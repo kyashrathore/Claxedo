@@ -52,7 +52,7 @@ const AUTH_STAGE_DIR = "/tmp/claxedo-auth"
 // Opt-IN. Syncing copies the operator's live provider sessions
 // (~/.codex/auth.json, opencode auth.json, .claude.json) into every container
 // at /root — anything that executes inside a sandbox can exfiltrate them, and
-// on a shared self-host that is cross-user secret exposure. Local-docker users
+// on a shared host that is cross-user secret exposure. Local-docker users
 // who want their host credentials in the sandbox must say so explicitly.
 export function dockerSandboxSyncLocalAuth(env: SandboxEnv = process.env) {
   return enabledFlag(env.CLAXEDO_DOCKER_SANDBOX_SYNC_LOCAL_AUTH)

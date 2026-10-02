@@ -68,9 +68,6 @@ API since the previous publish. For 0.1.0 / 0.8.0 / 0.5.0 (2026-09-06):
   shipped as `dist/opencode-node`), `agent-sdk-runtime` gained the Pi harness
   and the subagent-admission surface, and `agent-runtime-contract` is
   published for the first time. `sandbox-contract`, `sandbox-manager`,
-  `workspace-relay` moves its Bun runtime adapter (`createWorkspaceRelayBun`
-  and friends) off the root barrel to the `@claxedo/workspace-relay/bun`
-  subpath, so the root entry typechecks under Node type roots;
   `workspace-relay-protocol` rides the track.
 - apps — `connections` changed with the control-plane migration;
   `channels` rides the track.

@@ -42,10 +42,10 @@ function filesUnder(dir: string): string[] {
  * hand-written producer list would leave every later module unwalked.
  *
  * Most exports are `./*` -> `./src/*.ts`, so every source module is a producer.
- * The self-hosted entry's `import` target under `dist/` is skipped: that bundle
- * is measured from Bun's source map by `script/product-boundary/verify.ts`, and
- * walking it here would count its dynamic-import expressions and external
- * packages as authored modules.
+ * The daemon entry's (`./self-hosted-execution`) `import` target under `dist/`
+ * is skipped: that bundle is measured from Bun's source map by
+ * `script/product-boundary/verify.ts`, and walking it here would count its
+ * dynamic-import expressions and external packages as authored modules.
  *
  * Test code is dropped — a `.test.` file and anything under `test-support/`
  * (not shipped, and allowed edges a product module is not: a test may reach for

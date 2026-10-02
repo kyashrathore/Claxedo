@@ -22,9 +22,6 @@ import NodeWebSocket from "ws"
  * satisfies them too. The reverse is what fails, and claiming DOM was the
  * reason the old conversion looked unavoidable.
  *
- * Unrelated to `workspace-relay`'s `upstream-websocket.ts`, which converts
- * Bun's GLOBAL `WebSocket` because `bun-types` yields to `lib.dom`. That is
- * about a global's declaration; this is about a package's class.
  */
 export type TunnelWebSocket = Pick<
   NodeWebSocket,

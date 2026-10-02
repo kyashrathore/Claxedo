@@ -52,32 +52,16 @@ async function mirrorRenewedLocalTokens(id: string, secret: string, org?: string
 }
 
 /**
- * Reconcile delivered credentials in the sandboxes the workspace supervisor
- * keeps running. A cloud sandbox's brokered accounts live at its provider's
- * edge, which only this reconcile withdraws: without it a revoked account
- * stays spendable there until the next ensure happens to run. It is
- * write-only-when-running — a stopped sandbox needs nothing because its next
- * ensure resolves the current set — and a host with no supervisor
- * has nothing delivered to reconcile. Lazy like the rest: the hosted Worker
- * composes its own adapter and must not grow a node-side graph here.
- */
-async function syncDeliveredCredentials() {
-  const { workspaceSupervisor } = await import("../workspace/supervisor-port")
-  await workspaceSupervisor().reconcileCredentialDelivery()
-}
-
-/**
- * Carries a stored credential change to every running workspace: the
- * supervisor's sandboxes and, where the composition has them, its local
- * runtimes. Both are attempted whichever fails, so one unreachable sandbox
- * never leaves a local runtime spending a revoked account.
+ * Carries a stored credential change to the composition's local runtimes, if
+ * it has any. A failure reaches the caller as `CredentialDeliveryError`, so the
+ * write reports that a running runtime may still hold the old account.
  */
 export async function deliverCredentialChange(refreshLocalRuntimes?: () => Promise<void>) {
-  const results = await Promise.allSettled([syncDeliveredCredentials(), refreshLocalRuntimes?.()])
-  const failures = results.flatMap((result) => result.status === "rejected" ? [result.reason] : [])
-  if (!failures.length) return
-  if (failures.length === 1 && failures[0] instanceof CredentialDeliveryError) throw failures[0]
-  throw new CredentialDeliveryError(failures.length === 1 ? failures[0] : new AggregateError(failures, "credential delivery failed"))
+  try {
+    await refreshLocalRuntimes?.()
+  } catch (error) {
+    throw error instanceof CredentialDeliveryError ? error : new CredentialDeliveryError(error)
+  }
 }
 
 export function defaultControlPlaneCredentials(options: { refreshLocalRuntimes?: () => Promise<void> } = {}): ControlPlaneCredentials {

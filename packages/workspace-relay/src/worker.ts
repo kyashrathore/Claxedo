@@ -11,7 +11,7 @@ import {
   type WorkspaceRelayDurableObjectRoomOptions,
   type WorkspaceRelayDurableObjectSocket,
 } from "./cloudflare"
-import type { RelayHostPublicKey, RuntimeAccessTokenActiveResult, WorkspaceRelayTarget } from "./server"
+import type { RuntimeAccessTokenActiveResult, WorkspaceRelayTarget } from "./server"
 import {
   createCachedHostGenerationClient,
   createCachedRevocationClient,
@@ -129,7 +129,7 @@ async function loadRelayHostKeys(env: WorkspaceRelayWorkerEnv) {
   const publicKey = explicitPublicPem
     ? await importSPKI(explicitPublicPem, "EdDSA", { extractable: true })
     : await deriveRelayHostPublicKey(privateKey)
-  const current: RelayHostPublicKey = {
+  const current = {
     publicKey,
     kid: trimToUndefined(env.CLAXEDO_RELAY_HOST_KID) ?? await deriveRelayHostKid(publicKey),
   }
@@ -205,7 +205,6 @@ export async function workspaceRelayDurableObjectOptions(
     runtimeAccessKey: await loadRuntimeAccessKey(env),
     relayHostSigningKey: relayHost.privateKey,
     relayHostAlgorithm: "EdDSA",
-    relayHostPublicKeys: relayHost.publicKeys,
     relayHostMintKid: relayHost.currentKid,
     auditAcceptSampleRate: Number(trimToUndefined(env.CLAXEDO_RELAY_AUDIT_ACCEPT_SAMPLE_RATE) ?? "0.1"),
     ...(positiveInteger(env.CLAXEDO_RELAY_TUNNEL_CHANNEL_CAP) ? { tunnelChannelCap: positiveInteger(env.CLAXEDO_RELAY_TUNNEL_CHANNEL_CAP) } : {}),

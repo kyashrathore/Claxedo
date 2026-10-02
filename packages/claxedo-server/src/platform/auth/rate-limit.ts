@@ -44,14 +44,11 @@
  * that route can take a counter-DO `SharedRateLimitStore` implementation
  * without touching this interface — which is why the store is a port.
  *
- * ## Degrading on Node / self-host
+ * ## Without a shared store
  *
- * A Node process has no Cloudflare bindings. `sharedStore`
- * is therefore optional everywhere: absent, `createLayeredRateLimiter` is the
- * in-memory fuse and nothing else. A single Node box has ONE process, so the
- * per-process fuse IS the global limit there — the degraded mode is correct for
- * that topology rather than merely tolerable. Multi-instance Node is a known
- * gap; it would need a real shared store.
+ * `sharedStore` is optional: absent (no rate-limit binding configured),
+ * `createLayeredRateLimiter` is the in-memory fuse and nothing else, so each
+ * isolate is limited on its own.
  *
  * ## Relationship to `@claxedo/channels`' limiter
  *
@@ -235,7 +232,7 @@ export type LayeredRateLimiter = {
 export function createLayeredRateLimiter(options: {
   /** Per-isolate first-layer fuse. Required — it is the floor, not an add-on. */
   local: ConnectionRateLimiter
-  /** Cross-isolate ceiling. Absent on Node/self-host; see the module header. */
+  /** Cross-isolate ceiling. Optional; see the module header. */
   sharedStore?: SharedRateLimitStore
 }): LayeredRateLimiter {
   const { local, sharedStore } = options

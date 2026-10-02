@@ -4,7 +4,6 @@ import { createServer, type Server } from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
-import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { stopHostServing } from "@claxedo/host-serving/serving"
 import { startLocalServer, type LocalServer } from "../../app/start-local-server"
 import { createLocalControlPlaneServices } from "../../app/local-services"
@@ -40,7 +39,6 @@ afterEach(async () => {
   await new Promise<void>((resolve) => (controlPlane ? controlPlane.close(() => resolve()) : resolve()))
   controlPlane = undefined
   ClaxedoDB.close()
-  closeAuthorityDatabases()
   if (previous === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previous
   rmSync(dataDir, { recursive: true, force: true })

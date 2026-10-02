@@ -26,7 +26,7 @@ describe("credential org scope migration", () => {
 
     sqlite.exec(migration("20260728000100_credential_org_scope"))
 
-    // An existing self-host user must not lose access on upgrade: the unsigned
+    // An existing local user must not lose access when this runs: the unsigned
     // request path resolves to exactly this partition, so every credential they
     // had stays readable with no re-entry.
     expect(sqlite.prepare("SELECT id, org_id FROM claxedo_provider_credential ORDER BY id").all()).toEqual([

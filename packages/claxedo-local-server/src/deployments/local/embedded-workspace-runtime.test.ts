@@ -26,7 +26,6 @@ import { disposeAgentConfig, loadUserConfig, saveUserConfig } from "@claxedo/ser
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { localWorkspaceRuntimeSessionAuthority } from "@claxedo/server-core/workspace/local-runtime-port"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
-import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { Pty, type EmbeddedRelayHostIdentity } from "@claxedo/workspace-runtime"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "@claxedo/workspace-runtime/exposure"
@@ -41,7 +40,6 @@ import { FakeTransport, fakeConnectionProvider, testSessionCore } from "@claxedo
  */
 async function removeWorkspaceRoot(...roots: string[]) {
   ClaxedoDB.close()
-  closeAuthorityDatabases()
   for (const root of roots) await fs.rm(root, { recursive: true, force: true })
 }
 
@@ -83,7 +81,6 @@ async function shutdownTestRuntimes() {
   // Direct tests own the shared Claxedo database singleton, so release it
   // before Windows removes the temporary data directory.
   ClaxedoDB.close()
-  closeAuthorityDatabases()
 }
 
 afterEach(async () => {

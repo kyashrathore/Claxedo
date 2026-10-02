@@ -1,24 +1,7 @@
 # @claxedo/server
 
 Claxedo's control plane. It deploys to Cloudflare as the Workers in
-`src/deployments/hosted-workerd/`. `src/deployments/self-hosted-node/` is a
-Node composition that is not deployed: the app and harness e2e suites and this
-package's integration tests boot it.
-
-## Machine operators in the Node composition
-
-When the Node composition runs signed, machine-wide plugin configuration, machine enrollment and deleting a
-workspace placed on this machine require an authenticated subject listed in
-`CLAXEDO_OPERATOR_SUBJECTS` (comma-separated).
-Use the stable user ID returned by the embedded issuer's signup/signin response,
-not an email address or organization role. Configure this on the server and
-restart it after adding or removing an operator. An empty list denies plugin
-reads, activation, source management, signed-runtime handoff, enrollment and machine-placed
-workspace deletion to all signed users. Ordinary workspace membership grants no machine
-configuration authority. A provisioned cloud workspace is different: its deletion is the
-control plane's decision about that stored workspace, and operating this machine does not
-grant it.
-The unsigned single-user deployment continues to require a loopback peer.
+`src/deployments/hosted-workerd/`. The app and harness e2e suites boot the Worker.
 
 Workspace runtime control tokens are generated separately for each workspace.
 Setting `WORKSPACE_RUNTIME_CONFIG_TOKEN` in the control-plane environment no
@@ -106,9 +89,6 @@ combination for the following reasons:
   existing tests would each need to grow into kitchen-sink mock
   declarations to be safe under `bun test`, which is an outsized cost
   to switch runners.
-- **`tsx` already handles TypeScript loading** where the e2e suites boot the
-  Node composition, and Vitest's built-in TS support matches that toolchain without an
-  extra preload step.
 
 ## Why a different runner from `claxedo-app`
 

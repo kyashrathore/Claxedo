@@ -13,7 +13,7 @@ export const OwnershipStatus = {
 export type OwnershipStatus = (typeof OwnershipStatus)[keyof typeof OwnershipStatus]
 
 export type ArchitectureOwnershipEntry = {
-  area: "authority" | "lease" | "mirror" | "registry" | "host" | "route" | "projection"
+  area: "authority" | "lease" | "registry" | "host" | "route" | "projection"
   module: string
   status: OwnershipStatus
   owner: string
@@ -62,59 +62,11 @@ export const ARCHITECTURE_OWNERSHIP = [
     owner: "SandboxLeaseStore test/local driver",
     tests: ["../../sandbox-manager/src/manager.test.ts"],
   },
-  {
-    area: "lease",
-    module: "sandbox/stores/sqlite.ts",
-    status: OwnershipStatus.Canonical,
-    owner: "SandboxLeaseStore local durable driver",
-    tests: ["workspace/supervisor/cloud.test.ts"],
-  },
-  {
-    area: "lease",
-    module: "sandbox/stores/sqlite-supervisor-state.ts",
-    status: OwnershipStatus.Compatibility,
-    owner: "local supervisor SQLite row-state adapter",
-    canonicalReplacement: "../../sandbox-manager/src/index.ts plus sandbox-manager/stores/sqlite.ts",
-    reason: "Keeps local workspace-supervisor row and hold compatibility under the SandboxManager storage boundary instead of a second top-level lease authority.",
-    removalCondition: "Delete when the local supervisor consumes only SandboxManager and SandboxLeaseStore operations.",
-    tests: ["workspace/supervisor/cloud.test.ts", "workspace/store/index.test.ts"],
-  },
-  {
-    area: "host",
-    module: "sandbox/provision-events.ts",
-    status: OwnershipStatus.Canonical,
-    owner: "sandbox provision event publisher",
-    reason: "Production host lifecycle code emits provision events without depending on manual live sandbox probes.",
-    tests: ["sandbox/provision-events.test.ts"],
-  },
-  {
-    area: "host",
-    module: "workspace/supervisor/sandbox.ts",
-    status: OwnershipStatus.Canonical,
-    owner: "local supervisor SandboxManager composer",
-    reason: "The local Claxedo product path dogfoods SandboxManager and SandboxDriver directly for cloud workspaces.",
-    tests: [
-      "workspace/supervisor/cloud.test.ts",
-      "authority/services.test.ts",
-    ],
-  },
-  {
-    area: "lease",
-    module: "authority/http/index.ts",
-    status: OwnershipStatus.Canonical,
-    owner: "control-plane runtime register and heartbeat routes",
-    canonicalReplacement: "../../sandbox-manager/src/index.ts plus SandboxLeaseStore heartbeat/touch methods",
-    reason: "Runtime register and heartbeat routes update the canonical SandboxManager lease; legacy cloud authority rows are no longer written.",
-    tests: ["authority/http/index.test.ts"],
-  },
-  {
-    area: "mirror",
-    module: "adapters/central-store/mirror.ts",
-    status: OwnershipStatus.Canonical,
-    owner: "MirrorController",
-    reason: "createMirrorController owns each mirror adapter, subscription, pending lease set, and flush timer.",
-    tests: ["tests/integration/host-primitives.test.ts"],
-  },
+
+
+
+
+
   {
     area: "projection",
     // Moved to @claxedo/server-core in the local/cloud package split: BOTH
@@ -191,7 +143,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     module: "../../claxedo-local-server/src/agent-config/fanout.ts",
     status: OwnershipStatus.Canonical,
     owner: "Sandbox runtime config fan-out",
-    reason: "Agent config changes broadcast already-resolved runtime snapshots to active sandboxs.",
+    reason: "Agent config changes push already-resolved runtime snapshots to the embedded workspace runtimes.",
     tests: [
       "../../claxedo-server-core/src/agent-config/index.test.ts",
       "tests/governance/codebase-shape.test.ts",
@@ -257,7 +209,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "runtime session authority oracle",
     reason:
-      "Isolated workspace runtimes cannot read session participation themselves. They present their already-verified Relay Host Token as an opaque proof; this route re-verifies the relay signature and expiry, then derives actor and workspace ONLY from signed claims — a request body can never assert an actor. Mounted at /api/runtime-authority by self-hosted-node/app.ts and hosted-core-app.ts alike.",
+      "Isolated workspace runtimes cannot read session participation themselves. They present their already-verified Relay Host Token as an opaque proof; this route re-verifies the relay signature and expiry, then derives actor and workspace ONLY from signed claims — a request body can never assert an actor. Mounted at /api/runtime-authority by hosted-core-app.ts.",
     tests: [
       "routes/runtime-session-authority.test.ts",
       "authority/two-user-runtime-transport.acceptance.test.ts",
@@ -289,20 +241,14 @@ export const ARCHITECTURE_OWNERSHIP = [
     module: "authority/projection-store.ts",
     status: OwnershipStatus.Canonical,
     owner: "ControlPlane ProjectionStore",
-    tests: [
-      "authority/projection-store.test.ts",
-      "authority/durable-state.test.ts",
-    ],
+    tests: ["authority/projection-store.test.ts"],
   },
   {
     area: "projection",
     module: "../../claxedo-server-core/src/platform/auth/durable-session-log.ts",
     status: OwnershipStatus.Canonical,
     owner: "ControlPlane DurableSessionLog",
-    tests: [
-      "../../claxedo-server-core/src/platform/auth/durable-session-log.test.ts",
-      "authority/durable-state.test.ts",
-    ],
+    tests: ["../../claxedo-server-core/src/platform/auth/durable-session-log.test.ts"],
   },
   {
     area: "projection",
@@ -313,17 +259,6 @@ export const ARCHITECTURE_OWNERSHIP = [
     reason: "Local server still exposes loopback-only projections for local surfaces.",
     removalCondition: "Local-only route surfaces are either removed or compose the same route factories with explicit auth policies.",
     tests: ["../../claxedo-server-core/src/platform/http/local-only-projection.test.ts"],
-  },
-  // Worker-safe route modules: shared control plane.
-  {
-    area: "route",
-    module: "session/routes/control-plane-session.ts",
-    status: OwnershipStatus.Canonical,
-    owner: "control-plane session routes",
-    reason:
-      "No workspace store, SQLite, or fs in its import graph, so it is Worker-safe shared control plane.",
-    tests: ["session/routes/control-plane-session.test.ts"],
-    routeSamples: ["/api/control/sessions/s1/gateway"],
   },
   {
     area: "route",
@@ -374,16 +309,6 @@ export const ARCHITECTURE_OWNERSHIP = [
       "Imports the workspace store and the runtime data paths (fs), so it stays local.",
     tests: ["../../claxedo-local-server/src/deployments/shared-routes/bootstrap.test.ts"],
     routeSamples: ["/api/claxedo/bootstrap"],
-  },
-  {
-    area: "route",
-    module: "workspace/routes/index.ts",
-    status: OwnershipStatus.Canonical,
-    owner: "local workspace routes (Claxedo local adapter)",
-    reason:
-      "Imports the workspace store and supervisor (fs/child_process/SQLite), so it stays local.",
-    tests: ["workspace/routes/index.test.ts"],
-    routeSamples: ["/api/workspace"],
   },
   {
     area: "registry",

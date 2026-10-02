@@ -77,8 +77,8 @@ export function newWorkspaceId(now: number = Date.now()): string {
  * Shape check for a minted workspace id.
  *
  * Deliberately not used to validate ids arriving on requests: a workspace a
- * machine registers carries a caller-chosen id (`registerLocalForSharing`), so rejecting
- * anything that does not match this pattern would break them. It exists so
+ * machine registers carries a caller-chosen id, so rejecting anything that
+ * does not match this pattern would break them. It exists so
  * tests and tooling can assert what this generator produces.
  */
 export function isMintedWorkspaceId(value: string): boolean {

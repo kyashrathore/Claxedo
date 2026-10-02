@@ -48,7 +48,6 @@ afterEach(async () => {
   await lifecycle.cleanup()
 })
 
-/** The control plane: the authority routes over the real SQLite authority, signing with its own runtime key. */
 async function controlPlane(authority: WakeAuthority) {
   const runtimeKey = await generateKeyPair("EdDSA", { extractable: true })
   const relayKey = await generateKeyPair("EdDSA", { extractable: true })
@@ -106,7 +105,7 @@ function remotePolicy(plane: Hono) {
 async function relayProof(relayKey: CryptoKey, who: SignedControlPlaneAuth, orgId: string, jti: string) {
   return await mintRelayHostToken({
     principalKind: "user",
-    actorId: who.user.tokenIdentifier,
+    actorId: who.principal!.actorId,
     userId: who.user.subject,
     actorKind: "human",
     orgId,
@@ -167,7 +166,7 @@ async function childCreatedOverTheRelay() {
   const workspace = await seedWakeWorkspace("send")
   const { root, authority, alice, aliceRuntime, orgId } = workspace
   await authority.recordRuntimeAccessToken(alice, {
-    jti: RAT, workspaceId: WORKSPACE, hostId: HOST, actorId: alice.user.tokenIdentifier, actorKind: "human", role: "owner", expiresAt: Date.now() + 60 * 60_000,
+    jti: RAT, workspaceId: WORKSPACE, hostId: HOST, actorId: alice.principal!.actorId, actorKind: "human", role: "owner", expiresAt: Date.now() + 60 * 60_000,
   })
   await reserveChild(authority, aliceRuntime)
   const plane = await controlPlane(authority)
@@ -236,16 +235,16 @@ test("a child created over a Relay Host Token takes its grant over the wire and 
   ])
   expect(store.subagentOrigin(PARENT, subagentKey)).toEqual({
     provenance: "relay-replayed",
-    actor: { actorId: alice.user.tokenIdentifier, actorKind: "human", userId: alice.user.subject },
+    actor: { actorId: alice.principal!.actorId, actorKind: "human", userId: alice.user.subject },
     authority: { managed: true, workspaceId: WORKSPACE, orgId: expect.any(String), role: "owner" },
     grant,
   })
   expect(decodeJwt(grant)).toMatchObject({
-    actor_id: alice.user.tokenIdentifier, session_id: PARENT, subject_session_id: CHILD, intent: "child_completion", turn_id_prefix: `msg_wake_${CHILD}_`,
+    actor_id: alice.principal!.actorId, session_id: PARENT, subject_session_id: CHILD, intent: "child_completion", turn_id_prefix: `msg_wake_${CHILD}_`,
   })
-  expect(grantRows(seeded)).toEqual([{
+  expect(await grantRows(seeded)).toEqual([{
     grant_id: decodeJwt(grant).jti,
-    actor_id: alice.user.tokenIdentifier,
+    actor_id: alice.principal!.actorId,
     session_id: PARENT,
     subject_session_id: CHILD,
     turn_id: null,
@@ -263,20 +262,20 @@ test("a restarted host delivers the wake as the original actor by presenting the
   const { seeded, authority, alice } = item
   await processEndedBeforeTheOffer(item)
   const { store, host, calls, attempts, prompts } = await restarted(item)
-  expect(store.subagentOrigin(PARENT, item.subagentKey)).toMatchObject({ actor: { actorId: alice.user.tokenIdentifier }, grant: item.grant })
+  expect(store.subagentOrigin(PARENT, item.subagentKey)).toMatchObject({ actor: { actorId: alice.principal!.actorId }, grant: item.grant })
 
   await wake(host)
   await until(() => store.listSubagents(PARENT)[0]?.wake === "delivered" && calls.some((call) => call.action === "turn_release"), "the wake to be delivered and its lease released")
 
-  expect(attempts).toEqual([{ actorId: alice.user.tokenIdentifier, turnId: WAKE_TURN, grant: true }])
+  expect(attempts).toEqual([{ actorId: alice.principal!.actorId, turnId: WAKE_TURN, grant: true }])
   expect(calls).toEqual([
     { action: "turn_acquire", authorization: null, grant: true, turnId: WAKE_TURN, status: 200 },
     { action: "turn_release", authorization: null, grant: false, turnId: WAKE_TURN, status: 200 },
   ])
   expect(prompts).toEqual([{ sessionId: PARENT, messageId: WAKE_TURN }])
-  const admitted = producers(seeded)
-  expect(admitted).toMatchObject([{ session_id: PARENT, turn_id: WAKE_TURN, actor_id: alice.user.tokenIdentifier }])
-  expect(grantRows(seeded)).toMatchObject([{ redeemed_turn_id: WAKE_TURN }])
+  const admitted = await producers(seeded)
+  expect(admitted).toMatchObject([{ session_id: PARENT, turn_id: WAKE_TURN, actor_id: alice.principal!.actorId }])
+  expect(await grantRows(seeded)).toMatchObject([{ redeemed_turn_id: WAKE_TURN }])
 
   await expect(authority.syncSessionMessages(alice, {
     updatedAt: Date.now(),
@@ -286,8 +285,8 @@ test("a restarted host delivers the wake as the original actor by presenting the
     maxEventOrdinal: 1,
     messages: [{ id: WAKE_TURN, role: "user", sessionID: PARENT, parts: [{ type: "text", text: "Subagent finished." }] }],
   })).resolves.toMatchObject({ ok: true })
-  expect(seeded().prepare(`SELECT author_actor_id FROM session_messages WHERE message_id = ?`).get(WAKE_TURN))
-    .toEqual({ author_actor_id: alice.user.tokenIdentifier })
+  expect(await seeded.prepare(`SELECT author_actor_id FROM session_messages WHERE message_id = ?`).bind(WAKE_TURN).first())
+    .toEqual({ author_actor_id: alice.principal!.actorId })
 })
 
 test("a workspace deleted before delivery refuses the redemption at the authority: no prompt, no producer, grant unredeemed, wake pending", async () => {
@@ -302,8 +301,8 @@ test("a workspace deleted before delivery refuses the redemption at the authorit
 
   expect(calls).toEqual([{ action: "turn_acquire", authorization: null, grant: true, turnId: WAKE_TURN, status: 403, code: "workspace_authorization_denied" }])
   expect(prompts).toEqual([])
-  expect(producers(seeded)).toEqual([])
-  expect(grantRows(seeded)).toMatchObject([{ redeemed_turn_id: null, revoked_at: null }])
+  expect(await producers(seeded)).toEqual([])
+  expect(await grantRows(seeded)).toMatchObject([{ redeemed_turn_id: null, revoked_at: null }])
   expect(store.listSubagents(PARENT)).toMatchObject([{ wake: "pending" }])
 })
 
@@ -320,8 +319,8 @@ test("a grant past its expiry is refused over the wire and the wake stays pendin
 
   expect(calls).toEqual([{ action: "turn_acquire", authorization: null, grant: true, turnId: WAKE_TURN, status: 401, code: "session_turn_grant_expired" }])
   expect(prompts).toEqual([])
-  expect(producers(seeded)).toEqual([])
-  expect(grantRows(seeded)).toMatchObject([{ redeemed_turn_id: null }])
+  expect(await producers(seeded)).toEqual([])
+  expect(await grantRows(seeded)).toMatchObject([{ redeemed_turn_id: null }])
   expect(store.listSubagents(PARENT)).toMatchObject([{ wake: "pending" }])
 })
 
@@ -343,8 +342,8 @@ test("the same wake re-offered after delivery is refused as redeemed, and no sec
 
   expect(calls).toEqual([{ action: "turn_acquire", authorization: null, grant: true, turnId: WAKE_TURN, status: 401, code: "session_turn_grant_redeemed" }])
   expect(prompts).toEqual([])
-  expect(producers(seeded)).toHaveLength(1)
-  expect(grantRows(seeded)).toMatchObject([{ redeemed_turn_id: WAKE_TURN }])
+  expect(await producers(seeded)).toHaveLength(1)
+  expect(await grantRows(seeded)).toMatchObject([{ redeemed_turn_id: WAKE_TURN }])
   expect(store.listSubagents(PARENT)).toMatchObject([{ wake: "pending" }])
 })
 
@@ -353,7 +352,7 @@ test("a legacy row recorded without a grant never reaches the authority, and nev
   await reserveChild(authority, aliceRuntime)
   await registerChild(authority, aliceRuntime)
   const plane = await controlPlane(authority)
-  const storeRoot = await seedFinishedChildStore(root, { actorId: bob.user.tokenIdentifier, orgId })
+  const storeRoot = await seedFinishedChildStore(root, { actorId: bob.principal!.actorId, orgId })
   const { store, host, calls, attempts, prompts } = await restarted({ storeRoot, plane })
   expect(store.subagentOrigin(PARENT, "subagent_wake")).not.toHaveProperty("grant")
 
@@ -363,15 +362,15 @@ test("a legacy row recorded without a grant never reaches the authority, and nev
   expect(attempts).toEqual([])
   expect(calls).toEqual([])
   expect(prompts).toEqual([])
-  expect(producers(seeded)).toEqual([])
-  expect(grantRows(seeded)).toEqual([])
+  expect(await producers(seeded)).toEqual([])
+  expect(await grantRows(seeded)).toEqual([])
   expect(store.listSubagents(PARENT)).toMatchObject([{ wake: "pending" }])
 })
 
 test("a prompt queued over the relay mints a grant for its message id, survives a restart, and is delivered as its requester through that grant", async () => {
   const { root, authority, seeded, alice, orgId } = await seedWakeWorkspace("send")
   await authority.recordRuntimeAccessToken(alice, {
-    jti: RAT, workspaceId: WORKSPACE, hostId: HOST, actorId: alice.user.tokenIdentifier, actorKind: "human", role: "owner", expiresAt: Date.now() + 60 * 60_000,
+    jti: RAT, workspaceId: WORKSPACE, hostId: HOST, actorId: alice.principal!.actorId, actorKind: "human", role: "owner", expiresAt: Date.now() + 60 * 60_000,
   })
   const plane = await controlPlane(authority)
   const storeRoot = runtimeStoreRoot(root)
@@ -393,11 +392,11 @@ test("a prompt queued over the relay mints a grant for its message id, survives 
     { action: "turn_grant", authorization: bearer(token), grant: false, turnId: "msg_queued_1", status: 200 },
   ])
   const [row] = store.deliveryQueue.listQueuedPrompts()
-  expect(row).toMatchObject({ sessionId: PARENT, messageId: "msg_queued_1", provenance: "relay-replayed", actor: { actorId: alice.user.tokenIdentifier, actorKind: "human" } })
+  expect(row).toMatchObject({ sessionId: PARENT, messageId: "msg_queued_1", provenance: "relay-replayed", actor: { actorId: alice.principal!.actorId, actorKind: "human" } })
   const grant = row.grant
   if (!grant) throw new Error("The queue recorded no grant beside the row")
-  expect(decodeJwt(grant)).toMatchObject({ actor_id: alice.user.tokenIdentifier, session_id: PARENT, intent: "queued_prompt", turn_id: "msg_queued_1" })
-  expect(grantRows(seeded)).toMatchObject([{ grant_id: decodeJwt(grant).jti, actor_id: alice.user.tokenIdentifier, turn_id: "msg_queued_1", redeemed_turn_id: null }])
+  expect(decodeJwt(grant)).toMatchObject({ actor_id: alice.principal!.actorId, session_id: PARENT, intent: "queued_prompt", turn_id: "msg_queued_1" })
+  expect(await grantRows(seeded)).toMatchObject([{ grant_id: decodeJwt(grant).jti, actor_id: alice.principal!.actorId, turn_id: "msg_queued_1", redeemed_turn_id: null }])
   expect(busyRuntime.prompts).toEqual([])
   await first.host.dispose()
   store.close()
@@ -407,12 +406,12 @@ test("a prompt queued over the relay mints a grant for its message id, survives 
   await host.recoverQueuedPrompts()
   await until(() => recovered.deliveryQueue.listQueuedPrompts().length === 0 && calls.some((call) => call.action === "turn_release"), "the recovered prompt to be delivered and its lease released")
 
-  expect(attempts).toEqual([{ actorId: alice.user.tokenIdentifier, turnId: "msg_queued_1", grant: true }])
+  expect(attempts).toEqual([{ actorId: alice.principal!.actorId, turnId: "msg_queued_1", grant: true }])
   expect(calls).toEqual([
     { action: "turn_acquire", authorization: null, grant: true, turnId: "msg_queued_1", status: 200 },
     { action: "turn_release", authorization: null, grant: false, turnId: "msg_queued_1", status: 200 },
   ])
   expect(prompts).toEqual([{ sessionId: PARENT, messageId: "msg_queued_1" }])
-  expect(producers(seeded)).toMatchObject([{ session_id: PARENT, turn_id: "msg_queued_1", actor_id: alice.user.tokenIdentifier }])
-  expect(grantRows(seeded)).toMatchObject([{ redeemed_turn_id: "msg_queued_1" }])
+  expect(await producers(seeded)).toMatchObject([{ session_id: PARENT, turn_id: "msg_queued_1", actor_id: alice.principal!.actorId }])
+  expect(await grantRows(seeded)).toMatchObject([{ redeemed_turn_id: "msg_queued_1" }])
 })

@@ -65,7 +65,7 @@ function requirePersonalOwner(input: { owner?: string; scope?: ConnectionScope }
 
 // Callers that partition the org scope by an opaque key (e.g. a hosted
 // deployment's `org:{orgId}`) pass it as `orgOwner`; absent means the
-// owner-absent partition is the org — the self-host default, byte-identical.
+// owner-absent partition is the org.
 type PartitionInput = { owner?: string; scope?: ConnectionScope; orgOwner?: string }
 
 export type ConnectResult =
@@ -123,8 +123,6 @@ export function createConnectionsService(deps: {
 
   async function rowsFor(input: PartitionInput = {}) {
     requirePersonalOwner(input)
-    // The org partition: the caller-resolved opaque key when present,
-    // otherwise the owner-absent partition (self-host default).
     const orgRows = () =>
       input.orgOwner !== undefined
         ? deps.connections.list({ owner: input.orgOwner })

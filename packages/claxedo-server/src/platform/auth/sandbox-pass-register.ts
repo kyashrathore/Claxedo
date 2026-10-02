@@ -36,12 +36,7 @@ export type SandboxPassRegister = Readonly<{
   outstanding(input: { orgId: string; audience: string }): Promise<readonly SandboxPassRecord[]>
 }>
 
-/**
- * The in-process register: the self-hosted signed node's shape and every
- * test's. The self-hosted node mints no pass — its Tasks grants are handles
- * into the in-process registry every box that is its own runtime host uses —
- * so this holds nothing there; it is the D1 register's contract made concrete.
- */
+/** The in-process register: the D1 register's contract made concrete, for tests. */
 export function memorySandboxPassRegister(options: { now?: () => number } = {}): SandboxPassRegister {
   const now = options.now ?? Date.now
   const passes = new Map<string, SandboxPassRecord & { revokedAt?: number; reason?: string }>()

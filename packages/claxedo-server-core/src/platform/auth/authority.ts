@@ -230,20 +230,6 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
   ) => Promise<void>
   openWorkspace: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<WorkspaceOpenResult>
   listWorkspaces: (auth: SignedControlPlaneAuth) => Promise<unknown>
-  registerLocalForSharing: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      orgId?: string
-      displayName: string
-      projectId?: string
-      repoUrl?: string
-      repoName?: string
-      gitBranch?: string
-      remoteDirectory?: string
-      homeRegion?: string
-    },
-  ) => Promise<unknown>
   // --- machine-wide enrollment ---------------------------------------------
   //
   // Enrollment carries no workspace, and that absence is the feature: a laptop
@@ -430,15 +416,6 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
   /** What `verifyMachineRequest` reads and consumes; absent, no route can admit a machine caller. */
   machineAuth?: MachineAuthAdapter
   deleteWorkspace: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<unknown>
-  /**
-   * Retires a project and every placement filed under it, for its owner.
-   * Optional because only an authority that keeps project rows beside a
-   * server's own project store answers it: the self-hosted app files each
-   * local project there at creation, and a row left behind would claim the
-   * same repository for the retired id and hide the next project made for
-   * that folder. `deleted: false` is a project the authority never held.
-   */
-  deleteProject?: (auth: SignedControlPlaneAuth, args: { projectId: string }) => Promise<{ deleted: boolean }>
   createCloudWorkspace: (
     auth: SignedControlPlaneAuth,
     args: {

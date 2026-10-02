@@ -12,10 +12,6 @@
  * boot, where it is one line of output, rather than at the first request that
  * reaches the losing handler.
  *
- * Lives at the `deployments/` root because both compositions install it —
- * `createSignedControlPlaneApp` as "hosted-shared" and `createSelfHostedApp`
- * as "self-hosted-node" — and a rule that belongs to no single deployment does
- * not live in a directory named for one.
  */
 
 /** A mounted family: the prefix, and who mounted it. */

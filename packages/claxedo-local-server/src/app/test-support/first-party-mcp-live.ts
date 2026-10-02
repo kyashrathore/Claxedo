@@ -7,7 +7,6 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
-import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { closeTasksStore } from "@claxedo/server-core/tasks-host/sqlite-store"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { ensureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes } from "../../deployments/local/embedded-workspace-runtime"
@@ -154,7 +153,6 @@ export async function startLiveFirstPartyMcp(options: Pick<Parameters<typeof sta
       await shutdownEmbeddedWorkspaceRuntimes()
       await server.stop()
       ClaxedoDB.close()
-      closeAuthorityDatabases()
       closeTasksStore()
       if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
       else process.env.CLAXEDO_DATA_DIR = previousDataDir

@@ -227,7 +227,7 @@ describe("claxedo workspace-runtime boot policy", () => {
       options.bindSessionParents!(() => undefined)
       const policy = options.sessionAccessPolicy!
       const access = {
-        actor: { actorId: plane.member.user.tokenIdentifier, actorKind: "human" as const },
+        actor: { actorId: plane.member.principal!.actorId, actorKind: "human" as const },
         authority: { managed: true as const, workspaceId: "ws_real", orgId: plane.orgId, role: "editor" as const },
         credential: `Bearer ${await plane.relayToken(plane.member)}`,
         operation: "prompt" as const,
@@ -256,7 +256,7 @@ describe("claxedo workspace-runtime boot policy", () => {
 
       await options.onDrain!()
 
-      expect((await plane.ledger.ownedBy({ org_id: plane.orgId, user_id: "member" })).map((fact) => [
+      expect((await plane.ledger.ownedBy({ org_id: plane.orgId, user_id: plane.member.principal!.userId })).map((fact) => [
         fact.messageId, fact.location, fact.hostId, fact.settlement, fact.tokens,
       ])).toEqual([
         ["msg_reply", "cloud-workspace", "workspace:ws_real", "final", tokens],
@@ -270,7 +270,7 @@ describe("claxedo workspace-runtime boot policy", () => {
       expect(unmetered.options.sessionAccessPolicy).toBeUndefined()
     } finally {
       vi.unstubAllGlobals()
-      plane.close()
+      await plane.close()
       await rm(store, { recursive: true, force: true })
     }
   })

@@ -1,27 +1,18 @@
-/**
- * Config Fan-out
- *
- * Pushes raw runtime snapshots to all supervised workspace-runtime instances
- * after any MCP mutation. Called from agent-config routes.
- */
-
-import { workspaceSupervisor } from "@claxedo/server-core/workspace/supervisor-port"
 import { syncEmbeddedWorkspaceRuntimes } from "../deployments/local/embedded-workspace-runtime"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
 const log = Log.create({ service: "config-fanout" })
 
+/**
+ * Pushes the current runtime config to every embedded workspace runtime after
+ * an agent-config mutation. The warning names the target only: a runtime's
+ * rejection can quote the config it refused, secrets included.
+ */
 export async function fanOutConfig(): Promise<void> {
-  const targets = [
-    { name: "workspace/supervisor", run: () => workspaceSupervisor().broadcastRuntimeConfig() },
-    { name: "deployments/local/embedded-workspace-runtime", run: syncEmbeddedWorkspaceRuntimes },
-  ] as const
-  const results = await Promise.allSettled(targets.map((target) => target.run()))
-
-  results.forEach((result, index) => {
-    if (result.status === "fulfilled") return
-    log.warn("config fan-out target failed", { target: targets[index]?.name })
-  })
-  const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected")
-  if (failures.length) throw new AggregateError(failures.map((result) => result.reason), "config fan-out failed")
+  try {
+    await syncEmbeddedWorkspaceRuntimes()
+  } catch (error) {
+    log.warn("config fan-out target failed", { target: "deployments/local/embedded-workspace-runtime" })
+    throw new Error("config fan-out failed", { cause: error })
+  }
 }

@@ -18,10 +18,6 @@ export function createLocalWorkspaceRelayProxy(options: RuntimeProxyOptions = {}
   return (c: Context) => localWorkspaceRelayProxyWithOptions(c, options)
 }
 
-export async function localWorkspaceRelayProxy(c: Context): Promise<Response> {
-  return localWorkspaceRelayProxyWithOptions(c)
-}
-
 async function localWorkspaceRelayProxyWithOptions(c: Context, options: RuntimeProxyOptions = {}): Promise<Response> {
   if (!isLoopbackLocalRequest(c.req.raw)) {
     return c.json(errorBody("workspace_relay_local_loopback_required", "Local workspace relay proxy requires loopback access"), 401)

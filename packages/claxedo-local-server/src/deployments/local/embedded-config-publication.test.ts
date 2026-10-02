@@ -5,7 +5,6 @@ import path from "node:path"
 import { configureEmbeddedWorkspaceRuntime, ensureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes, syncEmbeddedWorkspaceRuntimes } from "./embedded-workspace-runtime"
 import { disposeAgentConfig, saveCommand } from "@claxedo/server-core/agent-config/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
-import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 
 const roots: string[] = []
 const previous = process.env.CLAXEDO_DATA_DIR
@@ -19,7 +18,8 @@ async function runtime(id: string) {
 afterEach(async () => {
   vi.restoreAllMocks()
   await shutdownEmbeddedWorkspaceRuntimes()
-  disposeAgentConfig(); ClaxedoDB.close(); closeAuthorityDatabases()
+  disposeAgentConfig()
+  ClaxedoDB.close()
   if (previous === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previous
   for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true })

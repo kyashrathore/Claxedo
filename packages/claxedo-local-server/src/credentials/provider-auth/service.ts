@@ -77,11 +77,11 @@ export class ProviderAuthError extends Error {
  * The tenant an OAuth login belongs to.
  *
  * Same convention as the credential router's `requestOrg` (routes/credential.ts):
- * unsigned/local self-host resolves to the NAMED single-tenant partition,
+ * an unsigned local caller resolves to the NAMED single-tenant partition,
  * signed resolves to the verified `org_id` claim (or the subject when the
  * principal has no org). Blank is NOT a wildcard — it collapses to the named
  * partition, so a call site that forgets to thread the org fails closed into
- * self-host's own tenant rather than into someone else's.
+ * the machine's own tenant rather than into someone else's.
  */
 export function providerAuthOrg(org?: string | null): string {
   return org?.trim() || SINGLE_TENANT_ORG

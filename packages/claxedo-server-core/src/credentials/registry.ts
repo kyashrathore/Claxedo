@@ -12,7 +12,7 @@
  * path, and no wildcard.
  *
  * The `org` parameter defaults to `SINGLE_TENANT_ORG` (`__local__`), the named
- * partition that unsigned/loopback self-host resolves to. That default is a
+ * partition an unsigned loopback caller resolves to. That default is a
  * fail-CLOSED default, not a convenience wildcard: a call site that forgets to
  * pass an org operates on the single-tenant partition only, so the worst
  * outcome of a missed call site is "cannot see this org's rows" — never "can

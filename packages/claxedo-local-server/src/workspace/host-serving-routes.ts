@@ -7,8 +7,8 @@
  * relay connection that exposes them. The route mutates no account state and
  * carries no account credential — the body is a relay-scoped Host Tunnel
  * Token whose claim the relay itself verifies. Reachability is governed by
- * the daemon's existing local gate (loopback-only in unsigned self-host
- * mode), the same protection every other local admin surface relies on.
+ * the daemon's loopback-only local gate, the same protection every other
+ * local admin surface relies on.
  *
  * The body is the heartbeat ack's `hostTunnel` object VERBATIM — the control
  * plane is the authoritative producer of this credential and every hop

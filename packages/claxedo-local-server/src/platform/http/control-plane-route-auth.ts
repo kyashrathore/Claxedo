@@ -19,9 +19,9 @@ import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
  * immediately when `authConfig.enabled` — by design, because per-route bearer
  * verification is supposed to take over from there. A router that never
  * implemented that verification is therefore protected only by the loopback
- * guard, and only while the box is unsigned. Self-host deployments enable signed
- * auth (`CLAXEDO_EMBEDDED_AUTH=1`) precisely in order to be reachable remotely,
- * so that is exactly when the protection disappears.
+ * guard, and only while the box is unsigned. A box enables signed auth
+ * precisely in order to be reachable remotely, so that is exactly when the
+ * protection disappears.
  *
  * Policy, matching `network-policy.ts` / `remote-access.ts`:
  * - unsigned local-only → pass, whatever the Authorization header says; the

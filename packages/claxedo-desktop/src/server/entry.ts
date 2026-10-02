@@ -1,5 +1,4 @@
-// The desktop-local product, not the mixed self-hosted composition. This is
-// the line that keeps an unsigned desktop from closing over the hosted control
+// The desktop-local product. This is the line that keeps an unsigned desktop from closing over the hosted control
 // plane: `@claxedo/local-server` cannot reach Documents, Connections, Channels,
 // a workspace authority, or cloud provisioning, and its own closure test
 // asserts so.

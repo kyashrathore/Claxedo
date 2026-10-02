@@ -302,7 +302,7 @@ describe("manager: document where we can't", () => {
 
 describe("manager: self-host and allow-all paths are untouched", () => {
   test("an incapable driver serving a workspace with no policy warns about nothing", async () => {
-    // Local/self-host passes no policy at all when the operator configured
+    // A local composition passes no policy at all when the operator configured
     // none. Containment is a hosted, multi-tenant requirement; warning here
     // would train operators to ignore the warning that matters.
     const driver = fakeDriver("none", { id: "self-host-driver" })

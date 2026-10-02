@@ -9,7 +9,7 @@ describe("architecture boundaries", () => {
   test("classifies host primitive architecture modules with owners and removal conditions", () => {
     const entries = architectureOwnershipEntries()
     const areas = new Set(entries.map((entry) => entry.area))
-    expect([...areas].sort()).toEqual(["authority", "host", "lease", "mirror", "projection", "registry", "route"])
+    expect([...areas].sort()).toEqual(["authority", "host", "lease", "projection", "registry", "route"])
 
     const keys = entries.map((entry) => `${entry.area}:${entry.module}`)
     expect(keys.filter((key, index) => keys.indexOf(key) !== index)).toEqual([])
@@ -310,7 +310,6 @@ describe("architecture boundaries", () => {
 
   test("keeps API error response bodies structured", () => {
     const files = [
-      path.resolve(import.meta.dirname, "../../deployments/self-hosted-node/app.ts"),
       // Whole directory, not one file: the entrypoints hold the `errorBody`
       // responses this guard pins, and they moved out of proxy.ts in W11.2b.
       ...walk(path.resolve(import.meta.dirname, "../../workspace/runtime-dispatch")).filter((file) =>

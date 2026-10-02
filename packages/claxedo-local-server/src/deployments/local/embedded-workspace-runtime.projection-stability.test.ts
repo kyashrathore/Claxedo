@@ -7,7 +7,6 @@ import { createTestBackend, setBackendOverride } from "@claxedo/server-core/cred
 import { putCredential, setActiveCredentials } from "@claxedo/server-core/credentials/registry"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
-import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { createLocalCredentialBroker } from "../../credentials/broker"
 import { configureEmbeddedWorkspaceRuntime, ensureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes } from "./embedded-workspace-runtime"
 
@@ -19,7 +18,6 @@ afterEach(async () => {
   disposeAgentConfig()
   setBackendOverride(undefined)
   ClaxedoDB.close()
-  closeAuthorityDatabases()
   for (const root of roots) await fs.rm(root, { recursive: true, force: true })
   roots = []
   if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR

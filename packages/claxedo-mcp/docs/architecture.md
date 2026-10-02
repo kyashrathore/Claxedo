@@ -67,8 +67,8 @@ receive it.
 The registry calls `ctx.audit` before every write with the tool, the
 credential, the arguments, and the session the write addresses.
 `mcpAuditRecord` flattens that to `{ tool, actor, client, sessionId?,
-workspaceId?, callerSessionId? }`. The hosted worker and the node record it
-through `WorkspaceAuthority.auditAllow` as the signed caller (action
+workspaceId?, callerSessionId? }`. The hosted worker records it through
+`WorkspaceAuthority.auditAllow` as the signed caller (action
 `mcp.<tool>`); the desktop-local server and the cloud runtime write a log
 line (`mcp.audit`) from their own loggers.
 
@@ -77,21 +77,19 @@ line (`mcp.audit`) from their own loggers.
 `McpClientInputs` is what a mount can offer the client factory:
 
 - `local` — the runtime in this process and the workspace it serves. The
-  desktop-local server and the node bind their app's own in-process fetch to
-  the credential's workspace with `x-workspace-id`, which their runtime proxy
-  reads; the node leaves the workspace unnamed for an account credential, so
-  the client names it per call. The cloud runtime's fetch re-enters its own
+  desktop-local server binds its app's own in-process fetch to the
+  credential's workspace with `x-workspace-id`, which its runtime proxy
+  reads. The cloud runtime's fetch re-enters its own
   app; under relay exposure it carries a process-private bearer that
   relay-host auth accepts as a direct token.
 - `controlPlane` — the composed app's in-process fetch with the caller's
-  `Authorization` forwarded. Hosted and node supply it for user credentials.
+  `Authorization` forwarded. The hosted worker supplies it for user
+  credentials.
   The desktop-local server has no account credential to act with and supplies
   none; a cloud runtime's exchange of its credential for a user grant is not
   built here.
 
-The hosted worker and the node share `packages/claxedo-server/src/mcp/first-party-mcp.ts`,
+The hosted worker mounts `packages/claxedo-server/src/mcp/first-party-mcp.ts`,
 which turns a signed control-plane identity into a user credential (actor id
 from the principal, `cli` as the client) and keeps the identity beside the
-credential for the audit sink. The node adds the unsigned loopback branch:
-`actorId: "loopback"`, `clientId: "loopback"`, every scope — the same trust
-every other route on an unsigned box extends a loopback caller.
+credential for the audit sink.

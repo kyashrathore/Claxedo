@@ -4,7 +4,7 @@ import type { WorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
  * The one client every tool calls. No tool builds a URL: a tool names a
  * target and a runtime path, and the client decides whether that is an
  * in-process call, a loopback `/api/wr` call, a relay hop under
- * `/workspaces/:id`, or a self-hosted node's direct mount.
+ * `/workspaces/:id`, or a `node` mount's direct call.
  */
 export type WorkspaceTarget = Readonly<{
   workspaceId?: string

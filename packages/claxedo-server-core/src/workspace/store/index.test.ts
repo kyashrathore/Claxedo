@@ -75,9 +75,6 @@ describe("the project catalog's session composition", () => {
     (await listProjects()).flatMap((project) => Object.values(project.workspaces))
 
   test("publishes the composition the serving process declares for the workspaces it runs", async () => {
-    // The client cannot derive this: the same loopback address serves an
-    // unsigned daemon and a signed self-hosted server, and only one of them
-    // refuses `POST /session` without a reservation.
     configureLocalWorkspaceRuntime({
       fetch: async () => new Response(null, { status: 404 }),
       sessionAuthority: () => "managed-private",
