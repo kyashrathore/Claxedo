@@ -331,6 +331,24 @@ CREATE TABLE mcp_oauth_clients (
   registered_at integer not null
 );
 
+CREATE TABLE org_invitation_admissions (
+  user_id text primary key references users(user_id) on delete cascade,
+  invitation_id text not null references org_invitations(id)
+);
+
+CREATE TABLE org_invitations (
+  id text primary key,
+  org_id text not null references orgs(org_id),
+  email text not null check (email = lower(trim(email))),
+  role text not null check (role in ('member', 'admin', 'owner')),
+  token_hash text not null unique,
+  invited_by text not null references users(user_id),
+  created_at integer not null,
+  expires_at integer not null,
+  accepted_at integer,
+  revoked_at integer
+);
+
 CREATE TABLE org_memberships (
   org_id text not null references orgs (org_id) deferrable initially deferred,
   user_id text not null references users (user_id) deferrable initially deferred,
@@ -410,7 +428,7 @@ CREATE TABLE runtime_access_tokens (
   minted_for_user_id text references users (user_id) deferrable initially deferred,
   expires_at integer not null,
   revoked_at integer,
-  created_at integer not null,
+  created_at integer not null, session_id text, share_grant_id text,
   foreign key (workspace_id, org_id, project_id)
     references workspaces (workspace_id, org_id, project_id) deferrable initially deferred,
   check (
@@ -476,21 +494,6 @@ CREATE TABLE session_messages (
   created_at integer not null,
   updated_at integer not null,
   primary key (session_id, message_id),
-  foreign key (session_id, workspace_id, org_id, project_id)
-    references sessions (session_id, workspace_id, org_id, project_id) deferrable initially deferred
-);
-
-CREATE TABLE session_participants (
-  session_id text not null,
-  workspace_id text not null,
-  org_id text not null,
-  project_id text not null,
-  actor_id text not null references actors (actor_id) deferrable initially deferred,
-  granted_by_actor_id text not null references actors (actor_id) deferrable initially deferred,
-  role text not null check (role in ('participant')),
-  granted_at integer not null,
-  revoked_at integer,
-  primary key (session_id, actor_id),
   foreign key (session_id, workspace_id, org_id, project_id)
     references sessions (session_id, workspace_id, org_id, project_id) deferrable initially deferred
 );
@@ -815,8 +818,7 @@ CREATE TABLE workspaces (
   remote_directory text,
   created_at integer not null,
   updated_at integer not null,
-  deleted_at integer, org_member_visible integer not null default 1
-  check (org_member_visible in (0, 1)), host_assignment_revision integer not null default 0,
+  deleted_at integer, host_assignment_revision integer not null default 0,
   foreign key (project_id, org_id) references projects (project_id, org_id) deferrable initially deferred
 );
 
@@ -894,6 +896,8 @@ CREATE UNIQUE INDEX hosted_connections_one_per_partition
 CREATE UNIQUE INDEX hosted_provider_credentials_owner_provider
   on hosted_provider_credentials (org_id, ifnull(owner, ''), provider_id);
 
+CREATE INDEX org_invitations_org on org_invitations(org_id, created_at);
+
 CREATE INDEX org_memberships_by_user
   on org_memberships (user_id, revoked_at, org_id);
 
@@ -932,9 +936,6 @@ CREATE INDEX sandbox_passes_workspace_idx on sandbox_passes (workspace_id, audie
 
 CREATE INDEX session_messages_by_session_ordinal
   on session_messages (session_id, ordinal);
-
-CREATE INDEX session_participants_by_actor_workspace
-  on session_participants (actor_id, workspace_id, revoked_at, session_id);
 
 CREATE INDEX session_registration_operations_by_state
   on session_registration_operations (state, updated_at, operation_id);
@@ -1113,20 +1114,6 @@ when new.deployment_id != old.deployment_id
   or new.created_at != old.created_at
 BEGIN
   select raise(abort, 'runtime access token intent is immutable');
-end;
-
-CREATE TRIGGER session_participant_scope_immutable
-before update of session_id, workspace_id, org_id, project_id, actor_id, role, granted_at
-on session_participants
-when new.session_id != old.session_id
-  or new.workspace_id != old.workspace_id
-  or new.org_id != old.org_id
-  or new.project_id != old.project_id
-  or new.actor_id != old.actor_id
-  or new.role != old.role
-  or new.granted_at != old.granted_at
-BEGIN
-  select raise(abort, 'session participant scope is immutable');
 end;
 
 CREATE TRIGGER session_registration_intent_immutable
