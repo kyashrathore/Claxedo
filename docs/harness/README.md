@@ -12,33 +12,33 @@ the README beside each owner.
 ## Sending a message
 
 1. The session message route in
-   [`session-core.ts`](../../packages/workspace-runtime/src/routes/session-core.ts)
+   [`session-core.ts`](../../packages/session-core/src/routes/session-core.ts)
    parses the body with `parseSessionPromptBody`.
-   [`session-prompt-admission.ts`](../../packages/workspace-runtime/src/routes/session-prompt-admission.ts)
+   [`session-prompt-admission.ts`](../../packages/session-core/src/routes/session-prompt-admission.ts)
    admits or queues the delivery and calls `runRuntimePromptTurn` in
-   [`session/service.ts`](../../packages/workspace-runtime/src/session/service.ts),
+   [`session/service.ts`](../../packages/session-core/src/session/service.ts),
    which builds the turn input and calls the runtime's `turns.start`.
-2. [`createAgentRuntime`](../../packages/workspace-runtime/src/host/runtime.ts)
+2. [`createAgentRuntime`](../../packages/session-core/src/host/runtime.ts)
    admits the turn. A busy session takes a steer or a queued delivery, chosen in
-   [`turn-admission.ts`](../../packages/workspace-runtime/src/host/turn-admission.ts);
-   [`steered-inputs.ts`](../../packages/workspace-runtime/src/host/steered-inputs.ts)
+   [`turn-admission.ts`](../../packages/session-core/src/host/turn-admission.ts);
+   [`steered-inputs.ts`](../../packages/session-core/src/host/steered-inputs.ts)
    tracks when the harness reports a steer entering its conversation.
-3. [`SessionAttachments`](../../packages/workspace-runtime/src/host/attachments.ts)
+3. [`SessionAttachments`](../../packages/session-core/src/host/attachments.ts)
    attaches the transport named by the session's stored execution binding.
    [`createWorkspaceHost`](../../packages/workspace-runtime/src/workspace/runtime.ts)
    builds it with [`createHarnessComposer`](../../packages/harness/src/compose.ts).
-4. [`turnPrompt`](../../packages/workspace-runtime/src/host/turn-record.ts)
+4. [`turnPrompt`](../../packages/session-core/src/host/turn-record.ts)
    resolves model, effort and system values; `runTurn` in
-   [`turn-runner.ts`](../../packages/workspace-runtime/src/host/turn-runner.ts)
+   [`turn-runner.ts`](../../packages/session-core/src/host/turn-runner.ts)
    iterates the transport's `send` with the admitted turn identity and its
    broker, and records the outcome through
-   [`turn-outcome.ts`](../../packages/workspace-runtime/src/host/turn-outcome.ts).
+   [`turn-outcome.ts`](../../packages/session-core/src/host/turn-outcome.ts).
    A transport failure is a thrown `TransportError`; a provider-reported error
    is an event.
-5. [`createSessionEventWriter`](../../packages/workspace-runtime/src/projection/session-event-writer.ts)
+5. [`createSessionEventWriter`](../../packages/session-core/src/projection/session-event-writer.ts)
    commits each presentation event to
-   [`RuntimeStore`](../../packages/workspace-runtime/src/store.ts) before
-   [`RuntimeEventHub`](../../packages/workspace-runtime/src/projection/runtime-event-hub.ts)
+   [`RuntimeStore`](../../packages/session-core/src/store.ts) before
+   [`RuntimeEventHub`](../../packages/session-core/src/projection/runtime-event-hub.ts)
    publishes it. The SQLite journal is the durable readback source; the runtime
    [architecture](../../packages/workspace-runtime/docs/architecture.md) owns
    the journal and its views.
@@ -70,7 +70,7 @@ groups through [`capabilities/wire.ts`](../../packages/harness/src/capabilities/
 never from a harness name ([capabilities](../../packages/harness/src/capabilities/README.md)).
 
 Goal mutations go through
-[`createRuntimeGoalController`](../../packages/workspace-runtime/src/host/goal-controller.ts).
+[`createRuntimeGoalController`](../../packages/session-core/src/host/goal-controller.ts).
 Claude, Codex and Cursor expose native goal operations, Pi and OpenCode declare
 none, and ACP derives them from its extensions. A provider-originated run is
 admitted through
@@ -79,7 +79,7 @@ host supplies its turn identity.
 
 ## Credentials, conversation stores and plugins
 
-[`sessionCredentials`](../../packages/workspace-runtime/src/host/launch.ts)
+[`sessionCredentials`](../../packages/session-core/src/host/launch.ts)
 selects credentials for the stored session owner; `TurnInput.origin` names the
 caller for authorization and audit and never selects the spending account.
 `selectSessionCredentials` in
@@ -106,7 +106,7 @@ profile README owns where its harness keeps conversations and configuration:
   servers and skills through the embedded engine's per-location plugin hooks,
   with nothing written into the project.
 
-[`host/projection.ts`](../../packages/workspace-runtime/src/host/projection.ts)
+[`host/projection.ts`](../../packages/session-core/src/host/projection.ts)
 projects Agent Plugins into each transport's launch shape; an entry a transport
 cannot take is reported as `notApplied`. For a remote ACP peer,
 [`mcp-filter.ts`](../../packages/harness/src/capabilities/mcp-filter.ts)
@@ -118,19 +118,19 @@ peer did not declare.
 A provider request goes through the turn or session broker. The
 [request table](../../packages/harness/src/broker/requests/table.ts) owns its
 live state and the
-[store broker ports](../../packages/workspace-runtime/src/broker-ports/index.ts)
+[store broker ports](../../packages/session-core/src/broker-ports/index.ts)
 persist and publish it; the contract README defines answer, cancellation and
 child-routing rules.
 
 ## Native subagents and background work
 
 A provider spawn is bound to a Claxedo child session before its events are
-delivered. [`child-turns.ts`](../../packages/workspace-runtime/src/host/child-turns.ts)
+delivered. [`child-turns.ts`](../../packages/session-core/src/host/child-turns.ts)
 owns child turn lifetime and
-[`child-routes.ts`](../../packages/workspace-runtime/src/projection/child-routes.ts)
+[`child-routes.ts`](../../packages/session-core/src/projection/child-routes.ts)
 resolves routes from durable bindings. A background child keeps its own open
 turn, and
-[`BrokerSessionEvents`](../../packages/workspace-runtime/src/broker-ports/session-events.ts)
+[`BrokerSessionEvents`](../../packages/session-core/src/broker-ports/session-events.ts)
 routes its events while the parent is idle.
 
 | Producer | Child activity source |
@@ -140,13 +140,13 @@ routes its events while the parent is idle.
 | Cursor | [`host-deltas.ts`](../../packages/harness/src/transports/cursor-sdk/host-deltas.ts), [`deltas.ts`](../../packages/harness/src/transports/cursor-sdk/deltas.ts) |
 
 Claxedo's first-party MCP `create_subagent` is the separate cross-harness path,
-through [`session-children.ts`](../../packages/workspace-runtime/src/routes/session-children.ts).
+through [`session-children.ts`](../../packages/session-core/src/routes/session-children.ts).
 
-[`BrokerBackgroundWork`](../../packages/workspace-runtime/src/broker-ports/background-work.ts)
+[`BrokerBackgroundWork`](../../packages/session-core/src/broker-ports/background-work.ts)
 publishes live counts of a session's agents, shells and other work as
 `session.background-work`; it is not persisted and does not hold the next
 prompt. `POST /session/:id/background-task/stop` with a `toolCallId` reaches
-[`createBackgroundTaskStops`](../../packages/workspace-runtime/src/host/background-tasks.ts):
+[`createBackgroundTaskStops`](../../packages/session-core/src/host/background-tasks.ts):
 a transport without the operation answers `unsupported`, and a session with no
 running harness process answers `not_found` without launching one.
 
