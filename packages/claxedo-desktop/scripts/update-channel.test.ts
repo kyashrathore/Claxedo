@@ -73,7 +73,7 @@ describe("runtime updater wiring", () => {
     const prod = read("prod")
     expect(JSON.parse(prod.stdout.toString())).toEqual({ update: "latest", enabled: true })
 
-    const source = await Bun.file(path.join(desktopDir, "src/main/index.ts")).text()
+    const source = await Bun.file(path.join(desktopDir, "src/main/auto-update.ts")).text()
     expect(source).toContain("autoUpdater.channel = UPDATE_CHANNEL")
     expect(source).toContain("autoUpdater.allowDowngrade = false")
     expect(source).not.toContain("allowDowngrade = true")

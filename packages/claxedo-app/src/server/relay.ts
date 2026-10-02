@@ -1,6 +1,5 @@
-import { startWorkspace } from "./workspace-start"
-import { responseError, toAppError } from "./errors"
-import { connectionAnswerFromWire, workspaceStopped, type RelayConnection } from "./wire/connection"
+import { toAppError } from "./errors"
+import { workspaceStopped, type RelayConnection, type WorkspaceConnections } from "./wire/connection"
 
 export type Relay = {
   readonly fetch: (workspaceId: string, path: string, init?: RequestInit) => Promise<Response>
@@ -15,12 +14,8 @@ function workspaceUrl(link: RelayConnection, path: string) {
   return `${link.relayUrl}/workspaces/${encodeURIComponent(link.workspaceId)}${path}`
 }
 
-type Request = (path: string, init?: RequestInit) => Promise<Response>
-
-async function readRelayConnection(request: Request, workspaceId: string): Promise<RelayConnection> {
-  const response = await request(`/api/workspace/${encodeURIComponent(workspaceId)}/connection`)
-  if (!response.ok) throw await responseError(response, "Workspace connection")
-  const answer = connectionAnswerFromWire(await response.json(), workspaceId)
+async function readConnection(read: WorkspaceConnections["read"], workspaceId: string): Promise<RelayConnection> {
+  const answer = await read(workspaceId)
   if (answer.kind !== "ready") throw workspaceStopped(workspaceId)
   return answer.link
 }
@@ -36,7 +31,7 @@ async function sendThroughRelay(link: RelayConnection, path: string, init?: Requ
   }
 }
 
-export function createRelay(request: Request): Relay {
+export function createRelay(read: WorkspaceConnections["read"]): Relay {
   const connections = new Map<string, Promise<RelayConnection>>()
   const hold = async (workspaceId: string, pending: Promise<RelayConnection>) => {
     connections.set(workspaceId, pending)
@@ -47,7 +42,7 @@ export function createRelay(request: Request): Relay {
       throw error
     }
   }
-  const connection = (workspaceId: string, force = false) => (!force && connections.get(workspaceId)) || hold(workspaceId, readRelayConnection(request, workspaceId))
+  const connection = (workspaceId: string, force = false) => (!force && connections.get(workspaceId)) || hold(workspaceId, readConnection(read, workspaceId))
   const fresh = async (workspaceId: string) => {
     const current = await connection(workspaceId)
     return current.tokenExpiresAt - Date.now() > REFRESH_WINDOW_MS ? current : connection(workspaceId, true)
@@ -55,7 +50,7 @@ export function createRelay(request: Request): Relay {
   return {
     fetch: async (workspaceId, path, init) => {
       const response = await sendThroughRelay(await fresh(workspaceId), path, init)
-      return response.status === 401 ? sendThroughRelay(await hold(workspaceId, startWorkspace(request, workspaceId)), path, init) : response
+      return response.status === 401 ? sendThroughRelay(await connection(workspaceId, true), path, init) : response
     },
     webSocket: async (workspaceId, path) => {
       const link = await fresh(workspaceId)

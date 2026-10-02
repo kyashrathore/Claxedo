@@ -44,6 +44,18 @@ describe("readAccountConfig", () => {
   })
 })
 
+describe("relay origins", () => {
+  test("carries each configured relay as an exact origin", () => {
+    expect(readAccountConfig({ CLAXEDO_CORE_ORIGIN: "https://core.example", CLAXEDO_RELAY_ORIGINS: "https://relay.example, http://127.0.0.1:4100" }))
+      .toEqual({ configured: true, coreOrigin: "https://core.example", relayOrigins: ["https://relay.example", "http://127.0.0.1:4100"] })
+  })
+
+  test.each(["https://*.example", "https://relay.example/path", "wss://relay.example"])("refuses %p", (value) => {
+    expect(readAccountConfig({ CLAXEDO_CORE_ORIGIN: "https://core.example", CLAXEDO_RELAY_ORIGINS: value }))
+      .toMatchObject({ configured: false, missing: [expect.stringContaining("CLAXEDO_RELAY_ORIGINS")] })
+  })
+})
+
 describe("canary journey configuration", () => {
   test("carries an explicit canary journey id", () => {
     expect(

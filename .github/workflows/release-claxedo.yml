@@ -190,6 +190,7 @@ jobs:
           # anchor. Its live descriptor owns all public-client endpoints, ids,
           # resources and scopes.
           CLAXEDO_CORE_ORIGIN: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+          CLAXEDO_RELAY_ORIGINS: ${{ vars.CLAXEDO_WORKSPACE_RELAY_URL }}
           # Telemetry has to be BAKED here, in both halves of the app, because
           # a packaged build runs on a user's machine where none of these
           # variables exist. Reading them only at runtime is why shipped

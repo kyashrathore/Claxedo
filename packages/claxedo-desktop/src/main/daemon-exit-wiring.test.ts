@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 
 const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8")
+const updater = readFileSync(new URL("./auto-update.ts", import.meta.url), "utf8")
 
 describe("desktop daemon exit wiring", () => {
   test("focus and background changes never release the process daemon lease", () => {
@@ -23,13 +24,14 @@ describe("desktop daemon exit wiring", () => {
   test("menu restart and updater exits mark a handoff before quitting", () => {
     const menuHandoff = source.indexOf("daemonExitLifecycle.handoff()", source.indexOf("function wireMenu"))
     const menuRelaunch = source.indexOf("app.relaunch()", menuHandoff)
-    const installUpdate = source.indexOf("async function installUpdate")
-    const installHandoff = source.indexOf("daemonExitLifecycle.handoff()", installUpdate)
-    const quitAndInstall = source.indexOf("autoUpdater.quitAndInstall()", installHandoff)
+    const install = updater.indexOf("const install = ")
+    const installHandoff = updater.indexOf("input.beforeInstall()", install)
+    const quitAndInstall = updater.indexOf("autoUpdater.quitAndInstall()", installHandoff)
 
     expect(menuHandoff).toBeGreaterThan(-1)
     expect(menuRelaunch).toBeGreaterThan(menuHandoff)
-    expect(installHandoff).toBeGreaterThan(installUpdate)
+    expect(source).toContain("beforeInstall: () => daemonExitLifecycle.handoff()")
+    expect(installHandoff).toBeGreaterThan(install)
     expect(quitAndInstall).toBeGreaterThan(installHandoff)
   })
 })

@@ -19,8 +19,6 @@ import {
 
 const ASLEEP = "This workspace is asleep. Your next message wakes it."
 const WAKING = "Waking up the workspace…"
-const LIVE_ACCOUNT_STREAM = "an account-catalog placement opens its live stream only when the bootstrap query next changes, after the turn has started, until goal/s5-desktop-cloud-runtime reconciles placement streams on the account catalog"
-const DESKTOP_CLOUD_RUNTIME = "the desktop reaches an account cloud workspace's runtime only through the session sources plan's S5 (src/server/README.md): its daemon answers the wake 404 and reads a live session as missing"
 
 function wakeRequests(page: Page, workspace: CloudWorkspace) {
   const seen: string[] = []
@@ -77,7 +75,7 @@ test("24 a gone sandbox: its session reads from the control plane with the aslee
   expect(wakes).toEqual([])
 })
 
-test.skip("24 sending to a gone sandbox wakes it, shows the dock waking up, then sends and the reply arrives", { annotation: { type: "skip", description: LIVE_ACCOUNT_STREAM } }, async ({ signedCloud, page }) => {
+test("24 sending to a gone sandbox wakes it, shows the dock waking up, then sends and the reply arrives", async ({ signedCloud, page }) => {
   test.setTimeout(150_000)
   const { workspace, sessionId } = await asleepWithHistory(signedCloud)
   const wakes = wakeRequests(page, workspace)
@@ -94,7 +92,7 @@ test.skip("24 sending to a gone sandbox wakes it, shows the dock waking up, then
   await expect.poll(async () => (await storedMessages(signedCloud, workspace, sessionId)).length).toBe(4)
 })
 
-test.skip("24 a live sandbox streams a turn as it runs", { annotation: { type: "skip", description: LIVE_ACCOUNT_STREAM } }, async ({ signedCloud, page }) => {
+test("24 a live sandbox streams a turn as it runs", async ({ signedCloud, page }) => {
   test.setTimeout(120_000)
   const workspace = await makeCloudWorkspace(signedCloud, "main")
   await startCloudWorkspace(signedCloud, workspace)
@@ -152,7 +150,7 @@ test("24 desktop: a gone sandbox's session reads from the control plane with the
   expect(desktopWakes(signedCloud, workspace, mark)).toEqual([])
 })
 
-test.skip("24 desktop: sending to a gone sandbox wakes it, shows the dock waking up, then sends and the reply arrives", { tag: "@desktop", annotation: { type: "skip", description: DESKTOP_CLOUD_RUNTIME } }, async ({ signedCloud, signedDesktop, page }) => {
+test("24 desktop: sending to a gone sandbox wakes it, shows the dock waking up, then sends and the reply arrives", { tag: "@desktop" }, async ({ signedCloud, signedDesktop, page }) => {
   test.setTimeout(180_000)
   const { workspace, sessionId } = await asleepWithHistory(signedCloud)
   const mark = signedCloud.controlPlaneRequests().length
@@ -169,7 +167,7 @@ test.skip("24 desktop: sending to a gone sandbox wakes it, shows the dock waking
   await expect.poll(async () => (await storedMessages(signedCloud, workspace, sessionId)).length).toBe(4)
 })
 
-test.skip("24 desktop: a live sandbox streams a turn as it runs", { tag: "@desktop", annotation: { type: "skip", description: DESKTOP_CLOUD_RUNTIME } }, async ({ signedCloud, signedDesktop, page }) => {
+test("24 desktop: a live sandbox streams a turn as it runs", { tag: "@desktop" }, async ({ signedCloud, signedDesktop, page }) => {
   test.setTimeout(150_000)
   const workspace = await makeCloudWorkspace(signedCloud, "main")
   await startCloudWorkspace(signedCloud, workspace)
