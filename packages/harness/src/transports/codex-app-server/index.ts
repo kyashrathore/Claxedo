@@ -4,8 +4,7 @@ import type {
   AttachInput, BackgroundTaskRef, ConfigApplied, Deadline, DraftLaunch, HarnessServices, HarnessSession, HarnessTransport,
   HealthOperations, RoutedEvent, SessionBroker, StartInput, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
-import { ProcessLosses, selectedTurnAccount, sessionConnectionHealth } from "../../contract"
-import { draftProbeKey, DraftProbeCache } from "../../contract/probe-cache"
+import { draftProbeKey, DraftProbeCache, ProcessLosses, selectedTurnAccount, sessionConnectionHealth } from "../../contract/node"
 import { withTurnAccount } from "../../translate/turn-account"
 import { codexProbeInputs } from "../../profiles/codex"
 import { createCodexConfig } from "./config"
