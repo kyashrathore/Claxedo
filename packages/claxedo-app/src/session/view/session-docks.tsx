@@ -56,10 +56,10 @@ function goalActions(view: SessionView): GoalActions {
   return Object.fromEntries(view.goalActions().map((action: GoalAction) => [action, () => view.controlGoal(action)]))
 }
 
-export function SessionDocks(props: { readonly view: SessionView }) {
+export function SessionDocks(props: { readonly view: SessionView; readonly actionable: boolean }) {
   const request = createMemo(() => props.view.requests()[0])
   return (
-    <div data-slot="session-docks">
+    <div data-slot="session-docks" hidden={!props.actionable}>
       <Show when={props.view.requestsError()}>{(error) => <RequestReadError view={props.view} error={error()} />}</Show>
       <Show when={request()} keyed>
         {(current) => <RequestDock view={props.view} request={current} />}

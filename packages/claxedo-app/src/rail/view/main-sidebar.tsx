@@ -5,7 +5,7 @@ import { railDictionary } from "../i18n"
 import { AccountCard, USAGE_SECTION } from "./account-card"
 import { GlobalNavigation } from "./global-navigation"
 import { ProjectTree } from "./project-tree"
-import { SharedSessions } from "./shared-sessions"
+import { SharedSessionsSection } from "./shared-sessions"
 import { ClaxedoIcon as Icon, Tooltip } from "@/ui"
 
 function UsageButton(): JSX.Element {
@@ -36,7 +36,7 @@ export function MainSidebar(): JSX.Element {
       >
         <GlobalNavigation />
         <ProjectTree />
-        <SharedSessions />
+        <SharedSessionsSection />
       </div>
       <div class="px-2.5 py-2">
         <div ref={foot} class="flex items-center gap-1 border-t border-border-weak-base/15 pt-2">

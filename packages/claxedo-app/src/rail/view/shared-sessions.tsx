@@ -5,7 +5,7 @@ import { sessionPath, useShellRoute } from "@/shell"
 import { ClaxedoIcon as Icon } from "@/ui"
 import { railDictionary } from "../i18n"
 
-export function SharedSessions(): JSX.Element {
+export function SharedSessionsSection(): JSX.Element {
   const server = useServer()
   const routing = useShellRoute()
   const t = useTranslator(railDictionary)

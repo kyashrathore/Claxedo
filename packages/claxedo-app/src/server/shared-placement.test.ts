@@ -5,7 +5,6 @@ import { createHostedAccount } from "./account"
 import { placementId, projectId, sessionId } from "./ids"
 import { createTransport } from "./transport"
 import { createWorkspaces } from "./workspaces"
-import { frameFromWire, serverEventFromFrame } from "./wire/frames"
 import { queryKeys } from "./query-keys"
 
 const shared = { session_id: "ses_shared", workspace_id: "ws_owner", project_id: "prj_owner", title: "Design", owner_name: "Ada", level: "follow" }
@@ -25,9 +24,8 @@ test("a shared session routes without admitting its owner's workspace and disapp
       await workspaces.load()
       expect(await workspaces.route(ref)).toMatchObject({ workspaceId: "ws_owner", remote: true, sharedSession: { sessionId: "ses_shared", level: "follow" } })
       expect(workspaces.list()).toEqual([])
-      const frame = frameFromWire({ directory: "workspace:ws_owner", workspaceId: "ws_owner", type: "message.part.delta", properties: { sessionID: "ses_shared", messageID: "msg_1", partID: "prt_1", field: "text", delta: "live" } })!
-      expect(serverEventFromFrame(frame, workspaces.address)).toMatchObject({ type: "partDelta", ref, delta: "live" })
-      expect(serverEventFromFrame({ ...frame, properties: { ...frame.properties, sessionID: "ses_private" } }, workspaces.address)).toBeUndefined()
+      expect(workspaces.address.placementFor("workspace:ws_owner", "ws_owner", "ses_shared")).toMatchObject({ placementId: ref.placementId, projectId: ref.projectId })
+      expect(workspaces.address.placementFor("workspace:ws_owner", "ws_owner", "ses_private")).toBeUndefined()
       await expect(workspaces.route(ref.placementId)).rejects.toMatchObject({ class: "not_found" })
       await expect(workspaces.route({ ...ref, sessionId: sessionId("ses_other") })).rejects.toMatchObject({ class: "not_found" })
       rows = [{ ...shared, level: "send" }]

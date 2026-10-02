@@ -136,21 +136,17 @@ function SessionBody(props: {
         classList={{ "session-floating-dock": props.floating }}
       >
         <div class="w-full px-3 pointer-events-auto md:max-w-192 md:mx-auto 2xl:max-w-[880px]">
-          <Show when={props.controls.send}>
-            <SessionDocks view={props.view} />
-          </Show>
+          <SessionDocks view={props.view} actionable={props.controls.send} />
           <div hidden={props.controls.send && blocked()}>
             <Show when={todo.open()}>
               <TodoDockSlot view={props.view} dock={todo} />
             </Show>
             <div class="relative z-10">
-              <Show when={!props.readOnly && props.controls.owner}>
+              <Show when={!props.readOnly}>
                 <SessionConnectionLine />
               </Show>
               <Show when={(!parentId() || !props.controls.owner) && !props.readOnly} fallback={<ChildNotice t={t} readOnly={props.readOnly} onBack={toParent} />}>
-                <Show when={props.controls.owner}>
-                  <PlacementStateCards placementId={props.view.ref.placementId} />
-                </Show>
+                <PlacementStateCards placementId={props.view.ref.placementId} />
                 <Composer
                   readOnly={!props.controls.send}
                   manageSession={props.controls.owner}

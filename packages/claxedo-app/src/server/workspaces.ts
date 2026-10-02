@@ -108,6 +108,23 @@ function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | un
   }
 }
 
+function sharedAware(reads: ReturnType<typeof placementReads>, shared: SharedSessions): Pick<Workspaces, "address" | "streamRoute"> {
+  return {
+    address: {
+      placementFor: (directory, workspaceId, sessionId) => {
+        const owned = reads.address.placementFor(directory, workspaceId)
+        if (owned) return owned
+        return workspaceId && sessionId ? shared.find({ placementId: placementId(workspaceId), sessionId: asSessionId(sessionId) })?.ref : undefined
+      },
+    },
+    streamRoute: (ref) => {
+      const record = reads.recordOf(ref.placementId)
+      if (!record) return shared.route(ref)
+      return record.route.remote && record.placement.reachable ? record.route : undefined
+    },
+  }
+}
+
 function mergedCatalog(queryClient: QueryClient, key: readonly unknown[], accountPlacements: AccountPlacements | undefined) {
   const watched = [observeQuery(queryClient, key), ...(accountPlacements ? [observeQuery(queryClient, accountPlacements.key)] : [])]
   let last: { local: BootstrapCatalog; linked: LinkedCatalog | undefined; merged: BootstrapCatalog } | undefined
@@ -164,23 +181,13 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
   const load = async () => {
     return merged.merge(await readCatalogs(queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: Number.POSITIVE_INFINITY }), accountPlacements?.load()))
   }
-  const { recordOf, byId, list, address } = placementReads(() => merged.catalog()?.placements ?? [])
+  const reads = placementReads(() => merged.catalog()?.placements ?? [])
+  const { recordOf, byId, list } = reads
   return {
     shared,
     byId,
     list,
-    address: { placementFor: (directory, workspaceId, sessionId) => {
-      const owned = address.placementFor(directory, workspaceId)
-      if (owned) return owned
-      const workspace = workspaceId ?? (directory.startsWith(WORKSPACE_DIRECTORY_PREFIX) ? directory.slice(WORKSPACE_DIRECTORY_PREFIX.length) : undefined)
-      const row = workspace && sessionId ? shared.find({ placementId: placementId(workspace), sessionId: asSessionId(sessionId) }) : undefined
-      return row?.ref
-    } },
-    streamRoute: (ref) => {
-      const record = recordOf(ref.placementId)
-      if (!record) return shared.route(ref)
-      return record.route.remote && record.placement.reachable ? record.route : undefined
-    },
+    ...sharedAware(reads, shared),
     ...placementRoutes(async (id) => {
       await load()
       return recordOf(id)
