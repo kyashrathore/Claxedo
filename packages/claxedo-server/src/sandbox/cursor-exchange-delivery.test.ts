@@ -91,7 +91,7 @@ describe("a Cursor account in a native-brokering sandbox", () => {
     ])
   })
 
-  test("end to end through the local brokering driver, the sandbox exchanges the key it never holds and spends the returned token", async () => {
+  test.skipIf(process.platform !== "darwin")("end to end through the local brokering driver, the sandbox exchanges the key it never holds and spends the returned token", async () => {
     const secret = await cursorSecret()
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "cursor-exchange-"))
     const seen: Seen[] = []
