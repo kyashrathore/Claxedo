@@ -1,4 +1,4 @@
-import { rec } from "@claxedo/session-core"
+import { asRecord } from "@claxedo/helpers/guards"
 
 // Keep a pending control string bounded independently of retained screen rows.
 // Oversize state is unavailable for checkpoints until the parser returns to
@@ -6,9 +6,9 @@ import { rec } from "@claxedo/session-core"
 const MAX_CONTINUATION_UNITS = 1_048_576
 
 export function createTerminalParserContinuation(terminal: unknown) {
-  const input = rec(rec(rec(terminal)?._core)?._inputHandler)
-  const parser = rec(input?._parser)
-  const table = rec(parser?._transitions)?.table
+  const input = asRecord(asRecord(asRecord(terminal)?._core)?._inputHandler)
+  const parser = asRecord(input?._parser)
+  const table = asRecord(parser?._transitions)?.table
   if (!parser || !(table instanceof Uint16Array) || parser.currentState !== 0) {
     throw new Error("Pinned xterm parser continuation internals are unavailable or already active")
   }

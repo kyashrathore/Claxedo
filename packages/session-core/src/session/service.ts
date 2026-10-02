@@ -6,7 +6,7 @@ import type { AgentRuntimeStreamEvent, RuntimeDirectory } from "../host/contract
 import type { TurnOrigin } from "@claxedo/harness/contract"
 import { isAgentRuntimeTurnAdmissionError, type AgentRuntime, type AgentRuntimeTurnStartInput } from "../host/runtime"
 import { isTerminalRuntimePayload } from "../host/turn-outcome"
-import { arr, bool, rec, str } from "../json-value"
+import { asArrayOrUndefined, asBoolean, asRecord, asString } from "@claxedo/helpers/guards"
 import { buildAssistantMessage, sessionError, withDir } from "../projection/presentation-events"
 
 export type ActiveTurnScope = {
@@ -61,17 +61,17 @@ export type SessionPromptBody = {
  * dereferences are actually checked.
  */
 function isPromptPart(input: unknown): input is PromptInput["parts"][number] {
-  const part = rec(input)
+  const part = asRecord(input)
   if (!part) return false
-  if (part.type === "text") return str(part.text) !== undefined
-  if (part.type === "file") return str(part.mime) !== undefined && str(part.url) !== undefined
-  if (part.type === "agent") return str(part.name) !== undefined
+  if (part.type === "text") return asString(part.text) !== undefined
+  if (part.type === "file") return asString(part.mime) !== undefined && asString(part.url) !== undefined
+  if (part.type === "agent") return asString(part.name) !== undefined
   return false
 }
 
 /** Part ids are the runtime's to mint (`promptPartId`), so the client's never travels. */
 function promptPart(input: unknown): PromptInput["parts"][number] | undefined {
-  const record = rec(input)
+  const record = asRecord(input)
   if (!record) return undefined
   const { id: _clientId, ...part } = record
   return isPromptPart(part) ? part : undefined
@@ -79,11 +79,11 @@ function promptPart(input: unknown): PromptInput["parts"][number] | undefined {
 
 /** The `Record<string, boolean>` subset of a wire `tools` map. */
 function promptTools(input: unknown): SessionPromptBody["tools"] {
-  const source = rec(input)
+  const source = asRecord(input)
   if (!source) return undefined
   const tools: Record<string, boolean> = {}
   for (const [name, value] of Object.entries(source)) {
-    const enabled = bool(value)
+    const enabled = asBoolean(value)
     if (enabled !== undefined) tools[name] = enabled
   }
   return tools
@@ -99,23 +99,23 @@ function promptTools(input: unknown): SessionPromptBody["tools"] {
  * boundary, rather than several layers deeper.
  */
 export function parseSessionPromptBody(input: unknown): SessionPromptBody {
-  const body = rec(input)
+  const body = asRecord(input)
   if (!body) return {}
-  const parts = arr(body.parts)?.flatMap((input) => promptPart(input) ?? [])
-  const model = rec(body.model)
-  const format = rec(body.format)
-  const formatType = str(format?.type)
+  const parts = asArrayOrUndefined(body.parts)?.flatMap((input) => promptPart(input) ?? [])
+  const model = asRecord(body.model)
+  const format = asRecord(body.format)
+  const formatType = asString(format?.type)
   return {
     parts,
-    messageID: str(body.messageID),
-    agent: str(body.agent),
-    model: model && { providerID: str(model.providerID), modelID: str(model.modelID) },
+    messageID: asString(body.messageID),
+    agent: asString(body.agent),
+    model: model && { providerID: asString(model.providerID), modelID: asString(model.modelID) },
     tools: promptTools(body.tools),
     format: format && formatType !== undefined ? { ...format, type: formatType } : undefined,
-    system: str(body.system),
-    variant: body.variant === null ? null : str(body.variant),
-    serviceTier: str(body.serviceTier),
-    permissionMode: str(body.permissionMode),
+    system: asString(body.system),
+    variant: body.variant === null ? null : asString(body.variant),
+    serviceTier: asString(body.serviceTier),
+    permissionMode: asString(body.permissionMode),
     delivery: promptDelivery(body.delivery),
   }
 }
@@ -198,16 +198,16 @@ export function envelopeDirectory(directory: RuntimeDirectory, sessionId: string
 }
 
 function isMessage(input: unknown): input is AgentMessage {
-  const info = rec(rec(input)?.info)
+  const info = asRecord(asRecord(input)?.info)
   return !!info
-    && str(info.id) !== undefined
-    && str(info.role) !== undefined
-    && str(info.sessionID) !== undefined
-    && arr(rec(input)?.parts) !== undefined
+    && asString(info.id) !== undefined
+    && asString(info.role) !== undefined
+    && asString(info.sessionID) !== undefined
+    && asArrayOrUndefined(asRecord(input)?.parts) !== undefined
 }
 
 function failure(input: unknown): string {
-  return str(rec(rec(input)?.data)?.message) ?? "session error"
+  return asString(asRecord(asRecord(input)?.data)?.message) ?? "session error"
 }
 
 function isPresentationEvent(event: AgentRuntimeStreamEvent): event is AgentPresentationEvent {

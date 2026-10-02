@@ -27,11 +27,11 @@ import {
 import { foldUsageObservations, type RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
 import { type RuntimeGoalSnapshot, type SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import { base64UrlEncode } from "@claxedo/helpers/crypto"
-import { asRecord } from "@claxedo/helpers/guards"
+import { asRecord, isRecord, asNumber, asString } from "@claxedo/helpers/guards"
 import type { SqliteDatabase } from "./sqlite/database"
 import { openRuntimeStoreSchema } from "./store-schema"
 import type { SessionTurnOrigin } from "./session-access-policy"
-import { actorKind, isRecord, nullable, num, rec, str } from "./json-value"
+import { actorKind, nullable } from "./stored-columns"
 import { observationStartsNewRun, subagentStatusAdvances } from "./subagent-status"
 import { buildAssistantMessage, buildUserMessage, buildUserPromptParts, messageCompleted, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionStatus } from "./projection/presentation-events"
 
@@ -406,10 +406,10 @@ function preserveClaxedoAuthor(
   previous: Record<string, unknown> | undefined,
   next: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (str(next.role) !== "user") return next
-  const nextClaxedo = rec(next.claxedo)
+  if (asString(next.role) !== "user") return next
+  const nextClaxedo = asRecord(next.claxedo)
   if (nextClaxedo?.author && typeof nextClaxedo.author === "object") return next
-  const prevClaxedo = rec(previous?.claxedo)
+  const prevClaxedo = asRecord(previous?.claxedo)
   if (!prevClaxedo?.author || typeof prevClaxedo.author !== "object") return next
   return {
     ...next,
@@ -1281,7 +1281,7 @@ export class RuntimeStore {
       const part = readColumn.partRecord(row.data_json)
       if (part.type !== "tool") continue
       const state = asRecord(part.state)
-      const status = str(state?.status)
+      const status = asString(state?.status)
       if (status !== "pending" && status !== "running") continue
       const time = asRecord(state?.time)
       part.state = {
@@ -1289,7 +1289,7 @@ export class RuntimeStore {
         status: "error",
         error,
         time: {
-          start: num(time?.start) ?? ts,
+          start: asNumber(time?.start) ?? ts,
           end: ts,
         },
       }
@@ -1327,8 +1327,8 @@ export class RuntimeStore {
     const err = asRecord(infoRecord.error)
     const data = asRecord(err?.data)
     return {
-      ts: num(time?.completed) ?? num(time?.created) ?? Date.now(),
-      message: str(data?.message) ?? str(err?.message),
+      ts: asNumber(time?.completed) ?? asNumber(time?.created) ?? Date.now(),
+      message: asString(data?.message) ?? asString(err?.message),
     }
   }
 
@@ -1532,7 +1532,7 @@ export class RuntimeStore {
       "SELECT permission_state_json FROM session WHERE id = ?",
     ).get(sessionId)
     if (!row) throw new Error(`Unknown grant session ${sessionId}`)
-    const state = row.permission_state_json ? rec(JSON.parse(row.permission_state_json)) : {}
+    const state = row.permission_state_json ? asRecord(JSON.parse(row.permission_state_json)) : {}
     if (!state) throw new Error(`Invalid permission state for ${sessionId}`)
     const storedGrants = state.brokerGrants
     if (storedGrants !== undefined && (!Array.isArray(storedGrants) || !storedGrants.every((item: unknown) => typeof item === "string"))) {
@@ -1752,9 +1752,9 @@ export class RuntimeStore {
 
   private upsertMessage(envelope: object, ts: number) {
     const info = envelopeRecord(envelope)
-    const sessionId = str(info.sessionID)
-    const id = str(info.id)
-    const role = str(info.role)
+    const sessionId = asString(info.sessionID)
+    const id = asString(info.id)
+    const role = asString(info.role)
     if (!sessionId || !id || !role) return
     const prev = this.db
       .prepare<{ created_at: number; info_json: string }>("SELECT created_at, info_json FROM message WHERE id = ?")
@@ -1793,9 +1793,9 @@ export class RuntimeStore {
 
   private upsertPart(envelope: object, ts: number) {
     const part = envelopeRecord(envelope)
-    const sessionId = str(part.sessionID)
-    const messageId = str(part.messageID)
-    const id = str(part.id)
+    const sessionId = asString(part.sessionID)
+    const messageId = asString(part.messageID)
+    const id = asString(part.id)
     if (!sessionId || !messageId || !id) return
     this.db
       .prepare(
@@ -1815,7 +1815,7 @@ export class RuntimeStore {
           type: "text",
           text: "",
         }
-    const prev = str(part[field]) ?? ""
+    const prev = asString(part[field]) ?? ""
     part[field] = prev + delta
     this.upsertPart(part, ts)
   }
@@ -2329,7 +2329,7 @@ export class RuntimeStore {
           .get(event.properties.messageID)
         if (!rowInfo) return
         const info = readColumn.messageRecord(rowInfo.info_json)
-        info.time = { ...rec(info.time), completed: row.ts }
+        info.time = { ...asRecord(info.time), completed: row.ts }
         this.upsertMessage(info, row.ts)
         return
       }
@@ -2954,7 +2954,7 @@ export class RuntimeStore {
     if (row.type === "turn.finish") return readColumn.turnFinish(row.payload_json).outcome
     const properties = readColumn.eventPayload(row.payload_json).properties
     if (row.type === "message.completed") {
-      const assistantMessageId = str(properties?.messageID)
+      const assistantMessageId = asString(properties?.messageID)
       if (!assistantMessageId) return undefined
       return {
         status: properties?.cancelled === true ? "cancelled" : "completed",
@@ -2962,7 +2962,7 @@ export class RuntimeStore {
         completedAt: row.created_at,
       }
     }
-    const message = str(rec(rec(properties?.error)?.data)?.message)
+    const message = asString(asRecord(asRecord(properties?.error)?.data)?.message)
     return {
       status: "failed",
       assistantMessageId: this.lastStartedAssistant(sessionId, row.seq),

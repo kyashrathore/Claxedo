@@ -1,8 +1,7 @@
 import type { AgentRuntimeStatus, BackgroundWork } from "@claxedo/agent-runtime-contract"
 import { ACP_RECOVER } from "../store"
 import { recovering } from "../projection/presentation-events"
-import { str } from "../json-value"
-import { asRecord } from "@claxedo/helpers/guards"
+import { asRecord, asString } from "@claxedo/helpers/guards"
 
 export type SessionStatusRead = AgentRuntimeStatus & { backgroundWork?: BackgroundWork }
 
@@ -13,7 +12,7 @@ export function sessionStatusSnapshot(input: unknown[], backgroundWork: (session
   for (const item of input) {
     const row = asRecord(item)
     if (!row) continue
-    const id = str(row.id)
+    const id = asString(row.id)
     if (!id) continue
     const status = live(row, ACP_RECOVER)
     const background = backgroundWork(id)

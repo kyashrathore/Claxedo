@@ -25,7 +25,7 @@ import { narrowerPermissionLevel, PermissionModeRefusedError } from "../session/
 import type { RuntimeDirectory } from "../host/contracts"
 import { AgentMessagePageError, parseMessagePageQuery, type AgentMessagePage, type AgentMessagePageInput, type AgentMessageReadInput, type AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
 import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery, readFirstRead, readTurnPage, type TurnRead } from "@claxedo/agent-runtime-contract"
-import { asRecord } from "@claxedo/helpers/guards"
+import { asRecord, asNumber, asString } from "@claxedo/helpers/guards"
 import { routeParam } from "@claxedo/helpers/route-param"
 import {
   isAgentRuntimeGoalError,
@@ -58,7 +58,6 @@ import {
   type SessionAccessOperation,
 } from "../session-access-policy"
 import { SessionRollbackError } from "../session-rollback-error"
-import { num, rec, str } from "../json-value"
 import { elicitationError } from "./elicitation-error"
 import { errorBody } from "./error-body"
 import { boundedJsonBody, boundedJsonRecord, isRequestBodyTooLarge, noStoreJson, requestBodyTooLargeBody } from "./http"
@@ -190,7 +189,7 @@ async function updateSessionMeta(
 }
 
 function createdSessionBody(session: unknown, created: Record<string, unknown>) {
-  return { ...rec(session), ...created }
+  return { ...asRecord(session), ...created }
 }
 
 type SessionFirstInput = { prompt: SessionPromptBody } | { goal: string }
@@ -203,10 +202,10 @@ function sessionFirstInput(wire: Record<string, unknown>): SessionFirstInput | {
   if (wire.prompt === undefined && wire.goal === undefined) return undefined
   if (wire.prompt !== undefined && wire.goal !== undefined) return { invalid: "A session starts with a prompt or a goal, not both" }
   if (wire.goal !== undefined) {
-    const objective = str(rec(wire.goal)?.objective)
+    const objective = asString(asRecord(wire.goal)?.objective)
     return objective === undefined ? { invalid: "goal.objective must be a string" } : { goal: objective }
   }
-  const prompt = rec(wire.prompt)
+  const prompt = asRecord(wire.prompt)
   if (!prompt) return { invalid: "prompt must be an object" }
   if (prompt.delivery !== undefined) return { invalid: "A new session has no running turn to queue behind or steer" }
   return { prompt: parseSessionPromptBody(prompt) }
@@ -709,9 +708,9 @@ async function sessionFact<T>(read: () => Promise<T | Response>): Promise<Sessio
   try {
     const result = await read()
     if (!(result instanceof Response)) return { value: result }
-    const refusal = rec(rec(await result.json())?.error)
-    const code = str(refusal?.code)
-    return { error: { status: result.status, ...(code ? { code } : {}), message: str(refusal?.message) ?? `Refused with status ${result.status}` } }
+    const refusal = asRecord(asRecord(await result.json())?.error)
+    const code = asString(refusal?.code)
+    return { error: { status: result.status, ...(code ? { code } : {}), message: asString(refusal?.message) ?? `Refused with status ${result.status}` } }
   } catch (error) {
     if (error instanceof HTTPException) return { error: { status: error.status, message: error.message } }
     console.error(error)
@@ -1318,7 +1317,7 @@ export function createSessionRoutes(opts: Opts) {
     .get("/session/:id/goal", goalRoute(opts, "goal_read", async ({ c, sessionId, directory, runtime }) =>
       noStoreJson(c, await runtime.goals.read(sessionId, directory))))
     .post("/session/:id/goal", goalRoute(opts, "goal_start", async (input) =>
-      goalStartInvocation(str((await boundedJsonRecord(input.c)).objective) ?? "")(input)))
+      goalStartInvocation(asString((await boundedJsonRecord(input.c)).objective) ?? "")(input)))
     .post("/session/:id/goal/pause", goalRoute(opts, "goal_pause", async ({ c, sessionId, directory, runtime }) =>
       goalMutationResponse(c, await runtime.goals.pause(sessionId, directory))))
     .post("/session/:id/goal/resume", goalRoute(opts, "goal_resume", async ({ c, sessionId, directory, runtime }) =>
@@ -1376,8 +1375,8 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const wire = await boundedJsonRecord(c)
-      const title = str(wire.title)
-      const archived = num(rec(wire.time)?.archived)
+      const title = asString(wire.title)
+      const archived = asNumber(asRecord(wire.time)?.archived)
       const body = {
         ...(title !== undefined ? { title } : {}),
         ...(archived !== undefined ? { time: { archived } } : {}),
@@ -1660,7 +1659,7 @@ export function createSessionRoutes(opts: Opts) {
           message: `${caps.harness} cannot be told about permission modes`,
         })
       }
-      const modeId = str((await boundedJsonRecord(c)).modeId) ?? ""
+      const modeId = asString((await boundedJsonRecord(c)).modeId) ?? ""
       if (!modeId) return c.json({ error: "modeId is required" }, 400)
       const session = await readSession(opts, c, directory, sessionId)
       if (!session) return c.json(errorBody("session_not_found", "Session not found"), 404)
@@ -1689,7 +1688,7 @@ export function createSessionRoutes(opts: Opts) {
       const unsupported = await unsupportedIfUnavailable(c, runtime, target, "fork", "fork")
       if (unsupported) return unsupported
       const wire = await boundedJsonRecord(c)
-      const body = { id: str(wire.id), messageId: str(wire.messageId) }
+      const body = { id: asString(wire.id), messageId: asString(wire.messageId) }
       const operationId = registrationOperationId(c)
       if (managedSessionLifecycle(opts, c) && (!body.id || !operationId)) {
         return c.json(errorBody(
@@ -1838,7 +1837,7 @@ export function createSessionRoutes(opts: Opts) {
       } else if (optionId !== undefined) {
         return c.json({ error: "This permission request does not offer provider options" }, 400)
       }
-      const response = str(body.response)
+      const response = asString(body.response)
       try {
         const result = await runtime.permissions.respond(permId, optionId !== undefined
           ? { kind: "permission", optionId }
@@ -1852,7 +1851,7 @@ export function createSessionRoutes(opts: Opts) {
       const admitted = await admitQuestionOperation(opts, c)
       if (admitted.rejected) return admitted.rejected
       const { id, sessionId } = admitted
-      const body = rec(await boundedJsonBody(c))
+      const body = asRecord(await boundedJsonBody(c))
       const answers = body && Object.keys(body).every((key) => key === "answers")
         ? questionAnswers(body.answers)
         : undefined

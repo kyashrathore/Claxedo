@@ -1,5 +1,5 @@
 import type { AgentMessageAuthor, PromptFormat, PromptInput } from "@claxedo/agent-runtime-contract"
-import { actorKind } from "../json-value"
+import { actorKind } from "../stored-columns"
 import type { SessionRequestProvenance, SessionWorkspaceAuthority } from "../session-access-policy"
 import type { SqliteDatabase } from "../sqlite/database"
 

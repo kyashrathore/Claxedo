@@ -8,6 +8,8 @@
 import { Hono, type Context } from "hono"
 import z from "zod/v3"
 import { Log } from "../log"
+import { jsonRecord } from "@claxedo/helpers"
+import { asArrayOrUndefined, asBoolean, asNumber, asString } from "@claxedo/helpers/guards"
 import {
   bearerToken,
   boundedJsonBody,
@@ -15,11 +17,6 @@ import {
   boundedTextBody,
   isRequestBodyTooLarge,
   requestBodyTooLargeBody,
-  arr,
-  bool,
-  num,
-  str,
-  parseRecord,
   sessionAccessContext,
   sessionAccessDenied,
   type RuntimeBus,
@@ -505,7 +502,7 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions) {
         return c.json({ success: false, error: "Invalid payload" }, 400)
       }
       const raw = "providerEvent" in parsed.data ? parsed.data.providerEvent : undefined
-      const input = raw === undefined ? undefined : parseRecord(raw)
+      const input = raw === undefined ? undefined : jsonRecord(raw)
       if (raw !== undefined && !input) return c.json({ success: false, error: "Invalid provider event JSON" }, 400)
       const providerEvent = input ? providerLifecycle(input, statusHooks, parsed.data.provider) : undefined
       const payload = raw === undefined ? parsed.data : {
@@ -654,10 +651,10 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions) {
         const body = await boundedJsonRecord(c)
         await setupAgentHooks({
           templates: statusHooks,
-          port: num(body.port),
-          force: bool(body.force),
-          wrappers: arr(body.wrappers)?.flatMap((item) => str(item) ?? []),
-          replaceWrappers: bool(body.replaceWrappers),
+          port: asNumber(body.port),
+          force: asBoolean(body.force),
+          wrappers: asArrayOrUndefined(body.wrappers)?.flatMap((item) => asString(item) ?? []),
+          replaceWrappers: asBoolean(body.replaceWrappers),
         })
         const wrappers = await listWrapperAgents(undefined, statusHooks)
         return c.json({

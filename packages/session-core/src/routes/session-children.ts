@@ -2,10 +2,9 @@ import type { SubagentObservation, AgentEventEnvelope } from "@claxedo/agent-run
 import type { AgentMessage, AgentSession } from "@claxedo/agent-runtime-contract"
 import type { RuntimeDirectory } from "../host/contracts"
 import type { SubagentStatus, SubagentUpdatedEvent, SubagentWake } from "@claxedo/agent-runtime-contract"
-import { asRecord } from "@claxedo/helpers/guards"
+import { asRecord, asNumber, asString } from "@claxedo/helpers/guards"
 import type { SessionPromptBody } from "../session/service"
 import type { SessionTurnOrigin } from "../session-access-policy"
-import { num, str } from "../json-value"
 
 /** `providerKind` of a subagent row whose child is a session this runtime created itself. */
 export const HOST_CHILD_PROVIDER_KIND = "claxedo"
@@ -310,18 +309,18 @@ function requireDirectory(directory: RuntimeDirectory): string {
 export function hostChildRow(parentSessionId: string, value: unknown): HostChildRow | undefined {
   const row = asRecord(value)
   if (!row || row.providerKind !== HOST_CHILD_PROVIDER_KIND) return undefined
-  const subagentKey = str(row.subagentKey)
-  const childSessionId = str(row.childSessionId)
+  const subagentKey = asString(row.subagentKey)
+  const childSessionId = asString(row.childSessionId)
   if (!subagentKey || !childSessionId) return undefined
   const wake = row.wake
   return {
     parentSessionId,
     subagentKey,
     childSessionId,
-    ...(str(row.status) ? { status: str(row.status) } : {}),
-    ...(str(row.label) ? { label: str(row.label) } : {}),
-    ...(str(row.subagentType) ? { subagentType: str(row.subagentType) } : {}),
-    ...(num(row.attention) !== undefined ? { attention: num(row.attention) } : {}),
+    ...(asString(row.status) ? { status: asString(row.status) } : {}),
+    ...(asString(row.label) ? { label: asString(row.label) } : {}),
+    ...(asString(row.subagentType) ? { subagentType: asString(row.subagentType) } : {}),
+    ...(asNumber(row.attention) !== undefined ? { attention: asNumber(row.attention) } : {}),
     ...(wake === "pending" || wake === "delivered" ? { wake } : {}),
   }
 }
@@ -346,7 +345,7 @@ export function childSummary(messages: AgentMessage[]): ChildSummary {
     .flatMap((part) => (part.type === "text" && typeof part.text === "string" ? [part.text] : []))
     .join("\n")
     .trim()
-  const detail = error ? str(error.data?.message) ?? error.name : undefined
+  const detail = error ? asString(error.data?.message) ?? error.name : undefined
   return {
     status,
     text: [text, detail ? `Error: ${detail}` : undefined].filter(Boolean).join("\n\n").slice(0, WAKE_SUMMARY_MAX_CHARS),

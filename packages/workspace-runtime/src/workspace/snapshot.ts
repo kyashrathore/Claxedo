@@ -3,7 +3,7 @@ import path from "path"
 import type { CredentialSnapshot, ProviderProjection } from "@claxedo/agent-runtime-contract"
 import { errorMessage } from "@claxedo/helpers"
 import { acpConnectionConfig, type ConnectionConfigHooks } from "@claxedo/harness/providers"
-import { rec } from "@claxedo/session-core"
+import { asRecord } from "@claxedo/helpers/guards"
 import { RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeConnectionDescriptor, type RuntimeHarnessSelection } from "../routes/config"
 import type { RuntimeConfigApplyStatus } from "./host"
 
@@ -64,7 +64,7 @@ export function sameRuntimeMcp(a: Record<string, unknown>, b: Record<string, unk
 
 export function canonicalJson(input: unknown): unknown {
   if (Array.isArray(input)) return input.map(canonicalJson)
-  const row = rec(input)
+  const row = asRecord(input)
   if (!row) return input
   return Object.fromEntries(Object.keys(row).sort().map((key) => [key, canonicalJson(row[key])]))
 }

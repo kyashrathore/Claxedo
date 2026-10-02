@@ -1,6 +1,6 @@
 import { normalizeHarnessIdentity, type SessionConfig, type SessionHandoff, type SessionHandoffSource } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
-import { nullable } from "../json-value"
+import { nullable } from "../stored-columns"
 
 export function sessionHandoff(input: string | null | undefined): SessionHandoff | undefined {
   if (!input) return undefined

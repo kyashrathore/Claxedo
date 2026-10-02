@@ -28,7 +28,7 @@
   "packages/claxedo-server/src/routes/runtime-session-authority.ts": 1306,
   "packages/claxedo-server/src/signed-browser-relay-fixture.mjs": 1284,
   "packages/claxedo-server/src/workspace/supervisor/sandbox.ts": 827,
-  "packages/session-core/src/routes/session-core.ts": 1900,
+  "packages/session-core/src/routes/session-core.ts": 1899,
   "packages/session-core/src/store.ts": 4185,
   "packages/workspace-relay/src/bun.ts": 2437,
   "packages/workspace-relay/src/cloudflare.ts": 2615,

@@ -2,7 +2,7 @@ import { execFile } from "node:child_process"
 import { realpath } from "node:fs/promises"
 import { runtimeEnvText } from "./env"
 import { buildSafeEnv } from "./pty/env"
-import { rec } from "@claxedo/session-core"
+import { asRecord } from "@claxedo/helpers/guards"
 
 export const GIT_TIMEOUT_MS = 10_000
 export const GIT_MAX_BUFFER = 50 * 1024 * 1024
@@ -179,7 +179,7 @@ export function createBoundedGit(options: BoundedGitOptions = {}) {
     })
     const result = await Promise.race([execution, timeout]).catch((err) => {
       if (err instanceof GitTimeoutError) throw err
-      const failure = rec(err)
+      const failure = asRecord(err)
       if (failure?.killed === true || failure?.signal === "SIGTERM") {
         throw new GitTimeoutError(args)
       }
