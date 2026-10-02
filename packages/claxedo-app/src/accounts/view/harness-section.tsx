@@ -44,15 +44,15 @@ function HarnessTabs(props: { readonly tab: HarnessTab; readonly onTab: (tab: Ha
   )
 }
 
-function CatalogAccounts(props: { readonly harness: string; readonly onAddCustomRef: (open: () => void) => void }) {
-  const providers = createHarnessProviders(() => props.harness)
+function CatalogAccounts(props: { readonly harness: string; readonly placement: SettingsPlacement; readonly onAddCustomRef: (open: () => void) => void }) {
+  const providers = createHarnessProviders(() => props.harness, () => props.placement.placementId)
   return <HarnessProvidersSection providers={providers} onAddCustomRef={props.onAddCustomRef} />
 }
 
-function AccountsTab(props: { readonly harness: ModelsHarness; readonly accounts: Accounts; readonly onAddRef: (open: () => void) => void }) {
+function AccountsTab(props: { readonly harness: ModelsHarness; readonly accounts: Accounts; readonly placement: SettingsPlacement; readonly onAddRef: (open: () => void) => void }) {
   const t = useAccountsText()
   return (
-    <Switch fallback={<CatalogAccounts harness={props.harness.slug} onAddCustomRef={props.onAddRef} />}>
+    <Switch fallback={<CatalogAccounts harness={props.harness.slug} placement={props.placement} onAddCustomRef={props.onAddRef} />}>
       <Match when={props.harness.cli}>{(cli) => <AgentHarnessAccounts harness={cli()} accounts={props.accounts} headerless onAddAccountRef={props.onAddRef} />}</Match>
       <Match when={props.harness.kind === "connection"}>
         <SettingsEmpty>
@@ -99,7 +99,7 @@ export function HarnessSection(props: { readonly harness: ModelsHarness; readonl
       </div>
       <div class="flex flex-col gap-4">
         <HarnessTabs tab={props.tab} onTab={props.onTab} actions={actions} />
-        <Show when={props.tab === "models"} fallback={<AccountsTab harness={props.harness} accounts={props.accounts} onAddRef={(open) => setAddAccount(() => open)} />}>
+        <Show when={props.tab === "models"} fallback={<AccountsTab harness={props.harness} accounts={props.accounts} placement={props.placement} onAddRef={(open) => setAddAccount(() => open)} />}>
           <ModelsTab source={source()} harness={props.harness.slug} harnessLabel={props.harness.label} workspace={props.placement.label} />
         </Show>
       </div>
