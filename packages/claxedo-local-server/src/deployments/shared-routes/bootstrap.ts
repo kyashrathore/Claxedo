@@ -35,12 +35,6 @@ type Options = {
    */
   hostAggregateEvents: boolean
   /**
-   * Whether this composition mounts the Connections family
-   * (`/api/claxedo/integrations`). A client told nothing would ask a server
-   * that 404s. The composition passes the same fact it mounts by.
-   */
-  connections: boolean
-  /**
    * This machine's enrollment id at the control plane, when it has one.
    *
    * A client reads it to answer "is the machine that serves this workspace
@@ -82,7 +76,7 @@ function declaresSessions(options: Options) {
 }
 
 function deployment(options: Options) {
-  return { serverKind: "daemon", issuesSessions: declaresSessions(options), documents: true, connections: options.connections }
+  return { serverKind: "daemon", issuesSessions: declaresSessions(options), documents: true, connections: false }
 }
 
 function bootstrapHostIdentity(options: Options) {

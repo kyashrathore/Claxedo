@@ -434,7 +434,6 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     services,
     env,
     hostAggregateEvents: !!runtimeProxy.hostEventStream,
-    connections: false,
     // Read per request off the live serving arrangement, which Electron main
     // installs through `/api/claxedo/host-serving` after this route is
     // mounted: the daemon starts before the machine has enrolled and outlives
