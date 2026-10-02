@@ -8,7 +8,7 @@ import {
   USER_DEPLOYED_OWNER_CLAIM_HEADER,
   userDeployedOwnerBootstrapClaimHash,
   userDeployedOwnerIdentityHash,
-} from "../../src/authority/adapters/d1/workspace-authority"
+} from "../../src/authority/adapters/d1/owner-identity"
 import { betterAuthIssuer } from "../../src/platform/auth/better-auth-d1-foundation"
 import { d1Row, d1Rows } from "./d1-json"
 import { userCloudflareTarget } from "./user-cloudflare-config"

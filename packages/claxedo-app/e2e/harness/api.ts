@@ -28,7 +28,7 @@ export type QuestionRow = { id: string; sessionID: string; [key: string]: unknow
 
 type CallOptions = { directory?: string; body?: unknown; query?: Record<string, string>; headers?: Record<string, string> }
 
-export type ApiOptions = { reserveSessions?: boolean }
+export type ApiOptions = { reserveSessions?: boolean; workspaceId?: (directory: string) => Promise<string> }
 
 type Reservation = { operationId: string; sessionId: string }
 
@@ -94,7 +94,9 @@ export class ClaxedoApi {
   }
 
   private async reserveSession(directory: string, title?: string): Promise<Reservation> {
-    const { workspaceId } = await this.call<{ workspaceId: string }>("GET", "/api/workspace/resolve", { directory })
+    const workspaceId = this.options.workspaceId
+      ? await this.options.workspaceId(directory)
+      : (await this.call<{ workspaceId: string }>("GET", "/api/workspace/resolve", { directory })).workspaceId
     const reservation = { operationId: `session_registration_${randomUUID()}`, sessionId: `ses_${randomUUID()}` }
     await this.call<unknown>("POST", "/api/control/session-registrations/reserve", {
       body: { ...reservation, workspaceId, kind: "create", ...(title ? { title } : {}) },

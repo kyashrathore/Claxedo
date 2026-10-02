@@ -10,7 +10,7 @@ async function consentedClients(account: Account, url: string) {
 
 test("21 desktop sign-in: main signs in through the system browser, the card names the account, the account's cloud and machine workspaces join the rail, and log out ends it", { tag: "@desktop" }, async ({ signedCloud: signed, signedDesktop, page }) => {
   await signed.makeWorkspace("remote-app", "Remote App")
-  await makeCloudWorkspace(signed, "Cloudy")
+  await makeCloudWorkspace(signed, "main")
   await signedDesktop.makeWorkspace("local-app", "Local App")
   const window = signedDesktop.window
   await window.reload()
@@ -28,7 +28,7 @@ test("21 desktop sign-in: main signs in through the system browser, the card nam
   await expect(machineProject).toBeVisible()
   await expect(cloudProject).toBeVisible()
   await expect(rail.getByText("Local App")).toBeVisible()
-  expect(await consentedClients(signed.owner, signed.stack.url)).toContain("claxedo-desktop")
+  expect(await consentedClients(signed.owner, signed.hosted.workerUrl)).toContain("claxedo-desktop")
 
   await card.click()
   await window.getByRole("menuitem", { name: "Log out" }).click()

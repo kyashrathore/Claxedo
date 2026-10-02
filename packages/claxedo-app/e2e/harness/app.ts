@@ -42,11 +42,12 @@ export function sourceMtime() {
   return Math.max(...entries.map((entry) => newestMtime(path.resolve(APP_ROOT, entry))))
 }
 
-function buildIsCurrent(distDir: string, mtime: number, serverUrl: string) {
+function buildIsCurrent(distDir: string, mtime: number, serverUrl: string, relayOrigins: readonly string[]) {
   const stamp = path.join(distDir, BUILD_STAMP)
   if (!fs.existsSync(stamp) || !fs.existsSync(path.join(distDir, "index.html"))) return false
-  const recorded = JSON.parse(fs.readFileSync(stamp, "utf8")) as { sourceMtime?: number; serverUrl?: string }
+  const recorded = JSON.parse(fs.readFileSync(stamp, "utf8")) as { sourceMtime?: number; serverUrl?: string; relayOrigins?: string[] }
   return typeof recorded.sourceMtime === "number" && recorded.sourceMtime >= mtime && recorded.serverUrl === serverUrl
+    && (recorded.relayOrigins ?? []).join(",") === relayOrigins.join(",")
 }
 
 export async function run(label: string, command: string, args: string[], options: { cwd: string; env?: NodeJS.ProcessEnv }) {
@@ -58,23 +59,25 @@ export async function run(label: string, command: string, args: string[], option
 
 export type AppBuild = { distDir: string; built: boolean; ms: number }
 
-export async function ensureAppBuilt(input: { serverUrl: string; outDir?: string }): Promise<AppBuild> {
+export async function ensureAppBuilt(input: { serverUrl: string; outDir?: string; relayOrigins?: readonly string[] }): Promise<AppBuild> {
   const started = Date.now()
   const distDir = input.outDir ?? appDistDir()
   const mtime = sourceMtime()
-  if (buildIsCurrent(distDir, mtime, input.serverUrl)) return { distDir, built: false, ms: Date.now() - started }
+  const relayOrigins = input.relayOrigins ?? []
+  if (buildIsCurrent(distDir, mtime, input.serverUrl, relayOrigins)) return { distDir, built: false, ms: Date.now() - started }
   const build = await run("app build", "node", ["./node_modules/vite/bin/vite.js", "build", "--config", "vite.cloud.config.ts", "--outDir", distDir, "--emptyOutDir"], {
     cwd: APP_ROOT,
     env: {
       ...process.env,
       VITE_CLAXEDO_SERVER_URL: input.serverUrl,
       VITE_CLAXEDO_AUTH_ADAPTER: "better-auth",
+      CLAXEDO_RELAY_ORIGINS: relayOrigins.join(","),
       NODE_OPTIONS: "--max-old-space-size=4096",
     },
   })
   if (build.code !== 0) throw new Error(`app build exited with ${build.code}:\n${build.tail()}`)
   const ms = Date.now() - started
-  const stamp = { sourceMtime: mtime, serverUrl: input.serverUrl, builtAt: Date.now(), ms }
+  const stamp = { sourceMtime: mtime, serverUrl: input.serverUrl, relayOrigins, builtAt: Date.now(), ms }
   fs.writeFileSync(path.join(distDir, BUILD_STAMP), JSON.stringify(stamp))
   return { distDir, built: true, ms }
 }

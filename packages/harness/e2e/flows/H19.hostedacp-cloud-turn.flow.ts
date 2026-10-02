@@ -4,7 +4,7 @@ import { assistantText } from "../harness/api"
 import { SCRIPTED_ACP_HARNESS, scriptedAcpConnection } from "../harness/acp/connection"
 import { acpScriptToken, writeAcpScript } from "../harness/acp/script"
 import { hostedFetch } from "../harness/hosted-auth"
-import { hostedApi, hostedOwner, hostedSession, hostedWorkspace } from "../harness/hosted-flow"
+import { hostedApi, hostedOwner, hostedWorkspace } from "../harness/hosted-flow"
 import { startHostedStack } from "../harness/hosted-stack"
 import { frameSessionId, frameType, openEventStream } from "../harness/stream"
 import { waitForTitle } from "../harness/turn-observations"
@@ -26,14 +26,14 @@ export async function run() {
     assert.ok(configuration.connections?.some((row) => row.connectionId === SCRIPTED_ACP_HARNESS.id),
       `C-2: hosted did not persist the scripted ACP connection: ${JSON.stringify(configuration)}`)
     const workspace = await hostedWorkspace(stack, owner, "H19 hosted ACP")
-    const api = hostedApi(stack, workspace)
+    const api = hostedApi(stack, workspace, owner)
     const stream = await openEventStream(stack.relayUrl, workspace.directory, {
       relayWorkspaceId: workspace.id, authorization: `Bearer ${workspace.runtimeAccessToken}`,
     })
     try {
-      let session: Awaited<ReturnType<typeof hostedSession>>
+      let session: Awaited<ReturnType<typeof api.createSession>>
       try {
-        session = await hostedSession(stack, owner, workspace, SCRIPTED_ACP_HARNESS)
+        session = await api.createSession(workspace.directory, { harness: SCRIPTED_ACP_HARNESS })
       } catch (error) {
         if (/connection|not configured|unavailable/i.test(String(error))) {
           throw new Error(`C-4: hosted ACP connection was not usable in the sandbox: ${String(error)}`, { cause: error })
