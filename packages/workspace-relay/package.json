@@ -43,7 +43,6 @@
   "dependencies": {
     "@claxedo/helpers": "workspace:*",
     "@claxedo/workspace-relay-protocol": "workspace:*",
-    "hono": "4.12.34",
     "jose": "6.0.11"
   },
   "devDependencies": {

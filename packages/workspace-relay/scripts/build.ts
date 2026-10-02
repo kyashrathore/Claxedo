@@ -9,8 +9,6 @@ const DIST = path.join(ROOT, "dist")
 const EXTERNALS = [
   "@claxedo/helpers/string",
   "@claxedo/workspace-relay-protocol",
-  "hono",
-  "hono/cors",
   "jose",
 ]
 
