@@ -1,3 +1,5 @@
+import type { AgentFileContent } from "@claxedo/agent-runtime-contract"
+
 export type InitStep = { phase: "server_waiting" } | { phase: "sqlite_waiting" } | { phase: "done" }
 
 export type ServerReadyData = {
@@ -169,6 +171,7 @@ export type ElectronAPI = {
   }) => Promise<string | string[] | null>
   saveFilePicker: (opts?: { title?: string; defaultPath?: string }) => Promise<string | null>
   openLink: (url: string) => void
+  readFileContent: (path: string) => Promise<AgentFileContent>
   openPath: (path: string, app?: string) => Promise<void>
   showItemInFolder: (path: string) => Promise<void>
   readClipboardImage: () => Promise<{ buffer: ArrayBuffer; width: number; height: number } | null>

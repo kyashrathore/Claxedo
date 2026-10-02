@@ -33,7 +33,7 @@ function NavigatorViews(props: { readonly placementId: PlacementId }): JSX.Eleme
           <FilesNavigator
             placementId={props.placementId}
             active={panel.open() && panel.navigator() === "files"}
-            activePath={activeFilePath(panel)}
+            activePath={activeFilePath(panel)?.startsWith("/") ? undefined : activeFilePath(panel)}
             onOpenFile={(path) => panel.show({ kind: "file", path })}
           />
         </Match>

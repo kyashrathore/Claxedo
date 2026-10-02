@@ -1,7 +1,9 @@
+import type { AgentFileContent } from "@claxedo/agent-runtime-contract"
 import { readField } from "@claxedo/helpers/readers"
 
 export type DesktopBridge = {
   readonly openLink: (url: string) => void
+  readonly readFileContent: (path: string) => Promise<AgentFileContent>
   readonly openPath: (path: string, app?: string) => Promise<void>
   readonly renderMermaid: (source: string, theme?: Record<string, string>) => Promise<string>
   readonly getWindowFullscreen: () => Promise<boolean>

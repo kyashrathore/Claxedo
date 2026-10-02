@@ -7,7 +7,7 @@ const loopbackHosts: readonly string[] = ["localhost", "127.0.0.1", "0.0.0.0", "
 
 export type TimelineLinkHost = {
   openFocus: (focus: TimelineFocus) => void
-  platform: Pick<TimelinePlatform, "openLink" | "openPath">
+  platform: Pick<TimelinePlatform, "openLink" | "openPath" | "canReadLocalFiles">
   placementPath: string
   onError: (error: unknown) => void
 }
@@ -25,7 +25,11 @@ function fileOpeners(host: TimelineLinkHost) {
   const openFile = (raw: string) => {
     const target = timelineFileFocus(raw, host.placementPath)
     if (target) host.openFocus({ kind: "file", ...target })
-    else openFileExternally(raw)
+    else {
+      const path = timelineAbsoluteFilePath(raw)
+      if (path && host.platform.canReadLocalFiles) host.openFocus({ kind: "file", path })
+      else host.onError(new Error("This file cannot be opened on this computer."))
+    }
   }
 
   return { openFile, openFileExternally }

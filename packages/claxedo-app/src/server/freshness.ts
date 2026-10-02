@@ -6,9 +6,9 @@ export type Freshness =
   | { readonly kind: "ttl"; readonly ms: number; readonly reason: string }
   | { readonly kind: "once"; readonly reason: string }
 
-type InvalidationPrefix = "filesAll" | "filesOf" | "gitAll" | "gitOf" | "usageAll" | "marketplaceAll" | "codeHostAll" | "providerCatalogs"
+type CachePrefix = "filesAll" | "filesOf" | "gitAll" | "gitOf" | "usageAll" | "marketplaceAll" | "codeHostAll" | "providerCatalogs"
 
-export type CacheName = Exclude<keyof typeof queryKeys, InvalidationPrefix>
+export type CacheName = Exclude<keyof typeof queryKeys, CachePrefix>
 
 const catalogEvents = ["projectChanged", "placementsChanged", "cloudWorkspaceChanged", "streamGap"] as const
 const placementEvents = ["placementsChanged", "cloudWorkspaceChanged", "streamGap"] as const
@@ -32,6 +32,8 @@ export const freshness = {
   usage: { kind: "event-owned", events: ["usageChanged"] },
   fileTree: fileOwned,
   fileContent: fileOwned,
+  localFilesAll: { kind: "once", reason: "the desktop file prefix configures gcTime 0; each artifact is read afresh when its tab mounts" },
+  localFileContent: { kind: "once", reason: "local artifacts are re-read on every file-tab mount with staleTime 0 and gcTime 0; no workspace event owns them" },
   fileSearch: fileOwned,
   gitStatus: fileOwned,
   gitLog: fileOwned,

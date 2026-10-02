@@ -212,7 +212,9 @@ export const desktopMainComposition: Policy = {
   // and install, split out of `index.ts` along its own responsibility.
   // Reviewed owner: Electron main, the only process that drives
   // `electron-updater`, already a package edge. 87/24, no headroom.
-  ceilings: { modules: 87, packages: 24 },
+  // Local artifact tabs add main/local-file-content.ts and the published
+  // workspace-runtime/file-content reader: 88 modules / 25 packages, no headroom.
+  ceilings: { modules: 88, packages: 25 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,

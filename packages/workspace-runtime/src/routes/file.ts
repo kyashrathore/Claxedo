@@ -1,3 +1,4 @@
+import { readFileContent } from "../file-content"
 import { Hono } from "hono"
 import { WorkspaceTargetError, errorBody } from "@claxedo/session-core"
 import { currentSessionCore } from "../session-context"
@@ -11,7 +12,6 @@ import {
 import {
   listAllWorkspaceFiles,
   listWorkspaceDirectory,
-  readWorkspaceFileContent,
   resolveWorkspaceFile,
   searchWorkspaceFiles,
   warmWorkspaceSearchIndex,
@@ -104,7 +104,7 @@ export function FileRoutes(options: WorktreeTargetAccessOptions = {}) {
       if (typeof base !== "string") return base
       const full = await routeFile(base, c.req.query("path"))
       if (!full) return c.json(invalidPath(), 400)
-      return c.json(await readWorkspaceFileContent(full))
+      return c.json(await readFileContent(full))
     })
     .get("/file/status", async (c) => {
       const base = await readable(c)

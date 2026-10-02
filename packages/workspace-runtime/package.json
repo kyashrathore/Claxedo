@@ -96,6 +96,13 @@
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.mjs",
       "default": "./dist/testing.mjs"
+    },
+    "./file-content": {
+      "development": "./src/file-content.ts",
+      "bun": "./src/file-content.ts",
+      "types": "./dist/file-content.d.ts",
+      "import": "./dist/file-content.mjs",
+      "default": "./dist/file-content.mjs"
     }
   },
   "files": [
