@@ -1,0 +1,98 @@
+{
+  "sandboxId": "37752007-5668-489f-9e9d-aa3d4fbc4298",
+  "relayUrl": "wss://claxedo-workspace-relay-reeval.kanusdlp.workers.dev",
+  "count": 10,
+  "basePort": 3940,
+  "manifest": [
+    {
+      "workspaceId": "ws_reeval_mt_0",
+      "hostId": "host_mt_0",
+      "port": 3940,
+      "directHttpUrl": "https://3940-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "directWsUrl": "wss://3940-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "previewToken": "aixxzugpbrcuoozuiewggid3s6zjjcfj",
+      "registered": true
+    },
+    {
+      "workspaceId": "ws_reeval_mt_1",
+      "hostId": "host_mt_1",
+      "port": 3941,
+      "directHttpUrl": "https://3941-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "directWsUrl": "wss://3941-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "previewToken": "aixxzugpbrcuoozuiewggid3s6zjjcfj",
+      "registered": true
+    },
+    {
+      "workspaceId": "ws_reeval_mt_2",
+      "hostId": "host_mt_2",
+      "port": 3942,
+      "directHttpUrl": "https://3942-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "directWsUrl": "wss://3942-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "previewToken": "aixxzugpbrcuoozuiewggid3s6zjjcfj",
+      "registered": true
+    },
+    {
+      "workspaceId": "ws_reeval_mt_3",
+      "hostId": "host_mt_3",
+      "port": 3943,
+      "directHttpUrl": "https://3943-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "directWsUrl": "wss://3943-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "previewToken": "aixxzugpbrcuoozuiewggid3s6zjjcfj",
+      "registered": true
+    },
+    {
+      "workspaceId": "ws_reeval_mt_4",
+      "hostId": "host_mt_4",
+      "port": 3944,
+      "directHttpUrl": "https://3944-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "directWsUrl": "wss://3944-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "previewToken": "aixxzugpbrcuoozuiewggid3s6zjjcfj",
+      "registered": true
+    },
+    {
+      "workspaceId": "ws_reeval_mt_5",
+      "hostId": "host_mt_5",
+      "port": 3945,
+      "directHttpUrl": "https://3945-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "directWsUrl": "wss://3945-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "previewToken": "aixxzugpbrcuoozuiewggid3s6zjjcfj",
+      "registered": true
+    },
+    {
+      "workspaceId": "ws_reeval_mt_6",
+      "hostId": "host_mt_6",
+      "port": 3946,
+      "directHttpUrl": "https://3946-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "directWsUrl": "wss://3946-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "previewToken": "aixxzugpbrcuoozuiewggid3s6zjjcfj",
+      "registered": true
+    },
+    {
+      "workspaceId": "ws_reeval_mt_7",
+      "hostId": "host_mt_7",
+      "port": 3947,
+      "directHttpUrl": "https://3947-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "directWsUrl": "wss://3947-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "previewToken": "aixxzugpbrcuoozuiewggid3s6zjjcfj",
+      "registered": true
+    },
+    {
+      "workspaceId": "ws_reeval_mt_8",
+      "hostId": "host_mt_8",
+      "port": 3948,
+      "directHttpUrl": "https://3948-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "directWsUrl": "wss://3948-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "previewToken": "aixxzugpbrcuoozuiewggid3s6zjjcfj",
+      "registered": true
+    },
+    {
+      "workspaceId": "ws_reeval_mt_9",
+      "hostId": "host_mt_9",
+      "port": 3949,
+      "directHttpUrl": "https://3949-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "directWsUrl": "wss://3949-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "previewToken": "aixxzugpbrcuoozuiewggid3s6zjjcfj",
+      "registered": true
+    }
+  ]
+}

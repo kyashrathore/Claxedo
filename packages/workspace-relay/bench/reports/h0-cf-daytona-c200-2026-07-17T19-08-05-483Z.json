@@ -1,0 +1,38 @@
+{
+  "rowId": "h0-cf-daytona-c200",
+  "shape": "c200/load600",
+  "target": "https://3939-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+  "relay": "https://claxedo-workspace-relay-reeval.kanusdlp.workers.dev",
+  "httpP99OverheadMs": null,
+  "wsMessageP99OverheadMs": 217.95,
+  "relayedWsMessages": {
+    "attempted": 396,
+    "delivered": 396
+  },
+  "directWsMessages": {
+    "attempted": 800,
+    "delivered": 800
+  },
+  "connectP95Ms": 1371.87,
+  "upstreamOpenP95Ms": 732,
+  "upstreamOpenSource": "relay-trace",
+  "holderSetup": {
+    "attempted": 200,
+    "delivered": 99
+  },
+  "upstreamFailureCodes": {
+    "error": 101
+  },
+  "trace": {
+    "wsUpstreamOpenP95Ms": 732,
+    "maxQueuedFrames": 0,
+    "maxQueuedDelayMs": 0,
+    "samples": 99
+  },
+  "gates": {
+    "httpP99OverheadPass": true,
+    "wsMessageP99OverheadPass": false,
+    "zeroRelayedWsLossPass": true,
+    "pass": false
+  }
+}

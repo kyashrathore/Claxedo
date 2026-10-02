@@ -26,6 +26,10 @@ doc or package README that owns it.
 - [Hosted agent core](./2026-10-01-001-feat-hosted-agent-core-plan.md)
   — deferred runtime option. Worker-hosted Pi, retained files and sandbox delegation consume the same
   work-system contracts; they are not prerequisites for the Task foundation.
+- [Session seen state](./2026-10-02-001-feat-session-seen-state-plan.md)
+  — planned, not started; the server contract changes await owner sign-off. The rail's finished and failed
+  dots become a per-reader server fact (`lastTurn` + `seenAt` on list items, a `session.seen` notice), and
+  every readable session's status and attention reach the app as a per-reader `cp/events` notice, never missed.
 - [Reducing server, runtime and machine code](./2026-09-29-002-refactor-loc-reduction-plan.md)
   — planned, not started. 254.8k → ~114k in the server, runtime, machine agent, desktop main process and relay
   (app, UI kit and harness out of scope). Keeps Pages, Teams, the browser pane and channels; adds plugin backends,

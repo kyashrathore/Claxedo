@@ -1,0 +1,171 @@
+{
+  "summary": {
+    "tunnels": 5,
+    "tunnelsOk": 5,
+    "perTunnelConns": 10,
+    "perTunnelMsgs": 100,
+    "aggregateMessages": 5000,
+    "perTunnelOverheadMs": {
+      "min": 80.05,
+      "median": 755.91,
+      "p95": 1078.9,
+      "max": 1078.9
+    },
+    "relayedDelivered": "5000/5000",
+    "holders": "50/50",
+    "throughputMsgPerSec": 1107.66,
+    "wallMs": 4514.03
+  },
+  "rows": [
+    {
+      "rowId": "mt-ws_reeval_mt_0",
+      "shape": "c10x100",
+      "target": "https://3940-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "relay": "https://claxedo-workspace-relay-reeval.kanusdlp.workers.dev",
+      "httpP99OverheadMs": null,
+      "wsMessageP99OverheadMs": 80.05,
+      "relayedWsMessages": {
+        "attempted": 1000,
+        "delivered": 1000
+      },
+      "directWsMessages": {
+        "attempted": 1000,
+        "delivered": 1000
+      },
+      "connectP95Ms": 589.26,
+      "upstreamOpenP95Ms": 589.26,
+      "upstreamOpenSource": "client-wall-clock",
+      "holderSetup": {
+        "attempted": 10,
+        "delivered": 10
+      },
+      "upstreamFailureCodes": {},
+      "gates": {
+        "httpP99OverheadPass": true,
+        "wsMessageP99OverheadPass": true,
+        "zeroRelayedWsLossPass": true,
+        "pass": true
+      }
+    },
+    {
+      "rowId": "mt-ws_reeval_mt_1",
+      "shape": "c10x100",
+      "target": "https://3941-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "relay": "https://claxedo-workspace-relay-reeval.kanusdlp.workers.dev",
+      "httpP99OverheadMs": null,
+      "wsMessageP99OverheadMs": 964.25,
+      "relayedWsMessages": {
+        "attempted": 1000,
+        "delivered": 1000
+      },
+      "directWsMessages": {
+        "attempted": 1000,
+        "delivered": 1000
+      },
+      "connectP95Ms": 647.15,
+      "upstreamOpenP95Ms": 647.15,
+      "upstreamOpenSource": "client-wall-clock",
+      "holderSetup": {
+        "attempted": 10,
+        "delivered": 10
+      },
+      "upstreamFailureCodes": {},
+      "gates": {
+        "httpP99OverheadPass": true,
+        "wsMessageP99OverheadPass": false,
+        "zeroRelayedWsLossPass": true,
+        "pass": false
+      }
+    },
+    {
+      "rowId": "mt-ws_reeval_mt_2",
+      "shape": "c10x100",
+      "target": "https://3942-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "relay": "https://claxedo-workspace-relay-reeval.kanusdlp.workers.dev",
+      "httpP99OverheadMs": null,
+      "wsMessageP99OverheadMs": 755.91,
+      "relayedWsMessages": {
+        "attempted": 1000,
+        "delivered": 1000
+      },
+      "directWsMessages": {
+        "attempted": 1000,
+        "delivered": 1000
+      },
+      "connectP95Ms": 1061.16,
+      "upstreamOpenP95Ms": 1061.16,
+      "upstreamOpenSource": "client-wall-clock",
+      "holderSetup": {
+        "attempted": 10,
+        "delivered": 10
+      },
+      "upstreamFailureCodes": {},
+      "gates": {
+        "httpP99OverheadPass": true,
+        "wsMessageP99OverheadPass": false,
+        "zeroRelayedWsLossPass": true,
+        "pass": false
+      }
+    },
+    {
+      "rowId": "mt-ws_reeval_mt_3",
+      "shape": "c10x100",
+      "target": "https://3943-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "relay": "https://claxedo-workspace-relay-reeval.kanusdlp.workers.dev",
+      "httpP99OverheadMs": null,
+      "wsMessageP99OverheadMs": 1078.9,
+      "relayedWsMessages": {
+        "attempted": 1000,
+        "delivered": 1000
+      },
+      "directWsMessages": {
+        "attempted": 1000,
+        "delivered": 1000
+      },
+      "connectP95Ms": 1075.08,
+      "upstreamOpenP95Ms": 1075.08,
+      "upstreamOpenSource": "client-wall-clock",
+      "holderSetup": {
+        "attempted": 10,
+        "delivered": 10
+      },
+      "upstreamFailureCodes": {},
+      "gates": {
+        "httpP99OverheadPass": true,
+        "wsMessageP99OverheadPass": false,
+        "zeroRelayedWsLossPass": true,
+        "pass": false
+      }
+    },
+    {
+      "rowId": "mt-ws_reeval_mt_4",
+      "shape": "c10x100",
+      "target": "https://3944-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "relay": "https://claxedo-workspace-relay-reeval.kanusdlp.workers.dev",
+      "httpP99OverheadMs": null,
+      "wsMessageP99OverheadMs": 627.7,
+      "relayedWsMessages": {
+        "attempted": 1000,
+        "delivered": 1000
+      },
+      "directWsMessages": {
+        "attempted": 1000,
+        "delivered": 1000
+      },
+      "connectP95Ms": 1089.77,
+      "upstreamOpenP95Ms": 1089.77,
+      "upstreamOpenSource": "client-wall-clock",
+      "holderSetup": {
+        "attempted": 10,
+        "delivered": 10
+      },
+      "upstreamFailureCodes": {},
+      "gates": {
+        "httpP99OverheadPass": true,
+        "wsMessageP99OverheadPass": false,
+        "zeroRelayedWsLossPass": true,
+        "pass": false
+      }
+    }
+  ]
+}

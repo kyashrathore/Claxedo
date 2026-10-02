@@ -1,0 +1,30 @@
+{
+  "rowId": "dialin-c200-stock",
+  "shape": "c200/load600",
+  "target": "https://3939-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+  "relay": "https://claxedo-workspace-relay-reeval.kanusdlp.workers.dev",
+  "httpP99OverheadMs": null,
+  "wsMessageP99OverheadMs": 769.82,
+  "relayedWsMessages": {
+    "attempted": 800,
+    "delivered": 800
+  },
+  "directWsMessages": {
+    "attempted": 800,
+    "delivered": 800
+  },
+  "connectP95Ms": 1080.96,
+  "upstreamOpenP95Ms": 1080.96,
+  "upstreamOpenSource": "client-wall-clock",
+  "holderSetup": {
+    "attempted": 200,
+    "delivered": 200
+  },
+  "upstreamFailureCodes": {},
+  "gates": {
+    "httpP99OverheadPass": true,
+    "wsMessageP99OverheadPass": false,
+    "zeroRelayedWsLossPass": true,
+    "pass": false
+  }
+}

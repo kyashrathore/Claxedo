@@ -1,0 +1,32 @@
+{
+  "rowId": "local-dry-run",
+  "shape": "c50/load50",
+  "target": "http://127.0.0.1:53964",
+  "relay": "http://127.0.0.1:53966",
+  "httpP99OverheadMs": 9.07,
+  "wsMessageP99OverheadMs": null,
+  "relayedWsMessages": {
+    "attempted": 100000,
+    "delivered": 0
+  },
+  "directWsMessages": {
+    "attempted": 100000,
+    "delivered": 100000
+  },
+  "connectP95Ms": 255.98,
+  "upstreamOpenP95Ms": 255.98,
+  "upstreamOpenSource": "client-wall-clock",
+  "holderSetup": {
+    "attempted": 50,
+    "delivered": 50
+  },
+  "upstreamFailureCodes": {
+    "1011": 50
+  },
+  "gates": {
+    "httpP99OverheadPass": true,
+    "wsMessageP99OverheadPass": true,
+    "zeroRelayedWsLossPass": false,
+    "pass": false
+  }
+}

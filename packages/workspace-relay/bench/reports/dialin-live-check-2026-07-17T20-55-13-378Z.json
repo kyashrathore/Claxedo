@@ -1,0 +1,30 @@
+{
+  "rowId": "dialin-live-check",
+  "shape": "c1",
+  "target": "https://3939-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+  "relay": "https://claxedo-workspace-relay-reeval.kanusdlp.workers.dev",
+  "httpP99OverheadMs": null,
+  "wsMessageP99OverheadMs": -1.15,
+  "relayedWsMessages": {
+    "attempted": 2,
+    "delivered": 2
+  },
+  "directWsMessages": {
+    "attempted": 2,
+    "delivered": 2
+  },
+  "connectP95Ms": 1368.35,
+  "upstreamOpenP95Ms": 1368.35,
+  "upstreamOpenSource": "client-wall-clock",
+  "holderSetup": {
+    "attempted": 1,
+    "delivered": 1
+  },
+  "upstreamFailureCodes": {},
+  "gates": {
+    "httpP99OverheadPass": true,
+    "wsMessageP99OverheadPass": true,
+    "zeroRelayedWsLossPass": true,
+    "pass": true
+  }
+}
