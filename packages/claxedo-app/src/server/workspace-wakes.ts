@@ -26,8 +26,8 @@ export function createWorkspaceWakes(transport: Transport, workspaces: Workspace
   const run = async (id: PlacementId) => {
     send(id, { type: "wakeStarted" })
     try {
-      const route = await workspaces.locate(id)
-      await transport.startRuntime(route, { onProgress: (progress) => send(id, { type: "provisioning", ...(progress.bootMode ? { bootMode: progress.bootMode } : {}) }) })
+      const { workspaceId } = await workspaces.locate(id)
+      await transport.startRuntime(workspaceId, { onProgress: (progress) => send(id, { type: "provisioning", ...(progress.bootMode ? { bootMode: progress.bootMode } : {}) }) })
       await workspaces.refresh()
       send(id, { type: "woke" })
     } catch (cause) {

@@ -18,7 +18,7 @@ function openBody(): Response {
 const placement = placementId("ws_shared")
 const record = {
   placement: { id: placement, projectId: projectId("prj"), kind: "worktree", label: "Shared", reachable: true },
-  route: { kind: "worktree", directory: "workspace:ws_shared", workspaceId: "ws_shared", remote: true },
+  route: { directory: "workspace:ws_shared", workspaceId: "ws_shared", remote: true },
 }
 const workspaces = { catalog: () => ({ projects: [], placements: [record] }) } as unknown as Workspaces
 

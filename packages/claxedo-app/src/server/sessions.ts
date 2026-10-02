@@ -43,9 +43,8 @@ async function createSession(context: SessionContext, wakes: WorkspaceWakes, inp
   const placement = context.workspaces.byId(input.placementId)
   if (!placement) throw new ServerError({ class: "not_found", message: `Placement ${input.placementId} is not in the catalog` })
   const path = withQuery("/session", input.harness ? harnessSelectionQuery(input.harness) : {})
-  const account = placement.kind === "cloud" ? context.account : undefined
-  const reservation = account || context.workspaces.catalog()?.declaration.issuesSessions
-    ? await reserveSession(context.transport, { workspaceId: where.workspaceId, ...(input.title ? { title: input.title } : {}) }, account)
+  const reservation = where.remote && context.account
+    ? await reserveSession(context.account, { workspaceId: where.workspaceId, ...(input.title ? { title: input.title } : {}) })
     : undefined
   const body = { ...createBody(input), ...(reservation ? { id: reservation.sessionId } : {}) }
   const init = jsonInit("POST", body, reservation ? { headers: { [RESERVATION_HEADER]: reservation.operationId } } : undefined)

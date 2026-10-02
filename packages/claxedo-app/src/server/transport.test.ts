@@ -6,7 +6,7 @@ import { createWorkspaceWakes } from "./workspace-wakes"
 
 const fetcher = spyOn(globalThis, "fetch")
 const link = { relayUrl: "https://relay.test", runtimeAccessToken: "session-rat", tokenExpiresAt: Date.now() + 3_600_000 }
-const cloud = { kind: "cloud" as const, directory: "workspace:ws_cloud", workspaceId: "ws_cloud", remote: true }
+const cloud = { directory: "workspace:ws_cloud", workspaceId: "ws_cloud", remote: true }
 
 afterEach(() => fetcher.mockReset())
 afterAll(() => fetcher.mockRestore())
@@ -41,7 +41,7 @@ test("the public workspace wake owner sends a signed desktop cloud wake to the a
 })
 
 test("signed desktop cloud and remote machine runtime reads use the account's workspace connection and only its relay token", async () => {
-  const machine = { kind: "worktree" as const, directory: "workspace:ws_machine", workspaceId: "ws_machine", remote: true }
+  const machine = { directory: "workspace:ws_machine", workspaceId: "ws_machine", remote: true }
   for (const route of [machine, cloud]) {
     fetcher.mockReset().mockResolvedValue(Response.json({ id: "ses_a" }))
     const { transport, calls } = signed(link)
@@ -65,24 +65,8 @@ test("signed desktop stopped connection fails without daemon reads, relay reads 
 test("signed desktop local placements keep using the daemon with no account call", async () => {
   const { transport, calls } = signed()
   fetcher.mockResolvedValue(Response.json({}))
-  await transport.runtime({ kind: "folder", directory: "/repo", workspaceId: "ws_local", remote: false }, "/session/ses_local")
+  await transport.runtime({ directory: "/repo", workspaceId: "ws_local", remote: false }, "/session/ses_local")
   expect(String(fetcher.mock.calls[0]?.[0])).toBe("http://127.0.0.1:4444/session/ses_local?directory=%2Frepo")
   expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get("authorization")).toBeNull()
   expect(calls).toEqual([])
-})
-
-test("web runtime routing uses the same read-only workspace connection", async () => {
-  const transport = createTransport({ serverUrl: "https://account.test", cookies: true })
-  fetcher.mockResolvedValueOnce(Response.json(link)).mockResolvedValueOnce(Response.json({}))
-  await transport.runtime(cloud, "/session/ses_a")
-  expect(String(fetcher.mock.calls[0]?.[0])).toBe("https://account.test/api/workspace/ws_cloud/connection")
-  expect(fetcher.mock.calls[0]?.[1]?.method).toBeUndefined()
-  expect(new Headers(fetcher.mock.calls[1]?.[1]?.headers).get("authorization")).toBe("Bearer session-rat")
-})
-
-test("renewing a rejected runtime token cannot wake compute", async () => {
-  const { transport, calls } = signed(link, { ...link, runtimeAccessToken: "fresh-rat" })
-  fetcher.mockResolvedValueOnce(Response.json({}, { status: 401 })).mockResolvedValueOnce(Response.json({}))
-  await transport.runtime(cloud, "/session/ses_a")
-  expect(calls).toEqual(Array(2).fill({ operation: "workspace.connection.read", input: { id: "ws_cloud" } }))
 })

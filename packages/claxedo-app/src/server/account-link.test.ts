@@ -34,7 +34,7 @@ test("account link: a control-plane project sharing a local workspace id is that
   const linked = linkAccountCatalog(local, account)
   const cloud = linked.placements.find((record) => String(record.placement.id) === "ws_cloud")
   expect(cloud?.placement).toMatchObject({ projectId: "local_app", kind: "cloud", reachable: false })
-  expect(cloud?.route).toEqual({ kind: "cloud", directory: "workspace:ws_cloud", workspaceId: "ws_cloud", remote: true })
+  expect(cloud?.route).toEqual({ directory: "workspace:ws_cloud", workspaceId: "ws_cloud", remote: true })
   expect(linked.projects.map((project) => project.id)).toEqual([projectId("prj_web")])
   expect(linked.accountProjectIds(projectId("local_app"))).toEqual([projectId("prj_app")])
 })
@@ -63,7 +63,7 @@ test("account link: a control-plane project with a local project's own id pairs 
 
 test("account link: every account placement is a remote workspace, and a machine's keeps its host and path", () => {
   const machine = accountCatalogFromWire([{ ...row("ws_node", "prj_node", "local-worktree", true, 60), remote_directory: "/srv/app", placement: { host_enrollment_id: "enr_other" } }])
-  expect(machine.placements[0]?.route).toEqual({ kind: "worktree", directory: "workspace:ws_node", workspaceId: "ws_node", remote: true })
+  expect(machine.placements[0]?.route).toEqual({ directory: "workspace:ws_node", workspaceId: "ws_node", remote: true })
   expect(machine.placements[0]?.placement).toMatchObject({ kind: "worktree", path: "/srv/app", machineId: "enr_other" })
 })
 

@@ -3,11 +3,9 @@ import { createHostedAccount, type HostedAccount } from "./account"
 import { responseError, toAppError } from "./errors"
 import { createRelay } from "./relay"
 import { startWorkspace, type StartOptions } from "./workspace-start"
-import type { Placement } from "./types"
 import { CLOUD_RUNTIME_UNAVAILABLE, connectionAnswerFromWire, unavailableRetryAfter, type ConnectionAnswer, type WorkspaceConnections } from "./wire/connection"
 
 export type RuntimeRoute = {
-  readonly kind: Placement["kind"]
   readonly directory: string
   readonly workspaceId: string
   readonly remote: boolean
@@ -21,7 +19,7 @@ export type Transport = {
   readonly runtimeSocket: (route: RuntimeRoute, path: string) => Promise<WebSocket>
   readonly json: <T>(path: string, init?: RequestInit) => Promise<T>
   readonly runtimeJson: <T>(route: RuntimeRoute, path: string, init?: RequestInit) => Promise<T>
-  readonly startRuntime: (route: RuntimeRoute, options?: StartOptions) => Promise<void>
+  readonly startRuntime: (workspaceId: string, options?: StartOptions) => Promise<void>
 }
 
 function socketUrl(serverUrl: string, path: string) {
@@ -104,14 +102,16 @@ export function createTransport(config: ServerConfig): Transport {
   const request = (path: string, init?: RequestInit) => fetchFromServer(config, `${serverUrl}${path}`, init)
   const connections = createWorkspaceConnections(request, config.account ? createHostedAccount(config.account) : undefined)
   const relay = createRelay(connections.read)
-  const usesRelay = (route: RuntimeRoute) => (route.kind === "cloud" || route.remote) && (!loopback || config.account !== undefined)
+  const daemonProxy = loopback && config.account === undefined
   const runtime = (route: RuntimeRoute, path: string, init?: RequestInit) => {
-    if (usesRelay(route)) return relay.fetch(route.workspaceId, withoutRouteQuery(path), init)
-    return request(route.remote ? workspaceProxyPath(route, path) : withQuery(path, { directory: route.directory }), init)
+    if (!route.remote) return request(withQuery(path, { directory: route.directory }), init)
+    if (daemonProxy) return request(workspaceProxyPath(route, path), init)
+    return relay.fetch(route.workspaceId, withoutRouteQuery(path), init)
   }
   const runtimeSocket = async (route: RuntimeRoute, path: string): Promise<WebSocket> => {
-    if (usesRelay(route)) return relay.webSocket(route.workspaceId, withoutRouteQuery(path))
-    return new WebSocket(socketUrl(serverUrl, route.remote ? workspaceProxyPath(route, path) : withQuery(path, { directory: route.directory })))
+    if (!route.remote) return new WebSocket(socketUrl(serverUrl, withQuery(path, { directory: route.directory })))
+    if (daemonProxy) return new WebSocket(socketUrl(serverUrl, workspaceProxyPath(route, path)))
+    return relay.webSocket(route.workspaceId, withoutRouteQuery(path))
   }
   const label = (path: string, init?: RequestInit) => `${init?.method ?? "GET"} ${path}`
   return {
@@ -122,9 +122,9 @@ export function createTransport(config: ServerConfig): Transport {
     runtimeSocket,
     json: async (path, init) => readJsonResponse(await request(path, init), label(path, init)),
     runtimeJson: async (route, path, init) => readJsonResponse(await runtime(route, path, init), label(path, init)),
-    startRuntime: async (route, options) => {
-      const link = await startWorkspace(connections.start, route.workspaceId, options)
-      if (usesRelay(route)) relay.adopt(link)
+    startRuntime: async (workspaceId, options) => {
+      const link = await startWorkspace(connections.start, workspaceId, options)
+      if (!daemonProxy) relay.adopt(link)
     },
   }
 }

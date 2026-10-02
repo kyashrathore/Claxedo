@@ -17,14 +17,14 @@ function reads(route: RuntimeRoute) {
 }
 
 test("a remote placement's model options come from its runtime, which a signed desktop's daemon cannot serve", async () => {
-  const { seen, read } = reads({ kind: "cloud", directory: "workspace:ws_cloud", workspaceId: "ws_cloud", remote: true })
+  const { seen, read } = reads({ directory: "workspace:ws_cloud", workspaceId: "ws_cloud", remote: true })
   expect((await read("ses_1")).offersOptions).toBe(true)
   await read()
   expect(seen).toEqual(["runtime /session/ses_1/config-options?connectionId=scripted-acp", "runtime /api/wr/harness-config-options?connectionId=scripted-acp"])
 })
 
 test("a local placement's model options come from the daemon, which falls back to its catalog", async () => {
-  const { seen, read } = reads({ kind: "folder", directory: "/repo", workspaceId: "ws_local", remote: false })
+  const { seen, read } = reads({ directory: "/repo", workspaceId: "ws_local", remote: false })
   await read()
   expect(seen).toEqual(["server /api/claxedo/agent-config/harness/options?workspaceId=ws_local&connectionId=scripted-acp"])
 })
