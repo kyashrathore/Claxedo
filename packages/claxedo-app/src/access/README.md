@@ -9,7 +9,7 @@ Owns: who may do what, answered only from facts the server reports, and the Orga
 
 ## `useAccess()` (`store.ts`)
 
-Returns `principal`, `orgRole` (the user principal's role, `undefined` for a machine) , `can(action, facts?)` and `session(ref)`. It holds no state of its own: it reads `server.capabilities()` and accepts account-source facts from the account query, so it needs no provider.
+Returns `principal`, `orgRole` (the user principal's role, `undefined` for a machine), `can(action, facts?)` and `session(ref)`. It holds no state of its own: it reads `server.capabilities()` and accepts account-source facts from the account query, so it needs no provider.
 
 | Action (`AccessAction`, `model.ts`) | Answered from |
 | --- | --- |
@@ -33,6 +33,6 @@ Flow 15 (`e2e/flows/15-settings.spec.ts`) opens the Organization section among t
 
 ## Shared sessions
 
-`session(ref)` reads the owned placement catalog and the signed account's shared-session row for the exact workspace and session. `sessionControls` (`model.ts`) answers `available`, `send`, `manage` and `shared`. Owned sessions allow sending and management; a `follow` share permits reading, a `send` share permits agent turns, and neither permits session management. Missing facts deny access. The session screen renders a read-only follow composer without editable composer hooks or Send. Shared rows have no rename, archive, delete or share menu, and shared composers offer no fork, shell, goal, model configuration or permission-mode writes. Send holders can send prompts and answer agent requests using the owner's session and credentials. Revocation removes the canonical row on the next read and renders Session unavailable in the open screen.
+`session(ref)` answers from the signed account's shared-session row (`sessionControls`, `model.ts`): a session without one is the reader's own, with every control; a `send` share drives the agent and answers its requests on the owner's accounts; a `follow` share only reads, and cannot stop a background task either. Neither owns the session, so the session screen offers no fork, shell, goal, model, permission mode or turn recovery and writes no attachment into the owner's workspace; the rail lists shared sessions in their own section with no session menu. A follow share gets the read-only composer, whose Send is blocked with the `session-share` reason. A row that disappears while its session is open makes the screen "Session unavailable".
 
-`e2e/flows/47-shared-sessions.spec.ts` covers two signed browser users: share follow, discover/open, observe a live owner turn, upgrade to send, send and read the reply as owner, revoke, remove the row and make the open screen unavailable. Run `bun run e2e --project=web e2e/flows/47-shared-sessions.spec.ts` after the verifier builds the app. Signed Electron main credential routing and owner-account spending require the verifier's desktop/cloud acceptance checks.
+`e2e/flows/47-shared-sessions.spec.ts` covers two signed people: a follow share is listed and opened, follows a live owner turn, is upgraded to send and sends, and is revoked to an unavailable screen.

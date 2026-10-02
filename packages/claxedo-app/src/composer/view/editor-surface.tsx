@@ -10,6 +10,7 @@ export type PromptEditorSurfaceProps = {
   newSession: Accessor<boolean>
   mode: Accessor<PromptInputMode>
   dirty: Accessor<boolean>
+  readOnly: Accessor<boolean>
   designPlaceholder: Accessor<string>
   focusEditor: VoidFunction
   popover: PromptPopoverKind
@@ -54,7 +55,8 @@ export const PromptEditorSurface: Component<PromptEditorSurfaceProps> = (props) 
           aria-autocomplete={props.popover !== null ? "list" : undefined}
           aria-activedescendant={activeDescendant()}
           aria-label={props.designPlaceholder()}
-          contenteditable="true"
+          contenteditable={props.readOnly() ? "false" : "true"}
+          aria-readonly={props.readOnly() || undefined}
           autocapitalize={props.mode() === "normal" ? "sentences" : "off"}
           autocorrect={props.mode() === "normal" ? "on" : "off"}
           spellcheck={props.mode() === "normal"}

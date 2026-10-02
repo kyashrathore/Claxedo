@@ -27,7 +27,6 @@ export default {
   "prompt.action.planMode": "Modo de planejamento",
   "prompt.action.agentGroup": "Agente",
   "prompt.action.approveForMe": "Aprovar automaticamente",
-  "prompt.action.readOnlyWorkspace": "Workspace somente leitura",
   "prompt.popover.atLabel": "Menções",
   "prompt.popover.slashLabel": "Comandos",
   "prompt.popover.emptyResults": "Nenhum resultado correspondente",

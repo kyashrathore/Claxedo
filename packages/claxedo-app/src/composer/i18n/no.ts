@@ -25,7 +25,6 @@ export default {
   "prompt.action.clearGoal": "Fjern mål",
   "prompt.action.planMode": "Planleggingsmodus",
   "prompt.action.approveForMe": "Godkjenn automatisk",
-  "prompt.action.readOnlyWorkspace": "Skrivebeskyttet arbeidsområde",
   "prompt.popover.atLabel": "Omtaler",
   "prompt.popover.slashLabel": "Kommandoer",
   "prompt.popover.emptyResults": "Ingen matchende resultater",

@@ -17,7 +17,7 @@ export function useAccess(): Access {
     return who?.kind === "user" ? who.orgRole : undefined
   }
   return {
-    session: (ref) => sessionControls({ owned: server.placements.byId(ref.placementId) !== undefined, level: server.sharedSessions.find(ref)?.level }),
+    session: (ref) => sessionControls(server.sharedSessions.find(ref)?.level),
     principal,
     orgRole,
     can: (action, facts) => {

@@ -27,7 +27,6 @@ export default {
   "prompt.action.planMode": "计划模式",
   "prompt.action.agentGroup": "智能体",
   "prompt.action.approveForMe": "自动批准",
-  "prompt.action.readOnlyWorkspace": "只读工作区",
   "prompt.popover.atLabel": "提及",
   "prompt.popover.slashLabel": "命令",
   "prompt.popover.emptyResults": "没有匹配的结果",

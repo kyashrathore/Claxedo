@@ -27,7 +27,6 @@ export default {
   "prompt.action.planMode": "プランモード",
   "prompt.action.agentGroup": "エージェント",
   "prompt.action.approveForMe": "自動承認",
-  "prompt.action.readOnlyWorkspace": "読み取り専用ワークスペース",
   "prompt.popover.atLabel": "メンション",
   "prompt.popover.slashLabel": "コマンド",
   "prompt.popover.emptyResults": "一致する結果がありません",

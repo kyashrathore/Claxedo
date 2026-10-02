@@ -27,7 +27,6 @@ export default {
   "prompt.action.planMode": "وضع التخطيط",
   "prompt.action.agentGroup": "الوكيل",
   "prompt.action.approveForMe": "الموافقة تلقائيًا",
-  "prompt.action.readOnlyWorkspace": "مساحة عمل للقراءة فقط",
   "prompt.popover.atLabel": "الإشارات",
   "prompt.popover.slashLabel": "الأوامر",
   "prompt.popover.emptyResults": "لا توجد نتائج مطابقة",

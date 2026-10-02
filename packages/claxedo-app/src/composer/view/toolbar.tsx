@@ -50,7 +50,7 @@ export type PromptToolbarProps = {
   submitExcludeFromTab: Accessor<boolean>
   submitBlock: Accessor<SubmitBlock | null>
   onChooseModel: VoidFunction
-  workspaceRoleBlocked: Accessor<boolean>
+  readOnly: Accessor<boolean>
   t: (key: ComposerTextKey) => string
 }
 
@@ -124,6 +124,7 @@ export const PromptToolbar: Component<PromptToolbarProps> = (props) => {
         approveTitle={props.t("prompt.action.approveForMe")}
         mode={props.mode}
         harnessPending={props.harnessPending}
+        readOnly={props.readOnly}
         harnessController={props.harnessController}
         harnessScope={props.harnessScope}
         harnessScopeInput={props.harnessScopeInput}
@@ -147,10 +148,8 @@ export const PromptToolbar: Component<PromptToolbarProps> = (props) => {
         excludeFromTab={props.submitExcludeFromTab}
         block={props.submitBlock}
         onChooseModel={props.onChooseModel}
-        readOnlyBlocked={props.workspaceRoleBlocked}
         stopLabel={props.t("prompt.action.stop")}
         sendLabel={props.t("prompt.action.send")}
-        readOnlyLabel={props.t("prompt.action.readOnlyWorkspace")}
       />
     </div>
   )

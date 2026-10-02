@@ -27,7 +27,6 @@ export default {
   "prompt.action.planMode": "โหมดวางแผน",
   "prompt.action.agentGroup": "เอเจนต์",
   "prompt.action.approveForMe": "อนุมัติอัตโนมัติ",
-  "prompt.action.readOnlyWorkspace": "เวิร์กสเปซแบบอ่านอย่างเดียว",
   "prompt.popover.atLabel": "การกล่าวถึง",
   "prompt.popover.slashLabel": "คำสั่ง",
   "prompt.popover.emptyResults": "ไม่พบผลลัพธ์ที่ตรงกัน",

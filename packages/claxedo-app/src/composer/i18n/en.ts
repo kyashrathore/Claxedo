@@ -27,7 +27,6 @@ export type ComposerTextKey =
   | "prompt.action.planMode"
   | "prompt.action.agentGroup"
   | "prompt.action.approveForMe"
-  | "prompt.action.readOnlyWorkspace"
   | "prompt.popover.atLabel"
   | "prompt.popover.slashLabel"
   | "prompt.popover.emptyResults"
@@ -137,7 +136,6 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "prompt.action.planMode": "Plan mode",
   "prompt.action.agentGroup": "Agent",
   "prompt.action.approveForMe": "Approve for me",
-  "prompt.action.readOnlyWorkspace": "Read-only workspace",
   "prompt.popover.atLabel": "Mentions",
   "prompt.popover.slashLabel": "Commands",
   "prompt.popover.emptyResults": "No matching results",

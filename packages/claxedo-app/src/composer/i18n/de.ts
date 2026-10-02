@@ -26,7 +26,6 @@ export default {
   "prompt.action.clearGoal": "Ziel entfernen",
   "prompt.action.planMode": "Planungsmodus",
   "prompt.action.approveForMe": "Automatisch genehmigen",
-  "prompt.action.readOnlyWorkspace": "Schreibgeschützter Arbeitsbereich",
   "prompt.popover.atLabel": "Erwähnungen",
   "prompt.popover.slashLabel": "Befehle",
   "prompt.popover.emptyResults": "Keine passenden Ergebnisse",

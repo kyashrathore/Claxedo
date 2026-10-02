@@ -27,7 +27,6 @@ export default {
   "prompt.action.planMode": "計畫模式",
   "prompt.action.agentGroup": "代理程式",
   "prompt.action.approveForMe": "自動核准",
-  "prompt.action.readOnlyWorkspace": "唯讀工作區",
   "prompt.popover.atLabel": "提及",
   "prompt.popover.slashLabel": "命令",
   "prompt.popover.emptyResults": "沒有符合的結果",

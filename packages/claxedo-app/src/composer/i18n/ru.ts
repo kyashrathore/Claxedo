@@ -27,7 +27,6 @@ export default {
   "prompt.action.planMode": "Режим планирования",
   "prompt.action.agentGroup": "Агент",
   "prompt.action.approveForMe": "Подтверждать автоматически",
-  "prompt.action.readOnlyWorkspace": "Рабочее пространство только для чтения",
   "prompt.popover.atLabel": "Упоминания",
   "prompt.popover.slashLabel": "Команды",
   "prompt.popover.emptyResults": "Нет совпадений",

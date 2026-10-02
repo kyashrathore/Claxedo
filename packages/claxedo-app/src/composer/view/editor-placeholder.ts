@@ -29,5 +29,5 @@ export function createEditorPlaceholder(input: {
   return () =>
     input.composer.draft().goalArmed
       ? t("prompt.goal.placeholder")
-      : promptDesignPlaceholder({ authorityBlock: input.readOnly() ? "workspace-role" : undefined, mode: input.mode(), shellPlaceholder: placeholder() })
+      : promptDesignPlaceholder({ authorityBlock: input.readOnly() ? "session-share" : undefined, mode: input.mode(), shellPlaceholder: placeholder() })
 }

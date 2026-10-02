@@ -26,7 +26,6 @@ export default {
   "prompt.action.clearGoal": "Effacer l'objectif",
   "prompt.action.planMode": "Mode planification",
   "prompt.action.approveForMe": "Approuver automatiquement",
-  "prompt.action.readOnlyWorkspace": "Espace de travail en lecture seule",
   "prompt.popover.slashLabel": "Commandes",
   "prompt.popover.emptyResults": "Aucun résultat correspondant",
   "prompt.popover.emptyCommands": "Aucune commande correspondante",

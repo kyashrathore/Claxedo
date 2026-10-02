@@ -27,7 +27,6 @@ export default {
   "prompt.action.planMode": "계획 모드",
   "prompt.action.agentGroup": "에이전트",
   "prompt.action.approveForMe": "자동 승인",
-  "prompt.action.readOnlyWorkspace": "읽기 전용 워크스페이스",
   "prompt.popover.atLabel": "멘션",
   "prompt.popover.slashLabel": "명령어",
   "prompt.popover.emptyResults": "일치하는 결과 없음",

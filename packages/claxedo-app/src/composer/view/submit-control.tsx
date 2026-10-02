@@ -16,10 +16,8 @@ export function PromptSubmitControl(props: {
   excludeFromTab: Accessor<boolean>
   block: Accessor<SubmitBlock | null>
   onChooseModel: VoidFunction
-  readOnlyBlocked: Accessor<boolean>
   sendLabel: string
   stopLabel: string
-  readOnlyLabel: string
 }) {
   const { flash, explain, dismiss } = createSubmitBlockFlash(
     () => props.block(),
@@ -49,11 +47,9 @@ export function PromptSubmitControl(props: {
       ? props.stopLabel
       : props.booting()
         ? props.bootText()
-        : props.readOnlyBlocked()
-          ? props.readOnlyLabel
-          : props.block()
-            ? props.block()!.copy
-            : props.sendLabel
+        : props.block()
+          ? props.block()!.copy
+          : props.sendLabel
 
   return (
     <Tooltip

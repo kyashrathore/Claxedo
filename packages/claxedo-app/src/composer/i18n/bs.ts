@@ -26,7 +26,6 @@ export default {
   "prompt.action.clearGoal": "Očisti cilj",
   "prompt.action.planMode": "Način planiranja",
   "prompt.action.approveForMe": "Automatski odobri",
-  "prompt.action.readOnlyWorkspace": "Radni prostor samo za čitanje",
   "prompt.popover.atLabel": "Spominjanja",
   "prompt.popover.slashLabel": "Komande",
   "prompt.popover.emptyResults": "Nema rezultata",

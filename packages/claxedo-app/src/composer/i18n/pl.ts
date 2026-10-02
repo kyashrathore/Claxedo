@@ -26,7 +26,6 @@ export default {
   "prompt.action.clearGoal": "Wyczyść cel",
   "prompt.action.planMode": "Tryb planowania",
   "prompt.action.approveForMe": "Zatwierdzaj automatycznie",
-  "prompt.action.readOnlyWorkspace": "Obszar roboczy tylko do odczytu",
   "prompt.popover.atLabel": "Wzmianki",
   "prompt.popover.slashLabel": "Polecenia",
   "prompt.popover.emptyResults": "Brak pasujących wyników",

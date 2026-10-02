@@ -27,7 +27,6 @@ export default {
   "prompt.action.planMode": "Planlama modu",
   "prompt.action.agentGroup": "Ajan",
   "prompt.action.approveForMe": "Otomatik onayla",
-  "prompt.action.readOnlyWorkspace": "Salt okunur çalışma alanı",
   "prompt.popover.atLabel": "Bahsetmeler",
   "prompt.popover.slashLabel": "Komutlar",
   "prompt.popover.emptyResults": "Eşleşen sonuç yok",

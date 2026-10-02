@@ -161,14 +161,13 @@ export function createComposer(props: ComposerProps) {
   const shared = { t, key, store, refs, send, reader, suggestions, controller, dragging, draft, working, goalAvailable }
   return {
     ...shared,
-    ...submitState({ key, selection, send, controller, working, asleep: () => isStoppedCloud(props.placementId ? server.placements.byId(props.placementId) : undefined) }),
+    ...submitState({ key, selection, send, controller, working, asleep: () => isStoppedCloud(props.placementId ? server.placements.byId(props.placementId) : undefined), readOnly: () => props.readOnly === true }),
     harness: selection.harness,
     harnessController: selection.controller,
     harnessScopeInput: selection.scopeInput,
     permissionMode: selection.permissionMode,
     images: createMemo(() => promptImages(draft().prompt)),
     attachments: () => store.attachments(key()),
-    disabled: () => props.readOnly === true,
   }
 }
 
@@ -179,13 +178,14 @@ function submitState(input: {
   controller: ComposerController
   working: Accessor<boolean>
   asleep: Accessor<boolean>
+  readOnly: Accessor<boolean>
 }) {
   const { selection, send } = input
   const submitBlock = createMemo(() => {
     const state = selection.selection()
     const harnessMode = !!state.harness
     return submitBlockReason({
-      authorityBlock: undefined,
+      authorityBlock: input.readOnly() ? "session-share" : undefined,
       harnessMode,
       draftConnectionAllowsNoModel: state.canCreateWithoutModel,
       harnessReadiness: state.readiness,

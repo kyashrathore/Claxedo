@@ -37,6 +37,7 @@ export function PromptToolbarControls(props: {
   onPermissionOpen: () => void
   mode: Accessor<"normal" | "shell">
   harnessPending: Accessor<boolean>
+  readOnly: Accessor<boolean>
   harnessController: Accessor<HarnessSelectionController | undefined>
   harnessScope: Accessor<string>
   harnessScopeInput: Accessor<HarnessScopeInput>
@@ -48,7 +49,7 @@ export function PromptToolbarControls(props: {
   currentAgentName: Accessor<string>
   onAgentSelect: (value: string) => void
 }) {
-  const addDisabled = () => props.mode() !== "normal" || props.harnessPending()
+  const addDisabled = () => props.readOnly() || props.mode() !== "normal" || props.harnessPending()
 
   return (
     <div data-slot="composer-controls" data-claxedo-compact-touch class="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">

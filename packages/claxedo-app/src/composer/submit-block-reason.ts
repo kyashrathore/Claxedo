@@ -1,6 +1,6 @@
 import type { HarnessReadiness } from "./harness/selection"
 
-export type SubmitAuthorityBlock = "workspace-role" | "session-share"
+export type SubmitAuthorityBlock = "session-share"
 
 export type SubmitBlockReason =
   | SubmitAuthorityBlock
@@ -37,7 +37,6 @@ export type SubmitBlockInput = {
 
 const COPY = {
   "session-loading": "Checking session…",
-  "workspace-role": "Read-only workspace (viewer)",
   "session-share": "You can follow this session, not send to it",
   "harness-degraded": "The selected agent is unavailable",
   "harness-error": "The agent isn't running",

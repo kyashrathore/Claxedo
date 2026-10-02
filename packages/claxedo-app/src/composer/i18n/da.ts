@@ -24,7 +24,6 @@ export default {
   "prompt.action.clearGoal": "Ryd mål",
   "prompt.action.planMode": "Planlægningstilstand",
   "prompt.action.approveForMe": "Godkend automatisk",
-  "prompt.action.readOnlyWorkspace": "Skrivebeskyttet arbejdsområde",
   "prompt.popover.atLabel": "Omtaler",
   "prompt.popover.slashLabel": "Kommandoer",
   "prompt.popover.emptyResults": "Ingen matchende resultater",
