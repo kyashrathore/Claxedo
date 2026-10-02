@@ -324,9 +324,8 @@ describe("control plane auth", () => {
   })
 })
 
-// Absent mode must keep the self-host zero-config posture byte-for-byte, and
-// the global unsigned-local guard is the PRIMARY gate over the per-route
-// loopback checks.
+// Absent mode is the local zero-config posture, and the global unsigned-local
+// guard is the PRIMARY gate over the per-route loopback checks.
 describe("deployment mode matrix", () => {
   test("an enabled signed config makes unsigned-local unreachable", async () => {
     // Signed deployments compose an explicit adapter; the neutral default

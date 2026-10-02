@@ -12,10 +12,9 @@ export type HostTunnelPresence = {
 }
 
 /**
- * Presence is keyed by (host, workspace): one host may hold a separate tunnel
- * per workspace on a Bun relay, and a later registration for a workspace takes
- * that workspace over without touching the host's other entries. `recordPong`
- * and `disconnectHost` take the optional workspace set for the same reason —
+ * Presence is keyed by (host, workspace), so a later registration for a
+ * workspace takes that workspace over without touching the host's other
+ * entries. `recordPong` and `disconnectHost` take an optional workspace set;
  * without it they act on every entry of the host, which is what a
  * single-workspace Cloudflare room wants.
  */

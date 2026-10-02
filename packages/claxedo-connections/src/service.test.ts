@@ -720,8 +720,6 @@ describe("connections service", () => {
     expect(orgAMixed.map((row) => row.id).sort()).toEqual(["alice-row", "org-a-row"])
     expect(orgAMixed.find((row) => row.id === "alice-row")).toMatchObject({ scope: "personal" })
 
-    // Without orgOwner the owner-absent partition remains the org —
-    // self-host semantics unchanged.
     expect((await service.list({ scope: "org" })).map((row) => row.id)).toEqual(["ownerless-row"])
 
     // Capability resolution honors the same partition; personal wins over

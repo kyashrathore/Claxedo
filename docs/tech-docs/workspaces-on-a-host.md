@@ -106,8 +106,7 @@ clients (B.1); it goes away with every way serving ends.
 
 **A.4 Publishing one workspace** — the app has no caller that publishes a
 workspace. The owner's declaration is `POST /api/workspace/:id/host-assignment`
-(`packages/claxedo-server/src/routes/hosted/workspace.ts`, and the self-hosted
-node's `packages/claxedo-server/src/workspace/routes/index.ts`), which Electron
+(`packages/claxedo-server/src/routes/hosted/workspace.ts`), which Electron
 main sends as the account operation `workspace.assignHost`
 (`packages/account-contract/src/hosted-operations.ts`).
 On the desktop the port is `claxedo.hostConnector.share`, which carries a
@@ -184,10 +183,9 @@ Two servers answer the route, and they declare different facts:
 - The daemon's `BootstrapRoutes`
   (`packages/claxedo-local-server/src/deployments/shared-routes/bootstrap.ts`,
   mounted in `packages/claxedo-local-server/src/app/local-app.ts` with
-  `hostEnrollmentId: hostServingEnrollmentId`; the self-hosted node mounts the
-  same routes with its own auth config). The desktop daemon's auth config is
-  local-only (`packages/claxedo-local-server/src/app/local-services.ts`), so
-  it declares `deployment.issuesSessions: false`. Its body carries
+  `hostEnrollmentId: hostServingEnrollmentId`). The desktop daemon's auth
+  config is local-only
+  (`packages/claxedo-local-server/src/app/local-services.ts`), so it declares `deployment.issuesSessions: false`. Its body carries
   `host.enrollment` (this machine's enrollment id while it serves, A.3, else
   `null`), `events.hostAggregate` (whether it mounts the host aggregate
   `wr/events`), and `project`: its own workspace store's projects, each
@@ -225,9 +223,7 @@ On a signed desktop the catalog has a second source, the account's:
    `?host=machine` (`packages/account-contract/src/hosted-operations.ts`).
    The control plane answers from `authority.listWorkspaces` and filters
    `host=machine` to `backing === "local-worktree"` rows
-   (`packages/claxedo-server/src/routes/hosted/workspace.ts`; the self-hosted
-   node's `packages/claxedo-server/src/workspace/routes/index.ts` answers the
-   same query).
+   (`packages/claxedo-server/src/routes/hosted/workspace.ts`).
 3. `accountCatalogFromWire`
    (`packages/claxedo-app/src/server/wire/account-catalog.ts`) groups the rows
    into projects by `project_id` and makes every row a remote
@@ -453,7 +449,7 @@ answers the stopped facts.
    `/api/control/session-registrations/reserve` with a client-minted session
    id and operation id (`PrivateSessionRegistrationRoutes` in
    `packages/claxedo-server/src/routes/private-session-registration.ts`,
-   mounted by the hosted core and the self-hosted node).
+   mounted by the hosted core).
 3. It creates the session on the runtime over the placement's wire, under the
    reserved id and with the `x-claxedo-session-registration-operation`
    header when it reserved.

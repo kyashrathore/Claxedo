@@ -158,9 +158,8 @@ function fakeAuthority() {
 }
 
 /**
- * The composition `claxedo-server`'s self-hosted node builds: this proxy is
- * mounted BEFORE the `/workspaces/:workspaceId/*` relay route, so its
- * workspace-scoped terminal route is the one that answers.
+ * The proxy with no `/workspaces/:workspaceId/*` relay route ahead of it, so
+ * its own workspace-scoped terminal route is the one that answers.
  */
 async function startPtyProxyOnly() {
   const app = new Hono()

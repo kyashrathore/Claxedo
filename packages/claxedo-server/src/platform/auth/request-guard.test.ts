@@ -109,8 +109,7 @@ describe("Default rate limit", () => {
   })
 
   test("no rate limiter configured means no default limit (the cap still applies)", async () => {
-    // Node/self-host and tests compose without one; the guard must not become a
-    // hard dependency on a limiter existing.
+    // The guard must not become a hard dependency on a limiter existing.
     const app = guardedApp({ maxBodyBytes: 1_024 })
     for (let i = 0; i < 20; i += 1) {
       expect((await app.fetch(new Request("http://cp.test/read"))).status).toBe(200)

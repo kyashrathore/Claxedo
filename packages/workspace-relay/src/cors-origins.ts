@@ -1,8 +1,7 @@
-// Browser-origin allowlist policy shared by the Bun adapter and the
-// Cloudflare adapter. The relay ships with Claxedo's own app origins as the
-// DEFAULT list, but a self-hosted deployment can fully REPLACE that list with
-// `allowedOrigins` (Bun options) / `CLAXEDO_RELAY_ALLOWED_ORIGINS` (env) —
-// the built-in product domains are a default, not a hardwired grant.
+// Browser-origin allowlist policy. The relay ships with Claxedo's own app
+// origins as the DEFAULT list, but a deployment can fully REPLACE that list
+// with `CLAXEDO_RELAY_ALLOWED_ORIGINS` — the built-in product domains are a
+// default, not a hardwired grant.
 //
 // Pattern grammar (comma-separated in env form):
 //   https://app.example.com     exact origin match

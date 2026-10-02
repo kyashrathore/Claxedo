@@ -382,7 +382,7 @@ function ensureNetworkPolicyHarnessColumn(db: SqliteInstance, out: string[]) {
  * migration ledger drifted, and a drizzle `select()` names every column, so one
  * missing column fails every credential read rather than the feature that
  * introduced it. Backfilling `org_id` to the named single-tenant partition
- * keeps an existing self-host user's credentials reachable; it never widens one
+ * keeps an existing local user's credentials reachable; it never widens one
  * tenant's rows into another's, because `__local__` is only ever resolved for
  * an unsigned/loopback request.
  */

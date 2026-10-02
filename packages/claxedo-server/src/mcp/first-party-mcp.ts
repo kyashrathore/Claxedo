@@ -1,8 +1,3 @@
-/**
- * The `/api/claxedo/mcp` contribution the hosted worker and the self-hosted
- * node both mount. The two differ in who they admit and what they serve
- * in-process; everything else is this one module.
- */
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
@@ -27,7 +22,7 @@ export type FirstPartyMcpContributionInput = Readonly<{
   options: FirstPartyMcpOptions
   /** The signed identity behind a request, or undefined when it carries none this deployment accepts. */
   signedAuth: (request: Request) => Promise<SignedControlPlaneAuth | undefined>
-  /** A caller this deployment admits with no identity at all: the node's unsigned loopback. */
+  /** A caller this deployment admits with no identity at all. */
   anonymousCredential?: (request: Request) => McpCredential | undefined
   /** A consented OAuth access token, resolved by `resolveOAuthMcpCredential`. */
   oauthCredential?: (request: Request) => Promise<McpCredential | undefined>

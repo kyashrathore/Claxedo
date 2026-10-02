@@ -26,8 +26,7 @@ export type LocalWorkspaceRuntimePort = {
    * `managed-private` means those runtimes refuse `POST /session` without a
    * control-plane reservation, so a client has to reserve before it creates.
    * The client cannot derive that from its own build flags or from the wire it
-   * reaches the server on: the same loopback address serves an unsigned daemon
-   * (`local`) and a signed self-hosted server (`managed-private`).
+   * reaches the server on: it is how this process composed its runtimes.
    */
   sessionAuthority(): HostSessionAuthority
 }

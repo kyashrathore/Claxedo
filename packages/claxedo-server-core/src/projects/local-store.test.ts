@@ -17,7 +17,6 @@ process.env.CLAXEDO_DATA_DIR = root
 
 type Deps = LocalProjectStoreDeps & Pick<ProjectRouteOptions, "authority" | "authorizeFolderSource"> & RepositorySourceDeps
 
-/** The route over the local store, composed as the desktop's and the self-hosted server compose it. */
 function routes(authenticate: ProjectRouteOptions["authenticate"], deps: Deps = {}) {
   const { clone, registerWorkspace, unregisterProject, authority, authorizeFolderSource, ...repositories } = deps
   return ProjectRoutes({
@@ -86,7 +85,7 @@ function ownerAuthority() {
   }
 }
 
-/** `selfHostedOperatorAuthorizer`'s contract: deployment-wide authority, or a 403. */
+/** An `authorizeFolderSource`: deployment-wide authority, or a 403. */
 function operatorOnly(subjects: string[]) {
   return (auth: SignedControlPlaneAuth) => {
     if (!subjects.includes(auth.user.subject)) {
@@ -503,7 +502,7 @@ describe("local project routes on a signed server", () => {
     expect(listed.projects.map((item) => item.name)).not.toContain("Denied Folder")
   })
 
-  /** What the self-hosted composition answers: the connection's repository row and the token that clones it. */
+  /** A readable answer: the connection's repository row and the token that clones it. */
   const readable = (fullName: string, token: string) => ({
     ok: true as const,
     repository: {

@@ -267,8 +267,8 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
       .catch((error) => log.warn("local turn outcome metering degraded", { error: String(error) }))
   }
   // One statement of the signed-auth configuration for both readers below. A
-  // quota resolved from an empty one answers the single-tenant partition on a
-  // signed box, so it reported another org's accounts than `identity` named.
+  // quota resolved from an empty one would answer the single-tenant partition
+  // under signed auth, reporting other accounts than `identity` names.
   const authOptions = {
     authConfig: services.auth.config,
     ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),

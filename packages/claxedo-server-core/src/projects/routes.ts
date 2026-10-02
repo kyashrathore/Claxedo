@@ -11,9 +11,9 @@ import { resolveRepository, type RepositorySourceDeps } from "./repository-sourc
 import { PROJECT_NAME_MAX, ProjectStoreError, type ProjectSourceInput, type ProjectStore } from "./store"
 
 /**
- * `/api/claxedo/projects`, served the same way by the desktop's local server,
- * the self-hosted app and the hosted worker. A project is a record with an id;
- * a folder, a worktree or a cloud workspace is a placement of it. Which
+ * `/api/claxedo/projects`, served by the desktop's local server. A project is
+ * a record with an id; a folder, a worktree or a cloud workspace is a
+ * placement of it. Which
  * records the caller may reach is the deployment authority's answer
  * (`projectAccess`); how they are kept is the store's.
  */

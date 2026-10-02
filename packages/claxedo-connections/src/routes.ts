@@ -50,8 +50,7 @@ export type IntegrationsRouteOptions = {
   tokenOwner?: RouteOwnerResolver
   // Hosts that partition the org scope by an opaque key (e.g. a hosted
   // deployment's `org:{orgId}`) resolve it here per request. Absent resolver
-  // (or an undefined result) keeps owner-absent as the org partition — the
-  // self-host semantics, byte-identical.
+  // (or an undefined result) keeps owner-absent as the org partition.
   orgOwner?: RouteOwnerResolver
   // Org partition key for token/auth-failure callers (resolved from the
   // turn credential's tenant, never from the management principal).

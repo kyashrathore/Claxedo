@@ -446,24 +446,23 @@ Whether a client must hold a signed session at all is the server's
 declaration too, in the same body: `deployment.issuesSessions`, derived from
 the composition's own control-plane auth config
 (`packages/claxedo-local-server/src/deployments/shared-routes/bootstrap.ts`
-for a daemon or a self-hosted node, `packages/claxedo-server/src/routes/hosted/shell.ts`
-for the hosted central). A desktop daemon and an unsigned self-hosted node
-say `false`; a signed node and the hosted central say `true`, and so does a
-composition whose signed auth is misconfigured, because a client that read it
-as a personal machine would enter a shell where every route then refuses it.
-Only an explicitly local-only composition says `false`.
+for a daemon, `packages/claxedo-server/src/routes/hosted/shell.ts`
+for the hosted central). A desktop daemon says `false`; the hosted central
+says `true`, and so does a composition whose signed auth is misconfigured,
+because a client that read it as a personal machine would enter a shell where
+every route then refuses it. Only an explicitly local-only composition says
+`false`.
 
-The client cannot derive this. A signed node runs its embedded issuer on
-localhost, so the URL is the one a daemon has, and a build flag describes the
-bundle rather than the server it reached. The app resolves the declaration
+The client cannot derive this: a build flag describes the bundle rather than
+the server it reached. The app resolves the declaration
 before its first render
 (`bootstrapCatalog` in `packages/claxedo-app/src/server/wire/placements.ts`) and three
 surfaces read it: the sign-in gate (`CloudAuthGate`), the browser identity
 provider's startup (`startBrowserAuth`, which loads no provider SDK against a
 server that issues no sessions), and the first-project canvas. The request
 carries no credential, because the caller that most needs the answer is the
-one who has not signed in; a signed node answers an anonymous caller the
-declaration and nothing of the machine behind it.
+one who has not signed in; a signed server answers an anonymous caller the
+declaration and nothing behind it.
 
 Invite and accept UI, org and team switching, personal-to-org workspace transfer,
 session-share management UI, and presence UI are tracked product

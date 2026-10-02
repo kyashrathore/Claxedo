@@ -174,9 +174,8 @@ describe("Shared-store rate limiting across isolates", () => {
 
 describe("Node/self-host degradation", () => {
   test("with no shared store the limiter is the in-memory fuse and stays enforcing", async () => {
-    // hosted-node.ts / server.ts have no Cloudflare bindings. Absent a store the
-    // limiter must still LIMIT — degrading to "no limit" would turn the
-    // self-host composition into the unbounded surface.
+    // Absent a store the limiter must still LIMIT — degrading to "no limit"
+    // would leave a composition without the binding unbounded.
     const limiter = isolate({ localLimit: 3 })
     expect(limiter.shared).toBe(false)
 

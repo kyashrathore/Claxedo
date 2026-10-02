@@ -3,11 +3,9 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
 import path from "node:path"
 
 /**
- * `deployments/local` stays gone.
- *
- * It was the mixed composition — the self-hosted product and an authority-less
- * `local` mode in one function — that neither boot gate could be applied to,
- * and a revert, cherry-pick, or merge can resurrect a path nobody is watching.
+ * `deployments/local` stays gone: a composition there mixes a product with an
+ * authority-less `local` mode in one function no boot gate can be applied to,
+ * and a revert, cherry-pick, or merge can resurrect it with nobody watching.
  *
  * Deliberately narrow: it forbids THIS package's `src/deployments/local`, not
  * the string anywhere. `@claxedo/local-server` has a directory of the same

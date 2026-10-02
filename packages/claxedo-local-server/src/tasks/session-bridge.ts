@@ -11,10 +11,10 @@ import type { TasksSessionBridgePort } from "@claxedo/tasks"
 
 export type LocalTasksSessionBridgeInput = {
   /**
-   * Admission a signed self-host requires before a create. Its sessions are
-   * granted to a creator actor, so a session reserved for nobody is one the
-   * member who pressed Start cannot open. The unsigned single-user posture has
-   * no actors to record and supplies none.
+   * Admission before a create, for a host whose sessions are granted to a
+   * creator actor: a session reserved for nobody is one the member who pressed
+   * Start cannot open. The unsigned single-user posture has no actors to record
+   * and supplies none.
    */
   reserve?: TasksSessionHost["reserve"]
   /** The undo of that admission, so a host that reserves can also give an origin back. */

@@ -349,10 +349,9 @@ export async function deriveRelayHostPublicKey(privateKey: CryptoKey): Promise<C
 /**
  * The relay-host key id, derived from the key's public component.
  *
- * ONE implementation on purpose: a Bun relay and a Cloudflare relay signing
- * with the same key must publish the same `kid`, or a token minted by one fails
- * key lookup at the other. It is written against WebCrypto rather than
- * `node:crypto` so the workerd bundle can use it too.
+ * Signing with the same key must always publish the same `kid`, or a token
+ * minted under one build fails key lookup at the next. Written against
+ * WebCrypto rather than `node:crypto` so the workerd bundle can use it.
  */
 export async function deriveRelayHostKid(publicKey: CryptoKey): Promise<string> {
   const jwk = await exportJWK(publicKey)

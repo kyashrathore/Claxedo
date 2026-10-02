@@ -305,9 +305,8 @@ export function confineCapabilityBridge(
  * The scheme is what makes it a presentation: `Bearer` with nothing usable
  * after it is a grant that failed, not a caller with no credential.
  *
- * Only this scheme. An unsigned box behind desktop basic auth sends
- * `Authorization: Basic …` on every call the person makes, which carries no
- * grant and answers no question a grant would.
+ * Only this scheme: any other `Authorization` carries no grant and answers no
+ * question a grant would.
  */
 function presentsBearer(request: Request): boolean {
   return /^Bearer\b/i.test(request.headers.get("authorization")?.trim() ?? "")

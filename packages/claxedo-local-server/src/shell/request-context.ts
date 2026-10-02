@@ -85,14 +85,9 @@ async function canonical(input: string, hops = 0): Promise<string> {
 
 /**
  * Resolve a caller-named `?path=` against the workspace root, and REFUSE
- * anything that lands outside it.
- *
- * Before containment this was `path.resolve(root, file)` with no check, so
- * `?path=../../../../etc/passwd` (and its absolute twin `?path=/etc/passwd`)
- * resolved cleanly and was handed straight to `fs.readdir`/`fs.readFile` in
- * client-presentation-file-browser.ts. This router is not mounted on the hosted
- * Cloudflare Worker, but a signed box is remotely reachable by design, so
- * "local" is not "unreachable".
+ * anything that lands outside it: the result is handed straight to
+ * `fs.readdir`/`fs.readFile` in client-presentation-file-browser.ts, so
+ * `?path=../../../../etc/passwd` or `?path=/etc/passwd` must never resolve.
  *
  * Absolute input stays supported on purpose: the directory listing returns an
  * `absolute` field per entry and the client round-trips it back. Resolving

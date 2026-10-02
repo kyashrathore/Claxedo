@@ -667,9 +667,8 @@ function websocketRequest(request: Request) {
 // Additive experiment instrumentation: when the client sends
 // `x-claxedo-relay-ws-trace: 1`, the cloud WS admit path emits a single
 // `relay.trace` frame on the client socket carrying wsUpstreamOpenMs /
-// queuedFrames / maxQueuedDelayMs. This mirrors the Bun relay's trace
-// (bun.ts) so a measuring client sees the same vocabulary on both adapters.
-// Without the header there is zero behavior change.
+// queuedFrames / maxQueuedDelayMs. Without the header there is zero behavior
+// change.
 function relayWebSocketTraceEnabled(request: Request) {
   return request.headers.get("x-claxedo-relay-ws-trace") === "1"
 }

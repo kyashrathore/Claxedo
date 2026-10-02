@@ -1,11 +1,7 @@
 /**
  * The managed reservation a control plane requires before Tasks may create or
- * remove a session, shared by the hosted bridge and by the local bridge a
- * signed self-host runs.
- *
- * Both record a creator actor, and a session reserved for anyone but the person
- * who started it is one they cannot open — so the policy belongs to neither
- * bridge and is asked for by both.
+ * remove a session. The session records a creator actor, and a session
+ * reserved for anyone but the person who started it is one they cannot open.
  */
 import type { PrivateSessionAuthority, PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/runtime-actor"

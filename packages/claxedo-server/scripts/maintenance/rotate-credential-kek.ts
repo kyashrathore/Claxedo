@@ -19,8 +19,8 @@
  *      ciphertext remains under any retired key-id.
  *   4. Only then remove `CLAXEDO_CREDENTIALS_KEK_NEXT` from configuration.
  *
- * The local file store of a self-hosted node is outside the KEK scheme (it
- * seals with a machine-local seed), so there is nothing to drain there.
+ * The desktop daemon's local file store is outside the KEK scheme (it seals
+ * with a machine-local seed), so there is nothing to drain there.
  *
  * Exit codes: 0 = complete, 1 = work remains or items failed. Safe to re-run at
  * any point: the pass is idempotent and each slot is a single overwrite.

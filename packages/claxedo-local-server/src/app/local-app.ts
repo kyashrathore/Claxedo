@@ -448,7 +448,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     ...authRouteOptions(services),
     ...(env.CLAXEDO_CREDENTIALS_TOKEN?.trim() ? { token: env.CLAXEDO_CREDENTIALS_TOKEN.trim() } : {}),
     // Derived from the environment, never caller-supplied, since an omitted
-    // hook would leave credential mutation behind only the loopback guard on a signed box.
+    // hook would leave credential mutation behind only the loopback guard under signed auth.
     ...(deploymentMode(env) === "hosted" || env.CLAXEDO_SIGNED_CLOUD_AUTH === "1"
       ? {
           authenticate: async (request: Request) => {

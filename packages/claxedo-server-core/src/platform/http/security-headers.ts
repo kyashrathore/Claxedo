@@ -28,8 +28,8 @@
  * ## Why HSTS is conditional
  *
  * `Strict-Transport-Security` pins a HOST, not a URL. Emitting it from a
- * plaintext local control plane (`http://localhost:3001`, the self-host and
- * desktop default) would tell the developer's browser to force HTTPS on
+ * plaintext local control plane (`http://localhost:2593`, the desktop
+ * daemon's default) would tell the developer's browser to force HTTPS on
  * `localhost` for a year, breaking every other plaintext dev server on that
  * machine with no obvious cause. Browsers are specified to ignore HSTS
  * received over non-secure transport, but "the browser probably ignores it"

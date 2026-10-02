@@ -90,10 +90,10 @@ export type Attempts = {
  * The in-memory store's own, fully SYNCHRONOUS shape.
  *
  * `Attempts` is the widened port every store implements; this is what
- * `createAttempts` actually returns. Keeping the concrete type sync means
- * callers holding the in-memory store directly (its own tests, the local and
- * self-host compositions) read a value, not a promise — the widening buys the
- * durable store a seat without making every existing caller `await`.
+ * `createAttempts` actually returns. Keeping the concrete type sync means a
+ * caller holding the in-memory store directly reads a value, not a promise —
+ * the widening buys the durable store a seat without making that caller
+ * `await`.
  */
 export type SyncAttempts = {
   create(input: { integrationId: string; owner?: string; scope: "org" | "personal"; deviceCode?: string; context?: Record<string, string>; routing?: Record<string, string> }): { state: string; verifier: string }

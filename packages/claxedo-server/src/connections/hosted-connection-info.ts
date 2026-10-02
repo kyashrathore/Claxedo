@@ -69,8 +69,8 @@ async function cloudConnectionIngress(
   // create, so a deployment that stops admitting cloud workspaces cannot leave
   // existing ones wake-able. Reached ONLY for HOSTED `cloud-vm` workspaces,
   // asserted above; the hook is wired through hosted-core-app.ts's
-  // HostedWorkspaceRoutes mount, so self-host / local never gate. A denial is
-  // answered BEFORE any sandbox wake side effect.
+  // HostedWorkspaceRoutes mount. A denial is answered BEFORE any sandbox wake
+  // side effect.
   //
   // It gates the READ path too: the read still mints a Runtime Access Token
   // for a workspace whose sandbox is already running.
