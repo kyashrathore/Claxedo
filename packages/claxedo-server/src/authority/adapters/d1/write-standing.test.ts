@@ -6,7 +6,6 @@ import { D1WorkspaceAuthority } from "./workspace-authority"
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { D1AuditAuthority } from "./audit-authority"
 import {
-  controlPlaneMigrations,
   miniflareControlPlaneDatabase,
   type ControlPlaneDatabase,
 } from "../../../test-support/control-plane-migrations"
@@ -92,7 +91,7 @@ function beforeWrite(database: D1Database, write: RegExp, step: (database: D1Dat
 }
 
 async function setup() {
-  const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const controlPlane = await miniflareControlPlaneDatabase()
   active.push(controlPlane)
   const { database } = controlPlane
   const options = { deploymentId: "deployment-a", product: { kind: "claxedo-hosted" as const } }

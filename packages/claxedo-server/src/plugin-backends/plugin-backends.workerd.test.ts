@@ -6,7 +6,7 @@ import { buildPluginBackend, type PluginBackendBuild } from "@claxedo/plugin-bui
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 import type { AgentPluginR2Bucket } from "../agent-plugins/artifacts/r2-artifact-adapter"
 import { D1WorkspaceAuthority } from "../authority/adapters/d1/workspace-authority"
-import { applyControlPlaneMigration, controlPlaneMigrations } from "../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../test-support/control-plane-migrations"
 import { hostedWorkerCompatibility, wranglerBundle } from "../test-support/hosted-worker-bundle"
 import { readPluginBackendState, writePluginBackendActivation } from "./activations"
 import { putPluginBackendBundle } from "./bundles"
@@ -157,7 +157,7 @@ beforeAll(async () => {
     },
   })
   database = (await miniflare.getD1Database("CONTROL_PLANE_DB")) as unknown as D1Database
-  for (const name of controlPlaneMigrations()) await applyControlPlaneMigration(database, name)
+  await applyControlPlaneBaseline(database)
   const r2 = await miniflare.getR2Bucket("CLAXEDO_AGENT_PLUGINS")
   bucket = {
     async get(key) {

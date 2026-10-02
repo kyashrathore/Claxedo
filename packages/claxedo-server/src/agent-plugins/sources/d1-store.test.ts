@@ -9,10 +9,9 @@ import { AgentPluginSourceRegistryError } from "@claxedo/server-core/agent-plugi
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 import { D1WorkspaceAuthority } from "../../authority/adapters/d1/workspace-authority"
-import { applyControlPlaneMigration, controlPlaneMigrations } from "../../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../../test-support/control-plane-migrations"
 import { D1AgentPluginSourceStore } from "./d1-store"
 
-const MIGRATIONS = controlPlaneMigrations()
 
 const active: Miniflare[] = []
 
@@ -25,7 +24,7 @@ function identity(subject: string): AuthIdentity {
 }
 
 async function migrate(database: D1Database) {
-  for (const name of MIGRATIONS) await applyControlPlaneMigration(database, name)
+  await applyControlPlaneBaseline(database)
 }
 
 async function setup() {

@@ -80,7 +80,8 @@ Keep `BETTER_AUTH_SECRET` and `CLAXEDO_AUTH_INTROSPECTION_SECRET`: every later d
 The deploy:
 
 1. finds the D1 databases `claxedo-auth` and `claxedo-control-plane`, and creates them the first time;
-2. applies their migrations and provisions the CLI and desktop OAuth clients;
+2. requires an empty or baseline control-plane database, applies its canonical
+   baseline and the auth migrations, and provisions the CLI and desktop OAuth clients;
 3. builds the web app against your API origin;
 4. deploys the `claxedo` Worker on `api.example.com` with every secret in the environment, and waits until
    `https://api.example.com/health` names the version it just deployed;

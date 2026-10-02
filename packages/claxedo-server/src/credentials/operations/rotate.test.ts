@@ -9,7 +9,7 @@ import {
 } from "./rotate"
 import { CREDENTIALS_KEK_ENV, CREDENTIALS_KEK_NEXT_ENV } from "@claxedo/server-core/credentials/envelope"
 import { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } from "../worker/index"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 
 function memoryBackend(): SecretBackend & { values: Map<string, string> } {
   const values = new Map<string, string>()
@@ -334,7 +334,7 @@ describe("hosted (D1) rotation", () => {
   let controlPlane: ControlPlaneDatabase
 
   beforeAll(async () => {
-    controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+    controlPlane = await miniflareControlPlaneDatabase()
   })
 
   afterAll(async () => {

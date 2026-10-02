@@ -75,15 +75,25 @@ the same command a user runs against their own account
 settings: the Worker keeps `claxedo-user-deployed-locked-staging` and the app
 keeps `claxedo-user-deployed-app-staging`, because their Durable Object
 namespace and custom domains live on those names. It finds the two D1
-databases by name, applies their migrations, provisions the native OAuth
+databases by name, admits only an empty or baseline control-plane database,
+applies the control-plane baseline and auth migrations, provisions the native OAuth
 clients, deploys the Worker with `wrangler deploy`, and waits until `/health`
 names the version it deployed. The new version serves as soon as Cloudflare
 switches traffic.
 
-Staging's databases still hold tables no code reads: `deploymentRelease*`,
-`deploymentCutover*` and `deploymentRecoveryEpoch` in the auth database and
-`control_plane_recovery_epochs` in the control plane. Their restrict foreign
-keys make a drop impossible on D1, and a fresh database never creates them.
+The deploy refuses a control-plane D1 that does not hold exactly the current
+baseline; rows are never converted. To reset staging, delete that database
+(wrangler asks to confirm) and rerun the `control-plane` job, which recreates
+it empty by name and applies the baseline. `AUTH_DB` is untouched. Claim the
+deployment's owner again afterwards (`bun run deploy:user-cloudflare:claim-owner`):
+
+```sh
+bunx wrangler d1 delete <CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME>
+```
+
+Staging's auth database still holds tables no code reads: `deploymentRelease*`,
+`deploymentCutover*` and `deploymentRecoveryEpoch`. Their restrict foreign keys
+make a drop impossible on D1, and a fresh database never creates them.
 
 A deploy also drops the `CLAXEDO_CREDENTIALS` KV binding that was added to the
 Worker out of band. That is correct: hosted credentials moved to
@@ -122,8 +132,9 @@ workflow, not to this one.
 
 **A deploy broke staging.** Roll the Worker back to the previous version with
 `wrangler rollback --name claxedo-user-deployed-locked-staging` (and
-`--name claxedo-user-deployed-app-staging` for the app). Migrations are
-forward-only; `wrangler d1 time-travel restore` restores data.
+`--name claxedo-user-deployed-app-staging` for the app).
+`wrangler d1 time-travel restore` restores data; the next deploy admits the
+control-plane database only if it holds the current baseline.
 
 **The relay answers `mode: "node"` or stops resolving targets.** A deploy that
 omitted `CLAXEDO_CENTRAL_URL` removed it from the Worker. Rerun the `relay`

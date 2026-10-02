@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "vitest"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { hostedOrgCredentials, HOSTED_CREDENTIALS_FLAG } from "./index"
 
 const active: ControlPlaneDatabase[] = []
@@ -9,7 +9,7 @@ afterEach(async () => {
 })
 
 test("two first writes for one owner and provider land on one row under the winner's id", async () => {
-  const instance = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const instance = await miniflareControlPlaneDatabase()
   active.push(instance)
   const credentials = hostedOrgCredentials("org_1", {
     database: instance.database,

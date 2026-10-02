@@ -1,6 +1,3 @@
-import { readdirSync } from "node:fs"
-import { readFile } from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 
 import type { D1Database } from "@cloudflare/workers-types"
 import { Miniflare } from "miniflare"
@@ -23,7 +20,7 @@ import {
   verifyOwnerClaimOutput,
 } from "./claim-owner"
 
-const MIGRATIONS_DIR = fileURLToPath(new URL("../../migrations/control-plane/", import.meta.url))
+import { applyControlPlaneBaseline } from "../../src/test-support/control-plane-migrations"
 const active: Miniflare[] = []
 
 afterEach(async () => {
@@ -39,12 +36,7 @@ async function controlPlane(): Promise<D1Database> {
   })
   active.push(instance)
   const target = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const name of readdirSync(MIGRATIONS_DIR).filter((file) => file.endsWith(".sql")).sort()) {
-    const migration = (await readFile(`${MIGRATIONS_DIR}${name}`, "utf8")).replace(/^\s*--.*$/gm, "")
-    for (const statement of migration.split(/;\s*\n\s*\n/).map((part) => part.trim()).filter(Boolean)) {
-      await target.prepare(statement).run()
-    }
-  }
+  await applyControlPlaneBaseline(target)
   return target
 }
 

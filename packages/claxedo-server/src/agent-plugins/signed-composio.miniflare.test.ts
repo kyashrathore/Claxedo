@@ -22,7 +22,7 @@ import {
 } from "./runtime/provision"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
-import { applyControlPlaneMigration, controlPlaneMigrations } from "../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../test-support/control-plane-migrations"
 import type { WorkspaceRuntimePreparation } from "../workspace/route-support"
 import { hostedConnectionInfo } from "../connections/hosted-connection-info"
 import { hostTunnelConnectionInfo } from "../connections/host-tunnel-connection"
@@ -544,7 +544,6 @@ describe("signed Composio Gmail on Miniflare", () => {
 const DCR_ISSUER = "https://connect.composio.dev"
 const DCR_REGISTRATION = "https://login.composio.dev/oauth2/register"
 const DCR_TOKEN = "https://connect.composio.dev/api/v3/s/mcp/token"
-const DCR_MIGRATIONS = controlPlaneMigrations()
 
 const disposable: Miniflare[] = []
 
@@ -561,7 +560,7 @@ async function controlPlaneDatabase(): Promise<D1Database> {
   })
   disposable.push(instance)
   const target = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const name of DCR_MIGRATIONS) await applyControlPlaneMigration(target, name)
+  await applyControlPlaneBaseline(target)
   return target
 }
 
