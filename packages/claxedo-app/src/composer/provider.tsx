@@ -7,6 +7,7 @@ import { createModelVisibility } from "./harness/model-visibility"
 import { createDeferredPersistence } from "./deferred-persistence"
 import { createComposerPersistence } from "./persistence"
 import { ComposerStoreContext, createComposerStore } from "./store"
+import { createQuoteSurfaces, QuoteSurfacesContext } from "./quote/surfaces"
 
 export function ComposerStoreProvider(props: ParentProps) {
   const server = useServer()
@@ -18,7 +19,9 @@ export function ComposerStoreProvider(props: ParentProps) {
   return (
     <ComposerStoreContext.Provider value={store}>
       <HarnessConfigContext.Provider value={harness}>
-        <ModelPreferencesContext.Provider value={models}>{props.children}</ModelPreferencesContext.Provider>
+        <ModelPreferencesContext.Provider value={models}>
+          <QuoteSurfacesContext.Provider value={createQuoteSurfaces()}>{props.children}</QuoteSurfacesContext.Provider>
+        </ModelPreferencesContext.Provider>
       </HarnessConfigContext.Provider>
     </ComposerStoreContext.Provider>
   )

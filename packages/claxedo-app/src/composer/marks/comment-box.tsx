@@ -30,7 +30,6 @@ export function commentBoxPosition(mark: ImageMark, natural: Size | undefined, s
 
 export function MarkCommentBox(props: {
   isNew: boolean
-  number: number
   value: string
   position: JSX.CSSProperties
   onInput: (value: string) => void
@@ -56,7 +55,6 @@ export function MarkCommentBox(props: {
         inline
         class="w-full"
         value={props.value}
-        selection={t("prompt.imageMarks.mark", { number: String(props.number) })}
         onInput={props.onInput}
         onCancel={() => props.onCancel()}
         onSubmit={props.onSubmit}

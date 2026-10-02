@@ -73,7 +73,6 @@ export default {
   "prompt.imageMarks.title": "Označi sliku",
   "prompt.imageMarks.hint": "Povucite da uokvirite područje ili kliknite da postavite pribadaču, zatim dodajte komentar.",
   "prompt.imageMarks.delete": "Izbriši oznaku",
-  "prompt.imageMarks.mark": "oznaka {{number}}",
   "composer.cancel": "Otkaži",
   "common.save": "Sačuvaj",
   "model.input.text": "tekst",

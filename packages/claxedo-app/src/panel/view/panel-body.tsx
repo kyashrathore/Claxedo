@@ -2,6 +2,7 @@ import { createMemo, createSignal, Match, Show, Switch, type JSX } from "solid-j
 import { Dynamic } from "solid-js/web"
 import { DelayedLoading, MarkedProvider } from "@/ui"
 import { BrowserTabView } from "@/browser"
+import { SelectionComment } from "@/composer"
 import { FileTab, FilesNavigator } from "@/files"
 import { useTranslator } from "@/i18n"
 import { ReviewTab, SourceControlView, useLineComments } from "@/review"
@@ -120,6 +121,20 @@ function RegisteredView(props: {
   )
 }
 
+function PlanTab(props: { readonly markdown: string; readonly composerKey: () => string | undefined }): JSX.Element {
+  const [content, setContent] = createSignal<HTMLDivElement>()
+  return (
+    <div class="absolute inset-0 h-full min-h-0 overflow-hidden">
+      <div data-testid="workspace-plan-tab" class="h-full min-h-0 overflow-y-auto">
+        <div ref={setContent} class="px-6 py-4">
+          <Markdown text={props.markdown} />
+        </div>
+      </div>
+      <SelectionComment root={content} composerKey={props.composerKey} source={{ kind: "plan" }} />
+    </div>
+  )
+}
+
 function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
   const panel = usePanel()
   const tab = () => panel.activeTab()
@@ -190,15 +205,7 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
         )}
       </Match>
       <Match when={plan()}>
-        {(current) => (
-          <div class="absolute inset-0 h-full min-h-0 overflow-hidden">
-            <div data-testid="workspace-plan-tab" class="h-full min-h-0 overflow-y-auto">
-              <div class="px-6 py-4">
-                <Markdown text={current().markdown} />
-              </div>
-            </div>
-          </div>
-        )}
+        {(current) => <PlanTab markdown={current().markdown} composerKey={fileComments.composerKey} />}
       </Match>
     </Switch>
   )

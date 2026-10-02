@@ -20,6 +20,7 @@ export type FileLineCommentInput = {
 
 export type FileLineComments = {
   readonly enabled: Accessor<boolean>
+  readonly composerKey: Accessor<string | undefined>
   readonly comments: Accessor<readonly FileLineComment[]>
   readonly add: (input: FileLineCommentInput) => void
   readonly update: (id: string, input: FileLineCommentInput) => void

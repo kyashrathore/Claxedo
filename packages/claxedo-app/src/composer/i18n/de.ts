@@ -75,7 +75,6 @@ export default {
   "prompt.imageMarks.title": "Bild markieren",
   "prompt.imageMarks.hint": "Ziehen, um einen Bereich einzurahmen, oder klicken, um eine Nadel zu setzen, dann kommentieren.",
   "prompt.imageMarks.delete": "Markierung löschen",
-  "prompt.imageMarks.mark": "Markierung {{number}}",
   "composer.cancel": "Abbrechen",
   "common.save": "Speichern",
   "model.input.text": "Text",

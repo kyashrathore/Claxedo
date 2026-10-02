@@ -72,7 +72,6 @@ export default {
   "prompt.imageMarks.title": "Merk bilde",
   "prompt.imageMarks.hint": "Dra for å ramme inn et område eller klikk for å sette en nål, og kommenter deretter.",
   "prompt.imageMarks.delete": "Slett merke",
-  "prompt.imageMarks.mark": "merke {{number}}",
   "composer.cancel": "Avbryt",
   "common.save": "Lagre",
   "model.input.text": "tekst",

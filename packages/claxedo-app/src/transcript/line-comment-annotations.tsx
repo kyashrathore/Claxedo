@@ -5,12 +5,8 @@ import { render as renderSolid } from "solid-js/web"
 import { useTranscriptI18n } from "./i18n"
 import { createHoverCommentUtility } from "./diff/comment-hover"
 import { cloneSelectedLineRange, formatSelectedLineLabel, lineInSelectedRange } from "./diff/selection-bridge"
-import {
-  LineComment,
-  LineCommentEditor,
-  type LineCommentAnchorProps,
-  type LineCommentEditorProps,
-} from "./line-comment"
+import { LineComment, type LineCommentAnchorProps } from "./line-comment"
+import { LineCommentEditor, type LineCommentEditorProps } from "./line-comment-editor"
 
 export type LineCommentAnnotationMeta<T> =
   | { kind: "comment"; key: string; comment: T }
@@ -98,13 +94,11 @@ type CommentProps = {
 
 type DraftProps = {
   value: string
-  selection: JSX.Element
   mention?: LineCommentEditorProps["mention"]
   onInput: (value: string) => void
   onCancel: VoidFunction
   onSubmit: (value: string) => void
   onPopoverFocusOut?: LineCommentAnchorProps["onPopoverFocusOut"]
-  cancelLabel?: string
   submitLabel?: string
 }
 
@@ -200,12 +194,10 @@ function lineCommentElement(view: Accessor<CommentProps>) {
         inline
         id={view().id}
         value={view().editor!.value}
-        selection={view().editor!.selection}
         onInput={view().editor!.onInput}
         onCancel={view().editor!.onCancel}
         onSubmit={view().editor!.onSubmit}
         onPopoverFocusOut={view().editor!.onPopoverFocusOut}
-        cancelLabel={view().editor!.cancelLabel}
         submitLabel={view().editor!.submitLabel}
         mention={view().editor!.mention}
       />
@@ -218,7 +210,6 @@ function lineCommentDraftElement(view: Accessor<DraftProps>) {
     <LineCommentEditor
       inline
       value={view().value}
-      selection={view().selection}
       onInput={view().onInput}
       onCancel={view().onCancel}
       onSubmit={view().onSubmit}
@@ -413,7 +404,6 @@ export function createLineCommentController<T extends LineCommentShape>(
                 get value() {
                   return note.draft()
                 },
-                selection: formatSelectedLineLabel(comment.selection, i18n.t),
                 mention: props.mention,
                 onInput: note.setDraft,
                 onCancel: note.cancelDraft,
@@ -440,7 +430,6 @@ export function createLineCommentController<T extends LineCommentShape>(
       get value() {
         return note.draft()
       },
-      selection: formatSelectedLineLabel(range, i18n.t),
       mention: props.mention,
       onInput: note.setDraft,
       onCancel: () => {

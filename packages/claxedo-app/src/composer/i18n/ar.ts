@@ -75,7 +75,6 @@ export default {
   "prompt.imageMarks.title": "تعليم الصورة",
   "prompt.imageMarks.hint": "اسحب لتحديد منطقة أو انقر لوضع دبوس، ثم أضف تعليقًا.",
   "prompt.imageMarks.delete": "حذف العلامة",
-  "prompt.imageMarks.mark": "العلامة {{number}}",
   "composer.cancel": "إلغاء",
   "common.save": "حفظ",
   "model.input.text": "نص",

@@ -32,13 +32,28 @@ async function exactTimelineFileMatch(
 
 export function resolveTimelinePath(raw: string, workspaceDir: string): string {
   const target = timelineFileFocus(raw, workspaceDir)
-  if (!target) return stripMentionSigil(raw)
+  if (!target) return timelineAbsoluteFilePath(raw) ?? stripMentionSigil(raw)
   return `${workspaceDir.replace(/\/$/, "")}/${target.path}`
+}
+
+export function timelineAbsoluteFilePath(raw: string): string | undefined {
+  const path = stripMentionSigil(raw).replace(/:(\d+)(?::(\d+))?$/, "")
+  return path.startsWith("/") && !path.startsWith("//") ? path : undefined
 }
 
 export function timelineAnchorFileHref(anchor: Element): string | undefined {
   const href = anchor.getAttribute("href") ?? ""
-  if (!href || /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//") || href.startsWith("#")) return undefined
+  if (!href || href.startsWith("//") || href.startsWith("#") || href.startsWith("?")) return undefined
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href)) {
+    if (!URL.canParse(href)) return undefined
+    const url = new URL(href)
+    if (url.protocol !== "file:" || (url.hostname && url.hostname !== "localhost")) return undefined
+    return decodedTimelinePath(url.pathname)
+  }
+  return decodedTimelinePath(href)
+}
+
+function decodedTimelinePath(href: string): string {
   try {
     return decodeURIComponent(href)
   } catch (error) {
@@ -49,6 +64,8 @@ export function timelineAnchorFileHref(anchor: Element): string | undefined {
 
 export function timelineAnchorClickTarget(event: MouseEvent): string | undefined {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return undefined
+  const selection = window.getSelection()
+  if (selection && !selection.isCollapsed) return undefined
   const target = event.target instanceof Element ? event.target : null
   if (target?.closest('[data-component="markdown-image-tile"]')) return undefined
   const anchor = target?.closest("a[href]")
@@ -59,6 +76,8 @@ const IMAGE_URL_PATH = /(?:\.|\/)(?:avif|bmp|gif|ico|jpe?g|png|svg|webp)$/i
 
 export function timelineExternalSourceClickTarget(event: MouseEvent): string | undefined {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return undefined
+  const selection = window.getSelection()
+  if (selection && !selection.isCollapsed) return undefined
   const target = event.target instanceof Element ? event.target : null
   if (target?.closest('[data-component="markdown-image-tile"]')) return undefined
   const anchor = target?.closest("a[href]")
@@ -78,6 +97,8 @@ export function timelineExternalSourceClickTarget(event: MouseEvent): string | u
 
 export function timelineFileTarget(target: EventTarget | null): string | undefined {
   const el = target instanceof Element ? target : null
+  const anchor = el?.closest("a[href]")
+  if (anchor) return timelineAnchorFileHref(anchor)
   const chip = el?.closest('[data-inline-code-kind="path"]')
   if (chip) {
     const text = chip.textContent?.trim()

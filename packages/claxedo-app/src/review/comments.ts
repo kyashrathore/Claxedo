@@ -1,6 +1,6 @@
 import { createMemo, type Accessor } from "solid-js"
 import type { SelectedLineRange } from "@pierre/diffs"
-import { sessionComposerKey, useComposerStore, type ContextItem } from "@/composer"
+import { sessionComposerKey, useComposerStore, type ComposerKey, type ContextItem } from "@/composer"
 import { useActiveSession } from "@/files"
 import { uuid } from "@/lib/uuid"
 
@@ -20,6 +20,7 @@ export type ReviewCommentInput = {
 
 export type ReviewComments = {
   readonly enabled: Accessor<boolean>
+  readonly composerKey: Accessor<ComposerKey | undefined>
   readonly comments: Accessor<readonly ReviewComment[]>
   readonly add: (input: ReviewCommentInput) => void
   readonly update: (id: string, input: ReviewCommentInput) => void
@@ -75,6 +76,7 @@ export function useLineComments(origin: CommentOrigin): ReviewComments {
   }
   return {
     enabled: () => key() !== undefined,
+    composerKey: key,
     comments,
     add: (input) => withKey((current) => composer.addContext(current, contextItemOf(origin, uuid(), input))),
     update: (id, input) =>

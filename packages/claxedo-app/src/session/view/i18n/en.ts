@@ -176,6 +176,8 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.timeline.session.timeline.previousMessages.one": "{{count}} previous message",
   "sessionScreen.timeline.session.timeline.previousMessages.other": "{{count}} previous messages",
   "sessionScreen.timeline.session.timeline.scrollToBottom": "Scroll to latest message",
+  "sessionScreen.timeline.session.timeline.quote.conversation": "Conversation",
+  "sessionScreen.timeline.session.timeline.quote.plan": "Plan",
   "sessionScreen.timeline.ui.common.file.one": "file",
   "sessionScreen.timeline.ui.common.file.other": "files",
   "sessionScreen.timeline.ui.message.attachment.alt": "attachment",

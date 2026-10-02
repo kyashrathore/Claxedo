@@ -425,6 +425,7 @@ const INTENT_ICONS: Record<string, IconProps["name"]> = {
 }
 
 export function genericToolIcon(tool: string, input?: Record<string, unknown>): IconProps["name"] {
+  if (tool === "hook_prompt") return "hook"
   if (input?.kind === "image_view" || tool === "view_image") return "photo"
   if (isMcpTool(tool, input)) return "mcp"
   const intent = input?.intent
@@ -545,7 +546,7 @@ export function GenericTool(props: {
   const output = () => (typeof props.output === "string" ? props.output.trim() : "")
 
   return (
-    <div>
+    <div classList={{ "hook-call": props.tool === "hook_prompt" }}>
       <BasicTool
         icon={genericToolIcon(props.tool, props.input)}
         status={props.status}

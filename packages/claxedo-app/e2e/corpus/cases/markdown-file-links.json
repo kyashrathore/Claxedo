@@ -1,0 +1,23 @@
+{
+  "id": "markdown-file-links",
+  "title": "Markdown links retain workspace paths, artifact paths and file URLs",
+  "source": {
+    "kind": "test",
+    "file": "e2e/flows/42-transcript-file-links.spec.ts",
+    "name": "42 transcript file links: a workspace Markdown link opens its file and copies the canonical path"
+  },
+  "partKinds": ["text"],
+  "replay": {
+    "agent": "acp",
+    "turns": [{
+      "prompt": "Show the artifact links.",
+      "steps": [{
+        "kind": "text",
+        "text": "[Workspace notes](README.md) · [Artifact preview](/tmp/transcript-artifact.png) · [Verification details](file:///tmp/verification%20details.md)\n\nArtifact links ready."
+      }]
+    }]
+  },
+  "ready": "Artifact links ready.",
+  "interactions": [{ "kind": "reload" }],
+  "invariant": "Workspace and artifact links remain actionable anchors after reload; flow 42 proves panel opening, native opening and copying their canonical paths."
+}

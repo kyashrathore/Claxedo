@@ -77,7 +77,6 @@ export default {
   "prompt.imageMarks.title": "Görseli işaretle",
   "prompt.imageMarks.hint": "Bir alanı çerçevelemek için sürükleyin veya iğne bırakmak için tıklayın, ardından yorum yazın.",
   "prompt.imageMarks.delete": "İşareti sil",
-  "prompt.imageMarks.mark": "işaret {{number}}",
   "composer.cancel": "İptal",
   "common.save": "Kaydet",
   "model.input.text": "metin",

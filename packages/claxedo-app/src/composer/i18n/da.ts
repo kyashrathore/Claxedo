@@ -70,7 +70,6 @@ export default {
   "prompt.imageMarks.title": "Markér billede",
   "prompt.imageMarks.hint": "Træk for at markere et område, eller klik for at sætte en nål, og skriv så en kommentar.",
   "prompt.imageMarks.delete": "Slet markering",
-  "prompt.imageMarks.mark": "markering {{number}}",
   "composer.cancel": "Annuller",
   "common.save": "Gem",
   "model.input.text": "tekst",

@@ -1,7 +1,9 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import type { AgentAssistantMessage, AgentUserMessage } from "@claxedo/agent-runtime-contract"
-import { Timeline } from "./message-timeline.data"
+import { formatCommentNote, formatImageMarkNote, formatQuoteNote } from "@/lib/comment-note"
+import { promptEcho, type PromptAttachment } from "@/server"
+import { MessageComment, Timeline } from "./message-timeline.data"
 
 const user = { id: "u1", sessionID: "s1", role: "user", time: { created: 1 } } as AgentUserMessage
 
@@ -71,4 +73,24 @@ test("a thought between commands is drawn inside their work group, and the group
   const members = Timeline.groupMembers(work[0]!.refs, () => assistant, (ref) => parts.find((part: { id: string }) => part.id === ref.partId))
   expect(members.map((member) => member.part.id)).toEqual(["b1", "th", "b2"])
   expect(Timeline.memberTools(members).map((part) => part.id)).toEqual(["b1", "b2"])
+})
+
+function sentComments(attachments: PromptAttachment[]) {
+  const echo = promptEcho({ clientRequestId: "c1", text: "Look at these", attachments }, { sessionId: "s1", messageId: "u1", created: 1 })
+  return echo.parts.flatMap((part) => MessageComment.fromPart(part) ?? [])
+}
+
+test("a sent message shows a chip for each line comment, image mark and quoted excerpt it carried", () => {
+  const quote = { source: { kind: "file", path: "docs/guide.md" }, quote: "Install it first.\nThen run it.", comment: "Which version?" } as const
+  const comments = sentComments([
+    { kind: "text", label: "src/a.ts:4", text: formatCommentNote({ path: "src/a.ts", selection: { startLine: 4, startChar: 0, endLine: 4, endChar: 0 }, comment: "Why?" }) },
+    { kind: "text", label: "shot.png #1", text: formatImageMarkNote({ filename: "shot.png", number: 1, comment: "This button" }) },
+    { kind: "text", label: "docs/guide.md", text: formatQuoteNote(quote) },
+    { kind: "text", label: "Mention", text: "Some mentioned context" },
+  ])
+  expect(comments).toEqual([
+    { kind: "file", path: "src/a.ts", comment: "Why?", selection: { startLine: 4, endLine: 4 } },
+    { kind: "image-mark", filename: "shot.png", number: 1, comment: "This button" },
+    { kind: "quote", ...quote },
+  ])
 })

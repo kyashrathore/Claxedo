@@ -171,10 +171,9 @@ export function registerIpcHandlers(deps: Deps) {
       { platform: process.platform, resolveAppPath: deps.resolveAppPath },
       {
         reveal: (target) => shell.showItemInFolder(target),
-        // Answers nothing — `ElectronAPI.openPath` is `Promise<void>`, so
-        // `shell.openPath`'s error string has nowhere to go.
         openWithOsHandler: async (target) => {
-          await shell.openPath(target)
+          const error = await shell.openPath(target)
+          if (error) throw new Error(error)
         },
         confirmOpenExecutable: (target) => confirmOpenExecutable(event.sender, target),
         launch: (name, target) =>

@@ -1,6 +1,7 @@
 import type { Component } from "solid-js"
 import type { ComposerTextKey } from "../i18n"
 import type { ImagePart as ImageAttachmentPart } from "../model"
+import type { AnnotationsChipProps } from "./annotations-chip"
 import { firstMarkNumber, type NumberedImageMark } from "../marks/marks"
 import { PromptContextItems } from "./context-items"
 import { PromptImageAttachments } from "./image-attachments"
@@ -12,6 +13,7 @@ export type PromptContextStripProps = {
   contextActive: (item: PromptContextItem) => boolean
   openComment: (item: PromptContextItem) => void
   removeContextItem: (item: PromptContextItem) => void
+  annotations: Omit<AnnotationsChipProps, "t">
   imageAttachments: ImageAttachmentPart[]
   imageMarks: NumberedImageMark[]
   openImageMarks: (attachment: ImageAttachmentPart, focusIndex?: number) => void
@@ -28,6 +30,7 @@ export const PromptContextStrip: Component<PromptContextStripProps> = (props) =>
         active={props.contextActive}
         openComment={props.openComment}
         remove={props.removeContextItem}
+        annotations={props.annotations}
         imageMarks={props.imageMarks}
         openImageMark={(entry) => {
           const attachment = props.imageAttachments.find((part) => part.id === entry.imageId)

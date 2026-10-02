@@ -77,7 +77,6 @@ export default {
   "prompt.imageMarks.title": "이미지에 표시",
   "prompt.imageMarks.hint": "드래그해 영역을 지정하거나 클릭해 핀을 놓은 뒤 댓글을 남기세요.",
   "prompt.imageMarks.delete": "표시 삭제",
-  "prompt.imageMarks.mark": "표시 {{number}}",
   "composer.cancel": "취소",
   "common.save": "저장",
   "model.input.text": "텍스트",

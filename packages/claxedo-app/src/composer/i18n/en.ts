@@ -38,6 +38,17 @@ export type ComposerTextKey =
   | "prompt.slash.badge.custom"
   | "prompt.slash.badge.saved"
   | "prompt.context.removeFile"
+  | "prompt.annotations.one"
+  | "prompt.annotations.other"
+  | "prompt.annotations.open"
+  | "prompt.annotations.removeAll"
+  | "prompt.annotations.selectedText"
+  | "prompt.annotations.edit"
+  | "prompt.annotations.remove"
+  | "prompt.annotations.save"
+  | "prompt.annotations.source.conversation"
+  | "prompt.annotations.source.plan"
+  | "prompt.annotations.source.file"
   | "prompt.placeholder.shell"
   | "prompt.placeholder.normal"
   | "prompt.placeholder.simple"
@@ -80,7 +91,6 @@ export type ComposerTextKey =
   | "prompt.imageMarks.title"
   | "prompt.imageMarks.hint"
   | "prompt.imageMarks.delete"
-  | "prompt.imageMarks.mark"
   | "composer.cancel"
   | "common.save"
   | "composer.health.stopped"
@@ -147,6 +157,17 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "prompt.slash.badge.custom": "custom",
   "prompt.slash.badge.saved": "saved",
   "prompt.context.removeFile": "Remove file from context",
+  "prompt.annotations.one": "{{count}} annotation",
+  "prompt.annotations.other": "{{count}} annotations",
+  "prompt.annotations.open": "Show annotations",
+  "prompt.annotations.removeAll": "Remove all annotations",
+  "prompt.annotations.selectedText": "Selected text",
+  "prompt.annotations.edit": "Edit annotation",
+  "prompt.annotations.remove": "Remove annotation",
+  "prompt.annotations.save": "Save",
+  "prompt.annotations.source.conversation": "in the conversation",
+  "prompt.annotations.source.plan": "in the plan",
+  "prompt.annotations.source.file": "in {{file}}",
   "prompt.placeholder.shell": "Enter shell command... {{example}}",
   "prompt.placeholder.normal": "Ask anything... \"{{example}}\"",
   "prompt.placeholder.simple": "Ask anything...",
@@ -189,7 +210,6 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "prompt.imageMarks.title": "Mark up image",
   "prompt.imageMarks.hint": "Drag to box an area or click to drop a pin, then comment on it.",
   "prompt.imageMarks.delete": "Delete mark",
-  "prompt.imageMarks.mark": "mark {{number}}",
   "composer.cancel": "Cancel",
   "common.save": "Save",
   "composer.recovery.chooseModel": "Choose a model to resend",

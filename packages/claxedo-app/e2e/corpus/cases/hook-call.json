@@ -1,0 +1,25 @@
+{
+  "id": "hook-call",
+  "title": "Hook prompts use a hook glyph and a quieter tool row",
+  "source": {
+    "kind": "test",
+    "file": "packages/harness/src/transports/codex-app-server/translate/item-lifecycle.test.ts",
+    "name": "a hook's injected prompt is shown on its row"
+  },
+  "partKinds": ["tool:hook_prompt", "tool:bash", "text"],
+  "replay": {
+    "agent": "acp",
+    "turns": [{
+      "prompt": "Check the project after the hook runs.",
+      "steps": [
+        { "kind": "tool", "tool": "other", "title": "hook_prompt", "input": { "prompt": "Pick the next concrete work item and continue.", "hookRunIds": ["stop:7:hooks.json"] }, "text": "" },
+        { "kind": "text", "text": "I’ll check the working tree." },
+        { "kind": "tool", "tool": "execute", "title": "git status", "input": { "command": "git status" }, "text": "nothing to commit" },
+        { "kind": "text", "text": "The project is ready." }
+      ]
+    }]
+  },
+  "ready": "The project is ready.",
+  "interactions": [{ "kind": "toggleFold", "turn": 0 }, { "kind": "reload" }, { "kind": "toggleFold", "turn": 0 }],
+  "invariant": "The hook call remains readable beside a normal command, with a hook glyph, muted color and regular 12 px text, including after reload."
+}

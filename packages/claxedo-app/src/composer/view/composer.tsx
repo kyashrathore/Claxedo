@@ -1,7 +1,7 @@
 import { createMemo, Show } from "solid-js"
 import { useCommands } from "@/shell"
 import { useDialog } from "@/ui"
-import type { FileContextItem } from "../model"
+import type { FileContextItem, QuoteContextItem } from "../model"
 import { promptText } from "../model"
 import { createComposer, type ComposerProps } from "../setup"
 import { acceptedFileTypes } from "../attachments/files"
@@ -29,10 +29,11 @@ export function Composer(props: ComposerProps) {
   createComposerToasts(composer)
 
   const fileItems = createMemo(() => composer.draft().context.filter((item): item is FileContextItem => item.type === "file"))
+  const quoteItems = createMemo(() => composer.draft().context.filter((item): item is QuoteContextItem => item.type === "quote"))
   const dirty = createMemo(() => promptText(composer.draft().prompt).length > 0 || composer.draft().prompt.some((part) => part.type !== "text"))
-  const designPlaceholder = createEditorPlaceholder({ composer, mode, fileItems, view: () => props.view, readOnly: () => props.readOnly })
+  const designPlaceholder = createEditorPlaceholder({ composer, mode, fileItems, quoteItems, view: () => props.view, readOnly: () => props.readOnly })
   const popoverBindings = createPromptPopoverBindings({ composer, popover, keybind: commands.keybind })
-  const contextBindings = createPromptContextBindings({ composer, mode, fileItems, panel })
+  const contextBindings = createPromptContextBindings({ composer, mode, fileItems, quoteItems, panel })
   const imageMarkBindings = createPromptImageMarkBindings({ composer, dialog })
 
   return (

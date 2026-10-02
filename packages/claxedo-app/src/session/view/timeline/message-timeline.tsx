@@ -35,8 +35,8 @@ import {
 } from "@/transcript"
 import { isPhoneWidth } from "@/lib/viewport"
 import { holdPaneReveal } from "@/workbench"
-import { FileIcon, ScrollView, showToast } from "@/ui"
-import { Binary, getFilename, resolveTranscriptTypography, transcriptTypographyStyle } from "@/ui/utils"
+import { ScrollView, showToast } from "@/ui"
+import { Binary, resolveTranscriptTypography, transcriptTypographyStyle } from "@/ui/utils"
 import { ClaxedoSessionRetry } from "./claxedo-session-retry"
 import { TimelineErrorPresentation } from "./first-turn-recovery-card"
 import { TimelineJumpButton } from "./timeline-jump-button"
@@ -53,7 +53,7 @@ import { latchSessionTitle, type LatchedSessionTitle } from "./session-title-lat
 import { createActivePaneProjection } from "./active-pane-projection"
 import { whileOnScreen } from "./timeline-on-screen"
 import { MessageComment, Timeline } from "./message-timeline.data"
-import { ImageMarkBadge } from "@/lib/image-mark-badge"
+import { MessageCommentChip } from "./message-comment-chip"
 import { TimelineRow, type TimelineRowMap } from "./timeline-row-model"
 import { PreviousMessagesRow, TimelineDiffSummaryRow, TimelineThinkingRow } from "./message-timeline-turn-rows"
 import { nextThinkingVisibilityHold } from "./thinking-visibility-hold"
@@ -87,8 +87,6 @@ import { sessionMessageScrollInset } from "./session-message-scroll-position"
 import type { TranscriptUserMessage as UserMessage } from "@/transcript"
 import { TimelineUserMessage } from "./timeline-user-message"
 import {
-  timelineAnchorClickTarget,
-  timelineExternalSourceClickTarget,
   timelineFileCandidateIsOpenable,
   timelineFileFocus,
   resolveTimelinePath as resolveTimelineFilePath,
@@ -186,12 +184,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
 
   const fileFocus = (raw: string) => timelineFileFocus(raw, host.placementPath)
 
-  const openFileInPanel = (raw: string) => {
-    const target = fileFocus(raw)
-    if (!target) return
-    host.openFocus({ kind: "file", path: target.path, line: target.line, col: target.col })
-  }
-
   let candidateFileController: AbortController | undefined
   onCleanup(() => candidateFileController?.abort())
   createEffect(() => {
@@ -208,7 +200,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     if (!raw || !fileFocus(raw)) return
     event.preventDefault()
     if (chip?.dataset.inlineCodeKind === "path") {
-      openFileInPanel(raw)
+      links.openFile(raw)
       return
     }
     candidateFileController?.abort()
@@ -220,7 +212,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       if (!openable || controller.signal.aborted || !props.active()) return
       if (!chip?.isConnected || chip.textContent?.trim() !== raw) return
       chip.dataset.inlineCodeKind = "path"
-      openFileInPanel(raw)
+      links.openFile(raw)
     })
   }
   const [timelineRoot, setTimelineRoot] = createSignal<HTMLDivElement>()
@@ -229,7 +221,15 @@ export function MessageTimeline(props: MessageTimelineProps) {
     messageNavVisible((props.navMessages ?? props.userMessages).length) && messageNavHasRoom() && !!props.onMessageSelect,
   )
 
-  const links = createTimelineLinkOpen({ openFocus: host.openFocus, platform: host.platform })
+  const links = createTimelineLinkOpen({
+    openFocus: host.openFocus,
+    platform: host.platform,
+    get placementPath() { return host.placementPath },
+    onError: (error) => {
+      console.warn("Transcript file could not be opened", { error })
+      showToast({ title: host.t("common.requestFailed"), description: error instanceof Error ? error.message : String(error), variant: "error" })
+    },
+  })
 
   const registerTimelineRoot = (el: HTMLDivElement) => {
     setTimelineRoot(el)
@@ -257,26 +257,10 @@ export function MessageTimeline(props: MessageTimelineProps) {
       host.openFocus({ kind: "plan", sessionId, planId, markdown, ...(title ? { title } : {}) })
     }
     el.addEventListener("claxedo:open-plan", onOpenPlan)
-    const onCapture = (event: MouseEvent) => {
-      const externalSourceUrl = timelineExternalSourceClickTarget(event)
-      if (externalSourceUrl) {
-        event.preventDefault()
-        event.stopImmediatePropagation()
-        links.openBrowserTab(externalSourceUrl)
-        return
-      }
-      const raw = timelineAnchorClickTarget(event)
-      if (!raw || !fileFocus(raw)) return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      openFileInPanel(raw)
-    }
-    el.addEventListener("click", onCapture, { capture: true })
     onCleanup(() => {
       stopLinkOpen()
       el.removeEventListener("claxedo:open-subagent", onOpenSubagent)
       el.removeEventListener("claxedo:open-plan", onOpenPlan)
-      el.removeEventListener("click", onCapture, { capture: true })
     })
   }
 
@@ -1062,44 +1046,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
               <div class="ml-auto max-w-[82%] overflow-x-auto no-scrollbar">
                 <div class="flex w-max min-w-full justify-end gap-2">
                   <Index each={comments()}>
-                    {(comment) => (
-                      <div class="shrink-0 max-w-[260px] rounded-md border border-border-weak-base bg-background-stronger px-2.5 py-2">
-                        <Switch>
-                          <Match when={MessageComment.asImageMark(comment())}>
-                            {(mark) => (
-                              <div class="flex items-start gap-1.5 min-w-0">
-                                <ImageMarkBadge number={mark().number} />
-                                <span class="text-12-regular text-text-strong whitespace-pre-wrap break-words">
-                                  {mark().comment}
-                                </span>
-                              </div>
-                            )}
-                          </Match>
-                          <Match when={MessageComment.asFile(comment())}>
-                            {(file) => (
-                              <>
-                                <div class="flex items-center gap-1.5 min-w-0 text-11-medium text-text-strong">
-                                  <FileIcon node={{ path: file().path, type: "file" }} class="size-3.5 shrink-0" />
-                                  <span class="truncate">{getFilename(file().path)}</span>
-                                  <Show when={file().selection}>
-                                    {(selection) => (
-                                      <span class="shrink-0 text-text-weak">
-                                        {selection().startLine === selection().endLine
-                                          ? `:${selection().startLine}`
-                                          : `:${selection().startLine}-${selection().endLine}`}
-                                      </span>
-                                    )}
-                                  </Show>
-                                </div>
-                                <div class="pt-1 text-12-regular text-text-strong whitespace-pre-wrap break-words">
-                                  {file().comment}
-                                </div>
-                              </>
-                            )}
-                          </Match>
-                        </Switch>
-                      </div>
-                    )}
+                    {(comment) => <MessageCommentChip comment={comment()} t={host.t} />}
                   </Index>
                 </div>
               </div>
@@ -1352,7 +1299,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
         {(menu) => (
           <TimelineFileContextMenu
             menu={menu()}
-            onOpenFile={openFileInPanel}
+            onOpenFile={links.openFile}
+            onOpenExternal={host.platform.openPath ? links.openFileExternally : undefined}
             onDismiss={fileMenu.dismiss}
             resolvePath={(path) => resolveTimelineFilePath(path, host.placementPath)}
           />

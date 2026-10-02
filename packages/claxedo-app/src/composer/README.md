@@ -17,7 +17,14 @@ The prompt editor and everything that turns a draft into one `PromptInput` for `
 - **History**: the last 100 sent prompts per key and editor mode, navigated with the arrow keys from an empty draft or from a history entry; an entry brings its review-comment chips back.
 - **Attachments**: files read into image parts. `attachments/files.ts` decides the mime an attachment travels under and whether the target harness can take it.
 - **Image marks**: boxes and pins the user draws on an image. Marks are drawn onto a PNG copy only when the prompt is sent (`marks/flatten.ts`); the draft keeps the original. The badge and its colours are `@/lib/image-mark-badge`, shared with the transcript.
-- **Send**: `send.ts` builds the `PromptInput` from the draft and the harness submission (harness, model, effort as `variant`, fast tier), sends it over `SessionView.send` (creating the session first for a draft key), records history and clears the draft. File comments and mark comments travel as `text` attachments worded by `@/lib/comment-note`, the same sentences the transcript parses back into chips.
+- **Quoted comments** (`quote/`): a comment on text the user selected in the transcript, a Markdown file preview or the plan tab. Each surface mounts `SelectionComment` over its content with the composer key of its session and names its source (`conversation`, `plan`, or `file` with its path). A finished selection inside that content opens the comment box beside it, and Enter adds a `quote` context item (source, quoted text, comment) to the draft. Code files and diffs keep their line comments, which the line selection opens the same way.
+  - The box waits for a key before it takes focus, so the selection stays copyable: a typed character outside any editable field moves into the box, ahead of the session's type-to-compose.
+  - The box is the transcript's comment editor. Escape closes it. A press elsewhere closes an empty box; a box holding text ignores new selections until it is sent or closed.
+  - It opens under the selection when the grown box fits inside the surface's clipping area (the transcript, or the panel's scroller), otherwise just above it, anchored at its bottom so it grows upward. Quote positioning and image marks share bounded coordinates through `coordinate.ts`.
+  - The quoted range keeps a highlight (`::highlight(composer-quote)`) while the box is open, since focusing the box clears the document selection.
+  - `view/annotations-chip.tsx` groups the draft's quoted comments into one compact count chip. Hover, keyboard focus or a tap opens `view/annotation-card.tsx`, listing each source, excerpt and comment with Edit and Remove. Removing all annotations leaves other context and attachments intact.
+  - Each mounted source registers with the provider's `quote/surfaces.tsx`. Edit reveals a file through the panel, locates the quote in its source, scrolls it into view and opens `quote/annotation-editor.tsx`. The source has one accent highlight and numbered badge while editing; Save writes through the composer store, and Escape or clicking elsewhere discards the edit and removes the highlight. Unavailable source text remains editable beside the chip.
+- **Send**: `send.ts` builds the `PromptInput` from the draft and the harness submission (harness, model, effort as `variant`, fast tier), sends it over `SessionView.send` (creating the session first for a draft key), records history and clears the draft. File comments, mark comments and quoted comments travel as `text` attachments worded by `@/lib/comment-note`, the same sentences the transcript parses back into chips. The wire puts the attachment's label on the line above the sentence, so the transcript parses the text after the first line.
 
 ## Constraints
 
@@ -111,4 +118,4 @@ The prompt editor and everything that turns a draft into one `PromptInput` for `
 
 ## Flows
 
-- 3 (send a turn), 4 (stop and queued messages), 5 (errors by class), 6 (attachments, marks, `@file`, slash commands, a new session's harness default), 7 (goal mode), 33 (phone).
+- 3 (send a turn), 4 (stop and queued messages), 5 (errors by class), 6 (attachments, marks, quoted comments, `@file`, slash commands, a new session's harness default), 7 (goal mode), 33 (phone).
