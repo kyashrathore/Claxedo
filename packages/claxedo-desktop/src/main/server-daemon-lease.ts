@@ -1,7 +1,6 @@
-import { randomUUID } from "node:crypto"
 import http from "node:http"
-import { readField, readRecord, readString } from "@claxedo/helpers/readers"
-import { CLAXEDO_DAEMON_CAPABILITY_HEADER, createDaemonFetch } from "./daemon-request"
+import { readString } from "@claxedo/helpers/readers"
+import { CLAXEDO_DAEMON_CAPABILITY_HEADER } from "./daemon-request"
 import { CLAXEDO_DAEMON_PROTOCOL, DAEMON_PROTOCOL_HEADER } from "@claxedo/helpers/claxedo-daemon"
 import type { ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
 
@@ -21,9 +20,6 @@ export async function holdClaxedoDaemonLease(
     onError?: (error: unknown) => void
   } = {},
 ) {
-  const request = createDaemonFetch({
-    endpoint: () => ({ origin: `http://127.0.0.1:${String(discovery.port)}`, capability: discovery.token }),
-  })
   const headers = {
     "x-claxedo-daemon-client": "electron-main",
     [DAEMON_PROTOCOL_HEADER]: String(CLAXEDO_DAEMON_PROTOCOL),
@@ -48,49 +44,6 @@ export async function holdClaxedoDaemonLease(
       return held.id
     },
     stop: release,
-    /**
-     * Releases the lease and asks the daemon to drain.
-     *
-     * The old `/shutdown` acknowledged a request and called that termination.
-     * A drain is the honest version of the same intent: it closes the machine
-     * to new work, waits for what is still running, and answers with what it
-     * could not drain. The handoff grace does not apply while it holds the
-     * gate, which is the one property the old call was relied on for.
-     */
-    async drain() {
-      if (released) return
-      await release()
-      try {
-        const inspected = await request("/api/claxedo/daemon/recovery", {
-          headers,
-          signal: AbortSignal.timeout(requestTimeoutMs),
-        })
-        if (!inspected.ok) throw new Error(`daemon drain failed (${String(inspected.status)})`)
-        const machine: unknown = await inspected.json()
-        const scopeRevision = readString(machine, "scopeRevision")
-        // Submitting without them would ask the daemon to drain a scope it
-        // never described, which it answers by refusing on the revision — a
-        // refusal that reads like a race rather than an unreadable inspection.
-        if (!scopeRevision || !readRecord(machine, "target")) {
-          throw new Error("the daemon's recovery inspection named no machine scope to drain")
-        }
-        const submitted = await request("/api/claxedo/daemon/recovery", {
-          method: "POST",
-          headers: { ...headers, "content-type": "application/json" },
-          body: JSON.stringify({
-            requestId: `electron-main-drain-${randomUUID()}`,
-            action: "drain_daemon",
-            target: readField(machine, "target"),
-            scopeRevision,
-            attempt: 1,
-          }),
-          signal: AbortSignal.timeout(requestTimeoutMs),
-        })
-        if (!submitted.ok) throw new Error(`daemon drain failed (${String(submitted.status)})`)
-      } catch (error) {
-        options.onError?.(error)
-      }
-    },
   }
 }
 

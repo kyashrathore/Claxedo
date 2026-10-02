@@ -21,17 +21,10 @@ describe("desktop daemon exit wiring", () => {
     expect(release).toBeGreaterThan(shutdown)
   })
 
-  test("menu restart and updater exits mark a handoff before quitting", () => {
-    const menuHandoff = source.indexOf("daemonExitLifecycle.handoff()", source.indexOf("function wireMenu"))
-    const menuRelaunch = source.indexOf("app.relaunch()", menuHandoff)
-    const install = updater.indexOf("const install = ")
-    const installHandoff = updater.indexOf("input.beforeInstall()", install)
-    const quitAndInstall = updater.indexOf("autoUpdater.quitAndInstall()", installHandoff)
-
-    expect(menuHandoff).toBeGreaterThan(-1)
-    expect(menuRelaunch).toBeGreaterThan(menuHandoff)
-    expect(source).toContain("beforeInstall: () => daemonExitLifecycle.handoff()")
-    expect(installHandoff).toBeGreaterThan(install)
-    expect(quitAndInstall).toBeGreaterThan(installHandoff)
+  test("restart and updater exits share the normal lease release policy", () => {
+    expect(source).not.toContain("daemonExitLifecycle.handoff")
+    expect(source).toContain("app.relaunch()")
+    expect(updater).toContain("autoUpdater.quitAndInstall()")
+    expect(updater).not.toContain("beforeInstall")
   })
 })

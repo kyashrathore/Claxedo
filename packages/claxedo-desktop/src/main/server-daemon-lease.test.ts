@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from "bun:test"
 import { spawn } from "node:child_process"
+import { createDaemonExitLifecycle } from "./daemon-exit-lifecycle"
 import { holdClaxedoDaemonLease } from "./server-daemon-lease"
 import type { ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
 
@@ -30,23 +31,19 @@ const server = http.createServer((request, response) => {
       held.push(response)
       return
     }
-    if (options.recovery && options.recovery !== 200) return response.writeHead(options.recovery).end()
-    response.writeHead(200, { "content-type": "application/json" })
-    response.end(JSON.stringify(request.method === "GET"
-      ? { scopeRevision: "rev-1", target: { scope: "machine", machineId: "local", ownerGeneration: "generation-1" } }
-      : { kind: "operation" }))
+    response.writeHead(404).end()
   })
 })
 server.listen(0, "127.0.0.1", () => report({ port: server.address().port }))
 `
 
-async function fakeDaemon(options: { acquire?: number; recovery?: number } = {}) {
+async function fakeDaemon(options: { acquire?: number } = {}) {
   const seen: Seen[] = []
   const events: string[] = []
   const child = spawn("node", ["-e", FAKE_DAEMON, JSON.stringify(options)], { stdio: ["pipe", "pipe", "inherit"] })
   const port = await new Promise<number>((resolve) => {
     let buffered = ""
-    child.stdout!.on("data", (chunk: Buffer) => {
+    child.stdout.on("data", (chunk: Buffer) => {
       buffered += chunk.toString()
       for (let end = buffered.indexOf("\n"); end >= 0; end = buffered.indexOf("\n")) {
         const line = JSON.parse(buffered.slice(0, end)) as { port?: number; event?: string; seen?: Seen }
@@ -70,7 +67,7 @@ async function fakeDaemon(options: { acquire?: number; recovery?: number } = {})
     discovery,
     seen,
     events,
-    endLease: () => child.stdin!.write("end\n"),
+    endLease: () => child.stdin.write("end\n"),
     settle: () => new Promise((resolve) => setTimeout(resolve, 100)),
     close: () => {
       child.kill()
@@ -99,27 +96,18 @@ describe("Claxedo daemon client lease", () => {
     }
   })
 
-  test("a clean app quit closes the lease before it asks the machine to drain", async () => {
+  test("quit releases only its lease and a reopened desktop can acquire another", async () => {
     const daemon = await fakeDaemon()
     try {
-      const held = await holdClaxedoDaemonLease(daemon.discovery)
-      await held.drain()
+      const lifecycle = createDaemonExitLifecycle()
+      await lifecycle.release(await holdClaxedoDaemonLease(daemon.discovery))
       await daemon.settle()
-
-      // The lease goes first: a drain submitted while this process still holds
-      // one would be waiting on itself.
+      await lifecycle.release(await holdClaxedoDaemonLease(daemon.discovery))
+      await daemon.settle()
       expect(daemon.events).toEqual([
-        "POST /api/claxedo/daemon/leases",
-        "lease closed",
-        "GET /api/claxedo/daemon/recovery",
-        "POST /api/claxedo/daemon/recovery",
+        "POST /api/claxedo/daemon/leases", "lease closed",
+        "POST /api/claxedo/daemon/leases", "lease closed",
       ])
-      expect(JSON.parse(daemon.seen.at(-1)!.body)).toMatchObject({
-        action: "drain_daemon",
-        scopeRevision: "rev-1",
-        target: { scope: "machine", machineId: "local", ownerGeneration: "generation-1" },
-        attempt: 1,
-      })
     } finally {
       daemon.close()
     }
@@ -163,24 +151,6 @@ describe("Claxedo daemon client lease", () => {
     const daemon = await fakeDaemon({ acquire: 409 })
     try {
       await expect(holdClaxedoDaemonLease(daemon.discovery)).rejects.toThrow("daemon lease acquire failed (409)")
-    } finally {
-      daemon.close()
-    }
-  })
-
-  test("a refused drain is reported, and is not a lost lease", async () => {
-    const daemon = await fakeDaemon({ recovery: 503 })
-    try {
-      const onError = mock(() => {})
-      const onLost = mock(() => {})
-      const held = await holdClaxedoDaemonLease(daemon.discovery, { onError, onLost })
-      await held.drain()
-      await daemon.settle()
-
-      expect(daemon.events).toEqual(["POST /api/claxedo/daemon/leases", "lease closed", "GET /api/claxedo/daemon/recovery"])
-      expect(onError).toHaveBeenCalledTimes(1)
-      expect(String(onError.mock.calls[0]?.[0])).toContain("daemon drain failed (503)")
-      expect(onLost).not.toHaveBeenCalled()
     } finally {
       daemon.close()
     }

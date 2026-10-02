@@ -155,7 +155,7 @@ const daemonEndpoint = defer<DaemonEndpoint>()
 const serverOrigin = defer<string>()
 const daemon = createDaemonFetch({ endpoint: () => daemonEndpoint.promise })
 const logger = initLogging()
-const autoUpdate = createAutoUpdate({ logger, beforeInstall: () => daemonExitLifecycle.handoff() })
+const autoUpdate = createAutoUpdate({ logger })
 const mermaidRendererPath = resolveMermaidRendererPath({
   packaged: IS_PACKAGED,
   resourcesPath: process.resourcesPath,
@@ -613,7 +613,6 @@ function wireMenu() {
       runRestart({
         packaged: IS_PACKAGED,
         relaunch: () => {
-          daemonExitLifecycle.handoff()
           app.relaunch()
         },
         quit: () => app.quit(),
@@ -744,7 +743,6 @@ const recovery = daemonRecoveryBridge({
     runRestart({
       packaged: IS_PACKAGED,
       relaunch: () => {
-        daemonExitLifecycle.handoff()
         app.relaunch()
       },
       quit: () => app.quit(),

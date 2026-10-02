@@ -7,7 +7,7 @@ const { autoUpdater } = pkg
 
 type CheckResult = { updateAvailable: boolean; version?: string; failed?: boolean }
 
-export function createAutoUpdate(input: { logger: ReturnType<typeof initLogging>; beforeInstall: () => void }) {
+export function createAutoUpdate(input: { logger: ReturnType<typeof initLogging> }) {
   const { logger } = input
   let updateReady = false
 
@@ -67,7 +67,6 @@ export function createAutoUpdate(input: { logger: ReturnType<typeof initLogging>
 
   const install = async () => {
     if (!updateReady) return
-    input.beforeInstall()
     autoUpdater.quitAndInstall()
   }
 

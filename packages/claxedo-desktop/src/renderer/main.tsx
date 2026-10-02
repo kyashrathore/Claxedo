@@ -22,7 +22,27 @@ function openExternalAnchors(api: ElectronAPI) {
 async function renderWhenServerReady(root: HTMLElement) {
   const api = desktopApi()
   openExternalAnchors(api)
-  const server = await api.awaitInitialization(() => undefined)
+  const status = document.createElement("main")
+  status.setAttribute("role", "status")
+  status.style.cssText = "padding:48px;max-width:640px;margin:auto;font:16px/1.5 system-ui;overflow-wrap:anywhere"
+  status.textContent = "Starting Claxedo…"
+  root.replaceChildren(status)
+  let server: Awaited<ReturnType<ElectronAPI["awaitInitialization"]>>
+  try {
+    server = await api.awaitInitialization(() => undefined)
+  } catch (error) {
+    status.setAttribute("role", "alert")
+    const title = document.createElement("h1")
+    title.textContent = "Claxedo could not start"
+    const detail = document.createElement("p")
+    detail.textContent = error instanceof Error ? error.message : String(error)
+    const restart = document.createElement("button")
+    restart.textContent = "Restart Claxedo"
+    restart.onclick = () => api.relaunch()
+    status.replaceChildren(title, detail, restart)
+    return
+  }
+  root.replaceChildren()
   render(() => <App router={MemoryRouter} serverUrl={server.url} />, root)
 }
 
