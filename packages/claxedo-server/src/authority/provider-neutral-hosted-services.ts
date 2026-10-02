@@ -360,6 +360,7 @@ export function composeProviderNeutralHostedControlPlane(
       runtimeAccessTokenSigner: runtimeAccessSigner,
       hostTunnelTokenSigner: hostTunnelSigner,
       hostTunnelTokenVerifier: hostTunnelTokenVerifier(env),
+      hostTunnelResolver: bindings.hostTunnelResolver,
     },
     sandbox: (manager ? { sandboxManager: manager, ...(managerDriver ? { defaultDriver: managerDriver } : {}) } : {}),
     telemetry,
