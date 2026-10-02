@@ -2,7 +2,7 @@ import { settleAtRequestDeadline } from "@claxedo/helpers"
 import type { Deadline, HarnessVersionRange, OwnedProcess } from "../../contract"
 import { TransportError } from "../../contract/errors"
 
-export const PI_RANGE = { transport: "pi", program: "Pi", min: "0.99.0", max: "0.99.1" } as const satisfies HarnessVersionRange
+export const PI_RANGE = { transport: "pi", program: "Pi", min: "0.99.0", max: "1.0.0" } as const satisfies HarnessVersionRange
 
 async function printed(owned: OwnedProcess): Promise<string> {
   owned.stderr.resume()

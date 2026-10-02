@@ -11,7 +11,7 @@ ENV AMP_SKIP_UPDATE_CHECK=1 FACTORY_DROID_AUTO_UPDATE_ENABLED=false
 # driven: pass a different CLAXEDO_NPM_AGENTS to a local `docker build`.
 # NOTE: `wrangler deploy` cannot inject --build-arg, so the DEFAULT below is what
 # ships via wrangler.
-ARG CLAXEDO_NPM_AGENTS="@anthropic-ai/claude-code@2.1.285 @openai/codex@0.159.2 @google/gemini-cli@0.62.0 @earendil-works/pi-coding-agent@0.99.1"
+ARG CLAXEDO_NPM_AGENTS="@anthropic-ai/claude-code@2.1.285 @openai/codex@0.159.2 @google/gemini-cli@0.62.0 @earendil-works/pi-coding-agent@1.0.0"
 ARG CLAXEDO_CURL_AGENTS="1"
 
 # Install build tools for native deps (better-sqlite3, node-pty). `git` is named

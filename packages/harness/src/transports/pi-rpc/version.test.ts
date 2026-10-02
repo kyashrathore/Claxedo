@@ -35,7 +35,7 @@ test("a Pi that prints no version is refused as unreadable", async () => {
 })
 
 test("a Pi newer than the tested range runs, with one untested-version diagnostic per transport", async () => {
-  const pi = await scriptedPi({ version: "0.100.0" })
+  const pi = await scriptedPi({ version: "1.0.1" })
   const published: unknown[] = []
   const broker = { ...pi.broker, publish: async (event: unknown) => { published.push(event) } } as unknown as SessionBroker
   try {
@@ -43,7 +43,7 @@ test("a Pi newer than the tested range runs, with one untested-version diagnosti
     await pi.transport.close(session)
     await pi.transport.attach({ ...pi.start(), binding: session.binding, upstreamHasTurns: false }, broker)
     expect(published).toEqual([{ type: "diagnostic", diagnostic: { code: "pi.untested_version", severity: "warn", source: "pi.rpc", method: "--version",
-      message: `Pi 0.100.0 is newer than ${PI_RANGE.max}, the newest version Claxedo is tested against` } }])
+      message: `Pi 1.0.1 is newer than ${PI_RANGE.max}, the newest version Claxedo is tested against` } }])
     expect(pi.versions.map((command) => command.args.at(-1))).toEqual(["--version", "--version"])
   } finally { await pi.close() }
 })
