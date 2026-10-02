@@ -3,6 +3,7 @@ import { expect, test } from "bun:test"
 import type { WorkspaceStartProgress } from "./cloud-types"
 import { ServerError } from "./errors"
 import { startWorkspace } from "./workspace-start"
+import { createWorkspaceConnections } from "./transport"
 
 const READY = { relayUrl: "https://relay.test/", runtimeAccessToken: "rat", tokenExpiresAt: 1_900_000_000_000 }
 
@@ -15,7 +16,7 @@ function answers(...responses: readonly Response[]) {
     if (!response) throw new Error("no answer left")
     return response
   }
-  return { request, calls }
+  return { connect: createWorkspaceConnections(request).start, calls }
 }
 
 const json = (body: unknown, status = 200) => Response.json(body, { status })
@@ -29,7 +30,7 @@ test("workspace start: polls the explicit connect while it provisions, each wait
   )
   const waits: number[] = []
   const progress: WorkspaceStartProgress[] = []
-  const link = await startWorkspace(server.request, "ws_1", { onProgress: (step) => progress.push(step), wait: async (ms) => void waits.push(ms) })
+  const link = await startWorkspace(server.connect, "ws_1", { onProgress: (step) => progress.push(step), wait: async (ms) => void waits.push(ms) })
 
   expect(link).toEqual({ workspaceId: "ws_1", relayUrl: "https://relay.test", runtimeAccessToken: "rat", tokenExpiresAt: READY.tokenExpiresAt })
   expect(server.calls).toEqual(Array(4).fill({ path: "/api/workspace/ws_1/connection", method: "POST" }))
@@ -40,7 +41,7 @@ test("workspace start: polls the explicit connect while it provisions, each wait
 test("workspace start: a refusal with no retry hint fails at once with the server's reason", async () => {
   const server = answers(json({ error: { code: "billing_entitlement_required", message: "An active subscription is required" } }, 402))
 
-  const start = startWorkspace(server.request, "ws_1", { wait: async () => undefined })
+  const start = startWorkspace(server.connect, "ws_1", { wait: async () => undefined })
 
   await expect(start).rejects.toBeInstanceOf(ServerError)
   await expect(start).rejects.toMatchObject({ code: "billing_entitlement_required", message: "An active subscription is required" })
@@ -50,6 +51,6 @@ test("workspace start: a refusal with no retry hint fails at once with the serve
 test("workspace start: gives up after thirty provisioning answers, and says it is still starting", async () => {
   const server = answers(...Array.from({ length: 31 }, () => json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 2_000 })))
 
-  await expect(startWorkspace(server.request, "ws_1", { wait: async () => undefined })).rejects.toMatchObject({ class: "network", code: "workspace_still_starting" })
+  await expect(startWorkspace(server.connect, "ws_1", { wait: async () => undefined })).rejects.toMatchObject({ class: "network", code: "workspace_still_starting" })
   expect(server.calls).toHaveLength(30)
 })

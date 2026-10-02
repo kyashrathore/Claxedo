@@ -179,6 +179,13 @@ export const HOSTED_OPERATIONS = {
     exposure: { renderer: true, app: false },
     body: selectBody("approved"),
   }),
+  // The renderer's runtime reads need the workspace's relay token without waking it; main keeps the account bearer.
+  "workspace.connection.read": defineOperation({
+    method: "GET", path: operationPath("/api/workspace/:id/connection"),
+    input: operationInput({ id: requiredParameter }),
+    output: connection, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
   "workspace.connection.mint": defineOperation({
     method: "POST", path: operationPath("/api/workspace/:id/connection"),
     input: operationInput({ id: requiredParameter }),
@@ -191,6 +198,14 @@ export const HOSTED_OPERATIONS = {
     output: connection, retry: "safe",
     exposure: { renderer: true, app: false },
     body: selectBody("previousJti"),
+  }),
+  // Cloud create needs authority admission; main spends the account bearer on this fixed route.
+  "session.reserve": defineOperation({
+    method: "POST", path: operationPath("/api/control/session-registrations/reserve"),
+    input: operationInput({ workspaceId: requiredParameter, sessionId: requiredParameter, operationId: requiredParameter, title: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: (input) => ({ ...selectBody("workspaceId", "sessionId", "operationId", "title")(input), kind: "create" }),
   }),
   "session.list": defineOperation({
     method: "GET", path: operationPath("/api/control/sessions", { query: ["workspaceId"] }),

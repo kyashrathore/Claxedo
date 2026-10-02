@@ -95,7 +95,7 @@ function serverDataDir(world: DesktopWorld) {
   return path.join(world.dataDir, "server-data")
 }
 
-export type DesktopAccount = { coreOrigin: string; trust: TlsTrust }
+export type DesktopAccount = { coreOrigin: string; relayOrigins: readonly string[]; trust: TlsTrust }
 
 async function desktopEnv(world: DesktopWorld, account: DesktopAccount | undefined) {
   const zdotdir = path.join(world.dataDir, "zdotdir")
@@ -108,7 +108,7 @@ async function desktopEnv(world: DesktopWorld, account: DesktopAccount | undefin
     CLAXEDO_SERVER_PORT: String(world.serverPort),
     ZDOTDIR: zdotdir,
     ELECTRON_RENDERER_URL: world.rendererUrl,
-    ...(account ? { CLAXEDO_CORE_ORIGIN: account.coreOrigin, NODE_EXTRA_CA_CERTS: account.trust.caPath } : {}),
+    ...(account ? { CLAXEDO_CORE_ORIGIN: account.coreOrigin, CLAXEDO_RELAY_ORIGINS: account.relayOrigins.join(","), NODE_EXTRA_CA_CERTS: account.trust.caPath } : {}),
   }
   return Object.fromEntries(Object.entries(entries).filter((entry): entry is [string, string] => entry[1] !== undefined))
 }
