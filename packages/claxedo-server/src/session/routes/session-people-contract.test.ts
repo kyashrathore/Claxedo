@@ -6,7 +6,8 @@ import type { OrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import type { ControlPlaneServices } from "../../authority/services"
 import { ControlPlaneSessionRoutes } from "./control-plane-session"
 import { SessionPeopleControlRoutes } from "./session-people-routes"
-import type { SessionShareChangedSink, SessionShareFanoutTarget } from "../session-people-contract"
+import type { SessionShareChangedSink } from "../session-people-contract"
+import type { SessionShareFanoutTarget } from "@claxedo/server-core/platform/auth/session-share-authority"
 
 const signedOptions = {
   authConfig: {

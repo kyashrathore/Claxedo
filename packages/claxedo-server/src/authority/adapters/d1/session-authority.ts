@@ -3,11 +3,11 @@ import type { PublicApiErrorCode } from "@claxedo/helpers/api-error"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type {
-  SessionShareGrantResult,
   SessionShareLevel,
   WorkspaceAuthority,
   WorkspaceVisibility,
 } from "@claxedo/server-core/platform/auth/authority"
+import type { SessionShareGrantResult } from "@claxedo/server-core/platform/auth/session-share-authority"
 import {
   requestedSessionShareLevel,
   storedSessionShareLevel,

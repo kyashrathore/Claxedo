@@ -8,12 +8,12 @@ import type {
   RegisterRuntimePrivateSessionInput,
   SessionPageQuery,
 } from "./private-session-authority"
-import type { SessionShareLevel } from "./session-share-level"
 import type { LatestView } from "../../session/latest-view-page"
 import type { TurnPageQuery, TurnPageRequest, TurnPage, FirstRead } from "@claxedo/agent-runtime-contract"
 import type { AgentContentPart } from "@claxedo/agent-runtime-contract"
 import type { HostSessionRowsAuthority } from "./host-session-rows"
 import type { OrgAccessAuthority } from "./org-access-authority"
+import type { SessionShareAuthority } from "./session-share-authority"
 
 export {
   DEFAULT_SESSION_SHARE_LEVEL,
@@ -114,41 +114,6 @@ export type WorkspaceOpenResult = {
 }
 
 /**
- * Canonical recipient identity resolved by the authority before a session
- * share is revoked. Routes use this target for recipient doorbells, including
- * grant-id-only revokes whose request body carries no recipient selector.
- */
-export type SessionShareFanoutTarget = {
-  grantedToTokenIdentifier?: string
-  grantedToSubject?: string
-  grantedToUserId?: string
-  grantedToOrgId?: string
-  grantedToTeamId?: string
-  grantedToTeamPublicId?: string
-}
-
-export type SessionShareRevokeResult = {
-  revoked: boolean
-  runtime_tokens_revoked?: number
-  revokedTargets: SessionShareFanoutTarget[]
-}
-
-export type SessionShareGrantResult = {
-  grant_id: string
-  level: SessionShareLevel
-}
-
-export type SessionPeopleContext = {
-  can_manage_shares: boolean
-  grants: Array<Record<string, unknown>>
-  teams: Array<{
-    team_id: string
-    name: string
-    is_shared: boolean
-  }>
-}
-
-/**
  * Neutral authority capability. Every method mirrors a concrete route or
  * pull-flow call site; the shapes are the structural contract the core relies
  * on and the adapter must satisfy.
@@ -159,7 +124,7 @@ export type ChannelMachineIdentity = { channel: string; externalUserId: string; 
 /** The same identity carrying the binding generation the authority admitted it under. */
 export type AuthorizedChannelIdentity = ChannelMachineIdentity & { identityVersion: number }
 
-export type WorkspaceAuthority = OrgAccessAuthority & {
+export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & {
   /** Internal host delegation, answered only for the workspace's owner, whose actor the authority rechecks. */
   resolveRuntimeMachineAccess: (actorId: string, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole }>
   resolveChannelMachineAccess: (identity: ChannelMachineIdentity, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole; identityVersion: number }>
@@ -492,43 +457,6 @@ export type WorkspaceAuthority = OrgAccessAuthority & {
   ) => Promise<void>
   authorizeRuntimeSession?: (args: AuthorizeRuntimePrivateSessionInput) => Promise<void>
   registerRuntimeSession?: (args: RegisterRuntimePrivateSessionInput) => Promise<unknown>
-  /**
-   * Creates the grant, or moves an existing one to `level`. One active grant
-   * per (session, target) is the store's unique index, so a second grant at a
-   * different level is the downgrade/upgrade control rather than a conflict.
-   */
-  grantSessionShare?: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      sessionId: string
-      workspaceId: string
-      level?: SessionShareLevel
-      grantedToTokenIdentifier?: string
-      grantedToSubject?: string
-      grantedToUserId?: string
-      grantedToOrgId?: string
-      grantedToTeamId?: string
-      grantedToTeamPublicId?: string
-    },
-  ) => Promise<SessionShareGrantResult>
-  revokeSessionShare?: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      sessionId: string
-      workspaceId: string
-      grantId?: string
-      grantedToTokenIdentifier?: string
-      grantedToSubject?: string
-      grantedToUserId?: string
-      grantedToOrgId?: string
-      grantedToTeamId?: string
-      grantedToTeamPublicId?: string
-    },
-  ) => Promise<SessionShareRevokeResult>
-  listSessionShares?: (
-    auth: SignedControlPlaneAuth,
-    args: { sessionId: string; workspaceId: string },
-  ) => Promise<SessionPeopleContext>
   createOrg?: (auth: SignedControlPlaneAuth, args: { name: string }) => Promise<unknown>
   listSessions: (
     auth: SignedControlPlaneAuth,

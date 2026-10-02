@@ -1,3 +1,5 @@
+import type { SharedSession } from "@claxedo/account-contract"
+import type { AuthIdentity } from "@claxedo/server-core/platform/auth/authentication"
 import { AGENT_MESSAGE_PAGE_LIMIT, AgentMessagePageError } from "@claxedo/agent-runtime-contract"
 import { asRecord, numberField, parseJson } from "@claxedo/server-core/platform/json/index"
 import { latestViewPage, type LatestView } from "@claxedo/server-core/session/latest-view-page"
@@ -200,3 +202,28 @@ export function decodeMessagePageCursor(sessionId: string, input: string) {
   }
 }
 
+
+export async function readD1SharedSessions(database: D1Database, input: { reads: BoundSql; sends: BoundSql; issuer: string }) {
+  const rows = await database.prepare(`
+      select s.session_id, s.workspace_id, s.project_id, s.title,
+        case when ${input.sends.sql} then 'send' else 'follow' end as level,
+        identity.adapter, identity.issuer, identity.subject
+      from sessions s
+      join workspaces w on w.workspace_id = s.workspace_id
+      left join auth_identities identity on identity.user_id = w.owner_user_id
+        and identity.unlinked_at is null and identity.adapter = 'better-auth' and identity.issuer = ?
+        and identity.subject = (
+          select owner_identity.subject from auth_identities owner_identity
+          where owner_identity.user_id = w.owner_user_id and owner_identity.unlinked_at is null
+            and owner_identity.adapter = identity.adapter and owner_identity.issuer = identity.issuer
+          order by owner_identity.linked_at, owner_identity.subject limit 1
+        )
+      where ${input.reads.sql}
+      order by s.updated_at desc, s.session_id
+    `).bind(...input.sends.bind, input.issuer, ...input.reads.bind)
+      .all<Omit<SharedSession, "owner_name"> & { adapter: AuthIdentity["adapter"] | null; issuer: string | null; subject: string | null }>()
+  return rows.results.map((row) => ({
+    session_id: row.session_id, workspace_id: row.workspace_id, project_id: row.project_id, title: row.title, level: row.level,
+    ownerIdentity: row.adapter && row.issuer && row.subject ? { adapter: row.adapter, issuer: row.issuer, subject: row.subject } : undefined,
+  }))
+}

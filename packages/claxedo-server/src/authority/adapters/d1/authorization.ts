@@ -39,7 +39,7 @@ export type AuthorizationPrincipal = {
 export type WorkspaceAction = "open" | "operate" | "create_session" | "assign_host" | "administer"
 
 /** `read` includes the live stream; `send` is the agent's turn; `control` is every other session write. */
-export type SessionAction = "read" | "send" | "control" | "manage_shares"
+export type SessionAction = "read" | "send" | "control" | "manage_shares" | "shared_read" | "shared_send"
 
 export type OrgAction = "member" | "administer" | "own"
 
@@ -232,7 +232,12 @@ function workspaceRuleSql(action: WorkspaceAction, w: string) {
 }
 
 function sessionRuleSql(action: SessionAction, s: string, withActor: boolean) {
-  const share = action === "read" || action === "send" ? ` or ${sessionShareSql(s, action === "send", withActor)}` : ""
+  const recipient = action === "shared_read" || action === "shared_send"
+  const send = action === "send" || action === "shared_send"
+  const share = recipient || action === "read" || action === "send" ? sessionShareSql(s, send, withActor, !recipient) : undefined
+  const access = recipient
+    ? `rule_workspace.owner_user_id <> ${USER} and ${share}`
+    : `rule_workspace.owner_user_id = ${USER}${share ? ` or ${share}` : ""}`
   return `(${s}.deleted_at is null
     and ${orgMemberSql(`${s}.org_id`, USER)}
     and exists (
@@ -249,7 +254,7 @@ function sessionRuleSql(action: SessionAction, s: string, withActor: boolean) {
           where rule_owner.user_id = rule_workspace.owner_user_id and rule_owner.state = 'active'
         )
         and ${orgMemberSql("rule_workspace.org_id", "rule_workspace.owner_user_id")}
-        and (rule_workspace.owner_user_id = ${USER}${share})
+        and (${access})
     ))`
 }
 
@@ -258,8 +263,8 @@ function sessionRuleSql(action: SessionAction, s: string, withActor: boolean) {
  * team of it they are on. `send` narrows it to a share at that level; an actor
  * that is not human never holds one.
  */
-function sessionShareSql(s: string, send: boolean, withActor: boolean) {
-  return `exists (select 1 from session_share_grants share where ${sharePredicateSql(s, send, withActor)})`
+function sessionShareSql(s: string, send: boolean, withActor: boolean, includeOrg = true) {
+  return `exists (select 1 from session_share_grants share where ${sharePredicateSql(s, send, withActor, includeOrg)})`
 }
 
 /**
@@ -280,20 +285,20 @@ export function admittingShareSql(principal: AuthorizationPrincipal, session: st
   )`, principal)
 }
 
-function sharePredicateSql(s: string, send: boolean, withActor: boolean) {
+function sharePredicateSql(s: string, send: boolean, withActor: boolean, includeOrg = true) {
   return `share.session_id = ${s}.session_id and share.revoked_at is null
       ${send ? "and share.level = 'send'" : ""}
       ${withActor ? `and exists (select 1 from actors share_actor where share_actor.actor_id = ${ACTOR} and share_actor.kind = 'human')` : ""}
       and (
         share.target_user_id = ${USER}
-        or (
+        ${includeOrg ? `or (
           share.target_org_id = ${s}.org_id
           and exists (
             select 1 from org_memberships share_org_member
             where share_org_member.org_id = share.target_org_id and share_org_member.user_id = ${USER}
               and share_org_member.revoked_at is null
           )
-        )
+        )` : ""}
         or exists (
           select 1 from team_memberships share_team_member
           join teams share_team on share_team.team_id = share_team_member.team_id

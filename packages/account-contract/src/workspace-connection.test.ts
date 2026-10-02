@@ -12,6 +12,17 @@ test("read-only connection accepts a stopped lease without a relay address", () 
   expect(() => decodeHostedResult("workspace.connection.read", {})).toThrow()
 })
 
+test("shared reads expose the fixed catalog and require the exact session for a connection", () => {
+  expect(resolveHostedOperation("session.shared.list", { url: "https://evil.test" })).toEqual({ method: "GET", path: "/api/workspace/shared-sessions" })
+  expect(resolveHostedOperation("session.connection.read", { id: "ws_1", sessionId: "ses_1", scope: "workspace", method: "POST" })).toEqual({ method: "GET", path: "/api/workspace/ws_1/connection?sessionId=ses_1" })
+  expect(HOSTED_OPERATIONS["session.shared.list"].exposure).toEqual({ renderer: true, app: false })
+  expect(HOSTED_OPERATIONS["session.connection.read"].exposure).toEqual({ renderer: true, app: false })
+  expect(() => resolveHostedOperation("session.connection.read", { id: "ws_1" })).toThrow()
+  const row = { session_id: "ses_1", workspace_id: "ws_1", project_id: "prj_1", title: null, owner_name: "Ada", level: "follow" as const }
+  expect(decodeHostedResult("session.shared.list", { sessions: [row] })).toEqual({ sessions: [row] })
+  expect(() => decodeHostedResult("session.shared.list", { sessions: [row, { ...row, level: "owner" }] })).toThrow()
+})
+
 test("session reservation exposes only the authority's fixed create reservation route", () => {
   expect(resolveHostedOperation("session.reserve", { workspaceId: "ws_1", sessionId: "ses_1", operationId: "op_1", title: "Cloud", kind: "fork" })).toEqual({ method: "POST", path: "/api/control/session-registrations/reserve", body: { workspaceId: "ws_1", sessionId: "ses_1", operationId: "op_1", title: "Cloud", kind: "create" } })
   expect(HOSTED_OPERATIONS["session.reserve"].exposure).toEqual({ renderer: true, app: false })

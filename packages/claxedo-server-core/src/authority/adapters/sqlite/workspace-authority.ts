@@ -38,10 +38,10 @@ import type {
   MachinePrincipal,
   ProjectAction,
   ProjectRoleResult,
-  SessionShareFanoutTarget,
   WorkspaceAuthority,
   WorkspaceHostAssignmentAdmission,
 } from "@claxedo/server-core/platform/auth/authority"
+import type { SessionShareFanoutTarget } from "@claxedo/server-core/platform/auth/session-share-authority"
 import {
   directoryWithinRoots,
   normalizePosixDirectory,

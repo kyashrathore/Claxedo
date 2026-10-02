@@ -3,10 +3,10 @@ import type { Context } from "hono"
 import type { SessionShareChangedEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type {
-  SessionShareFanoutTarget,
   SessionShareLevel,
   WorkspaceAuthority,
 } from "@claxedo/server-core/platform/auth/authority"
+import type { SessionShareFanoutTarget } from "@claxedo/server-core/platform/auth/session-share-authority"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
 
 /**
@@ -17,7 +17,6 @@ import { asRecord } from "@claxedo/server-core/platform/json/index"
  */
 export type SessionShareChangedSink = (event: SessionShareChangedEvent) => unknown
 
-export type { SessionShareFanoutTarget } from "@claxedo/server-core/platform/auth/authority"
 
 export function peopleErrorResponse(c: Context, error: unknown): Response {
   return publicApiFamilyResponse(c, error, "session_share")

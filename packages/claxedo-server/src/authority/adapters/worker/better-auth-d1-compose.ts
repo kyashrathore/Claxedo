@@ -169,7 +169,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       CONTROL_PLANE_DB: input.controlPlaneDatabase,
     },
     product: input.product,
-    actorProfile: (auth) => betterAuthAccount({ database: input.authDatabase, issuer: descriptor.issuer }, auth.principal?.identity),
+    actorProfile: (identity) => betterAuthAccount({ database: input.authDatabase, issuer: descriptor.issuer }, identity),
     invitations: orgInvitationEmailDelivery({
       verifiedEmail: async (auth) => (await betterAuthAccount({ database: input.authDatabase, issuer: descriptor.issuer }, auth.principal?.identity))?.verifiedEmail,
       appOrigin: configured.public.appOrigin,

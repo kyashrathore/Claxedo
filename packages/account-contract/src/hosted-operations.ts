@@ -1,4 +1,5 @@
 import { isPluginId } from "@claxedo/plugin-api/id"
+import { sharedSessions } from "./shared-sessions"
 import {
   defineOperation, operationInput, operationPath, requiredParameter, optionalParameter, bodyField,
   selectBody, operationHeaders, pluginMethod, pluginBody, connectedRepositoryBody,
@@ -8,6 +9,16 @@ import {
 import { object, withStrings, array, withArrays, sessionPeople, withRecord, nullable, connection, statusResult } from "./hosted-output"
 
 export const HOSTED_OPERATIONS = {
+  "session.shared.list": defineOperation({
+    method: "GET", path: operationPath("/api/workspace/shared-sessions"),
+    input: operationInput({}), output: sharedSessions, retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "session.connection.read": defineOperation({
+    method: "GET", path: operationPath("/api/workspace/:id/connection", { query: ["sessionId"] }),
+    input: operationInput({ id: requiredParameter, sessionId: requiredParameter }),
+    output: connection, retry: "safe", exposure: { renderer: true, app: false },
+  }),
   "account.mode": defineOperation({
     method: "GET", path: operationPath("/api/claxedo/mode"),
     input: operationInput({}),

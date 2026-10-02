@@ -1,5 +1,9 @@
 import { inviteOrgMember } from "../../../test-support/invite-org-member"
 import { afterEach, describe, expect, test } from "vitest"
+import { decodeJwt, exportPKCS8, exportSPKI, generateKeyPair } from "jose"
+import { runtimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
+import { hostedConnectionStatus, hostedSessionConnection } from "../../../connections/hosted-connection-info"
+import type { ControlPlaneServices } from "../../../authority/services"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 import type { D1CoreAuthorityBoundary } from "./core-authority"
@@ -61,6 +65,7 @@ async function setup() {
   active.push(controlPlane)
   const { database } = controlPlane
   const authority = composeBetterAuthD1Authority({
+    actorProfile: async (identity) => identity ? { name: identity.subject } : undefined,
     env: {
       CLAXEDO_ADAPTER_PROFILE: "better-auth-d1",
       CLAXEDO_PRODUCT_POSTURE: "claxedo-hosted",
@@ -148,6 +153,41 @@ async function expectShutOut(authority: D1CoreAuthorityBoundary, who: SignedCont
 }
 
 describe("one authorization owner", () => {
+  test("the shared catalog lists direct and team grants once with the effective level and owner name", async () => {
+    const { authority, alice, follower, sender, teamId, grantees: { teamEditor } } = await setup()
+    const input = { sessionId: "ses_alice", workspaceId: "ws_alice" }
+    expect(await authority.listSharedSessions!(follower)).toEqual([])
+    await authority.grantSessionShare!(alice, { ...input, grantedToUserId: id(follower), level: "follow" })
+    await authority.grantSessionShare!(alice, { ...input, grantedToUserId: id(sender), level: "send" })
+    await authority.grantSessionShare!(alice, { ...input, grantedToTeamId: teamId, level: "send" })
+    await authority.grantSessionShare!(alice, { ...input, grantedToUserId: id(teamEditor), level: "follow" })
+    await authority.linkApplicationIdentity(alice, { identity: { ...alice.principal!.identity, subject: "alice-linked" } })
+    const row = { session_id: "ses_alice", workspace_id: "ws_alice", project_id: expect.any(String), title: null, owner_name: "alice" }
+    expect(await authority.listSharedSessions!(follower)).toEqual([{ ...row, level: "follow" }])
+    expect(await authority.listSharedSessions!(sender)).toEqual([{ ...row, level: "send" }])
+    expect(await authority.listSharedSessions!(teamEditor)).toEqual([{ ...row, level: "send" }])
+    expect(await authority.listSharedSessions!(alice)).toEqual([])
+    expect(await authority.listWorkspaces(follower)).toEqual([])
+  })
+
+  test("revoked, out-of-organization and organization-wide grants do not list", async () => {
+    const { authority, database, alice, follower, sender, teamId, grantees: { teamEditor } } = await setup()
+    const input = { sessionId: "ses_alice", workspaceId: "ws_alice" }
+    await authority.grantSessionShare!(alice, { ...input, grantedToUserId: id(follower) })
+    await authority.grantSessionShare!(alice, { ...input, grantedToTeamId: teamId })
+    await authority.grantSessionShare!(alice, { ...input, grantedToOrgId: "org_acme", level: "send" })
+    expect(await authority.listSharedSessions!(sender)).toEqual([])
+    await authority.revokeSessionShare!(alice, { ...input, grantedToUserId: id(follower) })
+    expect(await authority.listSharedSessions!(follower)).toEqual([])
+    await database.prepare("update org_memberships set revoked_at = 1 where user_id = ? and org_id = 'org_acme'").bind(id(teamEditor)).run()
+    await authority.createHostedOrganization(teamEditor, { name: "Other", orgId: "org_other" })
+    expect(await authority.listSharedSessions!(teamEditor)).toEqual([])
+    await authority.addTeamMember!(alice, { teamId, userPublicId: id(sender) })
+    expect(await authority.listSharedSessions!(sender)).toEqual([expect.objectContaining({ session_id: "ses_alice", level: "follow" })])
+    await authority.revokeSessionShare!(alice, { ...input, grantedToTeamId: teamId })
+    expect(await authority.listSharedSessions!(sender)).toEqual([])
+    expect(await authority.listSharedSessions!(teamEditor)).toEqual([])
+  })
   test("no organization role, project owner row, team grant or member grant reaches another person's workspace, machine or sessions", async () => {
     const { authority, alice, projectId, teamId, grantees } = await setup()
 
@@ -271,6 +311,34 @@ describe("one authorization owner", () => {
     expect(await active("jti_share_again")).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
     await expect(token(sender, "jti_after_revoke", { sessionId: "ses_alice" })).rejects.toMatchObject({ status: 403 })
     expect(await active("jti_owner")).toEqual({ active: true })
+  })
+
+  test("the connection signs a session token for either holder and refuses sibling, workspace and non-holder access", async () => {
+    const { authority, alice, follower, sender, grantees: { orgAdmin } } = await setup()
+    const keys = await generateKeyPair("EdDSA", { extractable: true })
+    const options = {
+      relayUrl: "https://relay.test",
+      runtimeAccessTokenSigner: runtimeAccessTokenSigner({
+        CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(keys.privateKey),
+        CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: await exportSPKI(keys.publicKey),
+        CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM: "EdDSA",
+      }),
+    }
+    const services = {
+      authority, relay: { hostTunnelResolver: async () => ({ active: true, hostId: "host_alice", backing: "local-worktree" }) }, sandbox: {},
+    } as unknown as ControlPlaneServices
+    const input = { workspaceId: "ws_alice", sessionId: "ses_alice" }
+    for (const [holder, level] of [[follower, "follow"], [sender, "send"]] as const) {
+      await authority.grantSessionShare!(alice, { ...input, grantedToUserId: id(holder), level })
+      const answer = await hostedSessionConnection(services, options, holder, input)
+      if (!answer.connection) throw new Error("Session did not get a connection")
+      const claims = decodeJwt(answer.connection.runtimeAccessToken)
+      expect(claims).toMatchObject({ scope: "session", session_id: "ses_alice", workspace_id: "ws_alice", role: "viewer", actor_id: holder.principal!.actorId })
+      expect(claims.exp! - claims.iat!).toBe(30 * 60)
+      await expect(hostedSessionConnection(services, options, holder, { ...input, sessionId: "ses_alice_other" })).rejects.toMatchObject({ status: 403 })
+      await expect(hostedConnectionStatus(services, options, holder, input.workspaceId)).rejects.toMatchObject({ status: 403 })
+    }
+    await expect(hostedSessionConnection(services, options, orgAdmin, input)).rejects.toMatchObject({ status: 403 })
   })
 
   test("a runtime token a team share admitted ends with its holder's team membership and never comes back", async () => {

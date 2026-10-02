@@ -14,8 +14,8 @@ import {
   notifySessionShareChanged,
   peopleErrorResponse,
   type SessionShareChangedSink,
-  type SessionShareFanoutTarget,
 } from "../session-people-contract"
+import type { SessionShareFanoutTarget } from "@claxedo/server-core/platform/auth/session-share-authority"
 import { requestedSessionShareLevel } from "@claxedo/server-core/platform/auth/session-share-level"
 
 type Options = {

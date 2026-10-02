@@ -207,11 +207,19 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
 
   return (
     new Hono()
-      // Workspace LIST. Mirrors the LOCAL handler (workspace/routes/index.ts
-      // GET "/") for shape: signed when a host is named, returns
-      // { workspaces: [...] }, filtered to machine-placed rows on host=machine.
-      // The hosted control plane has no local projects list, so the unsigned /
-      // no-host case returns an empty list (NOT the local listProjects()).
+      .get("/shared-sessions", async (c) => {
+        const result = await signedOrError(c.req.raw, authOptions(), services)
+        if ("error" in result) return c.json(result.error, result.status)
+        if (!result.auth) return c.json(missingBearerBody(), 401)
+        try {
+          const authority = requireAuthority(services)
+          if (!authority.listSharedSessions) throw new ControlPlaneAuthError(503, "authority_unavailable", "Shared session authority is unavailable")
+          return c.json({ sessions: await authority.listSharedSessions(result.auth) })
+        } catch (error) {
+          if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
+          throw error
+        }
+      })
       .get("/", async (c) => {
         const host = c.req.query("host")
         if (host !== undefined && host !== "machine" && host !== "provisioner") {

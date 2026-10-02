@@ -11,6 +11,7 @@ export {
   type HostedOperationInput,
   type DecodedHostedResult,
 } from "./hosted-operations"
+export type { SharedSession } from "./shared-sessions"
 export {
   defineOperation,
   MissingOperationParameter,

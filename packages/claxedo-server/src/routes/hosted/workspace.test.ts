@@ -765,6 +765,17 @@ describe("hosted connection", () => {
 })
 
 describe("a session share holder's connection", () => {
+  test("shared session catalog returns the authority's rows and refuses unsigned requests", async () => {
+    const rows = [{ session_id: "ses_shared", workspace_id: "ws_1", project_id: "prj_1", title: "Review", owner_name: "Ada", level: "follow" }]
+    const listSharedSessions = vi.fn(async () => rows)
+    const { app } = buildApp({ authority: fakeAuthority({ listSharedSessions }) })
+    const response = await app.fetch(get("/shared-sessions", "recipient"))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ sessions: rows })
+    expect(listSharedSessions).toHaveBeenCalledTimes(1)
+    expect((await app.fetch(new Request("http://cp.test/shared-sessions"))).status).toBe(401)
+    expect(listSharedSessions).toHaveBeenCalledTimes(1)
+  })
   function sessionApp(input: { authority: ReturnType<typeof fakeAuthority>; hostTunnelResolver?: (workspaceId: string) => Promise<unknown> }) {
     const { services } = fakeServices(input.authority)
     ;(services as { relay?: unknown }).relay = { hostTunnelResolver: input.hostTunnelResolver }

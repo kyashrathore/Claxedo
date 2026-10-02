@@ -60,7 +60,7 @@ export type D1AuthorityProductPolicy =
     }
 
 /** The display identity a signed caller's sign-in provider holds for them. */
-export type D1ActorProfile = (auth: SignedControlPlaneAuth) => Promise<{ name?: string; image?: string } | undefined>
+export type D1ActorProfile = (identity: AuthIdentity | undefined) => Promise<{ name?: string; image?: string } | undefined>
 
 export type D1WorkspaceAuthorityOptions = {
   deploymentId: string
@@ -522,7 +522,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
 
   async usersMe(auth: SignedControlPlaneAuth) {
     const who = await this.requirePrincipal(auth)
-    const [orgs, profile] = await Promise.all([this.organizationRows(who.userId), this.options.actorProfile?.(auth)])
+    const [orgs, profile] = await Promise.all([this.organizationRows(who.userId), this.options.actorProfile?.(auth.principal?.identity)])
     return {
       user_id: who.userId,
       actor_id: who.actorId,
@@ -644,9 +644,6 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     return rows.map((row) => ({
       ...workspaceJson(row),
       role: "owner" as const,
-      // Reachability, not authorization: a shared workspace whose machine is
-      // asleep is still listed, and the rail says "host offline" for it rather
-      // than dropping the row or waiting for a pane to discover it.
       ...(row.backing === "local-worktree" ? { host_online: online.has(row.workspace_id) } : {}),
     }))
   }
