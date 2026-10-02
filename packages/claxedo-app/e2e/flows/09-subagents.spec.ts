@@ -25,5 +25,5 @@ test("09 subagents: a subagent the agent creates opens beside its parent in the 
   await expect(panel.getByText("Subagent sessions cannot be prompted.")).toBeVisible()
   await expect(app).toHaveURL(new RegExp(`${sessionRoute(workspace.id, session.id)}$`))
   await expect(app.getByText("The parent read the researcher's answer")).toBeVisible()
-  expect(assistantText(await api.messages(workspace.directory, children[0]!.id))).toContain("The researcher found the project name")
+  expect(assistantText(await api.messages(workspace.directory, children[0].id))).toContain("The researcher found the project name")
 })

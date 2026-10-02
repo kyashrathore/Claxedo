@@ -723,7 +723,7 @@ describe("D1 user-deployed invitation membership", () => {
     const bob = await signed(authority, "bob")
     expect(await authority.listOrgs(bob)).toEqual([])
 
-    await authority.acceptOrgInvitation!(bob, { token: tokens[0]! })
+    await authority.acceptOrgInvitation!(bob, { token: tokens[0] })
     expect(await authority.listOrgMembers!(alice, { orgId: "org_deploy" }))
       .toEqual(expect.arrayContaining([expect.objectContaining({ user_id: id(bob), role: "admin" })]))
     expect(await authority.admitInvitedIdentity(identity("carol"), "bob@example.test")).toMatchObject({ state: "unavailable" })

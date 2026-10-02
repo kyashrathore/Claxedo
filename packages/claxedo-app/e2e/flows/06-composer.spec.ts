@@ -293,6 +293,6 @@ test("06 the first key on a never-opened menu trigger opens the menu on its firs
   const labels = (await items.allTextContents()).map((label) => label.trim())
   const target = labels.findIndex((label, index) => index > 0 && labels.filter((other) => other[0]?.toLowerCase() === label[0]?.toLowerCase()).length === 1)
   expect(target).toBeGreaterThan(0)
-  await app.keyboard.press(labels[target]![0]!.toLowerCase())
+  await app.keyboard.press(labels[target][0].toLowerCase())
   await expect(items.nth(target)).toBeFocused()
 })

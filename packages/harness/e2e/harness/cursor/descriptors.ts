@@ -46,8 +46,9 @@ async function sdkPackageDir(): Promise<string> {
 
 function only(code: string, pattern: RegExp, what: string): RegExpMatchArray {
   const matches = [...code.matchAll(pattern)]
-  if (matches.length !== 1) throw new Error(`Pinned Cursor SDK layout changed: ${matches.length} matches for ${what}`)
-  return matches[0]!
+  const [match] = matches
+  if (!match || matches.length !== 1) throw new Error(`Pinned Cursor SDK layout changed: ${matches.length} matches for ${what}`)
+  return match
 }
 
 function escaped(value: string): string {

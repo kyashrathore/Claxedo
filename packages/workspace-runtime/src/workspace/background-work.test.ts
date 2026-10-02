@@ -34,7 +34,7 @@ async function fixture(backgroundTasks?: BackgroundTaskOperations) {
     beforeStart: async (_input, broker) => { brokers.push(broker) },
     turn: async function* ({ session }) {
       yield { type: "text-delta", delta: "started a background shell" }
-      if (transport.turns.length === 1) await brokers[0]!.publish({ type: "background-work", agents: 1, shells: 0, other: 0 })
+      if (transport.turns.length === 1) await brokers[0].publish({ type: "background-work", agents: 1, shells: 0, other: 0 })
       yield { type: "finish", sessionId: session.binding.sessionId }
     },
   })
@@ -75,11 +75,11 @@ test("background work started in a turn outlives it as a status fact that never 
 
   expect((await f.prompt("what else?")).status).toBe(200)
   expect(f.transport.turns).toHaveLength(2)
-  expect(f.transport.turns[1]!.session).toBe(f.transport.turns[0]!.session)
+  expect(f.transport.turns[1].session).toBe(f.transport.turns[0].session)
   expect(await f.statuses()).toEqual({ s: { type: "idle", backgroundWork: running } })
 
-  await f.brokers[0]!.publish({ type: "background-work", agents: 1, shells: 0, other: 0 })
-  await f.brokers[0]!.publish({ type: "background-work", agents: 0, shells: 0, other: 0 })
+  await f.brokers[0].publish({ type: "background-work", agents: 1, shells: 0, other: 0 })
+  await f.brokers[0].publish({ type: "background-work", agents: 0, shells: 0, other: 0 })
   expect(await f.statuses()).toEqual({})
   expect(await f.openStatus()).toEqual({ value: null })
   expect(f.frames.filter((frame) => frame.type === "session.background-work")).toEqual([
@@ -98,7 +98,7 @@ test("stopping one background task reaches the attached session's harness by the
   expect((await f.prompt("run it in the background")).status).toBe(200)
 
   expect(await f.stopTask({ toolCallId: "call-agent" })).toEqual({ status: 200, body: { ok: true } })
-  expect(stops.map(({ session, task }) => [session, task])).toEqual([[f.transport.turns[0]!.session, { toolCallId: "call-agent" }]])
+  expect(stops.map(({ session, task }) => [session, task])).toEqual([[f.transport.turns[0].session, { toolCallId: "call-agent" }]])
   expect(await f.stopTask({ toolCallId: "call-gone" })).toEqual({ status: 404, body: { ok: false, status: "not_found", message: "No running background task for call-gone" } })
   expect((await f.stopTask({})).status).toBe(400)
 })

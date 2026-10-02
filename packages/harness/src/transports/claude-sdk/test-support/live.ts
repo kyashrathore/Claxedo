@@ -38,7 +38,7 @@ export function scriptedLaunches(options: { failFirst?: unknown } = {}) {
     const users: SDKUserMessage[] = []
     const controls: string[] = []
     const stdinClosed = (async () => {
-      for await (const message of spec.prompt as AsyncIterable<SDKUserMessage>) {
+      for await (const message of spec.prompt) {
         const content = message.message.content
         users.push(message)
         prompts.push(typeof content === "string" ? content : content.map((part) => "text" in part ? part.text : "").join(""))

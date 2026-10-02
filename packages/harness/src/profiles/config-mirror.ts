@@ -90,7 +90,7 @@ export async function mirrorConfigEntries(source: string | undefined, target: st
       else if (!initialize) await fs.rm(to, { recursive: true, force: true })
       continue
     }
-    try { await mirrorConfigTree(from, to, root!, options, name) }
+    try { await mirrorConfigTree(from, to, root, options, name) }
     catch (error) {
       if (!options.allowDisappeared || !isMissingFile(error)) throw error
     }

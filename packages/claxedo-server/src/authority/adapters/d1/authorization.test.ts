@@ -128,9 +128,9 @@ async function expectShutOut(authority: D1CoreAuthorityBoundary, who: SignedCont
   await expect(authority.openWorkspace(who, { workspaceId }), `${label} opened the workspace`).rejects.toMatchObject(refused)
   expect((await authority.listWorkspaces(who) as Array<{ workspace_id: string }>).map((row) => row.workspace_id),
     `${label} listed the workspace`).not.toContain(workspaceId)
-  await expect(authority.activeWorkspaceHost!(who, { workspaceId }), `${label} read the machine serving it`)
+  await expect(authority.activeWorkspaceHost(who, { workspaceId }), `${label} read the machine serving it`)
     .rejects.toMatchObject(refused)
-  await expect(authority.unassignWorkspaceHost!(who, { workspaceId }), `${label} unassigned its machine`)
+  await expect(authority.unassignWorkspaceHost(who, { workspaceId }), `${label} unassigned its machine`)
     .rejects.toMatchObject(refused)
   for (const role of ["viewer", "owner"] as const) {
     await expect(authority.recordRuntimeAccessToken(who, {
@@ -220,7 +220,7 @@ describe("one authorization owner", () => {
     expect(await authority.openWorkspace(alice, { workspaceId })).toMatchObject({ allowed: true, role: "owner" })
     expect((await authority.listWorkspaces(alice) as Array<{ workspace_id: string; role: string }>))
       .toEqual([expect.objectContaining({ workspace_id: workspaceId, role: "owner" })])
-    expect(await authority.activeWorkspaceHost!(alice, { workspaceId })).toEqual({ active: false })
+    expect(await authority.activeWorkspaceHost(alice, { workspaceId })).toEqual({ active: false })
     await authority.recordRuntimeAccessToken(alice, {
       jti: "jti_alice", workspaceId, hostId: "host_alice", ...runtime(alice), role: "owner", expiresAt: 1_900_000_000_000,
     })

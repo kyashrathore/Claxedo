@@ -20,7 +20,7 @@ void describe("store core scenarios on the Node SQLite driver", () => {
       const stores: RuntimeStore[] = []
       const side = openTestRuntimeStoreDatabase(root).db
       try {
-        storeCoreScenarios[name]!({
+        storeCoreScenarios[name]({
           open: () => {
             const store = new RuntimeStore(openTestRuntimeStoreDatabase(root))
             stores.push(store)
@@ -96,7 +96,7 @@ void describe("store core scenarios on Durable Object SQLite under workerd", () 
     })
     miniflare = new Miniflare({
       compatibilityDate: "2026-07-22",
-      modules: [{ type: "ESModule", path: "index.mjs", contents: bundled.outputFiles[0]!.text }],
+      modules: [{ type: "ESModule", path: "index.mjs", contents: bundled.outputFiles[0].text }],
       durableObjects: { STORE_GATE: { className: "StoreGate", useSQLite: true } },
     })
     await miniflare.ready

@@ -71,13 +71,13 @@ export async function exerciseSessionPageConformance(
 
   const readers: string[] = []
   for (let index = 0; index < 7; index++) {
-    const workspaceId = workspaceIds[index % 2]!
+    const workspaceId = workspaceIds[index % 2]
     readers.push(await create(reader, workspaceId))
   }
-  await prompt(reader, readers[1]!, workspaceIds[1])
-  await prompt(reader, readers[4]!, workspaceIds[0])
+  await prompt(reader, readers[1], workspaceIds[1])
+  await prompt(reader, readers[4], workspaceIds[0])
   const colleagues = [await create(colleague, colleague.workspaceId), await create(colleague, colleague.workspaceId)]
-  await prompt(colleague, colleagues[0]!, colleague.workspaceId)
+  await prompt(colleague, colleagues[0], colleague.workspaceId)
   const strangers = [await create(stranger, stranger.workspaceId)]
 
   const whole = await readListPage(authority, reader.auth, `scope=project&projectId=${projectId}&limit=100`)
@@ -102,8 +102,8 @@ export async function exerciseSessionPageConformance(
     pages++
     if (pages === 1) {
       inserted.push(await create(reader, workspaceIds[0]))
-      moved.push(readers[0]!)
-      await prompt(reader, readers[0]!, workspaceIds[0])
+      moved.push(readers[0])
+      await prompt(reader, readers[0], workspaceIds[0])
     }
     if (pages === 2) inserted.push(await create(colleague, colleague.workspaceId))
   } while (cursor && pages < 20)
@@ -115,8 +115,8 @@ export async function exerciseSessionPageConformance(
   for (const sessionId of readers.filter((id) => !moved.includes(id))) {
     conform(walkedIds.includes(sessionId), `row ${sessionId} was skipped by the walk`)
   }
-  conform(walkedIds.includes(inserted[0]!), "a row created behind the cursor was not reached")
-  conform(!walkedIds.includes(moved[0]!), "a row prompted above the cursor came back below it")
+  conform(walkedIds.includes(inserted[0]), "a row created behind the cursor was not reached")
+  conform(!walkedIds.includes(moved[0]), "a row prompted above the cursor came back below it")
   conform(!walkedIds.some((id) => colleagues.includes(id) || id === inserted[1] || strangers.includes(id)),
     "the walk returned another person's session")
 
@@ -157,7 +157,7 @@ async function readListPage(authority: PrivateSessionAuthority, auth: SignedCont
 
 function isStrictlyOrdered(rows: SessionNavigationRow[]) {
   return rows.every((row, index) =>
-    index === 0 || compareSessionOrder(sessionOrderKey(rows[index - 1]!), sessionOrderKey(row), "human_turn_desc") < 0)
+    index === 0 || compareSessionOrder(sessionOrderKey(rows[index - 1]), sessionOrderKey(row), "human_turn_desc") < 0)
 }
 
 function sameSet(left: string[], right: string[]) {

@@ -37,7 +37,7 @@ async function bundle() {
     write: false,
     plugins: [nodeImports],
   })
-  return result.outputFiles[0]!.text
+  return result.outputFiles[0].text
 }
 
 /** A workerd process over the bundle, with what its objects wrote to stderr. */
@@ -288,7 +288,7 @@ void describe("the session core in a Durable Object under workerd", () => {
     assert.deepEqual((await reopened.status())[session.id], { type: "recovering", kind: "process_restart", message: RESTART_MESSAGE })
     const interrupted = await reopened.messages(session.id)
     assert.deepEqual(transcript(interrupted), [{ role: "user", text: "hold: the build" }, { role: "assistant", text: "working on the build" }])
-    const tool = interrupted[1]!.parts.find((part) => part.callID === "call_held")
+    const tool = interrupted[1].parts.find((part) => part.callID === "call_held")
     assert.deepEqual([tool?.state?.status, tool?.state?.error], ["error", "Tool execution interrupted by ACP restart"])
 
     const after = await reopened.stream()

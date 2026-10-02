@@ -46,7 +46,7 @@ async function fakeDaemon(options: { acquire?: number; recovery?: number } = {})
   const child = spawn("node", ["-e", FAKE_DAEMON, JSON.stringify(options)], { stdio: ["pipe", "pipe", "inherit"] })
   const port = await new Promise<number>((resolve) => {
     let buffered = ""
-    child.stdout!.on("data", (chunk: Buffer) => {
+    child.stdout.on("data", (chunk: Buffer) => {
       buffered += chunk.toString()
       for (let end = buffered.indexOf("\n"); end >= 0; end = buffered.indexOf("\n")) {
         const line = JSON.parse(buffered.slice(0, end)) as { port?: number; event?: string; seen?: Seen }
@@ -70,7 +70,7 @@ async function fakeDaemon(options: { acquire?: number; recovery?: number } = {})
     discovery,
     seen,
     events,
-    endLease: () => child.stdin!.write("end\n"),
+    endLease: () => child.stdin.write("end\n"),
     settle: () => new Promise((resolve) => setTimeout(resolve, 100)),
     close: () => {
       child.kill()

@@ -31,7 +31,7 @@ export function mergeSortedById<T extends { readonly id: string }>(current: read
     const left = current[a]
     const right = incoming[b]
     if (right === undefined || (left !== undefined && left.id < right.id)) {
-      merged.push(left as T)
+      merged.push(left)
       a += 1
     } else {
       merged.push(right)

@@ -33,7 +33,7 @@ function renderControlPlaneBaseline(directory: string) {
       if (object.sql.includes(";\n\n")) throw new Error(`${object.name}: a blank line after a semicolon would split the statement`)
     }
     // SQLite resolves foreign keys when rows are written, so tables need no dependency order.
-    const ordered = objects.sort((left, right) => TYPE_ORDER[left.type]! - TYPE_ORDER[right.type]!)
+    const ordered = objects.sort((left, right) => TYPE_ORDER[left.type] - TYPE_ORDER[right.type])
     const schema = ordered.map((object) => `${object.sql};`).join("\n\n") + "\n"
     replay.transaction(() => { for (const statement of baselineStatements(schema)) replay.exec(statement) })()
     if (JSON.stringify(schemaObjects(replay)) !== JSON.stringify(schemaObjects(chain))) {

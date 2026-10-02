@@ -42,7 +42,7 @@ function createQuestionContext(questions: Accessor<readonly AgentQuestionInfo[]>
     multi: createMemo(() => question()?.multiple === true),
     count: createMemo(() => options().length + 1),
     input: () => draft.custom[draft.tab] ?? "",
-    customOn: () => draft.customOn[draft.tab] === true,
+    customOn: () => draft.customOn[draft.tab] ?? false,
   }
 }
 

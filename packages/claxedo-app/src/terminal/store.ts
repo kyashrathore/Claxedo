@@ -44,7 +44,7 @@ export type TerminalStoreInput = {
 type TerminalRows = ReturnType<typeof createTerminalRows>
 
 function createTerminalRows() {
-  const [state, setState] = createStore<{ rows: TerminalRow[]; lost: Record<string, true> }>({ rows: [], lost: {} })
+  const [state, setState] = createStore<{ rows: TerminalRow[]; lost: Partial<Record<string, true>> }>({ rows: [], lost: {} })
   const index = (terminalId: TerminalId) => state.rows.findIndex((row) => row.id === terminalId)
   return {
     all: () => state.rows,

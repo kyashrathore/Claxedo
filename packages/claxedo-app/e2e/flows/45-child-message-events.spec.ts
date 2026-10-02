@@ -29,7 +29,7 @@ test("45 native Claude child handback renders as an expandable event", async ({ 
   const replies = messages.filter((message) => message.info.role === "assistant")
   expect(prompts).toHaveLength(1)
   expect(replies.length).toBeGreaterThan(1)
-  expect(replies.every((message) => message.info.role === "assistant" && message.info.parentID === prompts[0]!.info.id)).toBe(true)
+  expect(replies.every((message) => message.info.role === "assistant" && message.info.parentID === prompts[0].info.id)).toBe(true)
   expect(messages.flatMap((message) => message.parts).filter((part) => part.type === "notice" && isRecord(part.notice) && part.notice.kind === "agent-message"))
     .toHaveLength(1)
   await event.locator("summary").click()

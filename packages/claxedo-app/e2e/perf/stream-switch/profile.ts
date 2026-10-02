@@ -31,7 +31,7 @@ for (const segment of long)
     for (const file of files) byFile.set(file, (byFile.get(file) ?? 0) + sample.dt)
   }
 const top = (map: Map<string, number>, count: number) => [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, count).map(([label, us]) => `${(us / 1000).toFixed(1).padStart(8)}ms ${(100 * us / total).toFixed(0).padStart(3)}% ${label}`)
-console.log(`${long.length} busy segments >= ${minMs}ms: ${long.map((segment) => Math.round((segment.at(-1)!.at - segment[0]!.at) / 1000)).join(" ")}; total ${(total / 1000).toFixed(0)}ms`)
+console.log(`${long.length} busy segments >= ${minMs}ms: ${long.map((segment) => Math.round((segment.at(-1)!.at - segment[0].at) / 1000)).join(" ")}; total ${(total / 1000).toFixed(0)}ms`)
 console.log("--inclusive--")
 console.log(top(inclusive, Number(process.env.TOP ?? "60")).join("\n"))
 console.log("--inclusive by file--")

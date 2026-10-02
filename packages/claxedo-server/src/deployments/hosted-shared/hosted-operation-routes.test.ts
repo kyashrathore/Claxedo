@@ -70,7 +70,7 @@ function hostedRoutes() {
 
 function normalized(path: string) {
   return path
-    .split("?")[0]!
+    .split("?")[0]
     .replace(/:[A-Za-z][A-Za-z0-9]*(?:\{[^}]+\})?/g, ":parameter")
     .replace(/\/$/, "")
 }

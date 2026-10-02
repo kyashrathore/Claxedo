@@ -170,7 +170,7 @@ export function ProjectCreateForm(props: ProjectCreateFormProps) {
     form.setBusy(true)
     form.setError("")
     try {
-      if (props.onSubmit) return void (await props.onSubmit(picked, name))
+      if (props.onSubmit) return await props.onSubmit(picked, name)
       props.onCreated(await server.projects.create({ source: picked, ...(name ? { name } : {}) }))
     } catch (cause) {
       form.setError(toAppError(cause).message)

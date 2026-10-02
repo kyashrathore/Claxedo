@@ -40,7 +40,7 @@ function useAccountReads(server: Server) {
   const queries = [list, effective, logins, sources] as const
   const load = createMemo((): AccountsLoad => {
     if (list.data && effective.data && logins.data && sources.data) {
-      const snapshot = { stored: list.data, effective: effectiveByProvider(effective.data), machineLogins: logins.data as readonly MachineLogin[], sources: sources.data, scannedAt: Math.max(...queries.map((query) => query.dataUpdatedAt)) }
+      const snapshot = { stored: list.data, effective: effectiveByProvider(effective.data), machineLogins: logins.data, sources: sources.data, scannedAt: Math.max(...queries.map((query) => query.dataUpdatedAt)) }
       return { kind: "ready", snapshot }
     }
     const error = queries.map((query) => query.error).find((candidate) => candidate)

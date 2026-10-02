@@ -135,7 +135,7 @@ test("snapshot: a reread that sends a tool as its header keeps the body the read
     await readSnapshot(context)
     await loadPart(context, "msg_2_r", "p2")
     await readSnapshot(context)
-    expect(context.data.parts["msg_2_r"]).toEqual([shell("a\nb"), withHeader.entries[1]!.parts[1]!])
+    expect(context.data.parts["msg_2_r"]).toEqual([shell("a\nb"), withHeader.entries[1].parts[1]])
     dispose()
   })
 })

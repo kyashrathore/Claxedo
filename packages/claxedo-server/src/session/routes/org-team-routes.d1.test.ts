@@ -297,9 +297,9 @@ describe("hosted organization, team and project access routes on D1", () => {
       expect(await call(alice.token, "POST", `/api/control/orgs/${orgId}/invitations`, { email, role: "member" }))
         .toEqual({ status: 202, body: { message: "invitation sent" } })
     }
-    expect((await call(carol.token, "POST", "/api/control/invitations/accept", { token: sent[0]!.token })).body)
+    expect((await call(carol.token, "POST", "/api/control/invitations/accept", { token: sent[0].token })).body)
       .toMatchObject({ user_id: carol.userId, role: "member" })
-    expect(await call("dave", "POST", "/api/control/invitations/accept", { token: sent[1]!.token }))
+    expect(await call("dave", "POST", "/api/control/invitations/accept", { token: sent[1].token }))
       .toMatchObject({ status: 403, body: { error: { code: "org_invitation_email_mismatch" } } })
   })
 

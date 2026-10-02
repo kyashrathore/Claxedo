@@ -36,7 +36,7 @@ export function sessionRowFromListItem(item: unknown, address: Address): Session
     updatedAt,
     ...(lastHumanTurnAt !== undefined ? { lastHumanTurnAt } : {}),
     ...(archivedAt ? { archivedAt } : {}),
-    ...(parentSessionId ? { parentSessionId: sessionId(parentSessionId) as SessionId } : {}),
+    ...(parentSessionId ? { parentSessionId: sessionId(parentSessionId) } : {}),
   }
 }
 
@@ -63,7 +63,7 @@ export function sessionRowFromSession(info: AgentSession, ref: SessionLocation):
     updatedAt: updated,
     ...(lastHumanTurnAt !== undefined ? { lastHumanTurnAt } : {}),
     ...(archived ? { archivedAt: archived } : {}),
-    ...(parent ? { parentSessionId: sessionId(parent) as SessionId } : {}),
+    ...(parent ? { parentSessionId: sessionId(parent) } : {}),
     ...(info.lastTurn ? { lastTurn: info.lastTurn } : {}),
     ...configuredSelection(info),
   }
