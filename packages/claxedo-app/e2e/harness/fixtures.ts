@@ -93,8 +93,6 @@ export const test = base.extend<HarnessFixtures, HarnessWorkerFixtures>({
     },
     { scope: "worker", timeout: 300_000 },
   ],
-  // Booting and stopping the hosted Worker, relay, sandbox fixture and enrolled
-  // daemon is outside the flow's own budget.
   signed: [async ({ signedBuild }, use, testInfo) => {
     await useSignedFixture(signedBuild, testInfo, use)
   }, { timeout: 120_000 }],

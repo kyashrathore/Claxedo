@@ -28,10 +28,7 @@ export type SubmitBlockInput = {
   readonly harnessConfigError: boolean
   readonly harnessOptionsLoading: boolean
   readonly harnessReadyForSubmit: boolean
-  readonly needsModelSelection: boolean
   readonly modelBlocked: boolean
-  readonly modelBlockLabel: string | undefined
-  readonly providerLoading: boolean
   readonly booting: boolean
   readonly stoppable: boolean
   readonly blank: boolean
@@ -78,14 +75,9 @@ export function submitBlockReason(input: SubmitBlockInput): SubmitBlock | null {
     if (input.harnessOptionsLoading) return block("models-loading")
     if (input.harnessReadiness === "unresolved") return block("harness-polling")
     if (!input.harnessReadyForSubmit) return block("no-model")
-  } else if (input.needsModelSelection && input.modelBlocked) {
-    return block("no-model")
   }
 
-  if (input.modelBlocked) {
-    if (input.providerLoading || input.modelBlockLabel === "Loading models") return block("models-loading")
-    return block("no-model")
-  }
+  if (input.modelBlocked) return block("no-model")
 
   if (input.booting) return block("booting")
   if (!input.stoppable && input.blank) return block("empty")

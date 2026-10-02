@@ -33,7 +33,6 @@ export type SignedStack = {
   signIn(page: Page, account: Account): Promise<void>
   makeWorkspace(name: string, projectName?: string): Promise<Workspace>
   runtime(workspaceId: string): HttpTransport
-  /** Every control-plane request the public front forwarded, as `METHOD /path`, the desktop's included. */
   controlPlaneRequests(): readonly string[]
   close(): Promise<void>
 }

@@ -10,39 +10,22 @@ export type AlertPreferences = {
 
 export type Alert = { readonly kind: AlertKind; readonly ref: SessionLocation }
 
-type Activity = { readonly status?: SessionStatus; readonly backgroundWork: BackgroundWork }
-
-const QUIET: Activity = { backgroundWork: NO_BACKGROUND_WORK }
-
-function shown(activity: Activity): SessionStatus["kind"] | undefined {
-  return activity.status && sessionStatusWithBackgroundWork(activity.status, activity.backgroundWork).kind
-}
-
-function turnRunning(kind: SessionStatus["kind"] | undefined): boolean {
-  return kind === "working" || kind === "retrying" || kind === "recovering"
-}
-
-function activityAlert(previous: Activity, next: Activity): AlertKind | undefined {
-  const [before, after] = [shown(previous), shown(next)]
-  if (after === "failed") return before === "failed" ? undefined : "errors"
-  return turnRunning(before) && after === "idle" ? "agent" : undefined
-}
-
-type ActivityEvent = Extract<ServerEvent, { type: "statusChanged" | "backgroundWorkChanged" }>
-
-function nextActivity(previous: Activity, event: ActivityEvent): Activity {
-  return event.type === "statusChanged" ? { ...previous, status: event.status } : { ...previous, backgroundWork: event.work }
-}
+type Activity = { readonly kind?: SessionStatus["kind"]; readonly backgroundWork: BackgroundWork }
 
 export function createAlertDetector(): (event: ServerEvent) => Alert | undefined {
   const last = new Map<string, Activity>()
   return (event) => {
     if (event.type === "requestOpened") return event.request.kind === "permission" ? { kind: "permissions", ref: event.ref } : undefined
     if (event.type !== "statusChanged" && event.type !== "backgroundWorkChanged") return undefined
-    const previous = last.get(event.ref.sessionId) ?? QUIET
-    const next = nextActivity(previous, event)
-    last.set(event.ref.sessionId, next)
-    const kind = activityAlert(previous, next)
-    return kind ? { kind, ref: event.ref } : undefined
+    const previous = last.get(event.ref.sessionId) ?? { backgroundWork: NO_BACKGROUND_WORK }
+    if (event.type === "backgroundWorkChanged") {
+      last.set(event.ref.sessionId, { ...previous, backgroundWork: event.work })
+      return undefined
+    }
+    last.set(event.ref.sessionId, { ...previous, kind: event.status.kind })
+    const after = sessionStatusWithBackgroundWork(event.status, previous.backgroundWork).kind
+    if (after === "failed" && previous.kind !== "failed") return { kind: "errors", ref: event.ref }
+    if (after === "idle" && (previous.kind === "working" || previous.kind === "retrying" || previous.kind === "recovering")) return { kind: "agent", ref: event.ref }
+    return undefined
   }
 }

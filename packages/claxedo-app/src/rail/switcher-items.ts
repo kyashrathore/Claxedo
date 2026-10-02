@@ -1,5 +1,4 @@
 import { createMemo, type Accessor } from "solid-js"
-import { useUnseenFailures } from "@/notifications"
 import { useProjectList } from "@/projects"
 import { useServer, type ProjectId } from "@/server"
 import { panePlacementOf } from "@/shell"
@@ -44,7 +43,6 @@ export function useSwitcherItems(): Accessor<readonly SwitcherItem[]> {
   const server = useServer()
   const stores = useSessionStores()
   const terminals = useTerminals()
-  const unseenFailures = useUnseenFailures()
   const labels = useProjectLabels()
   return createMemo(() =>
     workbench.selectors.aliveContents().flatMap((contentId) => {
@@ -65,7 +63,7 @@ export function useSwitcherItems(): Accessor<readonly SwitcherItem[]> {
           title: opened.kind.title(opened.state as never),
           projectLabel: placement ? labels().get(placement.projectId) : undefined,
           workspaceLabel: placement?.label,
-          status: row ? navigationStatus(row, unseenFailures.has(row.ref.sessionId)) : terminal ? terminalNavigationStatus(terminal) : "idle",
+          status: row ? navigationStatus(row, stores.unseenFailures.has(row.ref.sessionId)) : terminal ? terminalNavigationStatus(terminal) : "idle",
         },
       ]
     }),

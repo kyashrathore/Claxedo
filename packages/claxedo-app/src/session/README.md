@@ -1,5 +1,7 @@
 # Session data
 
+`SessionStores.unseenFailures` owns the principal-scoped acknowledgement marks consumed by the rail. Notifications raises a mark only for an off-screen live failure and clears it when its route opens; list reads and transcript snapshots never raise marks.
+
 ## Reconcile rules of the session list
 
 `src/session/list/transition.ts` is the one owner of rows, order and status in the rail. Nothing else fetches, caches or patches rows. These rules are the contract; a change here changes the transition and flow 31 in the same change.
