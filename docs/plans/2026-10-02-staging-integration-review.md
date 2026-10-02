@@ -220,3 +220,11 @@ commands. Both focused files pass all 12 tests locally. Run 37026971749 passed
 the Node SDK and host smoke assertions, then exposed the smoke caller's missing
 `await host.dispose()` during cleanup. That caller now awaits canonical shutdown.
 Both Node probes pass locally; native Windows follow-up remains in progress.
+
+Staging run 37031078356 found the analogous 100 ms wall-clock race in ACP's
+human-permission suspension test. It now uses the existing controlled service
+clock, asserts no timer remains while the real broker permission is pending,
+and observes early prompt failure through the same race as permission arrival.
+The separate silence, startup-timeout and post-answer deadline cases still
+exercise cancellation and uncertain-session fencing. All 202 ACP conformance
+cases pass locally; product deadlines and transport code are unchanged.

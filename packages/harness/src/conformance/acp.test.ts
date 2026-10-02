@@ -430,6 +430,7 @@ test("the targeted red ACP agent fails at session/prompt", async () => {
 })
 
 test("a human permission wait suspends ACP's quiet deadline", async () => {
+  let timers: FakeTimers | undefined
   const context = await setupConformance({
     name: "acp held permission",
     async backend() {
@@ -437,6 +438,7 @@ test("a human permission wait suspends ACP's quiet deadline", async () => {
       return { ...peer, connection: { ...peer.connection, promptTimeoutMs: 100 } }
     },
     makeTransport(services, state) {
+      timers = fakeClock(services)
       const peer = state as AcpBackend
       return new AcpTransport(services, peer.connection, filterMcpServers)
     },
@@ -448,13 +450,12 @@ test("a human permission wait suspends ACP's quiet deadline", async () => {
         context.turn(context.backend.permissionCommand!), context.turnBroker())) events.push(event)
       return events
     })()
-    let pending = context.owner.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "permission")
-    for (let attempt = 0; !pending && attempt < 500; attempt++) {
-      await new Promise((resolve) => setTimeout(resolve, 10))
-      pending = context.owner.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "permission")
-    }
+    const pending = await Promise.race([
+      waitFor(() => context.owner.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "permission"), "permission request"),
+      running.then(() => undefined),
+    ])
     expect(pending).toBeDefined()
-    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(timers!.size).toBe(0)
     expect((await context.owner.broker.answer(pending!.request.requestId,
       { kind: "permission", decision: "allow_once" }, { sessionId: "s1" })).ok).toBe(true)
     expect((await running).some((item) => item.event.type === "finish")).toBe(true)
