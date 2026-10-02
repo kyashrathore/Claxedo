@@ -1,8 +1,8 @@
 import { toAppError } from "./errors"
 import type { ServerEvent } from "./events"
-import type { Transport } from "./transport"
 import type { SessionLocation } from "./types"
 import type { Workspaces } from "./workspaces"
+import type { HostedAccount } from "./account"
 
 type Action = "register" | "checkpoint"
 type Reason = "session-created" | "message-checkpoint"
@@ -12,21 +12,12 @@ export type SessionProjection = {
   readonly observe: (event: ServerEvent) => void
 }
 
-function endpoint(workspaceId: string, ref: SessionLocation, action: Action) {
-  return `/api/control/workspaces/${encodeURIComponent(workspaceId)}/sessions/${encodeURIComponent(ref.sessionId)}/${action}`
-}
-
-export function createSessionProjection(transport: Transport, workspaces: Workspaces): SessionProjection {
-  const held = (ref: SessionLocation) => {
-    const catalog = workspaces.catalog()
-    const placement = workspaces.byId(ref.placementId)
-    return catalog?.declaration.issuesSessions === true && placement?.kind === "cloud"
-  }
+export function createSessionProjection(workspaces: Workspaces, account: HostedAccount | undefined): SessionProjection {
   const pull = async (ref: SessionLocation, action: Action, reason: Reason, idempotencyKey: string) => {
-    if (!held(ref)) return
+    if (!account || workspaces.byId(ref.placementId)?.kind !== "cloud") return
     try {
       const { workspaceId } = await workspaces.locate(ref.placementId)
-      await transport.json<unknown>(endpoint(workspaceId, ref, action), { method: "POST", body: JSON.stringify({ idempotencyKey, reason }) })
+      await account.run(action === "register" ? "session.projection.register" : "session.projection.checkpoint", { workspaceId, sessionId: ref.sessionId, idempotencyKey, reason })
     } catch (error) {
       console.warn("The control plane could not store a cloud session", { sessionId: ref.sessionId, action, error: toAppError(error) })
     }

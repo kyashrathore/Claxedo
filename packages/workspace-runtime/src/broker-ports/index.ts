@@ -75,7 +75,7 @@ export function createStoreBrokerPorts(store: RuntimeStore, options: StoreBroker
       return events.drainProviderEvent(sessionId, turn.assistantMessageId, event)
     },
     drainChildEvent: (sessionId, event) => events.drainChildEvent(sessionId, event),
-    publishSessionEvent: (sessionId, event) => events.publishSessionEvent(sessionId, event),
+    publishSessionEvent: (sessionId, event, assistantMessageId) => events.publishSessionEvent(sessionId, event, assistantMessageId),
     meterUsage: (usage) => events.meterUsage(usage),
     subagentAdmissionStore: store,
     bindChildCorrelation: (parentSessionId, correlationKey, childSessionId) =>

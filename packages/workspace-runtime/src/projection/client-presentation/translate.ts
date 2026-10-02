@@ -90,6 +90,7 @@ export function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: Com
 
     case "session-compaction":
     case "harness-notice":
+    case "agent-message":
     case "conversation-reset":
       return projectNotice(ctx, chunk, now)
 

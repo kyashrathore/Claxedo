@@ -63,10 +63,11 @@ export function sessionBroker() {
   const goals: Goal[] = []
   const children: RoutedEvent[] = []
   const published: unknown[] = []
+  const publishedTargets: (string | undefined)[] = []
   let busy = false
   let rebinds = 0
   const broker = {
-    sessionId: "s1", config: () => input.config, publish: async (event: unknown) => { published.push(event) }, meter() {},
+    sessionId: "s1", config: () => input.config, publish: async (event: unknown, target?: string) => { published.push(event); publishedTargets.push(target) }, meter() {},
     observeSubagent: async () => undefined, associateChild() {}, publishChild: async (event: RoutedEvent) => { children.push(event) },
     goal: { read: () => goals.at(-1) ?? null, publish: async (goal: Goal) => { goals.push(goal) } },
     reportFailure: (error: unknown) => { throw error },
@@ -84,7 +85,7 @@ export function sessionBroker() {
       return { admitted: true, turn, settled }
     },
   } as unknown as SessionBroker
-  return { broker, own, goals, children, published, setBusy: (value: boolean) => { busy = value }, rebound: () => rebinds > 1 }
+  return { broker, own, goals, children, published, publishedTargets, setBusy: (value: boolean) => { busy = value }, rebound: () => rebinds > 1 }
 }
 
 export function turnBroker(): TurnBroker {
@@ -124,4 +125,3 @@ export async function setup() {
   const session = await transport.start(input, sessions.broker)
   return { transport, session, launches, ...sessions }
 }
-

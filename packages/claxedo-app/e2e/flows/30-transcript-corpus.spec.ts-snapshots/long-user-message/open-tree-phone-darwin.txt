@@ -1,0 +1,101 @@
+scrollTop: 0
+background subagents:
+(none)
+row 0:
+- text: "Prompt instruction 1: inspect this part of the project. Prompt instruction 2: inspect this part of the project. Prompt instruction 3: inspect this part of the project. Prompt instruction 4: inspect this part of the project. Prompt instruction 5: inspect this part of the project. Prompt instruction 6: inspect this part of the project. Prompt instruction 7: inspect this part of the project. Prompt instruction 8: inspect this part of the project. Prompt instruction 9: inspect this part of the project. Prompt instruction 10: inspect this part of the project. Prompt instruction 11: inspect this part of the project. Prompt instruction 12: inspect this part of the project. Prompt instruction 13: inspect this part of the project. Prompt instruction 14: inspect this part of the project. Prompt instruction 15: inspect this part of the project. Prompt instruction 16: inspect this part of the project. Prompt instruction 17: inspect this part of the project. Prompt instruction 18: inspect this part of the project. Prompt instruction 19: inspect this part of the project. Prompt instruction 20: inspect this part of the project. Prompt instruction 21: inspect this part of the project. Prompt instruction 22: inspect this part of the project. Prompt instruction 23: inspect this part of the project. Prompt instruction 24: inspect this part of the project. Prompt instruction 25: inspect this part of the project. Prompt instruction 26: inspect this part of the project. Prompt instruction 27: inspect this part of the project. Prompt instruction 28: inspect this part of the project. Prompt instruction 29: inspect this part of the project. Prompt instruction 30: inspect this part of the project. Prompt instruction 31: inspect this part of the project. Prompt instruction 32: inspect this part of the project. acp-script:long-user-message-0"
+- button "Show all"
+- text: Build · <time>
+- button "Copy message"
+row 1:
+- paragraph: Plain prompt received.
+- button "Copy response"
+- text: Build · 0s
+row 2:
+- heading "Project review" [level=1]
+- list:
+  - listitem:
+    - strong: Requirement 1
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 2
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 3
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 4
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 5
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 6
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 7
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 8
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 9
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 10
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 11
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 12
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 13
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 14
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 15
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 16
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 17
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 18
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 19
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 20
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 21
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 22
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 23
+    - text: ": inspect this part of the project."
+  - listitem:
+    - strong: Requirement 24
+    - text: ": inspect this part of the project. acp-script:long-user-message-1"
+- button "Show all"
+- text: Build · <time>
+- button "Copy message"
+row 3:
+- paragraph: Markdown prompt received.
+- button "Copy response"
+- text: Build · 0s
+row 4:
+- text: A short prompt. acp-script:long-user-message-2 Build · <time>
+- button "Copy message"
+row 5:
+- paragraph: All prompts received.
+- button "Copy response"
+- text: Build · 0s

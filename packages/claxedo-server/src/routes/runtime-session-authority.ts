@@ -10,7 +10,7 @@ import {
   SignJWT,
   type JWTVerifyGetKey,
 } from "jose"
-import { bearerToken, ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
+import { bearerToken } from "@claxedo/server-core/platform/auth/auth"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
   privateSessionRuntimeProof,
@@ -20,9 +20,7 @@ import {
 } from "@claxedo/server-core/platform/auth/private-session-authority"
 import {
   normalizeGrantSessionTurnInput,
-  SessionTurnConflictError,
   SessionTurnGrantError,
-  SessionTurnLeaseLostError,
   type SessionTurnAuthority,
   type SessionTurnGrantIntent,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
@@ -49,6 +47,7 @@ import {
   type DeferredTurnGrantClaims,
 } from "../session/deferred-turn-grant"
 import { trimToUndefined } from "@claxedo/helpers/string"
+import { sessionAuthorityErrorAnswer } from "../session/runtime-authority-errors"
 import { RuntimeConnectionSecretRoutes, type RuntimeConnectionSecretOptions } from "./runtime-connection-secrets"
 
 const bodyLimitBytes = 16 * 1024
@@ -887,32 +886,8 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       })
       return context.json({ allowed: true })
     } catch (error) {
-      if (error instanceof SessionTurnGrantError) {
-        return context.json({ error: { code: error.code, message: error.message } }, action === "turn_grant" ? 403 : 401)
-      }
-      if (error instanceof SessionTurnConflictError || error instanceof SessionTurnLeaseLostError) {
-        return context.json(
-          {
-            error: {
-              code: error.code,
-              message: error.message,
-              ...(error instanceof SessionTurnConflictError && error.activeUntil !== undefined
-                ? { activeUntil: error.activeUntil }
-                : {}),
-            },
-          },
-          409,
-        )
-      }
-      if (error instanceof ControlPlaneAuthError) {
-        return context.json(controlPlaneAuthErrorBody(error), error.status)
-      }
-      return context.json(
-        {
-          error: { code: "session_authority_unavailable", message: "Session authority is temporarily unavailable" },
-        },
-        503,
-      )
+      const answer = sessionAuthorityErrorAnswer(error, action)
+      return context.json(answer.body, answer.status)
     }
   })
 }

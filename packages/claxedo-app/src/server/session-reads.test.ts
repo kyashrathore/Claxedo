@@ -3,6 +3,7 @@ import { expect, test } from "bun:test"
 import type { HostedAccount } from "./account"
 import { sessionEndpoint } from "./session-context"
 import { NO_GOAL } from "./session-goal"
+import { ServerError } from "./errors"
 import { startSessionReads } from "./session-reads"
 import { readTurnPageBefore } from "./transcript-reads"
 import { centralRow, fakeServer, firstPath, firstRead, openPath, openView, ref, shape, stored } from "./test-session-server"
@@ -75,6 +76,29 @@ test("session reads: a runtime that answers it has stopped re-homes the session 
   expect(first.row).toMatchObject({ title: "Ship it" })
   expect(first.outline).toMatchObject({ turns: [{ id: "msg_1" }] })
   expect(await reads.requests).toEqual([])
+  expect(server.requests.filter((path) => path === "/api/claxedo/bootstrap").length).toBeGreaterThanOrEqual(2)
+})
+
+test("session reads: a scoped connection finding no runtime re-reads the catalog and renders its stopped history", async () => {
+  let running = true
+  const server = fakeServer({ reachable: () => running, runtime: () => {
+    running = false
+    throw new ServerError({ class: "conflict", code: "workspace_host_offline", message: "Nothing is serving this session's workspace right now" })
+  } })
+  const reads = startSessionReads(server.context, ref, shape)
+  const results = await Promise.allSettled([reads.first, reads.status, reads.requests, reads.todos, reads.goal, reads.subagents, reads.backgroundWork])
+  expect(results.every((result) => result.status === "fulfilled")).toBe(true)
+  expect((await reads.first).transcript.entries).toHaveLength(2)
+  expect(await reads.status).toEqual({ kind: "idle" })
+  expect(server.requests.filter((path) => path === "/api/claxedo/bootstrap").length).toBeGreaterThanOrEqual(2)
+})
+
+test("session reads: an offline connection refusal remains a failure if the refreshed catalog still says live", async () => {
+  const failure = new ServerError({ class: "conflict", code: "workspace_host_offline", message: "Runtime unavailable" })
+  const server = fakeServer({ reachable: () => true, runtime: () => { throw failure } })
+  const reads = startSessionReads(server.context, ref, shape)
+  const results = await Promise.allSettled([reads.first, reads.status, reads.requests, reads.todos, reads.goal, reads.subagents, reads.backgroundWork])
+  expect(results.every((result) => result.status === "rejected" && result.reason === failure)).toBe(true)
   expect(server.requests.filter((path) => path === "/api/claxedo/bootstrap").length).toBeGreaterThanOrEqual(2)
 })
 

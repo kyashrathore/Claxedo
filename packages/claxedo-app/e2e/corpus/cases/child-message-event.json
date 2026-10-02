@@ -1,0 +1,18 @@
+{
+  "id": "child-message-event",
+  "title": "Native Claude child reports render as events across continuations and reload",
+  "source": {
+    "kind": "test",
+    "file": "e2e/flows/45-child-message-events.spec.ts",
+    "name": "45 native Claude child handback renders as an expandable event"
+  },
+  "partKinds": ["text", "tool", "notice"],
+  "replay": { "agent": "claude", "scenario": "child-message-event" },
+  "ready": "Message from general-purpose",
+  "interactions": [
+    { "kind": "toggleAgentMessage" },
+    { "kind": "toggleAgentMessage" },
+    { "kind": "reload" }
+  ],
+  "invariant": "A real native peer report remains a distinct expandable event after later continuation replies. Only the human prompt is a user bubble, and replay or reload does not duplicate the report."
+}

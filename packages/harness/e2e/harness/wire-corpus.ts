@@ -115,23 +115,7 @@ function faultedObservations(rows: Observation[]): Observation[] {
 export function comparisonShape(rows: Observation[]) {
   const ids = new Map<string, string>()
   const specials = new Map<string, string>()
-  const http = rows.map((row, index) => {
-    if (row.kind !== "http") return undefined
-    if (row.method === "GET" && row.route.startsWith("/api/claxedo/usage")) {
-      const source = object(row.body)
-      const breakdown = object(source.breakdown)
-      const body: Record<string, unknown> = { claxedo: source.claxedo }
-      if (Array.isArray(breakdown.rows)) {
-        body.breakdown = { rows: [...breakdown.rows].sort((a, b) => {
-          const aKey = String(normalize(object(a).value, new Map(ids), new Map(specials)))
-          const bKey = String(normalize(object(b).value, new Map(ids), new Map(specials)))
-          return aKey.localeCompare(bKey)
-        }) }
-      }
-      return normalize({ ...row, body }, ids, specials, "", `http:${index}`)
-    }
-    return normalize(row, ids, specials, "", `http:${index}`)
-  })
+  const http = rows.map((row, index) => row.kind === "http" ? normalize(row, ids, specials, "", `http:${index}`) : undefined)
   return rows.map((row, index) => {
     if (row.kind === "http") return http[index]
     const frames = row.frames.filter((frame) => {
@@ -265,6 +249,24 @@ export function normalizeWireCorpus(value: unknown): unknown {
   return normalize(value, new Map(), new Map())
 }
 
+function unsequenced(frame: unknown): boolean {
+  return object(object(object(frame).data).payload).type === "harness.health"
+}
+
+export function healthAfterSequencedFrames(corpus: unknown): unknown {
+  const observations = object(corpus).observations
+  if (!Array.isArray(observations)) return corpus
+  return { ...object(corpus), observations: observations.map((row) => {
+    const entities = object(row).entities
+    if (!Array.isArray(entities)) return row
+    return { ...object(row), entities: entities.map((entity) => {
+      const frames = object(entity).frames
+      if (!Array.isArray(frames)) return entity
+      return { ...object(entity), frames: [...frames.filter((frame) => !unsequenced(frame)), ...frames.filter(unsequenced)] }
+    }) }
+  }) }
+}
+
 export function difference(expected: unknown, actual: unknown, location = "$"): string | undefined {
   if (Object.is(expected, actual)) return undefined
   if (expected && actual && typeof expected === "object" && typeof actual === "object") {
@@ -302,7 +304,8 @@ export function observeStream(url: URL) {
 
 /** Records one loopback HTTP exchange made outside the global `fetch`. */
 export async function observeHttp(target: URL, method: string, accept: string | null, reply: Response) {
-  const unsynchronizedReadback = method === "GET" && flow !== "H0-smoke" && (target.pathname === "/api/claxedo/health" || target.pathname.endsWith("/api/wr/health"))
+  const unsynchronizedReadback = method === "GET" && (target.pathname === "/api/claxedo/usage"
+    || flow !== "H0-smoke" && (target.pathname === "/api/claxedo/health" || target.pathname.endsWith("/api/wr/health")))
   const capture = active && !unsynchronizedReadback && (target.hostname === "127.0.0.1" || target.hostname === "localhost") && accept !== "text/event-stream"
   if (capture && !reply.headers.get("content-type")?.includes("text/event-stream")) {
     observations.push({ kind: "http", method, route: `${target.pathname}${target.search}`, status: reply.status, body: parsed(await reply.clone().text()) })
@@ -334,7 +337,7 @@ function settleCorpus(code: number) {
     return
   }
   const expected = JSON.parse(fs.readFileSync(file, "utf8")) as unknown
-  const diff = difference(expected, current)
+  const diff = difference(healthAfterSequencedFrames(expected), healthAfterSequencedFrames(current))
   if (diff && process.env.CLAXEDO_E2E_CORPUS_ACTUAL) {
     fs.writeFileSync(process.env.CLAXEDO_E2E_CORPUS_ACTUAL, `${JSON.stringify(current, null, 2)}\n`)
   }

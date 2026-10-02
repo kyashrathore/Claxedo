@@ -1,4 +1,5 @@
 export * from "./agent-glyph"
+export * from "./agent-message-event"
 export * from "./basic-tool"
 export * from "./data"
 export * from "./dock-prompt"

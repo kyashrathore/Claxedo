@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, For, onMount, Show, type JSX } 
 import { createProviderCatalog } from "@/composer"
 import { harnessDisplayLabel } from "@/lib/harness-catalog"
 import { SettingsEmpty, SettingsList } from "@/settings"
-import { toAppError, useServer, type CatalogProvider } from "@/server"
+import { toAppError, useServer, type CatalogProvider, type PlacementId } from "@/server"
 import { ClaxedoIcon as Icon, showToast, useDialog, Button, ProviderIcon, Tag } from "@/ui"
 import { canDisconnectProvider, catalogProviders, providerNote, providerSourceTag } from "../catalog-rules"
 import { useAccountsText } from "../i18n"
@@ -11,9 +11,9 @@ import { createHostedAccountSources, HostedAccountSourceChoice } from "./hosted-
 import { ProviderSetupRow } from "./provider-setup-row"
 import { SearchField } from "./search-field"
 
-export function createHarnessProviders(harness: () => string) {
+export function createHarnessProviders(harness: () => string, placementId?: () => PlacementId | undefined) {
   const server = useServer()
-  const catalog = createProviderCatalog({ server, harness, eager: true })
+  const catalog = createProviderCatalog({ server, harness, ...(placementId ? { placementId } : {}), eager: true })
   const detailed = new Set<string>()
   createEffect(() => {
     const unsourced = catalog.connected().filter((provider) => provider.source === undefined && !detailed.has(provider.id))

@@ -11,7 +11,7 @@ import { type ClaudeModelCatalog, requiredClaudeEffort } from "./models"
 import { retireClaudeProcesses } from "./process"
 import type { ClaudeLaunchTurn, ClaudeQueryLauncher } from "./query-options"
 import { commandResult, translatedClaim, type ClaudeScope } from "./claim-frames"
-import { claudeBackgroundWork, claudeChildDelivery } from "./between-turns"
+import { claudeBackgroundWork, claudeOutsideTurnDelivery } from "./between-turns"
 import { settledBy } from "./turn-deadline"
 
 type Running = { live?: ClaudeLiveQuery; done: Promise<void> }
@@ -116,7 +116,7 @@ export class ClaudeTurns {
     if (scope.signal.aborted) return false
     entry.turn = { broker: scope.broker, turnId: turn.turnId }
     active.launched = true
-    const opened = await this.open(entry, launch, opening)
+    const opened = await this.open(entry, launch, opening, scope.assistantMessageId)
     active.live = opened.live
     if (scope.signal.aborted) this.interrupt(opened.live)
     return yield* translatedClaim(entry, opened.live, opened.claim, scope)
@@ -131,7 +131,7 @@ export class ClaudeTurns {
       const prior = entry.live
       if (prior && !prior.reusable) await this.retire(entry, prior)
       const opening: SDKUserMessage = { type: "user", session_id: "", message: { role: "user", content: text }, parent_tool_use_id: null }
-      const opened = await this.open(entry, await this.launchFor(entry, configuredChoice(entry)), opening, () => true)
+      const opened = await this.open(entry, await this.launchFor(entry, configuredChoice(entry)), opening, undefined, () => true)
       active.live = opened.live
       const limit = setTimeout(() => opened.live.terminate(), limitMs)
       try { return await commandResult(entry, opened.claim, active.abort.signal, this.versions) } finally { clearTimeout(limit) }
@@ -170,18 +170,18 @@ export class ClaudeTurns {
     return { key, model, ...(effort ? { effort } : {}), ...(choice.system ? { system: choice.system } : {}), ...(choice.agent ? { agent: choice.agent } : {}) }
   }
 
-  private async open(entry: ClaudeEntry, launch: Launch, opening: SDKUserMessage,
+  private async open(entry: ClaudeEntry, launch: Launch, opening: SDKUserMessage, assistantMessageId?: string,
     reuse = (live: ClaudeLiveQuery) => live.key === launch.key): Promise<{ live: ClaudeLiveQuery; claim: ClaudeClaim }> {
     const current = entry.live
     if (current?.reusable && reuse(current)) {
       current.input.write(opening)
-      return { live: current, claim: current.claim("prompt")! }
+      return { live: current, claim: current.claim("prompt", assistantMessageId)! }
     }
-    const live: ClaudeLiveQuery = new ClaudeLiveQuery(launch.key, { unclaimed: (notice) => this.admitOwnTurn(entry, live, notice),
-      child: claudeChildDelivery(entry, () => live), background: claudeBackgroundWork(entry) })
+    const live: ClaudeLiveQuery = new ClaudeLiveQuery(launch.key, { unclaimed: (current) => this.admitOwnTurn(entry, live, current),
+      stage: claudeOutsideTurnDelivery(entry, () => live), background: claudeBackgroundWork(entry) })
     entry.live = live
     live.input.write(opening)
-    const claim = live.claim("prompt")!
+    const claim = live.claim("prompt", assistantMessageId)!
     try {
       live.run(await this.launcher().launch({ session: entry.session, input: entry.input, broker: entry.broker, turn: () => entry.turn,
         prompt: live.input.stream, abort: live.abort, processes: live.processes, usage: live.usage, subagentCall: (agentId) => live.spawnCall(agentId), model: launch.model, effort: launch.effort,
@@ -206,14 +206,14 @@ export class ClaudeTurns {
     return done
   }
 
-  private admitOwnTurn(entry: ClaudeEntry, live: ClaudeLiveQuery, notice: string | undefined): void {
-    void entry.broker.admitProviderTurn({ reason: "provider", ...(notice ? { detail: notice } : {}) }, (broker, turn) => this.ownTurn(entry, live, broker, turn)).then((admission) => {
+  private admitOwnTurn(entry: ClaudeEntry, live: ClaudeLiveQuery, current: () => boolean): void {
+    void entry.broker.admitProviderTurn({ reason: "continuation", current }, (broker, turn) => this.ownTurn(entry, live, broker, turn)).then((admission) => {
       if (!admission.admitted && admission.reason === "closed") live.close()
     }, (error: unknown) => entry.broker.reportFailure(error))
   }
 
   private async *ownTurn(entry: ClaudeEntry, live: ClaudeLiveQuery, broker: TurnBroker, turn: TurnRef): AsyncIterable<RoutedEvent> {
-    const claim = live.claim("result")
+    const claim = live.claim("result", turn.assistantMessageId)
     if (!claim) return
     const { promise: done, resolve: finish } = Promise.withResolvers<void>()
     entry.provider = { turnId: turn.turnId, live, done }

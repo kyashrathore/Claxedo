@@ -40,12 +40,15 @@ The corpus holds the transcript's behavior still: every case renders the same as
 - `source` says where the case came from: an inventory row (`inventory/session.md`), a seed session, a fix commit, a comment, or a session-ui unit test.
 - `partKinds` lists what the transcript contains, so the corpus can be checked for every part kind the agents produce.
 - `replay.turns` are played in order through the scripted ACP agent; each turn's `steps` are an `AcpStep[]` (see `e2e/README.md`), and `{{workspace}}` becomes the case's workspace folder. A turn with an `error` step is sent without waiting and settles when its assistant message completes or fails.
+- `replay: { "agent": "claude", "scenario": "child-message-event" }` runs the native Claude CLI against the scripted model boundary, creates a background Agent, and receives its SendMessage delivery.
 - `ready` is text the last turn shows; the case waits for it before comparing.
 - Turns are sent with ascending message ids, as the app sends them: the app orders a transcript by message id, and the runtime gives a prompt without one a random id.
 - A session opens on its first page: every turn arrives with every part, each tool as its row header unless the reader's settings open it, and a turn the fold folds is drawn under its "Worked for …" header. Nothing is read after it until the case acts.
 - A turn marked `"live": true` streams with the session open: it is sent once the transcript is on screen, and its steps pace their text with `delayMs` and stop at `hold` steps. The case compares what is on screen at each hold, so it proves the streaming renderer, not only the settled one. A live case's durations (the text part's agent and time, the Worked header's label) are hidden from its screenshots and replaced in its trees, since they depend on how long the holds lasted.
 - `interactions` run in order after the transcript is on screen, and the comparison is taken after each one:
   - `scroll` to `top` or `bottom`, `toggleFold` of the n-th Worked header, `reload`;
+  - `toggleUserMessage` expands or collapses the user bubble containing the stable visible text in `message`;
+  - `toggleAgentMessage` expands or collapses the child-message details row containing the report text in `message`;
   - `release` a live turn's `hold`, wait for its `ready` text and a DOM that has stopped changing, and, with `settles`, for the session to go idle;
   - `markRows` remembers the turn rows on screen, and `rowsKept` asserts they are still the same elements;
   - `markDetached` counts, after a forced collection, the DOM nodes that live outside the document, and `detachedGrowth` asserts that count grew by at most `max` since.

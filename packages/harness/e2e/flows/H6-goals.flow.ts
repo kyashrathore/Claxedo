@@ -83,12 +83,15 @@ async function nativeGoal(harnessId: "claude" | "codex") {
     const objective = `Complete scripted ${harnessId} H6 objective`
     const priorMessages = await api.messages(workspace.directory, session.id)
     const priorFrameCount = stream.frames.length
-    held = harnessId === "claude" ? stack.scripted.holdTextReplies(objective) : undefined
+    held = stack.scripted.holdTextReplies(objective)
     const started = await api.startGoal(workspace.directory, session.id, objective)
     assert.equal(started.goal?.objective, objective)
     await stream.waitFor((frame) => frameType(frame) === "goal.updated", { label: `${harnessId} Goal frame`, timeoutMs: 60_000 })
     assert.ok(await api.goal(workspace.directory, session.id))
     if (harnessId === "codex") {
+      await stack.scripted.textGateReached(objective)
+      held()
+      held = stack.scripted.holdTextReplies(objective)
       const goalTurnIdle = await stream.waitFor((frame) => frameType(frame) === "session.idle" && stream.frames.indexOf(frame) >= priorFrameCount, { label: "Codex provider Goal turn idle", timeoutMs: 60_000 })
       await stream.waitFor((frame) => frameType(frame) === "session.status" && stream.frames.indexOf(frame) > stream.frames.indexOf(goalTurnIdle)
         && (frame.data.payload as { properties?: { status?: { type?: string } } }).properties?.status?.type === "busy", { label: "Codex continuing the active Goal", timeoutMs: 60_000 })

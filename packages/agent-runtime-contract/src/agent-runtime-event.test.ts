@@ -9,7 +9,7 @@ import { isRuntimeGoalStatus } from "./subagents"
 
 describe("AgentRuntimeEvent contract", () => {
   test("exposes an explicit contract version and event kind registry", () => {
-    expect(AGENT_RUNTIME_EVENT_CONTRACT_VERSION).toBe(7)
+    expect(AGENT_RUNTIME_EVENT_CONTRACT_VERSION).toBe(8)
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("text-delta")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("user-message-delta")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("tool-status")

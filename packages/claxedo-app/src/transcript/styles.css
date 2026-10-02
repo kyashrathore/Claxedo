@@ -1,11 +1,13 @@
 @layer theme, base, components, utilities;
 
 @import "./agent-glyph.css" layer(components);
+@import "./agent-message-notice.css" layer(components);
 @import "./basic-tool.css" layer(components);
 @import "./claxedo-tool.css" layer(components);
 @import "./file.css" layer(components);
 @import "./markdown.css" layer(components);
 @import "./message-part.css" layer(components);
+@import "./folded-user-message-body.css" layer(components);
 @import "./message-nav.css" layer(components);
 @import "./question-card.css" layer(components);
 @import "./session-review.css" layer(components);

@@ -14,6 +14,8 @@ playground
 tmp
 dist
 dist-*
+# macOS appends " HH-MM-SS-mmm" to a folder put back from the Trash.
+dist *
 build
 out
 ts-dist

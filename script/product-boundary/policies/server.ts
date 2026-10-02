@@ -50,7 +50,9 @@ export const serverWorkerd: Policy = {
   // included, leaves through the Worker's Cloudflare `EMAIL` binding
   // (`platform/auth/auth-email-delivery.ts`); the session authority
   // routes resolve whose connections a turn spends through
-  // `connections/turn-owner.ts`, the owner of turn credential attribution; the
+  // `connections/turn-owner.ts`, the owner of turn credential attribution, and
+  // answer a decision the authority threw through
+  // `session/runtime-authority-errors.ts`; the
   // D1 session authority's refusal error and input validation
   // (`authority/adapters/d1/session-input.ts`) are a module of their own; every
   // D1 adapter reads a constraint failure through `platform/db/d1-constraint.ts`;
@@ -67,7 +69,7 @@ export const serverWorkerd: Policy = {
   // The D1 workspace authority's refusal type and its owner identity and
   // bootstrap-claim helpers are modules of their own
   // (`authority/adapters/d1/workspace-authority-error.ts`, `owner-identity.ts`).
-  ceilings: { modules: 119, packages: 19 },
+  ceilings: { modules: 120, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

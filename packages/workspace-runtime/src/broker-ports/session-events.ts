@@ -1,5 +1,6 @@
 import { createClientPresentationProjection } from "../projection/client-presentation/projection"
 import { projectSessionCommands } from "../projection/client-presentation/translate"
+import { eventNoticePartId } from "../projection/client-presentation/notices"
 import type { AgentRuntimeEvent, RuntimeDiagnostic, SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
 import type { OutsideTurnEvent, OutsideTurnUsage, RoutedEvent } from "@claxedo/harness/contract"
 import { childRouteDropped, isMeteredUsage, parentScopedUsage, resolveChildRoute } from "../projection/child-routes"
@@ -48,6 +49,7 @@ export class BrokerSessionEvents {
   private project(sessionId: string, turnId: string, event: AgentRuntimeEvent, source: RoutedEvent["source"]): void {
     const session = this.store.getSession(sessionId) as { directory?: string } | null
     if (!session) throw new Error(`Unknown session ${sessionId}`)
+    if (this.alreadyProjected(sessionId, event)) return
     const key = JSON.stringify([sessionId, turnId])
     let projection = this.turnProjections.get(key)
     if (!projection) {
@@ -65,9 +67,21 @@ export class BrokerSessionEvents {
     this.turnProjections.delete(JSON.stringify([sessionId, turnId]))
   }
 
-  async publishSessionEvent(sessionId: string, event: OutsideTurnEvent | SubagentUpdatedEvent): Promise<void> {
+  private alreadyProjected(sessionId: string, event: AgentRuntimeEvent): boolean {
+    if (event.type !== "agent-message" && event.type !== "harness-notice") return false
+    if (!event.eventId) return false
+    return !!this.store.database().prepare<{ present: number }>(
+      "SELECT 1 AS present FROM part WHERE session_id = ? AND id = ?",
+    ).get(sessionId, eventNoticePartId(sessionId, event.eventId))
+  }
+
+  async publishSessionEvent(sessionId: string, event: OutsideTurnEvent | SubagentUpdatedEvent, assistantMessageId?: string): Promise<void> {
     const session = this.store.getSession(sessionId) as { directory?: string } | null
     if (!session) throw new Error(`Unknown session ${sessionId}`)
+    if (assistantMessageId && this.store.messageSessionId(assistantMessageId) !== sessionId) {
+      throw new Error(`Message ${assistantMessageId} does not belong to session ${sessionId}`)
+    }
+    if (this.alreadyProjected(sessionId, event)) return
     const directory = session.directory ?? ""
     if (event.type === "background-work") {
       this.delivery.runtime(sessionId, event, undefined, () => {
@@ -82,9 +96,9 @@ export class BrokerSessionEvents {
       return
     }
     const projection = createClientPresentationProjection({
-      sessionId, directory, assistantMessageId: "",
+      sessionId, directory, assistantMessageId: assistantMessageId ?? "",
     })
-    this.delivery.runtime(sessionId, event, undefined, () => {
+    this.delivery.runtime(sessionId, event, assistantMessageId, () => {
       for (const envelope of projection.ingest(event)) this.delivery.append(sessionId, envelope.payload)
     })
   }

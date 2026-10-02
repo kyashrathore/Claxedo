@@ -30,4 +30,4 @@ H32 (a custom ACP connection spends a stored secret, and revoking it refuses the
 
 Changed shapes that keep the assertion: H19's ungranted member is refused a connection by the Worker and refused by the relay with their own cookie, instead of carrying a self-hosted member bearer; app 00's signed-out API refusal reads `/api/workspace` on the Worker; flows 21, 24 and 38 create repository-backed cloud workspaces; flow 39 selects by the D1 project id.
 
-Flows 24 and 38 run in a signed browser and on the signed desktop (`signedCloud` + `signedDesktop`). Waking and live-streaming a cloud session are skipped in both until `goal/s5-desktop-cloud-runtime`: a browser opens an account placement's stream only when the bootstrap query next changes, after the turn has started, and the desktop's daemon answers the wake 404 and reads a live session as missing.
+Flows 24 and 38 run in a signed browser and on the signed desktop (`signedCloud` + `signedDesktop`); the desktop is launched with the stack's relay as `CLAXEDO_RELAY_ORIGINS`, the origin its renderer policy admits.

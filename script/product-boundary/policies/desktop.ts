@@ -208,7 +208,11 @@ export const desktopMainComposition: Policy = {
   // -1 module: the hosted operation table is `@claxedo/account-contract`'s
   // own, so `account/hosted-operations.ts` is gone; the plugin id subpath now
   // arrives through that package. 86/24, no headroom.
-  ceilings: { modules: 86, packages: 24 },
+  // +1 module: `main/auto-update.ts`, the packaged app's update check, prompt
+  // and install, split out of `index.ts` along its own responsibility.
+  // Reviewed owner: Electron main, the only process that drives
+  // `electron-updater`, already a package edge. 87/24, no headroom.
+  ceilings: { modules: 87, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -428,6 +432,13 @@ export const desktopRenderer: Policy = {
   // SidePanel owns shared frame, header, tab, resize and motion; the panel and
   // Marketplace wrappers reach it through ui, with workspace data kept outside.
   // side-panel-slot lets the active page use that full-height shell host.
+  // Settings' provider model cards share their switch rows and large-provider
+  // virtualization through `accounts/view/model-rows.tsx`. A long user prompt
+  // folds through `transcript/folded-user-message-body.tsx` and its stylesheet.
+  // A child's report and a stored agent-authored opening share the event chrome
+  // of `transcript/agent-message-event.tsx`, styled by
+  // `transcript/agent-message-notice.css`. None adds a package edge.
+  // 1245/36, no headroom.
   ceilings: { modules: 1245, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",

@@ -17,7 +17,7 @@ import {
 
 import { JwksRoutes } from "../../authority/routes/jwks"
 import { OAuthProtectedResourceRoutes } from "../../mcp/oauth-protected-resource"
-import { HostedShellRoutes, hostedHarnessRuntimeOptions, hostedHarnessRuntimeStatus } from "../../routes/hosted/shell"
+import { HostedShellRoutes, hostedHarnessRuntimeStatus } from "../../routes/hosted/shell"
 import { HostedAuthProfileRoutes } from "../../routes/hosted/auth-profile"
 import { HostedDeviceAuthRoutes } from "../../routes/hosted/device-auth"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
@@ -310,7 +310,6 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       liveSyncRoom: options.liveSyncRoom,
       ...(services.authority ? { resolveOrgId: (auth) => services.authority!.resolveOrgId(auth) } : {}),
       harnessStatus: hostedHarnessRuntimeStatus(services),
-      harnessOptions: hostedHarnessRuntimeOptions(services),
       ...hostedPiCredentials({
         resolveOrgId: (auth) => requireAuthority(services).resolveOrgId(auth),
         credentials: plane.orgCredentials,
