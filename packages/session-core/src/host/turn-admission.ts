@@ -121,10 +121,11 @@ export function createTurnAdmissions(
       return active.get(sessionId)?.generation === generation
     },
     /**
-     * Hold the session against new turns while a recovery operation works on
-     * it. One holder at a time: a second concurrent request on the same session
-     * joins the operation that already holds it rather than opening a second
-     * controller over the same generation.
+     * Hold the session against new turns while a recovery operation, a harness
+     * switch or an ended turn's held configuration works on it. One holder at a
+     * time: a second concurrent request on the same session joins the operation
+     * that already holds it rather than opening a second controller over the
+     * same generation.
      */
     gate(sessionId: string): { release: () => void } | undefined {
       if (gates.has(sessionId)) return undefined

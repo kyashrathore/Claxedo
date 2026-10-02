@@ -45,7 +45,7 @@ export type TurnRun = {
   releaseAdmission: () => void
   clearsHandoff: boolean
   fence: Fence
-  /** Applied once this turn's producer has ended, before the next turn can start. */
+  /** Applied once this turn's producer has ended; the session admits no other turn or harness switch until it settles. */
   afterTurn?: () => Promise<void>
 }
 
@@ -125,20 +125,25 @@ export async function runTurn(host: TurnRunnerHost, run: TurnRun): Promise<void>
   let finalized: TurnFinalization | undefined
   let outcome: AgentTurnOutcome | undefined
   let titled = false
+  let settling: { release: () => void } | undefined
   try {
     let terminal = false
     const placeholder = titles.placeholder(sessionId, normalizeDirectory(directory), prompt)
     if (placeholder) host.commit(sessionId, directory, placeholder, { dir: "in", method: "auto-title" }, fence, publishTurn)
     const turn = turnInputFor(prompt, store.getTodos(sessionId), run.origin)
-    for await (const routed of run.attached.handle.transport.send(run.attached.session, turn, turnBroker)) {
-      if (!admitted()) return
-      const payload: AgentRuntimeEvent = routed.event
-      if (routed.route?.kind !== "child") {
-        terminal ||= isTerminalRuntimePayload(payload)
-        outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
-        if (outcome?.status === "failed" && isTerminalRuntimePayload(payload)) continue
+    try {
+      for await (const routed of run.attached.handle.transport.send(run.attached.session, turn, turnBroker)) {
+        if (!admitted()) return
+        const payload: AgentRuntimeEvent = routed.event
+        if (routed.route?.kind !== "child") {
+          terminal ||= isTerminalRuntimePayload(payload)
+          outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
+          if (outcome?.status === "failed" && isTerminalRuntimePayload(payload)) continue
+        }
+        router.project(payload, appendSource(routed), routed.route)
       }
-      router.project(payload, appendSource(routed), routed.route)
+    } finally {
+      if (run.afterTurn && admitted()) settling = admissions.gate(sessionId)
     }
     if (!admitted()) return
     if (!terminal && recovery.stops.sent(capture)) {
@@ -186,6 +191,7 @@ export async function runTurn(host: TurnRunnerHost, run: TurnRun): Promise<void>
       try { await run.afterTurn() } catch (error) { recovery.reportSessionFailure(sessionId, error) }
     }
     finishPublication((finalized ?? recovery.abandonTurn(capture, publishTurn)).ok)
+    settling?.release()
     if (titled) {
       void titles.generate({ sessionId, directory: normalizeDirectory(directory), transport: run.attached.handle.transport, session: run.attached.session })
     }
