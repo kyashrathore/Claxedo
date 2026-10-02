@@ -267,6 +267,22 @@ export function assertHostBundleDependencies(metafile: Metafile, dependencies: R
 }
 
 /**
+ * The image runs the smoke with plain `node` before anything else is installed
+ * beside it, so its typed config builder is compiled in rather than imported.
+ */
+export async function bundleImageSmoke(outfile: string) {
+  await esbuildBuild({
+    entryPoints: [fileURLToPath(new URL(`./${IMAGE_SMOKE_FILENAME}`, import.meta.url))],
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    target: "node22",
+    outfile,
+    logLevel: "warning",
+  })
+}
+
+/**
  * Bundle Claxedo's runnable workspace-runtime host into `outDir`.
  *
  * Emits the esbuild host bundle plus a generated package.json pinning the
@@ -316,7 +332,7 @@ export async function bundleClaxedoWorkspaceRuntimeHost(
   }, null, 2)
   fs.writeFileSync(packageJsonPath, packageJson)
   const smokePath = path.join(outDir, IMAGE_SMOKE_FILENAME)
-  fs.copyFileSync(new URL(`./${IMAGE_SMOKE_FILENAME}`, import.meta.url), smokePath)
+  await bundleImageSmoke(smokePath)
   const agentInstallerPath = path.join(outDir, "install-agent-artifacts.sh")
   fs.copyFileSync(new URL("./install-agent-artifacts.sh", import.meta.url), agentInstallerPath)
   // The host spawns the launch gate child by path, and the bundle has no
