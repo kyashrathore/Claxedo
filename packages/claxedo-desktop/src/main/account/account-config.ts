@@ -36,7 +36,7 @@ export type AccountConfig =
     }
   | { configured: false; missing: string[] }
 
-function exactOrigin(value: string | undefined, protocols: readonly string[]) {
+function exactSchemeOrigin(value: string | undefined, protocols: readonly string[]) {
   const raw = value?.trim()
   if (!raw) return undefined
   try {
@@ -59,7 +59,7 @@ function exactOrigin(value: string | undefined, protocols: readonly string[]) {
 }
 
 export function readAccountConfig(env: AccountConfigEnv): AccountConfig {
-  const coreOrigin = exactOrigin(env.CLAXEDO_CORE_ORIGIN, ["https:"])
+  const coreOrigin = exactSchemeOrigin(env.CLAXEDO_CORE_ORIGIN, ["https:"])
   if (!coreOrigin) {
     return { configured: false, missing: ["coreOrigin (CLAXEDO_CORE_ORIGIN must be an exact HTTPS origin)"] }
   }
@@ -73,7 +73,7 @@ export function readAccountConfig(env: AccountConfigEnv): AccountConfig {
   }
   const canaryJourneyId = env.CLAXEDO_RELEASE_CANARY_JOURNEY_ID?.trim()
   const relayEntries = (env.CLAXEDO_RELAY_ORIGINS ?? "").split(",").map((entry) => entry.trim()).filter(Boolean)
-  const relayOrigins = relayEntries.flatMap((entry) => exactOrigin(entry, ["https:", "http:"]) ?? [])
+  const relayOrigins = relayEntries.flatMap((entry) => exactSchemeOrigin(entry, ["https:", "http:"]) ?? [])
   if (relayOrigins.length !== relayEntries.length) {
     return { configured: false, missing: ["relayOrigins (CLAXEDO_RELAY_ORIGINS must list exact HTTP(S) origins)"] }
   }
