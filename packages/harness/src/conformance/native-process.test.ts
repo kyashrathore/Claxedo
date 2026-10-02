@@ -32,7 +32,7 @@ for (const kind of ["pi", "codex"] as const) {
     let descendant: number | undefined
     try {
       descendant = await new Promise<number>((resolve) => {
-        if (rpc instanceof PiRpc) rpc.onEvent((message) => { if (message.type === "descendant") resolve(Number(message.pid)) })
+        if (rpc instanceof PiRpc) rpc.onMessage((message) => { if (message.type === "descendant") resolve(Number(message.pid)) })
         else rpc.onMessage((message) => { if (message.method === "descendant") resolve((message.params as { pid: number }).pid) })
       })
       expect(processAlive(descendant)).toBe(true)

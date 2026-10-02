@@ -41,7 +41,7 @@ export class PiRpc {
   get alive(): boolean { return this.channel.alive && !this.exitReported }
   get exited(): boolean { return this.exitReported }
 
-  onEvent(listener: (message: PiMessage) => void): () => void {
+  onMessage(listener: (message: PiMessage) => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
   }
@@ -62,6 +62,7 @@ export class PiRpc {
         this.diagnostic(unrecognizedEvent("pi.rpc", `response.${String(message.command)}`, message))
         return
       }
+      for (const listener of this.listeners) listener(message)
       if (message.success === true) this.pending.resolve(message.id, message.data)
       else this.pending.reject(message.id, new TransportError("pi",
         command === "set_model" || command === "set_thinking_level" ? "configuration" : "protocol",

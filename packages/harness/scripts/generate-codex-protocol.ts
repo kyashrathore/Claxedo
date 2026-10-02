@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSy
 import path from "node:path"
 
 const packageRoot = path.resolve(import.meta.dirname, "..")
-const binary = path.join(packageRoot, "node_modules/.bin/codex")
+const binary = path.join(packageRoot, "node_modules/@openai/codex/bin/codex.js")
 const output = path.join(packageRoot, "src/transports/codex-app-server/translate/protocol")
 const artifacts = path.join(packageRoot, ".artifacts")
 
@@ -33,7 +33,7 @@ if (!existsSync(binary)) throw new CodexProtocolGeneratorMissingError(binary)
 mkdirSync(artifacts, { recursive: true })
 const generated = mkdtempSync(path.join(artifacts, "codex-protocol-"))
 try {
-  const result = spawnSync(binary, ["app-server", "generate-ts", "--out", generated], {
+  const result = spawnSync(process.execPath, [binary, "app-server", "generate-ts", "--out", generated], {
     cwd: packageRoot,
     stdio: "inherit",
   })

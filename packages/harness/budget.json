@@ -6,11 +6,11 @@
   "registry": 900,
   "capabilities": 450,
   "profiles": 656,
-  "transports/claude-sdk": 3387,
+  "transports/claude-sdk": 3391,
   "transports/codex-app-server": 3060,
   "transports/cursor-sdk": 1872,
   "transports/acp": 3110,
-  "transports/pi-rpc": 1411,
+  "transports/pi-rpc": 1420,
   "transports/opencode-sdk": 3000,
   "compose.ts": 62
 }

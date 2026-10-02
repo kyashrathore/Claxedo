@@ -130,7 +130,6 @@ export class PiRpcTransport implements HarnessTransport {
         run.prompted = true
         const disposition = asRecordOrEmpty(await entry.rpc.request("prompt", body)).disposition
         if (disposition !== "started" && disposition !== "handled") throw new TransportError("pi", "protocol", `Pi answered a prompt with disposition ${String(disposition)}`)
-        if (disposition === "handled" && !run.started) run.finishUnstarted()
       },
       release: () => broker.signal.removeEventListener("abort", onAbort),
     }

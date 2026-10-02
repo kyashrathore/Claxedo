@@ -1,4 +1,5 @@
 import { errorMessage } from "@claxedo/helpers"
+import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import type { Clock, Logger, OutsideTurnEvent, RoutedEvent, SessionBroker } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import { piEvents } from "./events"
@@ -29,7 +30,7 @@ export class PiSessionStream {
   private readonly translate: (message: PiMessage) => RoutedEvent[]
   constructor(private readonly host: PiStreamHost) {
     this.translate = piEvents(host.sessionId)
-    host.rpc.onEvent((message) => this.receive(message))
+    host.rpc.onMessage((message) => this.receive(message))
     host.rpc.onFailure((error) => this.fail(error))
   }
 
@@ -61,6 +62,14 @@ export class PiSessionStream {
   }
 
   private receive(message: PiMessage): void {
+    if (message.type === "response") {
+      if (message.command === "prompt" && message.success === true && asRecordOrEmpty(message.data).disposition === "handled"
+        && this.owner.kind === "turn" && !this.owner.run.started) {
+        this.owner.run.finishUnstarted()
+        this.owner = { kind: "idle" }
+      }
+      return
+    }
     const events = this.withoutRenameEcho(this.translate(message))
     if (this.owner.kind === "idle" && message.type === "agent_start") this.owner = { kind: "provider", turn: this.provider() }
     if (this.owner.kind === "turn") this.owner.run.receive(message, events)

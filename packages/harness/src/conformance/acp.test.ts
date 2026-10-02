@@ -464,6 +464,7 @@ test("a human permission wait suspends ACP's quiet deadline", async () => {
 test("a startup elicitation suspends session/new and binds to its reservation", async () => {
   let owner: ReturnType<typeof import("../broker").createRequestBroker> | undefined
   let ports: import("./test-support/memory-ports").MemoryPorts | undefined
+  let timers: FakeTimers | undefined
   const started = setupConformance({
     name: "acp startup question",
     async backend() {
@@ -472,17 +473,17 @@ test("a startup elicitation suspends session/new and binds to its reservation", 
         onSetup(context) { owner = context.owner; ports = context.ports } }
     },
     makeTransport(services, state) {
+      timers = fakeClock(services)
       const peer = state as AcpBackend
       return new AcpTransport(services, peer.connection, filterMcpServers)
     },
   })
-  let pending = owner?.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "elicitation")
-  for (let attempt = 0; !pending && attempt < 500; attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    pending = owner?.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "elicitation")
-  }
+  const pending = await Promise.race([
+    waitFor(() => owner?.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "elicitation"), "startup elicitation"),
+    started.then(() => undefined),
+  ])
   expect(pending?.start).toEqual(ports?.startBinding)
-  await new Promise((resolve) => setTimeout(resolve, 200))
+  expect([...timers!.values()].filter((timer) => timer.ms === 100)).toEqual([])
   const answer = await owner!.broker.answer(pending!.request.requestId, { kind: "form", values: { answer: "yes" } },
     { start: ports!.startBinding! })
   expect(answer.ok).toBe(true)

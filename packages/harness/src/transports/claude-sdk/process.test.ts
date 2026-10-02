@@ -1,8 +1,26 @@
 import { expect, test } from "bun:test"
-import { PassThrough } from "node:stream"
+import { PassThrough, Writable } from "node:stream"
 import type { HarnessServices, OwnedProcess } from "../../contract"
 import { ClaudeProcess } from "./process"
 import { singleFlightUntil } from "@claxedo/helpers"
+
+test("a closed child input reports a typed process failure instead of an uncaught EPIPE", async () => {
+  const brokenPipe = Object.assign(new Error("child stopped reading"), { code: "EPIPE" })
+  const owned: OwnedProcess = {
+    pid: 5_000_005,
+    stdin: new Writable({ write(_chunk, _encoding, callback) { callback(brokenPipe) } }),
+    stdout: new PassThrough(), stderr: new PassThrough(),
+    exited: new Promise(() => {}), retire: async () => ({ stopped: true }),
+  }
+  const services = { spawn: async () => owned, log: { debug() {}, info() {}, warn() {}, error() {} } } as unknown as HarnessServices
+  const child = new ClaudeProcess(services, { command: "claude", args: [], env: {}, signal: new AbortController().signal }, "s1")
+  const failed = new Promise<Error>((resolve) => child.once("error", resolve))
+  await child.started
+  child.stdin.write("a pending SDK request\n")
+  await expect(failed).resolves.toMatchObject({ transport: "claude", code: "process", cause: brokenPipe })
+  expect(child.stdout.destroyed).toBe(true)
+  await child.retire({ at: Date.now() + 1000, signal: new AbortController().signal })
+})
 
 test("Claude retirement delegates only to the owned launch after an SDK kill", async () => {
   const retired: number[] = []

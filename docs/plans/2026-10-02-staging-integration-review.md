@@ -23,10 +23,10 @@ these modules would undo the file-size repairs.
 | Profiles | 600 → 656 | `config-mirror.ts` owns atomic mirroring and external-skill containment; `pi/mcp.ts` owns literal MCP values; Codex home composition preserves resumable owner state. |
 | Translation | 550 → 555 | `frame-excerpt.ts` owns bounded diagnostic excerpts; attachment readers preserve the supplied bytes. |
 | ACP | 3014 → 3110 | Tool facts, updates, presentation, content chunks, configuration options and plan updates now have separate translator modules. `wire-updates.ts` owns session update delivery and `children.ts` child continuity. |
-| Claude | 2969 → 3387 | Separate message, tool-result, usage and subagent translators replace the old combined translator. `live-query.ts` owns query lifetime; `live-settings.ts` applies model, effort and permission changes through the SDK. |
+| Claude | 2969 → 3391 | Separate message, tool-result, usage and subagent translators replace the old combined translator. `live-query.ts` owns query lifetime; `live-settings.ts` applies model, effort and permission changes through the SDK. |
 | Codex | 2793 → 3060 | `children.ts` owns native child state; `native-children.ts` interprets provider observations; `child-delivery.ts` orders delivery. Session and usage owners remain transport-specific. Generated protocol declarations remain excluded by the existing checker. |
 | Cursor | 1652 → 1872 | `cancel.ts` owns deadline-bound cancellation; host deltas and task/shell translators carry SDK events that its ordinary stream omits. These differ from Codex and Claude lifecycle protocols. |
-| Pi | 864 → 1411 | `session-stream.ts` owns the explicit idle/turn/provider state; `provider-turn.ts` admits Pi-initiated runs; `run.ts` handles terminal delivery; `steers.ts` correlates incorporation. Native MCP handoff and version admission have dedicated owners. |
+| Pi | 864 → 1420 | `session-stream.ts` owns the explicit idle/turn/provider state; `provider-turn.ts` admits Pi-initiated runs; `run.ts` handles terminal delivery; `steers.ts` correlates incorporation. Native MCP handoff and version admission have dedicated owners. |
 
 The app comparison uses `c78f8fb178`, the last app budget edit. The affected
 increments are local validation and exhaustiveness repairs, not a new domain.
@@ -112,9 +112,10 @@ Local logs are `/private/tmp/staging-integration-*.log`.
 | Server `bun run sandbox:image --agent-plugins` | Local Linux image build and in-image runtime smoke passed; no push |
 | Control-plane and relay staging dry runs | Both bundled offline; no deploy |
 
-The full clean Linux unit umbrella and the Cloudflare-specific Dockerfile
-build are still running. Native Windows and packaged desktop acceptance have
-not been run for this integration. Live staging flows have not been exercised.
+The Cloudflare-specific Dockerfile build and in-image smoke passed before the
+subsequent process fixes. Clean Linux and native Windows follow-ups are recorded
+below. The staging-configured desktop build passed; packaged desktop and live
+staging acceptance remain unverified.
 
 ## Fresh Linux follow-up
 
@@ -133,6 +134,46 @@ The shared Linux setup reserves that range, preserving existing reservations.
 These two hazards explain possible collisions; the observed failed bind alone
 does not identify which one won that particular race.
 
-The corrected Linux umbrella is running on another fresh lease. The original
-run continues to collect failures from the other packages. The Cloudflare
-Dockerfile build and its in-image smoke have now passed as well.
+Both Linux umbrellas have finished and released their leases. The second
+passed 25 of 28 package tasks; harness, local-server and workspace-runtime
+failed. Its harness and Claude process failures are addressed below.
+
+
+## Native CI follow-up
+
+GitHub run 37022046900 passed all four Linux server shards, documentation links
+and app checks. Typecheck run 37022048660 passed. The rest shard found a Pi
+wire-order race and the startup-elicitation fixture's 100 ms wall-clock race.
+Windows stopped at the protocol generator's Unix-only launcher path, before
+unit tests. The generator now executes the pinned package's JavaScript entry
+through the current runtime, on every platform.
+
+The Pi reply used to resolve a promise; a following `agent_start` in the same
+read reached the previous owner before that promise's continuation ran. The
+RPC owner now delivers matched replies synchronously; the session owner handles
+the canonical disposition before the next notification. No event is invented.
+The coalesced-wire regression failed before the repair and passes afterward;
+the started disposition retains its original owner. Real Pi and Codex background
+conformance passes all 80 cases locally. Pi's reviewed domain grows nine lines
+for this ownership transition, to exactly 1,420; the per-file limits stay fixed.
+
+The clean Linux local-server run also exposed an uncaught Claude child stdin
+EPIPE after its assertions passed. `ClaudeProcess` now forwards owned-stream
+errors as typed process failures and closes the SDK's read stream. The new test
+reproduced the unhandled EPIPE before the fix; all seven process tests pass
+with it. The four added lines belong to this existing process owner; Claude's
+reviewed domain is exactly 3,391 lines.
+
+The Codex background fixture now waits for the authoritative terminal inventory
+to empty after reading its marker: a file write precedes shell exit. The ACP
+startup question flow uses the existing controllable service clock and asserts
+that its deadline timer is suspended while the question is held; it no longer
+requires a complete network handshake inside 100 ms. All 204 ACP conformance
+and deadline cases pass locally, including the unattended-timeout case.
+
+
+The PTY fixture created its shell before the launch it claimed to represent,
+then waited on fixed sleeps while a 5 ms orphan timer could remove the session.
+It now creates the real process inside the mocked PTY spawn, connects a client,
+observes the shell's child-ready marker, and awaits the actual leader exit.
+No ownership admission rule changes. All 22 PTY lifecycle cases pass locally.

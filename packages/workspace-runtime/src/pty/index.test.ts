@@ -16,7 +16,7 @@ const fakeProcesses = new Map<number, {
   dataHandlers: DataHandler[]
   exitHandlers: ExitHandler[]
 }>()
-let nextSpawnPid: number | undefined
+let nextSpawnPid: number | (() => number) | undefined
 let nextSpawnDelay = 0
 let nextSpawnExit = false
 const nativeKills: number[] = []
@@ -49,7 +49,7 @@ const alive = (pid: number) => {
 
 await mock.module("@lydell/node-pty", () => ({
   spawn(command: string, args: string[], options: { cwd?: string; env?: Record<string, string> }) {
-    const pid = nextSpawnPid ?? disposablePid()
+    const pid = typeof nextSpawnPid === "function" ? nextSpawnPid() : nextSpawnPid ?? disposablePid()
     nextSpawnPid = undefined
     let ready = nextSpawnDelay === 0
     if (!ready) setTimeout(() => { ready = true }, nextSpawnDelay)
@@ -467,14 +467,23 @@ describe("Pty unresolved retirement", () => {
     // A leader with a member of its own. Killing only the leader leaves the
     // group populated, which is the one outcome that is honestly reportable
     // here: macOS cannot make a process survive SIGKILL.
-    const leader = spawnChild("/bin/sh", ["-c", "sleep 30 & sleep 30"], { detached: true, stdio: "ignore" })
-    disposableChildren.push(leader)
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    nextSpawnPid = leader.pid!
+    let leader!: ChildProcess
+    const ready = path.join(tmpDir, "group-ready")
+    nextSpawnPid = () => {
+      leader = spawnChild("/bin/sh", ["-c", 'sleep 30 & echo $! > "$1"; wait', "pty-test", ready], { detached: true, stdio: "ignore" })
+      disposableChildren.push(leader)
+      return leader.pid!
+    }
 
     const info = await Pty.create({ cwd: tmpDir, title: "orphaned-group" }, ownership)
-    process.kill(leader.pid!, "SIGKILL")
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    Pty.connect(info.id, socket())
+    const deadline = Date.now() + 5_000
+    while (!await Bun.file(ready).exists() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(await Bun.file(ready).exists()).toBe(true)
+    await new Promise<void>((resolve) => {
+      leader.once("exit", () => resolve())
+      process.kill(leader.pid!, "SIGKILL")
+    })
 
     const result = await Pty.remove(info.id)
 

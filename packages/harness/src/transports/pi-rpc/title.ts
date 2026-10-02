@@ -47,7 +47,7 @@ export async function piSessionTitle(rpc: PiRpc, stateRoot: string, request: Ses
   }
   let name: string | null = null
   let failure: string | undefined
-  const stop = rpc.onEvent((event) => {
+  const stop = rpc.onMessage((event) => {
     if (event.type === "session_info_changed" && typeof event.name === "string") name = event.name
     if (event.type === "extension_error" && event.extensionPath === `command:${PI_TITLE_COMMAND}`) failure = String(event.error)
   })

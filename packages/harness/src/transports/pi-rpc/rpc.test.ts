@@ -62,7 +62,7 @@ describe("Pi RPC wire", () => {
   test("splits only on LF and preserves Unicode separators", async () => {
     const f = fixture()
     const events: string[] = []
-    f.rpc.onEvent((message) => events.push(String(message.text)))
+    f.rpc.onMessage((message) => events.push(String(message.text)))
     f.stdout.write('{"type":"notice","text":"one\u2028two\u2029three"}\n')
     expect(events).toEqual(["one\u2028two\u2029three"])
     f.exit({ code: 0, signal: null })
