@@ -1,6 +1,6 @@
 # Invariant map: `agent-runtime-contract` + `opencode-server-adapter`
 
-Scope: all `*.test.ts` under `packages/agent-runtime-contract/src` (14 files) and `packages/opencode-server-adapter/src` (4 files), excluding `node_modules`/`dist`. Every file was read in full before classifying.
+Scope: all `*.test.ts` under `packages/agent-runtime-contract/src` (14 files) and the `src` of `opencode-server-adapter` (4 files; the package was deleted in 995d23e839), excluding `node_modules`/`dist`. Every file was read in full before classifying.
 
 ## Counting convention
 

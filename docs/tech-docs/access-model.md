@@ -243,7 +243,7 @@ to its workspace's owner, with an empty list; to anyone else it, another
 person's session and an unknown workspace are the same refusal.
 
 The runtime names which class a write is (`sessionAccessWriteClass` in
-`packages/workspace-runtime/src/session-access-policy.ts`: `agent_turn` is
+`packages/session-core/src/session-access-policy.ts`: `agent_turn` is
 `send`, `session_control` is `control`) and the session authority answers
 it. Read and write checks live in both the managed route policy and the
 storage authority so alternate clients cannot bypass the rule.
@@ -332,7 +332,7 @@ the stream before its next session-derived event. The client reconnects with a
 fresh RAT/RHT and resumes through `Last-Event-ID`.
 
 A runtime's `sessionAuthority` marker (`local` or `managed-private`,
-`packages/workspace-runtime/src/session-access-policy.ts`) is a declaration
+`packages/session-core/src/session-access-policy.ts`) is a declaration
 of how it was composed, carried on the host's heartbeat and read by clients
 to know whether a session must be reserved first. It decides nothing about a
 request. What decides registration, turn admission and event privacy is the
