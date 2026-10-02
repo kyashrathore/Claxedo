@@ -29,7 +29,7 @@ export function toolDisplayFromInput(input: {
   return {
     kind: input.kind,
     intent: canonicalToolIntent(input),
-    ...(text(input.input?.command) ? { command: text(input.input?.command), description: text(input.input?.command) } : {}),
+    ...(text(input.input?.command) ? { command: text(input.input?.command) } : {}),
     ...(text(input.input?.filePath) ? { filePath: text(input.input?.filePath) } : {}),
     ...(text(input.input?.file_path) ? { filePath: text(input.input?.file_path) } : {}),
     ...(text(input.input?.path) ? { path: text(input.input?.path) } : {}),

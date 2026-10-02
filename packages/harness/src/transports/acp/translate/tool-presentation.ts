@@ -49,7 +49,7 @@ function toolDetails(facts: ReturnType<typeof toolFacts>, modeValue: string | un
 export function viewTool(state: ToolState) {
   const facts = toolFacts(state)
   const { short, modeValue } = toolName(facts)
-  const { rawInput, cmd, sourcePath, diffValue, intent } = facts
+  const { rawInput, sourcePath, diffValue, intent } = facts
   const details = toolDetails(facts, modeValue)
   const presentation = {
     ...details,
@@ -59,13 +59,11 @@ export function viewTool(state: ToolState) {
   const input = {
     ...rawInput,
     ...details,
-    ...(cmd ? { description: cmd } : {}),
     ...(sourcePath && intent === "move" ? { sourcePath, filePath: sourcePath } : {}),
     ...(diffValue && intent === "edit" ? { oldString: diffValue.before, newString: diffValue.after } : {}),
   }
   const display = {
     ...presentation,
-    ...(cmd ? { description: cmd } : {}),
     ...(rawInput !== undefined ? { input: rawInput } : {}),
   } satisfies ToolDisplay
   const metadata = toolMetadata(state, facts, presentation)

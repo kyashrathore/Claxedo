@@ -17,10 +17,10 @@ const completed = (input: Record<string, unknown>, metadata: Record<string, unkn
 })
 
 describe("toolPartHeader", () => {
-  test("a shell row keeps its command, exit code, title and time, and drops its output", () => {
-    const header = toolPartHeader(part("bash", completed({ command: "ls", intent: "list", env: "x" }, { output: "big", exitCode: 1 })))
+  test("a shell row keeps its command, description, exit code, title and time, and drops its output", () => {
+    const header = toolPartHeader(part("bash", completed({ command: "ls", description: "List files", intent: "list", env: "x" }, { output: "big", exitCode: 1 })))
     expect(header).toEqual({
-      ...part("bash", { status: "completed", input: { command: "ls", intent: "list" }, output: "", title: "title", metadata: { exitCode: 1 }, time: { start: 1, end: 2 } }),
+      ...part("bash", { status: "completed", input: { command: "ls", description: "List files", intent: "list" }, output: "", title: "title", metadata: { exitCode: 1 }, time: { start: 1, end: 2 } }),
       headerOnly: true,
     })
     expect(isAgentContentPart(header)).toBe(true)

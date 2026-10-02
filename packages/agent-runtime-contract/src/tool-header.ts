@@ -44,7 +44,7 @@ const HEADERS: Readonly<Record<string, HeaderShape>> = {
   grep: { input: ["path", "pattern", "include"] },
   webfetch: { input: ["url"] },
   websearch: { input: ["query"], metadata: metadataNamed("provider") },
-  bash: { input: ["command"], metadata: metadataNamed("command", "exitCode") },
+  bash: { input: ["command", "description"], metadata: metadataNamed("command", "exitCode") },
   edit: {
     input: ["filePath", "path"],
     metadata: (metadata) => {

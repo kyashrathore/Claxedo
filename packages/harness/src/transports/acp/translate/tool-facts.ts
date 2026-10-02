@@ -74,7 +74,7 @@ function parseTitle(toolLabel: string, kind: ToolKind | undefined): { short: str
   const tail = toolLabel.slice(idx + 1).trim()
   if (!tail) return { short }
 
-  if (kind === "execute") return { short, input: { command: tail, description: tail } }
+  if (kind === "execute") return { short, input: { command: tail } }
   if ((kind === "read" || kind === "edit") && pathlike(tail)) return { short, input: { filePath: tail } }
   if (kind === "search" && pathlike(tail)) return { short, input: { pattern: tail } }
   if (kind === "fetch") return { short, input: { url: tail } }

@@ -44,13 +44,15 @@ describe("createAcpEventTranslator", () => {
     const start = events.find((event) => event.type === "tool-start")
     const input = events.find((event) => event.type === "tool-input")
     expect(start).toMatchObject({ display: {
-      intent: "shell", command: "printf hi", description: "printf hi",
+      intent: "shell", command: "printf hi",
       locations: [{ path: "/repo/main.ts", line: 4 }],
       input: { command: "printf hi", custom: true },
     } })
     expect(input).toMatchObject({ input: {
-      intent: "shell", command: "printf hi", description: "printf hi", custom: true,
+      intent: "shell", command: "printf hi", custom: true,
     } })
+    expect(start?.display).not.toHaveProperty("description")
+    expect((input as { input: Record<string, unknown> }).input).not.toHaveProperty("description")
     const metadata = start?.metadata?.acp as Record<string, unknown>
     expect(metadata).toMatchObject({ intent: "shell", command: "printf hi" })
     expect(metadata).not.toHaveProperty("description")
