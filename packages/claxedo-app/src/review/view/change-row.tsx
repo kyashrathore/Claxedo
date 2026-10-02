@@ -68,7 +68,7 @@ export function ChangeRow(props: {
         <FileIcon node={{ path: props.entry.path, type: "file" }} class="size-4 shrink-0" />
         <span class="flex h-[1lh] min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5 overflow-hidden">
           <span
-            class="max-w-full shrink-0 truncate text-text-strong"
+            class="max-w-full shrink-0 truncate"
             classList={{ "line-through decoration-text-weaker": props.entry.status === "deleted" }}
           >
             {getFilename(props.entry.path)}
