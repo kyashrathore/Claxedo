@@ -10,6 +10,8 @@ export type ConfigMirrorOptions = {
   keep?: (relative: string) => boolean
 }
 
+const STAGING_NAME = /^\..+\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/
+
 export async function replaceAtomically(target: string, stage: (temporary: string) => Promise<void>): Promise<void> {
   const temporary = path.join(path.dirname(target), `.${path.basename(target)}.${randomUUID()}.tmp`)
   try {
@@ -38,7 +40,7 @@ export async function pruneMirrorDirectory(target: string, relative: string, nam
   if (prior && !prior.isDirectory()) await fs.rm(target, { recursive: true, force: true })
   await fs.mkdir(target, { recursive: true, mode: 0o700 })
   for (const name of await fs.readdir(target)) {
-    if (names.includes(name) || name.endsWith(".tmp") || options.keep?.(path.join(relative, name))) continue
+    if (names.includes(name) || STAGING_NAME.test(name) || options.keep?.(path.join(relative, name))) continue
     await fs.rm(path.join(target, name), { recursive: true, force: true })
   }
 }
