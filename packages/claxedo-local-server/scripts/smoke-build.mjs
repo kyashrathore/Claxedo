@@ -1,10 +1,13 @@
 const entry = await import("../dist/self-hosted-execution.js")
 
 for (const name of [
-  "createLocalApp",
-  "mountLocalRouteFamilies",
   "startLocalServer",
-  "createWorkspaceRuntimeProxy",
+  "createLocalDaemonLifecycle",
+  "localDaemonOperationStore",
+  "claxedoDaemonOwnershipPath",
+  "clearDaemonOwnershipSnapshot",
+  "createDaemonOwnershipPublisher",
+  "embeddedRelayHostAuthFromActor",
 ]) {
   if (typeof entry[name] !== "function") throw new Error(`built Local Server export is missing: ${name}`)
 }
