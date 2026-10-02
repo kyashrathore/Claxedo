@@ -88,7 +88,6 @@ export function Composer(props: ComposerProps) {
       openCommands={() => controller.openCommands()}
       openContext={() => controller.openContext()}
       enterShellMode={() => controller.setMode("shell")}
-      shellEnabled={() => props.manageSession !== false}
       goalSelectable={composer.goalAvailable}
       goalArmed={() => composer.draft().goalArmed}
       armGoal={() => composer.send.armGoal()}

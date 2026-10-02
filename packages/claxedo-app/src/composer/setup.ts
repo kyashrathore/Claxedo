@@ -103,7 +103,6 @@ function createControllerFor(input: {
   store: ComposerStore
   refs: ComposerRefs
   working: Accessor<boolean>
-  shellEnabled: Accessor<boolean>
   suggestions: ReturnType<typeof createSuggestions>
   send: ReturnType<typeof createComposerSend>
   commands: Commands
@@ -113,7 +112,6 @@ function createControllerFor(input: {
     store: input.store,
     refs: input.refs,
     working: input.working,
-    shellEnabled: input.shellEnabled,
     atItems: input.suggestions.atItems,
     slashItems: input.suggestions.slashItems,
     submit: () => void input.send.send(),
@@ -150,7 +148,7 @@ export function createComposer(props: ComposerProps) {
   const suggestions = createSuggestionsFor(props, selection, commands, query)
   const send = createSendFor(props, store, key, selection, late, t)
   const reader = createReaderFor({ props, store, key, refs, selection, setDragging, late })
-  const controller = createControllerFor({ key, store, refs, working, shellEnabled: () => props.manageSession !== false, suggestions, send, commands })
+  const controller = createControllerFor({ key, store, refs, working, suggestions, send, commands })
   late.controller = controller
   props.registerRecovery?.(
     createRecovery({ store, key, controller: selection.controller, scopeInput: selection.scopeInput, send: () => send.send(), dialog: useDialog(), t }),

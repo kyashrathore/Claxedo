@@ -18,7 +18,6 @@ export const promptNormalModeKey = "mod+shift+e"
 type ModeCommandsInput = {
   register: (scope: string, commands: () => PromptModeCommand[]) => void
   mode: Accessor<PromptComposerEditMode>
-  shellEnabled?: Accessor<boolean>
   pick: VoidFunction
   setMode: (mode: PromptComposerEditMode) => void
   goalSelectable: Accessor<boolean>
@@ -61,7 +60,7 @@ function promptModeCommands(input: ModeCommandsInput): PromptModeCommand[] {
       title: input.labels.shellMode,
       category: input.labels.sessionCategory,
       keybind: promptShellModeKey,
-      disabled: input.mode() === "shell" || input.shellEnabled?.() === false,
+      disabled: input.mode() === "shell",
       onSelect: () => input.setMode("shell"),
     },
     {

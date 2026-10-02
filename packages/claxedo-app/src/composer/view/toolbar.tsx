@@ -21,7 +21,6 @@ export type PromptToolbarProps = {
   openCommands: VoidFunction
   openContext: VoidFunction
   enterShellMode: VoidFunction
-  shellEnabled?: Accessor<boolean>
   goalSelectable: Accessor<boolean>
   goalArmed: Accessor<boolean>
   armGoal: VoidFunction
@@ -107,7 +106,6 @@ export const PromptToolbar: Component<PromptToolbarProps> = (props) => {
         onContext={props.openContext}
         shellTitle={props.t("prompt.action.shellCommand")}
         onEnterShell={props.enterShellMode}
-        shellEnabled={props.shellEnabled}
         goalTitle={props.t("prompt.action.goal")}
         clearGoalTitle={props.t("prompt.action.clearGoal")}
         goalSelectable={props.goalSelectable}

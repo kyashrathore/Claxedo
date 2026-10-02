@@ -33,7 +33,6 @@ export function registerComposerCommands(input: CommandsInput) {
   registerPromptModeCommands({
     register,
     mode: () => controller.state.mode,
-    shellEnabled: input.manageSession,
     pick: () => input.refs.fileInput()?.click(),
     setMode: controller.setMode,
     goalSelectable: input.goalAvailable,
