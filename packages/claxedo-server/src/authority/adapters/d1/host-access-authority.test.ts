@@ -1,5 +1,4 @@
 import { inviteOrgMember } from "../../../test-support/invite-org-member"
-import { readFile } from "node:fs/promises"
 import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -23,9 +22,8 @@ import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { D1SessionAuthority } from "./session-authority"
 import { publishD1HostSessionRows } from "./host-session-rows"
 import type { HostSessionRow, HostSessionRowsPublication } from "@claxedo/server-core/platform/auth/host-session-rows"
-import { controlPlaneMigrationPath, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../../../test-support/control-plane-migrations"
 
-const MIGRATIONS = controlPlaneMigrations().map(controlPlaneMigrationPath)
 
 const active: Miniflare[] = []
 
@@ -35,7 +33,7 @@ afterEach(async () => {
 
 async function setup() {
   const { database: raw } = await emptyDatabase()
-  for (const path of MIGRATIONS) await applyMigration(raw, path)
+  await applyControlPlaneBaseline(raw)
   // A step run between a method's reads and its batch, which is where a
   // concurrent writer lands in production. Miniflare's D1 handle is a Proxy
   // that drops property sets, so the interception lives in a wrapper.
@@ -83,7 +81,6 @@ async function setup() {
     runtimeTokens,
     relayTarget,
     now,
-    applyMigration: (name: string) => applyMigration(raw, controlPlaneMigrationPath(name)),
     advance(milliseconds: number) {
       clock += milliseconds
     },
@@ -105,15 +102,6 @@ async function emptyDatabase() {
   return { database }
 }
 
-async function applyMigration(database: Awaited<ReturnType<Miniflare["getD1Database"]>>, path: string) {
-  const migration = (await readFile(path, "utf8")).replace(/^\s*--.*$/gm, "")
-  for (const statement of migration
-    .split(/;\s*\n\s*\n/)
-    .map((part) => part.trim())
-    .filter(Boolean)) {
-    await database.prepare(statement).run()
-  }
-}
 
 function identity(subject: string): AuthIdentity {
   return { adapter: "better-auth", issuer: "https://auth.example.test", subject }
@@ -284,71 +272,6 @@ async function sealingKey() {
 }
 
 describe("D1 host access authority", () => {
-  test("drops the membership union, its triggers and the table behind it, populated or not", async () => {
-    const { database } = await emptyDatabase()
-    await applyMigration(database, MIGRATIONS[0])
-    await applyMigration(database, MIGRATIONS[1])
-    await database.batch([
-      database.prepare(`insert into users values ('user-owner', 'active', 1, 1, null, null)`),
-      database.prepare(`insert into users values ('user-member', 'active', 1, 1, null, null)`),
-      database.prepare(`
-        insert into orgs values ('org-upgrade', 'Upgrade', 'team', 'user-owner', null, 1, 1, null)
-      `),
-      database.prepare(`
-        insert into org_memberships values ('org-upgrade', 'user-owner', 'owner', 1, 1, null)
-      `),
-      database.prepare(`
-        insert into org_memberships values ('org-upgrade', 'user-member', 'member', 1, 1, null)
-      `),
-      database.prepare(`
-        insert into projects values ('project-upgrade', 'org-upgrade', 'github.com/acme/upgrade', 'user-owner', 1, 1, null)
-      `),
-      database.prepare(`
-        insert into workspaces values (
-          'workspace-upgrade', 'org-upgrade', 'project-upgrade', 'user-owner',
-          'local-worktree', 'user-hosted', 'Upgrade', null, null, null, null, null, 1, 1, null
-        )
-      `),
-      database.prepare(`
-        insert into workspace_memberships values ('workspace-upgrade', 'user-member', 'editor', 1, 1, null)
-      `),
-    ])
-    for (const path of MIGRATIONS.slice(2)) await applyMigration(database, path)
-
-    expect(
-      await database
-        .prepare(
-          `
-      select type, name from sqlite_master
-      where name in ('workspace_memberships', 'workspace_direct_memberships', 'workspace_share_grants')
-    `,
-        )
-        .all()
-        .then((result) => result.results),
-    ).toEqual([])
-    expect(
-      await database
-        .prepare(
-          `
-      select name from sqlite_master where type = 'index' and name like 'workspace_%memberships_by_user'
-    `,
-        )
-        .all()
-        .then((result) => result.results),
-    ).toEqual([])
-    // The org membership seeded beside it is untouched: what the rank is
-    // composed from now is the organization, the project and a team's grant.
-    expect(
-      await database
-        .prepare(
-          `
-      select role from org_memberships where org_id = 'org-upgrade' and user_id = 'user-member'
-    `,
-        )
-        .first(),
-    ).toEqual({ role: "member" })
-  })
-
   test("cold-registers a machine-placed workspace the first time an owner assigns it to an enrolled host", async () => {
     const input = await setup()
     const alice = await signed(input.workspace, "cold-owner")
@@ -1868,57 +1791,6 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     expect(await input.database.prepare("select count(*) as n from workspaces where workspace_id = 'ws_x'").first())
       .toEqual({ n: 0 })
     expect(await input.database.prepare("select count(*) as n from projects").first()).toEqual(projectsBefore)
-  })
-
-  test("a legacy row stored with .. or a trailing slash is retired or kept by what it resolves to once migration 0029 has normalized it", async () => {
-    const input = await setup()
-    await fixture(input)
-    const owner = await signed(input.workspace, "alice", "org_acme")
-    const { enrollment } = await redeem(input, await invite(input, owner, ["/srv"]), "vps-l", await hostKey())
-    const assign = (workspaceId: string, remoteDirectory: string) =>
-      input.hostAccess.assignWorkspaceHost(owner, { workspaceId, hostId: enrollment.host_id, remoteDirectory })
-    await assign("ws_escape", "/srv/allowed/api")
-    await assign("ws_slash", "/srv/allowed/web")
-    await assign("ws_dot", "/srv/allowed/dot")
-    await assign("ws_sibling", "/srv/allowedx")
-    await assign("ws_root", "/srv/allowed")
-    // What the desktop's registration and the pre-normalization writers left behind.
-    const legacy: Record<string, string> = {
-      ws_escape: "/srv/allowed/../secret",
-      ws_slash: "/srv/allowed/web/",
-      ws_dot: "/srv/./allowed//dot/./",
-      ws_sibling: "/srv/allowedx/",
-      ws_root: "/srv/allowed/",
-    }
-    for (const [workspaceId, directory] of Object.entries(legacy)) {
-      await input.database
-        .prepare("update workspaces set remote_directory = ? where workspace_id = ?")
-        .bind(directory, workspaceId)
-        .run()
-    }
-    await input.applyMigration("0031_normalize_user_hosted_directories.sql")
-    const stored = await input.database
-      .prepare(
-        "select workspace_id, remote_directory from workspaces where workspace_id in (select workspace_id from host_workspace_assignments) order by workspace_id",
-      )
-      .all<{ workspace_id: string; remote_directory: string }>()
-    expect(stored.results).toEqual([
-      { workspace_id: "ws_dot", remote_directory: "/srv/allowed/dot" },
-      { workspace_id: "ws_escape", remote_directory: "/srv/secret" },
-      { workspace_id: "ws_root", remote_directory: "/srv/allowed" },
-      { workspace_id: "ws_sibling", remote_directory: "/srv/allowedx" },
-      { workspace_id: "ws_slash", remote_directory: "/srv/allowed/web" },
-    ])
-
-    const updated = await input.hostAccess.updateHostEnrollmentScope(owner, {
-      enrollmentId: enrollment.enrollment_id,
-      scope: { allowed_roots: ["/srv/allowed"] },
-    })
-    expect(updated.retired_workspace_ids).toEqual(["ws_escape", "ws_sibling"])
-    expect(
-      (await input.database.prepare("select workspace_id from host_workspace_assignments order by workspace_id").all())
-        .results,
-    ).toEqual([{ workspace_id: "ws_dot" }, { workspace_id: "ws_root" }, { workspace_id: "ws_slash" }])
   })
 
   test("a trailing slash an un-normalized writer leaves behind is still classified by the prefix clause", async () => {

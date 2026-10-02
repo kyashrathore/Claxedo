@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../../test-support/control-plane-migrations"
 import { hostedWorkspaceSandboxInput } from "./hosted-workspace-sandbox-input"
 
 const active: ControlPlaneDatabase[] = []
@@ -11,7 +11,7 @@ afterEach(async () => {
 type Row = { id: string; repoUrl?: string; branch?: string; directory?: string; region?: string; deletedAt?: number }
 
 async function sandboxInput(rows: Row[]) {
-  const instance = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const instance = await miniflareControlPlaneDatabase()
   active.push(instance)
   const db = instance.database
   await db.batch([

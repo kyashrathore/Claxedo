@@ -17,7 +17,7 @@ import {
   betterAuthNativeClientProvisioningStatements,
 } from "../../../platform/auth/better-auth-native-clients"
 import { DEVICE_GRANT, deviceGrant } from "../../../test-support/device-grant"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase } from "../../../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase } from "../../../test-support/control-plane-migrations"
 import { generateCanonicalOwnerClaim, ownerClaimMutationSql, ownerClaimProvisioning } from "../../../../scripts/deploy/claim-owner"
 import { USER_DEPLOYED_OWNER_CLAIM_HEADER } from "../d1/owner-identity"
 
@@ -56,7 +56,7 @@ beforeAll(async () => {
   await migrateAuth(authDatabase)
   const ciphertext = await betterAuthIntrospectionClientSecretCiphertext(BETTER_AUTH_SECRET, INTROSPECTION_SECRET)
   for (const sql of betterAuthNativeClientProvisioningStatements(API, ciphertext)) await authDatabase.prepare(sql).run()
-  const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const controlPlane = await miniflareControlPlaneDatabase()
   const keys = await generateKeyPair("EdDSA", { extractable: true })
   disposeControlPlane = () => controlPlane.dispose()
   controlPlaneDatabase = controlPlane.database

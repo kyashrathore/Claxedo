@@ -10,7 +10,6 @@ import { D1ProjectMemberAuthority } from "./project-member-authority"
 import { D1AuditAuthority } from "./audit-authority"
 import { composeBetterAuthD1Authority } from "../worker/better-auth-d1-compose"
 import {
-  controlPlaneMigrations,
   miniflareControlPlaneDatabase,
   type ControlPlaneDatabase,
 } from "../../../test-support/control-plane-migrations"
@@ -22,7 +21,7 @@ afterEach(async () => {
 })
 
 async function setup() {
-  const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const controlPlane = await miniflareControlPlaneDatabase()
   active.push(controlPlane)
   const { database } = controlPlane
   const authority = composeBetterAuthD1Authority({
@@ -702,7 +701,7 @@ describe("D1 access changes that must not undo or outlive a decision", () => {
 
 describe("D1 user-deployed invitation membership", () => {
   test("a stranger stays out; a pending invitation to their verified email admits them, and only the accept makes them a member", async () => {
-    const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+    const controlPlane = await miniflareControlPlaneDatabase()
     active.push(controlPlane)
     const identity = (subject: string): AuthIdentity => ({ adapter: "better-auth", issuer: "https://auth.example.test", subject })
     const tokens: string[] = []

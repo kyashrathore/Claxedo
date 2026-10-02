@@ -8,7 +8,7 @@ subprocess fixture.
 test imports: it must run before a test file's module graph loads.
 
 `d1-authority.ts` composes the canonical D1 authority against the shipped
-control-plane migrations. It admits identities and organization members through
+control-plane baseline. It admits identities and organization members through
 the authority's public lifecycle methods. Runtime fixtures use `composeHost`.
 `signed-d1-identity.ts` builds the signed auth for an admitted identity; it
 imports no Miniflare, so workerd test bundles (`hosted-session-pull-worker.ts`)

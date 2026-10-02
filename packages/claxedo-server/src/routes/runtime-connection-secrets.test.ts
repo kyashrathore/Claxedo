@@ -4,7 +4,7 @@ import { mintRelayHostToken } from "@claxedo/workspace-relay"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import type { ControlPlaneCredentials } from "../authority/services"
 import { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } from "../credentials/worker/index"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../test-support/control-plane-migrations"
 import { RuntimeSessionAuthorityRoutes } from "./runtime-session-authority"
 
 async function fixture(store?: ControlPlaneCredentials) {
@@ -209,7 +209,7 @@ describe("sandbox connection secret lease proven by a turn lease", () => {
 describe("sandbox connection secret lease over the hosted credential store", () => {
   let controlPlane: ControlPlaneDatabase
   beforeAll(async () => {
-    controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+    controlPlane = await miniflareControlPlaneDatabase()
   })
   afterAll(async () => {
     await controlPlane.dispose()

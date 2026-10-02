@@ -52,7 +52,7 @@ test("remote streams request only attached session scopes, and a revoked session
   streams.close()
 })
 
-test("an account catalog wake opens the attached stream and stopping closes it without waking", async () => {
+for (const catalog of ["bootstrap", "accountCatalog"] as const) test(`a ${catalog} update that wakes a placement opens its attached stream, and stopping closes it without waking`, async () => {
   let reachable = false
   let signal: AbortSignal | undefined
   const paths: string[] = []
@@ -69,11 +69,11 @@ test("an account catalog wake opens the attached stream and stopping closes it w
   await settle()
   expect(paths).toEqual([])
   reachable = true
-  queryClient.setQueryData(queryKeys.accountCatalog(serverUrl), { revision: 1 })
+  queryClient.setQueryData(queryKeys[catalog](serverUrl), { revision: 1 })
   await settle()
   expect(paths).toEqual(["/api/wr/events?sessionID=ses_shared"])
   reachable = false
-  queryClient.setQueryData(queryKeys.accountCatalog(serverUrl), { revision: 2 })
+  queryClient.setQueryData(queryKeys[catalog](serverUrl), { revision: 2 })
   await settle()
   expect(signal?.aborted).toBe(true)
   expect(paths).toHaveLength(1)

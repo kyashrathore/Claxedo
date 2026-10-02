@@ -8,7 +8,7 @@ import { PublicDocumentRoutes } from "@claxedo/server-core/documents/routes/publ
 import { createD1CoreAuthority } from "../authority/adapters/d1/core-authority"
 import { D1WorkspaceAuthority } from "../authority/adapters/d1/workspace-authority"
 import { d1DocumentAccess } from "../authority/adapters/d1/document-authority"
-import { applyControlPlaneMigration, controlPlaneMigrations } from "../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../test-support/control-plane-migrations"
 import { createHostedDocumentsBackend } from "./backends/hosted/backend"
 import type { R2BucketBinding } from "./backends/hosted/managed"
 import { inviteOrgMember } from "../test-support/invite-org-member"
@@ -28,7 +28,7 @@ async function fixture() {
   })
   instances.push(instance)
   const database = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const migration of controlPlaneMigrations()) await applyControlPlaneMigration(database as D1Database, migration)
+  await applyControlPlaneBaseline(database as D1Database)
   const product = { kind: "claxedo-hosted" as const }
   const authority = createD1CoreAuthority(database as D1Database, { deploymentId: "documents-test", product })
   const people = new Map<string, SignedControlPlaneAuth>()

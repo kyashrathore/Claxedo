@@ -2,12 +2,12 @@ import { expect, test } from "vitest"
 import type { ReaderSettings } from "@claxedo/agent-runtime-contract"
 import { exerciseToolHeaderReads, toolHeaderTranscript } from "@claxedo/server-core/platform/auth/turn-page.conformance"
 import { syncTranscript } from "@claxedo/server-core/platform/auth/stored-transcript.conformance"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { storedD1Session } from "../../test-support/d1-stored-session"
 import { createSessionReadRoutes, authoritySessionReads } from "./session-read"
 
 test("the D1 read port exposes the stored ordinal on replay, message pages and latest views", async () => {
-  const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const controlPlane = await miniflareControlPlaneDatabase()
   const { database } = controlPlane
   try {
     const { auth, sessions } = await storedD1Session(database)
@@ -24,7 +24,7 @@ test("the D1 read port exposes the stored ordinal on replay, message pages and l
 })
 
 test("every D1 read sends a tool as its header, and whole only when the reader's shell or edit setting opens it", async () => {
-  const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const controlPlane = await miniflareControlPlaneDatabase()
   try {
     const { auth, sessions } = await storedD1Session(controlPlane.database)
     const transcript = toolHeaderTranscript("ses")
