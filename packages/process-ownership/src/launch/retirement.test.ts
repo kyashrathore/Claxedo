@@ -136,3 +136,18 @@ test.skipIf(!posix)("init's group is never signalled, even when its identity ver
   expect(outcome.error?.code).toBe("ownership_unverified")
   expect(retirementSettled(outcome)).toBe(false)
 })
+
+test.skipIf(!posix)("a leader that already exited settles once the rest of its group exits within the budget", async () => {
+  const child = spawn("/bin/sh", ["-c", "sleep 1.2 & sleep 0.6"], { detached: true, stdio: "ignore" })
+  child.unref()
+  const identity = await readCreationIdentity(child.pid!)
+  if (!identity) throw new Error("the spawned leader was not readable")
+  try {
+    await new Promise<void>((resolve) => child.once("exit", () => resolve()))
+    const outcome = await retire({ identity }, { termGraceMs: 1_000, killVerifyMs: 1_000 })
+    expect(outcome).toEqual({ leader: "exited", descendants: "unknown", signals: [] })
+    expect(retirementSettled(outcome)).toBe(true)
+  } finally {
+    try { process.kill(-identity.processGroupId, "SIGKILL") } catch {}
+  }
+})

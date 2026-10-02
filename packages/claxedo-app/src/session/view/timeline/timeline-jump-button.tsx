@@ -8,7 +8,9 @@ export function TimelineJumpButton(props: { shown: boolean; working: boolean; la
   })
   let fade: HTMLDivElement | undefined
   onCleanup(() => {
-    for (const animation of fade?.getAnimations() ?? []) animation.cancel()
+    if (!fade) return
+    fade.style.transition = "none"
+    for (const animation of fade.getAnimations()) animation.cancel()
   })
   const settleFade = (event: TransitionEvent) => {
     if (event.target === event.currentTarget && event.propertyName === "opacity" && !props.shown) setFadedOut(true)
