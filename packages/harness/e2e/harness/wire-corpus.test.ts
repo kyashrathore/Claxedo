@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import path from "node:path"
-import { comparisonShape, difference, frameEntity, latestStatusSubject, normalizeWireCorpus } from "./wire-corpus"
+import { comparisonShape, difference, frameEntity, healthAfterSequencedFrames, latestStatusSubject, normalizeWireCorpus } from "./wire-corpus"
 
 test("wire normalization preserves cross-channel identity, state, phase and order", () => {
   const result = normalizeWireCorpus({
@@ -81,6 +81,18 @@ test("frame comparison keeps order inside an entity and accepts cross-entity int
   expect(difference(shaped([frames[0], diagnostic]), shaped([diagnostic, frames[0]]))).toContain("type")
   expect(difference(shaped(frames), shaped([{ data: { type: "heartbeat" } }, ...frames]))).toBeUndefined()
   expect(frameEntity(frames[0])).toBe("session:ses_11111111")
+})
+
+test("a session's harness health is compared by value and count, not by its place among the turn's frames", () => {
+  const frame = (type: string, properties: Record<string, unknown>) => ({ data: { payload: { type, properties: { sessionID: "ses_11111111", ...properties } } } })
+  const busy = frame("session.status", { status: { type: "busy" } })
+  const updated = frame("session.updated", { info: { id: "ses_11111111" } })
+  const health = frame("harness.health", { harnessHealth: { status: "ok" } })
+  const corpus = (frames: unknown[]) => healthAfterSequencedFrames({ flow: "F", observations: comparisonShape([{ kind: "stream", route: "/events", frames }]) })
+  expect(difference(corpus([busy, updated, health]), corpus([health, busy, updated]))).toBeUndefined()
+  expect(difference(corpus([busy, updated, health]), corpus([updated, busy, health]))).toBeDefined()
+  expect(difference(corpus([busy, updated, health]), corpus([busy, updated]))).toContain("frames")
+  expect(difference(corpus([busy, updated, health]), corpus([busy, updated, frame("harness.health", { harnessHealth: { status: "degraded" } })]))).toContain("degraded")
 })
 
 test("frame comparison keys messages, parts, requests and children separately", () => {

@@ -12,7 +12,7 @@ Owns: the logins each agent harness runs on, and today's app's surfaces for them
 
 ## Organization account and cloud consent
 
-- Every CLI harness lists an "Organization account" entry after the person's own accounts and this computer's login. Choosing it writes `org` for all of the harness's providers (`server.accounts.setSource`); choosing any own entry writes `own` first. Only the chosen side is ever spent, so an org choice where the organization holds no row of its own is shown as unable to run, never as a fallback to the person's own key. The org entry is not the person's to check or remove.
+- A CLI harness lists an "Organization account" entry after the person's own accounts and this computer's login only when the organization has an account for that harness, or the person has already selected the org source. An absent unselected org account renders no row; a selected org source with no account stays visible with its unavailable explanation until the person chooses their own account or machine login. Choosing it writes `org` for all of the harness's providers (`server.accounts.setSource`); choosing any own entry writes `own` first. Only the chosen side is ever spent, so an org choice where the organization holds no row of its own is shown as unable to run, never as a fallback to the person's own key. The org entry is not the person's to check. The server's `can_remove_org_accounts` fact permits the unsigned local operator to remove stored org provider credentials on the single-user installation; signed users remain limited to their own accounts. `useAccess().can("accounts.removeOrg", sources)` supplies this fact to the shared removal action, which deletes every stored binding in the account and refreshes the listings. The CLI's machine login never carries removable credential ids. Actions remain visible beside the last-check age; confirmation wraps below the account on narrow screens.
 - On a hosted plane, each Pi provider row offers the same own/org choice where the organization holds an account or the person chose one (`HostedAccountSourceChoice`, `/auth/sources` and `/auth/:provider/source`).
 - A stored account that its provider can deliver to a cloud sandbox carries an "Allow in cloud sandboxes" switch, which writes `local` or `shared` to every row of the account (`server.accounts.setScope`); an account whose rows disagree says cloud use is allowed for some bindings, and a failed write stays on the row.
 
@@ -23,6 +23,8 @@ Owns: the logins each agent harness runs on, and today's app's surfaces for them
 ## Models tab
 
 Each harness section on Settings → Models has an Accounts and a Models tab, the open one remembered per harness while the page is open, and a "{count} models" figure for the models switched on. The Models tab reads the harness's models for the settings placement (the first available project's folder placement): a catalog harness from its provider catalog (every provider's detail loaded once), any other from `server.queries.harnesses.options`. Models are grouped by provider (Pi by vendor); a harness that is its own only provider lists its models without a group row. Switches and Enable all / Disable all write the composer's model visibility (`useModelVisibility` from `@/composer`), which the composer's picker reads. With no project the page says "No workspaces yet" under the scan line. Enabled ACP connections get a section whose Accounts tab says they run on the connection they were set up with.
+
+Provider model groups render one `SettingsList` card: the header owns provider identity, enabled count, disclosure and bulk action; the body owns search and shared `SettingsRow` model switches; the footer owns the shown/matching count and loading ten more. Expansion is local UI state initialized from enablement once; changing individual or bulk visibility never changes it. A search change resets its ten-row preview. `model-rows.tsx` virtualizes more than 100 loaded rows. Visibility keys and group context are owned by `model-sources.ts`, shared by the rows and harness counts.
 
 ## Harness catalog (`@/lib/harness-catalog`)
 
@@ -44,4 +46,6 @@ Success shows "{vendor} connected", rescans and closes the dialog.
 ## Flows
 
 - Flow 15, "Models lists each agent's accounts": add two Cursor keys through the dialog, switch between them, remove both (both apps).
+- Flow 15, "the local operator removes a saved organization account": select the machine login, cancel removal, delete the saved organization credential, and verify deletion and machine selection persist after reload (desktop and phone).
+- Flow 15, "an unavailable selected organization account": show the selected source's failure, choose the machine login, and verify the empty org row disappears and the own-source selection persists after reload (desktop and phone).
 - Flow 1 checks the AI step lists the Claude Code card.

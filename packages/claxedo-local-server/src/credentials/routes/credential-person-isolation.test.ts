@@ -14,6 +14,8 @@ test("another person in the same org can neither change nor delete someone else'
   setBackendOverride(createTestBackend())
   try {
     const owned = await putCredential({ owner: "A", provider_id: "openai", kind: "api_key", source: "managed", secret: "key-A" }, "__local__")
+    const shared = await putCredential({ owner: null, provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "local-org-key" }, "__local__")
+    const foreign = await putCredential({ owner: null, provider_id: "claude-sdk", kind: "api_key", source: "managed", secret: "other-org-key" }, "other-org")
     const app = CredentialRoutes(defaultControlPlaneCredentials(), {
       authConfig: { enabled: true, issuer: "test", jwksUrl: "https://identity.test/jwks" },
       verifier: async (token) => ({ mode: "signed", user: { subject: token, tokenIdentifier: token, issuer: "test", orgId: "__local__" } }),
@@ -28,6 +30,24 @@ test("another person in the same org can neither change nor delete someone else'
     expect(await (await app.request(`http://localhost/${owned.id}`, as("B", "DELETE"))).json()).toEqual({ deleted: false })
     expect(await (await app.request("http://localhost/provider/openai", as("B", "DELETE"))).json()).toEqual({ deleted: 0 })
     expect(credentialById(owned.id, { onOutage: "throw" }, "__local__")).toMatchObject({ status: "available", scope: "local" })
+
+    for (const person of ["A", "B"]) {
+      const sources = await (await app.request("http://localhost/account-sources", as(person, "GET"))).json()
+      expect(sources).toMatchObject({ can_remove_org_accounts: false, org: [expect.objectContaining({ id: shared.id })] })
+      expect(await (await app.request(`http://localhost/${shared.id}`, as(person, "DELETE"))).json()).toEqual({ deleted: false })
+    }
+    expect((await app.request(`http://localhost/${shared.id}`, as("local", "DELETE"))).status).toBe(401)
+
+    const local = CredentialRoutes(defaultControlPlaneCredentials(), {})
+    expect(await (await local.request("http://localhost/account-sources")).json()).toMatchObject({ can_remove_org_accounts: true })
+    expect(await (await local.request(`http://localhost/${owned.id}`, { method: "DELETE" })).json()).toEqual({ deleted: false })
+    expect(await (await local.request(`http://localhost/${foreign.id}`, { method: "DELETE" })).json()).toEqual({ deleted: false })
+    expect(await (await local.request(`http://localhost/${shared.id}`, { method: "DELETE", headers: { "x-forwarded-for": "203.0.113.10" } })).json()).toEqual({ deleted: false })
+    expect(credentialById(shared.id, { onOutage: "throw" }, "__local__")).toBeDefined()
+    expect(await (await local.request(`http://localhost/${shared.id}`, { method: "DELETE" })).json()).toEqual({ deleted: true })
+    expect(credentialById(shared.id, { onOutage: "throw" }, "__local__")).toBeUndefined()
+    expect(await (await local.request("http://localhost/account-sources")).json()).toMatchObject({ org: [] })
+    expect(credentialById(foreign.id, { onOutage: "throw" }, "other-org")).toBeDefined()
 
     expect(await (await app.request("http://localhost/provider/openai", as("A", "DELETE"))).json()).toEqual({ deleted: 1 })
     expect(credentialById(owned.id, { onOutage: "throw" }, "__local__")).toBeUndefined()

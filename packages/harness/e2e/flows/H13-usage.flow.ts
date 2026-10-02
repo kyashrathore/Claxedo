@@ -39,9 +39,10 @@ export async function usageTurn(stack: Stack, api: ClaxedoApi, name: "acp" | "pi
   assert.ok(sources.some((entry) => entry.type === "session.usage"), `${name} runtime did not project session usage`)
   console.log(`H13 ${name} projected usage events: ${JSON.stringify(sources.filter((entry) => entry.type === "session.usage").map((entry) => entry.payload))}`)
   if (name === "codex") console.log(`H13 Codex rate-limit reports: ${JSON.stringify(sources.filter((entry) => entry.source.method === "account/rateLimits/updated").map((entry) => entry.payload))}`)
-  const firstTotals = await api.usageForSession(session.id)
-  assert.ok(firstTotals.claxedo.totals.input > 0 && firstTotals.claxedo.totals.output > 0,
-    `${name} session totals did not receive usage`)
+  const firstTotals = await eventually(`${name} session totals`, async () => {
+    const result = await api.usageForSession(session.id)
+    return result.claxedo.totals.input > 0 && result.claxedo.totals.output > 0 ? result : undefined
+  }, 20_000)
   console.log(`H13 ${name} first totals/quota keys: ${JSON.stringify({ totals: firstTotals.claxedo.totals, quota: firstTotals.quota && typeof firstTotals.quota === "object" ? Object.keys(firstTotals.quota) : [] })}`)
   const assistant = await eventually(`${name} assistant model usage`, async () => {
     const messages = await api.messages(directory, session.id)

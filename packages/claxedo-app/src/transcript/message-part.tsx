@@ -64,6 +64,7 @@ import { isRetractedPart, RetractedPartDisplay } from "./retracted-part"
 import { DiagnosticsDisplay, getDiagnostics } from "./tool-diagnostics"
 import { readPartText } from "./message-part-text"
 import { shouldRenderUserMarkdown } from "./user-message-markdown"
+import { FoldedUserMessageBody } from "./folded-user-message-body"
 import { handleTranscriptLinkClick, transcriptLinkHref, transcriptLinks } from "./transcript-link"
 
 function ShellSubmessage(props: { text: string; animate?: boolean }) {
@@ -1007,24 +1008,16 @@ export function UserMessageDisplay(props: {
           </For>
         </div>
       </Show>
-      <Switch>
-        <Match when={shape() === "markdown"}>
-          <div class="ui-user-message-body" data-markdown="true">
-            <div data-slot="user-message-text" class="ui-user-message-text" data-markdown="true">
+      <Show when={shape() !== "empty"}>
+        <FoldedUserMessageBody markdown={shape() === "markdown"}>
+          <div data-slot="user-message-text" class="ui-user-message-text" data-markdown={shape() === "markdown" ? "true" : undefined}>
+            <Show when={shape() === "markdown"} fallback={<HighlightedText text={text()} references={inlineFiles()} agents={agents()} />}>
               <Markdown text={text()} cacheKey={textPart()?.id} streaming={false} />
-            </div>
+            </Show>
           </div>
-          {footer()}
-        </Match>
-        <Match when={shape() === "text"}>
-          <div class="ui-user-message-body">
-            <div data-slot="user-message-text" class="ui-user-message-text">
-              <HighlightedText text={text()} references={inlineFiles()} agents={agents()} />
-            </div>
-          </div>
-          {footer()}
-        </Match>
-      </Switch>
+        </FoldedUserMessageBody>
+        {footer()}
+      </Show>
     </div>
   )
 }

@@ -1,0 +1,18 @@
+{
+  "id": "agent-authored-message",
+  "title": "Stored agent-authored openings use event presentation and human prompts remain bubbles",
+  "source": {
+    "kind": "test",
+    "file": "e2e/flows/46-agent-authored-messages.spec.ts",
+    "name": "46 stored agent-authored user rows render as events while human prompts remain bubbles"
+  },
+  "partKinds": ["text"],
+  "replay": { "agent": "claude", "scenario": "agent-authored-message" },
+  "ready": "Message from Claude Code",
+  "interactions": [
+    { "kind": "toggleAgentMessage" },
+    { "kind": "toggleAgentMessage" },
+    { "kind": "reload" }
+  ],
+  "invariant": "The authoritative goal producer writes an agent-authored user-role opening. Its stored author metadata selects the shared event renderer after reload; agent-like text in a human prompt never changes its bubble presentation."
+}

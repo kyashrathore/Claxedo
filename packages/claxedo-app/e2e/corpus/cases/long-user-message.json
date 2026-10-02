@@ -1,0 +1,71 @@
+{
+  "id": "long-user-message",
+  "title": "Long user prompts fold while short prompts and assistant replies remain open",
+  "source": {
+    "kind": "test",
+    "file": "e2e/flows/30-user-message-fold.spec.ts",
+    "name": "long user messages start folded, expand and collapse without losing the full prompt"
+  },
+  "partKinds": [
+    "text"
+  ],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "Prompt instruction 1: inspect this part of the project.\nPrompt instruction 2: inspect this part of the project.\nPrompt instruction 3: inspect this part of the project.\nPrompt instruction 4: inspect this part of the project.\nPrompt instruction 5: inspect this part of the project.\nPrompt instruction 6: inspect this part of the project.\nPrompt instruction 7: inspect this part of the project.\nPrompt instruction 8: inspect this part of the project.\nPrompt instruction 9: inspect this part of the project.\nPrompt instruction 10: inspect this part of the project.\nPrompt instruction 11: inspect this part of the project.\nPrompt instruction 12: inspect this part of the project.\nPrompt instruction 13: inspect this part of the project.\nPrompt instruction 14: inspect this part of the project.\nPrompt instruction 15: inspect this part of the project.\nPrompt instruction 16: inspect this part of the project.\nPrompt instruction 17: inspect this part of the project.\nPrompt instruction 18: inspect this part of the project.\nPrompt instruction 19: inspect this part of the project.\nPrompt instruction 20: inspect this part of the project.\nPrompt instruction 21: inspect this part of the project.\nPrompt instruction 22: inspect this part of the project.\nPrompt instruction 23: inspect this part of the project.\nPrompt instruction 24: inspect this part of the project.\nPrompt instruction 25: inspect this part of the project.\nPrompt instruction 26: inspect this part of the project.\nPrompt instruction 27: inspect this part of the project.\nPrompt instruction 28: inspect this part of the project.\nPrompt instruction 29: inspect this part of the project.\nPrompt instruction 30: inspect this part of the project.\nPrompt instruction 31: inspect this part of the project.\nPrompt instruction 32: inspect this part of the project.",
+        "steps": [
+          {
+            "kind": "text",
+            "text": "Plain prompt received."
+          }
+        ]
+      },
+      {
+        "prompt": "# Project review\n\n- **Requirement 1**: inspect this part of the project.\n- **Requirement 2**: inspect this part of the project.\n- **Requirement 3**: inspect this part of the project.\n- **Requirement 4**: inspect this part of the project.\n- **Requirement 5**: inspect this part of the project.\n- **Requirement 6**: inspect this part of the project.\n- **Requirement 7**: inspect this part of the project.\n- **Requirement 8**: inspect this part of the project.\n- **Requirement 9**: inspect this part of the project.\n- **Requirement 10**: inspect this part of the project.\n- **Requirement 11**: inspect this part of the project.\n- **Requirement 12**: inspect this part of the project.\n- **Requirement 13**: inspect this part of the project.\n- **Requirement 14**: inspect this part of the project.\n- **Requirement 15**: inspect this part of the project.\n- **Requirement 16**: inspect this part of the project.\n- **Requirement 17**: inspect this part of the project.\n- **Requirement 18**: inspect this part of the project.\n- **Requirement 19**: inspect this part of the project.\n- **Requirement 20**: inspect this part of the project.\n- **Requirement 21**: inspect this part of the project.\n- **Requirement 22**: inspect this part of the project.\n- **Requirement 23**: inspect this part of the project.\n- **Requirement 24**: inspect this part of the project.",
+        "steps": [
+          {
+            "kind": "text",
+            "text": "Markdown prompt received."
+          }
+        ]
+      },
+      {
+        "prompt": "A short prompt.",
+        "steps": [
+          {
+            "kind": "text",
+            "text": "All prompts received."
+          }
+        ]
+      }
+    ]
+  },
+  "ready": "All prompts received.",
+  "interactions": [
+    {
+      "kind": "scroll",
+      "to": "top"
+    },
+    {
+      "kind": "toggleUserMessage",
+      "message": "Prompt instruction 1:"
+    },
+    {
+      "kind": "toggleUserMessage",
+      "message": "Prompt instruction 1:"
+    },
+    {
+      "kind": "toggleUserMessage",
+      "message": "Project review"
+    },
+    {
+      "kind": "toggleUserMessage",
+      "message": "Project review"
+    },
+    {
+      "kind": "reload"
+    }
+  ],
+  "invariant": "Only long user text folds. Plain text and markdown retain all content, short prompts need no toggle, and assistant replies stay open."
+}

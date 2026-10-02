@@ -75,7 +75,7 @@ export type ChildSessionRef = {
 export type ProviderTurnInput = {
   reason: "goal" | "provider"
   detail?: string
-}
+} | { reason: "continuation"; current: () => boolean }
 
 export type ProviderTurnResult =
   | { admitted: true; turn: TurnRef; settled: Promise<ProviderTurnSettlement> }
@@ -85,7 +85,7 @@ export type ProviderTurnSettlement = { state: "completed" } | { state: "failed";
 
 export type OutsideTurnEvent = AgentRuntimeEventOf<
   | "rate-limit" | "auth-status" | "mcp-server-status" | "available-commands-update" | "config-update"
-  | "session-info" | "session-title" | "session-agent" | "harness-notice" | "diagnostic" | "background-work"
+  | "session-info" | "session-title" | "session-agent" | "harness-notice" | "agent-message" | "diagnostic" | "background-work"
 >
 
 export interface TurnBroker {
@@ -107,7 +107,7 @@ export interface SessionBroker {
     run: (broker: TurnBroker, turn: TurnRef) => AsyncIterable<RoutedEvent>,
   ): Promise<ProviderTurnResult>
   meter(usage: OutsideTurnUsage): void
-  publish(event: OutsideTurnEvent): Promise<void>
+  publish(event: OutsideTurnEvent, assistantMessageId?: string): Promise<void>
   observeSubagent(observation: SubagentObservation): Promise<ChildSessionRef | undefined>
   associateChild(correlationKey: string, child: ChildSessionRef): void
   publishChild(event: RoutedEvent): Promise<void>

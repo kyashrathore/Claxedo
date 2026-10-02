@@ -31,6 +31,13 @@ test("a failed turn whose error message is text shows the text", () => {
   expect(errorText("Rate limited")).toBe("Rate limited")
 })
 
+test("cold final rendering retains child events on earlier continuation replies", () => {
+  const replies = ["a1", "a2", "a3"].map((id) => ({ id, sessionID: "s1", role: "assistant", parentID: "u1", time: { created: 2, completed: 3 } }) as AgentAssistantMessage)
+  const notice = { id: "peer", sessionID: "s1", messageID: "a2", type: "notice", notice: { kind: "agent-message", sender: "reviewer", message: "Report ready" }, time: { created: 2 } } as const
+  expect(Timeline.coldFinalVisibleAssistantMessageIds(replies, (id) => id === "a2" ? [notice] : []))
+    .toEqual(new Set(["a3", "a2"]))
+})
+
 test("a notice stays on screen when a settled turn folds its work", () => {
   const assistant = { id: "a1", sessionID: "s1", role: "assistant", parentID: "u1", time: { created: 2, completed: 3 } } as unknown as AgentAssistantMessage
   const base = { sessionID: "s1", messageID: "a1" }
