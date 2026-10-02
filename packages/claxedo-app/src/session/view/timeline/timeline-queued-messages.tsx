@@ -43,13 +43,13 @@ function QueuedMessageBubble(props: { item: QueuedMessage; queued: QueuedMessage
   const status = () => queuedMessageStatus(props.item, editing() || heldElsewhere(), props.t)
   const text = () => queuedMessageText(props.item)
   const attachments = () => props.item.parts.filter((part) => part.type === "file")
-  const action = (input: { icon: "arrow-up" | "pencil" | "close-small"; label: string; onClick: () => void }) => (
+  const action = (input: { icon: "arrow-up" | "pencil" | "close-small"; label: string; removable?: boolean; onClick: () => void }) => (
     <Tooltip value={input.label} placement="top" gutter={4}>
       <IconButton
         icon={input.icon}
         size="small"
         variant="ghost"
-        disabled={busy()}
+        disabled={input.removable ? props.queued.pending() !== undefined : busy()}
         aria-label={input.label}
         onMouseDown={(event: MouseEvent) => event.preventDefault()}
         onClick={input.onClick}
@@ -98,7 +98,7 @@ function QueuedMessageBubble(props: { item: QueuedMessage; queued: QueuedMessage
           <span class="inline-flex items-center" data-claxedo-compact-touch>
             {action({ icon: "pencil", label: props.t("ui.message.queued.edit"), onClick: () => props.queued.beginEdit(props.item) })}
             {action({ icon: "arrow-up", label: status().send, onClick: () => props.queued.sendNow(props.item.seq) })}
-            {action({ icon: "close-small", label: props.t("ui.message.queued.remove"), onClick: () => props.queued.remove(props.item.seq) })}
+            {action({ icon: "close-small", removable: props.item.steering?.state === "unknown", label: props.t("ui.message.queued.remove"), onClick: () => props.queued.remove(props.item.seq) })}
           </span>
         </Show>
       </div>

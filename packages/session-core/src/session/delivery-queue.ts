@@ -237,7 +237,7 @@ export class DeliveryQueue {
 
   deleteQueuedPrompt(sessionId: string, seq: number) {
     return this.db.prepare(`DELETE FROM runtime_delivery WHERE session_id = ? AND seq = ?
-      AND (steering_json IS NULL OR json_extract(steering_json, '$.state') = 'rejected')`).run(sessionId, seq).changes === 1
+      AND (steering_json IS NULL OR json_extract(steering_json, '$.state') IN ('rejected', 'unknown'))`).run(sessionId, seq).changes === 1
   }
 
   /** A steered row whose message the transcript now holds: the provider took it in, so nothing is left to deliver. */

@@ -92,8 +92,9 @@ export function createSessionDeliveryOwner(input: {
     const state = result.ok ? "accepted" : result.status === "unknown" ? "unknown" : "rejected"
     const message = result.ok ? undefined : result.message
     const settled = store().settleQueuedPromptDelivery(record.sessionId, record.seq, { operationId, mode, state, message })
-    // A claimed steer row leaves the queue only with its session or when its
-    // message reaches the transcript, which can happen before the steer call
+    // A claimed steer row leaves the queue with its session, by explicit removal
+    // after an unknown outcome, or when its message reaches the transcript.
+    // Transcript incorporation can happen before the steer call
     // returns or with no acknowledgement ever arriving. The transcript's
     // evidence outranks whatever the call reports afterwards.
     if (!settled && mode === "steer" && !row(record.sessionId, record.seq)) return { ok: true }
@@ -176,7 +177,7 @@ export function createSessionDeliveryOwner(input: {
     if (disposed) return { ok: false, status: "conflict", message: "Session delivery owner is disposed" }
     const current = row(sessionId, seq)
     if (!current) return { ok: false, status: "conflict", message: "Queued message is not available" }
-    if (current.steering && current.steering.state !== "rejected") {
+    if (current.steering && current.steering.state !== "rejected" && !(action === "cancel" && current.steering.state === "unknown")) {
       const attempt = current.steering
       if (action !== "steer" || attempt.mode === "start") return { ok: false, status: "provider_owned", message: "Provider-held or uncertain input cannot be edited or cancelled locally" }
       if (attempt.state === "accepted") return { ok: true }

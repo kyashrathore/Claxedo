@@ -233,15 +233,20 @@ test("only a steered row leaves the queue when its message reaches the transcrip
   expect(runtimeStore.deliveryQueue.listQueuedPrompts().map((row) => row.messageId)).toEqual(["waiting"])
 })
 
-test("unknown dispatch remains pending and cannot be edited, cancelled, or replayed", async () => {
+test("unknown dispatch cannot be edited or replayed but can be removed durably", async () => {
   const runtimeStore = store(root())
   const host = owner(runtimeStore, { startTurn: async () => { throw new Error("connection lost") } })
   expect(await host.steer(submission())).toMatchObject({ status: "unknown", message: "connection lost" })
-  for (const action of ["cancel", "hold", { replace: [] }] as const) {
+  for (const action of ["hold", { replace: [] }] as const) {
     expect(await host.control("session_1", 1, action as "cancel" | "hold" | { replace: [] })).toMatchObject({ status: "provider_owned" })
   }
   await host.recover()
   expect(host.list("session_1")[0].steering?.state).toBe("unknown")
+  expect(await host.control("session_1", 1, "steer")).toMatchObject({ status: "unknown" })
+  expect(await host.control("session_1", 1, "cancel")).toEqual({ ok: true })
+  expect(runtimeStore.deliveryQueue.listQueuedPrompts()).toEqual([])
+  await host.recover()
+  expect(host.list("session_1")).toEqual([])
 })
 
 test("held state survives restart and replacement releases the original input", async () => {
@@ -585,4 +590,35 @@ test("the session routes publish each queue change on the workspace bus as the s
     unsubscribe()
     await host.dispose()
   }
+})
+
+for (const mode of ["start", "steer"] as const) {
+  for (const state of ["dispatching", "accepted", "unknown"] as const) {
+    test(`${mode} ${state}: removal respects delivery ownership and survives reopening`, async () => {
+      const directory = root()
+      const runtimeStore = store(directory)
+      const queued = runtimeStore.deliveryQueue.queuePrompt({ sessionId: "session_1", messageId: "remove-me", parts: [], delivery: "queue" })
+      runtimeStore.deliveryQueue.claimQueuedPromptDelivery("session_1", queued.seq, "operation", mode)
+      if (state !== "dispatching") runtimeStore.deliveryQueue.settleQueuedPromptDelivery("session_1", queued.seq, { operationId: "operation", mode, state })
+      const host = owner(runtimeStore)
+      expect(await host.control("another_session", queued.seq, "cancel")).toMatchObject({ status: "conflict" })
+      expect(await host.control("session_1", queued.seq, "cancel")).toMatchObject(state === "unknown" ? { ok: true } : { status: "provider_owned" })
+      await host.dispose()
+      runtimeStore.close()
+      expect(store(directory).deliveryQueue.listQueuedPrompts()).toHaveLength(state === "unknown" ? 0 : 1)
+    })
+  }
+}
+
+test("removing an uncertain start unblocks the next queued prompt without replaying it", async () => {
+  const runtimeStore = store(root())
+  const first = runtimeStore.deliveryQueue.queuePrompt({ sessionId: "session_1", messageId: "uncertain", parts: [], delivery: "queue" })
+  runtimeStore.deliveryQueue.claimQueuedPromptDelivery("session_1", first.seq, "operation", "start")
+  runtimeStore.deliveryQueue.settleQueuedPromptDelivery("session_1", first.seq, { operationId: "operation", mode: "start", state: "unknown" })
+  const started: string[] = []
+  const host = owner(runtimeStore, { startTurn: async (input) => { started.push(input.body.messageID!); input.onDelivery("start") } })
+  host.queue(submission("next"))
+  await host.control("session_1", first.seq, "cancel")
+  await until(() => runtimeStore.deliveryQueue.listQueuedPrompts().length === 0)
+  expect(started).toEqual(["next"])
 })
