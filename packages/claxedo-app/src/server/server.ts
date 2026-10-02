@@ -22,6 +22,7 @@ import { createOperations } from "./operations"
 import type { ProjectId } from "./ids"
 import type { Server, ServerQueries } from "./api"
 import { createProjectsApi } from "./projects"
+import { queryKeys } from "./query-keys"
 import { createQueries } from "./queries"
 import { createPlacementStreams } from "./placement-streams"
 import { createSessionProjection, type SessionProjection } from "./session-projection"
@@ -38,7 +39,7 @@ const QUERY_GC_TIME_MS = 10 * 60_000
 const QUERY_RETRY_LIMIT = 2
 
 function createQueryClient() {
-  return new QueryClient({
+  const client = new QueryClient({
     defaultOptions: {
       queries: {
         staleTime: Number.POSITIVE_INFINITY,
@@ -50,6 +51,8 @@ function createQueryClient() {
       mutations: { retry: false },
     },
   })
+  client.setQueryDefaults(queryKeys.localFilesAll(), { gcTime: 0 })
+  return client
 }
 
 export type ServerHandle = Server & {

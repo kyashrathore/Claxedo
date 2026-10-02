@@ -15,6 +15,7 @@ import type { BrowserRegistry } from "./browser/registry"
 import { IS_PACKAGED } from "./constants"
 import { isOpenableLinkUrl } from "./navigation-guard"
 import { openIn } from "./open-in"
+import { readLocalFileContent } from "./local-file-content"
 import { persistedServerUrlVerdict } from "./server-url"
 import { runRestart } from "../shared/restart-policy"
 import { clampZoomFactor } from "../shared/zoom-factor"
@@ -165,6 +166,7 @@ export function registerIpcHandlers(deps: Deps) {
 
   // `open-in.ts` decides which of these four the request is; this only binds
   // each to its electron call.
+  ipcMain.handle("read-file-content", (_event: IpcMainInvokeEvent, path: string) => readLocalFileContent(path))
   ipcMain.handle("open-path", (event: IpcMainInvokeEvent, path: string, app?: string) =>
     openIn(
       { path, app },

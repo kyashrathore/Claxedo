@@ -14,8 +14,8 @@ const en = {
   "files.tab.loading": "Loading...",
   "files.tab.empty": "No content",
   "files.tab.binary": "Binary file — no inline preview available.",
-  "files.tab.copyPath": "Copy relative path",
-  "files.tab.copiedPath": "Copied relative path",
+  "files.tab.copyPath": "Copy path",
+  "files.tab.copiedPath": "Copied path",
 }
 
 export type FilesKey = keyof typeof en

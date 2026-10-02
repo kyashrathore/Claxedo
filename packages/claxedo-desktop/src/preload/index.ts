@@ -119,6 +119,7 @@ const api: ElectronAPI = {
   openFilePicker: (opts) => invoke("open-file-picker", opts),
   saveFilePicker: (opts) => invoke("save-file-picker", opts),
   openLink: (url) => ipcRenderer.send("open-link", url),
+  readFileContent: (path) => invoke("read-file-content", path),
   openPath: (path, app) => invoke("open-path", path, app),
   showItemInFolder: (path) => invoke("show-item-in-folder", path),
   readClipboardImage: () => invoke("read-clipboard-image"),

@@ -44,51 +44,6 @@ export async function listWorkspaceDirectory(root: string, dir: string) {
     })
 }
 
-const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  gif: "image/gif",
-  webp: "image/webp",
-  avif: "image/avif",
-  bmp: "image/bmp",
-  ico: "image/x-icon",
-  svg: "image/svg+xml",
-}
-
-export async function readWorkspaceFileContent(file: string) {
-  try {
-    const buf = await fs.promises.readFile(file)
-    // A NUL byte is a reliable binary marker (images, archives) that a fatal
-    // UTF-8 decode also rejects; check it first so we don't waste a decode.
-    if (!buf.includes(0)) {
-      try {
-        return {
-          type: "text" as const,
-          content: new TextDecoder("utf-8", { fatal: true }).decode(buf).trim(),
-        }
-      } catch {
-        // Falls through to the binary branch below.
-      }
-    }
-    // Binary: carry the actual bytes as base64 so the client can preview
-    // images inline. Returning empty content here left PNG/JPG previews blank
-    // while SVG (valid UTF-8 text) rendered fine.
-    const extension = file.split(".").pop()?.toLowerCase() ?? ""
-    return {
-      type: "binary" as const,
-      content: buf.toString("base64"),
-      encoding: "base64" as const,
-      mimeType: IMAGE_MIME_BY_EXTENSION[extension],
-    }
-  } catch {
-    return {
-      type: "text" as const,
-      content: "",
-    }
-  }
-}
-
 async function gitCmd(root: string, args: string[]) {
   return await runGit(["-c", "core.fsmonitor=false", "-c", "core.quotepath=false", ...args], root)
 }

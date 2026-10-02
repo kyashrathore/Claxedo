@@ -1,6 +1,6 @@
 import { createMemo, type Accessor } from "solid-js"
 import type { Panel } from "@/panel"
-import { sessionId as toSessionId, type Server, type SessionLocation, type SessionRow, type SessionStatus } from "@/server"
+import { isLocalPlacement, sessionId as toSessionId, type Server, type SessionLocation, type SessionRow, type SessionStatus } from "@/server"
 import type { SessionStatusView, SessionStores, SessionView } from "@/session"
 import { usePreferences, type Preferences } from "@/settings"
 import { sessionPath, type ShellRouting } from "@/shell"
@@ -68,17 +68,18 @@ async function findFiles(input: TimelineHostInput, query: string): Promise<reado
   }
 }
 
+function localDesktopBridge(input: TimelineHostInput): ReturnType<typeof desktopBridge> {
+  const placement = input.server.placements.byId(input.view.ref.placementId)
+  const machine = input.server.capabilities()?.thisMachine
+  return isLocalPlacement(placement, machine?.id) ? desktopBridge() : undefined
+}
+
 function timelinePlatform(input: TimelineHostInput): TimelineHost["platform"] {
   return {
     openLink: openExternal,
     renderMermaid: desktopBridge()?.renderMermaid,
-    get openPath() {
-      const placement = input.server.placements.byId(input.view.ref.placementId)
-      const machine = input.server.capabilities()?.thisMachine
-      return machine && placement?.kind !== "cloud" && placement?.machineId === machine.id
-        ? desktopBridge()?.openPath
-        : undefined
-    },
+    get openPath() { return localDesktopBridge(input)?.openPath },
+    get canReadLocalFiles() { return !!localDesktopBridge(input)?.readFileContent },
   }
 }
 

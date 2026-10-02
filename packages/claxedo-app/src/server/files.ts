@@ -1,3 +1,6 @@
+import { desktopBridge } from "../lib/desktop-bridge"
+import { isLocalPlacement } from "./placement-runtime"
+import type { Server } from "./api"
 import { fetchQuery } from "./fetch-query"
 import type { PlacementId } from "./ids"
 import { queryKeys } from "./query-keys"
@@ -32,4 +35,15 @@ export function fileQueries(transport: Transport, workspaces: Workspaces) {
       return rows.filter((row): row is string => typeof row === "string")
     })
   return { tree, content, search }
+}
+
+export function localFileContentQuery(server: Pick<Server, "placements" | "capabilities">, placementId: PlacementId, path: string): FetchQuery<FileContent> {
+  const query = fetchQuery<FileContent>(queryKeys.localFileContent(placementId, path), async () => {
+    const bridge = desktopBridge()
+    if (!bridge || !isLocalPlacement(server.placements.byId(placementId), server.capabilities()?.thisMachine?.id)) {
+      throw new Error("This file cannot be opened on this computer.")
+    }
+    return bridge.readFileContent(path)
+  })
+  return { ...query, staleTime: 0 }
 }
