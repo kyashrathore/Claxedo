@@ -27,6 +27,7 @@ export type ControllerInput = {
   store: ComposerStore
   refs: ComposerRefs
   working: Accessor<boolean>
+  shellEnabled?: Accessor<boolean>
   atItems: Accessor<AtItem[]>
   slashItems: Accessor<SlashItem[]>
   submit: () => void

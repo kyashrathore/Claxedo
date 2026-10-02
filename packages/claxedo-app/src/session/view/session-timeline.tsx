@@ -24,7 +24,8 @@ export function SessionTimeline(props: {
   readonly active: boolean
   readonly onScreen: boolean
   readonly scroll: TimelineScroll
-  readonly onRecover: (kind: SessionErrorClass, userMessageId: string) => unknown
+  readonly onRecover?: (kind: SessionErrorClass, userMessageId: string) => unknown
+  readonly readOnly?: boolean
 }) {
   const phone = usePhone()
   const server = useServer()
@@ -33,10 +34,10 @@ export function SessionTimeline(props: {
   const t = useSessionScreenText()
   const labels = { subagent: t("sessionScreen.subagent.label"), task: t("sessionScreen.subagent.task") }
   const backgroundRunning = createMemo(() => props.view.subagents().some((entry) => entry.mode === "background" && (entry.status === "running" || entry.status === "pending")))
-  const stops = useQuery(() => ({ ...server.queries.harnesses.stopsBackgroundTasks(props.view.ref), enabled: backgroundRunning() }))
+  const stops = useQuery(() => ({ ...server.queries.harnesses.stopsBackgroundTasks(props.view.ref), enabled: !props.readOnly && backgroundRunning() }))
   const resolveSubagents = (parentSessionId: string, toolCallId?: string) =>
     parentSessionId === props.view.ref.sessionId
-      ? subagentViews({ entries: props.view.subagents(), parentSessionId, labels, toolCallId, stops: stops.data === true })
+      ? subagentViews({ entries: props.view.subagents(), parentSessionId, labels, toolCallId, stops: !props.readOnly && stops.data === true })
       : []
   const stopBackgroundTask = async (parentSessionId: string, call: string): Promise<SubagentStopAnswer> => {
     const answer = await server.sessions.stopBackgroundTask({ ...props.view.ref, sessionId: sessionId(parentSessionId) }, call)
@@ -52,7 +53,7 @@ export function SessionTimeline(props: {
         }
         resolveSubagents={resolveSubagents}
         loadToolBody={(part) => void props.view.loadPart(part.messageID, part.id)}
-        stopBackgroundTask={stopBackgroundTask}
+        stopBackgroundTask={props.readOnly ? undefined : stopBackgroundTask}
       >
         <Show when={props.view.conversation()}>
           <MessageTimeline

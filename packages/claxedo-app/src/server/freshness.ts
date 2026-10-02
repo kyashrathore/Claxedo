@@ -21,6 +21,7 @@ const fileOwned: Freshness = { kind: "event-owned", events: placementFileEvents 
 export const freshness = {
   bootstrap: catalog,
   accountCatalog: placementOwned,
+  sharedSessions: { kind: "event-owned", events: ["sessionsChanged", "streamGap"] },
   projects: catalog,
   project: catalog,
   placements: catalog,

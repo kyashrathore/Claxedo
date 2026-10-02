@@ -81,6 +81,21 @@ test("renderer can request a read-only scoped connection through its named chann
   expect(h.calls).toEqual([{ name: "workspace.connection.read", input: { id: "ws_1" } }])
 })
 
+test("renderer reads shares and session connections through the account service", async () => {
+  const h = harness()
+  for (const [name, input] of [
+    ["session.shared.list", {}],
+    ["session.connection.read", { id: "ws_owner", sessionId: "ses_shared" }],
+  ] as const) {
+    expect(h.has(hostedOperationChannel(name))).toBe(true)
+    await h.invoke(hostedOperationChannel(name), input)
+  }
+  expect(h.calls).toEqual([
+    { name: "session.shared.list", input: {} },
+    { name: "session.connection.read", input: { id: "ws_owner", sessionId: "ses_shared" } },
+  ])
+})
+
 test("renderer can reserve a cloud session through the closed account channel", async () => {
   const h = harness()
   const channel = hostedOperationChannel("session.reserve")
@@ -568,6 +583,7 @@ test("the renderer-visible operation set stays pinned", async () => {
     "project.access",
     "project.members.grant",
     "project.members.revoke",
+    "session.connection.read",
     "session.gateway",
     "session.list",
     "session.messages",
@@ -578,6 +594,7 @@ test("the renderer-visible operation set stays pinned", async () => {
     "session.projection.register",
     "session.projection.repair",
     "session.reserve",
+    "session.shared.list",
     "session.shares.grant",
     "session.shares.list",
     "session.shares.revoke",

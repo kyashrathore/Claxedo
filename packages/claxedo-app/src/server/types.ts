@@ -34,6 +34,13 @@ export type SessionLocation = {
   readonly sessionId: SessionId
 }
 
+export type SharedSessionRow = {
+  readonly ref: SessionLocation
+  readonly title: string | null
+  readonly ownerName: string | null
+  readonly level: "follow" | "send"
+}
+
 export type Machine = {
   readonly id: MachineId
   readonly name: string

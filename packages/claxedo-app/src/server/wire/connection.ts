@@ -3,6 +3,7 @@ import type { WorkspaceBootMode } from "../cloud-types"
 import { isRecord } from "@claxedo/helpers/guards"
 
 export type RelayConnection = {
+  readonly sessionId?: string
   readonly workspaceId: string
   readonly relayUrl: string
   readonly runtimeAccessToken: string
@@ -15,7 +16,7 @@ export type ConnectionAnswer =
   | { readonly kind: "stopped" }
 
 export type WorkspaceConnections = {
-  readonly read: (workspaceId: string) => Promise<ConnectionAnswer>
+  readonly read: (workspaceId: string, sessionId?: string) => Promise<ConnectionAnswer>
   readonly start: (workspaceId: string) => Promise<ConnectionAnswer>
 }
 
@@ -47,7 +48,7 @@ function linkOf(row: Record<string, unknown>, workspaceId: string): RelayConnect
   return { workspaceId, relayUrl: relayUrl.replace(/\/+$/, ""), runtimeAccessToken, tokenExpiresAt }
 }
 
-export function connectionAnswerFromWire(body: unknown, workspaceId: string): ConnectionAnswer {
+export function connectionAnswerFromWire(body: unknown, workspaceId: string, sessionId?: string): ConnectionAnswer {
   const row = isRecord(body) ? body : {}
   if (row.status === "stopped") return { kind: "stopped" }
   if (row.status === "provisioning") {
@@ -55,7 +56,8 @@ export function connectionAnswerFromWire(body: unknown, workspaceId: string): Co
     const bootMode = bootModeOf(row.bootMode)
     return { kind: "provisioning", ...(retryAfterMs !== undefined ? { retryAfterMs } : {}), ...(bootMode ? { bootMode } : {}) }
   }
-  return { kind: "ready", link: linkOf(row, workspaceId) }
+  if (sessionId && row.sessionId !== sessionId) throw new ServerError({ class: "internal", message: "Session connection scope does not match the requested session" })
+  return { kind: "ready", link: { ...linkOf(row, workspaceId), ...(sessionId ? { sessionId } : {}) } }
 }
 
 export function unavailableRetryAfter(body: unknown): number | undefined {

@@ -1,6 +1,6 @@
 # Consolidation before launch
 
-**Scope:** the server, runtime and machine code on `goal/foundation`, plus the contract packages they share with the app, desktop and CLI. **Out of scope:** app, UI kit and harness internals (their owners), except where a shared contract crosses into them. The owner-approved C13 lane below includes the signed browser account catalog and its app wiring.
+**Scope:** the server, runtime and machine code on `goal/foundation`, plus the contract packages they share with the app, desktop and CLI. **Out of scope:** app, UI kit and harness internals (their owners), except where a shared contract crosses into them. The owner-approved C13 and SS lanes below include the signed browser account catalog and shared-session app wiring.
 
 **Source:** three read-only audits of `d93757f9e8` (control plane; runtime and machine; whole-repo view). The rows in §2 carry the audits' file references; the access, ordinal, fence, open-time migration and idempotency rows were read in the code, and each lane re-reads its rows before changing anything. Savings are estimates and overlap between lanes.
 
@@ -30,6 +30,7 @@
 | Machine file listing and indexing exist twice and have drifted | local-server `shell/files.ts` vs runtime `workspace-files/file.ts:150-253` | C9 |
 | Session identity has three shapes | `agent-runtime-contract/sessions.ts`, `claxedo-plugin-api/host.ts` (`projectId`), `claxedo-tasks/contracts.ts` (nullable `workspaceId`) | C10 |
 | The self-hosted authority twin (~6k) and the Bun relay (~3k) survive only for e2e | plan 2026-09-29-002 Phase 0 and 5 | C11 |
+| The owner-only workspace catalog cannot place a recipient's shared session; the app asks only for workspace-scoped links. The Worker session connection route already exists and must be reused | `d1/workspace-authority.ts` `listWorkspaces`; app `server/{workspaces,transport,relay}.ts`; hosted `workspace.ts` `connectionResponse` and `hosted-connection-info.ts` `hostedSessionConnection` | SS |
 
 ## 3. Lanes
 
@@ -53,6 +54,8 @@ Each lane is one agent in its own worktree off the `goal/foundation` tip, with t
 - [ ] **C13 Signed browser account catalog** (owner ruling 2026-10-01). A signed browser's `HostedAccount` sends the operations the registry exposes to the renderer to the server it is connected to, with its Better Auth cookie; no operation gains exposure. The bootstrap declares `serverKind` (`daemon` or `hosted`); on hosted, projects and placements come from the account catalog alone, `/api/claxedo/projects` is never requested and project configuration is refused before any request. The catalog reads go through the existing D1 authority routes; no route is added. Proof: `claxedo-app/src/server/browser-account.test.ts` (Worker), flows 24 and 38 on web and phone (a browser signed in to the self-hosted node).
 
 Later, with their owning plans: the store split and explicit turn identity (plan 2026-09-29-002 Phase 3), the machine agent composition (D9), authorized fanout and journal streams, the credential domain service (needs a ruling on accounts per provider), and the sandbox driver catalogue (needs the boat.dev launch scope).
+
+- [ ] **SS Shared sessions appear and open** (owner ruling 2026-10-02). The signed account lists active direct/team session shares through the canonical D1 authorization owner. Shared rows remain separate from owned workspaces and use the existing session-scoped connection route through the one placement router, relay cache and placement streams. Follow is read-only; send permits agent turns; neither permits owner controls or forks. The signed desktop uses the closed HostedAccount operation registry. Revocation removes the row on the next read, closes its stream and makes its open screen unavailable. Implementation and focused unit checks are present; D1, live browser, signed desktop and owner-account billing acceptance remain pending. Done when: direct/team, revoked, other-org and level D1 cases pass; scoped connection tests refuse sibling sessions, workspace scope and non-holders; the two-user browser/desktop flow discovers and opens, follows a live turn, upgrades to send on the owner's account, and revokes to an unavailable screen. Runtime tokens default to 30 minutes, bounded at 15–60 minutes. Flow 47 and the placement/access READMEs describe the current path.
 
 ## 4. Order
 

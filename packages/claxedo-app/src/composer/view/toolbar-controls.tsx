@@ -20,6 +20,7 @@ export function PromptToolbarControls(props: {
   onContext: VoidFunction
   shellTitle: string
   onEnterShell: VoidFunction
+  shellEnabled?: Accessor<boolean>
   goalTitle: string
   clearGoalTitle: string
   goalSelectable: Accessor<boolean>
@@ -65,6 +66,7 @@ export function PromptToolbarControls(props: {
         onContext={props.onContext}
         shellLabel={props.shellTitle}
         onEnterShell={props.onEnterShell}
+        shellEnabled={props.shellEnabled}
         goalLabel={props.goalTitle}
         goalDisabled={() => !props.goalSelectable()}
         onGoal={props.onGoal}

@@ -2,10 +2,10 @@ import { QueryObserver, type QueryClient } from "@tanstack/solid-query"
 import { createSignal, type Accessor } from "solid-js"
 import type { HostedAccount } from "./account"
 import type { LinkedCatalog } from "./account-link"
-import { createAccountPlacements, withAccountPlacements, type AccountPlacements } from "./account-placements"
+import { createAccountPlacements, createSharedSessions, withAccountPlacements, type AccountPlacements } from "./account-placements"
 import type { PlacementsApi } from "./api"
 import { ServerError, toAppError } from "./errors"
-import type { PlacementId, ProjectId } from "./ids"
+import { placementId, sessionId as asSessionId, type PlacementId, type ProjectId } from "./ids"
 import { queryKeys } from "./query-keys"
 import type { RuntimeRoute, Transport } from "./transport"
 import type { Project, SessionLocation } from "./types"
@@ -21,8 +21,10 @@ export type SessionHome = {
 }
 
 export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
+  readonly shared: ReturnType<typeof createSharedSessions>
+  readonly streamRoute: (ref: Pick<SessionLocation, "placementId" | "sessionId">) => RuntimeRoute | undefined
   readonly address: Address
-  readonly route: (ref: SessionLocation | PlacementId) => Promise<RuntimeRoute>
+  readonly route: (ref: Pick<SessionLocation, "placementId" | "sessionId"> | PlacementId) => Promise<RuntimeRoute>
   readonly locate: (id: PlacementId) => Promise<RuntimeRoute>
   readonly home: (ref: SessionLocation) => Promise<SessionHome>
   readonly learn: (directory: string) => Promise<void>
@@ -80,24 +82,25 @@ function placementReads(records: () => readonly PlacementRecord[]) {
   }
 }
 
-function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | undefined>): Pick<Workspaces, "route" | "locate" | "home"> {
-  const placed = async (id: PlacementId) => {
+function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | undefined>, shared: Workspaces["shared"]): Pick<Workspaces, "route" | "locate" | "home"> {
+  const resolve = async (ref: Pick<SessionLocation, "placementId" | "sessionId"> | PlacementId) => {
+    const id = typeof ref === "string" ? ref : ref.placementId
     const record = await find(id)
+    const sharedRoute = typeof ref === "string" ? undefined : shared.route(ref)
+    if (sharedRoute) return { route: sharedRoute, central: false, live: true, stopped: false }
     if (!record) throw new ServerError({ class: "not_found", message: `Placement ${id} is not in the catalog` })
-    return record
+    const stopped = isStoppedCloud(record.placement)
+    const offlineMachine = record.route.remote && record.placement.kind !== "cloud" && !record.placement.reachable
+    return { route: record.route, central: record.placement.kind === "cloud", live: !stopped && !offlineMachine, stopped }
   }
   return {
     route: async (ref) => {
-      const record = await placed(typeof ref === "string" ? ref : ref.placementId)
-      if (isStoppedCloud(record.placement)) throw workspaceStopped(record.route.workspaceId)
-      return record.route
+      const home = await resolve(ref)
+      if (home.stopped) throw workspaceStopped(home.route.workspaceId)
+      return home.route
     },
-    locate: async (id) => (await placed(id)).route,
-    home: async (ref) => {
-      const record = await placed(ref.placementId)
-      const offlineMachine = record.route.remote && record.placement.kind !== "cloud" && !record.placement.reachable
-      return { route: record.route, central: record.placement.kind === "cloud", live: !isStoppedCloud(record.placement) && !offlineMachine }
-    },
+    locate: async (id) => (await resolve(id)).route,
+    home: resolve,
   }
 }
 
@@ -147,6 +150,7 @@ function accountReads(linked: () => LinkedCatalog | undefined, signed: boolean, 
 }
 
 export function createWorkspaces(transport: Transport, queryClient: QueryClient, account?: HostedAccount): Workspaces {
+  const shared = createSharedSessions(account, transport.serverUrl, queryClient)
   const key = queryKeys.bootstrap(transport.serverUrl)
   const accountPlacements = account ? createAccountPlacements(account, transport.serverUrl, queryClient) : undefined
   const merged = mergedCatalog(queryClient, key, accountPlacements)
@@ -154,17 +158,31 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
   const read = async () => bootstrapCatalog(await transport.json<unknown>(BOOTSTRAP_PATH))
   const reread = () => queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: 0 })
   const load = async () => {
-    return merged.merge(await readCatalogs(queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: Number.POSITIVE_INFINITY }), accountPlacements?.load()))
+    const accountRead = Promise.all([accountPlacements?.load(), shared.load()]).then(() => undefined)
+    return merged.merge(await readCatalogs(queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: Number.POSITIVE_INFINITY }), accountRead))
   }
   const { recordOf, byId, list, address } = placementReads(() => merged.catalog()?.placements ?? [])
   return {
+    shared,
     byId,
     list,
-    address,
+    address: { placementFor: (directory, workspaceId, sessionId) => {
+      const owned = address.placementFor(directory, workspaceId)
+      if (owned) return owned
+      const workspace = workspaceId ?? (directory.startsWith(WORKSPACE_DIRECTORY_PREFIX) ? directory.slice(WORKSPACE_DIRECTORY_PREFIX.length) : undefined)
+      const row = workspace && sessionId ? shared.find({ placementId: placementId(workspace), sessionId: asSessionId(sessionId) }) : undefined
+      return row?.ref
+    } },
+    streamRoute: (ref) => {
+      const share = shared.route(ref)
+      if (share) return share
+      const record = recordOf(ref.placementId)
+      return record?.route.remote && record.placement.reachable ? record.route : undefined
+    },
     ...placementRoutes(async (id) => {
       await load()
       return recordOf(id)
-    }),
+    }, shared),
     learn: async (directory) => {
       if (relearned.has(directory)) return
       await reread()
@@ -173,12 +191,13 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
     catalog: merged.catalog,
     load,
     refresh: async () => {
+      await shared.refresh()
       relearned.clear()
       await readCatalogs(reread(), accountPlacements?.reread())
       await queryClient.invalidateQueries({ queryKey: queryKeys.placements(transport.serverUrl) })
       await queryClient.invalidateQueries({ queryKey: queryKeys.projects(transport.serverUrl) })
     },
     ...accountReads(merged.linked, accountPlacements !== undefined, load),
-    dispose: merged.dispose,
+    dispose: () => { shared.dispose(); merged.dispose() },
   }
 }

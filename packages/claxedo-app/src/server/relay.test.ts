@@ -84,3 +84,21 @@ test("relay: expiry refresh remains a read and cannot wake a stopped workspace",
   expect(server.calls).toEqual([{ path: "/api/workspace/ws_1/connection", method: undefined }])
   expect(runtimeFetch).not.toHaveBeenCalled()
 })
+
+test("relay: session links are isolated from siblings and owned links, including expiry and 401 renewal", async () => {
+  const reads: Array<[string, string | undefined]> = []
+  const relay = createRelay(async (workspaceId, sessionId) => {
+    reads.push([workspaceId, sessionId])
+    return { kind: "ready", link: { ...link, workspaceId, sessionId, runtimeAccessToken: `${sessionId ?? "workspace"}:${reads.length}` } }
+  })
+  runtimeFetch.mockResolvedValue(Response.json({}))
+  await relay.fetch("ws_1", "/session/ses_a", undefined, "ses_a")
+  await relay.fetch("ws_1", "/session/ses_b", undefined, "ses_b")
+  await relay.fetch("ws_1", "/api/wr/health")
+  relay.adopt({ ...link, sessionId: "ses_a", tokenExpiresAt: Date.now() })
+  await relay.fetch("ws_1", "/session/ses_a", undefined, "ses_a")
+  runtimeFetch.mockResolvedValueOnce(Response.json({}, { status: 401 })).mockResolvedValueOnce(Response.json({}))
+  await relay.fetch("ws_1", "/session/ses_b", undefined, "ses_b")
+  expect(reads).toEqual([["ws_1", "ses_a"], ["ws_1", "ses_b"], ["ws_1", undefined], ["ws_1", "ses_a"], ["ws_1", "ses_b"]])
+  expect(new Headers(runtimeFetch.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBe("Bearer ses_b:5")
+})

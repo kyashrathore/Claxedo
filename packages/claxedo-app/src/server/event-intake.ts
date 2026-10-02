@@ -7,7 +7,7 @@ import type { StatusOwner } from "./status"
 import { createTurnWrites, type TurnWrites } from "./turn-writes"
 import type { SessionLocation } from "./types"
 import type { Workspaces } from "./workspaces"
-import { frameFromWire, placementDirectory, serverEventFromFrame, type Frame } from "./wire/frames"
+import { frameFromWire, frameSessionId, placementDirectory, serverEventFromFrame, type Frame } from "./wire/frames"
 
 export type EventIntake = {
   readonly frame: (raw: unknown) => void
@@ -50,7 +50,7 @@ function publisher(input: IntakeInput, listeners: Listeners, writes: TurnWrites)
 
 function unplacedDirectory(workspaces: Workspaces, frame: Frame): string | undefined {
   const directory = placementDirectory(frame)
-  return directory && !workspaces.address.placementFor(directory, frame.workspaceId) ? directory : undefined
+  return directory && !workspaces.address.placementFor(directory, frame.workspaceId, frameSessionId(frame)) ? directory : undefined
 }
 
 function mapFrame(workspaces: Workspaces, publish: Publish, frame: Frame): void {

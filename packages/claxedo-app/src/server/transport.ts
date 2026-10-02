@@ -6,6 +6,7 @@ import { startWorkspace, type StartOptions } from "./workspace-start"
 import { CLOUD_RUNTIME_UNAVAILABLE, connectionAnswerFromWire, unavailableRetryAfter, type ConnectionAnswer, type WorkspaceConnections } from "./wire/connection"
 
 export type RuntimeRoute = {
+  readonly sharedSession?: { readonly sessionId: string; readonly level: "follow" | "send" }
   readonly directory: string
   readonly workspaceId: string
   readonly remote: boolean
@@ -87,9 +88,17 @@ async function requestConnection(request: Request, workspaceId: string, start: b
 
 export function createWorkspaceConnections(request: Request, account?: HostedAccount): WorkspaceConnections {
   return {
-    read: async (workspaceId) => account
-      ? connectionAnswerFromWire(await account.run("workspace.connection.read", { id: workspaceId }), workspaceId)
-      : requestConnection(request, workspaceId, false),
+    read: async (workspaceId, sessionId) => {
+      if (sessionId) {
+        const body = account
+          ? await account.run("session.connection.read", { id: workspaceId, sessionId })
+          : await readJsonResponse(await request(withQuery(`/api/workspace/${encodeURIComponent(workspaceId)}/connection`, { sessionId })), "Session connection")
+        return connectionAnswerFromWire(body, workspaceId, sessionId)
+      }
+      return account
+        ? connectionAnswerFromWire(await account.run("workspace.connection.read", { id: workspaceId }), workspaceId)
+        : requestConnection(request, workspaceId, false)
+    },
     start: async (workspaceId) => account
       ? connectionAnswerFromWire(await account.run("workspace.connection.mint", { id: workspaceId }), workspaceId)
       : requestConnection(request, workspaceId, true),
@@ -105,13 +114,13 @@ export function createTransport(config: ServerConfig): Transport {
   const daemonProxy = loopback && config.account === undefined
   const runtime = (route: RuntimeRoute, path: string, init?: RequestInit) => {
     if (!route.remote) return request(withQuery(path, { directory: route.directory }), init)
-    if (daemonProxy) return request(workspaceProxyPath(route, path), init)
-    return relay.fetch(route.workspaceId, withoutRouteQuery(path), init)
+    if (daemonProxy && !route.sharedSession) return request(workspaceProxyPath(route, path), init)
+    return relay.fetch(route.workspaceId, withoutRouteQuery(path), init, route.sharedSession?.sessionId)
   }
   const runtimeSocket = async (route: RuntimeRoute, path: string): Promise<WebSocket> => {
     if (!route.remote) return new WebSocket(socketUrl(serverUrl, withQuery(path, { directory: route.directory })))
-    if (daemonProxy) return new WebSocket(socketUrl(serverUrl, workspaceProxyPath(route, path)))
-    return relay.webSocket(route.workspaceId, withoutRouteQuery(path))
+    if (daemonProxy && !route.sharedSession) return new WebSocket(socketUrl(serverUrl, workspaceProxyPath(route, path)))
+    return relay.webSocket(route.workspaceId, withoutRouteQuery(path), route.sharedSession?.sessionId)
   }
   const label = (path: string, init?: RequestInit) => `${init?.method ?? "GET"} ${path}`
   return {

@@ -22,7 +22,7 @@ export function ProjectTree(): JSX.Element {
   const terminals = useTerminals()
   const sections = createMemo(() => projects.list().map((entry) => projectSection(entry.project, server.placements.list())))
   const sectionByKey = createMemo(() => new Map(sections().map((section) => [section.key, section])))
-  const grouped = createMemo(() => sessionIdsByProject(stores.list.order()))
+  const grouped = createMemo(() => sessionIdsByProject(stores.list.order().filter((ref) => !server.sharedSessions.find(ref))))
   const sessionIdsOf = (section: ProjectSection) => (section.projectId ? grouped().get(section.projectId) : undefined) ?? []
   const workbench = useWorkbench()
   const shown = createMemo(() => {

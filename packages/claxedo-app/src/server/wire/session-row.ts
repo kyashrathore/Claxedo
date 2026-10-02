@@ -7,11 +7,11 @@ import { sessionConfigFromWire } from "./harness-state"
 import { backgroundWorkFromWire } from "./status"
 
 export type Address = {
-  readonly placementFor: (directory: string, workspaceId?: string) => { readonly placementId: PlacementId; readonly projectId: ProjectId } | undefined
+  readonly placementFor: (directory: string, workspaceId?: string, sessionId?: string) => { readonly placementId: PlacementId; readonly projectId: ProjectId } | undefined
 }
 
 export function sessionLocationFor(address: Address, input: { directory: string; workspaceId?: string; sessionId: string }): SessionLocation | undefined {
-  const placed = address.placementFor(input.directory, input.workspaceId)
+  const placed = address.placementFor(input.directory, input.workspaceId, input.sessionId)
   if (!placed) return undefined
   return { projectId: placed.projectId, placementId: placed.placementId, sessionId: sessionId(input.sessionId) }
 }

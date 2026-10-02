@@ -84,14 +84,14 @@ test("a stream outlives two missed heartbeats and a beat of jitter, and drops wh
   stream.close()
 })
 
-test("a 403 ends the stream: it reports the refusal once, goes offline and never reopens", async () => {
+test.each([401, 403, 404])("a %i ends the stream: it reports the refusal once, goes offline and never reopens", async (status) => {
   jest.useFakeTimers()
   let opens = 0
   const refusals: Array<string | undefined> = []
   const stream = openEventStream({
     open: async () => {
       opens += 1
-      return Response.json({ error: { code: "workspace_event_stream_denied", message: "denied" } }, { status: 403 })
+      return Response.json({ error: { code: "workspace_event_stream_denied", message: "denied" } }, { status })
     },
     onFrame: () => undefined,
     onGap: () => undefined,

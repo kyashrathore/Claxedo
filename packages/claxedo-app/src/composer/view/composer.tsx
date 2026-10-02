@@ -17,6 +17,14 @@ import { createPromptImageMarkBindings } from "./image-mark-bindings"
 import { usePanel } from "@/panel"
 
 export function Composer(props: ComposerProps) {
+  return <Show when={!props.readOnly} fallback={
+    <div data-component="composer-frame" data-testid="follow-composer" class="w-full rounded border border-border-weak-base px-3 py-2">
+      <textarea aria-label="Follow session" readonly value="Following this session" class="w-full resize-none bg-transparent text-12-regular text-text-weak" rows={1} />
+    </div>
+  }><EditableComposer {...props} /></Show>
+}
+
+function EditableComposer(props: ComposerProps) {
   const composer = createComposer(props)
   const dialog = useDialog()
   const commands = useCommands()
@@ -88,6 +96,7 @@ export function Composer(props: ComposerProps) {
       openCommands={() => controller.openCommands()}
       openContext={() => controller.openContext()}
       enterShellMode={() => controller.setMode("shell")}
+      shellEnabled={() => props.manageSession !== false}
       goalSelectable={composer.goalAvailable}
       goalArmed={() => composer.draft().goalArmed}
       armGoal={() => composer.send.armGoal()}
@@ -95,12 +104,12 @@ export function Composer(props: ComposerProps) {
         composer.send.disarmGoal()
         controller.focusEditor()
       }}
-      approveEnabled={() => props.readOnly !== true}
+      approveEnabled={() => props.manageSession !== false}
       permissionGroups={composer.permissionMode.groups}
       permissionCurrent={composer.permissionMode.current}
       onPermissionSelect={composer.permissionMode.select}
       onPermissionOpen={composer.permissionMode.openModes}
-      harnessController={() => composer.harnessController}
+      harnessController={() => props.manageSession === false ? undefined : composer.harnessController}
       harnessScope={composer.key}
       harnessScopeInput={composer.harnessScopeInput}
       active={() => true}

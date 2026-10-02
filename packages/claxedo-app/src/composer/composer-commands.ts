@@ -18,6 +18,7 @@ type CommandsInput = {
   readonly refs: ComposerRefs
   readonly send: ReturnType<typeof createComposerSend>
   readonly goalAvailable: Accessor<boolean>
+  readonly manageSession: Accessor<boolean>
   readonly hidden: Accessor<boolean>
   readonly t: ReturnType<typeof useComposerText>
 }
@@ -27,11 +28,12 @@ type Register = (scope: string, options: () => CommandOption[]) => void
 export function registerComposerCommands(input: CommandsInput) {
   const commands = useCommands()
   const register: Register = (scope, options) => commands.register(scope, () => (input.hidden() ? [] : options()))
-  registerModelChooser(input, register)
+  registerModelChooser(input, (scope, options) => register(scope, () => input.manageSession() ? options() : []))
   const { t, controller } = input
   registerPromptModeCommands({
     register,
     mode: () => controller.state.mode,
+    shellEnabled: input.manageSession,
     pick: () => input.refs.fileInput()?.click(),
     setMode: controller.setMode,
     goalSelectable: input.goalAvailable,

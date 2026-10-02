@@ -21,6 +21,7 @@ function worker(options: { unauthorized?: boolean; malformed?: boolean } = {}) {
     const url = new URL(input instanceof Request ? input.url : input)
     calls.push({ path: `${url.pathname}${url.search}`, init })
     if (url.pathname === "/api/claxedo/bootstrap") return Response.json(bootstrap)
+    if (url.pathname === "/api/workspace/shared-sessions") return Response.json({ sessions: [] })
     if (url.pathname === "/api/cp/events") {
       return new Response(new ReadableStream({ start(controller) { init?.signal?.addEventListener("abort", () => controller.close(), { once: true }) } }))
     }

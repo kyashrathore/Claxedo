@@ -2,6 +2,7 @@ import type { PlacementId, ProjectId } from "./ids"
 import type { DiffScope, FileSearchEntries } from "./git-types"
 
 export const queryKeys = {
+  sharedSessions: (server: string) => ["server", server, "shared-sessions"] as const,
   bootstrap: (server: string) => ["server", server, "bootstrap"] as const,
   accountCatalog: (server: string) => ["server", server, "account-catalog"] as const,
   projects: (server: string) => ["server", server, "projects"] as const,

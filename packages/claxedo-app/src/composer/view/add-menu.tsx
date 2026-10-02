@@ -25,6 +25,7 @@ export function PromptAddMenu(props: {
   onContext: VoidFunction
   shellLabel: string
   onEnterShell: VoidFunction
+  shellEnabled?: Accessor<boolean>
   goalLabel: string
   goalDisabled: Accessor<boolean>
   onGoal: VoidFunction
@@ -77,9 +78,9 @@ export function PromptAddMenu(props: {
               <DropdownMenu.Item data-action="prompt-goal" disabled={props.goalDisabled()} onSelect={props.onGoal}>
                 <span class="truncate">{props.goalLabel}</span>
               </DropdownMenu.Item>
-              <DropdownMenu.Item data-action="prompt-shell-mode" shortcut="!" onSelect={props.onEnterShell}>
+              <Show when={props.shellEnabled?.() !== false}><DropdownMenu.Item data-action="prompt-shell-mode" shortcut="!" onSelect={props.onEnterShell}>
                 <span class="truncate">{props.shellLabel}</span>
-              </DropdownMenu.Item>
+              </DropdownMenu.Item></Show>
             </DropdownMenu.Group>
             <Show when={planAgents()}>
               {(agents) => (

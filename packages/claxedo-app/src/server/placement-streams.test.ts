@@ -20,11 +20,33 @@ const record = {
   placement: { id: placement, projectId: projectId("prj"), kind: "worktree", label: "Shared", reachable: true },
   route: { directory: "workspace:ws_shared", workspaceId: "ws_shared", remote: true },
 }
-const workspaces = { catalog: () => ({ projects: [], placements: [record] }) } as unknown as Workspaces
+const workspaces = { streamRoute: () => record.route } as unknown as Workspaces
 
 function ref(id: string) {
   return { projectId: projectId("prj"), placementId: placement, sessionId: sessionId(id) }
 }
+
+test("a shared placement streams with session scope and a revoked share closes the stream", async () => {
+  let listed = true
+  let signal: AbortSignal | undefined
+  const routes: unknown[] = []
+  const queryClient = new QueryClient()
+  const transport = { serverUrl: "https://account.test", runtime: async (route: unknown, _path: string, init: RequestInit) => {
+    routes.push(route); signal = init.signal ?? undefined; return openBody()
+  } } as unknown as Transport
+  const scoped = { ...record.route, sharedSession: { sessionId: "ses_shared", level: "follow" } }
+  const workspaces = { catalog: () => ({ placements: [] }), streamRoute: () => listed ? scoped : undefined } as unknown as Workspaces
+  const streams = createPlacementStreams({ transport, workspaces, queryClient, onFrame: () => undefined, onGap: () => undefined })
+  const detach = streams.attach(ref("ses_shared"))
+  try {
+    await settle()
+    expect(routes).toEqual([scoped])
+    listed = false
+    queryClient.setQueryData(queryKeys.sharedSessions(transport.serverUrl), [])
+    await settle()
+    expect(signal?.aborted).toBe(true)
+  } finally { detach(); streams.close() }
+})
 
 test("remote streams request only attached session scopes, and a revoked session stream stays closed", async () => {
   const paths: string[] = []
@@ -58,7 +80,7 @@ test("an account catalog wake opens the attached stream and stopping closes it w
   const paths: string[] = []
   const serverUrl = "http://127.0.0.1:1"
   const queryClient = new QueryClient()
-  const workspaces = { catalog: () => ({ placements: [{ ...record, placement: { ...record.placement, kind: "cloud", reachable } }] }) } as unknown as Workspaces
+  const workspaces = { streamRoute: () => reachable ? record.route : undefined } as unknown as Workspaces
   const transport = { serverUrl, runtime: async (_route: unknown, path: string, init: RequestInit) => {
     paths.push(path)
     signal = init.signal ?? undefined

@@ -71,6 +71,7 @@ export function createComposerController(input: ControllerInput) {
   const { state, setState } = context
   const blank = createMemo(() => !promptFilled(context.draft()))
   const setMode = (mode: EditorMode) => {
+    if (mode === "shell" && input.shellEnabled?.() === false) return
     setState("mode", mode)
     closePopover(context)
   }

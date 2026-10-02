@@ -131,7 +131,7 @@ async function openStreamAttempt(run: StreamRun) {
   } catch (error) {
     if (run.closed || run.attempt !== controller) return
     const reason = toAppError(error)
-    if (reason.status === 403) return endRefusedStream(run, reason)
+    if (reason.status === 401 || reason.status === 403 || reason.class === "not_found") return endRefusedStream(run, reason)
     console.error("The event stream dropped", reason)
     scheduleReconnect(run)
   } finally {

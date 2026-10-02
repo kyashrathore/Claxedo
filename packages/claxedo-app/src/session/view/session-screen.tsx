@@ -4,6 +4,7 @@ import { usePhone } from "@/lib/viewport"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { sessionId, useServer, type SessionLocation } from "@/server"
 import { usePanel } from "@/panel"
+import { useAccess } from "@/access"
 import { useSessionStores, type SessionView } from "@/session"
 import { sessionPath, useCommands, useShellRoute, type PaneProps } from "@/shell"
 import { useDialog } from "@/ui"
@@ -56,6 +57,7 @@ function SessionBody(props: {
   readonly active: boolean
   readonly readOnly: boolean
   readonly floating: boolean
+  readonly shared: boolean
 }) {
   const t = useSessionScreenText()
   const server = useServer()
@@ -66,7 +68,7 @@ function SessionBody(props: {
   const dialog = useDialog()
   const parentId = () => props.view.row()?.parentSessionId
   const [parent, setParent] = createSignal<SessionView>()
-  createEffect(on(parentId, (id) => setParent(id ? stores.open({ ...props.view.ref, sessionId: sessionId(id) }) : undefined)))
+  createEffect(on(parentId, (id) => setParent(id && !props.shared ? stores.open({ ...props.view.ref, sessionId: sessionId(id) }) : undefined)))
   const host = createTimelineHost({ view: props.view, parent, stores, server, workbench, routing, t, panel })
   const toParent = () => {
     const parent = parentId()
@@ -124,7 +126,7 @@ function SessionBody(props: {
           data-session-transcript-collapsed={transcriptCollapsed() ? "true" : undefined}
           classList={{ "session-floating-timeline": props.floating, "session-floating-timeline-collapsed": transcriptCollapsed() }}
         >
-          <SessionTimeline view={props.view} navTurns={turns()} host={host} active={props.active} onScreen={!transcriptCollapsed()} scroll={scroll} onRecover={recovery.recover} />
+          <SessionTimeline view={props.view} navTurns={turns()} host={host} active={props.active} onScreen={!transcriptCollapsed()} scroll={scroll} onRecover={props.readOnly ? undefined : recovery.recover} readOnly={props.readOnly} />
         </div>
       </div>
       <div
@@ -134,22 +136,24 @@ function SessionBody(props: {
         classList={{ "session-floating-dock": props.floating }}
       >
         <div class="w-full px-3 pointer-events-auto md:max-w-192 md:mx-auto 2xl:max-w-[880px]">
-          <SessionDocks view={props.view} />
-          <div hidden={blocked()}>
+          <Show when={!props.readOnly}><SessionDocks view={props.view} /></Show>
+          <div hidden={!props.readOnly && blocked()}>
             <Show when={todo.open()}>
               <TodoDockSlot view={props.view} dock={todo} />
             </Show>
             <div class="relative z-10">
-              <Show when={!props.readOnly}>
+              <Show when={!props.readOnly && !props.shared}>
                 <SessionConnectionLine />
               </Show>
-              <Show when={!parentId() && !props.readOnly} fallback={<ChildNotice t={t} readOnly={props.readOnly} onBack={toParent} />}>
-                <PlacementStateCards placementId={props.view.ref.placementId} />
+              <Show when={!parentId() || props.shared} fallback={<ChildNotice t={t} readOnly={props.readOnly} onBack={toParent} />}>
+                <Show when={!props.shared}><PlacementStateCards placementId={props.view.ref.placementId} /></Show>
                 <Composer
+                  readOnly={props.readOnly}
+                  manageSession={!props.shared}
                   composerKey={sessionComposerKey(props.view.ref)}
                   placementId={props.view.ref.placementId}
                   view={props.view}
-                  attachmentWorkspace={true}
+                  attachmentWorkspace={!props.shared}
                   hidden={blocked()}
                   afterAccepted={() => {
                     peek.sent()
@@ -170,11 +174,14 @@ function SessionBody(props: {
 }
 
 export function SessionSurface(props: SessionSurfaceProps) {
+  const access = useAccess()
+  const controls = () => access.session(props.sessionRef)
+  const readOnly = () => props.readOnly === true || !controls().send
   const t = useSessionScreenText()
   const phone = usePhone()
   const stores = useSessionStores()
   const panel = usePanel()
-  const floating = () => !props.readOnly && panel.maximized() && props.active
+  const floating = () => !readOnly() && panel.maximized() && props.active
   const view = createMemo(() => stores.open(props.sessionRef))
   commitDeltasWhileShown(view)
   holdPaneReveal(() => view().state().kind === "loading")
@@ -194,8 +201,8 @@ export function SessionSurface(props: SessionSurfaceProps) {
         <h1 class="sr-only">{view().row()?.title || t("sessionScreen.untitled")}</h1>
       </Show>
       <FailureBoundary title={t("sessionScreen.failed")} retryLabel={t("sessionScreen.action.retry")}>
-        <Switch fallback={<SessionBody view={view()} active={props.active} readOnly={props.readOnly === true} floating={floating()} />}>
-          <Match when={view().state().kind === "missing"}>
+        <Switch fallback={<SessionBody view={view()} active={props.active} readOnly={readOnly()} shared={controls().shared} floating={floating()} />}>
+          <Match when={!controls().available || view().state().kind === "missing" || (controls().shared && failure()?.error.status === 403)}>
             <div class="flex h-full items-center justify-center px-4 text-text-weak">
               <div data-testid="session-unavailable" data-session-id={props.sessionRef.sessionId}>
                 Session unavailable

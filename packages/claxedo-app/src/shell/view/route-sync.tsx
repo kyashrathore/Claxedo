@@ -56,7 +56,9 @@ export function RouteSync(): JSX.Element {
   createEffect(on(workbench.selectors.focusedContent, () => layout.send({ type: "navigated" }), { defer: true }))
 
   createEffect(() => {
-    const target = paneRouteOf(routing.route(), routing.pathname(), (route) => server.placements.byId(route.placementId)?.projectId)
+    const target = paneRouteOf(routing.route(), routing.pathname(), (route) => route.kind === "session"
+      ? server.sharedSessions.find(route)?.ref.projectId ?? server.placements.byId(route.placementId)?.projectId
+      : server.placements.byId(route.placementId)?.projectId)
     if (target) untrack(() => workbench.openRoute(target))
   })
 

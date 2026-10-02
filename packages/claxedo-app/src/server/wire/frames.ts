@@ -40,7 +40,7 @@ export function frameFromWire(input: unknown): Frame | undefined {
   }
 }
 
-function frameSessionId(frame: Frame): string | undefined {
+export function frameSessionId(frame: Frame): string | undefined {
   const properties = frame.properties ?? {}
   const info = isRecord(properties.info) ? properties.info : undefined
   const part = isRecord(properties.part) ? properties.part : undefined

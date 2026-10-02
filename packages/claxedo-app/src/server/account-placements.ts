@@ -1,4 +1,8 @@
-import type { QueryClient } from "@tanstack/solid-query"
+import { createSignal } from "solid-js"
+import { placementId, projectId, sessionId } from "./ids"
+import type { RuntimeRoute } from "./transport"
+import type { SessionLocation, SharedSessionRow } from "./types"
+import { QueryObserver, type QueryClient } from "@tanstack/solid-query"
 import type { HostedAccount } from "./account"
 import { linkAccountCatalog, type LinkedCatalog } from "./account-link"
 import { readArray } from "@claxedo/helpers/readers"
@@ -37,3 +41,30 @@ export function createAccountPlacements(account: HostedAccount, serverUrl: strin
 export function withAccountPlacements(local: BootstrapCatalog, linked: LinkedCatalog | undefined): BootstrapCatalog {
   return linked ? { ...local, placements: [...local.placements, ...linked.placements] } : local
 }
+
+export function createSharedSessions(account: HostedAccount | undefined, serverUrl: string, client: QueryClient) {
+  const key = queryKeys.sharedSessions(serverUrl)
+  const [revision, revise] = createSignal(0)
+  const read = async (): Promise<readonly SharedSessionRow[]> => {
+    if (!account) return []
+    return (await account.run("session.shared.list")).sessions.map((row) => ({
+      ref: { placementId: placementId(row.workspace_id), projectId: projectId(row.project_id), sessionId: sessionId(row.session_id) },
+      title: row.title, ownerName: row.owner_name, level: row.level,
+    }))
+  }
+  const dispose = new QueryObserver(client, { queryKey: key, queryFn: read, enabled: account !== undefined, staleTime: Number.POSITIVE_INFINITY, retry: false }).subscribe(() => revise((value) => value + 1))
+  const list = () => {
+    revision()
+    return client.getQueryData<readonly SharedSessionRow[]>(key) ?? []
+  }
+  const find = (ref: Pick<SessionLocation, "placementId" | "sessionId">) => list().find((row) => row.ref.placementId === ref.placementId && row.ref.sessionId === ref.sessionId)
+  const route = (ref: Pick<SessionLocation, "placementId" | "sessionId">): RuntimeRoute | undefined => {
+    const row = find(ref)
+    return row && { directory: `workspace:${row.ref.placementId}`, workspaceId: row.ref.placementId, remote: true, sharedSession: { sessionId: row.ref.sessionId, level: row.level } }
+  }
+  const fetch = async (staleTime: number) => { await client.fetchQuery({ queryKey: key, queryFn: read, staleTime }) }
+  const error = () => { revision(); return client.getQueryState(key)?.error }
+  return { enabled: account !== undefined, error, list, find, route, load: () => fetch(Number.POSITIVE_INFINITY), refresh: () => fetch(0), dispose }
+}
+
+export type SharedSessions = ReturnType<typeof createSharedSessions>

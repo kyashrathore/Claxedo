@@ -1,8 +1,9 @@
 import type { Accessor } from "solid-js"
-import { useServer, type OrgRole, type Principal } from "@/server"
-import { isOrgManager, type AccessAction } from "./model"
+import { useServer, type OrgRole, type Principal, type SessionLocation } from "@/server"
+import { isOrgManager, sessionControls, type AccessAction } from "./model"
 
 export type Access = {
+  readonly session: (ref: SessionLocation) => ReturnType<typeof sessionControls>
   readonly principal: Accessor<Principal | undefined>
   readonly orgRole: Accessor<OrgRole | undefined>
   readonly can: (action: AccessAction, facts?: { readonly canRemoveOrgAccounts: boolean }) => boolean
@@ -16,6 +17,7 @@ export function useAccess(): Access {
     return who?.kind === "user" ? who.orgRole : undefined
   }
   return {
+    session: (ref) => sessionControls({ owned: server.placements.byId(ref.placementId) !== undefined, level: server.sharedSessions.find(ref)?.level }),
     principal,
     orgRole,
     can: (action, facts) => {

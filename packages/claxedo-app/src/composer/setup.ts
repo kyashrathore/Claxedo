@@ -24,6 +24,7 @@ export type ComposerProps = {
   readonly view?: SessionView
   readonly attachmentWorkspace: boolean
   readonly readOnly?: boolean
+  readonly manageSession?: boolean
   readonly hidden?: boolean
   readonly startSession?: (submission: Submission, prompt: PromptInput) => Promise<SessionView>
   readonly afterAccepted?: (view: SessionView) => void
@@ -39,6 +40,7 @@ type Late = { controller?: ComposerController }
 type HarnessSelection = ComposerHarness
 
 function goalCapable(props: ComposerProps, selection: HarnessSelection): boolean {
+  if (props.manageSession === false) return false
   if (props.view) return props.view.goalAvailable() !== false
   return (selection.harness()?.goalMode ?? "none") !== "none"
 }
@@ -101,6 +103,7 @@ function createControllerFor(input: {
   store: ComposerStore
   refs: ComposerRefs
   working: Accessor<boolean>
+  shellEnabled: Accessor<boolean>
   suggestions: ReturnType<typeof createSuggestions>
   send: ReturnType<typeof createComposerSend>
   commands: Commands
@@ -110,6 +113,7 @@ function createControllerFor(input: {
     store: input.store,
     refs: input.refs,
     working: input.working,
+    shellEnabled: input.shellEnabled,
     atItems: input.suggestions.atItems,
     slashItems: input.suggestions.slashItems,
     submit: () => void input.send.send(),
@@ -146,12 +150,12 @@ export function createComposer(props: ComposerProps) {
   const suggestions = createSuggestionsFor(props, selection, commands, query)
   const send = createSendFor(props, store, key, selection, late, t)
   const reader = createReaderFor({ props, store, key, refs, selection, setDragging, late })
-  const controller = createControllerFor({ key, store, refs, working, suggestions, send, commands })
+  const controller = createControllerFor({ key, store, refs, working, shellEnabled: () => props.manageSession !== false, suggestions, send, commands })
   late.controller = controller
   props.registerRecovery?.(
     createRecovery({ store, key, controller: selection.controller, scopeInput: selection.scopeInput, send: () => send.send(), dialog: useDialog(), t }),
   )
-  registerComposerCommands({ key, harness: selection, controller, refs, send, goalAvailable, hidden: () => props.hidden === true, t })
+  registerComposerCommands({ key, harness: selection, controller, refs, send, goalAvailable, manageSession: () => props.manageSession !== false, hidden: () => props.hidden === true, t })
   createEffect(() => setQuery(controller.suggestionQuery()))
   const draft = () => store.draft(key())
   const shared = { t, key, store, refs, send, reader, suggestions, controller, dragging, draft, working, goalAvailable }

@@ -63,6 +63,8 @@ export function createQueries(transport: Transport, workspaces: Workspaces, this
 
 function invalidationKeys(server: string, event: ServerEvent, endsWritingTurn: boolean): readonly (readonly unknown[])[] {
   switch (event.type) {
+    case "sessionsChanged":
+      return [queryKeys.sharedSessions(server)]
     case "filesChanged":
       return [queryKeys.filesOf(server, event.placementId), queryKeys.gitOf(server, event.placementId)]
     case "statusChanged":
@@ -78,6 +80,7 @@ function invalidationKeys(server: string, event: ServerEvent, endsWritingTurn: b
       return [queryKeys.usageAll(server)]
     case "streamGap":
       return [
+        queryKeys.sharedSessions(server),
         queryKeys.bootstrap(server),
         queryKeys.accountCatalog(server),
         queryKeys.placements(server),

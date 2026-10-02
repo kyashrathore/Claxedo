@@ -94,6 +94,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
   const wakes = createWorkspaceWakes(transport, workspaces)
   return {
     sessions: createSessionsApi(transport, workspaces, status, wakes, projection, account),
+    sharedSessions: workspaces.shared,
     projects: createProjectsApi(transport, queryClient, workspaces),
     placements: {
       byId: workspaces.byId,

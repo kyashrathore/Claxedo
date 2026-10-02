@@ -1,5 +1,6 @@
 import { hashKey, type QueryClient } from "@tanstack/solid-query"
 import { queryKeys } from "./query-keys"
+import { placementId, sessionId } from "./ids"
 import { openEventStream, type Stream } from "./stream"
 import type { Transport } from "./transport"
 import type { SessionLocation } from "./types"
@@ -26,9 +27,8 @@ type StreamsState = {
   readonly sessions: Map<string, Stream>
 }
 
-function liveRemoteRoute(workspaces: Workspaces, id: string) {
-  const record = workspaces.catalog()?.placements.find((candidate) => candidate.placement.id === id)
-  return record?.route.remote && record.placement.reachable ? record.route : undefined
+function liveRemoteRoute(workspaces: Workspaces, placement: string, session: string) {
+  return workspaces.streamRoute({ placementId: placementId(placement), sessionId: sessionId(session) })
 }
 
 function sessionKey(placement: string, session: string) {
@@ -38,8 +38,9 @@ function sessionKey(placement: string, session: string) {
 function wanted(state: StreamsState) {
   const sessions = new Map<string, { placement: string; session: string }>()
   for (const [placement, attachedSessions] of state.attached) {
-    if (!liveRemoteRoute(state.input.workspaces, placement)) continue
-    for (const session of attachedSessions.keys()) sessions.set(sessionKey(placement, session), { placement, session })
+    for (const session of attachedSessions.keys()) {
+      if (liveRemoteRoute(state.input.workspaces, placement, session)) sessions.set(sessionKey(placement, session), { placement, session })
+    }
   }
   return sessions
 }
@@ -53,20 +54,23 @@ function reconcileStreams(state: StreamsState) {
     sessions.delete(key)
   }
   for (const [key, { placement, session }] of want) {
-    const route = liveRemoteRoute(input.workspaces, placement)
+    const route = liveRemoteRoute(input.workspaces, placement, session)
     if (!route || sessions.has(key)) continue
     const path = `${RUNTIME_EVENTS_PATH}?sessionID=${encodeURIComponent(session)}`
     sessions.set(key, openEventStream({
       open: ({ headers, signal }) => input.transport.runtime(route, path, { headers, signal }),
       onFrame: (frame) => input.onFrame(frame && typeof frame === "object" ? { ...frame, workspaceId: route.workspaceId } : frame),
       onGap: input.onGap,
+      onRefused: () => {
+        if (route.sharedSession) void input.workspaces.shared.refresh().then(input.onGap, (error) => console.error("Shared sessions could not be refreshed", error))
+      },
     }))
   }
 }
 
 export function createPlacementStreams(input: StreamsInput): PlacementStreams {
   const state: StreamsState = { input, attached: new Map(), sessions: new Map() }
-  const catalogKeys = new Set([queryKeys.bootstrap(input.transport.serverUrl), queryKeys.accountCatalog(input.transport.serverUrl)].map(hashKey))
+  const catalogKeys = new Set([queryKeys.bootstrap(input.transport.serverUrl), queryKeys.accountCatalog(input.transport.serverUrl), queryKeys.sharedSessions(input.transport.serverUrl)].map(hashKey))
   const unsubscribe = input.queryClient.getQueryCache().subscribe((event) => {
     if (catalogKeys.has(event.query.queryHash) && event.type === "updated") reconcileStreams(state)
   })
