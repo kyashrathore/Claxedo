@@ -16,6 +16,23 @@ export const DEFAULT_RELAY_APP_ORIGINS = [
   "https://*.claxedo.com",
 ]
 
+/** Request headers a browser may send on relayed workspace requests, as the `access-control-allow-headers` value. */
+export const RELAY_ALLOWED_REQUEST_HEADERS = [
+  "Accept",
+  "Authorization",
+  "Content-Type",
+  "Last-Event-ID",
+  "Traceparent",
+  "Tracestate",
+  "X-Fetch-Bypass-Throttle",
+  "X-Workspace-Id",
+  "X-OpenCode-Directory",
+  "X-Claxedo-Runner",
+  "X-Claxedo-Model",
+  "X-Claxedo-Draft-Id",
+  "X-Claxedo-Binary",
+].join(", ")
+
 export function parseAllowedOrigins(raw: string | undefined): string[] | undefined {
   const entries = (raw ?? "").split(",").map((item) => item.trim()).filter(Boolean)
   return entries.length ? entries : undefined

@@ -102,19 +102,14 @@ type WorkspaceRelayDirectory = {
   recordPong(hostId: string): HostTunnelPresence | undefined
   disconnectHost(hostId: string): void
   activeHost(input: { hostId: string; workspaceId: string }): HostTunnelPresence | undefined
-  sweep(): void
-  dispose(): void
-  size(): number
 }
 ```
 
 The shipped implementation is an in-memory `Map` with:
 
 - a TTL per presence entry (`ttlMs`, default 45 s) refreshed by
-  `recordPong` on every tunnel heartbeat pong;
-- a background sweep (`sweepIntervalMs`, default 30 s; `0` disables the
-  timer for tests, which then call `sweep()` manually) that evicts entries
-  whose `expiresAt` has passed;
+  `recordPong` on every tunnel heartbeat pong; an expired entry is evicted
+  when a lookup reaches it;
 - `activeHost` returning a presence only if the host is unexpired **and**
   its `workspaceIds` includes the requested workspace — this is the
   workspace-membership check that keeps one host tunnel from serving
@@ -124,7 +119,7 @@ The room owns both presence and the live tunnel socket. Cloudflare's routing
 sends every request for the workspace to that one room, including requests
 arriving through different gateway isolates.
 
-Cloud-VM (`access: "cloud"`) targets do not go through the directory or a
+Cloud-VM (`backing: "cloud-vm"`) targets do not go through the directory or a
 host tunnel at all — the relay reaches them directly via `fetch()`/upstream
 WebSocket against `target.baseUrl`, so socket ownership does not apply to
 them.

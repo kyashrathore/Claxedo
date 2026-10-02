@@ -1,12 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
+import { decodeProtectedHeader, exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import worker, {
   WorkspaceRelayRoom,
+  workspaceRelayDurableObjectOptions,
   workspaceRelayWorkerResolverClient,
   workspaceRelayWorkerResolverUrl,
   type WorkspaceRelayWorkerEnv,
 } from "./worker"
-import type { WorkspaceRelayDurableObjectNamespace } from "./cloudflare"
+import { deriveRelayHostKid, mintRuntimeAccessToken, verifyRelayHostToken } from "./auth"
+import { createWorkspaceRelayDurableObjectRoom, type WorkspaceRelayDurableObjectNamespace } from "./cloudflare"
 
 function namespace() {
   const routed: Array<{ id: string; request: Request }> = []
@@ -195,4 +197,91 @@ test("Worker resolver transmits identity and preserves a stale-token authenticat
   })
   await expect(resolver.target("ws_1", "host_1", "old")).rejects.toMatchObject({ code: "runtime_access_token_invalid" })
   expect(requests[0]?.searchParams.get("routingId")).toBe("old")
+})
+
+describe("workspace relay Worker JWKS", () => {
+  type Jwks = { keys: Array<Record<string, unknown>> }
+  const jwks = (env: WorkspaceRelayWorkerEnv) => worker.fetch(new Request("https://relay.test/.well-known/jwks.json"), env)
+
+  test("publishes the current Relay Host Token public key", async () => {
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const res = await jwks({ CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM: await exportPKCS8(relayHost.privateKey) })
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get("cache-control")).toBe("public, max-age=300")
+    expect(res.headers.get("content-type")).toMatch(/application\/json/)
+    const body = await res.json() as Jwks
+    expect(body.keys).toHaveLength(1)
+    const key = body.keys[0]
+    expect(key.kty).toBe("OKP")
+    expect(key.crv).toBe("Ed25519")
+    expect(key.alg).toBe("EdDSA")
+    expect(key.use).toBe("sig")
+    expect(key.kid).toBe(await deriveRelayHostKid(relayHost.publicKey))
+    expect(typeof key.x).toBe("string")
+  })
+
+  test("publishes the next key after the current one when configured", async () => {
+    const current = await generateKeyPair("EdDSA", { extractable: true })
+    const next = await generateKeyPair("EdDSA", { extractable: true })
+    const res = await jwks({
+      CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM: await exportPKCS8(current.privateKey),
+      CLAXEDO_RELAY_HOST_KID: "kid_current",
+      CLAXEDO_RELAY_HOST_NEXT_PUBLIC_KEY_PEM: await exportSPKI(next.publicKey),
+      CLAXEDO_RELAY_HOST_NEXT_KID: "kid_next",
+    })
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as Jwks
+    expect(body.keys.map((key) => key.kid)).toEqual(["kid_current", "kid_next"])
+  })
+
+  test("a room minting under the Worker's options embeds the kid the Worker publishes", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const env: WorkspaceRelayWorkerEnv = {
+      CLAXEDO_RELAY_RESOLVER_URL: "https://central.test/internal/relay",
+      CLAXEDO_RELAY_RESOLVER_TOKEN: "resolver-token",
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: await exportSPKI(runtime.publicKey),
+      CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM: await exportPKCS8(relayHost.privateKey),
+    }
+    const forwarded: Request[] = []
+    const room = createWorkspaceRelayDurableObjectRoom({
+      ...await workspaceRelayDurableObjectOptions(env),
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: "https://host.example.test",
+        backing: "cloud-vm",
+      }),
+      isRuntimeAccessTokenActive: () => ({ active: true }),
+      fetch: ((url, init) => {
+        forwarded.push(new Request(url, init))
+        return Promise.resolve(new Response("ok"))
+      }) as typeof fetch,
+    })
+    const runtimeAccessToken = await mintRuntimeAccessToken({
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      role: "editor",
+    }, runtime.privateKey, "EdDSA")
+
+    const res = await room.fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/health", {
+      headers: { authorization: `Bearer ${runtimeAccessToken}` },
+    }))
+    expect(res.status).toBe(200)
+
+    const relayHostToken = forwarded[0]?.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
+    expect(relayHostToken).toBeTruthy()
+    const published = await (await jwks(env)).json() as Jwks
+    expect(published.keys.map((key) => key.kid)).toEqual([decodeProtectedHeader(relayHostToken!).kid])
+    await expect(verifyRelayHostToken(relayHostToken!, relayHost.publicKey, {
+      workspaceId: "ws_1",
+      hostId: "host_1",
+    })).resolves.toMatchObject({ workspace_id: "ws_1", host_id: "host_1" })
+  })
 })

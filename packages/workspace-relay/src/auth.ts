@@ -333,9 +333,7 @@ export type RelayKey = CryptoKey | Uint8Array | RelayKeyResolver
  *
  * `importJWK` is declared `Promise<CryptoKey | Uint8Array>` because a symmetric
  * (`oct`) JWK imports as raw bytes. An EdDSA public JWK never does, so the byte
- * branch is a configuration error worth failing loudly on — the two callers
- * (`main.ts` for Bun, `worker.ts` for Cloudflare) previously asserted it away
- * with their own copies of this round-trip.
+ * branch is a configuration error worth failing loudly on.
  */
 export async function deriveRelayHostPublicKey(privateKey: CryptoKey): Promise<CryptoKey> {
   const jwk = await exportJWK(privateKey)

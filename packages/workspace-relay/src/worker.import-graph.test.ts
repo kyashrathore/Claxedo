@@ -18,11 +18,6 @@ const FORBIDDEN_BARE = [
   "fs/promises",
 ]
 
-const FORBIDDEN_LOCAL = [
-  "bun.ts",
-  "main.ts",
-]
-
 type ImportRef = { spec: string; typeOnly: boolean }
 
 function parseImports(source: string): ImportRef[] {
@@ -82,11 +77,6 @@ describe("workspace relay Worker import graph", () => {
     expect(visitedRel).toContain("worker.ts")
     expect(visitedRel).toContain("cloudflare.ts")
     expect(visitedRel).toContain("server.ts")
-  })
-
-  test("does not import local Bun entrypoints", () => {
-    const leaked = visitedRel.filter((rel) => FORBIDDEN_LOCAL.some((bad) => rel.endsWith(bad)))
-    expect(leaked, `local-only relay modules leaked into the Worker graph: ${leaked.join(", ")}`).toEqual([])
   })
 
   test("does not import Node-only packages", () => {

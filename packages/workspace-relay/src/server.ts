@@ -1,6 +1,3 @@
-import { Hono } from "hono"
-import { cors } from "hono/cors"
-import { exportJWK, type JWK } from "jose"
 import { isRecord } from "@claxedo/helpers/guards"
 import { sessionScopeReaches, type RuntimeAccessVerifierClaims, type TokenVerifier } from "@claxedo/workspace-relay-protocol"
 import {
@@ -18,14 +15,8 @@ import {
   type RuntimeAccessTokenClaims,
 } from "./auth"
 import type { WorkspaceRelayDirectory } from "./directory"
-import { createOriginMatcher, DEFAULT_RELAY_APP_ORIGINS } from "./cors-origins"
 import { bearerToken, errorBody } from "./http"
 import { isHostTunnelTarget } from "./host-tunnel-forwarding"
-
-export type RelayHostPublicKey = {
-  publicKey: CryptoKey | Uint8Array
-  kid: string
-}
 
 export type WorkspaceRelayTarget = {
   workspaceId: string
@@ -84,7 +75,7 @@ export type HostGenerationResult = {
   revoked: boolean
 }
 
-export function parseHostGenerationResult(input: unknown): HostGenerationResult | undefined {
+function parseHostGenerationResult(input: unknown): HostGenerationResult | undefined {
   if (!isRecord(input)) return undefined
   const row = input
   if (typeof row.enrollmentId !== "string" || !row.enrollmentId.trim()) return undefined
@@ -159,11 +150,10 @@ function isLoopbackTargetHostname(hostname: string): boolean {
  *
  * A `cloud-vm` target is fetched over the network with the Relay Host Token
  * attached, so it must be HTTPS — or HTTP to a loopback host, the only
- * plaintext transport that cannot put the token on a network. The socket
- * adapters route a `local-worktree` target over the host tunnel and never
- * fetch its `baseUrl` — the control plane sends the empty string — but
- * embedded compositions do hand it to the shared fetch forwarder, so a
- * non-empty value is admitted only as a well-formed HTTP(S) URL.
+ * plaintext transport that cannot put the token on a network. A
+ * `local-worktree` target is reached over the host tunnel and its `baseUrl` is
+ * never fetched — the control plane sends the empty string — so only that
+ * placeholder or a well-formed HTTP(S) URL is admitted.
  */
 function isAllowedRelayTargetBaseUrl(target: { baseUrl: string; backing: RelayBacking }): boolean {
   if (isHostTunnelTarget(target)) {
@@ -179,7 +169,7 @@ export type RevocationLookupArgs = { jti: string; workspaceId: string; hostId: s
 export type RevocationLookup = (args: RevocationLookupArgs) => Promise<RuntimeAccessTokenActiveResult>
 
 export type CachedRevocationOptions = {
-  /** TTL in milliseconds for cached revocation responses. Defaults to `REVOCATION_CACHE_TTL_MS_DEFAULT`. */
+  /** TTL in milliseconds for cached revocation responses. Defaults to 10_000. */
   ttlMs?: number
   /** Clock injection for tests. Defaults to `Date.now`. */
   now?: () => number
@@ -210,9 +200,6 @@ export type WorkspaceRelayAuditEvent = {
     | "relay.request.accepted"
     | "relay.request.denied"
     | "relay.request.suppressed_summary"
-    | "host_tunnel.connected"
-    | "host_tunnel.disconnected"
-    | "host_tunnel.denied"
   result: "allow" | "deny"
   reason?: string
   actorId?: string
@@ -270,18 +257,10 @@ export type WorkspaceRelayHostTokenOptions = {
   relayHostSigningKey: CryptoKey | Uint8Array
   relayHostAlgorithm: RelayJwtAlgorithm
   /**
-   * Public keys to publish at `/.well-known/jwks.json`. The first entry is the
-   * "current" mint key; any further entries are "next" keys (for rolling
-   * rotation). Verifiers (workspace-runtime → workspace-host-service) consume
-   * this set via `jose.createRemoteJWKSet`. Omit to disable the endpoint
-   * (during rollout / for tests that do not need JWKS).
-   */
-  relayHostPublicKeys?: RelayHostPublicKey[]
-  /**
    * `kid` to embed in the protected header of freshly minted RHTs. When
    * provided, verifiers can dispatch on `kid` to pick the matching key from
-   * the published JWKS. Should match the `kid` of the first entry in
-   * `relayHostPublicKeys` so JWKS and mint agree by construction.
+   * the published JWKS, so it must be the `kid` of the current key the Worker
+   * publishes at `/.well-known/jwks.json`.
    */
   relayHostMintKid?: string
   /**
@@ -298,26 +277,16 @@ export type WorkspaceRelayRoutingOptions = {
   fetch?: typeof fetch
   forwardTimeoutMs?: number
   directory?: WorkspaceRelayDirectory
-  // Browser-origin allowlist for CORS. Replaces the built-in default list
-  // (Claxedo/OpenCode app origins plus localhost dev hosts) when provided —
-  // user-deployed Workers are not forced to keep the product domains.
-  // Pattern grammar: exact origin, `https://*.example.com`, `http://localhost:*`.
-  allowedOrigins?: string[]
-}
-
-export type WorkspaceRelayDrainOptions = {
-
-  isDraining?: () => boolean
 }
 
 export type WorkspaceRelayTelemetryOptions = {
   audit?: (event: WorkspaceRelayAuditEvent) => void | Promise<void>
   /**
    * Probability (0.0 – 1.0) at which `relay.request.accepted` audit
-   * events are emitted to the user `audit` callback. Denies and tunnel
-   * lifecycle events are never sampled. When unset, defaults to 1.0
-   * (emit every accept). Suppressed accepts are aggregated into a periodic
-   * `relay.request.suppressed_summary` event (see `auditFlushIntervalMs`).
+   * events are emitted to the user `audit` callback. Denies are never
+   * sampled. When unset, defaults to 1.0 (emit every accept). Suppressed
+   * accepts are aggregated into a periodic `relay.request.suppressed_summary`
+   * event (see `auditFlushIntervalMs`).
    */
   auditAcceptSampleRate?: number
   /**
@@ -328,46 +297,17 @@ export type WorkspaceRelayTelemetryOptions = {
    */
   auditFlushIntervalMs?: number
   /**
-   * Random source for the sampler. Defaults to `Math.random`. Override
-   * for deterministic tests.
+   * Random source for audit and trace sampling. Defaults to `Math.random`.
+   * Override for deterministic tests.
    */
   random?: () => number
-}
-
-export type WorkspaceRelayMetricsOptions = {
-
-  metricsToken?: string
-
-  metricsRemoteAddress?: (request: Request) => string | undefined
-
-  metricsSources?: WorkspaceRelayMetricsSources
 }
 
 export type WorkspaceRelayOptions =
   & WorkspaceRelayAuthOptions
   & WorkspaceRelayHostTokenOptions
   & WorkspaceRelayRoutingOptions
-  & WorkspaceRelayDrainOptions
   & WorkspaceRelayTelemetryOptions
-  & WorkspaceRelayMetricsOptions
-
-export type WorkspaceRelayMetricsSources = {
-  fragmentation?: () => { fragmentsBuffered: number; oversizedClosed: number }
-  slowConsumer?: () => { overflowEvents: number; timerFired: number; droppedRequests: number }
-  drainPending?: () => number
-}
-
-/**
- * Shape of the JSON body returned by `GET /metrics`. Exported so the
- * bun adapter and ops dashboards can type-narrow against it.
- */
-export type WorkspaceRelayMetrics = {
-  fragmentation: { fragmentsBuffered: number; oversizedClosed: number }
-  slowConsumer: { overflowEvents: number; timerFired: number; droppedRequests: number }
-  directory: { activeHostCount: number }
-  audit: { suppressedAccepts: number }
-  drain?: { pendingCount: number }
-}
 
 export type AuthorizedWorkspaceRelayRequest = {
   claims: RuntimeAccessTokenClaims
@@ -380,15 +320,6 @@ export type WorkspaceRelayAuthorizeTrace = {
   span<T>(name: string, run: () => Promise<T>): Promise<T>
 }
 
-export type WorkspaceRelayTracePhase = {
-  name: string
-  ms: number
-}
-
-export type WorkspaceRelayTrace = WorkspaceRelayAuthorizeTrace & {
-  phases: WorkspaceRelayTracePhase[]
-}
-
 type RelayHostTokenCacheEntry = {
   token?: string
   promise?: Promise<string>
@@ -399,7 +330,7 @@ const RELAY_HOST_TOKEN_CACHE_MAX_ENTRIES = 4096
 const RUNTIME_ACCESS_TOKEN_CACHE_MAX_ENTRIES = 8192
 const RESOLVER_CACHE_MAX_ENTRIES = 8192
 const RUNTIME_ACCESS_TOKEN_CACHE_TTL_MS_DEFAULT = 10_000
-export const REVOCATION_CACHE_TTL_MS_DEFAULT = 10_000
+const REVOCATION_CACHE_TTL_MS_DEFAULT = 10_000
 
 export const RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT = 30_000
 const relayHostTokenCaches = new WeakMap<WorkspaceRelayOptions, Map<string, RelayHostTokenCacheEntry>>()
@@ -468,7 +399,7 @@ export function createCachedRevocationClient(
  * Every relayed HTTP request re-runs the active check, so a cached `active`
  * answer delays denial by at most `revocationCacheTtlMs`. An established
  * socket adds at most one re-check interval — its watcher can tick just
- * before the stale entry expires — so pass the adapter's
+ * before the stale entry expires — so pass the room's
  * `runtimeAccessTokenActiveCheckIntervalMs` as `activeCheckIntervalMs`;
  * omit it for the per-request path. A non-positive interval means the socket
  * has no revocation watcher at all and the function reports no bound: the
@@ -1011,12 +942,9 @@ export function workspaceRelayForwardRequestInit(
 }
 
 /**
- * Per-options-object sampler state. We store the suppressed-event counter
- * (and the periodic flush timer) on a WeakMap keyed by `WorkspaceRelayOptions`
- * so that `authorizeWorkspaceRelayRequest`, the bun adapter's tunnel audit
- * helper, and the relay's own `createWorkspaceRelay` HTTP routes all share the
- * same suppressed counter without anyone having to thread a stateful sampler
- * object through their call signatures.
+ * Sampler state lives on a WeakMap keyed by the options object, so every
+ * authorization made with the same options — a room's HTTP requests and
+ * WebSocket admissions alike — shares one suppressed counter and flush timer.
  */
 type AuditSamplerState = {
   suppressedCount: number
@@ -1079,10 +1007,7 @@ function flushSuppressedSummary(options: WorkspaceRelayOptions, state: AuditSamp
   })
 }
 
-/**
- * Dispose the sampler's periodic flush timer for a given options object.
- * Tests call this in cleanup so the bun process can exit.
- */
+/** Stops the flush timer for `options` and emits any suppressed count it still holds. */
 export function disposeAuditSampler(options: WorkspaceRelayOptions) {
   const state = auditSamplers.get(options)
   if (!state) return
@@ -1093,44 +1018,6 @@ export function disposeAuditSampler(options: WorkspaceRelayOptions) {
   // Flush any remaining suppressed events synchronously so observers don't lose them.
   flushSuppressedSummary(options, state)
   auditSamplers.delete(options)
-}
-
-export function createWorkspaceRelayTrace(): WorkspaceRelayTrace {
-  const phases: WorkspaceRelayTracePhase[] = []
-  return {
-    phases,
-    async span<T>(name: string, run: () => Promise<T>): Promise<T> {
-      const startedAt = performance.now()
-      try {
-        return await run()
-      } finally {
-        phases.push({ name, ms: performance.now() - startedAt })
-      }
-    },
-  }
-}
-
-function roundedMs(value: number) {
-  return Math.round(value * 100) / 100
-}
-
-export function workspaceRelayServerTiming(trace: WorkspaceRelayTrace) {
-  return trace.phases
-    .map((phase) => `${phase.name};dur=${roundedMs(phase.ms)}`)
-    .join(", ")
-}
-
-export function workspaceRelayTimingResponse(response: Response, trace: WorkspaceRelayTrace) {
-  const value = workspaceRelayServerTiming(trace)
-  if (!value) return response
-  const headers = new Headers(response.headers)
-  const prev = headers.get("server-timing")
-  headers.set("server-timing", prev ? `${prev}, ${value}` : value)
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  })
 }
 
 async function audit(options: WorkspaceRelayOptions, event: WorkspaceRelayAuditEvent) {
@@ -1146,55 +1033,6 @@ async function audit(options: WorkspaceRelayOptions, event: WorkspaceRelayAuditE
     }
   }
   await options.audit?.(event)
-}
-
-const defaultOriginMatcher = createOriginMatcher(DEFAULT_RELAY_APP_ORIGINS)
-
-// Memoize per-options matchers so deny paths (which only receive the options
-// bag) share one compiled matcher with the main CORS middleware.
-const originMatchers = new WeakMap<object, (origin: string) => boolean>()
-
-function originMatcherFor(options: WorkspaceRelayOptions) {
-  if (!options.allowedOrigins) return defaultOriginMatcher
-  let matcher = originMatchers.get(options)
-  if (!matcher) {
-    matcher = createOriginMatcher(options.allowedOrigins)
-    originMatchers.set(options, matcher)
-  }
-  return matcher
-}
-
-
-export const RELAY_ALLOWED_REQUEST_HEADER_LIST = [
-  "Accept",
-  "Authorization",
-  "Content-Type",
-  "Last-Event-ID",
-  "Traceparent",
-  "Tracestate",
-  "X-Fetch-Bypass-Throttle",
-  "X-Workspace-Id",
-  "X-OpenCode-Directory",
-  "X-Claxedo-Runner",
-  "X-Claxedo-Model",
-  "X-Claxedo-Draft-Id",
-  "X-Claxedo-Binary",
-] as const
-
-/** The same list as a header value, for the adapters that write it directly. */
-export const RELAY_ALLOWED_REQUEST_HEADERS = RELAY_ALLOWED_REQUEST_HEADER_LIST.join(", ")
-
-function denyCorsHeaders(request: Request, originAllowed: (origin: string) => boolean = defaultOriginMatcher) {
-  const origin = request.headers.get("origin")
-  if (!origin) return undefined
-  // Mirror the main CORS allowlist so deny responses are visible to the
-  // browser instead of being hidden behind a CORS error.
-  if (!originAllowed(origin)) return undefined
-  return {
-    "access-control-allow-origin": origin,
-    "access-control-allow-headers": RELAY_ALLOWED_REQUEST_HEADERS,
-    "access-control-allow-methods": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
-  }
 }
 
 async function deny(options: WorkspaceRelayOptions, input: {
@@ -1218,10 +1056,7 @@ async function deny(options: WorkspaceRelayOptions, input: {
     method: input.request.method,
     path: url.pathname,
   })
-  return Response.json(errorBody(input.code, input.message), {
-    status: input.status,
-    headers: denyCorsHeaders(input.request, originMatcherFor(options)),
-  })
+  return Response.json(errorBody(input.code, input.message), { status: input.status })
 }
 
 export async function authorizeWorkspaceRelayRequest(
@@ -1293,8 +1128,8 @@ export async function authorizeWorkspaceRelayRequest(
       || target.workspaceId !== claims.workspace_id
       || target.hostId !== claims.host_id
       // A programmatic resolveTarget never passed through the resolver wire
-      // parse, so the same destination rule is applied again here — the last
-      // point shared by every adapter before forwarding.
+      // parse, so the same destination rule is applied again here, the last
+      // check before the room forwards.
       || !isAllowedRelayTargetBaseUrl(target)
     ) {
       return {
@@ -1360,297 +1195,4 @@ export async function authorizeWorkspaceRelayRequest(
       }),
     }
   }
-}
-
-export async function forwardWorkspaceRelayRequest(
-  request: Request,
-  target: WorkspaceRelayTarget,
-  relayHostToken: string,
-  path: string,
-  requestFetch: typeof fetch,
-  timeoutMs: number,
-  trace?: WorkspaceRelayAuthorizeTrace,
-  originAllowed: (origin: string) => boolean = defaultOriginMatcher,
-) {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  const span = <T>(name: string, run: () => Promise<T>) => trace ? trace.span(name, run) : run()
-  try {
-    const upstream = await span("upstream-fetch", async () => await requestFetch(
-      targetUrl(target, path, new URL(request.url).search),
-      workspaceRelayForwardRequestInit(request, relayHostToken, target.workspaceId, {
-        // Cookie forwarding follows the target type, not the transport this
-        // process happens to use: a local-worktree baseUrl must not receive
-        // the browser's relay cookies however it is reached.
-        hostTunnel: isHostTunnelTarget(target),
-        signal: controller.signal,
-      }),
-    ))
-    const headers = new Headers(upstream.headers)
-    headers.delete("access-control-allow-origin")
-    headers.delete("access-control-allow-credentials")
-    headers.delete("access-control-allow-headers")
-    headers.delete("access-control-allow-methods")
-    headers.delete("access-control-expose-headers")
-    headers.delete("access-control-max-age")
-    // Every workspace shares this relay's origin: an upstream Set-Cookie
-    // would be replayed to other workspaces' requests through the relay.
-    headers.delete("set-cookie")
-    for (const [key, value] of Object.entries(denyCorsHeaders(request, originAllowed) ?? {})) {
-      headers.set(key, value)
-    }
-    return new Response(upstream.body, {
-      status: upstream.status,
-      statusText: upstream.statusText,
-      headers,
-    })
-  } catch (err) {
-    const aborted = err instanceof Error && err.name === "AbortError"
-    return Response.json(
-      errorBody(
-        aborted ? "upstream_timeout" : "upstream_unavailable",
-        aborted ? "Workspace upstream timed out" : "Workspace upstream is unavailable",
-      ),
-      { status: aborted ? 504 : 503, headers: denyCorsHeaders(request, originAllowed) },
-    )
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
-export type WorkspaceRelayApp = Hono & {
-  /**
-   * Clear the sampler's periodic flush timer. Tests must call this so
-   * `setInterval` doesn't keep the process alive after the test exits.
-   */
-  disposeAuditSampler(): void
-}
-
-/**
- * Read the suppressed-accept counter for a given options object. Surfaced
- * for the `/metrics` route handler. Returns 0 if no sampler state has been
- * created yet (no requests have been audit-sampled), which is the same value
- * an external observer would see.
- */
-export function getAuditSuppressedCount(options: WorkspaceRelayOptions): number {
-  return auditSamplers.get(options)?.suppressedCount ?? 0
-}
-
-const LOOPBACK_REMOTES: ReadonlySet<string> = new Set([
-  "127.0.0.1",
-  "::1",
-  "::ffff:127.0.0.1",
-])
-
-function isLoopbackAddress(address: string | undefined): boolean {
-  if (!address) return false
-  const trimmed = address.trim()
-  if (LOOPBACK_REMOTES.has(trimmed)) return true
-  // 127.0.0.0/8 — anything starting with `127.` is loopback per RFC 5735.
-  if (trimmed.startsWith('127.')) return true
-  // IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.99).
-  if (/^::ffff:127\./i.test(trimmed)) return true
-  return false
-}
-
-type MetricsAuthResult =
-  | { ok: true }
-  | { ok: false; status: 401 | 403; code: string; message: string }
-
-function checkMetricsAuth(options: WorkspaceRelayOptions, request: Request): MetricsAuthResult {
-  if (options.metricsToken) {
-    const presented = bearerToken(request.headers.get("authorization") ?? undefined)
-    if (!presented || presented !== options.metricsToken) {
-      return {
-        ok: false,
-        status: 401,
-        code: "metrics_unauthorized",
-        message: "Metrics endpoint requires a valid bearer token",
-      }
-    }
-    return { ok: true }
-  }
-  // No token configured: gate on loopback. If no resolver is wired, fail
-  // closed; production should set either `metricsToken` or
-  if (!options.metricsRemoteAddress) {
-    return {
-      ok: false,
-      status: 401,
-      code: "metrics_unauthorized",
-      message: "Metrics endpoint is restricted to loopback or bearer-token clients",
-    }
-  }
-  const address = options.metricsRemoteAddress(request)
-  if (isLoopbackAddress(address)) return { ok: true }
-  return {
-    ok: false,
-    status: 401,
-    code: "metrics_unauthorized",
-    message: "Metrics endpoint is restricted to loopback or bearer-token clients",
-  }
-}
-
-function buildMetricsBody(options: WorkspaceRelayOptions): WorkspaceRelayMetrics {
-  const sources = options.metricsSources ?? {}
-  const fragmentation = sources.fragmentation?.() ?? { fragmentsBuffered: 0, oversizedClosed: 0 }
-  const slowConsumer = sources.slowConsumer?.() ?? {
-    overflowEvents: 0,
-    timerFired: 0,
-    droppedRequests: 0,
-  }
-  const activeHostCount = options.directory?.size?.() ?? 0
-  const suppressedAccepts = getAuditSuppressedCount(options)
-  const body: WorkspaceRelayMetrics = {
-    fragmentation,
-    slowConsumer,
-    directory: { activeHostCount },
-    audit: { suppressedAccepts },
-  }
-  if (sources.drainPending) {
-    body.drain = { pendingCount: sources.drainPending() }
-  }
-  return body
-}
-
-export function createWorkspaceRelay(options: WorkspaceRelayOptions): WorkspaceRelayApp {
-  // Built with its extra member in place rather than asserted onto a bare
-  // `Hono` and back-filled hundreds of lines later: the returned value matches
-  // its declared type from its first statement.
-  const app: WorkspaceRelayApp = Object.assign(new Hono(), {
-    disposeAuditSampler: () => disposeAuditSampler(options),
-  })
-  const originAllowed = originMatcherFor(options)
-
-  // Resource timing for the app: an admitted origin may read the timing
-  // breakdown of every relay response, not just a masked duration.
-  app.use("*", async (c, next) => {
-    await next()
-    const origin = c.res.headers.get("access-control-allow-origin")
-    if (origin && origin !== "*" && !c.res.headers.has("timing-allow-origin")) {
-      c.res.headers.set("timing-allow-origin", origin)
-    }
-  })
-  app.use("*", cors({
-    origin: (origin) => {
-      if (!origin) return undefined
-      return originAllowed(origin) ? origin : undefined
-    },
-    // Spread from the shared list, not hand-maintained here: a duplicate
-    // array drifts out of sync and silently drops headers like
-    // `Last-Event-ID` or `X-Fetch-Bypass-Throttle`.
-    allowHeaders: [...RELAY_ALLOWED_REQUEST_HEADER_LIST],
-    allowMethods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  }))
-
-  app.get("/health", (c) => {
-    if (options.isDraining?.()) {
-      return c.json(
-        { ok: false, service: "workspace-relay", draining: true },
-        503,
-      )
-    }
-    return c.json({ ok: true, service: "workspace-relay" })
-  })
-
-  /**
-   * JWKS endpoint for the Relay Host Token (RHT) signing key(s).
-   *
-   * Mirror of the RAT JWKS endpoint on `claxedo-server`. Publishes the public
-   * counterpart of the relay's RHT signing key so the Workspace Host Service
-   * can verify RHTs via `jose.createRemoteJWKSet` and the relay's signing key
-   * can be rotated without redeploying every workspace VM.
-   *
-   * 503 when no keys are configured (so misconfiguration is loud rather than
-   * silently serving an empty JWKS).
-   */
-  app.get("/.well-known/jwks.json", async (c) => {
-    const sources = options.relayHostPublicKeys ?? []
-    if (sources.length === 0) {
-      return c.json(
-        {
-          error: {
-            code: "jwks_no_keys_configured",
-            message: "No Relay Host Token public keys are configured for the JWKS endpoint",
-          },
-        },
-        503,
-      )
-    }
-    let keys: JWK[]
-    try {
-      keys = await Promise.all(sources.map(async (source) => {
-        const jwk = await exportJWK(source.publicKey)
-        return {
-          ...jwk,
-          kid: source.kid,
-          alg: "EdDSA",
-          use: "sig",
-        }
-      }))
-    } catch (err) {
-      return c.json(
-        {
-          error: {
-            code: "jwks_invalid_key",
-            message: "A configured RHT public key could not be exported as a JWK",
-            detail: err instanceof Error ? err.message : String(err),
-          },
-        },
-        500,
-      )
-    }
-    c.header("cache-control", "public, max-age=300")
-    return c.json({ keys })
-  })
-
-  /**
-   * Ops-only metrics endpoint. Surfaces fragmentation, slow-consumer,
-   * directory size, audit suppressed-accept count, and drain pending count.
-   *
-   * Auth model:
-   *   - If `metricsToken` is configured, every request must present
-   *     `Authorization: Bearer <metricsToken>` (loopback or not).
-   *   - Otherwise the endpoint requires the caller to be loopback. The
-   *     loopback check uses `metricsRemoteAddress(request)` — when that is
-   *     also unset (no resolver wired), the endpoint fails closed.
-   */
-  app.get("/metrics", (c) => {
-    const authResult = checkMetricsAuth(options, c.req.raw)
-    if (!authResult.ok) {
-      return c.json(
-        errorBody(authResult.code, authResult.message),
-        authResult.status,
-      )
-    }
-    return c.json(buildMetricsBody(options))
-  })
-
-  app.all("/workspaces/:workspaceId/*", async (c) => {
-    const trace = createWorkspaceRelayTrace()
-    // Cheap fast-path before auth so a draining instance never even
-    // verifies a token for a request it can't serve. Mirrors the same
-    if (options.isDraining?.()) {
-      return Response.json(
-        errorBody("relay_draining", "Workspace relay is shutting down; try another instance"),
-        { status: 503, headers: denyCorsHeaders(c.req.raw, originAllowed) },
-      )
-    }
-    const response = await trace.span("relay-total", async () => {
-      const relay = await authorizeWorkspaceRelayRequest(options, c.req.raw, c.req.param("workspaceId"), trace)
-      if (!relay.ok) return relay.response
-      return await forwardWorkspaceRelayRequest(
-        new Request(c.req.raw),
-        relay.request.target,
-        relay.request.relayHostToken,
-        relay.request.path,
-        options.fetch ?? fetch,
-        options.forwardTimeoutMs ?? 30_000,
-        trace,
-        originAllowed,
-      )
-    })
-    return workspaceRelayTimingResponse(response, trace)
-  })
-
-  return app
 }

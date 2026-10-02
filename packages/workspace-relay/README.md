@@ -100,17 +100,9 @@ VM targets may receive cookies when the caller intentionally sends them.
 ### CORS
 
 The relay owns CORS responses for browser-facing workspace requests. Do not
-forward upstream CORS headers as the source of truth. Add allowed product
-origins in the relay/server CORS configuration and keep wildcard origins out of
-credentialed deployments.
-
-### Metrics
-
-`GET /metrics` is privileged operational data. In production, set
-`CLAXEDO_RELAY_METRICS_TOKEN` and scrape with `Authorization: Bearer <token>`.
-When no metrics token is configured, the endpoint only allows callers that the
-adapter identifies as loopback; if no remote-address resolver exists, it fails
-closed.
+forward upstream CORS headers as the source of truth. Configure browser origins
+with `CLAXEDO_RELAY_ALLOWED_ORIGINS` or `CLAXEDO_APP_ORIGINS` (see
+Configuration) and keep wildcard origins out of credentialed deployments.
 
 ### Host-Tunnel Topology
 
@@ -124,15 +116,16 @@ Re-exported from [`src/index.ts`](src/index.ts):
 | Concern | Module | Notable exports |
 | --- | --- | --- |
 | Token issuance / verification | [`src/auth.ts`](src/auth.ts) | `mintRuntimeAccessToken`, `verifyRuntimeAccessToken`, `mintRelayHostToken`, `verifyRelayHostToken`, `mintHostTunnelToken`, `verifyHostTunnelToken`, types `RelayRole`, `RelayBacking`, `RelayJwtAlgorithm`, `RuntimeAccessTokenClaims`, `RelayKey`, `RelayKeyResolver`, error class `WorkspaceRelayAuthError` |
-| Hono HTTP surface | [`src/server.ts`](src/server.ts) | `createWorkspaceRelay`, `authorizeWorkspaceRelayRequest`, types `WorkspaceRelayOptions`, `WorkspaceRelayTarget`, `RuntimeAccessTokenActiveResult`, `WorkspaceRelayAuditEvent`, `WorkspaceRelayMetricsSources`, `RelayHostPublicKey` |
-| Active-host directory | [`src/directory.ts`](src/directory.ts) | `createWorkspaceRelayDirectory`, `disposeWorkspaceRelayDirectory`, types `WorkspaceRelayDirectory`, `HostTunnelPresence` |
+| Request authorization and forwarding | [`src/server.ts`](src/server.ts) | `authorizeWorkspaceRelayRequest`, `workspaceRelayForwardRequestInit`, `workspaceRelayTargetUrl`, the cached resolver clients, types `WorkspaceRelayOptions`, `WorkspaceRelayTarget`, `RuntimeAccessTokenActiveResult`, `WorkspaceRelayAuditEvent` |
+| CORS policy | [`src/cors-origins.ts`](src/cors-origins.ts) | `DEFAULT_RELAY_APP_ORIGINS`, `RELAY_ALLOWED_REQUEST_HEADERS`, `createOriginMatcher`, `parseAllowedOrigins` |
+| Active-host directory | [`src/directory.ts`](src/directory.ts) | `createWorkspaceRelayDirectory`, types `WorkspaceRelayDirectory`, `HostTunnelPresence` |
 | Cloudflare Worker gateway and room | [`src/cloudflare.ts`](src/cloudflare.ts) | `createWorkspaceRelayDurableObjectGateway`, `createWorkspaceRelayDurableObjectRoom` |
 
 Wire types live in the sibling package
 [`@claxedo/workspace-relay-protocol`](../workspace-relay-protocol/)
 (`TUNNEL_PROTOCOL_VERSION`, `TunnelMessage`, `isTunnelMessage`,
 `makeTunnelPong`). Keep that split — it lets non-Node consumers
-implement the tunnel protocol without pulling Hono and Jose.
+implement the tunnel protocol without pulling Jose.
 
 ## Configuration
 
@@ -146,11 +139,9 @@ All knobs are environment variables: Worker vars and secrets in
 | `CLAXEDO_RELAY_HOST_GENERATION_URL` | Optional absolute URL of the host-generation lookup. Unset (the normal case) derives `<CLAXEDO_RELAY_RESOLVER_URL>/host-generation`; set it only when the lookup lives at a different origin than the rest of the resolver. There is no way to turn the fence off on a resolver-backed relay. |
 | `CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS` | Cache TTL for host-generation answers. Defaults to 10000. A superseded tunnel closes within the re-check interval (30 s) plus this TTL. |
 | `CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS` | Cache TTL for `/revocation` answers (default 10000 ms). Target answers are not retained. |
-| `CLAXEDO_RELAY_JWKS_URL` | Optional remote JWKS the relay uses to verify runtime-access tokens. |
+| `CLAXEDO_CONTROL_PLANE_JWKS_URL` | Remote JWKS the relay uses to verify runtime-access and host-tunnel tokens. |
 | `CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM` | Inline public key (alternative to JWKS). |
-| `CLAXEDO_RELAY_HOST_VERIFY_PEM` | Public PEM the relay uses to verify host-tunnel tokens. |
-| `CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM` | Private PEM the relay uses to mint relay-host tokens. |
-| `CLAXEDO_RELAY_METRICS_TOKEN` | Optional bearer token for `/metrics`. Without it, `/metrics` requires a trusted loopback remote-address resolver. |
+| `CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM` | Private PEM the relay uses to mint relay-host tokens. The Worker publishes its public half at `/.well-known/jwks.json`. |
 | `CLAXEDO_RELAY_ALLOWED_ORIGINS` | Comma-separated browser-origin allowlist for CORS. **Replaces** the built-in default list (Claxedo/OpenCode app origins plus `http://localhost:*` dev hosts). Grammar: exact origin, `https://*.example.com`, `http://localhost:*`.  |
 
 Cloudflare Worker tracing knobs (Durable Object deployment):
@@ -219,9 +210,6 @@ type WorkspaceRelayDirectory = {
   recordPong(hostId: string): HostTunnelPresence | undefined
   disconnectHost(hostId: string): void
   activeHost(input: { hostId: string; workspaceId: string }): HostTunnelPresence | undefined
-  sweep(): void
-  dispose(): void
-  size(): number
 }
 ```
 

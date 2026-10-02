@@ -21,7 +21,6 @@ import {
   type TunnelWsFrame,
 } from "@claxedo/workspace-relay-protocol"
 import {
-  RELAY_ALLOWED_REQUEST_HEADERS,
   RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT,
   authorizeWorkspaceRelayRequest,
   checkHostTunnelGeneration,
@@ -34,7 +33,7 @@ import {
   type WorkspaceRelayOptions,
 } from "./server"
 import { createWorkspaceRelayDirectory } from "./directory"
-import { createOriginMatcher, DEFAULT_RELAY_APP_ORIGINS, parseAllowedOrigins } from "./cors-origins"
+import { createOriginMatcher, DEFAULT_RELAY_APP_ORIGINS, parseAllowedOrigins, RELAY_ALLOWED_REQUEST_HEADERS } from "./cors-origins"
 import { isHostTunnelTarget } from "./host-tunnel-forwarding"
 
 export type WorkspaceRelayDurableObjectId = unknown
@@ -738,9 +737,8 @@ type BlobLike = { arrayBuffer: () => Promise<ArrayBuffer> }
 /**
  * Duck-typed instead of `instanceof Blob`, for two reasons: a Blob handed over
  * from another realm fails `instanceof`, and the check must not throw in a
- * runtime that has no global `Blob` at all (the Bun adapter shares this file's
- * type surface). Reached only after the concrete `ArrayBuffer` / view branches,
- * so nothing that is already bytes can land here.
+ * runtime that has no global `Blob` at all. Reached only after the concrete
+ * `ArrayBuffer` / view branches, so nothing that is already bytes can land here.
  */
 function isBlobLike(input: unknown): input is BlobLike {
   if (!input || typeof input !== "object") return false
@@ -988,9 +986,8 @@ function allowedCorsOrigin(origin: string | null): string | undefined {
 }
 
 /**
- * The browser-origin gate on workspace WebSocket upgrades — the counterpart
- * of `requireAllowedOrigin` in bun.ts, applied to the same path (after token
- * authorization, before the upgrade is granted). A request carrying NO
+ * The browser-origin gate on workspace WebSocket upgrades, applied after token
+ * authorization and before the upgrade is granted. A request carrying NO
  * `Origin` header is a non-browser client — browsers always send Origin on
  * WebSocket upgrades — so there is no origin verdict to enforce and it is
  * admitted.
@@ -1023,8 +1020,7 @@ function corsPreflight(request: Request) {
  * Every workspace shares the relay's origin, so an upstream Set-Cookie would
  * be replayed to other workspaces' requests through the relay, and an
  * upstream access-control-* grant would answer for the relay's own allowlist.
- * Stripped unconditionally before `corsHeaders` stamps the relay's policy —
- * same list the Bun adapter's `relayCorsHeaders` deletes.
+ * Stripped unconditionally before `corsHeaders` stamps the relay's policy.
  */
 const UPSTREAM_OWNED_RESPONSE_HEADERS = [
   "set-cookie",
@@ -1196,7 +1192,7 @@ export function createWorkspaceRelayDurableObjectGateway(
 }
 
 export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDurableObjectRoomOptions) {
-  const directory = options.directory ?? createWorkspaceRelayDirectory({ sweepIntervalMs: 0 })
+  const directory = options.directory ?? createWorkspaceRelayDirectory()
   const relayOptions = { ...options, directory }
   const hostTunnels = new Map<string, HostTunnelSocket>()
   const clients = new Set<ClientSocket>()
@@ -1365,8 +1361,8 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
    * Distinguishes "the resolver says no" from "I could not reach the resolver".
    *
    * This distinction is the whole basis of the grace policy, and it is NOT the
-   * same as catch-vs-then: a 5xx from the revocation resolver never throws. Both
-   * `worker.ts` and `main.ts` convert a non-ok HTTP response into an ordinary
+   * same as catch-vs-then: a 5xx from the revocation resolver never throws.
+   * `worker.ts` converts a non-ok HTTP response into an ordinary
    * `{ active: false, code: "relay_revocation_resolver_unavailable" }`. So a
    * resolver outage arrives through the SUCCESS path wearing a denial's clothes,
    * and treating every `active: false` as authoritative is what made a resolver
