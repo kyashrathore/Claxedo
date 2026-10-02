@@ -71,7 +71,7 @@ try {
   assert.equal((await request("/api/session")).status, 404)
   console.log(JSON.stringify({ ok: true, node: process.versions.node, electron: process.versions.electron ?? null, root }))
 } finally {
-  host.dispose()
+  await host.dispose()
   await runtime.close()
   process.chdir(previousDirectory)
   fs.rmSync(root, { recursive: true, force: true })

@@ -3,6 +3,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { afterAll, expect, test } from "vitest"
+import { z } from "zod"
 import { setupAgentHooks } from "@claxedo/workspace-runtime/host"
 import { dataDir, stateDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { defaultStatusHooks } from "../../../workspace-runtime/src/status-hooks"
@@ -24,6 +25,14 @@ function fingerprint(homeDir: string) {
     runner,
     existsSync(file) ? createHash("sha256").update(readFileSync(file)).digest("hex") : undefined,
   ]))
+}
+
+function hookCommands(file: string) {
+  const config = z.object({ hooks: z.record(z.string(), z.array(z.object({
+    hooks: z.array(z.object({ command: z.string() })),
+  }))) }).parse(JSON.parse(readFileSync(file, "utf8")))
+  return Object.values(config.hooks).flatMap((groups) => groups.flatMap((group) =>
+    group.hooks.map((hook) => hook.command.replaceAll("\\", "/"))))
 }
 
 /** The passwd home: `data-isolation.ts` has already pointed HOME, and so `os.homedir()`, at the temporary root. */
@@ -58,7 +67,8 @@ test("agent hook setup rewrites the harness configs under the temporary home, no
   const written = agentHookConfigPaths(os.homedir(), defaultStatusHooks)
   for (const file of Object.values(written)) expect({ file, exists: existsSync(file) }).toEqual({ file, exists: true })
   const workspaceRuntime = process.env.WORKSPACE_RUNTIME_DATA_DIR!
-  expect(readFileSync(written.gemini, "utf8")).toContain(path.join(workspaceRuntime, "hooks", "gemini-hook.sh"))
-  expect(readFileSync(path.join(workspaceRuntime, "hooks", "claude-settings.json"), "utf8")).toContain(path.join(workspaceRuntime, "hooks", "notify.sh"))
+  expect(hookCommands(written.gemini)).toContain(path.join(workspaceRuntime, "hooks", "gemini-hook.sh").replaceAll("\\", "/"))
+  const notify = path.join(workspaceRuntime, "hooks", "notify.sh").replaceAll("\\", "/")
+  expect(hookCommands(path.join(workspaceRuntime, "hooks", "claude-settings.json")).some((command) => command.includes(notify))).toBe(true)
   expect(fingerprint(home)).toEqual(before)
 })
