@@ -1,20 +1,13 @@
 import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
-import { CONTROL_PLANE_BASELINE, baselineStatements, currentControlPlaneBaseline } from "../../scripts/control-plane-schema"
-
-export function controlPlaneMigrations(): readonly string[] {
-  currentControlPlaneBaseline()
-  return [CONTROL_PLANE_BASELINE]
-}
+import { baselineStatements, currentControlPlaneBaseline } from "../../scripts/control-plane-schema"
 
 export type ControlPlaneDatabase = {
   database: D1Database
   dispose(): Promise<void>
 }
 
-export async function miniflareControlPlaneDatabase(
-  migrations: readonly string[],
-): Promise<ControlPlaneDatabase> {
+export async function miniflareControlPlaneDatabase(): Promise<ControlPlaneDatabase> {
   const instance = new Miniflare({
     modules: true,
     script: "export default { fetch() { return new Response('ok') } }",
@@ -23,7 +16,7 @@ export async function miniflareControlPlaneDatabase(
   })
   try {
     const database = await instance.getD1Database("CONTROL_PLANE_DB")
-    for (const name of migrations) await applyControlPlaneMigration(database, name)
+    await applyControlPlaneBaseline(database)
     return { database, dispose: () => instance.dispose() }
   } catch (error) {
     await instance.dispose()
@@ -31,7 +24,6 @@ export async function miniflareControlPlaneDatabase(
   }
 }
 
-export async function applyControlPlaneMigration(database: D1Database, name: string): Promise<void> {
-  if (name !== CONTROL_PLANE_BASELINE) throw new Error(`${name} is not ${CONTROL_PLANE_BASELINE}`)
+export async function applyControlPlaneBaseline(database: D1Database): Promise<void> {
   await database.batch(baselineStatements(currentControlPlaneBaseline()).map((statement) => database.prepare(statement)))
 }

@@ -10,7 +10,7 @@ import {
   type IntegrationImpl,
 } from "@claxedo/connections"
 
-import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { createD1ConnectionAttempts } from "./attempts"
 import { createD1ConnectionStore } from "./connection-store"
 
@@ -35,7 +35,7 @@ afterEach(async () => {
 })
 
 async function database(): Promise<D1Database> {
-  const instance = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const instance = await miniflareControlPlaneDatabase()
   active.push(instance)
   const target = instance.database
   await target

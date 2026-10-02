@@ -14,7 +14,7 @@ import { createHostedCoreApp } from "./hosted-core-app"
 import { STATIC_PRODUCT_DESCRIPTORS } from "./deployment-profile"
 import { sandboxRelayTargetLookup, type HostedControlPlane } from "../../authority/hosted-services"
 import type { ControlPlaneServices } from "../../authority/services"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import { createHostedTasksComposition } from "../../tasks/hosted-composition"
 import { mintTasksCapability } from "../../tasks/capability"
@@ -60,7 +60,7 @@ afterEach(async () => {
 })
 
 async function database(): Promise<D1Database> {
-  const instance = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const instance = await miniflareControlPlaneDatabase()
   active.push(instance)
   return instance.database
 }

@@ -26,7 +26,6 @@ import { STATIC_PRODUCT_DESCRIPTORS } from "../deployments/hosted-shared/deploym
 import { sandboxRelayTargetLookup, type HostedControlPlane } from "../authority/hosted-services"
 import type { ControlPlaneServices } from "../authority/services"
 import {
-  controlPlaneMigrations,
   miniflareControlPlaneDatabase,
   type ControlPlaneDatabase,
 } from "../test-support/control-plane-migrations"
@@ -59,7 +58,7 @@ afterEach(async () => {
 })
 
 async function database(): Promise<D1Database> {
-  const instance = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const instance = await miniflareControlPlaneDatabase()
   active.push(instance)
   return instance.database
 }

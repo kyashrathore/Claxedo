@@ -18,7 +18,7 @@ import {
 import { LocalUsageRoutes, UsageRoutes } from "@claxedo/server-core/usage/routes"
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import { USAGE_REPORT_MAX_MESSAGES_PER_TURN } from "@claxedo/server-core/usage/usage-report"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { createD1UsageLedger } from "./d1-usage-ledger"
 
 const databases: ControlPlaneDatabase[] = []
@@ -28,7 +28,7 @@ afterEach(async () => {
 })
 
 async function controlPlane() {
-  const database = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const database = await miniflareControlPlaneDatabase()
   databases.push(database)
   return database.database
 }

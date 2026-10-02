@@ -19,7 +19,6 @@ import { betterAuthAccount } from "../../platform/auth/better-auth-d1-authentica
 import { orgInvitationEmailDelivery } from "../../platform/auth/auth-email-delivery"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import {
-  controlPlaneMigrations,
   miniflareControlPlaneDatabase,
 } from "../../test-support/control-plane-migrations"
 
@@ -56,7 +55,7 @@ async function authDatabase() {
  * on is the one the database holds.
  */
 async function hosted() {
-  const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const controlPlane = await miniflareControlPlaneDatabase()
   disposers.push(() => controlPlane.dispose())
   const accounts = await authDatabase()
   const sent: Array<{ recipient: string; token: string }> = []

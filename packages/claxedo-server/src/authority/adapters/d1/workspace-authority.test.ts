@@ -10,7 +10,7 @@ import { D1SessionAuthority } from "./session-authority"
 import { inviteIdentity } from "../../../test-support/invite-identity"
 import { D1AuditAuthority } from "./audit-authority"
 
-import { applyControlPlaneMigration, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../../../test-support/control-plane-migrations"
 
 const active: Miniflare[] = []
 
@@ -27,7 +27,7 @@ async function setup(product: D1AuthorityProductPolicy) {
   })
   active.push(instance)
   const database = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const name of controlPlaneMigrations()) await applyControlPlaneMigration(database, name)
+  await applyControlPlaneBaseline(database)
   let sequence = 0
   const authority = new D1WorkspaceAuthority(database, {
     deploymentId: "deployment-a",

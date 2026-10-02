@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import type { D1Database } from "@cloudflare/workers-types"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { d1BatchAssertionFailed, d1ConstraintFailure, d1UniqueFailureOn } from "./d1-constraint"
 
 let instance: ControlPlaneDatabase
 let database: D1Database
 
 beforeAll(async () => {
-  instance = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  instance = await miniflareControlPlaneDatabase()
   database = instance.database
   await database.prepare("create table pairs (a text not null, b text not null, unique (a, b))").run()
   await database.prepare("insert into pairs values ('x', 'y')").run()

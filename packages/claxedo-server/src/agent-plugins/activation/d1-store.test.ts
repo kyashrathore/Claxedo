@@ -14,9 +14,8 @@ import {
   D1SignedAgentPluginActivationStore,
   type AgentPluginActivationAuthority,
 } from "./d1-store"
-import { applyControlPlaneMigration, controlPlaneMigrations } from "../../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../../test-support/control-plane-migrations"
 
-const MIGRATIONS = controlPlaneMigrations()
 
 const PLUGIN = "claxedo/review"
 const OTHER_PLUGIN = "claxedo/triage"
@@ -47,7 +46,7 @@ async function setup() {
   })
   active.push(instance)
   const raw = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const name of MIGRATIONS) await applyControlPlaneMigration(raw, name)
+  await applyControlPlaneBaseline(raw)
   // A step run between a method's reads and its batch, which is where a
   // concurrent writer lands in production. Miniflare's D1 handle is a Proxy
   // that drops property sets, so the interception lives in a wrapper.

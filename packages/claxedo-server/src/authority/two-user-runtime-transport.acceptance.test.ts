@@ -14,7 +14,7 @@ import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/tes
 import { WorkspaceCheckpointRoutes } from "../workspace/routes/checkpoints"
 import { RuntimeSessionAuthorityRoutes } from "../routes/runtime-session-authority"
 import { fetchUrl } from "../test-support/fetch-calls"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase } from "../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase } from "../test-support/control-plane-migrations"
 import { createD1CoreAuthority } from "./adapters/d1/core-authority"
 import { PrivateSessionRegistrationRoutes } from "../routes/private-session-registration"
 import { SessionPeopleControlRoutes } from "../session/routes/session-people-routes"
@@ -26,7 +26,7 @@ import { removeTestDataDir } from "../test-support/test-data-dir"
 import { inviteOrgMember } from "../test-support/invite-org-member"
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-two-user-runtime-"))
-const database = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+const database = await miniflareControlPlaneDatabase()
 const authority = createD1CoreAuthority(database.database, {
   deploymentId: "deployment-test",
   product: { kind: "claxedo-hosted" },

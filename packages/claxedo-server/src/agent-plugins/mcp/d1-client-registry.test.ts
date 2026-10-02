@@ -4,7 +4,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 
 import { createD1McpOAuthClientRegistry, type McpOAuthClientSecretStore } from "./d1-client-registry"
 
-import { applyControlPlaneMigration, controlPlaneMigrations } from "../../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../../test-support/control-plane-migrations"
 
 const active: Miniflare[] = []
 
@@ -21,7 +21,7 @@ async function database(): Promise<D1Database> {
   })
   active.push(instance)
   const target = await instance.getD1Database("CONTROL_PLANE_DB")
-  await applyControlPlaneMigration(target, controlPlaneMigrations()[0])
+  await applyControlPlaneBaseline(target)
   return target
 }
 

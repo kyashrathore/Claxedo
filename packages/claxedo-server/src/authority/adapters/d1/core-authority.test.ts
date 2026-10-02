@@ -6,9 +6,8 @@ import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/p
 
 import { D1_AUTHORITY_MISSING_CAPABILITIES, type D1CoreAuthorityBoundary } from "./core-authority"
 import { composeBetterAuthD1Authority } from "../worker/better-auth-d1-compose"
-import { applyControlPlaneMigration, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../../../test-support/control-plane-migrations"
 
-const MIGRATIONS = controlPlaneMigrations()
 
 const active: Miniflare[] = []
 
@@ -25,7 +24,7 @@ async function setup() {
   })
   active.push(instance)
   const database = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const name of MIGRATIONS) await applyControlPlaneMigration(database, name)
+  await applyControlPlaneBaseline(database)
   const authority = composeBetterAuthD1Authority({
     env: {
       CLAXEDO_ADAPTER_PROFILE: "better-auth-d1",

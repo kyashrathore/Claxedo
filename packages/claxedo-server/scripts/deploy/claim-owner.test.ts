@@ -20,7 +20,7 @@ import {
   verifyOwnerClaimOutput,
 } from "./claim-owner"
 
-import { applyControlPlaneMigration, controlPlaneMigrations } from "../../src/test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../../src/test-support/control-plane-migrations"
 const active: Miniflare[] = []
 
 afterEach(async () => {
@@ -36,7 +36,7 @@ async function controlPlane(): Promise<D1Database> {
   })
   active.push(instance)
   const target = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const name of controlPlaneMigrations()) await applyControlPlaneMigration(target, name)
+  await applyControlPlaneBaseline(target)
   return target
 }
 

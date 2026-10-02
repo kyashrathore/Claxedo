@@ -1,10 +1,10 @@
 import { expect, test } from "vitest"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { storedD1Session } from "../../test-support/d1-stored-session"
 import { createSessionReadRoutes, authoritySessionReads } from "./session-read"
 
 test("the D1 read port exposes the stored ordinal on replay, message pages and latest views", async () => {
-  const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const controlPlane = await miniflareControlPlaneDatabase()
   const { database } = controlPlane
   try {
     const { auth, sessions } = await storedD1Session(database)

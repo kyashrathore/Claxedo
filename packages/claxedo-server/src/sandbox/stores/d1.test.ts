@@ -10,7 +10,7 @@ import type {
 
 import { createD1SandboxLeaseStore } from "./d1"
 
-import { applyControlPlaneMigration, controlPlaneMigrations } from "../../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../../test-support/control-plane-migrations"
 
 const NOW = 1_900_000_000_000
 const STALE_AFTER_MS = 30_000
@@ -31,7 +31,7 @@ async function database(): Promise<D1Database> {
   })
   active.push(instance)
   const target = await instance.getD1Database("CONTROL_PLANE_DB")
-  await applyControlPlaneMigration(target, controlPlaneMigrations()[0])
+  await applyControlPlaneBaseline(target)
   return target
 }
 

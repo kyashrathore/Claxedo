@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { createD1SandboxPassRegister } from "./d1-sandbox-pass-register"
 import { memorySandboxPassRegister, type SandboxPassRecord, type SandboxPassRegister } from "./sandbox-pass-register"
 
@@ -26,7 +26,7 @@ type Clock = { now: number }
 const registers: Record<string, (clock: Clock) => Promise<SandboxPassRegister>> = {
   memory: async (clock) => memorySandboxPassRegister({ now: () => clock.now }),
   d1: async (clock) => {
-    const instance = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+    const instance = await miniflareControlPlaneDatabase()
     active.push(instance)
     return createD1SandboxPassRegister({ database: instance.database, now: () => clock.now })
   },

@@ -25,9 +25,8 @@ import { buildSessionListResponse, parseSessionListQuery } from "../../../sessio
 import { D1WorkspaceAuthority } from "./workspace-authority"
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { D1SessionAuthority } from "./session-authority"
-import { applyControlPlaneMigration, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../../../test-support/control-plane-migrations"
 
-const MIGRATIONS = controlPlaneMigrations()
 
 const active: Miniflare[] = []
 
@@ -44,7 +43,7 @@ async function setup() {
   })
   active.push(instance)
   const database = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const name of MIGRATIONS) await applyControlPlaneMigration(database, name)
+  await applyControlPlaneBaseline(database)
   let sequence = 0
   let currentTime = 1_800_000_000_000
   const now = () => ++currentTime

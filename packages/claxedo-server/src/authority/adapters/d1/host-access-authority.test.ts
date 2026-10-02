@@ -22,9 +22,8 @@ import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { D1SessionAuthority } from "./session-authority"
 import { publishD1HostSessionRows } from "./host-session-rows"
 import type { HostSessionRow, HostSessionRowsPublication } from "@claxedo/server-core/platform/auth/host-session-rows"
-import { applyControlPlaneMigration, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../../../test-support/control-plane-migrations"
 
-const MIGRATIONS = controlPlaneMigrations()
 
 const active: Miniflare[] = []
 
@@ -34,7 +33,7 @@ afterEach(async () => {
 
 async function setup() {
   const { database: raw } = await emptyDatabase()
-  for (const name of MIGRATIONS) await applyControlPlaneMigration(raw, name)
+  await applyControlPlaneBaseline(raw)
   // A step run between a method's reads and its batch, which is where a
   // concurrent writer lands in production. Miniflare's D1 handle is a Proxy
   // that drops property sets, so the interception lives in a wrapper.

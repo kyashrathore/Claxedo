@@ -26,7 +26,7 @@ import type { ControlPlaneServices } from "../authority/services"
 import { HostedAgentPluginRoutes } from "../agent-plugins/routes"
 import { createBuiltinGroupReader } from "../agent-plugins/runtime/cloud-root-environment"
 import { memorySandboxPassRegister } from "../platform/auth/sandbox-pass-register"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../test-support/control-plane-migrations"
 import { testRequestAuthenticationAdapter } from "../test-support/request-authentication"
 import { OWNER_GRANT_AUDIENCE, createOwnerRootGrant, verifyOwnerGrant } from "../session/owner-grant"
 import { TASKS_CAPABILITY_AUDIENCE } from "./capability"
@@ -41,7 +41,7 @@ afterEach(async () => {
 })
 
 async function database(): Promise<D1Database> {
-  const instance = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const instance = await miniflareControlPlaneDatabase()
   active.push(instance)
   return instance.database
 }

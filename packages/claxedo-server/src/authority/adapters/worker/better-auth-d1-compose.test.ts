@@ -13,10 +13,9 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { D1CoreAuthorityBoundary } from "../d1/core-authority"
 import { composeBetterAuthD1UserDeployedControlPlane } from "./better-auth-d1-compose"
-import { applyControlPlaneMigration, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../../../test-support/control-plane-migrations"
 
 const ROOT = path.resolve(import.meta.dirname, "../../../..")
-const CONTROL_MIGRATIONS = controlPlaneMigrations()
 const AUTH_MIGRATIONS = ["0001_better_auth.sql", "0003_authentication_evidence.sql"]
   .map((name) => fileURLToPath(new URL(`../../../../migrations/auth/${name}`, import.meta.url)))
 
@@ -48,7 +47,7 @@ async function databases() {
   const authDatabase = await instance.getD1Database("AUTH_DB")
   const controlPlaneDatabase = await instance.getD1Database("CONTROL_PLANE_DB")
   await applyMigrations(authDatabase, AUTH_MIGRATIONS)
-  for (const name of CONTROL_MIGRATIONS) await applyControlPlaneMigration(controlPlaneDatabase, name)
+  await applyControlPlaneBaseline(controlPlaneDatabase)
   return { authDatabase, controlPlaneDatabase }
 }
 

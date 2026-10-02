@@ -12,7 +12,7 @@ import {
   d1ProjectionCommandIdempotency,
   type DurableIdempotencyStore,
 } from "./idempotency"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 
 let clock = 1_800_000_000_000
 beforeEach(() => {
@@ -34,7 +34,7 @@ function registerKey(key: string) {
 
 let d1: ControlPlaneDatabase
 beforeAll(async () => {
-  d1 = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  d1 = await miniflareControlPlaneDatabase()
 })
 afterAll(async () => {
   await d1.dispose()

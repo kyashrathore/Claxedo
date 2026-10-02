@@ -25,13 +25,11 @@ import {
 } from "@claxedo/tasks"
 
 import {
-  controlPlaneMigrations,
   miniflareControlPlaneDatabase,
   type ControlPlaneDatabase,
 } from "../test-support/control-plane-migrations"
 import { createD1TasksStore } from "./d1-store"
 
-const MIGRATIONS = controlPlaneMigrations()
 
 const active: ControlPlaneDatabase[] = []
 
@@ -39,8 +37,8 @@ afterEach(async () => {
   await Promise.all(active.splice(0).map((instance) => instance.dispose()))
 })
 
-async function database(migrations: readonly string[] = MIGRATIONS): Promise<D1Database> {
-  const instance = await miniflareControlPlaneDatabase(migrations)
+async function database(): Promise<D1Database> {
+  const instance = await miniflareControlPlaneDatabase()
   active.push(instance)
   return instance.database
 }
