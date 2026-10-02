@@ -1,7 +1,7 @@
 import { asText as text } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import { isHostSubagentTool } from "../../../translate/host-subagent"
-import { assistantToolBlocks } from "./assistant-content"
+import { assistantToolBlocks } from "./message-content"
 import type { ClaudeTaskLedger } from "./task-ledger"
 import { isTaskTool } from "./tool-blocks"
 

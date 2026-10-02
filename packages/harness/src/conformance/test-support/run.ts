@@ -21,7 +21,7 @@ export type ConformanceBackend = {
   origin?: TurnOrigin
   sharedSender?: TurnOrigin
   projection?: PluginProjection
-  expectedMcp?: "session" | "config" | "none"
+  credentialsAfterActiveTurns?: true
   locality?: "local" | "remote"
   permissionCommand?: string
   textCommand?: string
@@ -141,8 +141,6 @@ export function runConformance(input: SuiteInput): void {
         expect(events.some((item) => item.event.type === "text-delta" && item.event.delta.includes("PICONFORM"))).toBe(true)
         expect(events.some((item) => item.event.type === "usage")).toBe(true)
         expect(events.some((item) => item.event.type === "finish")).toBe(true)
-        const capabilities = await context.transport.capabilities({ directory: context.backend.directory })
-        if (context.backend.expectedMcp) expect(capabilities.pluginIntake.mcp).toBe(context.backend.expectedMcp)
         await context.transport.close(context.session)
         if (context.backend.execution === "in-process") expect(context.services.processes).toHaveLength(0)
         else expect((await Promise.all(context.services.processes.map((process) => process.exited))).every((exit) => exit.code !== null || exit.signal !== null)).toBe(true)
@@ -223,7 +221,6 @@ export function runConformance(input: SuiteInput): void {
     test("tool events and declared optional groups", async () => {
       const context = await setup(input)
       try {
-        const capabilities = await context.transport.capabilities({ directory: context.backend.directory })
         if (context.backend.scriptTool) {
           context.backend.scriptTool("read", { path: "conformance.txt" })
           const events = await collect(context.transport, context.session, context.turn("Read conformance.txt"), context.turnBroker())
@@ -231,10 +228,7 @@ export function runConformance(input: SuiteInput): void {
           expect(events.some((item) => item.event.type === "tool-output")).toBe(true)
         }
         if (context.transport.commands) expect(await context.transport.commands.list({ session: context.session })).toBeArray()
-        if (capabilities.titles === "harness") {
-          expect(context.transport.naming).toBeDefined()
-          await context.transport.naming?.rename?.(context.session, "Conformance title")
-        }
+        if (context.transport.naming?.rename) await context.transport.naming.rename(context.session, "Conformance title")
         if (context.transport.health) {
           expect(context.transport.health.runtime(context.backend.directory).status).toBe("ok")
           expect(context.transport.health.connection(context.backend.directory, context.session.binding.sessionId).state).toBe("ready")
@@ -267,14 +261,13 @@ export function runConformance(input: SuiteInput): void {
     test("credential timing, cancellation facts, and disposal", async () => {
       const context = await setup(input)
       try {
-        const capabilities = await context.transport.capabilities({ directory: context.backend.directory })
         if (context.backend.hold) {
           const release = context.backend.hold("PICANCEL")
           const controller = new AbortController()
           const running = collect(context.transport, context.session, context.turn("Reply with exactly this one token: PICANCEL"), context.turnBroker(controller.signal))
           await heldRequest(context.backend, "PICANCEL")
           const update = await context.transport.configure(context.session, { credentials: context.backend.credentials })
-          if (capabilities.timing.credentials === "after-active-turns") expect(["refused", "deferred"]).toContain(update.state)
+          if (context.backend.credentialsAfterActiveTurns) expect(["refused", "deferred"]).toContain(update.state)
           const outcome = await context.transport.cancel(context.session, { turnId: "t1", assistantMessageId: "a1" }, { at: Date.now() + 5_000, signal: controller.signal })
           expect(["terminal", "unknown"].includes(outcome.execution)).toBe(true)
           if (context.backend.cleanupWithoutCommands) expect(outcome.cleanup).toBe(context.backend.cleanupWithoutCommands)
@@ -467,8 +460,7 @@ export function runConformance(input: SuiteInput): void {
     test("a credential update targets one session while another turn runs", async () => {
       const context = await setup(input)
       try {
-        const capabilities = await context.transport.capabilities({ directory: context.backend.directory })
-        if (capabilities.timing.credentials !== "after-active-turns" ||
+        if (!context.backend.credentialsAfterActiveTurns ||
           (!context.backend.hold && !context.backend.permissionCommand)) return
         await collect(context.transport, context.session, context.turn("Reply with exactly this one token: CONFORMANCEPREPARE"), context.turnBroker())
         const secondStart = { ...context.start, sessionId: "s2", workspaceId: "w2" }

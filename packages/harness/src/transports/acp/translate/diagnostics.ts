@@ -14,24 +14,15 @@ export type AcpTranslationDiagnostic =
 
 export type AcpDiagnosticContext = {
   agent?: string
-  version?: string
-  sessionId?: string
   toolCallId?: string
   title?: string
-  name?: string
   kind?: string
-  intent?: string
-  extractor?: string
   shape?: unknown
   reason?: string
 }
 
 export type AcpDiagnostics = {
   items: RuntimeDiagnostic[]
-}
-
-export function createAcpDiagnostics(): AcpDiagnostics {
-  return { items: [] }
 }
 
 export function shape(value: unknown): unknown {
@@ -47,14 +38,10 @@ export function diagnoseTranslation(
   event: AcpTranslationDiagnostic,
   ctx: AcpDiagnosticContext,
 ): void {
-  const level =
-    event === "acp.dropped_content"
-      ? "info"
-      : "warn"
   diagnostics.items.push(runtimeDiagnostic({
     code: event,
     message: ctx.reason ? `${event}: ${ctx.reason}` : event,
-    severity: level,
+    severity: event === "acp.dropped_content" ? "info" : "warn",
     details: { acp: ctx as Record<string, unknown> },
   }))
 }

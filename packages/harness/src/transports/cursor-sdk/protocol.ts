@@ -47,6 +47,8 @@ export type HostReply =
   | { id: number; kind: "delta"; update: HostDelta }
   | ({ id: number; kind: "error" } & HostFailure)
 
+export type HostResultReply = Extract<HostReply, { kind: "result" }>
+
 const commandKinds: readonly string[] = ["open", "run", "title", "models", "cancel", "steer", "close"]
 const replyKinds: readonly string[] = ["result", "event", "delta", "error"]
 

@@ -41,7 +41,7 @@ export async function connectAcp(input: StartInput, options: AcpConnectionOption
     throw new AcpTransportError("configuration", "ACP connection kind does not match locality")
   }
   const { process, stream } = await openAcpStream(input, options, services, launch)
-  const startup = new AcpStartupDeadline(services.clock, options.startupTimeoutMs ?? 10_000, "initialize")
+  const startup = new AcpStartupDeadline(services.clock, options.startupTimeoutMs, "initialize")
   let initializing = true
   const requests = new AcpRequestScope()
   const inbound = acpOrderedUpdates({ readable: stream.readable, writable: requests.writable(stream) }, handlers, requests)

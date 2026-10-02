@@ -16,8 +16,10 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
     const logFile = join(directory, "peer.jsonl")
     const peer = fileURLToPath(new URL("./fixtures/acp-recovery-peer.mjs", import.meta.url))
     const config = { version: 4 as const, commands: [], auth: { machineOwnerUserId: "local", accounts: { local: {} } }, mcp: {}, connections: [{ connectionId: "recovery", providerKey: "acp", configRevision: 1, enabled: true, config: { label: "Recovery peer", connection: { kind: "process", command: "node", args: [peer, logFile, recovery] } } }], defaultHarness: { kind: "connection" as const, connectionId: "recovery" } }
+    const sessionErrors: string[] = []
     const open = async () => {
-      const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "store") })
+      const host = createWorkspaceHost({ placement: loopbackMachineLoginPolicy(), target, storeRoot: join(directory, "store"),
+        onPresentationEvent: ({ payload }) => { if (payload.type === "session.error") sessionErrors.push(JSON.stringify(payload.properties)) } })
       await host.apply(config)
       const app = new Hono()
       host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
@@ -126,25 +128,25 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
       await active.host.dispose()
       active = await open()
       expect(await (await active.request("/session/saved/message")).json()).toEqual(before)
-      const next = await active.request("/session/saved/message", "POST", { parts: [{ type: "text", text: "Continue explicitly." }] })
+      const route = recovery === "missing" ? "prompt_async" : "message"
+      const next = await active.request(`/session/saved/${route}`, "POST", { parts: [{ type: "text", text: "Continue explicitly." }] })
       // The HTTP streaming route can accept a turn whose failure is recorded in
       // history; the wire log proves whether execution or replacement occurred.
       await next.text()
+      if (recovery === "missing") {
+        expect(next.status).toBe(204)
+        for (let n = 0; n < 200 && !sessionErrors.length; n++) await Bun.sleep(5)
+        expect(sessionErrors).toHaveLength(1)
+        expect(sessionErrors[0]).toContain("ACP agent no longer has session")
+      }
       const log = (await readFile(logFile, "utf8")).trim().split("\n").map(line => JSON.parse(line))
       const creations = log.filter(row => row.method === "session/new")
       const prompts = log.filter(row => row.method === "session/prompt")
-      expect(creations).toHaveLength(recovery === "missing" ? 2 : 1)
-      expect(prompts).toHaveLength(recovery === "auth" || recovery === "unsupported" ? 1 : 2)
+      expect(creations).toHaveLength(1)
+      expect(prompts).toHaveLength(recovery === "resume" ? 2 : 1)
       const after = JSON.stringify(await (await active.request("/session/saved/message")).json())
       expect(after).toContain("Persisted recovery-peer answer.")
-      if (recovery === "missing") {
-        expect(after).toContain("Cache busted — agent context rebuilt from saved conversation")
-        expect(JSON.stringify(prompts[1].params.prompt)).toContain("Remember the original conversation.")
-        expect(prompts[1].params.sessionId).not.toBe(prompts[0].params.sessionId)
-      } else {
-        expect(after).not.toContain("Cache busted")
-        if (recovery === "resume") expect(prompts[1].params.sessionId).toBe(prompts[0].params.sessionId)
-      }
+      if (recovery === "resume") expect(prompts[1].params.sessionId).toBe(prompts[0].params.sessionId)
       expect(new Set(log.map(row => row.pid)).size).toBe(2)
     } finally { await active.host.dispose(); await rm(directory, { recursive: true, force: true }) }
   })

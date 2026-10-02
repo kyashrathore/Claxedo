@@ -3,7 +3,6 @@ import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { asText as text } from "@claxedo/agent-runtime-contract"
 import { formatRateLimitReset } from "../../../translate/rate-limit-reset"
 import type { CodexHandlers } from "./frame"
-import { harnessNotice } from "./notices"
 
 function rateLimitEvent(row: Record<string, unknown>) {
   const rateLimits = asRecord(row.rateLimits) ?? {}
@@ -44,28 +43,6 @@ function rateLimitErrorMessage(event: Extract<AgentRuntimeEvent, { type: "rate-l
 }
 
 export const accountHandlers: CodexHandlers = {
-  "account/updated": ({ row }) => [{
-    type: "auth-status",
-    status: row.authMode ? "authenticated" : "unknown",
-    authMode: text(row.authMode) ?? null,
-    planType: text(row.planType) ?? null,
-    metadata: { codex: row },
-  }],
-  "account/login/completed": ({ row }) => [
-    {
-      type: "auth-status",
-      status: row.success === true ? "authenticated" : "unauthenticated",
-      metadata: { codex: row },
-    },
-    ...(row.success === false
-      ? [harnessNotice({
-        code: "codex_app_server.account_login_failed",
-        message: text(row.error) ?? "Codex account login failed",
-        severity: "warn",
-        details: row,
-      })]
-      : []),
-  ],
   "account/rateLimits/updated": ({ state, row }) => {
     const event = rateLimitEvent(row)
     return {

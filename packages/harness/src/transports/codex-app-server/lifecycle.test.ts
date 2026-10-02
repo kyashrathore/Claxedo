@@ -26,6 +26,17 @@ test("a Codex app-server lost between turns reads disconnected and degraded, and
   } finally { await peer.close() }
 })
 
+test.each(["thread not found: thread-1", "Thread not found: thread-1", "401 Unauthorized", "turn interrupted"])("turn/start surfaces %s without resume or retry", async (message) => {
+  const peer = await scriptedTransport({ turnStartError: message, completeTurns: true })
+  try {
+    const session = await peer.transport.start(peer.startInput, peer.liveBroker())
+    await expect(drain(peer.transport.send(session, turnInput, turnBroker()))).rejects.toMatchObject({ transport: "codex", code: "protocol", message })
+    expect(peer.frames.filter((frame) => frame.method === "turn/start")).toHaveLength(1)
+    expect(peer.frames.filter((frame) => frame.method === "thread/resume")).toHaveLength(0)
+    expect(peer.spawned()).toBe(1)
+  } finally { await peer.close() }
+})
+
 test("a failed model/list is read again on the next request instead of failing every later one", async () => {
   const peer = await scriptedTransport({ modelListFailures: 1 })
   try {

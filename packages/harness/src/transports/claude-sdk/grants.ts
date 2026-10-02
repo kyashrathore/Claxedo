@@ -9,7 +9,6 @@ export type ClaudeGrant = { key: string; updates?: PermissionUpdate[] }
 type GrantContext = { directory: string; permissionMode: string }
 
 const protocolRuleBehaviorMap = { allow: "allow", deny: "deny", ask: "ask" } as const
-const protocolPermissionStateMap: readonly (keyof ClaudePermissionRules)[] = ["allow", "deny", "ask", "additionalDirectories"]
 
 const invalidClaudeGrant = (message: string, cause?: unknown) => new TransportError("claude", "configuration", message, cause === undefined ? undefined : { cause })
 
@@ -54,23 +53,12 @@ export function claudeGrantUpdates(keys: readonly string[]): PermissionUpdate[] 
   })
 }
 
-export function persistedClaudeRules(state: Record<string, unknown> | undefined): ClaudePermissionRules {
-  const rules: ClaudePermissionRules = { allow: [], deny: [], ask: [], additionalDirectories: [] }
-  for (const key of protocolPermissionStateMap) {
-    const row = state?.[key]
-    if (row === undefined) continue
-    if (!Array.isArray(row) || row.some((value) => typeof value !== "string")) throw invalidClaudeGrant(`Invalid Claude ${key} permission state`)
-    rules[key] = row.filter((value: unknown): value is string => typeof value === "string")
-  }
-  return rules
-}
-
 function ruleText(rule: { toolName: string; ruleContent?: string }): string {
   return rule.ruleContent === undefined ? rule.toolName : `${rule.toolName}(${rule.ruleContent})`
 }
 
-export function replayClaudePermissionUpdates(rules: ClaudePermissionRules, updates: readonly PermissionUpdate[]): ClaudePermissionRules {
-  const next = { ...rules }
+export function replayClaudePermissionUpdates(updates: readonly PermissionUpdate[]): ClaudePermissionRules {
+  const next: ClaudePermissionRules = { allow: [], deny: [], ask: [], additionalDirectories: [] }
   for (const update of updates) {
     if (update.type === "setMode") continue
     if (update.type === "addDirectories") { next.additionalDirectories = [...new Set([...next.additionalDirectories, ...update.directories])]; continue }
