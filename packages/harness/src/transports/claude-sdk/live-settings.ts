@@ -10,15 +10,16 @@ export async function applyClaudePermissionMode(stream: Query, current: Pick<Cla
   if (current) current.permissionMode = mode
 }
 
-export async function applyClaudeLiveSettings(stream: Query, current: ClaudeLiveSettings, next: ClaudeLiveSettings): Promise<void> {
+export async function applyClaudeModelSettings(stream: Query, current: ClaudeLiveSettings, next: Pick<ClaudeLiveSettings, "model" | "effort">): Promise<void> {
   const changedModel = current.model !== next.model
-  if (changedModel) {
-    await stream.setModel(next.model)
+  if (changedModel || current.effort !== next.effort) {
+    await stream.applyFlagSettings({ ...(changedModel ? { model: next.model } : {}), effortLevel: next.effort ?? null })
     current.model = next.model
-  }
-  if (current.effort !== next.effort || changedModel && next.effort !== undefined) {
-    await stream.applyFlagSettings({ effortLevel: next.effort ?? null })
     current.effort = next.effort
   }
+}
+
+export async function applyClaudeLiveSettings(stream: Query, current: ClaudeLiveSettings, next: ClaudeLiveSettings): Promise<void> {
+  await applyClaudeModelSettings(stream, current, next)
   await applyClaudePermissionMode(stream, current, claudeModeId(next.permissionMode))
 }

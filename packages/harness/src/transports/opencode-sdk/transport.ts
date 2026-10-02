@@ -276,6 +276,7 @@ export class OpenCodeSdkTransport implements HarnessTransport {
     targetScope: (target) => this.targetScope(target),
     models: (scope, target) => "draft" in target ? this.readAsDraft(target.draft, (draftScope) => this.runtime.catalog.models(draftScope))
       : this.runtime.catalog.models(scope),
+    switchModel: (scope, upstream, model) => this.runtime.sessions.switchModel(scope, upstream, model),
   })
 
   readonly health = {

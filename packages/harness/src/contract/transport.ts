@@ -76,7 +76,10 @@ export interface ConfigOperations {
   options(target: ConfigPreviewTarget, mode: "probe" | "peek"): Promise<ConfigOptionsPreview>
   permissionModes(target: ConfigTarget): Promise<AgentPermissionModeState>
   setPermissionMode(session: HarnessSession, modeId: string): Promise<AgentPermissionModeState>
+  setModelSettings?(session: HarnessSession, settings: ModelSettings): Promise<void>
 }
+
+export type ModelSettings = { model?: PromptModel; effort?: string | null }
 
 export interface HarnessConfigOperations {
   read(session: HarnessSession): Promise<SessionConfig>

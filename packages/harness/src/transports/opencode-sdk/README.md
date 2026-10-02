@@ -1,5 +1,7 @@
 # Embedded OpenCode engine
 
+`ConfigOperations.setModelSettings` validates the selected provider, model and variant, then calls the existing session port's `switchModel`. The engine owns model selection and resolves the session's current selection at its next step. Model and effort changes therefore reach the next model request within an active turn without stopping its execution. An already running request retains its captured model. The preview and live update use the same model catalog and its advertised variants.
+
 One `OpenCodeHost` owns the embedded SDK engine and its SQLite writer for all local workspaces in a runtime. The absolute database path is required because the SDK otherwise defaults to an in-memory database and loses sessions on restart. Concurrent first use shares one boot promise; closing waits for a boot already in progress so a late writer cannot remain after shutdown. A failed boot reports an unavailable reason and may be retried on the same engine path. A closed owner is terminal.
 
 A steer is admitted with the steered prompt's Claxedo id as its inbox id. The engine promotes it into the conversation at a step boundary and publishes `session.inbox.delivered` with that id, which the transport yields as `input-incorporated`; admission itself only says the inbox holds it. The id is recorded before admission is asked, and kept when admission gives no answer, because the engine can deliver the input before or without admission answering.

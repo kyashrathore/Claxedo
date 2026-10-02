@@ -267,6 +267,33 @@ function piTransport(services: ReturnType<typeof createTestServices>, state: Con
     env: { ...env, HOME: path.join(pi.root, "home") } })
 }
 
+test("Pi changes model and effort between requests without stopping the active process", async () => {
+  const context = await setupConformance({ name: "pi live model", backend, makeTransport: piTransport })
+  const state = context.backend as PiBackend
+  const release = state.server.holdOpeningReplies("PILIVEMODEL")
+  try {
+    state.server.scriptTool({ name: "bash", input: { command: "printf pi-model-boundary" }, whenPromptIncludes: "PILIVEMODEL" })
+    const running = (async () => {
+      for await (const _event of context.transport.send(context.session, context.turn("Run the scripted tool PILIVEMODEL"), context.turnBroker())) {}
+    })()
+    await state.server.textGateReached("PILIVEMODEL")
+    const native = context.services.processes.at(-1)!
+    await expect(context.transport.config!.setModelSettings!(context.session,
+      { model: { providerID: "pi", modelID: "openai/gpt-4.1" }, effort: "high" })).rejects.toThrow("thinking level high")
+    await context.transport.config!.setModelSettings!(context.session,
+      { model: { providerID: "pi", modelID: "openai/gpt-5.5" }, effort: "high" })
+    expect(processAlive(native.pid)).toBe(true)
+    release()
+    await running
+    const requests = state.server.requests.filter((request) => request.prompt.includes("PILIVEMODEL"))
+    expect(requests.length).toBeGreaterThanOrEqual(2)
+    expect(requests[0]?.model).toBe("gpt-4.1")
+    expect(requests.at(-1)?.model).toBe("gpt-5.5")
+    expect(JSON.stringify(requests.at(-1)?.body)).toContain('"effort":"high"')
+    expect(processAlive(native.pid)).toBe(true)
+  } finally { release(); await context.close() }
+}, 30_000)
+
 test("a Pi process death mid-turn fails the turn through the channel's exit", async () => {
   const context = await setupConformance({ name: "pi process death", backend, makeTransport: piTransport })
   try {

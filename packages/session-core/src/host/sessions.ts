@@ -159,7 +159,13 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
       const configured = harnessConfig
         ? await harnessConfig.update(attached.session, update)
         : applySessionConfigUpdate(current!, update)
-      const persisted = store.updateSessionConfig(sessionId, configured)
+      if (!harnessConfig && (configured.model?.providerID !== current?.model?.providerID
+        || configured.model?.modelID !== current?.model?.modelID || (configured.variant ?? null) !== (current?.variant ?? null))) {
+        await attached.handle.transport.config?.setModelSettings?.(attached.session, {
+          model: configured.model, effort: configured.variant,
+        })
+      }
+      const persisted = store.updateSessionConfig(sessionId, { ...configured, model: configured.model ?? null, variant: configured.variant ?? null })
       if (!persisted) throw new Error(`Session ${sessionId} has no runtime config`)
       return persisted
     }

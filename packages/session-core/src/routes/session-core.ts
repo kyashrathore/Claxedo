@@ -20,7 +20,6 @@ import {
 } from "@claxedo/agent-runtime-contract"
 import { cancelledAssistantMessageId } from "@claxedo/agent-runtime-contract/turn-fold"
 import { admitSessionInstructions } from "../session/session-instructions"
-import { IMMUTABLE_SESSION_CONFIG_FIELDS, type ImmutableSessionConfigField } from "../session-config"
 import { narrowerPermissionLevel, PermissionModeRefusedError } from "../session/permission-ceiling"
 import type { RuntimeDirectory } from "../host/contracts"
 import { AgentMessagePageError, parseMessagePageQuery, type AgentMessagePage, type AgentMessagePageInput, type AgentMessageReadInput, type AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
@@ -77,6 +76,7 @@ import {
   unsupportedOperation,
 } from "./session-harness-refusal"
 import { sessionOperationGuard, sessionPromptAdmitted } from "./session-operation-guard"
+import { sessionConfigWrite } from "./session-config-write"
 import {
   admitQuestionOperation,
   filterRequestRows,
@@ -428,18 +428,6 @@ function sessionLifecycleInfo(input: {
     },
   }
 }
-
-/** How each fixed-at-create field answers a PATCH that names it. */
-const IMMUTABLE_CONFIG_REFUSALS = {
-  instructions: {
-    code: "session_instructions_immutable",
-    message: "A session's instructions are fixed at create and cannot be changed",
-  },
-  group: {
-    code: "session_group_immutable",
-    message: "A session's model group is fixed at create and cannot be changed",
-  },
-} as const satisfies Record<ImmutableSessionConfigField, { code: string; message: string }>
 
 /**
  * The revoked caller's answer, carrying what containment reached for the turn
@@ -1387,28 +1375,7 @@ export function createSessionRoutes(opts: Opts) {
       if (archived !== undefined) await cascadeToChildren(opts, c, directory, sessionId, "archive", { archived })
       return c.json(timedSession(session))
     })
-    .patch("/session/:id/config", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "session_config_write")
-      if (guarded) return guarded
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      const wire = await boundedJsonRecord(c)
-      const immutable = IMMUTABLE_SESSION_CONFIG_FIELDS.find((field) => field in wire)
-      if (immutable) {
-        const refusal = IMMUTABLE_CONFIG_REFUSALS[immutable]
-        return c.json(errorBody(refusal.code, refusal.message), 409)
-      }
-      const body = normalizeSessionConfigUpdate(wire)
-      const requestedHarness = opts.requestedSessionHarness(c)
-      if (requestedHarness) body.harness = requestedHarness
-      try {
-        return c.json(await (await opts.runtime(c)).sessions.updateConfig(sessionId, body, directory, requestSecretAuthority(c).secretAuthority))
-      } catch (error) {
-        const refusal = harnessUnavailableResponse(c, error)
-        if (refusal) return refusal
-        throw error
-      }
-    })
+    .patch("/session/:id/config", (c) => sessionConfigWrite(opts, c))
     .delete("/session/:id", async (c) => {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "delete")

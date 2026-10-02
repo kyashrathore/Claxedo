@@ -54,7 +54,10 @@ export function scriptedLaunches(options: { failFirst?: unknown; failModel?: unk
     return { [Symbol.asyncIterator]: () => frames[Symbol.asyncIterator](), close() { controls.push("close"); frames.end() },
       async interrupt() { controls.push("interrupt") }, async stopTask(task: string) { controls.push(`stop ${task}`) },
       async setModel(model: string) { controls.push(`model ${model}`); if (options.failModel) throw options.failModel },
-      async applyFlagSettings(settings: unknown) { controls.push(`settings ${JSON.stringify(settings)}`) },
+      async applyFlagSettings(settings: { model?: string }) {
+        controls.push(`settings ${JSON.stringify(settings)}`)
+        if (settings.model && options.failModel) throw options.failModel
+      },
       async setPermissionMode(mode: string) { controls.push(`mode ${mode}`) } } as unknown as Query
   } } as unknown as ClaudeQueryLauncher
   return { launches, launcher }

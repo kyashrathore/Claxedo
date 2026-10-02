@@ -68,6 +68,10 @@ test.each([false, true])("a Claude background task survives follow-ups and model
     await fs.access(marker).then(() => { throw new Error("the background command finished inside its own turn") }, () => undefined)
 
     if (followups) {
+      await transport.config.setModelSettings({ ...started, binding: ports.bindings.get("s1")! },
+        { model: { providerID: "anthropic", modelID: "sonnet" }, effort: "low" })
+      expect(pids).toHaveLength(1)
+      expect(alive(pids[0]!)).toBe(true)
       for (const [index, effort] of ["high", "low", undefined].entries()) {
         const turnId = `followup-${index}`
         const prompt: TurnInput = { ...turn, turnId, assistantMessageId: turnId, userMessageId: `u-${turnId}`, effort, model: index === 2 ? { ...model, modelID: "sonnet" } : model,

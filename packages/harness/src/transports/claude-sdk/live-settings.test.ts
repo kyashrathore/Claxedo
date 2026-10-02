@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import type { Query, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import { AsyncPushQueue } from "@claxedo/helpers"
 import { ClaudeLiveQuery } from "./live-query"
-import { applyClaudeLiveSettings } from "./live-settings"
+import { applyClaudeLiveSettings, type ClaudeLiveSettings } from "./live-settings"
 import { background, collect, init, input, rebound, result, setup, turnBroker, until, userTurn } from "./test-support/live"
 
 test("effort changes and explicit reset apply through the SDK without rewriting unchanged settings", async () => {
@@ -20,6 +20,30 @@ test("a rejected SDK setting remains unapplied and does not close the process", 
   const query = { applyFlagSettings: async () => { throw new Error("refused") } } as unknown as Query
   await expect(applyClaudeLiveSettings(query, current, { model: "sonnet", effort: "low" })).rejects.toThrow("refused")
   expect(current.effort).toBe("high")
+})
+
+test("combined model and effort changes wait for launch, remain unapplied on refusal, and recover without interrupting", async () => {
+  const current: ClaudeLiveSettings = { model: "sonnet", effort: "high" }
+  const frames = new AsyncPushQueue<SDKMessage>()
+  const live = new ClaudeLiveQuery("key", { unclaimed() {}, stage: () => async () => {}, background() {} }, current)
+  const calls: unknown[] = []
+  const stream = { [Symbol.asyncIterator]: () => frames[Symbol.asyncIterator](), async applyFlagSettings(settings: unknown) {
+    calls.push(settings)
+    if (calls.length === 1) throw new Error("native refusal")
+  } } as unknown as Query
+  const updating = live.setModelSettings({ model: "opus", effort: "low" })
+  expect(calls).toEqual([])
+  live.run(stream)
+  const claim = live.claim("result")!
+  await expect(updating).rejects.toMatchObject({ code: "configuration" })
+  expect(current).toEqual({ model: "sonnet", effort: "high" })
+  await live.setModelSettings({ model: "opus", effort: "low" })
+  expect(current).toEqual({ model: "opus", effort: "low" })
+  expect(calls).toEqual([{ model: "opus", effortLevel: "low" }, { model: "opus", effortLevel: "low" }])
+  frames.push(result())
+  for await (const _frame of claim.frames) {}
+  frames.end()
+  await live.ended
 })
 
 test("the last background task finishing during a setting control cannot close the next prompt's stdin", async () => {
@@ -108,7 +132,7 @@ test("a rejected setting leaves background permissions on the session broker and
     await expect(collect(f.transport.send(rebound(f.session), userTurn("t2", "change", "sonnet"), turnBroker()))).rejects.toThrow("model refused")
     expect(claude.turn()).toBeUndefined()
     expect(claude.stdinOpen()).toBe(true)
-    expect(claude.controls).toEqual(["model sonnet"])
+    expect(claude.controls).toEqual(['settings {"model":"sonnet","effortLevel":null}'])
     const third = collect(f.transport.send(rebound(f.session), userTurn("t3", "continue"), turnBroker()))
     await until(() => claude.prompts.length === 2)
     claude.replay(1)

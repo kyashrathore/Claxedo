@@ -1,6 +1,6 @@
 import path from "node:path"
-import { query, type AgentInfo, type ModelInfo, type Query, type SlashCommand } from "@anthropic-ai/claude-agent-sdk"
-import type { AgentConfigOption } from "@claxedo/agent-runtime-contract"
+import { query, type AgentInfo, type EffortLevel, type ModelInfo, type Query, type SlashCommand } from "@anthropic-ai/claude-agent-sdk"
+import { isHarnessEffortLevel, type AgentConfigOption } from "@claxedo/agent-runtime-contract"
 import type { DraftLaunch, HarnessServices, StartInput } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import { draftProbeKey, DraftProbeCache, modelAndEffortOptions, type ProbeInputs } from "../../contract/node"
@@ -69,10 +69,10 @@ export function claudeCatalogModel(models: readonly ModelInfo[], modelId?: strin
     ?? (modelId === undefined ? models.find((model) => model.value === "default") : undefined)
 }
 
-export function requiredClaudeEffort(models: readonly ModelInfo[], modelId: string, requested?: string | null): string | undefined {
+export function requiredClaudeEffort(models: readonly ModelInfo[], modelId: string, requested?: string | null): EffortLevel | undefined {
   if (!requested) return undefined
   const row = claudeCatalogModel(models, modelId)
-  if (row?.supportsEffort && row.supportedEffortLevels?.some((level) => level === requested)) return requested
+  if (isHarnessEffortLevel(requested) && row?.supportsEffort && row.supportedEffortLevels?.some((level) => level === requested)) return requested
   throw new TransportError("claude", "configuration", `Claude does not run ${row?.value ?? modelId} at effort ${requested}`)
 }
 

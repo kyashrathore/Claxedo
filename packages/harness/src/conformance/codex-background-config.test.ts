@@ -23,3 +23,24 @@ test("a real Codex background shell survives a configuration replacement request
     expect(recorder.frames.filter((frame) => frame.method === "initialize")).toHaveLength(2)
   } finally { await context.close() }
 }, 30_000)
+
+test("a real Codex background shell survives a live model and effort change", async () => {
+  const recorder = recordingBackend()
+  const context = await setupConformance({ name: "codex-background-model", backend: recorder.backend, makeTransport: makeCodexTransport })
+  try {
+    const state = context.backend as CodexBackend
+    const marker = join(state.directory, "model-change-finished.txt")
+    state.server.scriptTool({ name: "exec_command", input: { cmd: `sleep 5; echo done > ${marker}`, yield_time_ms: 1000 } })
+    for await (const _event of context.transport.send(context.session, context.turn("Run the scripted command CODEXMODELJOB"), context.turnBroker())) {}
+    expect(await Bun.file(marker).exists()).toBe(false)
+    await context.transport.config!.setModelSettings!(context.session, { model: { providerID: "codex", modelID: "gpt-5.6-sol" }, effort: "high" })
+    expect(recorder.frames.filter((frame) => frame.method === "initialize")).toHaveLength(1)
+    expect(recorder.frames.some((frame) => frame.method === "turn/interrupt" || frame.method === "thread/backgroundTerminals/terminate")).toBe(false)
+    const updated = await pollUntil(() => recorder.received.find((frame) => frame.method === "thread/settings/updated"
+      && (frame.params?.threadSettings as { model?: string })?.model === "gpt-5.6-sol"), Date.now() + 5_000)
+    expect(updated?.params?.threadSettings).toMatchObject({ model: "gpt-5.6-sol", effort: "high" })
+    expect(await pollUntil(async () => await Bun.file(marker).exists() ? true : undefined, Date.now() + 10_000)).toBe(true)
+    expect(await Bun.file(marker).text()).toBe("done\n")
+    expect(recorder.frames.filter((frame) => frame.method === "thread/start")).toHaveLength(1)
+  } finally { await context.close() }
+}, 30_000)

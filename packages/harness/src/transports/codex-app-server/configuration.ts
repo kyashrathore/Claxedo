@@ -17,5 +17,5 @@ export function projectCodexThreadConfig(input: StartInput, services: HarnessSer
   const servers = sessionMcpServers(input, services, { includeFirstParty: input.locality === "local",
     duplicate: () => new CodexTransportError("configuration", "Duplicate Codex MCP server name") })
   const mcp = Object.fromEntries(servers.map((server) => [server.name, mcpConfig(server)]))
-  return { features: { default_mode_request_user_input: true }, tools: { update_plan: { enabled: true } }, ...codexPluginConfig(plugins), mcp_servers: mcp }
+  return { features: { default_mode_request_user_input: true, step_model_switching: true }, tools: { update_plan: { enabled: true } }, ...codexPluginConfig(plugins), mcp_servers: mcp }
 }

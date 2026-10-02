@@ -1,5 +1,5 @@
 import type { Query, SDKActiveGoalMessage, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
-import { AsyncPushQueue } from "@claxedo/helpers"
+import { AsyncPushQueue, errorMessage } from "@claxedo/helpers"
 import { NO_BACKGROUND_WORK, sameBackgroundWork, type BackgroundWork } from "@claxedo/agent-runtime-contract"
 import type { RoutedEvent } from "../../contract"
 import { TransportError } from "../../contract"
@@ -11,7 +11,7 @@ import { ClaudeHeldFrames } from "./held-frames"
 import { ClaudeQueryInput } from "./query-input"
 import type { ClaudeMirroredUsage } from "./mirrored-usage"
 import type { ClaudeProcess } from "./process"
-import { applyClaudeLiveSettings, applyClaudePermissionMode, type ClaudeLiveSettings } from "./live-settings"
+import { applyClaudeLiveSettings, applyClaudeModelSettings, applyClaudePermissionMode, type ClaudeLiveSettings } from "./live-settings"
 
 export type ClaudeFrame = SDKMessage | SDKActiveGoalMessage
 
@@ -104,6 +104,15 @@ export class ClaudeLiveQuery {
       if (this.process.kind !== "open") return
       try { await applyClaudePermissionMode(this.process.stream, this.settings, modeId) }
       catch (cause) { throw new TransportError("claude", "configuration", "Claude refused the permission mode change", { cause }) }
+    })
+  }
+
+  setModelSettings(settings: Pick<ClaudeLiveSettings, "model" | "effort">): Promise<void> {
+    return this.updateSettings(async () => {
+      await this.opened.promise
+      if (this.process.kind !== "open" || !this.settings) return
+      try { await applyClaudeModelSettings(this.process.stream, this.settings, settings) }
+      catch (cause) { throw new TransportError("claude", "configuration", `Claude refused the model or effort change: ${errorMessage(cause)}`, { cause }) }
     })
   }
 

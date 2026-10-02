@@ -3,7 +3,7 @@ import type { ModelInfo } from "@anthropic-ai/claude-agent-sdk"
 import { HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
 import type {
   AttachInput, BackgroundTaskRef, CapabilityContext, ConfigApplied, Deadline, HarnessServices, HarnessSession, HarnessTransport,
-  RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate,
+  ModelSettings, RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate,
   TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
 import { attachedSessionEntry, HarnessVersionGate, configOptionsPreview, mergeStartInput, selectedTurnAccount } from "../../contract"
@@ -14,7 +14,7 @@ import { claudeBinding } from "./credentials"
 import { TransportError } from "../../contract/errors"
 import { ClaudeGoals } from "./goals"
 import type { ClaudeSdkOptions } from "./launch-context"
-import { ClaudeModelCatalog, modelOptions } from "./models"
+import { ClaudeModelCatalog, modelOptions, requiredClaudeEffort } from "./models"
 import { claudeModeState, requireClaudeMode, claudeModeId } from "./permissions"
 import { ClaudeQueryLauncher } from "./query-options"
 import { ClaudeTurns, type ClaudeEntry } from "./turns"
@@ -110,8 +110,14 @@ export class ClaudeSdkTransport implements HarnessTransport {
     setPermissionMode: async (session: HarnessSession, modeId: string) => {
       const entry = this.entry(session)
       requireClaudeMode(modeId)
-      await entry.live?.setPermissionMode(modeId)
+      await (await this.turns.liveForSettings(entry))?.setPermissionMode(modeId)
       return claudeModeState(modeId)
+    },
+    setModelSettings: async (session: HarnessSession, settings: ModelSettings) => {
+      const entry = this.entry(session)
+      const model = settings.model?.modelID ?? "default"
+      const effort = requiredClaudeEffort(settings.effort ? await this.models.load(entry.input, entry.input.sessionId) : [], model, settings.effort)
+      await (await this.turns.liveForSettings(entry))?.setModelSettings({ model, effort })
     },
   }
 

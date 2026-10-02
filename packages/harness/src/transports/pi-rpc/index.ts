@@ -1,7 +1,8 @@
 import type { AdapterCancelOutcome, PromptModel, SessionTitleRequest, SteerResult } from "@claxedo/agent-runtime-contract"
+import { errorMessage } from "@claxedo/helpers"
 import type {
   AttachInput, ConfigApplied, ConfigTarget, Deadline, HarnessServices, HarnessSession, HarnessTransport,
-  RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
+  ModelSettings, RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
 import { attachedSessionEntry, DraftProbeCache, HarnessVersionGate, launchConfigChanged, mergeStartInput, ProcessLosses, sessionConnectionHealth } from "../../contract/node"
 import { selectPiProfile, type PiProfile } from "../../profiles/pi"
@@ -114,6 +115,19 @@ export class PiRpcTransport implements HarnessTransport {
     }
   }
 
+  private async applyModelSettings(entry: Entry, settings: ModelSettings): Promise<void> {
+    const model = settings.model
+    const catalog = await this.probes.catalog(entry.start, model, "probe")
+    if (model && !catalog.models.some((row) => row.id === model.modelID)) {
+      throw new TransportError("pi", "configuration", `Pi does not offer model ${model.modelID}`)
+    }
+    if (settings.effort && !catalog.efforts.includes(settings.effort)) {
+      throw new TransportError("pi", "configuration", `Pi does not offer thinking level ${settings.effort} for this model`)
+    }
+    try { await this.applyTurnConfig(entry, settings.model, settings.effort) }
+    catch (cause) { throw new TransportError("pi", "configuration", `Pi refused the model or effort change: ${errorMessage(cause)}`, { cause }) }
+  }
+
   private beginTurn(entry: Entry, turn: TurnInput, broker: TurnBroker, run: PiRun) {
     const onAbort = () => {
       if (!run.prompted) return run.withdraw()
@@ -223,7 +237,8 @@ export class PiRpcTransport implements HarnessTransport {
       ? piCommands(this.entry(target.session).rpc) : this.probes.commands(target.draft),
   }
 
-  readonly config = createPiConfig({ entry: (session) => this.entry(session), catalog: (draft, model, mode) => this.probes.catalog(draft, model, mode) })
+  readonly config = createPiConfig({ entry: (session) => this.entry(session), catalog: (draft, model, mode) => this.probes.catalog(draft, model, mode),
+    setModelSettings: (session, settings) => this.applyModelSettings(this.entry(session), settings) })
 
   readonly naming = {
     generateTitle: async (session: HarnessSession, request: SessionTitleRequest) =>

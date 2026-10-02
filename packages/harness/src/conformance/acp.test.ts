@@ -1324,6 +1324,7 @@ agent()
     if (configId === "mode") releasePrompt?.()
     if (configId === "model" && !flag("PARITY_ACP_CLAMP_MODEL")) state.model = value
     if (configId === "thought_level") state.effort = value
+    if (configId === "thought_level" && flag("PARITY_ACP_HOLD_FOR_SETTINGS")) releasePrompt?.()
     return { configOptions: options() }
   })
   .onRequest("session/set_mode", async (context) => {
@@ -1335,9 +1336,9 @@ agent()
   })
   .onRequest("session/prompt", async (context) => {
     log("session/prompt", context.params)
-    if (flag("PARITY_ACP_HOLD_FOR_MODE")) await new Promise((resolve) => { releasePrompt = resolve })
+    if (flag("PARITY_ACP_HOLD_FOR_MODE") || flag("PARITY_ACP_HOLD_FOR_SETTINGS")) await new Promise((resolve) => { releasePrompt = resolve })
     const text = context.params.prompt.filter((block) => block.type === "text").map((block) => block.text).join("\\n")
-    const reply = flag("PARITY_ACP_HOLD_FOR_MODE") ? state.mode : text.includes(process.env.PARITY_ACP_TITLE_MARK ?? "\\u0000") ? "Scripted parity title" : "PARITY_OK"
+    const reply = flag("PARITY_ACP_HOLD_FOR_SETTINGS") ? state.model + ":" + state.effort : flag("PARITY_ACP_HOLD_FOR_MODE") ? state.mode : text.includes(process.env.PARITY_ACP_TITLE_MARK ?? "\\u0000") ? "Scripted parity title" : "PARITY_OK"
     await context.client.notify("session/update", { sessionId: context.params.sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: reply } } })
     return { stopReason: "end_turn" }
   })
@@ -1489,6 +1490,27 @@ test.each(["0", "1"])("ACP changes permission modes during an active prompt with
     expect(requests.filter((row) => row.method === "session/new")).toHaveLength(1)
     expect(requests.filter((row) => row.method === "session/prompt")).toHaveLength(1)
     expect(requests.at(-1)?.method).toBe(modesOnly === "1" ? "session/set_mode" : "session/set_config_option")
+  } finally { await context.close() }
+}, 30_000)
+
+test("ACP changes model and effort while the original prompt remains active", async () => {
+  const context = await setupConformance({ name: "acp live model", backend: () => parityBackend({ PARITY_ACP_HOLD_FOR_SETTINGS: "1" }), makeTransport: parityTransport })
+  const state = context.backend as ParityBackend
+  const running = (async () => {
+    const events = []
+    for await (const event of context.transport.send(context.session, context.turn("hold for model settings"), context.turnBroker())) events.push(event)
+    return events
+  })()
+  try {
+    await waitFor(async () => (await state.requests()).some((row) => row.method === "session/prompt") || undefined, "held ACP prompt")
+    await expect(context.transport.harnessConfig!.update(context.session, { model: { providerID: "scripted", modelID: "bogus" } })).rejects.toThrow("does not offer model")
+    const applied = await context.transport.harnessConfig!.update(context.session, { model: { providerID: "scripted", modelID: "beta" }, variant: "high" })
+    expect(applied).toMatchObject({ model: { providerID: "scripted", modelID: "beta" }, variant: "high" })
+    expect(JSON.stringify(await running)).toContain("scripted/beta:high")
+    const requests = await state.requests()
+    expect(requests.filter((row) => row.method === "session/new")).toHaveLength(1)
+    expect(requests.filter((row) => row.method === "session/prompt")).toHaveLength(1)
+    expect(requests.some((row) => row.method === "session/cancel")).toBe(false)
   } finally { await context.close() }
 }, 30_000)
 

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { AbortError, type EffortLevel, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
-import { isHarnessEffortLevel, type PromptModel, type SteerResult, type AdapterCancelOutcome } from "@claxedo/agent-runtime-contract"
+import { type PromptModel, type SteerResult, type AdapterCancelOutcome } from "@claxedo/agent-runtime-contract"
 import { errorMessage } from "@claxedo/helpers"
 import type { BackgroundTaskRef, BackgroundTaskStopResult, Deadline, HarnessServices, HarnessSession, HarnessVersionGate, RoutedEvent, SessionBroker,
   StartInput, TurnBroker, TurnInput, TurnRef } from "../../contract"
@@ -16,7 +16,7 @@ import { settledBy } from "./turn-deadline"
 
 type Running = { live?: ClaudeLiveQuery; done: Promise<void> }
 
-type ClaudeActive = Running & { id: string; abort: AbortController; launched: boolean }
+type ClaudeActive = Running & { id: string; abort: AbortController; launched: boolean; ready: PromiseWithResolvers<ClaudeLiveQuery | undefined> }
 
 export type ClaudeEntry = {
   input: StartInput
@@ -35,12 +35,6 @@ export type ClaudeChoice = { model?: PromptModel; effort?: string | null; system
 type Launch = { key: string; model: string; effort?: EffortLevel; system?: string; agent?: string; permissionMode?: string }
 
 
-function claudeEffort(value: string | null | undefined): EffortLevel | undefined {
-  if (!value) return undefined
-  if (!isHarnessEffortLevel(value)) throw new TransportError("claude", "configuration", `Unsupported Claude effort ${value}`)
-  return value
-}
-
 export function configuredChoice(entry: Pick<ClaudeEntry, "broker">): ClaudeChoice {
   const { model, variant, instructions, agent } = entry.broker.config()
   return { ...(model ? { model } : {}), ...(variant ? { effort: variant } : {}), ...(instructions ? { system: instructions } : {}), ...(agent ? { agent } : {}) }
@@ -49,6 +43,10 @@ export function configuredChoice(entry: Pick<ClaudeEntry, "broker">): ClaudeChoi
 export class ClaudeTurns {
   constructor(private readonly launcher: () => ClaudeQueryLauncher, private readonly models: ClaudeModelCatalog,
     private readonly log: HarnessServices["log"], private readonly versions: HarnessVersionGate) {}
+
+  liveForSettings(entry: ClaudeEntry): Promise<ClaudeLiveQuery | undefined> {
+    return entry.active?.ready.promise ?? Promise.resolve(entry.live)
+  }
 
   async steer(entry: ClaudeEntry, ref: TurnRef, input: TurnInput): Promise<SteerResult> {
     const active = entry.active
@@ -87,7 +85,7 @@ export class ClaudeTurns {
   async *run(entry: ClaudeEntry, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent> {
     if (entry.active || entry.provider) throw new TransportError("claude", "session", "Claude turn already active")
     const { promise: done, resolve: finish } = Promise.withResolvers<void>()
-    const active: ClaudeActive = { id: turn.turnId, abort: new AbortController(), launched: false, done }
+    const active: ClaudeActive = { id: turn.turnId, abort: new AbortController(), launched: false, done, ready: Promise.withResolvers() }
     entry.active = active
     active.abort.signal.addEventListener("abort", () => { if (active.live) this.interrupt(active.live) }, { once: true })
     const onAbort = () => active.abort.abort()
@@ -100,6 +98,7 @@ export class ClaudeTurns {
     } catch (error) {
       if (!active.abort.signal.aborted || !(error instanceof AbortError)) throw error
     } finally {
+      active.ready.resolve(undefined)
       broker.signal.removeEventListener("abort", onAbort)
       entry.active = undefined
       if (entry.turn?.turnId === turn.turnId) entry.turn = undefined
@@ -118,6 +117,7 @@ export class ClaudeTurns {
     entry.turn = { broker: scope.broker, turnId: turn.turnId }
     active.launched = true
     const opened = await this.open(entry, launch, opening, scope.assistantMessageId)
+    active.ready.resolve(opened.live)
     active.live = opened.live
     if (scope.signal.aborted) this.interrupt(opened.live)
     return yield* translatedClaim(entry, opened.live, opened.claim, scope)
@@ -126,17 +126,19 @@ export class ClaudeTurns {
   async command(entry: ClaudeEntry, text: string, limitMs: number): Promise<SDKMessage | undefined> {
     if (entry.active || entry.provider) throw new TransportError("claude", "session", "Claude turn already active")
     const { promise: done, resolve: finish } = Promise.withResolvers<void>()
-    const active: ClaudeActive = { id: `command:${randomUUID()}`, abort: new AbortController(), launched: true, done }
+    const active: ClaudeActive = { id: `command:${randomUUID()}`, abort: new AbortController(), launched: true, done, ready: Promise.withResolvers() }
     entry.active = active
     try {
       const prior = entry.live
       if (prior && !prior.reusable) await this.retire(entry, prior)
       const opening: SDKUserMessage = { type: "user", session_id: "", message: { role: "user", content: text }, parent_tool_use_id: null }
       const opened = await this.open(entry, await this.launchFor(entry, configuredChoice(entry)), opening, undefined, () => true, false)
+      active.ready.resolve(opened.live)
       active.live = opened.live
       const limit = setTimeout(() => opened.live.terminate(), limitMs)
       try { return await commandResult(entry, opened.claim, active.abort.signal, this.versions) } finally { clearTimeout(limit) }
     } finally {
+      active.ready.resolve(undefined)
       entry.active = undefined
       if (active.live) this.endTurn(entry, active.live, active.id, true)
       finish()
@@ -167,7 +169,7 @@ export class ClaudeTurns {
 
   private async launchFor(entry: ClaudeEntry, choice: ClaudeChoice): Promise<Launch> {
     const model = choice.model?.modelID ?? "default"
-    const effort = claudeEffort(requiredClaudeEffort(choice.effort ? await this.models.load(entry.input, entry.input.sessionId) : [], model, choice.effort))
+    const effort = requiredClaudeEffort(choice.effort ? await this.models.load(entry.input, entry.input.sessionId) : [], model, choice.effort)
     const config = entry.broker.config()
     const key = JSON.stringify([entry.revision, config.permissionCeiling, choice.system ?? null, choice.agent ?? null])
     return { key, model, permissionMode: config.permissionMode, ...(effort ? { effort } : {}), ...(choice.system ? { system: choice.system } : {}), ...(choice.agent ? { agent: choice.agent } : {}) }

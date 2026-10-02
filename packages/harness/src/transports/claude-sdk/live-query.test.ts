@@ -92,7 +92,7 @@ test("a model change uses the running Claude process without stopping background
     await first
     const second = collect(transport.send(rebound(session), userTurn("t2", "switch models", "sonnet"), turnBroker()))
     await until(() => claude.prompts.length === 2)
-    expect(claude.controls).toEqual(["model sonnet"])
+    expect(claude.controls).toEqual(['settings {"model":"sonnet","effortLevel":null}'])
     expect(launches).toHaveLength(1)
     claude.replay(1)
     claude.frames.push(reply("on sonnet"))

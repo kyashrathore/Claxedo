@@ -595,6 +595,30 @@ test("the owner catalog applies carried custom definitions in a cloud transport 
   } finally { await context.close() }
 }, 30_000)
 
+test("OpenCode applies model and effort at the next request without replacing active work", async () => {
+  const variants = { high: { reasoningEffort: "high" }, low: { reasoningEffort: "low" } }
+  const context = await setupConformance({ name: "opencode-live-model", backend,
+    makeTransport: (services, state) => transport(services, state as OpenCodeBackend, {
+      provider: { proof: proofProvider({}, { next: { ...PROOF_MODEL, variants } }) }, permission: { shell: "allow" } }) })
+  const state = context.backend as OpenCodeBackend
+  const release = state.server.holdOpeningReplies("OPENCODELIVEMODEL")
+  try {
+    state.server.scriptTool({ name: "shell", input: { command: "printf model-boundary" }, whenPromptIncludes: "OPENCODELIVEMODEL" })
+    const running = collect(context, context.turn("Run the scripted tool OPENCODELIVEMODEL"))
+    await state.server.textGateReached("OPENCODELIVEMODEL")
+    await expect(context.transport.config!.setModelSettings!(context.session,
+      { model: { providerID: "proof", modelID: "proof" }, effort: "high" })).rejects.toThrow("does not offer effort high")
+    await context.transport.config!.setModelSettings!(context.session, { model: { providerID: "proof", modelID: "next" }, effort: "high" })
+    release()
+    expect(JSON.stringify(await running)).not.toContain('"type":"error"')
+    const requests = state.server.requests.filter((request) => request.prompt.includes("OPENCODELIVEMODEL"))
+    expect(requests.length).toBeGreaterThanOrEqual(2)
+    expect(requests[0]?.model).toBe("proof")
+    expect(requests.at(-1)?.model).toBe("next")
+    expect((requests.at(-1)?.body as Record<string, unknown>)?.reasoning_effort).toBe("high")
+  } finally { release(); await context.close() }
+}, 30_000)
+
 test("a catalog read by another person never takes the engine from the owner who starts its sessions", async () => {
   let prebuilt: OpenCodeSdkTransport | undefined
   const context = await setupConformance({ name: "opencode-catalog-owner", backend: async () => {

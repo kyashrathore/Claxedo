@@ -8,6 +8,7 @@ import { draftProbeKey, DraftProbeCache, ProcessLosses, selectedTurnAccount, ses
 import { withTurnAccount } from "../../translate/turn-account"
 import { codexProbeInputs } from "../../profiles/codex"
 import { createCodexConfig } from "./config"
+import { applyCodexModelSettings } from "./live-model-settings"
 import { codexCapabilities } from "./capabilities"
 import { codexTurnInput } from "./input"
 import type { CodexTransportOptions, Entry } from "./entry"
@@ -62,6 +63,10 @@ export class CodexAppServerTransport implements HarnessTransport {
   readonly config = createCodexConfig({
     entry: (session) => this.sessions.entry(session), models: (entry) => this.models(entry),
     probe: (draft, mode) => this.probeDraftModels(draft, mode),
+    setModelSettings: async (session, settings) => {
+      const entry = this.sessions.entry(session)
+      await applyCodexModelSettings(entry, settings, await this.models(entry))
+    },
   })
 
   private probeDraftModels(draft: DraftLaunch, mode: "probe" | "peek"): Promise<CodexModel[]> {

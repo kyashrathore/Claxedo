@@ -1,6 +1,6 @@
 import type { Context } from "hono"
 import { AgentRuntimeContractError } from "@claxedo/agent-runtime-contract"
-import { isAgentHarnessEngineError } from "@claxedo/harness/contract"
+import { isAgentHarnessEngineError, TransportError } from "@claxedo/harness/contract"
 import { CredentialSelectionError } from "@claxedo/harness/registry"
 import type { HarnessCapabilities } from "../host/capabilities"
 import type { AgentRuntime, HarnessTarget } from "../host/runtime"
@@ -17,6 +17,11 @@ export function harnessUnavailableResponse(c: Context, error: unknown) {
   }
   if (error instanceof WorkspaceHarnessUnavailableError) return c.json(errorBody(error.code, error.message), 409)
   return undefined
+}
+
+export function sessionConfigRefusalResponse(c: Context, error: unknown) {
+  if (!(error instanceof TransportError) || error.code !== "configuration") return undefined
+  return c.json(errorBody("session_config_refused", error.message, { harness: error.transport, retryable: error.retryable }), 409)
 }
 
 export function unsupportedOperation(

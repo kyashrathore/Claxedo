@@ -48,6 +48,8 @@ const methods: Record<string, Shape> = {
     model: optional(text), serviceTier: optional(text), serviceTierForTurn: optional(text), effort: optional(text),
     summary: optional(oneOf("auto", "concise", "detailed", "none")), personality, outputSchema: json } },
   "turn/interrupt": { required: ["threadId", "turnId"], fields: { threadId: text, turnId: text } },
+  "turn/settings/update": { required: ["threadId", "turnId"], fields: { threadId: text, turnId: text, model: optional(text), effort: optional(text) } },
+  "thread/settings/update": { required: ["threadId"], fields: { threadId: text, model: optional(text), effort: optional(text) } },
   "thread/goal/get": { required: ["threadId"], fields: { threadId: text } },
   "thread/backgroundTerminals/list": { required: ["threadId"], fields: { threadId: text, cursor: optional(text) } },
   "turn/steer": { required: ["threadId", "expectedTurnId", "input"], fields: { threadId: text, expectedTurnId: text,
@@ -61,7 +63,7 @@ export class CodexPeer {
   private readonly threads = new Map<string, string | undefined>()
   private readonly pending = new Set<number>()
 
-  constructor(private readonly models: unknown[], private readonly script: { modelListFailures?: number; turnStartError?: string; goal?: unknown; userAgent?: string; backgroundTerminals?: string[] } = {}) {}
+  constructor(private readonly models: unknown[], private readonly script: { modelListFailures?: number; turnSettingsFailures?: number; turnStartError?: string; goal?: unknown; userAgent?: string; backgroundTerminals?: string[] } = {}) {}
 
   request(id: number) { this.pending.add(id) }
 
@@ -97,6 +99,11 @@ export class CodexPeer {
     if (frame.method === "thread/goal/get") return { goal: this.script.goal ?? null }
     if (frame.method === "thread/backgroundTerminals/list") return { data: (this.script.backgroundTerminals ?? []).map((processId) => ({ processId })), nextCursor: null }
     if (frame.method === "turn/start") return this.start(params)
+    if (frame.method === "turn/settings/update") {
+      if (this.script.turnSettingsFailures) { this.script.turnSettingsFailures--; throw new CodexScriptedFailure("native live settings refused") }
+      return { status: this.threads.get(String(params.threadId)) === params.turnId ? "applied" : "targetUnavailable" }
+    }
+    if (frame.method === "thread/settings/update") return {}
     if (frame.method === "turn/steer") {
       assert.equal(this.threads.get(String(params.threadId)), params.expectedTurnId, "turn/steer must name the thread's active turn")
       return { turnId: params.expectedTurnId }

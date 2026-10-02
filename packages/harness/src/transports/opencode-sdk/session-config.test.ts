@@ -18,6 +18,7 @@ function preview() {
     entry: () => ({ start: draft }) as Entry,
     targetScope: () => scope,
     models: async () => ["old", "current"].map((id) => ({ providerID: "proof", id, name: id, cost: [] })),
+    switchModel: async () => {},
   })
 }
 

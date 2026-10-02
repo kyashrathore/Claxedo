@@ -1,4 +1,4 @@
-import type { ConfigOperations, DraftLaunch, HarnessSession, StartInput } from "../../contract"
+import type { ConfigOperations, DraftLaunch, HarnessSession, ModelSettings, StartInput } from "../../contract"
 import { applySessionConfigUpdate, configOptionsPreview } from "../../contract"
 import { codexModelOptions, type CodexModel } from "./models"
 import { codexModeState, requireCodexMode } from "./modes"
@@ -9,8 +9,10 @@ export function createCodexConfig<T extends ConfigEntry>(input: {
   entry(session: HarnessSession): T
   models(entry: T): Promise<CodexModel[]>
   probe(draft: DraftLaunch, mode: "probe" | "peek"): Promise<CodexModel[]>
+  setModelSettings(session: HarnessSession, settings: ModelSettings): Promise<void>
 }): ConfigOperations {
   return {
+    setModelSettings: input.setModelSettings,
     options: async (target, mode) => {
       if ("session" in target) {
         const entry = input.entry(target.session)

@@ -33,7 +33,7 @@ if (!existsSync(binary)) throw new CodexProtocolGeneratorMissingError(binary)
 mkdirSync(artifacts, { recursive: true })
 const generated = mkdtempSync(path.join(artifacts, "codex-protocol-"))
 try {
-  const result = spawnSync(binary, ["app-server", "generate-ts", "--out", generated], {
+  const result = spawnSync(binary, ["app-server", "generate-ts", "--experimental", "--out", generated], {
     cwd: packageRoot,
     stdio: "inherit",
   })
