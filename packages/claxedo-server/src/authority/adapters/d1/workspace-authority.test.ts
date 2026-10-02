@@ -533,9 +533,11 @@ describe("D1 user-deployed workspace authority", () => {
       status: 403,
     })
 
-    await authority.registerLocalForSharing(owner, {
+    await authority.createWorkspace(owner, {
       workspaceId: "ws_contract_local",
+      orgId: "org_deployment",
       displayName: "contract local",
+      backing: "local-worktree",
       remoteDirectory: "/srv/repos/widgets",
     })
     await expect(authority.openWorkspace(owner, { workspaceId: "ws_contract_local" })).resolves.toMatchObject({

@@ -27,7 +27,7 @@ export async function usageReportPlane(input: { usageWriter?: boolean | UsageRep
   await store.usersMe(member)
   const { org_id: outsiderOrgId } = await store.usersMe(outsider) as { org_id: string }
   await store.createCloudWorkspace(owner, { workspaceId: "ws_real", displayName: "Main" })
-  await store.registerLocalForSharing(owner, { workspaceId: "ws_machine", displayName: "Laptop", remoteDirectory: "/work/laptop" })
+  await store.createWorkspace(owner, { workspaceId: "ws_machine", orgId, displayName: "Laptop", backing: "local-worktree", remoteDirectory: "/work/laptop" })
   await fixture.addMember(owner, member, orgId)
 
   const ledger = createSqliteUsageLedger()
