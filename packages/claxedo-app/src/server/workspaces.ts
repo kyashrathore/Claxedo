@@ -2,11 +2,12 @@ import { QueryObserver, type QueryClient } from "@tanstack/solid-query"
 import { createSignal, type Accessor } from "solid-js"
 import type { HostedAccount } from "./account"
 import type { LinkedCatalog } from "./account-link"
-import { createAccountPlacements, createSharedSessions, withAccountPlacements, type AccountPlacements } from "./account-placements"
+import { createAccountPlacements, withAccountPlacements, type AccountPlacements } from "./account-placements"
 import type { PlacementsApi } from "./api"
 import { ServerError, toAppError } from "./errors"
 import { placementId, sessionId as asSessionId, type PlacementId, type ProjectId } from "./ids"
 import { queryKeys } from "./query-keys"
+import { createSharedSessions, type SharedSessions } from "./shared-sessions"
 import type { RuntimeRoute, Transport } from "./transport"
 import type { Project, SessionLocation } from "./types"
 import { isStoppedCloud } from "./placement-runtime"
@@ -21,7 +22,7 @@ export type SessionHome = {
 }
 
 export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
-  readonly shared: ReturnType<typeof createSharedSessions>
+  readonly shared: SharedSessions
   readonly streamRoute: (ref: Pick<SessionLocation, "placementId" | "sessionId">) => RuntimeRoute | undefined
   readonly address: Address
   readonly route: (ref: Pick<SessionLocation, "placementId" | "sessionId"> | PlacementId) => Promise<RuntimeRoute>
@@ -86,8 +87,11 @@ function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | un
   const resolve = async (ref: Pick<SessionLocation, "placementId" | "sessionId"> | PlacementId) => {
     const id = typeof ref === "string" ? ref : ref.placementId
     const record = await find(id)
-    const sharedRoute = typeof ref === "string" ? undefined : shared.route(ref)
-    if (sharedRoute) return { route: sharedRoute, central: false, live: true, stopped: false }
+    if (!record && typeof ref !== "string") {
+      await shared.load()
+      const route = shared.route(ref)
+      if (route) return { route, central: false, live: true, stopped: false }
+    }
     if (!record) throw new ServerError({ class: "not_found", message: `Placement ${id} is not in the catalog` })
     const stopped = isStoppedCloud(record.placement)
     const offlineMachine = record.route.remote && record.placement.kind !== "cloud" && !record.placement.reachable
@@ -158,8 +162,7 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
   const read = async () => bootstrapCatalog(await transport.json<unknown>(BOOTSTRAP_PATH))
   const reread = () => queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: 0 })
   const load = async () => {
-    const accountRead = Promise.all([accountPlacements?.load(), shared.load()]).then(() => undefined)
-    return merged.merge(await readCatalogs(queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: Number.POSITIVE_INFINITY }), accountRead))
+    return merged.merge(await readCatalogs(queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: Number.POSITIVE_INFINITY }), accountPlacements?.load()))
   }
   const { recordOf, byId, list, address } = placementReads(() => merged.catalog()?.placements ?? [])
   return {
@@ -174,10 +177,9 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
       return row?.ref
     } },
     streamRoute: (ref) => {
-      const share = shared.route(ref)
-      if (share) return share
       const record = recordOf(ref.placementId)
-      return record?.route.remote && record.placement.reachable ? record.route : undefined
+      if (!record) return shared.route(ref)
+      return record.route.remote && record.placement.reachable ? record.route : undefined
     },
     ...placementRoutes(async (id) => {
       await load()
@@ -191,11 +193,11 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
     catalog: merged.catalog,
     load,
     refresh: async () => {
-      await shared.refresh()
       relearned.clear()
       await readCatalogs(reread(), accountPlacements?.reread())
       await queryClient.invalidateQueries({ queryKey: queryKeys.placements(transport.serverUrl) })
       await queryClient.invalidateQueries({ queryKey: queryKeys.projects(transport.serverUrl) })
+      await shared.refresh()
     },
     ...accountReads(merged.linked, accountPlacements !== undefined, load),
     dispose: () => { shared.dispose(); merged.dispose() },

@@ -1,7 +1,7 @@
 import type { AccountScope, AccountSource } from "@claxedo/account-contract/vocabulary"
 import type { Accessor } from "solid-js"
 import type { QueryClient } from "@tanstack/solid-query"
-import type { SharedSessions } from "./account-placements"
+import type { SharedSessions } from "./shared-sessions"
 import type { RuntimeCommand } from "@claxedo/agent-runtime-contract"
 import type { Account, AccountCheck, AccountSources, EffectiveAccounts, HostedAccountSources, MachineLogin } from "./account-types"
 import type { CloudCreateInput, CloudWorkspace, CodeHostRepository, WorkspaceRuntime } from "./cloud-types"
