@@ -3,7 +3,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { inside } from "@claxedo/helpers/path"
 import type { TurnInput } from "../contract"
-import { inlineDataUrl } from "./prompt"
+import { flattenTurnPrompt, inlineDataUrl } from "./prompt"
 
 export type PromptFile = { mime: string; bytes: Buffer; base64: string; filename?: string }
 export type MaterializedFile = PromptFile & { path: string }
@@ -73,4 +73,13 @@ export async function materializeAttachment(directory: string, file: PromptFile,
 
 export function attachmentPathLine(file: MaterializedFile): string {
   return `Attached file (${file.mime}): ${file.path}`
+}
+
+export async function writtenPrompt(turn: TurnInput, directory: string,
+  options: { program: string; flatten: Parameters<typeof flattenTurnPrompt>[1]; error: AttachmentError }): Promise<{ text: string; files: MaterializedFile[] }> {
+  const { files, references } = promptFiles(turn, options.error)
+  if (references.length) throw options.error(`${options.program} cannot deliver the file URL ${references[0]}`)
+  const written: MaterializedFile[] = []
+  for (const file of files) written.push(await materializeAttachment(directory, file, options.error))
+  return { text: [flattenTurnPrompt(turn, options.flatten), ...written.map(attachmentPathLine)].filter(Boolean).join("\n"), files: written }
 }
