@@ -102,8 +102,7 @@ beforeAll(async () => {
     if (hold) { hold.reached(); await hold.released }
     return await broker.projectAuth(input)
   } })
-  configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,})
+  configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
 
   setBackendOverride(createTestBackend())
   provider = {

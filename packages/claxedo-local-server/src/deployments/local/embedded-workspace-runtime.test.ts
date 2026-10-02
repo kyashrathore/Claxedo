@@ -21,14 +21,13 @@ import {
 import { Hono } from "hono"
 import { createHostAggregateEventsHandler } from "../../shell/host-events"
 import { createLocalDaemonLifecycle } from "../../app/local-daemon-lifecycle"
-import type { WorkspaceEventStreamFrame } from "@claxedo/session-core"
+import { type WorkspaceEventStreamFrame, managedWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
 import { disposeAgentConfig, loadUserConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { localWorkspaceRuntimeSessionAuthority } from "@claxedo/server-core/workspace/local-runtime-port"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { Pty, type EmbeddedRelayHostIdentity } from "@claxedo/workspace-runtime"
-import { managedWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "@claxedo/workspace-runtime/exposure"
 import { withSessionCore } from "@claxedo/workspace-runtime/testing"
@@ -220,8 +219,7 @@ describe("embedded workspace runtime", () => {
       tail.resolve()
       await prompt
       await shutdownEmbeddedWorkspaceRuntimes()
-      configureEmbeddedWorkspaceRuntime({
-      sessionIdWorkspace: () => undefined,})
+      configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
       await removeWorkspaceRoot(root)
     }
   })
@@ -248,8 +246,7 @@ describe("embedded workspace runtime", () => {
       expect(await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })).toBe(replacement)
     } finally {
       release()
-      configureEmbeddedWorkspaceRuntime({
-      sessionIdWorkspace: () => undefined,})
+      configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
@@ -300,8 +297,7 @@ describe("embedded workspace runtime", () => {
       expect(embeddedWorkspaceRuntimeSessionAuthority()).toBe("managed-private")
       expect(localWorkspaceRuntimeSessionAuthority()).toBe("managed-private")
     } finally {
-      configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,})
+      configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
     }
     expect(embeddedWorkspaceRuntimeSessionAuthority()).toBe("local")
     expect(localWorkspaceRuntimeSessionAuthority()).toBe("local")
@@ -347,8 +343,7 @@ describe("embedded workspace runtime", () => {
       expect(embeddedWorkspaceRuntimeSessionAuthority()).toBe("managed-private")
       expect(localWorkspaceRuntimeSessionAuthority()).toBe("local")
     } finally {
-      configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,})
+      configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
     }
   })
 
@@ -457,8 +452,7 @@ describe("embedded workspace runtime", () => {
         `actor_alice:read:${session.id}:Bearer alice-proof`,
       ])
     } finally {
-      configureEmbeddedWorkspaceRuntime({
-      sessionIdWorkspace: () => undefined,})
+      configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
@@ -724,8 +718,7 @@ describe("embedded workspace runtime", () => {
       })
       expect(fresh).not.toBe(first)
     } finally {
-      configureEmbeddedWorkspaceRuntime({
-      sessionIdWorkspace: () => undefined,})
+      configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
       await fs.rm(project + "-new", { recursive: true, force: true }).catch(() => {})
@@ -936,8 +929,7 @@ describe("embedded workspace runtime", () => {
       expect(controlPlaneEvents).toEqual([])
     } finally {
       unsubscribe()
-      configureEmbeddedWorkspaceRuntime({
-      sessionIdWorkspace: () => undefined,})
+      configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
@@ -977,8 +969,7 @@ describe("embedded workspace runtime", () => {
         }),
       ]])
     } finally {
-      configureEmbeddedWorkspaceRuntime({
-      sessionIdWorkspace: () => undefined,})
+      configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
@@ -1065,8 +1056,7 @@ describe("the daemon lifecycle on its real work sources", () => {
       held.tail.resolve()
       await prompt
       await shutdownEmbeddedWorkspaceRuntimes()
-      configureEmbeddedWorkspaceRuntime({
-      sessionIdWorkspace: () => undefined,})
+      configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
       await removeWorkspaceRoot(root)
     }
   })
@@ -1163,8 +1153,7 @@ describe("attaching to an embedded workspace terminal", () => {
       // to refuse and the socket is its own.
       expect(owner.ok).toBe(true)
     } finally {
-      configureEmbeddedWorkspaceRuntime({
-      sessionIdWorkspace: () => undefined,})
+      configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
       await Pty.remove(pty.id)
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
@@ -1207,8 +1196,7 @@ describe("attaching to an embedded workspace terminal", () => {
       expect(received.join("")).not.toContain("pwned")
       expect(readOnly.asked).toEqual(["pty_read", "pty_write"])
     } finally {
-      configureEmbeddedWorkspaceRuntime({
-      sessionIdWorkspace: () => undefined,})
+      configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
       await Pty.remove(pty.id)
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)

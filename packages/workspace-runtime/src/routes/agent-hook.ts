@@ -15,13 +15,14 @@ import {
   boundedTextBody,
   isRequestBodyTooLarge,
   requestBodyTooLargeBody,
-} from "@claxedo/session-core"
-import {
   arr,
   bool,
   num,
   str,
   parseRecord,
+  sessionAccessContext,
+  sessionAccessDenied,
+  type RuntimeBus,
 } from "@claxedo/session-core"
 import { providerLifecycle } from "../agent-hooks/provider-lifecycle"
 import { defaultStatusHooks } from "../status-hooks"
@@ -35,7 +36,6 @@ import {
 import { Pty } from "../pty/index"
 import { authoritativeWorkspaceId } from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
-import { sessionAccessContext, sessionAccessDenied } from "@claxedo/session-core"
 import { authorizeHostCapability, type HostCapabilityAccessOptions } from "./host-capability-access"
 
 const log = Log.create({ service: "agent-hook" })
@@ -343,7 +343,7 @@ function settlePendingUserActions(input: {
   return { pending, held: pending.length > 0 }
 }
 
-const clearTerminalSession = (terminalId: string, bus: import("@claxedo/session-core").RuntimeBus) => {
+const clearTerminalSession = (terminalId: string, bus: RuntimeBus) => {
   pruneTerminalSessions()
   const id = clean(terminalId)
   if (!id) return undefined
@@ -390,7 +390,7 @@ const readTerminalSession = (input: { terminalId?: string; tabId?: string }) => 
 }
 
 export type AgentHookRoutesOptions = HostCapabilityAccessOptions & {
-  bus: import("@claxedo/session-core").RuntimeBus
+  bus: RuntimeBus
   statusHooks?: readonly StatusHookTemplate[]
 }
 

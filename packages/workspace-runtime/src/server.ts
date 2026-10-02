@@ -32,8 +32,8 @@ import {
   type WorkspaceRuntimeExposure,
 } from "./exposure"
 import { runtimeEnvText, workspaceRuntimeEpoch, workspaceRuntimeStoreDir } from "./env"
-import type { WorkspaceEventParents } from "@claxedo/session-core"
 import {
+  type WorkspaceEventParents,
   managedWorkspaceSessionAccessPolicy,
   sessionAccessContext,
   sessionAccessDenied,

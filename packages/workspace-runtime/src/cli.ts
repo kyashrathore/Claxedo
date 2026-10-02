@@ -17,8 +17,7 @@ import {
   relayWorkspaceRuntimeExposure,
 } from "./exposure"
 import { runtimeEnvText, workspaceRuntimeEpoch, workspaceRuntimePlacementFromEnv } from "./env"
-import { RUNTIME_NATIVE_HARNESS_IDS } from "@claxedo/session-core"
-import { rec, str } from "@claxedo/session-core"
+import { RUNTIME_NATIVE_HARNESS_IDS, rec, str } from "@claxedo/session-core"
 
 const pkg = rec(JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")))
 

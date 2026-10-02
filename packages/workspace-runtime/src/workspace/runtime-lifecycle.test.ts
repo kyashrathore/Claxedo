@@ -11,13 +11,22 @@ import { sqliteLaunchOwnership } from "../ownership/launch-ownership-sqlite"
 import { withWorkspaceTarget } from "../target"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { installFakePiRpc } from "../test-support/home/fake-pi-rpc.mjs"
-import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
+import {
+  FakeTransport,
+  fakeConnectionProvider,
+  controlledTurn,
+  createHostFixture,
+  sessionCreate,
+  tick,
+  until as hostUntil,
+  LOOPBACK_ORIGIN,
+  MACHINE_OWNER,
+} from "@claxedo/session-core/testing"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "./runtime"
 import { createRuntimeEventHub } from "@claxedo/session-core"
 import type { RuntimeSnapshot } from "../routes/config"
 
-import { controlledTurn, createHostFixture, sessionCreate, tick, until as hostUntil, LOOPBACK_ORIGIN, MACHINE_OWNER } from "@claxedo/session-core/testing"
 
 const cleanups: Array<() => void | Promise<void>> = []
 const roots: string[] = []

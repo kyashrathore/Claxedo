@@ -8,7 +8,6 @@ import path from "node:path"
 
 import { AgentHookRoutes } from "../routes/agent-hook"
 import { NOTIFY_MARKER } from "./core/constants"
-import { currentSessionCore } from "../session-context"
 import { Pty } from "../pty/index"
 
 const testBus = createTestBus<TestBusEvent>()

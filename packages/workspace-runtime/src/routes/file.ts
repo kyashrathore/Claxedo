@@ -1,8 +1,7 @@
 import { Hono } from "hono"
-import { WorkspaceTargetError } from "@claxedo/session-core"
+import { WorkspaceTargetError, errorBody } from "@claxedo/session-core"
 import { assertTarget} from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
-import { errorBody } from "@claxedo/session-core"
 import {
   authorizeWorktreeTarget,
   deniedWorktreeFilter,

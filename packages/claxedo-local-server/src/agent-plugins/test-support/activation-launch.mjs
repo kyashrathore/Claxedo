@@ -12,8 +12,7 @@ import { openCodeAgentPluginAdapter } from "../runtime/adapters/opencode"
 import { agentPluginHarnessLaunch, materializeAgentPluginGeneration, readMaterializedAgentPluginGeneration } from "../runtime/materialize"
 import { prepareCodexProfile } from "../../../../harness/src/profiles/codex"
 import { composeCursorHome } from "../../../../harness/src/profiles/cursor"
-import { pluginProjectionFor } from "@claxedo/session-core"
-import { startInput } from "@claxedo/session-core"
+import { pluginProjectionFor, startInput } from "@claxedo/session-core"
 
 const FIXTURE_HOME_PREFIX = "plugin-activation-fixture-"
 

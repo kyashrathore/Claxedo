@@ -68,8 +68,7 @@ describe("embedded first-party MCP credential", () => {
   test("a process configured without the launch origin injects nothing and verifies nothing", async () => {
     const ws = await workspaceIn("embedded-first-party-off-", "ws_first_party_off")
     process.env.CLAXEDO_DATA_DIR = path.join(path.dirname(ws.directory), "data")
-    configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined,})
+    configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
     const runtime = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
     expect(runtime.host.runtimeCredentialIssuer()).toBeUndefined()
     const stray = createRuntimeCredentialIssuer({ runtimeId: "stray", workspaceId: "ws_first_party_off" })

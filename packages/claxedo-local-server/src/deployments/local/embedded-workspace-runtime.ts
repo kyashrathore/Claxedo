@@ -2,7 +2,6 @@ import { attachEmbeddedPty, type EmbeddedPtyAttachInput } from "./embedded-pty-a
 import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { embeddedConfigModeForPath } from "../../workspace/runtime-dispatch/internals"
 import path from "path"
-import fs from "fs/promises"
 import {
   createRuntimeCredentialIssuer,
   createWorkspaceRuntimeApp,

@@ -3,8 +3,7 @@ import path from "node:path"
 import { inside } from "@claxedo/helpers/path"
 import { runGit } from "./git"
 import { workspaceRuntimeWorkspacesDir } from "./env"
-import type { RuntimeStore, WorkspaceWorktreeRecord } from "@claxedo/session-core"
-import { WorkspaceTargetError } from "@claxedo/session-core"
+import { type RuntimeStore, type WorkspaceWorktreeRecord, WorkspaceTargetError, type SessionPlacement } from "@claxedo/session-core"
 
 const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 
@@ -30,7 +29,7 @@ export class WorkspaceWorktreeManager {
   /** `store` is read on each use, so a store the host has not opened yet is opened by the first worktree request. */
   constructor(private readonly options: {
     workspaceId: string
-    placement: import("@claxedo/session-core").SessionPlacement
+    placement: SessionPlacement
     sourceDirectory: string
     root?: string
     store: () => WorktreeStore

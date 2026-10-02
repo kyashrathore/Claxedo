@@ -3,9 +3,15 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
-import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
-import { transportsById } from "@claxedo/session-core/testing"
-import { createHostFixture, sessionCreate, tick, until } from "@claxedo/session-core/testing"
+import {
+  FakeTransport,
+  fakeConnectionProvider,
+  transportsById,
+  createHostFixture,
+  sessionCreate,
+  tick,
+  until,
+} from "@claxedo/session-core/testing"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { withWorkspaceTarget } from "../target"
 import { loopbackMachineLoginPolicy } from "../testing"

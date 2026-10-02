@@ -6,7 +6,7 @@ import type { ChildSessionRef } from "../../contract/broker"
 import type { BrokerPorts } from "../ports"
 
 export class SubagentBroker {
-  private readonly admissions = createKeyedSerializer<string>()
+  private readonly admissions = createKeyedSerializer()
   constructor(private readonly ports: BrokerPorts) {}
 
   associate(sessionId: string, correlationKey: string, child: ChildSessionRef): void {

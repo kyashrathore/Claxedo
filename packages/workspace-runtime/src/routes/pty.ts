@@ -8,9 +8,14 @@ import {
   errorBody,
   isRequestBodyTooLarge,
   requestBodyTooLargeBody,
+  WorkspaceTargetError,
+  managedWorkspaceSessionAccessPolicy,
+  sessionAccessContext,
+  sessionAccessDenied,
+  type SessionAccessOperation,
+  type SessionAccessPolicy,
 } from "@claxedo/session-core"
 import { routeParam } from "@claxedo/helpers/route-param"
-import { WorkspaceTargetError } from "@claxedo/session-core"
 import {
   assertTarget,
   authoritativeWorkspaceId,
@@ -26,13 +31,6 @@ import {
   ptyAccessRefusalResponse,
   type PtyStreamAdmission,
 } from "../pty/authorized-connection"
-import {
-  managedWorkspaceSessionAccessPolicy,
-  sessionAccessContext,
-  sessionAccessDenied,
-  type SessionAccessOperation,
-  type SessionAccessPolicy,
-} from "@claxedo/session-core"
 import { volatileLaunchOwnership, type LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
 
 function invalidInput(details: Record<string, unknown>) {

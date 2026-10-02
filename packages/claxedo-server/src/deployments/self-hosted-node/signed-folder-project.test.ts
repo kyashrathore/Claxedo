@@ -60,8 +60,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   const { configureEmbeddedWorkspaceRuntime } = await import("@claxedo/local-server/self-hosted-execution")
-  configureEmbeddedWorkspaceRuntime({
-  sessionIdWorkspace: () => undefined,})
+  configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
   await composed.dispose()
   services.close()
   const { closeAuthorityDatabases } = await import(

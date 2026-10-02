@@ -8,8 +8,9 @@ import type { SessionCore } from "@claxedo/session-core"
 // the core its own request or callback entered.
 const contextsKey = Symbol.for("claxedo.workspace-runtime.session-core-context")
 const pinned = globalThis as Record<PropertyKey, unknown>
-const contexts: AsyncLocalStorage<SessionCore> = pinned[contextsKey] instanceof AsyncLocalStorage
-  ? pinned[contextsKey] as AsyncLocalStorage<SessionCore>
+const existing = pinned[contextsKey]
+const contexts: AsyncLocalStorage<SessionCore> = existing instanceof AsyncLocalStorage
+  ? existing
   : (pinned[contextsKey] = new AsyncLocalStorage<SessionCore>())
 
 export function withSessionCore<T>(core: SessionCore, run: () => T): T { return contexts.run(core, run) }

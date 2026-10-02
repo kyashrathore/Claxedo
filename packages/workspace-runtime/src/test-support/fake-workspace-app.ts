@@ -5,9 +5,12 @@ import type { HarnessConnectionCapabilities, AgentEventEnvelope } from "@claxedo
 import type { HarnessTransport } from "@claxedo/harness/contract"
 import { Hono } from "hono"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
-import { createRuntimeEventHub, type RuntimeEventHub } from "@claxedo/session-core"
-import type { SessionAccessPolicy } from "@claxedo/session-core"
-import type { RuntimeStore } from "@claxedo/session-core"
+import {
+  createRuntimeEventHub,
+  type RuntimeEventHub,
+  type SessionAccessPolicy,
+  type RuntimeStore,
+} from "@claxedo/session-core"
 import { openRuntimeStore } from "../store-file"
 import type { RuntimeSnapshot } from "../routes/config"
 import { withWorkspaceTarget } from "../target"

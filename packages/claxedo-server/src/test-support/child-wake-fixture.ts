@@ -8,9 +8,8 @@ import { openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { randomUUID } from "node:crypto"
-import type { RuntimeStore } from "@claxedo/session-core"
+import type { RuntimeStore, SessionRoutes } from "@claxedo/session-core"
 import { openRuntimeStore } from "../../../workspace-runtime/src/store-file"
-import type { SessionRoutes } from "@claxedo/session-core"
 import { FakeTransport, composeHost } from "@claxedo/session-core/testing"
 import { removeTestDataDir } from "./test-data-dir"
 

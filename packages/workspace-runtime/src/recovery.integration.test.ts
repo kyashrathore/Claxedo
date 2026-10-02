@@ -12,10 +12,13 @@ import {
 } from "@claxedo/agent-runtime-contract"
 import { createWorkspaceRuntimeClient } from "./client"
 import { loopbackWorkspaceRuntimeExposure } from "./exposure"
-import type { AgentRuntimeRecoveryInspection } from "@claxedo/session-core"
-import { managedWorkspaceSessionAccessPolicy, type ManagedSessionAuthority } from "@claxedo/session-core"
+import {
+  type AgentRuntimeRecoveryInspection,
+  managedWorkspaceSessionAccessPolicy,
+  type ManagedSessionAuthority,
+  type RuntimeStore,
+} from "@claxedo/session-core"
 import type { RelayHostAuthContext } from "./workspace-host-service-auth"
-import type { RuntimeStore } from "@claxedo/session-core"
 import { openRuntimeStore } from "./store-file"
 import { withWorkspaceTarget } from "./target"
 import { loopbackMachineLoginPolicy } from "./testing"

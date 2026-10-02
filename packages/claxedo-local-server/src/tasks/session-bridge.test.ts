@@ -270,8 +270,7 @@ afterEach(async () => {
   disposeAgentConfig()
   ClaxedoDB.close()
   closeAuthorityDatabases()
-  configureEmbeddedWorkspaceRuntime({
-  sessionIdWorkspace: () => undefined,})
+  configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
   configureAgentConfig()
   for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true })
   delete process.env.CLAXEDO_DATA_DIR

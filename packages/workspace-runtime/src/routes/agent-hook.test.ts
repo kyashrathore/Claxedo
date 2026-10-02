@@ -1,15 +1,20 @@
 import { describe, expect, spyOn, test } from "bun:test"
 import { Hono } from "hono"
-import { createBus as createTestBus, type WorkspaceRuntimeEvent as TestBusEvent } from "@claxedo/session-core"
+import {
+  createBus as createTestBus,
+  type WorkspaceRuntimeEvent as TestBusEvent,
+  type WorkspaceRuntimeEvent,
+  errorBody,
+  JSON_BODY_LIMIT_BYTES,
+  managedWorkspaceSessionAccessPolicy,
+  type SessionAccessPolicy,
+  workspaceRuntimeEventSessionId,
+} from "@claxedo/session-core"
 const testBus = createTestBus<TestBusEvent>()
-import { type WorkspaceRuntimeEvent } from "@claxedo/session-core"
 import { AgentHookRoutes, lifecycleLogMetadata, TERMINAL_SESSION_MAX_ENTRIES } from "./agent-hook"
-import { errorBody, JSON_BODY_LIMIT_BYTES } from "@claxedo/session-core"
-import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "@claxedo/session-core"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { Pty } from "../pty/index"
 import { withWorkspaceTarget } from "../target"
-import { workspaceRuntimeEventSessionId } from "@claxedo/session-core"
 
 const runningTerminal = (id: string, sessionId?: string) => ({
   id,

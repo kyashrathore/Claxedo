@@ -55,8 +55,7 @@ beforeAll(async () => {
 afterAll(async () => {
   const { configureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes } = await import("@claxedo/local-server/self-hosted-execution")
   await shutdownEmbeddedWorkspaceRuntimes()
-  configureEmbeddedWorkspaceRuntime({
-  sessionIdWorkspace: () => undefined,})
+  configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
   const { disposeAgentConfig } = await import("@claxedo/server-core/agent-config/index")
   disposeAgentConfig()
   await composed.dispose()

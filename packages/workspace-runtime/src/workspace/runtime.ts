@@ -2,7 +2,28 @@ import type { AgentTurnOutcome, ConnectionSecretResolver } from "@claxedo/agent-
 import type { WorkspaceHostOptions, WorkspaceRuntimeStoreFactory } from "./host-options"
 import path from "node:path"
 import { mountWorkspaceVcs } from "./vcs"
-import { createSessionCore } from "@claxedo/session-core"
+import {
+  createSessionCore,
+  createStoreBrokerPorts,
+  WorkspaceHarnessUnavailableError,
+  sessionCredentials,
+  harnessUnavailableResponse,
+  pluginProjectionFor,
+  PreviewModelInvalidError,
+  type AgentRuntime,
+  type LaunchComposer,
+  requestedSessionHarness,
+  RUNTIME_NATIVE_HARNESS_IDS,
+  createWorkspaceEventFramesTap,
+  type WorkspaceEventParents,
+  isSessionRecoveryPath,
+  sessionOwner,
+  errorBody,
+  managedWorkspaceSessionAccessPolicy,
+  type SessionAccessPolicy,
+  runtimeSessionTime,
+  harnessHealthChanged,
+} from "@claxedo/session-core"
 import { realDirectoryPath } from "@claxedo/helpers/real-path"
 import { inside } from "@claxedo/helpers/path"
 import { withSessionCore } from "../session-context"
@@ -15,21 +36,13 @@ import { HTTPException } from "hono/http-exception"
 import { clearOpaqueTimer, createKeyedSerializer, errorMessage } from "@claxedo/helpers"
 import type { LaunchOwnershipOwner } from "@claxedo/process-ownership/launch"
 import { workspaceCapabilities } from "../capabilities"
-import { createStoreBrokerPorts } from "@claxedo/session-core"
 import { workspaceRuntimeStoreDir } from "../env"
 import { assertWorkspaceRuntimeExposure } from "../exposure"
 import { firstPartyMcpServerFor } from "../first-party-mcp/index"
 import { createHarnessServices } from "../harness-services"
-import { WorkspaceHarnessUnavailableError } from "@claxedo/session-core"
 import { defaultHarnessStateRoot, harnessCompositionOptions, sweepIdleHarnessHomes } from "../host/composition"
 import { createElicitationPatternEvaluator } from "../host/pattern-evaluator"
-import { sessionCredentials } from "@claxedo/session-core"
-import { harnessUnavailableResponse } from "@claxedo/session-core"
-import { pluginProjectionFor } from "@claxedo/session-core"
-import { PreviewModelInvalidError } from "@claxedo/session-core"
-import { type AgentRuntime, type LaunchComposer } from "@claxedo/session-core"
 import { Log } from "../log"
-import { createRuntimeEventHub, type RuntimeEventHub } from "@claxedo/session-core"
 import {
   normalizeRuntimeSnapshot,
   RuntimeConfigApplyError,
@@ -38,14 +51,6 @@ import {
   type RuntimeHarnessSelection,
   type RuntimeSnapshot,
 } from "../routes/config"
-import { requestedSessionHarness, RUNTIME_NATIVE_HARNESS_IDS } from "@claxedo/session-core"
-import { createWorkspaceEventFramesTap, type WorkspaceEventParents } from "@claxedo/session-core"
-import { isSessionRecoveryPath } from "@claxedo/session-core"
-import { sessionOwner } from "@claxedo/session-core"
-import { errorBody } from "@claxedo/session-core"
-import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "@claxedo/session-core"
-import { runtimeSessionTime } from "@claxedo/session-core"
-import type { RuntimeStore } from "@claxedo/session-core"
 import { openRuntimeStore } from "../store-file"
 import { workspaceDurableState } from "./durable-state"
 import {
@@ -68,7 +73,6 @@ import { scopedToolPrompt } from "./scoped-tool-prompt"
 import { mountSessionRoutes } from "./session-routes"
 import { assertConnectionRevision, connectionConfigHooks, harnessKey, persistRuntimeConfigApplyStatus, runnerForSelection, runtimeConfigApplyError, runtimeSnapshotSignature, sameAuth, sameRuntimeMcp, validateDescriptors, type RuntimeRunner } from "./snapshot"
 import { createWorkspaceTransports } from "./transports"
-import { harnessHealthChanged } from "@claxedo/session-core"
 
 export type { RuntimeRunner } from "./snapshot"
 

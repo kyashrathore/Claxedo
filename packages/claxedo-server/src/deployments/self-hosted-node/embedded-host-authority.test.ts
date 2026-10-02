@@ -9,10 +9,13 @@ import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/a
 import { openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { createWorkspaceRuntimeApp, relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime"
-import { createRuntimeEventHub } from "@claxedo/session-core"
-import { createBus, type WorkspaceRuntimeEvent } from "@claxedo/session-core"
-import { sessionEventDeliveryPolicy } from "@claxedo/session-core"
-import { workspaceEventsHandler } from "@claxedo/session-core"
+import {
+  createRuntimeEventHub,
+  createBus,
+  type WorkspaceRuntimeEvent,
+  sessionEventDeliveryPolicy,
+  workspaceEventsHandler,
+} from "@claxedo/session-core"
 import { sessionStreamLeaseVerifier } from "../../routes/runtime-session-authority"
 import { embeddedManagedPrivateSessionPolicy } from "./app"
 import { loopbackMachineLoginPolicy } from "@claxedo/workspace-runtime/testing"

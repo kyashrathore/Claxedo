@@ -10,7 +10,7 @@ const SPECIFIER = /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+|\brequire\s*\(\s*)[
 const PROCESS_ENV = /\bprocess\s*(?:\.\s*env\b|\[\s*["']env["']\s*\])/
 /** Prose and wire values that name the machine runtime without importing it. */
 const MACHINE_MENTION = /workspace-runtime is pinned to|source: "workspace-runtime"/g
-const HOST_GLOBAL = /\bglobalThis\s*[.\[]|\bBuffer\s*[.(]|\bprocess\s*\.\s*(?:env|argv|cwd|platform|arch|stderr|stdout|versions|exit|pid)\b/
+const HOST_GLOBAL = /\bglobalThis\s*[.[]|\bBuffer\s*[.(]|\bprocess\s*\.\s*(?:env|argv|cwd|platform|arch|stderr|stdout|versions|exit|pid)\b/
 
 function violations(file: string): string[] {
   const source = readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "")

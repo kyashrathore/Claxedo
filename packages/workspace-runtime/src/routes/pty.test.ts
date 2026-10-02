@@ -6,9 +6,13 @@ import { Hono, type Context } from "hono"
 import type { UpgradeWebSocket, WSEvents, WSContext } from "hono/ws"
 import { PtyRoutes } from "./pty"
 import { Pty } from "../pty/index"
-import { errorBody, JSON_BODY_LIMIT_BYTES } from "@claxedo/session-core"
+import {
+  errorBody,
+  JSON_BODY_LIMIT_BYTES,
+  managedWorkspaceSessionAccessPolicy,
+  type SessionAccessPolicy,
+} from "@claxedo/session-core"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
-import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "@claxedo/session-core"
 import { createDiskHistory } from "../pty/history-disk"
 import { withWorkspaceTarget } from "../target"
 import { withSessionCore } from "../session-context"

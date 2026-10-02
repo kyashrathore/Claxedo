@@ -4,8 +4,12 @@ import type { createHarnessComposer } from "@claxedo/harness/compose"
 import type { HarnessConnectionDescriptor } from "@claxedo/harness/providers"
 import { harnessRecord } from "@claxedo/harness/registry"
 import type { HarnessTransport, Locality } from "@claxedo/harness/contract"
-import { WorkspaceHarnessUnavailableError } from "@claxedo/session-core"
-import type { HarnessHandle, TransportAccess, TransportResolver } from "@claxedo/session-core"
+import {
+  WorkspaceHarnessUnavailableError,
+  type HarnessHandle,
+  type TransportAccess,
+  type TransportResolver,
+} from "@claxedo/session-core"
 import { Log } from "../log"
 import type { RuntimeConnectionDescriptor } from "../routes/config"
 import { canonicalJson } from "./snapshot"

@@ -25,8 +25,8 @@
  */
 
 import { Pty } from "./index"
-import { errorBody } from "@claxedo/session-core"
 import {
+  errorBody,
   sessionAccessContext,
   type SessionAccessPolicy,
   type SessionAccessPolicyInput,

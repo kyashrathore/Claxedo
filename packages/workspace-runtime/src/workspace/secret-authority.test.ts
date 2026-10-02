@@ -1,22 +1,30 @@
-import { testSessionRoutePorts } from "@claxedo/session-core/testing"
+import {
+  testSessionRoutePorts,
+  FakeTransport,
+  createHostFixture,
+  sessionCreate,
+  tempStoreRoot,
+  until,
+  type HostFixture,
+  fakeConnectionProvider,
+} from "@claxedo/session-core/testing"
 import { afterEach, expect, test } from "bun:test"
 import { Hono } from "hono"
 import type { ConnectionSecretAuthority } from "@claxedo/agent-runtime-contract"
 import type { RuntimeConnectionDescriptor } from "../routes/config"
-import { SessionRoutes } from "@claxedo/session-core"
-import { managedWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
-import { FakeTransport } from "@claxedo/session-core/testing"
-import { createHostFixture, sessionCreate, tempStoreRoot, until, type HostFixture } from "@claxedo/session-core/testing"
-import type { RuntimeStore } from "@claxedo/session-core"
+import {
+  SessionRoutes,
+  managedWorkspaceSessionAccessPolicy,
+  type RuntimeStore,
+  queuedPromptStore,
+} from "@claxedo/session-core"
 import { openRuntimeStore } from "../store-file"
 import { rm } from "node:fs/promises"
 import { join } from "node:path"
 import { createWorkspaceHost } from "./runtime"
-import { fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { withWorkspaceTarget } from "../target"
-import { queuedPromptStore } from "@claxedo/session-core"
 import { createWorkspaceTransports } from "./transports"
 
 const runner = { id: "connection", access: "connection" as const }

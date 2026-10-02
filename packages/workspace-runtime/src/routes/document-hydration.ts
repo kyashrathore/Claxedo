@@ -7,10 +7,16 @@ import { createHash } from "node:crypto"
 import { verifyDocumentJobCapability } from "../document-job-capability"
 import { Hono } from "hono"
 import { z } from "zod"
-import { boundedJson, RequestBodyTooLargeError } from "@claxedo/session-core"
-import { num, rec, str } from "@claxedo/session-core"
+import {
+  boundedJson,
+  RequestBodyTooLargeError,
+  num,
+  rec,
+  str,
+  sessionAccessContext,
+  type SessionAccessPolicy,
+} from "@claxedo/session-core"
 import { authorizeHostCapability } from "./host-capability-access"
-import { sessionAccessContext, type SessionAccessPolicy } from "@claxedo/session-core"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { isMissingFile } from "@claxedo/helpers/fs"
 import { MAX_DOCUMENT_BYTES, readContained, secureDirectory, writeContained } from "./document-hydration-files"
