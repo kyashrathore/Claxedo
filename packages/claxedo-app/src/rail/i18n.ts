@@ -85,6 +85,11 @@ const en = {
   "rail.card.failed": "Last turn failed",
   "rail.card.project": "Project",
   "rail.card.workspace": "Workspace",
+  "rail.shared": "Shared with me",
+  "rail.shared.refresh": "Refresh shared sessions",
+  "rail.shared.failed": "Shared sessions could not be read.",
+  "rail.shared.follow": "{{owner}} · can follow",
+  "rail.shared.send": "{{owner}} · can send",
 } as const
 
 export type RailKey = keyof typeof en
