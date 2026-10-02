@@ -15,7 +15,7 @@ export type ConnectionAnswer =
   | { readonly kind: "stopped" }
 
 export type WorkspaceConnections = {
-  readonly read: (workspaceId: string, sessionId?: string) => Promise<ConnectionAnswer>
+  readonly read: (workspaceId: string) => Promise<ConnectionAnswer>
   readonly start: (workspaceId: string) => Promise<ConnectionAnswer>
 }
 

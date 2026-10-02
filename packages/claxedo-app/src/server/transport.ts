@@ -77,9 +77,8 @@ function workspaceProxyPath(route: RuntimeRoute, path: string) {
 
 type Request = Transport["request"]
 
-async function requestConnection(request: Request, workspaceId: string, start: boolean, sessionId?: string): Promise<ConnectionAnswer> {
-  const query = sessionId === undefined ? "" : `?sessionId=${encodeURIComponent(sessionId)}`
-  const response = await request(`/api/workspace/${encodeURIComponent(workspaceId)}/connection${query}`, start ? { method: "POST", body: "{}" } : undefined)
+async function requestConnection(request: Request, workspaceId: string, start: boolean): Promise<ConnectionAnswer> {
+  const response = await request(`/api/workspace/${encodeURIComponent(workspaceId)}/connection`, start ? { method: "POST", body: "{}" } : undefined)
   if (response.ok) return connectionAnswerFromWire(await response.json(), workspaceId)
   const body = response.clone()
   const error = await responseError(response, start ? "Workspace start" : "Workspace connection")
@@ -90,9 +89,9 @@ async function requestConnection(request: Request, workspaceId: string, start: b
 
 export function createWorkspaceConnections(request: Request, account?: HostedAccount): WorkspaceConnections {
   return {
-    read: async (workspaceId, sessionId) => account
-      ? connectionAnswerFromWire(await account.run("workspace.connection.read", { id: workspaceId, ...(sessionId === undefined ? {} : { sessionId }) }), workspaceId)
-      : requestConnection(request, workspaceId, false, sessionId),
+    read: async (workspaceId) => account
+      ? connectionAnswerFromWire(await account.run("workspace.connection.read", { id: workspaceId }), workspaceId)
+      : requestConnection(request, workspaceId, false),
     start: async (workspaceId) => account
       ? connectionAnswerFromWire(await account.run("workspace.connection.mint", { id: workspaceId }), workspaceId)
       : requestConnection(request, workspaceId, true),

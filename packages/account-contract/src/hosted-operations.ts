@@ -179,10 +179,10 @@ export const HOSTED_OPERATIONS = {
     exposure: { renderer: true, app: false },
     body: selectBody("approved"),
   }),
-  // Renderer runtime reads need scoped relay tokens; main retains the account bearer.
+  // The renderer's runtime reads need the workspace's relay token without waking it; main keeps the account bearer.
   "workspace.connection.read": defineOperation({
-    method: "GET", path: operationPath("/api/workspace/:id/connection", { optionalQuery: ["sessionId"] }),
-    input: operationInput({ id: requiredParameter, sessionId: optionalParameter }),
+    method: "GET", path: operationPath("/api/workspace/:id/connection"),
+    input: operationInput({ id: requiredParameter }),
     output: connection, retry: "safe",
     exposure: { renderer: true, app: false },
   }),

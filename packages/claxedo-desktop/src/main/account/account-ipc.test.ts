@@ -77,8 +77,8 @@ test("renderer can request a read-only scoped connection through its named chann
   const h = harness()
   const channel = hostedOperationChannel("workspace.connection.read")
   expect(h.has(channel)).toBe(true)
-  await h.invoke(channel, { id: "ws_1", sessionId: "ses_1" })
-  expect(h.calls).toEqual([{ name: "workspace.connection.read", input: { id: "ws_1", sessionId: "ses_1" } }])
+  await h.invoke(channel, { id: "ws_1" })
+  expect(h.calls).toEqual([{ name: "workspace.connection.read", input: { id: "ws_1" } }])
 })
 
 test("renderer can reserve a cloud session through the closed account channel", async () => {

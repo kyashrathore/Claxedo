@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test"
 import { decodeHostedResult, HOSTED_OPERATIONS, resolveHostedOperation } from "./hosted-operations"
 
-test("connection reads expose only the fixed read-only route and optional session scope", () => {
-  expect(resolveHostedOperation("workspace.connection.read", { id: "ws/a", sessionId: "ses/a", method: "POST", url: "https://evil.test" })).toEqual({ method: "GET", path: "/api/workspace/ws%2Fa/connection?sessionId=ses%2Fa" })
+test("connection reads expose only the fixed read-only route", () => {
+  expect(resolveHostedOperation("workspace.connection.read", { id: "ws/a", method: "POST", url: "https://evil.test" })).toEqual({ method: "GET", path: "/api/workspace/ws%2Fa/connection" })
   expect(HOSTED_OPERATIONS["workspace.connection.read"].exposure).toEqual({ renderer: true, app: false })
   expect(() => resolveHostedOperation("workspace.connection.read", {})).toThrow()
 })

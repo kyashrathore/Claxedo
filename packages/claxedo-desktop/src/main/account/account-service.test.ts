@@ -681,9 +681,9 @@ describe("bound desktop account lifecycle", () => {
       },
     })
     await h.service.restore()
-    await expect(h.service.run("workspace.connection.read", { id: "ws_1", sessionId: "ses/a", url: "https://evil.test" })).resolves.toEqual({ status: "stopped", workspaceId: "ws_1" })
+    await expect(h.service.run("workspace.connection.read", { id: "ws_1", url: "https://evil.test" })).resolves.toEqual({ status: "stopped", workspaceId: "ws_1" })
     expect(calls).toHaveLength(1)
-    expect(calls[0]?.url).toBe("https://core.example/api/workspace/ws_1/connection?sessionId=ses%2Fa")
+    expect(calls[0]?.url).toBe("https://core.example/api/workspace/ws_1/connection")
     expect(calls[0]?.init.method).toBe("GET")
     expect(new Headers(calls[0]?.init.headers).get("authorization")).toBe("Bearer at_1")
     expect(calls[0]?.init.body).toBeUndefined()
