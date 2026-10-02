@@ -102,7 +102,7 @@ setInterval(() => {}, 1000);
         return await ownership.recordIdentity(...input)
       },
     }
-    const info = await Pty.create({ command: process.execPath, args: [launcher], cwd: tmpDir }, slowRecord)
+    const info = await withSessionCore(testSessionCore(tmpDir), () => Pty.create({ command: process.execPath, args: [launcher], cwd: tmpDir }, slowRecord))
     const client = socket()
     assert.ok(Pty.connect(info.id, client.ws))
     await waitFor(() => client.text().includes("early-output-42"))
