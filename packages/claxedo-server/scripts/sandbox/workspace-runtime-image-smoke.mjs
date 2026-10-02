@@ -8,6 +8,7 @@ import { createServer } from "node:net"
 import { createServer as createHttpServer } from "node:http"
 import path from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
+import { IMAGE_SMOKE_PLACEHOLDER, imageSmokeRuntimeSnapshot } from "./workspace-runtime-image-smoke-snapshot.ts"
 
 const directory = await mkdtemp(path.join(tmpdir(), "workspace-runtime-image-"))
 const marker = "claxedo-image-native-turn"
@@ -32,9 +33,6 @@ const provider = createHttpServer(async (request, response) => {
   response.end("data: [DONE]\n\n")
 })
 await new Promise((resolve) => provider.listen(0, "127.0.0.1", resolve))
-// The harness owns Pi's models.json and rewrites it from every config apply, so
-// the provider reaches Pi the way a control-plane push does. Groq is the Pi
-// provider whose built-in wire protocol is chat completions.
 const management = generateKeyPairSync("ed25519")
 const managementIssuer = "workspace-runtime-image-smoke"
 const managementAudience = "workspace-runtime"
@@ -100,14 +98,7 @@ try {
   await json("/api/wr/config", {
     method: "POST",
     headers: { "content-type": "application/json", "x-workspace-runtime-management-token": managementToken() },
-    body: JSON.stringify({
-      version: 4,
-      mcp: {},
-      connections: [],
-      commands: [],
-      defaultHarness: { kind: "native", harnessId: "pi" },
-      auth: { groq: { baseUrl: `http://127.0.0.1:${provider.address().port}`, apiPath: "/openai/v1", placeholder: "image-proof-placeholder", authMode: "bearer" } },
-    }),
+    body: JSON.stringify(imageSmokeRuntimeSnapshot(`http://127.0.0.1:${provider.address().port}`)),
   })
   const created = await json("/session", mutation("POST", { id, title: "Image smoke", model: { providerID: "pi", modelID: "groq/llama-3.1-8b-instant" } }))
   assert.equal(created.id, id)
@@ -142,7 +133,7 @@ try {
     assert.equal(await readFile(path.join(directory, "native-proof.txt"), "utf8"), marker)
     assert.equal(providerRequests.length, 2)
     assert.deepEqual(providerCalls.map((call) => call.path), ["/openai/v1/chat/completions", "/openai/v1/chat/completions"])
-    assert(providerCalls.every((call) => call.authorization === "Bearer image-proof-placeholder"), "Pi did not send the projected placeholder")
+    assert(providerCalls.every((call) => call.authorization === `Bearer ${IMAGE_SMOKE_PLACEHOLDER}`), "Pi did not send the projected placeholder")
     assert(providerRequests[1].messages.some((message) => message.role === "tool"), "native tool result did not reach provider")
     assert(history.maxEventOrdinal > 0, "history omitted the committed event ordinal")
   } finally {
