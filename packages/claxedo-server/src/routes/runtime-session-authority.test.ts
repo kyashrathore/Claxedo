@@ -28,6 +28,9 @@ import {
 } from "../session/deferred-turn-grant"
 import { mintTasksCapability } from "../tasks/capability"
 import { RuntimeSessionAuthorityRoutes, type RuntimeSessionAuthorityOptions } from "./runtime-session-authority"
+import { D1SessionAuthorityError } from "../authority/adapters/d1/session-input"
+import { remoteWorkspaceSessionAccessPolicy } from "../../../workspace-runtime/src/remote-session-authority"
+import { fetchUrl } from "../test-support/fetch-calls"
 
 const RUNTIME_TIMES = { createdAt: 1_000, updatedAt: 1_234 }
 
@@ -197,6 +200,38 @@ describe("runtime private-session authority oracle", () => {
     }, key.privateKey, "EdDSA")
     expect((await request(target, expired, { sessionId: "ses_private", action: "read" })).status).toBe(401)
     expect(authorizeRuntimeSession).not.toHaveBeenCalled()
+  })
+
+  test("a registration the authority refuses as a conflict reaches the runtime as that conflict, and only an untyped failure as unavailable", async () => {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    let refusal: Error = new D1SessionAuthorityError("resource_conflict", "Runtime registration title does not match the reservation")
+    const target = app({
+      authority: {
+        ...transitionStubs,
+        registerRuntimeSession: async () => { throw refusal },
+        authorizeRuntimeSession: async () => {},
+        runtimeAccessTokenActive: async () => ({ active: true }),
+      },
+      env: { CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey) },
+    })
+    const policy = remoteWorkspaceSessionAccessPolicy({
+      url: "http://control.test/api/runtime-authority/session-authorize",
+      fetch: async (input, init) => target.request(fetchUrl(input), init),
+    })
+    const register = async () => policy.registerSession!({
+      actor: { actorId: "actor_1", actorKind: "human" },
+      authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "editor" },
+      credential: `Bearer ${await mintRelayHostToken({ ...relayInput, jti: `rht_${crypto.randomUUID()}` }, key.privateKey, "EdDSA")}`,
+      sessionId: "ses_private",
+      registrationOperationId: "op_create_1",
+      sessionTitle: "Private",
+      sessionTime: { created: RUNTIME_TIMES.createdAt, updated: RUNTIME_TIMES.updatedAt },
+      operation: "session_create",
+    })
+
+    await expect(register()).resolves.toMatchObject({ allowed: false, status: 409, code: "resource_conflict" })
+    refusal = new Error("database is away")
+    await expect(register()).resolves.toMatchObject({ allowed: false, status: 503, code: "session_authority_unavailable" })
   })
 
   test("rejects inconsistent principal and actor kinds even when the relay signature is valid", async () => {

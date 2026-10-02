@@ -6,6 +6,7 @@ import { withSessionCore } from "../session-context"
 import { afterEach, beforeEach, describe, test } from "node:test"
 import assert from "node:assert/strict"
 import fs from "node:fs/promises"
+import { existsSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import type { WSContext } from "hono/ws"
@@ -81,6 +82,30 @@ else void describe("real pty spawn (no mocks)", () => {
     if (previousHistoryDir === undefined) delete process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR
     else process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR = previousHistoryDir
     await fs.rm(tmpDir, { recursive: true, force: true })
+  })
+
+  void test("output written while the launch is still being recorded reaches the terminal's reader", { timeout: 30_000 }, async () => {
+    const { Pty } = await import("./index")
+    const launcher = path.join(tmpDir, "early-writer.cjs")
+    const written = path.join(tmpDir, "written")
+    await fs.writeFile(launcher, `process.stdout.write('early-output-' + (40 + 2) + '\\n');
+require('node:fs').writeFileSync(${JSON.stringify(written)}, '');
+setInterval(() => {}, 1000);
+`)
+    // The launch's identity is recorded only once the payload has written,
+    // and after the PTY has had I/O turns to deliver that write.
+    const slowRecord: typeof ownership = {
+      ...ownership,
+      async recordIdentity(...input) {
+        await waitFor(() => existsSync(written))
+        for (let turn = 0; turn < 5; turn += 1) await new Promise((resolve) => setImmediate(resolve))
+        return await ownership.recordIdentity(...input)
+      },
+    }
+    const info = await Pty.create({ command: process.execPath, args: [launcher], cwd: tmpDir }, slowRecord)
+    const client = socket()
+    assert.ok(Pty.connect(info.id, client.ws))
+    await waitFor(() => client.text().includes("early-output-42"))
   })
 
   void test("removing a terminal terminates its separate child process group without affecting a neighbor", { timeout: 30_000 }, async () => {

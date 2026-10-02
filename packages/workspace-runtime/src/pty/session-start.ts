@@ -234,6 +234,10 @@ export async function startTerminal(
     env,
   })
   const spawnMs = performance.now() - t3
+  // node-pty drops output no listener hears, and the session's own listener
+  // is attached only after the identity, ownership and history awaits below.
+  const earlyOutput: string[] = []
+  const earlyOutputSubscription = ptyProcess.onData((data) => { earlyOutput.push(data) })
   let nativeExit: { exitCode: number } | undefined
   let handleExit: ((event: { exitCode: number }) => Promise<void>) | undefined
   const exitSubscription = ptyProcess.onExit((event) => {
@@ -398,7 +402,7 @@ export async function startTerminal(
   }
   if (restoredBuffer) session.modeTracker.feed(restoredBuffer)
   context.register(session)
-  ptyProcess.onData((data) => {
+  const output = (data: string) => {
     if (session.firstByteAt === undefined) {
       session.firstByteAt = performance.now()
       const firstByteMs = session.firstByteAt - session.createdAt
@@ -456,7 +460,10 @@ export async function startTerminal(
       return extractContentAfterClear(data, carry)
     })()
     if (filtered) session.history.append(filtered)
-  })
+  }
+  earlyOutputSubscription.dispose()
+  ptyProcess.onData(output)
+  for (const data of earlyOutput.splice(0)) output(data)
   if (initialCommand) {
     initialCommandTimer = setTimeout(() => sendInitialCommand("fallback"), 1200)
   }

@@ -68,6 +68,7 @@ await mock.module("@lydell/node-pty", () => ({
       resize() {},
       onData(handler: DataHandler) {
         fakeProcesses.get(pid)?.dataHandlers.push(handler)
+        return { dispose() { const handlers = fakeProcesses.get(pid)?.dataHandlers; if (handlers) handlers.splice(handlers.indexOf(handler), 1) } }
       },
       onExit(handler: ExitHandler) {
         fakeProcesses.get(pid)?.exitHandlers.push(handler)

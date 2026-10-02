@@ -206,7 +206,8 @@ export class AcpTransport implements HarnessTransport {
     }
     const prompt = entry.peer.agent.prompt({ sessionId: session.binding.upstreamSessionId, prompt: content })
     entry.prompt = prompt
-    void prompt.then((result) => entry.updatesDelivered().then(() => result)).then((result) => {
+    void prompt.then((result) => entry.updatesDelivered().then(() => result),
+      (error: unknown) => entry.updatesDelivered().then(() => { throw error })).then((result) => {
       for (const event of acpPromptUsage(result, session.binding.upstreamSessionId, entry.context)) queue.push(event)
       for (const event of translateStopReason(result.stopReason, session.binding.sessionId)) queue.push({ event })
       queue.end()
