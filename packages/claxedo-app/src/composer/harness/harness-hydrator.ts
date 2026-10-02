@@ -122,7 +122,7 @@ async function hydrateSessionHarness<ScopeInput extends HarnessScopeInput>(input
   if (!type) return input.setPollingHydration(run.scope)
   const model = run.params.sessionModel?.()
   const current = input.state(run.scope)
-  if (current?.harness && sameHarnessSelection(current.harness, type) && current.selectedModel === (model?.modelId ?? "") && input.cache.getSeen(run.scope) !== undefined) {
+  if (current?.harness && sameHarnessSelection(current.harness, type) && current.selectedModel === (model?.modelId ?? "") && current.selectedModelProvider === model?.providerId && current.selectedThoughtLevel === model?.variant && input.cache.getSeen(run.scope) !== undefined) {
     input.cache.setSeen(run.scope, run.key)
     return
   }
@@ -164,7 +164,7 @@ function readHarnessStatus<ScopeInput extends HarnessScopeInput>(input: Hydrator
 
 function scopeStamp(input?: HarnessScopeInput) {
   if (input?.sessionId && input.sessionId !== "new") {
-    return [`session:${input.sessionId}`, input.placementId ?? "", input.sessionHarness ? JSON.stringify(input.sessionHarness) : "", input.sessionModel?.()?.modelId ?? ""].join("\n")
+    return [`session:${input.sessionId}`, input.placementId ?? "", input.sessionHarness ? JSON.stringify(input.sessionHarness) : "", JSON.stringify(input.sessionModel?.()) ?? ""].join("\n")
   }
   return `${input?.placementId ?? ""}\nnew`
 }

@@ -21,7 +21,7 @@ function diagnosticCodes(f: HostFixture, sessionId: string) {
   return journal(f, sessionId).filter((row) => row.type === "runtime.diagnostic").map((row) => JSON.parse(row.payload_json).properties.code)
 }
 
-test("a background child bound in one prompted turn keeps receiving its frames in the parent's next turn", async () => {
+test("a child moved to the background in one prompted turn keeps receiving its frames in the parent's next turn", async () => {
   const controls = [controlledTurn("parent"), controlledTurn("parent")]
   const second: RoutedEvent[] = []
   const transport = new FakeTransport({ turn: (input) => {
@@ -37,8 +37,9 @@ test("a background child bound in one prompted turn keeps receiving its frames i
     await f.runtime.sessions.create(sessionCreate({ id: "parent" }))
     await f.runtime.turns.start({ sessionId: "parent", text: "first", origin: LOOPBACK_ORIGIN, admission: fenced(1) })
     await until(() => transport.turns.length === 1)
-    const child = await transport.turns[0].broker.observeSubagent(spawn("toolu_agent", "background"))
+    const child = await transport.turns[0].broker.observeSubagent(spawn("toolu_agent", "foreground"))
     transport.turns[0].broker.associateChild("toolu_agent", child!)
+    await transport.turns[0].broker.observeSubagent({ ...spawn("toolu_agent", "background"), observationId: "backgrounded" })
     controls[0].finish()
     ;(await f.runtime.turns.whenIdle("parent")).abandon()
     second.push(childText("toolu_agent", "still working in the background"))

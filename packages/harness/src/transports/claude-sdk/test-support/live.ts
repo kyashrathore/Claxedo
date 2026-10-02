@@ -25,9 +25,10 @@ export const reply = (text: string) => frame({ type: "assistant", parent_tool_us
 export const result = () => frame({ type: "result", subtype: "success", is_error: false, num_turns: 1, result: "ok" })
 
 type Claude = { frames: AsyncPushQueue<SDKMessage>; prompts: string[]; users: SDKUserMessage[]; controls: string[]
-  stdinClosed: Promise<void>; stdinOpen: () => boolean; replay: (index: number) => void; transcript: (entry: SessionStoreEntry) => Promise<void> }
+  stdinClosed: Promise<void>; stdinOpen: () => boolean; replay: (index: number) => void; transcript: (entry: SessionStoreEntry) => Promise<void>
+  turn: Parameters<ClaudeQueryLauncher["launch"]>[0]["turn"] }
 
-export function scriptedLaunches(options: { failFirst?: unknown } = {}) {
+export function scriptedLaunches(options: { failFirst?: unknown; failModel?: unknown } = {}) {
   const launches: Claude[] = []
   let attempts = 0
   const launcher = { launch: async (spec: Parameters<ClaudeQueryLauncher["launch"]>[0]) => {
@@ -49,9 +50,12 @@ export function scriptedLaunches(options: { failFirst?: unknown } = {}) {
     const replay = (index: number) => frames.push({ ...users[index]!, session_id: "up1", isReplay: true } as unknown as SDKMessage)
     const store = goalSessionStore(spec.broker, spec.abort.signal)
     const transcript = (entry: SessionStoreEntry) => store.append({ projectKey: "work", sessionId: "up1" }, [entry])
-    launches.push({ frames, prompts, users, controls, stdinClosed, stdinOpen: () => open, replay, transcript })
+    launches.push({ frames, prompts, users, controls, stdinClosed, stdinOpen: () => open, replay, transcript, turn: spec.turn })
     return { [Symbol.asyncIterator]: () => frames[Symbol.asyncIterator](), close() { controls.push("close"); frames.end() },
-      async interrupt() { controls.push("interrupt") }, async stopTask(task: string) { controls.push(`stop ${task}`) } } as unknown as Query
+      async interrupt() { controls.push("interrupt") }, async stopTask(task: string) { controls.push(`stop ${task}`) },
+      async setModel(model: string) { controls.push(`model ${model}`); if (options.failModel) throw options.failModel },
+      async applyFlagSettings(settings: unknown) { controls.push(`settings ${JSON.stringify(settings)}`) },
+      async setPermissionMode(mode: string) { controls.push(`mode ${mode}`) } } as unknown as Query
   } } as unknown as ClaudeQueryLauncher
   return { launches, launcher }
 }
@@ -117,8 +121,8 @@ export async function until(check: () => boolean): Promise<void> {
   expect(check()).toBe(true)
 }
 
-export async function setup() {
-  const { launches, launcher } = scriptedLaunches()
+export async function setup(options?: Parameters<typeof scriptedLaunches>[0]) {
+  const { launches, launcher } = scriptedLaunches(options)
   const sessions = sessionBroker()
   const transport = new ClaudeSdkTransport(services, { executable: "claude", configRoot: "/tmp/claude-test", userConfigRoot: "/tmp/claude-user", env: {} })
   Object.assign(transport, { launcher })

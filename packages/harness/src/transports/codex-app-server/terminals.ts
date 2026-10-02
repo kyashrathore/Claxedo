@@ -48,6 +48,10 @@ export class CodexTerminals {
     return (this.byTurn.get(turnId)?.size ?? 0) > 0
   }
 
+  async hasBackgroundTasks(deadline: Deadline): Promise<boolean> {
+    return (await this.inventory(deadline)).length > 0
+  }
+
   stop(turnId: string, deadline: Deadline): Promise<AdapterCancelOutcome> {
     const previous = this.stopping.get(turnId)
     if (previous) return previous

@@ -63,6 +63,22 @@ test("a stale child terminal cannot release a replacement generation", async () 
   } finally { f.control.finish(); await f.dispose() }
 })
 
+test("a child moved to the background keeps its route and lease after its parent finishes", async () => {
+  const f = await fixture()
+  try {
+    const child = await f.broker.observeSubagent(observation("moved"))
+    f.broker.associateChild("moved", child!)
+    const lease = f.store.readTurnAuthority(child!.sessionId)?.leaseId
+    await f.broker.observeSubagent({ ...observation("moved", "background"), observationId: "backgrounded" })
+    f.control.finish()
+    ;(await f.runtime.turns.whenIdle("parent")).abandon()
+    expect(f.store.turnEvidence(child!.sessionId, child!.assistantMessageId).finished).toBe(false)
+    expect(f.store.readTurnAuthority(child!.sessionId)?.leaseId).toBe(lease)
+    await f.broker.observeSubagent({ ...observation("moved", "background"), observationId: "done", status: "completed" })
+    expect(f.store.getSession(child!.sessionId)?.lastTurn?.status).toBe("completed")
+  } finally { f.control.finish(); await f.dispose() }
+})
+
 test("ending the parent interrupts only foreground children and preserves background work", async () => {
   const f = await fixture()
   try {

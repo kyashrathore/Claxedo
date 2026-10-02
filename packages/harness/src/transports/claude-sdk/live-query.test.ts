@@ -79,39 +79,27 @@ test("a message sent while a background task runs goes to the same Claude proces
   await transport.dispose()
 })
 
-test("a message whose launch differs stops the lingering process's background tasks, takes its last report, and starts a new process", async () => {
-  const { transport, session, launches, own } = await setup()
-  const first = collect(transport.send(session, userTurn("t1", "start the job"), turnBroker()))
-  await until(() => launches[0]?.prompts.length === 1)
-  const claude = launches[0]!
-  claude.frames.push(init())
-  claude.replay(0)
-  claude.frames.push(background("job"))
-  claude.frames.push(result())
-  await first
-
-  const second = collect(transport.send(rebound(session), userTurn("t2", "switch models", "sonnet"), turnBroker()))
-  await claude.stdinClosed
-  expect(claude.controls).toEqual(["stop job"])
-  claude.frames.push(background())
-  claude.frames.push(notification("job"))
-  claude.frames.push(init())
-  claude.frames.push(reply("the job was stopped"))
-  claude.frames.push(result())
-  claude.frames.end()
-  await until(() => launches.length === 2 && launches[1]!.prompts.length === 1)
-  expect(launches[1]!.prompts).toEqual(["switch models"])
-  launches[1]!.frames.push(init())
-  launches[1]!.replay(0)
-  launches[1]!.frames.push(reply("on sonnet"))
-  launches[1]!.frames.push(result())
-  await launches[1]!.stdinClosed
-  const events = texts(await second).join()
-  expect(events).toContain("the job was stopped")
-  expect(events).toContain("on sonnet")
-  expect(own).toHaveLength(0)
-  launches[1]!.frames.end()
-  await transport.dispose()
+test("a model change uses the running Claude process without stopping background tasks", async () => {
+  const { transport, session, launches } = await setup()
+  try {
+    const first = collect(transport.send(session, userTurn("t1", "start the job"), turnBroker()))
+    await until(() => launches[0]?.prompts.length === 1)
+    const claude = launches[0]!
+    claude.frames.push(init())
+    claude.replay(0)
+    claude.frames.push(background("job"))
+    claude.frames.push(result())
+    await first
+    const second = collect(transport.send(rebound(session), userTurn("t2", "switch models", "sonnet"), turnBroker()))
+    await until(() => claude.prompts.length === 2)
+    expect(claude.controls).toEqual(["model sonnet"])
+    expect(launches).toHaveLength(1)
+    claude.replay(1)
+    claude.frames.push(reply("on sonnet"))
+    claude.frames.push(result())
+    expect(texts(await second).join()).toContain("on sonnet")
+    expect(claude.stdinOpen()).toBe(true)
+  } finally { await transport.dispose() }
 })
 
 test("bookkeeping frames between turns wait for Claude's own turn instead of opening one", async () => {

@@ -119,7 +119,7 @@ for (const deferred of [false, true]) test(`ACP close during ${deferred ? "defer
       await reached(() => peer.messages.find((row) => row.method === "session/prompt"))
     }
     peer.retirementGate = new Promise<void>((resolve) => { release = resolve })
-    const configuring = f.transport.configure(session, { credentials: { ...f.input.credentials, leaseGeneration: "g2" } })
+    const configuring = f.transport.configure(session, { projection: { ...f.input.projection, generation: "plugins:g2" } })
       .then((result) => ({ result }), (error: unknown) => ({ error }))
     if (deferred) {
       expect(await configuring).toEqual({ result: { state: "deferred", until: "after-active-turns" } })
@@ -167,7 +167,7 @@ for (const operation of ["initialize", "session/resume"] as const) test(`ACP clo
   })
   try {
     const session = await f.start()
-    const configuring = f.transport.configure(session, { credentials: { ...f.input.credentials, leaseGeneration: "g2" } })
+    const configuring = f.transport.configure(session, { projection: { ...f.input.projection, generation: "plugins:g2" } })
       .then((result) => ({ result }), (error: unknown) => ({ error }))
     await reached(() => f.peers[1]?.messages.find((row) => row.method === operation))
     expect(await bounded(f.transport.close(session))).toBeUndefined()
@@ -210,7 +210,7 @@ for (const operation of ["close", "restart"] as const) test(`ACP fences an unver
       return { stopped: false, error: { code: "deadline", message: "writer remains alive" } }
     }
     const failed = operation === "close" ? f.transport.close(session)
-      : f.transport.configure(session, { credentials: { ...f.input.credentials, leaseGeneration: "g2" } })
+      : f.transport.configure(session, { projection: { ...f.input.projection, generation: "plugins:g2" } })
     await expect(failed).rejects.toMatchObject({ code: "ownership", message: "writer remains alive" })
     await expect(f.start()).rejects.toMatchObject({ code: "ownership" })
     await expect(f.transport.attach({ ...f.input, binding: session.binding, upstreamHasTurns: false }, f.sessionBroker)).rejects.toMatchObject({ code: "ownership" })
@@ -235,7 +235,7 @@ test("ACP dispose during restart retirement suppresses the replacement and settl
     const session = await f.start()
     const peer = f.peers[0]!
     peer.retirementGate = new Promise<void>((resolve) => { release = resolve })
-    const configuring = f.transport.configure(session, { credentials: { ...f.input.credentials, leaseGeneration: "g2" } })
+    const configuring = f.transport.configure(session, { projection: { ...f.input.projection, generation: "plugins:g2" } })
       .then((result) => ({ result }), (error: unknown) => ({ error }))
     await reached(() => peer.retirements === 1 ? true : undefined)
     const disposing = f.transport.dispose()
@@ -262,7 +262,7 @@ for (const deferred of [false, true]) for (const failure of ["session/resume", "
     })
     try {
       const session = await f.start()
-      const update = { credentials: { ...f.input.credentials, leaseGeneration: "g2" } }
+      const update = { projection: { ...f.input.projection, generation: "plugins:g2" } }
       if (deferred) {
         const running = collect(f.transport.send(session, f.turn, f.turnBroker()))
         const prompt = await reached(() => f.peers[0]!.messages.find((row) => row.method === "session/prompt"))

@@ -8,7 +8,6 @@ import {
   WorkspaceHarnessUnavailableError,
   sessionCredentials,
   harnessUnavailableResponse,
-  pluginProjectionFor,
   PreviewModelInvalidError,
   type AgentRuntime,
   type LaunchComposer,
@@ -53,6 +52,7 @@ import {
 } from "../routes/config"
 import { openRuntimeStore } from "../store-file"
 import { workspaceDurableState } from "./durable-state"
+import { createRuntimeProjection } from "./projection"
 import { withWorkspaceTarget } from "../target"
 import { createWorkspaceCheckpoint } from "./checkpoint"
 import { createSessionConfiguration } from "./configure"
@@ -178,9 +178,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     return { secrets: {}, secretLeaseGeneration: "none" }
   }
 
+  const projectionFor = createRuntimeProjection()
   const launch: LaunchComposer = {
     workspaceId: options.target.workspaceId,
-    projection: (harness) => pluginProjectionFor(harness, {
+    projection: (harness) => projectionFor(harness, {
       generation: `runtime-config:${configApplyRevision}`, mcp: currentMcp, harnessLaunch: currentHarnessLaunch,
     }),
     providerDefinitions: () => currentProviderDefinitions,

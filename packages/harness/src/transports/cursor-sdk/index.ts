@@ -7,6 +7,7 @@ import type {
   TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
 import { attachedSessionEntry, configOptionsPreview, mergeStartInput, selectedTurnAccount } from "../../contract"
+import { launchConfigChanged } from "../../contract/node"
 import { withTurnAccount } from "../../translate/turn-account"
 import { TransportError } from "../../contract/errors"
 import { composeCursorHome, cursorHomeKey } from "../../profiles/cursor"
@@ -194,6 +195,7 @@ export class CursorSdkTransport implements HarnessTransport {
       const entry = this.entry(session)
       return this.lifecycle.run(entry, async () => {
         const state = cursorPermissionModeState({ permissionMode: modeId })
+        if (cursorPermissionModeState(entry.input.config).currentModeId === state.currentModeId) return state
         entry.input = { ...entry.input, config: { ...entry.input.config, permissionMode: modeId } }
         if (entry.busy) entry.reopen = true
         else await this.closeAgent(entry)
@@ -228,8 +230,12 @@ export class CursorSdkTransport implements HarnessTransport {
   }
 
   private async configureEntry(entry: Entry, update: TransportConfigUpdate): Promise<ConfigApplied> {
-    if (entry.busy) return { state: "refused", reason: "Cursor turn active" }
     const input = mergeStartInput(entry.input, update)
+    if (!launchConfigChanged(entry.input, input, HARNESS_TABLE.cursor.providerIds)) {
+      entry.input = input
+      return { state: "applied" }
+    }
+    if (entry.busy) return { state: "refused", reason: "Cursor turn active" }
     const credential = cursorCredential(input, this.env)
     await this.closeAgent(entry)
     const composed = await this.compose(input, credential, path.basename(entry.host.home))

@@ -97,7 +97,7 @@ test("Pi failed configuration restart removes the retired session", async () => 
     const entry = (context.transport as unknown as { entries: Map<string, { profile: { sessionDir: string } }> }).entries.get("s1")!
     await fs.rm(entry.profile.sessionDir, { recursive: true, force: true })
     await expect(context.transport.configure(context.session,
-      { credentials: { ...context.backend.credentials, leaseGeneration: "changed" } })).rejects.toThrow()
+      { projection: { ...context.start.projection, generation: "changed-plugins" } })).rejects.toThrow()
     expect(context.transport.health?.connection(context.backend.directory, "s1").state).toBe("disconnected")
     const send = async () => {
       for await (const _event of context.transport.send(context.session, context.turn("after failed restart"), context.turnBroker())) {}
@@ -368,7 +368,7 @@ test("a failed Pi retirement during configure keeps the session and its process 
   })
   try {
     for await (const _event of context.transport.send(context.session, context.turn("Reply with exactly this one token: PIRETIRE"), context.turnBroker())) {}
-    await expect(context.transport.configure(context.session, { credentials: { ...context.backend.credentials, leaseGeneration: "changed" } }))
+    await expect(context.transport.configure(context.session, { projection: { ...context.start.projection, generation: "changed-plugins" } }))
       .rejects.toThrow("retirement refused once")
     expect(processAlive(pid!)).toBe(true)
     expect(context.transport.health?.connection(context.backend.directory, "s1").state).toBe("ready")

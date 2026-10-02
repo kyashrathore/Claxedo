@@ -49,6 +49,7 @@ const methods: Record<string, Shape> = {
     summary: optional(oneOf("auto", "concise", "detailed", "none")), personality, outputSchema: json } },
   "turn/interrupt": { required: ["threadId", "turnId"], fields: { threadId: text, turnId: text } },
   "thread/goal/get": { required: ["threadId"], fields: { threadId: text } },
+  "thread/backgroundTerminals/list": { required: ["threadId"], fields: { threadId: text, cursor: optional(text) } },
   "turn/steer": { required: ["threadId", "expectedTurnId", "input"], fields: { threadId: text, expectedTurnId: text,
     clientUserMessageId: optional(text), input: list(userInput) } },
 }
@@ -60,7 +61,7 @@ export class CodexPeer {
   private readonly threads = new Map<string, string | undefined>()
   private readonly pending = new Set<number>()
 
-  constructor(private readonly models: unknown[], private readonly script: { modelListFailures?: number; turnStartError?: string; goal?: unknown; userAgent?: string } = {}) {}
+  constructor(private readonly models: unknown[], private readonly script: { modelListFailures?: number; turnStartError?: string; goal?: unknown; userAgent?: string; backgroundTerminals?: string[] } = {}) {}
 
   request(id: number) { this.pending.add(id) }
 
@@ -94,6 +95,7 @@ export class CodexPeer {
     }
     if (frame.method === "config/read") return { config: { model_provider: null }, origins: {}, layers: null }
     if (frame.method === "thread/goal/get") return { goal: this.script.goal ?? null }
+    if (frame.method === "thread/backgroundTerminals/list") return { data: (this.script.backgroundTerminals ?? []).map((processId) => ({ processId })), nextCursor: null }
     if (frame.method === "turn/start") return this.start(params)
     if (frame.method === "turn/steer") {
       assert.equal(this.threads.get(String(params.threadId)), params.expectedTurnId, "turn/steer must name the thread's active turn")

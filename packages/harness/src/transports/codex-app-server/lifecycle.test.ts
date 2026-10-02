@@ -130,6 +130,23 @@ test("an owner's credential change that leaves the Codex account as it was keeps
   } finally { await peer.close() }
 })
 
+test("a credential replacement preserves Codex background terminals and resumes only after they finish", async () => {
+  const backgroundTerminals = ["running-job"]
+  const peer = await scriptedTransport({ backgroundTerminals, completeTurns: true })
+  try {
+    const session = await peer.transport.start({ ...peer.startInput, credentials: brokered("placeholder-one") }, peer.liveBroker())
+    await expect(peer.transport.configure(session, { credentials: brokered("placeholder-two") })).rejects.toThrow("background tasks are running")
+    await expect(drain(peer.transport.send(session, turnInput, turnBroker()))).rejects.toThrow("background tasks are running")
+    expect(peer.spawned()).toBe(1)
+    expect(peer.retired()).toBe(0)
+    expect(peer.frames.some((frame) => frame.method === "thread/backgroundTerminals/terminate")).toBe(false)
+    backgroundTerminals.splice(0)
+    await drain(peer.transport.send(session, turnInput, turnBroker()))
+    expect(peer.spawned()).toBe(2)
+    expect(peer.frames.filter((frame) => frame.method === "thread/resume")).toHaveLength(1)
+  } finally { await peer.close() }
+})
+
 test("a request Codex resolves itself closes its open prompt and gets no late answer", async () => {
   const peer = await scriptedTransport()
   let asked!: (signal: AbortSignal | undefined) => void

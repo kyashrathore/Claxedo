@@ -85,7 +85,7 @@ export function harnessStatusPatch(input: {
     connectionState: statusConnection(want, input.data, input.current),
     configError: input.data.error ?? undefined,
     workspaceId: input.data.workspaceId ?? input.current?.workspaceId,
-    selectedThoughtLevel: input.data.thoughtLevel ?? kept?.selectedThoughtLevel,
+    selectedThoughtLevel: Object.hasOwn(input.data, "thoughtLevel") ? input.data.thoughtLevel : kept?.selectedThoughtLevel,
   }
 }
 
@@ -175,12 +175,12 @@ function emptyOptionsPatch(type: HarnessType) {
     : {
         selectedModel: type.kind === "connection" ? "default" : "",
         selectedModelProvider: undefined,
+        selectedThoughtLevel: undefined,
       }
   return {
     ...model,
     dynamicModels: type.kind === "connection" ? [] : null,
     thoughtLevels: null,
-    selectedThoughtLevel: undefined,
     serviceTiers: null,
     selectedServiceTier: undefined,
     optionsSource: "empty" as const,

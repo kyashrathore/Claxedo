@@ -7,6 +7,7 @@ import type {
   TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
 import { attachedSessionEntry, HarnessVersionGate, configOptionsPreview, mergeStartInput, selectedTurnAccount } from "../../contract"
+import { launchConfigChanged } from "../../contract/node"
 import { withTurnAccount } from "../../translate/turn-account"
 import { CLAUDE_CODE_RANGE } from "./cli-version"
 import { claudeBinding } from "./credentials"
@@ -133,8 +134,9 @@ export class ClaudeSdkTransport implements HarnessTransport {
   async configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied> {
     const entry = this.entry(session)
     if (update.credentials) claudeBinding(update.credentials)
-    entry.input = mergeStartInput(entry.input, update)
-    entry.revision += 1
+    const next = mergeStartInput(entry.input, update)
+    if (launchConfigChanged(entry.input, next, HARNESS_TABLE.claude.providerIds)) entry.revision += 1
+    entry.input = next
     return { state: "applied" }
   }
 

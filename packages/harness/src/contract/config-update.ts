@@ -9,11 +9,6 @@ export function mergeStartInput(start: StartInput, update: TransportConfigUpdate
     ...(update.projection ? { projection: update.projection } : {}) }
 }
 
-export function configGenerationChanged(start: StartInput, next: StartInput): boolean {
-  return start.credentials.leaseGeneration !== next.credentials.leaseGeneration ||
-    start.projection.generation !== next.projection.generation
-}
-
 export function applySessionConfigUpdate(config: SessionConfig, update: SessionConfigUpdate): SessionConfig {
   return { ...config,
     ...(update.harness !== undefined ? { harness: update.harness } : {}),

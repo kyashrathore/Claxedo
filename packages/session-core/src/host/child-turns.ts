@@ -173,6 +173,7 @@ export function createChildTurns(input: {
           const parent = parents.get(parentSessionId) ??
             (isTerminalSubagentStatus(observation.status) ? undefined : input.idleParent(parentSessionId))
           const known = children.get(childSessionId)
+          if (known && !known.settled && observation.mode !== undefined) known.mode = observation.mode
           if (parent && (!known || known.settled && ref.assistantMessageId !== known.target.assistantMessageId)) seed(parentSessionId, ref, observation, parent)
           return ref
         },

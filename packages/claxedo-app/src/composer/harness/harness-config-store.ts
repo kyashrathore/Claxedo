@@ -7,7 +7,7 @@ import { createHarnessStore } from "./harness-store"
 import { harnessOptionsReads, harnessSelectionReads } from "./harness-store-reads"
 import { rememberDraftModelInWorkspace, resolveCurrentDraftDefault, wireHydrator, wireModelWriter, wireOptionsLoader, wireSwitcher, type FetchConfigOptions, type HarnessWiring } from "./harness-wiring"
 import { createScopeCaches } from "./scope-caches"
-import { applyPushedHarnessHealth, commitHeldHarness, probeHarnessHealth } from "./session-harness"
+import { applyPushedHarnessHealth, commitSessionSelection, probeHarnessHealth } from "./session-harness"
 
 export function createHarnessConfigStore(server: Server, storage: DraftDefaultStorage) {
   const store = createHarnessStore(storage)
@@ -27,7 +27,7 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
   return {
     hydrate: hydrator.hydrate,
     reprobe: hydrator.reprobe,
-    commitHeldHarness: commitHeldHarness.bind(null, wiring),
+    commitSessionSelection: commitSessionSelection.bind(null, wiring),
     probeHealth: probeHarnessHealth.bind(null, wiring),
     markUnavailable: (scope: string) => store.setReadiness(scope, "error"),
     promote: store.promote,

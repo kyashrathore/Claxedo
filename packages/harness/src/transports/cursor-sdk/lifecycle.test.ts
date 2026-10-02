@@ -30,7 +30,9 @@ function fixture() {
   }
   const transport = new CursorSdkTransport({} as HarnessServices, { homeRoot: "/tmp", worker: { file: process.execPath, args: ["cursor-worker.js"] }, env: {}, placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: false })
   const session = { binding: { sessionId: "s1" } } as HarnessSession
-  const entry = { session, input: { config: {}, credentials: { leaseGeneration: "g1" }, owner: { kind: "machine-owner" } } as StartInput,
+  const entry = { session, input: { sessionId: "s1", workspaceId: "w1", directory: "/tmp", locality: "local", config: { harness: { id: "cursor", access: "native" } },
+    credentials: { leaseGeneration: "g1", accountOwner: "fixture-owner", machineLoginAllowed: true, providers: {}, secrets: {} },
+    projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] }, owner: { kind: "machine-owner" } } as StartInput,
     credential: { key: "key", apiKey: "test", bound: false, ownerLogin: false },
     host: { binding: "key", home: "/tmp" }, process: previous, busy: false, reopen: false }
   const internals = transport as unknown as { entries: Map<string, typeof entry>; registry: typeof registry;
@@ -40,6 +42,13 @@ function fixture() {
   internals.compose = async () => ({ home: "/tmp", local: {} })
   return { transport, session, entered, resume, acquired, released, calls, users: () => users }
 }
+
+test("an empty Cursor configuration does not close or replace the agent", async () => {
+  const f = fixture()
+  expect(await f.transport.configure(f.session, {})).toEqual({ state: "applied" })
+  expect(f.calls).toEqual([])
+  expect(f.released.size).toBe(0)
+})
 
 test("close during a pending refresh releases every acquired host", async () => {
   const f = fixture()

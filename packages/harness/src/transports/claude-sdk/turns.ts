@@ -32,7 +32,7 @@ export type ClaudeEntry = {
 
 export type ClaudeChoice = { model?: PromptModel; effort?: string | null; system?: string; agent?: string }
 
-type Launch = { key: string; model: string; effort?: EffortLevel; system?: string; agent?: string }
+type Launch = { key: string; model: string; effort?: EffortLevel; system?: string; agent?: string; permissionMode?: string }
 
 
 function claudeEffort(value: string | null | undefined): EffortLevel | undefined {
@@ -102,6 +102,7 @@ export class ClaudeTurns {
     } finally {
       broker.signal.removeEventListener("abort", onAbort)
       entry.active = undefined
+      if (entry.turn?.turnId === turn.turnId) entry.turn = undefined
       if (active.live) this.endTurn(entry, active.live, turn.turnId, settled)
       finish()
     }
@@ -131,7 +132,7 @@ export class ClaudeTurns {
       const prior = entry.live
       if (prior && !prior.reusable) await this.retire(entry, prior)
       const opening: SDKUserMessage = { type: "user", session_id: "", message: { role: "user", content: text }, parent_tool_use_id: null }
-      const opened = await this.open(entry, await this.launchFor(entry, configuredChoice(entry)), opening, undefined, () => true)
+      const opened = await this.open(entry, await this.launchFor(entry, configuredChoice(entry)), opening, undefined, () => true, false)
       active.live = opened.live
       const limit = setTimeout(() => opened.live.terminate(), limitMs)
       try { return await commandResult(entry, opened.claim, active.abort.signal, this.versions) } finally { clearTimeout(limit) }
@@ -143,7 +144,8 @@ export class ClaudeTurns {
   }
 
   private async *drain(entry: ClaudeEntry, prior: ClaudeLiveQuery, active: ClaudeActive, scope: ClaudeScope, turnId: string): AsyncGenerator<RoutedEvent> {
-    await prior.stopBackground()
+    if (prior.hasBackgroundTasks) throw new TransportError("claude", "configuration", "Claxedo cannot replace the Claude process while background tasks are running. Wait for them to finish or explicitly stop them before changing launch settings.")
+    prior.close()
     const claim = prior.claim("exit")
     if (claim) {
       active.live = prior
@@ -166,19 +168,20 @@ export class ClaudeTurns {
   private async launchFor(entry: ClaudeEntry, choice: ClaudeChoice): Promise<Launch> {
     const model = choice.model?.modelID ?? "default"
     const effort = claudeEffort(requiredClaudeEffort(choice.effort ? await this.models.load(entry.input, entry.input.sessionId) : [], model, choice.effort))
-    const key = JSON.stringify([entry.revision, entry.broker.config(), model, effort ?? null, choice.system ?? null, choice.agent ?? null])
-    return { key, model, ...(effort ? { effort } : {}), ...(choice.system ? { system: choice.system } : {}), ...(choice.agent ? { agent: choice.agent } : {}) }
+    const config = entry.broker.config()
+    const key = JSON.stringify([entry.revision, config.permissionCeiling, choice.system ?? null, choice.agent ?? null])
+    return { key, model, permissionMode: config.permissionMode, ...(effort ? { effort } : {}), ...(choice.system ? { system: choice.system } : {}), ...(choice.agent ? { agent: choice.agent } : {}) }
   }
 
   private async open(entry: ClaudeEntry, launch: Launch, opening: SDKUserMessage, assistantMessageId?: string,
-    reuse = (live: ClaudeLiveQuery) => live.key === launch.key): Promise<{ live: ClaudeLiveQuery; claim: ClaudeClaim }> {
+    reuse = (live: ClaudeLiveQuery) => live.key === launch.key, updateSettings = true): Promise<{ live: ClaudeLiveQuery; claim: ClaudeClaim }> {
     const current = entry.live
     if (current?.reusable && reuse(current)) {
-      current.input.write(opening)
-      return { live: current, claim: current.claim("prompt", assistantMessageId)! }
+      const claim = await current.prompt(opening, assistantMessageId, updateSettings ? launch : undefined)
+      return { live: current, claim }
     }
     const live: ClaudeLiveQuery = new ClaudeLiveQuery(launch.key, { unclaimed: (current) => this.admitOwnTurn(entry, live, current),
-      stage: claudeOutsideTurnDelivery(entry, () => live), background: claudeBackgroundWork(entry) })
+      stage: claudeOutsideTurnDelivery(entry, () => live), background: claudeBackgroundWork(entry) }, { ...launch })
     entry.live = live
     live.input.write(opening)
     const claim = live.claim("prompt", assistantMessageId)!

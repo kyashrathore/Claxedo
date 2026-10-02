@@ -36,7 +36,7 @@ export function sessionHarnessState(type: HarnessType, model: ModelChoice | unde
     type,
     activeType: type,
     ...(model ? { model: model.modelId, modelProviderId: model.providerId } : {}),
-    ...(model?.variant ? { thoughtLevel: model.variant } : {}),
+    thoughtLevel: model?.variant,
     status: "ready",
     ready: true,
   }

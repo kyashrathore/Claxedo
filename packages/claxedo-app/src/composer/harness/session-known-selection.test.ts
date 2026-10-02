@@ -21,14 +21,14 @@ function message(id: string, info: Partial<TranscriptMessage>): TranscriptMessag
 
 const piTurn = message("m1", { providerID: "pi", modelID: "anthropic/claude-opus-4-8", variant: "high" })
 
-function sessionHydration() {
+function sessionHydration(hasConfigOptions = true) {
   const store = createHarnessStore({ getItem: () => null, setItem: () => undefined })
   const options: string[] = []
   const status = createHarnessStatusActions<HarnessScopeInput>({
     applyPatch: store.applyPatch,
     state: store.state,
     fetchConfigOptions: (scope) => void options.push(scope),
-    hasConfigOptions: async () => true,
+    hasConfigOptions: async () => hasConfigOptions,
   })
   const hydrator = createHarnessHydrator<HarnessScopeInput>({
     seed: store.seed,
@@ -78,6 +78,27 @@ test("session hydration: a row that moves to another model is followed, and one 
   model = { providerId: "pi", modelId: "openai/gpt-5-mini" }
   await hydrator.hydrate("session:s1", params())
   expect(options, "this app's own write coming back").toHaveLength(2)
+})
+
+test("catalog session hydration keeps the persisted effort without harness config options", async () => {
+  const { store, hydrator } = sessionHydration(false)
+  await hydrator.hydrate("session:s1", { placementId, sessionId: "s1", sessionRef, sessionHarness: opencode,
+    sessionModel: () => ({ providerId: "anthropic", modelId: "claude-sonnet-4-5", variant: "max" }) })
+  expect(store.selectedThoughtLevel("session:s1")).toBe("max")
+})
+
+test("session hydration follows an explicitly changed or cleared effort on the same model", async () => {
+  const { store, hydrator } = sessionHydration()
+  let variant: string | undefined = "high"
+  const params = () => ({ placementId, sessionId: "s1", sessionRef, sessionHarness: pi,
+    sessionModel: () => ({ providerId: "pi", modelId: "anthropic/claude-opus-4-8", variant }) })
+  await hydrator.hydrate("session:s1", params())
+  variant = "low"
+  await hydrator.hydrate("session:s1", params())
+  expect(store.selectedThoughtLevel("session:s1")).toBe("low")
+  variant = undefined
+  await hydrator.hydrate("session:s1", params())
+  expect(store.selectedThoughtLevel("session:s1")).toBeUndefined()
 })
 
 test("session hydration: a row that names no harness keeps the scope connecting", async () => {

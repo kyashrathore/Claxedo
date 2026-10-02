@@ -43,7 +43,7 @@ function optionsBase(input: OptionsResponseInput) {
     optionsLoading: false,
     thoughtLevels: thought?.choices ?? [],
     serviceTiers: input.payload.serviceTiers,
-    selectedThoughtLevel: kept ? input.selectedThoughtLevel : thought?.current,
+    selectedThoughtLevel: input.sessionModel || input.preserveSelectedModel || kept ? input.selectedThoughtLevel : thought?.current,
   } satisfies HarnessOptionsStatePatch
 }
 

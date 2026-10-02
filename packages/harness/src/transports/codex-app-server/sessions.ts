@@ -1,17 +1,14 @@
 import { errorMessage } from "@claxedo/helpers"
+import { HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
 import type { ConfigApplied, HarnessServices, HarnessSession, ProcessLosses, SessionBroker, StartInput, TransportConfigUpdate } from "../../contract"
 import { attachedSessionEntry, HarnessVersionGate, mergeStartInput } from "../../contract"
-import { codexCredential } from "../../profiles/codex"
+import { launchConfigChanged } from "../../contract/node"
 import type { Entry } from "./entry"
 import { CodexTransportError } from "./errors"
 import type { CodexLaunches } from "./launch"
 import { codexRetirementDeadline, type RpcMessage } from "./rpc"
 import { openCodexSession, type CodexSessionHost } from "./session"
 import { CODEX_RANGE } from "./version"
-
-function codexLaunch(start: StartInput): string {
-  return JSON.stringify([start.credentials.accountOwner, start.credentials.machineLoginAllowed, codexCredential(start.credentials) ?? null, start.projection])
-}
 
 export class CodexSessions implements CodexSessionHost {
   readonly entries = new Map<string, Entry>()
@@ -42,6 +39,10 @@ export class CodexSessions implements CodexSessionHost {
 
   async live(session: HarnessSession): Promise<Entry> {
     const entry = await this.settled(session)
+    if (entry.state === "ready" && entry.pendingUpdate) {
+      await this.apply(entry)
+      return this.entry(session)
+    }
     return entry.state === "lost" ? this.reopen(entry) : entry
   }
 
@@ -61,7 +62,7 @@ export class CodexSessions implements CodexSessionHost {
 
   private async apply(entry: Entry): Promise<void> {
     const next = mergeStartInput(entry.start, entry.pendingUpdate ?? {})
-    if (entry.state !== "lost" && codexLaunch(next) !== codexLaunch(entry.start)) {
+    if (entry.state !== "lost" && launchConfigChanged(entry.start, next, HARNESS_TABLE.codex.providerIds)) {
       await this.reopen(entry)
       return
     }
@@ -80,6 +81,9 @@ export class CodexSessions implements CodexSessionHost {
 
   private async replace(entry: Entry): Promise<Entry> {
     if (entry.state !== "lost") {
+      if (entry.children.hasLive || await entry.terminals.hasBackgroundTasks(codexRetirementDeadline(this.services))) {
+        throw new CodexTransportError("configuration", "Claxedo cannot replace the Codex process while background tasks are running. Wait for them to finish or explicitly stop them before changing launch settings.")
+      }
       entry.state = "retiring"
       await entry.rpc.retire(codexRetirementDeadline(this.services))
     }

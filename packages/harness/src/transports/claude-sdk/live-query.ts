@@ -1,7 +1,8 @@
-import type { Query, SDKActiveGoalMessage, SDKMessage } from "@anthropic-ai/claude-agent-sdk"
+import type { Query, SDKActiveGoalMessage, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import { AsyncPushQueue } from "@claxedo/helpers"
 import { NO_BACKGROUND_WORK, sameBackgroundWork, type BackgroundWork } from "@claxedo/agent-runtime-contract"
 import type { RoutedEvent } from "../../contract"
+import { TransportError } from "../../contract"
 import { countBackgroundTasks, type ClaudeBackgroundTask } from "./between-turns"
 import { isClaudeOutsideTurnNotice } from "./translate/child-messages"
 import { claudeChildFrameKey } from "./events"
@@ -10,6 +11,7 @@ import { ClaudeHeldFrames } from "./held-frames"
 import { ClaudeQueryInput } from "./query-input"
 import type { ClaudeMirroredUsage } from "./mirrored-usage"
 import type { ClaudeProcess } from "./process"
+import { applyClaudeLiveSettings, type ClaudeLiveSettings } from "./live-settings"
 
 export type ClaudeFrame = SDKMessage | SDKActiveGoalMessage
 
@@ -59,12 +61,28 @@ export class ClaudeLiveQuery {
   readonly ended = new Promise<void>((resolve) => { this.resolveEnded = resolve })
 
   private delivered = Promise.resolve()
+  private preparingPrompt = false
 
-  constructor(readonly key: string, private readonly between: ClaudeBetweenTurns) {}
+  constructor(readonly key: string, private readonly between: ClaudeBetweenTurns, private readonly settings?: ClaudeLiveSettings) {}
 
   get childrenDelivered(): Promise<void> { return this.delivered }
 
   get reusable(): boolean { return this.process.kind === "open" && this.frames.kind !== "claimed" }
+
+  get hasBackgroundTasks(): boolean { return this.background.size > 0 }
+
+  async prompt(opening: SDKUserMessage, assistantMessageId?: string, settings?: ClaudeLiveSettings): Promise<ClaudeClaim> {
+    this.preparingPrompt = true
+    try {
+      if (settings && this.process.kind === "open" && this.settings) await applyClaudeLiveSettings(this.process.stream, this.settings, settings)
+      if (!this.reusable) throw new TransportError("claude", "process", "Claude process ended while preparing the next prompt")
+      this.input.write(opening)
+      return this.claim("prompt", assistantMessageId)!
+    } finally {
+      this.preparingPrompt = false
+      if (this.frames.kind !== "claimed" && this.background.size === 0) this.close()
+    }
+  }
 
   get failure(): unknown { return this.process.kind === "ended" ? this.process.failure : undefined }
 
@@ -101,14 +119,6 @@ export class ClaudeLiveQuery {
   close(): void {
     this.input.close()
     if (this.process.kind === "open") this.process = { kind: "closing", stream: this.process.stream }
-  }
-
-  async stopBackground(): Promise<void> {
-    if (this.process.kind === "open") {
-      const { stream } = this.process
-      for (const task of [...this.background]) await stream.stopTask(task)
-    }
-    this.close()
   }
 
   spawnCall(taskId: string): string | undefined {
@@ -172,7 +182,7 @@ export class ClaudeLiveQuery {
   private track(frame: ClaudeFrame): void {
     if (frame.type !== "system" || frame.subtype !== "background_tasks_changed") return
     this.replaceBackground(frame.tasks)
-    if (this.background.size === 0 && this.frames.kind !== "claimed") this.close()
+    if (this.background.size === 0 && this.frames.kind !== "claimed" && !this.preparingPrompt) this.close()
   }
 
   private replaceBackground(tasks: readonly ClaudeBackgroundTask[]): void {

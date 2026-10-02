@@ -54,6 +54,8 @@ export class CodexChildren {
 
   constructor(private readonly backgroundWork: (work: BackgroundWork) => void) {}
 
+  get hasLive(): boolean { return this.agents > 0 }
+
   get(threadId: string | undefined): CodexChild | undefined { return threadId ? this.byThread.get(threadId) : undefined }
 
   has(threadId: string | undefined): boolean { return this.get(threadId) !== undefined }

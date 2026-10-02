@@ -36,15 +36,16 @@ export function applyPushedHarnessHealth(wiring: HarnessWiring, scope: string, o
   if (harness) applyHarnessHealth(wiring, scope, harness, observed)
 }
 
-export async function commitHeldHarness({ api, store }: HarnessWiring, scope: string, input: HarnessScopeInput) {
+export async function commitSessionSelection({ api, store }: HarnessWiring, scope: string, input: HarnessScopeInput) {
   const held = store.heldHarness(scope)
   const ref = input.sessionRef
-  if (!held || !ref) return
+  if (!ref) return
   const model = store.harnessModelKeyForSubmit(scope)
+  if (!held && (!model || model.variant === input.sessionModel?.()?.variant)) return
   await api.updateSessionConfig(ref, {
-    harness: harnessSelectionId(held),
-    ...(model ? { model: { providerId: model.providerId, modelId: model.modelId } } : {}),
-    ...(model?.variant ? { variant: model.variant } : {}),
+    ...(held ? { harness: harnessSelectionId(held) } : {}),
+    ...(held && model ? { model: { providerId: model.providerId, modelId: model.modelId } } : {}),
+    variant: model?.variant ?? null,
   })
-  store.releaseHeldHarness(scope)
+  if (held) store.releaseHeldHarness(scope)
 }

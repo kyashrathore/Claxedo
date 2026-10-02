@@ -8,7 +8,7 @@ import { harnessIdentity } from "./wire/harness-selection"
 export type SessionConfigPatch = {
   readonly harness?: string
   readonly model?: ModelChoice
-  readonly variant?: string
+  readonly variant?: string | null
 }
 
 export async function writeSessionConfig(transport: Transport, workspaces: Workspaces, ref: SessionLocation, patch: SessionConfigPatch): Promise<void> {

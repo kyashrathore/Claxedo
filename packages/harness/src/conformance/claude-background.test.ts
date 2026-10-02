@@ -19,7 +19,7 @@ function alive(pid: number): boolean {
   catch { return false }
 }
 
-test("a Claude background task outlives its turn, and Claude reports it in a turn of its own on the same process", async () => {
+test.each([false, true])("a Claude background task survives follow-ups and model/effort changes (%s) and reports on the same process", async (followups) => {
   await ensurePinnedClaude()
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "claude-background-"))
   const directory = path.join(root, "work")
@@ -44,7 +44,7 @@ test("a Claude background task outlives its turn, and Claude reports it in a tur
   const broker = createSessionBroker(owner, { sessionId: "s1", directory, workspaceId: "w1", origin })
   const transport = new ClaudeSdkTransport({ ...services, spawn: async (command, options) => {
     const owned = await services.spawn(command, options)
-    pids.push(owned.pid)
+    if (options.role === "harness") pids.push(owned.pid)
     return owned
   } }, { executable: PINNED_CLAUDE, configRoot: path.join(root, "claxedo-claude"), userConfigRoot: path.join(root, "user-claude"), env })
   try {
@@ -53,7 +53,7 @@ test("a Claude background task outlives its turn, and Claude reports it in a tur
       credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", leaseGeneration: "background", secrets: {},
         providers: { anthropic: { baseUrl: server.url, placeholder: "claude-background-placeholder", authMode: "api-key" } } },
       projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] } }, broker)
-    const turn: TurnInput = { turnId: "t1", userMessageId: "u-t1", assistantMessageId: "a-t1", origin, model, todos: [],
+    const turn: TurnInput = { turnId: "t1", userMessageId: "u-t1", assistantMessageId: "a-t1", origin, model, todos: [], effort: "high",
       prompt: { agent: "claude", assistantMessageId: "a-t1", parts: [{ type: "text", text: "start the background job" }] } }
     const turnBroker = createTurnBroker(owner, { authority: { ...authority, directory, turnId: "t1" }, origin, signal: new AbortController().signal })
     const began = Date.now()
@@ -66,6 +66,18 @@ test("a Claude background task outlives its turn, and Claude reports it in a tur
     expect(pids).toHaveLength(1)
     expect(alive(pids[0]!)).toBe(true)
     await fs.access(marker).then(() => { throw new Error("the background command finished inside its own turn") }, () => undefined)
+
+    if (followups) {
+      for (const [index, effort] of ["high", "low", undefined].entries()) {
+        const turnId = `followup-${index}`
+        const prompt: TurnInput = { ...turn, turnId, assistantMessageId: turnId, userMessageId: `u-${turnId}`, effort, model: index === 2 ? { ...model, modelID: "sonnet" } : model,
+          prompt: { ...turn.prompt, assistantMessageId: turnId, parts: [{ type: "text", text: `Reply with exactly this one token: FOLLOWUP${index}` }] } }
+        const nextBroker = createTurnBroker(owner, { authority: { ...authority, directory, turnId }, origin, signal: new AbortController().signal })
+        for await (const event of transport.send({ ...started, binding: ports.bindings.get("s1")! }, prompt, nextBroker)) events.push(event)
+        expect(pids).toHaveLength(1)
+        expect(alive(pids[0]!)).toBe(true)
+      }
+    }
 
     const ownTurn = await pollUntil(() => (ports.drained as RoutedEvent[]).find(({ event, route }) => route?.kind !== "child" && event.type === "finish"),
       Date.now() + 30_000)

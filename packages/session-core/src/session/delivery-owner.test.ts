@@ -119,6 +119,22 @@ test("recovery runs unclaimed inputs in FIFO order and preserves their original 
   expect(starts).toEqual(["first", "second"])
 })
 
+test.each(["", null])("queue recovery preserves explicit default effort %s through dispatch", async (variant) => {
+  const directory = root(), first = store(directory), waiting = gate()
+  const dead = owner(first, { whenIdle: async () => { await waiting.promise; return { abandon() {} } } })
+  const sent = submission()
+  dead.queue({ ...sent, body: { ...sent.body, variant } })
+  await dead.dispose()
+  first.close()
+  const restarted = store(directory)
+  expect(restarted.deliveryQueue.listQueuedPrompts()[0].variant).toBe("")
+  const starts: unknown[] = []
+  const host = owner(restarted, { startTurn: async (input) => { starts.push(input.body); input.onDelivery("start") } })
+  await host.recover()
+  await until(() => restarted.deliveryQueue.listQueuedPrompts().length === 0)
+  expect(starts).toEqual([{ ...sent.body, variant: "", delivery: "queue" }])
+})
+
 test("dispatch is durable before calling the harness and competing owners cannot execute twice", async () => {
   const runtimeStore = store(root())
   const never = gate()

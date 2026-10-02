@@ -111,6 +111,16 @@ async function release(context: Context, pending: PendingRequest) {
     { kind: "permission", decision: "allow_once" }, { sessionId: context.session.binding.sessionId })).ok).toBe(true)
 }
 
+test("an unchanged ACP credential snapshot preserves its process through a lease renewal", async () => {
+  const context = await setup()
+  try {
+    expect(await context.transport.configure(context.session, { credentials: { ...context.start.credentials, leaseGeneration: "renewed" } }))
+      .toEqual({ state: "applied" })
+    expect((await readAcpRequests(context.backend.directory)).filter((row) => row.method === "session/resume")).toHaveLength(0)
+    expect((await collect(context, "still running")).some(({ event }) => event.type === "finish")).toBe(true)
+  } finally { await context.close() }
+})
+
 test("independent ACP instances restart idle and completed workspaces while another turn stays active", async () => {
   const first = await setup()
   const second = await setup()
@@ -118,11 +128,11 @@ test("independent ACP instances restart idle and completed workspaces while anot
     expect(first.backend.directory).not.toBe(second.backend.directory)
     const otherTurn = holdTurn(second)
     const otherPending = await otherTurn.pending
-    const credentials = { ...first.start.credentials, leaseGeneration: "rotated" }
-    expect(await first.transport.configure(first.session, { credentials })).toEqual({ state: "applied" })
+    const projection = { ...first.start.projection, generation: "plugins:rotated" }
+    expect(await first.transport.configure(first.session, { projection })).toEqual({ state: "applied" })
     const ownTurn = holdTurn(first)
     const ownPending = await ownTurn.pending
-    expect(await first.transport.configure(first.session, { credentials: { ...credentials, leaseGeneration: "again" } }))
+    expect(await first.transport.configure(first.session, { projection: { ...projection, generation: "plugins:again" } }))
       .toEqual({ state: "deferred", until: "after-active-turns" })
     await release(first, ownPending)
     await ownTurn.settled

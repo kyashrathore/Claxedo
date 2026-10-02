@@ -45,13 +45,13 @@ export function createComposerHarness(props: ComposerProps, key: Accessor<Compos
     const held = submit.heldHarness(scope)
     const model = submit.modelKeyForSubmit(scope)
     const tier = submit.serviceTierForSubmit(scope)
-    await store.commitHeldHarness(scope, scopeInput())
+    await store.commitSessionSelection(scope, scopeInput())
     const type = held ?? submit.harness(scope)
     const mode = permissionMode.promptModeId()
     return {
       ...(type ? { harness: harnessSelectionId(type) } : {}),
-      ...(model ? { model: { providerId: model.providerId, modelId: model.modelId } } : {}),
-      ...(model?.variant ? { effort: model.variant } : {}),
+      ...(model ? { model } : {}),
+      ...(model ? { effort: model.variant ?? "" } : {}),
       ...(tier ? { serviceTier: tier } : {}),
       ...(mode ? { permissionMode: mode } : {}),
     }

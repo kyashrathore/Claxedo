@@ -7,6 +7,17 @@ import { scriptedPi } from "./test-support/scripted-pi"
 const modelIds = (preview: ConfigOptionsPreview) =>
   preview.options.find((option) => option.id === "model")?.selectOptions?.map((choice) => choice.id)
 
+test("Pi keeps its process for an identical snapshot with a new credential lease generation", async () => {
+  const pi = await scriptedPi()
+  try {
+    const input = pi.start()
+    const session = await pi.transport.start(input, pi.broker)
+    expect(await pi.transport.configure(session, { credentials: { ...input.credentials, leaseGeneration: "refreshed" }, projection: structuredClone(input.projection) }))
+      .toEqual({ state: "applied" })
+    expect(pi.launches).toHaveLength(1)
+  } finally { await pi.close() }
+})
+
 test("a draft's Pi catalog is served from cache while its files are unchanged, and an edited .pi/settings.json probes again", async () => {
   const pi = await scriptedPi()
   try {

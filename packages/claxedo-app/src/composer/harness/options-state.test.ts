@@ -57,3 +57,10 @@ test("options state: a session keeps a model its catalog no longer lists, and na
   const { patch } = applyHarnessOptionsResponse({ type: codex, selectedModel: "gone", sessionModel: true, payload: live({ models }) })
   expect(patch).toMatchObject({ selectedModel: "gone", configError: "Selected model unavailable" })
 })
+
+test.each(["max", undefined])("options state: catalog refresh preserves a session's explicit effort %s", (selectedThoughtLevel) => {
+  for (const selection of [{ sessionModel: true }, { preserveSelectedModel: true }]) {
+    const { patch } = applyHarnessOptionsResponse({ type: codex, selectedModel: "opus", selectedThoughtLevel, ...selection, payload: live({ models, thoughtLevels: efforts }) })
+    expect(patch.selectedThoughtLevel).toBe(selectedThoughtLevel)
+  }
+})

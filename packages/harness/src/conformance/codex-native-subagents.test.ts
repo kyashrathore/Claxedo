@@ -42,11 +42,14 @@ const FOLLOWUPS = {
 
 for (const protocol of ["v2", "v1"] as const) {
   test(`Codex's own ${protocol} subagent becomes a background child session that keeps streaming after its parent's turn ends`, async () => {
-    const { context, metered, parent, release, child } = await nativeContext(protocol)
+    const { context, recorder, metered, parent, release, child } = await nativeContext(protocol)
     try {
       expect(parent.filter((routed) => routed.route?.kind !== "child" && routed.event.type === "finish")).toHaveLength(1)
       expect(context.ports.subagents[0]).toMatchObject({ status: "running", toolCallId: "call_1", toolCallRole: "spawn", mode: "background",
         providerId: child, providerKind: "codex", childSessionId: expect.any(String) })
+      const projection = { ...context.start.projection, generation: "changed-plugins" }
+      await expect(context.transport.configure(context.session, { projection })).rejects.toThrow("background tasks are running")
+      expect(recorder.frames.filter((frame) => frame.method === "initialize")).toHaveLength(1)
       release()
       await idle()
       const published = context.ports.childEvents.map((row) => row.event)
@@ -56,6 +59,8 @@ for (const protocol of ["v2", "v1"] as const) {
       expect(published.some((routed) => routed.event.type === "usage")).toBe(true)
       expect(metered.filter((usage) => usage.usage.observation?.scope?.includes(child))).toEqual([])
       expect(context.ports.subagents.at(-1)).toMatchObject({ status: "completed", providerId: child })
+      expect(await context.transport.configure(context.session, { projection })).toEqual({ state: "applied" })
+      expect(recorder.frames.filter((frame) => frame.method === "initialize")).toHaveLength(2)
     } finally { await context.close() }
   }, 120_000)
 

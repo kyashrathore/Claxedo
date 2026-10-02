@@ -5,7 +5,8 @@ import type {
   AttachInput, ConfigApplied, ConfigTarget, Deadline, HarnessServices, HarnessSession, HarnessTransport, McpServerSpec,
   ProjectedMcpServer, RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
-import { acpDeclaredCapabilities, attachedSessionEntry, configGenerationChanged, mergeStartInput } from "../../contract"
+import { acpDeclaredCapabilities, attachedSessionEntry, mergeStartInput } from "../../contract"
+import { launchConfigChanged } from "../../contract/node"
 import type { AcpConnectionOptions, AcpPeer } from "./connection"
 import { AcpTransportError } from "./errors"
 import { acpTurnFailure } from "./outcome"
@@ -232,9 +233,9 @@ export class AcpTransport implements HarnessTransport {
       return { state: "refused", reason: "ACP session outcome is uncertain" }
     }
     const next = mergeStartInput(entry.start, update)
-    const changed = configGenerationChanged(entry.start, next)
-    if (!changed) return { state: "applied" }
+    const changed = launchConfigChanged(entry.start, next)
     entry.start = next
+    if (!changed) return { state: "applied" }
     if (entry.phase === "busy" || entry.providerTurn) { entry.pendingRestart = true; return { state: "deferred", until: "after-active-turns" } }
     await this.lifecycle.restart(entry)
     return { state: "applied" }

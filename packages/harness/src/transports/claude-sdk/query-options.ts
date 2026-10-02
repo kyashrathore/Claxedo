@@ -57,7 +57,7 @@ export class ClaudeQueryLauncher {
       extraArgs: { "thinking-display": "summarized", "replay-user-messages": null }, includePartialMessages: true,
       canUseTool: (name, payload, options) => {
         const turn = spec.turn()
-        return askClaudePermission(current, turn?.broker ?? { ask: (request, asked) => broker.ask(request, asked), signal: abort.signal }, name, payload, options, turn?.turnId, spec.subagentCall)
+        return askClaudePermission({ ...input, config: broker.config() }, turn?.broker ?? { ask: (request, asked) => broker.ask(request, asked), signal: abort.signal }, name, payload, options, turn?.turnId, spec.subagentCall)
       },
       onElicitation: (request, options) => askClaudeElicitation(spec.turn()?.broker ?? broker, request, options.signal),
       spawnClaudeCodeProcess: (options) => {

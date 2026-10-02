@@ -3,7 +3,7 @@ import type {
   AttachInput, ConfigApplied, ConfigTarget, Deadline, HarnessServices, HarnessSession, HarnessTransport,
   RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
 } from "../../contract"
-import { attachedSessionEntry, DraftProbeCache, HarnessVersionGate, mergeStartInput, ProcessLosses, sessionConnectionHealth } from "../../contract/node"
+import { attachedSessionEntry, DraftProbeCache, HarnessVersionGate, launchConfigChanged, mergeStartInput, ProcessLosses, sessionConnectionHealth } from "../../contract/node"
 import { selectPiProfile, type PiProfile } from "../../profiles/pi"
 import { TransportError } from "../../contract/errors"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
@@ -168,8 +168,12 @@ export class PiRpcTransport implements HarnessTransport {
   async configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied> {
     const entry = this.entry(session)
     if (!update.credentials && !update.projection) return { state: "applied" }
-    if (entry.stream.busy) return { state: "refused", reason: "Cannot reconfigure Pi during an active turn" }
     const start = mergeStartInput(entry.start, update)
+    if (!launchConfigChanged(entry.start, start)) {
+      entry.start = start
+      return { state: "applied" }
+    }
+    if (entry.stream.busy) return { state: "refused", reason: "Cannot reconfigure Pi during an active turn" }
     const profile = selectPiProfile(start.credentials, start.directory, start.sessionId, this.options, entry.profile.kind)
     const hasTurns = !entry.rpc.alive || asRecordOrEmpty(await entry.rpc.request("get_state")).messageCount !== 0
     await this.retireSession(entry)
