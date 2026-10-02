@@ -96,7 +96,7 @@ export function PresetsSection(): JSX.Element {
   const create = () => store.open(emptyPresetEditorDraft())
   const listOffersCreate = () => presets.items().length > 0 || listFailure(presets) !== undefined
   return (
-    <div class="flex flex-col pb-10" data-testid="presets-view">
+    <div class="settings-body" data-testid="presets-view">
       <SettingsIntro
         description={t("tasks.preset.description")}
         action={

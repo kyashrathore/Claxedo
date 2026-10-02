@@ -15,6 +15,13 @@
   gap: 12px 16px;
 }
 
+.settings-intro-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
 .settings-toolbar {
   position: sticky;
   top: 0;
