@@ -70,7 +70,7 @@ const LOGIN = { placement: "loopback", machineOwnerUserId: "owner", canUseOwnLog
 
 function transportFor(state: CursorBackend, env: NodeJS.ProcessEnv = state.env, login: Partial<CursorSdkTransportOptions> = {}) {
   return (services: ConstructorParameters<typeof CursorSdkTransport>[0]) =>
-    new CursorSdkTransport(services, { homeRoot: homeRoot(state), worker: CURSOR_WORKER, env, ...LOGIN, ...login })
+    new CursorSdkTransport(services, { homeRoot: homeRoot(state), ownerCursorDir: personalCursorDir(state), worker: CURSOR_WORKER, env, ...LOGIN, ...login })
 }
 
 async function claxedoHomes(state: CursorBackend): Promise<string[]> {
@@ -781,7 +781,7 @@ test("a plugin root whose link escapes it is refused before Cursor starts", asyn
   await fs.symlink(directory, path.join(plugin, "outside"))
   const services = createTestServices()
   const homeRoot = path.join(root, "cursor-homes")
-  const transport = new CursorSdkTransport(services, { homeRoot, worker: CURSOR_WORKER, env: { HOME: path.join(root, "person") }, ...LOGIN })
+  const transport = new CursorSdkTransport(services, { homeRoot, ownerCursorDir: path.join(root, "person", ".cursor"), worker: CURSOR_WORKER, env: {}, ...LOGIN })
   try {
     await expect(transport.start({
       sessionId: "s1", workspaceId: "w1", directory, locality: "local", owner: { kind: "machine-owner" },

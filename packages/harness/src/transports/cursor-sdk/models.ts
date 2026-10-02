@@ -2,6 +2,7 @@ import type { AgentConfigOption, AgentModel } from "@claxedo/agent-runtime-contr
 import { credentialBrokerErrorCode } from "@claxedo/agent-runtime-contract"
 import { errorMessage } from "@claxedo/helpers"
 import { modelAndEffortOptions } from "../../contract"
+import type { ProbeInputs } from "../../contract/node"
 import { TransportError } from "../../contract/errors"
 import type { CursorCredential } from "./credentials"
 import type { CursorHost } from "./host-registry"
@@ -42,30 +43,11 @@ export function catalogKey(credential: CursorCredential, leaseGeneration: string
   return JSON.stringify([credential.key, leaseGeneration])
 }
 
-export class CursorModelCatalog {
-  private readonly rows = new Map<string, HostModel[]>()
-  private readonly inFlight = new Map<string, Promise<HostModel[]>>()
+export const CATALOG_INPUTS = { files: [] } as const satisfies ProbeInputs
 
-  peek(key: string): HostModel[] | undefined { return this.rows.get(key) }
-
-  async load(key: string, host: () => Promise<CursorHost>, credential: CursorCredential): Promise<HostModel[]> {
-    const cached = this.rows.get(key)
-    if (cached) return cached
-    const running = this.inFlight.get(key)
-    if (running) return running
-    const probe = this.read(host, credential)
-    this.inFlight.set(key, probe)
-    try {
-      const models = await probe
-      this.rows.set(key, models)
-      return models
-    } finally { this.inFlight.delete(key) }
-  }
-
-  private async read(host: () => Promise<CursorHost>, credential: CursorCredential): Promise<HostModel[]> {
-    let reply
-    try { reply = await (await host()).call({ kind: "models", apiKey: credential.apiKey }) }
-    catch (error) { throw catalogReadError(error, credential.bound) }
-    return reply.value?.models ?? []
-  }
+export async function readCursorModels(host: () => Promise<CursorHost>, credential: CursorCredential): Promise<HostModel[]> {
+  let reply
+  try { reply = await (await host()).call({ kind: "models", apiKey: credential.apiKey }) }
+  catch (error) { throw catalogReadError(error, credential.bound) }
+  return reply.value?.models ?? []
 }

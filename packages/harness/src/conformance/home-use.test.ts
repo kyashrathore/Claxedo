@@ -44,7 +44,7 @@ for (const kind of ["codex", "cursor"] as const) {
       }
       const transport: HarnessTransport = kind === "codex"
         ? new CodexAppServerTransport(services, { binary: "scripted", homeRoot: path.join(root, "homes"), ownerHome: path.join(root, "owner") })
-        : new CursorSdkTransport(services, { homeRoot: path.join(root, "homes"), worker: { file: process.execPath, args: ["cursor-worker.js"] }, env: { HOME: root, CURSOR_API_KEY: "fixture" },
+        : new CursorSdkTransport(services, { homeRoot: path.join(root, "homes"), ownerCursorDir: path.join(root, ".cursor"), worker: { file: process.execPath, args: ["cursor-worker.js"] }, env: { HOME: root, CURSOR_API_KEY: "fixture" },
           placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true })
       const input: StartInput = { sessionId: "session", workspaceId: "workspace", directory: root, locality: "local", owner: { kind: "machine-owner" },
         config: { harness: { id: kind, access: "native" } },

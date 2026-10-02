@@ -21,7 +21,7 @@ function fixture() {
     existing: () => undefined,
   }
   const transport = new CursorSdkTransport({ log: { debug() {}, info() {}, warn() {}, error() {} } } as unknown as HarnessServices,
-    { homeRoot: "/tmp", worker: { file: process.execPath, args: ["cursor-worker.js"] }, env: {}, placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: false })
+    { homeRoot: "/tmp", ownerCursorDir: "/tmp/owner-cursor", worker: { file: process.execPath, args: ["cursor-worker.js"] }, env: {}, placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: false })
   const session = { binding: { sessionId: "s1", upstreamSessionId: "agent" }, directory: "/work" } as HarnessSession
   const entry = { session, input: { directory: "/work", config: {}, credentials: { leaseGeneration: "g1", providers: {}, machineLoginAllowed: false }, owner: { kind: "machine-owner" },
     projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] } } as unknown as StartInput,
