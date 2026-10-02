@@ -5,7 +5,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ClaxedoMcpClient } from "@claxedo/mcp/client"
-import { CLAXEDO_MCP_SERVER_INFO, CLAXEDO_MCP_TOOL_GROUPS, fullUserCredential, type McpClientInputs, type McpToolGroup } from "@claxedo/mcp"
+import { CLAXEDO_MCP_SERVER_INFO, CLAXEDO_MCP_TOOL_GROUPS, type McpClientInputs, type McpToolGroup } from "@claxedo/mcp"
 import type { WorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
 import { firstPartyMcpContribution, signedActorId, type FirstPartyMcpContributionInput } from "./first-party-mcp"
 import { resolveOAuthMcpCredential, type OAuthAccessTokenClaims } from "./oauth-credential"
@@ -66,7 +66,6 @@ function compose(overrides: Partial<FirstPartyMcpContributionInput> = {}) {
   const auditAllow = vi.fn(async () => undefined)
   const auditFallback = vi.fn()
   const contribution = firstPartyMcpContribution({
-    mount: "hosted",
     app,
     authority: { auditAllow },
     options: {
@@ -141,7 +140,6 @@ describe("firstPartyMcpContribution", () => {
     } }
     const consented = (groups: readonly string[]) =>
       compose({
-        mount: "node",
         options: { createClient: () => stubClient, registerTools: [tools, other], enabledToolGroups: () => groups },
       })
 
@@ -159,23 +157,11 @@ describe("firstPartyMcpContribution", () => {
     await expect(none.callTool({ name: "session_send", arguments: { session: "ses_1" } })).rejects.toThrow(/Method not found/)
   })
 
-  test("challenges a caller with no credential and admits an anonymous one only where the mount allows it", async () => {
+  test("challenges a caller with no credential", async () => {
     const { app } = compose()
     const bare = await app.request("http://127.0.0.1/api/claxedo/mcp", { method: "POST", body: "{}" })
     expect(bare.status).toBe(401)
     expect(bare.headers.get("www-authenticate")).toContain('resource_metadata="http://127.0.0.1/.well-known/oauth-protected-resource"')
-
-    const { app: loopback, inputs, auditAllow, auditFallback } = compose({
-      mount: "node",
-      anonymousCredential: () => fullUserCredential({ actorId: "loopback", clientId: "loopback" }),
-      local: () => ({ fetch: async () => new Response(null, { status: 204 }), workspace: {} }),
-    })
-    const client = await connect(loopback, {})
-    expect(inputs[0]).toMatchObject({ deployment: "node", credential: { kind: "user", actorId: "loopback", clientId: "loopback" } })
-    expect(inputs[0]?.local).toBeDefined()
-    await client.callTool({ name: "session_send", arguments: { session: "ses_2" } })
-    expect(auditAllow).not.toHaveBeenCalled()
-    expect(auditFallback).toHaveBeenCalledWith({ tool: "session_send", actor: "loopback", client: "loopback", sessionId: "ses_2" })
   })
 })
 
@@ -200,7 +186,6 @@ function oauthComposed(tokens: Readonly<Record<string, readonly string[]>>) {
       ? { subject: "user_7", clientId: "mcp-host-1", scopes: tokens[token], audience: [`${CONTROL_PLANE_ORIGIN}/api/claxedo/mcp`] }
       : undefined
   const contribution = firstPartyMcpContribution({
-    mount: "hosted",
     app,
     authority: undefined,
     options: {
