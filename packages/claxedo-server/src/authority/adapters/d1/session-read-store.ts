@@ -1,12 +1,14 @@
 import type { SharedSession } from "@claxedo/account-contract"
-import type { AuthIdentity } from "@claxedo/server-core/platform/auth/authentication"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { AGENT_MESSAGE_PAGE_LIMIT, AgentMessagePageError } from "@claxedo/agent-runtime-contract"
 import { asRecord, numberField, parseJson } from "@claxedo/server-core/platform/json/index"
 import { latestViewPage, type LatestView } from "@claxedo/server-core/session/latest-view-page"
 import type { D1Database } from "@cloudflare/workers-types"
 import type { SessionPageQuery } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { sessionOrderSql } from "@claxedo/server-core/session/navigation-order"
-import type { BoundSql } from "./authorization"
+import { requireHuman } from "./access-context"
+import { maySql, type BoundSql } from "./authorization"
+import type { D1ActorProfile } from "./workspace-authority"
 
 type SessionPageRow = {
   session_id: string
@@ -203,27 +205,42 @@ export function decodeMessagePageCursor(sessionId: string, input: string) {
 }
 
 
-export async function readD1SharedSessions(database: D1Database, input: { reads: BoundSql; sends: BoundSql; issuer: string }) {
+/**
+ * The sessions other people shared with the caller: every session `read`
+ * admits that is not the caller's own, at the level `send` admits. The owner's
+ * name is their sign-in provider's profile, read once per owner.
+ */
+export async function listD1SharedSessions(
+  database: D1Database,
+  deploymentId: string,
+  profile: D1ActorProfile | undefined,
+  auth: SignedControlPlaneAuth,
+): Promise<SharedSession[]> {
+  const who = await requireHuman(database, deploymentId, auth)
+  const reads = maySql(who, "read", { kind: "session", alias: "s" })
+  const sends = maySql(who, "send", { kind: "session", alias: "s" })
+  const issuer = auth.principal!.identity.issuer
   const rows = await database.prepare(`
       select s.session_id, s.workspace_id, s.project_id, s.title,
-        case when ${input.sends.sql} then 'send' else 'follow' end as level,
-        identity.adapter, identity.issuer, identity.subject
+        case when ${sends.sql} then 'send' else 'follow' end as level,
+        (select owner.subject from auth_identities owner
+          where owner.user_id = w.owner_user_id and owner.unlinked_at is null
+            and owner.adapter = 'better-auth' and owner.issuer = ?
+          order by owner.linked_at, owner.subject limit 1) as owner_subject
       from sessions s
       join workspaces w on w.workspace_id = s.workspace_id
-      left join auth_identities identity on identity.user_id = w.owner_user_id
-        and identity.unlinked_at is null and identity.adapter = 'better-auth' and identity.issuer = ?
-        and identity.subject = (
-          select owner_identity.subject from auth_identities owner_identity
-          where owner_identity.user_id = w.owner_user_id and owner_identity.unlinked_at is null
-            and owner_identity.adapter = identity.adapter and owner_identity.issuer = identity.issuer
-          order by owner_identity.linked_at, owner_identity.subject limit 1
-        )
-      where ${input.reads.sql}
+      where w.owner_user_id <> ? and ${reads.sql}
       order by s.updated_at desc, s.session_id
-    `).bind(...input.sends.bind, input.issuer, ...input.reads.bind)
-      .all<Omit<SharedSession, "owner_name"> & { adapter: AuthIdentity["adapter"] | null; issuer: string | null; subject: string | null }>()
-  return rows.results.map((row) => ({
-    session_id: row.session_id, workspace_id: row.workspace_id, project_id: row.project_id, title: row.title, level: row.level,
-    ownerIdentity: row.adapter && row.issuer && row.subject ? { adapter: row.adapter, issuer: row.issuer, subject: row.subject } : undefined,
-  }))
+    `).bind(...sends.bind, issuer, who.userId, ...reads.bind)
+    .all<Omit<SharedSession, "owner_name"> & { owner_subject: string | null }>()
+  const names = new Map<string, Promise<string | null>>()
+  const nameOf = (subject: string) => {
+    let name = names.get(subject)
+    if (!name) names.set(subject, (name = profile?.({ adapter: "better-auth", issuer, subject }).then((found) => found?.name ?? null) ?? Promise.resolve(null)))
+    return name
+  }
+  return Promise.all(rows.results.map(async ({ owner_subject, ...row }) => ({
+    ...row,
+    owner_name: owner_subject ? await nameOf(owner_subject) : null,
+  })))
 }

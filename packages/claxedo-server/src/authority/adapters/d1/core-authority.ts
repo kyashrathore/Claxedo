@@ -1,7 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import { readD1SharedSessions } from "./session-read-store"
-import { requireHuman } from "./access-context"
-import { maySql } from "./authorization"
+import { listD1SharedSessions } from "./session-read-store"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { OrgInvitationDelivery } from "@claxedo/server-core/platform/auth/org-access-authority"
 import {
@@ -136,24 +134,7 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
   const channelsAndRuntime = new D1ChannelRuntimeAuthority(database, shared)
 
   return {
-    listSharedSessions: async (auth) => {
-      const principal = await requireHuman(database, options.deploymentId, auth)
-      const rows = await readD1SharedSessions(database, {
-        reads: maySql(principal, "shared_read", { kind: "session", alias: "s" }),
-        sends: maySql(principal, "shared_send", { kind: "session", alias: "s" }),
-        issuer: auth.principal!.identity.issuer,
-      })
-      const profiles = new Map<string, Promise<string | null>>()
-      return Promise.all(rows.map(async ({ ownerIdentity, ...row }) => {
-        const key = JSON.stringify([ownerIdentity])
-        let name = profiles.get(key)
-        if (!name) {
-          name = options.actorProfile?.(ownerIdentity).then((profile) => profile?.name ?? null) ?? Promise.resolve(null)
-          profiles.set(key, name)
-        }
-        return { ...row, owner_name: await name }
-      }))
-    },
+    listSharedSessions: (auth) => listD1SharedSessions(database, options.deploymentId, options.actorProfile, auth),
     ...bindMethods(workspace, D1_WORKSPACE_AUTHORITY_METHODS),
     ...bindMethods(new D1TeamAuthority(access), D1_TEAM_AUTHORITY_METHODS),
     ...bindMethods(new D1OrgMemberAuthority(access), D1_ORG_MEMBER_AUTHORITY_METHODS),

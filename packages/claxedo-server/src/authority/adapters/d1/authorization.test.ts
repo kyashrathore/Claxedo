@@ -170,12 +170,11 @@ describe("one authorization owner", () => {
     expect(await authority.listWorkspaces(follower)).toEqual([])
   })
 
-  test("revoked, out-of-organization and organization-wide grants do not list", async () => {
+  test("revoked grants and grants to people who left never list; an organization share lists for its members", async () => {
     const { authority, database, alice, follower, sender, teamId, grantees: { teamEditor } } = await setup()
     const input = { sessionId: "ses_alice", workspaceId: "ws_alice" }
     await authority.grantSessionShare!(alice, { ...input, grantedToUserId: id(follower) })
     await authority.grantSessionShare!(alice, { ...input, grantedToTeamId: teamId })
-    await authority.grantSessionShare!(alice, { ...input, grantedToOrgId: "org_acme", level: "send" })
     expect(await authority.listSharedSessions!(sender)).toEqual([])
     await authority.revokeSessionShare!(alice, { ...input, grantedToUserId: id(follower) })
     expect(await authority.listSharedSessions!(follower)).toEqual([])
@@ -186,7 +185,14 @@ describe("one authorization owner", () => {
     expect(await authority.listSharedSessions!(sender)).toEqual([expect.objectContaining({ session_id: "ses_alice", level: "follow" })])
     await authority.revokeSessionShare!(alice, { ...input, grantedToTeamId: teamId })
     expect(await authority.listSharedSessions!(sender)).toEqual([])
+    await authority.grantSessionShare!(alice, { ...input, grantedToOrgId: "org_acme", level: "send" })
+    for (const member of [sender, follower]) {
+      expect(await authority.listSharedSessions!(member)).toEqual([expect.objectContaining({ session_id: "ses_alice", level: "send" })])
+    }
     expect(await authority.listSharedSessions!(teamEditor)).toEqual([])
+    expect(await authority.listSharedSessions!(alice)).toEqual([])
+    await authority.revokeSessionShare!(alice, { ...input, grantedToOrgId: "org_acme" })
+    expect(await authority.listSharedSessions!(sender)).toEqual([])
   })
   test("no organization role, project owner row, team grant or member grant reaches another person's workspace, machine or sessions", async () => {
     const { authority, alice, projectId, teamId, grantees } = await setup()

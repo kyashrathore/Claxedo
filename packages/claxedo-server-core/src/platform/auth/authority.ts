@@ -23,6 +23,12 @@ export {
   storedSessionShareLevel,
   type SessionShareLevel,
 } from "./session-share-level"
+export type {
+  SessionPeopleContext,
+  SessionShareFanoutTarget,
+  SessionShareGrantResult,
+  SessionShareRevokeResult,
+} from "./session-share-authority"
 
 /**
  * Typed neutral authority port for the control plane.
