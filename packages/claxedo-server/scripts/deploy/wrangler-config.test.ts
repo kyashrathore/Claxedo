@@ -68,9 +68,10 @@ describe("the user-deployed Worker Wrangler config", () => {
   })
 
   test("renders the app as an assets-only Worker with SPA routing", () => {
-    const config = renderAppWranglerConfig({ appWorkerName: "claxedo-app", browserDirectory: "/tmp/app" })
+    const browserDirectory = path.join(serverRoot, "app")
+    const config = renderAppWranglerConfig({ appWorkerName: "claxedo-app", browserDirectory })
     expect(config).toContain('name = "claxedo-app"')
-    expect(config).toContain('directory = "/tmp/app"')
+    expect(config).toContain(`directory = ${JSON.stringify(browserDirectory)}`)
     expect(config).toContain('not_found_handling = "single-page-application"')
     expect(config).not.toContain("main =")
   })
