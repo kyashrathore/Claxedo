@@ -204,12 +204,6 @@ export function decodeMessagePageCursor(sessionId: string, input: string) {
   }
 }
 
-
-/**
- * The sessions other people shared with the caller: every session `read`
- * admits that is not the caller's own, at the level `send` admits. The owner's
- * name is their sign-in provider's profile, read once per owner.
- */
 export async function listD1SharedSessions(
   database: D1Database,
   deploymentId: string,
