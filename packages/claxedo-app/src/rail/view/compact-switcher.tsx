@@ -92,7 +92,7 @@ function SwitcherTab(props: { readonly item: SwitcherItem; readonly active: bool
         data-selected={props.active ? "true" : undefined}
         class="flex h-7 w-full min-w-0 max-w-[220px] shrink-0 items-stretch gap-0 rounded-md border border-transparent py-0 pl-1.5 pr-7 text-left text-sm leading-none transition-[background-color,color] duration-100"
         classList={{
-          "bg-surface-base-hover text-text-base": props.active,
+          "bg-[var(--row-surface-selected)] text-text-strong": props.active,
           "text-text-weak group-hover:bg-surface-base-hover/35 group-hover:text-text-base group-focus-within:bg-surface-base-hover/35 group-focus-within:text-text-base": !props.active,
         }}
       >
