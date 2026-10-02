@@ -115,23 +115,7 @@ function faultedObservations(rows: Observation[]): Observation[] {
 export function comparisonShape(rows: Observation[]) {
   const ids = new Map<string, string>()
   const specials = new Map<string, string>()
-  const http = rows.map((row, index) => {
-    if (row.kind !== "http") return undefined
-    if (row.method === "GET" && row.route.startsWith("/api/claxedo/usage")) {
-      const source = object(row.body)
-      const breakdown = object(source.breakdown)
-      const body: Record<string, unknown> = { claxedo: source.claxedo }
-      if (Array.isArray(breakdown.rows)) {
-        body.breakdown = { rows: [...breakdown.rows].sort((a, b) => {
-          const aKey = String(normalize(object(a).value, new Map(ids), new Map(specials)))
-          const bKey = String(normalize(object(b).value, new Map(ids), new Map(specials)))
-          return aKey.localeCompare(bKey)
-        }) }
-      }
-      return normalize({ ...row, body }, ids, specials, "", `http:${index}`)
-    }
-    return normalize(row, ids, specials, "", `http:${index}`)
-  })
+  const http = rows.map((row, index) => row.kind === "http" ? normalize(row, ids, specials, "", `http:${index}`) : undefined)
   return rows.map((row, index) => {
     if (row.kind === "http") return http[index]
     const frames = row.frames.filter((frame) => {
