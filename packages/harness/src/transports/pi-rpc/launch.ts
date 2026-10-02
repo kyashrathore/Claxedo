@@ -1,6 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { errorMessage } from "@claxedo/helpers"
+import { isMissingFile } from "@claxedo/helpers/fs"
 import { deadlineAfter, harnessVersionStanding, type Deadline, type DraftProbeCache, type HarnessServices, type HarnessVersionGate,
   type SessionBroker, type SpawnCommand, type StartInput } from "../../contract/node"
 import { TransportError } from "../../contract/errors"
@@ -117,7 +118,7 @@ export async function resumePi(host: PiLaunchHost, input: StartInput, profile: P
 
 async function piResume(profile: PiProfile, upstreamSessionId: string, hasTurns: boolean): Promise<PiResume> {
   const files = await fs.readdir(profile.sessionDir).catch((error: unknown) => {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return []
+    if (isMissingFile(error)) return []
     throw error
   })
   const file = files.find((name) => name.endsWith(`_${upstreamSessionId}.jsonl`))
