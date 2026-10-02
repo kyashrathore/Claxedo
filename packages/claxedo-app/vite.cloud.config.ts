@@ -123,7 +123,6 @@ export function cloudConfig({ mode }: { mode: string }, binding?: AccountBinding
         input: {
           main: fileURLToPath(new URL("./index.html", import.meta.url)),
           browserPreview: fileURLToPath(new URL("./browser-preview.html", import.meta.url)),
-          cliCallback: fileURLToPath(new URL("./cli-callback.html", import.meta.url)),
         },
         output: {
           manualChunks: {

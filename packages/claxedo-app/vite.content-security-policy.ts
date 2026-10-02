@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import path from "node:path"
 import type { HtmlTagDescriptor, Plugin } from "vite"
-import { browserPreviewPolicy, cliCallbackPolicy, contentSecurityPolicy } from "./content-security-policy"
+import { browserPreviewPolicy, contentSecurityPolicy } from "./content-security-policy"
 import { FRAME_BOOTSTRAP } from "./src/plugins/frame/document"
 
 export const WEB_CONTENT_SECURITY_POLICY_PLUGIN = "claxedo:web-content-security-policy"
@@ -30,7 +30,6 @@ export function webContentSecurityPolicyPlugin(serverUrl: string | undefined): P
   const policies: Readonly<Record<string, string>> = {
     "index.html": webContentSecurityPolicy(serverUrl),
     "browser-preview.html": browserPreviewPolicy(),
-    "cli-callback.html": cliCallbackPolicy(),
   }
   return {
     name: WEB_CONTENT_SECURITY_POLICY_PLUGIN,

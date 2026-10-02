@@ -13,7 +13,6 @@ export function createBetterAuthBrowserAdapter(
   const { descriptor, user, loading, unavailable } = session.state
   return {
     adapter: "better-auth",
-    transport: "cookie",
     initialize: (deployment) => initializeSession(session, deployment),
     useAuth: () => ({
       descriptor,
@@ -24,7 +23,6 @@ export function createBetterAuthBrowserAdapter(
       signIn: (options) => signIn(session, options),
       signOut: () => signOut(session),
       signUp: (options) => signUp(session, options),
-      getToken: async () => null,
       refreshSession: async () => {
         if (unavailable()) return
         await reloadDescriptor(session)
