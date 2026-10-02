@@ -1,3 +1,29 @@
+[data-component="dock-layout"] {
+  position: relative;
+  isolation: isolate;
+}
+
+[data-slot="dock-layout-overlay"] {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 100%;
+  padding-inline: inherit;
+}
+
+[data-slot="dock-layout-base"] {
+  position: relative;
+  z-index: 1;
+}
+
+[data-component="dock-layout"][data-replace] > [data-slot="dock-layout-overlay"] {
+  bottom: 0;
+  z-index: 2;
+}
+
+[data-component="dock-layout"][data-replace] > [data-slot="dock-layout-base"] {
+  visibility: hidden;
+}
+
 [data-dock-surface="shell"] {
   background-color: var(--surface-raised-stronger-non-alpha);
   box-shadow: var(--shadow-xs-border);

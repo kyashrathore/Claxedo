@@ -1,0 +1,63 @@
+Subject: dock-surface: share overlay placement while preserving base layout
+
+DockLayout anchors auxiliary dock content above a base or replaces it visually
+without changing its layout size. Replacement content makes the base inert.
+
+diff --git a/src/components/dock-surface.css b/src/components/dock-surface.css
+index fba0334960..eaa3a04280 100644
+--- a/src/components/dock-surface.css
++++ b/src/components/dock-surface.css
+@@ -1,3 +1,29 @@
++[data-component="dock-layout"] {
++  position: relative;
++  isolation: isolate;
++}
++
++[data-slot="dock-layout-overlay"] {
++  position: absolute;
++  inset-inline: 0;
++  bottom: 100%;
++  padding-inline: inherit;
++}
++
++[data-slot="dock-layout-base"] {
++  position: relative;
++  z-index: 1;
++}
++
++[data-component="dock-layout"][data-replace] > [data-slot="dock-layout-overlay"] {
++  bottom: 0;
++  z-index: 2;
++}
++
++[data-component="dock-layout"][data-replace] > [data-slot="dock-layout-base"] {
++  visibility: hidden;
++}
++
+ [data-dock-surface="shell"] {
+   background-color: var(--surface-raised-stronger-non-alpha);
+   box-shadow: var(--shadow-xs-border);
+diff --git a/src/components/dock-surface.tsx b/src/components/dock-surface.tsx
+index fd1ce1834f..4d7994db86 100644
+--- a/src/components/dock-surface.tsx
++++ b/src/components/dock-surface.tsx
+@@ -1,4 +1,18 @@
+-import { type ComponentProps, splitProps } from "solid-js"
++import { type ComponentProps, type JSX, splitProps } from "solid-js"
++
++export function DockLayout(props: {
++  children: JSX.Element
++  overlay: JSX.Element
++  replace?: boolean
++  class?: string
++}) {
++  return (
++    <div data-component="dock-layout" data-replace={props.replace || undefined} class={props.class}>
++      <div data-slot="dock-layout-overlay">{props.overlay}</div>
++      <div data-slot="dock-layout-base" inert={props.replace}>{props.children}</div>
++    </div>
++  )
++}
+
+ export interface DockTrayProps extends ComponentProps<"div"> {
+   attach?: "none" | "top"

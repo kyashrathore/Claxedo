@@ -1,4 +1,18 @@
-import { type ComponentProps, splitProps } from "solid-js"
+import { type ComponentProps, type JSX, splitProps } from "solid-js"
+
+export function DockLayout(props: {
+  children: JSX.Element
+  overlay: JSX.Element
+  replace?: boolean
+  class?: string
+}) {
+  return (
+    <div data-component="dock-layout" data-replace={props.replace || undefined} class={props.class}>
+      <div data-slot="dock-layout-overlay">{props.overlay}</div>
+      <div data-slot="dock-layout-base" inert={props.replace}>{props.children}</div>
+    </div>
+  )
+}
 
 export interface DockTrayProps extends ComponentProps<"div"> {
   attach?: "none" | "top"

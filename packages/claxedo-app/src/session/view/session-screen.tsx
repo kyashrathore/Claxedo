@@ -7,10 +7,10 @@ import { usePanel } from "@/panel"
 import { useAccess, type SessionControls } from "@/access"
 import { useSessionStores, type SessionView } from "@/session"
 import { sessionPath, useCommands, useShellRoute, type PaneProps } from "@/shell"
-import { useDialog } from "@/ui"
+import { DockLayout, useDialog } from "@/ui"
 import { holdPaneReveal, useWorkbench } from "@/workbench"
 import { createQueueEdit } from "./queue-edit"
-import { createTodoDock, SessionDocks, TodoDockSlot } from "./session-docks"
+import { createTodoDock, SessionDocks } from "./session-docks"
 import { SessionTimeline, userMessages } from "./session-timeline"
 import { createMessageLinks } from "./message-links"
 import { useSessionScreenText, type SessionScreenText } from "./text"
@@ -151,38 +151,34 @@ function SessionBody(props: {
         class="ui-session-prompt-dock w-full flex flex-col justify-center items-center pointer-events-none shrink-0 pb-3"
         classList={{ "session-floating-dock": props.floating }}
       >
-        <div class="w-full px-3 pointer-events-auto md:max-w-192 md:mx-auto 2xl:max-w-[880px]">
-          <SessionDocks view={props.view} controls={props.controls} />
-          <div hidden={props.controls.send && blocked()}>
-            <Show when={todo.open()}>
-              <TodoDockSlot view={props.view} dock={todo} />
-            </Show>
-            <div class="relative z-10">
-              <Show when={!props.readOnly}>
-                <SessionConnectionLine />
-              </Show>
-              <Show when={composing()} fallback={<ChildNotice t={t} readOnly={props.readOnly} onBack={toParent} />}>
-                <PlacementStateCards placementId={props.view.ref.placementId} />
-                <Composer
-                  readOnly={!props.controls.send}
-                  manageSession={props.controls.owner}
-                  composerKey={queueEdit.key()}
-                  placementId={props.view.ref.placementId}
-                  view={props.view}
-                  attachmentWorkspace={props.controls.owner}
-                  hidden={blocked()}
-                  afterAccepted={() => {
-                    peek.sent()
-                  }}
-                  queuedEdit={queueEdit.edit}
-                  dropZone={() => body}
-                  collapsible={props.floating}
-                  registerRecovery={recovery.register}
-                />
-              </Show>
-            </div>
-          </div>
-        </div>
+        <DockLayout
+          class="w-full px-3 pointer-events-auto md:max-w-192 md:mx-auto 2xl:max-w-[880px]"
+          replace={props.controls.send && blocked()}
+          overlay={<SessionDocks view={props.view} controls={props.controls} todo={todo} />}
+        >
+          <Show when={!props.readOnly}>
+            <SessionConnectionLine />
+          </Show>
+          <Show when={composing()} fallback={<ChildNotice t={t} readOnly={props.readOnly} onBack={toParent} />}>
+            <PlacementStateCards placementId={props.view.ref.placementId} />
+            <Composer
+              readOnly={!props.controls.send}
+              manageSession={props.controls.owner}
+              composerKey={queueEdit.key()}
+              placementId={props.view.ref.placementId}
+              view={props.view}
+              attachmentWorkspace={props.controls.owner}
+              hidden={blocked()}
+              afterAccepted={() => {
+                peek.sent()
+              }}
+              queuedEdit={queueEdit.edit}
+              dropZone={() => body}
+              collapsible={props.floating}
+              registerRecovery={recovery.register}
+            />
+          </Show>
+        </DockLayout>
       </div>
     </div>
   )

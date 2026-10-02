@@ -11,6 +11,8 @@ The app's door to the kit, plus the few components that are the app's own.
 - **Original, by exception:** `Spinner`. `loader-v2.css` sets its own muted colour, unlayered, so callers that colour the spinner (the submit button's inverse spinner, the review and files loaders) would lose it, and its spin is an infinite animation on a stateless selector, which `css-invalidation` rejects.
 - **Original, no v2 exists:** `AnimatedNumber`, `Card`, `Collapsible`, `DockShell`/`DockTray`, `FileIcon`, `ImagePreview`, `useSpring`, `Popover`, `ResizeHandle`, `ScrollView`/`ScrollThumb`, `StickyAccordionHeader`, `TextReveal`, `TextStrikethrough`, and `List`, `ProviderIcon`, the dialog host (`DialogProvider`, `useDialog`), the theme and the markdown context.
 
+`DockLayout` in the kit's `dock-surface` module reserves space for its base content and anchors an overlay above it. Replacement overlays align to the base's bottom and make the base invisible and inert while preserving its space. Overlay content never contributes to layout height. Callers own which content is available and whether it replaces the base; the layout reads no session or request state.
+
 ## Two doors
 
 `@opencode-ai/ui` may be imported only inside `src/ui` (`scripts/checks/v2-only.ts`). Everything else imports it through two entries, which `scripts/checks/domain-boundaries.ts` admits into `src/ui`:

@@ -41,6 +41,11 @@
   flex-direction: column;
 }
 
+[data-component="session-prompt-dock"] {
+  position: relative;
+  z-index: 1;
+}
+
 [data-component="session-prompt-dock"] [data-component="session-todo-dock"] {
   margin-bottom: -36px;
 }

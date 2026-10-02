@@ -9,7 +9,6 @@ import { GoalDock } from "./docks/goal-dock"
 import { InterruptedDock } from "./docks/interrupted-dock"
 import { SessionTodoDock } from "./docks/todo-dock"
 import { goalActions, todoDockOpen } from "./docks/model"
-import { turnActive } from "./timeline"
 import { useSessionScreenText } from "./text"
 import "./docks/docks.css"
 
@@ -54,17 +53,24 @@ function RequestReadError(props: { readonly view: SessionView; readonly error: A
   )
 }
 
-export function SessionDocks(props: { readonly view: SessionView; readonly controls: SessionControls }) {
+export function SessionDocks(props: { readonly view: SessionView; readonly controls: SessionControls; readonly todo: ReturnType<typeof createTodoDock> }) {
   const request = createMemo(() => props.view.requests()[0])
   return (
-    <div data-slot="session-docks" hidden={!props.controls.send}>
-      <InterruptedDock view={props.view} />
-      <Show when={props.view.requestsError()}>{(error) => <RequestReadError view={props.view} error={error()} />}</Show>
-      <Show when={request()} keyed>
-        {(current) => <RequestDock view={props.view} request={current} />}
-      </Show>
-      <Show when={props.view.goal()}>{(goal) => <GoalDock goal={goal()} actions={goalActions(props.view.goalActions(), props.view.controlGoal, props.controls)} />}</Show>
-    </div>
+    <>
+      <div data-slot="session-docks" hidden={!props.controls.send}>
+        <InterruptedDock view={props.view} />
+        <Show when={props.view.requestsError()}>{(error) => <RequestReadError view={props.view} error={error()} />}</Show>
+        <Show when={request()} keyed>
+          {(current) => <RequestDock view={props.view} request={current} />}
+        </Show>
+        <Show when={props.view.goal()}>{(goal) => <GoalDock goal={goal()} actions={goalActions(props.view.goalActions(), props.view.controlGoal, props.controls)} />}</Show>
+      </div>
+      <div hidden={props.controls.send && !!request()}>
+        <Show when={props.todo.open()}>
+          <TodoDockSlot view={props.view} dock={props.todo} />
+        </Show>
+      </div>
+    </>
   )
 }
 
@@ -76,8 +82,7 @@ export function createTodoDock(view: () => SessionView) {
   const open = () => {
     const list = view().todos()
     const done = list.length > 0 && list.every((todo) => todo.status === "completed" || todo.status === "cancelled")
-    const status = view().status()
-    return todoDockOpen({ count: list.length, done, live: status.kind !== "unknown" && turnActive(status) })
+    return todoDockOpen({ count: list.length, done })
   }
   return {
     open,
@@ -86,7 +91,7 @@ export function createTodoDock(view: () => SessionView) {
   }
 }
 
-export function TodoDockSlot(props: { readonly view: SessionView; readonly dock: ReturnType<typeof createTodoDock> }) {
+function TodoDockSlot(props: { readonly view: SessionView; readonly dock: ReturnType<typeof createTodoDock> }) {
   const t = useSessionScreenText()
   return (
     <SessionTodoDock

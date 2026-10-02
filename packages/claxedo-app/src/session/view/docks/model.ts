@@ -60,6 +60,6 @@ export function goalControls(goal: GoalSnapshot, actions: GoalActions) {
   }
 }
 
-export function todoDockOpen(input: { count: number; done: boolean; live: boolean }): boolean {
-  return input.count > 0 && !input.done && input.live
+export function todoDockOpen(input: { count: number; done: boolean }): boolean {
+  return input.count > 0 && !input.done
 }
