@@ -16,11 +16,10 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 import type { ControlPlaneServices } from "../../authority/services"
 import { D1WorkspaceAuthority } from "../../authority/adapters/d1/workspace-authority"
-import { applyControlPlaneMigration, controlPlaneMigrations } from "../../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../../test-support/control-plane-migrations"
 import { D1AgentPluginSourceStore } from "./d1-store"
 import { HostedAgentPluginSourceRoutes } from "./routes"
 
-const MIGRATIONS = controlPlaneMigrations()
 
 const EMPTY_BASE: CatalogSourceProvider = { listAuthorizedSources: async () => [] }
 
@@ -35,7 +34,7 @@ function identity(subject: string): AuthIdentity {
 }
 
 async function migrate(database: D1Database) {
-  for (const name of MIGRATIONS) await applyControlPlaneMigration(database, name)
+  await applyControlPlaneBaseline(database)
 }
 
 async function signed(

@@ -10,7 +10,7 @@ import {
 import { hostedPiCredentials } from "./pi"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { checkCredential } from "@claxedo/server-core/credentials/operations/check"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 
 const KEK_ENV = { [CREDENTIALS_KEK_ENV]: Buffer.alloc(32, 3).toString("base64") }
 const FULL_ENV = { ...KEK_ENV, [HOSTED_CREDENTIALS_FLAG]: "1" }
@@ -26,7 +26,7 @@ const write = {
 let controlPlane: ControlPlaneDatabase
 
 beforeAll(async () => {
-  controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  controlPlane = await miniflareControlPlaneDatabase()
 })
 
 afterAll(async () => {

@@ -12,7 +12,7 @@ import type { ControlPlaneServices } from "../../authority/services"
 import { STATIC_PRODUCT_DESCRIPTORS } from "./deployment-profile"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import { hostedOrgCredentials } from "../../credentials/worker"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { storedD1Session } from "../../test-support/d1-stored-session"
 import { d1UserAgentConfigRepository } from "../../authority/adapters/d1/user-agent-config"
 import { fetchUrl } from "../../test-support/fetch-calls"
@@ -180,7 +180,7 @@ describe("hosted production Pi and connection discovery", () => {
     const base = plane()
     base.env = { ...base.env, CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1", CLAXEDO_CREDENTIALS_KEK: Buffer.alloc(32, 3).toString("base64") }
     base.services.authority!.resolveOrgId = vi.fn(async (auth) => `internal-${auth.user.subject}` as never)
-    const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+    const controlPlane = await miniflareControlPlaneDatabase()
     let broken = false
     base.orgCredentials = (orgId) => {
       if (broken) throw new Error("CONTROL_PLANE_DB unavailable")
@@ -232,7 +232,7 @@ describe("hosted agent connection deletion", () => {
   async function hostedApp() {
     const base = plane()
     base.services.authority!.usersMe = vi.fn(async (auth) => ({ user_id: `user-${auth.user.subject}` })) as never
-    const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+    const controlPlane = await miniflareControlPlaneDatabase()
     for (const userId of ["user-alice", "user-bob"]) {
       await controlPlane.database.prepare("insert into users values (?, 'active', 1, 1, null, null)").bind(userId).run()
     }
@@ -285,7 +285,7 @@ describe("hosted agent connection deletion", () => {
 
 describe("resource-closed hosted core app", () => {
   test("message reads preserve the stored authority ordinal and hide denied sessions", async () => {
-    const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+    const controlPlane = await miniflareControlPlaneDatabase()
     const { database } = controlPlane
     try {
       const { auth, sessions } = await storedD1Session(database)

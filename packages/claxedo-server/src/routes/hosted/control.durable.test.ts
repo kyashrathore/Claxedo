@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest"
 import { createIdempotencyCoordinator, d1ProjectionCommandIdempotency, IDEMPOTENCY_INFLIGHT_TTL_MS } from "../../authority/http/idempotency"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 
 const pulls = vi.hoisted(() => ({ session: vi.fn(), messages: vi.fn() }))
 vi.mock("../../authority/hosted-session-pull", () => ({
@@ -17,7 +17,7 @@ const request = (operation: string, key: string, reason = "repair") => new Reque
 
 let d1: ControlPlaneDatabase
 beforeAll(async () => {
-  d1 = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  d1 = await miniflareControlPlaneDatabase()
 })
 afterAll(async () => {
   await d1.dispose()
@@ -100,7 +100,7 @@ test("a failed command releases its claim for the retry, and a storage failure r
   expect((await (await instance()).fetch(request("register", "retry"))).status).toBe(200)
   expect(pulls.session).toHaveBeenCalledTimes(2)
 
-  const unavailable = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const unavailable = await miniflareControlPlaneDatabase()
   await unavailable.dispose()
   expect((await (await instance(unavailable.database)).fetch(request("register", "unavailable"))).status).toBe(500)
   expect(pulls.session).toHaveBeenCalledTimes(2)

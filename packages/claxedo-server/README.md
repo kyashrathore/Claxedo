@@ -57,6 +57,21 @@ runtime `harnesses` descriptor. An `npm publish` of
 versioning keys off the bundle build plus `SNAPSHOT_SCHEMA_VERSION`
 (`packages/sandbox-manager/src/image.ts`).
 
+## Control-plane D1 schema
+
+`migrations/control-plane/0001_baseline.sql` is the whole control-plane schema,
+generated, never hand-edited. To change it, add a numbered migration beside it,
+run `bun run d1:baseline:generate`, and review `git diff migrations/control-plane/`:
+the generator applies everything to an empty SQLite database, rewrites the
+baseline from `sqlite_master` (sorted, so the diff shows only the new schema),
+and deletes the folded files. No rows survive. `bun run d1:baseline:check`, run
+by the package suite, fails while a migration sits unfolded or the baseline is
+not the generator's output.
+
+A deploy installs the baseline into an empty database and refuses any other
+(older history, an earlier baseline, untracked tables), since rows are never
+converted: delete that database with `wrangler d1 delete <name>` and deploy again.
+
 ## Local Env Files
 
 Local `.env` and `.env.local` files are ignored in this package. Keep real

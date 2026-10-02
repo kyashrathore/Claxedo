@@ -7,7 +7,6 @@ import { emptyUserAgentConfig } from "@claxedo/server-core/agent-config/config"
 import { D1OrgMemberAuthority } from "./org-member-authority"
 import { D1OrgInvitationAuthority } from "./org-invitation-authority"
 import {
-  controlPlaneMigrations,
   miniflareControlPlaneDatabase,
   type ControlPlaneDatabase,
 } from "../../../test-support/control-plane-migrations"
@@ -19,7 +18,7 @@ afterEach(async () => {
 })
 
 async function setup() {
-  const controlPlane = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const controlPlane = await miniflareControlPlaneDatabase()
   active.push(controlPlane)
   const database = controlPlane.database
   let now = 1_800_000_000_000

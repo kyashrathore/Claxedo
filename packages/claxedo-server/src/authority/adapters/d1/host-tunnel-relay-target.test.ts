@@ -1,10 +1,9 @@
 import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 
-import { applyControlPlaneMigration, controlPlaneMigrations } from "../../../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../../../test-support/control-plane-migrations"
 import { createD1HostTunnelTargetResolver } from "./host-tunnel-relay-target"
 
-const MIGRATIONS = controlPlaneMigrations()
 const active: Miniflare[] = []
 
 afterEach(async () => {
@@ -20,7 +19,7 @@ async function database() {
   })
   active.push(instance)
   const database = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const name of MIGRATIONS) await applyControlPlaneMigration(database, name)
+  await applyControlPlaneBaseline(database)
   await database.batch([
     database.prepare("insert into users values (?, 'active', ?, ?, null, null)").bind("user-1", 1, 1),
     database.prepare("insert into actors values (?, ?, 'human', 'active', ?, ?, null)").bind("actor-1", "user-1", 1, 1),

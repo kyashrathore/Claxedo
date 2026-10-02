@@ -2,7 +2,7 @@ import { expect, test } from "vitest"
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
 import { fileURLToPath } from "node:url"
-import { applyControlPlaneMigration, controlPlaneMigrations } from "../test-support/control-plane-migrations"
+import { applyControlPlaneBaseline } from "../test-support/control-plane-migrations"
 import { hostedWorkerCompatibility } from "../test-support/hosted-worker-bundle"
 
 test("register, checkpoint and repair run on workerd with real D1 and no projection store", async () => {
@@ -34,7 +34,7 @@ test("register, checkpoint and repair run on workerd with real D1 and no project
   })
   try {
     const database = await worker.getD1Database("CONTROL_PLANE_DB")
-    for (const name of controlPlaneMigrations()) await applyControlPlaneMigration(database, name)
+    await applyControlPlaneBaseline(database)
     const command = (operation: string, key: string, expectedEventOrdinal = ordinal) => worker.dispatchFetch(`https://control.test/workspaces/ws/sessions/ses/${operation}`, {
       method: "POST", headers: { authorization: "Bearer alice", "content-type": "application/json" },
       body: JSON.stringify({ idempotencyKey: key, expectedEventOrdinal }),

@@ -6,7 +6,7 @@ import {
   HOSTED_ATTEMPT_RETENTION_MS,
   HOSTED_ATTEMPT_TTL_MS,
 } from "./attempts"
-import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 
 /**
  * These are the SEMANTICS tests the kit's in-memory store pins
@@ -22,7 +22,7 @@ afterEach(async () => {
 })
 
 async function database(): Promise<D1Database> {
-  const instance = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const instance = await miniflareControlPlaneDatabase()
   active.push(instance)
   return instance.database
 }

@@ -3,7 +3,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 
 import { ConnectionExistsError, connectionStoreCoreConformance } from "@claxedo/connections"
 
-import { controlPlaneMigrations, miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { createD1ConnectionStore, HostedConnectionPartitionError } from "./connection-store"
 
 const active: ControlPlaneDatabase[] = []
@@ -13,7 +13,7 @@ afterEach(async () => {
 })
 
 async function database(): Promise<D1Database> {
-  const instance = await miniflareControlPlaneDatabase(controlPlaneMigrations())
+  const instance = await miniflareControlPlaneDatabase()
   active.push(instance)
   return instance.database
 }
