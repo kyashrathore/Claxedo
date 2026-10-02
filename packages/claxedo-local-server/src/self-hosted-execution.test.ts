@@ -13,6 +13,9 @@ describe("@claxedo/local-server/self-hosted-execution", () => {
     // module names it directly, and forcing those through a public facade would
     // either bloat the facade or stop the module being tested at all.
     const allowed = new Set([
+      // Channels keep the machine dispatch they were built on, unhosted and
+      // unchanged until a host for them is chosen.
+      "@claxedo/local-server/self-hosted-execution",
       "@claxedo/local-server/agent-plugins/runtime/runtime-contribution",
     ])
     const offenders: string[] = []
