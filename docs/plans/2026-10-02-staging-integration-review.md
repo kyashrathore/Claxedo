@@ -68,8 +68,10 @@ messages or fields are synthesized or silently removed.
 ## Deployment status
 
 Validation is ongoing. This document is not deployment approval or a claim
-that staging acceptance has passed. Remote `dev` and `staging` were both at
-`c8a1d691f1` when inspected. This session has made no Cloudflare mutations.
+that staging acceptance has passed. Remote `dev` and `staging` were advanced together to `e980f59015` after the
+full pre-push gate passed. Staging run 37025981805 passed its gate and all four
+Linux server shards, but failed the general Linux shard before any deploy job
+started. This session has made no Cloudflare mutations.
 
 ## Translator corpus repair
 
@@ -177,3 +179,26 @@ then waited on fixed sleeps while a 5 ms orphan timer could remove the session.
 It now creates the real process inside the mocked PTY spawn, connects a client,
 observes the shell's child-ready marker, and awaits the actual leader exit.
 No ownership admission rule changes. All 22 PTY lifecycle cases pass locally.
+
+
+## Pi dialog timing follow-up
+
+Candidate run 37025334090 and staging run 37025981805 exposed a test that
+required broker expiry to beat Pi's independent native timeout. Pinned Pi
+starts its timer before emitting the dialog request. If it expires first,
+command completion correctly cancels the broker request. Conformance now checks
+one durable non-granting answer and no pending request; the controlled-clock
+`pi-dialog-deadline.test.ts` separately proves that the real broker expires at
+the supplied duration and the real RPC channel sends cancellation. No product
+behavior or deadline changes. Staging also caught the scripted settlement test
+reading its response file before the child consumed stdin; that assertion now
+waits for actual receipt. Local Pi/UI validation passed 81 cases, and harness
+architecture checks passed.
+
+The final Cloudflare Docker build and in-image configuration smoke passed after
+the process fixes. The local hosted-stack rehearsal passed its 14 assertions,
+including owner bootstrap, organization invitation, sandbox creation and relay
+runtime health. The Electron desktop smoke passed with a scripted ACP turn.
+These local flows do not prove live staging authentication or hosted execution.
+Native Windows follow-up repairs resolve dynamic import paths as file URLs and
+locate bundled npm beside the selected Node executable; native CI is pending.

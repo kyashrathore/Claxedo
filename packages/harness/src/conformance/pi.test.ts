@@ -151,6 +151,8 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
       new Promise<string>((resolve) => setTimeout(() => resolve("pending"), 2_000)),
     ])).resolves.toBe("settled")
     expect(context.owner.broker.list({ sessionId: "s1" }).filter((row) => row.request.kind === "question")).toHaveLength(0)
+    expect(await pollUntil(async () => await Bun.file(path.join(root, "response.json")).exists() ? true : undefined,
+      Date.now() + 2_000)).toBe(true)
     expect(JSON.parse(await fs.readFile(path.join(root, "response.json"), "utf8"))).toEqual({
       type: "extension_ui_response", id: "orphan-dialog", cancelled: true,
     })
