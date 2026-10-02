@@ -6,4 +6,6 @@ export const isOrgManager = (role: OrgRole | undefined) => role === "owner" || r
 
 type ShareLevel = "follow" | "send"
 
-export const sessionControls = (share: ShareLevel | undefined) => ({ owner: share === undefined, send: share !== "follow" })
+export type SessionControls = { readonly owner: boolean; readonly send: boolean }
+
+export const sessionControls = (share: ShareLevel | undefined): SessionControls => ({ owner: share === undefined, send: share !== "follow" })

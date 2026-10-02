@@ -4,7 +4,7 @@ import { usePhone } from "@/lib/viewport"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { sessionId, useServer, type SessionLocation } from "@/server"
 import { usePanel } from "@/panel"
-import { useAccess } from "@/access"
+import { useAccess, type SessionControls } from "@/access"
 import { useSessionStores, type SessionView } from "@/session"
 import { sessionPath, useCommands, useShellRoute, type PaneProps } from "@/shell"
 import { useDialog } from "@/ui"
@@ -57,7 +57,7 @@ function SessionBody(props: {
   readonly active: boolean
   readonly readOnly: boolean
   readonly floating: boolean
-  readonly controls: { readonly owner: boolean; readonly send: boolean }
+  readonly controls: SessionControls
 }) {
   const t = useSessionScreenText()
   const server = useServer()
@@ -136,7 +136,7 @@ function SessionBody(props: {
         classList={{ "session-floating-dock": props.floating }}
       >
         <div class="w-full px-3 pointer-events-auto md:max-w-192 md:mx-auto 2xl:max-w-[880px]">
-          <SessionDocks view={props.view} actionable={props.controls.send} />
+          <SessionDocks view={props.view} controls={props.controls} />
           <div hidden={props.controls.send && blocked()}>
             <Show when={todo.open()}>
               <TodoDockSlot view={props.view} dock={todo} />

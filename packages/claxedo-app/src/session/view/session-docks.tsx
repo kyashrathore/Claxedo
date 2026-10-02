@@ -1,12 +1,13 @@
 import { createMemo, createSignal, Match, Show, Switch, untrack } from "solid-js"
 import { persistedSignal, preferenceKey, tabStorage } from "@/lib/persisted"
-import type { AgentRequest, AgentRequestReply, AppError, GoalAction } from "@/server"
+import type { SessionControls } from "@/access"
+import type { AgentRequest, AgentRequestReply, AppError } from "@/server"
 import type { SessionView } from "@/session"
 import { PermissionDock } from "./docks/permission-dock"
 import { QuestionDock } from "./docks/question-dock"
 import { GoalDock } from "./docks/goal-dock"
 import { SessionTodoDock } from "./docks/todo-dock"
-import { todoDockOpen, type GoalActions } from "./docks/model"
+import { goalActions, todoDockOpen } from "./docks/model"
 import { turnActive } from "./timeline"
 import { useSessionScreenText } from "./text"
 import "./docks/docks.css"
@@ -52,19 +53,15 @@ function RequestReadError(props: { readonly view: SessionView; readonly error: A
   )
 }
 
-function goalActions(view: SessionView): GoalActions {
-  return Object.fromEntries(view.goalActions().map((action: GoalAction) => [action, () => view.controlGoal(action)]))
-}
-
-export function SessionDocks(props: { readonly view: SessionView; readonly actionable: boolean }) {
+export function SessionDocks(props: { readonly view: SessionView; readonly controls: SessionControls }) {
   const request = createMemo(() => props.view.requests()[0])
   return (
-    <div data-slot="session-docks" hidden={!props.actionable}>
+    <div data-slot="session-docks" hidden={!props.controls.send}>
       <Show when={props.view.requestsError()}>{(error) => <RequestReadError view={props.view} error={error()} />}</Show>
       <Show when={request()} keyed>
         {(current) => <RequestDock view={props.view} request={current} />}
       </Show>
-      <Show when={props.view.goal()}>{(goal) => <GoalDock goal={goal()} actions={goalActions(props.view)} />}</Show>
+      <Show when={props.view.goal()}>{(goal) => <GoalDock goal={goal()} actions={goalActions(props.view.goalActions(), props.view.controlGoal, props.controls)} />}</Show>
     </div>
   )
 }

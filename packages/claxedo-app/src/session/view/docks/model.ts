@@ -1,4 +1,5 @@
 import type { AppError, GoalAction } from "@/server"
+import type { SessionControls } from "@/access"
 import type { RequestState } from "@/session"
 import type { Transition } from "@/lib/machine"
 import { unreachable } from "@/lib/machine"
@@ -45,6 +46,11 @@ export type GoalSnapshot = {
 export type GoalControl = Exclude<GoalAction, "stop">
 
 export type GoalActions = Partial<Record<GoalControl, () => Promise<void>>>
+
+export function goalActions(available: readonly GoalAction[], control: (action: GoalAction) => Promise<void>, reader: SessionControls): GoalActions {
+  if (!reader.owner) return {}
+  return Object.fromEntries(available.map((action) => [action, () => control(action)]))
+}
 
 export function goalControls(goal: GoalSnapshot, actions: GoalActions) {
   return {
