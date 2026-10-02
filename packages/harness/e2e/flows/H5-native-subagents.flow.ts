@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { eventually } from "../harness/eventually"
 import { ClaxedoApi, assistantText } from "../harness/api"
 import { unexpectedEgress } from "../harness/egress-guard"
 import { startStack } from "../harness/stack"
@@ -40,9 +41,10 @@ export async function run() {
       assert.ok(stream.frames.some((frame) => frameType(frame) === "subagent.updated" && frameSessionId(frame) === parent.id))
       assert.ok(stream.frames.some((frame) => frameType(frame) === "message.part.updated" && frameSessionId(frame) === child.id))
       assert.doesNotMatch(assistantText(await api.messages(directory, parent.id)), /CHILD-(CLAUDE|CODEX)-NATIVE/)
-      const usage = await api.usageBySession(Date.now() - 120_000, Date.now() + 60_000)
-      assert.ok(usage.claxedo.totals.input > 0,
-        `${harness.id} usage was absent from the local person's totals`)
+      const usage = await eventually(`${harness.id} usage in the local person's totals`, async () => {
+        const read = await api.usageBySession(Date.now() - 120_000, Date.now() + 60_000)
+        return read.claxedo.totals.input > 0 ? read : undefined
+      }, 20_000)
       assert.ok(usage.breakdown.rows.some((row) => row.value.endsWith(`:session:${parent.id}`) && row.input > 0),
         `${harness.id} usage was not attributed to parent: ${JSON.stringify(usage.breakdown.rows)}`)
       console.log(`H5 ${harness.id}: child transcript, parent link, live frames and owner usage passed`)
