@@ -226,6 +226,42 @@ describe("prompts for a session that is already running a turn", () => {
     await dispose()
   })
 
+  test("a queued prompt waits for the configuration its predecessor's turn held back; a direct prompt or harness switch meanwhile is refused", async () => {
+    const turns: string[] = []
+    const controls: TurnControl[] = []
+    let land!: () => void
+    const held = new Promise<void>((resolve) => { land = resolve })
+    let pushes = 0
+    const fixture = createHostFixture({
+      transports: { pi: harness({ turns, open: () => open(controls) }), claude: new FakeTransport() },
+      afterTurn: async () => {
+        pushes++
+        await held
+      },
+    })
+    const { id: sessionId } = await fixture.runtime.sessions.create(sessionCreate({ id: "ses_busy" }))
+    const origin = sessionCreate().origin
+    await fixture.runtime.turns.start({ sessionId, messageId: "msg_first", text: "start the work", origin })
+    const queued = fixture.runtime.turns.whenIdle(sessionId)
+      .then(() => fixture.runtime.turns.start({ sessionId, messageId: "msg_next", text: "next", origin }))
+
+    controls[0].finish()
+    await until(() => pushes === 1)
+    for (let wait = 0; wait < 5; wait++) await tick()
+    expect(turns).toEqual(["start the work"])
+    await expect(fixture.runtime.turns.start({ sessionId, messageId: "msg_direct", text: "direct", origin }))
+      .rejects.toMatchObject({ code: "session_turn_in_progress" })
+    await expect(fixture.runtime.sessions.updateConfig(sessionId, { harness: { id: "claude", access: "native" } }))
+      .rejects.toMatchObject({ code: "session_turn_in_progress" })
+
+    land()
+    await until(() => turns.includes("next"))
+    controls[1].finish()
+    await queued
+    expect(turns).toEqual(["start the work", "next"])
+    await fixture.dispose()
+  })
+
   test("a session with nothing running is idle at once, so a queued prompt starts immediately", async () => {
     const control = controlledTurn("ses_busy")
     const { runtime, sessionId, dispose } = await session(harness({ turns: [], open: () => control }))

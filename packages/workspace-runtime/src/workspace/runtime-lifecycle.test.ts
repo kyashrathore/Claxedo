@@ -286,6 +286,19 @@ describe("workspace runtime public lifecycle", () => {
     expect((await f.request("/session")).status).toBe(503)
   })
 
+  test("a harness switch while a turn runs answers the typed 409 busy refusal", async () => {
+    const f = await fixture({ hold: true })
+    await f.host.apply(f.snapshot())
+    await f.request("/session", "POST", { id: "busy" })
+    const prompt = f.request("/session/busy/message", "POST", { parts: [{ type: "text", text: "work" }] })
+    try {
+      await f.startedTurn
+      const refused = await f.request("/session/busy/config", "PATCH", { harness: { id: "secondary", access: "connection" } })
+      expect(refused.status).toBe(409)
+      expect(await refused.json()).toMatchObject({ error: { code: "session_turn_in_progress" } })
+    } finally { f.release(); await prompt }
+  })
+
   test("source retirement after handoff leaves the target's active turn and transport alive", async () => {
     const f = await fixture({ hold: true })
     await f.host.apply(f.snapshot())
@@ -838,9 +851,7 @@ describe("workspace runtime public lifecycle", () => {
     const replacement = f.open()
     const refused = await replacement.request("/session", "POST", { id: "after-crash" })
     expect(refused.status, await refused.clone().text()).toBe(503)
-    const body = await refused.json() as { error?: string }
-    expect(body.error).toContain("workspace_launch_unreconciled")
-    expect(body.error).toContain(prepared.launchId)
+    expect(await refused.json()).toMatchObject({ error: { code: "workspace_launch_unreconciled", details: { launches: [{ launchId: prepared.launchId }] } } })
     // A read is not a write: inspecting the workspace is how an operator finds
     // out what is holding it.
     expect((await replacement.request("/session")).status).toBe(200)
@@ -1074,7 +1085,7 @@ describe("host lifecycle", () => {
     const f = createHostFixture({ transports: { pi: new FakeTransport({ turn: () => control.events }), target } })
     await f.runtime.sessions.create(sessionCreate({ id: "s" }))
     await f.runtime.turns.start({ sessionId: "s", text: "work", origin })
-    await expect(f.runtime.sessions.updateConfig("s", { harness: { id: "target", access: "native" } })).rejects.toThrow()
+    await expect(f.runtime.sessions.updateConfig("s", { harness: { id: "target", access: "native" } })).rejects.toMatchObject({ code: "session_turn_in_progress" })
     expect(target.starts).toEqual([])
     expect(f.store.getSessionConfig("s")?.harness.id).toBe("pi")
     control.finish()
