@@ -3,9 +3,10 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { assistantText } from "../harness/api"
 import { hostedFetch, inviteHostedPerson, signInHostedPerson } from "../harness/hosted-auth"
-import { hostedApi, hostedOwner, hostedWorkspace } from "../harness/hosted-flow"
+import { hostedPiSession } from "../harness/hosted-cloud"
+import { hostedOwner, hostedWorkspace } from "../harness/hosted-flow"
 import { startHostedStack } from "../harness/hosted-stack"
-import { frameSessionId, frameType, openEventStream } from "../harness/stream"
+import { frameSessionId, frameType } from "../harness/stream"
 import { waitForTitle } from "../harness/turn-observations"
 
 export async function run() {
@@ -30,23 +31,20 @@ export async function run() {
     const target = await fs.readFile(path.join(stack.root, "local-broker-targets", `${workspace.id}.json`), "utf8")
     const secretNames = (JSON.parse(target) as { secretNames: string[] }).secretNames
     if (!secretNames.length) throw new Error(`C-1: hosted delivered no brokered account to the owner's sandbox; stored owner and member accounts cannot be spent`)
-    const api = hostedApi(stack, workspace, owner)
-    const model = { providerId: "pi", modelId: "openai/gpt-4.1" }
-    const stream = await openEventStream(stack.relayUrl, workspace.directory, {
-      relayWorkspaceId: workspace.id, authorization: `Bearer ${workspace.runtimeAccessToken}`,
-    })
+    const session = await hostedPiSession(stack, owner, workspace, { providerId: "pi", modelId: "openai/gpt-4.1" })
+    await session.create()
+    const stream = await session.events()
     try {
-      const session = await api.createSession(workspace.directory, { harness: { id: "pi", access: "native" }, model })
-      await api.prompt(workspace.directory, session.id, "Reply with exactly this one token: H31OWNER", { model, title: true })
-      const settled = await stream.waitFor((frame) => frameSessionId(frame) === session.id &&
+      await session.prompt("Reply with exactly this one token: H31OWNER")
+      const settled = await stream.waitFor((frame) => frameSessionId(frame) === session.sessionId &&
         (frameType(frame) === "session.idle" || frameType(frame) === "session.error"), { label: "H31 owner settlement", timeoutMs: 60_000 })
       const spent = stack.model.requests.find((request) => request.prompt.includes("H31OWNER"))
       if (frameType(settled) !== "session.idle" || !spent) {
-        throw new Error(`C-1: hosted owner Pi turn did not spend a brokered account: ${JSON.stringify({ settlement: frameType(settled), requests: stack.model.requests.length, assistant: assistantText(await api.messages(workspace.directory, session.id)) })}`)
+        throw new Error(`C-1: hosted owner Pi turn did not spend the owner's account: ${JSON.stringify({ settlement: frameType(settled), requests: stack.model.requests.length, assistant: assistantText(await session.messages()) })}`)
       }
       assert.equal(spent.authorization, "Bearer hosted-owner-key",
         `C-12: owner turn spent another person's OpenAI account: ${JSON.stringify({ memberKeySpent: spent.authorization === "Bearer hosted-member-key", owner: owner.id, member: member.id })}`)
-      await waitForTitle(stream, session.id)
+      await waitForTitle(stream, session.sessionId)
     } finally {
       stream.close()
     }

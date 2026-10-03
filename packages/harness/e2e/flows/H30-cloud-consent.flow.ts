@@ -72,7 +72,7 @@ export async function run() {
       throw new Error(`The stored account did not reach its cloud sandbox as a placeholder; delivered names: ${first.secretNames.join(",")}`)
     }
 
-    const revoked = await hostedFetch(stack, "/api/claxedo/credentials/provider/openai", { method: "DELETE" }, owner)
+    const revoked = await hostedFetch(stack, "/api/claxedo/credentials/provider/openai", { method: "DELETE", headers: { "content-type": "application/json" }, body: "{}" }, owner)
     assert.equal(revoked.status, 200, `Revoking the cloud account: ${await revoked.text()}`)
     const until = Date.now() + 20_000
     let next = first

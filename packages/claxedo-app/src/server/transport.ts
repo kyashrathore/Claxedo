@@ -4,6 +4,8 @@ import { responseError, toAppError } from "./errors"
 import { createRelay, type Relay } from "./relay"
 import { startWorkspace, type StartOptions } from "./workspace-start"
 import { CLOUD_RUNTIME_UNAVAILABLE, connectionAnswerFromWire, unavailableRetryAfter, type ConnectionAnswer, type WorkspaceConnections } from "./wire/connection"
+import { SESSION_LIST_SORT, sessionHostRootFromListItem } from "./wire/session-row"
+import { asArray, asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { ServerError } from "./errors"
 
 export type RuntimeRoute = {
@@ -26,6 +28,7 @@ export type Transport = {
   readonly runtimeJson: <T>(route: RuntimeRoute, path: string, init?: RequestInit) => Promise<T>
   readonly startRuntime: (workspaceId: string, options?: StartOptions) => Promise<void>
   readonly connectSession: (workspaceId: string, sessionId: string) => Promise<void>
+  readonly findSessionHost: (workspaceId: string, sessionId: string) => Promise<string | undefined>
   readonly onSessionHost: (listener: SessionHostListener) => () => void
 }
 
@@ -143,13 +146,25 @@ function sessionHostConnector(connections: WorkspaceConnections, relay: Relay, h
   }
 }
 
+function sessionRowHost(json: Transport["json"], account: HostedAccount | undefined): Transport["findSessionHost"] {
+  return async (workspaceId, sessionId) => {
+    const one = { sessionId, limit: 1, settled: "all", sort: SESSION_LIST_SORT }
+    const page = account ? await account.run("session.activity.page", one) : await json<unknown>(withQuery("/api/control/session-list", { scope: "all", ...one }))
+    return sessionHostRootFromListItem(asArray(asRecordOrEmpty(page).items).find((item) => {
+      const row = asRecordOrEmpty(item)
+      return row.sessionId === sessionId && row.workspaceId === workspaceId
+    }))
+  }
+}
+
 export function createTransport(config: ServerConfig): Transport {
   const serverUrl = resolveServerUrl(config)
   const loopback = isLoopbackUrl(serverUrl)
   const request = (path: string, init?: RequestInit) => fetchFromServer(config, `${serverUrl}${path}`, init)
-  const connections = createWorkspaceConnections(request, config.account ? createHostedAccount(config.account) : undefined)
+  const account = config.account ? createHostedAccount(config.account) : undefined
+  const connections = createWorkspaceConnections(request, account)
   const hosts = sessionHostSignals()
-  const relay = createRelay(async (workspaceId, sessionId) => hosts.learned(workspaceId, sessionId, await connections.read(workspaceId, sessionId)))
+  const relay = createRelay(async (workspaceId, sessionId) => hosts.learned(workspaceId, sessionId, await connections.read(workspaceId, sessionId)), config.relayLinks)
   const daemonProxy = loopback && config.account === undefined
   const runtime = (route: RuntimeRoute, path: string, init?: RequestInit) => {
     if (!route.remote) return request(withQuery(path, { directory: route.directory }), init)
@@ -164,19 +179,21 @@ export function createTransport(config: ServerConfig): Transport {
     return relay.webSocket(route.workspaceId, withoutRouteQuery(path), session)
   }
   const label = (path: string, init?: RequestInit) => `${init?.method ?? "GET"} ${path}`
+  const json: Transport["json"] = async (path, init) => readJsonResponse(await request(path, init), label(path, init))
   return {
     serverUrl,
     loopback,
     request,
     runtime,
     runtimeSocket,
-    json: async (path, init) => readJsonResponse(await request(path, init), label(path, init)),
+    json,
     runtimeJson: async (route, path, init) => readJsonResponse(await runtime(route, path, init), label(path, init)),
     startRuntime: async (workspaceId, options) => {
       const link = await startWorkspace(connections.start, workspaceId, options)
       if (!daemonProxy) relay.adopt(link)
     },
     connectSession: sessionHostConnector(connections, relay, hosts),
+    findSessionHost: daemonProxy ? async () => undefined : sessionRowHost(json, loopback ? account : undefined),
     onSessionHost: hosts.onSessionHost,
   }
 }

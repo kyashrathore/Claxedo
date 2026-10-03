@@ -11,7 +11,6 @@ import { serveRenderer, type DesktopRenderer, type RendererServer } from "./desk
 import { startEgressGuard, type EgressGuard } from "../../../harness/e2e/harness/egress-guard"
 import type { TlsTrust } from "./tls-front"
 import { isolatedEnv } from "../../../harness/e2e/harness/isolated-env"
-import { APP_AGENT_ENV } from "./agent-env"
 import { writeScriptedModelCatalog } from "../../../harness/e2e/harness/model-catalog"
 import { releasePort, reservePort } from "../../../harness/e2e/harness/ports"
 import { startScriptedModelServer, type ScriptedModelServer } from "../../../harness/e2e/harness/scripted-model-server"
@@ -101,7 +100,7 @@ async function desktopEnv(world: DesktopWorld, account: DesktopAccount | undefin
   const zdotdir = path.join(world.dataDir, "zdotdir")
   await fs.mkdir(zdotdir, { recursive: true })
   const entries = {
-    ...(await isolatedEnv(world.dataDir, world.egress.url, APP_AGENT_ENV)),
+    ...(await isolatedEnv(world.dataDir, world.egress.url)),
     CLAXEDO_OPENCODE_CATALOG_CACHE: await writeScriptedModelCatalog(world.dataDir),
     CLAXEDO_DESKTOP_USER_DATA_DIR: path.join(world.dataDir, "user-data"),
     CLAXEDO_DATA_DIR: serverDataDir(world),

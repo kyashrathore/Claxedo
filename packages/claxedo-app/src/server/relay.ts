@@ -1,3 +1,4 @@
+import { asFiniteNumber, asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import { toAppError } from "./errors"
 import { workspaceStopped, type RelayConnection, type WorkspaceConnections } from "./wire/connection"
 
@@ -6,6 +7,9 @@ export type Relay = {
   readonly webSocket: (workspaceId: string, path: string, sessionId?: string) => Promise<WebSocket>
   readonly adopt: (link: RelayConnection) => void
 }
+
+/** Where a signed-in person's relay links outlive a reload: the tab's storage, under that person's own scope. */
+export type RelayLinkStorage = { readonly scope: string; readonly storage: Pick<Storage, "getItem" | "setItem"> }
 
 const REFRESH_WINDOW_MS = 60_000
 const RUNTIME_ACCESS_TOKEN_PROTOCOL = "claxedo-rat."
@@ -20,6 +24,32 @@ async function readConnection(read: WorkspaceConnections["read"], workspaceId: s
   return answer.link
 }
 
+function usable(link: RelayConnection) {
+  return link.tokenExpiresAt - Date.now() > REFRESH_WINDOW_MS
+}
+
+function storedLinks(links: RelayLinkStorage | undefined) {
+  const name = (key: string) => `claxedo:relay-link:${links?.scope}:${key}`
+  return {
+    read: (key: string): RelayConnection | undefined => {
+      const raw = links?.storage.getItem(name(key))
+      if (!raw) return undefined
+      const row = asRecordOrEmpty(JSON.parse(raw))
+      const [workspaceId, relayUrl, runtimeAccessToken, tokenExpiresAt] = [asString(row.workspaceId), asString(row.relayUrl), asString(row.runtimeAccessToken), asFiniteNumber(row.tokenExpiresAt)]
+      if (!workspaceId || !relayUrl || !runtimeAccessToken || tokenExpiresAt === undefined) return undefined
+      const link: RelayConnection = { workspaceId, relayUrl, runtimeAccessToken, tokenExpiresAt, ...(asString(row.sessionId) ? { sessionId: asString(row.sessionId) } : {}) }
+      return usable(link) ? link : undefined
+    },
+    write: (key: string, link: RelayConnection) => {
+      try {
+        links?.storage.setItem(name(key), JSON.stringify(link))
+      } catch (error) {
+        console.warn("A relay link could not be kept for the next reload", { workspaceId: link.workspaceId, error })
+      }
+    },
+  }
+}
+
 async function sendThroughRelay(link: RelayConnection, path: string, init?: RequestInit) {
   const headers = new Headers(init?.headers)
   headers.set("Authorization", `Bearer ${link.runtimeAccessToken}`)
@@ -31,22 +61,33 @@ async function sendThroughRelay(link: RelayConnection, path: string, init?: Requ
   }
 }
 
-export function createRelay(read: WorkspaceConnections["read"]): Relay {
+export function createRelay(read: WorkspaceConnections["read"], links?: RelayLinkStorage): Relay {
   const connections = new Map<string, Promise<RelayConnection>>()
-  const hold = async (workspaceId: string, pending: Promise<RelayConnection>) => {
-    connections.set(workspaceId, pending)
+  const stored = storedLinks(links)
+  const hold = async (key: string, pending: Promise<RelayConnection>) => {
+    connections.set(key, pending)
     try {
-      return await pending
+      const link = await pending
+      stored.write(key, link)
+      return link
     } catch (error) {
-      if (connections.get(workspaceId) === pending) connections.delete(workspaceId)
+      if (connections.get(key) === pending) connections.delete(key)
       throw error
     }
   }
   const key = (workspaceId: string, sessionId?: string) => JSON.stringify([workspaceId, sessionId ?? null])
-  const connection = (workspaceId: string, sessionId?: string, force = false) => (!force && connections.get(key(workspaceId, sessionId))) || hold(key(workspaceId, sessionId), readConnection(read, workspaceId, sessionId))
+  const kept = (at: string) => {
+    const link = stored.read(at)
+    if (link) connections.set(at, Promise.resolve(link))
+    return link && connections.get(at)
+  }
+  const connection = (workspaceId: string, sessionId?: string, force = false) => {
+    const at = key(workspaceId, sessionId)
+    return (!force && (connections.get(at) ?? kept(at))) || hold(at, readConnection(read, workspaceId, sessionId))
+  }
   const fresh = async (workspaceId: string, sessionId?: string) => {
     const current = await connection(workspaceId, sessionId)
-    return current.tokenExpiresAt - Date.now() > REFRESH_WINDOW_MS ? current : connection(workspaceId, sessionId, true)
+    return usable(current) ? current : connection(workspaceId, sessionId, true)
   }
   return {
     fetch: async (workspaceId, path, init, sessionId) => {
@@ -59,6 +100,7 @@ export function createRelay(read: WorkspaceConnections["read"]): Relay {
     },
     adopt: (link) => {
       connections.set(key(link.workspaceId, link.sessionId), Promise.resolve(link))
+      stored.write(key(link.workspaceId, link.sessionId), link)
     },
   }
 }

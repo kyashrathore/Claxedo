@@ -28,13 +28,16 @@ export { listLivePlugins, registerLivePlugin, writeLivePlugin, type LivePluginFo
 export { APP_PLUGIN_WARNING, appPluginDialog, appPluginRow, approveAppPlugin } from "./app-plugins"
 export { breakFixturePlugin, FIXTURE_ROUTES, fixtureFolder, writeFixturePlugin, type FixtureVersion } from "./fixture-plugin"
 export { type Account, type SignedStack } from "./signed-stack"
-export { cloudTurn, createCloudSession, makeCloudWorkspace, startCloudWorkspace, stopCloudWorkspace, storedMessages, type CloudWorkspace } from "./cloud"
+export {
+  cloudMessages, cloudPrompt, cloudTurn, createCloudSession, listedSessions, makeCloudWorkspace, sessionConnection, startCloudWorkspace, stopCloudWorkspace,
+  storedMessages, storeOwnerKey, type CloudWorkspace,
+} from "./cloud"
 export { SCRIPTED_ACP_CONNECTION_ID, SCRIPTED_ACP_HARNESS, UNSET_ACP_HARNESS } from "../../../harness/e2e/harness/acp/connection"
 export { scriptedAgentPids } from "./acp/agent-process"
 export { acpScriptToken, type AcpScript, type AcpStep, type AcpToolStep } from "../../../harness/e2e/harness/acp/script"
 export { installedCli, type CliAvailability, type CliName } from "./installed-cli"
 export { REFUSED_BACKGROUND_TARGETS, unexpectedEgress, type EgressAttempt, type EgressGuard } from "../../../harness/e2e/harness/egress-guard"
-export { type ScriptedProviderId } from "../../../harness/e2e/harness/scripted-providers"
+export { SCRIPTED_SECRET, type ScriptedProviderId } from "../../../harness/e2e/harness/scripted-providers"
 export { APP_SCRIPTED_PROVIDER_IDS } from "./scripted-world"
 export { type ScriptedModelRequest, type ScriptedModelServer, type ScriptedToolCall } from "../../../harness/e2e/harness/scripted-model-server"
 export { expectWithinBaseline, settled, type Surface } from "./a11y"
@@ -45,3 +48,4 @@ export { apiRequests, holdEveryRequest, holdResponse } from "./requests"
 export { recordStillness, sinceFirstReady, stillnessAfter, type Stillness } from "./stillness"
 export { watchPageWork, type PageWork, type PageWorkInput } from "./page-work"
 export { uncovered } from "./occlusion"
+export { processAlive } from "../../../harness/e2e/harness/process-alive"

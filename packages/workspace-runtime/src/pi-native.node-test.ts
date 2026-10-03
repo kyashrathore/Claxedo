@@ -8,6 +8,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { createServer, type ServerResponse } from "node:http"
+import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { PI_BROKER_PLACEHOLDER, PI_DIRECT_SECRET, PI_NATIVE_MODEL, piNativeRuntime, piNativeSnapshot, type PiNativeRoots } from "./test-support/pi-native-runtime"
 
 type Reply = { tool?: { name: string; arguments: object }; text?: string; hold?: true }
@@ -93,7 +94,7 @@ void test("native Pi HTTP routes keep the session across checkpoint scrub and re
   }
 })
 
-void test("a daemon killed mid-turn resumes Pi's run on restart as a continuation turn", { timeout: 60_000 }, async () => {
+void test("a daemon killed mid-turn resumes Pi's run on restart as a continuation turn, once the first snapshot brings its credentials", { timeout: 60_000 }, async () => {
   const model = await provider([{ hold: true }, { text: "Answered after the restart" }])
   const paths = await roots("pi-machine-crash-", model.url)
   const child = spawn(process.execPath, [...process.execArgv, path.join(import.meta.dirname, "test-support/pi-native-runtime.ts"), "crash-child", JSON.stringify(paths)],
@@ -104,8 +105,15 @@ void test("a daemon killed mid-turn resumes Pi's run on restart as a continuatio
   await new Promise((resolve) => child.once("exit", resolve))
   const runtime = piNativeRuntime(paths)
   try {
-    await runtime.host.apply(piNativeSnapshot(model.url))
     const history = async () => (await runtime.app.request("http://localhost/session/crash-proof/message")).text()
+    const status = async () => {
+      const statuses: unknown = await (await runtime.app.request("http://localhost/session/status")).json()
+      return asRecordOrEmpty(asRecordOrEmpty(statuses)["crash-proof"]).type
+    }
+    await history()
+    assert.equal(await status(), "interrupted")
+    assert.equal(model.requests.length, 1)
+    await runtime.host.apply(piNativeSnapshot(model.url))
     const deadline = Date.now() + 30_000
     while (!(await history()).includes("Answered after the restart") && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100))
     assert.ok((await history()).includes("Answered after the restart"))

@@ -166,3 +166,21 @@ test("a Claxedo turn sent twice runs once: Pi answers the repeat from the settle
     expect(backend.server.requests.filter((request) => request.prompt.includes("PIONCE") && !request.prompt.includes("Scripted Session"))).toHaveLength(1)
   } finally { await context.close() }
 }, 60_000)
+
+test("a Pi draft lists the models of providers the owner has only an account row for, and a turn on one is refused before any request", async () => {
+  const context = await piContext("pi-account-catalog")
+  const backend = context.backend as PiBackend
+  try {
+    const accountsOnly = { ...backend.credentials, direct: {},
+      providers: { openai: { baseUrl: backend.server.url, placeholder: "broker-placeholder", authMode: "bearer" as const } } }
+    const preview = await context.transport.config!.options({ draft: { ...context.start, credentials: accountsOnly } }, "peek")
+    const models = preview.options.find((option) => option.id === "model")
+    const ids = models && "selectOptions" in models ? (models.selectOptions ?? []).map((row) => row.id) : []
+    expect(ids).toContain("openai/gpt-4.1")
+    expect(new Set(ids.map((id) => id.split("/")[0]))).toEqual(new Set(["openai"]))
+    expect(await context.transport.configure(context.session, { credentials: accountsOnly })).toMatchObject({ state: "applied" })
+    const turn = collect(context.transport.send(context.session, context.turn("Reply with exactly this one token: PINODIRECT"), context.turnBroker()))
+    await expect(turn).rejects.toThrow(/direct_credential_required/)
+    expect(backend.server.requests.some((request) => request.prompt.includes("PINODIRECT"))).toBe(false)
+  } finally { await context.close() }
+}, 60_000)

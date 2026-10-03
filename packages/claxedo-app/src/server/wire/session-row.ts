@@ -6,6 +6,8 @@ import type { ModelChoice, SessionLocation, SessionReader, SessionRow, SessionSe
 import { sessionConfigFromWire } from "./harness-state"
 import { backgroundWorkFromWire } from "./status"
 
+export const SESSION_LIST_SORT = "human_turn_desc"
+
 export type Address = {
   readonly placementFor: (directory: string, workspaceId?: string, sessionId?: string) => { readonly placementId: PlacementId; readonly projectId: ProjectId } | undefined
 }

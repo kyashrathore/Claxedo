@@ -544,7 +544,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       app.route("/", sessions.routes)
       reissueQueuedPrompts = () => durable.whenAdmitted("queued prompt recovery", () =>
         withSessionCore(core, () => withWorkspaceTarget(options.target, async () => {
-          const interrupted = durable.takeInterruptedSessions()
+          // A resumed run spends the credentials an applied snapshot carries; before the first one it would continue with none and fail.
+          const interrupted = appliedSignature === undefined ? [] : durable.takeInterruptedSessions()
           if (interrupted.length) await harnessEngine().runtime.resumeDurableRuns(interrupted)
           await sessions.recoverQueuedPrompts()
         })))

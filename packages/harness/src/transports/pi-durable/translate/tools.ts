@@ -1,6 +1,7 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { asArray, asRecordOrEmpty as row, asString } from "@claxedo/helpers/guards"
 import { contentBlockImages } from "../../../translate/tool-attachments"
+import { toolDisplayFromInput } from "../../../translate/tool-display"
 import { piStep, type PiDurableTranslatorState, type PiStep } from "./state"
 
 type Frame = Record<string, unknown>
@@ -17,10 +18,22 @@ function piResultText(content: unknown): string {
   }).join("\n")
 }
 
+const PI_FILE_TOOLS: Readonly<Record<string, string>> = { read: "file_read", write: "file_change", edit: "file_change" }
+
+function piToolDisplay(toolName: string, args: unknown) {
+  const input = row(args)
+  const kind = PI_FILE_TOOLS[toolName]
+  const display = toolDisplayFromInput({ kind: kind ?? (toolName === "bash" ? "command_execution" : "dynamic_tool_call"), toolName, input })
+  const filePath = kind ? asString(input.path) : undefined
+  return filePath ? { ...display, filePath } : display
+}
+
 export function piToolStart(state: PiDurableTranslatorState, frame: Frame): PiStep {
   const id = toolCallId(frame, "start")
   if (typeof frame.toolName !== "string") throw new Error("Pi tool start lacks a name")
-  return piStep(state, [{ type: "tool-start", toolCallId: id, toolName: frame.toolName }, { type: "tool-input", toolCallId: id, input: frame.args }])
+  const display = piToolDisplay(frame.toolName, frame.args)
+  return piStep(state, [{ type: "tool-start", toolCallId: id, toolName: frame.toolName, kind: display.kind, display },
+    { type: "tool-input", toolCallId: id, input: frame.args, display }])
 }
 
 export function piToolUpdate(state: PiDurableTranslatorState, frame: Frame): PiStep {

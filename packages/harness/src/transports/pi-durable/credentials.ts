@@ -1,6 +1,6 @@
 import { createKeyedSerializer } from "@claxedo/helpers"
-import { isPiLaunchProvider, PI_LAUNCH_PROVIDERS, piCredentialProviderIDs, type PiLaunchProvider, type ProviderDirect,
-  type TurnAccount } from "@claxedo/agent-runtime-contract"
+import { isPiLaunchProvider, isProviderUnavailable, PI_LAUNCH_PROVIDERS, piCredentialProviderIDs, type PiLaunchProvider,
+  type ProviderDirect, type ProviderProjection, type TurnAccount } from "@claxedo/agent-runtime-contract"
 import { createModels, type AuthContext, type Credential, type CredentialStore, type MutableModels, type OAuthCredential,
   type Provider, type ProviderAuth } from "@earendil-works/pi-ai"
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic"
@@ -35,6 +35,7 @@ function apiRoot(providerId: string, row: ProviderDirect): string {
 export class PiCredentials {
   readonly models: MutableModels
   private rows: Readonly<Record<string, ProviderDirect>> = {}
+  private accounts: Readonly<Record<string, ProviderProjection>> = {}
   private definitions: readonly CustomProviderDefinition[] = []
   private readonly refreshed = new Map<string, Credential>()
   private readonly writes = createKeyedSerializer()
@@ -47,6 +48,7 @@ export class PiCredentials {
 
   update(credentials: ResolvedCredentials, definitions: readonly CustomProviderDefinition[]): void {
     this.rows = credentials.direct ?? {}
+    this.accounts = credentials.providers
     this.refreshed.clear()
     for (const old of this.definitions) this.models.deleteProvider(old.id)
     this.definitions = definitions.filter((definition) => !isPiLaunchProvider(definition.id))
@@ -57,11 +59,19 @@ export class PiCredentials {
     return this.models.getProviders().flatMap((provider) => this.direct(provider.id) ? [provider.id] : [])
   }
 
+  catalogProviders(): string[] {
+    return this.models.getProviders().flatMap((provider) => this.credentialIds(provider.id).some((id) =>
+      Object.hasOwn(this.rows, id) || (Object.hasOwn(this.accounts, id) && !isProviderUnavailable(this.accounts[id]!))) ? [provider.id] : [])
+  }
+
   direct(providerId: string): { credentialProviderId: string; row: ProviderDirect } | undefined {
-    const definition = this.definitions.find((candidate) => candidate.id === providerId)
-    const ids = definition ? [definition.credentialProviderId] : piCredentialProviderIDs(providerId)
-    const credentialProviderId = ids.find((id) => Object.hasOwn(this.rows, id))
+    const credentialProviderId = this.credentialIds(providerId).find((id) => Object.hasOwn(this.rows, id))
     return credentialProviderId ? { credentialProviderId, row: this.rows[credentialProviderId]! } : undefined
+  }
+
+  private credentialIds(providerId: string): readonly string[] {
+    const definition = this.definitions.find((candidate) => candidate.id === providerId)
+    return definition ? [definition.credentialProviderId] : piCredentialProviderIDs(providerId)
   }
 
   account(providerId: string): TurnAccount | undefined {

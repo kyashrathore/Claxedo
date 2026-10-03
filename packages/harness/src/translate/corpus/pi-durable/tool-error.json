@@ -872,13 +872,32 @@
           {
             "type": "tool-start",
             "toolCallId": "call_4|fc_4",
-            "toolName": "read"
+            "toolName": "read",
+            "kind": "file_read",
+            "display": {
+              "kind": "file_read",
+              "intent": "read",
+              "path": "missing.txt",
+              "input": {
+                "path": "missing.txt"
+              },
+              "filePath": "missing.txt"
+            }
           },
           {
             "type": "tool-input",
             "toolCallId": "call_4|fc_4",
             "input": {
               "path": "missing.txt"
+            },
+            "display": {
+              "kind": "file_read",
+              "intent": "read",
+              "path": "missing.txt",
+              "input": {
+                "path": "missing.txt"
+              },
+              "filePath": "missing.txt"
             }
           }
         ]

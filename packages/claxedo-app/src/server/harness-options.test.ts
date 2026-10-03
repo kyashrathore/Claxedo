@@ -41,3 +41,9 @@ test("a draft's model options on an asleep cloud workspace refuse without starti
   expect(server.runtimeCalls).toEqual([])
   expect(server.requests.filter((path) => path.includes("/connection"))).toEqual([])
 })
+
+test("a session's model options come from the host that serves it, its own session host included", async () => {
+  const server = fakeServer({ reachable: () => true, sessionHosts: { ses_1: "ses_1" }, runtime: () => Response.json(answer) })
+  await readHarnessOptions(server.context.transport, server.context.workspaces, { placementId: placementId("ws_cloud"), harness: "pi", sessionId: "ses_1" })
+  expect(server.hostedCalls).toEqual(["/session/ses_1/config-options?nativeHarness=pi"])
+})

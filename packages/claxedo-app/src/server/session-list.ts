@@ -5,9 +5,8 @@ import { readSessionSources, type MergedPage, type SessionSource, type SourcePag
 import { withQuery } from "./transport"
 import type { ListedStatus } from "./status-types"
 import type { SessionListInput, SessionPage, SessionReader, SessionRow, SettledFilter } from "./types"
-import { lastTurnFromWire, listedStatusFromListItem, readerFromWire, sessionHostRootFromListItem, sessionRowFromListItem } from "./wire/session-row"
+import { lastTurnFromWire, listedStatusFromListItem, readerFromWire, SESSION_LIST_SORT, sessionHostRootFromListItem, sessionRowFromListItem } from "./wire/session-row"
 
-const SORT = "human_turn_desc"
 
 type PageQuery = { readonly limit: number; readonly settled: SettledFilter }
 
@@ -47,8 +46,7 @@ async function listedOf(context: SessionContext, items: readonly unknown[], acco
       row = sessionRowFromListItem(item, address)
     }
     if (!row) continue
-    const hostRoot = sessionHostRootFromListItem(item)
-    if (hostRoot) context.workspaces.hostSession(row.ref, hostRoot)
+    context.workspaces.hostSession(row.ref, sessionHostRootFromListItem(item))
     rows.push(row)
     const reader = listedReader(context, item, account)
     if (reader) readers.set(row.ref.sessionId, reader)
@@ -69,7 +67,7 @@ function serverSource(context: SessionContext, scope: ScopeParams, query: PageQu
   const listPath = transport.loopback ? "/api/claxedo/session-list" : "/api/control/session-list"
   return {
     required: true,
-    read: async (after) => sourcePage(await transport.json(withQuery(listPath, { ...scope, sort: SORT, ...query, after }))),
+    read: async (after) => sourcePage(await transport.json(withQuery(listPath, { ...scope, sort: SESSION_LIST_SORT, ...query, after }))),
   }
 }
 
@@ -88,7 +86,7 @@ function projectSources(context: SessionContext, projectId: ProjectId, accountId
   const accountOnly = accountIds.includes(projectId)
   const account = context.account
   const linked = account
-    ? accountIds.map((id) => ({ ...accountSource((after) => account.run("session.page", { projectId: id, ...query, sort: SORT, ...(after ? { after } : {}) }), readers), required: accountOnly }))
+    ? accountIds.map((id) => ({ ...accountSource((after) => account.run("session.page", { projectId: id, ...query, sort: SESSION_LIST_SORT, ...(after ? { after } : {}) }), readers), required: accountOnly }))
     : []
   return [...(accountOnly ? [] : [serverSource(context, { scope: "project", projectId }, query)]), ...linked]
 }
@@ -105,7 +103,7 @@ function everySources(context: SessionContext, sessionId: SessionId | undefined,
       return { ...page, items: page.items.filter((item) => !accountHoldsReader(context, itemField(item, "workspaceId"), false)) }
     },
   }
-  return [machineOnly, accountSource((after) => account.run("session.activity.page", { ...query, ...one, sort: SORT, ...(after ? { after } : {}) }), readers)]
+  return [machineOnly, accountSource((after) => account.run("session.activity.page", { ...query, ...one, sort: SESSION_LIST_SORT, ...(after ? { after } : {}) }), readers)]
 }
 
 async function pageOf(context: SessionContext, merged: MergedPage, readers: AccountReaders): Promise<SessionPage> {

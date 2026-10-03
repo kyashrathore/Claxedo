@@ -1,4 +1,5 @@
 import { hashKey, type QueryClient } from "@tanstack/solid-query"
+import { toAppError } from "./errors"
 import { queryKeys } from "./query-keys"
 import { placementId, sessionId } from "./ids"
 import { openEventStream, type Stream } from "./stream"
@@ -83,6 +84,9 @@ export function createPlacementStreams(input: StreamsInput): PlacementStreams {
       counts.set(session, (counts.get(session) ?? 0) + 1)
       state.attached.set(placement, counts)
       reconcileStreams(state)
+      void input.workspaces.home(ref).then(() => reconcileStreams(state), (error: unknown) => {
+        console.warn("A session's host could not be resolved for its live stream", { sessionId: session, error: toAppError(error) })
+      })
       return () => {
         const count = (counts.get(session) ?? 1) - 1
         if (count > 0) counts.set(session, count)

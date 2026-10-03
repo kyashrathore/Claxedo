@@ -2,6 +2,7 @@ import { createMemo, type Accessor } from "solid-js"
 import type { HarnessSelectionSnapshot } from "../harness/controller"
 import { isCatalogHarness, type HarnessType } from "../harness/profile"
 import { connectionAllowsNoModel } from "../harness/selection"
+import { modelOptionsUnavailableMessage } from "../harness/store-policy"
 import type { PickerItem } from "./model-list"
 import type { SelectorCatalog } from "./selector-catalog"
 import type { createScopeSelection } from "./selector-scope"
@@ -44,7 +45,7 @@ export function createModelAvailability(input: ModelAvailabilityInput) {
   const modelOptionsFailed = createMemo(() => {
     if (input.harness() && isCatalogHarness(input.harness())) return !!input.catalog.providers.error() && !modelLoading()
     const error = input.selection().configError
-    if (!error || error === "Loading model options..." || error === "Selected model unavailable") return false
+    if (!error || error === "Loading model options..." || error === "Selected model unavailable" || error === modelOptionsUnavailableMessage({ stale: false })) return false
     return !optionsLoading() && !hasModelOptions()
   })
   const modelDisabled = createMemo(() => {

@@ -6,6 +6,9 @@ export function clearPersistedAuthState() {
     if (key === LAST_USER_ID_KEY || !key.startsWith(PREFERENCE_PREFIX)) continue
     localStorage.removeItem(key)
   }
+  for (const key of Object.keys(sessionStorage)) {
+    if (key.startsWith(PREFERENCE_PREFIX)) sessionStorage.removeItem(key)
+  }
 }
 
 export function recordAuthIdentity(userId: string | null | undefined) {

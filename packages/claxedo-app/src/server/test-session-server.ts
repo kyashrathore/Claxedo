@@ -58,6 +58,7 @@ type FakeServerOptions = {
   machine?: boolean
   runtime?: (path: string) => Response | Promise<Response>
   requested?: (path: string) => void
+  sessionHosts?: Readonly<Record<string, string>>
 }
 
 function controlPlaneAnswer(options: FakeServerOptions, path: string): Response {
@@ -72,13 +73,16 @@ function controlPlaneAnswer(options: FakeServerOptions, path: string): Response 
 export function fakeServer(options: FakeServerOptions) {
   const requests: string[] = []
   const runtimeCalls: string[] = []
+  const hostedCalls: string[] = []
+  const hostReads: string[] = []
   const request = async (path: string) => {
     requests.push(path)
     options.requested?.(path)
     return controlPlaneAnswer(options, path)
   }
-  const runtime = async (_route: RuntimeRoute, path: string) => {
+  const runtime = async (route: RuntimeRoute, path: string) => {
     runtimeCalls.push(path)
+    if (route.sessionHost) hostedCalls.push(path)
     return options.runtime ? options.runtime(path) : Response.json({ error: { message: "unexpected runtime read" } }, { status: 500 })
   }
   const readJson = async <T>(response: Response) => (await response.json()) as T
@@ -99,7 +103,11 @@ export function fakeServer(options: FakeServerOptions) {
     startRuntime: async () => undefined,
     connectSession: async () => undefined,
     onSessionHost: () => () => undefined,
+    findSessionHost: async (_workspaceId: string, sessionId: string) => {
+      hostReads.push(sessionId)
+      return options.sessionHosts?.[sessionId]
+    },
   } satisfies Transport
   const workspaces = createWorkspaces(transport, new QueryClient())
-  return { context: { transport, workspaces, status: createStatusOwner(transport) }, requests, runtimeCalls }
+  return { context: { transport, workspaces, status: createStatusOwner(transport) }, requests, runtimeCalls, hostedCalls, hostReads }
 }
