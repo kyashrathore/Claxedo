@@ -5,8 +5,6 @@ export type AccountDelivery = { readonly local: boolean; readonly cloud: boolean
 
 export type AccountSources = { readonly sources: ReadonlyMap<string, AccountSource>; readonly org: readonly Account[]; readonly canRemoveOrgAccounts: boolean }
 
-export type HostedAccountSources = { readonly sources: ReadonlyMap<string, AccountSource>; readonly org: ReadonlySet<string> }
-
 export type Account = {
   readonly id: string
   readonly providerId: string

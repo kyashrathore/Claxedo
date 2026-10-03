@@ -48,8 +48,8 @@ const ENTRIES = [
   // (`d1/workspace-creation.ts`). Hosted account setup carries the shared
   // credential and provider-login routes over the per-org stores
   // (`credentials/worker/routes.ts`, `org-routed.ts`, `provider-auth-pending.ts`).
-  // The clone credential is minted by the Agent Plugins Connections setup
-  // (`workspace/repository-clone.ts`), not by the base create route.
+  // Only the Agent Plugins entries mint a repository clone credential
+  // (`workspace/repository-clone.ts`).
   { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 123, packages: 19 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the

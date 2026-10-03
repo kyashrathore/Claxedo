@@ -61,18 +61,6 @@ test("accounts: org account removal is reported by the server, and an absent or 
   }
 })
 
-test("accounts: the hosted plane's Pi sources are read per harness and a choice is written to the provider's source route", async () => {
-  const { seen, transport } = serve((request) => {
-    if (request.path === "/auth/sources?harness=pi") return Response.json({ sources: { openrouter: "org" }, org: ["openrouter", "anthropic"] })
-    return Response.json({})
-  })
-  const client = new QueryClient()
-  const hosted = await client.fetchQuery(accountQueries(transport).hostedSources("pi"))
-  expect([...hosted.sources]).toEqual([["openrouter", "org"]])
-  expect([...hosted.org]).toEqual(["openrouter", "anthropic"])
-  await createAccountsApi(transport, client).setHostedSource("pi", "openrouter", "own")
-  expect(seen.at(-1)).toEqual({ method: "PUT", path: "/auth/openrouter/source?harness=pi", body: { source: "own" } })
-})
 
 test("accounts: cloud consent writes every binding's scope and stops at the first refusal", async () => {
   const { seen, transport } = serve((request) => {

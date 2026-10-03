@@ -73,8 +73,7 @@ export const serverWorkerd: Policy = {
   // (`authority/adapters/d1/workspace-creation.ts`). Hosted account setup
   // mounts the shared credential and provider-login routes over the per-org
   // stores (`credentials/worker/routes.ts`, `org-routed.ts`) with the D1 store
-  // a device login waits in across instances (`provider-auth-pending.ts`); the
-  // create route no longer mints a clone token (`workspace/repository-clone.ts`).
+  // a device login waits in across instances (`provider-auth-pending.ts`).
   ceilings: { modules: 123, packages: 19 },
 
   emitted: {

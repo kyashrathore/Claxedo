@@ -462,6 +462,14 @@ describe("hosted D1 Connections setup", () => {
       }])
     })
 
+    test("a token read that fails transiently fails the preparation rather than withdrawing the credential", async () => {
+      const test = await rig({ integrations: [github] })
+      await connect(test.app, "github", { scope: "org", secret: "org-token" })
+      const { organization } = await connectionIds(test)
+      Object.assign(test.credentials, { resolveCredentialSecret: undefined })
+      await expect(workspace(test, "ws_blip", organization)).rejects.toThrow("connections_unavailable")
+    })
+
     test("a picked connection that is gone, or that belongs to someone else, yields no credential rather than refusing the boot", async () => {
       const test = await rig({ integrations: [github] })
       test.as(test.member)

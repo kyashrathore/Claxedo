@@ -188,7 +188,7 @@ describe("hosted production Pi and connection discovery", () => {
       return hostedOrgCredentials(orgId, { database: controlPlane.database, env: base.env })
     }
     try {
-      const app = createHostedCoreApp(base, { ...options, providerAuthPending: d1ProviderAuthPending(controlPlane.database, base.env) }) as unknown as Hono
+      const app = createHostedCoreApp(base, { ...options, accountSetup: { pending: d1ProviderAuthPending(controlPlane.database, base.env), changed: async () => {} } }) as unknown as Hono
       const connected = async (subject: string) => (await (await app.request(catalogPath, { headers: headers(subject) })).json()).connected
       const key = { provider_id: "openai", kind: "api_key", source: "managed", label: "openai", secret: "alice-key", org_id: "internal-bob" }
       expect((await app.request("/api/claxedo/credentials?orgId=internal-bob", { method: "PUT", headers: headers(), body: JSON.stringify(key) })).status).toBe(200)

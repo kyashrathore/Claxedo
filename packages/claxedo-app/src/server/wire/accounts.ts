@@ -1,7 +1,8 @@
 import { isAccountScope, isAccountSource, type AccountScope, type AccountSource } from "@claxedo/account-contract/vocabulary"
+import { piCredentialProviderIDs } from "@claxedo/agent-runtime-contract"
 import { asFiniteNumber, asRecord, asString } from "@claxedo/helpers/guards"
 import type { QuotaWindow } from "@claxedo/usage-contract"
-import type { Account, AccountCheck, AccountDelivery, AccountSources, AccountVerdict, HostedAccountSources, MachineLogin, MachineLoginState } from "../account-types"
+import type { Account, AccountCheck, AccountDelivery, AccountSources, AccountVerdict, MachineLogin, MachineLoginState } from "../account-types"
 
 function texts(value: unknown) {
   return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : undefined
@@ -124,8 +125,6 @@ export function accountSourcesFromWire(value: unknown): AccountSources | undefin
   return sources && org && typeof canRemoveOrgAccounts === "boolean" ? { sources, org, canRemoveOrgAccounts } : undefined
 }
 
-export function hostedAccountSourcesFromWire(value: unknown): HostedAccountSources | undefined {
-  const sources = sourcesFromWire(asRecord(value)?.sources)
-  const org = texts(asRecord(value)?.org)
-  return sources && org ? { sources, org: new Set(org) } : undefined
+export function piProviderAccountIds(providerId: string): readonly string[] {
+  return piCredentialProviderIDs(providerId)
 }

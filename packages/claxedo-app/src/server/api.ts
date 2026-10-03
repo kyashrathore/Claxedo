@@ -4,7 +4,7 @@ import type { QueryClient } from "@tanstack/solid-query"
 import type { SharedSessions } from "./shared-sessions"
 import type { StartupState } from "./startup"
 import type { RuntimeCommand } from "@claxedo/agent-runtime-contract"
-import type { Account, AccountCheck, AccountSources, EffectiveAccounts, HostedAccountSources, MachineLogin } from "./account-types"
+import type { Account, AccountCheck, AccountSources, EffectiveAccounts, MachineLogin } from "./account-types"
 import type { CloudCreateInput, CloudWorkspace, CodeHostRepository, WorkspaceRuntime } from "./cloud-types"
 import type { HarnessOptions } from "./harness-types"
 import type { ConnectionState, ServerEvent } from "./events"
@@ -152,7 +152,6 @@ export type AccountsApi = {
   readonly select: (ids: readonly string[]) => Promise<void>
   readonly selectMachineLogin: (providerIds: readonly string[]) => Promise<void>
   readonly setSource: (providerIds: readonly string[], source: AccountSource) => Promise<void>
-  readonly setHostedSource: (harness: string, providerId: string, source: AccountSource) => Promise<void>
   readonly setScope: (ids: readonly string[], scope: AccountScope) => Promise<void>
   readonly remove: (ids: readonly string[]) => Promise<void>
   readonly check: (id: string) => Promise<AccountCheck>
@@ -212,7 +211,6 @@ export type ServerQueries = {
     readonly effective: () => FetchQuery<EffectiveAccounts>
     readonly machineLogins: () => FetchQuery<readonly MachineLogin[]>
     readonly sources: () => FetchQuery<AccountSources>
-    readonly hostedSources: (harness: string) => FetchQuery<HostedAccountSources>
   }
   readonly usage: { readonly summary: (input: UsageRequest) => FetchQuery<UsageSummary> }
   readonly marketplace: {

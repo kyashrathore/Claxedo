@@ -1350,7 +1350,7 @@ describe("hosted cloud workspace create (POST /create)", () => {
     for (const visibility of [{ private: true, bound: "conn_org" }, { private: false, bound: undefined }]) {
       const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
       const repository = { id: "1", name: "widgets", fullName: "acme/widgets", cloneUrl: "https://github.com/acme/widgets.git", private: visibility.private, permissions: { read: true, write: false } }
-      const repositoryForAuth = vi.fn(async () => ({ ok: true as const, repository, token: "minted-at-create" }))
+      const repositoryForAuth = vi.fn(async () => ({ ok: true as const, repository }))
       const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
       const { app } = buildApp({
         authority: fakeAuthority({ createCloudWorkspace }),
@@ -1364,7 +1364,6 @@ describe("hosted cloud workspace create (POST /create)", () => {
       expect(repositoryForAuth).toHaveBeenCalledWith(expect.anything(), "conn_org", "acme/widgets")
       const created = (createCloudWorkspace.mock.calls[0] as unknown[])[1] as { repoUrl?: string; repoConnectionId?: string }
       expect([created.repoUrl, created.repoConnectionId]).toEqual([repository.cloneUrl, visibility.bound])
-      expect(JSON.stringify(ensure.mock.calls)).not.toContain("minted-at-create")
     }
   })
 

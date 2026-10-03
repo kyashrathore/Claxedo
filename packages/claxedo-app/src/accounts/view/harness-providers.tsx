@@ -7,7 +7,7 @@ import { ClaxedoIcon as Icon, showToast, useDialog, Button, ProviderIcon, Tag } 
 import { canDisconnectProvider, catalogProviders, providerNote, providerSourceTag } from "../catalog-rules"
 import { useAccountsText } from "../i18n"
 import { DialogCustomProvider } from "./custom-provider-dialog"
-import { createHostedAccountSources, HostedAccountSourceChoice } from "./hosted-account-source"
+import { CatalogAccountSourceChoice, createCatalogAccountSources } from "./catalog-account-source"
 import { ProviderSetupRow } from "./provider-setup-row"
 import { SearchField } from "./search-field"
 
@@ -21,7 +21,7 @@ export function createHarnessProviders(harness: () => string, placementId?: () =
     if (unsourced.length > 0) void Promise.allSettled(unsourced.map((provider) => catalog.load(provider.id)))
   })
   const t = useAccountsText()
-  const sources = createHostedAccountSources(harness)
+  const sources = createCatalogAccountSources(harness, () => catalog.refresh())
   const disconnect = async (provider: CatalogProvider) => {
     try {
       await server.providerConnect.disconnect(harness(), provider)
@@ -114,7 +114,7 @@ export function HarnessProvidersSection(props: { readonly providers: HarnessProv
       <SettingsList>
         <For each={rows()}>
           {(item) => {
-            const choice = () => <HostedAccountSourceChoice providerId={item.id} providerName={item.name} sources={props.providers.sources} />
+            const choice = () => <CatalogAccountSourceChoice providerId={item.id} providerName={item.name} sources={props.providers.sources} />
             return (
               <Show
                 when={connectedIds().has(item.id)}

@@ -263,11 +263,11 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     }).accessContext(),
     options: {
       authentication,
-      ...(plane.orgCredentials ? { providerAuthPending: d1ProviderAuthPending(input.controlPlaneDatabase, input.env) } : {}),
       agentConfigRepository: settings,
       ...(delivery ? {
         settingsChanged: delivery.settingsChanged,
         credentialsChanged: delivery.reconcileCredentialDelivery,
+        accountSetup: { pending: d1ProviderAuthPending(input.controlPlaneDatabase, input.env), changed: delivery.reconcileCredentialDelivery },
         productWorkspace: {
           prepareRuntime: delivery.prepareRuntime,
           provisionRuntime: delivery.provisionRuntime,

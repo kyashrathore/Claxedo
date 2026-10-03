@@ -1,42 +1,48 @@
 import { ACCOUNT_SOURCES, type AccountSource } from "@claxedo/account-contract/vocabulary"
 import { useQuery } from "@tanstack/solid-query"
 import { createSignal, For, Show } from "solid-js"
-import { toAppError, useServer, type HostedAccountSources } from "@/server"
+import { piProviderAccountIds, toAppError, useServer } from "@/server"
 import { RadioGroup, RadioItem, showToast } from "@/ui"
 import { useAccountsText } from "../i18n"
 
 const SOURCE_KEY = { own: "settings.providers.accountSource.own", org: "settings.providers.accountSource.org" } as const
 
-export function createHostedAccountSources(harness: () => string) {
+export function createCatalogAccountSources(harness: () => string, refreshCatalog: () => Promise<unknown>) {
   const server = useServer()
   const t = useAccountsText()
   const enabled = () => harness() === "pi" && server.capabilities() !== undefined && server.capabilities()?.thisMachine === undefined
-  const query = useQuery(() => ({ ...server.queries.accounts.hostedSources(harness()), enabled: enabled() }))
+  const query = useQuery(() => ({ ...server.queries.accounts.sources(), enabled: enabled() }))
   const [writing, setWriting] = createSignal<string>()
-  const choose = async (providerId: string, source: AccountSource) => {
+  const read = () => (enabled() ? query.data : undefined)
+  const source = (providerId: string): AccountSource => {
+    const ids = piProviderAccountIds(providerId)
+    return ids.length > 0 && ids.every((id) => read()?.sources.get(id) === "org") ? "org" : "own"
+  }
+  const orgHeld = (providerId: string) => read()?.org.some((row) => piProviderAccountIds(providerId).includes(row.providerId)) === true
+  const choose = async (providerId: string, chosen: AccountSource) => {
     setWriting(providerId)
     try {
-      await server.accounts.setHostedSource(harness(), providerId, source)
+      await server.accounts.setSource(piProviderAccountIds(providerId), chosen)
+      await refreshCatalog()
     } catch (error) {
       showToast({ title: t("common.requestFailed"), description: toAppError(error).message })
     } finally {
       setWriting(undefined)
     }
   }
-  const sources = (): HostedAccountSources | undefined => (enabled() ? query.data : undefined)
   return {
     error: () => (enabled() && query.error ? toAppError(query.error).message : undefined),
-    source: (providerId: string): AccountSource => sources()?.sources.get(providerId) ?? "own",
-    orgHeld: (providerId: string) => sources()?.org.has(providerId) === true,
-    offered: (providerId: string) => sources() !== undefined && (sources()?.org.has(providerId) === true || sources()?.sources.get(providerId) === "org"),
+    source,
+    orgHeld,
+    offered: (providerId: string) => read() !== undefined && (orgHeld(providerId) || source(providerId) === "org"),
     writing,
-    choose: (providerId: string, source: AccountSource) => void choose(providerId, source),
+    choose: (providerId: string, chosen: AccountSource) => void choose(providerId, chosen),
   }
 }
 
-export type HostedAccountSourceChoices = ReturnType<typeof createHostedAccountSources>
+export type CatalogAccountSourceChoices = ReturnType<typeof createCatalogAccountSources>
 
-export function HostedAccountSourceChoice(props: { readonly providerId: string; readonly providerName: string; readonly sources: HostedAccountSourceChoices }) {
+export function CatalogAccountSourceChoice(props: { readonly providerId: string; readonly providerName: string; readonly sources: CatalogAccountSourceChoices }) {
   const t = useAccountsText()
   const source = () => props.sources.source(props.providerId)
   return (

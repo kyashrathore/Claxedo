@@ -107,11 +107,12 @@ export type HostedCoreAppOptions = {
   settingsChanged?: (userId: string) => Promise<void>
   credentialsChanged?: (orgId: string) => Promise<void>
   /**
-   * Where a provider device login waits for its callback across Worker
-   * instances. With the plane's per-org credential stores it serves the shared
-   * account setup routes (`/api/claxedo/credentials`, `/provider/*`).
+   * The shared account setup routes (`/api/claxedo/credentials`, `/provider/*`)
+   * over the plane's per-org credential stores: where a provider device login
+   * waits for its callback across Worker instances, and how a credential
+   * change reaches running workspaces.
    */
-  providerAuthPending?: ProviderAuthPendingStore
+  accountSetup?: { pending: ProviderAuthPendingStore; changed: (orgId: string) => Promise<void> }
   /**
    * Build-composed product route families (Agent Plugins today). An entry
    * passes an explicit array; the base core passes none and imports no
@@ -325,14 +326,13 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       }),
     }),
   )
-  if (plane.orgCredentials && options.providerAuthPending) {
+  if (plane.orgCredentials && options.accountSetup) {
     app.route("/", hostedCredentialRoutes({
       authentication: options.authentication,
       authConfig,
       resolveOrgId: (auth) => requireAuthority(services).resolveOrgId(auth),
       credentials: plane.orgCredentials,
-      changed: options.credentialsChanged ?? (async () => {}),
-      pending: options.providerAuthPending,
+      ...options.accountSetup,
     }))
   }
   app.route(

@@ -43,8 +43,6 @@ import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { workspaceIdFromWorkspaceRef } from "@claxedo/server-core/workspace/refs"
 import type { RelayRole } from "@claxedo/workspace-relay"
 import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
-import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
-import { isAccountSource, type AccountSource } from "@claxedo/account-contract/vocabulary"
 import { asRecord, asString } from "@claxedo/helpers/guards"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
 import { providerAuthMethodsForHarness } from "@claxedo/server-core/credentials/provider-auth/service"
@@ -81,8 +79,6 @@ export type HostedShellRouteOptions = {
    */
   piProviderCatalog?: (auth: SignedControlPlaneAuth) => Promise<Record<string, unknown>>
   deletePiCredential?: (auth: SignedControlPlaneAuth, providerID: string) => Promise<void>
-  piAccountSources?: (auth: SignedControlPlaneAuth) => Promise<{ sources: Record<string, AccountSource>; org: string[] }>
-  putPiAccountSource?: (auth: SignedControlPlaneAuth, providerID: string, source: AccountSource) => Promise<void>
   /**
    * Ask the runtime of a workspace placed on a machine for harness health and
    * identity,
@@ -524,29 +520,6 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         const methods = providerAuthMethodsForHarness(c.req.query("nativeHarness") ?? "")
         if (!methods || c.req.query("connectionId")) return c.json({ error: { code: "provider_catalog_unsupported", message: "Provider authentication requires a native harness" } }, 400)
         return c.json(methods)
-      } catch (err) {
-        return authErrorResponse(c, err)
-      }
-    })
-    .get("/auth/sources", async (c) => {
-      if (c.req.query("harness") !== "pi" || !options.piAccountSources) return c.json({ error: { code: "pi_credentials_unavailable", message: "Pi credential storage is unavailable" } }, 503)
-      try {
-        const auth = await signedAuth(c, options)
-        if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
-        return c.json(await options.piAccountSources(auth))
-      } catch (err) {
-        return authErrorResponse(c, err)
-      }
-    })
-    .put("/auth/:providerID/source", async (c) => {
-      if (c.req.query("harness") !== "pi" || !options.putPiAccountSource) return c.json({ error: { code: "pi_credentials_unavailable", message: "Pi credential storage is unavailable" } }, 503)
-      try {
-        const auth = await signedAuth(c, options)
-        if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
-        const source = (await readJsonRecord(c.req.raw))?.source
-        if (!isAccountSource(source)) return c.json({ error: { code: "account_source_invalid", message: "source must be \"own\" or \"org\"" } }, 400)
-        await options.putPiAccountSource(auth, c.req.param("providerID"), source)
-        return c.json({})
       } catch (err) {
         return authErrorResponse(c, err)
       }

@@ -69,9 +69,10 @@ function useActivity() {
   return { activity, setActivity, run }
 }
 
-async function selectAccount(server: Server, harness: Harness, key: string, ids: readonly string[]) {
+async function selectAccount(server: Server, onMachine: boolean, harness: Harness, key: string, ids: readonly string[]) {
   if (key === ORG_ACCOUNT_KEY) return server.accounts.setSource(harness.providerIds, "org")
   await server.accounts.setSource(harness.providerIds, "own")
+  if (!onMachine) return
   return key === MACHINE_LOGIN_KEY ? server.accounts.selectMachineLogin(harness.providerIds) : server.accounts.select(ids)
 }
 
@@ -121,7 +122,7 @@ export function useAccounts(): Accounts {
       setLiveChecks({})
       await (reads.onMachine() ? server.accounts.rescan() : server.accounts.refresh()).finally(() => setRescanning(false))
     }),
-    select: (harness, key, ids) => void run("selecting", key, () => selectAccount(server, harness, key, ids)),
+    select: (harness, key, ids) => void run("selecting", key, () => selectAccount(server, reads.onMachine(), harness, key, ids)),
     remove: (ids) => run("removing", ids[0] ?? "", () => server.accounts.remove(ids)),
     check: (id) =>
       void run("checking", id, async () => {

@@ -243,12 +243,11 @@ async function hostedCallback(input: HostedD1ConnectionsSetupInput, c: Context, 
 }
 
 /**
- * Hosted counterpart of the local `repositoryForAuth` (connections/index.ts):
- * proves the signed caller can read `fullName` through their org's code-host
- * connection and mints the clone token. Used by the hosted workspace-create
- * route so connected private repositories provision exactly like they do on the
- * local control plane. A fresh per-request service, like `handle` above —
- * connection metadata and credentials are org-scoped reads, not process state.
+ * Proves the signed caller can read `fullName` through their org's code-host
+ * connection, for the hosted workspace-create route. The clone token is minted
+ * at each boot instead (`createHostedRepositoryCloneSecrets`). A fresh
+ * per-request service, like `handle` above — connection metadata and
+ * credentials are org-scoped reads, not process state.
  */
 export function createHostedRepositoryAccess(input: HostedD1ConnectionsSetupInput) {
   return async (auth: SignedControlPlaneAuth | undefined, connectionId: string, fullName: string) => {
@@ -267,9 +266,7 @@ export function createHostedRepositoryAccess(input: HostedD1ConnectionsSetupInpu
       if (!repository.permissions.read) {
         return { ok: false as const, status: 403 as const, code: "repository_read_required" }
       }
-      const token = await service.getToken(connectionId, "code-host")
-      if (!token.ok) return token
-      return { ok: true as const, repository, token: token.response.token }
+      return { ok: true as const, repository }
     } finally {
       service.dispose()
     }
@@ -281,7 +278,9 @@ export function createHostedRepositoryAccess(input: HostedD1ConnectionsSetupInpu
  * repository anyone can clone, else a fresh token of the connection its
  * private repository was created through. Nothing is listed, and a connection
  * that is gone or refused yields none, so a checkout that already exists boots
- * without it and a clone that needs it fails in git.
+ * without it and a clone that needs it fails in git. A token read that failed
+ * transiently fails the preparation instead: answering none would withdraw the
+ * credential's name and restart a running runtime over a blip.
  */
 export function createHostedRepositoryCloneSecrets(input: HostedD1ConnectionsSetupInput) {
   return async (workspace: { workspaceId: string; ownerUserId: string; orgId: string }): Promise<SandboxBrokeredSecret[]> => {
@@ -293,7 +292,9 @@ export function createHostedRepositoryCloneSecrets(input: HostedD1ConnectionsSet
         .some((connection) => connection.id === repository.connectionId)
       if (!owned) return []
       const token = await service.getToken(repository.connectionId, "code-host")
-      return token.ok ? [githubCloneSecret(repository.repoUrl, token.response.token)] : []
+      if (token.ok) return [githubCloneSecret(repository.repoUrl, token.response.token)]
+      if (token.status === 503) throw new Error(`The repository connection is unavailable: ${token.code}`)
+      return []
     } finally {
       service.dispose()
     }
