@@ -461,8 +461,10 @@ export const desktopRenderer: Policy = {
   // These renderer interactions add no package edge.
   // The draft context reaches `projects/draft-branches.ts`, which owns the
   // selected placement's live Git status and new-workspace base choice.
-  // 1265/36, no headroom.
-  ceilings: { modules: 1265, packages: 36 },
+  // The Browser tab's retained pages, their eviction and their disposal when a
+  // placement is deleted are `browser/tab-cache.ts`, split from the provider
+  // that owns the context. 1266/36, no headroom.
+  ceilings: { modules: 1266, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

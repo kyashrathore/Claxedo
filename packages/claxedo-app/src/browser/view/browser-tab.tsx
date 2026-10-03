@@ -56,7 +56,7 @@ function BrowserPage(props: { readonly tab: BrowserTab; readonly active: boolean
         </Show>
         <div class="relative flex-1">
           <div data-testid="browser-pane-webview-host" class="absolute inset-0">
-            <PageHost tab={props.tab} deliver={(pick) => props.active && deliver(pick)} />
+            <PageHost tab={props.tab} active={props.active} deliver={(pick) => props.active && deliver(pick)} />
             <Show when={props.active}>
               <PickerShield tab={props.tab} />
             </Show>

@@ -31,6 +31,7 @@ export type BrowserWebview = HTMLElement & {
   readonly send?: (channel: string, ...args: unknown[]) => void
   readonly getWebContentsId?: () => number
   readonly capturePage?: () => Promise<{ readonly toDataURL: () => string; readonly isEmpty?: () => boolean }>
+  readonly setAudioMuted?: (muted: boolean) => void
 }
 
 const REQUIRED_METHODS = [
