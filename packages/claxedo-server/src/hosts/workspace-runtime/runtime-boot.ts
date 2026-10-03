@@ -20,9 +20,12 @@ import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/
 import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
 import { sandboxConnectionSecrets } from "./connection-secrets"
 import { configureRuntimeGitAuth } from "./git-auth"
+import { prepareRuntimeRepository } from "./repository-source"
+import { repositoryHistory } from "./repository-history"
 import { workspaceRuntimeOwnerGrant } from "./owner-grant"
 import { workspaceRuntimeTasksGrant } from "./tasks-grant"
 import { cloudWorkspaceUsage, createSandboxUsageLedger } from "./cloud-usage"
+import { cloudSessionRows } from "./cloud-session-rows"
 import {
   sandboxLeaseEnv,
   workspaceRuntimeMcpToolGroups,
@@ -34,6 +37,8 @@ export type ClaxedoWorkspaceRuntimeBoot = {
   port: number
   hostname: string
   options: WorkspaceRuntimeServerOptions
+  /** Work the host starts once the server is listening; the drain stops it. */
+  onListening?: () => void
 }
 
 export function claxedoWorkspaceRuntimeLaunch(input: {
@@ -133,6 +138,8 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   const targetDirectory = workspaceDir(env)
   const harness = claxedoRuntimeHarnessFromEnv(env)
   await configureRuntimeGitAuth(env)
+  const checkout = await prepareRuntimeRepository(targetDirectory, env)
+  const history = checkout?.branch ? repositoryHistory(targetDirectory, checkout.branch) : undefined
   // The owner the control plane launched this root for, presented on the
   // runtime's own session calls. Its unverified `user_id` names the actor in
   // the MCP audit trail; nothing here trusts it for more than that.
@@ -154,8 +161,9 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   const tasks = workspaceRuntimeTasksGrant(env, ownerGrant ? { ownerGrant } : {})
   tasks?.start()
   // A relay-exposed runtime answers to the control plane's session authority,
-  // which is also where its turns' usage is reported.
+  // which is also where its turns' usage and its sessions' list rows are reported.
   const authorityUrl = text(env, WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL)
+  const sessionRows = relayOptions.relayHostAuth && authorityUrl ? cloudSessionRows(env) : undefined
   const usageLedger = relayOptions.relayHostAuth && authorityUrl
     ? createSandboxUsageLedger({ path: path.join(workspaceRuntimeStoreDir(env), "usage.sqlite"), workspaceId: workspaceId(env) })
     : undefined
@@ -189,16 +197,30 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
     ...(usage
       ? {
           sessionAccessPolicy: usage.sessionAccessPolicy,
-          onPresentationEvent: usage.onPresentationEvent,
           onTurnOutcome: usage.onTurnOutcome,
           bindSessionConfig: usage.bindSessionConfig,
           bindSessionParents: usage.bindSessionParents,
+        }
+      : {}),
+    ...(usage || sessionRows
+      ? {
+          onPresentationEvent: (event) => {
+            usage?.onPresentationEvent(event)
+            sessionRows?.onPresentationEvent(event)
+          },
+        }
+      : {}),
+    ...(usage || sessionRows || history
+      ? {
           onDrain: async () => {
-            await usage.drain()
+            sessionRows?.stop()
+            await history?.stop()
+            await usage?.drain()
             usageLedger?.close()
           },
         }
       : {}),
+    ...(sessionRows ? { bindSessionReads: sessionRows.bindSessionReads, beforeStoreClose: sessionRows.beforeStoreClose } : {}),
     // A sandbox is nobody's desktop: the owner's logins never reach it, and
     // every session runs on brokered credentials.
     placement: { placement: "cloud", machineOwnerUserId: ownerGrant?.userId ?? "", canUseOwnLogin: false },
@@ -209,15 +231,16 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
     // the sandbox image answering 404 to the provisioner.
     routeContributions: [
       ...(input.routeContributions ?? []),
+      ...(sessionRows ? [sessionRows.routes] : []),
       firstPartyMcpRuntimeContribution({
         verifyRuntimeCredential: firstPartyMcp.verify,
         enabledToolGroups,
         tasks: () => tasks?.current(),
-        ...(ownerGrant ? { ownerGrant: () => ownerGrant.current() } : {}),
+        ...(ownerGrant ? { ownerGrant: () => ownerGrant.current(), ownerActorId: () => ownerGrant.actorId } : {}),
       }),
     ],
   }
-  return { port, hostname, options }
+  return { port, hostname, options, ...(history ? { onListening: () => void history.start() } : {}) }
 }
 
 function assertRuntimePort(port: number, label: string) {

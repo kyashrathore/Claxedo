@@ -54,6 +54,12 @@ export type WorkspaceRuntimeRouteContext = {
    */
   fetch(request: Request): Promise<Response>
   /**
+   * Whether the session exists and every turn in it and its ancestors was
+   * started by `actorId`: what a contribution asks before it lets a session
+   * act with its owner's authority.
+   */
+  sessionDrivenOnlyBy(sessionId: string, actorId: string): boolean
+  /**
    * Register this contribution's tools for a session under a named group.
    *
    * Grouping matters: several contributions can register tools for the SAME

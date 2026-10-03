@@ -41,7 +41,7 @@ async function drawer(stack: Stack, api: ClaxedoApi, app: Page, arranged: Arrang
   await open.tap()
   await expect(app.getByRole("button", { name: "Close navigation sidebar" })).toBeVisible()
   const nav = app.getByRole("navigation", { name: UI.rail })
-  await nav.getByRole("button", { name: "First" }).tap()
+  await nav.getByRole("button", { name: "First", exact: true }).tap()
   await expect(app).toHaveURL(new RegExp(`/s/${arranged.first.id}$`))
   await test.step("no session title bar (DECISIONS Owner, 17:15)", async () => {
     await expect(app.getByText("The first session's reply")).toBeVisible()
@@ -50,7 +50,7 @@ async function drawer(stack: Stack, api: ClaxedoApi, app: Page, arranged: Arrang
   await expectNoHorizontalScroll(app)
   await expectWithinBaseline(app, "session-page")
   await open.tap()
-  await nav.getByRole("button", { name: "Second" }).tap()
+  await nav.getByRole("button", { name: "Second", exact: true }).tap()
   await expect(app).toHaveURL(new RegExp(`/s/${arranged.second.id}$`))
   expect((await api.session(arranged.workspace.directory, arranged.second.id)).title).toBe("Second")
 }
@@ -86,14 +86,14 @@ test("33 phone: the drawer stays open on a session while another project gains s
   const open = app.getByRole("button", { name: UI.openRail })
   await open.tap()
   const nav = app.getByRole("navigation", { name: UI.rail })
-  await nav.getByRole("button", { name: "First" }).tap()
+  await nav.getByRole("button", { name: "First", exact: true }).tap()
   await expect(app).toHaveURL(new RegExp(`/s/${arranged.first.id}$`))
   await open.tap()
   const close = app.getByRole("button", { name: "Close navigation sidebar" })
   await expect(close).toBeVisible()
   for (const title of ["Arrived 1", "Arrived 2"]) {
     await api.createSession(other.directory, { title, harness: SCRIPTED_ACP_HARNESS })
-    await expect(nav.getByRole("button", { name: title })).toBeVisible()
+    await expect(nav.getByRole("button", { name: title, exact: true })).toBeVisible()
   }
   await expect(close).toBeVisible()
   await expect(app).toHaveURL(new RegExp(`/s/${arranged.first.id}$`))

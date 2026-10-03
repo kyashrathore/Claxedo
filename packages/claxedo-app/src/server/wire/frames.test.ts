@@ -46,6 +46,9 @@ test("frames: a turn-end frame carries the turn's lastTurn onto statusChanged; a
   const idle = frame("session.idle", { lastTurn: { status: "cancelled", completedAt: 7 } })
   const failed = frame("session.error", { error: { name: "UnknownError", data: { message: "refused" } }, lastTurn: { status: "failed", completedAt: 8 } })
   const bare = frame("session.idle", {})
+  const admissionFailure = frame("session.error", { error: { name: "UnknownError", data: { message: "The harness refused the prompt" } } })
+  expect(admissionFailure && serverEventFromFrame(admissionFailure, address), "a failure with no recorded turn is still a failed status").toMatchObject({ type: "statusChanged", ref, status: { kind: "failed" } })
+  expect(admissionFailure && serverEventFromFrame(admissionFailure, address)).not.toHaveProperty("lastTurn")
   expect(idle && serverEventFromFrame(idle, address)).toEqual({ type: "statusChanged", ref, status: { kind: "idle" }, lastTurn: { status: "cancelled", completedAt: 7 } })
   expect(failed && serverEventFromFrame(failed, address)).toMatchObject({ type: "statusChanged", ref, status: { kind: "failed" }, lastTurn: { status: "failed", completedAt: 8 } })
   expect(bare && serverEventFromFrame(bare, address)).toEqual({ type: "statusChanged", ref, status: { kind: "idle" } })
@@ -86,4 +89,53 @@ test("frames: a part retraction names the withdrawn parts and why", () => {
     payload: { type: "message.part.retracted", properties: { sessionID: "s1", reason: "refusal", parts: [{ messageID: "m1", partID: "p1" }, { messageID: "m1" }] } },
   })
   expect(frame && serverEventFromFrame(frame, address)).toEqual({ type: "partsRetracted", ref, reason: "refusal", parts: [{ messageId: "m1", partId: "p1" }] })
+})
+
+test("frames: a hosted status notice becomes the session's statusChanged with its wait, background work and last turn", () => {
+  const byWorkspace: Address = {
+    placementFor: (directory, workspaceId) => (directory === "workspace:ws_1" && workspaceId === "ws_1" ? { placementId: placementId("p1"), projectId: projectId("j1") } : undefined),
+  }
+  const notice = (fields: Record<string, unknown>) => frameFromWire({
+    type: "session.status.changed",
+    ownerUserId: "user_reader",
+    orgId: "org_1",
+    sessionId: "s1",
+    workspaceId: "ws_1",
+    status: "idle",
+    awaitingInput: false,
+    ts: 9,
+    ...fields,
+  })
+  const ended = notice({ lastTurn: { status: "failed", completedAt: 9 } })
+  const waiting = notice({ status: "busy", awaitingInput: true, backgroundWork: { agents: 1, shells: 0, other: 0 }, replayed: true })
+  const unknownStatus = notice({ status: "thinking" })
+  const elsewhere = notice({ workspaceId: "ws_2" })
+
+  expect(ended && serverEventFromFrame(ended, byWorkspace)).toEqual({
+    type: "statusChanged",
+    ref,
+    status: { kind: "idle" },
+    waitingOnUser: false,
+    backgroundWork: { agents: 0, shells: 0, other: 0 },
+    lastTurn: { status: "failed", completedAt: 9 },
+  })
+  expect(waiting && serverEventFromFrame(waiting, byWorkspace)).toEqual({
+    type: "statusChanged",
+    ref,
+    status: { kind: "working" },
+    waitingOnUser: true,
+    backgroundWork: { agents: 1, shells: 0, other: 0 },
+    replayed: true,
+  })
+  expect(unknownStatus && serverEventFromFrame(unknownStatus, byWorkspace)).toBeUndefined()
+  expect(elsewhere && serverEventFromFrame(elsewhere, byWorkspace)).toBeUndefined()
+})
+
+test("frames: a reader notice becomes the session's readerChanged with the marks it carries, located by its workspace", () => {
+  const located: Address = { placementFor: (directory, workspaceId) => (directory === "workspace:ws_1" && workspaceId === "ws_1" ? { placementId: placementId("p1"), projectId: projectId("j1") } : undefined) }
+  const notice = (workspaceId: string) => frameFromWire({ type: "session.reader.changed", ownerUserId: "local", sessionId: "s1", workspaceId, seenAt: 40, ts: 9 })
+  const known = notice("ws_1")
+  const unknown = notice("ws_elsewhere")
+  expect(known && serverEventFromFrame(known, located)).toEqual({ type: "readerChanged", ref, reader: { seenAt: 40 } })
+  expect(unknown && serverEventFromFrame(unknown, located)).toBeUndefined()
 })

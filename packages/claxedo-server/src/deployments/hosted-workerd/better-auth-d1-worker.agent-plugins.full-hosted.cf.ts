@@ -1,6 +1,6 @@
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { hostedSandboxDriver } from "../../authority/adapters/worker/hosted-sandbox-driver"
-import { createD1SandboxLeaseStore } from "../../sandbox/stores/d1"
+import { composeWithCloudSandbox } from "./full-hosted-sandbox"
 import {
   composeBetterAuthD1AgentPlugins,
   PluginOutbound,
@@ -35,12 +35,10 @@ const composition = settledCompositionCache(
         "full-hosted entry requires a completely configured CLAXEDO_SANDBOX_DRIVER",
       )
     }
-    return composeBetterAuthD1AgentPlugins(env, {
-      sandbox: {
-        driver,
-        leaseStore: createD1SandboxLeaseStore({ database: env.CONTROL_PLANE_DB }),
-      },
-    })
+    return composeWithCloudSandbox(
+      { database: env.CONTROL_PLANE_DB, signingEnv: stringEnvironment(env), driver },
+      (extra) => composeBetterAuthD1AgentPlugins(env, extra),
+    )
   },
   (created) => created.authReady,
 )

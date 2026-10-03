@@ -316,4 +316,37 @@ describe("withdrawing the Tasks grants of a project that turned Tasks off", () =
     expect(await withdrawal.reconcile("org-1")).toEqual(["ws_root"])
     expect(await passes.revoked("j1")).toBe(true)
   })
+
+  test("one reader's consent turned off ends that reader's passes in a shared workspace and no one else's", async () => {
+    const passes = memorySandboxPassRegister()
+    const bob: TasksRootIdentity = { ...ROOT, userId: "bob", sessionId: "ses_bob" }
+    const held = [
+      ["alice", ROOT],
+      ["alice-child", { ...ROOT, sessionId: "ses_child" }],
+      ["bob", bob],
+      ["alice-other-org", { ...ROOT, orgId: "org-2" }],
+    ] as const
+    for (const [jti, scope] of held) {
+      await passes.record({ jti, audience: TASKS_CAPABILITY_AUDIENCE, scope, issuedAt: 1, expiresAt: Date.now() + 60_000 })
+    }
+    for (const bobConsents of [true, false]) {
+      const read: string[] = []
+      const withdrawal = createGrantWithdrawal({
+        passes,
+        audience: TASKS_CAPABILITY_AUDIENCE,
+        reason: "tasks_group_disabled",
+        groupEnabled: async (root) => {
+          read.push(root.userId)
+          return root.userId === "bob" ? bobConsents : false
+        },
+      })
+      const revoked = await withdrawal.reconcile("org-1")
+      expect(read.toSorted()).toEqual(bobConsents ? ["alice", "bob"] : ["bob"])
+      expect(revoked).toEqual(["ws_root"])
+      expect(await passes.revoked("alice")).toBe(true)
+      expect(await passes.revoked("alice-child")).toBe(true)
+      expect(await passes.revoked("bob")).toBe(!bobConsents)
+      expect(await passes.revoked("alice-other-org")).toBe(false)
+    }
+  })
 })

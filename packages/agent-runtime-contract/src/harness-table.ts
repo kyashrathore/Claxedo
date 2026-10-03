@@ -32,10 +32,11 @@ type HarnessRecord = {
    * fallback.
    *
    * The order is load-bearing at both ends. A connect card stores under
-   * `connectProvider`, and `harnessProjection` takes the first of these ids a
-   * projection map holds — so a Claude turn binds through `claude-sdk` when one
-   * is selected and through a plain `anthropic` key when it is not, and a list
-   * that stopped at the aliases would drop that key.
+   * `connectProvider`, and the harness's `selectedProviderProjection` takes
+   * the first of these ids whose projection is available, else the first held
+   * — so a Claude turn binds through `claude-sdk` when its account can be used
+   * and through a plain `anthropic` key when it cannot, and a list that
+   * stopped at the aliases would drop that key.
    */
   providerIds: readonly string[]
   /** The provider id a sign-in for this harness is stored against. */
@@ -163,8 +164,8 @@ export function harnessBindingIds(harness: HarnessId): string[] {
  * rides in. So an engine that runs Anthropic models resolves it here instead
  * of asking for the account a second time.
  *
- * The vendor leads, which is the opposite of the order `harnessProjection`
- * reads. Both are right about their own question: Claude Code asked which
+ * The vendor leads, which is the opposite of the order a harness's
+ * `selectedProviderProjection` reads. Both are right about their own question: Claude Code asked which
  * login to run ITSELF on and its own binding is the answer, while an engine
  * borrowing the vendor spends the key that was pasted for the vendor before it
  * reaches for a subscription that belongs to another product. The engine's

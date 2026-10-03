@@ -262,6 +262,16 @@ describe("declaring a custom OpenAI-compatible provider", () => {
     }
   })
 
+  test("a declared provider is offered a key on OpenCode's sign-in methods, for its own tenant only", async () => {
+    expect((await putCustom("org_custom", ACME)).status).toBe(200)
+    const methods = async (org: string, harness = "opencode") =>
+      (await app.request(`/providers/auth?nativeHarness=${harness}`, { headers: { authorization: `Bearer ${org}` } })).json()
+    expect((await methods("org_custom")).acme).toEqual([{ type: "api", label: "API Key" }])
+    expect((await methods("org_custom")).anthropic).toBeDefined()
+    expect(await methods("org_a")).not.toHaveProperty("acme")
+    expect(await methods("org_custom", "pi")).not.toHaveProperty("acme")
+  })
+
   test("refuses a body carrying secret material instead of storing it", async () => {
     const response = await putCustom("org_secret", { ...ACME, secret: "sk-live" })
     expect(response.status).toBe(400)

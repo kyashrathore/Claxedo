@@ -28,10 +28,27 @@ import { targetScope } from "./target"
  */
 export type SessionReach = "own-children" | "itself-or-own-children"
 
+/** Refuses a session the composition knows another person has driven; one it cannot answer for may create. */
 export function assertDetachedSessionCreation(ctx: McpToolContext): void {
-  if (ctx.credential.kind === "runtime" && ctx.client.appPlugins && !ctx.client.appPlugins.allowed()) {
-    throw new McpAccessDenied("app-plugins", "A member-driven session cannot create a detached root session on the owner's behalf; use subagent_spawn to preserve its parent and permissions")
+  if (ctx.credential.kind === "runtime" && ctx.client.ownerDriven?.() === false) {
+    throw new McpAccessDenied(
+      "owner-driven",
+      "A member-driven session cannot create a detached root session on the owner's behalf; use subagent_spawn to preserve its parent and permissions",
+    )
   }
+}
+
+/**
+ * Refuses a runtime credential any workspace but the one its session runs in,
+ * whatever the account allows agents to do on other machines.
+ */
+export function assertOwnWorkspace(ctx: McpToolContext, tool: string, target: WorkspaceTarget): void {
+  const { credential } = ctx
+  if (credential.kind !== "runtime" || target.workspaceId === credential.workspaceId) return
+  throw new McpAccessDenied(
+    "own-workspace-only",
+    `${tool} acts only on the sessions of workspace ${credential.workspaceId}, where this session runs`,
+  )
 }
 
 export type SessionReachInput = Readonly<{

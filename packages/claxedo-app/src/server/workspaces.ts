@@ -24,6 +24,7 @@ export type SessionHome = {
 export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
   readonly shared: SharedSessions
   readonly streamRoute: (ref: Pick<SessionLocation, "placementId" | "sessionId">) => RuntimeRoute | undefined
+  readonly servedHere: (id: PlacementId) => boolean
   readonly address: Address
   readonly route: (ref: Pick<SessionLocation, "placementId" | "sessionId"> | PlacementId) => Promise<RuntimeRoute>
   readonly locate: (id: PlacementId) => Promise<RuntimeRoute>
@@ -35,6 +36,7 @@ export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
   readonly refresh: () => Promise<void>
   readonly accountProjects: () => Promise<readonly Project[]>
   readonly accountProjectIds: (projectId: ProjectId) => readonly ProjectId[]
+  readonly accountKnows: (workspaceId: string) => boolean
   readonly dispose: () => void
 }
 
@@ -133,7 +135,7 @@ function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | un
   }
 }
 
-function sharedAware(reads: ReturnType<typeof placementReads>, shared: SharedSessions, hosts: SessionHosts): Pick<Workspaces, "address" | "streamRoute"> {
+function sharedAware(reads: ReturnType<typeof placementReads>, shared: SharedSessions, hosts: SessionHosts): Pick<Workspaces, "address" | "streamRoute" | "servedHere"> {
   return {
     address: {
       placementFor: (directory, workspaceId, sessionId) => {
@@ -142,6 +144,7 @@ function sharedAware(reads: ReturnType<typeof placementReads>, shared: SharedSes
         return workspaceId && sessionId ? shared.find({ placementId: placementId(workspaceId), sessionId: asSessionId(sessionId) })?.ref : undefined
       },
     },
+    servedHere: (id) => reads.recordOf(id)?.route.remote === false,
     streamRoute: (ref) => {
       const record = reads.recordOf(ref.placementId)
       if (!record) return shared.route(ref)
@@ -184,7 +187,7 @@ async function readCatalogs(local: Promise<BootstrapCatalog>, account: Promise<v
   return read.value
 }
 
-function accountReads(linked: () => LinkedCatalog | undefined, signed: boolean, load: () => Promise<unknown>): Pick<Workspaces, "accountProjects" | "accountProjectIds"> {
+function accountReads(linked: () => LinkedCatalog | undefined, signed: boolean, load: () => Promise<unknown>): Pick<Workspaces, "accountProjects" | "accountProjectIds" | "accountKnows"> {
   return {
     accountProjects: async () => {
       if (!signed) return []
@@ -192,6 +195,7 @@ function accountReads(linked: () => LinkedCatalog | undefined, signed: boolean, 
       return linked()?.projects ?? []
     },
     accountProjectIds: (projectId) => linked()?.accountProjectIds(projectId) ?? [],
+    accountKnows: (workspaceId) => linked()?.knowsWorkspace(workspaceId) ?? false,
   }
 }
 

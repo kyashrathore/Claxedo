@@ -10,7 +10,7 @@ import {
 } from "@claxedo/server-core/platform/auth/auth"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { eventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
-import { controlPlaneRouteAuth, signedRouteAuth } from "../platform/http/control-plane-route-auth"
+import { controlPlaneRouteAuth, signedRouteAuth } from "@claxedo/server-core/platform/http/control-plane-route-auth"
 import type { MiddlewareHandler } from "hono"
 import { createControlPlaneEventsHandler, signedControlPlaneEventVisibleTo } from "./events"
 import { allFilesBody, directoryEntriesBody, findFilesBody, findTextBody } from "./file-browser"

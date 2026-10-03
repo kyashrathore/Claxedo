@@ -16,6 +16,8 @@ export type McpToolDefinition<Shape extends McpToolShape> = Readonly<{
    * the session through the `addressed` callback it is given.
    */
   sessionIdFromHandler?: true
+  /** What a destructive tool's confirmation tells the person they approve; `Confirm <name>?` when absent. */
+  confirmation?: (args: ShapeOutput<Shape>, ctx: McpToolContext) => Promise<string>
 }>
 
 export type McpToolHandler<Shape extends McpToolShape> = (
@@ -60,7 +62,11 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
     refresh() { for (const refresh of refreshers) refresh() },
     tool<Shape extends McpToolShape>(name: string, definition: McpToolDefinition<Shape>, handler: McpToolHandler<Shape>) {
       declared.set(name, definition.access)
-      if (!toolListed(ctx.credential, definition.access, { ...toolGrants(ctx.client), appPlugins: ctx.client.appPlugins !== undefined })) return
+      if (!toolListed(ctx.credential, definition.access, {
+        ...toolGrants(ctx.client),
+        appPlugins: ctx.client.appPlugins !== undefined,
+        ownerDriven: ctx.client.ownerDriven !== undefined,
+      })) return
       listed.push(name)
       // `ToolCallback<Shape>` is a conditional type over the shape; it resolves
       // only for a concrete shape, so a callback written once for every shape
@@ -75,7 +81,7 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
               if (!elicit) return toCallToolResult(mcpToolRefusal(`${name} requires confirmation, but this client does not support elicitation`))
               const answer = await elicit({
                 mode: "form",
-                message: `Confirm ${name}?`,
+                message: definition.confirmation ? await definition.confirmation(args, ctx) : `Confirm ${name}?`,
                 requestedSchema: { type: "object", properties: {} },
               })
               if (answer.action !== "accept") return toCallToolResult(mcpToolRefusal(`${name} was not confirmed`))
@@ -114,7 +120,7 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
         },
         callback,
       )
-      if (definition.access.appPlugins) {
+      if (definition.access.appPlugins || definition.access.ownerDriven) {
         const refresh = () => {
           const allowed = toolListed(ctx.credential, definition.access, toolGrants(ctx.client))
           if (registered.enabled !== allowed) registered.update({ enabled: allowed })

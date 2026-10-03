@@ -2,6 +2,7 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { RuntimeConfigSnapshotPlugins } from "@claxedo/harness/contract"
 import { piDirectRows } from "../../credentials/pi-direct-rows"
 import { defaultSessionHarnessId } from "../../session/default-session-harness"
+import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-origins"
@@ -26,6 +27,7 @@ import { HostedDeviceAuthRoutes } from "../../routes/hosted/device-auth"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
 import { HostEnrollmentRoutes, HostInvitationRoutes } from "../../routes/hosted/host-enrollment"
 import { HostSessionRowsRoutes } from "../../routes/hosted/host-session-rows"
+import type { SessionRowsPasses } from "../../session/session-rows-pass"
 import { RemoteAccessOwnerRoutes } from "../../routes/remote-access"
 import { hostedRemoteAccessService } from "./hosted-remote-access-service"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
@@ -53,10 +55,12 @@ import {
 } from "../../platform/auth/request-guard"
 import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
 import { createSessionReadRoutes, authoritySessionReads } from "../../session/routes/session-read"
+import { createSessionReaderRoutes } from "../../session/routes/session-reader"
 import type { HostedControlPlane } from "../../authority/hosted-services"
 import type { IdempotencyCoordinator } from "../../authority/http/idempotency"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { hostedPiCredentials } from "../../credentials/worker/pi"
+import { hostedCredentialRoutes } from "../../credentials/worker/routes"
 import { hostedAgentConfigRoutes } from "../../agent-config/hosted-routes"
 import type { UserAgentConfigRepository } from "@claxedo/server-core/agent-config/repository"
 import {
@@ -106,7 +110,12 @@ export type HostedCoreAppOptions = {
   productWorkspace?: HostedCoreProductWorkspaceOptions
   agentConfigRepository?: UserAgentConfigRepository
   settingsChanged?: (userId: string) => Promise<void>
-  credentialsChanged?: (orgId: string) => Promise<void>
+  /**
+   * The shared account setup routes (`/api/claxedo/credentials`) over the
+   * plane's per-org credential stores, and how a credential change reaches
+   * running workspaces.
+   */
+  accountSetup?: { changed: (orgId: string) => Promise<void> }
   /**
    * Build-composed product route families (Agent Plugins today). An entry
    * passes an explicit array; the base core passes none and imports no
@@ -134,6 +143,11 @@ export type HostedCoreAppOptions = {
    * base core, which mints none.
    */
   sandboxPasses?: Pick<SandboxPassRegister, "revoked">
+  /**
+   * The pass a cloud runtime publishes its sessions' list rows with. Absent on
+   * every entry without cloud workspaces, which then takes machine rows only.
+   */
+  sessionRowsPasses?: SessionRowsPasses
   /**
    * The store cloud workspace runtimes report usage into and the signed
    * account's usage view reads from. Absent, `/api/claxedo/usage` is not
@@ -318,10 +332,18 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       ...hostedPiCredentials({
         resolveOrgId: (auth) => requireAuthority(services).resolveOrgId(auth),
         credentials: plane.orgCredentials,
-        ...(options.credentialsChanged ? { changed: options.credentialsChanged } : {}),
       }),
     }),
   )
+  if (plane.orgCredentials && options.accountSetup) {
+    app.route("/", hostedCredentialRoutes({
+      authentication: options.authentication,
+      authConfig,
+      resolveOrgId: (auth) => requireAuthority(services).resolveOrgId(auth),
+      credentials: plane.orgCredentials,
+      ...options.accountSetup,
+    }))
+  }
   app.route(
     "/",
     HostedAuthProfileRoutes({
@@ -370,7 +392,10 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       ownerPiDirectRows: async (auth) => piDirectRows(orgCredentials(await requireAuthority(services).resolveOrgId(auth)), auth.user.subject),
     } : {}),
   }))
-  app.route("/api/claxedo/host/session-rows", HostSessionRowsRoutes(services))
+  app.route("/api/claxedo/host/session-rows", HostSessionRowsRoutes(services, {
+    notify: (orgId, notices) => nudgeLiveSyncRoom(options.liveSyncRoom, liveSyncRoomNameForPrincipal({ orgId }), notices),
+    ...(options.sessionRowsPasses ? { sessionRowsPasses: options.sessionRowsPasses } : {}),
+  }))
   app.route("/api/claxedo/host/invitations", HostInvitationRoutes(services, workspaceOptions))
   app.route("/api/claxedo/remote-access", RemoteAccessOwnerRoutes({
     deviceLoginConfigured: true,
@@ -455,6 +480,23 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         ),
     }),
   )
+  app.route("/api/control", createSessionReaderRoutes({
+    authenticate: async (request) => {
+      const result = await signedOrError(request, { authentication: options.authentication, requireSigned: true }, services)
+      if ("error" in result) return Response.json(result.error, { status: result.status })
+      if (!result.auth) return Response.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, { status: 401 })
+      return result.auth
+    },
+    record: (auth, input) => {
+      const record = requireAuthority(services).recordSessionReader
+      if (!record) throw new ControlPlaneAuthError(503, "authority_unavailable", "Workspace authority is unavailable")
+      return record(auth, input)
+    },
+    publish: async (auth, event) => {
+      const orgId = await requireAuthority(services).resolveOrgId(auth)
+      return await nudgeLiveSyncRoom(options.liveSyncRoom, liveSyncRoomNameForPrincipal({ ownerUserId: event.ownerUserId, orgId }), event)
+    },
+  }))
   if (options.usageLedger) {
     app.route("/api/claxedo/usage", UsageRoutes({
       ledger: options.usageLedger,

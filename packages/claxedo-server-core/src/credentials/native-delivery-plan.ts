@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import { accountHolderOf, holderAccountSources, ORG_ACCOUNT_UNAVAILABLE, selectedAccounts, spendsAccount, type AccountSelections } from "./account-holder"
 import type { CredentialSnapshot, ProviderDirect, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
-import { destinationAuthMode, builtInProviderDestination, type ProviderDestination } from "./built-in-destinations"
+import { destinationAuthMode, builtInProviderDestination, builtInProviderDestinationShape, type ProviderDestination } from "./built-in-destinations"
 import type { CredentialKind, CredentialMetadata } from "./types"
 import { isSubscriptionKind } from "./secret-material"
 import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
@@ -125,6 +125,14 @@ function delivery(credential: CredentialMetadata, destination: ProviderDestinati
       ...(destination.apiPath ? { apiPath: destination.apiPath } : {}),
     },
   }
+}
+
+/**
+ * The origin a stored account is delivered to, read from its row alone. A
+ * sandbox is delivered one account per origin: the most recently marked one.
+ */
+export function deliveryOrigin(row: { provider_id: string; kind: CredentialKind }): string | undefined {
+  return builtInProviderDestinationShape({ providerId: row.provider_id, kind: row.kind })?.origin
 }
 
 export type NativeCredentialSelection = { credential: CredentialMetadata; unavailable?: string }

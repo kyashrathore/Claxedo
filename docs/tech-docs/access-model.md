@@ -130,12 +130,9 @@ session token needs its holder to still `read` the session, which a
 suspended owner's session no longer answers to anyone. Removing the
 owner from the org revokes their tokens outright, because re-admission would
 otherwise bring the old token back to life. A share holder's session token
-records the share that admitted it (`runtime_access_tokens.share_grant_id`;
-`admittingShareSql` picks the share naming them directly, then one through a
-team, then one through their organization). Revoking a share revokes exactly
-the tokens it admitted, whoever its target reaches by then, and removing a
-person from a team revokes their tokens that team's shares admitted, so a
-later share or readmission never revives them. Lowering or revoking a project
+records the share that admitted it (`runtime_access_tokens.share_grant_id`,
+picked by `admittingShareSql`). Revoking a share revokes exactly the tokens it
+admitted, so a later share or readmission never revives them. Lowering or revoking a project
 grant and a change of org role reach no workspace or session and revoke no
 token, and no change revokes a workspace owner's own token.
 
@@ -220,7 +217,7 @@ level `follow` or `send`, and it is the whole admission:
 
 ```text
 may read the session (its transcript, its live and replayed events)
-  = owns its workspace, or holds a user-, org- or team-targeted share on it
+  = owns its workspace, or holds a share naming them on it
 
 may send (prompt, answer a permission or a question, abort)
   = owns its workspace, or holds a `send` share on it
@@ -317,8 +314,8 @@ fan-out, replay, reconnect, proxied streams, and transcript-bearing compatibilit
 events. Visibility-specific replay sequencing prevents filtered events from
 appearing as data-loss gaps.
 
-Org membership removal, team membership removal and session share revocation
-revoke the affected user's runtime access tokens. Open connections are closed by the hosting adapter's revocation check;
+Org membership removal and session share revocation revoke the affected
+user's runtime access tokens. Open connections are closed by the hosting adapter's revocation check;
 the relay polls every 30 seconds and caches a positive revocation result for
 at most 10 seconds, with every lifetime capped by token expiry. Revoked sockets
 close with policy code `1008`. WebSocket origins are evaluated against the

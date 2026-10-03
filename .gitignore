@@ -26,6 +26,10 @@ ts-dist
 # so a dry-run left untracked junk in the tree.
 .wrangler/
 packages/claxedo-server/scripts/.wrangler-hosted-e2e-*.toml
+# Relay benchmark runs write their built agent and the run's TLS keys beside
+# the reports; only the JSON/Markdown results belong in the tree.
+packages/workspace-relay/bench/reports/*.bundle.cjs
+packages/workspace-relay/bench/reports/*.pem
 .astro
 .cache
 .crabbox/

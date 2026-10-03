@@ -4,39 +4,83 @@
  * Deploy: cd cloudflare-worker && npm install && wrangler deploy
  * Set secret: wrangler secret put API_TOKEN
  */
+import { WorkerEntrypoint } from "cloudflare:workers"
+import type { DurableObjectState, Request as WorkerRequest, Response as WorkerResponse } from "@cloudflare/workers-types"
 import {
-  ContainerProxy,
   getSandbox,
   Sandbox as CloudflareSandbox,
   type SandboxOperations,
   type SandboxProcess,
 } from "@cloudflare/sandbox"
+import { RUNTIME_PREPARATION_DEADLINE_MS, WORKSPACE_RUNTIME_BOOT_FAILED } from "../../../../src/hosts/workspace-runtime/boot-contract"
 import { credentialPlaceholder, forwardCredential, parseRegistrations, type EgressRegistration } from "./outbound-credentials"
+import { safeRuntimeLog } from "./runtime-log"
 import { asWorkerRecord, stringMap } from "./worker-json"
 
-// Cloudflare routes intercepted container HTTP(S) through this Worker
-// Entrypoint. Without the export, the local sidecar accepts TLS and then has no
-// Worker target to forward to; production uses the same SDK contract.
-export { ContainerProxy }
+/** What a sandbox's credential hosts are intercepted with, from `ctx.exports` (`enable_ctx_exports`). */
+export class CredentialEgress extends WorkerEntrypoint<Env, { sandboxId: string }> {
+  override async fetch(request: WorkerRequest): Promise<WorkerResponse> {
+    // The entrypoint's signature takes workers-types' Request and Response;
+    // the broker is written against the DOM lib's. They are one class at runtime.
+    const answer = await forwardCredential(request as unknown as Request, {
+      registrations: () => readRegistrations(this.env, this.ctx.props.sandboxId),
+    })
+    return answer as unknown as WorkerResponse
+  }
+}
+
+const CREDENTIAL_HOSTS_KEY = "claxedo.credential-hosts"
+const RUNTIME_READY_KEY = "claxedo.runtime-ready"
+// The platform mints the CA the container trusts with its first HTTPS
+// interception, and `interceptHttps` makes the container refuse to start
+// without that CA. A reserved name no request resolves mints it for a sandbox
+// that starts before it holds any credential host, so a host registered later
+// is intercepted without restarting the container and nothing else is.
+const TRUST_ANCHOR_HOST = "claxedo-credential-trust.invalid"
+
+type CredentialHosts = { sandboxId: string; hosts: string[] }
 
 // Local export is required for Wrangler's [[containers]].class_name binding to
 // attach this Worker's Dockerfile to the Durable Object class. The process
 // operations `this` is passed to live on the ambient `@cloudflare/sandbox`
 // declaration, so no call site re-asserts `this`.
-/** Registration and dispatch must name the same handler; a literal on each side is a silent 520. */
-const CREDENTIAL_OUTBOUND_HANDLER = "credential"
-
 export class Sandbox extends CloudflareSandbox {
-  static {
-    // The SDK registers handlers through an inherited setter, not a static field.
-    Object.assign(this, { outboundHandlers: {
-      [CREDENTIAL_OUTBOUND_HANDLER]: (request: Request, env: Env, ctx: { params: { sandboxId: string } }) =>
-        forwardCredential(request, { registrations: () => readRegistrations(env, ctx.params.sandboxId) }),
-    } })
-  }
   interceptHttps = true
 
-  private workspaceRuntimeEnsure?: Promise<boolean>
+  private workspaceRuntimeEnsure?: Promise<RuntimeEnsure>
+
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env)
+    // An interception belongs to the running container, and the platform
+    // offers no removal, so only a restarted object re-installs it.
+    void ctx.blockConcurrencyWhile(async () => {
+      if (ctx.container?.running) await this.interceptCredentialHosts()
+    })
+  }
+
+  /** Intercepts exactly the hosts a registration names; every other host keeps its direct route. */
+  async setCredentialHosts(sandboxId: string, hosts: readonly string[]) {
+    await this.ctx.storage.put(CREDENTIAL_HOSTS_KEY, { sandboxId, hosts: [...new Set(hosts)] } satisfies CredentialHosts)
+    if (this.ctx.container?.running) await this.interceptCredentialHosts()
+  }
+
+  async start(...args: unknown[]) {
+    if (!this.ctx.container?.running) await this.interceptCredentialHosts()
+    return super.start(...args)
+  }
+
+  async startAndWaitForPorts(...args: unknown[]) {
+    if (!this.ctx.container?.running) await this.interceptCredentialHosts()
+    return super.startAndWaitForPorts(...args)
+  }
+
+  private async interceptCredentialHosts() {
+    const container = this.ctx.container
+    if (!container) return
+    const recorded = await this.ctx.storage.get<CredentialHosts>(CREDENTIAL_HOSTS_KEY)
+    const egress = this.ctx.exports.CredentialEgress({ props: { sandboxId: recorded?.sandboxId ?? "" } })
+    for (const host of [TRUST_ANCHOR_HOST, ...recorded?.hosts ?? []]) await container.interceptOutboundHttps(host, egress)
+  }
 
   /**
    * `reuseRunning: false` is how a caller says the boot env changed. A running
@@ -56,6 +100,14 @@ export class Sandbox extends CloudflareSandbox {
   async workspaceRuntimeReady(port: number) {
     const process = await runtimeProcess(this)
     return Boolean(process && await runtimeReady(process, port, 2_000))
+  }
+
+  async runtimeWasReady(process: SandboxProcess) {
+    return await this.ctx.storage.get<number>(RUNTIME_READY_KEY) === process.startTime.getTime()
+  }
+
+  async recordRuntimeReady(process: SandboxProcess) {
+    await this.ctx.storage.put(RUNTIME_READY_KEY, process.startTime.getTime())
   }
 }
 
@@ -179,7 +231,9 @@ const SANDBOX_PORT_TIMEOUT_MS = 180_000
 // caller-side bound must cover both SDK startup phases plus a small RPC margin.
 const SANDBOX_PROCESS_LOOKUP_TIMEOUT_MS = SANDBOX_INSTANCE_TIMEOUT_MS + SANDBOX_PORT_TIMEOUT_MS + 10_000
 const RUNTIME_READY_TIMEOUT_MS = 30_000
+const RUNTIME_WEDGED_AFTER_MS = RUNTIME_PREPARATION_DEADLINE_MS + 5 * 60_000
 const RUNTIME_PROCESS_ID = "claxedo-workspace-runtime"
+const LIVE_PROCESS: readonly SandboxProcess["status"][] = ["starting", "running"]
 
 const SANDBOX_OPTIONS = {
   containerTimeouts: {
@@ -237,58 +291,110 @@ async function runtimeProcess(sandbox: SandboxOperations) {
     .then((processes) => processes.find((process) => process.id === RUNTIME_PROCESS_ID) ?? null)
 }
 
-async function stopRuntimeProcess(sandbox: SandboxOperations) {
-  const existing = await runtimeProcess(sandbox)
+async function stopRuntimeProcess(sandbox: SandboxOperations, existing: SandboxProcess | null) {
   if (!existing) return
   const status = await bounded(existing.getStatus(), "workspace-runtime process status")
-  if (["starting", "running"].includes(status)) {
+  if (LIVE_PROCESS.includes(status)) {
     await bounded(existing.kill(), "workspace-runtime process kill")
   }
   await bounded(sandbox.cleanupCompletedProcesses(), "workspace-runtime process cleanup")
 }
 
+/**
+ * Remembers the one process that has answered ready, by the start time the
+ * container reports for it (`listProcesses`, `getProcess`).
+ */
+export type RuntimeReadiness = {
+  runtimeWasReady(process: SandboxProcess): Promise<boolean>
+  recordRuntimeReady(process: SandboxProcess): Promise<void>
+}
+
+export type RuntimeEnsure =
+  | { state: "ready" }
+  | { state: "preparing" }
+  | { state: "exited"; reason: string }
+
 export async function ensureRuntimeProcess(
-  sandbox: SandboxOperations,
+  sandbox: SandboxOperations & RuntimeReadiness,
   command: string,
   env: Record<string, string>,
   port: number,
   options: { reuseRunning: boolean },
-) {
+): Promise<RuntimeEnsure> {
   const existing = await runtimeProcess(sandbox)
-  if (
-    options.reuseRunning && existing && ["starting", "running"].includes(existing.status)
-    && await runtimeReady(existing, port, 5_000)
-  ) return true
   if (existing) {
-    const status = await bounded(existing.getStatus(), "workspace-runtime process status")
-    if (["starting", "running"].includes(status)) {
-      await bounded(existing.kill(), "stale workspace-runtime process kill")
-    }
-    await bounded(sandbox.cleanupCompletedProcesses(), "workspace-runtime process cleanup")
+    const kept = options.reuseRunning ? await keptRuntime(sandbox, existing, port) : undefined
+    if (kept) return kept
+    await stopRuntimeProcess(sandbox, existing)
   }
-
   const process = await bounded<SandboxProcess>(
     sandbox.startProcess(command, { env, processId: RUNTIME_PROCESS_ID }),
     "workspace-runtime process start",
   )
-  if (await runtimeReady(process, port)) return true
+  return await settledRuntime(sandbox, process, port)
+}
 
-  const status = await bounded(process.getStatus(), "workspace-runtime failed process status").catch(() => process.status)
-  const logs = await bounded(process.getLogs(), "workspace-runtime failed process logs").catch(() => ({ stdout: "", stderr: "" }))
-  console.error("workspace-runtime failed to become ready", {
+/**
+ * What an existing runtime is, when it is to be kept: a live runtime that has
+ * answered ready is never replaced for one slow health check, and one that
+ * never has is still preparing its repository until it is wedged. A runtime
+ * that exited before it was ever ready failed its boot; its reason is the
+ * answer, because starting it again would rerun the same boot on every poll.
+ */
+async function keptRuntime(
+  sandbox: SandboxOperations & RuntimeReadiness,
+  existing: SandboxProcess,
+  port: number,
+): Promise<RuntimeEnsure | undefined> {
+  if (!LIVE_PROCESS.includes(existing.status)) {
+    if (await sandbox.runtimeWasReady(existing)) return undefined
+    return { state: "exited", reason: await exitReason(sandbox, existing, existing.status) }
+  }
+  const settled = await settledRuntime(sandbox, existing, port)
+  if (settled.state !== "preparing") return settled
+  if (await sandbox.runtimeWasReady(existing)) return settled
+  return Date.now() - existing.startTime.getTime() < RUNTIME_WEDGED_AFTER_MS ? settled : undefined
+}
+
+async function settledRuntime(
+  sandbox: SandboxOperations & RuntimeReadiness,
+  process: SandboxProcess,
+  port: number,
+): Promise<RuntimeEnsure> {
+  if (await runtimeReady(process, port)) {
+    // `startProcess` stamps its answer with the Worker's clock, never the
+    // container's, so the time a later `listProcesses` reports comes from a read.
+    const listed = await bounded(sandbox.getProcess(RUNTIME_PROCESS_ID), "workspace-runtime process read")
+    if (listed && !await sandbox.runtimeWasReady(listed)) await sandbox.recordRuntimeReady(listed)
+    return { state: "ready" }
+  }
+  const status = await bounded(process.getStatus(), "workspace-runtime process status")
+  if (LIVE_PROCESS.includes(status)) return { state: "preparing" }
+  return { state: "exited", reason: await exitReason(sandbox, process, status) }
+}
+
+/**
+ * The exited runtime's own account of its failed boot, cleared away so the
+ * next ensure starts a fresh one.
+ */
+async function exitReason(sandbox: SandboxOperations, process: SandboxProcess, status: SandboxProcess["status"]) {
+  const logs = await bounded(process.getLogs(), "workspace-runtime exited process logs").catch(() => ({ stdout: "", stderr: "" }))
+  console.error("workspace-runtime exited before it was ready", {
     status,
     stdout: safeRuntimeLog(logs.stdout),
     stderr: safeRuntimeLog(logs.stderr),
   })
-  return false
+  await bounded(sandbox.cleanupCompletedProcesses(), "workspace-runtime process cleanup")
+  return bootFailure(logs.stderr) ?? `The workspace runtime process ended (${status}) before it was ready`
 }
 
-function safeRuntimeLog(value: string) {
-  return value
-    .slice(-4_000)
-    .replace(/-----BEGIN [^-]+-----[\s\S]*?-----END [^-]+-----/g, "[REDACTED PEM]")
-    .replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED]")
-    .replace(/\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PRIVATE_KEY|COOKIE)[A-Z0-9_]*)=\S+/gi, "$1=[REDACTED]")
+const BOOT_FAILURE_LINE = `${WORKSPACE_RUNTIME_BOOT_FAILED}: `
+
+function bootFailure(stderr: string) {
+  const at = stderr.lastIndexOf(BOOT_FAILURE_LINE)
+  if (at < 0) return undefined
+  const [failure = ""] = stderr.slice(at + BOOT_FAILURE_LINE.length).split(/\n\s+at /)
+  return safeRuntimeLog(failure.trim().replace(/^Error: /, "")).slice(0, 1_000) || undefined
 }
 
 function json(data: unknown, status = 200) {
@@ -328,8 +434,13 @@ export default {
       // Rewritten Request inherits method, headers (incl. the relay's RHT) and
       // body; the streamed Response (e.g. SSE event-stream) is returned as-is.
       const proxied = new Request(target.toString(), request)
+      // RPC cannot carry a Response holding a WebSocket, so an upgrade takes
+      // the SDK's fetch-boundary transport.
+      const response = request.headers.get("upgrade")?.toLowerCase() === "websocket"
+        ? await sandbox.wsConnect(proxied, WORKSPACE_RUNTIME_PORT)
+        : await sandbox.containerFetch(proxied, WORKSPACE_RUNTIME_PORT)
       return withServerTiming(
-        await sandbox.containerFetch(proxied, WORKSPACE_RUNTIME_PORT),
+        response,
         "sandbox-container",
         startedAt,
         request.headers.get(TRACE_ID_HEADER),
@@ -450,26 +561,22 @@ export default {
           // NAMES matter: a rotated value keeps the same placeholder, so it
           // needs no new process, while an added or dropped name does.
           const placeholdersChanged = registrationNames(previous) !== registrationNames(registrations)
-          await sandbox.setOutboundByHosts(Object.fromEntries(
-            registrations.flatMap((row) => row.hosts.map((host) =>
-              [host, { method: CREDENTIAL_OUTBOUND_HANDLER, params: { sandboxId } }],
-            )),
-          ))
+          await sandbox.setCredentialHosts(sandboxId, registrations.flatMap((row) => row.hosts))
           for (const row of registrations) containerEnv[row.name] = credentialPlaceholder(row.name)
           if (restore) {
             // Cloudflare backup mounts are ephemeral and restoring over an
             // active writer is unsafe. Stop the old runtime before mounting
             // the requested backup, then boot against the restored directory.
-            await stopRuntimeProcess(sandbox)
+            await stopRuntimeProcess(sandbox, await runtimeProcess(sandbox))
             await sandbox.restoreBackup({ id: restore.backupId, dir: restore.directory })
           }
           // Runtime bring-up is a Durable Object RPC with a per-sandbox
           // single-flight promise. Catalog refreshes and execution retries can
           // overlap, but they must join one process launch rather than cancel
           // each other's container operations.
-          if (!await sandbox.ensureWorkspaceRuntime(command, containerEnv, port, { reuseRunning: !placeholdersChanged })) {
-            return json({ ready: false, error: "workspace-runtime did not become ready" }, 503)
-          }
+          const runtime: RuntimeEnsure = await sandbox.ensureWorkspaceRuntime(command, containerEnv, port, { reuseRunning: !placeholdersChanged })
+          if (runtime.state === "exited") return json({ ready: false, exited: true, error: runtime.reason }, 502)
+          if (runtime.state === "preparing") return json({ ready: false, error: "workspace-runtime did not become ready" }, 503)
           // Register only once the sandbox is really up, and carry the labels
           // the control plane sent so GC can apply its own ownership and
           // identity checks against real provider state.

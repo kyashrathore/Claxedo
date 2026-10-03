@@ -1,6 +1,7 @@
 import { isRecord } from "@claxedo/helpers/guards"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "./auth"
 import type { OrgId, ProjectId } from "./branded-id"
+import type { CloudWorkspaceCreateArgs, RuntimeCloudWorkspaceCreateArgs } from "./cloud-workspace-create"
 import type {
   AuthorizeRuntimePrivateSessionInput,
   PrivateSessionRuntimePrincipal,
@@ -9,11 +10,11 @@ import type {
   SessionPageQuery,
 } from "./private-session-authority"
 import type { LatestView } from "../../session/latest-view-page"
-import type { TurnPageQuery, TurnPageRequest, TurnPage, FirstRead } from "@claxedo/agent-runtime-contract"
-import type { AgentContentPart } from "@claxedo/agent-runtime-contract"
+import type { AgentContentPart, TurnPageQuery, TurnPageRequest, TurnPage, FirstRead } from "@claxedo/agent-runtime-contract"
 import type { HostSessionRowsAuthority } from "./host-session-rows"
 import type { OrgAccessAuthority } from "./org-access-authority"
 import type { SessionShareAuthority } from "./session-share-authority"
+import type { SessionReaderAuthority } from "./session-reader-authority"
 
 export {
   DEFAULT_SESSION_SHARE_LEVEL,
@@ -25,7 +26,6 @@ export {
 } from "./session-share-level"
 export type {
   SessionPeopleContext,
-  SessionShareFanoutTarget,
   SessionShareGrantResult,
   SessionShareRevokeResult,
 } from "./session-share-authority"
@@ -130,7 +130,7 @@ export type ChannelMachineIdentity = { channel: string; externalUserId: string; 
 /** The same identity carrying the binding generation the authority admitted it under. */
 export type AuthorizedChannelIdentity = ChannelMachineIdentity & { identityVersion: number }
 
-export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & {
+export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Partial<SessionReaderAuthority> & {
   /** Internal host delegation, answered only for the workspace's owner, whose actor the authority rechecks. */
   resolveRuntimeMachineAccess: (actorId: string, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole }>
   resolveChannelMachineAccess: (identity: ChannelMachineIdentity, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole; identityVersion: number }>
@@ -387,20 +387,7 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & {
   /** What `verifyMachineRequest` reads and consumes; absent, no route can admit a machine caller. */
   machineAuth?: MachineAuthAdapter
   deleteWorkspace: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<unknown>
-  createCloudWorkspace: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      orgId?: string
-      projectId?: string
-      displayName: string
-      repoUrl?: string
-      repoName?: string
-      gitBranch?: string
-      remoteDirectory?: string
-      homeRegion?: string
-    },
-  ) => Promise<unknown>
+  createCloudWorkspace: (auth: SignedControlPlaneAuth, args: CloudWorkspaceCreateArgs) => Promise<unknown>
   /**
    * A cloud workspace created for a person who did not sign the request: the
    * canonical actor a credential this control plane minted resolved to, as
@@ -412,20 +399,7 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & {
    * `projectId` are the resolved owner's, and the adapter holds the principal
    * to that project as strictly as it holds a signed creator.
    */
-  createRuntimeCloudWorkspace?: (
-    principal: PrivateSessionRuntimePrincipal,
-    args: {
-      workspaceId: string
-      orgId: string
-      projectId: string
-      displayName: string
-      repoUrl?: string
-      repoName?: string
-      gitBranch?: string
-      remoteDirectory?: string
-      homeRegion?: string
-    },
-  ) => Promise<unknown>
+  createRuntimeCloudWorkspace?: (principal: PrivateSessionRuntimePrincipal, args: RuntimeCloudWorkspaceCreateArgs) => Promise<unknown>
   /** The undo of `createRuntimeCloudWorkspace`, as the same principal. */
   deleteRuntimeWorkspace?: (principal: PrivateSessionRuntimePrincipal, args: { workspaceId: string }) => Promise<unknown>
 

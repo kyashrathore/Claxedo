@@ -88,7 +88,7 @@ export function AppShell(props: AppShellProps): JSX.Element {
   const scope = createMemo(() => (gate() === "open" ? principalScope(server.capabilities()) : undefined))
   const screen = createMemo(() => {
     const route = routing.route()
-    return route.kind === "screen" ? route : undefined
+    return route.kind === "screen" && (!route.screen.requiresSignIn || gate() === "open") ? route : undefined
   })
   createEffect(() => {
     if (gate() === "login" && !screen()) routing.navigate(LOGIN_PATH, { replace: true })

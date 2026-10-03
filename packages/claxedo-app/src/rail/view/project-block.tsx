@@ -8,7 +8,7 @@ import { SESSION_GROUP_PAGE_SIZE, type RailRow, type SessionMarker } from "../mo
 import type { ProjectSection } from "../project-sections"
 import { ProjectHeader } from "./project-header"
 import { ProjectRows } from "./project-rows"
-import { SessionListNotice } from "./session-list-notice"
+import { SessionListNotice, SessionLoadMore } from "./session-list-notice"
 import type { SessionRowMenuActions } from "./session-row-menu"
 import { useProjectTerminals } from "./terminal-row"
 
@@ -52,25 +52,6 @@ function createProjectPaging(props: ProjectBlockProps) {
   }
 }
 
-function SessionLoadMore(props: { readonly loading: boolean; readonly onLoad: () => void }): JSX.Element {
-  const t = useTranslator(railDictionary)
-  return (
-    <button
-      data-testid="rail-sidebar-session-load-more"
-      type="button"
-      class="text-sm text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left transition-colors duration-100"
-      disabled={props.loading}
-      classList={{ "opacity-60": props.loading }}
-      onClick={(event) => {
-        props.onLoad()
-        event.currentTarget.blur()
-      }}
-    >
-      {props.loading ? t("rail.loadingMore") : t("rail.loadMore")}
-    </button>
-  )
-}
-
 function ProjectSessions(
   props: ProjectBlockProps & { readonly paging: ReturnType<typeof createProjectPaging>; readonly terminals: readonly TerminalItem[] },
 ): JSX.Element {
@@ -88,8 +69,7 @@ function ProjectSessions(
         projectLabel={props.section.label}
         onActivate={props.onActivate}
         onRename={props.onRename}
-        onArchive={props.onArchive}
-        onDelete={props.onDelete}
+        onToggleSettled={props.onToggleSettled}
       />
       <Show when={props.paging.loadingInitial()}>
         <SessionListNotice variant="loading">{t("rail.loadingSessions")}</SessionListNotice>

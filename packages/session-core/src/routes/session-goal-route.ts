@@ -5,6 +5,7 @@ import { isAgentRuntimeGoalError, type AgentRuntime } from "../host/runtime"
 import type { SessionAccessOperation } from "../session-access-policy"
 import { errorBody } from "./error-body"
 import { noStoreJson } from "./http"
+import { recordReaderSend } from "./session-route-options"
 import { sessionOperationGuard } from "./session-operation-guard"
 import type { SessionRouteContext as Ctx, SessionRouteOptions as Opts } from "./session-route-options"
 
@@ -70,6 +71,9 @@ export async function invokeGoalRuntime(opts: Opts, c: Ctx, sessionId: string, d
 }
 
 export function goalStartInvocation(objective: string): GoalInvocation {
-  return async ({ c, sessionId, directory, runtime }) =>
-    goalMutationResponse(c, await runtime.goals.start({ sessionId, objective }, directory), 201)
+  return async ({ c, sessionId, directory, runtime }) => {
+    const started = await runtime.goals.start({ sessionId, objective }, directory)
+    await recordReaderSend(runtime, c, sessionId)
+    return goalMutationResponse(c, started, 201)
+  }
 }

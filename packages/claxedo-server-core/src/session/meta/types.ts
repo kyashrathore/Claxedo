@@ -1,5 +1,5 @@
 import type { SessionLastTurn } from "@claxedo/agent-runtime-contract"
-import type { SessionListSort, SessionOrderKey } from "../navigation-order"
+import type { SessionListSettledMode, SessionListSort, SessionOrderKey } from "../navigation-order"
 
 export const GLOBAL_TAG = "global"
 export const GLOBAL_SHOW_TAG = "global:default"
@@ -34,11 +34,16 @@ export type SessionMeta = {
 }
 
 export type SessionMetaNavigationListInput = {
+  reader: string
   workspaceID?: string
+  /** The live workspaces a list of every session covers; a session of any other is not listed. */
+  workspaceIDs?: readonly string[]
   directory?: string
   projectID?: string
+  sessionID?: string
   global?: boolean
   archived?: "active" | "all" | "archived"
+  settled?: SessionListSettledMode
   status?: string[]
   search?: string
   sort?: SessionListSort

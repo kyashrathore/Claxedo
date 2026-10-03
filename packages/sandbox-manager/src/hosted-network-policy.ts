@@ -97,7 +97,7 @@ function hostOf(value: string | undefined): string | undefined {
  * The git host this workspace clones from.
  *
  * Scoped to the ONE repository host in the request rather than to a forge
- * allowlist, matching how `authenticatedGitHubCloneSource` scopes the clone
+ * allowlist, matching how `githubCloneSecret` scopes the clone
  * credential it brokers (`hosts: ["github.com"]`) — the credential and the
  * network policy should describe the same reachable surface.
  *

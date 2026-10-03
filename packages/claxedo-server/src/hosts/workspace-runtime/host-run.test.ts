@@ -47,4 +47,23 @@ describe("workspace-runtime host entry", () => {
     expect(out.error).not.toHaveBeenCalled()
     expect(out.exit).not.toHaveBeenCalled()
   })
+
+  test("the boot's background work starts only once the server is listening", async () => {
+    const order: string[] = []
+    let listening!: () => void
+    waitForWorkspaceRuntimeServerPort.mockImplementationOnce(() => new Promise((resolve) => {
+      listening = () => { order.push("listening"); resolve(2593) }
+    }))
+    const host = runWorkspaceRuntimeHost(async () => ({
+      port: 2593,
+      hostname: "0.0.0.0",
+      options: { target: { workspaceId: "ws_1", directory: "/workspace" } },
+      onListening: () => order.push("background"),
+    } as never), io())
+    await vi.waitFor(() => expect(startServer).toHaveBeenCalled())
+    expect(order).toEqual([])
+    listening()
+    await host
+    expect(order).toEqual(["listening", "background"])
+  })
 })

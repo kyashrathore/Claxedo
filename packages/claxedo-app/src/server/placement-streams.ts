@@ -10,6 +10,7 @@ const RUNTIME_EVENTS_PATH = "/api/wr/events"
 
 export type PlacementStreams = {
   readonly attach: (ref: SessionLocation) => () => void
+  readonly streams: (ref: SessionLocation) => boolean
   readonly close: () => void
 }
 
@@ -90,6 +91,7 @@ export function createPlacementStreams(input: StreamsInput): PlacementStreams {
         reconcileStreams(state)
       }
     },
+    streams: (ref) => state.sessions.has(sessionKey(String(ref.placementId), String(ref.sessionId))),
     close: () => {
       unsubscribe()
       state.attached.clear()

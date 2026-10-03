@@ -1,1 +1,1 @@
-export { createSessionList, type SessionListInternal } from "./store"
+export { createSessionList, type SessionListInternal, type SessionListOptions } from "./store"

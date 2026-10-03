@@ -3,10 +3,10 @@ import { parseBackgroundWork, type BackgroundWork, type SessionLastTurn } from "
 import { jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
-import type { SessionListSort, SessionOrderKey } from "./navigation-order"
+import type { SessionListSettledMode, SessionListSort, SessionOrderKey } from "./navigation-order"
 
-export type { SessionListSort, SessionOrderKey } from "./navigation-order"
-export type SessionListScope = "global" | "project" | "workspace"
+export type { SessionListSettledMode, SessionListSort, SessionOrderKey } from "./navigation-order"
+export type SessionListScope = "global" | "project" | "workspace" | "all"
 export type SessionListArchiveMode = "active" | "all" | "archived"
 
 export type SessionListQuery = {
@@ -14,7 +14,9 @@ export type SessionListQuery = {
   projectId?: string
   workspaceId?: string
   directory?: string
+  sessionId?: string
   archived: SessionListArchiveMode
+  settled: SessionListSettledMode
   status: string[]
   search?: string
   sort: SessionListSort
@@ -47,6 +49,9 @@ export type SessionNavigationRow = {
   lastHumanTurnAt?: number
   /** The outcome of the session's last turn the runtime recorded; absent until one ends. */
   lastTurn?: SessionLastTurn
+  /** The reading principal's own marks: the last turn end it has seen, and the activity it settled the session through. */
+  seenAt?: number
+  settledAt?: number
   archivedAt?: number
   tags: string[]
   attachments: Array<{ kind: string; targetId?: string }>
@@ -64,9 +69,9 @@ export type SessionNavigationRow = {
 /**
  * The last status the session's runtime reported, as the store that lists the
  * row last heard it. `awaitingInput` is an open permission or question.
- * `backgroundWork` counts the harness work running outside any turn; only a
- * list read from the runtime in process carries it, since stored rows have no
- * column for it.
+ * `backgroundWork` counts the harness work running outside any turn, absent
+ * while none runs: the daemon reads it from its runtimes in process, and the
+ * hosted registry holds what the runtime last published with its status.
  */
 export type SessionRowStatus = {
   kind: SessionRowStatusKind
@@ -87,7 +92,6 @@ export type SessionListResponse = {
   nextCursor?: string
   /** The `after` that reads the next page; present only when more rows follow. */
   nextAfter?: string
-  totalKnown?: number
 }
 
 type CursorShape = SessionOrderKey & { query: string }
@@ -98,8 +102,10 @@ type CursorShape = SessionOrderKey & { query: string }
  * whether another page follows without a count.
  */
 export type SessionListKeysetPage = {
+  sessionId?: string
   sort: SessionListSort
   archived: SessionListArchiveMode
+  settled: SessionListSettledMode
   search?: string
   limit: number
   after?: SessionOrderKey
@@ -112,7 +118,9 @@ export function parseSessionListQuery(url: URL): SessionListQuery {
     ...(trimToUndefined(url.searchParams.get("projectId")) ? { projectId: trimToUndefined(url.searchParams.get("projectId")) } : {}),
     ...(trimToUndefined(url.searchParams.get("workspaceId")) ? { workspaceId: trimToUndefined(url.searchParams.get("workspaceId")) } : {}),
     ...(trimToUndefined(url.searchParams.get("directory")) ? { directory: trimToUndefined(url.searchParams.get("directory")) } : {}),
+    ...(trimToUndefined(url.searchParams.get("sessionId")) ? { sessionId: trimToUndefined(url.searchParams.get("sessionId")) } : {}),
     archived: archivedValue(url.searchParams.get("archived")),
+    settled: url.searchParams.get("settled") === "all" ? "all" : "active",
     status: list(url.searchParams.get("status")),
     ...(trimToUndefined(url.searchParams.get("search")) ? { search: trimToUndefined(url.searchParams.get("search")) } : {}),
     sort: sortValue(url.searchParams.get("sort")),
@@ -141,7 +149,6 @@ export function buildSessionListResponse(input: {
   return {
     view: view(input.query),
     items: page.items,
-    totalKnown: rows.length,
     ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
     ...(page.nextAfter ? { nextAfter: page.nextAfter } : {}),
   }
@@ -150,8 +157,10 @@ export function buildSessionListResponse(input: {
 export function sessionListKeysetPage(query: SessionListQuery): SessionListKeysetPage {
   const cursor = cursorOfQuery(query)
   return {
+    ...(query.sessionId ? { sessionId: query.sessionId } : {}),
     sort: query.sort,
     archived: query.archived,
+    settled: query.settled,
     ...(query.search ? { search: query.search } : {}),
     limit: query.limit + 1,
     ...(cursor ? { after: sessionOrderKey(cursor) } : {}),
@@ -164,8 +173,10 @@ export function sessionListStorePageFilter(query: SessionListQuery) {
     ...(query.scope === "project" && query.projectId ? { projectID: query.projectId } : {}),
     ...(query.scope === "workspace" && query.workspaceId ? { workspaceID: query.workspaceId } : {}),
     ...(query.scope === "workspace" && query.directory ? { directory: query.directory } : {}),
+    ...(page.sessionId ? { sessionID: page.sessionId } : {}),
     global: query.scope === "global",
     archived: page.archived,
+    settled: page.settled,
     status: query.status,
     search: page.search,
     limit: page.limit,
@@ -222,6 +233,7 @@ function sessionNavigationRow(session: unknown): SessionNavigationRow | undefine
     updatedAt,
     ...(lastHumanTurnAt !== undefined ? { lastHumanTurnAt } : {}),
     ...lastTurnFromSession(item),
+    ...readerFromSession(item),
     ...(archivedAt ? { archivedAt } : {}),
     tags: stringArray(item.tags),
     attachments: arrayValue(item.attachments).flatMap((attachment) => {
@@ -245,7 +257,7 @@ function statusFromSession(item: Record<string, unknown>): { status?: SessionRow
   const at = numberValue(nested.at) ?? numberValue(item.status_at)
   if (!kind || at === undefined) return {}
   const awaitingInput = nested.awaitingInput ?? item.awaiting_input
-  const backgroundWork = parseBackgroundWork(nested.backgroundWork)
+  const backgroundWork = parseBackgroundWork(nested.backgroundWork ?? item.background_work)
   const background = backgroundWork ? { backgroundWork } : {}
   return { status: { kind, awaitingInput: awaitingInput === true || awaitingInput === 1, ...background, at } }
 }
@@ -256,6 +268,12 @@ function lastTurnFromSession(item: Record<string, unknown>): { lastTurn?: Sessio
   const completedAt = numberValue(nested.completedAt) ?? numberValue(item.last_turn_completed_at)
   if ((status !== "completed" && status !== "failed" && status !== "cancelled") || completedAt === undefined) return {}
   return { lastTurn: { status, completedAt } }
+}
+
+function readerFromSession(item: Record<string, unknown>): Pick<SessionNavigationRow, "seenAt" | "settledAt"> {
+  const seenAt = numberValue(item.seenAt) ?? numberValue(item.seen_at)
+  const settledAt = numberValue(item.settledAt) ?? numberValue(item.settled_at)
+  return { ...(seenAt === undefined ? {} : { seenAt }), ...(settledAt === undefined ? {} : { settledAt }) }
 }
 
 function statusKind(input: unknown): SessionRowStatusKind | undefined {
@@ -328,6 +346,8 @@ function stringArray(input: unknown) {
 }
 
 function rowInScope(row: SessionNavigationRow, query: SessionListQuery) {
+  if (query.sessionId && row.sessionId !== query.sessionId) return false
+  if (query.scope === "all") return true
   if (query.scope === "global") return row.tags.includes("global:default") || row.tags.includes("global") || row.directory === "global"
   if (query.scope === "project") return !query.projectId || row.projectId === query.projectId
   if (query.workspaceId && row.workspaceId === query.workspaceId) return true
@@ -470,7 +490,9 @@ function querySignature(query: SessionListQuery) {
     projectId: query.projectId,
     workspaceId: query.workspaceId,
     directory: query.directory,
+    sessionId: query.sessionId,
     archived: query.archived,
+    settled: query.settled,
     status: query.status,
     search: query.search,
     sort: query.sort,
@@ -479,7 +501,7 @@ function querySignature(query: SessionListQuery) {
 }
 
 function scopeValue(input: string | null): SessionListScope {
-  if (input === "project" || input === "workspace") return input
+  if (input === "project" || input === "workspace" || input === "all") return input
   return "global"
 }
 

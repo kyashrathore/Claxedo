@@ -35,7 +35,7 @@ import { turnPrompt, turnStartRecord } from "./turn-record"
 import { runTurn, type TurnRunnerHost } from "./turn-runner"
 import { createSteeredInputs } from "./steered-inputs"
 import { createSessionEventWriter } from "../projection/session-event-writer"
-import { eventSessionId, toPresentationEvent } from "../projection/presentation-events"
+import { eventSessionId, sessionUpdated, toPresentationEvent } from "../projection/presentation-events"
 
 export {
   AGENT_RUNTIME_MESSAGE_ID_CONFLICT_CODE,
@@ -315,6 +315,11 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
         secretAuthority?: ConnectionSecretAuthority) => sessions.update(sessionId, updates, directory, secretAuthority),
       updateConfig: (sessionId: string, update: SessionConfigUpdate, directory?: RuntimeDirectory, secretAuthority?: ConnectionSecretAuthority) =>
         sessions.updateSessionConfig(sessionId, update, directory, secretAuthority),
+      holdTree: async (sessionId: string) => sessions.holdTree(sessionId),
+      async recordHumanTurn(sessionId: string) {
+        const session = store.updateSession(sessionId, { humanTurn: true })
+        if (session) publish({ sessionId, directory: session.directory, payload: sessionUpdated(session) })
+      },
       delete: (sessionId: string, directory?: RuntimeDirectory, secretAuthority?: ConnectionSecretAuthority) =>
         sessions.delete(sessionId, directory, secretAuthority),
       fork: (sessionId: string, messageId: string, childId?: string, directory?: RuntimeDirectory, secretAuthority?: ConnectionSecretAuthority) =>

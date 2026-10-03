@@ -57,11 +57,11 @@ function assertLiveSyncRoomName(roomName: string): void {
   }
 }
 
-/** POST a nudge to the room that owns `roomName`, fanning it to held clients. */
+/** POST a nudge, one event or a batch, to the room that owns `roomName`, fanning it to held clients. */
 export async function nudgeLiveSyncRoom(
   namespace: LiveSyncRoomNamespace,
   roomName: string,
-  event: ControlPlaneEvent,
+  event: ControlPlaneEvent | readonly ControlPlaneEvent[],
 ): Promise<{ delivered: number; held: number }> {
   assertLiveSyncRoomName(roomName)
   const response = await namespace

@@ -34,10 +34,12 @@ import type { SqliteDatabase } from "./sqlite/database"
 import { openRuntimeStoreSchema } from "./store-schema"
 import type { SessionTurnOrigin } from "./session-access-policy"
 import { actorKind, nullable } from "./stored-columns"
+import { STORED_SESSION_SELECT, type StoredSessionRow } from "./stored-session-row"
 import { listSubagentRows, persistSubagentEvent } from "./subagent-rows"
 import { observationStartsNewRun, recordSubagentRun, subagentRunRevision } from "./subagent-status"
 import { pendingSubagentWakes, recordSubagentWake, runningHostChildren, subagentWakeParents } from "./subagent-wakes"
-import { buildAssistantMessage, buildUserMessage, buildUserPromptParts, messageCompleted, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionStatus } from "./projection/presentation-events"
+import { buildAssistantMessage, messageCompleted, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionStatus, sessionUpdated } from "./projection/presentation-events"
+import { turnStartMessages } from "./projection/turn-start-messages"
 
 export const SESSION_INTERRUPTED = "The agent runtime restarted. Send a message to continue the interrupted work."
 
@@ -73,7 +75,7 @@ type Bind = {
   updatedAt?: number
 }
 
-type Turn = {
+export type Turn = {
   type: "turn.start"
   userMessageId?: string
   parentMessageId?: string
@@ -87,6 +89,7 @@ type Turn = {
   variant?: string
   actorId?: string
   actorKind?: "human" | "agent"
+  humanTurn?: true
   fencingToken?: number
   author?: {
     id: string
@@ -114,6 +117,8 @@ type SessionUpdate = {
     time?: {
       archived?: number
     }
+    /** A person's send admitted without starting a turn: queued, steered, a Goal, a queued edit. */
+    humanTurn?: true
   }
 }
 
@@ -1745,6 +1750,9 @@ export class RuntimeStore {
         .prepare("UPDATE session SET archived_at = ?, updated_at = ? WHERE id = ?")
         .run(updates.time.archived, ts, sessionId)
     }
+    if (updates.humanTurn) {
+      this.db.prepare("UPDATE session SET last_human_turn_at = ?, updated_at = ? WHERE id = ?").run(ts, ts, sessionId)
+    }
   }
 
   /**
@@ -1812,49 +1820,22 @@ export class RuntimeStore {
     }
     if (control.type === "turn.start") {
       const directory = this.sessionTimes(row.sessionId).directory
-      if (control.userMessageId) {
-        this.upsertMessage(
-          buildUserMessage({
-            id: control.userMessageId,
-            sessionID: row.sessionId,
-            agent: control.agent,
-            model: control.model,
-            created: row.ts,
-            ...(control.tools ? { tools: control.tools } : {}),
-            ...(control.format ? { format: control.format } : {}),
-            ...(control.system ? { system: control.system } : {}),
-            ...(control.variant ? { variant: control.variant } : {}),
-            ...(control.author ? { author: control.author } : {}),
-          }),
-          row,
-        )
+      const messages = turnStartMessages({ sessionId: row.sessionId, ts: row.ts, directory, control })
+      if (messages.user) {
+        this.upsertMessage(messages.user.info, row)
         // No harness writes the user's prompt parts back, so these rows are the
         // prompt's only record, including when the harness never answers.
-        for (const part of buildUserPromptParts(row.sessionId, control.userMessageId, control.parts)) {
-          this.upsertPart(part, row.ts)
-        }
+        for (const part of messages.user.parts) this.upsertPart(part, row.ts)
       }
-      this.upsertMessage(
-        buildAssistantMessage({
-          id: control.assistantMessageId,
-          sessionID: row.sessionId,
-          parentID: control.userMessageId ?? control.parentMessageId ?? row.sessionId,
-          agent: control.agent,
-          model: control.model,
-          directory,
-          created: row.ts,
-        }),
-        row,
-      )
+      this.upsertMessage(messages.assistant, row)
       this.upsertSession({
         id: row.sessionId,
         directory,
         createdAt: row.ts,
         updatedAt: row.ts,
-        // A subagent's completion or a channel message starts a turn the same way
-        // the reader does, so `updated_at` alone cannot tell them apart. `actorKind`
-        // comes from the request's auth claims and a client cannot forge it.
-        ...(control.actorKind === "human" ? { lastHumanTurnAt: row.ts } : {}),
+        // Every turn moves `updated_at`; the list orders on this column so that
+        // only a person's own send moves a session.
+        ...(control.humanTurn ? { lastHumanTurnAt: row.ts } : {}),
         status: "busy",
         recoveryError: null,
       })
@@ -2180,60 +2161,18 @@ export class RuntimeStore {
 
   private turnStartEvents(row: TurnStartRow): AgentPresentationEvent[] {
     const control = row.control
-    const directory = this.sessionTimes(row.sessionId).directory
+    const messages = turnStartMessages({ sessionId: row.sessionId, ts: row.ts, directory: this.sessionTimes(row.sessionId).directory, control })
+    // The list orders on the human turn, and no other event carries the row it moved.
+    const moved = control.humanTurn ? this.getSession(row.sessionId) : null
     return [
       sessionStatus(row.sessionId, { type: "busy" }),
-      ...(control.userMessageId
-        ? [
-            messageUpdated(
-              buildUserMessage({
-                id: control.userMessageId,
-                sessionID: row.sessionId,
-                agent: control.agent,
-                model: control.model,
-                created: row.ts,
-                ...(control.tools ? { tools: control.tools } : {}),
-                ...(control.format ? { format: control.format } : {}),
-                ...(control.system ? { system: control.system } : {}),
-                ...(control.variant ? { variant: control.variant } : {}),
-                ...(control.author ? { author: control.author } : {}),
-              }),
-            ),
-            ...buildUserPromptParts(row.sessionId, control.userMessageId, control.parts).map(messagePartUpdated),
-          ]
-        : []),
-      messageUpdated(
-        buildAssistantMessage({
-          id: control.assistantMessageId,
-          sessionID: row.sessionId,
-          parentID: control.userMessageId ?? control.parentMessageId ?? row.sessionId,
-          agent: control.agent,
-          model: control.model,
-          directory,
-          created: row.ts,
-        }),
-      ),
+      ...(moved ? [sessionUpdated(moved)] : []),
+      ...(messages.user ? [messageUpdated(messages.user.info), ...messages.user.parts.map(messagePartUpdated)] : []),
+      messageUpdated(messages.assistant),
     ]
   }
 
-  startTurn(input: {
-    sessionId: string
-    agentSessionId?: string
-    userMessageId?: string
-    parentMessageId?: string
-    assistantMessageId: string
-    agent: string
-    model?: Model
-    parts: PromptInput["parts"]
-    tools?: Record<string, boolean>
-    format?: PromptFormat
-    system?: string
-    variant?: string
-    actorId?: string
-    actorKind?: "human" | "agent"
-    author?: Turn["author"]
-    fencingToken?: number
-  }) {
+  startTurn(input: Omit<Turn, "type"> & { sessionId: string; agentSessionId?: string }) {
     const active = this.db
       .prepare<{
       seq: number
@@ -2302,6 +2241,7 @@ export class RuntimeStore {
         ...(input.system ? { system: input.system } : {}),
         ...(input.variant ? { variant: input.variant } : {}),
         ...(input.actorId && input.actorKind ? { actorId: input.actorId, actorKind: input.actorKind } : {}),
+        ...(input.humanTurn ? { humanTurn: true as const } : {}),
         ...(input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}),
         ...(input.author ? { author: input.author } : {}),
       },
@@ -2493,35 +2433,7 @@ export class RuntimeStore {
     return message?.role === "assistant" ? message : undefined
   }
 
-  private session(row: {
-    id: string
-    workspace_id?: string | null
-    parent_id?: string | null
-    directory: string
-    title: string | null
-      title_source?: AgentSessionTitleSource | null
-    commands_json?: string | null
-    harness_id?: string | null
-    harness_access?: string | null
-    harness_binary?: string | null
-    harness_transport?: string | null
-    harness_url?: string | null
-    harness_headers_json?: string | null
-    model_provider_id?: string | null
-    model_id?: string | null
-    variant?: string | null
-    agent?: string | null
-    permission_mode?: string | null
-    permission_mode_label?: string | null
-    process_key?: string | null
-    created_at: number
-    updated_at: number
-    last_human_turn_at?: number | null
-    archived_at?: number | null
-    status?: string | null
-    recovery_error?: string | null
-    agent_session_id?: string | null
-  }) {
+  private session(row: StoredSessionRow) {
     const harness = sessionHarness(row)
     const lastTurn = this.lastTurn(row.id)
     return {
@@ -2611,68 +2523,19 @@ export class RuntimeStore {
   }
 
   listSessions(directory: string) {
-    return (
-      this.db
-        .prepare<{
-        id: string
-        workspace_id: string | null
-        parent_id: string | null
-        directory: string
-        title: string | null
-      title_source?: AgentSessionTitleSource | null
-      commands_json: string | null
-        agent_session_id: string | null
-        process_key: string | null
-        harness_id: string | null
-        harness_access: string | null
-        harness_binary: string | null
-        harness_transport: string | null
-        harness_url: string | null
-        harness_headers_json: string | null
-        model_provider_id: string | null
-        model_id: string | null
-        variant: string | null
-        agent: string | null
-        permission_mode: string | null
-        permission_mode_label: string | null
-        created_at: number
-        updated_at: number
-        status: string | null
-        recovery_error: string | null
-        archived_at: number | null
-      }>(
-          `
-        SELECT
-          session.id,
-          binding.workspace_id,
-          parent_id,
-	          session.directory,
-	          title,
-          title_source,
-          commands_json,
-	          agent_session_id,
-	          process_key,
-	          harness_id,
-	          harness_access,
-	          harness_binary,
-	          harness_transport,
-	          harness_url,
-	          harness_headers_json,
-          model_provider_id,
-          model_id,
-          variant,
-          agent,
-          permission_mode,
-          permission_mode_label,
-          created_at,
-          updated_at,
-          last_human_turn_at,
-          status,
-          recovery_error,
-          archived_at
-        FROM session
-        LEFT JOIN session_execution_binding binding ON binding.session_id = session.id
-        WHERE session.directory = ?
+    return this.sessionsWhere("session.directory = ?", directory)
+  }
+
+  /** Every session in this store, whatever directory each is filed under. */
+  listEverySession() {
+    return this.sessionsWhere("1 = 1")
+  }
+
+  private sessionsWhere(filter: string, ...binds: string[]) {
+    return this.db
+      .prepare<StoredSessionRow>(
+        `${STORED_SESSION_SELECT}
+        WHERE ${filter}
           -- A creation still waiting on its harness, or one that never finished, is nobody's session yet.
           AND NOT EXISTS (
             SELECT 1 FROM session_start start
@@ -2680,9 +2543,9 @@ export class RuntimeStore {
           )
         ORDER BY created_at DESC
       `,
-        )
-        .all(directory)
-    ).map((row) => this.session(row))
+      )
+      .all(...binds)
+      .map((row) => this.session(row))
   }
 
   stalePermission(id: string) {
@@ -2734,70 +2597,7 @@ export class RuntimeStore {
   }
 
   getSession(id: string) {
-    const row = this.db
-      .prepare<{
-      id: string
-      workspace_id: string | null
-      parent_id: string | null
-      directory: string
-      title: string | null
-      title_source?: AgentSessionTitleSource | null
-      commands_json: string | null
-      harness_id: string | null
-      harness_access: string | null
-      harness_binary: string | null
-      harness_transport: string | null
-      harness_url: string | null
-      harness_headers_json: string | null
-      model_provider_id: string | null
-      model_id: string | null
-      variant: string | null
-      agent: string | null
-      permission_mode: string | null
-      permission_mode_label: string | null
-      created_at: number
-      updated_at: number
-      status: string | null
-      recovery_error: string | null
-      archived_at: number | null
-      process_key: string | null
-      agent_session_id: string | null
-    }>(
-        `
-        SELECT
-          session.id,
-          binding.workspace_id,
-          parent_id,
-	          session.directory,
-	          title,
-          title_source,
-          commands_json,
-	          process_key,
-	          harness_id,
-	          harness_access,
-	          harness_binary,
-	          harness_transport,
-	          harness_url,
-	          harness_headers_json,
-          model_provider_id,
-          model_id,
-          variant,
-          agent,
-          permission_mode,
-          permission_mode_label,
-          created_at,
-          updated_at,
-          last_human_turn_at,
-          status,
-          recovery_error,
-          archived_at,
-          agent_session_id
-        FROM session
-        LEFT JOIN session_execution_binding binding ON binding.session_id = session.id
-        WHERE session.id = ?
-      `,
-      )
-      .get(id)
+    const row = this.db.prepare<StoredSessionRow>(`${STORED_SESSION_SELECT} WHERE session.id = ?`).get(id)
     if (!row) return null
     return this.session(row)
   }
@@ -2883,6 +2683,15 @@ export class RuntimeStore {
    * `permission.asked` handler and simply never read back.
    */
   listPermissions(directory: string): AgentPermission[] {
+    return this.pendingPermissionsWhere("s.directory = ?", directory)
+  }
+
+  /** Every pending permission in this store, whatever directory its session is filed under. */
+  listEveryPermission(): AgentPermission[] {
+    return this.pendingPermissionsWhere("1 = 1")
+  }
+
+  private pendingPermissionsWhere(filter: string, ...binds: string[]): AgentPermission[] {
     return this.db
       .prepare<{
       id: string
@@ -2897,11 +2706,11 @@ export class RuntimeStore {
         SELECT p.id, p.session_id, p.tool, p.patterns_json, p.always_json, p.metadata_json, p.options_json
         FROM pending_permission p
         JOIN session s ON s.id = p.session_id
-        WHERE s.directory = ? AND p.status = 'pending'
+        WHERE ${filter} AND p.status = 'pending'
         ORDER BY p.created_at ASC
       `,
       )
-      .all(directory)
+      .all(...binds)
       .map((row) => ({
         id: row.id,
         sessionID: row.session_id,
@@ -2916,6 +2725,15 @@ export class RuntimeStore {
   }
 
   listQuestions(directory: string): AgentQuestion[] {
+    return this.pendingQuestionsWhere("COALESCE(s.directory, p.directory) = ?", directory)
+  }
+
+  /** Every pending question in this store, whatever directory its session is filed under. */
+  listEveryQuestion(): AgentQuestion[] {
+    return this.pendingQuestionsWhere("1 = 1")
+  }
+
+  private pendingQuestionsWhere(filter: string, ...binds: string[]): AgentQuestion[] {
     return this.db
       .prepare<{ id: string; session_id: string; questions_json: string }>(
         `
@@ -2923,11 +2741,11 @@ export class RuntimeStore {
         FROM pending_question q
         LEFT JOIN session s ON s.id = q.session_id
         LEFT JOIN session_start p ON p.session_id = q.session_id
-        WHERE COALESCE(s.directory, p.directory) = ? AND q.status = 'pending'
+        WHERE ${filter} AND q.status = 'pending'
         ORDER BY q.created_at ASC
       `,
       )
-      .all(directory)
+      .all(...binds)
       .map((row) => ({
         id: row.id,
         sessionID: row.session_id,
@@ -3417,14 +3235,13 @@ export class RuntimeStore {
     return value
   }
 
+  childSessionIds(id: string): string[] {
+    return this.db.prepare<{ id: string }>("SELECT id FROM session WHERE parent_id = ? ORDER BY created_at ASC").all(id).map((row) => row.id)
+  }
+
   deleteSession(id: string) {
     if (!this.getSession(id)) return
-    const children = (
-      this.db.prepare<{
-        id: string
-      }>("SELECT id FROM session WHERE parent_id = ? ORDER BY created_at ASC").all(id)
-    ).map((row) => row.id)
-    for (const child of children) this.deleteSession(child)
+    for (const child of this.childSessionIds(id)) this.deleteSession(child)
     this.commit({
       seq: this.next(id),
       ts: Date.now(),
@@ -3436,7 +3253,7 @@ export class RuntimeStore {
     })
   }
 
-  updateSession(id: string, updates: { title?: string; time?: { archived?: number } }) {
+  updateSession(id: string, updates: SessionUpdate["updates"]) {
     if (!this.getSession(id)) return null
     this.commit({
       seq: this.next(id),

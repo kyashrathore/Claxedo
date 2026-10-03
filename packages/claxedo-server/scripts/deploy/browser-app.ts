@@ -56,9 +56,9 @@ export async function browserArtifactBuildId(directory: string) {
   return `sha256:${digest.digest("hex")}`
 }
 
-/** Build the Better Auth browser app against the deployment's API origin and stamp it with its build identity. */
-export async function buildBrowserApp(apiOrigin: string) {
-  await runBun(["run", "build"], { ...process.env, VITE_CLAXEDO_SERVER_URL: apiOrigin })
+/** Build the Better Auth browser app against the deployment's API and relay origins, which its CSP names, and stamp it with its build identity. */
+export async function buildBrowserApp(apiOrigin: string, relayOrigin: string) {
+  await runBun(["run", "build"], { ...process.env, VITE_CLAXEDO_SERVER_URL: apiOrigin, CLAXEDO_RELAY_ORIGINS: relayOrigin })
   await prepareBrowserArtifactsForWorkers(BROWSER_DIRECTORY)
   const browserBuildId = await browserArtifactBuildId(BROWSER_DIRECTORY)
   await writeFile(

@@ -1,6 +1,8 @@
 import { HTTPException } from "hono/http-exception"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { sessionPageScope } from "@claxedo/server-core/platform/auth/private-session-authority"
+import { LOCAL_USER_ID } from "@claxedo/server-core/platform/auth/local-identity"
 import { listSessionNavigationMetas } from "@claxedo/server-core/session/meta/index"
 import {
   buildSessionListResponse,
@@ -11,14 +13,14 @@ import {
 } from "@claxedo/server-core/session/navigation-list"
 import type { SessionMeta } from "@claxedo/server-core/session/meta/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import { readRuntimeSessionActivity, type RuntimeSessionActivity, type RuntimeStatusRead } from "../runtime-activity"
+import { readRuntimeSessionActivity, type RuntimeSessionActivity, type RuntimeStatusRead } from "@claxedo/server-core/session/runtime-activity"
 
 export type SessionListPageInput = {
   query: SessionListQuery
   /** The workspace a workspace-scoped query names, once resolved. */
   workspace: Workspace | undefined
-  /** The local workspaces whose sessions a project-scoped query covers. */
-  projectWorkspaces: () => Promise<Workspace[]>
+  /** The local workspaces whose sessions a project-scoped or an all-scoped query covers. */
+  coveredWorkspaces: () => Promise<Workspace[]>
   refreshSessionProjection?: (workspace: Workspace) => Promise<void>
   /** What a workspace's mounted runtime reports right now, read in process. */
   readRuntimeStatus: RuntimeStatusRead
@@ -27,7 +29,8 @@ export type SessionListPageInput = {
 
 /**
  * The signed caller's page: the authority's keyset read, authorized per row
- * in the query itself, for the project or the one workspace the query names.
+ * in the query itself, for the project, the one workspace or every session
+ * the query names.
  */
 export async function signedSessionListPage(
   authority: WorkspaceAuthority,
@@ -35,12 +38,8 @@ export async function signedSessionListPage(
   input: Pick<SessionListPageInput, "query" | "workspace">,
 ): Promise<SessionListResponse> {
   const { query } = input
-  const scope = query.scope === "project" && query.projectId
-    ? { projectId: query.projectId }
-    : input.workspace
-      ? { workspaceId: input.workspace.id }
-      : undefined
-  if (!scope) throw new HTTPException(400, { message: "Name a project or a workspace" })
+  const scope = sessionPageScope(query, input.workspace?.id)
+  if (!scope) throw new HTTPException(400, { message: "Name a project, a workspace or every session" })
   const sessions = await authority.listSessionPage(auth, { ...sessionListKeysetPage(query), ...scope })
   return buildSessionListResponse({
     query: "workspaceId" in scope ? { ...query, workspaceId: scope.workspaceId } : query,
@@ -58,11 +57,13 @@ export async function signedSessionListPage(
  */
 export async function localSessionListPage(input: SessionListPageInput): Promise<SessionListResponse> {
   const { query } = input
-  const covered = query.scope === "project" && query.projectId && !input.workspace
-    ? await input.projectWorkspaces()
+  const broad = query.scope === "all" || (query.scope === "project" && query.projectId)
+  const covered = broad && !input.workspace
+    ? await input.coveredWorkspaces()
     : input.workspace ? [input.workspace] : []
   await Promise.all(covered.map((workspace) => input.refreshSessionProjection?.(workspace)))
-  const metas = await listSessionNavigationMetas(sessionListStorePageFilter(query))
+  const live = query.scope === "all" ? { workspaceIDs: covered.map((workspace) => workspace.id) } : {}
+  const metas = await listSessionNavigationMetas({ ...sessionListStorePageFilter(query), ...live, reader: LOCAL_USER_ID })
   return buildSessionListResponse({
     query,
     sessions: await withRuntimeStatus(metas, input.readRuntimeStatus, (input.now ?? Date.now)()),

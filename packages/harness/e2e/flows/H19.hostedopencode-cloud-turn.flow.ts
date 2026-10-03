@@ -11,9 +11,9 @@ export async function run() {
   const stack = await startHostedStack("h19-hosted-opencode")
   try {
     const owner = await hostedOwner(stack)
-    const stored = await hostedFetch(stack, "/auth/openai?harness=pi", {
+    const stored = await hostedFetch(stack, "/api/claxedo/credentials", {
       method: "PUT", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ auth: { key: "hosted-owner-openai-key" } }),
+      body: JSON.stringify({ provider_id: "openai", kind: "api_key", source: "managed", label: "OpenAI", secret: "hosted-owner-openai-key" }),
     }, owner)
     assert.equal(stored.status, 200, `hosted OpenCode credential: ${await stored.text()}`)
     const workspace = await hostedWorkspace(stack, owner, "H19 hosted OpenCode")

@@ -22,6 +22,7 @@ import {
   createHostedCapabilityTokenResolver,
   createHostedD1ConnectionsSetup,
   createHostedRepositoryAccess,
+  createHostedRepositoryCloneSecrets,
   type HostedD1ConnectionsSetupInput,
 } from "./setup"
 
@@ -91,21 +92,26 @@ type CredentialFake = ControlPlaneCredentials & {
 
 /** A `ControlPlaneCredentials` over a Map, standing in for the encrypted per-org KV store. */
 function credentialFake(): CredentialFake {
-  const rows = new Map<string, { secret: string; status: "available" | "expired" | "revoked" | "error" }>()
+  const rows = new Map<string, {
+    secret: string
+    status: "available" | "expired" | "revoked" | "error"
+    kind: "api_key" | "oauth_token"
+    expiresAt: number | null
+  }>()
   const meta = (providerId: string) => {
     const row = rows.get(providerId)
     if (!row) return undefined
     return {
       id: providerId,
       provider_id: providerId,
-      kind: "api_key" as const,
+      kind: row.kind,
       source: "managed" as const,
       label: null,
       account_id: null,
       secure_ref: `test:${providerId}`,
       status: row.status,
       health: null,
-      expires_at: null,
+      expires_at: row.expiresAt,
       last_validated_at: null,
       last_error: null,
       created_at: NOW,
@@ -125,7 +131,12 @@ function credentialFake(): CredentialFake {
     // is the status-independent read `readSecret` is built on.
     resolveCredentialSecretById: async (id) => rows.get(id)?.secret ?? null,
     putCredential: async (value) => {
-      rows.set(value.provider_id, { secret: value.secret, status: "available" })
+      rows.set(value.provider_id, {
+        secret: value.secret,
+        status: "available",
+        kind: value.kind === "oauth_token" ? "oauth_token" : "api_key",
+        expiresAt: value.expires_at ?? null,
+      })
       return meta(value.provider_id)!
     },
     deleteCredential: async (id) => rows.delete(id),
@@ -415,6 +426,89 @@ describe("hosted D1 Connections setup", () => {
     const callback = await mounted.request(`/api/claxedo/integrations/callback?state=${attempt.attemptId}&code=grant-code`)
     expect(callback.status).toBe(200)
     expect((await listed(test.app)).connections).toMatchObject([{ integrationId: "composio", scope: "org" }])
+  })
+
+  describe("a cloud workspace's clone credential on every boot", () => {
+    const github: { decl: IntegrationDeclaration; impl: IntegrationImpl } = {
+      decl: { id: "github", name: "GitHub", methods: ["key"], keyTokenType: "bearer" },
+      impl: {
+        actions: { "code-host": { capability: "code-host", listRepositories: async () => { throw new Error("a boot must not list repositories") } } },
+        auth: { verify: async () => ({ ok: true }) },
+      },
+    }
+    const repoUrl = "https://github.com/acme/private.git"
+    const connectionIds = async (test: Awaited<ReturnType<typeof rig>>) => {
+      const rows = await test.database.prepare(`select connection_id, owner_user_id from hosted_connections`)
+        .all<{ connection_id: string; owner_user_id: string | null }>()
+      return {
+        personal: rows.results.find((row) => row.owner_user_id !== null)?.connection_id,
+        organization: rows.results.find((row) => row.owner_user_id === null)?.connection_id,
+      }
+    }
+    const workspace = async (test: Awaited<ReturnType<typeof rig>>, workspaceId: string, repoConnectionId?: string) => {
+      await test.authority.createCloudWorkspace(test.owner, { workspaceId, displayName: workspaceId, repoUrl, ...(repoConnectionId ? { repoConnectionId } : {}) })
+      return createHostedRepositoryCloneSecrets(test.input)({ workspaceId, ownerUserId: test.ownerUserId, orgId: "org_deployment" })
+    }
+
+    test("a repository created without a private connection boots with no credential, though its owner holds GitHub connections", async () => {
+      const test = await rig({ integrations: [github] })
+      await connect(test.app, "github", { scope: "org", secret: "org-token" })
+      await connect(test.app, "github", { scope: "personal", secret: "owner-token" })
+      expect(await workspace(test, "ws_public")).toEqual([])
+    })
+
+    test("a private repository clones with the connection picked at create, not the one capability resolution prefers", async () => {
+      const test = await rig({ integrations: [github] })
+      await connect(test.app, "github", { scope: "org", secret: "org-token" })
+      await connect(test.app, "github", { scope: "personal", secret: "owner-token" })
+      const { organization } = await connectionIds(test)
+      expect(await workspace(test, "ws_private", organization)).toEqual([{
+        name: "CLAXEDO_GITHUB_CLONE_AUTH",
+        value: `Basic ${Buffer.from("x-access-token:org-token").toString("base64")}`,
+        hosts: ["github.com"],
+        header: "Authorization",
+        methods: ["GET", "POST"],
+        pathPrefixes: ["/acme/private.git/"],
+      }])
+    })
+
+    test("a token mint GitHub answers 503 fails the preparation rather than withdrawing the credential", async () => {
+      let githubUp = false
+      const oauthGithub: { decl: IntegrationDeclaration; impl: IntegrationImpl } = {
+        decl: { id: "github", name: "GitHub", methods: ["oauth"] },
+        impl: {
+          actions: github.impl.actions,
+          auth: {
+            authorize: (state: string) => new URL(`https://github.example.test/authorize?state=${state}`),
+            // Expiring now, so the next token read has to refresh it.
+            callback: async () => ({ accessToken: "expiring-access", refreshToken: "refresh", expiresAt: Date.now() }),
+            refresh: async () => {
+              if (!githubUp) throw new Error("GitHub answered 503 Service Unavailable")
+              return { accessToken: "fresh-access", expiresAt: Date.now() + 3_600_000 }
+            },
+          },
+        },
+      }
+      const test = await rig({ integrations: [oauthGithub] })
+      const started = (await (await connect(test.app, "github", { method: "oauth", scope: "org" })).json()) as { attemptId: string }
+      expect((await test.app.request(`/callback?state=${started.attemptId}&code=grant-code`)).status).toBe(200)
+      const { organization } = await connectionIds(test)
+
+      await expect(workspace(test, "ws_blip", organization)).rejects.toThrow("connection_refresh_transient")
+      githubUp = true
+      await expect(createHostedRepositoryCloneSecrets(test.input)({ workspaceId: "ws_blip", ownerUserId: test.ownerUserId, orgId: "org_deployment" }))
+        .resolves.toMatchObject([{ name: "CLAXEDO_GITHUB_CLONE_AUTH", value: `Basic ${Buffer.from("x-access-token:fresh-access").toString("base64")}` }])
+    })
+
+    test("a picked connection that is gone, or that belongs to someone else, yields no credential rather than refusing the boot", async () => {
+      const test = await rig({ integrations: [github] })
+      test.as(test.member)
+      await connect(test.app, "github", { scope: "personal", secret: "member-token" })
+      const { personal: foreign } = await connectionIds(test)
+      test.as(test.owner)
+      expect(await workspace(test, "ws_foreign", foreign)).toEqual([])
+      expect(await workspace(test, "ws_gone", "conn_deleted")).toEqual([])
+    })
   })
 
   test("repository access refuses a connection id from another partition", async () => {

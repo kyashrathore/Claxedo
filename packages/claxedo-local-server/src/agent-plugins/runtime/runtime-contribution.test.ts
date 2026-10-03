@@ -51,6 +51,7 @@ async function fixture(input: { mcp?: boolean; env?: NodeJS.ProcessEnv } = {}) {
       directory: "/workspace",
       stateDirectory: root,
       fetch: (request: Request) => Promise.resolve(app.fetch(request)),
+      sessionDrivenOnlyBy: () => false,
       registerSessionTools: () => async () => {},
       unregisterSessionTools: () => async () => {},
     },

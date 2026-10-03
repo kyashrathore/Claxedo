@@ -103,6 +103,12 @@ describe("resolveHostedOperation", () => {
     })
     expect(() => resolveHostedOperation("session.page", { limit: 50 })).toThrow(MissingOperationParameter)
   })
+  test("the every-session page keeps its fixed scope and may name one session", () => {
+    expect(resolveHostedOperation("session.activity.page", { limit: 20, settled: "all", sessionId: "ses_1", projectId: "prj_1" })).toEqual({
+      method: "GET",
+      path: "/api/control/session-list?scope=all&limit=20&settled=all&sessionId=ses_1",
+    })
+  })
 
   test("appends only declared query keys from input", () => {
     expect(resolveHostedOperation("session.shares.list", {
@@ -216,6 +222,15 @@ describe("resolveHostedOperation", () => {
         grantedToTokenIdentifier: "https://issuer.test|user_bob",
       },
     })
+  })
+
+  test("carries no team or organization recipient into a grant", () => {
+    expect(resolveHostedOperation("session.shares.grant", {
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
+      grantedToTeamPublicId: "team_eng",
+      grantedToOrgId: "org_1",
+    } as never)).toEqual({ method: "POST", path: "/api/control/sessions/ses_1/shares", body: { workspaceId: "ws_1" } })
   })
 
   test("resolves DELETE session share revoke with body fields", () => {

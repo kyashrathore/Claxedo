@@ -20,11 +20,4 @@ export function executionBlock(choice: ExecutionChoice, facts: ExecutionFacts, s
 
 export type Created =
   | { readonly kind: "project"; readonly project: Project }
-  | { readonly kind: "cloudProject"; readonly project: Project }
   | { readonly kind: "workspace"; readonly placementId: PlacementId }
-
-export type Openable = Extract<Created, { readonly kind: "project" | "workspace" }>
-
-export function openable(created: Created | undefined): created is Openable {
-  return created?.kind === "project" || created?.kind === "workspace"
-}

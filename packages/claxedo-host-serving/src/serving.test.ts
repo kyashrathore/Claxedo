@@ -127,7 +127,6 @@ describe("relay connection grain", () => {
       "/provider?harness=opencode",
       "/provider/auth",
       "/provider/anthropic/oauth/authorize",
-      "/auth/anthropic",
       "/config",
       "/project",
       "/project/current",

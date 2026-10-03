@@ -94,9 +94,12 @@ export type BuiltinDeployment = Readonly<{
  * What a project gets before anyone has decided anything.
  *
  * Every group but two is served by the runtime the session is already running
- * in, so enabling it grants nothing the session does not already have. Tasks
- * leaves the project and carries a minted capability, so it is a decision the
- * user makes rather than one they inherit. Documents is the same decision
+ * in and reaches nothing outside that workspace, so it is on by default. That
+ * includes acting on the workspace's other sessions: `sessions` lets a session
+ * only its owner has driven delete idle sessions there, each delete confirmed
+ * by the person through the harness. Tasks leaves the project and carries a
+ * minted capability, so it is a decision the user makes rather than one they
+ * inherit. Documents is the same decision
  * wherever the documents service is the account's rather than this process's.
  */
 export function builtinGroupDefault(group: BuiltinToolGroup, deployment: BuiltinDeployment): boolean {

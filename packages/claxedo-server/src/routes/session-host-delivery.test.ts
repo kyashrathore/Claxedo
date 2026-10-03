@@ -115,7 +115,7 @@ describe("a session placed in its own host answers to that host alone", () => {
 
     const lapsed = await plane.acquire(proof, ROOT, "turn_lapsed")
     await plane.database.prepare("update session_turn_leases set expires_at = ? where session_id = ?").bind(Date.now() - 1, ROOT).run()
-    const page = await plane.store.listSessionPage(plane.owner, { workspaceId: WORKSPACE_ID, sort: "updated_desc", archived: "all", limit: 10 })
+    const page = await plane.store.listSessionPage(plane.owner, { workspaceId: WORKSPACE_ID, sort: "updated_desc", archived: "all", settled: "all", limit: 10 })
     expect(page.find((row) => row.session_id === ROOT)).toMatchObject({ status: "interrupted" })
     expect((await sessionRow(ROOT))?.status).toBe("busy")
     void lapsed

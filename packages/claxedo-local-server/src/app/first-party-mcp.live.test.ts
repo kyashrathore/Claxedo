@@ -86,11 +86,12 @@ describe("the first-party MCP a local session is launched with", () => {
     const client = await live.connect(sessionId)
     expect(client.getServerVersion()).toMatchObject({ name: "claxedo" })
 
-    // The runtime audience a machine that has decided nothing serves: a model
-    // inside a session drives sessions, subagents and documents,
-    // makes app plugins for this machine's owner, answers only its own
-    // children's questions, and never approves a permission, rejects a
-    // question, deletes a session or touches workspace compute. No `task_*`:
+    // The runtime audience a machine that has decided nothing serves to a
+    // session only its owner has driven: a model inside it drives sessions,
+    // subagents and documents, deletes the workspace's idle sessions once the
+    // person confirms, makes app plugins for this machine's owner, answers
+    // only its own children's questions, and never approves a permission,
+    // rejects a question or touches workspace compute. No `task_*`:
     // the Tasks group starts off, so the tools are unregistered and the grant
     // they would act with is never issued.
     expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual([
@@ -104,6 +105,7 @@ describe("the first-party MCP a local session is launched with", () => {
       "question_reply",
       "session_cancel_turn",
       "session_create",
+      "session_delete",
       "session_get",
       "session_send",
       "session_transcript",
@@ -220,7 +222,7 @@ describe("the first-party MCP a local session is launched with", () => {
     const client = await live.connect(sessionId)
     const listed = (await client.listTools()).tools.map((tool) => tool.name)
 
-    for (const tool of ["permission_reply", "question_reject", "session_delete", "workspace_lifecycle", "workspace_restore"]) {
+    for (const tool of ["permission_reply", "question_reject", "workspace_lifecycle", "workspace_restore"]) {
       expect(listed, `${tool} is offered to a session's own credential`).not.toContain(tool)
       const refused = await callTool(client, tool, {})
       expect(refused.isError).toBe(true)

@@ -3,15 +3,14 @@ import { Portal } from "solid-js/web"
 import { useTranslator } from "@/i18n"
 import { copyText } from "@/lib/clipboard"
 import { failureMessage } from "@/lib/failure"
-import type { SessionRowView } from "@/session"
+import { canSettle, type SessionRowView } from "@/session"
 import { sessionPath } from "@/shell"
 import { showToast, ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui"
 import { railDictionary } from "../i18n"
 
 export type SessionRowMenuActions = {
   readonly onRename: (row: SessionRowView) => void
-  readonly onArchive: (row: SessionRowView) => Promise<void>
-  readonly onDelete: (row: SessionRowView) => void
+  readonly onToggleSettled: (row: SessionRowView) => Promise<void>
 }
 
 const ITEM_CLASS =
@@ -60,8 +59,12 @@ export function SessionRowMenu(props: SessionRowMenuActions & { readonly at: { x
         <MenuItem icon="copy" label={t("rail.copySessionLink")} onSelect={copySessionLink} />
         <MenuItem icon="copy" label={t("rail.copyDeepLink")} disabled onSelect={props.onDismiss} />
         <MenuItem icon="pencil-line" label={t("rail.rename")} onSelect={select(props.onRename)} />
-        <MenuItem icon="archive" label={t("rail.archive")} onSelect={select(props.onArchive)} />
-        <MenuItem icon="trash" label={t("rail.delete")} onSelect={select(props.onDelete)} />
+        <MenuItem
+          icon={props.row.settled ? "reset" : "check"}
+          label={t(props.row.settled ? "rail.returnToActive" : "rail.settle")}
+          disabled={!canSettle(props.row)}
+          onSelect={select(props.onToggleSettled)}
+        />
       </div>
     </Portal>
   )

@@ -5,6 +5,8 @@ import { buildSafeEnv } from "./pty/env"
 import { asRecord } from "@claxedo/helpers/guards"
 
 export const GIT_TIMEOUT_MS = 10_000
+/** A clone or first fetch takes as long as the repository is large; this bounds a stalled one, not a big one. */
+export const GIT_CLONE_TIMEOUT_MS = 30 * 60_000
 export const GIT_MAX_BUFFER = 50 * 1024 * 1024
 export const GIT_CONCURRENCY = (() => {
   const raw = Number(runtimeEnvText(process.env, "WORKSPACE_RUNTIME_GIT_CONCURRENCY"))
@@ -16,6 +18,7 @@ export type GitOptions = {
   timeoutMs: number
   maxBuffer: number
   env?: Readonly<Record<string, string>>
+  signal?: AbortSignal
 }
 
 /**
@@ -40,6 +43,8 @@ export type GitRunOptions = {
   credential?: GitHttpCredential
   timeoutMs?: number
   maxBuffer?: number
+  /** Ends the git process, which removes the lock files it holds on its way out. */
+  signal?: AbortSignal
 }
 
 export type GitExec = (args: string[], cwd: string, options: GitOptions) => Promise<{ stdout: string; stderr?: string }>
@@ -127,7 +132,7 @@ const GIT_ENV = { ...buildSafeEnv(process.env, { customPrefix: "CLAXEDO" }), GIT
 function defaultGit(args: string[], cwd: string, options: GitOptions) {
   const env = options.env ? { ...GIT_ENV, ...options.env } : GIT_ENV
   return new Promise<{ stdout: string; stderr?: string }>((resolve, reject) => {
-    execFile("git", args, { cwd, env, maxBuffer: options.maxBuffer, timeout: options.timeoutMs }, (err, stdout, stderr) => {
+    execFile("git", args, { cwd, env, maxBuffer: options.maxBuffer, timeout: options.timeoutMs, signal: options.signal }, (err, stdout, stderr) => {
       if (err) {
         const hit = err as Error & { killed?: boolean; signal?: NodeJS.Signals; stdout?: string; stderr?: string }
         hit.stdout = stdout
@@ -172,13 +177,14 @@ export function createBoundedGit(options: BoundedGitOptions = {}) {
       timeoutMs: deadline,
       maxBuffer: run?.maxBuffer ?? maxBuffer,
       ...(env ? { env } : {}),
+      ...(run?.signal ? { signal: run.signal } : {}),
     })
     const timeout = new Promise<never>((_resolve, reject) => {
       const timer = setTimeout(() => reject(new GitTimeoutError(args)), deadline)
       execution.finally(() => clearTimeout(timer)).catch(() => {})
     })
     const result = await Promise.race([execution, timeout]).catch((err) => {
-      if (err instanceof GitTimeoutError) throw err
+      if (err instanceof GitTimeoutError || run?.signal?.aborted) throw err
       const failure = asRecord(err)
       if (failure?.killed === true || failure?.signal === "SIGTERM") {
         throw new GitTimeoutError(args)

@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test"
-import { readHarnessOptions } from "./harness-options"
+import { QueryClient } from "@tanstack/solid-query"
+import { harnessQueries, readHarnessOptions } from "./harness-options"
+import { fakeServer } from "./test-session-server"
 import { placementId } from "./ids"
 import type { RuntimeRoute, Transport } from "./transport"
 import type { Workspaces } from "./workspaces"
@@ -27,4 +29,15 @@ test("a local placement's model options come from the daemon, which falls back t
   const { seen, read } = reads({ directory: "/repo", workspaceId: "ws_local", remote: false })
   await read()
   expect(seen).toEqual(["server /api/claxedo/agent-config/harness/options?workspaceId=ws_local&connectionId=scripted-acp"])
+})
+
+test("a draft's model options on an asleep cloud workspace refuse without starting it, because only a send wakes", async () => {
+  const server = fakeServer({ reachable: () => false })
+  const starts: string[] = []
+  const transport = { ...server.context.transport, startRuntime: async (workspaceId: string) => void starts.push(workspaceId) }
+  const options = harnessQueries(transport, server.context.workspaces).options(placementId("ws_cloud"), "codex")
+  await expect(new QueryClient({ defaultOptions: { queries: { retry: false } } }).fetchQuery(options)).rejects.toMatchObject({ code: "workspace_stopped" })
+  expect(starts).toEqual([])
+  expect(server.runtimeCalls).toEqual([])
+  expect(server.requests.filter((path) => path.includes("/connection"))).toEqual([])
 })

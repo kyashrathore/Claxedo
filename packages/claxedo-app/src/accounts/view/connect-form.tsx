@@ -95,7 +95,7 @@ function PasteForm(props: { readonly form: ProviderConnect; readonly credentialI
         invalid={!!form().store.error}
         error={form().store.error}
       />
-      <Show when={!props.credentialId && !form().hosted()}>
+      <Show when={!props.credentialId}>
         <TextField
           type="text"
           label={t("provider.connect.label.label")}
@@ -196,8 +196,17 @@ function ConnectStep(props: { readonly form: ProviderConnect; readonly input: Co
   const kind = () => props.input.context.kind
   return (
     <Switch>
+      <Match when={form().loadingMethods()}>
+        <p class="flex items-center gap-2 text-13-regular text-text-base">
+          <Spinner />
+          <span>{t("provider.connect.methods.loading")}</span>
+        </p>
+      </Match>
+      <Match when={form().methodsError()}>
+        {(message) => <p role="alert" class="text-13-regular text-icon-critical-base">{message()}</p>}
+      </Match>
       <Match when={form().options().length === 0}>
-        <p class="text-13-regular text-text-base">{t("provider.connect.hosted.signsElsewhere", form().vars())}</p>
+        <p class="text-13-regular text-text-base">{t("provider.connect.methods.unavailable", form().vars())}</p>
       </Match>
       <Match when={form().pastes()}>
         <PasteForm form={form()} {...(props.input.credentialId ? { credentialId: props.input.credentialId } : {})} />

@@ -663,6 +663,7 @@ describe("claxedo schema", () => {
       directory: "/tmp/project",
     })
     expect(hasTable(sqlite, "claxedo_session_meta_old_repair")).toBe(false)
+    expect(hasIndex(sqlite, "claxedo_session_meta_archive_human_turn_idx")).toBe(true)
     expect(repair(sqlite)).toEqual([])
   })
 

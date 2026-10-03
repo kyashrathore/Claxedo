@@ -2,7 +2,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { lookup } from "node:dns/promises"
-import { createBoundedGit, runGit, type GitHttpCredential } from "@claxedo/workspace-runtime/host"
+import { createBoundedGit, GIT_CLONE_TIMEOUT_MS, runGit, type GitHttpCredential } from "@claxedo/workspace-runtime/host"
 import type { RepoAddressResolver } from "@claxedo/sandbox-contract"
 import { dataDir } from "../platform/runtime/lib/paths"
 import type { SignedControlPlaneAuth } from "../platform/auth/auth"
@@ -43,12 +43,10 @@ import {
  */
 
 /**
- * Cloning a repository takes as long as the repository is large, so it runs on
- * a pool of its own: on the shared runner a clone would hold a slot the file
- * tree and diff routes are waiting for.
+ * A clone runs on a pool of its own: on the shared runner it would hold a slot
+ * the file tree and diff routes are waiting for.
  */
-const CLONE_TIMEOUT_MS = 30 * 60_000
-const cloneGit = createBoundedGit({ timeoutMs: CLONE_TIMEOUT_MS })
+const cloneGit = createBoundedGit({ timeoutMs: GIT_CLONE_TIMEOUT_MS })
 
 export function projectsDirectory() {
   return path.join(dataDir(), "projects")
