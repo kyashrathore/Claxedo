@@ -105,9 +105,9 @@ A **Settings → Projects** section lists the projects and holds their managemen
 
 ## Owner, 20:28: the todo dock (a deviation from v1)
 - v1 keeps a finished todo list open (`todoState` returns "open" when every todo is done). The owner expects it to go away.
-- **v2:** the dock shows only while a turn runs and the list is unfinished, so a finished list goes away.
+- **v2:** the dock shows while any todo is unfinished, whether a turn runs or the session is idle, and goes away once every todo is completed or cancelled.
 - **Collapsed state:** kept per session in sessionStorage (`claxedo:session:<id>:todo-collapsed`). It survives a reload and nothing longer ("no long cache").
-- Flow 03 branches on this entry: v2 expects no todo dock after the turn.
+- Flow 03 pins both halves: an unfinished list stays after the turn ends and after a reload, and a finished list goes away.
 
 ## Owner, 22:05: no session-edge strip
 - v1's "Open changes / Open files" strip on the session's right edge (TOOL-003, SHELL-605) goes. The owner: "alone doesn't make any sense".
