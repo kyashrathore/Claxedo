@@ -2,7 +2,8 @@ import { expect, test } from "bun:test"
 import type { OutsideTurnUsage, RoutedEvent } from "../contract"
 import { setupConformance } from "./test-support/run"
 import { pollUntil } from "./test-support/poll"
-import { makeCodexTransport, recordingBackend, type CodexBackend } from "../../e2e/harness/codex-conformance"
+import { codexOptions, recordingBackend, type CodexBackend } from "../../e2e/harness/codex-conformance"
+import { CodexAppServerTransport } from "../transports/codex-app-server"
 
 const PROTOCOLS = {
   v2: { modelID: "gpt-6-astra", namespace: "collaboration", childOnly: "Message Type: NEW_TASK" },
@@ -18,7 +19,8 @@ function childThread(received: Received[]): string | undefined {
 async function nativeContext(protocol: keyof typeof PROTOCOLS) {
   const recorder = recordingBackend()
   const model = { providerID: "codex", modelID: PROTOCOLS[protocol].modelID }
-  const context = await setupConformance({ name: `codex-native-${protocol}`, makeTransport: makeCodexTransport,
+  const context = await setupConformance({ name: `codex-native-${protocol}`,
+    makeTransport: (services, backend) => new CodexAppServerTransport(services, codexOptions(backend, { idleMs: 60_000 })),
     backend: async () => ({ ...await recorder.backend(), model }) })
   const metered: OutsideTurnUsage[] = []
   context.ports.meterUsage = (usage: unknown) => { metered.push(usage as OutsideTurnUsage) }

@@ -2,7 +2,6 @@ import { expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { Clock, RoutedEvent, StartInput, TurnBroker, TurnInput } from "../../contract"
-import { CodexAppServerTransport } from "."
 import { agentMessage, subAgentActivity, tokenUsage, turnCompleted, turnStarted } from "./test-support/native-frames"
 import { scriptedTransport } from "./test-support/transport"
 

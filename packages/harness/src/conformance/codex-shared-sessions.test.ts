@@ -160,9 +160,9 @@ test("an account change moves only that session to a new app-server while its si
 test("a session lost to a turn/start timeout archives its thread on the live app-server, so it resumes on another one", async () => {
   const expire = { armed: false }
   const w = await sharedWorkspace("codex-share-lost", ["account-one", "account-one"], { prepare: (services) => {
-    const setTimer = services.clock.setTimeout
-    services.clock = { ...services.clock, setTimeout: (callback, ms) => {
-      if (!expire.armed || ms !== 60_000) return setTimer(callback, ms)
+    const clock = services.clock
+    services.clock = { ...clock, setTimeout: (callback, ms) => {
+      if (!expire.armed || ms !== 60_000) return clock.setTimeout(callback, ms)
       expire.armed = false
       queueMicrotask(callback)
       return undefined
