@@ -2,72 +2,67 @@
 
 Choose Pi in the session composer, then choose the machine where the session
 will run. **Local** uses a directory on your computer. **Cloud** uses a sandbox.
-Pi and its tools run together on that machine. A Cloud session needs its sandbox
-to start before Pi can run.
 
-Claxedo starts Pi in RPC mode and is tested against Pi 0.99.0 through 1.0.0
-(`PI_RANGE` in `packages/harness/src/transports/pi-rpc/version.ts`). For Local,
-install a Pi in that range and make `pi` available on PATH, or set
-`PI_EXECUTABLE` to its executable. Claxedo reads `pi --version` at launch and
-caches the result by executable identity, reading it again when the file changes;
-a bare command is read at every launch. An older Pi refuses the session and asks you to update it, and a newer
-one runs with one warning. The sandbox images install Pi 1.0.0. The model picker reads the models available to
-that Pi process; connect a provider before selecting its model.
+Pi runs inside Claxedo; there is nothing to install. Claxedo embeds Pi's own
+agent library (`@earendil-works/pi-durable`) and runs one Pi agent per session
+in the workspace runtime's process. The `pi` command line, its profile in
+`~/.pi` and its extensions are not used: Claxedo never reads or writes that
+folder.
 
-Claxedo keeps the visible conversation and controls starting, stopping and
-answering questions. Pi keeps its native conversation file, chooses the context
-sent to the model and performs automatic compaction. Restarting an idle process
-resumes that same file. Pi writes the file with the first message, so a session
-that has not had a message yet has no file: reconfiguring it, or reopening it
-after Claxedo restarts, starts Pi fresh under the same id, and nothing is lost
-because nothing was said. Claxedo's own record of the session's turns decides
-which case applies. If a session that had a turn has lost its file, Claxedo
-reports an error rather than silently starting another conversation.
-Repository memory files and other files written by the agent live on the
-selected machine.
+## Models and accounts
 
-## Extending Pi
+The model picker lists Pi's models for the providers you have connected in
+Claxedo: OpenAI (a key, or a ChatGPT plan through `openai-codex`), Anthropic (a
+key or a Claude plan), OpenRouter, Google, Groq, xAI, and the custom providers
+you added. Pi calls the provider directly with the account you selected; no
+other account and no environment variable is ever used. A model whose provider
+has no connected account is refused before the turn starts. When Claxedo renews
+an account's token, Pi uses the new one on its next request without restarting
+anything.
 
-Use Pi's native extensions, skills and project configuration in the machine
-where the session runs. Put project extensions in `.pi/extensions/`. Pi loads
-project extensions only after that project is trusted. Claxedo does not grant
-trust automatically. A host-controlled Pi profile can contain trusted global
-extensions and explicit trust decisions.
+On a machine you own, your sessions spend your own accounts. A person you
+share a session with spends your accounts on it too, as with every harness. A
+session another person owns on your machine cannot run Pi, because Pi needs its
+owner's account delivered to this machine and Claxedo delivers only yours.
 
-Extensions execute code with Pi's machine permissions. For extensions you do not
-want running on your computer, choose Cloud and an isolated sandbox. Do not give
-an extension secrets or filesystem access you would not give another program on
-that machine. Extension input, selection and confirmation requests appear as
-Claxedo questions. Stopping a session cancels its pending question and turn.
+## Conversations
 
-Claxedo uses a separate Pi profile for managed credentials. It does not rewrite
-your personal Pi configuration. Connected credentials are projected to that
-profile; registry-managed OAuth refresh tokens stay with the credential owner.
-Deleting or disconnecting a provider must be applied to the runtime before Pi
-can use the updated model catalog.
+Pi keeps each session's conversation in its own SQLite file under the runtime's
+harness folder (`<harness state>/pi/sessions/<session id>.sqlite`). Pi chooses
+the context sent to the model, compacts older context when it nears the model's
+window, and retries a failed model request on its own; Claxedo shows both as
+the session compacting and retrying.
 
-By default, a workspace runtime keeps its managed profile under
-`<runtime-store>/pi/agent`. To configure a host-owned profile, set
-`PI_CODING_AGENT_DIR` before starting the host, or pass `agentDir` when embedding
-the Pi adapter. Use a dedicated directory: Claxedo manages and clears its
-`auth.json`; the profile's settings, models and extensions remain native Pi
-configuration. Adapters in one host process can share the override: closing one
-keeps credentials available to the others, and closing the final adapter clears
-them. Independent host processes and different credential identities must use
-separate profiles.
+If the computer or the runtime stops in the middle of a turn, the turn shows as
+interrupted, and when the runtime starts again Pi picks the work up where it
+stopped and answers in a new reply. A tool call that was running when it
+stopped is not run twice: Pi tells the model it was interrupted.
 
-## What this release supports
+Stopping a turn cancels the model request and kills any command Pi is running.
 
-All harness sessions have a machine and workspace directory. There is no
-central, virtual or hybrid Pi execution mode. Worker agents and workspace-less
-chat remain a separate planned feature; they are not another placement option
-in this release.
+## Tools, permissions and questions
 
-Pi supplies its native file, search and shell tools. Inline image attachments
-are supported. Refer to other workspace files by path. Pi does not provide
-Claxedo permission prompts or native subagents. The MCP servers you configure in
-Claxedo reach Pi through Pi's own MCP support: HTTP servers everywhere, stdio
-servers in local sessions, and no SSE servers. Their tools are declared to the
-model directly. Pi also reads its own `mcp.json` from its profile, so the
-machine owner's own Pi servers load in their sessions; a server there with the
-same name as one from Claxedo replaces it.
+Pi has its own `read`, `write`, `edit` and `bash` tools, working in the
+session's directory. Each command runs as a process Claxedo owns, and it ends
+with its command: a background job a command starts does not outlive it.
+Inline image attachments are supported; refer to other files by path.
+
+The permission mode decides whether Pi asks first. **Full access** (the
+default) runs every tool call. **Ask** asks before each write, edit, command
+and MCP tool call; "Always allow" remembers the answer for that tool in the
+session.
+
+Pi can ask you a question while it works; the turn waits for your answer.
+
+## MCP servers and plugins
+
+The MCP servers you configure in Claxedo, Claxedo's own server (local sessions
+only) and the MCP servers and skills of the agent plugins you enable reach Pi
+per session: one session never sees another's servers, accounts or tools.
+HTTP and stdio servers work; SSE servers are not supported. A stdio server
+starts with the environment you configured for it plus the usual `PATH`,
+`HOME`, `USER`, `SHELL` and `TERM`, never the runtime's own environment. Plugin
+skills are listed to Pi with their descriptions, and Pi reads a skill's
+`SKILL.md` when a task matches it.
+
+Pi has no subagents and no slash commands in Claxedo.
