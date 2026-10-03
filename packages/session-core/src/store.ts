@@ -1,7 +1,7 @@
 import { SessionAuthoringOwnership } from "./session/authoring-ownership"
 import type { TurnOutline, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { readTurnOutline } from "./session/turn-outline"
-import { isContiguousTurn, readTurnEvidence, readTurnExtent, readTurnPromptIds, readTurnReply, readTurnEndOrd, readTurnReplyId, readUpstreamHasTurns } from "./session/turn-evidence"
+import { isContiguousTurn, readLatestTurn, readTurnEvidence, readTurnExtent, readTurnPromptIds, readTurnReply, readTurnEndOrd, readTurnReplyId, readUpstreamHasTurns } from "./session/turn-evidence"
 import type { SessionConfig, SessionConfigUpdate, SessionHandoff, SessionHandoffSource, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { recoveryScopeKey, recoveryTargetSessionId, decodeMessagePageCursor, encodeMessagePageCursor, AgentMessagePageError, type AgentMessagePage, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
 import { AGENT_MESSAGE_PAGE_LIMIT, projectLatestSurfaceMessages, type AgentTurnCoverage, type AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
@@ -3196,21 +3196,14 @@ export class RuntimeStore {
     if (!projection) return undefined
     if ("view" in page && page.view !== undefined) {
       const endOrd = page.before === undefined ? undefined : decodeMessagePageCursor(MESSAGE_PAGE_CURSOR_PREFIX, sessionId, page.before)
-      const boundary = this.db
-        .prepare<Pick<MessageProjectionRow, "id" | "ord">>(
-          `
-          SELECT id, ord
-          FROM message
-          WHERE session_id = ? AND role = 'user'${endOrd === undefined ? "" : " AND ord < ?"}
-          ORDER BY ord DESC
-          LIMIT 1
-        `,
-        )
-        .get(...(endOrd === undefined ? [sessionId] : [sessionId, endOrd]))
-      if (!boundary && endOrd !== undefined) return { messages: [] }
-      if (!boundary) {
+      const latest = readLatestTurn(this.db, sessionId, endOrd)
+      if (!latest && endOrd !== undefined) return { messages: [] }
+      if (!latest) {
         throw new AgentMessagePageError(409, `Latest turn boundary is unavailable for session: ${sessionId}`)
       }
+      const { boundary, prompts } = latest
+      const owned = [...prompts]
+      const ownedList = owned.map(() => "?").join(", ")
       if (page.view === "latest-surface") {
         const boundaryInfo = this.db
           .prepare<Pick<SurfaceTurnRow, "info_id">>(
@@ -3247,30 +3240,30 @@ export class RuntimeStore {
             FROM message
             WHERE session_id = ?
               AND ord > ?
-              AND (
-                role IS NOT 'assistant'
-                OR json_extract(info_json, '$.id') IS NOT id
-                OR json_extract(info_json, '$.parentID') IS NOT ?
+              AND NOT (
+                json_extract(info_json, '$.id') IS id
+                AND (
+                  (role IS 'user' AND id IN (${ownedList}))
+                  OR (role IS 'assistant' AND COALESCE(json_extract(info_json, '$.parentID'), '') IN (${ownedList}))
+                )
               )
             LIMIT 1
           `,
           )
-          .get(sessionId, boundary.ord, boundary.id)
+          .get(sessionId, boundary.ord, ...owned, ...owned)
         if (!final || invalidAssistant) {
           throw new AgentMessagePageError(409, `Latest turn projection is not contiguous for session: ${sessionId}`)
         }
-        const selectedIds = final.id === boundary.id ? [boundary.id] : [boundary.id, final.id]
-        const placeholders = selectedIds.map(() => "?").join(", ")
         const selected = this.db
           .prepare<MessageProjectionRow>(
             `
             SELECT id, ord, info_json
             FROM message
-            WHERE session_id = ? AND id IN (${placeholders})
+            WHERE session_id = ? AND ord >= ? AND (id IN (${ownedList}) OR id = ?)
             ORDER BY ord ASC
           `,
           )
-          .all(sessionId, ...selectedIds)
+          .all(sessionId, boundary.ord, ...owned, final.id)
         const older = this.db
           .prepare<{ present: number }>("SELECT 1 AS present FROM message WHERE session_id = ? AND ord < ? LIMIT 1")
           .get(sessionId, boundary.ord)
@@ -3292,7 +3285,7 @@ export class RuntimeStore {
         `,
         )
         .all(...(endOrd === undefined ? [sessionId, boundary.ord] : [sessionId, boundary.ord, endOrd]))
-      if (!isContiguousTurn(turn)) {
+      if (!isContiguousTurn(turn, prompts)) {
         throw new AgentMessagePageError(409, `Latest turn projection is not contiguous for session: ${sessionId}`)
       }
       const older = this.db

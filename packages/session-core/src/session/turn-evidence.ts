@@ -4,7 +4,9 @@ export type TurnEvidenceDatabase = {
   prepare<Row>(sql: string): { get(...params: unknown[]): Row | null | undefined }
 }
 
-type TurnRowsDatabase = { prepare<Row>(sql: string): { all(...params: unknown[]): Row[] } }
+type TurnRowsDatabase = {
+  prepare<Row>(sql: string): { get(...params: unknown[]): Row | null | undefined; all(...params: unknown[]): Row[] }
+}
 
 export type TurnEvidence = { started: boolean; finished: boolean; outcome?: AgentTurnOutcome }
 
@@ -38,6 +40,14 @@ const TURN_STEERED_PROMPTS_SQL = `
   SELECT json_extract(payload_json, '$.properties.info.id') AS id FROM runtime_journal
   WHERE session_id = ? AND seq > ? AND seq < ? AND kind = 'event' AND type = 'message.updated'
     AND json_extract(payload_json, '$.properties.info.role') = 'user'
+`
+
+const PROMPT_TURN_SQL = `
+  SELECT start.seq, start.assistant_message_id, start.user_message_id, prompt.ord
+  FROM runtime_journal start
+  JOIN message prompt ON prompt.session_id = start.session_id AND prompt.id = start.user_message_id
+  WHERE start.session_id = ? AND start.kind = 'control' AND start.type = 'turn.start' AND prompt.ord <= ?
+  ORDER BY prompt.ord DESC LIMIT 1
 `
 
 const UPSTREAM_TURN_SQL = `
@@ -75,10 +85,15 @@ function turnEndSeq(db: TurnEvidenceDatabase, sessionId: string, startSeq: numbe
   return db.prepare<{ seq: number | null }>(NEXT_TURN_START_SQL).get(sessionId, startSeq)?.seq ?? Number.MAX_SAFE_INTEGER
 }
 
+type TurnStartRow = { seq: number; assistant_message_id: string; user_message_id: string | null }
+
 /** The extent of the turn either of its message ids names. */
 export function readTurnExtent(db: TurnEvidenceDatabase, sessionId: string, turnId: string): TurnExtent | undefined {
-  const start = db.prepare<{ seq: number; assistant_message_id: string; user_message_id: string | null }>(TURN_START_SQL).get(sessionId, turnId, turnId)
-  if (!start) return undefined
+  const start = db.prepare<TurnStartRow>(TURN_START_SQL).get(sessionId, turnId, turnId)
+  return start ? turnExtent(db, sessionId, start) : undefined
+}
+
+function turnExtent(db: TurnEvidenceDatabase, sessionId: string, start: TurnStartRow): TurnExtent {
   return {
     startSeq: start.seq,
     endSeq: turnEndSeq(db, sessionId, start.seq),
@@ -93,6 +108,23 @@ export function readTurnPromptIds(db: TurnRowsDatabase, sessionId: string, exten
   return new Set([...(extent.userMessageId ? [extent.userMessageId] : []), ...steered.map((row) => row.id)])
 }
 
+/**
+ * The latest turn whose prompts were projected before `endOrd`, as its first
+ * message and its prompts: the turn whose extent journals the latest prompt,
+ * whether as its own or steered in. A prompt no journaled turn holds stands as
+ * a turn of its own.
+ */
+export function readLatestTurn(db: TurnRowsDatabase, sessionId: string, endOrd: number | undefined) {
+  const prompt = db.prepare<{ id: string; ord: number }>(
+    `SELECT id, ord FROM message WHERE session_id = ? AND role = 'user'${endOrd === undefined ? "" : " AND ord < ?"} ORDER BY ord DESC LIMIT 1`,
+  ).get(...(endOrd === undefined ? [sessionId] : [sessionId, endOrd]))
+  if (!prompt) return undefined
+  const start = db.prepare<TurnStartRow & { ord: number }>(PROMPT_TURN_SQL).get(sessionId, prompt.ord)
+  const prompts = start?.user_message_id ? readTurnPromptIds(db, sessionId, turnExtent(db, sessionId, start)) : undefined
+  if (!start?.user_message_id || !prompts?.has(prompt.id)) return { boundary: prompt, prompts: new Set([prompt.id]) }
+  return { boundary: { id: start.user_message_id, ord: start.ord }, prompts }
+}
+
 /** Where the projected messages of the turn whose prompt sits at `boundaryOrd` end: at the first prompt it did not take in. */
 export function readTurnEndOrd(db: TurnEvidenceDatabase, sessionId: string, boundaryOrd: number, prompts: ReadonlySet<string>): number | null {
   const owned = [...prompts]
@@ -101,21 +133,16 @@ export function readTurnEndOrd(db: TurnEvidenceDatabase, sessionId: string, boun
   ).get(sessionId, boundaryOrd, ...owned)?.ord ?? null
 }
 
-/**
- * One whole turn: its user message, then only the `prompts` taken into it
- * and assistants that answer one of them. Without `prompts` the turn took in
- * nothing but its own.
- */
-export function isContiguousTurn(rows: ReadonlyArray<{ id: string; info_json: string }>, prompts?: ReadonlySet<string>) {
+/** One whole turn: its user message, then only the `prompts` taken into it and assistants that answer one of them. */
+export function isContiguousTurn(rows: ReadonlyArray<{ id: string; info_json: string }>, prompts: ReadonlySet<string>) {
   const first = rows[0]
   if (!first) return false
   const user: AgentMessage["info"] = JSON.parse(first.info_json)
   if (user.role !== "user" || user.id !== first.id) return false
-  const owned = prompts ?? new Set([user.id])
   return rows.slice(1).every((row) => {
     const message: AgentMessage["info"] = JSON.parse(row.info_json)
-    if (message.role === "user") return owned.has(message.id)
-    return message.role === "assistant" && message.parentID !== undefined && owned.has(message.parentID)
+    if (message.role === "user") return prompts.has(message.id)
+    return message.role === "assistant" && message.parentID !== undefined && prompts.has(message.parentID)
   })
 }
 

@@ -17,7 +17,7 @@ afterEach(async () => {
  * steer reaches the harness, writes `after`, and then ends with `ending`, or
  * with no terminal once it is stopped.
  */
-function steeredTurn(ending: AgentRuntimeEvent | "stopped") {
+function steeredTurn(ending: AgentRuntimeEvent | "stopped", afterSteer: AgentRuntimeEvent[] = []) {
   let steered!: (messageId: string) => void
   const steer = new Promise<string>((resolve) => { steered = resolve })
   const transport = new FakeTransport({
@@ -25,6 +25,7 @@ function steeredTurn(ending: AgentRuntimeEvent | "stopped") {
       yield { type: "text-delta", delta: "before" }
       yield { type: "input-incorporated", messageId: await steer }
       yield { type: "text-delta", delta: "after" }
+      yield* afterSteer
       if (ending !== "stopped") yield ending
       else await new Promise((resolve) => broker.signal.addEventListener("abort", resolve, { once: true }))
     },
@@ -126,4 +127,23 @@ test("a steered turn's coverage holds the steered prompt and the reply it ended 
     expect(coverage.coverage).toBe("complete")
     expect(coverage.messages.map((message) => message.info.id)).toEqual(["msg_a_open", "msg_a_open_r", "msg_b_steer", "msg_b_steer_r"])
   }
+})
+
+test("the latest-turn pages hold the whole steered turn, including a later step that answers its own prompt", async () => {
+  const fixture = steeredTurn({ type: "finish", sessionId: "session_1" }, [
+    { type: "step-start", newMessageId: "msg_a_step" },
+    { type: "text-delta", delta: "stepped" },
+  ])
+  const messages = await steerMidTurn(fixture)
+  expect(messages.find((message) => message.info.id === "msg_a_step")?.info).toMatchObject({ role: "assistant", parentID: "msg_a_open" })
+
+  const latest = fixture.host.store.getMessagePage("session_1", { view: "latest-turn" })
+  expect(latest?.messages.map((message) => message.info.id)).toEqual(["msg_a_open", "msg_a_open_r", "msg_b_steer", "msg_b_steer_r", "msg_a_step"])
+  expect(latest?.nextCursor).toBeUndefined()
+  const surface = fixture.host.store.getMessagePage("session_1", { view: "latest-surface" })
+  expect(surface?.messages.map((message) => [message.info.id, text(message)])).toEqual([
+    ["msg_a_open", "work"],
+    ["msg_b_steer", "show me with html"],
+    ["msg_a_step", "stepped"],
+  ])
 })
