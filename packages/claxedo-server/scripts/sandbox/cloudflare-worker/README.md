@@ -31,6 +31,20 @@ modules and ACP bins are npm-installed inside the image from the generated
 `@claxedo/workspace-runtime` to npm is a separate release concern and no longer
 gates image builds.
 
+### Deploying over existing sandboxes
+
+A sandbox created by a Worker that used the SDK's runtime outbound overrides
+(`setOutboundByHosts` or `setOutboundHandler`) persisted that configuration in
+its Durable Object storage. On its next container start `@cloudflare/containers`
+re-applies it through the SDK `ContainerProxy` export, which this Worker no
+longer has, and the start throws. `DELETE /sandbox/:id` is not enough: the SDK's
+destroy keeps that key (`OUTBOUND_CONFIGURATION`), and the control plane names a
+sandbox by its workspace, so a recreated one reads it back. Before rolling this
+Worker out, reset the `Sandbox` namespace's storage: `wrangler delete` the
+Worker (which deletes its Durable Object namespaces and their storage), then
+deploy, and let the control plane recreate workspaces' sandboxes. No migration
+is provided; only sandboxes created by this Worker start.
+
 ## Pinning the control plane to a specific build
 
 Deleting the npm-publish gate removed content immutability at a fixed
@@ -137,9 +151,8 @@ that pins its own CA bundle or ships its own TLS stack fails against one in a
 way no local test here shows. Deployed acceptance is still required.
 
 The former `/egress` JWT route and signing secret are removed. Deploy the
-Worker and matching driver together, then destroy and recreate existing
-sandboxes: one created with the SDK's runtime overrides persisted them, and
-re-applying them needs the SDK `ContainerProxy` export this Worker no longer has. No migration or compatibility route is provided.
+Worker and matching driver together, after destroying existing sandboxes (see
+"Deploying over existing sandboxes").
 
 ## Repository preparation
 

@@ -305,6 +305,7 @@ describe("workspace-runtime process env", () => {
     return {
       id: "claxedo-workspace-runtime",
       status: "running",
+      startTime: new Date(),
       waitForPort: vi.fn(async () => {}),
       getStatus: vi.fn(async () => "running"),
       kill: vi.fn(async () => {}),
@@ -350,6 +351,19 @@ describe("workspace-runtime process env", () => {
 
     expect(existing.kill).not.toHaveBeenCalled()
     expect(sandbox.startProcess).not.toHaveBeenCalled()
+  })
+
+  test("a live runtime still not ready past the preparation limit is wedged and replaced", async () => {
+    const existing = process({
+      startTime: new Date(Date.now() - 36 * 60_000),
+      waitForPort: vi.fn(async () => { throw new Error("not listening") }),
+    })
+    const sandbox = operations(existing)
+
+    await expect(ensureRuntimeProcess(sandbox as never, "runtime", {}, 2593, { reuseRunning: true })).resolves.toBe(true)
+
+    expect(existing.kill).toHaveBeenCalled()
+    expect(sandbox.startProcess).toHaveBeenCalledTimes(1)
   })
 
   test("an exited runtime is replaced even when the env is unchanged", async () => {
@@ -454,12 +468,22 @@ describe("credential host interception", () => {
 
   beforeEach(() => { lifecycle.length = 0 })
 
-  test("a container that starts with no credential host intercepts only the unresolvable trust anchor, before it starts", async () => {
+  test("a fresh sandbox with no credential host intercepts only the unresolvable trust anchor, before its container starts", async () => {
     const { ctx, intercepted } = objectState(false)
     const sandbox = new Sandbox(ctx as never, {} as never)
+    expect(intercepted).toEqual([])
     await sandbox.startAndWaitForPorts()
     expect(intercepted).toEqual([`${TRUST_ANCHOR}->`])
     expect(lifecycle).toEqual([`intercept ${TRUST_ANCHOR}`, "startAndWaitForPorts"])
+  })
+
+  test("a fresh sandbox's first ensure-runtime records its hosts and boots without any SDK outbound configuration", async () => {
+    sandboxStub.setCredentialHosts.mockClear()
+    sandboxStub.ensureWorkspaceRuntime.mockClear()
+    const response = await call("/sandbox/fresh-sandbox/ensure-runtime", env(), { method: "POST", body: JSON.stringify({ command: "runtime", env: {}, egress: [] }) })
+    expect(response.status).toBe(200)
+    expect(sandboxStub.setCredentialHosts).toHaveBeenCalledWith("fresh-sandbox", [])
+    expect(sandboxStub.ensureWorkspaceRuntime).toHaveBeenCalledTimes(1)
   })
 
   test("registered hosts are intercepted on every container start, and at once on a running container", async () => {

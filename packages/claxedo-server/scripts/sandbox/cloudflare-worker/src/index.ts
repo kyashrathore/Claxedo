@@ -5,7 +5,7 @@
  * Set secret: wrangler secret put API_TOKEN
  */
 import { WorkerEntrypoint } from "cloudflare:workers"
-import type { DurableObjectState, Fetcher, Request as WorkerRequest, Response as WorkerResponse } from "@cloudflare/workers-types"
+import type { DurableObjectState, Request as WorkerRequest, Response as WorkerResponse } from "@cloudflare/workers-types"
 import {
   getSandbox,
   Sandbox as CloudflareSandbox,
@@ -75,8 +75,7 @@ export class Sandbox extends CloudflareSandbox {
     const container = this.ctx.container
     if (!container) return
     const recorded = await this.ctx.storage.get<CredentialHosts>(CREDENTIAL_HOSTS_KEY)
-    const exports = this.ctx.exports as unknown as { CredentialEgress(options: { props: { sandboxId: string } }): Fetcher }
-    const egress = exports.CredentialEgress({ props: { sandboxId: recorded?.sandboxId ?? "" } })
+    const egress = this.ctx.exports.CredentialEgress({ props: { sandboxId: recorded?.sandboxId ?? "" } })
     for (const host of [TRUST_ANCHOR_HOST, ...recorded?.hosts ?? []]) await container.interceptOutboundHttps(host, egress)
   }
 
@@ -221,6 +220,10 @@ const SANDBOX_PORT_TIMEOUT_MS = 180_000
 // caller-side bound must cover both SDK startup phases plus a small RPC margin.
 const SANDBOX_PROCESS_LOOKUP_TIMEOUT_MS = SANDBOX_INSTANCE_TIMEOUT_MS + SANDBOX_PORT_TIMEOUT_MS + 10_000
 const RUNTIME_READY_TIMEOUT_MS = 30_000
+// The runtime's own clone bound (workspace-runtime's GIT_CLONE_TIMEOUT_MS,
+// 30 minutes) plus a margin: a runtime still not ready after it is wedged
+// rather than cloning, and is replaced.
+const RUNTIME_PREPARATION_LIMIT_MS = 35 * 60_000
 const RUNTIME_PROCESS_ID = "claxedo-workspace-runtime"
 
 const SANDBOX_OPTIONS = {
@@ -297,11 +300,12 @@ export async function ensureRuntimeProcess(
   options: { reuseRunning: boolean },
 ) {
   const existing = await runtimeProcess(sandbox)
-  // A live runtime that is not ready yet is still preparing its repository, a
-  // step its own clone bound ends by exiting. Replacing it here would restart a
-  // large clone on every poll, so only an exited process or a changed env is.
+  // A live runtime that is not ready yet is still preparing its repository.
+  // Replacing it here would restart a large clone on every poll, so only an
+  // exited process, a changed env, or one past the preparation limit is.
   if (options.reuseRunning && existing && ["starting", "running"].includes(existing.status)) {
-    return runtimeReady(existing, port)
+    if (await runtimeReady(existing, port)) return true
+    if (Date.now() - existing.startTime.getTime() < RUNTIME_PREPARATION_LIMIT_MS) return false
   }
   if (existing) {
     const status = await bounded(existing.getStatus(), "workspace-runtime process status")

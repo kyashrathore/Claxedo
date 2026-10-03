@@ -25,10 +25,10 @@ import {
 } from "@claxedo/session-core"
 
 describe("claxedo workspace-runtime boot policy", () => {
-  test("installs the clone placeholder as a GitHub-only authorization header before boot returns", async () => {
-    // Outside the repository: a checkout on CI carries its own
-    // http.https://github.com/.extraheader in the local config, which git
-    // reads ahead of the global file the boot writes.
+  test("installs the clone placeholder as an authorization header for the workspace repository alone before boot returns", async () => {
+    // Outside the repository: a checkout on CI carries its own github.com
+    // extraheader in the local config, which git reads ahead of the global
+    // file the boot writes.
     const directory = await mkdtemp(path.join(os.tmpdir(), "broker-git-test-"))
     const env = {
       PATH: process.env.PATH,
@@ -37,20 +37,23 @@ describe("claxedo workspace-runtime boot policy", () => {
       GIT_CONFIG_GLOBAL: path.join(directory, "gitconfig"),
       WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-git",
       WORKSPACE_RUNTIME_DIRECTORY: directory,
+      WORKSPACE_RUNTIME_GIT_REPO_URL: "https://github.com/acme/private.git",
       CLAXEDO_GITHUB_CLONE_AUTH: "secret_ref_clone",
     }
+    const key = "http.https://github.com/acme/private.git.extraheader"
     const git = (args: string[]) => execFileSync("git", args, { env, cwd: directory, encoding: "utf8" }).trim()
     try {
       await claxedoWorkspaceRuntimeBootFromEnv(env)
-      expect(git(["config", "--get-urlmatch", "http.extraheader", "https://github.com/acme/private.git"]))
+      expect(git(["config", "--get-urlmatch", "http.extraheader", "https://github.com/acme/private.git/info/refs"]))
         .toBe("Authorization: secret_ref_clone")
+      expect(() => git(["config", "--get-urlmatch", "http.extraheader", "https://github.com/acme/other.git/info/refs"]))
+        .toThrow()
       expect(() => git(["config", "--get-urlmatch", "http.extraheader", "https://github.com.evil.test/acme/private.git"]))
         .toThrow()
       expect(() => git(["config", "--get-urlmatch", "http.extraheader", "http://github.com/acme/private.git"]))
         .toThrow()
       await claxedoWorkspaceRuntimeBootFromEnv({ ...env, CLAXEDO_GITHUB_CLONE_AUTH: "secret_ref_rotated" })
-      expect(git(["config", "--get-all", "http.https://github.com/.extraheader"]))
-        .toBe("Authorization: secret_ref_rotated")
+      expect(git(["config", "--get-all", key])).toBe("Authorization: secret_ref_rotated")
       await expect(claxedoWorkspaceRuntimeBootFromEnv({
         ...env, CLAXEDO_GITHUB_CLONE_AUTH: "secret_ref_clone\r\nX-Injected: value",
       })).rejects.toThrow("Invalid GitHub clone authorization header")
@@ -62,7 +65,7 @@ describe("claxedo workspace-runtime boot policy", () => {
       // credential the control plane took away.
       const { CLAXEDO_GITHUB_CLONE_AUTH: _withdrawn, ...withoutClone } = env
       await claxedoWorkspaceRuntimeBootFromEnv(withoutClone)
-      expect(() => git(["config", "--get-all", "http.https://github.com/.extraheader"])).toThrow()
+      expect(() => git(["config", "--get-all", key])).toThrow()
       // Nothing to remove is the ordinary case, not a boot failure.
       await expect(claxedoWorkspaceRuntimeBootFromEnv(withoutClone)).resolves.toBeDefined()
     } finally {

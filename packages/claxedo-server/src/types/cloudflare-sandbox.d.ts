@@ -2,6 +2,7 @@ declare module "@cloudflare/sandbox" {
   export interface SandboxProcess {
     id: string
     status: "starting" | "running" | "completed" | "failed" | "killed" | "error"
+    startTime: Date
     kill(signal?: string): Promise<void>
     getStatus(): Promise<SandboxProcess["status"]>
     getLogs(): Promise<{ stdout: string; stderr: string }>
@@ -24,7 +25,13 @@ declare module "@cloudflare/sandbox" {
 
   /** The container lifecycle a subclass extends; both start paths run before the container starts. */
   export interface SandboxDurableObject {
-    readonly ctx: import("@cloudflare/workers-types").DurableObjectState
+    // `ctx.exports` holds the sandbox Worker's own entrypoints, which only the
+    // Worker's generated types would otherwise name.
+    readonly ctx: Omit<import("@cloudflare/workers-types").DurableObjectState, "exports"> & {
+      readonly exports: {
+        CredentialEgress(options: { props: { sandboxId: string } }): import("@cloudflare/workers-types").Fetcher
+      }
+    }
     start(...args: unknown[]): Promise<void>
     startAndWaitForPorts(...args: unknown[]): Promise<void>
   }
