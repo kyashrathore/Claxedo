@@ -5,7 +5,7 @@ import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/auth
 import type { OrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import type { ControlPlaneServices } from "../../authority/services"
 import { SessionPeopleControlRoutes } from "./session-people-routes"
-import type { SessionShareChangedSink, SessionShareFanoutTarget } from "../session-people-contract"
+import type { SessionShareChangedSink } from "../session-people-contract"
 
 const signedOptions = {
   authConfig: {
@@ -72,8 +72,6 @@ describe("People route contract", () => {
       status: 403,
       code: "session_share_target_outside_organization",
     },
-    { thrown: "session_share_team_org_mismatch", status: 400, code: "session_share_team_org_mismatch" },
-    { thrown: "session_share_org_mismatch", status: 400, code: "session_share_org_mismatch" },
   ] as const
 
   for (const [name, routeFactory] of routeFactories) {
@@ -94,51 +92,46 @@ describe("People route contract", () => {
   }
 })
 
-const fanoutCases: Array<{ name: string; target: SessionShareFanoutTarget; rings: boolean }> = [
-  { name: "direct user", target: { grantedToTokenIdentifier: "https://auth.example.test|user_bob" }, rings: true },
-  { name: "team", target: { grantedToTeamPublicId: "team_eng" }, rings: false },
-  { name: "org", target: { grantedToOrgId: "org_internal" }, rings: false },
-]
-
 describe("grantId-only revoke fanout", () => {
   for (const [routeName, routeFactory] of routeFactories) {
-    for (const fanout of fanoutCases) {
-      test(`${routeName} ${fanout.rings ? "notifies" : "rings no one for"} the ${fanout.name} target returned by revoke`, async () => {
-        const sink = vi.fn()
-        const authority: Partial<WorkspaceAuthority> = {
-          resolveOrgId: vi.fn(async () => "org_internal" as OrgId),
-          listTeams: vi.fn(async () => [{ team_id: "team_eng" }]),
-          listTeamMembers: vi.fn(async () => [{ token_identifier: "https://auth.example.test|user_bob" }]),
-          revokeSessionShare: vi.fn(async () => ({
-            revoked: true,
-            runtime_tokens_revoked: 1,
-            revokedTargets: [fanout.target],
-          })),
-        }
-        const response = await routeFactory(services(authority), {
-          ...signedOptions,
-          sessionShareChangedSink: sink,
-        }).request("https://control.example.test/sessions/ses_1/shares", {
-          method: "DELETE",
-          headers: { authorization: "Bearer token", "content-type": "application/json" },
-          body: JSON.stringify({ workspaceId: "ws_1", grantId: "ssg_1" }),
-        })
-
-        expect(response.status).toBe(200)
-        if (fanout.rings) {
-          expect(sink).toHaveBeenCalledWith(expect.objectContaining({
-            type: "session.share.changed",
-            phase: "revoked",
-            ownerUserId: "user_bob",
-            sessionId: "ses_1",
-            workspaceId: "ws_1",
-          }))
-        } else {
-          expect(sink).not.toHaveBeenCalled()
-          expect(authority.listTeamMembers).not.toHaveBeenCalled()
-        }
+    test(`${routeName} notifies the person the revoke returned`, async () => {
+      const sink = vi.fn()
+      const authority: Partial<WorkspaceAuthority> = {
+        resolveOrgId: vi.fn(async () => "org_internal" as OrgId),
+        revokeSessionShare: vi.fn(async () => ({
+          revoked: true,
+          runtime_tokens_revoked: 1,
+          revokedTargets: [{ grantedToTokenIdentifier: "https://auth.example.test|user_bob" }],
+        })),
+      }
+      const response = await routeFactory(services(authority), {
+        ...signedOptions,
+        sessionShareChangedSink: sink,
+      }).request("https://control.example.test/sessions/ses_1/shares", {
+        method: "DELETE",
+        headers: { authorization: "Bearer token", "content-type": "application/json" },
+        body: JSON.stringify({ workspaceId: "ws_1", grantId: "ssg_1" }),
       })
-    }
+
+      expect(response.status).toBe(200)
+      expect(sink).toHaveBeenCalledWith(expect.objectContaining({
+        type: "session.share.changed",
+        phase: "revoked",
+        ownerUserId: "user_bob",
+        sessionId: "ses_1",
+        workspaceId: "ws_1",
+      }))
+    })
+
+    test(`${routeName} hands the authority no team or organization recipient`, async () => {
+      const grantSessionShare = vi.fn(async () => ({ grant_id: "ssg_1", level: "follow" as const }))
+      await routeFactory(services({ grantSessionShare }), signedOptions).request("https://control.example.test/sessions/ses_1/shares", {
+        method: "POST",
+        headers: { authorization: "Bearer token", "content-type": "application/json" },
+        body: JSON.stringify({ workspaceId: "ws_1", grantedToTeamPublicId: "team_eng", grantedToOrgId: "org_internal" }),
+      })
+      expect(grantSessionShare).toHaveBeenCalledWith(expect.anything(), { sessionId: "ses_1", workspaceId: "ws_1", level: "follow" })
+    })
   }
 })
 

@@ -529,20 +529,13 @@ CREATE TABLE session_share_grants (
   workspace_id text not null,
   org_id text not null,
   project_id text not null,
-  target_user_id text references users (user_id) deferrable initially deferred,
-  target_org_id text references orgs (org_id) deferrable initially deferred,
-  target_team_id text references teams (team_id) deferrable initially deferred,
+  target_user_id text not null references users (user_id) deferrable initially deferred,
   granted_by_actor_id text not null references actors (actor_id) deferrable initially deferred,
   granted_at integer not null,
   revoked_at integer, level text not null default 'follow'
   check (level in ('follow', 'send')),
   foreign key (session_id, workspace_id, org_id, project_id)
-    references sessions (session_id, workspace_id, org_id, project_id) deferrable initially deferred,
-  check (
-    (target_user_id is not null) +
-    (target_org_id is not null) +
-    (target_team_id is not null) = 1
-  )
+    references sessions (session_id, workspace_id, org_id, project_id) deferrable initially deferred
 );
 
 CREATE TABLE session_turn_grants (
@@ -944,23 +937,12 @@ CREATE INDEX session_messages_by_session_turn
 CREATE INDEX session_registration_operations_by_state
   on session_registration_operations (state, updated_at, operation_id);
 
-CREATE UNIQUE INDEX session_share_grants_active_org
-  on session_share_grants (session_id, target_org_id)
-  where target_org_id is not null and revoked_at is null;
-
-CREATE UNIQUE INDEX session_share_grants_active_team
-  on session_share_grants (session_id, target_team_id)
-  where target_team_id is not null and revoked_at is null;
-
 CREATE UNIQUE INDEX session_share_grants_active_user
   on session_share_grants (session_id, target_user_id)
-  where target_user_id is not null and revoked_at is null;
+  where revoked_at is null;
 
 CREATE INDEX session_share_grants_by_session
   on session_share_grants (session_id, revoked_at, granted_at, grant_id);
-
-CREATE INDEX session_share_grants_by_team
-  on session_share_grants (target_team_id, revoked_at, session_id);
 
 CREATE INDEX session_share_grants_by_user
   on session_share_grants (target_user_id, revoked_at, session_id);
@@ -1150,15 +1132,13 @@ end;
 
 CREATE TRIGGER session_share_intent_immutable
 before update of session_id, workspace_id, org_id, project_id,
-  target_user_id, target_org_id, target_team_id, granted_by_actor_id, granted_at
+  target_user_id, granted_by_actor_id, granted_at
 on session_share_grants
 when new.session_id != old.session_id
   or new.workspace_id != old.workspace_id
   or new.org_id != old.org_id
   or new.project_id != old.project_id
-  or new.target_user_id is not old.target_user_id
-  or new.target_org_id is not old.target_org_id
-  or new.target_team_id is not old.target_team_id
+  or new.target_user_id != old.target_user_id
   or new.granted_by_actor_id != old.granted_by_actor_id
   or new.granted_at != old.granted_at
 BEGIN
@@ -1167,17 +1147,11 @@ END;
 
 CREATE TRIGGER session_share_target_scope
 before insert on session_share_grants
-when
-  (new.target_user_id is not null and not exists (
-    select 1 from org_memberships om
-    join users u on u.user_id = om.user_id and u.state = 'active'
-    where om.org_id = new.org_id and om.user_id = new.target_user_id and om.revoked_at is null
-  ))
-  or (new.target_org_id is not null and new.target_org_id != new.org_id)
-  or (new.target_team_id is not null and not exists (
-    select 1 from teams t
-    where t.team_id = new.target_team_id and t.org_id = new.org_id and t.deleted_at is null
-  ))
+when not exists (
+  select 1 from org_memberships om
+  join users u on u.user_id = om.user_id and u.state = 'active'
+  where om.org_id = new.org_id and om.user_id = new.target_user_id and om.revoked_at is null
+)
 BEGIN
   select raise(abort, 'session share target belongs to another organization');
 END;

@@ -218,6 +218,15 @@ describe("resolveHostedOperation", () => {
     })
   })
 
+  test("carries no team or organization recipient into a grant", () => {
+    expect(resolveHostedOperation("session.shares.grant", {
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
+      grantedToTeamPublicId: "team_eng",
+      grantedToOrgId: "org_1",
+    } as never)).toEqual({ method: "POST", path: "/api/control/sessions/ses_1/shares", body: { workspaceId: "ws_1" } })
+  })
+
   test("resolves DELETE session share revoke with body fields", () => {
     expect(resolveHostedOperation("session.shares.revoke", {
       sessionId: "ses_1",

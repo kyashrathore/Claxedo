@@ -297,17 +297,17 @@ export const HOSTED_OPERATIONS = {
   }),
   "session.shares.grant": defineOperation({
     method: "POST", path: operationPath("/api/control/sessions/:sessionId/shares"),
-    input: operationInput({ sessionId: requiredParameter, workspaceId: bodyField, level: bodyField, grantedToTokenIdentifier: bodyField, grantedToUserId: bodyField, grantedToTeamPublicId: bodyField, grantedToOrgId: bodyField }),
+    input: operationInput({ sessionId: requiredParameter, workspaceId: bodyField, level: bodyField, grantedToTokenIdentifier: bodyField, grantedToUserId: bodyField }),
     output: object, retry: "never",
     exposure: { renderer: true, app: false },
-    body: selectBody("workspaceId", "level", "grantedToTokenIdentifier", "grantedToUserId", "grantedToTeamPublicId", "grantedToOrgId"),
+    body: selectBody("workspaceId", "level", "grantedToTokenIdentifier", "grantedToUserId"),
   }),
   "session.shares.revoke": defineOperation({
     method: "DELETE", path: operationPath("/api/control/sessions/:sessionId/shares"),
-    input: operationInput({ sessionId: requiredParameter, workspaceId: bodyField, grantId: bodyField, grantedToTokenIdentifier: bodyField, grantedToTeamPublicId: bodyField }),
+    input: operationInput({ sessionId: requiredParameter, workspaceId: bodyField, grantId: bodyField, grantedToTokenIdentifier: bodyField, grantedToUserId: bodyField }),
     output: object, retry: "never",
     exposure: { renderer: true, app: false },
-    body: selectBody("workspaceId", "grantId", "grantedToTokenIdentifier", "grantedToTeamPublicId"),
+    body: selectBody("workspaceId", "grantId", "grantedToTokenIdentifier", "grantedToUserId"),
   }),
   "org.list": defineOperation({
     method: "GET", path: operationPath("/api/control/orgs"),

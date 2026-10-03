@@ -1417,7 +1417,7 @@ describe("D1 session authority, shares of a session this plane never registered"
     await expect(input.sessions.listSessionShares(alice, {
       sessionId: "ses_created_on_the_machine",
       workspaceId: "ws_main",
-    })).resolves.toEqual({ can_manage_shares: false, grants: [], teams: [] })
+    })).resolves.toEqual({ can_manage_shares: false, grants: [] })
     const denied = { code: "workspace_authorization_denied", status: 403 }
     for (const who of [teammate, outsider]) {
       expect(await refusal(who, "ses_created_on_the_machine")).toEqual(denied)

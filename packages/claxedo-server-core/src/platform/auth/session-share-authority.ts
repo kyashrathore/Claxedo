@@ -3,18 +3,21 @@ import type { SignedControlPlaneAuth } from "./auth"
 import type { SessionShareLevel } from "./session-share-level"
 
 /**
+ * The one person a session share names, by exactly one of these. A share
+ * names a person and nothing else: no team or organization is a recipient.
+ */
+export type SessionShareRecipient = {
+  grantedToTokenIdentifier?: string
+  grantedToSubject?: string
+  grantedToUserId?: string
+}
+
+/**
  * Canonical recipient identity resolved by the authority before a session
  * share is revoked. Routes use this target for recipient doorbells, including
  * grant-id-only revokes whose request body carries no recipient selector.
  */
-export type SessionShareFanoutTarget = {
-  grantedToTokenIdentifier?: string
-  grantedToSubject?: string
-  grantedToUserId?: string
-  grantedToOrgId?: string
-  grantedToTeamId?: string
-  grantedToTeamPublicId?: string
-}
+export type SessionShareFanoutTarget = SessionShareRecipient
 
 export type SessionShareRevokeResult = {
   revoked: boolean
@@ -30,11 +33,6 @@ export type SessionShareGrantResult = {
 export type SessionPeopleContext = {
   can_manage_shares: boolean
   grants: Array<Record<string, unknown>>
-  teams: Array<{
-    team_id: string
-    name: string
-    is_shared: boolean
-  }>
 }
 
 export type SessionShareAuthority = {
@@ -49,13 +47,7 @@ export type SessionShareAuthority = {
       sessionId: string
       workspaceId: string
       level?: SessionShareLevel
-      grantedToTokenIdentifier?: string
-      grantedToSubject?: string
-      grantedToUserId?: string
-      grantedToOrgId?: string
-      grantedToTeamId?: string
-      grantedToTeamPublicId?: string
-    },
+    } & SessionShareRecipient,
   ) => Promise<SessionShareGrantResult>
   revokeSessionShare?: (
     auth: SignedControlPlaneAuth,
@@ -63,13 +55,7 @@ export type SessionShareAuthority = {
       sessionId: string
       workspaceId: string
       grantId?: string
-      grantedToTokenIdentifier?: string
-      grantedToSubject?: string
-      grantedToUserId?: string
-      grantedToOrgId?: string
-      grantedToTeamId?: string
-      grantedToTeamPublicId?: string
-    },
+    } & SessionShareRecipient,
   ) => Promise<SessionShareRevokeResult>
   listSessionShares?: (
     auth: SignedControlPlaneAuth,

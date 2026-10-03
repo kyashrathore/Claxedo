@@ -30,15 +30,7 @@ describe("subjectFromIdentity", () => {
   })
 })
 
-/**
- * An authority that could list team and organization members: the doorbell
- * must not read them, so a share to a team or an organization rings no one.
- */
-const authority = {
-  resolveOrgId: async () => "org_internal" as OrgId,
-  listTeams: async () => [{ team_id: "team_eng" }],
-  listTeamMembers: async () => [{ token_identifier: "https://issuer.test|user_bob" }],
-}
+const authority = { resolveOrgId: async () => "org_internal" as OrgId }
 
 async function doorbells(target: SessionShareFanoutTarget, sink?: (ownerUserId: string) => void) {
   const rung: Array<{ ownerUserId: string; phase: string; level?: string; orgId?: string }> = []
@@ -62,11 +54,6 @@ describe("notifySessionShareChanged", () => {
   test("rings the person a share names", async () => {
     expect(await doorbells({ grantedToTokenIdentifier: "https://issuer.test|user_bob" }))
       .toEqual([{ ownerUserId: "user_bob", phase: "granted", level: "send", orgId: "org_internal" }])
-  })
-
-  test("rings no one for a share to a team or an organization", async () => {
-    expect(await doorbells({ grantedToTeamPublicId: "team_eng" })).toEqual([])
-    expect(await doorbells({ grantedToOrgId: "org_internal" })).toEqual([])
   })
 
   test("never rings the granter or a target that names no person", async () => {

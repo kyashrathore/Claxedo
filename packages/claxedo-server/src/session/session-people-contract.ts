@@ -35,11 +35,7 @@ export function subjectFromIdentity(value: string | undefined): string | undefin
   return undefined
 }
 
-/**
- * The person a grant or revoke names, who is the one its doorbell rings for.
- * A team or organization target is not expanded into its members: only a
- * share to a person reaches a person.
- */
+/** The person a grant or revoke names, who is the one its doorbell rings for. */
 export function sessionShareRecipientSubject(target: SessionShareFanoutTarget, granterSubject: string): string | undefined {
   const subject = subjectFromIdentity(target.grantedToSubject)
     ?? subjectFromIdentity(target.grantedToTokenIdentifier)

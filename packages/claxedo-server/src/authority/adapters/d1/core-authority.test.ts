@@ -182,7 +182,7 @@ describe("composed Better Auth + D1 authority", () => {
     ).toEqual({ active: true })
   })
 
-  test("persists team session sharing and revokes the shared user's live authority", async () => {
+  test("shares a session with a person, never a team or an organization, and revokes the person's live authority", async () => {
     const { authority, database } = await setup()
     const alice = await signed(authority, "team-alice")
     const bob = await signed(authority, "team-bob")
@@ -211,9 +211,6 @@ describe("composed Better Auth + D1 authority", () => {
       role: "member",
     })
     await expect(authority.openWorkspace(bob, { workspaceId: "ws_team_sharing" })).rejects.toMatchObject({ status: 403 })
-    const otherTeam = await authority.ensureDefaultTeam!(outsider, { orgId: "org_other" }) as {
-      team_id: string
-    }
 
     await authority.reserveSession(alice, {
       operationId: "op_team_sharing",
@@ -235,23 +232,24 @@ describe("composed Better Auth + D1 authority", () => {
     })
 
     expect(await authority.listSessions(bob, { workspaceId: "ws_team_sharing" })).toEqual([])
-    await expect(
-      authority.grantSessionShare!(alice, {
+    for (const target of [{ grantedToTeamId: defaultTeam.team_id }, { grantedToOrgId: "org_team_sharing" }]) {
+      await expect(authority.grantSessionShare!(alice, {
         sessionId: "ses_team_sharing",
         workspaceId: "ws_team_sharing",
-        grantedToTeamId: otherTeam.team_id,
-      }),
-    ).rejects.toMatchObject({ code: "session_share_team_org_mismatch" })
+        ...target,
+      } as never)).rejects.toMatchObject({ code: "session_share_target_required" })
+    }
+    expect(await authority.listSessions(bob, { workspaceId: "ws_team_sharing" })).toEqual([])
 
     const firstGrant = await authority.grantSessionShare!(alice, {
       sessionId: "ses_team_sharing",
       workspaceId: "ws_team_sharing",
-      grantedToTeamId: defaultTeam.team_id,
+      grantedToUserId: bob.principal!.userId,
     }) as { grant_id: string }
     expect(await authority.grantSessionShare!(alice, {
       sessionId: "ses_team_sharing",
       workspaceId: "ws_team_sharing",
-      grantedToTeamPublicId: defaultTeam.team_id,
+      grantedToUserId: bob.principal!.userId,
     })).toEqual(firstGrant)
     expect(await authority.listSessions(bob, { workspaceId: "ws_team_sharing" })).toMatchObject([
       { session_id: "ses_team_sharing", title: "Private team session" },
@@ -265,8 +263,7 @@ describe("composed Better Auth + D1 authority", () => {
       workspaceId: "ws_team_sharing",
     })).resolves.toMatchObject({
       can_manage_shares: true,
-      grants: [{ grant_id: firstGrant.grant_id, granted_to_team_id: defaultTeam.team_id }],
-      teams: [{ team_id: defaultTeam.team_id, is_shared: true }],
+      grants: [{ grant_id: firstGrant.grant_id, granted_to_user_id: bob.principal!.userId }],
     })
 
     // A session the control plane does not hold (created on a machine, never
@@ -275,7 +272,7 @@ describe("composed Better Auth + D1 authority", () => {
     await expect(authority.listSessionShares!(alice, {
       sessionId: "ses_created_on_the_machine",
       workspaceId: "ws_team_sharing",
-    })).resolves.toEqual({ can_manage_shares: false, grants: [], teams: [] })
+    })).resolves.toEqual({ can_manage_shares: false, grants: [] })
     await expect(authority.listSessionShares!(outsider, {
       sessionId: "ses_created_on_the_machine",
       workspaceId: "ws_team_sharing",
