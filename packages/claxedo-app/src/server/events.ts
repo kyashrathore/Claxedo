@@ -1,3 +1,4 @@
+import type { SessionLastTurn } from "@claxedo/agent-runtime-contract"
 import type { PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
 import type { CloudWorkspaceStatus } from "./cloud-types"
 import type { HarnessConnectionState, HarnessHealth } from "./harness-types"
@@ -10,7 +11,7 @@ export type PartAddress = { readonly messageId: string; readonly partId: string 
 export type ServerEvent =
   | { readonly type: "sessionUpserted"; readonly row: SessionRow }
   | { readonly type: "sessionRemoved"; readonly ref: SessionLocation }
-  | { readonly type: "statusChanged"; readonly ref: SessionLocation; readonly status: SessionStatus }
+  | { readonly type: "statusChanged"; readonly ref: SessionLocation; readonly status: SessionStatus; readonly lastTurn?: SessionLastTurn }
   | { readonly type: "backgroundWorkChanged"; readonly ref: SessionLocation; readonly work: BackgroundWork }
   | { readonly type: "messageUpserted"; readonly ref: SessionLocation; readonly message: TranscriptMessage }
   | { readonly type: "messageRemoved"; readonly ref: SessionLocation; readonly messageId: string }

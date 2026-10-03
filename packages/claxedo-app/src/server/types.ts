@@ -9,6 +9,7 @@ import type {
   AgentSubagentUpdate,
   AgentTodo,
   AgentTurnOutcome,
+  SessionLastTurn,
   PromptDeliveryRequest,
   RuntimeGoalSnapshot,
 } from "@claxedo/agent-runtime-contract"
@@ -111,7 +112,7 @@ export type SessionRow = SessionSelections & {
   readonly lastHumanTurnAt?: number
   readonly archivedAt?: number
   readonly parentSessionId?: SessionId
-  readonly lastTurn?: AgentTurnOutcome
+  readonly lastTurn?: AgentTurnOutcome | SessionLastTurn
 }
 
 export type TranscriptMessage = AgentMessageInfo

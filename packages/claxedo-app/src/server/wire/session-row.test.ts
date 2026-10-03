@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import { placementId, projectId, sessionId } from "../ids"
-import { listedStatusFromListItem, sessionRowFromSession } from "./session-row"
+import { listedStatusFromListItem, sessionRowFromListItem, sessionRowFromSession } from "./session-row"
 
 const ref = { projectId: projectId("project-1"), placementId: placementId("placement-1"), sessionId: sessionId("s1") }
 
@@ -27,4 +27,12 @@ test("session row: a listed status carries whether the session's harness runs wo
   expect(listedStatusFromListItem({ status: { kind: "busy", awaitingInput: true, at: 1 } })).toEqual({
     status: { kind: "working" }, waitingOnUser: true, backgroundWork: { agents: 0, shells: 0, other: 0 },
   })
+})
+
+test("session row: a list item carries its session's last turn as the server recorded it", () => {
+  const address = { placementFor: () => ({ placementId: placementId("placement-1"), projectId: projectId("project-1") }) }
+  const item = (lastTurn?: unknown) => ({ sessionId: "s1", directory: "/work", createdAt: 1, updatedAt: 2, ...(lastTurn === undefined ? {} : { lastTurn }) })
+  expect(sessionRowFromListItem(item({ status: "failed", completedAt: 9 }), address)?.lastTurn).toEqual({ status: "failed", completedAt: 9 })
+  expect(sessionRowFromListItem(item(), address)?.lastTurn).toBeUndefined()
+  expect(sessionRowFromListItem(item({ status: "busy", completedAt: 9 }), address)?.lastTurn).toBeUndefined()
 })

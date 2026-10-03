@@ -62,6 +62,25 @@ test("a session's saved harness and model survive a newer row that does not carr
   expect(next?.kind === "confirmed" ? [next.row.harness, next.row.model] : undefined).toEqual([nativeHarness("codex"), undefined])
 })
 
+test("a session's last turn comes from its listed row and its turn-end frame, and the session read's own outcome of that turn is kept", () => {
+  const a1 = row(ALPHA, "a1", 30)
+  const lastTurn = (state: ListState) => {
+    const entry = state.kind === "live" ? state.entries.get(sessionId("a1")) : undefined
+    return entry?.kind === "confirmed" ? entry.row.lastTurn : undefined
+  }
+  const listed = run(initialListState, { type: "fetchStarted" }, { type: "fetched", window: window([page(ALPHA, [{ ...a1, lastTurn: { status: "completed", completedAt: 40 } }])]) })
+  expect(lastTurn(listed)).toEqual({ status: "completed", completedAt: 40 })
+
+  const ended = run(listed, { type: "statusChanged", ref: a1.ref, status: { kind: "idle" }, lastTurn: { status: "cancelled", completedAt: 60 }, at: 1_100 })
+  expect(lastTurn(ended)).toEqual({ status: "cancelled", completedAt: 60 })
+
+  const outcome = { status: "cancelled" as const, completedAt: 60, reason: "abort", assistantMessageId: "msg_a1" }
+  const read = run(ended, { type: "rowRead", row: { ...a1, lastTurn: outcome } })
+  const relisted = run(read, { type: "sessionUpserted", row: { ...a1, lastTurn: { status: "cancelled", completedAt: 60 } } })
+  const late = run(relisted, { type: "statusChanged", ref: a1.ref, status: { kind: "idle" }, lastTurn: { status: "completed", completedAt: 50 }, at: 1_200 })
+  expect([lastTurn(read), lastTurn(relisted), lastTurn(late)]).toEqual([outcome, outcome, outcome])
+})
+
 test("a session read older than the row it meets never rolls back the row's selections", () => {
   const selected = { ...row(ALPHA, "a1", 30), updatedAt: 50, harness: nativeHarness("claude"), model: { providerId: "claude", modelId: "default" }, permissionMode: "plan" }
   const listed = run(initialListState, { type: "fetchStarted" }, { type: "fetched", window: window([page(ALPHA, [selected])]) })

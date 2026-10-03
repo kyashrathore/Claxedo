@@ -1,9 +1,11 @@
 import { sameHarnessSelection } from "@/lib/harness-selection"
+import type { SessionLastTurn } from "@claxedo/agent-runtime-contract"
 import { sameModelKey, type ProjectId, type SessionId, type SessionLocation, type SessionRow, type SessionSelections } from "@/server"
 import {
   WINDOW_ALL,
   compareOrder,
   insideProjectWindow,
+  laterTurn,
   newerRow,
   windowTail,
   orderKey,
@@ -61,6 +63,13 @@ export function mergeRow<S extends ListData>(data: S, row: SessionRow): S {
   const next = newerRow(current.row, row)
   if (!next) return data
   return setEntry(data, id, { kind: "confirmed", row: next, pendingSend: keptSend(current.pendingSend, current.row, next) })
+}
+
+export function turnEnded<S extends ListData>(data: S, ref: SessionLocation, lastTurn: SessionLastTurn): S {
+  const current = data.entries.get(ref.sessionId)
+  if (current?.kind !== "confirmed") return data
+  const later = laterTurn(current.row.lastTurn, lastTurn)
+  return later === current.row.lastTurn ? data : setEntry(data, ref.sessionId, { ...current, row: { ...current.row, lastTurn: later } })
 }
 
 export function upsertRow<S extends ListData>(data: S, row: SessionRow): S {

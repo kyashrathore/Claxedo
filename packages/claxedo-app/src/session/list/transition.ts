@@ -13,6 +13,7 @@ import {
   startCreate,
   startSend,
   tombstoneRow,
+  turnEnded,
   upsertRow,
 } from "./rows"
 import { backgroundWorkChanged, backgroundWorkRead, pageStatusesRead, statusChanged, statusRead } from "./statuses"
@@ -43,8 +44,10 @@ function applyListEvent<S extends ListData>(state: S, event: ServerListEvent): S
       return upsertRow(state, event.row)
     case "sessionRemoved":
       return tombstoneRow(state, event.ref, event.at)
-    case "statusChanged":
-      return statusChanged(state, event.ref, event.status, event.at)
+    case "statusChanged": {
+      const next = statusChanged(state, event.ref, event.status, event.at)
+      return event.lastTurn ? turnEnded(next, event.ref, event.lastTurn) : next
+    }
     case "backgroundWorkChanged":
       return backgroundWorkChanged(state, event.ref, event.work, event.at)
     default:

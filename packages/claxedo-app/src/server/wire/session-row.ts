@@ -1,5 +1,5 @@
 import { asFiniteNumber, nonEmptyString } from "@claxedo/helpers/guards"
-import type { AgentSession } from "@claxedo/agent-runtime-contract"
+import type { AgentSession, AgentTurnOutcome, SessionLastTurn } from "@claxedo/agent-runtime-contract"
 import { sessionId, type PlacementId, type ProjectId, type SessionId } from "../ids"
 import type { ListedStatus } from "../status-types"
 import type { ModelChoice, SessionLocation, SessionRow, SessionSelections } from "../types"
@@ -29,6 +29,7 @@ export function sessionRowFromListItem(item: unknown, address: Address): Session
   const lastHumanTurnAt = asFiniteNumber(row.lastHumanTurnAt)
   const archivedAt = asFiniteNumber(row.archivedAt)
   const parentSessionId = nonEmptyString(row.parentSessionId)
+  const lastTurn = lastTurnFromWire(row.lastTurn)
   return {
     ref,
     title: nonEmptyString(row.title) ?? id,
@@ -37,7 +38,23 @@ export function sessionRowFromListItem(item: unknown, address: Address): Session
     ...(lastHumanTurnAt !== undefined ? { lastHumanTurnAt } : {}),
     ...(archivedAt ? { archivedAt } : {}),
     ...(parentSessionId ? { parentSessionId: sessionId(parentSessionId) as SessionId } : {}),
+    ...(lastTurn ? { lastTurn } : {}),
   }
+}
+
+export function turnOutcome(lastTurn: SessionRow["lastTurn"]): AgentTurnOutcome | undefined {
+  return lastTurn && (lastTurn.status !== "failed" || "error" in lastTurn) ? (lastTurn as AgentTurnOutcome) : undefined
+}
+
+export function turnDetailed(lastTurn: NonNullable<SessionRow["lastTurn"]>): boolean {
+  return "assistantMessageId" in lastTurn || "error" in lastTurn
+}
+
+export function lastTurnFromWire(value: unknown): SessionLastTurn | undefined {
+  if (!value || typeof value !== "object") return undefined
+  const { status, completedAt } = value as { status?: unknown; completedAt?: unknown }
+  const at = asFiniteNumber(completedAt)
+  return (status === "completed" || status === "failed" || status === "cancelled") && at !== undefined ? { status, completedAt: at } : undefined
 }
 
 function configuredSelection(info: AgentSession & { readonly config?: unknown }): SessionSelections {

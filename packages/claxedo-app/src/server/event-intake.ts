@@ -5,7 +5,6 @@ import type { ServerEvent } from "./events"
 import { invalidateFor } from "./queries"
 import type { StatusOwner } from "./status"
 import { createTurnWrites, type TurnWrites } from "./turn-writes"
-import type { SessionLocation } from "./types"
 import type { Workspaces } from "./workspaces"
 import { frameFromWire, frameSessionId, placementDirectory, serverEventFromFrame, type Frame } from "./wire/frames"
 
@@ -27,10 +26,11 @@ type Listeners = Set<(event: ServerEvent) => void>
 
 type Publish = (event: ServerEvent) => void
 
-async function settleHeld(input: IntakeInput, ref: SessionLocation, publish: Publish) {
+async function settleHeld(input: IntakeInput, held: Extract<ServerEvent, { type: "statusChanged" }>, publish: Publish) {
+  const { ref } = held
   try {
     const status = await input.status.settle(await input.workspaces.route(ref), ref)
-    publish({ type: "statusChanged", ref, status })
+    publish({ ...held, status })
   } catch (error) {
     console.error("A session's status after its failed turn could not be settled", { sessionId: ref.sessionId, error: toAppError(error) })
   }
@@ -39,7 +39,7 @@ async function settleHeld(input: IntakeInput, ref: SessionLocation, publish: Pub
 function publisher(input: IntakeInput, listeners: Listeners, writes: TurnWrites): Publish {
   const publish: Publish = (event) => {
     const admission = input.status.apply(event)
-    if (admission.kind === "held") return void settleHeld(input, admission.ref, publish)
+    if (admission.kind === "held") return void settleHeld(input, admission.event, publish)
     batch(() => {
       invalidateFor(input.queryClient, input.serverUrl, admission.event, writes.endsWritingTurn(admission.event))
       for (const listener of listeners) listener(admission.event)

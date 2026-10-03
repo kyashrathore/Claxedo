@@ -1,6 +1,6 @@
 import { createMemo, type Accessor } from "solid-js"
 import type { Panel } from "@/panel"
-import { isLocalPlacement, sessionId as toSessionId, type Server, type SessionLocation, type SessionRow, type SessionStatus } from "@/server"
+import { isLocalPlacement, sessionId as toSessionId, turnOutcome, type Server, type SessionLocation, type SessionRow, type SessionStatus } from "@/server"
 import type { SessionStatusView, SessionStores, SessionView } from "@/session"
 import { usePreferences, type Preferences } from "@/settings"
 import { sessionPath, type ShellRouting } from "@/shell"
@@ -37,13 +37,16 @@ function timelineSettings(preferences: Preferences): TimelineSettings {
 }
 
 function timelineRows(rows: readonly SessionRow[]): readonly TimelineSessionRow[] {
-  return rows.map((row) => ({
-    id: row.ref.sessionId,
-    title: row.title,
-    parentId: row.parentSessionId,
-    archived: row.archivedAt !== undefined,
-    ...(row.lastTurn ? { lastTurn: row.lastTurn } : {}),
-  }))
+  return rows.map((row) => {
+    const lastTurn = turnOutcome(row.lastTurn)
+    return {
+      id: row.ref.sessionId,
+      title: row.title,
+      parentId: row.parentSessionId,
+      archived: row.archivedAt !== undefined,
+      ...(lastTurn ? { lastTurn } : {}),
+    }
+  })
 }
 
 function shownStatus(status: SessionStatusView): SessionStatus {

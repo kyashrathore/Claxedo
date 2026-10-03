@@ -7,7 +7,7 @@ import { goalFromWire } from "./goal"
 import { connectionStateFromWire, harnessHealthFromWire } from "./harness-state"
 import { subagentFromWire } from "./subagents"
 import { isPermissionWire, isQuestionWire, requestFromPermission, requestFromQuestion } from "./requests"
-import { sessionLocationFor, sessionRowFromSession, type Address } from "./session-row"
+import { lastTurnFromWire, sessionLocationFor, sessionRowFromSession, type Address } from "./session-row"
 import { sessionStatusFromTurnError, sessionStatusFromWire } from "./status"
 import { terminalEvent } from "./terminals"
 import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
@@ -118,6 +118,11 @@ function harnessHealthEvent(properties: Record<string, unknown>, ref: SessionLoc
   return { type: "harnessHealthChanged", ref, health, ...(connectionState ? { connectionState } : {}) }
 }
 
+function turnEnd(properties: Record<string, unknown>) {
+  const lastTurn = lastTurnFromWire(properties.lastTurn)
+  return lastTurn ? { lastTurn } : {}
+}
+
 function activityEvent(frame: Frame, ref: SessionLocation): ServerEvent | undefined {
   const properties = frame.properties ?? {}
   switch (frame.type) {
@@ -126,9 +131,9 @@ function activityEvent(frame: Frame, ref: SessionLocation): ServerEvent | undefi
       return status ? { type: "statusChanged", ref, status } : undefined
     }
     case "session.idle":
-      return { type: "statusChanged", ref, status: { kind: "idle" } }
+      return { type: "statusChanged", ref, status: { kind: "idle" }, ...turnEnd(properties) }
     case "session.error":
-      return { type: "statusChanged", ref, status: sessionStatusFromTurnError(properties.error) }
+      return { type: "statusChanged", ref, status: sessionStatusFromTurnError(properties.error), ...turnEnd(properties) }
     case "session.background-work": {
       const work = parseBackgroundWork(properties)
       return work ? { type: "backgroundWorkChanged", ref, work } : undefined

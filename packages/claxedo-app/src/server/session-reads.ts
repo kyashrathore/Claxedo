@@ -9,7 +9,7 @@ import type { HeldSessionReads, PageShape, SessionFirstRead, SessionReads, Sessi
 import { GOAL_UNAVAILABLE } from "./wire/goal"
 import { firstReadFromWire, NO_FIRST_PAGE } from "./wire/first-read"
 import { OPEN_VIEW, sessionOpenFromWire, TODOS_UNSUPPORTED, type SessionFact, type SessionOpenView } from "./wire/session-open"
-import { sessionRowFromSession } from "./wire/session-row"
+import { sessionRowFromSession, turnOutcome } from "./wire/session-row"
 import { viewportQuery } from "./wire/turn-page"
 
 const STOPPED_STATUS: SessionStatus = { kind: "idle" }
@@ -77,7 +77,7 @@ export function startSessionReads(context: SessionContext, ref: SessionLocation,
   const fact = <T>(read: (view: SessionOpenView) => T, stopped: T) => opened.then((view) => (view ? read(view) : stopped))
   return {
     first,
-    status: Promise.all([first, opened]).then(([read, view]) => (view ? context.status.read(ref, read.row.lastTurn, view.status) : STOPPED_STATUS)),
+    status: Promise.all([first, opened]).then(([read, view]) => (view ? context.status.read(ref, turnOutcome(read.row.lastTurn), view.status) : STOPPED_STATUS)),
     backgroundWork: fact((view) => factValue(view.backgroundWork), NO_BACKGROUND_WORK),
     requests: fact((view) => factValue(view.requests), []),
     todos: fact(todosOf, []),

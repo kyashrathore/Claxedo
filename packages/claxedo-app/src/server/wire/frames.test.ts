@@ -41,6 +41,16 @@ test("frames: a session.background-work frame becomes the session's backgroundWo
   expect(garbled && serverEventFromFrame(garbled, address)).toBeUndefined()
 })
 
+test("frames: a turn-end frame carries the turn's lastTurn onto statusChanged; an idle that ends no turn carries none", () => {
+  const frame = (type: string, properties: Record<string, unknown>) => frameFromWire({ directory: "/work", payload: { type, properties: { sessionID: "s1", ...properties } } })
+  const idle = frame("session.idle", { lastTurn: { status: "cancelled", completedAt: 7 } })
+  const failed = frame("session.error", { error: { name: "UnknownError", data: { message: "refused" } }, lastTurn: { status: "failed", completedAt: 8 } })
+  const bare = frame("session.idle", {})
+  expect(idle && serverEventFromFrame(idle, address)).toEqual({ type: "statusChanged", ref, status: { kind: "idle" }, lastTurn: { status: "cancelled", completedAt: 7 } })
+  expect(failed && serverEventFromFrame(failed, address)).toMatchObject({ type: "statusChanged", ref, status: { kind: "failed" }, lastTurn: { status: "failed", completedAt: 8 } })
+  expect(bare && serverEventFromFrame(bare, address)).toEqual({ type: "statusChanged", ref, status: { kind: "idle" } })
+})
+
 test("frames: a harness.health frame without a known health status is dropped", () => {
   const frame = frameFromWire({ directory: "/work", payload: { type: "harness.health", properties: { sessionID: "s1", harnessHealth: { status: "fine" } } } })
   expect(frame && serverEventFromFrame(frame, address)).toBeUndefined()

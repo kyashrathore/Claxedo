@@ -10,7 +10,7 @@ import { OPEN_VIEW, sessionOpenFromWire, type SessionFact } from "./wire/session
 
 export type StatusAdmission =
   | { readonly kind: "admitted"; readonly event: ServerEvent }
-  | { readonly kind: "held"; readonly ref: SessionLocation }
+  | { readonly kind: "held"; readonly event: Extract<ServerEvent, { type: "statusChanged" }> }
 
 export type StatusOwner = {
   readonly read: (ref: SessionLocation, lastTurn: AgentTurnOutcome | undefined, live: SessionFact<SessionStatus | undefined>) => SessionStatus
@@ -77,7 +77,7 @@ export function createStatusOwner(transport: Transport): StatusOwner {
     },
     apply: (event) => {
       if (event.type !== "statusChanged") return { kind: "admitted", event }
-      if (event.status.kind === "idle" && failures.get(event.ref)) return { kind: "held", ref: event.ref }
+      if (event.status.kind === "idle" && failures.get(event.ref)) return { kind: "held", event }
       failures.record(event.ref, event.status)
       return { kind: "admitted", event }
     },

@@ -102,7 +102,7 @@ function routeServerEvent(list: Machine<ListState, ListEvent>, reads: ListReads,
     case "sessionRemoved":
       return list.send({ type: "sessionRemoved", ref: event.ref, at: Date.now() })
     case "statusChanged":
-      return list.send({ type: "statusChanged", ref: event.ref, status: event.status, at: Date.now() })
+      return list.send({ type: "statusChanged", ref: event.ref, status: event.status, ...(event.lastTurn ? { lastTurn: event.lastTurn } : {}), at: Date.now() })
     case "backgroundWorkChanged":
       return list.send({ type: "backgroundWorkChanged", ref: event.ref, work: event.work, at: Date.now() })
     case "streamGap":

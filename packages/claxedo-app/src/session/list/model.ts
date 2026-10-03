@@ -1,5 +1,6 @@
 import { unreachable } from "@/lib/machine"
-import type { AppError, BackgroundWork, ListedStatus, ProjectId, SessionId, SessionLocation, SessionRow, SessionSelections, SessionStatus } from "@/server"
+import { turnDetailed, type AppError, type BackgroundWork, type ListedStatus, type ProjectId, type SessionId, type SessionLocation, type SessionRow, type SessionSelections, type SessionStatus } from "@/server"
+import type { SessionLastTurn } from "@claxedo/agent-runtime-contract"
 
 export type PendingSend = {
   readonly clientRequestId: string
@@ -69,7 +70,7 @@ export type ListData = {
 export type ServerListEvent =
   | { readonly type: "sessionUpserted"; readonly row: SessionRow }
   | { readonly type: "sessionRemoved"; readonly ref: SessionLocation; readonly at: number }
-  | { readonly type: "statusChanged"; readonly ref: SessionLocation; readonly status: SessionStatus; readonly at: number }
+  | { readonly type: "statusChanged"; readonly ref: SessionLocation; readonly status: SessionStatus; readonly lastTurn?: SessionLastTurn; readonly at: number }
   | { readonly type: "backgroundWorkChanged"; readonly ref: SessionLocation; readonly work: BackgroundWork; readonly at: number }
 
 export type MorePhase =
@@ -188,10 +189,16 @@ function withSelections(row: SessionRow, from: SessionSelections): SessionRow {
   }
 }
 
+export function laterTurn(held: SessionRow["lastTurn"], incoming: SessionRow["lastTurn"]): SessionRow["lastTurn"] {
+  if (!incoming) return held
+  if (!held || incoming.completedAt > held.completedAt) return incoming
+  return incoming.completedAt === held.completedAt && turnDetailed(incoming) && !turnDetailed(held) ? incoming : held
+}
+
 export function newerRow(current: SessionRow, incoming: SessionRow): SessionRow | undefined {
   if (incoming.updatedAt < current.updatedAt) return undefined
   const lastHumanTurnAt = laterHumanTurn(current, incoming)
-  const lastTurn = incoming.lastTurn ?? current.lastTurn
+  const lastTurn = laterTurn(current.lastTurn, incoming.lastTurn)
   const configured = incoming.harness || !current.harness ? incoming : current
   if (incoming.createdAt === current.createdAt && incoming.lastHumanTurnAt === lastHumanTurnAt && incoming.lastTurn === lastTurn && configured === incoming) return incoming
   return withSelections(

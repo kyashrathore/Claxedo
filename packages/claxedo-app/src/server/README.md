@@ -68,7 +68,7 @@ The only module that knows today's server: its routes, its OpenCode-shaped paylo
 - The list costs one read per project at boot and none per placement; statuses ride on its rows.
 - The relay path (remote placements off loopback) and the hosted control plane are not exercised by the probe.
 - On loopback a remote cloud placement is reached through the daemon's `/workspaces/<id>` proxy, which ensures the sandbox; only the catalog's `reachable` keeps a read from waking a workspace that stopped after the catalog was read.
-- The control plane stores no diff summary, todo, goal or `lastTurn` for a session, so a stopped workspace's session shows none of them.
+- The control plane stores no diff summary, todo, goal or full `lastTurn` for a session, so a stopped workspace's session shows none of them; its list row carries the last turn's status and time when the session's machine published them.
 
 ## Proof
 
