@@ -129,6 +129,49 @@ new_sqlite_classes = ["LiveSyncRoom"]
 ${pluginSupervisor.migration}${agentPluginsBucket}`
 }
 
+/**
+ * The session-host Worker: one `SessionDO` per top-level Pi session, which the
+ * relay binds by this Worker's name and which reaches the control plane over
+ * a service binding, so it is published after the control-plane Worker.
+ */
+export function renderSessionHostWranglerConfig(input: Readonly<{
+  workerName: string
+  controlPlaneWorkerName: string
+  configDirectory: string
+  variables: Readonly<Record<string, string>>
+}>) {
+  const main = path.relative(input.configDirectory, path.resolve(SERVER_ROOT, "../session-host/src/worker.ts")).split(path.sep).join("/")
+  const variables = Object.entries(input.variables)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, value]) => `${name} = ${quote(value)}`)
+    .join("\n")
+  return `name = ${quote(input.workerName)}
+main = ${quote(main)}
+compatibility_date = "2026-07-22"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+preview_urls = false
+
+[observability]
+enabled = true
+
+[vars]
+${variables}
+
+[[services]]
+binding = "CONTROL_PLANE"
+service = ${quote(input.controlPlaneWorkerName)}
+
+[[durable_objects.bindings]]
+name = "SESSION_HOST"
+class_name = "SessionDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SessionDO"]
+`
+}
+
 /** The static-assets Worker that serves the browser app on its own custom domain. */
 export function renderAppWranglerConfig(input: Readonly<{ appWorkerName: string; browserDirectory: string }>) {
   return `name = ${quote(input.appWorkerName)}

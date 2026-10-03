@@ -1,4 +1,3 @@
-export { createSpawnService } from "./spawn-service"
 export {
   createWorkspaceHost,
   mountWorkspaceAgentHooks,

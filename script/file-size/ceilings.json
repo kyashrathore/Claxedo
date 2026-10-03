@@ -20,7 +20,7 @@
   "packages/claxedo-server/src/authority/adapters/d1/session-authority.ts": 1930,
   "packages/claxedo-server/src/authority/adapters/d1/workspace-authority.ts": 1062,
   "packages/claxedo-server/src/deployments/hosted-workerd/live-sync-room.cf.ts": 873,
-  "packages/claxedo-server/src/routes/runtime-session-authority.ts": 849,
+  "packages/claxedo-server/src/routes/runtime-session-authority.ts": 842,
   "packages/session-core/src/routes/session-core.ts": 1749,
   "packages/session-core/src/store.ts": 3497,
   "packages/workspace-relay/src/cloudflare.ts": 2473,

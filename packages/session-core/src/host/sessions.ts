@@ -13,14 +13,14 @@ import { admitSessionInstructions } from "../session/session-instructions"
 import type { ConnectionSecretAuthority } from "@claxedo/agent-runtime-contract"
 import type { RuntimeDirectory } from "./contracts"
 import { createSessionBroker, type createRequestBroker, type SessionBrokerContext } from "@claxedo/harness/broker"
-import { CredentialSelectionError, sessionAccountOwner } from "@claxedo/harness/registry"
+import { CredentialSelectionError } from "@claxedo/harness/registry"
 import type { HarnessSession, SessionBroker, TurnActor } from "@claxedo/harness/contract"
 import { SessionAttachments, type AttachedSession } from "./attachments"
 import type { AgentRuntimeEventEnvelope, AgentRuntimeSessionCreateInput, AgentRuntimeStore } from "./contracts"
 import { assertSessionCreateBindingScope, normalizeDirectory, requireExecutionBinding } from "./execution-binding"
 import { applyModelSettings, writtenConfig } from "./model-settings"
 import { executeHandoffTransaction, releaseKeptHandoffSource, type OpenedTarget } from "./handoff"
-import { attachInput, startInput, type LaunchComposer } from "./launch"
+import { accountHolder, attachInput, startInput, type LaunchComposer } from "./launch"
 import type { PermissionModeWrite, SessionRowWrite } from "./session-row"
 import { holdSessionTree } from "./session-tree-hold"
 import type { createSessionTitleOwner } from "./session-titles"
@@ -225,8 +225,7 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
       const sessionId = create.id ?? `ses_${crypto.randomUUID()}`
       const existed = !!store.getSession(sessionId)
       const recorded = store.sessionOwner(sessionId)
-      const holder = (actor: TurnActor) => sessionAccountOwner(launch.credentials(), actor).userId
-      if (recorded && holder(recorded) !== holder(owner)) {
+      if (recorded && accountHolder(launch, recorded) !== accountHolder(launch, owner)) {
         throw new CredentialSelectionError("account_unavailable", `Session ${sessionId} belongs to another owner`)
       }
       const config: SessionConfig = {

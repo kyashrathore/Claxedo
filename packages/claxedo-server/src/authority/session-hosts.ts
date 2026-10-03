@@ -1,6 +1,7 @@
 export type SessionHostPlacement = {
   workspace: { backing: "cloud-vm" | "local-worktree"; directory: string | null }
-  session?: { workspaceId: string; sessionHostRoot: string | null; deleted: boolean }
+  /** `creatorUserId`: the person whose accounts the session spends, whoever sends its turns; null for an agent that names nobody. */
+  session?: { workspaceId: string; sessionHostRoot: string | null; deleted: boolean; creatorUserId: string | null }
   reservation?: { workspaceId: string; sessionHostRoot: string | null }
 }
 
@@ -19,6 +20,8 @@ export type SessionHostAuthority = {
   recordTurnRuntimeAccessToken(actorId: string, token: TurnRuntimeAccessTokenRecord): Promise<unknown>
   /** Whether this lease is still the session's live one: neither released nor expired nor superseded. */
   turnLeaseLive(input: { sessionId: string; turnId: string; leaseId: string; fencingToken: number }): Promise<boolean>
+  /** Deletes the live row of a session served by its own host; false when there was none. */
+  deleteHostedSession(input: { workspaceId: string; sessionId: string }): Promise<boolean>
 }
 
 /** The host a session id is placed in: its row's, else its reservation's; nothing for a session the workspace's runtime serves. */

@@ -7,7 +7,7 @@ import {
   requireNonLegacyWorkerName,
   selectHostedWorkerArtifact,
 } from "../../src/deployments/hosted-workerd/certified-worker-artifacts"
-import { renderAppWranglerConfig, renderWorkerWranglerConfig } from "./wrangler-config"
+import { renderAppWranglerConfig, renderSessionHostWranglerConfig, renderWorkerWranglerConfig } from "./wrangler-config"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
 const configDirectory = path.join(serverRoot, ".claxedo-cloudflare-deploy-test")
@@ -96,5 +96,21 @@ describe("certified Worker artifacts", () => {
     expect(() => requireNonLegacyWorkerName("claxedo-control-plane")).toThrow(/append-only Durable Object/)
     expect(() => requireNonLegacyWorkerName("Claxedo")).toThrow(/valid Cloudflare Worker identifiers/)
     expect(requireNonLegacyWorkerName("claxedo")).toBe("claxedo")
+  })
+})
+
+describe("the session-host Worker Wrangler config", () => {
+  test("hosts SessionDO under nodejs_compat, binds the control plane by name and reads its variables", () => {
+    const config = renderSessionHostWranglerConfig({
+      workerName: "claxedo-session-host", controlPlaneWorkerName: "claxedo", configDirectory,
+      variables: { WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: "https://api.example.com/api/runtime-authority/session-authorize" },
+    })
+    expect(config).toContain('name = "claxedo-session-host"')
+    expect(config).toContain('main = "../../session-host/src/worker.ts"')
+    expect(config).toContain('compatibility_flags = ["nodejs_compat"]')
+    expect(config).toContain('[[services]]\nbinding = "CONTROL_PLANE"\nservice = "claxedo"')
+    expect(config).toContain('[[durable_objects.bindings]]\nname = "SESSION_HOST"\nclass_name = "SessionDO"')
+    expect(config).toContain('[[migrations]]\ntag = "v1"\nnew_sqlite_classes = ["SessionDO"]')
+    expect(config).toContain('[vars]\nWORKSPACE_RUNTIME_SESSION_AUTHORITY_URL = "https://api.example.com/api/runtime-authority/session-authorize"')
   })
 })
