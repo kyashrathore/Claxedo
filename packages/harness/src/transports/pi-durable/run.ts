@@ -1,15 +1,17 @@
 import { AsyncPushQueue } from "@claxedo/helpers"
-import type { AgentEvent, SubmissionRecord } from "@earendil-works/pi-durable"
+import type { AgentEvent, SubmissionId, SubmissionRecord } from "@earendil-works/pi-durable"
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 import type { RoutedEvent, TurnBroker } from "../../contract"
+import type { PiSessionRuntime } from "./placement"
 import { piModelError } from "./errors"
 
-export type PiRunOwnership = { requestId: string } | { inputs: readonly number[] }
+export type PiRunOwnership = { requestId: string } | { inputs: readonly SubmissionId[] }
 
 export class PiRun {
   readonly queue = new AsyncPushQueue<RoutedEvent>()
   private terminal: RoutedEvent["event"] | undefined
-  private readonly steers = new Map<string, string>()
-  private readonly submissions = new Set<number>()
+  private readonly steers = new Set<string>()
+  private readonly submissions = new Set<SubmissionId>()
   private readonly requestId: string | undefined
   settled = false
 
@@ -23,10 +25,16 @@ export class PiRun {
     if (event.type === "submission") this.submission(event.record)
   }
 
-  steer(messageId: string): { requestId: string; withdraw(): void } {
-    const requestId = `steer:${crypto.randomUUID()}`
-    this.steers.set(requestId, messageId)
-    return { requestId, withdraw: () => { this.steers.delete(requestId) } }
+  steer(messageId: string): () => void {
+    this.steers.add(messageId)
+    return () => { this.steers.delete(messageId) }
+  }
+
+  async record(runtime: PiSessionRuntime): Promise<SubmissionRecord | undefined> {
+    const { requestId } = this
+    if (requestId !== undefined) return runtime.harness.commit((tx) => tx.submissionByRequest(runtime.conversation.id, requestId), BACKGROUND_CONTEXT)
+    const [first] = this.submissions
+    return first === undefined ? undefined : (await runtime.harness.submission(first, BACKGROUND_CONTEXT))?.status(BACKGROUND_CONTEXT)
   }
 
   fail(error: unknown): void {
@@ -35,10 +43,9 @@ export class PiRun {
   }
 
   private submission(record: SubmissionRecord): void {
-    const steered = record.requestId === undefined ? undefined : this.steers.get(record.requestId)
-    if (steered !== undefined && record.status === "placed") {
-      this.steers.delete(record.requestId!)
-      this.queue.push({ event: { type: "input-incorporated", messageId: steered }, source: { dir: "in", method: "submission" } })
+    if (record.requestId !== undefined && this.steers.has(record.requestId) && record.status === "placed") {
+      this.steers.delete(record.requestId)
+      this.queue.push({ event: { type: "input-incorporated", messageId: record.requestId }, source: { dir: "in", method: "submission" } })
     }
     if (record.requestId !== undefined && record.requestId === this.requestId) this.submissions.add(record.id)
     if (!this.submissions.has(record.id) || record.type !== "input") return

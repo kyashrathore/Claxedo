@@ -21,6 +21,7 @@ export class OwnedStdioMcpTransport implements McpTransport {
     this.owned = owned
     owned.stdout.setEncoding("utf8")
     owned.stdout.on("data", (chunk: string) => this.read(chunk))
+    owned.stderr.resume()
     void owned.exited.then(() => { for (const listener of this.closes) listener() })
   }
 

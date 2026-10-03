@@ -79,7 +79,7 @@ test("Pi calls a person's configured HTTP MCP server with its header kept litera
   expect(JSON.stringify(turn.events)).toContain("MCP proof complete")
 }, 60_000)
 
-test("Pi starts a stdio MCP server through the owned spawn with its literal env and none of the daemon's", async () => {
+test("Pi starts a stdio MCP server through the owned spawn with its literal env and none of the daemon's, and drains what it writes to stderr", async () => {
   const root = await tempRoot("pi-stdio-mcp-")
   const endpoint = startMcpProofEndpoint("mcp__local__app_plugin_guide")
   const outside = await tempRoot("pi-stdio-proof-")
@@ -93,7 +93,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
   const reply = (result) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }) + "\\n");
   if (message.method === "initialize") return reply({ protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "stdio-proof", version: "1" } });
   if (message.method === "tools/list") return reply({ tools: [{ name: "app_plugin_guide", description: "Read the app plugin guide", inputSchema: { type: "object", properties: {} } }] });
-  if (message.method === "tools/call") { fs.writeFileSync(process.env.PROOF_FILE, JSON.stringify(process.env)); return reply({ content: [{ type: "text", text: "stdio proof" }] }); }
+  if (message.method === "tools/call") { fs.writeSync(2, "x".repeat(256 * 1024)); fs.writeFileSync(process.env.PROOF_FILE, JSON.stringify(process.env)); return reply({ content: [{ type: "text", text: "stdio proof" }] }); }
 });
 `)
   try {
@@ -140,5 +140,46 @@ test("two Pi sessions in one process see only their own MCP tools and spend only
     const seen = (marker: string) => new Set(scripted.requests.filter((request) => request.prompt.includes(marker)).map((request) => request.authorization))
     expect(seen("ALPHA")).toEqual(new Set(["Bearer alpha-renewed"]))
     expect(seen("BETA")).toEqual(new Set(["Bearer beta-renewed"]))
+  } finally { await context.close() }
+}, 60_000)
+
+test("a reattached Pi session offers its MCP tools from the recorded list and starts the server only when a tool is called", async () => {
+  const root = await tempRoot("pi-lazy-mcp-")
+  const endpoint = startMcpProofEndpoint("mcp__local__app_plugin_guide")
+  const outside = await tempRoot("pi-lazy-mcp-proof-")
+  const server = path.join(outside, "stdio-mcp.js")
+  const starts = path.join(outside, "starts.log")
+  await fs.writeFile(server, `const readline = require("node:readline");
+require("node:fs").appendFileSync(${JSON.stringify(starts)}, "start\\n");
+readline.createInterface({ input: process.stdin }).on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id === undefined) return;
+  const reply = (result) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }) + "\\n");
+  if (message.method === "initialize") return reply({ protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "lazy-proof", version: "1" } });
+  if (message.method === "tools/list") return reply({ tools: [{ name: "app_plugin_guide", description: "Read the app plugin guide", inputSchema: { type: "object", properties: {} } }] });
+  if (message.method === "tools/call") return reply({ content: [{ type: "text", text: "lazy proof" }] });
+});
+`)
+  await fs.writeFile(starts, "")
+  const startCount = async () => (await fs.readFile(starts, "utf8")).split("\n").filter(Boolean).length
+  const context = await setupConformance({ name: "pi lazy mcp",
+    backend: async () => ({ directory: root, harness: { id: "pi", access: "native" }, owner: { kind: "machine-owner" },
+      model: { providerID: "pi", modelID: "groq/llama-3.1-8b-instant" }, unrunnableTurn: withUndeliverableFile, locality: "local",
+      credentials: proofCredentials(endpoint, "proof-secret"),
+      projection: { generation: "g1", pluginRoots: [], notApplied: [],
+        mcpServers: [{ kind: "stdio", name: "local", command: process.execPath, args: [server], env: {}, origin: "configured" }] },
+      close: async () => { endpoint.stop(); await fs.rm(root, { recursive: true, force: true }); await fs.rm(outside, { recursive: true, force: true }) } }),
+    makeTransport: (services) => piTransport(services, { root }) })
+  try {
+    await collect(context.transport.send(context.session, context.turn("Read the app plugin guide"), context.turnBroker()))
+    expect(await startCount()).toBe(1)
+    await context.transport.close(context.session)
+    const attached = await context.transport.attach({ ...context.start, binding: context.session.binding, upstreamHasTurns: true }, context.sessionBroker)
+    expect(await startCount()).toBe(1)
+    const offeredBefore = endpoint.offered.length
+    const events = await collect(context.transport.send(attached, context.turn("Read the app plugin guide"), context.turnBroker()))
+    expect(endpoint.offered.slice(offeredBefore)).toContain("mcp__local__app_plugin_guide")
+    expect(JSON.stringify(events)).toContain("MCP proof complete")
+    expect(await startCount()).toBe(2)
   } finally { await context.close() }
 }, 60_000)

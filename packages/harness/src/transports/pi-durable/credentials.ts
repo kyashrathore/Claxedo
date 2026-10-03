@@ -12,7 +12,7 @@ import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter"
 import { xaiProvider } from "@earendil-works/pi-ai/providers/xai"
 import type { CustomProviderDefinition, ResolvedCredentials } from "../../contract"
 import { customPiProvider } from "./custom-providers"
-import { piCredentialExpired, piCredentialRefused } from "./errors"
+import { piConfiguration, piCredentialExpired } from "./errors"
 
 const BUILT_IN: Record<PiLaunchProvider, () => Provider> = {
   "openai-codex": openaiCodexProvider, anthropic: anthropicProvider, openai: openaiProvider, openrouter: openrouterProvider,
@@ -83,7 +83,7 @@ export class PiCredentials {
         if (next) this.refreshed.set(providerId, next)
         return next ?? current
       }),
-      delete: async () => { throw piCredentialRefused("Claxedo owns Pi's provider sign-in") },
+      delete: async () => { throw piConfiguration("Claxedo owns Pi's provider sign-in") },
     }
   }
 
@@ -93,7 +93,7 @@ export class PiCredentials {
       apiKey: { name: providerId, resolve: async ({ credential }) => credential?.key ? { auth: { apiKey: credential.key, ...root() } } : undefined },
       oauth: {
         name: providerId, isSubscription: true,
-        login: async () => { throw piCredentialRefused("Claxedo owns Pi's provider sign-in") },
+        login: async () => { throw piConfiguration("Claxedo owns Pi's provider sign-in") },
         refresh: (credential) => this.refresh(providerId, credential),
         toAuth: async (credential) => ({ apiKey: credential.access, ...root() }),
       },

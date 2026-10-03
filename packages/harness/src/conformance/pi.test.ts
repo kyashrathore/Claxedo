@@ -112,3 +112,57 @@ test("the model's Pi question reaches the person and their answer returns to the
     expect(backend.server.requests.at(-1)?.prompt).toContain("blue")
   } finally { await context.close() }
 }, 60_000)
+
+test("a background job outlives its Pi bash call and ends when the session closes", async () => {
+  const context = await piContext("pi-background")
+  const backend = context.backend as PiBackend
+  try {
+    const pidFile = path.join(backend.directory, "background.pid")
+    backend.server.scriptTool({ name: "bash", input: { command: `sleep 30 & echo $! > ${pidFile}; echo started` }, whenPromptIncludes: "PIBACKGROUND" })
+    const started = Date.now()
+    const events = await collect(context.transport.send(context.session, context.turn("Reply with exactly this one token: PIBACKGROUND"), context.turnBroker()))
+    expect(Date.now() - started).toBeLessThan(10_000)
+    expect(events.some(({ event }) => event.type === "tool-output" && JSON.stringify(event.output).includes("started"))).toBe(true)
+    const pid = Number(await fs.readFile(pidFile, "utf8"))
+    expect(processAlive(pid)).toBe(true)
+    await context.transport.close(context.session)
+    expect(await pollUntil(() => processAlive(pid) ? undefined : true, Date.now() + 10_000)).toBe(true)
+  } finally { await context.close() }
+}, 60_000)
+
+test("a background compaction that completes after the turn is published and its spend metered against the last reply", async () => {
+  const context = await piContext("pi-idle-compaction")
+  const backend = context.backend as PiBackend
+  const metered: unknown[] = []
+  context.ports.meterUsage = (usage: unknown) => { metered.push(usage) }
+  try {
+    await context.transport.configure(context.session, {
+      credentials: { ...backend.credentials, direct: { scripted: { delivery: "direct", baseUrl: backend.server.url, apiPath: "/v1", secret: "custom-secret", authKind: "api-key" } } },
+      providerDefinitions: [{ id: "scripted", name: "Scripted", npm: "@ai-sdk/openai-compatible", baseURL: backend.server.v1Url, headers: {},
+        models: { model: { name: "Scripted model" } }, credentialProviderId: "scripted", credentialSource: "account" }],
+    })
+    const model = { providerID: "pi", modelID: "scripted/model" }
+    await collect(context.transport.send(context.session, { ...context.turn("Reply with exactly this one token: PIEARLY"), model }, context.turnBroker()))
+    const release = backend.server.holdTextReplies("context summarization assistant")
+    const events = await collect(context.transport.send(context.session,
+      { ...context.turn(`Reply with exactly this one token: PILARGE ${"filler ".repeat(50_000)}`), model }, context.turnBroker()))
+    expect(events.at(-1)?.event.type).toBe("finish")
+    release()
+    const completed = await pollUntil(() => context.ports.sessionEvents.find(({ event }) =>
+      (event as { type?: string; phase?: string }).type === "session-compaction" && (event as { phase?: string }).phase === "completed"), Date.now() + 15_000)
+    expect(completed).toBeDefined()
+    expect(await pollUntil(() => metered.length ? true : undefined, Date.now() + 15_000)).toBe(true)
+    expect(metered[0]).toMatchObject({ sessionId: "s1", assistantMessageId: "a1", usage: { type: "usage" } })
+  } finally { await context.close() }
+}, 60_000)
+
+test("a Claxedo turn sent twice runs once: Pi answers the repeat from the settled submission", async () => {
+  const context = await piContext("pi-dedupe")
+  const backend = context.backend as PiBackend
+  try {
+    const turn = context.turn("Reply with exactly this one token: PIONCE")
+    expect((await collect(context.transport.send(context.session, turn, context.turnBroker()))).at(-1)?.event.type).toBe("finish")
+    expect((await collect(context.transport.send(context.session, turn, context.turnBroker()))).map(({ event }) => event.type)).toEqual(["finish"])
+    expect(backend.server.requests.filter((request) => request.prompt.includes("PIONCE") && !request.prompt.includes("Scripted Session"))).toHaveLength(1)
+  } finally { await context.close() }
+}, 60_000)

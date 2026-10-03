@@ -27,7 +27,7 @@ function mcpAnswer(body: ProofRequest, request: Request, called: (string | null)
 
 function modelAnswer(body: ProofRequest, offered: string[], tool: string): Response {
   offered.push(...(body.tools ?? []).flatMap((tool) => tool.function?.name ?? tool.name ?? []))
-  const afterTool = (body.messages ?? []).some((message) => message.role === "tool")
+  const afterTool = body.messages?.at(-1)?.role === "tool"
   const delta = afterTool ? { role: "assistant", content: "MCP proof complete" } : {
     role: "assistant", tool_calls: [{ index: 0, id: "mcp_proof", type: "function", function: { name: tool, arguments: "{}" } }],
   }

@@ -1,8 +1,9 @@
 import { errorMessage } from "@claxedo/helpers"
 import { Type } from "@earendil-works/pi-ai"
-import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable"
-import { McpClient, toLlmContent, type McpTransport, type Tool } from "@earendil-works/pi-mcp"
+import { defineTool, type JsonObject, type ToolRegistration } from "@earendil-works/pi-durable"
+import { McpClient, toLlmContent, type McpTransport } from "@earendil-works/pi-mcp"
 import type { ProjectedMcpServer } from "../../contract"
+import type { McpListedTool, McpToolLists } from "./mcp-cache"
 
 const NAME_LIMIT = 64
 
@@ -21,6 +22,8 @@ export function piMcpToolName(server: string, tool: string): string {
 export type PiMcpHost = {
   connect(server: ProjectedMcpServer): Promise<McpTransport>
   failed(server: string, error: unknown): void
+  cached(key: string): Promise<McpToolLists>
+  record(key: string, lists: McpToolLists): Promise<void>
 }
 
 export class PiMcpTools {
@@ -32,7 +35,11 @@ export class PiMcpTools {
   async tools(servers: readonly ProjectedMcpServer[], key: string): Promise<ToolRegistration[]> {
     if (this.listed?.key === key) return this.listed.tools
     await this.close()
-    const tools = (await Promise.all(servers.map((server) => this.serverTools(server)))).flat()
+    const cached = await this.host.cached(key)
+    const fresh = await this.list(servers.filter((server) => !Object.hasOwn(cached, server.name)))
+    if (Object.keys(fresh).length > 0) await this.host.record(key, { ...cached, ...fresh })
+    const lists = { ...cached, ...fresh }
+    const tools = servers.flatMap((server) => (lists[server.name] ?? []).map((tool) => this.tool(server, tool)))
     this.listed = { key, tools }
     return tools
   }
@@ -44,15 +51,19 @@ export class PiMcpTools {
     await Promise.all(clients.map(async (client) => (await client).close()))
   }
 
-  private async serverTools(server: ProjectedMcpServer): Promise<ToolRegistration[]> {
-    try {
-      const listed = await (await this.client(server)).listTools()
-      return listed.map((tool) => this.tool(server, tool))
-    } catch (error) {
-      this.clients.delete(server.name)
-      this.host.failed(server.name, error)
-      return []
-    }
+  private async list(servers: readonly ProjectedMcpServer[]): Promise<McpToolLists> {
+    const listed = await Promise.all(servers.map(async (server): Promise<[string, McpListedTool[]][]> => {
+      try {
+        const tools = await (await this.client(server)).listTools()
+        return [[server.name, tools.map(({ name, description, inputSchema }) =>
+          ({ name, ...(description ? { description } : {}), inputSchema: inputSchema as JsonObject }))]]
+      } catch (error) {
+        this.clients.delete(server.name)
+        this.host.failed(server.name, error)
+        return []
+      }
+    }))
+    return Object.fromEntries(listed.flat())
   }
 
   private client(server: ProjectedMcpServer): Promise<McpClient> {
@@ -68,7 +79,7 @@ export class PiMcpTools {
     return connecting
   }
 
-  private tool(server: ProjectedMcpServer, tool: Tool): ToolRegistration {
+  private tool(server: ProjectedMcpServer, tool: McpListedTool): ToolRegistration {
     return defineTool({
       name: piMcpToolName(server.name, tool.name),
       description: tool.description ?? `${tool.name} from MCP server ${server.name}`,

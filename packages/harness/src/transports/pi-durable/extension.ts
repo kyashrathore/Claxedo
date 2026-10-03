@@ -10,6 +10,7 @@ export type PiExtensionHost = {
   config(): SessionConfig
   skills(): readonly SkillRoot[]
   asker(): PiAsker
+  opening: string
 }
 
 export const CLAXEDO_PI_EXTENSION = "claxedo"
@@ -21,7 +22,7 @@ export function claxedoPiExtension(host: PiExtensionHost, mcpTools: readonly Too
     sections: [piSkillsSection(() => host.skills())],
     hooks: [hook(ToolTask, {
       beforeTool: (call, _api, context) => piAsks(host.config(), call.name)
-        ? piToolApproval({ sessionId: host.sessionId, call, asker: host.asker(), signal: context.abortSignal })
+        ? piToolApproval({ sessionId: host.sessionId, call, asker: host.asker(), signal: context.abortSignal, opening: host.opening })
         : undefined,
     })],
   })

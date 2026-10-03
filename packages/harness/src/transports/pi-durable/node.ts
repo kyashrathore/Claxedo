@@ -3,10 +3,10 @@ import path from "node:path"
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 import { createRegistry, Harness } from "@earendil-works/pi-durable"
 import { StreamableHttpTransport, type McpTransport } from "@earendil-works/pi-mcp"
-import type { HarnessServices, ProjectedMcpServer } from "../../contract/node"
+import { deadlineAfter, type HarnessServices, type OwnedProcess, type ProjectedMcpServer } from "../../contract/node"
 import { piConfiguration } from "./errors"
 import { OwnedStdioMcpTransport } from "./mcp-stdio"
-import { piHarnessOptions, type PiPlacement, type PiSessionRuntime } from "./placement"
+import type { PiPlacement, PiSessionRuntime } from "./placement"
 import { ownedExecutionEnv } from "./shell"
 import { openPiStorage } from "./storage"
 
@@ -20,20 +20,37 @@ function definedEnv(env: PiNodeOptions["env"], names?: readonly string[]): Recor
   return Object.fromEntries(Object.entries(env).flatMap(([name, value]) => value === undefined || (names && !names.includes(name)) ? [] : [[name, value]]))
 }
 
+function sessionCommands(services: HarnessServices) {
+  const live = new Map<string, Set<OwnedProcess>>()
+  const of = (sessionId: string) => live.get(sessionId) ?? live.set(sessionId, new Set()).get(sessionId)!
+  return {
+    of,
+    async retire(sessionId: string): Promise<void> {
+      const running = [...of(sessionId)]
+      live.delete(sessionId)
+      await Promise.all(running.map((owned) => owned.retire(deadlineAfter(services.clock, 5_000))))
+    },
+  }
+}
+
+async function sessionStorage(stateRoot: string, sessionId: string) {
+  if (!/^[A-Za-z0-9_-]+$/.test(sessionId)) throw piConfiguration(`Pi cannot store session ${sessionId}`)
+  const file = path.join(stateRoot, "sessions", `${sessionId}.sqlite`)
+  await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 })
+  return openPiStorage(file)
+}
+
 export function createNodePiPlacement(input: PiNodeOptions & { services: HarnessServices }): PiPlacement {
   const env = definedEnv(input.env)
   const mcpEnv = definedEnv(input.env, MCP_INHERITED_ENV)
   const directories = new Map<string, string>()
+  const commands = sessionCommands(input.services)
   const placement: PiPlacement = {
-    env: ({ sessionId, directory }) => ({ cwd }) => ownedExecutionEnv({ sessionId, services: input.services, env }, cwd ?? directory),
+    env: ({ sessionId, directory }) => ({ cwd }) => ownedExecutionEnv({ sessionId, services: input.services, env, live: commands.of(sessionId) }, cwd ?? directory),
     async open({ sessionId, directory, models }): Promise<PiSessionRuntime> {
-      if (!/^[A-Za-z0-9_-]+$/.test(sessionId)) throw piConfiguration(`Pi cannot store session ${sessionId}`)
-      const file = path.join(input.stateRoot, "sessions", `${sessionId}.sqlite`)
-      await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 })
       const registry = createRegistry()
-      const options = piHarnessOptions({ models, registry, env: placement.env({ sessionId, directory }),
-        onReport: (error) => input.services.log.error("Pi extension failure", { sessionId, error: String(error) }) })
-      const harness = await Harness.open(await openPiStorage(file), options, BACKGROUND_CONTEXT)
+      const harness = await Harness.open(await sessionStorage(input.stateRoot, sessionId), { models, registry, env: placement.env({ sessionId, directory }),
+        onReport: (error) => input.services.log.error("Pi extension failure", { sessionId, error: String(error) }) }, BACKGROUND_CONTEXT)
       const conversation = await harness.root(BACKGROUND_CONTEXT, { agent: { cwd: directory } })
       directories.set(sessionId, directory)
       return {
@@ -41,7 +58,11 @@ export function createNodePiPlacement(input: PiNodeOptions & { services: Harness
         submit: async (content, { requestId, whenBusy }) => {
           await conversation.submit({ type: "input", content, requestId, whenBusy }, BACKGROUND_CONTEXT)
         },
-        close: async () => { directories.delete(sessionId); await harness.close(BACKGROUND_CONTEXT) },
+        close: async () => {
+          directories.delete(sessionId)
+          await harness.close(BACKGROUND_CONTEXT)
+          await commands.retire(sessionId)
+        },
       }
     },
     async mcpTransport(server: ProjectedMcpServer, sessionId: string): Promise<McpTransport> {

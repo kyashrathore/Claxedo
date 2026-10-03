@@ -1,4 +1,4 @@
-import { PI_PERMISSION_MODES, type AgentPermissionModeState, type PromptModel } from "@claxedo/agent-runtime-contract"
+import { PI_PERMISSION_MODES, type AgentPermissionModeState, type PromptModel, type SessionConfig } from "@claxedo/agent-runtime-contract"
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 import { getSupportedThinkingLevels, type Api, type Model, type ModelThinkingLevel } from "@earendil-works/pi-ai"
 import type { ModelRef } from "@earendil-works/pi-durable"
@@ -41,7 +41,7 @@ export async function applyPiModelSettings(session: PiSession, settings: ModelSe
   await session.runtime.conversation.configure({ model: ref, ...(thinkingLevel === undefined ? {} : { thinkingLevel }) }, BACKGROUND_CONTEXT)
 }
 
-function permissionState(config: { permissionMode?: string }): AgentPermissionModeState {
+function permissionState(config: Pick<SessionConfig, "permissionMode" | "permissionCeiling">): AgentPermissionModeState {
   return { modes: [...PI_PERMISSION_MODES.modes], currentModeId: piPermissionMode(config), appliesFrom: PI_PERMISSION_MODES.appliesFrom }
 }
 

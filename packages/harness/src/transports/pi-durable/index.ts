@@ -13,7 +13,7 @@ import { PiSession } from "./session"
 import { piSessionTitle } from "./title"
 import { piTurnContent } from "./turn"
 
-export { piHarnessOptions, type PiPlacement, type PiSessionRuntime, type PiSubmitOptions, type PiTurnContext } from "./placement"
+export { type PiPlacement, type PiSessionRuntime, type PiSubmitOptions, type PiTurnContext } from "./placement"
 
 export class PiDurableTransport implements HarnessTransport {
   readonly kind = "pi-durable" as const
@@ -72,13 +72,14 @@ export class PiDurableTransport implements HarnessTransport {
     const thinkingLevel = piThinkingLevel(piModel(entry.credentials, ref), turn.effort)
     await entry.runtime.conversation.configure({ model: ref, ...(thinkingLevel === undefined ? {} : { thinkingLevel }) }, BACKGROUND_CONTEXT)
     if (broker.signal.aborted) return
-    const requestId = `turn:${turn.turnId}:${crypto.randomUUID()}`
-    const run = new PiRun(entry.sessionId, broker, { requestId })
-    const release = entry.stream.claim(run)
+    const run = new PiRun(entry.sessionId, broker, { requestId: turn.turnId })
+    const release = entry.stream.claim(run, turn.assistantMessageId)
     const stop = () => { void entry.stop().then(undefined, (error: unknown) => run.fail(error)) }
     broker.signal.addEventListener("abort", stop, { once: true })
     try {
-      await entry.runtime.submit(content, { requestId, whenBusy: "followUp" })
+      await entry.runtime.submit(content, { requestId: turn.turnId, whenBusy: "followUp" })
+      if (broker.signal.aborted) await entry.stop()
+      await entry.stream.resync(run)
       yield* withTurnAccount(run.queue, entry.credentials.account(ref.provider))
     } finally {
       broker.signal.removeEventListener("abort", stop)
@@ -120,9 +121,9 @@ export class PiDurableTransport implements HarnessTransport {
       const entry = this.entry(session)
       const run = entry.stream.active
       if (!run) return { ok: false, status: "no_active_turn", message: "No Pi turn is active" }
-      const steer = run.steer(input.userMessageId)
-      try { await entry.runtime.submit(piTurnContent(input), { requestId: steer.requestId, whenBusy: "steer" }) }
-      catch (error) { steer.withdraw(); throw error }
+      const withdraw = run.steer(input.userMessageId)
+      try { await entry.runtime.submit(piTurnContent(input), { requestId: input.userMessageId, whenBusy: "steer" }) }
+      catch (error) { withdraw(); throw error }
       return { ok: true }
     },
   }

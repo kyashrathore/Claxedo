@@ -46,4 +46,4 @@ Pi commits a tool call's intent before executing it. When the process dies, reop
 
 ## Placement port
 
-`PiPlacement.open` returns the session's `Harness`, root conversation and live registry, without resuming; the transport installs its extensions and resumes. `env` builds the execution environment, `mcpTransport` the transport for one server, `prepareTurn` (cloud) delivers the turn's credentials, projection and provider definitions before each turn, and `refreshCredential` renews an expiring subscription. `piHarnessOptions` builds the `HarnessOptions` a placement opens Pi with.
+`PiPlacement.open` returns the session's `Harness`, root conversation and live registry, without resuming; the transport installs its extensions and resumes. `env` builds the execution environment, `mcpTransport` the transport for one server, `prepareTurn` (cloud) delivers the turn's credentials, projection and provider definitions before each turn, and `refreshCredential` renews an expiring subscription.

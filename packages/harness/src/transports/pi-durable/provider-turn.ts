@@ -1,5 +1,5 @@
 import { errorMessage } from "@claxedo/helpers"
-import type { AgentEvent } from "@earendil-works/pi-durable"
+import type { AgentEvent, SubmissionId } from "@earendil-works/pi-durable"
 import type { Logger, RoutedEvent, SessionBroker, TurnBroker } from "../../contract"
 import { PiRun } from "./run"
 
@@ -7,9 +7,10 @@ export type PiProviderHost = {
   sessionId: string
   broker: SessionBroker
   log: Logger
-  inputs: readonly number[]
+  inputs: readonly SubmissionId[]
   stop(): Promise<void>
   current(): boolean
+  admitted(assistantMessageId: string): void
   ended(): void
 }
 
@@ -22,7 +23,7 @@ export class PiProviderTurn {
   private finished = false
 
   constructor(private readonly host: PiProviderHost) {
-    void host.broker.admitProviderTurn({ reason: "continuation", current: () => host.current() }, (broker) => this.stream(broker)).then(async (admission) => {
+    void host.broker.admitProviderTurn({ reason: "continuation", current: () => host.current() }, (broker, turn) => this.stream(broker, turn.assistantMessageId)).then(async (admission) => {
       if (admission.admitted) return
       host.ended()
       if (admission.reason === "closed") await host.stop()
@@ -52,7 +53,8 @@ export class PiProviderTurn {
     this.failure = { error }
   }
 
-  private async *stream(broker: TurnBroker): AsyncIterable<RoutedEvent> {
+  private async *stream(broker: TurnBroker, assistantMessageId: string): AsyncIterable<RoutedEvent> {
+    this.host.admitted(assistantMessageId)
     const run = new PiRun(this.host.sessionId, broker, { inputs: this.host.inputs })
     const stop = () => { void this.host.stop().then(undefined, (error: unknown) => this.host.broker.reportFailure(error)) }
     broker.signal.addEventListener("abort", stop, { once: true })

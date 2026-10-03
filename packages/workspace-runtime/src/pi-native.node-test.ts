@@ -36,7 +36,7 @@ async function provider(replies: Reply[]) {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
   const address = server.address()
   if (!address || typeof address === "string") throw new Error("Missing provider address")
-  return { requests, url: `http://127.0.0.1:${address.port}`,
+  return { requests, replies, url: `http://127.0.0.1:${address.port}`,
     close: () => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()) }) }
 }
 
@@ -111,6 +111,31 @@ void test("a daemon killed mid-turn resumes Pi's run on restart as a continuatio
     assert.ok((await history()).includes("Answered after the restart"))
     assert.equal(model.requests.length, 2)
     assert.deepEqual([...new Set(model.requests.map((request) => request.authorization))], [`Bearer ${PI_DIRECT_SECRET}`])
+  } finally {
+    await runtime.dispose()
+    await model.close()
+    await fs.rm(paths.root, { recursive: true, force: true })
+  }
+})
+
+void test("a background job a Pi command starts survives the command and ends with the runtime", { timeout: 60_000 }, async () => {
+  const model = await provider([])
+  const paths = await roots("pi-machine-background-", model.url)
+  const pidFile = path.join(paths.directory, "background.pid")
+  model.replies.push({ tool: { name: "bash", arguments: { command: `sleep 30 & echo $! > ${pidFile}; echo started` } } }, { text: "Background started" })
+  const runtime = piNativeRuntime(paths)
+  try {
+    await runtime.host.apply(piNativeSnapshot(model.url))
+    const call = caller(runtime)
+    const session = await call("session?nativeHarness=pi", { title: "Background proof", model: PI_NATIVE_MODEL })
+    await call(`session/${session.id}/message`, { messageID: "first", model: PI_NATIVE_MODEL, parts: [{ type: "text", text: "Start it" }] })
+    const pid = Number(await fs.readFile(pidFile, "utf8"))
+    assert.doesNotThrow(() => process.kill(pid, 0))
+    await runtime.dispose()
+    const deadline = Date.now() + 10_000
+    const alive = () => { try { process.kill(pid, 0); return true } catch { return false } }
+    while (alive() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50))
+    assert.equal(alive(), false)
   } finally {
     await runtime.dispose()
     await model.close()

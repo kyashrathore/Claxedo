@@ -8,6 +8,7 @@ import { PiCredentials } from "./credentials"
 import { piConfiguration } from "./errors"
 import { claxedoPiExtension } from "./extension"
 import { PiMcpTools } from "./mcp"
+import { cachedMcpTools, recordMcpTools } from "./mcp-cache"
 import type { PiPlacement, PiSessionRuntime } from "./placement"
 import { PiSessionStream } from "./stream"
 
@@ -15,15 +16,18 @@ export type PiSessionInput = { start: StartInput; broker: SessionBroker; placeme
 
 export class PiSession {
   readonly stream: PiSessionStream
+  private readonly opening = crypto.randomUUID()
   private readonly mcp: PiMcpTools
 
   private constructor(private readonly input: PiSessionInput, public start: StartInput, readonly credentials: PiCredentials,
     readonly runtime: PiSessionRuntime) {
-    this.stream = new PiSessionStream({ sessionId: start.sessionId, runtime, broker: input.broker, log: input.services.log, stop: () => this.stop() })
+    this.stream = new PiSessionStream({ sessionId: start.sessionId, directory: start.directory, runtime, broker: input.broker, log: input.services.log, stop: () => this.stop() })
     this.mcp = new PiMcpTools({
       connect: (server) => input.placement.mcpTransport(server, start.sessionId),
       failed: (serverName, error) => void input.broker.publish({ type: "mcp-server-status", serverName, status: "failed", error: errorMessage(error) })
         .then(undefined, (failure: unknown) => input.services.log.error("Pi MCP status publication failed", { error: errorMessage(failure) })),
+      cached: (key) => cachedMcpTools(runtime, key),
+      record: (key, lists) => recordMcpTools(runtime, key, lists),
     })
   }
 
@@ -72,7 +76,7 @@ export class PiSession {
     const tools = await this.mcp.tools(servers, JSON.stringify([this.start.projection.generation, servers.map((server) => server.name)]))
     this.runtime.registry.install(CodingTools)
     this.runtime.registry.install(claxedoPiExtension({
-      sessionId: this.sessionId, config: () => this.start.config, skills: () => this.start.projection.pluginRoots, asker: () => this.asker(),
+      sessionId: this.sessionId, config: () => this.start.config, skills: () => this.start.projection.pluginRoots, asker: () => this.asker(), opening: this.opening,
     }, tools))
   }
 }

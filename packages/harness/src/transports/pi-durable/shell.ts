@@ -1,35 +1,46 @@
 import { existsSync } from "node:fs"
 import path from "node:path"
-import type { Readable } from "node:stream"
 import { errorMessage } from "@claxedo/helpers"
 import type { Context } from "@earendil-works/chord"
 import { ExecutionError, type ExecutionEnv, type Result, type ShellExecOptions, type ShellExecResult } from "@earendil-works/pi-durable/env"
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node"
 import { deadlineAfter, type HarnessServices, type OwnedProcess } from "../../contract/node"
+import { exitMarker, type ExitMarker } from "./exit-marker"
 
 const SHELL = existsSync("/bin/bash") ? "/bin/bash" : "bash"
+const SCRIPT = `eval "$1"
+printf '%s%d\\n' "$2" "$?" >&2
+wait`
 const EXIT_STDIO_GRACE_MS = 100
 const RETIRE_MS = 5_000
 
-export type PiShellHost = { sessionId: string; services: HarnessServices; env: Readonly<Record<string, string>> }
+export type PiShellHost = { sessionId: string; services: HarnessServices; env: Readonly<Record<string, string>>; live: Set<OwnedProcess> }
 
-type Exec = { owned: OwnedProcess; options: ShellExecOptions | undefined; context: Context }
+type Exec = { owned: OwnedProcess; options: ShellExecOptions | undefined; context: Context; marker: ExitMarker; settled: boolean }
 
 const execFailure = (code: ExecutionError["code"], message: string): Result<ShellExecResult, ExecutionError> =>
   ({ ok: false, error: new ExecutionError(code, message) })
 
-function drained(stream: Readable): Promise<void> {
-  return new Promise((resolve) => { stream.once("end", resolve); stream.once("close", resolve) })
+function forward(exec: Exec): void {
+  const emit = (text: string) => { if (text && !exec.settled) exec.options?.onOutput?.(text, exec.context) }
+  const stdout = new TextDecoder()
+  const stderr = new TextDecoder()
+  exec.owned.stdout.on("data", (chunk: Uint8Array) => emit(stdout.decode(chunk, { stream: true })))
+  exec.owned.stderr.on("data", (chunk: Uint8Array) => emit(exec.marker.filter(stderr.decode(chunk, { stream: true }))))
 }
 
-function forward(exec: Exec): void {
-  for (const stream of [exec.owned.stdout, exec.owned.stderr]) {
-    const decoder = new TextDecoder()
-    stream.on("data", (chunk: Uint8Array) => {
-      const text = decoder.decode(chunk, { stream: true })
-      if (text) exec.options?.onOutput?.(text, exec.context)
-    })
-  }
+async function exitCode(exec: Exec, grace: () => Promise<void>): Promise<number> {
+  const code = await Promise.race([exec.marker.code, exec.owned.exited.then((exit) => exit.code ?? 1)])
+  await grace()
+  return code
+}
+
+function keep(host: PiShellHost, owned: OwnedProcess): void {
+  host.live.add(owned)
+  void owned.exited.then(async () => {
+    host.live.delete(owned)
+    await owned.retire(deadlineAfter(host.services.clock, RETIRE_MS))
+  }).then(undefined, (error: unknown) => host.services.log.error("Pi bash retirement failed", { error: errorMessage(error) }))
 }
 
 async function settleExec(host: PiShellHost, exec: Exec): Promise<Result<ShellExecResult, ExecutionError>> {
@@ -40,18 +51,17 @@ async function settleExec(host: PiShellHost, exec: Exec): Promise<Result<ShellEx
   exec.context.abortSignal?.addEventListener("abort", onAbort, { once: true })
   const seconds = exec.options?.timeout
   const timer = seconds === undefined ? undefined : clock.setTimeout(() => stop("timeout"), seconds * 1000)
+  const grace = () => new Promise<void>((resolve) => { clock.setTimeout(() => resolve(), EXIT_STDIO_GRACE_MS) })
   try {
-    const exit = await exec.owned.exited
-    let grace: unknown
-    await Promise.race([Promise.all([drained(exec.owned.stdout), drained(exec.owned.stderr)]),
-      new Promise<void>((resolve) => { grace = clock.setTimeout(() => resolve(), EXIT_STDIO_GRACE_MS) })])
-    clock.clearTimeout(grace)
+    const code = await exitCode(exec, grace)
     if (stopped) return execFailure(stopped, stopped === "timeout" ? `Command timed out after ${seconds} seconds` : "Command aborted")
-    return { ok: true, value: { exitCode: exit.code ?? 1 } }
+    return { ok: true, value: { exitCode: code } }
   } finally {
+    exec.settled = true
     clock.clearTimeout(timer)
     exec.context.abortSignal?.removeEventListener("abort", onAbort)
-    await exec.owned.retire(deadlineAfter(clock, RETIRE_MS))
+    if (stopped) await exec.owned.retire(deadlineAfter(clock, RETIRE_MS))
+    else keep(host, exec.owned)
   }
 }
 
@@ -62,15 +72,17 @@ async function ownedExec(host: PiShellHost, cwd: string, command: string, option
     return execFailure("timeout", "Invalid timeout: must be a finite number of seconds")
   }
   const env = options?.inheritEnv === false ? { ...options.env } : { ...host.env, ...options?.env }
+  const marker = exitMarker()
   let owned: OwnedProcess
   try {
-    owned = await host.services.spawn({ file: SHELL, args: ["-c", command], cwd: options?.cwd ? path.resolve(cwd, options.cwd) : cwd, env },
-      { role: "harness", label: "Pi bash", sessionId: host.sessionId, signal: context.abortSignal ?? new AbortController().signal })
+    owned = await host.services.spawn({ file: SHELL, args: ["-c", SCRIPT, "pi-bash", command, marker.text],
+      cwd: options?.cwd ? path.resolve(cwd, options.cwd) : cwd, env },
+    { role: "harness", label: "Pi bash", sessionId: host.sessionId, signal: context.abortSignal ?? new AbortController().signal })
   } catch (error) {
     return execFailure("spawn_error", errorMessage(error))
   }
   owned.stdin.end()
-  const exec = { owned, options, context }
+  const exec = { owned, options, context, marker, settled: false }
   forward(exec)
   return settleExec(host, exec)
 }

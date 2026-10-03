@@ -15,9 +15,9 @@ const protocolPermissionMap = {
   ],
 } as const
 
-export function piPermissionMode(config: { permissionMode?: string }): string {
-  const stored = config.permissionMode
-  return PI_PERMISSION_MODES.modes.some((mode) => mode.id === stored) ? stored! : PI_PERMISSION_MODES.defaultModeId
+export function piPermissionMode(config: Pick<SessionConfig, "permissionMode" | "permissionCeiling">): string {
+  if (config.permissionCeiling !== undefined && config.permissionCeiling !== "full") return "ask"
+  return PI_PERMISSION_MODES.modes.find((mode) => mode.id === config.permissionMode)?.id ?? PI_PERMISSION_MODES.defaultModeId
 }
 
 export function piAsks(config: SessionConfig, toolName: string): boolean {
@@ -25,13 +25,21 @@ export function piAsks(config: SessionConfig, toolName: string): boolean {
     && (ASKED_TOOLS.includes(toolName) || toolName.startsWith("mcp__"))
 }
 
-export async function piToolApproval(input: { sessionId: string; call: ToolCall; asker: PiAsker; signal: AbortSignal | undefined }) {
+export type PiApprovalInput = { sessionId: string; call: ToolCall; asker: PiAsker; signal: AbortSignal | undefined; opening: string }
+
+function askTool(input: PiApprovalInput, requestId: string) {
   const { call } = input
-  const answer = await input.asker.ask(permissionRequest({
-    requestId: `pi-tool:${call.id}`, sessionId: input.sessionId, permission: call.name, title: call.name, grantKey: call.name,
+  return input.asker.ask(permissionRequest({
+    requestId, sessionId: input.sessionId, permission: call.name, title: call.name, grantKey: call.name,
     metadata: { input: call.arguments }, harnessPayload: { toolName: call.name, toolCallId: call.id },
     options: protocolPermissionMap.options,
   }), input.signal ? { signal: input.signal } : undefined)
+}
+
+export async function piToolApproval(input: PiApprovalInput) {
+  const requestId = `pi-tool:${input.call.id}`
+  const recorded = await askTool(input, requestId)
+  const answer = recorded.kind === "cancelled" && !input.signal?.aborted ? await askTool(input, `${requestId}:${input.opening}`) : recorded
   const decision = permissionDecision(answer)
   if (decision === protocolPermissionMap.allowOnce || decision === protocolPermissionMap.allowAlways) return undefined
   return { block: decision ? "The person denied this tool call" : "The tool call was not approved" }
