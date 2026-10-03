@@ -1,3 +1,4 @@
+import { backgroundWorkActive, parseBackgroundWork, sameBackgroundWork, NO_BACKGROUND_WORK, type BackgroundWork } from "@claxedo/agent-runtime-contract"
 import type { SessionRowStatus, SessionRowStatusKind } from "@claxedo/server-core/session/navigation-list"
 import { record, raw } from "../../platform/json"
 import { readRuntimeSessionActivity, runtimeStatusKind, type RuntimeStatusRead } from "../runtime-activity"
@@ -27,14 +28,24 @@ export type RuntimeSessionStatus = {
   stop: () => void
 }
 
-type Tracked = { kind: SessionRowStatusKind; pending: Set<string>; at: number }
+type Tracked = { kind: SessionRowStatusKind; pending: Set<string>; backgroundWork: BackgroundWork; at: number }
 
-function tracked(kind: SessionRowStatusKind, at: number, pending = new Set<string>()): Tracked {
-  return { kind, pending, at }
+function tracked(kind: SessionRowStatusKind, at: number, pending = new Set<string>(), backgroundWork = NO_BACKGROUND_WORK): Tracked {
+  return { kind, pending, backgroundWork, at }
 }
 
 function rowStatus(entry: Tracked): SessionRowStatus {
-  return { kind: entry.kind, awaitingInput: entry.pending.size > 0, at: entry.at }
+  const background = backgroundWorkActive(entry.backgroundWork) ? { backgroundWork: entry.backgroundWork } : {}
+  return { kind: entry.kind, awaitingInput: entry.pending.size > 0, ...background, at: entry.at }
+}
+
+function sameStatus(a: SessionRowStatus, b: SessionRowStatus) {
+  return a.kind === b.kind && a.awaitingInput === b.awaitingInput
+    && sameBackgroundWork(a.backgroundWork ?? NO_BACKGROUND_WORK, b.backgroundWork ?? NO_BACKGROUND_WORK)
+}
+
+function idle(entry: Tracked) {
+  return entry.kind === "idle" && entry.pending.size === 0 && !backgroundWorkActive(entry.backgroundWork)
 }
 
 /**
@@ -52,7 +63,9 @@ function presentationEventOf(frame: unknown): { type: string; properties: Record
  * Session status as the daemon observes it: from the frames of every runtime
  * mounted in this process, and on demand from those runtimes' own answers.
  * `awaitingInput` is an open permission or question, held until it is
- * replied, rejected or expired.
+ * replied, rejected or expired; `backgroundWork` is the harness work the last
+ * `session.background-work` frame counted. Only a change to one of the three
+ * is reported, so a turn's streamed content publishes nothing.
  */
 export function createRuntimeSessionStatus(options: RuntimeSessionStatusOptions): RuntimeSessionStatus {
   const now = options.now ?? Date.now
@@ -86,6 +99,9 @@ export function createRuntimeSessionStatus(options: RuntimeSessionStatusOptions)
       case "session.error":
         entry.kind = "idle"
         break
+      case "session.background-work":
+        entry.backgroundWork = parseBackgroundWork(event.properties) ?? NO_BACKGROUND_WORK
+        break
       case "permission.asked":
       case "question.asked": {
         const id = raw(event.properties.id)
@@ -104,8 +120,7 @@ export function createRuntimeSessionStatus(options: RuntimeSessionStatusOptions)
       default:
         return
     }
-    const after = rowStatus(entry)
-    if (after.kind === before.kind && after.awaitingInput === before.awaitingInput) return
+    if (sameStatus(rowStatus(entry), before)) return
     entry.at = now()
     options.onChange(workspaceId, sessionId)
   }
@@ -115,8 +130,7 @@ export function createRuntimeSessionStatus(options: RuntimeSessionStatusOptions)
     workspaces.delete(workspaceId)
     if (!sessions) return
     for (const [sessionId, entry] of sessions) {
-      if (entry.kind === "idle" && entry.pending.size === 0) continue
-      options.onChange(workspaceId, sessionId)
+      if (!idle(entry)) options.onChange(workspaceId, sessionId)
     }
   }
 
@@ -139,7 +153,7 @@ export function createRuntimeSessionStatus(options: RuntimeSessionStatusOptions)
       workspaces.delete(workspaceId)
       return new Map<string, SessionRowStatus>()
     }
-    const sessions = new Map([...activity].map(([sessionId, entry]) => [sessionId, tracked(entry.kind, at, entry.pending)]))
+    const sessions = new Map([...activity].map(([sessionId, entry]) => [sessionId, tracked(entry.kind, at, entry.pending, entry.backgroundWork)]))
     workspaces.set(workspaceId, sessions)
     return new Map([...sessions].map(([sessionId, entry]) => [sessionId, rowStatus(entry)]))
   }
