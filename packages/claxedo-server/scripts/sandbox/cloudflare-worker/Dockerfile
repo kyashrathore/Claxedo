@@ -44,15 +44,17 @@ ENV PATH=/opt/node-24/bin:$PATH
 # Harness SDKs and CLIs skip npm's release-age gate: their releases carry the
 # protocol changes Claxedo tracks the day they ship (owner exemption,
 # 2026-09-30). npm honors these exclusions from 11.17 (Node 24.19); every other
-# package, the harness packages' own dependencies included, stays gated.
-RUN printf '%s\n' \
+# package, the harness packages' own dependencies included, stays gated. The
+# exclusions go to npm's global config: the runtime runs with HOME=/home/claxedo
+# (its captured directory), where root's ~/.npmrc is not read.
+RUN npmrc="$(npm config get globalconfig)" && mkdir -p "$(dirname "$npmrc")" && printf '%s\n' \
       'min-release-age-exclude[]=@agentclientprotocol/sdk' \
       'min-release-age-exclude[]=@anthropic-ai/claude-*' \
       'min-release-age-exclude[]=@cursor/sdk*' \
       'min-release-age-exclude[]=@earendil-works/*' \
       'min-release-age-exclude[]=@google/gemini-cli*' \
       'min-release-age-exclude[]=@openai/codex' \
-      >> "$HOME/.npmrc"
+      >> "$npmrc"
 
 # Global CLI tools used by direct terminal agents and materialized MCP configs.
 # tsx is always needed by the runtime; the agent set is configurable above.
