@@ -6,7 +6,7 @@ import { createQueue } from "../transcript/queue"
 
 void mock.module("@/composer", () => ({
   sessionComposerKey: (ref: { sessionId: string }) => `session:${ref.sessionId}`,
-  queuedDraft: (parts: QueuedPromptPart[]) => (parts.every((part) => part.text !== undefined) ? { prompt: parts.map((part) => ({ content: part.text })) } : undefined),
+  queuedDraft: ({ parts }: { parts: QueuedPromptPart[] }) => (parts.every((part) => part.text !== undefined) ? { prompt: parts.map((part) => ({ content: part.text })) } : undefined),
 }))
 const { createQueueEdit } = await import("./queue-edit")
 

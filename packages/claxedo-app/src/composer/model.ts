@@ -1,4 +1,4 @@
-import type { AppError, ModelChoice, QueuedPromptPart } from "@/server"
+import type { AppError, ModelChoice, QueuedPrompt } from "@/server"
 import type { FileSelection } from "@/lib/file-selection"
 import type { Transition } from "@/lib/machine"
 import { unreachable } from "@/lib/machine"
@@ -112,19 +112,19 @@ function noteItem(text: string, key: string): ContextItem {
   return { type: "text", key, label: "", text }
 }
 
-export function queuedDraft(parts: readonly QueuedPromptPart[]): Draft | undefined {
+export function queuedDraft(record: Pick<QueuedPrompt, "seq" | "parts">): Draft | undefined {
   const context: ContextItem[] = []
   const text: PromptPart[] = []
   const images: PromptPart[] = []
   let offset = 0
-  for (const [index, part] of parts.entries()) {
-    if (part.type === "text" && part.text !== undefined && part.synthetic) context.push(noteItem(part.text, `queued-note-${index}`))
+  for (const [index, part] of record.parts.entries()) {
+    if (part.type === "text" && part.text !== undefined && part.synthetic) context.push(noteItem(part.text, `queued-${record.seq}-note-${index}`))
     else if (part.type === "text" && part.text !== undefined) {
       const content = `${offset ? "\n\n" : ""}${part.text}`
       text.push({ type: "text", content, start: offset, end: offset + content.length })
       offset += content.length
     } else if (part.type === "file" && part.url && part.mime && part.filename) {
-      images.push({ type: "image", id: `queued-file-${index}`, filename: part.filename, mime: part.mime, dataUrl: part.url })
+      images.push({ type: "image", id: `queued-${record.seq}-file-${index}`, filename: part.filename, mime: part.mime, dataUrl: part.url })
     } else return undefined
   }
   return { prompt: [...(text.length ? text : emptyPrompt()), ...images], context, goalArmed: false }

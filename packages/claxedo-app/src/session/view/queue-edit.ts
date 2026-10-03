@@ -23,7 +23,7 @@ export function createQueueEdit(view: SessionView, store: DraftForks) {
     }),
   )
   const beginEdit = async (record: QueuedPrompt) => {
-    const draft = queuedDraft(record.parts)
+    const draft = queuedDraft(record)
     if (await view.queue.beginEdit(record.seq, draft !== undefined) && draft) store.forkDraft(key, draft)
   }
   const queued: QueuedMessages = { ...view.queue, beginEdit: (record) => void beginEdit(record) }
