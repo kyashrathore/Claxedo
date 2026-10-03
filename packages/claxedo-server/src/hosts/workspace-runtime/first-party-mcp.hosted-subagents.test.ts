@@ -26,6 +26,7 @@ import { createOwnerGrantProof, mintOwnerGrant } from "../../session/owner-grant
 import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"
 import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
 import { workspaceRuntimeOwnerGrant } from "./owner-grant"
+import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/runtime-actor"
 
 /**
  * `create_subagent` on a hosted cloud root, end to end: the real MCP mount
@@ -277,6 +278,14 @@ async function createRoot(sessionId: string, creator: WorkspaceOwnerIdentity) {
   return sessionId
 }
 
+async function readSession(sessionId: string) {
+  const response = await runtime.app.request(`http://runtime.test/session/${sessionId}`, {
+    headers: { authorization: `Bearer ${await relayToken(ALICE, `rht_read_${sessionId}`)}`, "x-workspace-id": WORKSPACE, "x-forwarded-by": "workspace-relay" },
+  })
+  expect(response.status, await response.clone().text()).toBe(200)
+  return await response.json() as { status?: string; time?: { lastHumanTurn?: number } }
+}
+
 function rpc(session: string, credential: string, mcpSession: string | undefined, body: Record<string, unknown>) {
   return runtime.app.request(`http://127.0.0.1/api/claxedo/mcp?session=${session}`, {
     method: "POST",
@@ -346,20 +355,13 @@ describe("create_subagent on a hosted cloud root", () => {
     const parent = await createRoot("ses_parent_turns", ALICE)
     const call = await connect(parent)
     const child = (JSON.parse((await spawn(call)).text) as Binding).sessionId
-    const read = async (sessionId: string) => {
-      const response = await runtime.app.request(`http://runtime.test/session/${sessionId}`, {
-        headers: { authorization: `Bearer ${await relayToken(ALICE, `rht_read_${sessionId}`)}`, "x-workspace-id": WORKSPACE, "x-forwarded-by": "workspace-relay" },
-      })
-      expect(response.status, await response.clone().text()).toBe(200)
-      return await response.json() as { status?: string; time?: { lastHumanTurn?: number } }
-    }
-    await expect.poll(async () => (await read(child)).status, { timeout: 10_000 }).not.toBe("busy")
+    await expect.poll(async () => (await readSession(child)).status, { timeout: 10_000 }).not.toBe("busy")
 
     const sent = await call("session_send", { session: child, text: "keep going" })
     expect(sent.isError, sent.text).toBe(false)
     await expect.poll(() => harness.prompts.filter((prompt) => prompt.sessionId === child).length, { timeout: 10_000 }).toBe(2)
 
-    expect((await read(child)).time?.lastHumanTurn).toBeUndefined()
+    expect((await readSession(child)).time?.lastHumanTurn).toBeUndefined()
   }, 60_000)
 
   test("a grant signed with another key, or minted for another workspace, leaves the runtime's own routes actor-less", async () => {
@@ -485,5 +487,40 @@ describe("session_delete on a hosted cloud root", () => {
       headers: { authorization: `Bearer ${await relayToken(ALICE, "rht_alice_read")}`, "x-workspace-id": WORKSPACE, "x-forwarded-by": "workspace-relay" },
     })
     expect(read.status).toBe(200)
+  }, 60_000)
+})
+
+describe("a turn the control plane relays to a cloud root", () => {
+  async function relayedPrompt(sessionId: string, token: string) {
+    const response = await runtime.app.request(`http://runtime.test/session/${sessionId}/prompt_async`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "x-workspace-id": WORKSPACE, "x-forwarded-by": "workspace-relay" },
+      body: JSON.stringify({ parts: [{ type: "text", text: "relayed" }] }),
+    })
+    expect(response.status, await response.clone().text()).toBe(204)
+    await expect.poll(() => harness.prompts.filter((prompt) => prompt.sessionId === sessionId).length, { timeout: 10_000 }).toBe(1)
+  }
+
+  test("is no human turn when a Task sends its first message, and is the owner's when their channel message arrives", async () => {
+    const task = await createRoot("ses_task_target", ALICE)
+    const channel = await createRoot("ses_channel_target", ALICE)
+    records.shares.add(`${task}:${CONTROL_PLANE_RUNTIME_ACTOR.actorId}`)
+    const tasks = await mintRelayHostToken({
+      ...CONTROL_PLANE_RUNTIME_ACTOR,
+      userId: ALICE.userId,
+      orgId: ALICE.orgId,
+      workspaceId: WORKSPACE,
+      hostId: HOST,
+      role: "owner",
+      backing: "cloud-vm",
+      jti: "rht_task_dispatch",
+      parentJti: "rat_control_plane",
+    }, relayKey.privateKey, "EdDSA")
+
+    await relayedPrompt(task, tasks)
+    await relayedPrompt(channel, await relayToken(ALICE, "rht_channel_message"))
+
+    expect((await readSession(task)).time?.lastHumanTurn).toBeUndefined()
+    expect(typeof (await readSession(channel)).time?.lastHumanTurn).toBe("number")
   }, 60_000)
 })
