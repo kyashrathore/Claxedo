@@ -18,7 +18,7 @@ export type HarnessSelectionControllerStore = {
   markUnavailable(scope: string): void
   setHarness(scope: string, type: HarnessType, input?: HarnessScopeInput): void | Promise<void>
   setModel(scope: string, model: ModelChoice, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | Promise<void>
-  setThoughtLevel(scope: string, value: string | undefined): void
+  setThoughtLevel(scope: string, value: string | undefined, input?: HarnessScopeInput): void | Promise<void>
   setServiceTier(scope: string, value: string | undefined): void
   rememberDraftModel(scope: string, model: ModelChoice, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | boolean
   resolveDraftDefault(scope: string, input: Omit<ResolveDraftDefaultInput, "saved">): boolean
@@ -116,7 +116,7 @@ export function createHarnessSelectionController(store: HarnessSelectionControll
       store.setHarness(scope, type, input),
     setModel: (scope: string, model: ModelChoice, input?: HarnessScopeInput, labels?: DraftDefaultLabels) =>
       store.setModel(scope, model, input, labels),
-    setThoughtLevel: (scope: string, value: string | undefined) => store.setThoughtLevel(scope, value),
+    setThoughtLevel: (scope: string, value: string | undefined, input?: HarnessScopeInput) => store.setThoughtLevel(scope, value, input),
     setServiceTier: (scope: string, value: string | undefined) => store.setServiceTier(scope, value),
     rememberDraftModel: (scope: string, model: ModelChoice, input?: HarnessScopeInput, labels?: DraftDefaultLabels) =>
       store.rememberDraftModel(scope, model, input, labels),

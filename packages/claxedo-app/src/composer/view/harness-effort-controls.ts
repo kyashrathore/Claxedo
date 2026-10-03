@@ -1,5 +1,5 @@
 import { createMemo, type Accessor } from "solid-js"
-import type { HarnessSelectionController, HarnessSelectionSnapshot } from "../harness/controller"
+import type { HarnessScopeInput, HarnessSelectionController, HarnessSelectionSnapshot } from "../harness/controller"
 import type { SelectorCatalog } from "./selector-catalog"
 
 type EffortControlsInput = {
@@ -7,6 +7,7 @@ type EffortControlsInput = {
   catalogSelected: Accessor<boolean>
   catalog: SelectorCatalog
   scope: Accessor<string>
+  scopeInput: Accessor<HarnessScopeInput>
   controller: Accessor<HarnessSelectionController>
 }
 
@@ -22,7 +23,9 @@ export function createEffortControls(input: EffortControlsInput) {
   const levelName = (value: string) =>
     harnessThoughtLevels().find((item) => item.id === value)?.name ?? value
   const select = (value: string) => {
-    input.controller().setThoughtLevel(input.scope(), input.catalogSelected() && value === "default" ? undefined : value)
+    const effort = input.catalogSelected() && value === "default" ? undefined : value
+    void Promise.resolve(input.controller().setThoughtLevel(input.scope(), effort, input.scopeInput()))
+      .catch((error: unknown) => console.warn(`The session refused effort ${effort ?? "default"}; the previous effort is kept`, error))
   }
   return { variants, showEffort, currentVariant, levelName, select }
 }

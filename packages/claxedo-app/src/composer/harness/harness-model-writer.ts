@@ -57,8 +57,11 @@ type ModelWriterInput<ScopeInput extends HarnessScopeInput> = {
   holdsHarness(scope: string): boolean
   reloadOptions(scope: string, params?: ScopeInput): Promise<void> | void
   rememberDraftModel(scope: string, model: ModelChoice, input?: ScopeInput, labels?: DraftDefaultLabels): void
+  selectedEffort(scope: string): string | undefined
+  setSelectedEffort(scope: string, effort: string | undefined): void
   runtime: {
     setSessionModel(ref: SessionLocation, model: ModelChoice): Promise<void>
+    setSessionEffort(ref: SessionLocation, effort: string | undefined): Promise<void>
   }
   cache: HarnessSessionModelSyncCache
 }
@@ -77,8 +80,21 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
     if (run) await saveSessionModel(input, saving, { scope, model, previous, run })
     if (changed) await input.reloadOptions(scope, params)
   }
+  const setEffort = async (scope: string, effort: string | undefined, params?: ScopeInput) => {
+    const previous = input.selectedEffort(scope)
+    input.setSelectedEffort(scope, effort)
+    const ref = params?.sessionId && params.sessionId !== "new" && !input.holdsHarness(scope) ? params.sessionRef : undefined
+    if (!ref || previous === effort) return
+    try {
+      await input.runtime.setSessionEffort(ref, effort)
+    } catch (error) {
+      if (input.selectedEffort(scope) === effort) input.setSelectedEffort(scope, previous)
+      throw error
+    }
+  }
   return {
     setModel,
+    setEffort,
     settledModel: async (scope: string) => {
       await Promise.allSettled([saving.get(scope)])
     },

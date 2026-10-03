@@ -109,7 +109,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     harnessLabel: optionList.label,
     openProviders,
   })
-  const effort = createEffortControls({ selection, catalogSelected, catalog, scope, controller })
+  const effort = createEffortControls({ selection, catalogSelected, catalog, scope, scopeInput, controller })
   const fast = createFastControl({ selection, catalogSelected, scope, controller })
 
   publishComposerNotice(notice)

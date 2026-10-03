@@ -177,6 +177,10 @@ export class ClaxedoApi {
     })
   }
 
+  sessionConfig(directory: string, id: string) {
+    return this.call<{ variant?: string | null; [key: string]: unknown }>("GET", `/session/${encodeURIComponent(id)}/config`, { directory })
+  }
+
   async messages(directory: string, id: string): Promise<MessageRow[]> {
     const body = await this.call<MessageRow[] | { messages: MessageRow[] }>("GET", `/session/${encodeURIComponent(id)}/message`, { directory })
     return Array.isArray(body) ? body : body.messages

@@ -41,7 +41,7 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
     }) satisfies typeof switcher.setHarness,
     releaseHeldHarness: store.releaseHeldHarness,
     setConnectionDeclaration: store.setConnectionDeclaration,
-    setThoughtLevel: store.setThoughtLevel,
+    setThoughtLevel: modelWriter.setEffort,
     setServiceTier: store.setServiceTier,
     readiness: (scope: string) => store.read(scope).readiness,
     connectionState: (scope: string) => store.read(scope).connectionState,

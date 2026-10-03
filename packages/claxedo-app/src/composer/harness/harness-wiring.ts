@@ -93,7 +93,12 @@ export function wireModelWriter(wiring: HarnessWiring, fetchConfigOptions: Fetch
       await fetchConfigOptions(scope, harness, params)
     },
     rememberDraftModel: (scope, model, input, labels) => void rememberDraftModelInWorkspace(wiring, scope, model, input, labels),
-    runtime: { setSessionModel: (ref, model) => api.updateSessionConfig(ref, { model: { providerId: model.providerId, modelId: model.modelId } }) },
+    selectedEffort: (scope) => store.state(scope)?.selectedThoughtLevel,
+    setSelectedEffort: store.setThoughtLevel,
+    runtime: {
+      setSessionModel: (ref, model) => api.updateSessionConfig(ref, { model: { providerId: model.providerId, modelId: model.modelId } }),
+      setSessionEffort: (ref, effort) => api.updateSessionConfig(ref, { variant: effort ?? null }),
+    },
     cache: wiring.caches.sessionModel,
   })
 }

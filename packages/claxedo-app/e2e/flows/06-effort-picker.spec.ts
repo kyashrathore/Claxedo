@@ -14,6 +14,7 @@ test("06 effort picker: an OpenCode model's effort variants show in the picker, 
   await app.keyboard.press("End")
   const chosen = await effort.getAttribute("aria-valuetext")
   expect(chosen).toBeTruthy()
+  await expect.poll(async () => (await api.sessionConfig(workspace.directory, session.id)).variant?.toLowerCase()).toBe(chosen?.toLowerCase())
   await app.keyboard.press("Escape")
   await sendPrompt(app, "Reply with exactly EFFORTPICKED")
   await expect(app.getByText("EFFORTPICKED", { exact: true }).last()).toBeVisible()
