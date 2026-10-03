@@ -1,4 +1,4 @@
-import { readFileContent } from "../file-content"
+import { FileContentError, readFileContent, type FileContentRefusal } from "../file-content"
 import { Hono } from "hono"
 import { WorkspaceTargetError, errorBody } from "@claxedo/session-core"
 import { currentSessionCore } from "../session-context"
@@ -37,6 +37,8 @@ function root(c: FileRouteContext) {
 function invalidPath() {
   return errorBody("file_invalid_relative_path", "Invalid relative file path")
 }
+
+const FILE_REFUSAL_STATUS = { missing: 404, not_a_file: 400, too_large: 413 } as const satisfies Record<FileContentRefusal, number>
 
 function invalidDirectory() {
   return errorBody("file_invalid_directory", "File directory must match configured workspace")
@@ -104,7 +106,12 @@ export function FileRoutes(options: WorktreeTargetAccessOptions = {}) {
       if (typeof base !== "string") return base
       const full = await routeFile(base, c.req.query("path"))
       if (!full) return c.json(invalidPath(), 400)
-      return c.json(await readFileContent(full))
+      try {
+        return c.json(await readFileContent(full))
+      } catch (error) {
+        if (!(error instanceof FileContentError)) throw error
+        return c.json(errorBody(`file_${error.refusal}`, error.message), FILE_REFUSAL_STATUS[error.refusal])
+      }
     })
     .get("/file/status", async (c) => {
       const base = await readable(c)

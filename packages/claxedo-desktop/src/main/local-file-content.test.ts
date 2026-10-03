@@ -24,9 +24,9 @@ test("relative paths, traversal and directories are refused", async () => {
   await expect(readLocalFileContent(directory)).rejects.toThrow("not a file")
 })
 
-test("a missing artifact reports the disk failure and can be read once restored", async () => {
+test("a missing artifact is reported as missing and can be read once restored", async () => {
   const document = path.join(directory, "restored.md")
-  await expect(readLocalFileContent(document)).rejects.toThrow("ENOENT")
+  await expect(readLocalFileContent(document)).rejects.toThrow("does not exist")
   await writeFile(document, "Restored")
   expect(await readLocalFileContent(document)).toEqual({ type: "text", content: "Restored" })
 })

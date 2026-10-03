@@ -7,6 +7,7 @@ import fs from "node:fs/promises"
 import fsNode from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { FILE_CONTENT_MAX_BYTES } from "../file-content"
 import { FileRoutes } from "./file"
 import { runGit } from "../git"
 
@@ -83,6 +84,25 @@ describe("FileRoutes file reads", () => {
         message: "Invalid relative file path",
       },
     })
+  }))
+
+  test("answers a missing file, a directory and an oversized file with typed refusals on the content route", () => withSessionCore(testSessionCore(tmp, workspaceId()), async () => {
+    const app = new Hono().route("/", FileRoutes())
+    await fs.mkdir(path.join(tmp, "folder"))
+    await fs.writeFile(path.join(tmp, "huge.log"), "")
+    await fs.truncate(path.join(tmp, "huge.log"), FILE_CONTENT_MAX_BYTES + 1)
+
+    const missing = await app.request("http://localhost/file/content?path=gone.md")
+    expect(missing.status).toBe(404)
+    await expect(missing.json()).resolves.toEqual({ error: { code: "file_missing", message: "The file does not exist." } })
+
+    const directory = await app.request("http://localhost/file/content?path=folder")
+    expect(directory.status).toBe(400)
+    await expect(directory.json()).resolves.toEqual({ error: { code: "file_not_a_file", message: "The path is not a file." } })
+
+    const huge = await app.request("http://localhost/file/content?path=huge.log")
+    expect(huge.status).toBe(413)
+    await expect(huge.json()).resolves.toEqual({ error: { code: "file_too_large", message: "The file is larger than 20 MiB." } })
   }))
 
   test("rejects escaping paths across JSON file routes", () => withSessionCore(testSessionCore(tmp, workspaceId()), async () => {
