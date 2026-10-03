@@ -7,8 +7,8 @@ import {
   readMountedEmbeddedWorkspaceRuntime,
 } from "../../deployments/local/embedded-workspace-runtime"
 import { localSessionRowSource } from "./local-session-rows"
-import { createRuntimeSessionStatus } from "./runtime-session-status"
-import { createSessionRowsPublisher } from "./session-rows-publisher"
+import { createRuntimeSessionStatus } from "@claxedo/server-core/session/publish/runtime-session-status"
+import { createSessionRowsPublisher } from "@claxedo/server-core/session/publish/session-rows-publisher"
 
 /**
  * The machine publisher, composed over this daemon's own producers: the

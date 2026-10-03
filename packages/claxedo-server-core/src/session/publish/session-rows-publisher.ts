@@ -3,17 +3,35 @@ import {
   MAX_HOST_SESSION_ROWS,
   type HostSessionRow,
   type HostSessionRowsResult,
-} from "@claxedo/server-core/platform/auth/host-session-rows"
-import type { HostServingPublisherCredential } from "@claxedo/host-serving/serving"
-import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { record } from "../../platform/json"
-import type { SessionRowSource } from "./local-session-rows"
+} from "../../platform/auth/host-session-rows"
+import { Log } from "../../platform/runtime/lib/log"
+import { jsonRecord as record } from "../../platform/runtime/lib/json"
 
 const log = Log.create({ service: "session-rows-publisher" })
 
+export type SessionRowRead =
+  | { kind: "row"; row: HostSessionRow }
+  /** No root session by that id in that workspace any more. */
+  | { kind: "absent" }
+  /** A child session, which is never a list entry of its own. */
+  | { kind: "child" }
+
+export type SessionRowSource = {
+  /** Every root session of the workspace, archived ones included, with the status its runtime holds now. */
+  listRows: (workspaceId: string) => Promise<HostSessionRow[]>
+  readRow: (workspaceId: string, sessionId: string) => Promise<SessionRowRead>
+}
+
+/** The bearer a publication is sent with, the host it names, and the workspaces it may publish. */
+export type SessionRowsCredential = {
+  hostId: string
+  token: string
+  workspaceIds: readonly string[]
+}
+
 export type SessionRowsPublisherOptions = {
   source: SessionRowSource
-  /** The control plane's publish endpoint as the last heartbeat named it; nothing until it has. */
+  /** The control plane's publish endpoint; nothing until the host knows it. */
   url: () => string | undefined
   fetch?: typeof fetch
   random?: () => number
@@ -30,9 +48,9 @@ export type SessionRowsPublisher = {
   sessionRemoved: (workspaceId: string, sessionId: string) => void
   /** A snapshot rewrote the workspace's rows; which ones changed is not known. */
   workspaceChanged: (workspaceId: string) => void
-  /** The serving credential as it stands now, or nothing when this machine serves nothing. */
-  credentialChanged: (credential: HostServingPublisherCredential | undefined) => void
-  /** Republish every served workspace's rows. */
+  /** The publishing credential as it stands now, or nothing when this host may publish nothing. */
+  credentialChanged: (credential: SessionRowsCredential | undefined) => void
+  /** Republish every workspace the credential names. */
   resync: () => void
   stop: () => void
 }
@@ -46,7 +64,7 @@ type Chunk = { rows: HostSessionRow[]; removed: SessionRef[]; origins: Origin[] 
 
 class SessionRowsUnauthorized extends Error {
   constructor() {
-    super("the control plane refused the Host Tunnel Token")
+    super("the control plane refused the publishing credential")
     this.name = "SessionRowsUnauthorized"
   }
 }
@@ -78,9 +96,9 @@ function refusedKeys(result: HostSessionRowsResult) {
 }
 
 /**
- * Publishes this machine's session list rows to the control plane: on change,
- * coalesced and debounced; on a changed credential or workspace set, every
- * served workspace in full. One publish in flight at a time, retried with
+ * Publishes a host's session list rows to the control plane: on change,
+ * coalesced and debounced; on a changed credential host or workspace set,
+ * every workspace the credential names in full. One publish in flight at a time, retried with
  * exponential backoff, and nothing scheduled while nothing is pending.
  *
  * The control plane's endpoint is idempotent and never moves a row backwards,
@@ -100,7 +118,7 @@ export function createSessionRowsPublisher(options: SessionRowsPublisherOptions)
   let resyncPending = false
   /** Session ids the control plane holds for each workspace, as far as this process has told it. */
   const published = new Map<string, Set<string>>()
-  let credential: HostServingPublisherCredential | undefined
+  let credential: SessionRowsCredential | undefined
   /** The token a 401 refused; nothing is sent with it again. */
   let staleToken: string | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -237,7 +255,7 @@ export function createSessionRowsPublisher(options: SessionRowsPublisherOptions)
       if (error instanceof SessionRowsUnauthorized) {
         staleToken = current.token
         resyncPending = true
-        log.warn("session rows refused; waiting for the next serving credential", { hostId: current.hostId })
+        log.warn("session rows refused; waiting for the next publishing credential", { hostId: current.hostId })
       } else {
         failures += 1
         log.warn("session rows publish failed", { failures, error: String(error) })

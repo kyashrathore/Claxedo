@@ -1,6 +1,7 @@
 import { parseBackgroundWork, type BackgroundWork } from "@claxedo/agent-runtime-contract"
-import type { SessionRowStatusKind } from "@claxedo/server-core/session/navigation-list"
-import { record, raw } from "../platform/json"
+import { asString as raw } from "@claxedo/helpers/guards"
+import type { SessionRowStatusKind } from "./navigation-list"
+import { jsonRecord as record } from "../platform/runtime/lib/json"
 
 export type RuntimeStatusPath = "/session/status" | "/permission" | "/question"
 

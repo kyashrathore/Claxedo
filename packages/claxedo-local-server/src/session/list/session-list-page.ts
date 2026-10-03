@@ -12,7 +12,7 @@ import {
 } from "@claxedo/server-core/session/navigation-list"
 import type { SessionMeta } from "@claxedo/server-core/session/meta/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import { readRuntimeSessionActivity, type RuntimeSessionActivity, type RuntimeStatusRead } from "../runtime-activity"
+import { readRuntimeSessionActivity, type RuntimeSessionActivity, type RuntimeStatusRead } from "@claxedo/server-core/session/runtime-activity"
 
 export type SessionListPageInput = {
   query: SessionListQuery

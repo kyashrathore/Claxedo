@@ -1,20 +1,8 @@
 import type { HostSessionRow } from "@claxedo/server-core/platform/auth/host-session-rows"
 import type { SessionProjectionStore } from "@claxedo/server-core/authority/session-projection"
-import type { RuntimeSessionStatus } from "./runtime-session-status"
+import type { RuntimeSessionStatus } from "@claxedo/server-core/session/publish/runtime-session-status"
+import type { SessionRowSource } from "@claxedo/server-core/session/publish/session-rows-publisher"
 import { hostSessionRowFromMeta } from "./session-row"
-
-export type SessionRowRead =
-  | { kind: "row"; row: HostSessionRow }
-  /** No root session by that id in that workspace any more. */
-  | { kind: "absent" }
-  /** A child session, which is never a list entry of its own. */
-  | { kind: "child" }
-
-export type SessionRowSource = {
-  /** Every root session of the workspace, archived ones included, with the status its runtime holds now. */
-  listRows: (workspaceId: string) => Promise<HostSessionRow[]>
-  readRow: (workspaceId: string, sessionId: string) => Promise<SessionRowRead>
-}
 
 /** Rows read from the local projection, with status from the runtimes mounted in this process. */
 export function localSessionRowSource(

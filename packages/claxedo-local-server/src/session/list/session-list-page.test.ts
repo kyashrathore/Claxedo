@@ -5,7 +5,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
-import type { RuntimeStatusPath } from "../runtime-activity"
+import type { RuntimeStatusPath } from "@claxedo/server-core/session/runtime-activity"
 
 const root = path.join(realpathSync(os.tmpdir()), `session-list-page-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })
