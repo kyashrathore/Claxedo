@@ -32,7 +32,7 @@ export async function usageTurn(stack: Stack, api: ClaxedoApi, name: "acp" | "pi
     const dialect = name === "claude" ? "messages" : name === "codex" ? "responses" : "chat"
     assert.ok(stack.scripted.requests.some((request) => request.dialect === dialect && request.prompt.includes(marker)),
       `${name} did not reach the scripted ${dialect} endpoint`)
-    const method = name === "claude" ? "claude.result" : name === "codex" ? "thread/tokenUsage/updated" : "message_end"
+    const method = name === "claude" ? "claude.result" : name === "codex" ? "thread/tokenUsage/updated" : "usage_changed"
     assert.ok(sources.some((entry) => entry.type === "session.usage" && entry.source.method === method),
       `${name} CLI did not report usage through ${method}`)
   }
