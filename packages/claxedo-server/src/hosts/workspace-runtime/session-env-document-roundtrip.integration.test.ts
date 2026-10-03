@@ -42,7 +42,7 @@ describe("real workspace-runtime document round-trip", () => {
         })
         const spawn = createSpawnService(volatileLaunchOwnership())
         const services = { spawn, clock, log, recordHomeUse: async () => {}, firstPartyMcp: () => undefined, healthChanged: () => {}, patternEvaluator: async () => {} }
-        const env = ownedExecutionEnv({ sessionId, services, env: stringRecord(process.env) }, root)
+        const env = ownedExecutionEnv({ sessionId, services, env: stringRecord(process.env), live: new Set() }, root)
         const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
         const result = await env.exec(`printf %s ${quote(after)} > ${quote(hydratedPath)}`, undefined, context)
         await syncHydratedSessionDocuments(sessionId)
