@@ -284,7 +284,7 @@ test("a projected plugin link outside the plugin root is refused", async () => {
   } finally { await fs.rm(root, { recursive: true, force: true }) }
 })
 
-test("a brokered home retains a projected plugin cache during credential rotation with a private config", async () => {
+test("a brokered home retains a projected plugin cache during credential rotation with a private config that never carries the placeholder", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-profile-brokered-"))
   try {
     const sample = await plugin(root, "sample", "2.0.0")
@@ -296,7 +296,9 @@ test("a brokered home retains a projected plugin cache during credential rotatio
     const rotated = { ...brokered, providers: { openai: { ...brokered.providers.openai!, placeholder: "second" } } }
     expect((await prepareCodexProfile({ homeRoot, projection, credentials: rotated })).home).toBe(home)
     const config = await fs.readFile(path.join(home, "config.toml"), "utf8")
-    expect(config).toContain("Bearer second")
+    expect(config).not.toContain("first")
+    expect(config).not.toContain("second")
+    expect(config).toContain("requires_openai_auth = true")
     expect(config).toContain("[marketplaces.claxedo-agent-plugins]")
     expect(await fs.readFile(cache, "utf8")).toBe("sample retained")
     if (process.platform !== "win32") expect((await fs.stat(path.join(home, "config.toml"))).mode & 0o777).toBe(0o600)

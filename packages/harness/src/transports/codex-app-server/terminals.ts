@@ -3,7 +3,7 @@ import { errorMessage, settleAtRequestDeadline } from "@claxedo/helpers"
 import type { AdapterCancelOutcome, CleanupFact, RecoveryErrorCode } from "@claxedo/agent-runtime-contract"
 import type { Deadline } from "../../contract"
 import { CodexDeadlineError, CodexNoActiveTurnError, CodexTransportError } from "./errors"
-import type { CodexRpc, RpcMessage } from "./rpc"
+import type { CodexConnection, RpcMessage } from "./rpc"
 
 function cleanupFailure(error: unknown): { code: RecoveryErrorCode; message: string } {
   const code: RecoveryErrorCode = error instanceof CodexDeadlineError ? "deadline_exceeded"
@@ -21,7 +21,7 @@ export class CodexTerminals {
   private readonly completions = new Map<string, PromiseWithResolvers<void>>()
   private readonly stopping = new Map<string, Promise<AdapterCancelOutcome>>()
 
-  constructor(private readonly rpc: CodexRpc, private readonly threadId: string) {}
+  constructor(private readonly rpc: CodexConnection, private readonly threadId: string) {}
 
   observe(message: RpcMessage): void {
     const params = asRecordOrEmpty(message.params)
@@ -90,12 +90,19 @@ export class CodexTerminals {
     }
   }
 
-  private async release(turnId: string, ours: Set<string>, deadline: Deadline): Promise<CleanupFact> {
-    let remaining = await this.survivors(ours, deadline)
-    for (const processId of remaining) {
+  async clear(deadline: Deadline): Promise<void> {
+    await this.terminate(await this.inventory(deadline), deadline)
+  }
+
+  private async terminate(processIds: string[], deadline: Deadline): Promise<void> {
+    for (const processId of processIds) {
       await this.rpc.request("thread/backgroundTerminals/terminate", { threadId: this.threadId, processId }, this.budget(deadline))
     }
-    remaining = await this.survivors(ours, deadline)
+  }
+
+  private async release(turnId: string, ours: Set<string>, deadline: Deadline): Promise<CleanupFact> {
+    await this.terminate(await this.survivors(ours, deadline), deadline)
+    const remaining = await this.survivors(ours, deadline)
     if (remaining.length) return "owned"
     this.byTurn.delete(turnId)
     return "verified_clear"

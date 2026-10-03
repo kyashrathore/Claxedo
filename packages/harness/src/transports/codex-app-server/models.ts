@@ -3,7 +3,7 @@ import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import type { v2 } from "./translate"
 import { CodexTransportError } from "./errors"
 import { modelAndEffortOptions } from "../../contract"
-import type { CodexRpc } from "./rpc"
+import type { CodexConnection } from "./rpc"
 
 export type CodexModel = {
   id: string
@@ -16,7 +16,7 @@ export type CodexModel = {
   tiers: { id: string; name: string; description?: string }[]
 }
 
-export async function readCodexModels(rpc: CodexRpc): Promise<CodexModel[]> {
+export async function readCodexModels(rpc: CodexConnection): Promise<CodexModel[]> {
   const models = new Map<string, CodexModel>()
   let cursor: string | undefined
   do {

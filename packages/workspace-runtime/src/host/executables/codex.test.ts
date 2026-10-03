@@ -31,6 +31,40 @@ describe("Codex executable resolution", () => {
     expect(resolveCodexExecutable({ PATH: directory }, "linux", "x64")).toBe(binary)
   })
 
+  function npmLauncher(prefix: string): string {
+    const script = makeExecutable(path.join(prefix, "lib", "node_modules", "@openai", "codex", "bin", "codex.js"))
+    fs.mkdirSync(path.join(prefix, "bin"), { recursive: true })
+    fs.symlinkSync(path.relative(path.join(prefix, "bin"), script), path.join(prefix, "bin", "codex"))
+    return path.join(prefix, "bin")
+  }
+
+  test("follows the macOS npm launcher to the native binary nested in its platform package", () => {
+    const prefix = temporaryRoot()
+    const bin = npmLauncher(prefix)
+    const binary = makeExecutable(path.join(prefix, "lib", "node_modules", "@openai", "codex", "node_modules", "@openai",
+      "codex-darwin-arm64", "vendor", "aarch64-apple-darwin", "bin", "codex"))
+
+    expect(resolveCodexExecutable({ PATH: bin }, "darwin", "arm64")).toBe(fs.realpathSync(binary))
+  })
+
+  test("follows the Linux launcher to a hoisted platform package, as bun's isolated install lays it out", () => {
+    const prefix = temporaryRoot()
+    const bin = npmLauncher(prefix)
+    const binary = makeExecutable(path.join(prefix, "lib", "node_modules", "@openai", "codex-linux-x64",
+      "vendor", "x86_64-unknown-linux-musl", "bin", "codex"))
+
+    expect(resolveCodexExecutable({ PATH: bin }, "linux", "x64")).toBe(fs.realpathSync(binary))
+  })
+
+  test("refuses a launcher whose platform package carries no binary for this machine", () => {
+    const prefix = temporaryRoot()
+    const bin = npmLauncher(prefix)
+    makeExecutable(path.join(prefix, "lib", "node_modules", "@openai", "codex-linux-x64", "vendor", "x86_64-unknown-linux-musl", "bin", "codex"))
+
+    expect(resolveCodexExecutable({ PATH: bin }, "linux", "arm64")).toBeUndefined()
+    expect(() => requireCodexExecutable({ PATH: bin }, "darwin", "arm64")).toThrow(/npm install -g @openai\/codex/)
+  })
+
   test("follows a Windows npm cmd shim to the official native binary", () => {
     const directory = temporaryRoot()
     makeExecutable(path.join(directory, "codex.cmd"))

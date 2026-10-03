@@ -5,7 +5,7 @@ import { createServer } from "node:http"
 import os from "node:os"
 import path from "node:path"
 import { setupConformance } from "./test-support/run"
-import { codexBackend, codexEntry, makeCodexTransport, recordingBackend, type CodexBackend } from "../../e2e/harness/codex-conformance"
+import { codexBackend, codexEntry, codexOptions, makeCodexTransport, recordingBackend, type CodexBackend } from "../../e2e/harness/codex-conformance"
 import { createTestServices } from "./test-support/services"
 import { PINNED_CODEX } from "../../e2e/harness/pinned-codex"
 import { listenOnLoopback, releasePort, reservePort } from "../../e2e/harness/ports"
@@ -87,7 +87,7 @@ test("a killed Codex app-server reads lost, and the next turn resumes the same t
 
 async function attachedGoalSession(state: CodexBackend, model = state.model) {
   const services = createTestServices()
-  const transport = new CodexAppServerTransport(services, { binary: PINNED_CODEX, homeRoot: path.join(state.root, "homes"), env: state.env })
+  const transport = new CodexAppServerTransport(services, codexOptions(state))
   const ports = new MemoryPorts()
   ports.current.set("s1", { ...authority, directory: state.directory })
   const owner = createRequestBroker(ports)

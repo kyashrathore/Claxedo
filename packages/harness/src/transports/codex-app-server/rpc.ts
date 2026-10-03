@@ -8,16 +8,25 @@ import { codexChannelError, CodexRequestRefusal, CodexRequestTimeout, CodexTrans
 
 export type RpcMessage = { id?: string | number; method?: string; params?: unknown; result?: unknown; error?: { code: number; message: string } }
 
+export type CodexRequestHandler = (message: RpcMessage, signal: AbortSignal) => Promise<unknown>
+
+export interface CodexConnection {
+  readonly alive: boolean
+  request(method: string, params?: unknown, ms?: number): Promise<unknown>
+  onMessage(listener: (message: RpcMessage) => void): () => void
+  onFailure(listener: (error: Error) => void): () => void
+}
+
 export function codexRetirementDeadline(services: HarnessServices): Deadline {
   return { at: services.clock.now() + 10_000, signal: new AbortController().signal }
 }
 
-export class CodexRpc {
+export class CodexRpc implements CodexConnection {
   private serial = 0
   private readonly channel: NdjsonOwnedProcess
   private readonly pending: PendingRpcRequests<number>
   private readonly listeners = new Set<(message: RpcMessage) => void>()
-  private handler?: (message: RpcMessage, signal: AbortSignal) => Promise<unknown>
+  private handler?: CodexRequestHandler
   private readonly inbound = new Map<string | number, AbortController>()
   private readonly stderr: StderrTail
 
@@ -39,7 +48,7 @@ export class CodexRpc {
 
   onFailure(listener: (error: Error) => void): () => void { return this.channel.onFailure(listener) }
 
-  onRequest(handler: (message: RpcMessage, signal: AbortSignal) => Promise<unknown>): void { this.handler = handler }
+  onRequest(handler: CodexRequestHandler): void { this.handler = handler }
 
   request(method: string, params?: unknown, ms = 30_000): Promise<unknown> {
     if (!this.channel.alive) return Promise.reject(new CodexTransportError("process", `Codex ${method} was not sent after process exit`))
@@ -95,11 +104,7 @@ export class CodexRpc {
   }
 
   retire(deadline: Deadline): Promise<void> {
-    return this.abandon(new CodexTransportError("process", "Codex process retired"), deadline)
-  }
-
-  abandon(reason: Error, deadline: Deadline): Promise<void> {
-    this.channel.fail(reason, false)
+    this.channel.fail(new CodexTransportError("process", "Codex process retired"), false)
     return this.process.retire(deadline).then((outcome) => {
       if (!outcome.stopped) throw new CodexTransportError("process", outcome.error.message)
     })

@@ -41,10 +41,7 @@ export function codexNotificationOutsideTurn(entry: Entry, message: RpcMessage):
     codexChildFrame(entry, child, message)
     return
   }
-  if (threadId === entry.session.binding.upstreamSessionId) {
-    if (message.method === "turn/completed") entry.children.forgetUnclaimed()
-    sessionThreadNotification(entry, message)
-  } else if (threadId && !entry.sideThreads.has(threadId) && parentRunning(entry)) entry.children.hold(threadId, message)
+  if (threadId === entry.session.binding.upstreamSessionId) sessionThreadNotification(entry, message)
 }
 
 function parentRunning(entry: Entry): boolean {

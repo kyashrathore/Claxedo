@@ -24,6 +24,7 @@ import { codexSessionTitle } from "./titles"
 import { runCodexTurn } from "./turn"
 
 export type { CodexTransportOptions, Entry } from "./entry"
+export { CodexProcessPool } from "./pool"
 
 export class CodexAppServerTransport implements HarnessTransport {
   readonly kind = "codex-app-server" as const
@@ -76,10 +77,8 @@ export class CodexAppServerTransport implements HarnessTransport {
     return this.probes.read(key, inputs, () => this.probeModels({ ...draft, sessionId: prefixedRandomId("probe", "-") }))
   }
 
-  private async probeModels(input: StartInput): Promise<CodexModel[]> {
-    const { rpc } = await this.launches.launch(input)
-    try { return await readCodexModels(rpc) }
-    finally { await this.launches.discard(rpc) }
+  private probeModels(input: StartInput): Promise<CodexModel[]> {
+    return this.launches.probe(input, readCodexModels)
   }
 
   private async answer(entry: Entry, message: RpcMessage, signal: AbortSignal): Promise<unknown> {

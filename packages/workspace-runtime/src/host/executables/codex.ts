@@ -6,18 +6,10 @@ export const CODEX_INSTALL_HINT =
 
 const WINDOWS_SHIM_EXTENSIONS: ReadonlySet<string> = new Set([".cmd", ".bat", ".ps1"])
 
-const WINDOWS_TARGET_BY_ARCH: Partial<Record<NodeJS.Architecture, {
-  packageName: string
-  targetTriple: string
-}>> = {
-  x64: {
-    packageName: "codex-win32-x64",
-    targetTriple: "x86_64-pc-windows-msvc",
-  },
-  arm64: {
-    packageName: "codex-win32-arm64",
-    targetTriple: "aarch64-pc-windows-msvc",
-  },
+const NATIVE_TARGETS: Partial<Record<NodeJS.Platform, Partial<Record<NodeJS.Architecture, string>>>> = {
+  darwin: { x64: "x86_64-apple-darwin", arm64: "aarch64-apple-darwin" },
+  linux: { x64: "x86_64-unknown-linux-musl", arm64: "aarch64-unknown-linux-musl" },
+  win32: { x64: "x86_64-pc-windows-msvc", arm64: "aarch64-pc-windows-msvc" },
 }
 
 function isExecutableFile(candidate: string, platform: NodeJS.Platform): boolean {
@@ -62,37 +54,34 @@ function resolveOnPath(
 }
 
 /**
- * The Windows npm launchers are shell scripts, and Node cannot execute a
- * `.cmd`/`.ps1` file with `spawn()` unless it enables a shell. Follow the
- * official `@openai/codex` package layout to the platform-native executable
- * instead. This preserves stdio and process ownership for the app-server.
+ * The `@openai/codex` npm package installs a Node launcher (`bin/codex.js`, or
+ * a `.cmd`/`.ps1` shim on Windows) that only spawns the platform-native binary
+ * from its optional platform package. Spawning that binary directly keeps
+ * stdio and process ownership on the app-server and saves the launcher's Node
+ * process. The 0.159.2 launcher adds nothing to the child's `PATH`; the
+ * binary finds its bundled `rg` beside itself, and the `CODEX_MANAGED_*`
+ * variables it sets only feed `codex doctor` and update hints.
  */
-function resolveWindowsNativeBinary(shim: string, arch: NodeJS.Architecture): string | undefined {
-  if (!WINDOWS_SHIM_EXTENSIONS.has(path.extname(shim).toLowerCase())) return shim
-  const target = WINDOWS_TARGET_BY_ARCH[arch]
+function codexPackageDirectory(launcher: string, platform: NodeJS.Platform): string | undefined {
+  if (platform === "win32") {
+    return WINDOWS_SHIM_EXTENSIONS.has(path.extname(launcher).toLowerCase())
+      ? path.join(path.dirname(launcher), "node_modules", "@openai", "codex")
+      : undefined
+  }
+  const script = fs.realpathSync(launcher)
+  return path.basename(script) === "codex.js" ? path.dirname(path.dirname(script)) : undefined
+}
+
+function nativeCodexBinary(packageDirectory: string, platform: NodeJS.Platform, arch: NodeJS.Architecture): string | undefined {
+  const target = NATIVE_TARGETS[platform]?.[arch]
   if (!target) return undefined
-  const launcherDirectory = path.dirname(shim)
-  const platformPackageSegments = ["@openai", target.packageName, "vendor", target.targetTriple, "bin", "codex.exe"]
-  const candidates = [
-    // npm's current global layout: the optional platform package is nested
-    // under `@openai/codex`.
-    path.join(launcherDirectory, "node_modules", "@openai", "codex", "node_modules", ...platformPackageSegments),
-    // Hoisted package-manager layout.
-    path.join(launcherDirectory, "node_modules", ...platformPackageSegments),
-    // Candidate used by the official launcher when the platform binary is
-    // copied into the main package.
-    path.join(
-      launcherDirectory,
-      "node_modules",
-      "@openai",
-      "codex",
-      "vendor",
-      target.targetTriple,
-      "bin",
-      "codex.exe",
-    ),
-  ]
-  return candidates.find((candidate) => isExecutableFile(candidate, "win32"))
+  const platformPackage = `codex-${platform}-${arch}`
+  const binary = ["vendor", target, "bin", platform === "win32" ? "codex.exe" : "codex"]
+  return [
+    path.join(packageDirectory, "node_modules", "@openai", platformPackage, ...binary),
+    path.join(path.dirname(packageDirectory), platformPackage, ...binary),
+    path.join(packageDirectory, ...binary),
+  ].find((candidate) => isExecutableFile(candidate, platform))
 }
 
 /** Resolve the installed Codex CLI to a binary Node can spawn directly. */
@@ -103,7 +92,8 @@ export function resolveCodexExecutable(
 ): string | undefined {
   const resolved = resolveOnPath("codex", platform, env)
   if (!resolved) return undefined
-  return platform === "win32" ? resolveWindowsNativeBinary(resolved, arch) : resolved
+  const packageDirectory = codexPackageDirectory(resolved, platform)
+  return packageDirectory ? nativeCodexBinary(packageDirectory, platform, arch) : resolved
 }
 
 export function requireCodexExecutable(

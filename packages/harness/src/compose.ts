@@ -9,10 +9,11 @@ import { AcpTransport } from "./transports/acp"
 import { PiDurableTransport } from "./transports/pi-durable"
 import { createNodePiPlacement, type PiNodeOptions } from "./transports/pi-durable/node"
 import { CodexAppServerTransport, type CodexTransportOptions } from "./transports/codex-app-server"
+export { CodexProcessPool } from "./transports/codex-app-server"
 import { ClaudeSdkTransport } from "./transports/claude-sdk"
 import type { ClaudeSdkOptions } from "./transports/claude-sdk/launch-context"
 import { CursorSdkTransport, type CursorSdkTransportOptions } from "./transports/cursor-sdk"
-export { CURSOR_WORKER_FILE } from "./transports/cursor-sdk"
+export { CURSOR_WORKER_FILE, CursorHostRegistry } from "./transports/cursor-sdk"
 import { OpenCodeSdkTransport, type OpenCodeSdkTransportOptions } from "./transports/opencode-sdk/transport"
 
 export type HarnessCompositionOptions = {

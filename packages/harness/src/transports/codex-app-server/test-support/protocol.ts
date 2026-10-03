@@ -52,6 +52,10 @@ const methods: Record<string, Shape> = {
   "thread/settings/update": { required: ["threadId"], fields: { threadId: text, model: optional(text), effort: optional(text) } },
   "thread/goal/get": { required: ["threadId"], fields: { threadId: text } },
   "thread/backgroundTerminals/list": { required: ["threadId"], fields: { threadId: text, cursor: optional(text) } },
+  "thread/backgroundTerminals/terminate": { required: ["threadId", "processId"], fields: { threadId: text, processId: text } },
+  "thread/archive": { required: ["threadId"], fields: { threadId: text } },
+  "thread/unarchive": { required: ["threadId"], fields: { threadId: text } },
+  "account/login/start": { required: ["type", "apiKey"], fields: { type: oneOf("apiKey"), apiKey: text } },
   "turn/steer": { required: ["threadId", "expectedTurnId", "input"], fields: { threadId: text, expectedTurnId: text,
     clientUserMessageId: optional(text), input: list(userInput) } },
 }
@@ -62,6 +66,9 @@ export class CodexPeer {
   private phase: "new" | "initializing" | "ready" = "new"
   private readonly threads = new Map<string, string | undefined>()
   private readonly pending = new Set<number>()
+  private started = 0
+  private readonly archived = new Set<string>()
+  readonly logins: string[] = []
 
   constructor(private readonly models: unknown[], private readonly script: { modelListFailures?: number; turnSettingsFailures?: number; turnStartError?: string; goal?: unknown; userAgent?: string; backgroundTerminals?: string[] } = {}) {}
 
@@ -98,6 +105,23 @@ export class CodexPeer {
     if (frame.method === "config/read") return { config: { model_provider: null }, origins: {}, layers: null }
     if (frame.method === "thread/goal/get") return { goal: this.script.goal ?? null }
     if (frame.method === "thread/backgroundTerminals/list") return { data: (this.script.backgroundTerminals ?? []).map((processId) => ({ processId })), nextCursor: null }
+    if (frame.method === "thread/backgroundTerminals/terminate") {
+      this.script.backgroundTerminals?.splice(this.script.backgroundTerminals.indexOf(String(params.processId)), 1)
+      return {}
+    }
+    if (frame.method === "thread/archive") {
+      this.threads.delete(String(params.threadId))
+      this.archived.add(String(params.threadId))
+      return {}
+    }
+    if (frame.method === "thread/unarchive") {
+      if (!this.archived.delete(String(params.threadId))) throw new CodexScriptedFailure(`no archived rollout found for thread id ${params.threadId}`)
+      return { thread: { id: params.threadId } }
+    }
+    if (frame.method === "thread/resume" && this.archived.has(String(params.threadId))) {
+      throw new CodexScriptedFailure(`session ${params.threadId} is archived. Run \`codex unarchive ${params.threadId}\` to unarchive it first.`)
+    }
+    if (frame.method === "account/login/start") { this.logins.push(String(params.apiKey)); return { type: "apiKey" } }
     if (frame.method === "turn/start") return this.start(params)
     if (frame.method === "turn/settings/update") {
       if (this.script.turnSettingsFailures) { this.script.turnSettingsFailures--; throw new CodexScriptedFailure("native live settings refused") }
@@ -112,9 +136,8 @@ export class CodexPeer {
       assert.equal(this.threads.get(String(params.threadId)), params.turnId, "turn/interrupt must name the thread's active turn")
       return {}
     }
-    const threadId = frame.method === "thread/start" ? `thread-${this.threads.size + 1}` : String(params.threadId)
-    assert(!this.threads.has(threadId), `Thread ${threadId} is already open`)
-    this.threads.set(threadId, undefined)
+    const threadId = frame.method === "thread/start" ? `thread-${++this.started}` : String(params.threadId)
+    if (!this.threads.has(threadId)) this.threads.set(threadId, undefined)
     return { thread: { id: threadId } }
   }
 

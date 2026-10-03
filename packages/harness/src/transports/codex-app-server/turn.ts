@@ -7,8 +7,11 @@ import { CodexRequestTimeout, CodexTransportError } from "./errors"
 import { codexTurnParams } from "./input"
 import { codexTurnSettings, type CodexModel } from "./models"
 import { codexPermissionSettings } from "./modes"
-import { codexRetirementDeadline, type RpcMessage } from "./rpc"
+import type { RpcMessage } from "./rpc"
 import { codexHostSubagentObservation } from "./host-subagents"
+
+const TURN_START_MS = 60_000
+const LATE_TURN_START_MS = 600_000
 
 function hostSubagents(threadId: string, broker: TurnBroker, queue: AsyncPushQueue<RoutedEvent>) {
   let observed: Promise<unknown> = Promise.resolve()
@@ -63,6 +66,18 @@ export function incorporatedSteer(message: RpcMessage, steers: Set<string>): Rou
   return { event: { type: "input-incorporated", messageId: clientId } }
 }
 
+async function requestTurnStart(entry: Entry, params: { threadId: string }, clock: HarnessServices["clock"]): Promise<Record<string, unknown>> {
+  const answer = entry.rpc.request("turn/start", params, LATE_TURN_START_MS)
+  const expired = Promise.withResolvers<never>()
+  const timer = clock.setTimeout(() => {
+    const error = new CodexRequestTimeout("turn/start", TURN_START_MS)
+    entry.rpc.abandonTurn(params.threadId, answer, error)
+    expired.reject(error)
+  }, TURN_START_MS)
+  try { return asRecordOrEmpty(await Promise.race([answer, expired.promise])) }
+  finally { clock.clearTimeout(timer) }
+}
+
 async function startTurn(entry: Entry, session: HarnessSession, turn: TurnInput, services: HarnessServices,
   models: () => Promise<CodexModel[]>): Promise<void> {
   const settings = codexTurnSettings(await models(), {
@@ -71,10 +86,7 @@ async function startTurn(entry: Entry, session: HarnessSession, turn: TurnInput,
   const mode = codexPermissionSettings(entry.start.config.permissionMode)
   const threadId = session.binding.upstreamSessionId
   const params = await codexTurnParams(turn, threadId, session.directory, settings, mode)
-  const result = asRecordOrEmpty(await entry.rpc.request("turn/start", params, 60_000).catch(async (error: unknown) => {
-    if (error instanceof CodexRequestTimeout) await entry.rpc.abandon(error, codexRetirementDeadline(services))
-    throw error
-  }))
+  const result = await requestTurnStart(entry, params, services.clock)
   const id = asString(asRecordOrEmpty(result.turn).id)
   if (!id) throw new CodexTransportError("protocol", "Codex turn/start returned no turn id")
   if (entry.turn) entry.turn.id = id

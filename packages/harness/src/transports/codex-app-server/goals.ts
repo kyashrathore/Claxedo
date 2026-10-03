@@ -4,9 +4,9 @@ import { errorMessage } from "@claxedo/helpers"
 import { goalSnapshotFromRecord, type HarnessSession, type NativeGoalOperations, type SessionBroker } from "../../contract"
 import { CodexTransportError } from "./errors"
 import { codexStopDeadline, type CodexTerminals } from "./terminals"
-import type { CodexRpc } from "./rpc"
+import type { CodexConnection } from "./rpc"
 
-type GoalEntry = { rpc: CodexRpc; broker: SessionBroker; goal: RuntimeGoalSnapshot | null; terminals: CodexTerminals;
+type GoalEntry = { rpc: CodexConnection; broker: SessionBroker; goal: RuntimeGoalSnapshot | null; terminals: CodexTerminals;
   providerTurn?: { id: string }; turn?: { id?: string } }
 
 export function snapshotFromCodexGoal(sessionId: string, value: unknown): RuntimeGoalSnapshot {

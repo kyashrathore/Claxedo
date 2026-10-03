@@ -5,7 +5,7 @@ import path from "node:path"
 import type { DraftLaunch, HarnessServices, SessionBroker, StartInput, TurnBroker, TurnInput } from "../../contract"
 import { ScriptedProcess } from "../../test-support/scripted-process"
 import { projectCodexThreadConfig } from "./configuration"
-import { CodexAppServerTransport } from "."
+import { CodexAppServerTransport, CodexProcessPool } from "."
 import { scriptedTransport, type Frame } from "./test-support/transport"
 
 const input: StartInput = {
@@ -31,20 +31,24 @@ test("Codex receives every projected MCP server and local first-party server", (
   expect((projectCodexThreadConfig({ ...input, locality: "remote" }, services, []).mcp_servers as Record<string, unknown>).claxedo).toBeUndefined()
 })
 
-test("disposing during pending initialize retires the process before start rejects", async () => {
+test("disposing a transport during a pending initialize rejects its start, and disposing the pool retires the starting app-server", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-initialize-"))
   let initialized!: () => void
   const sent = new Promise<void>((resolve) => { initialized = resolve })
   const wire = new ScriptedProcess<Frame>((frame) => { if (frame.method === "initialize") initialized() })
-  const services = { spawn: async () => wire.owned(), recordHomeUse: async () => {}, healthChanged: () => {},
-    clock: { now: Date.now, setTimeout, clearTimeout } } as unknown as HarnessServices
-  const transport = new CodexAppServerTransport(services, { binary: "unused", homeRoot: root, ownerHome: path.join(root, "owner") })
+  const clock = { now: Date.now, setTimeout, clearTimeout }
+  const log = { debug() {}, info() {}, warn() {}, error() {} }
+  const services = { spawn: async () => wire.owned(), recordHomeUse: async () => {}, healthChanged: () => {}, clock, log } as unknown as HarnessServices
+  const pool = new CodexProcessPool({ clock, log })
+  const transport = new CodexAppServerTransport(services, { binary: "unused", homeRoot: root, ownerHome: path.join(root, "owner"), pool })
   const starting = transport.start({ ...input, projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [] } },
     {} as SessionBroker)
   try {
     await sent
     await transport.dispose()
-    await expect(starting).rejects.toThrow()
+    await expect(starting).rejects.toThrow("disposed during startup")
+    expect(wire.retirements).toBe(0)
+    await pool.dispose()
     expect(wire.retirements).toBeGreaterThan(0)
     expect(await wire.exited).toEqual({ code: 0, signal: null })
   } finally { await fs.rm(root, { recursive: true, force: true }) }

@@ -4,9 +4,9 @@ import type { v2 } from "./translate"
 import type { HarnessServices, SessionBroker, StartInput } from "../../contract"
 import { projectCodexThreadConfig } from "./configuration"
 import { CodexTransportError } from "./errors"
-import type { CodexRpc } from "./rpc"
+import type { CodexConnection } from "./rpc"
 
-export type TitleEntry = { rpc: CodexRpc; start: StartInput; modelProvider: string; broker: SessionBroker; sideThreads: Set<string> }
+export type TitleEntry = { rpc: CodexConnection; start: StartInput; modelProvider: string; broker: SessionBroker; sideThreads: Set<string> }
 
 const titleSchema = { type: "object", properties: { title: { type: "string" } }, required: ["title"], additionalProperties: false }
 

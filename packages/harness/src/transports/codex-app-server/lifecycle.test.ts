@@ -71,38 +71,43 @@ function manualClock() {
   return { clock, fire: (ms: number) => { for (const [id, timer] of timers) if (timer.ms === ms) { timers.delete(id); timer.callback() } } }
 }
 
-test("a turn/start that never answers retires the app-server so no orphan turn runs, and the next turn resumes on a new one", async () => {
+test("a turn/start that never answers fails only its session, interrupts the turn once Codex starts it, and the next turn resumes on the same app-server", async () => {
   const { clock, fire } = manualClock()
-  const peer = await scriptedTransport({ holdTurnStart: true, clock })
+  const peer = await scriptedTransport({ holdTurnStart: true, clock, idleMs: 30_000 })
   try {
     const session = await peer.transport.start(peer.startInput, peer.liveBroker())
     const running = drain(peer.transport.send(session, turnInput, turnBroker()))
     await peer.started
     fire(60_000)
     await expect(running).rejects.toThrow("Codex turn/start did not answer within 60000ms")
-    expect(peer.retired()).toBe(1)
+    expect(peer.retired()).toBe(0)
     expect(peer.transport.health.runtime(peer.root, "s1")).toMatchObject({ status: "degraded", message: "Codex turn/start did not answer within 60000ms" })
+    peer.releaseTurnStart()
+    for (let attempt = 0; attempt < 50 && !peer.frames.some((frame) => frame.method === "turn/interrupt"); attempt++) await tick()
+    expect(peer.frames.find((frame) => frame.method === "turn/interrupt")?.params).toEqual({ threadId: "thread-1", turnId: "turn-current" })
+    peer.emit({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-current", status: "interrupted" } } })
     const second = drain(peer.transport.send(session, turnInput, turnBroker()))
     for (let attempt = 0; attempt < 50 && peer.frames.filter((frame) => frame.method === "turn/start").length < 2; attempt++) await tick()
     peer.releaseTurnStart()
     await tick()
     peer.emit({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-current", status: "completed" } } })
     await second
-    expect(peer.spawned()).toBe(2)
+    expect(peer.spawned()).toBe(1)
     expect(peer.frames.filter((frame) => frame.method === "thread/resume")).toHaveLength(1)
+    expect(peer.transport.health.runtime(peer.root, "s1")).toEqual({ status: "ok" })
   } finally { await peer.close() }
 })
 
-const brokered = (placeholder: string) => ({ machineLoginAllowed: false, accountOwner: "fixture-owner", secrets: {}, leaseGeneration: placeholder,
-  providers: { openai: { baseUrl: "http://127.0.0.1:47509/v1", placeholder, authMode: "api-key" as const } } })
+const brokered = (placeholder: string, credentialId = "account-one") => ({ machineLoginAllowed: false, accountOwner: "fixture-owner", secrets: {}, leaseGeneration: placeholder,
+  providers: { openai: { baseUrl: "http://127.0.0.1:47509/v1", placeholder, authMode: "api-key" as const, account: { credentialId, providerId: "openai" } } } })
 
-test("a credential change during a turn is deferred to that turn's end, then applied by resuming the thread on a new app-server", async () => {
+test("an account change during a turn is deferred to that turn's end, then moves the session's thread to a new app-server", async () => {
   const peer = await scriptedTransport({ holdTurnStart: true })
   try {
     const session = await peer.transport.start({ ...peer.startInput, credentials: brokered("placeholder-one") }, peer.liveBroker())
     const running = drain(peer.transport.send(session, turnInput, turnBroker()))
     await peer.started
-    expect(await peer.transport.configure(session, { credentials: brokered("placeholder-two") })).toEqual({ state: "deferred", until: "after-active-turns" })
+    expect(await peer.transport.configure(session, { credentials: brokered("placeholder-two", "account-two") })).toEqual({ state: "deferred", until: "after-active-turns" })
     expect(peer.spawned()).toBe(1)
     peer.releaseTurnStart()
     await tick()
@@ -110,10 +115,23 @@ test("a credential change during a turn is deferred to that turn's end, then app
     await running
     for (let attempt = 0; attempt < 50 && !peer.frames.some((frame) => frame.method === "thread/resume"); attempt++) await tick()
     expect(peer.spawned()).toBe(2)
+    expect(peer.frames.filter((frame) => frame.method === "thread/archive").map((frame) => frame.params)).toEqual([{ threadId: "thread-1" }])
     expect(peer.frames.find((frame) => frame.method === "thread/resume")?.params).toMatchObject({ threadId: "thread-1" })
-    expect(await Bun.file(`${peer.environments[1]?.CODEX_HOME}/config.toml`).text()).toContain("placeholder-two")
-    expect(await peer.transport.configure(session, { credentials: brokered("placeholder-two") })).toEqual({ state: "applied" })
+    expect(await peer.transport.configure(session, { credentials: brokered("placeholder-two", "account-two") })).toEqual({ state: "applied" })
     expect(peer.spawned()).toBe(2)
+  } finally { await peer.close() }
+})
+
+test("a placeholder rotation of the same account keeps the app-server and logs the new key in before the next turn", async () => {
+  const peer = await scriptedTransport({ completeTurns: true })
+  try {
+    const session = await peer.transport.start({ ...peer.startInput, credentials: brokered("placeholder-one") }, peer.liveBroker())
+    await drain(peer.transport.send(session, turnInput, turnBroker()))
+    expect(await peer.transport.configure(session, { credentials: brokered("placeholder-two") })).toEqual({ state: "applied" })
+    await drain(peer.transport.send(session, turnInput, turnBroker()))
+    expect(peer.spawned()).toBe(1)
+    expect(peer.logins()).toEqual(["placeholder-one", "placeholder-two"])
+    expect(await Bun.file(`${peer.environments[0]?.CODEX_HOME}/config.toml`).text()).not.toContain("placeholder")
   } finally { await peer.close() }
 })
 
@@ -130,12 +148,12 @@ test("an owner's credential change that leaves the Codex account as it was keeps
   } finally { await peer.close() }
 })
 
-test("a credential replacement preserves Codex background terminals and resumes only after they finish", async () => {
+test("an account change preserves Codex background terminals and moves the session only after they finish", async () => {
   const backgroundTerminals = ["running-job"]
   const peer = await scriptedTransport({ backgroundTerminals, completeTurns: true })
   try {
     const session = await peer.transport.start({ ...peer.startInput, credentials: brokered("placeholder-one") }, peer.liveBroker())
-    await expect(peer.transport.configure(session, { credentials: brokered("placeholder-two") })).rejects.toThrow("background tasks are running")
+    await expect(peer.transport.configure(session, { credentials: brokered("placeholder-two", "account-two") })).rejects.toThrow("background tasks are running")
     await expect(drain(peer.transport.send(session, turnInput, turnBroker()))).rejects.toThrow("background tasks are running")
     expect(peer.spawned()).toBe(1)
     expect(peer.retired()).toBe(0)

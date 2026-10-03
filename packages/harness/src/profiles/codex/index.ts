@@ -68,16 +68,16 @@ async function marketplace(home: string, projection: PluginProjection): Promise<
     plugins: [...names].map((name) => `${name}@${CLAXEDO_MARKETPLACE}`) }
 }
 
-function brokerFragment(selected: { baseUrl: string; apiPath?: string; placeholder: string }): string {
+function brokerFragment(selected: { baseUrl: string; apiPath?: string }): string {
   return [
     "check_for_update_on_startup = false",
+    'cli_auth_credentials_store = "ephemeral"',
     `model_provider = ${JSON.stringify(CODEX_BROKER_PROVIDER)}`,
     `[model_providers.${CODEX_BROKER_PROVIDER}]`,
     'name = "Claxedo credential broker"',
     `base_url = ${JSON.stringify(`${selected.baseUrl}${selected.apiPath ?? ""}`)}`,
     'wire_api = "responses"',
-    "requires_openai_auth = false",
-    `http_headers = { Authorization = ${JSON.stringify(`Bearer ${selected.placeholder}`)} }`,
+    "requires_openai_auth = true",
   ].join("\n")
 }
 

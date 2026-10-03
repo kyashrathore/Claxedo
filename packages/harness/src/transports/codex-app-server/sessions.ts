@@ -1,13 +1,12 @@
 import { errorMessage } from "@claxedo/helpers"
-import { HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
 import type { ConfigApplied, HarnessServices, HarnessSession, ProcessLosses, SessionBroker, StartInput, TransportConfigUpdate } from "../../contract"
 import { attachedSessionEntry, HarnessVersionGate, mergeStartInput } from "../../contract"
-import { launchConfigChanged } from "../../contract/node"
 import type { Entry } from "./entry"
 import { CodexTransportError } from "./errors"
 import type { CodexLaunches } from "./launch"
 import { codexRetirementDeadline, type RpcMessage } from "./rpc"
 import { openCodexSession, type CodexSessionHost } from "./session"
+import { releaseCodexThreads } from "./thread-release"
 import { CODEX_RANGE } from "./version"
 
 export class CodexSessions implements CodexSessionHost {
@@ -62,7 +61,7 @@ export class CodexSessions implements CodexSessionHost {
 
   private async apply(entry: Entry): Promise<void> {
     const next = mergeStartInput(entry.start, entry.pendingUpdate ?? {})
-    if (entry.state !== "lost" && launchConfigChanged(entry.start, next, HARNESS_TABLE.codex.providerIds)) {
+    if (entry.state !== "lost" && this.launches.key(next) !== entry.key) {
       await this.reopen(entry)
       return
     }
@@ -85,8 +84,9 @@ export class CodexSessions implements CodexSessionHost {
         throw new CodexTransportError("configuration", "Claxedo cannot replace the Codex process while background tasks are running. Wait for them to finish or explicitly stop them before changing launch settings.")
       }
       entry.state = "retiring"
-      await entry.rpc.retire(codexRetirementDeadline(this.services))
+      await releaseCodexThreads(entry, codexRetirementDeadline(this.services))
     }
+    await entry.release()
     entry.state = "lost"
     entry.start = mergeStartInput(entry.start, entry.pendingUpdate ?? {})
     entry.pendingUpdate = undefined
@@ -102,12 +102,15 @@ export class CodexSessions implements CodexSessionHost {
     const entry = this.entries.get(session.binding.sessionId)
     if (!entry) return
     entry.state = "retiring"
-    entry.providerTurn?.fail(new CodexTransportError("process", "Codex process retired during provider turn"))
-    entry.providerTurn = undefined
-    entry.children.end()
-    await entry.rpc.retire(codexRetirementDeadline(this.services))
-    this.entries.delete(session.binding.sessionId)
-    this.losses.recovered(session.binding.sessionId)
+    try { await releaseCodexThreads(entry, codexRetirementDeadline(this.services)) }
+    finally {
+      entry.providerTurn?.fail(new CodexTransportError("session", "Codex session closed during its provider turn"))
+      entry.providerTurn = undefined
+      entry.children.end()
+      await entry.release()
+      this.entries.delete(session.binding.sessionId)
+      this.losses.recovered(session.binding.sessionId)
+    }
   }
 
   async dispose(): Promise<void> {

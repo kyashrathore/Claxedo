@@ -83,6 +83,7 @@ export type WorkspaceRuntimeServerOptions = {
   placement: WorkspaceHostOptions["placement"]
   connectionProviders?: WorkspaceHostOptions["connectionProviders"]
   harnessStateRoot?: WorkspaceHostOptions["harnessStateRoot"]
+  sharedHarnessHosts?: WorkspaceHostOptions["sharedHarnessHosts"]
   env?: WorkspaceHostOptions["env"]
   resolveConnectionSecrets?: WorkspaceHostOptions["resolveConnectionSecrets"]
   /** Persist host-owned session metadata before the created lifecycle event is published. */
@@ -438,6 +439,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     placement: options.placement,
     ...(options.connectionProviders ? { connectionProviders: options.connectionProviders } : {}),
     ...(options.harnessStateRoot ? { harnessStateRoot: options.harnessStateRoot } : {}),
+    ...(options.sharedHarnessHosts ? { sharedHarnessHosts: options.sharedHarnessHosts } : {}),
     ...(options.env ? { env: options.env } : {}),
     ...(options.resolveConnectionSecrets ? { resolveConnectionSecrets: options.resolveConnectionSecrets } : {}),
     ...(options.harness ? { harness: options.harness } : {}),

@@ -3,6 +3,7 @@ import type { MachineLoginPolicy } from "@claxedo/harness/contract"
 import type { CustomHarnessProvider } from "@claxedo/harness/providers"
 import type { RuntimeEventEnvelope, RuntimeEventHub, RuntimeStore, SessionAccessPolicy, WorkspaceEventParents } from "@claxedo/session-core"
 import type { WorkspaceFirstPartyMcpLaunchOptions } from "../first-party-mcp/index"
+import type { SharedHarnessHosts } from "../host/shared-harness-hosts"
 import type { RuntimeHarnessSelection } from "../routes/config"
 import type { WorkspaceTarget } from "../target"
 
@@ -41,6 +42,12 @@ export type WorkspaceHostOptions = {
   resolveConnectionSecrets?: ConnectionSecretResolver
   target: WorkspaceTarget
   storeRoot?: string
+  /**
+   * The Codex app-server pool and Cursor SDK hosts every workspace of this
+   * process shares. A host given none creates its own and retires them when it
+   * is disposed, which is right only where one workspace owns the process.
+   */
+  sharedHarnessHosts?: SharedHarnessHosts
   /** Where Claxedo-owned harness homes live; defaults to `~/.claxedo/harness` of the process user. */
   harnessStateRoot?: string
   /** The environment harness processes inherit and executables are resolved from. */

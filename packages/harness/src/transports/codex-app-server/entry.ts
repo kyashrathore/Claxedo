@@ -4,11 +4,12 @@ import type { HarnessSession, RoutedEvent, SessionBroker, StartInput, TransportC
 import type { CodexChildren } from "./children"
 import type { CodexModel } from "./models"
 import type { CodexProviderTurn } from "./provider-turn"
-import type { CodexRpc } from "./rpc"
+import type { CodexMember } from "./member"
+import type { CodexProcessPool } from "./pool"
 import type { CodexTerminals } from "./terminals"
 import type { CodexUsageLedger } from "./usage"
 
-export type CodexTransportOptions = { binary: string; homeRoot: string; ownerHome?: string; env?: NodeJS.ProcessEnv }
+export type CodexTransportOptions = { binary: string; homeRoot: string; ownerHome?: string; env?: NodeJS.ProcessEnv; pool: CodexProcessPool }
 
 export type EntryState = "ready" | "busy" | "lost" | "retiring"
 
@@ -17,7 +18,9 @@ export type Entry = {
   start: StartInput
   session: HarnessSession
   broker: SessionBroker
-  rpc: CodexRpc
+  rpc: CodexMember
+  key: string
+  release(): Promise<void>
   home: string
   modelProvider: string
   terminals: CodexTerminals

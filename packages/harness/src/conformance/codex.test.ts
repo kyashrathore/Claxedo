@@ -3,7 +3,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import { runConformance, setupConformance } from "./test-support/run"
-import { codexBackend as backend, codexEntry, entryHome, hashes, makeCodexTransport as makeTransport, OWNER_KEY, ownLoginContext, recordingBackend, type CodexBackend } from "../../e2e/harness/codex-conformance"
+import { codexBackend as backend, codexEntry, codexOptions, entryHome, hashes, makeCodexTransport as makeTransport, OWNER_KEY, ownLoginContext, recordingBackend, type CodexBackend } from "../../e2e/harness/codex-conformance"
 import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
 import { PINNED_CODEX } from "../../e2e/harness/pinned-codex"
 import { startScriptedMcpServer } from "../../e2e/harness/scripted-mcp-server"
@@ -207,9 +207,7 @@ test("Codex materializes every attachment into the workspace with a path line, a
 
 test("Codex draft configuration probes model/list with the owner's resolved credentials", async () => {
   const state = await backend()
-  const transport = new CodexAppServerTransport(createTestServices(), {
-    binary: PINNED_CODEX, homeRoot: path.join(state.root, "homes"), env: state.env,
-  })
+  const transport = new CodexAppServerTransport(createTestServices(), codexOptions(state))
   try {
     const target = { draft: { workspaceId: "ws", directory: state.directory, locality: "local" as const,
       owner: state.owner, credentials: state.credentials, config: { harness: { id: "codex", access: "native" as const } },
@@ -297,9 +295,7 @@ test("a foreign harness projection leaves Codex on the owner's own login and its
 
 test("Codex live model list supplies capabilities and session options", async () => {
   const context = await setupConformance({ name: "codex-models", backend,
-    makeTransport: (services, state) => new CodexAppServerTransport(services, {
-      binary: PINNED_CODEX, homeRoot: path.join((state as CodexBackend).root, "homes"), env: (state as CodexBackend).env,
-    }) })
+    makeTransport: (services, state) => new CodexAppServerTransport(services, codexOptions(state)) })
   try {
     const capabilities = await context.transport.capabilities({ sessionId: "s1", directory: context.backend.directory })
     expect(capabilities.modelSelection.status).toBe("required")
@@ -315,9 +311,7 @@ test("Codex live model list supplies capabilities and session options", async ()
 
 test("Codex provider-started goal turn is admitted, streams, and settles completed", async () => {
   const context = await setupConformance({ name: "codex-goal-stream", backend,
-    makeTransport: (services, state) => new CodexAppServerTransport(services, {
-      binary: PINNED_CODEX, homeRoot: path.join((state as CodexBackend).root, "homes"), env: (state as CodexBackend).env,
-    }) })
+    makeTransport: (services, state) => new CodexAppServerTransport(services, codexOptions(state)) })
   let admitted!: (result: Awaited<ReturnType<typeof context.sessionBroker.admitProviderTurn>>) => void
   const admission = new Promise<Awaited<ReturnType<typeof context.sessionBroker.admitProviderTurn>>>((resolve) => { admitted = resolve })
   const original = context.sessionBroker.admitProviderTurn.bind(context.sessionBroker)
@@ -355,9 +349,7 @@ test("Codex turn model overrides start model and validates effort and tier from 
       }
       return state
     },
-    makeTransport: (services, state) => new CodexAppServerTransport(services, {
-      binary: PINNED_CODEX, homeRoot: path.join((state as CodexBackend).root, "homes"), env: (state as CodexBackend).env,
-    }) })
+    makeTransport: (services, state) => new CodexAppServerTransport(services, codexOptions(state)) })
   try {
     const { options } = await context.transport.config!.options({ session: context.session }, "probe")
     const model = options.find((option) => option.id === "model")?.selectOptions?.[0]?.id
@@ -382,7 +374,7 @@ test("Codex exec approval reaches the durable broker and a denied command never 
   await fs.access(state.root, fs.constants.W_OK)
   state.server.scriptTool({ name: "exec_command", input: { cmd: `touch ${marker}`, sandbox_permissions: "require_escalated", justification: "Test a denied Codex approval" } })
   const services = createTestServices()
-  const transport = new CodexAppServerTransport(services, { binary: PINNED_CODEX, homeRoot: path.join(state.root, "homes"), env: state.env })
+  const transport = new CodexAppServerTransport(services, codexOptions(state))
   const ports = new MemoryPorts()
   ports.current.set("s1", { ...authority, directory: state.directory })
   const owner = createRequestBroker(ports)
@@ -440,9 +432,7 @@ test("a Codex approval whose publication fails gets the exact JSON-RPC error and
 test("Codex native goals use the running app-server", async () => {
   const state = await backend()
   const services = createTestServices()
-  const transport = new CodexAppServerTransport(services, {
-    binary: PINNED_CODEX, homeRoot: path.join(state.root, "homes"), env: state.env,
-  })
+  const transport = new CodexAppServerTransport(services, codexOptions(state))
   const ports = new MemoryPorts()
   ports.current.set("s1", { ...authority, directory: state.directory })
   const owner = createRequestBroker(ports)
@@ -490,9 +480,7 @@ test("Codex defers a projected configured MCP server's tools behind tool_search,
   const context = await setupConformance({ name: "codex-projected-mcp",
     backend: async () => ({ ...(await backend()), model: { providerID: "codex", modelID: "gpt-5.5" },
       projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [{ name: "projected", kind: "http", url: mcp.url, origin: "configured" }] } }),
-    makeTransport: (services, state) => new CodexAppServerTransport(services, {
-      binary: PINNED_CODEX, homeRoot: path.join((state as CodexBackend).root, "homes"), env: (state as CodexBackend).env,
-    }) })
+    makeTransport: (services, state) => new CodexAppServerTransport(services, codexOptions(state)) })
   try {
     const server = (context.backend as CodexBackend).server
     await context.transport.config!.setPermissionMode(context.session, "full-access")
@@ -619,8 +607,9 @@ describe("Codex transport configuration", () => {
       const config = await fs.readFile(path.join(home, "config.toml"), "utf8")
       const entries = await fs.readdir(home)
       expect(config).toContain('base_url = "http://127.0.0.1:48850/binding/backend-api/codex"')
-      expect(config).toContain('Authorization = "Bearer signed-placeholder"')
-      expect(config).toContain('requires_openai_auth = false')
+      expect(config).not.toContain("signed-placeholder")
+      expect(config).toContain('requires_openai_auth = true')
+      expect(config).toContain('cli_auth_credentials_store = "ephemeral"')
       expect(config).toContain('wire_api = "responses"')
       expect(config).not.toContain("operator-sentinel")
       expect(entries).not.toContain("auth.json")

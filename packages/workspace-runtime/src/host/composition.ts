@@ -7,6 +7,7 @@ import type { MachineLoginPolicy } from "@claxedo/harness/contract"
 import { requireCursorWorker } from "./executables/cursor"
 import { requireClaudeExecutable } from "./executables/claude"
 import { requireCodexExecutable } from "./executables/codex"
+import type { SharedHarnessHosts } from "./shared-harness-hosts"
 
 export type HarnessCompositionInput = {
   env: NodeJS.ProcessEnv
@@ -15,6 +16,7 @@ export type HarnessCompositionInput = {
   harnessStateRoot: string
   /** Where the OpenCode engine of this host keeps its database. */
   opencodeRoot: string
+  sharedHarnessHosts: SharedHarnessHosts
 }
 
 export function defaultHarnessStateRoot(env: NodeJS.ProcessEnv = process.env): string {
@@ -31,6 +33,7 @@ export function harnessCompositionOptions(input: HarnessCompositionInput): Harne
       homeRoot: path.join(harnessStateRoot, "codex", "homes"),
       ownerHome: env.CODEX_HOME ?? path.join(home, ".codex"),
       env,
+      pool: input.sharedHarnessHosts.codex,
     }),
     claude: () => ({
       executable: requireClaudeExecutable(env),
@@ -43,6 +46,7 @@ export function harnessCompositionOptions(input: HarnessCompositionInput): Harne
       homeRoot: path.join(harnessStateRoot, "cursor", "homes"),
       ownerCursorDir: path.join(home, ".cursor"),
       worker: requireCursorWorker(env),
+      hosts: input.sharedHarnessHosts.cursor,
       ...placement,
     }),
     opencode: () => {
