@@ -159,12 +159,13 @@ const autoUpdate = createAutoUpdate({ logger, exitForInstall: (install) => lifec
 let leasedDaemon: ClaxedoDaemonDiscovery | undefined
 const lifecycle = createAppLifecycle({
   app,
+  powerMonitor: () => powerMonitor,
   platform: process.platform,
   window: () => mainWindow ?? undefined,
   ready: app.whenReady(),
   createTray: createAppTray,
   runningWork: async () => (leasedDaemon && daemonConnected ? runningWork(await recovery.inspect()) : undefined),
-  confirmQuit: confirmQuitDialog,
+  confirmQuit: (message, signal) => confirmQuitDialog(message, signal, mainWindow ?? undefined),
   exit: exitApp,
   log: (message, fields) => logger.log(message, fields),
 })
@@ -219,8 +220,6 @@ function setupApp() {
   })
 
   void app.whenReady().then(async () => {
-    powerMonitor.on("suspend", () => logger.log("system suspending"))
-    powerMonitor.on("resume", () => logger.log("system resumed"))
     app.setAsDefaultProtocolClient("claxedo")
     setDockIcon()
     autoUpdate.setup()

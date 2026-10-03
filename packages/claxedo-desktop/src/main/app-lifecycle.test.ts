@@ -32,9 +32,11 @@ class FakeWindow extends EventEmitter {
   }
 }
 
-function lifecycle(options: { platform?: NodeJS.Platform; work?: RunningWork; confirm?: boolean } = {}) {
+function lifecycle(options: { platform?: NodeJS.Platform; work?: RunningWork; confirm?: boolean | "pending" } = {}) {
   const app = new FakeApp()
   const win = new FakeWindow()
+  const power = new EventEmitter()
+  const aborted: boolean[] = []
   const exits: ExitIntent[] = []
   const confirms: string[] = []
   const trays: Array<{ open: () => void; quit: () => void }> = []
@@ -42,20 +44,25 @@ function lifecycle(options: { platform?: NodeJS.Platform; work?: RunningWork; co
   app.on("quit", () => { quit = true })
   const subject = createAppLifecycle({
     app,
+    powerMonitor: () => power,
     platform: options.platform ?? "darwin",
     window: () => win,
     ready: Promise.resolve(),
     createTray: (actions) => trays.push(actions),
     runningWork: async () => options.work,
-    confirmQuit: async (message) => {
+    confirmQuit: async (message, signal) => {
       confirms.push(message)
-      return options.confirm ?? true
+      if (options.confirm !== "pending") return options.confirm ?? true
+      return new Promise<boolean>((resolve) => signal.addEventListener("abort", () => {
+        aborted.push(true)
+        resolve(false)
+      }))
     },
     exit: async (intent) => { exits.push(intent) },
     log: () => {},
   })
   subject.keepOnClose(win)
-  return { app, win, subject, exits, confirms, trays, quit: () => quit }
+  return { app, win, power, subject, exits, confirms, aborted, trays, quit: () => quit }
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
@@ -145,5 +152,49 @@ describe("app lifecycle", () => {
     expect(confirms).toEqual(["1 session is still working. Quitting stops it."])
     expect(exits).toEqual(["quit"])
     expect(installed).toBe(true)
+  })
+
+  test("an OS shutdown stops the daemon without asking and holds the shutdown until then", async () => {
+    const { power, exits, confirms, quit } = lifecycle({ work: { sessions: 2, terminals: 0 }, confirm: false })
+    await settle()
+    const event = preventable()
+
+    power.emit("shutdown", event)
+    await settle()
+
+    expect(event.prevented()).toBe(true)
+    expect(confirms).toEqual([])
+    expect(exits).toEqual(["stop"])
+    expect(quit()).toBe(true)
+  })
+
+  test("a Windows session end stops the daemon without asking and lets the window close", async () => {
+    const { win, exits, confirms, quit } = lifecycle({ platform: "win32", work: { sessions: 1, terminals: 0 }, confirm: false })
+    let closed = false
+    win.on("closed", () => { closed = true })
+
+    win.emit("query-session-end")
+    win.close()
+    await settle()
+
+    expect(confirms).toEqual([])
+    expect(exits).toEqual(["stop"])
+    expect(quit()).toBe(true)
+    expect(closed).toBe(true)
+  })
+
+  test("a session ending while the quit confirmation is open closes it and stops once", async () => {
+    const { app, power, exits, confirms, aborted, quit } = lifecycle({ work: { sessions: 1, terminals: 0 }, confirm: "pending" })
+    await settle()
+
+    app.quit()
+    await settle()
+    expect(confirms).toHaveLength(1)
+    power.emit("shutdown", preventable())
+    await settle()
+
+    expect(aborted).toEqual([true])
+    expect(exits).toEqual(["stop"])
+    expect(quit()).toBe(true)
   })
 })

@@ -1,4 +1,4 @@
-import { dialog, Menu, Tray } from "electron"
+import { dialog, Menu, Tray, type BrowserWindow } from "electron"
 
 import { brandedIcon, iconPath } from "./windows"
 
@@ -16,13 +16,20 @@ export function createAppTray(actions: { open: () => void; quit: () => void }) {
   tray.on("click", actions.open)
 }
 
-export async function confirmQuitDialog(message: string): Promise<boolean> {
-  const { response } = await dialog.showMessageBox({
-    type: "warning",
+/**
+ * A visible parent makes the box a sheet that `signal` can close: macOS runs a
+ * parentless message box synchronously, which an abort cannot reach.
+ */
+export async function confirmQuitDialog(message: string, signal: AbortSignal, window: BrowserWindow | undefined): Promise<boolean> {
+  const options = {
+    type: "warning" as const,
     message,
     buttons: ["Quit", "Cancel"],
     defaultId: 1,
     cancelId: 1,
-  })
+    signal,
+  }
+  const parent = window && !window.isDestroyed() && window.isVisible() ? window : undefined
+  const { response } = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options)
   return response === 0
 }
