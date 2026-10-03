@@ -1,4 +1,4 @@
-import { credentialSnapshot, type CredentialSnapshot, type ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
+import { credentialSnapshot, type CredentialSnapshot } from "@claxedo/agent-runtime-contract"
 import { isRecord } from "@claxedo/helpers/guards"
 import { readProviderDefinitions, type CustomProviderDefinition } from "./provider-definitions"
 
@@ -11,7 +11,7 @@ export type TurnDeliveryRequest = { turnLease: string }
 
 export type TurnDelivery = {
   expiresAt: number
-  auth: CredentialSnapshot<ProviderProjectionSource>
+  auth: CredentialSnapshot
   plugins: RuntimeConfigSnapshotPlugins
   providerDefinitions: readonly CustomProviderDefinition[]
 }
