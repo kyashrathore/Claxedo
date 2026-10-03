@@ -50,15 +50,19 @@ const ENTRIES = [
   // (`connections/session-host-connection.ts`) and its per-turn routes
   // (`routes/session-host-delivery.ts`), with the session authority's request
   // parsing (`session/runtime-authority-request.ts`) and the D1 session
-  // row shapes (`d1/session-rows.ts`) as modules of their own.
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 125, packages: 19 },
+  // row shapes (`d1/session-rows.ts`) as modules of their own. A reservation
+  // places its session by the creator's default harness when it names none
+  // (`session/default-session-harness.ts`), and a session host and an
+  // enrolled owner's machine are both handed the owner's Pi accounts by one
+  // owner (`credentials/pi-direct-rows.ts`).
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 127, packages: 19 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
   // plus `agent-plugins/signed-scope.ts`, the caller and write guard the
   // activation and source stores share.
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 175, packages: 23 },
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 180, packages: 23 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 177, packages: 23 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 182, packages: 23 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

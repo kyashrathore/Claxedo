@@ -11,6 +11,7 @@ import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth
 import type { ControlPlaneServices } from "../authority/services"
 import { signedOrError } from "../workspace/route-support"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
+import { asRecord } from "@claxedo/helpers/guards"
 
 const BODY_LIMIT_BYTES = 16 * 1024
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/
@@ -21,6 +22,8 @@ export type PrivateSessionRegistrationRouteOptions = {
   authConfig?: ControlPlaneAuthConfig
   verifier?: ControlPlaneTokenVerifier
   services?: ControlPlaneServices
+  /** The harness a session created with none named runs, by the creator's user id; absent, such a session is placed in the workspace's runtime. */
+  defaultHarnessId?: (userId: string) => Promise<string | undefined>
 }
 
 /**
@@ -66,6 +69,7 @@ export function PrivateSessionRegistrationRoutes(options: PrivateSessionRegistra
     const kind = body?.kind
     const parentSessionId = optionalIdentifier(body?.parentSessionId)
     const title = optionalTitle(body?.title)
+    const harness = sessionHarness(body?.harness)
     if (
       !operationId
       || !sessionId
@@ -75,6 +79,7 @@ export function PrivateSessionRegistrationRoutes(options: PrivateSessionRegistra
       || (kind === "fork" && !parentSessionId)
       || (body?.parentSessionId !== undefined && parentSessionId === undefined)
       || (body?.title !== undefined && title === undefined)
+      || (body?.harness !== undefined && harness === undefined)
     ) {
       return context.json({
         error: {
@@ -85,6 +90,10 @@ export function PrivateSessionRegistrationRoutes(options: PrivateSessionRegistra
     }
 
     try {
+      const userId = authenticated.auth.principal?.userId
+      const harnessId = harness
+        ? harness.access === "native" ? harness.id : harness.access
+        : userId ? await options.defaultHarnessId?.(userId) : undefined
       const result = await options.authority.reserveSession(authenticated.auth, {
         operationId,
         sessionId,
@@ -92,6 +101,7 @@ export function PrivateSessionRegistrationRoutes(options: PrivateSessionRegistra
         kind,
         ...(parentSessionId ? { parentSessionId } : {}),
         ...(title ? { title } : {}),
+        ...(harnessId ? { harnessId } : {}),
       })
       return context.json(result, result.changed ? 201 : 200)
     } catch (error) {
@@ -136,4 +146,12 @@ function errorCode(error: unknown) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error && error.message ? error.message : "Session reservation was denied"
+}
+
+function sessionHarness(value: unknown): { id: string; access: "native" | "connection" } | undefined {
+  const row = asRecord(value)
+  const id = identifier(row?.id)
+  const access = row?.access
+  if (!row || !id || (access !== "native" && access !== "connection") || Object.keys(row).length !== 2) return undefined
+  return { id, access }
 }

@@ -11,7 +11,7 @@ let plane: SessionHostPlane
 let services: ControlPlaneServices
 const options = () => ({ runtimeAccessTokenSigner: plane.signRuntimeAccessToken, relayUrl: "https://relay.test" })
 const ROOT = "ses_pi_connected"
-const pi = { id: "pi", access: "native" } as const
+const RESERVED = "ses_pi_reserved"
 
 beforeAll(async () => {
   plane = await sessionHostPlane()
@@ -27,6 +27,8 @@ beforeAll(async () => {
     relay: {},
   } as unknown as ControlPlaneServices
   await plane.createHostedSession(ROOT)
+  await plane.createVmSession("ses_vm")
+  await plane.store.reserveSession(plane.owner, { operationId: "op_reserved", sessionId: RESERVED, workspaceId: WORKSPACE_ID, kind: "create", harnessId: "pi" })
 })
 
 afterAll(async () => {
@@ -39,30 +41,21 @@ function claims(connection: unknown) {
 }
 
 describe("connecting to a session served by its own host", () => {
-  test("the owner creating a Pi session on a cloud workspace is handed that session's host before it exists", async () => {
-    const minted = await hostedSessionHostConnection(services, options(), plane.owner, { workspaceId: WORKSPACE_ID, sessionId: "ses_new", harness: pi })
-    expect(minted).toMatchObject({ connection: { backing: "durable-object", hostId: sessionHostId("ses_new"), sessionId: "ses_new", relayUrl: "https://relay.test", role: "editor" } })
+  test("a session reserved in its own host is handed that host's session-scoped connection before it exists", async () => {
+    const minted = await hostedSessionHostConnection(services, options(), plane.owner, { workspaceId: WORKSPACE_ID, sessionId: RESERVED })
+    expect(minted).toMatchObject({ connection: { backing: "durable-object", hostId: sessionHostId(RESERVED), sessionId: RESERVED, relayUrl: "https://relay.test", role: "editor" } })
     const token = claims(minted)
-    expect(token).toMatchObject({ host_id: sessionHostId("ses_new"), role: "editor", scope: "workspace", workspace_id: WORKSPACE_ID })
+    expect(token).toMatchObject({ host_id: sessionHostId(RESERVED), role: "editor", scope: "session", session_id: RESERVED, workspace_id: WORKSPACE_ID })
     expect(token.routing_id).toBeUndefined()
-    expect(await plane.store.runtimeAccessTokenActive({ jti: String(token.jti), workspaceId: WORKSPACE_ID, hostId: sessionHostId("ses_new") })).toEqual({ active: true })
+    expect(await plane.store.runtimeAccessTokenActive({ jti: String(token.jti), workspaceId: WORKSPACE_ID, hostId: sessionHostId(RESERVED) })).toEqual({ active: true })
   })
 
-  test("any other harness gets the workspace's own connection", async () => {
-    const minted = await hostedSessionHostConnection(services, options(), plane.owner, { workspaceId: WORKSPACE_ID, sessionId: "ses_codex", harness: { id: "codex", access: "native" } })
-    expect(minted).toMatchObject({ connection: { status: "provisioning", workspaceId: WORKSPACE_ID, retryAfterMs: 2_000 } })
-  })
-
-  test("refuses a session id already registered in the workspace's runtime, and a person who cannot create sessions there", async () => {
-    await plane.store.reserveSession(plane.owner, { operationId: "op_vm", sessionId: "ses_vm", workspaceId: WORKSPACE_ID, kind: "create" })
-    const vmProof = await plane.relayProof(plane.owner, { hostId: "host_vm", backing: "cloud-vm", jti: "rat_vm" })
-    for (const action of ["start", "register"]) {
-      const times = action === "register" ? { createdAt: Date.now(), updatedAt: Date.now() } : {}
-      expect((await plane.post("/session-authorize", { action, sessionId: "ses_vm", operationId: "op_vm", ...times }, vmProof)).status).toBe(200)
+  test("refuses a session the reservation placed in the workspace's runtime, an unreserved one, and a person who cannot create sessions", async () => {
+    for (const sessionId of ["ses_vm", "ses_unreserved"]) {
+      expect(await hostedSessionHostConnection(services, options(), plane.owner, { workspaceId: WORKSPACE_ID, sessionId }))
+        .toMatchObject({ status: 409, error: { code: "session_host_unavailable" } })
     }
-    expect(await hostedSessionHostConnection(services, options(), plane.owner, { workspaceId: WORKSPACE_ID, sessionId: "ses_vm", harness: pi }))
-      .toMatchObject({ status: 409, error: { code: "session_host_unavailable" } })
-    await expect(hostedSessionHostConnection(services, options(), plane.member, { workspaceId: WORKSPACE_ID, sessionId: "ses_member", harness: pi }))
+    await expect(hostedSessionHostConnection(services, options(), plane.member, { workspaceId: WORKSPACE_ID, sessionId: RESERVED }))
       .rejects.toMatchObject({ status: 403 })
   })
 
@@ -87,16 +80,27 @@ describe("connecting to a session served by its own host", () => {
 })
 
 describe("the relay resolving a session host", () => {
-  test("admits an unregistered session or its own root on a cloud workspace, and nothing else", async () => {
+  test("admits a session its reservation or its row places there, and nothing else", async () => {
     const lookup = sandboxRelayTargetLookup({ sessionHosts: plane.store })
     const host = { found: true, baseUrl: "", backing: "durable-object" }
-    expect(await lookup({ workspaceId: WORKSPACE_ID, hostId: sessionHostId("ses_unregistered") })).toEqual(host)
+    expect(await lookup({ workspaceId: WORKSPACE_ID, hostId: sessionHostId(RESERVED) })).toEqual(host)
     expect(await lookup({ workspaceId: WORKSPACE_ID, hostId: sessionHostId(ROOT) })).toEqual(host)
-    expect(await lookup({ workspaceId: WORKSPACE_ID, hostId: sessionHostId("ses_vm") }))
-      .toEqual({ found: false, code: "relay_resolver_workspace_target_unavailable" })
+    for (const sessionId of ["ses_unreserved", "ses_vm"]) {
+      expect(await lookup({ workspaceId: WORKSPACE_ID, hostId: sessionHostId(sessionId) }))
+        .toEqual({ found: false, code: "relay_resolver_workspace_target_unavailable" })
+    }
     expect(await lookup({ workspaceId: "ws_missing", hostId: sessionHostId(ROOT) }))
       .toEqual({ found: false, code: "relay_resolver_workspace_not_found" })
     expect(await lookup({ workspaceId: WORKSPACE_ID, hostId: sessionHostId(ROOT), routingId: "route_1" }))
       .toEqual({ found: false, code: "runtime_access_token_invalid" })
+  })
+
+  test("never admits a deleted session's host again", async () => {
+    const root = "ses_pi_deleted"
+    await plane.createHostedSession(root)
+    await plane.database.prepare("update sessions set deleted_at = ? where session_id = ?").bind(Date.now(), root).run()
+    const lookup = sandboxRelayTargetLookup({ sessionHosts: plane.store })
+    expect(await lookup({ workspaceId: WORKSPACE_ID, hostId: sessionHostId(root) }))
+      .toEqual({ found: false, code: "relay_resolver_workspace_target_unavailable" })
   })
 })

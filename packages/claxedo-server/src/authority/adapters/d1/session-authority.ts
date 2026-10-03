@@ -65,6 +65,7 @@ import { d1ConstraintFailure } from "../../../platform/db/d1-constraint"
 import { readStoredTurnOutline } from "@claxedo/server-core/session/turn-outline"
 import { readStoredPart } from "@claxedo/server-core/session/stored-part"
 import type { StoredMessageQuery } from "@claxedo/server-core/session/stored-messages"
+import { sessionPlacement } from "@claxedo/server-core/session/session-placement"
 import { readFirstRead, readTurnPage, type TurnPageQuery, type TurnPageRequest, type TurnRead } from "@claxedo/agent-runtime-contract"
 import {
   registrationResult,
@@ -155,9 +156,12 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const creates = maySql(who, "create_session", { kind: "workspace", alias: "w" })
     const parentSends = maySql(who, "send", { kind: "session", alias: "parent" })
 
+    const sessionHostRoot = intent.kind === "create" && sessionPlacement({ backing: workspace.backing, harnessId: intent.harnessId ?? "" }) === "durable-object"
+      ? intent.sessionId
+      : null
     const existing = await this.registration(intent.operationId)
     if (existing && existing.state !== "compensated") {
-      requireSameRegistration(existing, intent, workspace, who.actorId)
+      requireSameRegistration(existing, { ...intent, sessionHostRoot }, workspace, who.actorId)
       return registrationResult(existing, false)
     }
 
@@ -180,9 +184,9 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
             `
         insert into session_registration_operations (
           operation_id, session_id, workspace_id, org_id, project_id, creator_actor_id,
-          operation_kind, parent_session_id, requested_title, state, state_reason, created_at, updated_at
+          operation_kind, parent_session_id, requested_title, state, state_reason, created_at, updated_at, session_host_root
         )
-        select ?, ?, w.workspace_id, w.org_id, w.project_id, ?, ?, ?, ?, 'reserved', null, ?, ?
+        select ?, ?, w.workspace_id, w.org_id, w.project_id, ?, ?, ?, ?, 'reserved', null, ?, ?, ?
         from workspaces w
         where w.workspace_id = ? and w.org_id = ? and w.project_id = ? and w.deleted_at is null
           and ${creates.sql}
@@ -203,6 +207,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
             intent.title ?? null,
             now,
             now,
+            sessionHostRoot,
             workspace.workspace_id,
             workspace.org_id,
             workspace.project_id,
@@ -211,7 +216,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
             intent.parentSessionId ?? null,
             ...parentSends.bind,
           ),
-        this.registrationAssertion(assertionId, intent, workspace, who.actorId, "reserved"),
+        this.registrationAssertion(assertionId, { ...intent, sessionHostRoot }, workspace, who.actorId, "reserved"),
         this.deleteAssertion(assertionId),
       ],
       "Session reservation collided or authority changed",
@@ -254,7 +259,10 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         "Runtime registration title does not match the reservation",
       )
     }
-    return await this.registerReservation(actor, result, times, optionalText(input.sessionHostRoot, "sessionHostRoot") ?? null)
+    if ((optionalText(input.sessionHostRoot, "sessionHostRoot") ?? null) !== result.session_host_root) {
+      throw new D1SessionAuthorityError("registration_transition_denied", "The session is placed in another host")
+    }
+    return await this.registerReservation(actor, result, times)
   }
 
   /**
@@ -1169,7 +1177,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
 
   async listSessionPage(auth: SignedControlPlaneAuth, query: SessionPageQuery) {
     const who = await this.requirePrincipal(auth)
-    return await readD1SessionPage(this.database, query, maySql(who, "read", { kind: "session", alias: "s" }))
+    return await readD1SessionPage(this.database, query, maySql(who, "read", { kind: "session", alias: "s" }), this.now())
   }
 
   async resolveSession(auth: SignedControlPlaneAuth, args: { sessionId: string }) {
@@ -1477,7 +1485,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     actor: Principal,
     registration: RegistrationRow,
     times: { createdAt: number; updatedAt: number },
-    sessionHostRoot: string | null,
   ) {
     await this.requireWorkspace(actor, registration.workspace_id, "create_session")
     if (registration.state === "registered") {
@@ -1485,8 +1492,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       if (
         !existing ||
         existing.creator_actor_id !== actor.actorId ||
-        existing.operation_id !== registration.operation_id ||
-        existing.session_host_root !== sessionHostRoot
+        existing.operation_id !== registration.operation_id
       ) {
         throw new D1SessionAuthorityError("resource_conflict", "Registered session projection is incomplete")
       }
@@ -1543,13 +1549,13 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
           max_event_ordinal, snapshot_generation, snapshot_hash, snapshot_token, session_host_root
         )
         select session_id, operation_id, workspace_id, org_id, project_id, creator_actor_id,
-          1, requested_title, ?, ?, null, 0, 0, null, null, ?
+          1, requested_title, ?, ?, null, 0, 0, null, null, session_host_root
         from session_registration_operations
         where operation_id = ? and creator_actor_id = ? and state = 'registered'
         on conflict do nothing
       `,
           )
-          .bind(times.createdAt, times.updatedAt, sessionHostRoot, registration.operation_id, actor.actorId),
+          .bind(times.createdAt, times.updatedAt, registration.operation_id, actor.actorId),
         this.database
           .prepare(
             `
@@ -1857,7 +1863,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
   private async requireWorkspace(actor: Principal, workspaceId: string, action: WorkspaceAction) {
     const allowed = maySql(actor, action, { kind: "workspace", alias: "w" })
     const row = await this.database
-      .prepare(`select w.workspace_id, w.org_id, w.project_id from workspaces w where w.workspace_id = ? and ${allowed.sql}`)
+      .prepare(`select w.workspace_id, w.org_id, w.project_id, w.backing from workspaces w where w.workspace_id = ? and ${allowed.sql}`)
       .bind(workspaceId, ...allowed.bind)
       .first<WorkspaceAccessRow>()
     if (!row) throw denied()
@@ -1935,7 +1941,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
 
   private registrationAssertion(
     assertionId: string,
-    intent: ReturnType<typeof normalizeReservation>,
+    intent: ReturnType<typeof normalizeReservation> & { sessionHostRoot: string | null },
     workspace: WorkspaceAccessRow,
     actorId: string,
     state: SessionRegistrationState,
@@ -1948,7 +1954,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         select 1 from session_registration_operations
         where operation_id = ? and session_id = ? and workspace_id = ? and org_id = ? and project_id = ?
           and creator_actor_id = ? and operation_kind = ? and parent_session_id is ?
-          and requested_title is ? and state = ?
+          and requested_title is ? and session_host_root is ? and state = ?
       ) then 1 else 0 end)
     `,
       )
@@ -1963,6 +1969,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         intent.kind,
         intent.parentSessionId ?? null,
         intent.title ?? null,
+        intent.sessionHostRoot,
         state,
       )
   }
@@ -2032,12 +2039,13 @@ function normalizeReservation(input: ReserveSessionInput) {
     kind,
     parentSessionId,
     title: optionalText(input.title, "title", 2_000),
+    harnessId: optionalText(input.harnessId, "harnessId"),
   }
 }
 
 function requireSameRegistration(
   row: RegistrationRow,
-  intent: ReturnType<typeof normalizeReservation>,
+  intent: ReturnType<typeof normalizeReservation> & { sessionHostRoot: string | null },
   workspace: WorkspaceAccessRow,
   actorId: string,
 ) {
@@ -2049,7 +2057,8 @@ function requireSameRegistration(
     row.creator_actor_id !== actorId ||
     row.operation_kind !== intent.kind ||
     row.parent_session_id !== (intent.parentSessionId ?? null) ||
-    row.requested_title !== (intent.title ?? null)
+    row.requested_title !== (intent.title ?? null) ||
+    row.session_host_root !== intent.sessionHostRoot
   )
     throw new D1SessionAuthorityError("resource_conflict", "Reservation retry changed immutable intent")
 }

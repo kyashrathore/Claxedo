@@ -1,17 +1,16 @@
 import { Hono, type Context } from "hono"
 import { bodyLimit } from "hono/body-limit"
 import { z } from "zod"
-import { PI_LAUNCH_PROVIDERS, piCredentialProviderIDs, type ProviderDirect } from "@claxedo/agent-runtime-contract"
-import type { RuntimeConfigSnapshotPlugins, TurnDelivery, TurnExecutionAccess } from "@claxedo/harness/contract"
-import type { SandboxManager } from "@claxedo/sandbox-manager"
+import { sessionHostId } from "@claxedo/workspace-relay-protocol"
+import type { TurnDelivery, TurnExecutionAccess } from "@claxedo/harness/contract"
 import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import type { RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
-import { builtInProviderRow } from "@claxedo/server-core/credentials/built-in-destinations"
-import { directProviderDeliveriesFromRepository } from "@claxedo/server-core/credentials/native-delivery-plan"
-import type { ControlPlaneCredentials } from "../authority/services"
-import type { SessionHostAuthority } from "../authority/session-hosts"
+import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
+import { sessionHostAdmits, type SessionHostAuthority } from "../authority/session-hosts"
+import { resolveWorkspaceRuntimeTarget, WorkspaceRuntimeTargetError } from "../authority/runtime-target"
+import { piDirectRows } from "../credentials/pi-direct-rows"
 import type { RuntimeSessionAuthorityOptions } from "./runtime-session-authority"
 
 type TurnLeaseVerifier = NonNullable<RuntimeSessionAuthorityOptions["verifyTurnLease"]>
@@ -21,14 +20,11 @@ export type SessionHostDeliveryOptions = {
   sessionHosts: SessionHostAuthority
   resolveWorkspaceOwner(workspaceId: string): Promise<WorkspaceOwnerIdentity | undefined>
   credentials(orgId: string): ControlPlaneCredentials
-  /** The owner's plugin MCP and launch rows for Pi; absent, a session host runs without plugins. */
-  plugins?(input: { workspaceId: string; ownerUserId: string }): Promise<RuntimeConfigSnapshotPlugins>
-  sandboxManager?: Pick<SandboxManager, "target">
+  services: ControlPlaneServices
   relayEndpoint(workspaceId: string, homeRegion: ClaxedoRegion): string | Promise<string>
   signRuntimeAccessToken: RuntimeAccessTokenSigner
 }
 
-const PI_STORED_PROVIDERS: ReadonlySet<string> = new Set(PI_LAUNCH_PROVIDERS.flatMap(piCredentialProviderIDs))
 const EXECUTION_TTL_SECONDS = 10 * 60
 const UNAVAILABLE_RETRY_MS = 2_000
 const requestSchema = z.object({ turnLease: z.string().min(1) }).strict()
@@ -36,11 +32,10 @@ const requestSchema = z.object({ turnLease: z.string().min(1) }).strict()
 /**
  * The two calls a session's Durable Object makes per turn, each proven by the
  * turn lease the session authority issued it: `/turn-delivery` hands it the
- * session owner's provider accounts as direct secrets plus the owner's plugin
- * rows, and `/turn-execution` mints it a session-scoped token for the
- * workspace's machine, where its tools run. Both answer only for a session the
- * control plane recorded as served by its own host, and only while the turn's
- * actor may still send its turns.
+ * session owner's provider accounts as direct secrets, and `/turn-execution`
+ * mints it a session-scoped token for the workspace's machine, where its tools
+ * run. Both answer only that session's own host, only while its lease is the
+ * live one, and only while the turn's actor may still send its turns.
  */
 export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
   authority: RuntimeSessionAuthorityOptions["authority"]
@@ -58,34 +53,23 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
     } catch {
       return c.json({ error: { code: "session_turn_lease_invalid" } }, 401)
     }
-    if (await input.turnLeaseDenial(claims)) return denied(c)
-    const placement = await input.sessionHosts.readSessionHostPlacement({ workspaceId: claims.workspaceId, sessionId: claims.sessionId })
-    if (placement?.session?.workspaceId !== claims.workspaceId || placement.session.sessionHostRoot !== claims.sessionId) return denied(c)
+    const host = claims.transport === "relay-host" || claims.transport === "deferred-grant" ? claims.hostId : undefined
+    if (host !== sessionHostId(claims.sessionId) || await input.turnLeaseDenial(claims)) return denied(c)
+    const { sessionId, workspaceId } = claims
+    const placement = await input.sessionHosts.readSessionHostPlacement({ workspaceId, sessionId })
+    if (!placement?.session || !sessionHostAdmits(placement, { workspaceId, sessionId })) return denied(c)
+    const live = await input.sessionHosts.turnLeaseLive({ sessionId, turnId: claims.turnId, leaseId: claims.authorityLeaseId, fencingToken: claims.fencingToken })
+    if (!live) return c.json({ error: { code: "session_turn_lease_invalid" } }, 401)
     const principal = claims.principalKind === "user"
       ? { principalKind: "user" as const, actorId: claims.actorId, actorKind: "human" as const }
       : { principalKind: "service" as const, actorId: claims.actorId, actorKind: "agent" as const }
     try {
-      await input.authority.authorizeRuntimeSession({ ...principal, sessionId: claims.sessionId, workspaceId: claims.workspaceId, action: "write" })
+      await input.authority.authorizeRuntimeSession({ ...principal, sessionId, workspaceId, action: "write" })
     } catch (error) {
       if (error instanceof ControlPlaneAuthError) return denied(c)
       throw error
     }
     return { claims, directory: placement.workspace.directory }
-  }
-
-  async function ownerDirectRows(owner: WorkspaceOwnerIdentity) {
-    const credentials = input.credentials(owner.orgId)
-    const selected = (await credentials.listCredentials())
-      .filter((credential) => PI_STORED_PROVIDERS.has(credential.provider_id) && !!builtInProviderRow(credential.provider_id)
-        && (credential.kind === "api_key" || credential.kind === "oauth_token"))
-      .map((credential) => ({ credential, ...(credential.status !== "available" ? { unavailable: credential.status } : {}) }))
-    return await directProviderDeliveriesFromRepository({
-      owner: owner.userId,
-      machineOwnerUserId: owner.userId,
-      selections: await credentials.accountSelections(),
-      selected,
-      readSecret: (credential) => credentials.resolveCredentialSecretById?.(credential.id) ?? Promise.resolve(null),
-    })
   }
 
   return new Hono()
@@ -96,19 +80,11 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
       const { claims } = admitted
       const owner = await input.resolveWorkspaceOwner(claims.workspaceId)
       if (!owner || owner.orgId !== claims.orgId) return denied(c)
-      const rows = await ownerDirectRows(owner)
-      if (rows.some((row) => row.unavailable === "unreadable_secret")) return c.json({ error: { code: "account_unavailable" } }, 409)
-      const direct: Record<string, ProviderDirect> = {}
-      let expiresAt = claims.expiresAt
-      for (const row of rows) {
-        if (!row.direct) continue
-        direct[row.providerId] = row.direct
-        if (row.direct.expiresAt !== undefined) expiresAt = Math.min(expiresAt, row.direct.expiresAt)
-      }
+      const direct = await piDirectRows(input.credentials(owner.orgId), owner.userId)
       const delivery: TurnDelivery = {
-        expiresAt,
+        expiresAt: Math.min(claims.expiresAt, ...Object.values(direct).flatMap((row) => row.expiresAt === undefined ? [] : [row.expiresAt])),
         auth: { machineOwnerUserId: owner.userId, accounts: {}, direct: { [owner.userId]: direct } },
-        plugins: input.plugins ? await input.plugins({ workspaceId: claims.workspaceId, ownerUserId: owner.userId }) : { harnessLaunch: {}, mcp: {} },
+        plugins: { harnessLaunch: {}, mcp: {} },
         providerDefinitions: [],
       }
       return c.json(delivery)
@@ -118,11 +94,13 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
       const admitted = await admittedTurn(c)
       if (admitted instanceof Response) return admitted
       const { claims, directory } = admitted
-      if (claims.principalKind !== "user") return denied(c)
-      const target = await input.sandboxManager?.target(claims.workspaceId)
-      if (target?.status !== "ready" || !directory) {
-        const retryAfterMs = target?.status === "unavailable" ? target.retryAfterMs ?? UNAVAILABLE_RETRY_MS : UNAVAILABLE_RETRY_MS
-        return c.json({ error: { code: "cloud_runtime_unavailable", retryAfterMs } }, 409)
+      if (claims.principalKind !== "user" || !directory) return denied(c)
+      let target: Awaited<ReturnType<typeof resolveWorkspaceRuntimeTarget>>
+      try {
+        target = await resolveWorkspaceRuntimeTarget(input.services, undefined, { workspaceId: claims.workspaceId, workspace: { backing: "cloud-vm" } })
+      } catch (error) {
+        if (!(error instanceof WorkspaceRuntimeTargetError) || error.status !== 409) throw error
+        return c.json({ error: { code: "cloud_runtime_unavailable", retryAfterMs: error.retryAfterMs ?? UNAVAILABLE_RETRY_MS } }, 409)
       }
       const token = await input.signRuntimeAccessToken({
         principalKind: "user",
@@ -143,8 +121,9 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
         sessionId: claims.sessionId,
         expiresAt: token.tokenExpiresAt,
       })
+      const relayUrl = await input.relayEndpoint(claims.workspaceId, target.homeRegion)
       const access: TurnExecutionAccess = {
-        relayUrl: (await input.relayEndpoint(claims.workspaceId, target.homeRegion)).replace(/\/+$/, ""),
+        relayUrl: relayUrl.replace(/\/+$/, ""),
         workspaceId: claims.workspaceId,
         hostId: target.hostId,
         ...(target.routingId ? { routingId: target.routingId } : {}),

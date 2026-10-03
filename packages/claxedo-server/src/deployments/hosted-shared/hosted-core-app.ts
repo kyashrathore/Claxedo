@@ -1,4 +1,6 @@
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { piDirectRows } from "../../credentials/pi-direct-rows"
+import { defaultSessionHarnessId } from "../../session/default-session-harness"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-origins"
@@ -358,7 +360,13 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       changed: options.settingsChanged ?? (async () => {}),
     }))
   }
-  app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, workspaceOptions))
+  const orgCredentials = plane.orgCredentials
+  app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, {
+    ...workspaceOptions,
+    ...(orgCredentials ? {
+      ownerPiDirectRows: async (auth) => piDirectRows(orgCredentials(await requireAuthority(services).resolveOrgId(auth)), auth.user.subject),
+    } : {}),
+  }))
   app.route("/api/claxedo/host/session-rows", HostSessionRowsRoutes(services))
   app.route("/api/claxedo/host/invitations", HostInvitationRoutes(services, workspaceOptions))
   app.route("/api/claxedo/remote-access", RemoteAccessOwnerRoutes({
@@ -415,6 +423,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       authority: plane.privateSessionAuthority!,
       authentication: options.authentication,
       services,
+      ...(options.agentConfigRepository ? { defaultHarnessId: defaultSessionHarnessId(options.agentConfigRepository, plane.env) } : {}),
     }),
   )
   app.route(
@@ -464,7 +473,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         sessionHosts: services.sessionHosts,
         resolveWorkspaceOwner: (workspaceId: string) => services.authority?.resolveWorkspaceOwner?.(workspaceId) ?? Promise.resolve(undefined),
         credentials: plane.orgCredentials,
-        ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
+        services,
         relayEndpoint: relayProvider.getRelayEndpoint,
         signRuntimeAccessToken,
       }
@@ -481,6 +490,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         } } : {}),
         ...(plane.turnAuthority ? { turnAuthority: plane.turnAuthority } : {}),
         ...(sessionHostDelivery ? { sessionHostDelivery } : {}),
+        ...(services.sessionHosts ? { sessionHosts: services.sessionHosts } : {}),
         ...(options.usageLedger ? { usageWriter: options.usageLedger } : {}),
         ...(services.authority?.resolveWorkspaceOwner
           ? {

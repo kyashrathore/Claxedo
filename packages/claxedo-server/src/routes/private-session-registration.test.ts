@@ -8,12 +8,13 @@ type ReserveSession = (
   input: Record<string, unknown>,
 ) => Promise<any>
 
-function app(reserveSession: ReserveSession) {
+function app(reserveSession: ReserveSession, defaultHarnessId?: (userId: string) => Promise<string | undefined>) {
   return new Hono().route(
     "/api/control/session-registrations",
     PrivateSessionRegistrationRoutes({
       authentication: testRequestAuthenticationAdapter(),
       authority: { reserveSession },
+      ...(defaultHarnessId ? { defaultHarnessId } : {}),
     }),
   )
 }
@@ -116,5 +117,18 @@ describe("private session reservation routes", () => {
       expect(response.status).toBe(status)
       expect(await response.json()).toEqual({ error: { code, message: code } })
     }
+  })
+
+  test("places the session by the harness it names, or by its creator's default when it names none", async () => {
+    const reserveSession = vi.fn<ReserveSession>(async (_auth, input) => ({ changed: true, ...input, state: "reserved" }))
+    const defaults = vi.fn(async () => "pi")
+    const target = app(reserveSession, defaults)
+    const intent = { operationId: "op_1", sessionId: "ses_1", workspaceId: "ws_1", kind: "create" }
+    expect((await reserve(target, { ...intent, harness: { id: "codex", access: "native" } })).status).toBe(201)
+    expect((await reserve(target, { ...intent, operationId: "op_2", sessionId: "ses_2", harness: { id: "conn_1", access: "connection" } })).status).toBe(201)
+    expect((await reserve(target, { ...intent, operationId: "op_3", sessionId: "ses_3" })).status).toBe(201)
+    expect(reserveSession.mock.calls.map(([, input]) => input.harnessId)).toEqual(["codex", "connection", "pi"])
+    expect(defaults).toHaveBeenCalledOnce()
+    expect((await reserve(target, { ...intent, operationId: "op_4", sessionId: "ses_4", harness: { id: "pi" } })).status).toBe(400)
   })
 })

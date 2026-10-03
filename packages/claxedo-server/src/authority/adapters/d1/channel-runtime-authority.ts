@@ -8,7 +8,7 @@ import type {
   WorkspaceAuthority,
 } from "@claxedo/server-core/platform/auth/authority"
 import { asOrgId } from "@claxedo/server-core/platform/auth/branded-id"
-import { CURRENT_CHANNEL_IDENTITY_VERSION, sessionHostId } from "@claxedo/workspace-relay-protocol"
+import { CURRENT_CHANNEL_IDENTITY_VERSION, sessionHostId, sessionHostRootOf } from "@claxedo/workspace-relay-protocol"
 import type { TurnRuntimeAccessTokenRecord } from "../../session-hosts"
 import { activeGuard, admittingShareSql, batchUnder, may, mayGuard, maySql, readProjectRole, type AuthorizationPrincipal, type BoundSql } from "./authorization"
 import { requireHuman } from "./access-context"
@@ -278,8 +278,18 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     return await this.recordUserRuntimeToken(who, args)
   }
 
+  /**
+   * The one editor token scoped to a session on a machine rather than on the
+   * session's own host: a session that runs in its own Durable Object reaches
+   * its workspace's machine for its tools, and nothing else ever does.
+   */
   async recordTurnRuntimeAccessToken(actorId: string, token: TurnRuntimeAccessTokenRecord) {
-    return await this.recordUserRuntimeToken(await this.requireActor(actorId), { ...token, role: "editor" })
+    const hosted = await this.database
+      .prepare(`select 1 from sessions where session_id = ? and workspace_id = ? and session_host_root = session_id and deleted_at is null`)
+      .bind(requireText(token.sessionId, "sessionId"), requireText(token.workspaceId, "workspaceId"))
+      .first()
+    if (!hosted || sessionHostRootOf(token.hostId)) throw denied("Only a session served by its own host reaches its machine with a turn token")
+    return await this.recordUserRuntimeToken(await this.requireActor(actorId), { ...token, role: "editor" }, { turn: true })
   }
 
   async recordRuntimeAccessTokenForService(args: {
@@ -401,11 +411,13 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
   private async recordUserRuntimeToken(
     who: Principal,
     args: { jti: string; workspaceId: string; hostId: string; role: ProjectRole; sessionId?: string; expiresAt: number },
+    grant: { turn: boolean } = { turn: false },
   ) {
     const values = this.tokenValues(args)
     const sessionId = args.sessionId === undefined ? null : requireText(args.sessionId, "sessionId")
-    if (sessionId !== null && args.role !== "viewer" && !(args.role === "editor" && await this.sessionHosted(sessionId, values.hostId))) {
-      throw denied("A session's runtime token is a viewer's unless the session runs in its own host")
+    const sessionEditor = args.role === "editor" && (grant.turn || values.hostId === sessionHostId(sessionId ?? ""))
+    if (sessionId !== null && args.role !== "viewer" && !sessionEditor) {
+      throw denied("A session's runtime token is a viewer's unless it reaches the session's own host")
     }
     if (!(await this.holderMayUse(who, values.workspaceId, sessionId, args.role))) {
       throw denied(sessionId === null ? "Runtime access to this workspace is its owner's" : "Runtime access to this session is denied")
@@ -518,15 +530,6 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     const guard = holderGuard(holder, workspaceId, sessionId, role)
     const row = await this.database.prepare(`select ${guard.sql} as holds`).bind(...guard.bind).first<{ holds: number }>()
     return row?.holds === 1
-  }
-
-  /** The session's own host, or the machine a session served by its own host reaches for its tools. */
-  private async sessionHosted(sessionId: string, hostId: string) {
-    if (hostId === sessionHostId(sessionId)) return true
-    return !!await this.database
-      .prepare(`select 1 from sessions where session_id = ? and session_host_root = session_id and deleted_at is null`)
-      .bind(sessionId)
-      .first()
   }
 
   private async workspaceExists(workspaceId: string) {

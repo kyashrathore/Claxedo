@@ -1,11 +1,7 @@
-/**
- * What the control plane knows about a session served by its own Durable
- * Object: the workspace it belongs to and, once the session host has
- * registered it, its row.
- */
 export type SessionHostPlacement = {
-  workspace: { orgId: string; backing: "cloud-vm" | "local-worktree"; directory: string | null }
-  session?: { workspaceId: string; sessionHostRoot: string | null }
+  workspace: { backing: "cloud-vm" | "local-worktree"; directory: string | null }
+  session?: { workspaceId: string; sessionHostRoot: string | null; deleted: boolean }
+  reservation?: { workspaceId: string; sessionHostRoot: string | null }
 }
 
 export type TurnRuntimeAccessTokenRecord = {
@@ -21,15 +17,24 @@ export type SessionHostAuthority = {
   readSessionHostPlacement(input: { workspaceId: string; sessionId: string }): Promise<SessionHostPlacement | undefined>
   /** The editor token a session host is minted for one turn, reaching the workspace's machine for that session alone. */
   recordTurnRuntimeAccessToken(actorId: string, token: TurnRuntimeAccessTokenRecord): Promise<unknown>
+  /** Whether this lease is still the session's live one: neither released nor expired nor superseded. */
+  turnLeaseLive(input: { sessionId: string; turnId: string; leaseId: string; fencingToken: number }): Promise<boolean>
+}
+
+/** The host a session id is placed in: its row's, else its reservation's; nothing for a session the workspace's runtime serves. */
+export function placedSessionHostRoot(placement: SessionHostPlacement | undefined): string | undefined {
+  if (placement?.session) return placement.session.sessionHostRoot ?? undefined
+  return placement?.reservation?.sessionHostRoot ?? undefined
 }
 
 /**
- * Whether `sessionId` may be served by its own Durable Object in this
- * workspace: a cloud workspace, and the id is either not registered yet or
- * registered here as that host's root.
+ * Whether `sessionId` is served by its own Durable Object in this workspace:
+ * its live row, or before registration its reservation, places it there. A
+ * deleted session's host is never admitted again.
  */
 export function sessionHostAdmits(placement: SessionHostPlacement | undefined, input: { workspaceId: string; sessionId: string }): boolean {
   if (placement?.workspace.backing !== "cloud-vm") return false
-  const session = placement.session
-  return !session || (session.workspaceId === input.workspaceId && session.sessionHostRoot === input.sessionId)
+  const placed = placement.session ?? placement.reservation
+  if (!placed || placed.workspaceId !== input.workspaceId || placed.sessionHostRoot !== input.sessionId) return false
+  return !placement.session?.deleted
 }

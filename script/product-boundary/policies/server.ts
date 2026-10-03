@@ -76,8 +76,11 @@ export const serverWorkerd: Policy = {
   // (`routes/session-host-delivery.ts`); the session authority's request
   // parsing (`session/runtime-authority-request.ts`) and the D1 session
   // tables' row shapes (`authority/adapters/d1/session-rows.ts`) are modules
-  // of their own.
-  ceilings: { modules: 125, packages: 19 },
+  // of their own. A reservation places its session by the creator's default
+  // harness when it names none (`session/default-session-harness.ts`), and a
+  // session host and an enrolled owner's machine are both handed the owner's
+  // Pi accounts by one owner (`credentials/pi-direct-rows.ts`).
+  ceilings: { modules: 127, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

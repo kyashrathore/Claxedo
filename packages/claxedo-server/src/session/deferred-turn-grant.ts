@@ -33,6 +33,8 @@ export type DeferredTurnGrantClaims = PrivateSessionRuntimePrincipal & {
   subjectSessionId?: string
   turnId?: string
   turnIdPrefix?: string
+  /** The relay host the grant was asked from, which the turn it admits must come through again. */
+  hostId?: string
   issuedAt: number
   expiresAt: number
 }
@@ -44,6 +46,7 @@ export function deferredTurnGrantClaims(
   principal: PrivateSessionRuntimePrincipal,
   orgId: string,
   grant: SessionTurnGrant,
+  hostId?: string,
 ): DeferredTurnGrantInput {
   if (grant.actorId !== principal.actorId) {
     throw new SessionTurnGrantError("session_turn_grant_invalid", "Deferred turn grant row was minted for another actor")
@@ -58,6 +61,7 @@ export function deferredTurnGrantClaims(
     ...(grant.subjectSessionId === undefined ? {} : { subjectSessionId: grant.subjectSessionId }),
     ...(grant.turnId === undefined ? {} : { turnId: grant.turnId }),
     ...(grant.turnIdPrefix === undefined ? {} : { turnIdPrefix: grant.turnIdPrefix }),
+    ...(hostId === undefined ? {} : { hostId }),
     expiresAt: grant.expiresAt,
   }
 }
@@ -84,6 +88,7 @@ export async function mintDeferredTurnGrant(
     ...(claims.subjectSessionId === undefined ? {} : { subject_session_id: claims.subjectSessionId }),
     ...(claims.turnId === undefined ? {} : { turn_id: claims.turnId }),
     ...(claims.turnIdPrefix === undefined ? {} : { turn_id_prefix: claims.turnIdPrefix }),
+    ...(claims.hostId === undefined ? {} : { host_id: claims.hostId }),
   })
     .setProtectedHeader({ alg })
     .setIssuer(DEFERRED_TURN_GRANT_ISSUER)
@@ -145,10 +150,11 @@ function claimsOf(payload: JWTPayload): DeferredTurnGrantClaims | undefined {
   const subjectSessionId = optionalClaimText(payload.subject_session_id)
   const turnId = optionalClaimText(payload.turn_id)
   const turnIdPrefix = optionalClaimText(payload.turn_id_prefix)
+  const hostId = optionalClaimText(payload.host_id)
   if (
     !actorId || !grantId || !orgId || !workspaceId || !sessionId
     || (intent !== "child_completion" && intent !== "queued_prompt")
-    || subjectSessionId === null || turnId === null || turnIdPrefix === null
+    || subjectSessionId === null || turnId === null || turnIdPrefix === null || hostId === null
     || payload.iat === undefined || payload.exp === undefined
   ) return undefined
   let principal: PrivateSessionRuntimePrincipal
@@ -165,6 +171,7 @@ function claimsOf(payload: JWTPayload): DeferredTurnGrantClaims | undefined {
     ...(subjectSessionId === undefined ? {} : { subjectSessionId }),
     ...(turnId === undefined ? {} : { turnId }),
     ...(turnIdPrefix === undefined ? {} : { turnIdPrefix }),
+    ...(hostId === undefined ? {} : { hostId }),
     issuedAt: payload.iat * 1_000,
     expiresAt: payload.exp * 1_000,
   }

@@ -10,7 +10,7 @@ import { storedD1Session } from "./d1-stored-session"
 
 async function compose(database: D1Database) {
   const { auth, sessions } = await storedD1Session(database)
-  await sessions.reserveSession(auth, { operationId: "op_hosted", sessionId: "ses_hosted", workspaceId: "ws", kind: "create" })
+  await sessions.reserveSession(auth, { operationId: "op_hosted", sessionId: "ses_hosted", workspaceId: "ws", kind: "create", harnessId: "pi" })
   await sessions.registerRuntimeSession({
     principalKind: "user", actorId: auth.principal!.actorId, actorKind: "human",
     operationId: "op_hosted", sessionId: "ses_hosted", workspaceId: "ws", createdAt: 1, updatedAt: 1, sessionHostRoot: "ses_hosted",

@@ -1,7 +1,6 @@
 import type { PrivateSessionRegistrationState } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { SessionTurnGrant, SessionTurnGrantIntent, SessionTurnLease } from "@claxedo/server-core/platform/auth/session-turn-authority"
 
-/** The D1 rows of the session tables as the session authority reads them, and the shapes it answers with. */
 export type ActorRow = {
   actor_id: string
   actor_kind: "human" | "agent"
@@ -14,6 +13,7 @@ export type WorkspaceAccessRow = {
   workspace_id: string
   org_id: string
   project_id: string
+  backing: "cloud-vm" | "local-worktree"
 }
 
 export type SessionRow = {
@@ -45,6 +45,7 @@ export type RegistrationRow = {
   operation_kind: "create" | "fork"
   parent_session_id: string | null
   requested_title: string | null
+  session_host_root: string | null
   state: PrivateSessionRegistrationState
   state_reason: string | null
   created_at: number
@@ -111,6 +112,7 @@ export function registrationResult(row: RegistrationRow, changed: boolean) {
     sessionId: row.session_id,
     workspaceId: row.workspace_id,
     state: row.state,
+    ...(row.session_host_root === null ? {} : { sessionHostRoot: row.session_host_root }),
   }
 }
 

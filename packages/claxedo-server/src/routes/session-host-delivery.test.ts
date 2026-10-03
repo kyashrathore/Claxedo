@@ -6,6 +6,8 @@ import { DIRECTORY, WORKSPACE_ID, sessionHostPlane, type SessionHostPlane } from
 
 let plane: SessionHostPlane
 const ROOT = "ses_pi_root"
+const VM = "ses_vm"
+const VM_HOST = "host_vm"
 
 beforeAll(async () => {
   plane = await sessionHostPlane()
@@ -16,6 +18,7 @@ beforeAll(async () => {
   await accounts.putCredential({ owner: memberId, provider_id: "openai", kind: "api_key", source: "managed", secret: "sk-member" })
   await accounts.putCredential({ owner: ownerId, provider_id: "cursor-sdk", kind: "api_key", source: "managed", secret: "cursor-owner" })
   await plane.createHostedSession(ROOT)
+  await plane.createVmSession(VM)
 })
 
 afterAll(async () => {
@@ -26,6 +29,11 @@ const sessionRow = async (sessionId: string) => await plane.database
   .prepare("select session_host_root, status from sessions where session_id = ?")
   .bind(sessionId)
   .first<{ session_host_root: string | null; status: string | null }>()
+
+const hostProof = (jti: string, sessionId = ROOT) => plane.relayProof(plane.owner, { hostId: sessionHostId(sessionId), backing: "durable-object", jti })
+const vmProof = (jti: string) => plane.relayProof(plane.owner, { hostId: VM_HOST, backing: "cloud-vm", jti })
+const release = (proof: string, sessionId: string, lease: { turnId: string; leaseId: string; fencingToken: number }) =>
+  plane.post("/session-authorize", { action: "turn_release", sessionId, turnId: lease.turnId, leaseId: lease.leaseId, fencingToken: lease.fencingToken }, proof)
 
 async function expiredLease() {
   const now = Math.floor(Date.now() / 1_000)
@@ -43,42 +51,69 @@ async function expiredLease() {
     .sign(await importPKCS8(plane.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM, "EdDSA"))
 }
 
-describe("a session served by its own host registers with the control plane", () => {
-  test("the host's registration records the root, and the root never changes", async () => {
+describe("a session placed in its own host answers to that host alone", () => {
+  test("the reservation places it, the host's registration records it, and the root never changes", async () => {
     expect(await sessionRow(ROOT)).toMatchObject({ session_host_root: ROOT })
+    expect(await sessionRow(VM)).toMatchObject({ session_host_root: null })
     await expect(plane.database.prepare("update sessions set session_host_root = 'ses_other' where session_id = ?").bind(ROOT).run()).rejects.toThrow()
-    expect(await plane.store.readSessionHostPlacement({ workspaceId: WORKSPACE_ID, sessionId: ROOT }))
-      .toEqual({ workspace: { orgId: plane.orgId, backing: "cloud-vm", directory: DIRECTORY }, session: { workspaceId: WORKSPACE_ID, sessionHostRoot: ROOT } })
+    await expect(plane.database.prepare("update session_registration_operations set session_host_root = null where session_id = ?").bind(ROOT).run()).rejects.toThrow()
   })
 
-  test("a session host reaches no other session, reserves nothing and adopts nothing", async () => {
-    await plane.store.reserveSession(plane.owner, { operationId: "op_elsewhere", sessionId: "ses_elsewhere", workspaceId: WORKSPACE_ID, kind: "create" })
-    const proof = await plane.relayProof(plane.owner, { hostId: sessionHostId("ses_confined"), backing: "durable-object", jti: "rat_confined" })
-    const register = await plane.post("/session-authorize", { action: "register", sessionId: "ses_elsewhere", operationId: "op_elsewhere", createdAt: Date.now(), updatedAt: Date.now() }, proof)
-    expect(register.status).toBe(403)
-    expect(await register.json()).toMatchObject({ error: { code: "session_scope_denied" } })
-    const reserve = await plane.post("/session-authorize", { action: "reserve", sessionId: "ses_confined", parentSessionId: ROOT }, proof)
-    expect(reserve.status).toBe(401)
-    const adopt = await plane.post("/session-authorize", { action: "adopt", sessionId: "ses_confined", createdAt: 1, updatedAt: 1 }, proof)
+  test("a machine's proof reaches no action of a session placed in its own host", async () => {
+    const proof = await vmProof("rat_vm_on_hosted")
+    for (const body of [
+      { action: "read", sessionId: ROOT },
+      { action: "turn_acquire", sessionId: ROOT, turnId: "turn_vm" },
+      { action: "turn_grant", sessionId: ROOT, intent: "queued_prompt", turnId: "turn_vm_grant" },
+    ]) {
+      const answer = await plane.post("/session-authorize", body, proof)
+      expect(answer.status, body.action).toBe(403)
+      expect(await answer.json()).toMatchObject({ error: { code: "session_host_mismatch" } })
+    }
+  })
+
+  test("each runtime registers only the session its reservation placed with it", async () => {
+    await plane.store.reserveSession(plane.owner, { operationId: "op_pi_misrouted", sessionId: "ses_pi_misrouted", workspaceId: WORKSPACE_ID, kind: "create", harnessId: "pi" })
+    await plane.store.reserveSession(plane.owner, { operationId: "op_vm_misrouted", sessionId: "ses_vm_misrouted", workspaceId: WORKSPACE_ID, kind: "create", harnessId: "codex" })
+    const times = { createdAt: Date.now(), updatedAt: Date.now() }
+    const onVm = await plane.post("/session-authorize", { action: "register", sessionId: "ses_pi_misrouted", operationId: "op_pi_misrouted", ...times }, await vmProof("rat_vm_misrouted"))
+    expect(onVm.status).toBe(403)
+    const onHost = await plane.post("/session-authorize", { action: "register", sessionId: "ses_vm_misrouted", operationId: "op_vm_misrouted", ...times }, await hostProof("rat_host_misrouted", "ses_vm_misrouted"))
+    expect(onHost.status).toBe(403)
+    expect(await sessionRow("ses_pi_misrouted")).toBeNull()
+    expect(await sessionRow("ses_vm_misrouted")).toBeNull()
+  })
+
+  test("a host reaches no other session, reserves nothing, adopts nothing and reads no workspace", async () => {
+    const proof = await hostProof("rat_confined")
+    const other = await plane.post("/session-authorize", { action: "read", sessionId: VM }, proof)
+    expect(other.status).toBe(403)
+    const reserve = await plane.post("/session-authorize", { action: "reserve", sessionId: "ses_fork", parentSessionId: ROOT }, proof)
+    expect(reserve.status).toBe(403)
+    const adopt = await plane.post("/session-authorize", { action: "adopt", sessionId: ROOT, createdAt: 1, updatedAt: 1 }, proof)
     expect(adopt.status).toBe(403)
-    expect(await adopt.json()).toMatchObject({ error: { code: "session_adoption_requires_host_owner" } })
-    const host = await plane.post("/session-authorize", { action: "host_read" }, proof)
-    expect(host.status).toBe(403)
+    expect((await plane.post("/session-authorize", { action: "host_read" }, proof)).status).toBe(403)
   })
 
-  test("an admitted turn marks the session busy for a list nobody watches, and its release idle", async () => {
-    const proof = await plane.relayProof(plane.owner, { hostId: sessionHostId(ROOT), backing: "durable-object", jti: "rat_turn_status" })
+  test("an admitted turn marks the session busy for a list nobody watches, its release idle, and a lapsed lease reads interrupted", async () => {
+    const proof = await hostProof("rat_turn_status")
     const lease = await plane.acquire(proof, ROOT, "turn_status")
     expect((await sessionRow(ROOT))?.status).toBe("busy")
-    const release = await plane.post("/session-authorize", { action: "turn_release", sessionId: ROOT, turnId: "turn_status", leaseId: lease.leaseId, fencingToken: lease.fencingToken }, proof)
-    expect(await release.json()).toMatchObject({ released: true })
+    expect(await (await release(proof, ROOT, lease)).json()).toMatchObject({ released: true })
     expect((await sessionRow(ROOT))?.status).toBe("idle")
+
+    const lapsed = await plane.acquire(proof, ROOT, "turn_lapsed")
+    await plane.database.prepare("update session_turn_leases set expires_at = ? where session_id = ?").bind(Date.now() - 1, ROOT).run()
+    const page = await plane.store.listSessionPage(plane.owner, { workspaceId: WORKSPACE_ID, sort: "updated_desc", archived: "all", limit: 10 })
+    expect(page.find((row) => row.session_id === ROOT)).toMatchObject({ status: "interrupted" })
+    expect((await sessionRow(ROOT))?.status).toBe("busy")
+    void lapsed
   })
 })
 
 describe("/turn-delivery", () => {
-  test("hands the turn the session owner's Pi accounts as direct secrets and nothing else", async () => {
-    const proof = await plane.relayProof(plane.owner, { hostId: sessionHostId(ROOT), backing: "durable-object", jti: "rat_delivery" })
+  test("hands the session's own host the owner's Pi accounts as direct secrets and nothing else", async () => {
+    const proof = await hostProof("rat_delivery")
     const lease = await plane.acquire(proof, ROOT, "turn_delivery")
     const answer = await plane.post("/turn-delivery", { turnLease: lease.leaseId })
     expect(answer.status).toBe(200)
@@ -90,12 +125,21 @@ describe("/turn-delivery", () => {
       [ownerId]: { anthropic: expect.objectContaining({ delivery: "direct", baseUrl: "https://api.anthropic.com", secret: "sk-ant-api03-owner", authKind: "api-key" }) },
     })
     expect(delivery!.expiresAt).toBe(decodeJwt(lease.leaseId).authority_expires_at)
-    await plane.post("/session-authorize", { action: "turn_release", sessionId: ROOT, turnId: "turn_delivery", leaseId: lease.leaseId, fencingToken: lease.fencingToken }, proof)
+
+    await release(proof, ROOT, lease)
+    const released = await plane.post("/turn-delivery", { turnLease: lease.leaseId })
+    expect(released.status).toBe(401)
+  })
+
+  test("a machine's lease gets nothing for the session it serves", async () => {
+    const lease = await plane.acquire(await vmProof("rat_vm_delivery"), VM, "turn_vm_delivery")
+    expect((await plane.post("/turn-delivery", { turnLease: lease.leaseId })).status).toBe(403)
   })
 
   test("a member's turn spends the owner's accounts, until the member can no longer send", async () => {
     await plane.store.grantSessionShare!(plane.owner, { sessionId: ROOT, workspaceId: WORKSPACE_ID, grantedToUserId: plane.member.principal!.userId, level: "send" })
     const proof = await plane.relayProof(plane.member, { hostId: sessionHostId(ROOT), backing: "durable-object", sessionId: ROOT, jti: "rat_member" })
+    await plane.database.prepare("update session_turn_leases set released_at = ? where session_id = ?").bind(Date.now(), ROOT).run()
     const lease = await plane.acquire(proof, ROOT, "turn_member")
     const allowed = parseTurnDelivery(await (await plane.post("/turn-delivery", { turnLease: lease.leaseId })).json())
     expect(Object.keys(allowed!.auth.direct!)).toEqual([plane.owner.principal!.userId])
@@ -105,20 +149,23 @@ describe("/turn-delivery", () => {
     expect(await revoked.json()).toEqual({ error: { code: "turn_delivery_denied" } })
   })
 
-  test("refuses an expired or forged lease, and a session not served by its own host", async () => {
+  test("a queued turn's grant carries the host it was asked from, so its lease is delivered to", async () => {
+    const root = "ses_pi_grant"
+    const proof = await plane.createHostedSession(root)
+    const granted = await plane.post("/session-authorize", { action: "turn_grant", sessionId: root, intent: "queued_prompt", turnId: "turn_queued" }, proof)
+    expect(granted.status).toBe(200)
+    const { grant } = await granted.json() as { grant: string }
+    expect(decodeJwt(grant).host_id).toBe(sessionHostId(root))
+    const acquired = await plane.post("/session-authorize", { action: "turn_acquire", sessionId: root, turnId: "turn_queued", grant })
+    expect(acquired.status).toBe(200)
+    const { leaseId } = await acquired.json() as { leaseId: string }
+    expect((await plane.post("/turn-delivery", { turnLease: leaseId })).status).toBe(200)
+  })
+
+  test("refuses an expired, forged or malformed lease", async () => {
     expect((await plane.post("/turn-delivery", { turnLease: await expiredLease() })).status).toBe(401)
     expect((await plane.post("/turn-delivery", { turnLease: "not-a-lease" })).status).toBe(401)
     expect((await plane.post("/turn-delivery", { turnLease: "x", extra: true })).status).toBe(400)
-    await plane.store.reserveSession(plane.owner, { operationId: "op_vm", sessionId: "ses_vm", workspaceId: WORKSPACE_ID, kind: "create" })
-    const vmProof = await plane.relayProof(plane.owner, { hostId: "host_vm", backing: "cloud-vm", jti: "rat_vm" })
-    for (const action of ["start", "register"]) {
-      const times = action === "register" ? { createdAt: Date.now(), updatedAt: Date.now() } : {}
-      expect((await plane.post("/session-authorize", { action, sessionId: "ses_vm", operationId: "op_vm", ...times }, vmProof)).status).toBe(200)
-    }
-    expect(await sessionRow("ses_vm")).toMatchObject({ session_host_root: null })
-    const lease = await plane.acquire(vmProof, "ses_vm", "turn_vm")
-    const answer = await plane.post("/turn-delivery", { turnLease: lease.leaseId })
-    expect(answer.status).toBe(403)
   })
 })
 
@@ -132,21 +179,25 @@ describe("/turn-execution", () => {
     expect(provisioning.status).toBe(409)
     expect(await provisioning.json()).toEqual({ error: { code: "cloud_runtime_unavailable", retryAfterMs: 1_500 } })
 
-    plane.serve({ status: "ready", workspaceId: WORKSPACE_ID, sandboxId: "sbx", url: "https://vm.test", hostId: "host_vm", routingId: "route_1", epoch: 1, homeRegion: "us-east" })
+    plane.serve({ status: "ready", workspaceId: WORKSPACE_ID, sandboxId: "sbx", url: "https://vm.test", hostId: VM_HOST, routingId: "route_1", epoch: 1, homeRegion: "us-east" })
     const answer = await plane.post("/turn-execution", { turnLease: lease.leaseId })
     expect(answer.status).toBe(200)
     const access = parseTurnExecutionAccess(await answer.json())
-    expect(access).toMatchObject({ relayUrl: "https://relay.test", workspaceId: WORKSPACE_ID, hostId: "host_vm", routingId: "route_1", directory: DIRECTORY })
+    expect(access).toMatchObject({ relayUrl: "https://relay.test", workspaceId: WORKSPACE_ID, hostId: VM_HOST, routingId: "route_1", directory: DIRECTORY })
     expect(decodeJwt(access!.runtimeAccessToken)).toMatchObject({
-      scope: "session", session_id: root, role: "editor", host_id: "host_vm", routing_id: "route_1", actor_id: plane.owner.principal!.actorId,
+      scope: "session", session_id: root, role: "editor", host_id: VM_HOST, routing_id: "route_1", actor_id: plane.owner.principal!.actorId,
     })
     const jti = String(decodeJwt(access!.runtimeAccessToken).jti)
-    expect(await plane.store.runtimeAccessTokenActive({ jti, workspaceId: WORKSPACE_ID, hostId: "host_vm" })).toEqual({ active: true })
+    expect(await plane.store.runtimeAccessTokenActive({ jti, workspaceId: WORKSPACE_ID, hostId: VM_HOST })).toEqual({ active: true })
   })
 
-  test("no editor token is recorded for a session that runs in the workspace's runtime", async () => {
-    await expect(plane.store.recordTurnRuntimeAccessToken(plane.owner.principal!.actorId, {
-      jti: "rat_vm_editor", workspaceId: WORKSPACE_ID, hostId: "host_vm", sessionId: "ses_vm", expiresAt: Date.now() + 60_000,
-    })).rejects.toThrow(/viewer/)
+  test("a session-scoped editor token reaches the session's own host, or its machine for a turn, and nothing else", async () => {
+    const actorId = plane.owner.principal!.actorId
+    const expiresAt = Date.now() + 60_000
+    await expect(plane.store.recordTurnRuntimeAccessToken(actorId, { jti: "rat_vm_editor", workspaceId: WORKSPACE_ID, hostId: VM_HOST, sessionId: VM, expiresAt }))
+      .rejects.toThrow(/served by its own host/)
+    await expect(plane.store.recordRuntimeAccessToken(plane.owner, {
+      jti: "rat_signed_vm_editor", workspaceId: WORKSPACE_ID, hostId: VM_HOST, actorId, actorKind: "human", role: "editor", sessionId: ROOT, expiresAt,
+    })).rejects.toThrow(/session's own host/)
   })
 })

@@ -1,5 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import { listD1SharedSessions, readD1SessionHostPlacement } from "./session-read-store"
+import { listD1SharedSessions, readD1SessionHostPlacement, readD1TurnLeaseLive } from "./session-read-store"
 import type { SessionHostAuthority } from "../../session-hosts"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { OrgInvitationDelivery } from "@claxedo/server-core/platform/auth/org-access-authority"
@@ -153,6 +153,7 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     machineAuth: hosts.machineAuth,
     readSessionHostPlacement: (input) => readD1SessionHostPlacement(database, input),
     recordTurnRuntimeAccessToken: (actorId, token) => channelsAndRuntime.recordTurnRuntimeAccessToken(actorId, token),
+    turnLeaseLive: (input) => readD1TurnLeaseLive(database, input, (options.now ?? Date.now)()),
     publishHostSessionRows: (publisher, publication) =>
       publishD1HostSessionRows(database, (options.now ?? Date.now)(), publisher, publication),
   }

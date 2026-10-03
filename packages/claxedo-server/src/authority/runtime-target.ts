@@ -6,7 +6,7 @@ import type { ControlPlaneServices } from "./services"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
 export class WorkspaceRuntimeTargetError extends Error {
-  constructor(readonly status: number, readonly code: string, message: string) {
+  constructor(readonly status: number, readonly code: string, message: string, readonly retryAfterMs?: number) {
     super(message)
   }
 }
@@ -56,7 +56,8 @@ export async function resolveWorkspaceRuntimeTarget(
   }
   const target = await hostManager.target(workspaceId).catch(() => undefined)
   if (target?.status !== "ready") {
-    throw new WorkspaceRuntimeTargetError(409, "cloud_runtime_unavailable", "Cloud runtime is unavailable")
+    const retryAfterMs = target?.status === "unavailable" ? target.retryAfterMs : undefined
+    throw new WorkspaceRuntimeTargetError(409, "cloud_runtime_unavailable", "Cloud runtime is unavailable", retryAfterMs)
   }
   return {
     hostId: target.hostId,

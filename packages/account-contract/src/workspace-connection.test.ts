@@ -29,13 +29,19 @@ test("session reservation exposes only the authority's fixed create reservation 
   expect(() => resolveHostedOperation("session.reserve", { workspaceId: "ws_1" })).toThrow()
 })
 
-test("a session connection mint names only the session and its harness on the fixed connection route", () => {
-  const harness = { id: "pi", access: "native" }
-  expect(resolveHostedOperation("session.connection.mint", { id: "ws_1", sessionId: "ses_1", harness, previousJti: "jti_1" })).toEqual({
+test("a session connection mint names only the session on the fixed connection route", () => {
+  expect(resolveHostedOperation("session.connection.mint", { id: "ws_1", sessionId: "ses_1", previousJti: "jti_1" })).toEqual({
     method: "POST",
     path: "/api/workspace/ws_1/connection",
-    body: { session: { sessionId: "ses_1", harness } },
+    body: { session: { sessionId: "ses_1" } },
   })
   expect(HOSTED_OPERATIONS["session.connection.mint"].exposure).toEqual({ renderer: true, app: false })
-  expect(() => resolveHostedOperation("session.connection.mint", { id: "ws_1", harness })).toThrow()
+  expect(() => resolveHostedOperation("session.connection.mint", { id: "ws_1" })).toThrow()
+})
+
+test("a session reservation carries the harness it will run", () => {
+  const harness = { id: "pi", access: "native" }
+  expect(resolveHostedOperation("session.reserve", { workspaceId: "ws_1", sessionId: "ses_1", operationId: "op_1", harness })).toMatchObject({
+    body: { workspaceId: "ws_1", sessionId: "ses_1", operationId: "op_1", harness, kind: "create" },
+  })
 })

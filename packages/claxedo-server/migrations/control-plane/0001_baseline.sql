@@ -514,7 +514,7 @@ CREATE TABLE session_registration_operations (
   ),
   state_reason text,
   created_at integer not null,
-  updated_at integer not null,
+  updated_at integer not null, session_host_root text check (session_host_root is null or session_host_root = session_id),
   foreign key (workspace_id, org_id, project_id)
     references workspaces (workspace_id, org_id, project_id) deferrable initially deferred,
   check (
@@ -1122,7 +1122,7 @@ end;
 
 CREATE TRIGGER session_registration_intent_immutable
 before update of session_id, workspace_id, org_id, project_id, creator_actor_id,
-  operation_kind, parent_session_id, requested_title, created_at
+  operation_kind, parent_session_id, requested_title, created_at, session_host_root
 on session_registration_operations
 when new.session_id != old.session_id
   or new.workspace_id != old.workspace_id
@@ -1133,6 +1133,7 @@ when new.session_id != old.session_id
   or new.parent_session_id is not old.parent_session_id
   or new.requested_title is not old.requested_title
   or new.created_at != old.created_at
+  or new.session_host_root is not old.session_host_root
 BEGIN
   select raise(abort, 'session registration intent is immutable');
 end;

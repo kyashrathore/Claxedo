@@ -8,6 +8,7 @@ import { runtimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/run
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } from "../credentials/worker/index"
 import { RuntimeSessionAuthorityRoutes } from "../routes/runtime-session-authority"
+import type { ControlPlaneServices } from "../authority/services"
 import { d1Authority } from "./d1-authority"
 
 export const SESSION_AUTHORIZE_URL = "https://plane.test/api/runtime-authority/session-authorize"
@@ -42,15 +43,17 @@ export async function sessionHostPlane() {
   let target: SandboxTargetResult = { status: "unavailable", reason: "runtime_lease_not_ready", leaseStatus: "acquiring", retryAfterMs: 1_500 }
   const signRuntimeAccessToken = runtimeAccessTokenSigner(env)
 
+  const services = { sandbox: { sandboxManager: { target: async () => target } }, defaultHomeRegion: "us-east" } as unknown as ControlPlaneServices
   const app = new Hono().route("/api/runtime-authority", RuntimeSessionAuthorityRoutes({
     authority: store,
     turnAuthority: store,
+    sessionHosts: store,
     env,
     sessionHostDelivery: {
       sessionHosts: store,
       resolveWorkspaceOwner: (workspaceId) => store.resolveWorkspaceOwner!(workspaceId),
       credentials,
-      sandboxManager: { target: async () => target },
+      services,
       relayEndpoint: () => "https://relay.test/",
       signRuntimeAccessToken,
     },
@@ -89,17 +92,19 @@ export async function sessionHostPlane() {
     }, key.privateKey, "EdDSA")
   }
 
-  /** The owner's create through a session's own host: the reservation, then the host's start and registration. */
-  async function createHostedSession(root: string) {
-    await store.reserveSession(owner, { operationId: `op_${root}`, sessionId: root, workspaceId: WORKSPACE_ID, kind: "create" })
-    const proof = await relayProof(owner, { hostId: sessionHostId(root), backing: "durable-object", jti: `rat_create_${root}` })
+  /** The owner's create through the host its reservation placed it in: the reservation, then that host's start and registration. */
+  async function createSession(sessionId: string, input: { harnessId: string; hostId: string; backing: RelayBacking }) {
+    await store.reserveSession(owner, { operationId: `op_${sessionId}`, sessionId, workspaceId: WORKSPACE_ID, kind: "create", harnessId: input.harnessId })
+    const proof = await relayProof(owner, { hostId: input.hostId, backing: input.backing, jti: `rat_create_${sessionId}` })
     for (const action of ["start", "register"]) {
       const times = action === "register" ? { createdAt: Date.now(), updatedAt: Date.now() } : {}
-      const answer = await post("/session-authorize", { action, sessionId: root, operationId: `op_${root}`, ...times }, proof)
+      const answer = await post("/session-authorize", { action, sessionId, operationId: `op_${sessionId}`, ...times }, proof)
       if (answer.status !== 200) throw new Error(`${action} answered ${answer.status}: ${await answer.text()}`)
     }
     return proof
   }
+  const createHostedSession = (root: string) => createSession(root, { harnessId: "pi", hostId: sessionHostId(root), backing: "durable-object" })
+  const createVmSession = (sessionId: string) => createSession(sessionId, { harnessId: "codex", hostId: "host_vm", backing: "cloud-vm" })
 
   async function acquire(proof: string, sessionId: string, turnId: string) {
     const answer = await post("/session-authorize", { action: "turn_acquire", sessionId, turnId }, proof)
@@ -121,6 +126,7 @@ export async function sessionHostPlane() {
     post,
     relayProof,
     createHostedSession,
+    createVmSession,
     acquire,
     serve(next: SandboxTargetResult) {
       target = next

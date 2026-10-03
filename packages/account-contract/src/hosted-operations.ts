@@ -203,13 +203,13 @@ export const HOSTED_OPERATIONS = {
     output: connection, retry: "safe",
     exposure: { renderer: true, app: false },
   }),
-  // A session about to be created names itself and its harness; the plane answers its own host's connection or the workspace's.
+  // A session the plane reserved in its own host, connected to before it is created there.
   "session.connection.mint": defineOperation({
     method: "POST", path: operationPath("/api/workspace/:id/connection"),
-    input: operationInput({ id: requiredParameter, sessionId: requiredParameter, harness: bodyField }),
+    input: operationInput({ id: requiredParameter, sessionId: requiredParameter }),
     output: connection, retry: "safe",
     exposure: { renderer: true, app: false },
-    body: (input) => ({ session: { sessionId: input.sessionId, harness: input.harness } }),
+    body: (input) => ({ session: { sessionId: input.sessionId } }),
   }),
   "workspace.connection.refresh": defineOperation({
     method: "POST", path: operationPath("/api/workspace/:id/connection/refresh"),
@@ -221,10 +221,10 @@ export const HOSTED_OPERATIONS = {
   // Cloud create needs authority admission; main spends the account bearer on this fixed route.
   "session.reserve": defineOperation({
     method: "POST", path: operationPath("/api/control/session-registrations/reserve"),
-    input: operationInput({ workspaceId: requiredParameter, sessionId: requiredParameter, operationId: requiredParameter, title: bodyField }),
+    input: operationInput({ workspaceId: requiredParameter, sessionId: requiredParameter, operationId: requiredParameter, title: bodyField, harness: bodyField }),
     output: object, retry: "never",
     exposure: { renderer: true, app: false },
-    body: (input) => ({ ...selectBody("workspaceId", "sessionId", "operationId", "title")(input), kind: "create" }),
+    body: (input) => ({ ...selectBody("workspaceId", "sessionId", "operationId", "title", "harness")(input), kind: "create" }),
   }),
   "session.list": defineOperation({
     method: "GET", path: operationPath("/api/control/sessions", { query: ["workspaceId"] }),

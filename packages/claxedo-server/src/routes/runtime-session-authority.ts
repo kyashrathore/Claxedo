@@ -44,6 +44,7 @@ import { trimToUndefined } from "@claxedo/helpers/string"
 import { sessionAuthorityErrorAnswer } from "../session/runtime-authority-errors"
 import { RuntimeConnectionSecretRoutes, type RuntimeConnectionSecretOptions } from "./runtime-connection-secrets"
 import { SessionHostDeliveryRoutes, type SessionHostDeliveryOptions } from "./session-host-delivery"
+import { placedSessionHostRoot, type SessionHostAuthority } from "../authority/session-hosts"
 import {
   finiteTimestamp,
   isHostAuthorityAction,
@@ -119,7 +120,7 @@ export type SessionStreamLeaseBinding =
  * from it renews on the authority's own share recheck, there being no
  * parent token or owner row behind it to re-resolve.
  */
-export type DeferredGrantBinding = { transport: "deferred-grant"; grantId: string }
+export type DeferredGrantBinding = { transport: "deferred-grant"; grantId: string; hostId?: string }
 
 type SessionProofBinding = SessionStreamLeaseBinding | DeferredGrantBinding
 
@@ -240,6 +241,8 @@ async function proofDenial(
 
 export type RuntimeSessionAuthorityOptions = {
   connectionSecrets?: RuntimeConnectionSecretOptions
+  /** Where a session is placed; absent, no session is served by its own host and every session-host proof is refused. */
+  sessionHosts?: Pick<SessionHostAuthority, "readSessionHostPlacement">
   /** What a session served by its own Durable Object is handed per turn; absent, `/turn-delivery` and `/turn-execution` are not mounted. */
   sessionHostDelivery?: SessionHostDeliveryOptions
   authority: RuntimeSessionAuthorityPort
@@ -384,6 +387,19 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
   const resolveWorkspaceOwner = options.ownerGrants?.resolveWorkspaceOwner
 
   /**
+   * A session placed in its own Durable Object answers to that host alone, and
+   * a host answers for no session placed elsewhere: whatever the action, the
+   * host behind the proof must be the one the session's row, or before
+   * registration its reservation, names.
+   */
+  async function sessionHostMismatch(claims: SessionProofClaims, sessionId: string) {
+    const host = proofHost(claims)
+    const proven = host === undefined ? undefined : sessionHostRootOf(host)
+    const placement = await options.sessionHosts?.readSessionHostPlacement({ workspaceId: claims.workspaceId, sessionId })
+    return proven !== placedSessionHostRoot(placement)
+  }
+
+  /**
    * A cloud workspace runtime's usage for one session, proven by a turn lease
    * the plane minted for that session. Session and workspace come from the
    * lease, location and host from the plane; the report names none of them.
@@ -415,6 +431,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         401,
       )
     }
+    if (await sessionHostMismatch(lease, sessionId)) return sessionHostRefusal(context)
     let revisions: Array<{ fact: UsageReportFact; revision: TurnUsageRevision }>
     try {
       revisions = facts.map((fact) => ({ fact, revision: cloudWorkspaceUsageRevision(fact, lease) }))
@@ -489,7 +506,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
           503,
         )
       }
-      const binding: DeferredGrantBinding = { transport: "deferred-grant", grantId: verified.grantId }
+      const binding: DeferredGrantBinding = { transport: "deferred-grant", grantId: verified.grantId, ...(verified.hostId ? { hostId: verified.hostId } : {}) }
       const claims: SessionProofClaims = {
         ...sessionLeasePrincipal(verified),
         ...binding,
@@ -564,8 +581,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
           401,
         )
       }
-      const hostRoot = sessionHostRootOf(verified.host_id)
-      if ((verified.session_id !== undefined && verified.session_id !== sessionId) || (hostRoot !== undefined && hostRoot !== sessionId)) {
+      if (verified.session_id !== undefined && verified.session_id !== sessionId) {
         return context.json({ error: { code: "session_scope_denied", message: "The relay's token reaches another session" } }, 403)
       }
       try {
@@ -645,7 +661,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         ...(request.registrationOperationId ? { registrationOperationId: request.registrationOperationId } : {}),
         ...(turnId ? { turnId } : {}),
       })
-      const minted = await mintDeferredTurnGrant(deferredTurnGrantClaims(principal, claims.orgId, granted), env)
+      const minted = await mintDeferredTurnGrant(deferredTurnGrantClaims(principal, claims.orgId, granted, proofHost(claims)), env)
       return context.json({ allowed: true, grant: minted.grant, expiresAt: granted.expiresAt })
     }
     const turn = {
@@ -742,6 +758,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     const { sessionId, action, operationId, reason, title, stream, parentSessionId, createdAt, updatedAt } = request
     const verified = await verifySessionProof(context, request)
     if (verified instanceof Response) return verified
+    if (await sessionHostMismatch("turn" in verified ? verified.turn.claims : verified.claims, sessionId)) return sessionHostRefusal(context)
 
     try {
       if ("turn" in verified) {
@@ -986,7 +1003,7 @@ function turnLeaseMinter(env: Record<string, string | undefined>) {
       ...(claims.transport === "relay-host"
         ? { host_id: claims.hostId, parent_jti: claims.parentRuntimeAccessTokenJti }
         : claims.transport === "deferred-grant"
-          ? { grant_id: claims.grantId }
+          ? { grant_id: claims.grantId, ...(claims.hostId ? { host_id: claims.hostId } : {}) }
           : {}),
       session_id: claims.sessionId,
       action: "write",
@@ -1047,7 +1064,7 @@ function turnLeaseVerifier(env: Record<string, string | undefined>) {
       : transport === "relay-host" && hostId && parentRuntimeAccessTokenJti
         ? { transport: "relay-host", hostId, parentRuntimeAccessTokenJti }
         : transport === "deferred-grant" && grantId
-          ? { transport: "deferred-grant", grantId }
+          ? { transport: "deferred-grant", grantId, ...(hostId ? { hostId } : {}) }
           : (() => { throw new Error("Turn lease binding is invalid") })()
     const principal: PrivateSessionRuntimePrincipal = principalKind === "user"
       ? { principalKind: "user", actorId, actorKind: "human" }
@@ -1137,6 +1154,14 @@ function cachedKey(key: string, create: () => RelayProofKey | Promise<RelayProof
   const value = create()
   relayKeys.set(key, value)
   return value
+}
+
+function proofHost(claims: SessionProofClaims) {
+  return claims.transport === "relay-host" || claims.transport === "deferred-grant" ? claims.hostId : undefined
+}
+
+function sessionHostRefusal(context: Context) {
+  return context.json({ error: { code: "session_host_mismatch", message: "This session is served by another host" } }, 403)
 }
 
 function keyPem(value: string | undefined) {

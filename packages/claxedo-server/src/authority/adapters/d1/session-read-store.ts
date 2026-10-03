@@ -35,8 +35,13 @@ const COLUMNS = {
   sessionRef: "('workspace:' || s.workspace_id || ':session:' || s.session_id)",
 }
 
-/** `access` is the caller's read predicate over `s`, with the values its placeholders bind. */
-export async function readD1SessionPage(database: D1Database, query: SessionPageQuery, access: BoundSql) {
+/**
+ * `access` is the caller's read predicate over `s`, with the values its
+ * placeholders bind. A `busy` stamped by a turn lease that then lapsed
+ * unreleased reads as `interrupted`: the runtime holding it is gone, and the
+ * lease's own expiry is the one record that says so.
+ */
+export async function readD1SessionPage(database: D1Database, query: SessionPageQuery, access: BoundSql, now: number) {
   const where = ["s.deleted_at is null"]
   const params: unknown[] = []
   if ("projectId" in query) {
@@ -62,14 +67,20 @@ export async function readD1SessionPage(database: D1Database, query: SessionPage
   const result = await database
     .prepare(`
       select s.session_id, s.workspace_id, s.project_id, s.title, s.created_at, s.updated_at,
-        s.last_human_turn_at, s.archived_at, s.status, s.status_at, s.awaiting_input,
+        s.last_human_turn_at, s.archived_at,
+        case when s.status = 'busy' and exists (
+          select 1 from session_turn_leases lapsed
+          where lapsed.session_id = s.session_id and lapsed.acquired_at = s.status_at
+            and lapsed.released_at is null and lapsed.expires_at <= ?
+        ) then 'interrupted' else s.status end as status,
+        s.status_at, s.awaiting_input,
         s.last_turn_status, s.last_turn_completed_at, s.session_host_root
       from sessions s
       where ${where.join(" and ")}
       order by ${order.orderBy}
       limit ?
     `)
-    .bind(...params, query.limit)
+    .bind(now, ...params, query.limit)
     .all<SessionPageRow>()
   return result.results.map(pageRowJson)
 }
@@ -94,28 +105,49 @@ function pageRowJson(row: SessionPageRow) {
   }
 }
 
+export async function readD1TurnLeaseLive(
+  database: D1Database,
+  input: { sessionId: string; turnId: string; leaseId: string; fencingToken: number },
+  now: number,
+) {
+  return !!await database.prepare(`
+    select 1 from session_turn_leases
+    where session_id = ? and turn_id = ? and lease_id = ? and fencing_token = ? and released_at is null and expires_at > ?
+  `).bind(input.sessionId, input.turnId, input.leaseId, input.fencingToken, now).first()
+}
+
 /**
- * A workspace and, when it is registered anywhere, the session a Durable
- * Object would host. The session is read by id alone: an id registered under
- * another workspace must not be hosted under this one.
+ * A workspace, and the session id's row and live reservation wherever they
+ * are. The id is read alone and a deleted row is still read: an id held under
+ * another workspace, or one a deleted session used, is never hosted here.
  */
 export async function readD1SessionHostPlacement(database: D1Database, input: { workspaceId: string; sessionId: string }): Promise<SessionHostPlacement | undefined> {
   const row = await database.prepare(`
-    select w.org_id, w.backing, w.remote_directory, s.workspace_id as session_workspace_id, s.session_host_root
+    select w.backing, w.remote_directory,
+      s.workspace_id as session_workspace_id, s.session_host_root, s.deleted_at as session_deleted_at,
+      r.workspace_id as reservation_workspace_id, r.session_host_root as reservation_host_root
     from workspaces w
-    left join sessions s on s.session_id = ? and s.deleted_at is null
+    left join sessions s on s.session_id = ?
+    left join session_registration_operations r on r.session_id = ? and r.state <> 'compensated'
     where w.workspace_id = ? and w.deleted_at is null
-  `).bind(input.sessionId, input.workspaceId).first<{
-    org_id: string
+  `).bind(input.sessionId, input.sessionId, input.workspaceId).first<{
     backing: "cloud-vm" | "local-worktree"
     remote_directory: string | null
     session_workspace_id: string | null
     session_host_root: string | null
+    session_deleted_at: number | null
+    reservation_workspace_id: string | null
+    reservation_host_root: string | null
   }>()
   if (!row) return undefined
   return {
-    workspace: { orgId: row.org_id, backing: row.backing, directory: row.remote_directory },
-    ...(row.session_workspace_id === null ? {} : { session: { workspaceId: row.session_workspace_id, sessionHostRoot: row.session_host_root } }),
+    workspace: { backing: row.backing, directory: row.remote_directory },
+    ...(row.session_workspace_id === null ? {} : {
+      session: { workspaceId: row.session_workspace_id, sessionHostRoot: row.session_host_root, deleted: row.session_deleted_at !== null },
+    }),
+    ...(row.reservation_workspace_id === null ? {} : {
+      reservation: { workspaceId: row.reservation_workspace_id, sessionHostRoot: row.reservation_host_root },
+    }),
   }
 }
 

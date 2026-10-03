@@ -27,7 +27,6 @@ import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } fr
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
 import { hostedConnectionInfo, hostedConnectionStatus, hostedSessionConnection, hostedSessionHostConnection } from "../../connections/hosted-connection-info"
-import { AGENT_HARNESS_ACCESSES, type SessionHarness } from "@claxedo/agent-runtime-contract"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { hostedSandboxInput } from "../../workspace/hosted-sandbox-input"
 import { apiError, captureWorkspaceTelemetry, missingBearerBody, parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
@@ -102,10 +101,7 @@ const refreshConnectionBody = z
 const connectionBody = z
   .object({
     previousJti: z.string().optional(),
-    session: z.object({
-      sessionId: z.string().min(1),
-      harness: z.object({ id: z.string().min(1), access: z.enum(AGENT_HARNESS_ACCESSES) }).strict(),
-    }).strict().optional(),
+    session: z.object({ sessionId: z.string().min(1) }).strict().optional(),
   })
   .strict()
   .refine((body) => !(body.previousJti && body.session), { message: "A session connection is minted fresh, never refreshed from a previous token" })
@@ -170,7 +166,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
     ...options,
     requireSigned: true as const,
   })
-  const connectionResponse = async (c: Context, input: { previousJti?: string; readOnly?: boolean; session?: { sessionId: string; harness: SessionHarness } } = {}) => {
+  const connectionResponse = async (c: Context, input: { previousJti?: string; readOnly?: boolean; session?: { sessionId: string } } = {}) => {
     const workspaceId = routeParam(c, "id")
     const authResult = await signedOrError(c.req.raw, authOptions(), services)
     if ("error" in authResult) return c.json(authResult.error, authResult.status)
