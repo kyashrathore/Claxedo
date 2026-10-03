@@ -42,7 +42,7 @@ const executionEnvAccess: MiddlewareHandler<Env> = async (c, next) => {
   return next()
 }
 
-async function parsed<T extends z.ZodType>(c: HonoContext, schema: T): Promise<z.output<T> | Response> {
+async function parsedRequest<T extends z.ZodType>(c: HonoContext, schema: T): Promise<z.output<T> | Response> {
   const body = schema.safeParse(await boundedJsonBody(c, { limit: BODY_LIMIT_BYTES }))
   return body.success ? body.data : c.json(errorBody("execution_env_request_invalid", z.prettifyError(body.error)), 400)
 }
@@ -51,14 +51,14 @@ export function ExecutionEnvRoutes(options: ExecutionEnvRouteOptions) {
   const app = new Hono<Env>()
   app.use("*", executionEnvAccess)
   app.post("/fs", async (c) => {
-    const request = await parsed(c, fsRequest)
+    const request = await parsedRequest(c, fsRequest)
     if (request instanceof Response) return request
     const result = await runFileSystemOperation(new NodeExecutionEnv({ cwd: options.directory }), request,
       withAbortSignal(c.req.raw.signal, BACKGROUND_CONTEXT))
     return "invalid" in result ? c.json(errorBody("execution_env_request_invalid", result.invalid), 400) : c.json(result)
   })
   app.post("/exec", async (c) => {
-    const request = await parsed(c, execRequest)
+    const request = await parsedRequest(c, execRequest)
     if (request instanceof Response) return request
     const host = { spawn: options.spawn, sessionId: c.get("executionSessionId"), env: options.env }
     const context = withAbortSignal(c.req.raw.signal, BACKGROUND_CONTEXT)

@@ -40,7 +40,7 @@ function forwardOutput(owned: OwnedProcess, options: ShellExecOptions | undefine
   }
 }
 
-async function settle(owned: OwnedProcess, options: ShellExecOptions | undefined, context: Context): Promise<Result<ShellExecResult, ExecutionError>> {
+async function settleCommand(owned: OwnedProcess, options: ShellExecOptions | undefined, context: Context): Promise<Result<ShellExecResult, ExecutionError>> {
   let stopped: "aborted" | "timeout" | undefined
   const stop = (reason: "aborted" | "timeout") => { stopped ??= reason; void retireSoon(owned) }
   const onAbort = () => stop("aborted")
@@ -78,5 +78,5 @@ export async function ownedShellExec(host: OwnedShellHost, cwd: string, command:
   }
   owned.stdin.end()
   forwardOutput(owned, options, context)
-  return settle(owned, options, context)
+  return settleCommand(owned, options, context)
 }

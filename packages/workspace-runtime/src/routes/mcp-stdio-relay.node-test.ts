@@ -2,11 +2,10 @@ import assert from "node:assert/strict"
 import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { setTimeout as sleep } from "node:timers/promises"
 import { afterEach, test } from "node:test"
 import WebSocket from "ws"
 import type { PluginProjection } from "@claxedo/harness/contract"
-import { serveExecutionEnv, type ExecutionEnvClaims } from "../test-support/execution-env-server"
+import { pidRunning, serveExecutionEnv, waitForPidExit, type ExecutionEnvClaims } from "../test-support/execution-env-server"
 
 const STDIO_SERVER = `const readline = require("node:readline");
 readline.createInterface({ input: process.stdin }).on("line", (line) => {
@@ -37,7 +36,7 @@ async function relay() {
   return { server, url }
 }
 
-function open(url: string, headers: Record<string, string>) {
+function openRelaySocket(url: string, headers: Record<string, string>) {
   const socket = new WebSocket(url, { headers })
   return new Promise<{ socket: WebSocket } | { status: number }>((resolve, reject) => {
     socket.once("open", () => resolve({ socket }))
@@ -59,29 +58,23 @@ function rpc(socket: WebSocket, id: number, method: string, params: unknown = {}
   })
 }
 
-function processAlive(pid: number) {
-  try { process.kill(pid, 0); return true } catch { return false }
-}
-
 void test("bridges JSON-RPC to the named plugin stdio server and retires it when the socket closes", async () => {
   const { server, url } = await relay()
-  const opened = await open(url("tools"), await server.headers({ sessionId: "ses_1" }))
+  const opened = await openRelaySocket(url("tools"), await server.headers({ sessionId: "ses_1" }))
   assert.ok("socket" in opened)
   const initialized = await rpc(opened.socket, 1, "initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "do", version: "1" } })
   const pid = Number(String(initialized.result.serverInfo.name).slice("pid:".length))
-  assert.equal(processAlive(pid), true)
+  assert.equal(pidRunning(pid), true)
   assert.deepEqual((await rpc(opened.socket, 2, "tools/list")).result.tools.map((tool: { name: string }) => tool.name), ["guide"])
   opened.socket.close()
-  const deadline = Date.now() + 10_000
-  while (processAlive(pid) && Date.now() < deadline) await sleep(25)
-  assert.equal(processAlive(pid), false, `MCP server ${pid} outlived its socket`)
+  assert.equal(await waitForPidExit(pid, 10_000), true, `MCP server ${pid} outlived its socket`)
 })
 
 void test("an unknown name, a non-plugin server and a viewer are refused before any process starts", async () => {
   const { server, url } = await relay()
   const editor = await server.headers({ sessionId: "ses_1" })
   const viewer: ExecutionEnvClaims = { sessionId: "ses_1", role: "viewer" }
-  assert.deepEqual(await open(url("missing"), editor), { status: 404 })
-  assert.deepEqual(await open(url("configured"), editor), { status: 404 })
-  assert.deepEqual(await open(url("tools"), await server.headers(viewer)), { status: 403 })
+  assert.deepEqual(await openRelaySocket(url("missing"), editor), { status: 404 })
+  assert.deepEqual(await openRelaySocket(url("configured"), editor), { status: 404 })
+  assert.deepEqual(await openRelaySocket(url("tools"), await server.headers(viewer)), { status: 403 })
 })

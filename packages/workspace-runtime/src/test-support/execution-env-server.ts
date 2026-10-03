@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from "node:timers/promises"
 import { serve } from "@hono/node-server"
 import { createNodeWebSocket } from "@hono/node-ws"
 import { Hono } from "hono"
@@ -55,4 +56,20 @@ export async function serveExecutionEnv(input: Parameters<typeof executionEnvApp
     headers,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   }
+}
+
+export function pidRunning(pid: number) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Whether `pid` exits within `ms`; process exit is observed by polling because nothing here is its parent. */
+export async function waitForPidExit(pid: number, ms: number) {
+  const deadline = Date.now() + ms
+  while (pidRunning(pid) && Date.now() < deadline) await sleep(25)
+  return !pidRunning(pid)
 }

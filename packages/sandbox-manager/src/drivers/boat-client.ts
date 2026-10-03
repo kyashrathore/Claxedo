@@ -26,11 +26,11 @@ function invalid(): never {
   throw new BoatApiError("Boat API returned an invalid response", "invalid_response")
 }
 
-function string(value: unknown): string {
+function requiredText(value: unknown): string {
   return typeof value === "string" ? value : invalid()
 }
 
-function boolean(value: unknown): boolean {
+function requiredFlag(value: unknown): boolean {
   return typeof value === "boolean" ? value : invalid()
 }
 
@@ -44,12 +44,12 @@ function isSandboxState(value: unknown): value is BoatSandboxState {
 
 function sandbox(body: Record<string, unknown>): BoatSandbox {
   const value = record(body.sandbox) ?? invalid()
-  const id = string(value.id)
+  const id = requiredText(value.id)
   if (!/^bx_[23456789abcdefghjkmnpqrstuvwxyz]{8}$/.test(id) || !isSandboxState(value.state)) invalid()
   return { id, state: value.state }
 }
 
-async function boundedJson(response: Response): Promise<Record<string, unknown> | undefined> {
+async function readBoundedResponseJson(response: Response): Promise<Record<string, unknown> | undefined> {
   const reader = response.body?.getReader() ?? invalid()
   const chunks: Uint8Array[] = []
   let size = 0
@@ -89,13 +89,13 @@ export function createBoatClient(options: { apiKey: string; baseUrl?: string; ti
     } catch {
       throw new BoatApiError(`Boat ${init?.method ?? "GET"} ${path} failed before acknowledgement`, "transport_failed")
     }
-    const body = await boundedJson(response).catch(() => undefined)
+    const body = await readBoundedResponseJson(response).catch(() => undefined)
     // Provider error text is never copied: command bodies and their output can carry secrets.
     if (!response.ok || body?.ok === false) {
       const code = typeof body?.code === "string" ? body.code : `http_${response.status}`
       throw new BoatApiError(`Boat ${init?.method ?? "GET"} ${path} was rejected (${code})`, code, response.status)
     }
-    if (body?.ok !== true || !types.includes(string(body.type))) invalid()
+    if (body?.ok !== true || !types.includes(requiredText(body.type))) invalid()
     return body
   }
 
@@ -126,8 +126,8 @@ export function createBoatClient(options: { apiKey: string; baseUrl?: string; ti
     async command(id: string, input: { command: string; timeoutSeconds?: number }): Promise<BoatCommandResult> {
       const body = await api(`${path(id)}/commands`, ["command.finished"], { method: "POST", body: input })
       return {
-        success: boolean(body.success), stdout: string(body.stdout), stderr: string(body.stderr),
-        exitCode: exitCode(body.exitCode), timedOut: boolean(body.timedOut),
+        success: requiredFlag(body.success), stdout: requiredText(body.stdout), stderr: requiredText(body.stderr),
+        exitCode: exitCode(body.exitCode), timedOut: requiredFlag(body.timedOut),
       }
     },
   }
