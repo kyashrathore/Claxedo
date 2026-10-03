@@ -8,11 +8,15 @@ const SessionStoresContext = createContext<SessionStores>()
 
 export function SessionStoresProvider(props: ParentProps) {
   const preferences = usePreferences()
-  const stores = createSessionStores(useServer(), () => ({
-    reasoning: preferences.transcript.showReasoningSummaries,
-    shell: preferences.transcript.shellToolPartsExpanded,
-    edit: preferences.transcript.editToolPartsExpanded,
-  }))
+  const stores = createSessionStores(
+    useServer(),
+    () => ({
+      reasoning: preferences.transcript.showReasoningSummaries,
+      shell: preferences.transcript.shellToolPartsExpanded,
+      edit: preferences.transcript.editToolPartsExpanded,
+    }),
+    () => preferences.sidebar.showSettled,
+  )
   return <SessionStoresContext.Provider value={stores}>{props.children}</SessionStoresContext.Provider>
 }
 

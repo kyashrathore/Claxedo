@@ -7,7 +7,7 @@ import { goalFromWire } from "./goal"
 import { connectionStateFromWire, harnessHealthFromWire } from "./harness-state"
 import { subagentFromWire } from "./subagents"
 import { isPermissionWire, isQuestionWire, requestFromPermission, requestFromQuestion } from "./requests"
-import { lastTurnFromWire, listedStatusFromListItem, sessionLocationFor, sessionRowFromSession, type Address } from "./session-row"
+import { lastTurnFromWire, listedStatusFromListItem, readerFromWire, sessionLocationFor, sessionRowFromSession, type Address } from "./session-row"
 import { sessionStatusFromTurnError, sessionStatusFromWire } from "./status"
 import { terminalEvent } from "./terminals"
 import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
@@ -195,6 +195,17 @@ function requestEvent(frame: Frame, ref: SessionLocation): ServerEvent | undefin
   }
 }
 
+function noticeRef(raw: Record<string, unknown>, address: Address): SessionLocation | undefined {
+  const id = nonEmptyString(raw.sessionId)
+  const workspace = nonEmptyString(raw.workspaceId)
+  return id && workspace ? sessionLocationFor(address, { directory: `workspace:${workspace}`, workspaceId: workspace, sessionId: id }) : undefined
+}
+
+function readerEvent(frame: Frame, address: Address): ServerEvent | undefined {
+  const ref = noticeRef(frame.raw, address)
+  return ref ? { type: "readerChanged", ref, reader: readerFromWire(frame.raw) } : undefined
+}
+
 function controlEvent(frame: Frame, address: Address): ServerEvent | undefined {
   const placementId = framePlacementId(frame, address)
   const scoped = placementId ? { placementId } : {}
@@ -207,6 +218,8 @@ function controlEvent(frame: Frame, address: Address): ServerEvent | undefined {
       const id = nonEmptyString(info?.id)
       return id ? { type: "projectChanged", projectId: projectId(id) } : { type: "placementsChanged" }
     }
+    case "session.reader.changed":
+      return readerEvent(frame, address)
     case "session.lifecycle":
     case "session.inventory.changed":
     case "session.share.changed":
@@ -234,13 +247,10 @@ function controlEvent(frame: Frame, address: Address): ServerEvent | undefined {
 }
 
 function statusNotice(frame: Frame, address: Address): ServerEvent | undefined {
-  const { sessionId, workspaceId, status, awaitingInput, backgroundWork, lastTurn, replayed } = frame.raw
-  const id = nonEmptyString(sessionId)
-  const workspace = nonEmptyString(workspaceId)
+  const { status, awaitingInput, backgroundWork, lastTurn, replayed } = frame.raw
   const listed = listedStatusFromListItem({ status: { kind: status, awaitingInput, backgroundWork } })
-  if (!id || !workspace || !listed) return undefined
-  const ref = sessionLocationFor(address, { directory: `workspace:${workspace}`, workspaceId: workspace, sessionId: id })
-  if (!ref) return undefined
+  const ref = noticeRef(frame.raw, address)
+  if (!listed || !ref) return undefined
   const turn = lastTurnFromWire(lastTurn)
   return {
     type: "statusChanged",

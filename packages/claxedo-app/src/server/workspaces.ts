@@ -35,6 +35,7 @@ export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
   readonly refresh: () => Promise<void>
   readonly accountProjects: () => Promise<readonly Project[]>
   readonly accountProjectIds: (projectId: ProjectId) => readonly ProjectId[]
+  readonly accountKnows: (workspaceId: string) => boolean
   readonly dispose: () => void
 }
 
@@ -161,7 +162,7 @@ async function readCatalogs(local: Promise<BootstrapCatalog>, account: Promise<v
   return read.value
 }
 
-function accountReads(linked: () => LinkedCatalog | undefined, signed: boolean, load: () => Promise<unknown>): Pick<Workspaces, "accountProjects" | "accountProjectIds"> {
+function accountReads(linked: () => LinkedCatalog | undefined, signed: boolean, load: () => Promise<unknown>): Pick<Workspaces, "accountProjects" | "accountProjectIds" | "accountKnows"> {
   return {
     accountProjects: async () => {
       if (!signed) return []
@@ -169,6 +170,7 @@ function accountReads(linked: () => LinkedCatalog | undefined, signed: boolean, 
       return linked()?.projects ?? []
     },
     accountProjectIds: (projectId) => linked()?.accountProjectIds(projectId) ?? [],
+    accountKnows: (workspaceId) => linked()?.knowsWorkspace(workspaceId) ?? false,
   }
 }
 

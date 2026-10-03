@@ -1,7 +1,7 @@
 import { createSignal, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { useAgeClock } from "@/lib/clock"
-import { useSessionStores, type SessionRowView } from "@/session"
+import type { SessionRowView } from "@/session"
 import { createHoverEngagement } from "../hover-engagement"
 import { railDictionary } from "../i18n"
 import { navigationStatus, sessionAge, sessionAgeSince, type SessionMarker } from "../model"
@@ -67,8 +67,7 @@ function ArchiveButton(props: { readonly row: SessionRowView; readonly engaged: 
 export function RailSessionRow(props: SessionRowProps): JSX.Element {
   const [menu, setMenu] = createSignal<{ x: number; y: number }>()
   const engagement = createHoverEngagement()
-  const unseen = useSessionStores().unseenOutcomes
-  const status = () => navigationStatus(props.row, unseen.of(props.row.ref.sessionId))
+  const status = () => navigationStatus(props.row)
   const now = useAgeClock(() => sessionAgeSince(props.row))
   const openMenu = (event: MouseEvent) => {
     event.preventDefault()

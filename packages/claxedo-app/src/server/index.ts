@@ -17,6 +17,7 @@ export { RUNNING_IN_BACKGROUND, sessionStatusWithBackgroundWork } from "./status
 export { backgroundWorkActive, NO_BACKGROUND_WORK } from "@claxedo/agent-runtime-contract"
 export { sameModelKey } from "./model-choice"
 export { turnDetailed, turnOutcome } from "./wire/session-row"
+export { sessionSettled, type ReaderWrite } from "./session-reader"
 export { harnessIdentityOf } from "./wire/harness-selection"
 export type * from "./account-types"
 export type * from "./usage-types"

@@ -97,7 +97,7 @@ async function turnChecks(probe: Probe, placement: Placement) {
   await check("session surface and list after the turn", async () => {
     const snapshot = await surfaceOf(server, ref)
     if (!JSON.stringify(snapshot.transcript.entries).includes("ADAPTER_OK")) throw new Error("the first page lacks the reply")
-    const page = await server.sessions.list({ projectId: ref.projectId, limit: 20 })
+    const page = await server.sessions.list({ projectId: ref.projectId, limit: 20, settled: "active" })
     const hit = page.rows.find((item) => item.ref.sessionId === ref.sessionId)
     if (!hit) throw new Error(`${page.rows.length} row(s), none is ${ref.sessionId}`)
     return `entries=${snapshot.transcript.entries.length} list row "${hit.title}" placement=${hit.ref.placementId}`
@@ -120,7 +120,7 @@ async function turnChecks(probe: Probe, placement: Placement) {
       await server.sessions.prompt(ref, { clientRequestId: crypto.randomUUID(), text: `Wait. ${acpScriptToken("held")}`, attachments: [] })
       await log.next("working", from, isStatus(ref.sessionId, ["working"]))
       const working = log.mark()
-      const listed = await server.sessions.list({ projectId: ref.projectId, limit: 20 })
+      const listed = await server.sessions.list({ projectId: ref.projectId, limit: 20, settled: "active" })
       const reported = listed.statuses.get(ref.sessionId)?.status.kind
       const delivery = await server.sessions.prompt(ref, { clientRequestId: crypto.randomUUID(), text: "Later.", attachments: [], delivery: "queue" })
       const queued = (await server.sessions.queue(ref)) ?? []
@@ -147,7 +147,7 @@ async function turnChecks(probe: Probe, placement: Placement) {
       paths.push(new URL(input instanceof Request ? input.url : String(input)).pathname)
       return original(input, init)
     }) as typeof fetch
-    const read = await server.sessions.list({ projectId: ref.projectId, limit: 20 }).finally(() => (globalThis.fetch = original))
+    const read = await server.sessions.list({ projectId: ref.projectId, limit: 20, settled: "active" }).finally(() => (globalThis.fetch = original))
     const reported = read.statuses.get(ref.sessionId)?.status.kind
     if (reported !== "failed" || paths.join(",") !== "/api/claxedo/session-list") throw new Error(`reported=${reported}, reads=${paths.join(",")}`)
     return `reported=${reported}, reads=${paths.sort().join(",")}`
@@ -195,7 +195,7 @@ async function cleanupChecks(probe: Probe, ref: Parameters<ServerHandle["session
     const from = log.mark()
     await server.sessions.remove(ref)
     await log.next("sessionRemoved", from, (event): event is ServerEvent => event.type === "sessionRemoved" && event.ref.sessionId === ref.sessionId)
-    const page = await server.sessions.list({ projectId: ref.projectId, limit: 20 })
+    const page = await server.sessions.list({ projectId: ref.projectId, limit: 20, settled: "active" })
     if (page.rows.some((item) => item.ref.sessionId === ref.sessionId)) throw new Error("the list still holds the removed session")
     return "removed, and gone from the list"
   })

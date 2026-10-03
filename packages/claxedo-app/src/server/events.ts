@@ -4,7 +4,7 @@ import type { CloudWorkspaceStatus } from "./cloud-types"
 import type { HarnessConnectionState, HarnessHealth } from "./harness-types"
 import type { Terminal, TerminalAgentStatus } from "./terminal-types"
 import type { BackgroundWork, SessionStatus } from "./status-types"
-import type { AgentRequest, FileDiff, SessionGoal, SessionLocation, SessionRow, Subagent, Todo, TranscriptMessage, TranscriptPart } from "./types"
+import type { AgentRequest, FileDiff, SessionGoal, SessionLocation, SessionReader, SessionRow, Subagent, Todo, TranscriptMessage, TranscriptPart } from "./types"
 
 export type PartAddress = { readonly messageId: string; readonly partId: string }
 
@@ -21,6 +21,7 @@ export type ServerEvent =
       readonly replayed?: boolean
     }
   | { readonly type: "backgroundWorkChanged"; readonly ref: SessionLocation; readonly work: BackgroundWork }
+  | { readonly type: "readerChanged"; readonly ref: SessionLocation; readonly reader: SessionReader }
   | { readonly type: "messageUpserted"; readonly ref: SessionLocation; readonly message: TranscriptMessage }
   | { readonly type: "messageRemoved"; readonly ref: SessionLocation; readonly messageId: string }
   | { readonly type: "partUpserted"; readonly ref: SessionLocation; readonly part: TranscriptPart }

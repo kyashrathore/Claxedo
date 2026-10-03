@@ -3,7 +3,7 @@ import type { FetchedWindow, ListData } from "./model"
 
 type Timed = { readonly at: number; readonly source: "event" | "read" }
 
-function readIsStale(current: Timed | undefined, sentAt: number): boolean {
+export function readIsStale(current: Timed | undefined, sentAt: number): boolean {
   if (!current) return false
   return current.source === "event" ? current.at >= sentAt : current.at > sentAt
 }
@@ -47,12 +47,14 @@ export function pageStatusesRead<S extends ListData>(data: S, window: FetchedWin
   return next
 }
 
-export function withoutSessionFacts<S extends ListData>(data: S, sessionIds: Iterable<SessionId>): Pick<ListData, "statuses" | "backgroundWork"> {
+export function withoutSessionFacts<S extends ListData>(data: S, sessionIds: Iterable<SessionId>): Pick<ListData, "statuses" | "backgroundWork" | "readers"> {
   const statuses = new Map(data.statuses)
   const backgroundWork = new Map(data.backgroundWork)
+  const readers = new Map(data.readers)
   for (const sessionId of sessionIds) {
     statuses.delete(sessionId)
     backgroundWork.delete(sessionId)
+    readers.delete(sessionId)
   }
-  return { statuses, backgroundWork }
+  return { statuses, backgroundWork, readers }
 }

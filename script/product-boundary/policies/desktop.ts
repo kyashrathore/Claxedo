@@ -497,6 +497,9 @@ export const desktopRenderer: Policy = {
   // The session stores derive a row's finished, failed and waiting alerts in
   // `session/store/attention.ts`, and a signed desktop reads its account's
   // hosted event stream through `server/account-events.ts`.
+  // A reader's seen and settle writes, and where a signed desktop's marks live,
+  // are `server/session-reader.ts`; the session view's seen write while a
+  // session is shown is `session/view/seen-while-shown.ts`.
   // 1303/36, no headroom.
   ceilings: { modules: 1303, packages: 36 },
   emitted: {

@@ -1,5 +1,5 @@
 import { machine, type Machine } from "@/lib/machine"
-import { toAppError, type ProjectId, type Server } from "@/server"
+import { toAppError, type ProjectId, type Server, type SettledFilter } from "@/server"
 import {
   NO_FOLLOW_UP,
   followUpTransition,
@@ -24,6 +24,7 @@ export type ListReads = {
 
 type ReadContext = {
   readonly server: Server
+  readonly settled: () => SettledFilter
   readonly list: Machine<ListState, ListEvent>
   readonly followUp: Machine<FollowUp, FollowUpEvent>
 }
@@ -31,8 +32,8 @@ type ReadContext = {
 type PageTarget = { readonly projectId: ProjectId; readonly after?: string }
 
 async function readSessionListPage(context: ReadContext, target: PageTarget): Promise<FetchedPage> {
-  const page = await context.server.sessions.list({ projectId: target.projectId, after: target.after, limit: PAGE_SIZE })
-  return { projectId: target.projectId, rows: page.rows, statuses: page.statuses, nextAfter: page.nextAfter, degraded: page.degraded === true }
+  const page = await context.server.sessions.list({ projectId: target.projectId, after: target.after, limit: PAGE_SIZE, settled: context.settled() })
+  return { projectId: target.projectId, rows: page.rows, statuses: page.statuses, readers: page.readers, nextAfter: page.nextAfter, degraded: page.degraded === true }
 }
 
 async function firstPageTargets(context: ReadContext): Promise<PageTarget[]> {
@@ -108,8 +109,8 @@ function requestReread(context: ReadContext, mode: RereadMode): void {
   context.followUp.send({ type: "requested", mode })
 }
 
-export function createListReads(server: Server, list: Machine<ListState, ListEvent>): ListReads {
-  const context: ReadContext = { server, list, followUp: machine(NO_FOLLOW_UP, followUpTransition) }
+export function createListReads(server: Server, list: Machine<ListState, ListEvent>, settled: () => SettledFilter): ListReads {
+  const context: ReadContext = { server, settled, list, followUp: machine(NO_FOLLOW_UP, followUpTransition) }
   return {
     fetchFirst: () => fetchFirst(context),
     loadMore: (projectId) => loadMore(context, projectId),

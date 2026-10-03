@@ -130,3 +130,12 @@ test("frames: a hosted status notice becomes the session's statusChanged with it
   expect(unknownStatus && serverEventFromFrame(unknownStatus, byWorkspace)).toBeUndefined()
   expect(elsewhere && serverEventFromFrame(elsewhere, byWorkspace)).toBeUndefined()
 })
+
+test("frames: a reader notice becomes the session's readerChanged with the marks it carries, located by its workspace", () => {
+  const located: Address = { placementFor: (directory, workspaceId) => (directory === "workspace:ws_1" && workspaceId === "ws_1" ? { placementId: placementId("p1"), projectId: projectId("j1") } : undefined) }
+  const notice = (workspaceId: string) => frameFromWire({ type: "session.reader.changed", ownerUserId: "local", sessionId: "s1", workspaceId, seenAt: 40, ts: 9 })
+  const known = notice("ws_1")
+  const unknown = notice("ws_elsewhere")
+  expect(known && serverEventFromFrame(known, located)).toEqual({ type: "readerChanged", ref, reader: { seenAt: 40 } })
+  expect(unknown && serverEventFromFrame(unknown, located)).toBeUndefined()
+})

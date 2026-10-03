@@ -14,9 +14,7 @@ Any row the list holds alerts, open or not: a session that is not open reaches t
 
 A subagent's session never alerts, and neither does a session the list store does not hold. The sound plays when the session is not the one on screen; the system notification needs the browser's permission, which only a Notifications switch turned on asks for, and it is skipped while the window is visible and focused. Clicking it opens the session.
 
-## Unseen outcomes
-
-An `agent` or `errors` alert for a session that is not on screen marks its turn's outcome (`finished` or `failed`) unseen, and the rail draws the session's grey finished dot or blue failed dot only while it is; the later turn's outcome replaces an earlier one. Opening the session (the route names it) marks it seen. A read that finds the last turn ended, on open, reload or reconnect, marks nothing: the reader is looking at it, or the turn ended while the app was not running. The marks live in `SessionStores.unseenOutcomes` for the principal's server scope; both rail readers use the existing session context. `AttentionAlerts` raises and acknowledges them.
+Alerts mark nothing: whether a turn's outcome is unseen is the reader's seen mark on the server, which the session list owns (`src/session/README.md`, reader marks).
 
 ## Flows
 

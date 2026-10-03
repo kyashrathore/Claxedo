@@ -2,6 +2,8 @@ import type { SessionRowView } from "@/session"
 
 export type SessionActivity = "waiting" | "working" | "interrupted" | "failed" | "background" | "idle"
 
+export type UnseenOutcome = "finished" | "failed"
+
 export function sessionActivity(row: SessionRowView): SessionActivity {
   if (row.waitingOnUser) return "waiting"
   switch (row.status.kind) {
@@ -18,4 +20,18 @@ export function sessionActivity(row: SessionRowView): SessionActivity {
     case "unknown":
       return "idle"
   }
+}
+
+const OUTCOME: Readonly<Record<NonNullable<SessionRowView["lastTurn"]>["status"], UnseenOutcome | undefined>> = {
+  completed: "finished",
+  failed: "failed",
+  cancelled: undefined,
+}
+
+export function unseenOutcome(row: SessionRowView): UnseenOutcome | undefined {
+  const turn = row.lastTurn
+  if (!turn || turn.completedAt <= (row.seenAt ?? 0)) return undefined
+  const activity = sessionActivity(row)
+  if (activity === "waiting" || activity === "working" || activity === "background") return undefined
+  return OUTCOME[turn.status]
 }
