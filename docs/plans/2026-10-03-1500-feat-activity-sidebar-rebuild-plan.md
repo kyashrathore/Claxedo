@@ -143,5 +143,5 @@ Owner: the orchestrating session. Base: `dev` 60fe7c6385 (f69c8ec42d reverted, r
 - No `unseenOutcomes`; unseen is derived from `lastTurn` and `seenAt`.
 - Every query on these paths is indexed (plans recorded).
 - Each lane has a red-without-fix test and one adversarial review.
-- `bun run check`/`typecheck`/`test` in claxedo-app; touched packages' tests and typechecks; `bun run test:architecture-ratchets` (only the known `dialin-agent.bundle.cjs` failure); `verify:closure` when desktop imports change; D1 baseline check.
+- `bun run check`/`typecheck`/`test` in claxedo-app; touched packages' tests and typechecks; `bun run test:architecture-ratchets`; `verify:closure` when desktop imports change; D1 baseline check.
 - Production LOC target: about 1,300-1,800 total across lanes (f69c8ec42d was +8,912). Any lane over its estimate by >30% justifies it in its report.
