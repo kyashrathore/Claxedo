@@ -17,6 +17,8 @@ export type WorkspaceRuntimeLivenessInput = {
   ptyCount: number
   /** When the workspace last stopped having work; the Sandbox Durable Object's idle check reads it with the config token. */
   idleSince?: number
+  /** Since when a checkpoint has held the workspace frozen; the same check acts on one frozen past its deadline. */
+  frozenSince?: number
 }
 
 /** Canonical response producer for `GET /api/wr/health`. */
@@ -37,6 +39,7 @@ export function workspaceRuntimeLivenessResponse(input: WorkspaceRuntimeLiveness
     ...(input.connectionState ? { connectionState: input.connectionState } : {}),
     ptyCount: input.ptyCount,
     ...(input.idleSince === undefined ? {} : { idleSince: input.idleSince }),
+    ...(input.frozenSince === undefined ? {} : { frozenSince: input.frozenSince }),
   }
 }
 

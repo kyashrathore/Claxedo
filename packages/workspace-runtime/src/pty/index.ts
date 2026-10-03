@@ -15,6 +15,7 @@ import {
 import { osc7 as osc7Parser } from "./osc7"
 import { enqueueWrite, flushWriteQueue } from "./write-queue"
 import { decodeInput } from "./decode-input"
+import { terminalIo } from "./io-clock"
 import { sendWebSocketWithBackpressure, type WebSocketBackpressureSocket } from "./websocket-backpressure"
 import { safeChunkEnd } from "./safe-slice"
 import { type ModeTracker } from "./mode-tracker"
@@ -589,6 +590,7 @@ export namespace Pty {
         enqueueWrite(session, { type: "write", data })
         return
       }
+      terminalIo.touch()
       session.process.write(data)
     }
   }
@@ -665,6 +667,7 @@ export namespace Pty {
         if (session.info.status !== "running") {
           return
         }
+        terminalIo.touch()
         session.process.write(input)
       },
       onClose: () => {

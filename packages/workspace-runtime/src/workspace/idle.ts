@@ -1,18 +1,35 @@
+export type WorkspaceIdleInput = {
+  /** A turn, admitted write or background work; a terminal is not, unless it moved bytes. */
+  busy: () => boolean
+  frozen: () => boolean
+  /** When any terminal last carried input or output. */
+  terminalIoAt: () => number
+  now?: () => number
+}
+
 /**
  * When this workspace last stopped having work, or `undefined` while it has
- * some. `changed` runs on every activity change it can observe; `since`
- * re-evaluates first, so a change no event reported never reads as idle.
+ * some, and since when a checkpoint has held it frozen. `changed` runs on every
+ * activity change it can observe; the readers re-evaluate first, so a change no
+ * event reported never reads as idle.
  */
-export function createWorkspaceIdle(busy: () => boolean, now: () => number = Date.now) {
+export function createWorkspaceIdle(input: WorkspaceIdleInput) {
+  const now = input.now ?? Date.now
   let idleSince: number | undefined
+  let frozenSince: number | undefined
   const changed = () => {
-    idleSince = busy() ? undefined : idleSince ?? now()
+    idleSince = input.busy() || input.frozen() ? undefined : idleSince ?? now()
+    frozenSince = input.frozen() ? frozenSince ?? now() : undefined
   }
   return {
     changed,
     since() {
       changed()
-      return idleSince
+      return idleSince === undefined ? undefined : Math.max(idleSince, input.terminalIoAt())
+    },
+    frozenSince() {
+      changed()
+      return frozenSince
     },
   }
 }

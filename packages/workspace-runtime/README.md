@@ -307,7 +307,7 @@ Inbound RHT verification is configured by `relayHostAuthFromEnv()`:
 | `WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM` | Static PEM fallback for RHT verification when JWKS discovery is unavailable. |
 | `WORKSPACE_RUNTIME_WORKSPACE_ID` | Workspace id the runtime hosts; RHT claims and `x-workspace-id` must match it. |
 | `WORKSPACE_RUNTIME_HOST_ID` | Host id expected in the RHT. Defaults to `workspaceId()` when omitted. |
-| `WORKSPACE_RUNTIME_CONFIG_TOKEN` | Supervisor bearer accepted without an RHT on `GET /api/wr/health` only; every other route still needs an RHT or a management token. The Cloudflare sandbox Worker reads `idleSince` there: when the workspace last had no turn, admitted write, background work or terminal and no checkpoint in progress (`workspace/idle.ts`, the one owner the idle freeze also asks). |
+| `WORKSPACE_RUNTIME_CONFIG_TOKEN` | Supervisor bearer accepted without an RHT on `GET /api/wr/health` only; every other route still needs an RHT or a management token. The Cloudflare sandbox Worker reads `idleSince` there: when the workspace last had no turn, admitted write or background work, no checkpoint in progress and no terminal input or output (an open but quiet shell keeps nothing awake); and `frozenSince`, since when a checkpoint has held it frozen (`workspace/idle.ts`, the one owner the idle freeze also asks). |
 
 Relay-issued RHT requests must include `x-forwarded-by: workspace-relay`.
 `workspace-relay` sets that marker after stripping client-supplied

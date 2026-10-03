@@ -12,6 +12,7 @@ import { withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } 
 import { WorkspaceWorktreeManager } from "./worktree"
 import { createWorkspaceHost, type WorkspaceHostOptions } from "./workspace"
 import { createWorkspaceIdle, type WorkspaceIdle } from "./workspace/idle"
+import { terminalIo } from "./pty/io-clock"
 import { setupAgentHooks } from "./agent-hooks"
 import { createRelayHostAuthMiddleware, type RelayHostAuthOptions } from "./workspace-host-service-auth"
 import { startWorkspaceRelayHostTunnel, type WorkspaceRelayHostTunnelOptions } from "./workspace-relay-host-tunnel"
@@ -420,6 +421,7 @@ async function runtimeLiveness(host: Host, idle: WorkspaceIdle, options: Workspa
     workspaceId: options.target?.workspaceId ?? workspaceId(),
     ptyCount: Pty.list().length,
     idleSince: idle.since(),
+    frozenSince: idle.frozenSince(),
   })
 }
 
@@ -443,10 +445,13 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ?? (options.exposure?.kind === "loopback" || options.exposure?.kind === "embedded"
       ? managedWorkspaceSessionAccessPolicy()
       : remoteWorkspaceSessionAccessPolicyFromEnv())
-  const idle = createWorkspaceIdle(() => {
-    const activity = host.activity()
-    return activity.checkpointState !== "active"
-      || activity.activeTurns + activity.activeWrites + activity.backgroundWork + Pty.activity().running > 0
+  const idle = createWorkspaceIdle({
+    busy: () => {
+      const activity = host.activity()
+      return activity.activeTurns + activity.activeWrites + activity.backgroundWork > 0
+    },
+    frozen: () => host.activity().checkpointState !== "active",
+    terminalIoAt: terminalIo.lastAt,
   })
   const host = createWorkspaceHost({
     placement: options.placement,
@@ -694,12 +699,10 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.renewalIntervalMs !== undefined ? { renewalIntervalMs: options.renewalIntervalMs } : {}),
   })
 
-  const stopWatchingTerminals = Pty.onActivityChange(idle.changed)
   let cleaned = false
   const dispose = () => {
     if (!cleaned) {
       cleaned = true
-      stopWatchingTerminals()
       routeContributions.dispose()
       worktrees?.close()
     }
