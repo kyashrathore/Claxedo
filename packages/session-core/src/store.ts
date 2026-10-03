@@ -3506,14 +3506,13 @@ export class RuntimeStore {
     return value
   }
 
+  childSessionIds(id: string): string[] {
+    return this.db.prepare<{ id: string }>("SELECT id FROM session WHERE parent_id = ? ORDER BY created_at ASC").all(id).map((row) => row.id)
+  }
+
   deleteSession(id: string) {
     if (!this.getSession(id)) return
-    const children = (
-      this.db.prepare<{
-        id: string
-      }>("SELECT id FROM session WHERE parent_id = ? ORDER BY created_at ASC").all(id)
-    ).map((row) => row.id)
-    for (const child of children) this.deleteSession(child)
+    for (const child of this.childSessionIds(id)) this.deleteSession(child)
     this.commit({
       seq: this.next(id),
       ts: Date.now(),

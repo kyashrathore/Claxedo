@@ -41,7 +41,7 @@ export type McpToolAccess = Readonly<{
   write: boolean
   /** The scope a user credential must hold. */
   scope: McpScope
-  /** Human-only, annotated `destructiveHint`, and requires accepted host elicitation. */
+  /** Annotated `destructiveHint`, and runs only once the host's elicitation is accepted. */
   destructive?: boolean
   /** The Tasks operation this tool performs; a tool that names one exists only while the caller's grant carries it. */
   operation?: TasksOperation
@@ -77,7 +77,17 @@ export type McpToolContext = Readonly<{
 
 export class McpAccessDenied extends Error {
   constructor(
-    readonly code: "audience" | "read-only" | "scope" | "cross-machine" | "own-children-only" | "recursion" | "tasks" | "app-plugins",
+    readonly code:
+      | "audience"
+      | "read-only"
+      | "scope"
+      | "cross-machine"
+      | "own-workspace-only"
+      | "own-children-only"
+      | "owner-driven"
+      | "recursion"
+      | "tasks"
+      | "app-plugins",
     message: string,
   ) {
     super(message)

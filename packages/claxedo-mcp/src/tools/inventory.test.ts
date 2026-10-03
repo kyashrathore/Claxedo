@@ -142,6 +142,7 @@ describe("the registered surface", () => {
       "question_reply",
       "session_cancel_turn",
       "session_create",
+      "session_delete",
       "session_get",
       "session_send",
       "session_transcript",
@@ -217,13 +218,14 @@ describe("the registered surface", () => {
     ])
   })
 
-  test("the destructive set is human-only, admin-scoped and annotated", () => {
+  test("the destructive set is admin-scoped and annotated, and only session_delete reaches inside a session", () => {
     const destructive = [...surface(userCredential()).declared]
       .flatMap(([name, access]) => (access.destructive ? [[name, access] as const] : []))
       .toSorted(([left], [right]) => left.localeCompare(right))
     expect(destructive.map(([name]) => name)).toEqual(["session_delete", "workspace_lifecycle", "workspace_restore"])
     for (const [name, access] of destructive) {
-      expect({ name, ...(access as McpToolAccess) }).toEqual({ name, audiences: ["user"], write: true, scope: "admin", destructive: true })
+      const audiences = name === "session_delete" ? ["runtime", "user"] : ["user"]
+      expect({ name, ...(access as McpToolAccess) }).toEqual({ name, audiences, write: true, scope: "admin", destructive: true })
     }
   })
 })

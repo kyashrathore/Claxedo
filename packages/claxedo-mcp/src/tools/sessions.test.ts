@@ -21,7 +21,7 @@ import type {
 } from "@claxedo/agent-runtime-contract"
 import { createSessionRoutes } from "@claxedo/session-core"
 import { createClaxedoMcpClient } from "../client/index"
-import type { ClaxedoFetch } from "../client/contract"
+import type { AppPluginsGrant, ClaxedoFetch } from "../client/contract"
 import type { McpAuditEvent } from "../context"
 import {
   CLAXEDO_MCP_PATH,
@@ -267,6 +267,17 @@ function runtimeApp(state: Workspace) {
         if (row && update.harness) row.harness = update.harness.id
         return config(sessionId)
       },
+      holdTree: async (sessionId: string) => {
+        if (!find(sessionId)) return { held: false, sessionId, reason: "not_found" }
+        const leafFirst: Array<{ sessionId: string; parentSessionId?: string }> = []
+        const visit = (row: FixtureSession) => {
+          for (const child of state.sessions.filter((candidate) => candidate.parentID === row.id)) visit(child)
+          leafFirst.push({ sessionId: row.id, ...(row.parentID ? { parentSessionId: row.parentID } : {}) })
+        }
+        visit(find(sessionId)!)
+        const working = leafFirst.find((entry) => state.running.has(entry.sessionId))
+        return working ? { held: false, sessionId: working.sessionId, reason: "working" } : { held: true, leafFirst, release: () => {} }
+      },
       delete: async (sessionId: string) => { state.deleted.push(sessionId) },
     },
     reads: {
@@ -448,6 +459,9 @@ type MountInput = {
   mount?: ClaxedoMcpMountOptions["mount"]
   claims?: Partial<RuntimeCredentialClaims>
   crossMachineWrites?: boolean
+  enabledToolGroups?: readonly string[]
+  /** Whether only the machine's owner has driven the calling session, as the app plugin grant carries it. */
+  ownerDriven?: boolean
 }
 
 async function listen(input: MountInput) {
@@ -475,8 +489,10 @@ async function listen(input: MountInput) {
           : {}),
         controlPlane: { fetch: control.fetch },
         fetch: relay(all),
+        ...(input.ownerDriven === undefined ? {} : { appPlugins: ownerDrivenGrant(input.ownerDriven) }),
       }),
     registerTools: [{ id: "sessions", reach: "runtime", register: registerSessionTools }],
+    ...(input.enabledToolGroups ? { enabledToolGroups: () => input.enabledToolGroups! } : {}),
     audit: (event) => { audits.push(event) },
   })
   mounts.push(routes)
@@ -487,6 +503,12 @@ async function listen(input: MountInput) {
   const address = server.address()
   if (!address || typeof address === "string") throw new Error("no port")
   return { url: `http://127.0.0.1:${address.port}${CLAXEDO_MCP_PATH}`, audits, control, created }
+}
+
+/** The app plugin grant as a composition hands it out: only `allowed` is read by these tools. */
+function ownerDrivenGrant(allowed: boolean): AppPluginsGrant {
+  const unused = () => Promise.reject(new Error("app plugin authoring is not part of these tools"))
+  return { allowed: () => allowed, create: unused, check: unused, add: unused }
 }
 
 async function connect(url: string, token: string, confirm?: () => "accept" | "decline" | "cancel") {
@@ -844,7 +866,7 @@ describe("reading and driving one session", () => {
     expect(state.sessions[0].harness).toBe("codex")
   })
 
-  test("session_delete removes the session for a person and is never offered inside one", async () => {
+  test("session_delete removes a session and its children for a person once confirmed", async () => {
     const state = local()
     const person = await listen({ local: state })
     for (const confirm of [undefined, () => "decline" as const, () => "cancel" as const]) {
@@ -853,13 +875,58 @@ describe("reading and driving one session", () => {
     }
     expect(state.deleted).toEqual([])
     const client = await connect(person.url, "cli-jwt", () => "accept")
-    expect(await json(client, "session_delete", { session: "ses_root" })).toEqual({ session: "ses_root", deleted: { ok: true } })
-    expect(state.deleted).toEqual(["ses_root"])
+    expect(await json(client, "session_delete", { session: "ses_root" })).toEqual({
+      session: "ses_root",
+      deleted: { ok: true, deletedSessionIds: ["ses_child", "ses_root"] },
+    })
+    expect(state.deleted).toEqual(["ses_child", "ses_root"])
+  })
 
-    const inside = await listen({ local: local() })
-    const agent = await connect(inside.url, "rt-token")
-    expect((await agent.listTools()).tools.map((tool) => tool.name)).not.toContain("session_delete")
-    expect(await call(agent, "session_delete", { session: "ses_root" })).toMatchObject({ isError: true })
+  test("session_delete lets a session delete an idle session of its own workspace and nothing beyond it", async () => {
+    const state = local({ sessions: [
+      { id: "ses_caller", title: "Caller", harness: "claude" },
+      { id: "ses_done", title: "Done", harness: "claude" },
+      { id: "ses_busy", title: "Busy", harness: "claude" },
+      { id: "ses_busy_child", title: "Busy child", parentID: "ses_busy", harness: "codex" },
+    ] })
+    state.running.add("ses_busy_child")
+    const other = workspace({ id: "ws_other", directory: "/other", sessions: [{ id: "ses_far", title: "Far", harness: "claude" }] })
+    const { url, audits } = await listen({ local: state, workspaces: [state, other], crossMachineWrites: true, claims: { sessionId: "ses_caller" } })
+    const agent = await connect(url, "rt-token", () => "accept")
+
+    expect(await json(agent, "session_delete", { session: "ses_done" })).toEqual({ session: "ses_done", deleted: { ok: true, deletedSessionIds: ["ses_done"] } })
+    const far = await call(agent, "session_delete", { session: "ses_far", workspace: "ws_other" })
+    expect(far).toMatchObject({ isError: true })
+    expect(far.text).toContain("ws_local")
+    const busy = await call(agent, "session_delete", { session: "ses_busy" })
+    expect(busy).toMatchObject({ isError: true })
+    expect(busy.text).toContain("Session ses_busy_child is working")
+
+    expect(state.deleted).toEqual(["ses_done"])
+    expect(other.deleted).toEqual([])
+    expect(audits.filter((event) => event.tool === "session_delete").map((event) => event.sessionId)).toEqual(["ses_done", "ses_far", "ses_busy"])
+  })
+
+  test("session_delete exists inside a session only while its tool group is consented to", async () => {
+    const state = local()
+    const withheld = await connect((await listen({ local: state, claims: { sessionId: "ses_other" }, enabledToolGroups: [] })).url, "rt-token", () => "accept")
+    await expect(withheld.callTool({ name: "session_delete", arguments: { session: "ses_root" } })).rejects.toThrow()
+    expect(state.deleted).toEqual([])
+
+    const consented = await connect((await listen({ local: state, claims: { sessionId: "ses_other" }, enabledToolGroups: ["sessions"] })).url, "rt-token", () => "accept")
+    expect((await consented.listTools()).tools.map((tool) => tool.name)).toContain("session_delete")
+    await json(consented, "session_delete", { session: "ses_root" })
+    expect(state.deleted).toEqual(["ses_child", "ses_root"])
+  })
+
+  test("session_delete is refused to a session another person has driven", async () => {
+    const state = local()
+    const { url } = await listen({ local: state, claims: { sessionId: "ses_other" }, ownerDriven: false })
+    const agent = await connect(url, "rt-token", () => "accept")
+    const refused = await call(agent, "session_delete", { session: "ses_root" })
+    expect(refused).toMatchObject({ isError: true })
+    expect(refused.text).toContain("another person has driven")
+    expect(state.deleted).toEqual([])
   })
 
   test("drives its own session and the children it started, and refuses every other session in the same workspace", async () => {

@@ -48,6 +48,13 @@ sees the `runtime` audience, a user credential the `user` audience, and a
 read-only credential sees no write. A tool outside the audience is not
 registered, so calling it anyway is answered by the SDK as an unknown tool.
 
+`session_delete` is the one destructive tool a session is offered. It exists
+only while the project's `sessions` group is consented to, reaches only the
+sessions of the workspace the caller runs in whatever the account allows on
+other machines, and is refused to a session another person has driven. The
+runtime removes the session and every session under it leaf-first, and
+refuses the whole tree while any of them is working or waiting for input.
+
 ## App plugins
 
 The `app-plugins` group lets a session make an app plugin for the Claxedo app on the machine it runs on. Its tools exist only when the client carries an `AppPluginsGrant`, and a composition hands one only to a session of the machine's owner, bound to that session's workspace folder: the desktop's local server, for a session no relayed turn has reached (its own or an ancestor's). A cloud runtime and the hosted worker serve none. The grant is the daemon's (`packages/claxedo-local-server/src/plugins/authoring.ts`): it scaffolds, checks with `@claxedo/plugin-build`, and registers through the same live-plugin service the `/api/claxedo/live-plugins` route uses.

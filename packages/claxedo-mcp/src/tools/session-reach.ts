@@ -28,10 +28,33 @@ import { targetScope } from "./target"
  */
 export type SessionReach = "own-children" | "itself-or-own-children"
 
-export function assertDetachedSessionCreation(ctx: McpToolContext): void {
+/**
+ * Refuses a session another person has driven. Whether only the machine's
+ * owner has driven it is carried by the app plugin grant, which a composition
+ * hands only to a session it can answer that for; without one there is no
+ * answer to refuse on.
+ */
+export function assertOwnerDriven(ctx: McpToolContext, refusal: string): void {
   if (ctx.credential.kind === "runtime" && ctx.client.appPlugins && !ctx.client.appPlugins.allowed()) {
-    throw new McpAccessDenied("app-plugins", "A member-driven session cannot create a detached root session on the owner's behalf; use subagent_spawn to preserve its parent and permissions")
+    throw new McpAccessDenied("owner-driven", refusal)
   }
+}
+
+export function assertDetachedSessionCreation(ctx: McpToolContext): void {
+  assertOwnerDriven(ctx, "A member-driven session cannot create a detached root session on the owner's behalf; use subagent_spawn to preserve its parent and permissions")
+}
+
+/**
+ * Refuses a runtime credential any workspace but the one its session runs in,
+ * whatever the account allows agents to do on other machines.
+ */
+export function assertOwnWorkspace(ctx: McpToolContext, tool: string, target: WorkspaceTarget): void {
+  const { credential } = ctx
+  if (credential.kind !== "runtime" || target.workspaceId === credential.workspaceId) return
+  throw new McpAccessDenied(
+    "own-workspace-only",
+    `${tool} acts only on the sessions of workspace ${credential.workspaceId}, where this session runs`,
+  )
 }
 
 export type SessionReachInput = Readonly<{

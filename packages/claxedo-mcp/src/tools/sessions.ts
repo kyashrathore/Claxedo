@@ -17,7 +17,7 @@ import type { WorkspaceSummary, WorkspaceTarget } from "../client/contract"
 import type { ToolRegistrar } from "./registry"
 import { runtimeToolAccess } from "./inventory"
 import { recoveryResult } from "./recovery-report"
-import { assertDetachedSessionCreation, assertSessionReach } from "./session-reach"
+import { assertDetachedSessionCreation, assertOwnerDriven, assertOwnWorkspace, assertSessionReach } from "./session-reach"
 import { assertWritableTarget, targetScope, toolJson, toolTarget, WORKSPACE_TARGET_SCHEMA, type WorkspaceTargetArgs } from "./target"
 
 /** The harnesses `?nativeHarness=` names; `satisfies` refuses one the runtime does not have. */
@@ -259,13 +259,17 @@ export function registerSessionTools(registry: ToolRegistrar) {
   registry.tool(
     "session_delete",
     {
-      description: "Delete a session and its transcript. This cannot be undone.",
+      description:
+        "Delete a session, every session under it and their transcripts. Refused while any of them is working or waiting for input. This cannot be undone. "
+        + "Inside a session, this reaches the sessions of that session's own workspace and no other.",
       inputSchema: { ...SESSION_ARG, ...WORKSPACE_TARGET_SCHEMA },
-      access: runtimeToolAccess("session_delete", { audiences: ["user"], scope: "admin", destructive: true }),
+      access: runtimeToolAccess("session_delete", { audiences: ["runtime", "user"], scope: "admin", destructive: true }),
       sessionIdOf: (args) => args.session,
     },
     async (args, ctx) => {
       const target = toolTarget(ctx, args)
+      assertOwnWorkspace(ctx, "session_delete", target)
+      assertOwnerDriven(ctx, "A session another person has driven cannot delete the owner's sessions")
       const server = await ctx.client.server(target)
       const deleted = await server.session.delete({ sessionID: args.session, ...targetScope(target) })
       return toolJson({ session: args.session, deleted: deleted.data })
