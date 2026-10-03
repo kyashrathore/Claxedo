@@ -113,6 +113,7 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
         ...(target.routingId ? { routingId: target.routingId } : {}),
         role: "editor",
         sessionId: claims.sessionId,
+        purpose: "turn-execution",
         ttlSeconds: EXECUTION_TTL_SECONDS,
       })
       await input.sessionHosts.recordTurnRuntimeAccessToken(claims.actorId, {

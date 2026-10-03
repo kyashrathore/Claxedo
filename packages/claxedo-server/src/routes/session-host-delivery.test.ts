@@ -197,7 +197,7 @@ describe("/turn-execution", () => {
     const access = parseTurnExecutionAccess(await answer.json())
     expect(access).toMatchObject({ relayUrl: "https://relay.test", workspaceId: WORKSPACE_ID, hostId: VM_HOST, routingId: "route_1", directory: DIRECTORY })
     expect(decodeJwt(access!.runtimeAccessToken)).toMatchObject({
-      scope: "session", session_id: root, role: "editor", host_id: VM_HOST, routing_id: "route_1", actor_id: plane.owner.principal!.actorId,
+      scope: "session", session_id: root, role: "editor", host_id: VM_HOST, routing_id: "route_1", actor_id: plane.owner.principal!.actorId, purpose: "turn-execution",
     })
     const jti = String(decodeJwt(access!.runtimeAccessToken).jti)
     expect(await plane.store.runtimeAccessTokenActive({ jti, workspaceId: WORKSPACE_ID, hostId: VM_HOST })).toEqual({ active: true })
