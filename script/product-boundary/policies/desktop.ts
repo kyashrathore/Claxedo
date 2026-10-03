@@ -498,10 +498,12 @@ export const desktopRenderer: Policy = {
   // `session/store/attention.ts`, and a signed desktop reads its account's
   // hosted event stream through `server/account-events.ts`.
   // A reader's seen and settle writes, and where a signed desktop's marks live,
-  // are `server/session-reader.ts`; the session view's seen write while a
+  // are `server/session-reader.ts`; the list holds each row's reader marks in
+  // `session/list/readers.ts` and sends its pending writes from
+  // `session/list/reader-writes.ts`; the session view's seen write while a
   // session is shown is `session/view/seen-while-shown.ts`.
-  // 1303/36, no headroom.
-  ceilings: { modules: 1303, packages: 36 },
+  // 1307/36, no headroom.
+  ceilings: { modules: 1307, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

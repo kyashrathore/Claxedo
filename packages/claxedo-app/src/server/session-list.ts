@@ -6,24 +6,29 @@ import { readSessionSources, type SessionSource, type SourcePage } from "./sessi
 import { withQuery } from "./transport"
 import type { ListedStatus } from "./status-types"
 import type { SessionListInput, SessionPage, SessionReader, SessionRow, SettledFilter } from "./types"
-import { listedStatusFromListItem, readerFromWire, sessionRowFromListItem } from "./wire/session-row"
+import { lastTurnFromWire, listedStatusFromListItem, readerFromWire, sessionRowFromListItem } from "./wire/session-row"
 
 const SORT = "human_turn_desc"
 
 type PageQuery = { readonly limit: number; readonly settled: SettledFilter }
 
-type AccountReaders = { readonly items: Map<unknown, SessionReader>; readonly sessions: Map<string, SessionReader> }
+type AccountReaders = Map<string, SessionReader>
 
 function itemField(item: unknown, key: "sessionId" | "workspaceId"): string | undefined {
   const value = (item as Record<string, unknown>)[key]
   return typeof value === "string" ? value : undefined
 }
 
-function listedReader(context: SessionContext, item: unknown, account: AccountReaders): SessionReader {
-  const own = account.items.get(item)
-  if (own) return own
+function listedReader(context: SessionContext, item: unknown, account: AccountReaders): SessionReader | undefined {
   if (!accountHoldsReader(context, itemField(item, "workspaceId"), false)) return readerFromWire(item)
-  return account.sessions.get(itemField(item, "sessionId") ?? "") ?? {}
+  return account.get(itemField(item, "sessionId") ?? "")
+}
+
+function settledItem(context: SessionContext, item: unknown, account: AccountReaders): boolean {
+  const reader = listedReader(context, item, account)
+  const row = item as { lastHumanTurnAt?: unknown; lastTurn?: unknown }
+  const lastHumanTurnAt = typeof row.lastHumanTurnAt === "number" ? row.lastHumanTurnAt : undefined
+  return reader !== undefined && sessionSettled({ lastHumanTurnAt, lastTurn: lastTurnFromWire(row.lastTurn) }, reader)
 }
 
 async function listedOf(context: SessionContext, items: readonly unknown[], account: AccountReaders) {
@@ -40,7 +45,8 @@ async function listedOf(context: SessionContext, items: readonly unknown[], acco
     }
     if (!row) continue
     rows.push(row)
-    readers.set(row.ref.sessionId, listedReader(context, item, account))
+    const reader = listedReader(context, item, account)
+    if (reader) readers.set(row.ref.sessionId, reader)
     const listed = listedStatusFromListItem(item)
     if (listed) statuses.set(row.ref.sessionId, { ...listed, status: context.status.listed(row.ref, listed.status) })
   }
@@ -65,18 +71,13 @@ function accountSource(account: HostedAccount, projectId: ProjectId, query: Page
     required: false,
     read: async (after) => {
       const page = sourcePage(await account.run("session.page", { projectId, ...query, sort: SORT, ...(after ? { after } : {}) }))
-      for (const item of page.items) {
-        const reader = readerFromWire(item)
-        readers.items.set(item, reader)
-        readers.sessions.set(itemField(item, "sessionId") ?? "", reader)
-      }
+      for (const item of page.items) readers.set(itemField(item, "sessionId") ?? "", readerFromWire(item))
       return page
     },
   }
 }
 
-function sourcesOf(context: SessionContext, projectId: ProjectId, query: PageQuery, readers: AccountReaders): SessionSource[] {
-  const accountIds = context.account ? context.workspaces.accountProjectIds(projectId) : []
+function sourcesOf(context: SessionContext, projectId: ProjectId, accountIds: readonly ProjectId[], query: PageQuery, readers: AccountReaders): SessionSource[] {
   const accountOnly = accountIds.includes(projectId)
   const account = context.account
   return [
@@ -85,21 +86,15 @@ function sourcesOf(context: SessionContext, projectId: ProjectId, query: PageQue
   ]
 }
 
-function pairedWithAccount(context: SessionContext, projectId: ProjectId): boolean {
-  const accountIds = context.account ? context.workspaces.accountProjectIds(projectId) : []
-  return accountIds.length > 0 && !accountIds.includes(projectId)
-}
-
 export async function listSessions(context: SessionContext, options: SessionListInput): Promise<SessionPage> {
-  const paired = pairedWithAccount(context, options.projectId)
-  const account: AccountReaders = { items: new Map(), sessions: new Map() }
+  const accountIds = context.account ? context.workspaces.accountProjectIds(options.projectId) : []
+  const paired = accountIds.length > 0 && !accountIds.includes(options.projectId)
+  const account: AccountReaders = new Map()
   const query: PageQuery = { limit: options.limit, settled: paired ? "all" : options.settled }
-  const merged = await readSessionSources(sourcesOf(context, options.projectId, query, account), options.limit, options.after)
-  const listed = await listedOf(context, merged.items, account)
-  const hidden = (row: SessionRow) => paired && options.settled === "active" && sessionSettled(row, listed.readers.get(row.ref.sessionId) ?? {})
+  const hidden = paired && options.settled === "active" ? (item: unknown) => settledItem(context, item, account) : undefined
+  const merged = await readSessionSources(sourcesOf(context, options.projectId, accountIds, query, account), options.limit, options.after, hidden)
   return {
-    ...listed,
-    rows: listed.rows.filter((row) => !hidden(row)),
+    ...(await listedOf(context, merged.items, account)),
     ...(merged.nextAfter ? { nextAfter: merged.nextAfter } : {}),
     ...(merged.degraded ? { degraded: true } : {}),
   }

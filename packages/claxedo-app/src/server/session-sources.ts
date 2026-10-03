@@ -9,16 +9,23 @@ export type SessionSource = {
 
 export type MergedPage = { readonly items: readonly unknown[]; readonly nextAfter?: string; readonly degraded: boolean }
 
-type Keyed = { readonly key: ListOrderKey; readonly item: unknown }
+type Keyed = { readonly key: ListOrderKey; readonly item: unknown; readonly identity: string }
+
+type Round = { readonly ordered: readonly Keyed[]; readonly exhausted: boolean; readonly degraded: boolean }
+
+function sessionIdentity(item: unknown, key: ListOrderKey): string {
+  const { workspaceId, sessionId } = item as { workspaceId?: unknown; sessionId?: unknown }
+  return typeof workspaceId === "string" && typeof sessionId === "string" ? `${workspaceId}\u0000${sessionId}` : key.sessionRef
+}
 
 function keyed(items: readonly unknown[]): Keyed[] {
   return items.flatMap((item) => {
     const key = listOrderKey(item)
-    return key ? [{ key, item }] : []
+    return key ? [{ key, item, identity: sessionIdentity(item, key) }] : []
   })
 }
 
-export async function readSessionSources(sources: readonly SessionSource[], limit: number, after: string | undefined): Promise<MergedPage> {
+async function readRound(sources: readonly SessionSource[], after: string | undefined): Promise<Round> {
   const pages = await Promise.all(sources.map(async (source) => {
     try {
       return await source.read(after)
@@ -29,15 +36,38 @@ export async function readSessionSources(sources: readonly SessionSource[], limi
   }))
   const union = new Map<string, Keyed>()
   for (const entry of pages.flatMap((page) => keyed(page?.items ?? []))) {
-    if (!union.has(entry.key.sessionRef)) union.set(entry.key.sessionRef, entry)
+    if (!union.has(entry.identity)) union.set(entry.identity, entry)
   }
-  const ordered = [...union.values()].sort((a, b) => compareListOrder(a.key, b.key))
-  const shown = ordered.slice(0, limit)
-  const last = shown.at(-1)
-  const more = ordered.length > limit || pages.some((page) => page?.nextAfter !== undefined)
   return {
-    items: shown.map((entry) => entry.item),
-    ...(more && last ? { nextAfter: encodeListAfter(last.key) } : {}),
+    ordered: [...union.values()].sort((a, b) => compareListOrder(a.key, b.key)),
+    exhausted: pages.every((page) => page?.nextAfter === undefined),
     degraded: pages.includes(undefined),
+  }
+}
+
+export async function readSessionSources(
+  sources: readonly SessionSource[],
+  limit: number,
+  after: string | undefined,
+  hidden: (item: unknown) => boolean = () => false,
+): Promise<MergedPage> {
+  const shown: Keyed[] = []
+  const examined = new Set<string>()
+  let degraded = false
+  let cursor = after
+  for (;;) {
+    const round = await readRound(sources, cursor)
+    degraded ||= round.degraded
+    const window = round.ordered.slice(0, limit).filter((entry) => !examined.has(entry.identity))
+    for (const entry of window) {
+      examined.add(entry.identity)
+      if (!hidden(entry.item)) shown.push(entry)
+      if (shown.length < limit) continue
+      const more = entry !== round.ordered.at(-1) || !round.exhausted
+      return { items: shown.map((kept) => kept.item), ...(more ? { nextAfter: encodeListAfter(entry.key) } : {}), degraded }
+    }
+    const last = window.at(-1)
+    if (!last || (round.ordered.length <= limit && round.exhausted)) return { items: shown.map((kept) => kept.item), degraded }
+    cursor = encodeListAfter(last.key)
   }
 }

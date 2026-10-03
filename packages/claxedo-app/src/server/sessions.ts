@@ -90,7 +90,7 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
   return {
     list: (options) => listSessions(context, options),
     markSeen: (ref, completedAt) => sendReaderWrite(context, ref, { kind: "seen", completedAt }),
-    settle: (ref, settled) => sendReaderWrite(context, ref, { kind: "settle", settled }),
+    settle: (ref, write) => sendReaderWrite(context, ref, { kind: "settle", ...write }),
     read: (ref, shape, held) => startSessionReads(context, ref, shape, held),
     page: (ref, shape, before) => readTurnPageBefore(context, ref, shape, before),
     part: (ref, messageId, partId) => readPart(context, ref, messageId, partId),

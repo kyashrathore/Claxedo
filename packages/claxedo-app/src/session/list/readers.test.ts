@@ -75,3 +75,12 @@ test("a settled row leaves the rail unless Show settled is on, and a later send 
   const returned = run(live, { type: "readerWriteStarted", sessionId: a1.ref.sessionId, writeId: "w2", reader: {} })
   expect(shown(returned)).toEqual(["a1", "a2"])
 })
+
+test("a page that carries no marks for a row leaves the marks the store holds", () => {
+  const a1 = { ...row("a1", 50), lastTurn: { status: "completed" as const, completedAt: 70 } }
+  const held = run(initialListState, { type: "fetchStarted" }, { type: "fetched", window: window([a1], [["a1", { seenAt: 70, settledAt: 70 }]], 1_000) })
+  const partial = run(held, { type: "rereadStarted" }, { type: "rereadFetched", mode: "refresh", window: window([a1], [], 1_200) })
+  expect(rowView(partial, "a1")?.seenAt).toBe(70)
+  expect(shown(partial, true)).toEqual(["a1"])
+  expect(shown(partial)).toEqual([])
+})

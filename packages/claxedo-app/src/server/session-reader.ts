@@ -3,10 +3,19 @@ import { jsonInit } from "./transport"
 import type { SessionLocation, SessionReader, SessionRow } from "./types"
 import { readerFromWire } from "./wire/session-row"
 
-export type ReaderWrite = { readonly kind: "seen"; readonly completedAt: number } | { readonly kind: "settle"; readonly settled: boolean }
+export type ReaderWrite =
+  | { readonly kind: "seen"; readonly completedAt: number }
+  | { readonly kind: "settle"; readonly settled: true; readonly through: number }
+  | { readonly kind: "settle"; readonly settled: false }
 
-export function sessionSettled(row: Pick<SessionRow, "lastHumanTurnAt" | "lastTurn">, reader: SessionReader): boolean {
-  return reader.settledAt !== undefined && reader.settledAt >= Math.max(row.lastHumanTurnAt ?? 0, row.lastTurn?.completedAt ?? 0)
+type Activity = Pick<SessionRow, "lastHumanTurnAt" | "lastTurn">
+
+export function settledThrough(row: Activity | undefined): number {
+  return Math.max(row?.lastHumanTurnAt ?? 0, row?.lastTurn?.completedAt ?? 0)
+}
+
+export function sessionSettled(row: Activity, reader: SessionReader): boolean {
+  return reader.settledAt !== undefined && reader.settledAt >= settledThrough(row)
 }
 
 export function accountHoldsReader(context: SessionContext, workspaceId: string | undefined, shared: boolean): boolean {
@@ -15,7 +24,8 @@ export function accountHoldsReader(context: SessionContext, workspaceId: string 
 }
 
 function writeBody(write: ReaderWrite) {
-  return write.kind === "seen" ? { completedAt: write.completedAt } : { settled: write.settled }
+  if (write.kind === "seen") return { completedAt: write.completedAt }
+  return write.settled ? { settled: true, through: write.through } : { settled: false }
 }
 
 export async function sendReaderWrite(context: SessionContext, ref: SessionLocation, write: ReaderWrite): Promise<SessionReader> {

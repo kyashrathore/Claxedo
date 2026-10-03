@@ -3,7 +3,7 @@ import { expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/solid-query"
 import { createEventIntake } from "../event-intake"
 import type { ServerEvent } from "../events"
-import { placementId, projectId } from "../ids"
+import { placementId, projectId, sessionId } from "../ids"
 import { createStatusOwner } from "../status"
 import type { Transport } from "../transport"
 import type { SessionLocation } from "../types"
@@ -39,4 +39,14 @@ test("event intake: a status notice for a session whose own stream is open is dr
     ["ses_closed", false],
     ["ses_open", undefined],
   ])
+})
+
+test("event intake: an account's reader notice lands as readerChanged, open stream or not", () => {
+  const intake = createEventIntake({ serverUrl: "http://server.test", queryClient: new QueryClient(), workspaces, status: createStatusOwner({} as Transport), streamed: () => true })
+  const events: ServerEvent[] = []
+  intake.subscribe((event) => events.push(event))
+
+  intake.frame({ type: "session.reader.changed", ownerUserId: "user_reader", sessionId: "ses_open", workspaceId: "ws_1", seenAt: 30, settledAt: 30, ts: 1 })
+
+  expect(events).toEqual([{ type: "readerChanged", ref: { placementId: placementId("ws_1"), projectId: projectId("j1"), sessionId: sessionId("ses_open") }, reader: { seenAt: 30, settledAt: 30 } }])
 })
