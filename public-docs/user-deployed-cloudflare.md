@@ -77,6 +77,10 @@ bun run deploy:user-cloudflare
 
 Keep `BETTER_AUTH_SECRET` and `CLAXEDO_AUTH_INTROSPECTION_SECRET`: every later deploy needs the same two values.
 
+To let people connect GitHub repositories by signing in rather than pasting a token, register a GitHub App
+(separate from the sign-in OAuth app) and also export `CLAXEDO_INTEGRATION_GITHUB_CLIENT_ID` and, optionally,
+`CLAXEDO_INTEGRATION_GITHUB_CLIENT_SECRET`. Without them, GitHub connects by pasted token only.
+
 The deploy:
 
 1. finds the D1 databases `claxedo-auth` and `claxedo-control-plane`, and creates them the first time;

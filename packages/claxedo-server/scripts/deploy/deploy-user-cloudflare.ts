@@ -45,10 +45,10 @@ export function parseDeployArguments(argv: readonly string[]): DeployArguments {
   return { dryRun: argv.includes("--dry-run"), agentPlugins: argv.includes("--agent-plugins") }
 }
 
-/** The secrets the command uploads with the Worker: every required secret the environment carries. */
+/** The secrets the command uploads with the Worker: every required or optional secret the environment carries. */
 export function providedSecrets(deployment: UserCloudflareDeployment, env: NodeJS.ProcessEnv) {
   return Object.fromEntries(
-    deployment.requiredSecrets.flatMap((name) => {
+    [...deployment.requiredSecrets, ...deployment.optionalSecrets].flatMap((name) => {
       const value = env[name]?.trim()
       return value ? [[name, value] as const] : []
     }),
