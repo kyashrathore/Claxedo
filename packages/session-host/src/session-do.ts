@@ -11,7 +11,6 @@ import { Lifecycle } from "agents/lifecycle"
 import { PiHarness } from "agents/harness/pi"
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
-import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { composeSessionHost, type SessionHost } from "./composition"
 import { DurablePiPlacement } from "./pi-placement"
 import { SessionHostMeta } from "./session-host-meta"
@@ -111,7 +110,7 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     return gate
       .delete(`/session/${this.root}`, async (c) => {
         const refused = await this.deleteAtControlPlane(c.req.header("authorization"))
-        if (refused) return refused
+        if (refused) return c.json(errorBody("session_delete_failed", refused.message), refused.status)
         await this.erase()
         return c.json({ ok: true, deletedSessionIds: [this.root] })
       })
@@ -130,7 +129,7 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
       placement: this.placement, held: () => this.turns.held(this.root),
       beforeDelete: async (sessionId, credential) => {
         const refused = sessionId === this.root ? await this.deleteAtControlPlane(credential) : undefined
-        if (refused) throw new HTTPException(refused.status as ContentfulStatusCode, { message: `The control plane refused the delete: ${await refused.text()}` })
+        if (refused) throw new HTTPException(refused.status, { message: refused.message })
         this.erasing = true
       },
     }))
@@ -139,14 +138,14 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     return hosting
   }
 
-  /** The control plane's answer when it refuses to delete the session as the request's actor; nothing once it deleted it. */
-  private async deleteAtControlPlane(credential: string | undefined): Promise<Response | undefined> {
+  /** Why the control plane did not delete the session as the request's actor; nothing once it deleted it. */
+  private async deleteAtControlPlane(credential: string | undefined): Promise<{ status: 403 | 502; message: string } | undefined> {
     const answer = await this.controlPlane(new URL("session-host-delete", this.env.WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL).href, {
       method: "POST", headers: { "content-type": "application/json", ...(credential ? { authorization: credential } : {}) },
       body: JSON.stringify({ sessionId: this.root }),
     })
     if (answer.ok) return undefined
-    return new Response(answer.body, { status: answer.status, headers: { "content-type": "application/json" } })
+    return { status: answer.status === 401 || answer.status === 403 ? 403 : 502, message: `The control plane did not delete the session: ${answer.status} ${await answer.text()}` }
   }
 
   private async execution(signal: AbortSignal): Promise<TurnExecutionAccess> {

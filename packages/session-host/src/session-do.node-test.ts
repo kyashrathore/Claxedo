@@ -259,7 +259,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     await host.prompt("msg_delete", "Reply with exactly this one token: PIDELETE")
     await host.settled("PIDELETE")
     host.controlPlane.control.deleteUnavailable = true
-    await assert.rejects(host.json(`/session/${root}`, { method: "DELETE" }), /answered 503/)
+    await assert.rejects(host.json(`/session/${root}`, { method: "DELETE" }), /answered 502: .*did not delete the session: 503/)
     assert.equal(assistantText(await host.messages()).includes("PIDELETE"), true)
     host.controlPlane.control.deleteUnavailable = false
     await host.crash()
