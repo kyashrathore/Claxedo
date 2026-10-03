@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { HarnessServices, HarnessSession, StartInput, TurnBroker, TurnInput } from "../../contract"
-import type { CursorHost, CursorHostRegistry } from "./host-registry"
+import type { CursorHost } from "./host-registry"
 import { CursorSdkTransport } from "./index"
 
 const origin = { actor: { kind: "machine-owner" as const }, via: "loopback" as const, reissued: false }
@@ -21,7 +21,7 @@ function fixture() {
     existing: () => undefined,
   }
   const transport = new CursorSdkTransport({ log: { debug() {}, info() {}, warn() {}, error() {} } } as unknown as HarnessServices,
-    { homeRoot: "/tmp", ownerCursorDir: "/tmp/owner-cursor", worker: { file: process.execPath, args: ["cursor-worker.js"] }, env: {}, placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: false, hosts: {} as CursorHostRegistry })
+    { homeRoot: "/tmp", ownerCursorDir: "/tmp/owner-cursor", worker: { file: process.execPath, args: ["cursor-worker.js"] }, env: {}, placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: false })
   const session = { binding: { sessionId: "s1", upstreamSessionId: "agent" }, directory: "/work" } as HarnessSession
   const entry = { session, input: { directory: "/work", config: {}, credentials: { leaseGeneration: "g1", providers: {}, machineLoginAllowed: false }, owner: { kind: "machine-owner" },
     projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] } } as unknown as StartInput,

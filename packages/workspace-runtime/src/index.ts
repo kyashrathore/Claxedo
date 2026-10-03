@@ -64,7 +64,6 @@ export type { WorkspaceRuntimeExposure, WorkspaceRuntimeRequestGuard }
  */
 export { runtimeEnvText } from "./env"
 export { createWorkspaceHost } from "./workspace"
-export { createSharedHarnessHosts, type SharedHarnessHosts } from "./host/shared-harness-hosts"
 export type { WorkspaceHost, WorkspaceHostOptions } from "./workspace"
 
 export { Pty } from "./pty/index"

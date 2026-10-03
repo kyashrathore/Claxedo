@@ -14,7 +14,7 @@ import { cancelCursorTurn } from "./cancel"
 import { cursorCredential, type CursorCredential } from "./credentials"
 import { CursorEntryLifecycle, type CursorEntry as Entry } from "./entry"
 import { CursorGoals } from "./goals"
-import { CursorHostLeases, type CursorHostRegistry, type CursorWorker, type CursorHost, type CursorHostKey } from "./host-registry"
+import { CursorHostRegistry, type CursorWorker, type CursorHost, type CursorHostKey } from "./host-registry"
 import { cursorModelId, hostSession } from "./launch"
 import { CATALOG_INPUTS, catalogKey, cursorCatalogModels, cursorModelOptions, readCursorModels } from "./models"
 import { cursorPermissionModeState } from "./permission-modes"
@@ -24,9 +24,8 @@ import { cursorSessionTitle } from "./title"
 import { cursorPrompt, streamCursorRun } from "./turn"
 
 export { CURSOR_WORKER_FILE } from "./worker-file"
-export { CursorHostRegistry } from "./host-registry"
 
-export type CursorSdkTransportOptions = MachineLoginPolicy & { homeRoot: string; ownerCursorDir: string; worker: CursorWorker; env?: NodeJS.ProcessEnv; hosts: CursorHostRegistry }
+export type CursorSdkTransportOptions = MachineLoginPolicy & { homeRoot: string; ownerCursorDir: string; worker: CursorWorker; env?: NodeJS.ProcessEnv }
 
 function cursorCapabilities(models: readonly HostModel[] | undefined): TransportCapabilities {
   return {
@@ -47,15 +46,16 @@ function hostKey(credential: CursorCredential, home: string): CursorHostKey {
 export class CursorSdkTransport implements HarnessTransport {
   readonly kind = "cursor-sdk" as const
   private readonly env: NodeJS.ProcessEnv
-  private readonly registry: CursorHostLeases
+  private readonly registry: CursorHostRegistry
   private readonly entries = new Map<string, Entry>()
   private readonly lifecycle = new CursorEntryLifecycle()
   private readonly catalog = new DraftProbeCache<HostModel[]>()
   private readonly goalRuntime = new CursorGoals()
+  private readonly disposeAbort = new AbortController()
 
   constructor(private readonly services: HarnessServices, private readonly options: CursorSdkTransportOptions) {
     this.env = options.env ?? process.env
-    this.registry = new CursorHostLeases(options.hosts, { spawn: (command, spawnOptions) => services.spawn(command, spawnOptions), worker: options.worker, env: this.env })
+    this.registry = new CursorHostRegistry(services, options.worker, this.env, this.disposeAbort.signal)
   }
 
   async capabilities(context: CapabilityContext): Promise<TransportCapabilities> {
@@ -267,6 +267,7 @@ export class CursorSdkTransport implements HarnessTransport {
   }
 
   async dispose(): Promise<void> {
+    this.disposeAbort.abort()
     for (const entry of this.entries.values()) await this.close(entry.session)
     await this.registry.dispose()
   }

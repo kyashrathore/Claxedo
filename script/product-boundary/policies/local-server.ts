@@ -216,12 +216,7 @@ export const localServer: Policy = {
   // re-exports them. The terminal attachment the embedded runtime admits is
   // its own module (`deployments/local/embedded-pty-attachment.ts`, owner: the
   // embedded runtime's PTY admission). 79/30, no headroom.
-  // +2 modules: `deployments/local/embedded-harness-hosts.ts` (owner: the Codex
-  // app-server pool and Cursor SDK hosts every embedded workspace runtime of
-  // the daemon shares) and `deployments/local/embedded-config-renewal-timer.ts`
-  // (owner: the timer that drives credential renewal, split from the embedded
-  // runtime by responsibility). 81/30, no headroom.
-  ceilings: { modules: 81, packages: 30 },
+  ceilings: { modules: 79, packages: 30 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

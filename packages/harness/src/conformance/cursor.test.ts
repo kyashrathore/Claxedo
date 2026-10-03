@@ -18,10 +18,7 @@ import type { RoutedEvent, SessionBroker, TurnInput } from "../contract"
 
 const CURSOR_WORKER = { file: process.execPath, args: [path.join(import.meta.dirname, "../transports/cursor-sdk/host.ts")] }
 
-type CursorBackend = SuiteBackend & { root: string; env: NodeJS.ProcessEnv; hosts: CursorHostRegistry; server: Awaited<ReturnType<typeof startScriptedCursorBackend>> }
-
-const silent = { debug() {}, info() {}, warn() {}, error() {} }
-const realClock = { now: Date.now, setTimeout, clearTimeout }
+type CursorBackend = SuiteBackend & { root: string; env: NodeJS.ProcessEnv; server: Awaited<ReturnType<typeof startScriptedCursorBackend>> }
 
 type Context = Awaited<ReturnType<typeof setupConformance>>
 
@@ -37,9 +34,8 @@ async function backend(): Promise<CursorBackend> {
   const guard = await startEgressGuard(guardPort)
   server.script("conformance", { steps: [{ kind: "text", text: "PICONFORM" }], usage: { inputTokens: 7, outputTokens: 11 } })
   server.defaultScript("conformance")
-  const hosts = new CursorHostRegistry(realClock, silent)
   return {
-    execution: "process", root, directory, server, hosts, env: { ...process.env, HOME: home, USERPROFILE: home, ...egressProxyEnv(guard.url) },
+    execution: "process", root, directory, server, env: { ...process.env, HOME: home, USERPROFILE: home, ...egressProxyEnv(guard.url) },
     harness: { id: "cursor", access: "native" }, model: { providerID: "cursor", modelID: "scripted" },
     credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: { cursor: { baseUrl: server.url, placeholder: "cursor-conformance-placeholder", authMode: "bearer" } },
       secrets: {}, leaseGeneration: "conformance" },
@@ -54,7 +50,6 @@ async function backend(): Promise<CursorBackend> {
     steerIncorporationUnreported: true,
     credentialsPerCommand: true,
     close: async () => {
-      await hosts.dispose()
       console.log(`Cursor outbound attempts: ${JSON.stringify(guard.attempts)}`)
       const unexpected = unexpectedEgress(guard.attempts)
       await guard.close()
@@ -75,7 +70,7 @@ const LOGIN = { placement: "loopback", machineOwnerUserId: "owner", canUseOwnLog
 
 function transportFor(state: CursorBackend, env: NodeJS.ProcessEnv = state.env, login: Partial<CursorSdkTransportOptions> = {}) {
   return (services: ConstructorParameters<typeof CursorSdkTransport>[0]) =>
-    new CursorSdkTransport(services, { homeRoot: homeRoot(state), ownerCursorDir: personalCursorDir(state), worker: CURSOR_WORKER, env, hosts: state.hosts, ...LOGIN, ...login })
+    new CursorSdkTransport(services, { homeRoot: homeRoot(state), ownerCursorDir: personalCursorDir(state), worker: CURSOR_WORKER, env, ...LOGIN, ...login })
 }
 
 async function claxedoHomes(state: CursorBackend): Promise<string[]> {
@@ -100,9 +95,9 @@ function personalCursorDir(state: CursorBackend) {
   return path.join(state.env.HOME!, ".cursor")
 }
 
-async function collect(context: Context, turn: TurnInput, session = context.session, transport = context.transport): Promise<RoutedEvent[]> {
+async function collect(context: Context, turn: TurnInput, session = context.session): Promise<RoutedEvent[]> {
   const events: RoutedEvent[] = []
-  for await (const event of transport.send(session, turn, context.turnBroker())) events.push(event)
+  for await (const event of context.transport.send(session, turn, context.turnBroker())) events.push(event)
   return events
 }
 
@@ -202,14 +197,13 @@ test("a silent run expires by inactivity, is cancelled alone, and the shared hos
   const state = await backend()
   state.server.script("held", { steps: [], hold: true })
   const services = createTestServices()
-  const registry = new CursorHostRegistry(services.clock, services.log)
-  const launch = { spawn: services.spawn.bind(services), worker: CURSOR_WORKER, env: state.env }
+  const registry = new CursorHostRegistry(services, CURSOR_WORKER, state.env, new AbortController().signal)
   const home = path.join(state.root, "deadline-home")
   await fs.mkdir(home, { recursive: true })
   const session = { sessionId: "deadline", directory: state.directory, apiKey: "cursor-conformance-placeholder", model: "scripted",
     mcpServers: {}, local: { sandboxOptions: { enabled: false } } }
   try {
-    const host = await registry.acquire({ binding: "deadline", home, backendUrl: state.server.url }, launch)
+    const host = await registry.acquire({ binding: "deadline", home, backendUrl: state.server.url })
     await host.call({ kind: "open", session })
     const running = host.call({ kind: "run", session, prompt: "CURSOR_SCRIPT:held" }, undefined,
       { at: Date.now() + 300, signal: new AbortController().signal })
@@ -232,14 +226,13 @@ test("a run that keeps streaming outlives its inactivity window", async () => {
     { kind: "text", text: "THREE" }, { kind: "wait", ms: 600 }, { kind: "text", text: "FOUR" },
   ] })
   const services = createTestServices()
-  const registry = new CursorHostRegistry(services.clock, services.log)
-  const launch = { spawn: services.spawn.bind(services), worker: CURSOR_WORKER, env: state.env }
+  const registry = new CursorHostRegistry(services, CURSOR_WORKER, state.env, new AbortController().signal)
   const home = path.join(state.root, "slow-home")
   await fs.mkdir(home, { recursive: true })
   const session = { sessionId: "slow", directory: state.directory, apiKey: "cursor-conformance-placeholder", model: "scripted",
     mcpServers: {}, local: { sandboxOptions: { enabled: false } } }
   try {
-    const host = await registry.acquire({ binding: "slow", home, backendUrl: state.server.url }, launch)
+    const host = await registry.acquire({ binding: "slow", home, backendUrl: state.server.url })
     await host.call({ kind: "open", session })
     const events: string[] = []
     const reply = await host.call({ kind: "run", session, prompt: "CURSOR_SCRIPT:slow" }, (event) => { if (event.kind === "event") events.push(event.message.type) },
@@ -302,28 +295,6 @@ test("two bindings use separate SDK hosts", async () => {
     expect(second.server.requests.some((request) => request.path === "/agent.v1.AgentService/RunSSE")).toBe(true)
     expect(services.processes).toHaveLength(2)
   } finally { await transport.dispose(); await first.close(); await second.close() }
-}, 60_000)
-
-test("two workspaces of one owner share one SDK host, and disposing one workspace's transport keeps it serving the other", async () => {
-  const state = await backend()
-  const workspaceA = createTestServices()
-  const workspaceB = createTestServices()
-  const a = transportFor(state)(workspaceA)
-  const b = transportFor(state)(workspaceB)
-  try {
-    const one = await setupConformance({ name: "host-lifetime", backend: async () => state, makeTransport: () => a })
-    const other = await b.start({ ...one.start, sessionId: "s2", workspaceId: "w2" }, { rebind: async (upstreamSessionId: string) =>
-      ({ sessionId: "s2", workspaceId: "w2", directory: state.directory, connectionId: "cursor-sdk", upstreamSessionId }) } as unknown as SessionBroker)
-    expect((await collect(one, one.turn("CURSOR_SCRIPT:conformance"))).some((item) => item.event.type === "finish")).toBe(true)
-    expect(workspaceA.processes).toHaveLength(1)
-    expect(workspaceB.processes).toHaveLength(0)
-    await a.dispose()
-    expect(await Promise.race([workspaceA.processes[0]!.exited.then(() => "exited"), new Promise((resolve) => setTimeout(() => resolve("alive"), 300))])).toBe("alive")
-    expect((await collect(one, one.turn("CURSOR_SCRIPT:conformance"), other, b)).some((item) => item.event.type === "finish")).toBe(true)
-    expect(workspaceB.processes).toHaveLength(0)
-    await b.close(other)
-    expect(await workspaceA.processes[0]!.exited).toBeDefined()
-  } finally { await a.dispose(); await b.dispose(); await state.close() }
 }, 60_000)
 
 test.each([
@@ -810,8 +781,7 @@ test("a plugin root whose link escapes it is refused before Cursor starts", asyn
   await fs.symlink(directory, path.join(plugin, "outside"))
   const services = createTestServices()
   const homeRoot = path.join(root, "cursor-homes")
-  const hosts = new CursorHostRegistry(services.clock, services.log)
-  const transport = new CursorSdkTransport(services, { homeRoot, ownerCursorDir: path.join(root, "person", ".cursor"), worker: CURSOR_WORKER, env: {}, hosts, ...LOGIN })
+  const transport = new CursorSdkTransport(services, { homeRoot, ownerCursorDir: path.join(root, "person", ".cursor"), worker: CURSOR_WORKER, env: {}, ...LOGIN })
   try {
     await expect(transport.start({
       sessionId: "s1", workspaceId: "w1", directory, locality: "local", owner: { kind: "machine-owner" },
@@ -827,7 +797,6 @@ test("a plugin root whose link escapes it is refused before Cursor starts", asyn
     }
   } finally {
     await transport.dispose()
-    await hosts.dispose()
     await fs.rm(root, { recursive: true, force: true })
   }
 })

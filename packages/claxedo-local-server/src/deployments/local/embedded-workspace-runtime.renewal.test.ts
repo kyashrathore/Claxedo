@@ -11,8 +11,8 @@ import {
   ensureEmbeddedWorkspaceRuntime,
   renewEmbeddedWorkspaceRuntimeConfigs,
   shutdownEmbeddedWorkspaceRuntimes,
+  startEmbeddedWorkspaceRuntimeConfigRenewal,
 } from "./embedded-workspace-runtime"
-import { startEmbeddedWorkspaceRuntimeConfigRenewal } from "./embedded-config-renewal-timer"
 
 /** The renewal timer's own period, which this test drives from outside it. */
 const TICK_MS = 30_000

@@ -286,13 +286,8 @@ describe("@claxedo/local-server closure", () => {
     //    projection: the retained skill roots and the projected MCP servers
     //    the embedded `transports/pi-durable` connects itself, beside the
     //    other harnesses' adapters.
-    //  - `deployments/local/embedded-harness-hosts.ts` — the Codex app-server
-    //    pool and Cursor SDK hosts every embedded workspace runtime of the
-    //    daemon shares, created at the first mount and retired at shutdown.
-    //  - `deployments/local/embedded-config-renewal-timer.ts` — the timer that
-    //    drives credential renewal, split from the embedded runtime.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(112)
+    expect(modules.size).toBeLessThanOrEqual(110)
     expect(packages.size).toBeLessThanOrEqual(30)
   })
 })

@@ -9,7 +9,6 @@ import {
   type RuntimeCredentialClaims,
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
-import { embeddedHarnessHosts, retireEmbeddedHarnessHosts } from "./embedded-harness-hosts"
 import { managedWorkspaceSessionAccessPolicy, type WorkspaceEventFramesTap } from "@claxedo/session-core"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
 import { DESKTOP_PLACEMENT } from "./connection-secret-scope"
@@ -390,7 +389,6 @@ function options(
   return {
     ...(harness ? { harness } : {}),
     placement: DESKTOP_PLACEMENT,
-    sharedHarnessHosts: embeddedHarnessHosts(),
     connectionProviders: configuredConnectionProviders,
     resolveConnectionSecrets: configuredConnectionSecretResolver,
     onActivityChange: activityChanged,
@@ -664,6 +662,8 @@ export async function syncEmbeddedWorkspaceRuntimes() {
   if (broken.length > 0) throw new AggregateError(broken, `${broken.length} embedded runtime(s) failed to re-configure`)
 }
 
+/** How often the renewal check runs; what it renews is decided from each placeholder's expiry. */
+const RENEWAL_CHECK_INTERVAL_MS = 30_000
 const RENEWAL_RETRY_BASE_MS = 5_000
 const RENEWAL_RETRY_CEILING_MS = 5 * 60_000
 
@@ -698,6 +698,20 @@ export async function renewEmbeddedWorkspaceRuntimeConfigs(input: { at: number; 
   }
 }
 
+/** Drive {@link renewEmbeddedWorkspaceRuntimeConfigs} off a timer. Returns the stop. */
+export function startEmbeddedWorkspaceRuntimeConfigRenewal(options: { now?: () => number } = {}) {
+  const now = options.now ?? Date.now
+  let lastCheck = now()
+  const timer = setInterval(() => {
+    const at = now()
+    const slept = at - lastCheck > RENEWAL_CHECK_INTERVAL_MS * 2
+    lastCheck = at
+    void renewEmbeddedWorkspaceRuntimeConfigs({ at, all: slept })
+  }, RENEWAL_CHECK_INTERVAL_MS)
+  timer.unref()
+  return () => clearInterval(timer)
+}
+
 export async function shutdownEmbeddedWorkspaceRuntimes(): Promise<{ ok: boolean; results: EmbeddedRetirementResult[] }> {
   shutdownGeneration++
   // Owners already retiring are collected before the live ones start, so
@@ -712,8 +726,7 @@ export async function shutdownEmbeddedWorkspaceRuntimes(): Promise<{ ok: boolean
     outcome.status === "fulfilled"
       ? outcome.value
       : { workspaceId: pending[index].workspaceId, state: "retire_failed", attempt: 0, error: String(outcome.reason) })
-  const harnessProcessesRetired = await retireEmbeddedHarnessHosts()
-  return { ok: harnessProcessesRetired && results.every((result) => result.state === "retired"), results }
+  return { ok: results.every((result) => result.state === "retired"), results }
 }
 
 export function embeddedWorkspaceRuntimeActivity() {

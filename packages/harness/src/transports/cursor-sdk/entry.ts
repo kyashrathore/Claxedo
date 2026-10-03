@@ -3,7 +3,7 @@ import type { HarnessSession, SessionBroker, StartInput } from "../../contract"
 import { TransportError } from "../../contract/errors"
 import type { CursorPluginOptions } from "../../profiles/cursor"
 import type { CursorCredential } from "./credentials"
-import type { CursorHost, CursorHostKey, CursorHostLeases } from "./host-registry"
+import type { CursorHost, CursorHostKey, CursorHostRegistry } from "./host-registry"
 
 export type CursorEntry = {
   session: HarnessSession
@@ -37,7 +37,7 @@ export class CursorEntryLifecycle {
     })
   }
 
-  async acquire(entry: CursorEntry, registry: CursorHostLeases, key: CursorHostKey): Promise<CursorHost> {
+  async acquire(entry: CursorEntry, registry: CursorHostRegistry, key: CursorHostKey): Promise<CursorHost> {
     const host = await registry.acquire(key)
     if (entry.closing) {
       await registry.release(key, host)
@@ -46,7 +46,7 @@ export class CursorEntryLifecycle {
     return host
   }
 
-  current(entry: CursorEntry, registry: CursorHostLeases): Promise<CursorHost> {
+  current(entry: CursorEntry, registry: CursorHostRegistry): Promise<CursorHost> {
     return this.run(entry, async () => {
       if (!entry.process.failed) return entry.process
       const previous = entry.process

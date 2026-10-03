@@ -28,7 +28,6 @@
     "ptyAccessRefusalResponse",
     "ptyStreamAccess",
     "createRuntimeCredentialIssuer",
-    "createSharedHarnessHosts",
     "createWorkspaceHost",
     "createWorkspaceRuntimeApp",
     "createWorkspaceRuntimeJwtManagementAuth",

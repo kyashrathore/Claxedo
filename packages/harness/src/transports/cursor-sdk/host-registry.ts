@@ -10,8 +10,6 @@ export type CursorHostKey = { binding: string; home: string; backendUrl?: string
 
 export type CursorWorker = Pick<SpawnCommand, "file" | "args">
 
-export type CursorLaunch = { spawn: HarnessServices["spawn"]; worker: CursorWorker; env: NodeJS.ProcessEnv }
-
 const RUN_IDLE_MS = 600_000
 const COMMAND_MS = 30_000
 
@@ -28,7 +26,7 @@ export function cursorHostEnvironment(base: NodeJS.ProcessEnv, home: string, bac
 }
 
 export function cursorHostId(key: CursorHostKey): string {
-  return JSON.stringify([key.binding, key.home, key.backendUrl ?? null])
+  return `${key.binding}\n${key.home}`
 }
 
 function retirementDeadline(clock: Clock): Deadline {
@@ -114,54 +112,56 @@ export class CursorHost {
 
 type Slot = { host: CursorHost; users: number }
 
-function unavailable() {
-  return new TransportError("cursor", "worker", "Cursor SDK host registry disposed")
-}
-
 export class CursorHostRegistry {
   private readonly hosts = new Map<string, Slot>()
   private readonly serial = createKeyedSerializer()
   private readonly disposal = new AbortController()
+  private readonly signal: AbortSignal
 
-  constructor(private readonly clock: Clock, private readonly log: Logger) {}
+  constructor(private readonly services: HarnessServices, private readonly worker: CursorWorker, private readonly env: NodeJS.ProcessEnv, signal: AbortSignal) {
+    this.signal = AbortSignal.any([signal, this.disposal.signal])
+  }
 
-  private async spawn(key: CursorHostKey, launch: CursorLaunch, signal: AbortSignal): Promise<CursorHost> {
-    const owned = await launch.spawn({ file: launch.worker.file, args: launch.worker.args, cwd: key.home,
-      env: cursorHostEnvironment(launch.env, key.home, key.backendUrl) }, { role: "harness", label: "Cursor SDK host", home: key.home, signal })
-    const host = new CursorHost(owned, this.clock, this.log)
+  private unavailable() {
+    return new TransportError("cursor", "worker", "Cursor SDK host registry disposed")
+  }
+
+  private async spawn(key: CursorHostKey, signal: AbortSignal): Promise<CursorHost> {
+    const owned = await this.services.spawn({ file: this.worker.file, args: this.worker.args, cwd: key.home,
+      env: cursorHostEnvironment(this.env, key.home, key.backendUrl) }, { role: "harness", label: "Cursor SDK host", home: key.home, signal })
+    const host = new CursorHost(owned, this.services.clock, this.services.log)
     if (signal.aborted) {
       try { await host.retire() }
       catch (error) {
-        this.log.error("Cursor late host retirement failed", { error: errorMessage(error) })
+        this.services.log.error("Cursor late host retirement failed", { error: errorMessage(error) })
         throw error
       }
-      throw unavailable()
+      throw this.unavailable()
     }
     return host
   }
 
-  private async live(key: CursorHostKey, launch: CursorLaunch): Promise<Slot> {
-    const signal = this.disposal.signal
-    if (signal.aborted) throw unavailable()
+  private async live(key: CursorHostKey): Promise<Slot> {
+    if (this.signal.aborted) throw this.unavailable()
     const id = cursorHostId(key)
     const current = this.hosts.get(id)
     if (current && !current.host.failed) return current
     if (current) await current.host.retire()
     const abandoned = new AbortController()
-    const spawning = this.spawn(key, launch, AbortSignal.any([signal, abandoned.signal]))
-    const host = await settleAtRequestDeadline("Cursor host spawn", { deadlineAt: this.clock.now() + COMMAND_MS, signal },
-      spawning, () => abandoned.abort(), (_what, aborted) => aborted ? unavailable()
+    const spawning = this.spawn(key, AbortSignal.any([this.signal, abandoned.signal]))
+    const host = await settleAtRequestDeadline("Cursor host spawn", { deadlineAt: this.services.clock.now() + COMMAND_MS, signal: this.signal },
+      spawning, () => abandoned.abort(), (_what, aborted) => aborted ? this.unavailable()
         : new TransportError("cursor", "worker", "Cursor SDK host spawn exceeded its deadline"))
-    if (signal.aborted) { await host.retire(); throw unavailable() }
+    if (this.signal.aborted) { await host.retire(); throw this.unavailable() }
     const slot = { host, users: 0 }
     this.hosts.set(id, slot)
     return slot
   }
 
-  acquire(key: CursorHostKey, launch: CursorLaunch): Promise<CursorHost> {
+  acquire(key: CursorHostKey): Promise<CursorHost> {
     return this.serial.run(cursorHostId(key), async () => {
-      const slot = await this.live(key, launch)
-      if (this.disposal.signal.aborted) throw unavailable()
+      const slot = await this.live(key)
+      if (this.signal.aborted) throw this.unavailable()
       slot.users += 1
       return slot.host
     })
@@ -190,43 +190,5 @@ export class CursorHostRegistry {
       await slot.host.retire()
       if (this.hosts.get(id) === slot) this.hosts.delete(id)
     }))
-  }
-}
-
-export class CursorHostLeases {
-  private readonly held = new Map<CursorHost, { key: CursorHostKey; count: number }>()
-  private disposed = false
-
-  constructor(private readonly registry: CursorHostRegistry, private readonly launch: CursorLaunch) {}
-
-  async acquire(key: CursorHostKey): Promise<CursorHost> {
-    if (this.disposed) throw unavailable()
-    const host = await this.registry.acquire(key, this.launch)
-    if (this.disposed) {
-      await this.registry.release(key, host)
-      throw unavailable()
-    }
-    const held = this.held.get(host) ?? { key, count: 0 }
-    held.count += 1
-    this.held.set(host, held)
-    return host
-  }
-
-  existing(key: CursorHostKey): CursorHost | undefined { return this.registry.existing(key) }
-
-  async release(key: CursorHostKey, host: CursorHost): Promise<void> {
-    const held = this.held.get(host)
-    if (!held) return
-    held.count -= 1
-    if (!held.count) this.held.delete(host)
-    await this.registry.release(key, host)
-  }
-
-  async dispose(): Promise<void> {
-    this.disposed = true
-    for (const [host, held] of this.held) {
-      this.held.delete(host)
-      for (let count = 0; count < held.count; count += 1) await this.registry.release(held.key, host)
-    }
   }
 }

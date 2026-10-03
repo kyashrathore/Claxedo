@@ -7,7 +7,6 @@ import { createHarnessComposer } from "@claxedo/harness/compose"
 import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import { createHarnessServices } from "./harness-services"
 import { requireCursorWorker } from "./host/executables/cursor"
-import { createSharedHarnessHosts } from "./host/shared-harness-hosts"
 
 const peerSource = `#!/usr/bin/env node
 const { createInterface } = require("node:readline");
@@ -40,14 +39,13 @@ test("harness package composition starts ACP, Pi, Codex, Claude and OpenCode and
   const log = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }
   const clock = { now: () => Date.now(), setTimeout, clearTimeout }
   const services = createHarnessServices({ ownership: volatileLaunchOwnership(), log, clock, patternEvaluator: async () => {}, healthChanged: () => {} })
-  const shared = createSharedHarnessHosts({ clock, log })
   const composer = createHarnessComposer(services, {
     pi: () => ({ stateRoot: path.join(root, "pi-state"), env: process.env }),
     codex: () => ({ binary: peer, homeRoot: path.join(root, "codex-homes"), ownerHome: path.join(root, "codex-owner"),
-      env: { ...process.env, COMPOSE_PEER_KIND: "codex" }, pool: shared.codex }),
+      env: { ...process.env, COMPOSE_PEER_KIND: "codex" } }),
     claude: () => ({ executable: "claude", configRoot: path.join(root, "claude-homes"),
       userConfigRoot: path.join(root, "claude-owner"), env: process.env }),
-    cursor: () => ({ env: process.env, homeRoot: path.join(root, "cursor-homes"), ownerCursorDir: path.join(root, "owner-cursor"), worker: requireCursorWorker(process.env), hosts: shared.cursor, placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true }),
+    cursor: () => ({ env: process.env, homeRoot: path.join(root, "cursor-homes"), ownerCursorDir: path.join(root, "owner-cursor"), worker: requireCursorWorker(process.env), placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true }),
     opencode: () => ({ databasePath: path.join(root, "opencode.db"), configContent: JSON.stringify({ model: "proof/proof",
       provider: { proof: { npm: "@ai-sdk/openai-compatible", name: "Proof", models: { proof: { name: "Proof", limit: { context: 32_000, output: 1_024 } } } } } }) }) })
   const brokerFor = (connectionId: string) => ({ rebind: committed(root, connectionId) }) as unknown as SessionBroker
@@ -84,8 +82,5 @@ test("harness package composition starts ACP, Pi, Codex, Claude and OpenCode and
       expectedRevision: 2, secrets: { token: "resolved" } })).toThrow("disabled or stale")
     expect(() => composer.connection({ descriptor: acpDescriptor, directory: root,
       expectedRevision: 1, secrets: {} })).toThrow("Secret lease")
-  } finally {
-    await shared.dispose()
-    await fs.rm(root, { recursive: true, force: true })
-  }
+  } finally { await fs.rm(root, { recursive: true, force: true }) }
 }, 30_000)

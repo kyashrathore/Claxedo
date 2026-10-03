@@ -45,7 +45,6 @@ import { firstPartyMcpServerFor } from "../first-party-mcp/index"
 import { createHarnessServices } from "../harness-services"
 import { createSpawnService } from "../spawn-service"
 import { defaultHarnessStateRoot, harnessCompositionOptions, sweepIdleHarnessHomes } from "../host/composition"
-import { createSharedHarnessHosts } from "../host/shared-harness-hosts"
 import { createElicitationPatternEvaluator } from "../host/pattern-evaluator"
 import { Log } from "../log"
 import {
@@ -213,7 +212,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
   const harnessLog: HarnessServices["log"] = { debug: (message, fields) => log.info(message, fields), info: (message, fields) => log.info(message, fields),
     warn: (message, fields) => log.warn(message, fields), error: (message, fields) => log.error(message, fields) }
   const harnessClock: HarnessServices["clock"] = { now: () => Date.now(), setTimeout: (callback, ms) => setTimeout(callback, ms), clearTimeout: clearOpaqueTimer }
-  const sharedHarnessHosts = options.sharedHarnessHosts ?? createSharedHarnessHosts({ clock: harnessClock, log: harnessLog })
 
   function harnessEngine(): Engine {
     if (engine) return engine
@@ -229,7 +227,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     })
     void sweepIdleHarnessHomes(harnessStateRoot).catch((error: unknown) => log.warn("Idle harness home sweep failed", { error: String(error) }))
     const composer = createHarnessComposer(services, harnessCompositionOptions({
-      env, placement: options.placement, harnessStateRoot, opencodeRoot: `${storeRoot}/opencode`, sharedHarnessHosts,
+      env, placement: options.placement, harnessStateRoot, opencodeRoot: `${storeRoot}/opencode`,
     }), options.connectionProviders ?? [])
     const transports = createWorkspaceTransports({
       composer,
@@ -709,7 +707,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
           })(),
           deliveriesDone,
         ])
-        if (!options.sharedHarnessHosts) await sharedHarnessHosts.dispose()
         if (runtimeResult && !runtimeResult.ok) throw runtimeResult.error
         checkpoint.clear()
         cleanupPresentationObserver()
