@@ -1,5 +1,6 @@
 import type { SessionLastTurn, SessionRef } from "@claxedo/agent-runtime-contract"
 import type { SessionRowStatus } from "../../session/navigation-list"
+import type { SessionStatusChangedEvent } from "../runtime/lib/bus"
 
 export const MAX_HOST_SESSION_ROWS = 100
 
@@ -47,11 +48,20 @@ export type HostSessionRowsResult = {
   refused: HostSessionRowRefusal[]
 }
 
+/**
+ * What a committed publication answers the machine, and the status notices it
+ * owes each reader of a session whose status, wait, background work or last
+ * turn the write changed.
+ */
+export type HostSessionRowsOutcome = HostSessionRowsResult & {
+  statusNotices: SessionStatusChangedEvent[]
+}
+
 export type HostSessionRowsAuthority = {
   publishHostSessionRows: (
     publisher: HostSessionRowsPublisher,
     publication: HostSessionRowsPublication,
-  ) => Promise<HostSessionRowsResult>
+  ) => Promise<HostSessionRowsOutcome>
 }
 
 export type HostSessionRowsPlan<Workspace> = {

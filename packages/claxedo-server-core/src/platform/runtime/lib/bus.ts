@@ -1,5 +1,7 @@
+import type { BackgroundWork, SessionLastTurn } from "@claxedo/agent-runtime-contract"
 import { jsonRecord } from "./json"
 import type { SessionShareLevel } from "../../auth/session-share-level"
+import type { SessionRowStatusKind } from "../../../session/navigation-list"
 
 type Subscriber<T> = (event: T) => unknown
 
@@ -97,6 +99,29 @@ export type SessionShareChangedEvent = {
 )
 
 /**
+ * A session's list status as the hosted registry holds it after a machine or
+ * cloud runtime published a row that changed its status, wait, background
+ * work or last turn. One per reader: `ownerUserId` is the recipient subject
+ * (the session's owner or a person it is shared with), never the publisher.
+ * Unlike a doorbell it carries the state, so a reader updates the row in
+ * place instead of re-reading the list.
+ */
+export type SessionStatusChangedEvent = {
+  type: "session.status.changed"
+  ownerUserId: string
+  /** Authority-internal org id of the session: the room its readers are held in. */
+  orgId: string
+  sessionId: string
+  workspaceId: string
+  status: SessionRowStatusKind
+  awaitingInput: boolean
+  backgroundWork?: BackgroundWork
+  lastTurn?: SessionLastTurn
+  /** When the runtime reported the status, as the registry holds it. */
+  ts: number
+}
+
+/**
  * A workspace's session inventory gained or lost a row in the control plane's
  * own projection — the one the rail lists from. A doorbell with no session
  * named: the reader re-reads the inventory, and the read applies access.
@@ -141,17 +166,19 @@ export type PluginsChangedEvent = {
 
 /**
  * What the control plane tells its clients on `cp/events`: something changed
- * and the reader re-reads. Never a session's content — that is the workspace
- * runtime's stream. One bus, one publisher per event kind: the sandbox
- * provisioner, the worktree routes, the documents backend, the session-share
- * authority, the session-meta store (`session/meta/index.ts`), the usage quota
+ * and the reader re-reads, or a session's list status as it stands. Never a
+ * session's content — that is the workspace runtime's stream. One bus, one
+ * publisher per event kind: the sandbox provisioner, the worktree routes, the
+ * documents backend, the session-share authority, the hosted session-row
+ * ingest, the session-meta store (`session/meta/index.ts`), the usage quota
  * reader (`usage/quota.ts`).
  *
- * The local daemon serves all seven kinds to its unsigned user. A signed
- * subscriber gets only share and quota notices (`event-visibility.ts`), and
- * the hosted plane's room (`hosted-workerd/live-sync-room.cf.ts`) carries
- * `session.share.changed` alone, so a signed client learns of a provision
- * step, a Page change or another session by its next read, not by a notice.
+ * The local daemon serves every kind it publishes to its unsigned user. A
+ * signed subscriber gets only share, status and quota notices
+ * (`event-visibility.ts`), and the hosted plane's room
+ * (`hosted-workerd/live-sync-room.cf.ts`) carries `session.share.changed` and
+ * `session.status.changed` alone, so a signed client learns of a provision
+ * step or a Page change by its next read, not by a notice.
  */
 export type ControlPlaneEvent =
   | {
@@ -171,6 +198,7 @@ export type ControlPlaneEvent =
   | { type: "worktree.failed"; directory: string; message: string }
   | DocumentChangedEvent
   | SessionShareChangedEvent
+  | SessionStatusChangedEvent
   | SessionInventoryChangedEvent
   | UsageQuotaChangedEvent
   | PluginsChangedEvent

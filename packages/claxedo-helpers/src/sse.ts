@@ -27,6 +27,8 @@ export function createSseReplayBuffer<T>(input?: {
   maxEvents?: number
   maxTerminalEvents?: number
   isTerminal?: (payload: T) => boolean
+  /** Two payloads with one key state the same fact; a replay sends only the later. */
+  supersedes?: (payload: T) => string | undefined
   /** Continue a principal-local cursor after its replay ring was evicted. */
   initialSequence?: number
 }): SseReplayBuffer<T> {
@@ -96,7 +98,7 @@ export function createSseReplayBuffer<T>(input?: {
       const after = numericId(lastEventId)
       const through = numericId(throughId) || seq
       const seen = new Set<string>()
-      return [...events, ...terminal]
+      const replayed = [...events, ...terminal]
         .filter((event) => event.seq > after && event.seq <= through)
         .sort((left, right) => left.seq - right.seq)
         .filter((event) => {
@@ -104,6 +106,17 @@ export function createSseReplayBuffer<T>(input?: {
           seen.add(event.id)
           return true
         })
+      const keyOf = input?.supersedes
+      if (!keyOf) return replayed
+      const latest = new Map<string, string>()
+      for (const event of replayed) {
+        const key = keyOf(event.payload)
+        if (key !== undefined) latest.set(key, event.id)
+      }
+      return replayed.filter((event) => {
+        const key = keyOf(event.payload)
+        return key === undefined || latest.get(key) === event.id
+      })
     },
     isTerminal,
   }

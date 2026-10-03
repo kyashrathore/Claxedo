@@ -62,9 +62,9 @@ export type SessionNavigationRow = {
 /**
  * The last status the session's runtime reported, as the store that lists the
  * row last heard it. `awaitingInput` is an open permission or question.
- * `backgroundWork` counts the harness work running outside any turn; only a
- * list read from the runtime in process carries it, since stored rows have no
- * column for it.
+ * `backgroundWork` counts the harness work running outside any turn, absent
+ * while none runs: the daemon reads it from its runtimes in process, and the
+ * hosted registry holds what the runtime last published with its status.
  */
 export type SessionRowStatus = {
   kind: SessionRowStatusKind
@@ -241,7 +241,7 @@ function statusFromSession(item: Record<string, unknown>): { status?: SessionRow
   const at = numberValue(nested.at) ?? numberValue(item.status_at)
   if (!kind || at === undefined) return {}
   const awaitingInput = nested.awaitingInput ?? item.awaiting_input
-  const backgroundWork = parseBackgroundWork(nested.backgroundWork)
+  const backgroundWork = parseBackgroundWork(nested.backgroundWork ?? item.background_work)
   const background = backgroundWork ? { backgroundWork } : {}
   return { status: { kind, awaitingInput: awaitingInput === true || awaitingInput === 1, ...background, at } }
 }

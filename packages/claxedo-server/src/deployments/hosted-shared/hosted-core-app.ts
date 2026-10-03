@@ -359,7 +359,9 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     }))
   }
   app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, workspaceOptions))
-  app.route("/api/claxedo/host/session-rows", HostSessionRowsRoutes(services))
+  app.route("/api/claxedo/host/session-rows", HostSessionRowsRoutes(services, {
+    notify: (event) => nudgeLiveSyncRoom(options.liveSyncRoom, liveSyncRoomNameForPrincipal({ orgId: event.orgId }), event),
+  }))
   app.route("/api/claxedo/host/invitations", HostInvitationRoutes(services, workspaceOptions))
   app.route("/api/claxedo/remote-access", RemoteAccessOwnerRoutes({
     deviceLoginConfigured: true,

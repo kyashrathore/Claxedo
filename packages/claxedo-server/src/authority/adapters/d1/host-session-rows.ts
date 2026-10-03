@@ -2,12 +2,13 @@ import type { D1Database } from "@cloudflare/workers-types"
 import {
   planHostSessionRows,
   type HostSessionRow,
+  type HostSessionRowsOutcome,
   type HostSessionRowsPublication,
   type HostSessionRowsPublisher,
-  type HostSessionRowsResult,
 } from "@claxedo/server-core/platform/auth/host-session-rows"
 import { sessionAdoptionOperationId } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
+import { SESSION_STATUS_COLUMNS, sessionStatusNotices, type SessionStatusColumns } from "./session-status-notices"
 
 type ServedWorkspace = { workspace_id: string; owner_actor_id: string; org_id: string; project_id: string }
 
@@ -22,29 +23,35 @@ type ServedWorkspace = { workspace_id: string; owner_actor_id: string; org_id: s
  * adopts one: the machine held it before anyone reached it through the plane.
  *
  * Republishing is idempotent: turn and update times only move forward, a
- * status replaces the held one only when it was reported at or after it, and
- * a last turn replaces the held one only when it ended later.
+ * status (with its wait and background work) replaces the held one only when
+ * it was reported at or after it, and a last turn replaces the held one only
+ * when it ended later. Each row's update returns what it left, so the status
+ * notices compare the committed row with the one read before the batch.
  */
 export async function publishD1HostSessionRows(
   database: D1Database,
   now: number,
   publisher: HostSessionRowsPublisher,
   publication: HostSessionRowsPublication,
-): Promise<HostSessionRowsResult> {
+): Promise<HostSessionRowsOutcome> {
   const touched = [...publication.rows, ...publication.removed]
   const served = await servedD1Workspaces(database, now, publisher, [...new Set(touched.map((row) => row.workspaceId))])
   const existing = await registeredD1Sessions(database, [...new Set(touched.map((row) => row.sessionId))])
   const plan = planHostSessionRows(publication, served, existing)
+  const adoptions = plan.adopt.flatMap(({ row, workspace }) => adoptionStatements(database, now, workspace, row))
   const statements = [
-    ...plan.adopt.flatMap(({ row, workspace }) => adoptionStatements(database, now, workspace, row)),
+    ...adoptions,
     ...plan.update.map((row) => listFieldsStatement(database, row)),
     ...plan.remove.map((ref) =>
       database
         .prepare(`update sessions set deleted_at = ? where session_id = ? and workspace_id = ? and deleted_at is null`)
         .bind(now, ref.sessionId, ref.workspaceId)),
   ]
-  if (statements.length) await database.batch(statements)
-  return plan.result
+  if (!statements.length) return { ...plan.result, statusNotices: [] }
+  const results = await database.batch<SessionStatusColumns>(statements)
+  const written = results.slice(adoptions.length, adoptions.length + plan.update.length).flatMap((result) => result.results)
+  const before = new Map([...existing].flatMap(([sessionId, session]) => (session.status ? [[sessionId, session.status]] : [])))
+  return { ...plan.result, statusNotices: await sessionStatusNotices(database, before, written) }
 }
 
 async function servedD1Workspaces(
@@ -79,13 +86,16 @@ async function servedD1Workspaces(
   return new Map(result.results.map((row) => [row.workspace_id, row]))
 }
 
+type RegisteredSession = { workspaceId: string; deleted: boolean; status?: SessionStatusColumns }
+
 async function registeredD1Sessions(database: D1Database, sessionIds: string[]) {
-  if (!sessionIds.length) return new Map<string, { workspaceId: string; deleted: boolean }>()
+  if (!sessionIds.length) return new Map<string, RegisteredSession>()
   const result = await database
-    .prepare(`select session_id, workspace_id, deleted_at from sessions where session_id in (${sessionIds.map(() => "?").join(", ")})`)
+    .prepare(`select ${SESSION_STATUS_COLUMNS}, deleted_at from sessions where session_id in (${sessionIds.map(() => "?").join(", ")})`)
     .bind(...sessionIds)
-    .all<{ session_id: string; workspace_id: string; deleted_at: number | null }>()
-  return new Map(result.results.map((row) => [row.session_id, { workspaceId: row.workspace_id, deleted: row.deleted_at !== null }]))
+    .all<SessionStatusColumns & { deleted_at: number | null }>()
+  return new Map(result.results.map(({ deleted_at, ...status }): [string, RegisteredSession] =>
+    [status.session_id, { workspaceId: status.workspace_id, deleted: deleted_at !== null, status }]))
 }
 
 function adoptionStatements(database: D1Database, now: number, workspace: ServedWorkspace, row: HostSessionRow) {
@@ -123,7 +133,9 @@ function adoptionStatements(database: D1Database, now: number, workspace: Served
 
 function listFieldsStatement(database: D1Database, row: HostSessionRow) {
   const status = row.status
+  const work = status.backgroundWork
   const at = row.lastTurn?.completedAt ?? null
+  const current = "status_at is null or status_at <= ?"
   return database
     .prepare(`
       update sessions set
@@ -132,12 +144,16 @@ function listFieldsStatement(database: D1Database, row: HostSessionRow) {
         last_human_turn_at = case when ? is null then last_human_turn_at
           else max(coalesce(last_human_turn_at, 0), ?) end,
         archived_at = ?,
-        status = case when status_at is null or status_at <= ? then ? else status end,
-        awaiting_input = case when status_at is null or status_at <= ? then ? else awaiting_input end,
-        status_at = case when status_at is null or status_at <= ? then ? else status_at end,
+        status = case when ${current} then ? else status end,
+        awaiting_input = case when ${current} then ? else awaiting_input end,
+        background_agents = case when ${current} then ? else background_agents end,
+        background_shells = case when ${current} then ? else background_shells end,
+        background_other = case when ${current} then ? else background_other end,
+        status_at = case when ${current} then ? else status_at end,
         last_turn_status = case when ? is not null and (last_turn_completed_at is null or last_turn_completed_at < ?) then ? else last_turn_status end,
         last_turn_completed_at = case when ? is not null and (last_turn_completed_at is null or last_turn_completed_at < ?) then ? else last_turn_completed_at end
       where session_id = ? and workspace_id = ? and deleted_at is null
+      returning ${SESSION_STATUS_COLUMNS}
     `)
     .bind(
       row.title ?? null,
@@ -147,6 +163,9 @@ function listFieldsStatement(database: D1Database, row: HostSessionRow) {
       row.archivedAt ?? null,
       status.at, status.kind,
       status.at, status.awaitingInput ? 1 : 0,
+      status.at, work?.agents ?? 0,
+      status.at, work?.shells ?? 0,
+      status.at, work?.other ?? 0,
       status.at, status.at,
       at, at, row.lastTurn?.status ?? null,
       at, at, at,

@@ -2309,7 +2309,7 @@ describe("machine session rows", () => {
           row("ses_spoken", { lastHumanTurnAt: 400, status: { kind: "busy", awaitingInput: true, at: 410 } }),
         ],
       }),
-    ).resolves.toEqual({ accepted: 2, refused: [] })
+    ).resolves.toMatchObject({ accepted: 2, refused: [] })
 
     expect(await page(alice)).toEqual([
       expect.objectContaining({
@@ -2336,7 +2336,7 @@ describe("machine session rows", () => {
           row("ses_idle"),
         ],
       }),
-    ).resolves.toEqual({ accepted: 2, refused: [] })
+    ).resolves.toMatchObject({ accepted: 2, refused: [] })
 
     expect(await page(alice)).toEqual(expect.arrayContaining([
       expect.objectContaining({ session_id: "ses_interrupted", status: "interrupted", status_at: 310 }),
@@ -2428,6 +2428,97 @@ describe("machine session rows", () => {
     expect(details.filter((detail) => /^SCAN s\b/.test(detail))).toEqual([])
   })
 
+  test("notifies only rows whose status, wait, background work or last turn changed", async () => {
+    const { publish } = await served()
+    const notified = async (publication: Partial<HostSessionRowsPublication>) =>
+      (await publish(publication)).statusNotices.map((notice) => notice.sessionId)
+
+    expect(await notified({ rows: [row("ses_a", { status: { kind: "busy", awaitingInput: false, at: 300 } }), row("ses_b")] }))
+      .toEqual(["ses_a", "ses_b"])
+    expect(await notified({
+      rows: [
+        row("ses_a", { title: "Renamed", updatedAt: 900, status: { kind: "busy", awaitingInput: false, at: 350 } }),
+        row("ses_b", { status: { kind: "idle", awaitingInput: false, at: 360 } }),
+      ],
+    })).toEqual([])
+    expect(await notified({ rows: [row("ses_a", { status: { kind: "busy", awaitingInput: false, at: 340 } }), row("ses_b")] }))
+      .toEqual([])
+    expect(await notified({ rows: [row("ses_a", { status: { kind: "busy", awaitingInput: true, at: 400 } }), row("ses_b")] }))
+      .toEqual(["ses_a"])
+    expect(await notified({
+      rows: [row("ses_b", { status: { kind: "idle", awaitingInput: false, backgroundWork: { agents: 1, shells: 0, other: 0 }, at: 410 } })],
+    })).toEqual(["ses_b"])
+
+    const ended = await publish({
+      rows: [row("ses_a", { status: { kind: "idle", awaitingInput: false, at: 500 }, lastTurn: { status: "failed", completedAt: 490 } })],
+    })
+    expect(ended.statusNotices).toEqual([{
+      type: "session.status.changed",
+      ownerUserId: "alice",
+      orgId: "org_acme",
+      sessionId: "ses_a",
+      workspaceId: "ws_local",
+      status: "idle",
+      awaitingInput: false,
+      lastTurn: { status: "failed", completedAt: 490 },
+      ts: 500,
+    }])
+    expect((await publish({ rows: [row("ses_a", { status: { kind: "idle", awaitingInput: false, at: 510 }, lastTurn: { status: "failed", completedAt: 490 } })] })).statusNotices)
+      .toEqual([])
+  })
+
+  test("a status notice goes to the session's owner and the people it is shared with, and to nobody else in the org", async () => {
+    const { publish, sessions, alice, bob } = await served()
+    await publish({ rows: [row("ses_shared"), row("ses_private")] })
+    await sessions.grantSessionShare(alice, { sessionId: "ses_shared", workspaceId: "ws_local", grantedToUserId: bob.principal!.userId, level: "follow" })
+
+    const { statusNotices } = await publish({
+      rows: [
+        row("ses_shared", { status: { kind: "busy", awaitingInput: false, at: 400 } }),
+        row("ses_private", { status: { kind: "busy", awaitingInput: false, at: 400 } }),
+      ],
+    })
+
+    expect(statusNotices.map((notice) => [notice.sessionId, notice.ownerUserId]).sort()).toEqual([
+      ["ses_private", "alice"],
+      ["ses_shared", "alice"],
+      ["ses_shared", "bob"],
+    ])
+  })
+
+  test("the readers of a changed session are found through indexes, never a scan", async () => {
+    const { input, sessions, alice, bob, publisher } = await served()
+    await publishD1HostSessionRows(input.database, input.now(), publisher, { rows: [row("ses_planned")], removed: [] })
+    await sessions.grantSessionShare(alice, { sessionId: "ses_planned", workspaceId: "ws_local", grantedToUserId: bob.principal!.userId, level: "follow" })
+    const reads: Array<{ sql: string; binds: unknown[] }> = []
+    const recording = new Proxy(input.database, {
+      get(target, property) {
+        if (property !== "prepare") return Reflect.get(target, property).bind(target)
+        return (sql: string) => {
+          const statement = target.prepare(sql)
+          return { bind: (...binds: unknown[]) => (reads.push({ sql, binds }), statement.bind(...binds)) }
+        }
+      },
+    })
+
+    await publishD1HostSessionRows(recording, input.now(), publisher, {
+      rows: [row("ses_planned", { status: { kind: "busy", awaitingInput: false, at: 400 } })],
+      removed: [],
+    })
+
+    const plans = await Promise.all(
+      reads
+        .filter((read) => read.sql.trimStart().startsWith("select") || read.sql.trimStart().startsWith("with"))
+        .map(async (read) => (await input.database.prepare(`explain query plan ${read.sql}`).bind(...read.binds).all<{ detail: string }>())
+          .results.map((step) => step.detail)),
+    )
+    const readersPlan = plans.find((plan) => plan.some((detail) => detail.includes("session_share_grants")))
+    expect(readersPlan).toContainEqual(expect.stringMatching(/^SEARCH g USING INDEX session_share_grants_/))
+    expect(readersPlan).toContainEqual(expect.stringMatching(/^SEARCH ai USING INDEX auth_identities_by_user/))
+    const tables = /^SCAN (s|w|g|u|ai|sessions|workspaces|session_share_grants|users|auth_identities|member_org|member_row|orgs|org_memberships)\b/
+    expect(plans.flat().filter((detail) => tables.test(detail))).toEqual([])
+  })
+
   test("refuses rows for a workspace the enrollment does not serve at this generation", async () => {
     const { publish, page, alice, publisher } = await served()
 
@@ -2436,7 +2527,7 @@ describe("machine session rows", () => {
         { rows: [row("ses_cloud", { workspaceId: "ws_cloud" })] },
         { ...publisher, workspaceIds: ["ws_local", "ws_cloud"] },
       ),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       accepted: 0,
       refused: [{ workspaceId: "ws_cloud", sessionId: "ses_cloud", reason: "workspace_not_served" }],
     })
@@ -2454,7 +2545,7 @@ describe("machine session rows", () => {
 
   test("a superseded serving generation's token publishes nothing", async () => {
     const { input, publish, page, alice, publisher } = await served()
-    await expect(publish({ rows: [row("ses_before")] })).resolves.toEqual({ accepted: 1, refused: [] })
+    await expect(publish({ rows: [row("ses_before")] })).resolves.toMatchObject({ accepted: 1, refused: [] })
 
     const next = await input.hostAccess.acquireHostServingGeneration(await principal(input, publisher.enrollmentId))
     await machineBeat(input, publisher.enrollmentId, [{ workspaceId: "ws_local", revision: 1 }], {
@@ -2464,7 +2555,7 @@ describe("machine session rows", () => {
     await expect(publish({ rows: [row("ses_after")] })).resolves.toMatchObject({
       refused: [{ sessionId: "ses_after", reason: "workspace_not_served" }],
     })
-    await expect(publish({ rows: [row("ses_after")] }, { ...publisher, generation: next.generation })).resolves.toEqual(
+    await expect(publish({ rows: [row("ses_after")] }, { ...publisher, generation: next.generation })).resolves.toMatchObject(
       { accepted: 1, refused: [] },
     )
     expect((await page(alice)).map((item) => item.session_id).sort()).toEqual(["ses_after", "ses_before"])
@@ -2495,7 +2586,7 @@ describe("machine session rows", () => {
           generation: otherMachine.generation,
         },
       ),
-    ).resolves.toEqual({ accepted: 1, refused: [] })
+    ).resolves.toMatchObject({ accepted: 1, refused: [] })
   })
 
   test("refuses a session id registered in another workspace", async () => {
@@ -2517,7 +2608,7 @@ describe("machine session rows", () => {
       workspaceId: "ws_cloud",
     })
 
-    await expect(publish({ rows: [row("ses_taken")] })).resolves.toEqual({
+    await expect(publish({ rows: [row("ses_taken")] })).resolves.toMatchObject({
       accepted: 0,
       refused: [{ workspaceId: "ws_local", sessionId: "ses_taken", reason: "session_elsewhere" }],
     })
@@ -2529,7 +2620,7 @@ describe("machine session rows", () => {
     expect((await page(alice)).map((item) => item.session_id)).toEqual(["ses_gone"])
     expect((await page(alice, "all")).map((item) => item.session_id).sort()).toEqual(["ses_archived", "ses_gone"])
 
-    await expect(publish({ removed: [{ workspaceId: "ws_local", sessionId: "ses_gone" }] })).resolves.toEqual({
+    await expect(publish({ removed: [{ workspaceId: "ws_local", sessionId: "ses_gone" }] })).resolves.toMatchObject({
       accepted: 1,
       refused: [],
     })

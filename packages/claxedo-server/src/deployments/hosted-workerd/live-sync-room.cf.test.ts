@@ -809,3 +809,77 @@ describe("LiveSyncRoom — held-connection cap", () => {
     expect((await clamped.fetch(connectRequest())).status).toBe(200)
   })
 })
+
+const statusChanged = (ownerUserId: string, sessionId: string, status: "busy" | "idle", ts = Date.now()): ControlPlaneEvent => ({
+  type: "session.status.changed",
+  ownerUserId,
+  orgId: "acme",
+  sessionId,
+  workspaceId: "ws_1",
+  status,
+  awaitingInput: false,
+  ...(status === "idle" ? { lastTurn: { status: "completed", completedAt: ts } } : {}),
+  ts,
+})
+
+describe("LiveSyncRoom — session status notices", () => {
+  test("a status notice reaches its reader only, rebuilt from the fields the room verifies", async () => {
+    const room = new LiveSyncRoom({}, {})
+    await pushEvent(room, Object.assign(statusChanged("alice", "ses_1", "idle", 5), { smuggled: "x" }))
+    await pushEvent(room, statusChanged("bob", "ses_2", "busy"))
+
+    const alice = await openRoom(room, { subject: "alice", lastEventId: "0" })
+    const bob = await openRoom(room, { subject: "bob", lastEventId: "0" })
+
+    expect(alice.frames.slice(1).map((frame) => frame.data)).toEqual([{
+      type: "session.status.changed",
+      ownerUserId: "alice",
+      orgId: "acme",
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
+      status: "idle",
+      awaitingInput: false,
+      lastTurn: { status: "completed", completedAt: 5 },
+      ts: 5,
+    }])
+    expect(bob.frames.slice(1).map((frame) => (frame.data as { sessionId: string }).sessionId)).toEqual(["ses_2"])
+  })
+
+  test("refuses a status notice that names no reader or an unknown status", async () => {
+    const room = new LiveSyncRoom({}, {})
+    for (const body of [{ ...statusChanged("alice", "ses_1", "busy"), ownerUserId: "" }, { ...statusChanged("alice", "ses_1", "busy"), status: "thinking" }]) {
+      const response = await room.fetch(new Request("https://live-sync-room.internal/nudge", { method: "POST", body: JSON.stringify(body) }))
+      expect(response.status).toBe(400)
+    }
+  })
+
+  test("a replay sends the latest notice of each session, doorbells kept in order", async () => {
+    const room = new LiveSyncRoom({}, {})
+    await pushEvent(room, statusChanged("alice", "ses_1", "busy", 1))
+    await pushEvent(room, sessionShareChanged("alice", "ses_shared"))
+    await pushEvent(room, statusChanged("alice", "ses_2", "busy", 2))
+    await pushEvent(room, statusChanged("alice", "ses_1", "idle", 3))
+
+    const opened = await openRoom(room, { subject: "alice", lastEventId: "0" })
+
+    expect(opened.frames.slice(1).map((frame) => [frame.id, (frame.data as { type: string; sessionId: string }).sessionId])).toEqual([
+      ["2", "ses_shared"],
+      ["3", "ses_2"],
+      ["4", "ses_1"],
+    ])
+  })
+
+  test("notices a reader missed after the room's ring rolled past its released cursor surface as a replay gap", async () => {
+    const room = new LiveSyncRoom({}, {})
+    await pushEvent(room, statusChanged("alice", "ses_0", "busy"))
+    const first = await openRoom(room, { subject: "alice" })
+    expect(first.cursorHeader).toBe("1")
+
+    for (let index = 1; index <= 300; index += 1) {
+      await pushEvent(room, statusChanged("alice", index <= 40 ? `ses_once_${index}` : `ses_${index % 5}`, "busy"))
+    }
+
+    const resumed = await openRoom(room, { subject: "alice", lastEventId: "1" })
+    expect(resumed.frames[1]).toMatchObject({ data: { type: "stream.replay-gap", lastEventId: "1" } })
+  })
+})

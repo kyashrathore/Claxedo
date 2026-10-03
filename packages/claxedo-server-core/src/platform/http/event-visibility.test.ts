@@ -18,6 +18,22 @@ describe("control-plane event visibility", () => {
     expect(eventVisibleTo({ mode: "unsigned-local" }, event)).toBe(true)
   })
 
+  test("a session status notice reaches only the reader it names, in any org; never another member", () => {
+    const event = {
+      type: "session.status.changed",
+      ownerUserId: "user_reader",
+      orgId: "org_a",
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
+      status: "busy",
+      awaitingInput: false,
+      ts: 1,
+    } as const
+    expect(eventVisibleTo({ mode: "signed", subject: "user_reader", orgId: "org_a" }, event)).toBe(true)
+    expect(eventVisibleTo({ mode: "signed", subject: "user_reader" }, event)).toBe(true)
+    expect(eventVisibleTo({ mode: "signed", subject: "user_member", orgId: "org_a" }, event)).toBe(false)
+  })
+
   test("a live plugin notice reaches no signed subscriber, only the unsigned machine's single user", () => {
     const event = { type: "plugins.changed", pluginId: "notes", status: "ready", hash: "a".repeat(16), ts: 1 } as const
     expect(eventVisibleTo({ mode: "unsigned-local" }, event)).toBe(true)

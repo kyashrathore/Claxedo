@@ -22,6 +22,9 @@ type SessionPageRow = {
   status: string | null
   status_at: number | null
   awaiting_input: number
+  background_agents: number
+  background_shells: number
+  background_other: number
   last_turn_status: string | null
   last_turn_completed_at: number | null
 }
@@ -61,6 +64,7 @@ export async function readD1SessionPage(database: D1Database, query: SessionPage
     .prepare(`
       select s.session_id, s.workspace_id, s.project_id, s.title, s.created_at, s.updated_at,
         s.last_human_turn_at, s.archived_at, s.status, s.status_at, s.awaiting_input,
+        s.background_agents, s.background_shells, s.background_other,
         s.last_turn_status, s.last_turn_completed_at
       from sessions s
       where ${where.join(" and ")}
@@ -70,6 +74,11 @@ export async function readD1SessionPage(database: D1Database, query: SessionPage
     .bind(...params, query.limit)
     .all<SessionPageRow>()
   return result.results.map(pageRowJson)
+}
+
+function backgroundWorkJson(row: SessionPageRow) {
+  const work = { agents: row.background_agents, shells: row.background_shells, other: row.background_other }
+  return work.agents + work.shells + work.other > 0 ? { background_work: work } : {}
 }
 
 function pageRowJson(row: SessionPageRow) {
@@ -84,7 +93,7 @@ function pageRowJson(row: SessionPageRow) {
     ...(row.archived_at === null ? {} : { archived_at: row.archived_at }),
     ...(row.status === null || row.status_at === null
       ? {}
-      : { status: row.status, status_at: row.status_at, awaiting_input: row.awaiting_input === 1 }),
+      : { status: row.status, status_at: row.status_at, awaiting_input: row.awaiting_input === 1, ...backgroundWorkJson(row) }),
     ...(row.last_turn_status === null || row.last_turn_completed_at === null
       ? {}
       : { last_turn_status: row.last_turn_status, last_turn_completed_at: row.last_turn_completed_at }),

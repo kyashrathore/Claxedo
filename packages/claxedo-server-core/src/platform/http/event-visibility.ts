@@ -59,6 +59,10 @@ export function eventVisibleTo(principal: EventScopePrincipal, event: ControlPla
       // ownerUserId is the *recipient* the identity provider subject stamped at grant/revoke
       // publish (session share fanout), not the granter.
       return event.ownerUserId === principal.subject
+    case "session.status.changed":
+      // ownerUserId is the recipient the ingest read from the session's owner
+      // and people shares; each reader gets its own copy.
+      return event.ownerUserId === principal.subject
     case "usage.quota.changed":
       // Carries no figures and names no account: the quota read it provokes
       // is what applies `operator_required`.
