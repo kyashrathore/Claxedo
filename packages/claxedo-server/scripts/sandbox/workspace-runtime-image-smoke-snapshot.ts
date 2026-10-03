@@ -4,13 +4,9 @@ const IMAGE_SMOKE_ACCOUNT_OWNER = "image-smoke-owner"
 export const IMAGE_SMOKE_PLACEHOLDER = "image-proof-placeholder"
 
 /**
- * The config push the image smoke applies before its native turn. The harness
- * owns Pi's models.json and rewrites it from every config apply, so the provider
- * reaches Pi the way a control-plane push does. Groq is the Pi provider whose
- * built-in wire protocol is chat completions.
- *
- * The smoke's session has no relay actor, so it spends the machine owner's
- * accounts.
+ * Mirrors the control plane's push to a cloud VM, which carries brokered
+ * account rows and never direct ones. The smoke's session has no relay actor,
+ * so it spends the machine owner's accounts.
  */
 export function imageSmokeRuntimeSnapshot(providerBaseUrl: string): RuntimeSnapshot {
   return {
@@ -18,7 +14,7 @@ export function imageSmokeRuntimeSnapshot(providerBaseUrl: string): RuntimeSnaps
     mcp: {},
     connections: [],
     commands: [],
-    defaultHarness: { kind: "native", harnessId: "pi" },
+    defaultHarness: { kind: "native", harnessId: "opencode" },
     auth: {
       machineOwnerUserId: IMAGE_SMOKE_ACCOUNT_OWNER,
       accounts: {

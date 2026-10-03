@@ -63,7 +63,7 @@ const runtime = spawn(process.argv[2] ? process.execPath : "workspace-runtime", 
     WORKSPACE_RUNTIME_DATA_DIR: path.join(directory, "data"),
     WORKSPACE_RUNTIME_STATE_DIR: path.join(directory, "state"),
     WORKSPACE_RUNTIME_STORE_DIR: path.join(directory, "store"),
-    WORKSPACE_RUNTIME_NATIVE_HARNESS: "pi",
+    WORKSPACE_RUNTIME_NATIVE_HARNESS: "opencode",
     WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM: management.publicKey.export({ type: "spki", format: "pem" }).toString(),
     WORKSPACE_RUNTIME_MANAGEMENT_ISSUER: managementIssuer,
     WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE: managementAudience,
@@ -100,11 +100,11 @@ try {
     headers: { "content-type": "application/json", "x-workspace-runtime-management-token": managementToken() },
     body: JSON.stringify(imageSmokeRuntimeSnapshot(`http://127.0.0.1:${provider.address().port}`)),
   })
-  const created = await json("/session", mutation("POST", { id, title: "Image smoke", model: { providerID: "pi", modelID: "groq/llama-3.1-8b-instant" } }))
+  const created = await json("/session", mutation("POST", { id, title: "Image smoke", model: { providerID: "groq", modelID: "llama-3.1-8b-instant" } }))
   assert.equal(created.id, id)
   assert.equal(created.directory, directory)
   const config = await json(`/session/${id}/config`)
-  assert.deepEqual(config.harness, { id: "pi", access: "native" })
+  assert.deepEqual(config.harness, { id: "opencode", access: "native" })
   await json(`/session/${id}`, mutation("PATCH", { title: "Updated image smoke" }))
   const inventory = await json("/session")
   assert.equal(inventory.find((session) => session.id === id)?.title, "Updated image smoke")
@@ -120,12 +120,15 @@ try {
     }))
     const decoder = new TextDecoder()
     let received = ""
-    // The runtime projects the harness's `finish` to `session.idle` on its stream.
-    while (!received.includes('"type":"session.idle"')) {
+    let terminal
+    while (!terminal) {
       const item = await reader.read()
       assert(!item.done, "workspace event stream ended before the turn finished")
       received += decoder.decode(item.value, { stream: true })
+      terminal = received.slice(0, received.lastIndexOf("\n")).split("\n").filter((line) => line.startsWith("data:")).map((line) => JSON.parse(line.slice(5)).payload)
+        .find((payload) => payload?.type === "session.idle" || payload?.type === "session.error")
     }
+    assert.equal(terminal.type, "session.idle", `turn failed: ${JSON.stringify(terminal.properties?.error)}`)
     assert(received.includes(id), "runtime events omitted the canonical session identity")
     const history = await json(`/session/${id}/message?snapshot=1`)
     const assistant = history.messages.filter((message) => message.info.role === "assistant")
@@ -133,7 +136,7 @@ try {
     assert.equal(await readFile(path.join(directory, "native-proof.txt"), "utf8"), marker)
     assert.equal(providerRequests.length, 2)
     assert.deepEqual(providerCalls.map((call) => call.path), ["/openai/v1/chat/completions", "/openai/v1/chat/completions"])
-    assert(providerCalls.every((call) => call.authorization === `Bearer ${IMAGE_SMOKE_PLACEHOLDER}`), "Pi did not send the projected placeholder")
+    assert(providerCalls.every((call) => call.authorization === `Bearer ${IMAGE_SMOKE_PLACEHOLDER}`), "a provider request did not carry the projected placeholder")
     assert(providerRequests[1].messages.some((message) => message.role === "tool"), "native tool result did not reach provider")
     assert(history.maxEventOrdinal > 0, "history omitted the committed event ordinal")
   } finally {

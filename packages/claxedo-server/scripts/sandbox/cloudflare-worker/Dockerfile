@@ -88,5 +88,6 @@ RUN cd /opt/workspace-runtime && \
     command -v workspace-runtime && \
     test "$(workspace-runtime --version)" = "$(cat /opt/workspace-runtime/workspace-runtime-version)"
 
-# Exercise the canonical session lifecycle without starting an agent server.
+# Exercise the canonical session lifecycle and one embedded OpenCode turn
+# against a loopback stand-in provider, the turn path a cloud VM serves.
 RUN node /opt/workspace-runtime/workspace-runtime-image-smoke.mjs
