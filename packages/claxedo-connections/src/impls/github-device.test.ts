@@ -68,7 +68,7 @@ describe("github device grant", () => {
     })
     expect(calls[0].url).toBe("https://github.com/login/device/code")
     expect(calls[0].body.get("client_id")).toBe("Iv1.client")
-    expect(calls[0].body.get("scope")).toBe("repo read:user")
+    expect(calls[0].body.has("scope")).toBe(false)
     // The token endpoints answer form-encoded unless JSON is asked for.
     expect(calls[0].accept).toBe("application/json")
   })
