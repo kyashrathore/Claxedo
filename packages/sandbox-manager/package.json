@@ -127,13 +127,6 @@
       "import": "./dist/image-name.mjs",
       "default": "./dist/image-name.mjs"
     },
-    "./lease-policy": {
-      "development": "./src/lease-policy.ts",
-      "bun": "./src/lease-policy.ts",
-      "types": "./dist/lease-policy.d.ts",
-      "import": "./dist/lease-policy.mjs",
-      "default": "./dist/lease-policy.mjs"
-    },
     "./lease-types": {
       "development": "./src/lease-types.ts",
       "bun": "./src/lease-types.ts",

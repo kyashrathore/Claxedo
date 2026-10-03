@@ -43,13 +43,6 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "lease",
-    module: "../../sandbox-manager/src/lease-policy.ts",
-    status: OwnershipStatus.Canonical,
-    owner: "SandboxManager lease policy",
-    tests: ["../../sandbox-manager/src/lease-policy.test.ts"],
-  },
-  {
-    area: "lease",
     module: "../../sandbox-manager/src/index.ts",
     status: OwnershipStatus.Canonical,
     owner: "SandboxManager",
