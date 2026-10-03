@@ -1,4 +1,4 @@
-import { createResource, createSignal, For, Show, type JSX } from "solid-js"
+import { createSignal, For, Show, type JSX } from "solid-js"
 import { useErrorCopy, useTranslator } from "@/i18n"
 import { createDraftPlacementResolver, NewSessionContextRow, type DraftCreation } from "@/projects"
 import { isTerminalSessionRequired, toAppError, useServer, type PlacementId } from "@/server"
@@ -50,20 +50,6 @@ function LauncherTile(props: {
   )
 }
 
-function useInstalledAgents(placementId: () => PlacementId) {
-  const server = useServer()
-  const [installed] = createResource(placementId, (id) =>
-    server.terminals.agents(id).catch((cause: unknown) => {
-      console.warn("Installed agent CLIs could not be read; every launcher shows", {
-        placementId: id,
-        error: toAppError(cause),
-      })
-      return undefined
-    }),
-  )
-  return installed
-}
-
 export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Element {
   const t = useTranslator(terminalDictionary)
   const errorCopy = useErrorCopy()
@@ -71,13 +57,11 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
   const server = useServer()
   const workbench = useWorkbench()
   const projectId = () => server.placements.byId(props.state.placementId)?.projectId
-  const installed = useInstalledAgents(() => props.state.placementId)
   const [starting, setStarting] = createSignal<string>()
   const [error, setError] = createSignal<string>()
   const [creating, setCreating] = createSignal<DraftCreation>()
   const draft = createDraftPlacementResolver()
-  const launchers = () =>
-    terminalLaunchers(t("terminal.creator.shell"), installed.state === "ready" ? installed() : undefined)
+  const launchers = () => terminalLaunchers(t("terminal.creator.shell"))
   const sessionMissing = () =>
     (creating() === "cloud" || server.terminals.requiresOpenSession(props.state.placementId))
     && (creating() !== undefined || runtime.openSession()?.placementId !== props.state.placementId)

@@ -1,23 +1,22 @@
 import { createSignal } from "solid-js"
 import { createFlow, runFlow } from "@/lib/flow"
 import { toAppError, type AppError } from "@/server"
-import { openable, type Created, type Openable } from "./model"
+import type { Created } from "./model"
 
 export type FinishSteps = {
-  readonly create: (created: Created | undefined) => Promise<Created>
-  readonly open: (created: Openable) => Promise<void>
+  readonly create: () => Promise<Created>
+  readonly open: (created: Created) => Promise<void>
   readonly describe: (error: unknown, created: Created | undefined) => string
 }
 
 function createResumableTarget(create: FinishSteps["create"]) {
   const [created, setCreated] = createSignal<Created>()
-  const reach = async (): Promise<Openable> => {
-    let current = created()
-    while (!openable(current)) {
-      current = await create(current)
-      setCreated(current)
-    }
-    return current
+  const reach = async (): Promise<Created> => {
+    const held = created()
+    if (held) return held
+    const made = await create()
+    setCreated(made)
+    return made
   }
   return { created, reach }
 }
@@ -28,7 +27,7 @@ function finishError(steps: FinishSteps, cause: unknown, created: Created | unde
 }
 
 export function createFinish(steps: FinishSteps) {
-  const flow = createFlow<"creating" | "opening", Openable>()
+  const flow = createFlow<"creating" | "opening", Created>()
   const target = createResumableTarget(steps.create)
   const reachAndOpen = async (step: (next: "opening") => void) => {
     const reached = await target.reach()

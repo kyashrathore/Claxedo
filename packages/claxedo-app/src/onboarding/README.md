@@ -16,11 +16,11 @@ Owns: the first run. Today's app's first-project canvas and its three-step wizar
 - Step 1 is `ProjectCreateForm` from `@/projects` with `submitLabel` Continue; its submit stores the draft and moves to step 2.
 - Step 2 is `AgentHarnessAccounts` from `@/accounts` for each harness, the same cards Settings → Models shows, and reports whether one login can run a turn. Machine logins are read only when this step first opens, because that read starts the harness CLIs.
 - Step 3 offers Just this machine (desktop, preselected), A cloud sandbox (only with `cloudAvailable`; the control plane provides the sandbox, so there is nothing to configure) and Another machine (the two CLI commands).
-- Finish (`place.ts`) on a desktop that keeps this machine or a connected machine creates the project (`createOrOpenFolderProject`: a folder that already is a project opens that project) and opens the draft of its folder placement at `/w/<placement>/session`. A desktop that picked the cloud creates a cloud workspace from the repository on the account's control plane (`server.cloud.create({ source })`), which derives the project. A hosted plane creates the project, then its first cloud workspace (`server.cloud.create({ projectId })`). Either cloud path opens the workspace's draft.
+- Finish (`place.ts`) on a desktop that keeps this machine or a connected machine creates the project (`createOrOpenFolderProject`: a folder that already is a project opens that project) and opens the draft of its folder placement at `/w/<placement>/session`. A cloud choice, on a signed desktop or on a hosted plane, creates the cloud workspace from the repository through the signed account (`server.cloud.create({ source })`), whose control plane derives the project, and opens the workspace's draft.
 
 ## Finish machine
 
-`createFinish` (`finish.ts`) runs Finish as an `@/lib/flow` flow, `creating` then `opening`, beside `created`: what Finish has made so far, a `project`, a hosted `cloudProject` still waiting for its workspace, or a `workspace` (`model.ts`). A failure keeps `created`, and the next click runs the flow again.
+`createFinish` (`finish.ts`) runs Finish as an `@/lib/flow` flow, `creating` then `opening`, beside `created`: what Finish has made so far, a `project` or a `workspace` (`model.ts`). A failure keeps `created`, and the next click runs the flow again.
 
 - A retry continues from `created`: it never creates what already exists, and with a project or workspace in hand it only opens it.
 - A failure after the project or workspace exists reads "Created successfully, but could not open it: …" and the button reads Open created project / Open created workspace.

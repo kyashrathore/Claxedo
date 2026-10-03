@@ -35,7 +35,7 @@ function useOnboardingFinish(placing: Accessor<Placing | undefined>) {
     return current
   }
   return createFinish({
-    create: (created) => createOnboardingTarget(server, t, held(), created),
+    create: () => createOnboardingTarget(server, t, held()),
     open: async (created) => navigate(draftPath(openedPlacement(t, created, (project) => primaryPlacement(server.placements.list(), project)?.id))),
     describe: (error, created) => finishFailure(t, error, created),
   })
@@ -49,7 +49,7 @@ export function createOnboardingWizard(facts: Accessor<ExecutionFacts>) {
   const choice = (): ExecutionChoice => chosen() ?? (facts().localExecution ? "local" : "cloud")
   const placing = () => {
     const held = draft()
-    return held && { draft: held, choice: choice(), localExecution: facts().localExecution }
+    return held && { draft: held, choice: choice() }
   }
   const finish = useOnboardingFinish(placing)
   const blocked = createMemo(() => executionBlock(choice(), facts(), draft()?.source))

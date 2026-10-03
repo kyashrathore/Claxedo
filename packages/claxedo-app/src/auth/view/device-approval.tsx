@@ -1,16 +1,15 @@
-import { useLocation } from "@solidjs/router"
+import { useLocation, useNavigate } from "@solidjs/router"
 import { createResource, createSignal, For, Show } from "solid-js"
 import { DEVICE_CODE_MISSING, readDeviceAuthorization, submitDeviceDecision, type DeviceAuthorizationRequest } from "../device-authorization"
 import { appUrl } from "../origins"
 import { useAuth } from "../provider"
 import "./auth.css"
 
-type Decision = "approved" | "denied"
-
 export function DeviceApprovalPage() {
   const location = useLocation()
+  const navigate = useNavigate()
   const auth = useAuth()
-  const [decided, setDecided] = createSignal<Decision>()
+  const [denied, setDenied] = createSignal(false)
   const [submitting, setSubmitting] = createSignal<"approve" | "deny">()
   const [decisionFailure, setDecisionFailure] = createSignal<string>()
   const userCode = () => new URLSearchParams(location.search).get("user_code")?.trim()
@@ -27,11 +26,13 @@ export function DeviceApprovalPage() {
         await auth.signIn({ redirectUrl: appUrl(location) })
         return undefined
       }
-      return readDeviceAuthorization(input.code)
+      const request = await readDeviceAuthorization(input.code)
+      if (request.status === "approved") navigate("/", { replace: true })
+      return request
     },
   )
 
-  const ready = () => grant.state === "ready" && grant() !== undefined
+  const ready = () => grant.state === "ready" && grant()?.status === "pending"
 
   const failureMessage = () => {
     const message = decisionFailure()
@@ -49,7 +50,8 @@ export function DeviceApprovalPage() {
     setDecisionFailure()
     try {
       await submitDeviceDecision({ request: loaded, approve })
-      setDecided(approve ? "approved" : "denied")
+      if (approve) navigate("/", { replace: true })
+      else setDenied(true)
     } catch (error) {
       setDecisionFailure(error instanceof Error ? error.message : "Device authorization failed")
     } finally {
@@ -62,7 +64,7 @@ export function DeviceApprovalPage() {
       <section class="auth-card">
         <p class="auth-kicker">Device sign-in</p>
         <Show
-          when={decided()}
+          when={denied() || grant()?.status === "denied"}
           fallback={
             <>
               <h1 class="auth-title">Connect this device?</h1>
@@ -93,12 +95,8 @@ export function DeviceApprovalPage() {
             </>
           }
         >
-          {(outcome) => (
-            <>
-              <h1 class="auth-title">{outcome() === "approved" ? "Device connected" : "Device denied"}</h1>
-              <p class="auth-subtitle">You can close this page and return to your terminal.</p>
-            </>
-          )}
+          <h1 class="auth-title">Device denied</h1>
+          <p class="auth-subtitle">You can close this page and return to your terminal.</p>
         </Show>
       </section>
     </main>

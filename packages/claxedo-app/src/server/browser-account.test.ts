@@ -25,6 +25,7 @@ function worker(options: { unauthorized?: boolean; malformed?: boolean; identity
     if (url.pathname === "/api/cp/events") {
       return new Response(new ReadableStream({ start(controller) { init?.signal?.addEventListener("abort", () => controller.close(), { once: true }) } }))
     }
+    if (url.pathname === "/api/workspace/create") return Response.json({ workspaceId: "ws_cloud", projectId: "prj_app", directory: "workspace:ws_cloud" })
     if (url.pathname === "/api/workspace") {
       if (options.identityUnavailable) return Response.json({ error: { code: "auth_verifier_unavailable", message: "Application identity mapping is unavailable", retryable: false } }, { status: 503 })
       if (options.unauthorized) return Response.json({ error: { code: "session_expired", message: "Sign in again" } }, { status: 401 })
@@ -101,3 +102,19 @@ for (const action of ["create", "update", "remove", "reclone"] as const) {
     } finally { server.dispose() }
   })
 }
+
+test("a signed browser creates a cloud workspace from a connected repository through its own session, with no project created first", async () => {
+  const calls = worker()
+  await createRoot(async (dispose) => {
+    const server = createServer({ serverUrl: "https://worker.test", cookies: true })
+    try {
+      await server.ready
+      const workspace = await server.cloud.create({ source: { kind: "connectedRepository", connectionId: "github_1", fullName: "owner/app" } })
+      expect(String(workspace.id)).toBe("ws_cloud")
+      const request = calls.find((call) => call.path === "/api/workspace/create")
+      expect(request?.init?.credentials).toBe("include")
+      expect(JSON.parse(String(request?.init?.body))).toEqual({ connectionId: "github_1", repo: { fullName: "owner/app" } })
+      expect(calls.some((call) => call.path.startsWith("/api/claxedo/projects"))).toBe(false)
+    } finally { server.dispose(); dispose() }
+  })
+})

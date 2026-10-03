@@ -129,7 +129,6 @@ export type TerminalsApi = {
   readonly update: (placementId: PlacementId, terminalId: TerminalId, input: TerminalUpdateInput) => Promise<void>
   readonly remove: (placementId: PlacementId, terminalId: TerminalId) => Promise<void>
   readonly presence: (placementId: PlacementId, terminalId: TerminalId) => Promise<TerminalPresence>
-  readonly agents: (placementId: PlacementId) => Promise<readonly string[]>
   readonly agentStatus: (placementId: PlacementId, terminalId: TerminalId) => Promise<TerminalAgentStatus | undefined>
   readonly attach: (input: TerminalAttachInput) => Promise<TerminalStream>
 }
