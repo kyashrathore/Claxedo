@@ -11,8 +11,6 @@ import {
   type WorkspaceRelayDurableObjectConnectWebSocket,
   workspaceRelayDurableObjectRoomName,
   workspaceRelayDurableObjectWorkspaceId,
-  DEFAULT_RELAY_LOCATION_HINT,
-  RELAY_LOCATION_HINTS,
   type WorkspaceRelaySocketAttachment,
   type WorkspaceRelayDurableObjectNamespace,
 } from "./cloudflare"
@@ -20,8 +18,9 @@ import {
   createCachedHostGenerationClient,
   type HostGenerationLookup,
   type HostGenerationResult,
-  type WorkspaceRelayTarget,
 } from "./server"
+import { DEFAULT_RELAY_LOCATION_HINT, RELAY_LOCATION_HINTS } from "./relay-location"
+import type { WorkspaceRelayTarget } from "./relay-target"
 import { signUnfencedHostTunnelToken } from "./test-support/unfenced-host-token"
 
 /**

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { readFile } from "node:fs/promises"
-import { DEFAULT_RELAY_LOCATION_HINT, RELAY_LOCATION_HINTS, relayLocationHint } from "./cloudflare"
+import { DEFAULT_RELAY_LOCATION_HINT, RELAY_LOCATION_HINTS, relayLocationHint } from "./relay-location"
 
 /**
  * Guards the two relay settings whose absence is SILENT.

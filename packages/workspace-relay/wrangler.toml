@@ -77,6 +77,13 @@ CLAXEDO_RELAY_LOCATION_HINT = "apac"
 name = "WORKSPACE_RELAY_ROOM"
 class_name = "WorkspaceRelayRoom"
 
+# Each top-level Pi session on a cloud workspace runs in its own SessionDO in
+# the session-host Worker; the relay forwards a `durable-object` target to it.
+[[durable_objects.bindings]]
+name = "SESSION_HOST"
+class_name = "SessionDO"
+script_name = "claxedo-session-host"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["WorkspaceRelayRoom"]
@@ -96,3 +103,8 @@ CLAXEDO_RELAY_LOCATION_HINT = "apac"
 [[env.staging.durable_objects.bindings]]
 name = "WORKSPACE_RELAY_ROOM"
 class_name = "WorkspaceRelayRoom"
+
+[[env.staging.durable_objects.bindings]]
+name = "SESSION_HOST"
+class_name = "SessionDO"
+script_name = "claxedo-session-host-staging"

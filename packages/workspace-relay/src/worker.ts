@@ -11,14 +11,15 @@ import {
   type WorkspaceRelayDurableObjectRoomOptions,
   type WorkspaceRelayDurableObjectSocket,
 } from "./cloudflare"
-import type { RuntimeAccessTokenActiveResult, WorkspaceRelayTarget } from "./server"
+import type { RuntimeAccessTokenActiveResult } from "./server"
+import { parseWorkspaceRelayTarget, type WorkspaceRelayTarget } from "./relay-target"
+import { isSessionHostNamespace } from "./session-host-forwarding"
 import {
   createCachedHostGenerationClient,
   createCachedRevocationClient,
   createCoalescedTargetClient,
   createHostGenerationResolverLookup,
   parseRuntimeAccessTokenActiveResult,
-  parseWorkspaceRelayTarget,
   type HostGenerationLookup,
   type RevocationLookup,
   type TargetLookup,
@@ -290,6 +291,7 @@ export class WorkspaceRelayRoom {
         ...options,
         ...(this.hibernation() ? { hibernation: this.hibernation() } : {}),
         ...(this.alarms() ? { alarms: this.alarms() } : {}),
+        ...(isSessionHostNamespace(this.env.SESSION_HOST) ? { sessionHost: this.env.SESSION_HOST } : {}),
       }))
       .catch((err: unknown) => {
         this.loading = undefined
