@@ -70,7 +70,7 @@ await manager.stop("workspace-1")
 
 Swap `createDockerSandboxDriver` for `createModalSandboxDriver`,
 `createVercelSandboxDriver`,
-`createCloudflareSandboxDriver`, or `createBoxSandboxDriver` (all under
+`createCloudflareSandboxDriver`, or `createBoatSandboxDriver` (all under
 `@claxedo/sandbox-manager/drivers/*`) to place on a hosted provider instead —
 see [`docs/architecture.md`](docs/architecture.md) for the full driver
 comparison and each provider's required options. Swap `createMemoryLeaseStore`
@@ -152,7 +152,7 @@ and the difference matters:
   manager **withholds** the policy and provisions anyway — the sandbox runs
   with unrestricted egress.
 
-Withholding rather than passing is deliberate: `docker`, `modal` and `box`
+Withholding rather than passing is deliberate: `docker`, `modal` and `boat`
 throw when handed a restricted policy, and `cloudflare` and the fetch
 bridge accept one and silently ignore it. Withholding at the manager means the
 throwing drivers never see a policy (their throws stay as their own last line of

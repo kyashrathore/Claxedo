@@ -99,12 +99,13 @@ describe("workspace host service relay auth", () => {
       ["/session/ses_1/prompt_async", "POST"],
       ["/api/wr/events?sessionID=ses_1", "GET"],
       ["/question/question_1/reply", "POST"],
+      ["/api/wr/execution-env/fs", "POST"],
     ] as const) {
       const allowed = await call(path, method)
       expect(allowed.status, `${method} ${path}`).toBe(200)
       await expect(allowed.json()).resolves.toEqual({ sessionScope: "ses_1" })
     }
-    for (const path of ["/api/wr/health", "/api/wr/pty", "/api/wr/git/status", "/session/ses_2", "/api/wr/events", "/file?path=a"]) {
+    for (const path of ["/api/wr/health", "/api/wr/pty", "/api/wr/git/status", "/session/ses_2", "/api/wr/events", "/file?path=a", "/api/wr/execution-env"]) {
       const refused = await call(path)
       expect(refused.status, path).toBe(403)
       await expect(refused.json()).resolves.toEqual({
@@ -854,7 +855,7 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
     })
   })
 
-  test("rejects injected TokenVerifier claims whose backing names no placement", async () => {
+  test("rejects injected TokenVerifier claims whose backing names no placement or whose purpose is unknown", async () => {
     const { createStaticTokenVerifier } = await import("@claxedo/workspace-relay-protocol")
     const base = {
       iss: "workspace-relay",
@@ -884,6 +885,14 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
           scopes: [],
           claims: { ...base, access: "cloud", backing: "cloud-vm" } as unknown as RelayHostVerifierClaims,
         },
+        "static-rht-unknown-purpose": {
+          scopes: [],
+          claims: { ...base, backing: "cloud-vm", purpose: "anything" } as unknown as RelayHostVerifierClaims,
+        },
+        "static-rht-turn-execution": {
+          scopes: [],
+          claims: { ...base, backing: "cloud-vm", purpose: "turn-execution" } as unknown as RelayHostVerifierClaims,
+        },
       },
     })
     const app2 = new Hono()
@@ -895,7 +904,11 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
     }))
     app2.get("/api/wr/health", (c) => c.json({ ok: true }))
 
-    for (const token of ["static-rht-retired-backing", "static-rht-carries-access"]) {
+    const purposeful = await app2.request("http://localhost/api/wr/health", {
+      headers: { authorization: "Bearer static-rht-turn-execution", "x-workspace-id": "ws_static", "x-forwarded-by": "workspace-relay" },
+    })
+    expect(purposeful.status).toBe(200)
+    for (const token of ["static-rht-retired-backing", "static-rht-carries-access", "static-rht-unknown-purpose"]) {
       const res = await app2.request("http://localhost/api/wr/health", {
         headers: {
           authorization: `Bearer ${token}`,

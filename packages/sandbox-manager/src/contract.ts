@@ -109,7 +109,7 @@ export type SandboxDriverMetadata = {
    * - `"hosts-and-cidrs"` — the provider filters by name AND by address.
    * - `"hosts"` — the provider filters by hostname only (Vercel firewall).
    * - `"none"` — the driver cannot express an egress allowlist. This covers
-   *   BOTH drivers that throw when handed a restricted policy (docker, box,
+   *   BOTH drivers that throw when handed a restricted policy (docker, boat,
    *   and modal for host policy) AND — more dangerously — drivers that
    *   silently ignore `net` and run wide open (cloudflare, the fetch bridge).
    *   Modal is `"none"` even though it can cut the network entirely: a total
@@ -137,7 +137,7 @@ export type SandboxEgressControl = "none" | "hosts" | "hosts-and-cidrs"
  *    (absent / `allow-all`), which is nothing to enforce.
  *  - `"withhold"` — the driver declares `egressControl: "none"`, so there is no
  *    containment to be had. The policy is NOT handed down: half the `"none"`
- *    drivers throw on a restricted policy (docker, modal, box) and the
+ *    drivers throw on a restricted policy (docker, modal, boat) and the
  *    other half silently drop it (cloudflare, the fetch bridge). Withholding at
  *    the manager means the throwing drivers never see one — their throws stay
  *    in place as their own last line of defence — and the silently-dropping

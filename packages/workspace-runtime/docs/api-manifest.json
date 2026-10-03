@@ -69,6 +69,7 @@
     "/api/wr/diff",
     "/api/wr/git",
     "/api/wr/hook",
-    "/api/wr/worktrees"
+    "/api/wr/worktrees",
+    "/api/wr/execution-env"
   ]
 }

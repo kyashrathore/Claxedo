@@ -30,7 +30,7 @@ everything else.
 | `vercel` | `hosts` | **Enforced** | The driver sends a hostname allow list, or `deny-all`. SDK subnet rules exist but the driver does not translate `net.cidrs`. |
 | `cloudflare` | `none` | **UNRESTRICTED** | Native outbound handlers inject credentials for registered hosts. They do not restrict unrelated destinations; the driver does not apply a network allowlist. |
 | `modal` | `none` | **UNRESTRICTED** | The driver implements `blockNetwork` only and rejects host policies. Modal's domain allowlist and alpha sidecar are not wired. |
-| `box` | `none` | **UNRESTRICTED** | No egress allowlist. The driver throws if handed one. |
+| `boat` | `none` | **UNRESTRICTED** | No egress allowlist. The driver throws if handed one. |
 | `docker` | `none` | **UNRESTRICTED** | Local Docker placement, no per-sandbox network policy wired. The driver throws if handed one. |
 | `fetch` | `none` | **UNRESTRICTED** | The fetch bridge forwards a provisioning request to an external HTTP driver; the wire format carries no egress policy, so whatever contains that sandbox (if anything) is outside Claxedo's knowledge. |
 
@@ -43,7 +43,7 @@ not. The current secret delivery declarations are:
 | `vercel` | `native` |
 | `cloudflare` | `native` |
 | `modal` | `none` |
-| `box` | `none` |
+| `boat` | `none` |
 | `docker` | `none` |
 
 These declarations describe implemented delivery paths, not live acceptance

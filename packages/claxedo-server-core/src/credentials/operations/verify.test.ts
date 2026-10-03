@@ -678,22 +678,22 @@ describe("verifyCredential — sandbox providers", () => {
     const transports = transport({})
 
     const outcome = await verifyCredential(
-      credential({ provider_id: "box", kind: "sandbox_driver" }),
-      JSON.stringify({ api_key: "box_key" }),
+      credential({ provider_id: "boat", kind: "sandbox_driver" }),
+      JSON.stringify({ api_key: "boat_key" }),
       { fetch: transports.stub, now: () => NOW },
     )
 
     expect(outcome).toEqual({ health: "ok" })
-    expect(transports.probeCalls()[0].url).toBe("https://ascii.dev/api/box/v1/me")
-    expect(transports.probeCalls()[0].headers.Authorization).toBe("Bearer box_key")
+    expect(transports.probeCalls()[0].url).toBe("https://boat.dev/api/v1/me")
+    expect(transports.probeCalls()[0].headers.Authorization).toBe("Bearer boat_key")
   })
 
   test("a rejected sandbox provider key is auth_failed, not an error", async () => {
     const transports = transport({ probe: { ok: false, status: 401, body: "unauthorized" } })
 
     const outcome = await verifyCredential(
-      credential({ provider_id: "box", kind: "sandbox_driver" }),
-      JSON.stringify({ api_key: "box_revoked" }),
+      credential({ provider_id: "boat", kind: "sandbox_driver" }),
+      JSON.stringify({ api_key: "boat_revoked" }),
       { fetch: transports.stub, now: () => NOW },
     )
 
@@ -702,9 +702,9 @@ describe("verifyCredential — sandbox providers", () => {
 
   test("a bare or non-object sandbox secret is refused without a provider request", async () => {
     const transports = transport({})
-    for (const secret of ["box_key", '"box_key"', "[]", "null"]) {
+    for (const secret of ["boat_key", '"boat_key"', "[]", "null"]) {
       await expect(verifyCredential(
-        credential({ provider_id: "box", kind: "sandbox_driver" }),
+        credential({ provider_id: "boat", kind: "sandbox_driver" }),
         secret,
         { fetch: transports.stub, now: () => NOW },
       )).rejects.toThrow("Sandbox provider credential has an unsupported shape")

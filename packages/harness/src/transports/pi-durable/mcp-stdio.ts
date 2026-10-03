@@ -4,6 +4,19 @@ import { deadlineAfter, type HarnessServices, type OwnedProcess, type ProjectedM
 
 type StdioServer = Extract<ProjectedMcpServer, { kind: "stdio" }>
 
+const MCP_INHERITED_ENV = process.platform === "win32"
+  ? ["APPDATA", "HOMEDRIVE", "HOMEPATH", "LOCALAPPDATA", "PATH", "PROCESSOR_ARCHITECTURE", "SYSTEMDRIVE", "SYSTEMROOT", "TEMP", "USERNAME", "USERPROFILE"]
+  : ["HOME", "LOGNAME", "PATH", "SHELL", "TERM", "USER"]
+const MAX_MESSAGE_BYTES = 16 * 1024 * 1024
+
+export function mcpStdioBaseEnv(env: Readonly<Record<string, string | undefined>>): Record<string, string> {
+  return Object.fromEntries(MCP_INHERITED_ENV.flatMap((name) => env[name] === undefined ? [] : [[name, env[name]]]))
+}
+
+export function parseMcpMessage(text: string): JsonRpcMessage {
+  return parseJsonRpcMessage(JSON.parse(text))
+}
+
 export class OwnedStdioMcpTransport implements McpTransport {
   private owned: OwnedProcess | undefined
   private buffer = ""
@@ -12,7 +25,7 @@ export class OwnedStdioMcpTransport implements McpTransport {
   private readonly closes = new Set<() => void>()
 
   constructor(private readonly server: StdioServer, private readonly host: { cwd: string; sessionId: string; baseEnv: Readonly<Record<string, string>>;
-    services: HarnessServices }) {}
+    services: Pick<HarnessServices, "spawn" | "clock"> }) {}
 
   async start(): Promise<void> {
     const owned = await this.host.services.spawn({ file: this.server.command, args: [...this.server.args ?? []],
@@ -44,6 +57,12 @@ export class OwnedStdioMcpTransport implements McpTransport {
 
   private read(chunk: string): void {
     this.buffer += chunk
+    if (this.buffer.length > MAX_MESSAGE_BYTES && !this.buffer.includes("\n")) {
+      this.buffer = ""
+      for (const listener of this.errors) listener(new Error(`MCP server ${this.server.name} wrote a message over ${MAX_MESSAGE_BYTES} bytes`))
+      void this.close()
+      return
+    }
     for (let newline = this.buffer.indexOf("\n"); newline >= 0; newline = this.buffer.indexOf("\n")) {
       const line = this.buffer.slice(0, newline).trim()
       this.buffer = this.buffer.slice(newline + 1)
@@ -53,7 +72,7 @@ export class OwnedStdioMcpTransport implements McpTransport {
 
   private deliver(line: string): void {
     try {
-      const message = parseJsonRpcMessage(JSON.parse(line))
+      const message = parseMcpMessage(line)
       for (const listener of this.messages) listener(message)
     } catch (error) {
       const failure = new Error(`MCP server ${this.server.name} wrote an invalid message: ${errorMessage(error)}`)

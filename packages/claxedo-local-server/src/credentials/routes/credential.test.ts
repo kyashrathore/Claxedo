@@ -821,7 +821,7 @@ describe("credential routes", () => {
     const put = await app.request("http://localhost/", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider_id: "box", kind: "sandbox_driver", source: "managed", secret: "box-key" }),
+      body: JSON.stringify({ provider_id: "boat", kind: "sandbox_driver", source: "managed", secret: "boat-key" }),
     })
     expect(put.status).toBe(400)
     expect(registry.putCredential).not.toHaveBeenCalled()

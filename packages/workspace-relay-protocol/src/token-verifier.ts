@@ -35,6 +35,7 @@ export type RuntimeAccessVerifierClaims = Omit<TokenVerifierBaseClaims, "sub"> &
   /** The whole workspace, or the one session `session_id` names. */
   scope: "workspace" | "session"
   session_id?: string
+  purpose?: "turn-execution"
   principal_kind: "user" | "service"
   actor_id: string
   user_id?: string
@@ -49,6 +50,7 @@ export type RelayHostVerifierClaims = Omit<TokenVerifierBaseClaims, "sub"> & {
   role: "viewer" | "editor" | "admin" | "owner"
   scope: "workspace" | "session"
   session_id?: string
+  purpose?: "turn-execution"
   principal_kind: "user" | "service"
   actor_id: string
   user_id?: string

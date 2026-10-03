@@ -90,7 +90,7 @@ async function harness(
     relayHost,
     forwarded,
     auditEvents,
-    token: (role: "viewer" | "editor" | "admin" | "owner" = "editor", sessionId?: string) => mintRuntimeAccessToken({
+    token: (role: "viewer" | "editor" | "admin" | "owner" = "editor", sessionId?: string, purpose?: "turn-execution") => mintRuntimeAccessToken({
       principalKind: "user",
       actorId: "actor_1",
       actorKind: "human",
@@ -99,6 +99,7 @@ async function harness(
       hostId: "host_1",
       role,
       ...(sessionId ? { sessionId } : {}),
+      ...(purpose ? { purpose } : {}),
     }, runtime.privateKey, "EdDSA"),
   }
 }
@@ -650,6 +651,9 @@ describe("workspace relay server", () => {
       ["/session/ses_1/permissions/perm_1", "POST"],
       ["/api/wr/events?sessionID=ses_1", "GET"],
       ["/question/question_1/reply", "POST"],
+      ["/api/wr/execution-env/fs", "POST"],
+      ["/api/wr/execution-env/exec", "POST"],
+      ["/api/wr/execution-env/mcp/tools", "GET"],
     ] as const) {
       expect((await call(path, method)).status, `${method} ${path}`).toBe(200)
     }
@@ -663,6 +667,11 @@ describe("workspace relay server", () => {
       "/api/wr/pty",
       "/session/ses_1/..%2F..%2Fapi%2Fwr%2Fpty",
       "/question",
+      "/api/wr/execution-env",
+      "/api/wr/execution-env/fs/x",
+      "/api/wr/execution-env/mcp",
+      "/api/wr/execution-env/mcp/tools/x",
+      "/api/wr/execution-env/pty",
     ]) {
       expect((await call(path)).status, path).toBe(403)
     }
@@ -673,7 +682,7 @@ describe("workspace relay server", () => {
         message: "Runtime Access Token scope does not reach this relay request",
       },
     })
-    expect(relay.forwarded).toHaveLength(5)
+    expect(relay.forwarded).toHaveLength(8)
     expect(relay.auditEvents).toContainEqual(expect.objectContaining({
       action: "relay.request.denied",
       reason: "relay_scope_denied",
@@ -721,6 +730,23 @@ describe("workspace relay server", () => {
     })
     const forwarded = relay.forwarded[0].request.headers.get("authorization")?.replace(/^Bearer /, "")
     expect(decodeJwt(forwarded!)).toMatchObject({ session_id: "ses_1", role: "viewer" })
+    expect(decodeJwt(forwarded!).purpose).toBeUndefined()
+  })
+
+  test("the Relay Host Token carries the turn-execution purpose the Runtime Access Token named", async () => {
+    const relay = await harness({
+      fetch: ((url, init) => {
+        relay.forwarded.push({ url: fetchUrl(url), request: new Request(url, init) })
+        return Promise.resolve(new Response("ok"))
+      }) as typeof fetch,
+    })
+    const response = await relay.room.request("http://relay.test/workspaces/ws_1/api/wr/execution-env/fs", {
+      method: "POST", headers: { authorization: `Bearer ${await relay.token("editor", "ses_1", "turn-execution")}` },
+    })
+    expect(response.status).toBe(200)
+    const forwarded = relay.forwarded[0].request.headers.get("authorization")?.replace(/^Bearer /, "")
+    await expect(verifyRelayHostToken(forwarded!, relay.relayHost.publicKey, { workspaceId: "ws_1", hostId: "host_1" }))
+      .resolves.toMatchObject({ session_id: "ses_1", purpose: "turn-execution" })
   })
 
   test("allows editor admin and owner relay write requests", async () => {

@@ -207,7 +207,7 @@ describe("local composition — sandbox driver settings", () => {
       "modal",
       "vercel",
       "cloudflare",
-      "box",
+      "boat",
     ])
     expect(body.drivers?.every((driver) => driver.label && driver.fields.length > 0)).toBe(true)
   })

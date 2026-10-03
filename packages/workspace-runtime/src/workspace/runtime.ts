@@ -43,6 +43,7 @@ import { workspaceRuntimeStoreDir } from "../env"
 import { assertWorkspaceRuntimeExposure } from "../exposure"
 import { firstPartyMcpServerFor } from "../first-party-mcp/index"
 import { createHarnessServices } from "../harness-services"
+import { createSpawnService } from "../spawn-service"
 import { defaultHarnessStateRoot, harnessCompositionOptions, sweepIdleHarnessHomes } from "../host/composition"
 import { createElicitationPatternEvaluator } from "../host/pattern-evaluator"
 import { Log } from "../log"
@@ -208,6 +209,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     retiredTransports.delete(transports)
   }
   const patternEvaluator = createElicitationPatternEvaluator()
+  const harnessLog: HarnessServices["log"] = { debug: (message, fields) => log.info(message, fields), info: (message, fields) => log.info(message, fields),
+    warn: (message, fields) => log.warn(message, fields), error: (message, fields) => log.error(message, fields) }
+  const harnessClock: HarnessServices["clock"] = { now: () => Date.now(), setTimeout: (callback, ms) => setTimeout(callback, ms), clearTimeout: clearOpaqueTimer }
 
   function harnessEngine(): Engine {
     if (engine) return engine
@@ -216,9 +220,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     const services = createHarnessServices({
       ownership: launchOwnership(),
       ...(options.firstPartyMcpLaunch ? { firstPartyMcpLaunch: options.firstPartyMcpLaunch } : {}),
-      log: { debug: (message, fields) => log.info(message, fields), info: (message, fields) => log.info(message, fields),
-        warn: (message, fields) => log.warn(message, fields), error: (message, fields) => log.error(message, fields) },
-      clock: { now: () => Date.now(), setTimeout: (callback, ms) => setTimeout(callback, ms), clearTimeout: clearOpaqueTimer },
+      log: harnessLog,
+      clock: harnessClock,
       patternEvaluator,
       healthChanged: () => healthFeed.changed(),
     })
@@ -566,6 +569,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     firstPartyMcpServer(sessionId) {
       return options.firstPartyMcpLaunch ? firstPartyMcpServerFor(options.firstPartyMcpLaunch, sessionId) : undefined
     },
+    shellServices: { spawn: (command, spawnOptions) => createSpawnService(launchOwnership())(command, spawnOptions), clock: harnessClock, log: harnessLog },
+    piProjection: () => launch.projection({ id: "pi", access: "native" }),
     apply,
     detail() {
       const health = runnerHealth()
