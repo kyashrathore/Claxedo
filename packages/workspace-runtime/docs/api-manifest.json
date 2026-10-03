@@ -4,6 +4,7 @@
     ".",
     "./client",
     "./config",
+    "./execution-env",
     "./exposure",
     "./file-content",
     "./file-index",

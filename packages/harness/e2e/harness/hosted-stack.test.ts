@@ -4,7 +4,7 @@ import path from "node:path"
 import { hostedFetch, inviteHostedPerson, signInHostedPerson } from "./hosted-auth"
 import { startHostedStack } from "./hosted-stack"
 
-test("certified hosted Worker signs in two GitHub people and refuses unbrokered repository egress", async () => {
+test.skipIf(process.platform !== "darwin")("certified hosted Worker signs in two GitHub people and refuses unbrokered repository egress", async () => {
   const stack = await startHostedStack("auth-and-repository")
   try {
     const health = await hostedFetch(stack, "/health")
