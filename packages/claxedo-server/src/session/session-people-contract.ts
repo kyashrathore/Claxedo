@@ -7,7 +7,6 @@ import type {
   SessionShareLevel,
   WorkspaceAuthority,
 } from "@claxedo/server-core/platform/auth/authority"
-import { asRecord } from "@claxedo/server-core/platform/json/index"
 
 /**
  * Injected sink for `session.share.changed` doorbells.
@@ -36,126 +35,50 @@ export function subjectFromIdentity(value: string | undefined): string | undefin
   return undefined
 }
 
-function memberSubjects(rows: unknown): string[] {
-  if (!Array.isArray(rows)) return []
-  const subjects: string[] = []
-  for (const row of rows) {
-    const record = asRecord(row)
-    if (!record) continue
-    const subject =
-      subjectFromIdentity(typeof record.provider_subject === "string" ? record.provider_subject : undefined)
-      ?? subjectFromIdentity(typeof record.token_identifier === "string" ? record.token_identifier : undefined)
-      ?? subjectFromIdentity(typeof record.subject === "string" ? record.subject : undefined)
-    if (subject) subjects.push(subject)
-  }
-  return subjects
-}
-
-function teamIds(rows: unknown): string[] {
-  if (!Array.isArray(rows)) return []
-  const ids: string[] = []
-  for (const row of rows) {
-    const record = asRecord(row)
-    if (!record) continue
-    const id = typeof record.team_id === "string"
-      ? record.team_id
-      : typeof record.public_id === "string"
-        ? record.public_id
-        : undefined
-    if (id) ids.push(id)
-  }
-  return ids
-}
-
 /**
- * Expand a grant/revoke target into recipient subjects for doorbell fanout.
+ * The person a grant or revoke names, who is the one its doorbell rings for.
+ * A team or organization target is not expanded into its members: only a
+ * share to a person reaches a person.
  */
-export async function resolveSessionShareRecipientSubjects(input: {
-  auth: SignedControlPlaneAuth
-  authority: Pick<WorkspaceAuthority, "listTeamMembers" | "listTeams" | "resolveOrgId">
-  target: SessionShareFanoutTarget
-  /** Granter subject — omitted from the recipient set. */
-  excludeSubject?: string
-}): Promise<string[]> {
-  const subjects = new Set<string>()
-  const { target, authority, auth } = input
-
-  const direct =
-    subjectFromIdentity(target.grantedToSubject)
+export function sessionShareRecipientSubject(target: SessionShareFanoutTarget, granterSubject: string): string | undefined {
+  const subject = subjectFromIdentity(target.grantedToSubject)
     ?? subjectFromIdentity(target.grantedToTokenIdentifier)
     ?? subjectFromIdentity(target.grantedToUserId)
-  if (direct) subjects.add(direct)
-
-  const teamId = target.grantedToTeamPublicId ?? target.grantedToTeamId
-  if (teamId && authority.listTeamMembers) {
-    for (const subject of memberSubjects(await authority.listTeamMembers(auth, { teamId }))) {
-      subjects.add(subject)
-    }
-  }
-
-  const orgId = target.grantedToOrgId
-  if (orgId && authority.listTeams && authority.listTeamMembers) {
-    // Best-effort: expand via team memberships in the org (collaborative orgs
-    // place members on the default team). Full org_memberships listing is not
-    // on the authority surface yet.
-    const teams = await authority.listTeams(auth, { orgId })
-    for (const id of teamIds(teams)) {
-      for (const subject of memberSubjects(await authority.listTeamMembers(auth, { teamId: id }))) {
-        subjects.add(subject)
-      }
-    }
-  }
-
-  if (input.excludeSubject) subjects.delete(input.excludeSubject)
-  return [...subjects]
+  return subject === granterSubject ? undefined : subject
 }
 
 /**
- * After a successful grant/revoke, publish one doorbell per recipient subject.
+ * After a successful grant/revoke, ring the doorbell of the person it names.
  * Fail-soft: share mutation must not fail if the sink throws.
  */
 export async function notifySessionShareChanged(input: {
   auth: SignedControlPlaneAuth
-  authority: Pick<WorkspaceAuthority, "listTeamMembers" | "listTeams" | "resolveOrgId">
+  authority: Pick<WorkspaceAuthority, "resolveOrgId">
   sessionId: string
   workspaceId: string
   target: SessionShareFanoutTarget
   sink?: SessionShareChangedSink
 } & ({ phase: "granted"; level: SessionShareLevel } | { phase: "revoked" })): Promise<void> {
   if (!input.sink) return undefined
+  const ownerUserId = sessionShareRecipientSubject(input.target, input.auth.user.subject)
+  if (!ownerUserId) return undefined
   let orgId: string | undefined
   try {
     orgId = await input.authority.resolveOrgId(input.auth)
   } catch {
     // Room routing hint only — continue without orgId (owner rooms still work).
   }
-  let recipients: string[]
   try {
-    recipients = await resolveSessionShareRecipientSubjects({
-      auth: input.auth,
-      authority: input.authority,
-      target: input.target,
-      excludeSubject: input.auth.user.subject,
+    await input.sink({
+      type: "session.share.changed",
+      ...(input.phase === "granted" ? { phase: input.phase, level: input.level } : { phase: input.phase }),
+      ownerUserId,
+      sessionId: input.sessionId,
+      workspaceId: input.workspaceId,
+      ...(orgId ? { orgId } : {}),
+      ts: Date.now(),
     })
   } catch (error) {
-    console.error("[claxedo-server] WARN  session.share.changed recipient resolve failed:", error)
-    return undefined
-  }
-  if (recipients.length === 0) return undefined
-  const ts = Date.now()
-  for (const ownerUserId of recipients) {
-    try {
-      await input.sink({
-        type: "session.share.changed",
-        ...(input.phase === "granted" ? { phase: input.phase, level: input.level } : { phase: input.phase }),
-        ownerUserId,
-        sessionId: input.sessionId,
-        workspaceId: input.workspaceId,
-        ...(orgId ? { orgId } : {}),
-        ts,
-      })
-    } catch (error) {
-      console.error("[claxedo-server] WARN  session.share.changed publish failed:", error)
-    }
+    console.error("[claxedo-server] WARN  session.share.changed publish failed:", error)
   }
 }

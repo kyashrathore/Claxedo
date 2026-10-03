@@ -94,45 +94,21 @@ describe("People route contract", () => {
   }
 })
 
-const fanoutCases: Array<{
-  name: string
-  target: SessionShareFanoutTarget
-  authority: Partial<WorkspaceAuthority>
-}> = [
-  {
-    name: "direct user",
-    target: { grantedToTokenIdentifier: "https://auth.example.test|user_bob" },
-    authority: {},
-  },
-  {
-    name: "team",
-    target: { grantedToTeamPublicId: "team_eng" },
-    authority: {
-      listTeamMembers: vi.fn(async () => [
-        { token_identifier: "https://auth.example.test|user_bob" },
-      ]),
-    },
-  },
-  {
-    name: "org",
-    target: { grantedToOrgId: "org_internal" },
-    authority: {
-      listTeams: vi.fn(async () => [{ team_id: "team_eng" }]),
-      listTeamMembers: vi.fn(async () => [
-        { token_identifier: "https://auth.example.test|user_bob" },
-      ]),
-    },
-  },
+const fanoutCases: Array<{ name: string; target: SessionShareFanoutTarget; rings: boolean }> = [
+  { name: "direct user", target: { grantedToTokenIdentifier: "https://auth.example.test|user_bob" }, rings: true },
+  { name: "team", target: { grantedToTeamPublicId: "team_eng" }, rings: false },
+  { name: "org", target: { grantedToOrgId: "org_internal" }, rings: false },
 ]
 
 describe("grantId-only revoke fanout", () => {
   for (const [routeName, routeFactory] of routeFactories) {
     for (const fanout of fanoutCases) {
-      test(`${routeName} notifies the canonical ${fanout.name} target returned by revoke`, async () => {
+      test(`${routeName} ${fanout.rings ? "notifies" : "rings no one for"} the ${fanout.name} target returned by revoke`, async () => {
         const sink = vi.fn()
         const authority: Partial<WorkspaceAuthority> = {
           resolveOrgId: vi.fn(async () => "org_internal" as OrgId),
-          ...fanout.authority,
+          listTeams: vi.fn(async () => [{ team_id: "team_eng" }]),
+          listTeamMembers: vi.fn(async () => [{ token_identifier: "https://auth.example.test|user_bob" }]),
           revokeSessionShare: vi.fn(async () => ({
             revoked: true,
             runtime_tokens_revoked: 1,
@@ -149,13 +125,18 @@ describe("grantId-only revoke fanout", () => {
         })
 
         expect(response.status).toBe(200)
-        expect(sink).toHaveBeenCalledWith(expect.objectContaining({
-          type: "session.share.changed",
-          phase: "revoked",
-          ownerUserId: "user_bob",
-          sessionId: "ses_1",
-          workspaceId: "ws_1",
-        }))
+        if (fanout.rings) {
+          expect(sink).toHaveBeenCalledWith(expect.objectContaining({
+            type: "session.share.changed",
+            phase: "revoked",
+            ownerUserId: "user_bob",
+            sessionId: "ses_1",
+            workspaceId: "ws_1",
+          }))
+        } else {
+          expect(sink).not.toHaveBeenCalled()
+          expect(authority.listTeamMembers).not.toHaveBeenCalled()
+        }
       })
     }
   }
