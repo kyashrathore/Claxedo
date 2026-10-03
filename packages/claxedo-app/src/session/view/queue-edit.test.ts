@@ -47,7 +47,7 @@ function arrange(parts = RECORD.parts) {
   })
   const begin = async () => {
     await queue.reread()
-    edit.queued.beginEdit(queue.items()[0]!)
+    edit.queued.beginEdit(queue.items()[0])
     await Bun.sleep(0)
   }
   return { queue, edit, actions, drafts, begin, remove: () => (rows = []), unreachable: () => (rows = undefined), reachable: () => (rows = [{ ...RECORD, parts, held: true }]) }

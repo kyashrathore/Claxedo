@@ -45,7 +45,7 @@ function signedDesktop(sources: { daemon: readonly Item[]; account: readonly Ite
       loopback: true,
       json: async (path: string, init?: RequestInit) => {
         const url = new URL(path, "http://daemon.test")
-        if (url.pathname !== "/api/claxedo/session-list") return writes.push({ to: url.pathname, body: JSON.parse(String(init?.body)) }), { seenAt: 70 }
+        if (url.pathname !== "/api/claxedo/session-list") return writes.push({ to: url.pathname, body: JSON.parse(typeof init?.body === "string" ? init.body : "") }), { seenAt: 70 }
         return paged(sources.daemon, url.searchParams.get("after") ?? undefined, Number(url.searchParams.get("limit")))
       },
     },
@@ -63,7 +63,7 @@ function signedDesktop(sources: { daemon: readonly Item[]; account: readonly Ite
   return { value, writes }
 }
 
-const ids = (rows: readonly { readonly ref: { readonly sessionId: string } }[]) => rows.map((row) => row.ref.sessionId as string)
+const ids = (rows: readonly { readonly ref: { readonly sessionId: string } }[]) => rows.map((row) => row.ref.sessionId)
 
 test("signed list: a published session from both sources is one row, with the account's marks; what the account settled is hidden", async () => {
   const { value } = signedDesktop({

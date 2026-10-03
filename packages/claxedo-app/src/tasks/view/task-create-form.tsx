@@ -141,7 +141,12 @@ export function TaskCreateForm(props: TaskCreateFormProps): JSX.Element {
     Object.entries(props.fieldErrors ?? {}).find(([path]) => path.startsWith("attachments"))?.[1]
   const project = () => props.projects.find((entry) => entry.id === props.draft.projectId)
   const submit = () => {
-    if (queue.reading() > 0) return void queue.drained().then(() => !props.busy && props.onSubmit())
+    if (queue.reading() > 0) {
+      void queue.drained().then(() => {
+        if (!props.busy) props.onSubmit()
+      })
+      return
+    }
     if (!props.busy) props.onSubmit()
   }
   return (

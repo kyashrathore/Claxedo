@@ -24,8 +24,8 @@ function Home(props: { readonly api: PluginApi; readonly hostTheme?: () => strin
   const projectId = () => api.projects.currentId() ?? api.projects.list()[0]?.id ?? ""
   const createDocument = async () => {
     await api.server.operation("documents.create", { project_id: projectId(), display_name: "Fixture page", markdown: "# Fixture" })
-    const listed = await api.server.operation<readonly unknown[]>("documents.list", { project_id: projectId() })
-    add("documents " + listed.length)
+    const listed = await api.server.operation("documents.list", { project_id: projectId() })
+    add("documents " + (Array.isArray(listed) ? listed.length : "unreadable"))
   }
   const probeIsolation = () => {
     const attempt = (name: string, read: () => unknown) => {
@@ -96,7 +96,7 @@ export default definePlugin({
       render: (props) => <p>Fixture pane: {props.state.text}</p>,
       restore: { parse: (raw) => (typeof raw === "object" && raw !== null && typeof (raw as Note).text === "string" ? (raw as Note) : undefined), serialize: (state) => state },
     })
-    api.commands.register({ id: "pane", title: "Fixture: open a pane", run: () => api.panes.open<Note>("notes", { text: "Pane state" }) })
+    api.commands.register({ id: "pane", title: "Fixture: open a pane", run: () => api.panes.open("notes", { text: "Pane state" } satisfies Note) })
     api.icons.registerSkin({
       id: "fixture",
       name: "Fixture icons",

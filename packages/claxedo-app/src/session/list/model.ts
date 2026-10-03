@@ -10,7 +10,7 @@ export type PendingSend = {
 
 export type OrderKey = { readonly activity: number; readonly createdAt: number; readonly sessionId: string }
 
-export const ACTIVITY_WINDOW: "activity" = "activity"
+export const ACTIVITY_WINDOW = "activity" as const
 
 export type WindowKey = ProjectId | typeof ACTIVITY_WINDOW
 

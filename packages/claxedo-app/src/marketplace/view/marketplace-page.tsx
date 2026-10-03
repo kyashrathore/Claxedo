@@ -58,7 +58,8 @@ function directoryKeys(selection: ReturnType<typeof createSelection>, grid: () =
     if (event.key === "Escape" && (selection.selectedId() || selection.personalKey())) {
       event.preventDefault()
       selection.closePlugin()
-      return selection.closePersonal()
+      selection.closePersonal()
+      return
     }
     const forward = event.key === "ArrowDown" || event.key === "ArrowRight"
     const back = event.key === "ArrowUp" || event.key === "ArrowLeft"

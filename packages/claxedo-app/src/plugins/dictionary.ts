@@ -1,3 +1,5 @@
+import { isRecord } from "@claxedo/helpers/guards"
+import { readField, readString } from "@claxedo/helpers/readers"
 import type { Translations } from "@/i18n"
 
 export class PluginDictionaryError extends Error {
@@ -8,20 +10,23 @@ export class PluginDictionaryError extends Error {
 }
 
 function isTextRecord(value: unknown): value is Readonly<Record<string, string>> {
-  return typeof value === "object" && value !== null && !Array.isArray(value) && Object.values(value).every((text) => typeof text === "string")
+  return isRecord(value) && Object.values(value).every((text) => typeof text === "string")
+}
+
+function isDictionary(value: Record<string, unknown>): value is Translations {
+  return Object.values(value).every(isTextRecord)
 }
 
 export function moduleDictionary(module: unknown): Translations | undefined {
-  const candidate: unknown = (module as { readonly dictionary?: unknown }).dictionary
+  const candidate = readField(module, "dictionary")
   if (candidate === undefined) return undefined
-  if (typeof candidate !== "object" || candidate === null || !isTextRecord((candidate as { readonly en?: unknown }).en)) {
+  if (!isRecord(candidate) || !isTextRecord(candidate.en)) {
     throw new PluginDictionaryError("the bundle's dictionary export must be { en: { key: text }, …other locales }")
   }
-  if (!Object.values(candidate).every(isTextRecord)) throw new PluginDictionaryError("every locale in the bundle's dictionary must map keys to text")
-  return candidate as Translations
+  if (!isDictionary(candidate)) throw new PluginDictionaryError("every locale in the bundle's dictionary must map keys to text")
+  return candidate
 }
 
 export function translated(dictionary: Translations | undefined, locale: string, key: string): string {
-  const locales = dictionary as Readonly<Record<string, Readonly<Record<string, string>> | undefined>> | undefined
-  return locales?.[locale]?.[key] ?? locales?.en?.[key] ?? key
+  return readString(readField(dictionary, locale), key) ?? readString(dictionary?.en, key) ?? key
 }

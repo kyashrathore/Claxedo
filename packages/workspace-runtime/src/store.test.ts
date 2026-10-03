@@ -2635,7 +2635,7 @@ void describe("RuntimeStore", () => {
       const ends = events.filter((event) => event.type === "session.idle" || event.type === "session.error")
       assert.deepEqual(ends.map((event) => event.type), [outcome.status === "failed" ? "session.error" : "session.idle"])
       const read = (store.getSession("s1") as { lastTurn?: { status: string; completedAt: number } } | null)?.lastTurn
-      assert.deepEqual((ends[0]?.properties as { lastTurn?: unknown }).lastTurn, { status: read?.status, completedAt: read?.completedAt })
+      assert.deepEqual((ends[0]?.properties as { lastTurn?: unknown } | undefined)?.lastTurn, { status: read?.status, completedAt: read?.completedAt })
       assert.deepEqual({ status: read?.status, completedAt: read?.completedAt }, { status: outcome.status, completedAt: outcome.completedAt })
     }
   })

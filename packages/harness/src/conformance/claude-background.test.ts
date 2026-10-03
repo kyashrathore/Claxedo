@@ -94,7 +94,7 @@ test.each([false, true])("a Claude background task survives follow-ups and model
       const notification = server.requests.at(-1)
       expect(notification?.model).toBe(byPrompt("FOLLOWUP0")?.model)
       expect(notification?.model).not.toBe(byPrompt("FOLLOWUP2")?.model)
-      expect((notification?.body as { output_config?: { effort?: string } }).output_config?.effort).toBe("low")
+      expect((notification?.body as { output_config?: { effort?: string } } | undefined)?.output_config?.effort).toBe("low")
     }
     expect(pids).toHaveLength(1)
     expect(await pollUntil(() => alive(pids[0]!) ? undefined : true, Date.now() + 15_000)).toBe(true)

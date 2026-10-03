@@ -1,4 +1,5 @@
 import type { Message } from "esbuild"
+import { asRecord, isRecord } from "@claxedo/helpers/guards"
 
 export type PluginBuildFailure = "manifest" | "entry" | "bundle"
 
@@ -43,8 +44,12 @@ function bundleDiagnostic(message: Message) {
   }
 }
 
+function isBundleMessage(value: unknown): value is Message {
+  const message = asRecord(value)
+  return typeof message?.text === "string" && (message.location === null || isRecord(message.location))
+}
+
 export function bundleFailure(error: unknown): PluginBuildError | undefined {
-  if (typeof error !== "object" || error === null) return undefined
-  const errors = (error as { errors?: unknown }).errors
-  return Array.isArray(errors) ? new PluginBuildError("bundle", (errors as Message[]).map(bundleDiagnostic)) : undefined
+  const errors = asRecord(error)?.errors
+  return Array.isArray(errors) && errors.every(isBundleMessage) ? new PluginBuildError("bundle", errors.map(bundleDiagnostic)) : undefined
 }

@@ -1,3 +1,4 @@
+import { readField } from "@claxedo/helpers/readers"
 import type { QueryClient } from "@tanstack/solid-query"
 import type { MarketplaceApi } from "./api"
 import { contractMismatch, responseError, ServerError } from "./errors"
@@ -90,7 +91,7 @@ async function postSource(transport: Transport, input: unknown): Promise<PluginS
       })
     throw new PluginSourceError(await responseError(response, "POST plugin source"), sourceDiagnosticsFromWire(body))
   }
-  const source = pluginSourceFromWire(((await response.json()) as { source?: unknown }).source)
+  const source = pluginSourceFromWire(readField(await response.json(), "source"))
   if (!source) throw contractMismatch("plugin source")
   return source
 }

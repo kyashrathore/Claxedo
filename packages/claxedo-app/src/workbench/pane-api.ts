@@ -1,9 +1,9 @@
-import type { AnyPaneKind, PaneKind } from "@/shell"
+import type { AnyPaneKind, OpenedContent, PaneKind } from "@/shell"
 import { reducers } from "./reducers/index"
 import { selectors } from "./selectors"
 import type { WorkbenchState } from "./types"
 
-export type PaneView = { readonly paneId: string; readonly contentId: string; readonly kind: AnyPaneKind; readonly state: unknown }
+export type PaneView = { readonly paneId: string; readonly contentId: string; readonly kind: AnyPaneKind; readonly content: OpenedContent | undefined }
 
 export type PaneApi = {
   readonly panes: () => readonly PaneView[]
@@ -15,7 +15,7 @@ export type PaneApi = {
 
 export type PaneApiHost = {
   readonly layout: () => WorkbenchState
-  readonly content: (contentId: string) => { readonly kind: AnyPaneKind; readonly state: unknown } | undefined
+  readonly content: (contentId: string) => { readonly kind: AnyPaneKind; readonly content: OpenedContent | undefined } | undefined
   readonly open: <State>(kind: PaneKind<State>, state: State, focus?: boolean) => string
   readonly apply: (mutation: (layout: WorkbenchState) => WorkbenchState) => void
   readonly closeContent: (contentId: string) => void
@@ -26,7 +26,7 @@ export function createPaneApi(host: PaneApiHost): PaneApi {
     selectors.visiblePanes(host.layout()).flatMap((pane) => {
       if (!pane.contentId) return []
       const opened = host.content(pane.contentId)
-      return opened ? [{ paneId: pane.id, contentId: pane.contentId, kind: opened.kind, state: opened.state }] : []
+      return opened ? [{ paneId: pane.id, contentId: pane.contentId, kind: opened.kind, content: opened.content }] : []
     })
   const openPane = <State,>(kind: PaneKind<State>, state: State): string => {
     const contentId = host.open(kind, state, true)

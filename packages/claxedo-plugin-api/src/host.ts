@@ -33,7 +33,7 @@ export interface ProjectsApi {
 
 export interface ServerApi {
   fetch(path: string, init?: RequestInit): Promise<Response>
-  operation<Result = unknown>(name: string, input?: unknown): Promise<Result>
+  operation(name: string, input?: unknown): Promise<unknown>
 }
 
 export type PluginPlatform = "desktop" | "web"

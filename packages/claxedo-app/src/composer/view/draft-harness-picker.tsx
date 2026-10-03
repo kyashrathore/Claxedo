@@ -25,7 +25,7 @@ export function DraftHarnessPicker(props: {
     if (!seed.harness) return
     void controller.setHarness(scope, seed.harness, scopeInput())
     if (seed.model) void controller.setModel(scope, seed.model, scopeInput())
-    controller.setThoughtLevel(scope, seed.effort)
+    void controller.setThoughtLevel(scope, seed.effort)
   })
   const snapshot = createMemo(() => controller.read(scope))
   createEffect(() => {

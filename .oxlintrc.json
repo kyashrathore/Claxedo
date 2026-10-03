@@ -159,6 +159,86 @@
       }
     },
     {
+      // The app's branded-identifier mints, and nothing else. Same grounds as
+      // `branded-id.ts` above: a brand exists only in the type system, so
+      // minting one is an assertion by construction, and the app cannot import
+      // server-core's mints (it does not depend on server-core, whose brands
+      // cover a different set of identifiers).
+      //
+      // Scoped to the exact file that declares the app's brands and their six
+      // `as` lines; every other app module calls a mint instead of asserting.
+      "files": ["packages/claxedo-app/src/server/ids.ts"],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      // Worker entrypoints, and nothing else. `WorkerEntrypoint.fetch` and a
+      // `Fetcher` are typed with workers-types' own `Request` and `Response`,
+      // while these packages compile against the DOM lib's; in the Workers
+      // runtime they are one class, so the hand-off between the two
+      // declarations is an assertion no runtime check could replace.
+      //
+      // Scoped to the exact files whose job is that hand-off, so the brokers and
+      // dispatchers they call stay fully enforced.
+      "files": [
+        "packages/claxedo-server/src/plugin-backends/entrypoints.cf.ts",
+        "packages/claxedo-server/src/plugin-backends/supervisor.cf.ts",
+        "packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/index.ts"
+      ],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      // The Pi storage adapter over `bun:sqlite`, and nothing else. pi-durable's
+      // `SqliteExecutor` puts an unconstrained type parameter on the READERS —
+      // `get<T extends object>(sql, ...params): Promise<T | undefined>` and
+      // `all<T>` — over rows the driver returns untyped, so no implementation
+      // can prove what comes back; the unsoundness is the vendor's shape. The
+      // file also loads `bun:sqlite` through a computed specifier so Node
+      // bundles never resolve it, which returns `any`.
+      //
+      // Scoped to the exact file whose only job is that adapter, so the rest of
+      // the pi-durable transport stays fully enforced.
+      "files": ["packages/harness/src/transports/pi-durable/storage.ts"],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      // The hosted operations' input decoder, and nothing else. `operationInput`
+      // runs every field's decoder, so each value it returns has been decoded,
+      // but its result type is a key-remapped mapped type that splits required
+      // from optional fields: TypeScript resolves neither `infer` through a
+      // generic indexed decoder nor indexing that remapped type by `keyof S`,
+      // so a value assembled key by key cannot be typed as it. A helper typed
+      // per key was compiled and refused on both counts.
+      //
+      // Scoped to the exact file that holds only `operationInput` and its two
+      // result types, so the rest of the account contract stays fully enforced.
+      "files": ["packages/account-contract/src/operation-input.ts"],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      // Playwright fixtures that depend on no other fixture. Playwright reads a
+      // fixture's dependencies from the destructuring pattern of its first
+      // parameter, refuses any other first parameter, and documents `{}` as the
+      // form for a fixture with none; naming an unused fixture instead would
+      // misstate what the fixture needs.
+      //
+      // Scoped to the exact files that define such fixtures.
+      "files": [
+        "packages/claxedo-app/e2e/harness/fixtures.ts",
+        "packages/claxedo-app/e2e/flows/31-session-list-races.controls.ts"
+      ],
+      "rules": {
+        "no-empty-pattern": "off"
+      }
+    },
+    {
       // The browser-delivered packages write nothing to the devtools console.
       // `@opencode-ai/ui/utils/report-error` forwards the leaf packages'
       // failures to the host app's error tracking. The exemptions are inline,

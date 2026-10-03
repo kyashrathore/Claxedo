@@ -57,7 +57,7 @@ export interface PaneDefinition<State> {
 
 export interface PanesApi {
   register<State>(pane: PaneDefinition<State>): Disposer
-  open<State>(kind: string, state: State): void
+  open(kind: string, state: unknown): void
 }
 
 export interface SettingsSection {

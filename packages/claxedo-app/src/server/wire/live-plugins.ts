@@ -19,8 +19,12 @@ function nullableTextOrThrow(value: unknown, label: string): string | null {
   return value === null ? null : textOrThrow(value, label)
 }
 
+function isLivePluginStatus(value: unknown): value is LivePluginStatus {
+  return typeof value === "string" && STATUSES.has(value)
+}
+
 function statusOrThrow(value: unknown, label: string): LivePluginStatus {
-  if (typeof value === "string" && STATUSES.has(value)) return value as LivePluginStatus
+  if (isLivePluginStatus(value)) return value
   throw new ServerError({ class: "internal", message: `${label} has an unknown status` })
 }
 

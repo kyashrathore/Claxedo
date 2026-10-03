@@ -1,11 +1,11 @@
+import { isRecord } from "@claxedo/helpers/guards"
 import { ServerError } from "../errors"
 import type { TranscriptEntry, TranscriptPage } from "../types"
 
 export const OLDER_CURSOR_HEADER = "X-Next-Cursor"
 
 function isEntry(value: unknown): value is TranscriptEntry {
-  const row = value as { info?: unknown; parts?: unknown } | null
-  return !!row && !!row.info && typeof row.info === "object" && Array.isArray(row.parts)
+  return isRecord(value) && isRecord(value.info) && Array.isArray(value.parts)
 }
 
 export function transcriptPageFromWire(body: unknown, olderCursor: string | null): TranscriptPage {

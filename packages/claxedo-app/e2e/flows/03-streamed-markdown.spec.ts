@@ -19,9 +19,9 @@ async function recordFenceClose(app: Page): Promise<() => Promise<FenceFrame[]>>
           return { height: code.getBoundingClientRect().height, complete: code.closest<HTMLElement>("[data-markdown-block]")?.dataset.markdownComplete === "true" }
         },
         painted: (frame) => {
-          if (!frame) return
+          if (!frame) return false
           frames.push(frame)
-          if (frames.filter((seen) => seen.complete).length < 3) return
+          if (frames.filter((seen) => seen.complete).length < 3) return false
           resolve(frames)
           return true
         },

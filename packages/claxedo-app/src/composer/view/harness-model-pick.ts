@@ -22,7 +22,7 @@ function writeModelPick(input: ModelPickInput, model: ModelChoice) {
   )
   const level = input.selection().selectedThoughtLevel
   if (input.catalogSelected() && level && !input.catalogVariants(model).includes(level)) {
-    input.controller().setThoughtLevel(input.scope(), undefined)
+    void Promise.resolve(input.controller().setThoughtLevel(input.scope(), undefined)).catch(input.refused)
   }
   return input.controller().setModel(
     input.scope(),

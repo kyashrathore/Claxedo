@@ -12,7 +12,7 @@ export function createCodexConfig<T extends ConfigEntry>(input: {
   setModelSettings(session: HarnessSession, settings: ModelSettings): Promise<void>
 }): ConfigOperations {
   return {
-    setModelSettings: input.setModelSettings,
+    setModelSettings: (session, settings) => input.setModelSettings(session, settings),
     options: async (target, mode) => {
       if ("session" in target) {
         const entry = input.entry(target.session)

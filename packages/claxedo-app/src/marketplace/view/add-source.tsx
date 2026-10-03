@@ -54,7 +54,10 @@ function createSourceForm(onAdd: (input: PluginSourceInput) => Promise<void>, in
     setError(undefined)
     setDiagnostics([])
     const [owner, repository, ...rest] = slug().trim().split("/")
-    if (!owner || !repository || rest.length > 0) return setError(invalidSlug())
+    if (!owner || !repository || rest.length > 0) {
+      setError(invalidSlug())
+      return
+    }
     setBusy(true)
     try {
       const trimmedRef = ref().trim()

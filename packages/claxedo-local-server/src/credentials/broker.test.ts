@@ -199,7 +199,7 @@ describe("local binding authority", () => {
     await updateCredentialSecret(credential.id, JSON.stringify({ tokens: { access_token: "access-old", refresh_token: "refresh-1" } }), Date.now() + 10 * 60_000)
     const exchanged: string[] = []
     const tokenEndpoint = (async (_url: string | URL | Request, init?: RequestInit) => {
-      exchanged.push(new URLSearchParams(String(init?.body)).get("refresh_token") ?? "")
+      exchanged.push(new URLSearchParams(typeof init?.body === "string" ? init.body : "").get("refresh_token") ?? "")
       return Response.json({ access_token: "access-new", refresh_token: "refresh-2" })
     }) as typeof fetch
     const local = createLocalCredentialBroker({ machineOwnerUserId: () => "local", dataDir: root, brokerOrigin, fetch: tokenEndpoint })
@@ -221,8 +221,8 @@ describe("local binding authority", () => {
     await updateCredentialSecret(credential.id, JSON.stringify({ tokens: { access_token: "access-old", refresh_token: "refresh-1" } }), Date.now() + 10 * 60_000)
     const exchanged: string[] = []
     const provider = (async (url: string | URL | Request, init?: RequestInit) => {
-      if (!String(url).endsWith("/oauth/token")) return new Response("{}")
-      exchanged.push(new URLSearchParams(String(init?.body)).get("refresh_token") ?? "")
+      if (!(url instanceof Request ? url.url : url.toString()).endsWith("/oauth/token")) return new Response("{}")
+      exchanged.push(new URLSearchParams(typeof init?.body === "string" ? init.body : "").get("refresh_token") ?? "")
       await new Promise((resolve) => setTimeout(resolve, 200))
       return Response.json({ access_token: "access-new", refresh_token: "refresh-2" })
     }) as typeof fetch

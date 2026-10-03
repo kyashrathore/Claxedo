@@ -59,7 +59,7 @@ export async function publishD1HostSessionRows(
   if (!statements.length) return { ...plan.result, statusNotices: [] }
   const results = await database.batch<SessionStatusColumns>(statements)
   if (!updated.length) return { ...plan.result, statusNotices: [] }
-  const before = new Map(results[0]!.results.map((row) => [row.session_id, row]))
+  const before = new Map(results[0].results.map((row) => [row.session_id, row]))
   const written = results.slice(1 + adoptions.length, 1 + adoptions.length + updated.length).flatMap((result) => result.results)
   return { ...plan.result, statusNotices: await sessionStatusNotices(database, before, written) }
 }

@@ -3,7 +3,7 @@ import { ensureAppBuilt } from "../harness/app"
 import type { ServerEvent } from "../../src/server/events"
 import type { Placement } from "../../src/server/types"
 import { codeHostConnections } from "../../src/server/integrations"
-import { createServer, type ServerHandle } from "../../src/server/server"
+import { createServer } from "../../src/server/server"
 import { check, describe, eventLog, isStatus, PROBE_VIEWPORT, RESTART_TIMEOUT_MS, results, surfaceOf, waitFor, type Probe } from "./probe-support"
 import { startTcpProxy } from "./tcp-proxy"
 

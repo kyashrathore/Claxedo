@@ -1,5 +1,5 @@
 import type { ShellOutputDeltaUpdate } from "@cursor/sdk"
-import { asRecord } from "@claxedo/helpers/guards"
+import { asRecord, isRecord } from "@claxedo/helpers/guards"
 import { asText as text } from "@claxedo/agent-runtime-contract"
 import { own } from "../../../translate/value"
 import { unknownKind } from "./frames"
@@ -13,6 +13,10 @@ export function closedShell(state: CursorSdkAdapterState, toolCallId: string): C
   if (!state.openShells.includes(toolCallId)) return state
   const { [toolCallId]: _output, ...shellOutputByCallId } = state.shellOutputByCallId
   return { ...state, openShells: state.openShells.filter((id) => id !== toolCallId), shellOutputByCallId }
+}
+
+export function isShellOutputDelta(row: Record<string, unknown>): row is Record<string, unknown> & ShellOutputDeltaUpdate {
+  return row.type === "shell-output-delta" && isRecord(row.event)
 }
 
 export function shellOutputEvents(state: CursorSdkAdapterState, update: ShellOutputDeltaUpdate): CursorTranslation {

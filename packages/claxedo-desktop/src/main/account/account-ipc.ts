@@ -19,6 +19,7 @@ import { readRecord, readString } from "@claxedo/helpers/readers"
 import {
   HOSTED_OPERATIONS,
   hostedOperationNames,
+  isHostedOperationName,
   isStreamHostedOperation,
   type HostedOperationName,
 } from "@claxedo/account-contract"
@@ -162,7 +163,7 @@ export function registerAccountIpc(input: { ipcMain: AccountIpcTarget; service: 
     // Read, not declared: the payload is renderer input, so the operation name
     // has to survive a check before it can pick a stream.
     const operation = readString(payload, "operation")
-    if (!operation || !isStreamHostedOperation(operation)) {
+    if (!operation || !isHostedOperationName(operation) || !isStreamHostedOperation(operation)) {
       throw new Error(`hosted stream operation "${String(operation)}" is not allowed`)
     }
     if (withheld.has(operation)) {

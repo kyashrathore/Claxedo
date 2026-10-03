@@ -1,7 +1,6 @@
 import type { HarnessHydratorCache } from "./harness-hydrator"
 import type { HarnessOptionsLoaderCache } from "./harness-options-loader"
 import type { HarnessSwitcherCache } from "./harness-switcher"
-import type { HarnessScopeInput } from "./store-policy"
 
 function pendingSlots<Value>() {
   const slots = new Map<string, Value>()
@@ -26,7 +25,7 @@ function optionsCache(): HarnessOptionsLoaderCache {
   }
 }
 
-function hydratorCache(): HarnessHydratorCache<HarnessScopeInput> {
+function hydratorCache(): HarnessHydratorCache {
   const seen = new Map<string, string>()
   const hydrations = pendingSlots<Promise<void>>()
   return {

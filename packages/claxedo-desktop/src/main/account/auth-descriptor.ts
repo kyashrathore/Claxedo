@@ -138,19 +138,19 @@ export function parseDesktopAuthDescriptor(
     error: (code, message) => new DesktopAuthDescriptorError(code, message),
     client: (desktop, _kind, issuer) => {
       if (desktop.controlPlaneOrigin !== configuredOrigin)
-        return fail("deployment_mismatch", "Authentication descriptor belongs to a different control-plane origin")
+        fail("deployment_mismatch", "Authentication descriptor belongs to a different control-plane origin")
       if (new URL(issuer).origin !== desktop.tokenEndpointOrigin)
-        return fail("deployment_mismatch", "Authentication issuer and token endpoint origins do not match")
+        fail("deployment_mismatch", "Authentication issuer and token endpoint origins do not match")
       if (new URL(desktop.resource).origin !== configuredOrigin)
-        return fail("deployment_mismatch", "Authentication resource belongs to a different control-plane origin")
+        fail("deployment_mismatch", "Authentication resource belongs to a different control-plane origin")
       if (new URL(desktop.revocation.endpoint).origin !== desktop.tokenEndpointOrigin)
-        return fail("deployment_mismatch", "Authentication revocation endpoint belongs to another origin")
+        fail("deployment_mismatch", "Authentication revocation endpoint belongs to another origin")
       if (desktop.flow !== "authorization-code-pkce")
-        return fail("unsupported_native_flow", "Better Auth desktop requires authorization code with PKCE")
+        fail("unsupported_native_flow", "Better Auth desktop requires authorization code with PKCE")
       if (issuer !== `${configuredOrigin}/api/auth`)
-        return fail("deployment_mismatch", "Better Auth issuer is not bound to the configured core origin")
+        fail("deployment_mismatch", "Better Auth issuer is not bound to the configured core origin")
       if (desktop.revocation.protocol !== "rfc7009" || desktop.revocation.endpoint !== `${issuer}/oauth2/revoke`)
-        return fail("invalid_descriptor", "Better Auth desktop requires issuer-bound public-client revocation")
+        fail("invalid_descriptor", "Better Auth desktop requires issuer-bound public-client revocation")
     },
   })
   const binding: DesktopCredentialBinding = {

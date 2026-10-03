@@ -24,8 +24,8 @@ export type Transport = {
   readonly request: (path: string, init?: RequestInit) => Promise<Response>
   readonly runtime: (route: RuntimeRoute, path: string, init?: RequestInit) => Promise<Response>
   readonly runtimeSocket: (route: RuntimeRoute, path: string) => Promise<WebSocket>
-  readonly json: <T>(path: string, init?: RequestInit) => Promise<T>
-  readonly runtimeJson: <T>(route: RuntimeRoute, path: string, init?: RequestInit) => Promise<T>
+  readonly json: (path: string, init?: RequestInit) => Promise<unknown>
+  readonly runtimeJson: (route: RuntimeRoute, path: string, init?: RequestInit) => Promise<unknown>
   readonly startRuntime: (workspaceId: string, options?: StartOptions) => Promise<void>
   readonly connectSession: (workspaceId: string, sessionId: string) => Promise<void>
   readonly findSessionHost: (workspaceId: string, sessionId: string) => Promise<string | undefined>
@@ -73,10 +73,10 @@ async function fetchFromServer(config: ServerConfig, url: string, init?: Request
   }
 }
 
-async function readJsonResponse<T>(response: Response, label: string): Promise<T> {
+async function readJsonResponse(response: Response, label: string): Promise<unknown> {
   if (!response.ok) throw await responseError(response, label)
-  if (response.status === 204) return undefined as T
-  return (await response.json()) as T
+  if (response.status === 204) return undefined
+  return response.json()
 }
 
 function sessionScope(route: RuntimeRoute) {
@@ -149,7 +149,7 @@ function sessionHostConnector(connections: WorkspaceConnections, relay: Relay, h
 function sessionRowHost(json: Transport["json"], account: HostedAccount | undefined): Transport["findSessionHost"] {
   return async (workspaceId, sessionId) => {
     const one = { sessionId, limit: 1, settled: "all", sort: SESSION_LIST_SORT }
-    const page = account ? await account.run("session.activity.page", one) : await json<unknown>(withQuery("/api/control/session-list", { scope: "all", ...one }))
+    const page = account ? await account.run("session.activity.page", one) : await json(withQuery("/api/control/session-list", { scope: "all", ...one }))
     return sessionHostRootFromListItem(asArray(asRecordOrEmpty(page).items).find((item) => {
       const row = asRecordOrEmpty(item)
       return row.sessionId === sessionId && row.workspaceId === workspaceId

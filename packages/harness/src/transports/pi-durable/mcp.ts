@@ -1,6 +1,7 @@
 import { errorMessage } from "@claxedo/helpers"
+import { isJsonValue } from "@earendil-works/chord"
 import { Type } from "@earendil-works/pi-ai"
-import { defineTool, type JsonObject, type ToolRegistration } from "@earendil-works/pi-durable"
+import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable"
 import { McpClient, toLlmContent, type McpTransport } from "@earendil-works/pi-mcp"
 import type { ProjectedMcpServer } from "../../contract"
 import type { McpListedTool, McpToolLists } from "./mcp-cache"
@@ -55,8 +56,8 @@ export class PiMcpTools {
     const listed = await Promise.all(servers.map(async (server): Promise<[string, McpListedTool[]][]> => {
       try {
         const tools = await (await this.client(server)).listTools()
-        return [[server.name, tools.map(({ name, description, inputSchema }) =>
-          ({ name, ...(description ? { description } : {}), inputSchema: inputSchema as JsonObject }))]]
+        return [[server.name, tools.flatMap(({ name, description, inputSchema }) =>
+          isJsonValue(inputSchema) ? [{ name, ...(description ? { description } : {}), inputSchema }] : [])]]
       } catch (error) {
         this.clients.delete(server.name)
         this.host.failed(server.name, error)

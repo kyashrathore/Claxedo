@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { spawn } from "node:child_process"
-import { readCreationIdentity, type CreationIdentity } from "@claxedo/process-ownership/launch"
+import { readCreationIdentity } from "@claxedo/process-ownership/launch"
 
 import { CLAXEDO_DAEMON_PROTOCOL } from "@claxedo/helpers/claxedo-daemon"
 import { publishedDaemonVerdict } from "./daemon-launch"

@@ -80,7 +80,7 @@ test("49 Activity lists every project's sessions in one order, the reader's send
   await expect.poll(() => rowTitles(app, titles)).toEqual(["One", "Three", "Two"])
   await expect.poll(() => serverTitles(stack, titles)).toEqual(["One", "Three", "Two"])
   await stack.acp.release("held")
-  await expect.poll(async () => assistantText(await api.messages(made.One!.directory, made.One!.id))).toContain("Held reply.")
+  await expect.poll(async () => assistantText(await api.messages(made.One.directory, made.One.id))).toContain("Held reply.")
 
   if (!isMobile) {
     await row(app, "Two").click({ button: "right" })
@@ -94,7 +94,7 @@ test("49 Activity lists every project's sessions in one order, the reader's send
 
   await rowAction(app, isMobile, "Two", "Settle Two")
   await expect(row(app, "Two")).toHaveCount(0)
-  await expect.poll(async () => (await serverList(stack, "active")).some((item) => item.sessionId === made.Two!.id)).toBe(false)
+  await expect.poll(async () => (await serverList(stack, "active")).some((item) => item.sessionId === made.Two.id)).toBe(false)
 
   await option(app, isMobile, "menuitemcheckbox", "Show settled")
   await showRail(app, isMobile)
@@ -105,7 +105,7 @@ test("49 Activity lists every project's sessions in one order, the reader's send
   await expect(row(app, "Two")).toBeVisible()
 
   await rowAction(app, isMobile, "Two", "Return Two to active")
-  await expect.poll(async () => (await serverList(stack, "all")).find((item) => item.sessionId === made.Two!.id)?.settledAt).toBeUndefined()
+  await expect.poll(async () => (await serverList(stack, "all")).find((item) => item.sessionId === made.Two.id)?.settledAt).toBeUndefined()
   await option(app, isMobile, "menuitemcheckbox", "Show settled")
   await showRail(app, isMobile)
   await expect(row(app, "Two")).toBeVisible()
@@ -125,11 +125,11 @@ test("49 a session settled in Projects stays hidden after a reload, and its next
   await showRail(app, isMobile)
   await expect(row(app, "Later")).toBeVisible()
   await expect(row(app, "Quiet")).toHaveCount(0)
-  expect((await serverList(stack, "all")).find((item) => item.sessionId === made.Quiet!.id)?.settledAt).toEqual(expect.any(Number))
+  expect((await serverList(stack, "all")).find((item) => item.sessionId === made.Quiet.id)?.settledAt).toEqual(expect.any(Number))
 
-  await api.promptAsync(made.Quiet!.directory, made.Quiet!.id, `Say something. ${acpScriptToken("result")}`)
+  await api.promptAsync(made.Quiet.directory, made.Quiet.id, `Say something. ${acpScriptToken("result")}`)
   await expect(row(app, "Quiet")).toBeVisible()
-  await expect.poll(async () => (await serverList(stack, "active")).some((item) => item.sessionId === made.Quiet!.id)).toBe(true)
+  await expect.poll(async () => (await serverList(stack, "active")).some((item) => item.sessionId === made.Quiet.id)).toBe(true)
 })
 
 test("49 hidden working statuses show on hover, the Activity filter cycles Working and Needs you, and an opened result's dot stays cleared after a reload", async ({ stack, api, app, isMobile }) => {
@@ -138,13 +138,13 @@ test("49 hidden working statuses show on hover, the Activity filter cycles Worki
   const made = await sessions(stack, api, [["Filters", "Calm"], ["Filters", "Done"], ["Filters", "Busy"]])
   await stack.acp.write("done", { steps: [{ kind: "text", text: "Finished work." }] })
   await stack.acp.write("busy", { steps: [{ kind: "hold", name: "busy" }, { kind: "text", text: "Busy reply." }] })
-  await api.promptAsync(made.Done!.directory, made.Done!.id, `Finish. ${acpScriptToken("done")}`)
-  await expect.poll(async () => ((await api.session(made.Done!.directory, made.Done!.id)).lastTurn as { status?: string } | undefined)?.status).toBe("completed")
+  await api.promptAsync(made.Done.directory, made.Done.id, `Finish. ${acpScriptToken("done")}`)
+  await expect.poll(async () => ((await api.session(made.Done.directory, made.Done.id)).lastTurn as { status?: string } | undefined)?.status).toBe("completed")
 
   await app.goto(`${stack.url}/`)
   await option(app, false, "menuitemradio", "Activity")
   await option(app, false, "menuitemcheckbox", "Hide working statuses")
-  await api.promptAsync(made.Busy!.directory, made.Busy!.id, `Work. ${acpScriptToken("busy")}`)
+  await api.promptAsync(made.Busy.directory, made.Busy.id, `Work. ${acpScriptToken("busy")}`)
   const working = row(app, "Busy").locator('[data-sidebar-status="working"]')
   await expect(working).toHaveCount(1)
   await expect(working).toBeHidden()

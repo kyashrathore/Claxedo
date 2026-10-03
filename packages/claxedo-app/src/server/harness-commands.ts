@@ -12,7 +12,7 @@ const COMMANDS_PATH = "/api/wr/command"
 
 export async function readHarnessCommands(transport: Transport, workspaces: Workspaces, placementId: PlacementId, harness: string): Promise<readonly RuntimeCommand[]> {
   const route = await workspaces.route(placementId)
-  return runtimeCommandsFromWire(await transport.runtimeJson<unknown>(route, withQuery(COMMANDS_PATH, harnessSelectionQuery(harness))))
+  return runtimeCommandsFromWire(await transport.runtimeJson(route, withQuery(COMMANDS_PATH, harnessSelectionQuery(harness))))
 }
 
 export function harnessCommandQuery(transport: Transport, workspaces: Workspaces) {

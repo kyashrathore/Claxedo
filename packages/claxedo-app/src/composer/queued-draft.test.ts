@@ -64,6 +64,6 @@ test("two vanished edits joined in turn keep both records' notes and images apar
   expect(promptText(joined.prompt)).toBe("A\n\nB")
   expect(joined.context.map((item) => (item.type === "text" ? item.text : item.type))).toEqual(["Note A", "Note B"])
   const [first, second] = promptImages(joined.prompt)
-  store.removeImage(key, first!.id)
-  expect(promptImages(store.draft(key).prompt)).toEqual([second!])
+  store.removeImage(key, first.id)
+  expect(promptImages(store.draft(key).prompt)).toEqual([second])
 })

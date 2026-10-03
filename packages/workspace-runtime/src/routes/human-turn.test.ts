@@ -93,7 +93,7 @@ describe("a person's send that starts no turn of its own", () => {
 
     sender.person = true
     const [row] = wa.store().deliveryQueue.listQueuedPrompts()
-    expect((await wa.json(`/session/ses_steer/queue/${row!.seq}/replace`, { parts: [{ type: "text", text: "edited" }] })).status).toBe(200)
+    expect((await wa.json(`/session/ses_steer/queue/${row.seq}/replace`, { parts: [{ type: "text", text: "edited" }] })).status).toBe(200)
     const edited = lastHumanTurn(wa, "ses_steer")
     expect(typeof edited).toBe("number")
 

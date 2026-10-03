@@ -70,7 +70,7 @@ export async function recordSwitchFrames(app: Page, input: { readonly targetId: 
           const onTarget = panes.length === 1 && panes[0].sessionId === targetId && panes[0].rows.length > 0
           quiet = onTarget && signature === previous ? quiet + 1 : 0
           previous = signature
-          if (quiet < quietFrames && frames.length <= 1200) return
+          if (quiet < quietFrames && frames.length <= 1200) return false
           resolve(frames)
           return true
         },

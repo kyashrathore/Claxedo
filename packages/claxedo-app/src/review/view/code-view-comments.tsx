@@ -102,7 +102,7 @@ function createOwnerRegistry(parent: Owner | null, build: (file: string) => Comm
     owners.delete(file)
   }
   onCleanup(() => {
-    for (const file of [...owners.keys()]) release(file)
+    for (const file of Array.from(owners.keys())) release(file)
   })
   return {
     owner: (file: string): CommentOwner => {
@@ -114,7 +114,7 @@ function createOwnerRegistry(parent: Owner | null, build: (file: string) => Comm
     },
     keep: (files: readonly string[]) => {
       const rendered = new Set(files)
-      for (const file of [...owners.keys()]) if (!rendered.has(file)) release(file)
+      for (const file of Array.from(owners.keys())) if (!rendered.has(file)) release(file)
     },
   }
 }

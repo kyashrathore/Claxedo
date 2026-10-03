@@ -268,7 +268,7 @@ function MenuV2Trigger(props: ComponentProps<typeof DropdownMenu.Trigger>) {
       {...rest}
       ref={(node: HTMLElement) => {
         lazy.setTrigger(node, props)
-        if (typeof local.ref === "function") (local.ref as (node: HTMLElement) => void)(node)
+        if (typeof local.ref === "function") local.ref(node)
       }}
       id={props.id ?? `${lazy.id}-trigger`}
       aria-haspopup="true"

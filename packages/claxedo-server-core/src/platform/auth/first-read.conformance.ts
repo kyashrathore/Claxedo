@@ -1,9 +1,5 @@
-import { projectTurn, type TurnPageRequest, type FirstRead } from "@claxedo/agent-runtime-contract"
-import type { AgentMessage } from "@claxedo/agent-runtime-contract"
-import type { PrivateSessionInventoryRow } from "./private-session-authority"
-import { registerTranscriptSession, syncTranscript, syncedMessage, type TranscriptConformanceHarness } from "./stored-transcript.conformance"
-
-type Page = { messages: AgentMessage[]; nextCursor?: string }
+import { projectTurn, type TurnPageRequest } from "@claxedo/agent-runtime-contract"
+import { registerTranscriptSession, storedMessagePage, syncTranscript, syncedMessage, type TranscriptConformanceHarness } from "./stored-transcript.conformance"
 
 const sessionId = "ses_first_read"
 const message = syncedMessage.bind(undefined, sessionId)
@@ -58,11 +54,12 @@ export async function exerciseFirstReadConformance(harness: TranscriptConformanc
     "the turns' titles, times or prompt snippets are wrong",
   )
 
-  const latest = (await authority.readSessionMessages(creator.auth, { sessionId, workspaceId, view: "latest-turn" })) as Page
-  const earlier = (await authority.readSessionMessages(creator.auth, { sessionId, workspaceId, view: "latest-turn", before: latest.nextCursor })) as Page
+  const latest = storedMessagePage(await authority.readSessionMessages(creator.auth, { sessionId, workspaceId, view: "latest-turn" }))
+  const earlier = storedMessagePage(await authority.readSessionMessages(creator.auth, { sessionId, workspaceId, view: "latest-turn", before: latest.nextCursor }))
   const [prompt, work, answer] = latest.messages
   firstReadHolds(prompt && work && answer && latest.nextCursor, "the latest turn is not the prompt, the work and the answer with a cursor before it")
-  const first = (await read(viewport)) as FirstRead<PrivateSessionInventoryRow>
+  const first = await read(viewport)
+  firstReadHolds(first, "a session the registry holds answered no first read")
   firstReadHolds(
     JSON.stringify(first.page?.turns) === JSON.stringify([
       projectTurn(earlier.messages, viewport),

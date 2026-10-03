@@ -508,8 +508,13 @@ export const desktopRenderer: Policy = {
   // are renderer views over the session list, and the list reads a settled
   // row a turn end returns through `session/list/turn-end-reads.ts`; they add
   // no package edge.
-  // 1311/36, no headroom.
-  ceilings: { modules: 1311, packages: 36 },
+  // Wire reads decode through their parsers: git answers in
+  // `server/wire/git.ts` and the usage summary in `server/wire/usage.ts`; the
+  // workbench and plugin panes check stored pane state with `shell/json.ts` and
+  // adapt a typed pane kind through `shell/pane-kind-entry.tsx`. They add no
+  // package edge.
+  // 1315/36, no headroom.
+  ceilings: { modules: 1315, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

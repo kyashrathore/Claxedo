@@ -1,5 +1,4 @@
-import type { AgentMessage } from "@claxedo/agent-runtime-contract"
-import { registerTranscriptSession, syncTranscript, syncedMessage, type TranscriptConformanceHarness } from "./stored-transcript.conformance"
+import { registerTranscriptSession, storedMessagePage, syncTranscript, syncedMessage, type TranscriptConformanceHarness } from "./stored-transcript.conformance"
 
 const sessionId = "ses_session_part"
 const toolOutput = "x".repeat(4096)
@@ -33,7 +32,7 @@ export async function exerciseSessionPartConformance(harness: TranscriptConforma
   const header = first?.page?.turns[0]?.messages[1]?.parts[0]
   sessionPartHolds(header?.type === "tool" && header.headerOnly === true, "the page did not send the tool as its header")
 
-  const stored = (await authority.readSessionMessages(creator.auth, { sessionId, workspaceId, view: "latest-turn" })) as { messages: AgentMessage[] }
+  const stored = storedMessagePage(await authority.readSessionMessages(creator.auth, { sessionId, workspaceId, view: "latest-turn" }))
   const whole = stored.messages[1]?.parts[0]
   sessionPartHolds(whole?.type === "tool" && whole.state.status === "completed" && whole.state.output === toolOutput, "the stored tool part is not whole")
   sessionPartHolds(JSON.stringify(await read("a1", header.id)) === JSON.stringify({ part: whole }), "the part a page sent as its header did not read back whole")

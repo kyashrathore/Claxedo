@@ -1,4 +1,4 @@
-import { asFiniteNumber } from "@claxedo/helpers/guards"
+import { asFiniteNumber, isRecord } from "@claxedo/helpers/guards"
 
 export type ListOrderKey = {
   readonly updatedAt: number
@@ -7,9 +7,8 @@ export type ListOrderKey = {
   readonly sessionRef: string
 }
 
-export function listOrderKey(item: unknown): ListOrderKey | undefined {
-  if (!item || typeof item !== "object") return undefined
-  const row = item as Record<string, unknown>
+export function listOrderKey(row: unknown): ListOrderKey | undefined {
+  if (!isRecord(row)) return undefined
   const createdAt = asFiniteNumber(row.createdAt)
   const updatedAt = asFiniteNumber(row.updatedAt)
   const lastHumanTurnAt = asFiniteNumber(row.lastHumanTurnAt)

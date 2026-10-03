@@ -36,7 +36,7 @@ test("the public workspace wake owner sends a signed desktop cloud wake to the a
   await wakes.start(id)
   await transport.runtime(cloud, "/api/wr/health")
   expect(calls).toEqual(Array(2).fill({ operation: "workspace.connection.mint", input: { id: "ws_cloud" } }))
-  expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual(["https://relay.test/workspaces/ws_cloud/api/wr/health"])
+  expect(fetcher.mock.calls.map(([url]) => url)).toEqual(["https://relay.test/workspaces/ws_cloud/api/wr/health"])
   expect(wakes.runtime(id)).toEqual({ kind: "live" })
 })
 
@@ -48,7 +48,7 @@ test("signed desktop cloud and remote machine runtime reads use the account's wo
     await transport.runtime(route, "/session/ses_a?view=open")
     await transport.runtime(route, "/api/wr/events?sessionID=ses_b")
     expect(calls).toEqual([{ operation: "workspace.connection.read", input: { id: route.workspaceId } }])
-    expect(String(fetcher.mock.calls[0]?.[0])).toBe(`https://relay.test/workspaces/${route.workspaceId}/session/ses_a?view=open`)
+    expect(fetcher.mock.calls[0]?.[0]).toBe(`https://relay.test/workspaces/${route.workspaceId}/session/ses_a?view=open`)
     const init = fetcher.mock.calls[0]?.[1]
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer session-rat")
     expect(init?.credentials).toBe("omit")
@@ -66,7 +66,7 @@ test("signed desktop local placements keep using the daemon with no account call
   const { transport, calls } = signed()
   fetcher.mockResolvedValue(Response.json({}))
   await transport.runtime({ directory: "/repo", workspaceId: "ws_local", remote: false }, "/session/ses_local")
-  expect(String(fetcher.mock.calls[0]?.[0])).toBe("http://127.0.0.1:4444/session/ses_local?directory=%2Frepo")
+  expect(fetcher.mock.calls[0]?.[0]).toBe("http://127.0.0.1:4444/session/ses_local?directory=%2Frepo")
   expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get("authorization")).toBeNull()
   expect(calls).toEqual([])
 })

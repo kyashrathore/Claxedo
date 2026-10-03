@@ -21,14 +21,14 @@ export type FoldersApi = {
 }
 
 async function readPaths(transport: Transport): Promise<ServerPaths> {
-  const body = await transport.json<unknown>("/path")
+  const body = await transport.json("/path")
   const home = readString(body, "home")
   if (home === undefined) throw new ServerError({ class: "internal", message: "The server answered /path without a home folder" })
   return { home, directory: readString(body, "directory") ?? home }
 }
 
 async function readChildren(transport: Transport, directory: string): Promise<readonly FolderEntry[]> {
-  const body = await transport.json<unknown>(withQuery("/file", { directory, path: "" }))
+  const body = await transport.json(withQuery("/file", { directory, path: "" }))
   return (Array.isArray(body) ? body : []).flatMap((item) => {
     const name = readString(item, "name")
     const absolute = readString(item, "absolute")
@@ -47,10 +47,10 @@ export function folderQueries(transport: Transport): FolderQueries {
 export function createFoldersApi(transport: Transport): FoldersApi {
   return {
     search: async (scope, query, limit) =>
-      asArray(await transport.json<unknown>(withQuery("/find/file", { directory: scope, query, type: "directory", limit: String(limit) }))).filter(isString),
+      asArray(await transport.json(withQuery("/find/file", { directory: scope, query, type: "directory", limit: String(limit) }))).filter(isString),
     browsable: async () => {
       if (transport.loopback) return true
-      const body = await transport.json<unknown>("/api/claxedo/health")
+      const body = await transport.json("/api/claxedo/health")
       return isRecord(body) && body.localExecution === true
     },
   }

@@ -421,7 +421,7 @@ describe("containing a turn whose lease was revoked", () => {
     const running = generationCheckedOwner(() => replacement)
     const lostTurn = captureTurnTarget()
     // A's admission, captured before B replaced it.
-    lostTurn.set(TARGET)
+    await lostTurn.set(TARGET)
 
     const outcome = await containLostTurn({
       runtime: running.owner,

@@ -16,7 +16,7 @@ async function firstPaintedTranscript(app: Page, sessionId: string): Promise<() 
           return root.querySelector("[data-session-timeline-root]")?.textContent ?? ""
         },
         painted: (text) => {
-          if (text === undefined) return
+          if (text === undefined) return false
           resolve(text)
           return true
         },
@@ -42,7 +42,7 @@ async function recordSentMessage(app: Page, text: string): Promise<() => Promise
         }),
         painted: (frame) => {
           frames.push(frame.sent)
-          if (!frame.answered && frames.length <= 3000) return
+          if (!frame.answered && frames.length <= 3000) return false
           resolve(frames)
           return true
         },

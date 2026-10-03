@@ -1,12 +1,7 @@
 import type { AgentMessage, AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
+import type { SqliteDatabase } from "../sqlite/database"
 
-export type TurnEvidenceDatabase = {
-  prepare<Row>(sql: string): { get(...params: unknown[]): Row | null | undefined }
-}
-
-type TurnRowsDatabase = {
-  prepare<Row>(sql: string): { get(...params: unknown[]): Row | null | undefined; all(...params: unknown[]): Row[] }
-}
+export type TurnEvidenceDatabase = Pick<SqliteDatabase, "prepare">
 
 export type TurnEvidence = { started: boolean; finished: boolean; outcome?: AgentTurnOutcome }
 
@@ -93,7 +88,7 @@ export function readTurnId(db: TurnEvidenceDatabase, sessionId: string, messageI
 }
 
 /** The turn's own prompt and every prompt steered into it, in projection order. */
-export function readTurnPrompts(db: TurnRowsDatabase, sessionId: string, turnId: string): Array<{ id: string; ord: number }> {
+export function readTurnPrompts(db: TurnEvidenceDatabase, sessionId: string, turnId: string): Array<{ id: string; ord: number }> {
   return db.prepare<{ id: string; ord: number }>(TURN_PROMPTS_SQL).all(sessionId, turnId)
 }
 
@@ -103,7 +98,7 @@ export function readTurnPrompts(db: TurnRowsDatabase, sessionId: string, turnId:
  * prompt was its own or steered in. A prompt no turn holds stands as a turn
  * of its own.
  */
-export function readLatestTurn(db: TurnRowsDatabase, sessionId: string, endOrd: number | undefined) {
+export function readLatestTurn(db: TurnEvidenceDatabase, sessionId: string, endOrd: number | undefined) {
   const prompt = db.prepare<{ id: string; ord: number; turn_id: string | null }>(
     `SELECT id, ord, turn_id FROM message WHERE session_id = ? AND role = 'user'${endOrd === undefined ? "" : " AND ord < ?"} ORDER BY ord DESC LIMIT 1`,
   ).get(...(endOrd === undefined ? [sessionId] : [sessionId, endOrd]))

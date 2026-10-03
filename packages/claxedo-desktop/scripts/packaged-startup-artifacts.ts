@@ -7,7 +7,7 @@ import {
   compileCacheEntrySource,
   parseCompileCacheManifest,
 } from "../src/shared/compile-cache"
-import { readRecord, readString } from "@claxedo/helpers/readers"
+import { readBoolean, readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
 
 type AsarFile = { size: number; offset: number; unpacked: boolean }
 
@@ -37,11 +37,10 @@ function readAsar(archive: string): { files: Map<string, AsarFile>; dataOffset: 
           walk(child, p)
           continue
         }
-        const record = child as { size?: unknown; offset?: unknown; unpacked?: unknown }
         files.set(p, {
-          size: typeof record.size === "number" ? record.size : 0,
+          size: readFiniteNumber(child, "size") ?? 0,
           offset: Number(readString(child, "offset") ?? 0),
-          unpacked: record.unpacked === true,
+          unpacked: readBoolean(child, "unpacked") === true,
         })
       }
     }

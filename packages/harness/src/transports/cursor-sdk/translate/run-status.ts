@@ -34,6 +34,10 @@ function failedRun(row: CursorRunResult): AgentRuntimeEvent[] {
   ]
 }
 
+export function isCursorRunResult(row: Record<string, unknown>): row is Record<string, unknown> & CursorRunResult {
+  return row.type === "result" && typeof row.runId === "string" && typeof row.status === "string"
+}
+
 export function localRunTerminalEvents(state: CursorSdkAdapterState, row: CursorRunResult): CursorTranslation {
   if (row.status === "finished" || row.status === "cancelled") {
     const type = row.status === "cancelled" ? "cancelled" : "finish"

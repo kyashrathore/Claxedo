@@ -2482,11 +2482,12 @@ describe("machine session rows", () => {
       ],
     })
 
-    expect(statusNotices.map((notice) => [notice.sessionId, notice.ownerUserId]).sort()).toEqual([
+    const byPair = (a: readonly string[], b: readonly string[]) => a.join("\u0000").localeCompare(b.join("\u0000"))
+    expect(statusNotices.map((notice) => [notice.sessionId, notice.ownerUserId]).sort(byPair)).toEqual([
       ["ses_private", alice.principal!.userId],
       ["ses_shared", alice.principal!.userId],
       ["ses_shared", bob.principal!.userId],
-    ].sort())
+    ].sort(byPair))
   })
 
   test("a share recipient hears nothing once the session read rule no longer admits them", async () => {

@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
 
 import { V2_PRIMITIVES_DEFAULT } from "../src/theme/v2/default-primitives"
+import { parseDesktopTheme } from "../src/theme/parse"
 import type { DesktopTheme } from "../src/theme/types"
 
 const themePath = import.meta.dir + "/../src/theme/themes/oc-2.json"
-const theme = (await Bun.file(themePath).json()) as DesktopTheme
+const theme = parseDesktopTheme(await Bun.file(themePath).json(), themePath)
 const css = await Bun.file(import.meta.dir + "/../src/v2/styles/theme.css").text()
 
 const light = { ...V2_PRIMITIVES_DEFAULT, ...readTokens("light") }
@@ -27,6 +28,6 @@ function readTokens(mode: "light" | "dark") {
     [...block.matchAll(/--(v2-[\w-]+):\s*([^;]+);/g)]
       // Fonts and the fixed avatar foreground remain global CSS rather than theme overrides.
       .filter(([, key]) => key !== "v2-avatar-fg" && key !== "v2-font-family-sans")
-      .map(([, key, value]) => [key, value!.replace(/\s+/g, " ").trim()]),
+      .map(([, key, value]) => [key, value.replace(/\s+/g, " ").trim()]),
   )
 }

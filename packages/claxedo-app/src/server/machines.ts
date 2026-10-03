@@ -1,5 +1,5 @@
-import { isNonBlankString } from "@claxedo/helpers/guards"
-import { readField } from "@claxedo/helpers/readers"
+import { isNonBlankString, isRecord } from "@claxedo/helpers/guards"
+import { readArray, readField } from "@claxedo/helpers/readers"
 import { fetchQuery } from "./fetch-query"
 import { machineId } from "./ids"
 import { queryKeys } from "./query-keys"
@@ -17,8 +17,7 @@ type DeviceRow = { readonly host_id: string; readonly display_name: string; read
 type MachineReport = () => Promise<unknown>
 
 function isDeviceRow(value: unknown): value is DeviceRow {
-  const row = value as Partial<DeviceRow> | null
-  return !!row && typeof row.host_id === "string" && typeof row.display_name === "string" && typeof row.last_seen_at === "number"
+  return isRecord(value) && typeof value.host_id === "string" && typeof value.display_name === "string" && typeof value.last_seen_at === "number"
 }
 
 function machineFromDevice(row: DeviceRow, self: string | undefined, now: number): Machine {
@@ -56,9 +55,9 @@ async function loadMachines(transport: Transport, workspaces: Workspaces, report
     const machine = thisMachine(declaration, transport.loopback)
     return machine ? [await namedByReport(machine, report)] : []
   }
-  const body = await transport.json<{ devices?: unknown }>(DEVICES_PATH)
+  const devices = readArray(await transport.json(DEVICES_PATH), "devices") ?? []
   const now = Date.now()
-  return (Array.isArray(body.devices) ? body.devices : []).filter(isDeviceRow).map((row) => machineFromDevice(row, declaration.enrollmentId, now))
+  return devices.filter(isDeviceRow).map((row) => machineFromDevice(row, declaration.enrollmentId, now))
 }
 
 export function machineQueries(transport: Transport, workspaces: Workspaces, report?: MachineReport) {

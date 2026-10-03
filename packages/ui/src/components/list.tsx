@@ -82,8 +82,8 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }):
     list.onInput(value)
     props.onFilter?.(value)
     if (!options?.ref) return
-    if (previous === value) return void list.refetch()
-    queueMicrotask(() => list.refetch())
+    if (previous === value) void list.refetch()
+    else queueMicrotask(() => list.refetch())
   }
   createEffect(() => {
     if (props.filter === undefined || props.filter === store.internalFilter) return

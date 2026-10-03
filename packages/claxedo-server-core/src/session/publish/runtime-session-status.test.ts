@@ -159,7 +159,7 @@ describe("runtime session status", () => {
       },
       url: () => "https://plane.test/api/claxedo/host/session-rows",
       fetch: (async (_url: string | URL | Request, init?: RequestInit) => {
-        posts.push(JSON.parse(String(init?.body)))
+        posts.push(JSON.parse(typeof init?.body === "string" ? init.body : ""))
         return Response.json({ accepted: 1, refused: [] })
       }) as typeof fetch,
       debounceMs: 1,

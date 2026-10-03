@@ -19,7 +19,19 @@ export function goalFromWire(value: unknown): SessionGoal | undefined {
   const { sessionId, objective, status, createdAt, updatedAt } = value
   if (typeof sessionId !== "string" || typeof objective !== "string" || !isRuntimeGoalStatus(status)) return undefined
   if (typeof createdAt !== "number" || typeof updatedAt !== "number") return undefined
-  return value as SessionGoal
+  const { tokenBudget, tokensUsed, timeUsedSeconds, iteration, lastReason } = value
+  return {
+    sessionId,
+    objective,
+    status,
+    createdAt,
+    updatedAt,
+    ...(typeof tokenBudget === "number" ? { tokenBudget } : {}),
+    ...(typeof tokensUsed === "number" ? { tokensUsed } : {}),
+    ...(typeof timeUsedSeconds === "number" ? { timeUsedSeconds } : {}),
+    ...(typeof iteration === "number" ? { iteration } : {}),
+    ...(typeof lastReason === "string" ? { lastReason } : {}),
+  }
 }
 
 export function goalStateFromWire(body: unknown): SessionGoalState {

@@ -11,7 +11,8 @@ function isTerminalPaneState(value: unknown): value is TerminalPaneState {
 export function terminalContents(workbench: WorkbenchStore): readonly TerminalContent[] {
   return workbench.selectors.aliveContents().flatMap((contentId) => {
     const opened = workbench.content(contentId)
-    if (opened?.kind.kind !== terminalPaneKind.kind || !isTerminalPaneState(opened.state)) return []
-    return [{ contentId, state: opened.state }]
+    const state = opened?.content?.state
+    if (opened?.kind.kind !== terminalPaneKind.kind || !isTerminalPaneState(state)) return []
+    return [{ contentId, state }]
   })
 }

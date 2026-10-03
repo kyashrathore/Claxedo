@@ -71,11 +71,11 @@ function apiError(code: string, message: string) {
   return { error: { code, message } }
 }
 
-const ERROR_STATUSES = new Set<number>([400, 401, 402, 403, 404, 409, 422, 500, 501, 502, 503])
+const ERROR_STATUSES = [400, 401, 402, 403, 404, 409, 422, 500, 501, 502, 503] as const satisfies readonly ContentfulStatusCode[]
 
 /** The status a thrown error names, when it is one an error body may carry. */
 function errorStatus(status: number): ContentfulStatusCode {
-  return (ERROR_STATUSES.has(status) ? status : 500) as ContentfulStatusCode
+  return ERROR_STATUSES.find((code) => code === status) ?? 500
 }
 
 export function ProjectRoutes(options: ProjectRouteOptions) {
