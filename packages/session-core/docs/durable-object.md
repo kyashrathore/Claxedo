@@ -78,7 +78,12 @@ request reaches it before they finish:
    restarted and a new message can continue the work. It ends the session's
    running tool calls with "Tool execution interrupted" and marks its pending
    permissions and questions stale. The text the turn had already streamed
-   stays in the transcript.
+   stays in the transcript. Last, every host child (a Claxedo child session)
+   whose row still says a run is in progress is settled as `interrupted`
+   under its parent, so it no longer counts toward the parent's active
+   children. Unless the parent is archived, that result is owed to the parent
+   as a wake naming the reply the child's newest turn opened, and is delivered
+   like any other child result.
 2. `sessions.recoverQueuedPrompts()` wakes every session that has an eligible
    queued row: one not held, and with no delivery attempt still outstanding.
    Each one runs as its own turn once the session is idle.
