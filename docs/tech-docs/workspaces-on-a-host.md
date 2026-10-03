@@ -394,9 +394,12 @@ by `projectSources`:
 The Activity view's page (`every: true`) is built by `everySources`: the same
 `serverSource` with `scope=all`, every session the reader may read (the
 daemon's projection of every local workspace; on the control plane, the
-workspaces the reader owns and the sessions shared to it), and on a signed
+first rows of each workspace the reader owns, read in index order, and the
+sessions shared to it), and on a signed
 desktop the account's `session.activity.page` (`GET
-/api/control/session-list?scope=all`), optional. A `sessionId` narrows either
+/api/control/session-list?scope=all`), optional, under the reader's own settled
+filter; the daemon's page then drops the sessions the account knows, and the
+page is one round of the two sources, never refilled. A `sessionId` narrows either
 to that one session, which is how the list reads one row it was not holding.
 
 `readSessionSources` (`packages/claxedo-app/src/server/session-sources.ts`)

@@ -66,13 +66,13 @@ test("session list: a paired project whose account page fails lists the daemon's
   expect(page.rows).toEqual([])
 })
 
-test("session list: every readable session is one all-scoped read of the server, and a signed desktop adds its account's, read whole and filtered after", async () => {
+test("session list: every readable session is one all-scoped read of the server, and a signed desktop adds its account's under the reader's own settled filter", async () => {
   const unsigned = context({})
   await listSessions(unsigned.value, { every: true, limit: 20, settled: "active" })
   expect(unsigned.daemon).toEqual(["/api/claxedo/session-list?scope=all&sort=human_turn_desc&limit=20&settled=active"])
 
   const signed = context({ account: "up" })
   await listSessions(signed.value, { every: true, sessionId: sessionId("ses_1"), limit: 1, settled: "active" })
-  expect(signed.daemon).toEqual(["/api/claxedo/session-list?scope=all&sessionId=ses_1&sort=human_turn_desc&limit=1&settled=all"])
-  expect(signed.account).toEqual([{ limit: 1, settled: "all", sessionId: "ses_1", sort: "human_turn_desc" }])
+  expect(signed.daemon).toEqual(["/api/claxedo/session-list?scope=all&sessionId=ses_1&sort=human_turn_desc&limit=1&settled=active"])
+  expect(signed.account).toEqual([{ limit: 1, settled: "active", sessionId: "ses_1", sort: "human_turn_desc" }])
 })

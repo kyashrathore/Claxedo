@@ -31,56 +31,82 @@ type SessionPageRow = {
   settled_at: number | null
 }
 
-const COLUMNS = {
-  lastHumanTurnAt: "s.last_human_turn_at",
-  createdAt: "s.created_at",
-  updatedAt: "s.updated_at",
-  sessionRef: "('workspace:' || s.workspace_id || ':session:' || s.session_id)",
+type Clauses = { readonly where: string[]; readonly params: unknown[] }
+
+const orderColumns = (s: string) => ({
+  lastHumanTurnAt: `${s}.last_human_turn_at`,
+  createdAt: `${s}.created_at`,
+  updatedAt: `${s}.updated_at`,
+  sessionRef: `('workspace:' || ${s}.workspace_id || ':session:' || ${s}.session_id)`,
+})
+
+function pageFilters(query: SessionPageQuery, s: string, r: string): Clauses {
+  const where = [`${s}.deleted_at is null`]
+  const params: unknown[] = []
+  if (query.archived === "archived") where.push(`${s}.archived_at is not null`)
+  if (query.archived === "active") where.push(`${s}.archived_at is null`)
+  if (query.settled !== "all") where.push(unsettledSql({ settledAt: `${r}.settled_at`, lastHumanTurnAt: `${s}.last_human_turn_at`, lastTurnCompletedAt: `${s}.last_turn_completed_at` }))
+  if (query.search) {
+    where.push(`lower(coalesce(${s}.title, '')) like ?`)
+    params.push(`%${query.search.toLowerCase()}%`)
+  }
+  const keyset = sessionOrderSql(orderColumns(s), query.sort, query.after).keyset
+  if (keyset) {
+    where.push(keyset.sql)
+    params.push(...keyset.params)
+  }
+  return { where, params }
 }
 
-const READER_COLUMNS = {
-  settledAt: "r.settled_at",
-  lastHumanTurnAt: "s.last_human_turn_at",
-  lastTurnCompletedAt: "s.last_turn_completed_at",
+/**
+ * The candidates of a page of every session the reader may read: the first
+ * `limit` rows of each workspace the reader owns, each read in order from
+ * `sessions_by_workspace_human_turn`, and the first `limit` of the sessions
+ * shared to the reader. The page is the first `limit` of their union, so its
+ * sort holds at most (owned workspaces + 1) × `limit` rows. The shared arm
+ * orders every active share of the reader that passes the filters, since no
+ * index orders shares by their session's activity.
+ */
+function everyReadableCandidates(query: SessionPageQuery, readerUserId: string): Clauses {
+  const owned = pageFilters(query, "o", "o_r")
+  const shared = pageFilters(query, "h", "h_r")
+  const ordered = (s: string) => sessionOrderSql(orderColumns(s), query.sort, undefined).orderBy
+  return {
+    where: [`s.session_id in (
+      select c.session_id from workspaces w
+        join sessions c on c.session_id in (
+          select o.session_id from sessions o
+            left join session_reads o_r on o_r.user_id = ? and o_r.session_id = o.session_id
+          where o.workspace_id = w.workspace_id and ${owned.where.join(" and ")}
+          order by ${ordered("o")} limit ?)
+      where w.owner_user_id = ? and w.deleted_at is null
+      union all
+      select session_id from (
+        select h.session_id from session_share_grants g
+          join sessions h on h.session_id = g.session_id
+          left join session_reads h_r on h_r.user_id = ? and h_r.session_id = h.session_id
+        where g.target_user_id = ? and g.revoked_at is null and ${shared.where.join(" and ")}
+        order by ${ordered("h")} limit ?))`],
+    params: [readerUserId, ...owned.params, query.limit, readerUserId, readerUserId, readerUserId, ...shared.params, query.limit],
+  }
+}
+
+function pageScope(query: SessionPageQuery, readerUserId: string): Clauses {
+  if (query.sessionId) return { where: ["s.session_id = ?"], params: [query.sessionId] }
+  if ("projectId" in query) return { where: ["s.project_id = ?"], params: [query.projectId] }
+  if ("workspaceId" in query) return { where: ["s.workspace_id = ?"], params: [query.workspaceId] }
+  return everyReadableCandidates(query, readerUserId)
 }
 
 /**
  * `access` is the caller's read predicate over `s`, with the values its
  * placeholders bind; `readerUserId` is whose seen and settled marks the rows
- * carry and the settled filter reads.
+ * carry and the settled filter reads. A `sessionId` reads that one session,
+ * whatever the scope, by its key.
  */
 export async function readD1SessionPage(database: D1Database, query: SessionPageQuery, access: BoundSql, readerUserId: string) {
-  const where = ["s.deleted_at is null"]
-  const params: unknown[] = [readerUserId]
-  if ("projectId" in query) {
-    where.push("s.project_id = ?")
-    params.push(query.projectId)
-  } else if ("workspaceId" in query) {
-    where.push("s.workspace_id = ?")
-    params.push(query.workspaceId)
-  } else {
-    where.push(`(s.workspace_id in (select w.workspace_id from workspaces w where w.owner_user_id = ? and w.deleted_at is null)
-      or s.session_id in (select g.session_id from session_share_grants g where g.target_user_id = ? and g.revoked_at is null))`)
-    params.push(readerUserId, readerUserId)
-  }
-  if (query.sessionId) {
-    where.push("s.session_id = ?")
-    params.push(query.sessionId)
-  }
-  if (query.archived === "archived") where.push("s.archived_at is not null")
-  if (query.archived === "active") where.push("s.archived_at is null")
-  if (query.settled !== "all") where.push(unsettledSql(READER_COLUMNS))
-  if (query.search) {
-    where.push("lower(coalesce(s.title, '')) like ?")
-    params.push(`%${query.search.toLowerCase()}%`)
-  }
-  where.push(access.sql)
-  params.push(...access.bind)
-  const order = sessionOrderSql(COLUMNS, query.sort, query.after)
-  if (order.keyset) {
-    where.push(order.keyset.sql)
-    params.push(...order.keyset.params)
-  }
+  const scope = pageScope(query, readerUserId)
+  const filters = pageFilters(query, "s", "r")
   const result = await database
     .prepare(`
       select s.session_id, s.workspace_id, s.project_id, s.title, s.created_at, s.updated_at,
@@ -89,11 +115,11 @@ export async function readD1SessionPage(database: D1Database, query: SessionPage
         s.last_turn_status, s.last_turn_completed_at, r.seen_at, r.settled_at
       from sessions s
       left join session_reads r on r.user_id = ? and r.session_id = s.session_id
-      where ${where.join(" and ")}
-      ${query.sessionId ? "" : `order by ${order.orderBy}`}
+      where ${[...scope.where, ...filters.where, access.sql].join(" and ")}
+      ${query.sessionId ? "" : `order by ${sessionOrderSql(orderColumns("s"), query.sort, undefined).orderBy}`}
       limit ?
     `)
-    .bind(...params, query.limit)
+    .bind(readerUserId, ...scope.params, ...filters.params, ...access.bind, query.limit)
     .all<SessionPageRow>()
   return result.results.map(pageRowJson)
 }

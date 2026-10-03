@@ -42,7 +42,7 @@ async function walk(sources: SessionSource[], limit: number, between?: (page: nu
   const pages: string[][] = []
   let after: string | undefined
   do {
-    const page = await readSessionSources(sources, limit, after)
+    const page = await readSessionSources(sources, limit, after, { fill: true })
     pages.push(page.items.map((entry) => (entry as Item).sessionId))
     after = page.nextAfter
     between?.(pages.length)
@@ -79,16 +79,16 @@ test("session sources: a failed account page leaves the daemon's rows with a deg
   const local = store([item("ws_local", "l1", 10)], 5, { required: true })
   const cloud = store([item("ws_cloud", "c1", 20)], 5, { down: () => down })
 
-  expect(await readSessionSources([local, cloud], 5, undefined)).toEqual({ items: [item("ws_local", "l1", 10)], degraded: true })
+  expect(await readSessionSources([local, cloud], 5, undefined, { fill: true })).toEqual({ items: [item("ws_local", "l1", 10)], degraded: true })
   down = false
-  expect((await readSessionSources([local, cloud], 5, undefined)).items.map((entry) => (entry as Item).sessionId)).toEqual(["c1", "l1"])
-  await expect(readSessionSources([store([], 5, { required: true, down: () => true })], 5, undefined)).rejects.toThrow("unreachable")
+  expect((await readSessionSources([local, cloud], 5, undefined, { fill: true })).items.map((entry) => (entry as Item).sessionId)).toEqual(["c1", "l1"])
+  await expect(readSessionSources([store([], 5, { required: true, down: () => true })], 5, undefined, { fill: true })).rejects.toThrow("unreachable")
 })
 
 test("session sources: a session two sources both answer is shown once, as the first source has it", async () => {
   const mine = { ...item("ws_local", "same", 10), title: "Local" }
   const published = { ...item("ws_local", "same", 10), title: "Published" }
-  const page = await readSessionSources([store([mine], 5, { required: true }), store([published], 5)], 5, undefined)
+  const page = await readSessionSources([store([mine], 5, { required: true }), store([published], 5)], 5, undefined, { fill: true })
 
   expect(page.items).toEqual([mine])
 })
@@ -96,4 +96,13 @@ test("session sources: a session two sources both answer is shown once, as the f
 test("session sources: the key round-trips through its encoding", () => {
   const key = { updatedAt: 5, createdAt: 4, lastHumanTurnAt: 9, sessionRef: "workspace:ws_é:session:ses_1" }
   expect(decodeAfter(encodeListAfter(key))).toEqual(key)
+})
+
+test("a merge that does not fill answers one round: a source's filtered page shortens the page, and the next key resumes after the last row examined", async () => {
+  const machine = store([item("ws_a", "a1", 30), item("ws_a", "a2", 20), item("ws_a", "a3", 10)], 2, { required: true })
+  const filtered: SessionSource = { ...machine, read: async (after) => { const page = await machine.read(after); return { ...page, items: page.items.filter((entry) => (entry as Item).sessionId !== "a1") } } }
+  const page = await readSessionSources([filtered], 2, undefined, { fill: false })
+  expect(page.items.map((entry) => (entry as Item).sessionId)).toEqual(["a2"])
+  expect(machine.reads).toEqual([undefined])
+  expect(decodeAfter(page.nextAfter!).sessionRef).toBe("workspace:ws_a:session:a2")
 })

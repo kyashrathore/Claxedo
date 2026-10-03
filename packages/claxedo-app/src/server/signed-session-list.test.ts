@@ -34,9 +34,10 @@ function signedDesktop(sources: { daemon: readonly Item[]; account: readonly Ite
   const writes: Array<{ to: string; body: unknown }> = []
   const account = {
     run: async (operation: string, input: Readonly<Record<string, unknown>> = {}) => {
-      if (operation !== "session.page") return writes.push({ to: operation, body: input }), { seenAt: 70 }
+      if (operation !== "session.page" && operation !== "session.activity.page") return writes.push({ to: operation, body: input }), { seenAt: 70 }
       if (sources.account === "down") throw new Error("control plane unreachable")
-      return paged(sources.account, input.after, Number(input.limit))
+      const listed = input.settled === "active" ? sources.account.filter((entry) => !("settledAt" in entry)) : sources.account
+      return paged(listed, input.after, Number(input.limit))
     },
   } as unknown as HostedAccount
   const value = {
@@ -75,6 +76,16 @@ test("signed list: a published session from both sources is one row, with the ac
   const all = await listSessions(value, { projectId: projectId("local_1"), limit: 10, settled: "all" })
   expect(ids(all.rows)).toEqual(["ses_seen", "ses_settled", "ses_machine"])
   expect(Object.fromEntries(all.readers)).toEqual({ ses_seen: { seenAt: 91 }, ses_settled: { settledAt: 81 }, ses_machine: { seenAt: 71 } })
+})
+
+test("signed Activity: the account answers its own sessions under the reader's settled filter, and the machine only the sessions the account does not know", async () => {
+  const { value } = signedDesktop({
+    daemon: [local("ses_seen", "ws_published", 90, { seenAt: 5 }), local("ses_settled", "ws_published", 80), local("ses_machine", "ws_unpublished", 70, { seenAt: 71 })],
+    account: [hosted("ses_seen", "ws_published", 90, { seenAt: 91 }), hosted("ses_settled", "ws_published", 80, { settledAt: 81 })],
+  })
+  const page = await listSessions(value, { every: true, limit: 10, settled: "active" })
+  expect(ids(page.rows)).toEqual(["ses_seen", "ses_machine"])
+  expect(Object.fromEntries(page.readers)).toEqual({ ses_seen: { seenAt: 91 }, ses_machine: { seenAt: 71 } })
 })
 
 test("signed list: a page whose first rows the account settled fills from the rows after them", async () => {

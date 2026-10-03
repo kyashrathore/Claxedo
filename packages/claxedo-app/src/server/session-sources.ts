@@ -45,12 +45,10 @@ async function readRound(sources: readonly SessionSource[], after: string | unde
   }
 }
 
-export async function readSessionSources(
-  sources: readonly SessionSource[],
-  limit: number,
-  after: string | undefined,
-  hidden: (item: unknown) => boolean = () => false,
-): Promise<MergedPage> {
+export type MergeOptions = { readonly fill: boolean; readonly hidden?: (item: unknown) => boolean }
+
+export async function readSessionSources(sources: readonly SessionSource[], limit: number, after: string | undefined, options: MergeOptions): Promise<MergedPage> {
+  const hidden = options.hidden ?? (() => false)
   const shown: Keyed[] = []
   const examined = new Set<string>()
   let degraded = false
@@ -68,6 +66,7 @@ export async function readSessionSources(
     }
     const last = window.at(-1)
     if (!last || (round.ordered.length <= limit && round.exhausted)) return { items: shown.map((kept) => kept.item), degraded }
+    if (!options.fill) return { items: shown.map((kept) => kept.item), nextAfter: encodeListAfter(last.key), degraded }
     cursor = encodeListAfter(last.key)
   }
 }

@@ -1,7 +1,7 @@
 import type { ProjectId, SessionId } from "./ids"
 import type { SessionContext } from "./session-context"
 import { accountHoldsReader, sessionSettled } from "./session-reader"
-import { readSessionSources, type SessionSource, type SourcePage } from "./session-sources"
+import { readSessionSources, type MergedPage, type SessionSource, type SourcePage } from "./session-sources"
 import { withQuery } from "./transport"
 import type { ListedStatus } from "./status-types"
 import type { SessionListInput, SessionPage, SessionReader, SessionRow, SettledFilter } from "./types"
@@ -94,22 +94,37 @@ function projectSources(context: SessionContext, projectId: ProjectId, accountId
 function everySources(context: SessionContext, sessionId: SessionId | undefined, query: PageQuery, readers: AccountReaders): SessionSource[] {
   const account = context.transport.loopback ? context.account : undefined
   const one: ScopeParams = sessionId ? { sessionId } : {}
-  const linked = account ? [accountSource((after) => account.run("session.activity.page", { ...query, ...one, sort: SORT, ...(after ? { after } : {}) }), readers)] : []
-  return [serverSource(context, { scope: "all", ...one }, query), ...linked]
+  const server = serverSource(context, { scope: "all", ...one }, query)
+  if (!account) return [server]
+  const machineOnly: SessionSource = {
+    ...server,
+    read: async (after) => {
+      const page = await server.read(after)
+      return { ...page, items: page.items.filter((item) => !accountHoldsReader(context, itemField(item, "workspaceId"), false)) }
+    },
+  }
+  return [machineOnly, accountSource((after) => account.run("session.activity.page", { ...query, ...one, sort: SORT, ...(after ? { after } : {}) }), readers)]
 }
 
-export async function listSessions(context: SessionContext, options: SessionListInput): Promise<SessionPage> {
-  const project = "projectId" in options ? options.projectId : undefined
-  const accountIds = project && context.account ? context.workspaces.accountProjectIds(project) : []
-  const paired = project ? accountIds.length > 0 && !accountIds.includes(project) : context.transport.loopback && context.account !== undefined
-  const account: AccountReaders = new Map()
-  const query: PageQuery = { limit: options.limit, settled: paired ? "all" : options.settled }
-  const hidden = paired && options.settled === "active" ? (item: unknown) => settledItem(context, item, account) : undefined
-  const sources = project ? projectSources(context, project, accountIds, query, account) : everySources(context, "sessionId" in options ? options.sessionId : undefined, query, account)
-  const merged = await readSessionSources(sources, options.limit, options.after, hidden)
+async function pageOf(context: SessionContext, merged: MergedPage, readers: AccountReaders): Promise<SessionPage> {
   return {
-    ...(await listedOf(context, merged.items, account)),
+    ...(await listedOf(context, merged.items, readers)),
     ...(merged.nextAfter ? { nextAfter: merged.nextAfter } : {}),
     ...(merged.degraded ? { degraded: true } : {}),
   }
+}
+
+export async function listSessions(context: SessionContext, options: SessionListInput): Promise<SessionPage> {
+  const account: AccountReaders = new Map()
+  if (!("projectId" in options)) {
+    const sources = everySources(context, options.sessionId, { limit: options.limit, settled: options.settled }, account)
+    return pageOf(context, await readSessionSources(sources, options.limit, options.after, { fill: false }), account)
+  }
+  const { projectId } = options
+  const accountIds = context.account ? context.workspaces.accountProjectIds(projectId) : []
+  const paired = accountIds.length > 0 && !accountIds.includes(projectId)
+  const query: PageQuery = { limit: options.limit, settled: paired ? "all" : options.settled }
+  const hidden = paired && options.settled === "active" ? (item: unknown) => settledItem(context, item, account) : undefined
+  const sources = projectSources(context, projectId, accountIds, query, account)
+  return pageOf(context, await readSessionSources(sources, options.limit, options.after, { fill: true, hidden }), account)
 }
