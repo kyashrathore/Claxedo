@@ -54,8 +54,8 @@ describe("direct provider delivery", () => {
   })
 
   test("names why an account cannot be handed over instead of dropping it", async () => {
-    expect(await deliver([credential({ id: "key", provider_id: "anthropic", kind: "api_key", status: "auth_failed" })]))
-      .toEqual([{ providerId: "anthropic", credentialId: "key", unavailable: "auth_failed" }])
+    expect(await deliver([credential({ id: "key", provider_id: "anthropic", kind: "api_key", status: "revoked" })]))
+      .toEqual([{ providerId: "anthropic", credentialId: "key", unavailable: "revoked" }])
     expect(await deliver([credential({ id: "missing", provider_id: "anthropic", kind: "api_key" })]))
       .toEqual([{ providerId: "anthropic", credentialId: "missing", unavailable: "unreadable_secret" }])
   })

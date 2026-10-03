@@ -57,6 +57,8 @@ export type SessionNavigationRow = {
     publicId?: string
   }
   status?: SessionRowStatus
+  /** The session whose own Durable Object serves this one; absent for a session the workspace's runtime serves. */
+  sessionHostRoot?: string
 }
 
 /**
@@ -207,6 +209,7 @@ function sessionNavigationRow(session: unknown): SessionNavigationRow | undefine
   const updatedAt = numberValue(item.updatedAt) ?? numberValue(item.updated_at) ?? createdAt
   const lastHumanTurnAt = numberValue(item.lastHumanTurnAt) ?? numberValue(item.last_human_turn_at)
   const archivedAt = numberValue(item.archived) ?? numberValue(item.archived_at)
+  const sessionHostRoot = stringValue(item.session_host_root)
   return {
     type: "session",
     sessionRef: stringValue(item.sessionRef) ?? stringValue(item.session_ref) ?? sessionRef({ sessionId, workspaceId, directory }),
@@ -232,6 +235,7 @@ function sessionNavigationRow(session: unknown): SessionNavigationRow | undefine
     }),
     ...ownerFromSession(item),
     ...statusFromSession(item),
+    ...(sessionHostRoot ? { sessionHostRoot } : {}),
   }
 }
 
