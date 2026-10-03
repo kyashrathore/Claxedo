@@ -1,4 +1,5 @@
 import { mkdir, readdir } from "node:fs/promises"
+import { asRecord } from "@claxedo/helpers/guards"
 import { createBoundedGit, GIT_CLONE_TIMEOUT_MS } from "@claxedo/workspace-runtime/host"
 
 const git = createBoundedGit({ timeoutMs: GIT_CLONE_TIMEOUT_MS })
@@ -27,7 +28,7 @@ async function hasCommit(directory: string) {
     return true
   } catch (error) {
     // `--quiet` exits 1 with no output exactly when HEAD names no commit yet.
-    if ((error as { code?: unknown }).code === 1) return false
+    if (asRecord(error)?.code === 1) return false
     throw error
   }
 }

@@ -160,9 +160,9 @@ export function providerAuthMethodsForHarness(harness: string): ProviderAuthMeth
   if (harness === "opencode") return methods
   if (harness === "pi") {
     return Object.fromEntries(PI_LAUNCH_PROVIDERS.map((id) => [id,
-      id === "openai-codex" ? methods["codex-app-server"]!.filter((method) => method.type === "oauth")
-        : id === "openai" ? methods.openai!.filter((method) => method.type === "api")
-          : methods[id]!,
+      id === "openai-codex" ? methods["codex-app-server"].filter((method) => method.type === "oauth")
+        : id === "openai" ? methods.openai.filter((method) => method.type === "api")
+          : methods[id],
     ]))
   }
   if (!isHarnessId(harness)) return undefined

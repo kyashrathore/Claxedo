@@ -113,7 +113,8 @@ test("a signed browser creates a cloud workspace from a connected repository thr
       expect(String(workspace.id)).toBe("ws_cloud")
       const request = calls.find((call) => call.path === "/api/workspace/create")
       expect(request?.init?.credentials).toBe("include")
-      expect(JSON.parse(String(request?.init?.body))).toEqual({ connectionId: "github_1", repo: { fullName: "owner/app" } })
+      const body = request?.init?.body
+      expect(typeof body === "string" ? JSON.parse(body) : body).toEqual({ connectionId: "github_1", repo: { fullName: "owner/app" } })
       expect(calls.some((call) => call.path.startsWith("/api/claxedo/projects"))).toBe(false)
     } finally { server.dispose(); dispose() }
   })

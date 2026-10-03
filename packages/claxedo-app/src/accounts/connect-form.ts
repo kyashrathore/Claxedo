@@ -104,8 +104,11 @@ function useSaveKey(input: ConnectFormInput, state: ReturnType<typeof createConn
     event.preventDefault()
     const secret = store.value.trim()
     const label = store.label.trim()
-    if (!secret) return void setStore("error", t("provider.connect.apiKey.required"))
-    if (!input.credentialId && !label) return void setStore("error", t("provider.connect.label.required"))
+    const missing = !secret ? t("provider.connect.apiKey.required") : !input.credentialId && !label ? t("provider.connect.label.required") : undefined
+    if (missing) {
+      setStore("error", missing)
+      return
+    }
     setStore({ saving: true, error: undefined })
     try {
       await write(secret, label)

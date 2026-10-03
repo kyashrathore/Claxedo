@@ -86,10 +86,10 @@ describe("hosted account setup through the shared credential routes", () => {
     await call(app(), "/api/claxedo/credentials", { method: "PUT", body: key("cursor-sdk") })
     const [row] = await store().listCredentials()
     expect((await (await call(app(), "/api/claxedo/credentials", { person: "bob" })).json()).credentials).toEqual([])
-    expect((await call(app(), `/api/claxedo/credentials/${row!.id}/verify`, { method: "POST", body: {}, person: "bob" })).status).toBe(404)
-    expect((await call(app(), `/api/claxedo/credentials/${row!.id}/reconnect`, { method: "POST", body: { secret: "replacement" }, person: "bob" })).status).toBe(404)
-    expect(await (await call(app(), `/api/claxedo/credentials/${row!.id}`, { method: "DELETE", person: "bob" })).json()).toEqual({ deleted: false })
-    expect(await store().resolveCredentialSecretById?.(row!.id)).toBe("test-key")
+    expect((await call(app(), `/api/claxedo/credentials/${row.id}/verify`, { method: "POST", body: {}, person: "bob" })).status).toBe(404)
+    expect((await call(app(), `/api/claxedo/credentials/${row.id}/reconnect`, { method: "POST", body: { secret: "replacement" }, person: "bob" })).status).toBe(404)
+    expect(await (await call(app(), `/api/claxedo/credentials/${row.id}`, { method: "DELETE", person: "bob" })).json()).toEqual({ deleted: false })
+    expect(await store().resolveCredentialSecretById?.(row.id)).toBe("test-key")
   })
 
   test("the effective account follows the person's own or organization selection", async () => {
