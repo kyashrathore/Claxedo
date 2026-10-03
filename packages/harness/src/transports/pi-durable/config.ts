@@ -47,19 +47,19 @@ function permissionState(config: { permissionMode?: string }): AgentPermissionMo
 
 type Target = { credentials: PiCredentials; model?: PromptModel; effort?: string }
 
-async function sessionTarget(session: PiSession, model: PromptModel | undefined): Promise<Target> {
+async function sessionConfigTarget(session: PiSession, model: PromptModel | undefined): Promise<Target> {
   const agent = await session.runtime.conversation.agent(BACKGROUND_CONTEXT)
   const held = agent.model ? { providerID: "pi", modelID: `${agent.model.provider}/${agent.model.modelId}` } : undefined
   const selected = model ?? held ?? session.start.config.model ?? session.start.model
   return { credentials: session.credentials, ...(selected ? { model: selected } : {}), effort: agent.thinkingLevel }
 }
 
-function draftTarget(draft: DraftLaunch): Target {
+function draftConfigTarget(draft: DraftLaunch): Target {
   const model = draft.config.model ?? draft.model
   return { credentials: new PiCredentials(draft.credentials, draft.providerDefinitions ?? [], async () => undefined), ...(model ? { model } : {}) }
 }
 
-function preview(target: Target) {
+function piConfigPreview(target: Target) {
   const models = piCatalog(target.credentials)
   const selected = models.find((row) => row.id === target.model?.modelID)?.id
   const ref = selected ? piModelRef(target.model) : undefined
@@ -70,7 +70,7 @@ function preview(target: Target) {
 
 export function createPiConfig(input: { session(session: HarnessSession): PiSession }): ConfigOperations {
   return {
-    options: async (target) => preview("session" in target ? await sessionTarget(input.session(target.session), target.model) : draftTarget(target.draft)),
+    options: async (target) => piConfigPreview("session" in target ? await sessionConfigTarget(input.session(target.session), target.model) : draftConfigTarget(target.draft)),
     permissionModes: async (target) => permissionState("session" in target ? input.session(target.session).start.config : target.draft.config),
     setPermissionMode: async (session, modeId) => {
       if (!PI_PERMISSION_MODES.modes.some((mode) => mode.id === modeId)) throw piConfiguration(`Pi has no permission mode ${modeId}`)

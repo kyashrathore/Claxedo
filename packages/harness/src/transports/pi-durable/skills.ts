@@ -5,7 +5,7 @@ import type { SkillRoot } from "../../contract"
 
 const GUIDE = "Each skill below is a folder of instructions. When a task matches a skill's description, read its SKILL.md with the read tool before acting."
 
-const escape = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+const xmlText = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
 
 function frontmatter(text: string, field: string): string | undefined {
   const head = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1]
@@ -13,13 +13,13 @@ function frontmatter(text: string, field: string): string | undefined {
   return line?.slice(field.length + 1).trim().replace(/^["']|["']$/g, "") || undefined
 }
 
-async function skill(env: ExecutionEnv, root: SkillRoot, name: string, context: Context): Promise<string | undefined> {
+async function skillEntry(env: ExecutionEnv, root: SkillRoot, name: string, context: Context): Promise<string | undefined> {
   const location = await env.joinPath([root.root, "skills", name, "SKILL.md"], context)
   if (!location.ok) return undefined
   const text = await env.readTextFile(location.value, context)
   const description = text.ok ? frontmatter(text.value, "description") ?? "" : ""
-  return `<skill>\n<name>${escape(frontmatter(text.ok ? text.value : "", "name") ?? name)}</name>\n` +
-    `<description>${escape(description)}</description>\n<location>${escape(location.value)}</location>\n</skill>`
+  return `<skill>\n<name>${xmlText(frontmatter(text.ok ? text.value : "", "name") ?? name)}</name>\n` +
+    `<description>${xmlText(description)}</description>\n<location>${xmlText(location.value)}</location>\n</skill>`
 }
 
 export function piSkillsSection(roots: () => readonly SkillRoot[]): PromptSection {
@@ -27,7 +27,7 @@ export function piSkillsSection(roots: () => readonly SkillRoot[]): PromptSectio
     const env = input.env
     const listed = roots().flatMap((root) => root.skillNames.map((name) => ({ root, name })))
     if (!env || !listed.length) return undefined
-    const skills = await Promise.all(listed.map(({ root, name }) => skill(env, root, name, context)))
+    const skills = await Promise.all(listed.map(({ root, name }) => skillEntry(env, root, name, context)))
     return [GUIDE, ...skills.filter((entry) => entry !== undefined)].join("\n")
   })
 }

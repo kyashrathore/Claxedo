@@ -277,3 +277,9 @@ export function projectionRenewalDueAt(
     .map((expiresAt) => expiresAt - Math.max(expiresAt - appliedAt, 0) / 2)
   return due.length ? Math.min(...due) : undefined
 }
+
+/** The earliest renewal any row of a snapshot needs, across every person's accounts and direct credentials. */
+export function credentialSnapshotRenewalDueAt(auth: CredentialSnapshot<ProviderProjection>, appliedAt: number): number | undefined {
+  const due = [...Object.values(auth.accounts), ...Object.values(auth.direct ?? {})].flatMap((rows) => projectionRenewalDueAt(rows, appliedAt) ?? [])
+  return due.length ? Math.min(...due) : undefined
+}

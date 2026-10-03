@@ -6,7 +6,7 @@ import type { ProjectedMcpServer } from "../../contract"
 
 const NAME_LIMIT = 64
 
-function fnv1a(value: string): string {
+function nameHash(value: string): string {
   let hash = 0x811c9dc5
   for (const char of value) hash = Math.imul(hash ^ char.codePointAt(0)!, 0x01000193) >>> 0
   return hash.toString(16).padStart(8, "0")
@@ -15,7 +15,7 @@ function fnv1a(value: string): string {
 export function piMcpToolName(server: string, tool: string): string {
   const raw = `mcp__${server}__${tool}`
   const clean = raw.replace(/[^A-Za-z0-9_]/g, "_")
-  return clean === raw && raw.length <= NAME_LIMIT ? raw : `${clean.slice(0, NAME_LIMIT - 9)}_${fnv1a(raw)}`
+  return clean === raw && raw.length <= NAME_LIMIT ? raw : `${clean.slice(0, NAME_LIMIT - 9)}_${nameHash(raw)}`
 }
 
 export type PiMcpHost = {

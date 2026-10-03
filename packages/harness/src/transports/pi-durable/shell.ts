@@ -15,7 +15,7 @@ export type PiShellHost = { sessionId: string; services: HarnessServices; env: R
 
 type Exec = { owned: OwnedProcess; options: ShellExecOptions | undefined; context: Context }
 
-const failed = (code: ExecutionError["code"], message: string): Result<ShellExecResult, ExecutionError> =>
+const execFailure = (code: ExecutionError["code"], message: string): Result<ShellExecResult, ExecutionError> =>
   ({ ok: false, error: new ExecutionError(code, message) })
 
 function drained(stream: Readable): Promise<void> {
@@ -32,7 +32,7 @@ function forward(exec: Exec): void {
   }
 }
 
-async function settle(host: PiShellHost, exec: Exec): Promise<Result<ShellExecResult, ExecutionError>> {
+async function settleExec(host: PiShellHost, exec: Exec): Promise<Result<ShellExecResult, ExecutionError>> {
   const { clock } = host.services
   let stopped: "aborted" | "timeout" | undefined
   const stop = (reason: "aborted" | "timeout") => { stopped ??= reason; void exec.owned.retire(deadlineAfter(clock, RETIRE_MS)) }
@@ -46,7 +46,7 @@ async function settle(host: PiShellHost, exec: Exec): Promise<Result<ShellExecRe
     await Promise.race([Promise.all([drained(exec.owned.stdout), drained(exec.owned.stderr)]),
       new Promise<void>((resolve) => { grace = clock.setTimeout(() => resolve(), EXIT_STDIO_GRACE_MS) })])
     clock.clearTimeout(grace)
-    if (stopped) return failed(stopped, stopped === "timeout" ? `Command timed out after ${seconds} seconds` : "Command aborted")
+    if (stopped) return execFailure(stopped, stopped === "timeout" ? `Command timed out after ${seconds} seconds` : "Command aborted")
     return { ok: true, value: { exitCode: exit.code ?? 1 } }
   } finally {
     clock.clearTimeout(timer)
@@ -57,9 +57,9 @@ async function settle(host: PiShellHost, exec: Exec): Promise<Result<ShellExecRe
 
 async function ownedExec(host: PiShellHost, cwd: string, command: string, options: ShellExecOptions | undefined,
   context: Context): Promise<Result<ShellExecResult, ExecutionError>> {
-  if (context.abortSignal?.aborted) return failed("aborted", "aborted")
+  if (context.abortSignal?.aborted) return execFailure("aborted", "aborted")
   if (options?.timeout !== undefined && !(Number.isFinite(options.timeout) && options.timeout > 0)) {
-    return failed("timeout", "Invalid timeout: must be a finite number of seconds")
+    return execFailure("timeout", "Invalid timeout: must be a finite number of seconds")
   }
   const env = options?.inheritEnv === false ? { ...options.env } : { ...host.env, ...options?.env }
   let owned: OwnedProcess
@@ -67,12 +67,12 @@ async function ownedExec(host: PiShellHost, cwd: string, command: string, option
     owned = await host.services.spawn({ file: SHELL, args: ["-c", command], cwd: options?.cwd ? path.resolve(cwd, options.cwd) : cwd, env },
       { role: "harness", label: "Pi bash", sessionId: host.sessionId, signal: context.abortSignal ?? new AbortController().signal })
   } catch (error) {
-    return failed("spawn_error", errorMessage(error))
+    return execFailure("spawn_error", errorMessage(error))
   }
   owned.stdin.end()
   const exec = { owned, options, context }
   forward(exec)
-  return settle(host, exec)
+  return settleExec(host, exec)
 }
 
 export function ownedExecutionEnv(host: PiShellHost, cwd: string): ExecutionEnv {

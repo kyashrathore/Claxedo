@@ -23,7 +23,7 @@ import { createClaxedoRuntimeExposure } from "../../hosts/workspace-runtime/expo
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 import { resolveClaxedoWorkspaceRuntimeTarget } from "../../hosts/workspace-runtime/target"
-import { projectionRenewalDue, projectionRenewalDueAt, type ConnectionSecretResolver } from "@claxedo/agent-runtime-contract"
+import { credentialSnapshotRenewalDueAt, projectionRenewalDue, type ConnectionSecretResolver } from "@claxedo/agent-runtime-contract"
 import { ConnectionUnavailableError, createLocalConnectionSecretResolver } from "@claxedo/server-core/agent-config/connection-secrets"
 import { localConnectionSecretScope } from "./connection-secret-scope"
 import { defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-config/index"
@@ -436,9 +436,7 @@ async function apply(runtime: EmbeddedRuntime) {
     workspaceId: runtime.workspace.id,
   })
   await runtime.host.apply(snapshot)
-  const renewAt = Math.min(...[...Object.values(snapshot.auth.accounts), ...Object.values(snapshot.auth.direct ?? {})]
-    .map((providers) => projectionRenewalDueAt(providers, appliedAt) ?? Infinity))
-  runtime.renewAt = Number.isFinite(renewAt) ? renewAt : undefined
+  runtime.renewAt = credentialSnapshotRenewalDueAt(snapshot.auth, appliedAt)
   runtime.renewFailures = 0
 }
 

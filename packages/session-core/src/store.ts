@@ -1,6 +1,7 @@
 import { SessionAuthoringOwnership } from "./session/authoring-ownership"
 import type { TurnOutline, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { readTurnOutline } from "./session/turn-outline"
+import { busySessions } from "./session/busy-sessions"
 import { readLatestTurnView, type MessageProjectionRow } from "./session/latest-turn-view"
 import { isContiguousTurn, readJournaledTurn, readMessageCompleted, readTurnEvidence, readTurnFinished, readTurnId, readTurnPrompts, readTurnReply, readTurnEndOrd, readTurnReplyId, readUpstreamHasTurns } from "./session/turn-evidence"
 import type { SessionConfig, SessionConfigUpdate, SessionHandoff, SessionHandoffSource, SubagentObservation } from "@claxedo/agent-runtime-contract"
@@ -1140,10 +1141,7 @@ export class RuntimeStore {
   }
 
   private interruptPreviousSessions(): string[] {
-    const rows = this.db.prepare<{
-      id: string
-      agent_session_id: string | null
-    }>("SELECT id, agent_session_id FROM session WHERE status IN ('busy', 'retry')").all()
+    const rows = busySessions(this.db)
     for (const row of rows) {
       this.markSessionInterrupted(row.id, SESSION_INTERRUPTED, row.agent_session_id)
     }

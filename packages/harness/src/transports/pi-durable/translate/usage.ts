@@ -1,15 +1,15 @@
 import { asRecordOrEmpty as row } from "@claxedo/helpers/guards"
 import { EMPTY_USAGE, piStep, type PiDurableTranslatorState, type PiStep, type PiUsageTotals } from "./state"
 
-const count = (value: unknown) => typeof value === "number" ? value : 0
+const usageNumber = (value: unknown) => typeof value === "number" ? value : 0
 
 export function piUsageTotals(usage: unknown): PiUsageTotals {
   const state = row(usage)
   const buckets = [...Object.values(row(state.models)), ...Object.values(row(state.tools))].map(row)
   return buckets.reduce((total: PiUsageTotals, bucket) => ({
-    input: total.input + count(bucket.input), output: total.output + count(bucket.output),
-    reasoning: total.reasoning + count(bucket.reasoning),
-    cacheRead: total.cacheRead + count(bucket.cacheRead), cacheWrite: total.cacheWrite + count(bucket.cacheWrite),
+    input: total.input + usageNumber(bucket.input), output: total.output + usageNumber(bucket.output),
+    reasoning: total.reasoning + usageNumber(bucket.reasoning),
+    cacheRead: total.cacheRead + usageNumber(bucket.cacheRead), cacheWrite: total.cacheWrite + usageNumber(bucket.cacheWrite),
   }), EMPTY_USAGE)
 }
 

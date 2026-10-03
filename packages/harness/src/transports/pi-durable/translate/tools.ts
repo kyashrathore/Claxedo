@@ -10,7 +10,7 @@ function toolCallId(frame: Frame, what: string): string {
   return frame.toolCallId
 }
 
-function contentText(content: unknown): string {
+function piResultText(content: unknown): string {
   return asArray(content).flatMap((item) => {
     const block = row(item)
     return block.type === "text" && typeof block.text === "string" ? [block.text] : []
@@ -36,7 +36,7 @@ export function piToolEnd(state: PiDurableTranslatorState, frame: Frame): PiStep
   if (result.role !== "toolResult") {
     return piStep(state, [{ type: "tool-error", toolCallId: id, error: `Pi tool ${String(frame.toolName)} ended without a result` }])
   }
-  if (result.isError === true) return piStep(state, [{ type: "tool-error", toolCallId: id, error: contentText(result.content) }])
+  if (result.isError === true) return piStep(state, [{ type: "tool-error", toolCallId: id, error: piResultText(result.content) }])
   const output = { content: result.content, ...(row(frame.entry).data === undefined ? {} : { details: row(frame.entry).data }) }
   const images = contentBlockImages(result.content)
   const event: AgentRuntimeEvent = { type: "tool-output", toolCallId: id, output, ...(images.length ? { attachments: images } : {}) }
