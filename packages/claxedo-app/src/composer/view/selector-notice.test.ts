@@ -4,6 +4,7 @@ import { createRoot, createSignal } from "solid-js"
 import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import { connectionHarness, nativeHarness } from "@/lib/harness-selection"
 import { placementId } from "@/server"
+import { applyHarnessOptionsResponse } from "../harness/options-state"
 import type { HarnessSelectionController, HarnessSelectionSnapshot } from "../harness/controller"
 import type { HarnessType } from "../harness/profile"
 import { createModelAvailability } from "./harness-model-availability"
@@ -38,7 +39,7 @@ function snapshot(harness: HarnessType, optionsAnswered: boolean): HarnessSelect
   }
 }
 
-function harnessNotice(harness: HarnessType) {
+function harnessNotice(harness: HarnessType, answered: (harness: HarnessType) => HarnessSelectionSnapshot = (type) => snapshot(type, true)) {
   return createRoot((dispose) => {
     const [selection, setSelection] = createSignal(snapshot(harness, false))
     const [connection, setConnection] = createSignal<HarnessConnectionRef | undefined>(undefined)
@@ -60,7 +61,7 @@ function harnessNotice(harness: HarnessType) {
     })
     return {
       kind: () => notice()?.kind,
-      answerOptions: () => setSelection(snapshot(harness, true)),
+      answerOptions: () => setSelection(answered(harness)),
       answerConnection: () => setConnection(declaration),
       dispose,
     }
@@ -82,5 +83,16 @@ test("selector notice: a native harness claims no setup until its options have a
   expect(view.kind(), "the options have not answered").toBeUndefined()
   view.answerOptions()
   expect(view.kind(), "the options answered with no model").toBe("setup-required")
+  view.dispose()
+})
+
+test("selector notice: a harness whose live options answer offers no model asks for a provider, not a retry", () => {
+  const pi = nativeHarness("pi")
+  const view = harnessNotice(pi, (type) => {
+    const { patch } = applyHarnessOptionsResponse({ type, payload: { source: "harness", stale: false, offersOptions: false, serviceTiers: [] } })
+    return { ...snapshot(type, true), configError: patch.configError, optionsLoading: patch.optionsLoading ?? false }
+  })
+  view.answerOptions()
+  expect(view.kind()).toBe("setup-required")
   view.dispose()
 })
