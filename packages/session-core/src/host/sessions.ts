@@ -18,7 +18,7 @@ import type { HarnessSession, SessionBroker, TurnActor } from "@claxedo/harness/
 import { SessionAttachments, type AttachedSession } from "./attachments"
 import type { AgentRuntimeEventEnvelope, AgentRuntimeSessionCreateInput, AgentRuntimeStore } from "./contracts"
 import { assertSessionCreateBindingScope, normalizeDirectory, requireExecutionBinding } from "./execution-binding"
-import { applyModelSettings } from "./model-settings"
+import { applyModelSettings, writtenConfig } from "./model-settings"
 import { executeHandoffTransaction, releaseKeptHandoffSource, type OpenedTarget } from "./handoff"
 import { attachInput, startInput, type LaunchComposer } from "./launch"
 import type { PermissionModeWrite, SessionRowWrite } from "./session-row"
@@ -165,10 +165,10 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
     if (!changingHarness) {
       const attached = await attachments.for(sessionId, directory, undefined, authority)
       const harnessConfig = attached.handle.transport.harnessConfig
-      const configured = harnessConfig
-        ? await harnessConfig.update(attached.session, update)
+      const written = harnessConfig
+        ? writtenConfig(await harnessConfig.update(attached.session, update), update)
         : await applyModelSettings(attached, current!, update)
-      const persisted = store.updateSessionConfig(sessionId, { ...configured, model: configured.model ?? null, variant: configured.variant ?? null })
+      const persisted = store.updateSessionConfig(sessionId, written)
       if (!persisted) throw new Error(`Session ${sessionId} has no runtime config`)
       return persisted
     }

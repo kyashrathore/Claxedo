@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { ModelSettings } from "@claxedo/harness/contract"
 import { FakeTransport } from "../test-support/fake-transport"
 import { controlledTurn, createHostFixture, LOOPBACK_ORIGIN, sessionCreate, until } from "../test-support/host-fixture"
@@ -126,4 +127,60 @@ test("overlapping config writes of one session apply in order without reverting 
       { model: { providerID: "anthropic", modelID: "opus" }, effort: "high" }])
     expect(fixture.store.getSessionConfig(session.id)).toMatchObject({ model: { modelID: "opus" }, variant: "high" })
   } finally { held.resolve(); await fixture.dispose() }
+})
+
+const MODES = [{ id: "default", name: "Default" }, { id: "plan", name: "Plan" }]
+
+function heldModelTransport(changes: ModelSettings[], held: Promise<void>, turn?: () => AsyncIterable<AgentRuntimeEvent>) {
+  return new FakeTransport({ ...(turn ? { turn } : {}), config: {
+    options: async () => ({ options: [] }),
+    permissionModes: async () => ({ modes: MODES, currentModeId: "default", appliesFrom: "immediate" }),
+    setPermissionMode: async (_session, modeId) => ({ modes: MODES, currentModeId: modeId, appliesFrom: "immediate" }),
+    setModelSettings: async (_session, settings) => {
+      changes.push(settings)
+      await held
+    },
+  } })
+}
+
+test("a permission mode stored while a model change is applying survives that change", async () => {
+  const changes: ModelSettings[] = []
+  const held = Promise.withResolvers<void>()
+  const fixture = createHostFixture({ transports: { claude: heldModelTransport(changes, held.promise) } })
+  try {
+    const session = await fixture.runtime.sessions.create({ ...sessionCreate({ id: "ses_mode_race", harness: { id: "claude", access: "native" } }),
+      model: { providerID: "anthropic", modelID: "sonnet" } })
+    await fixture.runtime.reads.setPermissionMode(session.id, "default")
+    const changing = fixture.runtime.sessions.updateConfig(session.id, { model: { providerID: "anthropic", modelID: "opus" } })
+    await until(() => changes.length === 1)
+    await fixture.runtime.reads.setPermissionMode(session.id, "plan")
+    expect(fixture.store.getSessionConfig(session.id)?.permissionMode).toBe("plan")
+    held.resolve()
+    await changing
+    expect(fixture.store.getSessionConfig(session.id)).toMatchObject({ model: { modelID: "opus" }, permissionMode: "plan" })
+  } finally { held.resolve(); await fixture.dispose() }
+})
+
+test("a handoff a finished turn cleared while a model change was applying stays cleared", async () => {
+  const changes: ModelSettings[] = []
+  const held = Promise.withResolvers<void>()
+  const control = controlledTurn("ses_handoff_race")
+  const fixture = createHostFixture({ transports: { claude: heldModelTransport(changes, held.promise, () => control.events) } })
+  try {
+    const session = await fixture.runtime.sessions.create({ ...sessionCreate({ id: "ses_handoff_race", harness: { id: "claude", access: "native" } }),
+      model: { providerID: "anthropic", modelID: "sonnet" } })
+    fixture.store.updateSessionConfig(session.id, {
+      handoff: { from: { id: "codex", access: "native" }, pending: true, transcript: "earlier work", announced: true },
+    })
+    await fixture.runtime.turns.start({ sessionId: session.id, text: "continue", origin: LOOPBACK_ORIGIN })
+    const changing = fixture.runtime.sessions.updateConfig(session.id, { model: { providerID: "anthropic", modelID: "opus" } })
+    await until(() => changes.length === 1)
+    control.finish()
+    await fixture.runtime.turns.whenIdle(session.id)
+    expect(fixture.store.getSessionConfig(session.id)?.handoff).toBeUndefined()
+    held.resolve()
+    await changing
+    expect(fixture.store.getSessionConfig(session.id)).toMatchObject({ model: { modelID: "opus" } })
+    expect(fixture.store.getSessionConfig(session.id)?.handoff).toBeUndefined()
+  } finally { held.resolve(); control.finish(); await fixture.dispose() }
 })
