@@ -97,7 +97,7 @@ function transport(services: ConstructorParameters<typeof OpenCodeSdkTransport>[
     databasePath: path.join(state.root, "opencode.db"),
     configContent: JSON.stringify({ model: "proof/proof", small_model: "proof/proof", enabled_providers: ["proof"],
       provider: { proof: proofProvider() },
-      agent: { pi: { description: "Conformance", prompt: "Follow the instruction exactly" } },
+      agent: { pi: { description: "Conformance", prompt: "Follow the instruction exactly" }, title: { disable: true } },
       permission: { shell: "ask", question: "allow" },
       ...config,
     }) })

@@ -3,6 +3,7 @@ import type { AttachInput, ConfigApplied, ConfigTarget, HarnessServices, Harness
   HarnessTransport, DraftLaunch, ScopedSessionTools, SessionBroker, SessionToolOperations, StartInput, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef, Deadline } from "../../contract"
 import { openCodeLaunchDocument } from "../../profiles/opencode/index.js"
 import { loadLaunchDocument } from "./launch-policy.js"
+import { openCodeLocationClient } from "./host.js"
 import { openCodeCapabilities } from "./capabilities.js"
 import { rollbackOpenCodeSession } from "./open-rollback.js"
 import { engineProviderBinding } from "./credentials.js"
@@ -75,6 +76,7 @@ export class OpenCodeSdkTransport implements HarnessTransport {
     this.assertBindingCompatible(input)
     const scope = this.scope(input)
     const instance = await this.instanceKey(input, scope)
+    await openCodeLocationClient(this.runtime.host, scope.directory)
     const priorStart = this.providerInput
     let row: Awaited<ReturnType<OpenCodeRuntime["sessions"]["create"]>> | undefined
     let registered = false
