@@ -10,7 +10,6 @@ import { openRuntimeStore } from "../store-file"
 import { sqliteLaunchOwnership } from "../ownership/launch-ownership-sqlite"
 import { withWorkspaceTarget } from "../target"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
-import { installFakePiRpc } from "../test-support/home/fake-pi-rpc.mjs"
 import {
   FakeTransport,
   fakeConnectionProvider,
@@ -604,11 +603,8 @@ describe("workspace runtime public lifecycle", () => {
     expect(store.getSession("unbound")).toBeNull()
   })
   test("a prompt the previous process left queued starts as the runtime boots, with no request", async () => {
-    // Only a native default is runnable before any snapshot, so the harness
-    // that answers at boot is the scripted Pi, and the session it resumes is
-    // one the previous process created for real.
-    const peer = await installFakePiRpc()
-    cleanups.push(() => peer.dispose())
+    // Before any snapshot only a native default can be addressed, and Pi has
+    // no credential yet, so the boot turn is started and refused by Pi itself.
     const directory = await mkdtemp(join(tmpdir(), "workspace-queued-boot-"))
     roots.push(directory)
     const storeRoot = join(directory, "state")
@@ -619,7 +615,7 @@ describe("workspace runtime public lifecycle", () => {
       const host = createWorkspaceHost({
         sessionIdWorkspace: () => undefined,
         placement: loopbackMachineLoginPolicy(), target, storeRoot, harnessStateRoot,
-        env: { ...process.env, PI_EXECUTABLE: peer.binary },
+        env: process.env,
         harness: { kind: "native", harnessId: "pi" },
         ...(onTurnOutcome ? { onTurnOutcome } : {}),
       })
@@ -643,10 +639,10 @@ describe("workspace runtime public lifecycle", () => {
 
     const restarted = boot((input) => outcomes.push(input))
     await until(() => outcomes.length > 0)
-    expect(outcomes).toEqual([expect.objectContaining({ sessionId: "local", assistantMessageId: "msg_queued_r", outcome: expect.objectContaining({ status: "completed" }) })])
+    expect(outcomes).toEqual([expect.objectContaining({ sessionId: "local", assistantMessageId: "msg_queued_r",
+      outcome: expect.objectContaining({ status: "failed", error: expect.stringContaining("direct_credential_required") }) })])
     const history = JSON.stringify(await (await restarted.request("/session/local/message")).json())
     expect(history).toContain("then run the tests")
-    expect(history).toContain("work done")
     await restarted.host.dispose()
     const drained = openRuntimeStore(storeRoot)
     cleanups.push(() => drained.close())

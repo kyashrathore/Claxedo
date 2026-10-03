@@ -11,13 +11,10 @@ import { requireCursorWorker } from "./host/executables/cursor"
 const peerSource = `#!/usr/bin/env node
 const { createInterface } = require("node:readline");
 const kind = process.env.COMPOSE_PEER_KIND;
-if (kind === "pi" && process.argv.includes("--version")) { process.stdout.write("0.99.1\\n"); process.exit(0); }
 createInterface({ input: process.stdin }).on("line", line => {
   const request = JSON.parse(line);
   let response;
-  if (kind === "pi") response = { type: "response", id: request.id, command: request.type, success: true,
-    data: request.type === "get_state" ? { sessionId: "pi-peer" } : {} };
-  else if (kind === "codex") response = { id: request.id, result: request.method === "thread/start" ? { thread: { id: "codex-peer" } }
+  if (kind === "codex") response = { id: request.id, result: request.method === "thread/start" ? { thread: { id: "codex-peer" } }
     : request.method === "initialize" ? { userAgent: "codex_cli_rs/0.156.1 (Mac OS 26.6.2; arm64)" } : {} };
   else response = { jsonrpc: "2.0", id: request.id, result: request.method === "initialize"
     ? { protocolVersion: 1, agentCapabilities: {} } : { sessionId: "acp-peer" } };
@@ -42,9 +39,7 @@ test("harness package composition starts ACP, Pi, Codex, Claude and OpenCode and
   const clock = { now: () => Date.now(), setTimeout, clearTimeout }
   const services = createHarnessServices({ ownership: volatileLaunchOwnership(), log, clock, patternEvaluator: async () => {}, healthChanged: () => {} })
   const composer = createHarnessComposer(services, {
-    pi: () => ({ binary: peer, runtime: process.execPath, env: { ...process.env, COMPOSE_PEER_KIND: "pi" },
-      placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true,
-      stateRoot: path.join(root, "pi-state"), ownerAgentDir: path.join(root, "pi-agent") }),
+    pi: () => ({ stateRoot: path.join(root, "pi-state"), env: process.env }),
     codex: () => ({ binary: peer, homeRoot: path.join(root, "codex-homes"), ownerHome: path.join(root, "codex-owner"),
       env: { ...process.env, COMPOSE_PEER_KIND: "codex" } }),
     claude: () => ({ executable: "claude", configRoot: path.join(root, "claude-homes"),
@@ -61,7 +56,7 @@ test("harness package composition starts ACP, Pi, Codex, Claude and OpenCode and
     try { expect((await acp.start(startInput(root, "acp", "connection"), brokerFor("acp-1"))).binding.upstreamSessionId).toBe("acp-peer") }
     finally { await acp.dispose() }
     const pi = composer.builtIn("pi")
-    try { expect((await pi.start(startInput(root, "pi", "native"), brokerFor("pi-rpc"))).binding.upstreamSessionId).toBe("pi-peer") }
+    try { expect((await pi.start(startInput(root, "pi", "native"), brokerFor("pi-durable"))).binding.upstreamSessionId).toBe("1") }
     finally { await pi.dispose() }
     const codex = composer.builtIn("codex")
     expect(codex.commands).toBeUndefined()

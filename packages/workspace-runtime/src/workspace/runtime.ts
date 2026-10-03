@@ -539,7 +539,11 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       disposeDeliveries = sessions.dispose
       app.route("/", sessions.routes)
       reissueQueuedPrompts = () => durable.whenAdmitted("queued prompt recovery", () =>
-        withSessionCore(core, () => withWorkspaceTarget(options.target, sessions.recoverQueuedPrompts)))
+        withSessionCore(core, () => withWorkspaceTarget(options.target, async () => {
+          const interrupted = durable.takeInterruptedSessions()
+          if (interrupted.length) await harnessEngine().runtime.resumeDurableRuns(interrupted)
+          await sessions.recoverQueuedPrompts()
+        })))
       if (runner) reissueQueuedPrompts()
     },
     sessionTime(sessionId: string) {

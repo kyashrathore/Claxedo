@@ -7,7 +7,6 @@ import type { MachineLoginPolicy } from "@claxedo/harness/contract"
 import { requireCursorWorker } from "./executables/cursor"
 import { requireClaudeExecutable } from "./executables/claude"
 import { requireCodexExecutable } from "./executables/codex"
-import { piRuntime, requirePiExecutable } from "./executables/pi"
 
 export type HarnessCompositionInput = {
   env: NodeJS.ProcessEnv
@@ -26,14 +25,7 @@ export function harnessCompositionOptions(input: HarnessCompositionInput): Harne
   const { env, placement, harnessStateRoot } = input
   const home = userHomeDir(env)
   return {
-    pi: () => ({
-      binary: requirePiExecutable(env),
-      runtime: piRuntime(),
-      env,
-      ...placement,
-      stateRoot: path.join(harnessStateRoot, "pi"),
-      ownerAgentDir: env.PI_CODING_AGENT_DIR ?? path.join(home, ".pi", "agent"),
-    }),
+    pi: () => ({ stateRoot: path.join(harnessStateRoot, "pi"), env }),
     codex: () => ({
       binary: requireCodexExecutable(env),
       homeRoot: path.join(harnessStateRoot, "codex", "homes"),

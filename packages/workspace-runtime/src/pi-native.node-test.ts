@@ -3,144 +3,115 @@
 // rather than rejecting, so every registration below is deliberately `void`ed.
 import { test } from "node:test"
 import assert from "node:assert/strict"
+import { spawn } from "node:child_process"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { createServer } from "node:http"
-import { createWorkspaceRuntimeApp } from "./server"
-import { loopbackWorkspaceRuntimeExposure } from "./exposure"
-import { loopbackMachineLoginPolicy } from "./testing"
+import { createServer, type ServerResponse } from "node:http"
+import { PI_BROKER_PLACEHOLDER, PI_DIRECT_SECRET, PI_NATIVE_MODEL, piNativeRuntime, piNativeSnapshot, type PiNativeRoots } from "./test-support/pi-native-runtime"
 
-void test(
-  "native Pi machine HTTP routes keep the session across checkpoint scrub and restart, sending only the placeholder",
-  { timeout: 60_000 },
-  async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-machine-http-"))
-    const directory = path.join(root, "repo")
-    const storeRoot = path.join(root, "runtime")
-    const harnessStateRoot = path.join(root, "harness")
-    await fs.mkdir(directory)
-    const requests: any[] = []
-    const authorizations: Array<string | undefined> = []
-    const provider = createServer(async (request, response) => {
-      const chunks = []
-      for await (const chunk of request) chunks.push(chunk)
-      requests.push(JSON.parse(Buffer.concat(chunks).toString()))
-      authorizations.push(request.headers.authorization)
-      const tool = requests.length === 1
-      const delta = tool
-        ? {
-            role: "assistant",
-            tool_calls: [
-              {
-                index: 0,
-                id: "write-proof",
-                type: "function",
-                function: {
-                  name: "write",
-                  arguments: JSON.stringify({ path: "proof.txt", content: "native machine tool" }),
-                },
-              },
-            ],
-          }
-        : { role: "assistant", content: "Machine turn complete" }
-      response.writeHead(200, { "content-type": "text/event-stream" })
-      for (const chunk of [
-        { choices: [{ index: 0, delta, finish_reason: null }] },
-        {
-          choices: [{ index: 0, delta: {}, finish_reason: tool ? "tool_calls" : "stop" }],
-          usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
-        },
-      ])
-        response.write(
-          `data: ${JSON.stringify({ id: `proof-${requests.length}`, object: "chat.completion.chunk", created: 1, model: "proof", ...chunk })}\n\n`,
-        )
-      response.end("data: [DONE]\n\n")
-    })
-    await new Promise<void>((resolve) => provider.listen(0, "127.0.0.1", resolve))
-    const address = provider.address()
-    if (!address || typeof address === "string") throw new Error("Missing provider address")
-    const placeholder = "proof-placeholder"
-    const model = { providerID: "pi", modelID: "groq/llama-3.1-8b-instant" }
-    const create = () =>
-      createWorkspaceRuntimeApp({
-        placement: loopbackMachineLoginPolicy(),
-        target: { workspaceId: "workspace-proof", directory },
-        sessionIdWorkspace: () => undefined,
-        storeRoot,
-        harnessStateRoot,
-        harness: { kind: "native", harnessId: "pi" },
-        exposure: loopbackWorkspaceRuntimeExposure(),
-      })
-    let runtime = create()
-    const snapshot = {
-      version: 4 as const,
-      defaultHarness: { kind: "native" as const, harnessId: "pi" as const },
-      mcp: {},
-      connections: [],
-      auth: {
-        machineOwnerUserId: "local",
-        accounts: {
-          local: {
-            groq: {
-              baseUrl: `http://127.0.0.1:${address.port}/bindings/proof`,
-              placeholder,
-              authMode: "bearer" as const,
-              apiPath: "/openai/v1",
-            },
-          },
-        },
-      },
-      commands: [],
-    }
-    const call = async (resource: string, body: object) => {
-      const response = await runtime.app.request(
-        `http://localhost/${resource.startsWith("checkpoint/") ? "api/wr/" : ""}${resource}`,
-        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) },
-      )
-      const text = await response.text()
-      assert.equal(response.status, resource.startsWith("session?") ? 201 : 200, `${resource}: ${text}`)
-      return text ? JSON.parse(text) : undefined
-    }
-    try {
-      await runtime.host.apply(snapshot)
-      const session = await call("session?nativeHarness=pi", {
-        title: "Native machine proof",
-        model,
-      })
-      assert.ok(session.id)
-      await call(`session/${session.id}/message`, {
-        messageID: "first",
-        model,
-        parts: [{ type: "text", text: "Write proof.txt" }],
-      })
-      assert.equal(await fs.readFile(path.join(directory, "proof.txt"), "utf8"), "native machine tool")
-      const nativeFiles = async () => (await fs.readdir(harnessStateRoot, { recursive: true })).filter((file) => file.endsWith(".jsonl"))
-      const files = await nativeFiles()
-      assert.equal(files.length, 1)
-      await call("checkpoint/freeze", { policy: "drain" })
-      await call("checkpoint/flush", {})
-      await call("checkpoint/scrub", {})
-      assert.deepEqual(await nativeFiles(), files)
-      await runtime.dispose()
-      runtime = create()
-      await runtime.host.apply(snapshot)
-      await call(`session/${session.id}/message`, {
-        messageID: "second",
-        model,
-        parts: [{ type: "text", text: "Continue" }],
-      })
-      assert.equal(requests.at(-1).messages.filter((message: any) => message.role === "user").length, 2)
-      assert.deepEqual([...new Set(authorizations)], [`Bearer ${placeholder}`])
-      assert.deepEqual(await nativeFiles(), files)
-      const history = await runtime.app.request(`http://localhost/session/${session.id}/message`)
-      assert.equal(history.status, 200)
-      assert.ok((await history.text()).includes("Machine turn complete"))
-    } finally {
-      await runtime.dispose()
-      provider.closeAllConnections()
-      await new Promise<void>((resolve) => provider.close(() => resolve()))
-      await fs.rm(root, { recursive: true, force: true })
-    }
-  },
-)
+type Reply = { tool?: { name: string; arguments: object }; text?: string; hold?: true }
+
+function write(response: ServerResponse, sequence: number, reply: Reply) {
+  const delta = reply.tool
+    ? { role: "assistant", tool_calls: [{ index: 0, id: `call-${sequence}`, type: "function", function: { name: reply.tool.name, arguments: JSON.stringify(reply.tool.arguments) } }] }
+    : { role: "assistant", content: reply.text ?? "ok" }
+  response.writeHead(200, { "content-type": "text/event-stream" })
+  for (const chunk of [{ choices: [{ index: 0, delta, finish_reason: null }] },
+    { choices: [{ index: 0, delta: {}, finish_reason: reply.tool ? "tool_calls" : "stop" }], usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 } }]) {
+    response.write(`data: ${JSON.stringify({ id: `proof-${sequence}`, object: "chat.completion.chunk", created: 1, model: "proof", ...chunk })}\n\n`)
+  }
+  response.end("data: [DONE]\n\n")
+}
+
+async function provider(replies: Reply[]) {
+  const requests: { body: any; authorization?: string }[] = []
+  const server = createServer(async (request, response) => {
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    requests.push({ body: JSON.parse(Buffer.concat(chunks).toString()), authorization: request.headers.authorization })
+    const reply = replies.shift() ?? { text: "ok" }
+    if (!reply.hold) write(response, requests.length, reply)
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const address = server.address()
+  if (!address || typeof address === "string") throw new Error("Missing provider address")
+  return { requests, url: `http://127.0.0.1:${address.port}`,
+    close: () => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()) }) }
+}
+
+async function roots(name: string, providerUrl: string): Promise<PiNativeRoots & { root: string }> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), name))
+  await fs.mkdir(path.join(root, "repo"))
+  return { root, directory: path.join(root, "repo"), storeRoot: path.join(root, "runtime"), harnessStateRoot: path.join(root, "harness"), providerUrl }
+}
+
+function caller(runtime: ReturnType<typeof piNativeRuntime>) {
+  return async (resource: string, body: object) => {
+    const response = await runtime.app.request(`http://localhost/${resource.startsWith("checkpoint/") ? "api/wr/" : ""}${resource}`,
+      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+    const text = await response.text()
+    assert.equal(response.status, resource.startsWith("session?") ? 201 : 200, `${resource}: ${text}`)
+    return text ? JSON.parse(text) : undefined
+  }
+}
+
+const sessionFiles = async (harnessStateRoot: string) => (await fs.readdir(harnessStateRoot, { recursive: true })).filter((file) => file.endsWith(".sqlite"))
+
+void test("native Pi HTTP routes keep the session across checkpoint scrub and restart, spending only the direct secret", { timeout: 60_000 }, async () => {
+  const model = await provider([{ tool: { name: "write", arguments: { path: "proof.txt", content: "native machine tool" } } }, { text: "Machine turn complete" }])
+  const paths = await roots("pi-machine-http-", model.url)
+  let runtime = piNativeRuntime(paths)
+  try {
+    await runtime.host.apply(piNativeSnapshot(model.url))
+    let call = caller(runtime)
+    const session = await call("session?nativeHarness=pi", { title: "Native machine proof", model: PI_NATIVE_MODEL })
+    await call(`session/${session.id}/message`, { messageID: "first", model: PI_NATIVE_MODEL, parts: [{ type: "text", text: "Write proof.txt" }] })
+    assert.equal(await fs.readFile(path.join(paths.directory, "proof.txt"), "utf8"), "native machine tool")
+    const files = await sessionFiles(paths.harnessStateRoot)
+    assert.equal(files.length, 1)
+    await call("checkpoint/freeze", { policy: "drain" })
+    await call("checkpoint/flush", {})
+    await call("checkpoint/scrub", {})
+    assert.deepEqual(await sessionFiles(paths.harnessStateRoot), files)
+    await runtime.dispose()
+    runtime = piNativeRuntime(paths)
+    await runtime.host.apply(piNativeSnapshot(model.url))
+    call = caller(runtime)
+    await call(`session/${session.id}/message`, { messageID: "second", model: PI_NATIVE_MODEL, parts: [{ type: "text", text: "Continue" }] })
+    assert.equal(model.requests.at(-1)!.body.messages.filter((message: any) => message.role === "user").length, 2)
+    assert.deepEqual([...new Set(model.requests.map((request) => request.authorization))], [`Bearer ${PI_DIRECT_SECRET}`])
+    assert.ok(!model.requests.some((request) => JSON.stringify(request).includes(PI_BROKER_PLACEHOLDER)))
+    const history = await runtime.app.request(`http://localhost/session/${session.id}/message`)
+    assert.ok((await history.text()).includes("Machine turn complete"))
+  } finally {
+    await runtime.dispose()
+    await model.close()
+    await fs.rm(paths.root, { recursive: true, force: true })
+  }
+})
+
+void test("a daemon killed mid-turn resumes Pi's run on restart as a continuation turn", { timeout: 60_000 }, async () => {
+  const model = await provider([{ hold: true }, { text: "Answered after the restart" }])
+  const paths = await roots("pi-machine-crash-", model.url)
+  const child = spawn(process.execPath, [...process.execArgv, path.join(import.meta.dirname, "test-support/pi-native-runtime.ts"), "crash-child", JSON.stringify(paths)],
+    { stdio: ["ignore", "pipe", "inherit"] })
+  const requested = (async () => { while (model.requests.length === 0) await new Promise((resolve) => setTimeout(resolve, 20)) })()
+  await requested
+  child.kill("SIGKILL")
+  await new Promise((resolve) => child.once("exit", resolve))
+  const runtime = piNativeRuntime(paths)
+  try {
+    await runtime.host.apply(piNativeSnapshot(model.url))
+    const history = async () => (await runtime.app.request("http://localhost/session/crash-proof/message")).text()
+    const deadline = Date.now() + 30_000
+    while (!(await history()).includes("Answered after the restart") && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100))
+    assert.ok((await history()).includes("Answered after the restart"))
+    assert.equal(model.requests.length, 2)
+    assert.deepEqual([...new Set(model.requests.map((request) => request.authorization))], [`Bearer ${PI_DIRECT_SECRET}`])
+  } finally {
+    await runtime.dispose()
+    await model.close()
+    await fs.rm(paths.root, { recursive: true, force: true })
+  }
+})
