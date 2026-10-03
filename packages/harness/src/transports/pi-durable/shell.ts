@@ -35,7 +35,7 @@ async function exitCode(exec: Exec, grace: () => Promise<void>): Promise<number>
   return code
 }
 
-function keep(host: PiShellHost, owned: OwnedProcess): void {
+function retireWhenExited(host: PiShellHost, owned: OwnedProcess): void {
   host.live.add(owned)
   void owned.exited.then(async () => {
     host.live.delete(owned)
@@ -61,7 +61,7 @@ async function settleExec(host: PiShellHost, exec: Exec): Promise<Result<ShellEx
     clock.clearTimeout(timer)
     exec.context.abortSignal?.removeEventListener("abort", onAbort)
     if (stopped) await exec.owned.retire(deadlineAfter(clock, RETIRE_MS))
-    else keep(host, exec.owned)
+    else retireWhenExited(host, exec.owned)
   }
 }
 
