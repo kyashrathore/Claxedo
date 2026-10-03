@@ -1,7 +1,8 @@
 import { describe, expect, mock, test } from "bun:test"
 import type { BindingScope } from "./services"
 
-mock.module("@/session", () => ({ sessionActivity: () => "working" }))
+let activity = "working"
+mock.module("@/session", () => ({ sessionActivity: () => activity }))
 mock.module("@/shell", () => ({ sessionPath: (ref: { placementId: string; sessionId: string }) => `${ref.placementId}/${ref.sessionId}` }))
 const { dataBindings } = await import("./data")
 
@@ -38,5 +39,15 @@ describe("plugin session bindings", () => {
     expect(api.sessions.status(own)).toBe("running")
     api.sessions.open(own)
     expect(navigated).toEqual(["workspace-1/session-1"])
+  })
+
+  test("an interrupted session reads interrupted, not waiting on the user", () => {
+    const { api } = fixture()
+    activity = "interrupted"
+    try {
+      expect(api.sessions.status({ sessionId: "session-1", workspaceId: "workspace-1" })).toBe("interrupted")
+    } finally {
+      activity = "working"
+    }
   })
 })

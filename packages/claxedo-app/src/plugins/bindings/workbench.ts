@@ -5,7 +5,7 @@ import { PluginEntryError, type BindingScope } from "./services"
 
 const TAB_STATUS: Readonly<Record<SessionActivity, WorkbenchTabStatus>> = {
   waiting: "attention",
-  interrupted: "attention",
+  interrupted: "interrupted",
   working: "working",
   background: "running_in_background",
   failed: "failed",

@@ -69,7 +69,7 @@ Asking for more access makes the app ask the person again.
 | \`api.themes.register\` | \`({ id, name, appearance, tokens }) => dispose\` | A selectable theme |
 | \`api.icons.registerSkin\` | \`({ id, name, icons }) => dispose\` | An icon skin |
 | \`api.sessions.create\` | \`({ projectId, prompt, title?, attachments? }) => Promise<SessionRef>\` | Start a session with a first message |
-| \`api.sessions.status\` | \`(ref) => "idle" \\| "running" \\| "waiting" \\| "failed"\` | A session's status |
+| \`api.sessions.status\` | \`(ref) => "idle" \\| "running" \\| "running_in_background" \\| "waiting" \\| "interrupted" \\| "failed"\` | A session's status |
 | \`api.sessions.open\` | \`(ref) => void\` | Show a session |
 | \`api.projects.list\` | \`() => ProjectSummary[]\` | The user's projects |
 | \`api.projects.currentId\` | \`() => string \\| undefined\` | The current project's id |
