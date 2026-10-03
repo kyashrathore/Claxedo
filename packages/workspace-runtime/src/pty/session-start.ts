@@ -13,6 +13,7 @@ import { resolveCwd } from "./resolve-cwd"
 import { workspaceId as runtimeWorkspaceId } from "../target"
 import { terminalHookWorkspaceId } from "./hook-workspace-id"
 import { safeStartIndex } from "./safe-slice"
+import { terminalIo } from "./io-clock"
 import { createMarkerScanner } from "./marker-scan"
 import { SHELL_READY_MARKER } from "./shell-ready"
 import { TERMINAL_TERM_PROGRAM, TERMINAL_TERM_PROGRAM_VERSION } from "./identity"
@@ -437,6 +438,7 @@ export async function startTerminal(
 
     context.broadcast(session, data)
 
+    terminalIo.touch()
     session.buffer += data
     if (session.buffer.length > BUFFER_LIMIT) {
       // Cut on a safe boundary: a raw `slice(excess)` can land inside an

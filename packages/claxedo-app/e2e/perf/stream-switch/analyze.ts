@@ -3,7 +3,7 @@ import path from "node:path"
 import sharp from "sharp"
 import { CONTENT_CROP, readRecording, type Frame } from "./recording"
 
-const dir = process.argv[2]!
+const dir = process.argv[2]
 const WINDOW_MS = 1000
 const BLANK_STDEV = 4
 
@@ -24,7 +24,7 @@ const report = []
 const gaps: { at: number; gap: number }[] = []
 for (const [round, { frames, inputs, timeOrigin }] of recording.rounds.entries()) {
 const painted = frames.map((frame) => frame.at)
-gaps.push(...painted.slice(1).map((at, index) => ({ at, gap: at - painted[index]! })).filter((entry) => entry.gap > 34))
+gaps.push(...painted.slice(1).map((at, index) => ({ at, gap: at - painted[index] })).filter((entry) => entry.gap > 34))
 for (const [index, input] of inputs.entries()) {
   const end = Math.min(input.at + WINDOW_MS, inputs[index + 1]?.at ?? Infinity)
   const window = frames.filter((frame) => frame.at >= input.at && frame.at <= end)
@@ -40,7 +40,7 @@ for (const [index, input] of inputs.entries()) {
     switch: index,
     to: name(input.target),
     revealFrames: revealIndex,
-    revealMs: revealIndex < 0 ? undefined : Math.round(window[revealIndex]!.at - input.at),
+    revealMs: revealIndex < 0 ? undefined : Math.round(window[revealIndex].at - input.at),
     domBlankFrames: domBlank.length,
     domBlankMs: domBlank.map((frame) => Math.round(frame.at - input.at)),
     lostAfterReveal: afterReveal.map((frame) => `+${Math.round(frame.at - input.at)} ${describe(frame)}`),

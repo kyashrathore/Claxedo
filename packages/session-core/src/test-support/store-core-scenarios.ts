@@ -16,9 +16,9 @@ import { RuntimeStoreSchemaMismatchError } from "../store-schema"
  * No `node:assert`: these also run inside workerd.
  */
 export type StoreHarness = {
-  open(): RuntimeStore
+  open: () => RuntimeStore
   /** Run SQL beside the store, as another writer of the same database would. */
-  exec(sql: string): void
+  exec: (sql: string) => void
 }
 
 const OWNER = { kind: "person", userId: "user-owner" } as const

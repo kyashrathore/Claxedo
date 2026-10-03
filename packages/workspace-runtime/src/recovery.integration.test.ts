@@ -146,7 +146,7 @@ function openWorkspace(input: { directory: string; storeRoot: string; workspaceI
     })
   }
   host.mount(app as unknown as Hono, { exposure: loopbackWorkspaceRuntimeExposure() })
-  app.route(WorkspaceRuntimeRoutes.checkpoint, CheckpointRoutes({ checkpoint: host.checkpoint, sessionAccessPolicy }))
+  app.route(WorkspaceRuntimeRoutes.checkpoint, CheckpointRoutes({ checkpoint: host.checkpoint, idleSince: () => undefined, sessionAccessPolicy }))
 
   const request = async (pathname: string, method = "GET", body?: unknown, headers: Record<string, string> = {}): Promise<Response> =>
     await withWorkspaceTarget(target, () => app.request(

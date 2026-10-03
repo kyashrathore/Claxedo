@@ -99,7 +99,7 @@ async function openClaudeModelsTab(stack: Stack, app: Page) {
   return claude
 }
 
-test("15 settings: a model switched off in Models leaves the composer's picker", async ({ stack, app, isMobile }) => {
+test("15 settings: a model switched off in Models leaves the composer's picker", async ({ stack, app }) => {
   const workspace = await stack.daemon.makeWorkspace("picker", "Picker")
   const draft = `${stack.url}${sessionRoute(workspace.id)}`
   await app.goto(draft)

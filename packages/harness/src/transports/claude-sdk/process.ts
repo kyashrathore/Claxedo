@@ -38,6 +38,10 @@ export class ClaudeProcess extends EventEmitter implements SpawnedProcess {
     if (options.signal.aborted) onAbort()
     else options.signal.addEventListener("abort", onAbort, { once: true })
     this.started.then((owned) => {
+      const ioFailed = (cause: unknown) => this.fail(new TransportError("claude", "process", "Claude Code process I/O failed", { retryable: true, cause }))
+      owned.stdin.on("error", ioFailed)
+      owned.stdout.on("error", ioFailed)
+      owned.stderr.on("error", ioFailed)
       this.stdin.pipe(owned.stdin)
       owned.stdout.pipe(this.stdout)
       owned.stderr.on("data", (chunk: Buffer) => { this.stderrTail = `${this.stderrTail}${chunk.toString("utf8")}`.slice(-STDERR_TAIL) })

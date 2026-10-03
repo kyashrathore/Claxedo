@@ -22,6 +22,8 @@ declare module "@cloudflare/sandbox" {
       processId: string
     }): Promise<SandboxProcess>
     cleanupCompletedProcesses(): Promise<number>
+    restoreBackup(backup: { id: string; dir: string }): Promise<unknown>
+    createBackup(options: { dir: string; ttl: number; excludes?: string[] }): Promise<{ id: string; dir: string }>
   }
 
   /** The container lifecycle a subclass extends; both start paths run before the container starts. */
@@ -35,6 +37,11 @@ declare module "@cloudflare/sandbox" {
     }
     start(...args: unknown[]): Promise<void>
     startAndWaitForPorts(...args: unknown[]): Promise<void>
+    stop(): Promise<void>
+    setKeepAlive(keepAlive: boolean): Promise<void>
+    schedule(delaySeconds: number, callback: string): Promise<unknown>
+    deleteSchedules(callback: string): void
+    containerFetch(request: Request, port: number): Promise<Response>
   }
 
   // The package ships `Sandbox` as a Durable Object class generic over an env

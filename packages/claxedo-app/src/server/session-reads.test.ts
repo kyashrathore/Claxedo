@@ -93,16 +93,17 @@ test("session reads: a scoped connection finding no runtime re-reads the catalog
   expect(server.requests.filter((path) => path === "/api/claxedo/bootstrap").length).toBeGreaterThanOrEqual(2)
 })
 
-test("session reads: an offline connection refusal remains a failure if the refreshed catalog still says live", async () => {
+test("session reads: an offline connection refusal preserves cloud history but refuses live facts if the refreshed catalog still says live", async () => {
   const failure = new ServerError({ class: "conflict", code: "workspace_host_offline", message: "Runtime unavailable" })
   const server = fakeServer({ reachable: () => true, runtime: () => { throw failure } })
   const reads = startSessionReads(server.context, ref, shape)
   const results = await Promise.allSettled([reads.first, reads.status, reads.requests, reads.todos, reads.goal, reads.subagents, reads.backgroundWork])
-  expect(results.every((result) => result.status === "rejected" && result.reason === failure)).toBe(true)
+  expect(results[0]?.status).toBe("fulfilled")
+  expect(results.slice(1).every((result) => result.status === "rejected" && result.reason === failure)).toBe(true)
   expect(server.requests.filter((path) => path === "/api/claxedo/bootstrap").length).toBeGreaterThanOrEqual(2)
 })
 
-test("session reads: a running cloud workspace's session reads its outline and page from the control plane, and its row and runtime facts from the sandbox", async () => {
+test("session reads: a running cloud workspace reads stored history first and sandbox details independently", async () => {
   const server = fakeServer({
     reachable: () => true,
     runtime: (path) => {
@@ -115,7 +116,8 @@ test("session reads: a running cloud workspace's session reads its outline and p
 
   const first = await reads.first
   expect(first.outline, "the outline comes from the control plane, whose history the transcript pages").toMatchObject({ turns: [{ id: "msg_1", preview: { user: "why?" } }], complete: true })
-  expect(first.row).toMatchObject({ title: "Live title", updatedAt: 30 })
+  expect(first.row).toMatchObject({ title: "Ship it", updatedAt: 20 })
+  expect((await reads.runtime)?.row).toMatchObject({ title: "Live title", updatedAt: 30 })
   expect(first.transcript.entries.map((entry) => entry.info.id)).toEqual(["msg_1", "msg_2"])
   expect(await reads.status).toEqual({ kind: "idle" })
   expect(server.requests.filter((path) => path.startsWith("/api/control/"))).toEqual([centralFirstPath])
@@ -266,4 +268,31 @@ test("session reads: a cold open of a cloud session its workspace serves asks on
   expect(server.hostedCalls).toEqual([])
   await startSessionReads(server.context, ref, shape).first
   expect(server.hostReads, "the workspace's answer is remembered too").toEqual(["ses_1"])
+})
+
+test("session reads: a cloud session's stored history survives a missing runtime session while live facts remain refused", async () => {
+  const failure = new ServerError({ class: "not_found", status: 404, code: "session_not_found", message: "Session not found" })
+  const server = fakeServer({ reachable: () => true, runtime: () => { throw failure } })
+  const reads = startSessionReads(server.context, ref, shape)
+  const [first, ...facts] = await Promise.allSettled([reads.first, reads.status, reads.backgroundWork, reads.requests, reads.todos, reads.goal, reads.subagents])
+  expect(first.status).toBe("fulfilled")
+  if (first.status === "fulfilled") {
+    expect(first.value.row.title).toBe("Ship it")
+    expect(first.value.transcript.entries.map((entry) => entry.info.id)).toEqual(["msg_1", "msg_2"])
+  }
+  for (const fact of facts) expect(fact).toEqual({ status: "rejected", reason: failure })
+})
+
+test("session reads: held cloud history reads the control-plane row independently of the runtime", async () => {
+  const failure = new ServerError({ class: "not_found", status: 404, code: "session_not_found", message: "Session not found" })
+  const server = fakeServer({ reachable: () => true, runtime: () => { throw failure } })
+  const held = { latestTurn: { entries: [], olderCursor: "before-latest" }, outline: { turns: [], complete: true } }
+  const reads = startSessionReads(server.context, ref, shape, held)
+  const results = await Promise.allSettled([reads.first, reads.runtime, reads.status, reads.requests, reads.todos, reads.goal, reads.subagents, reads.backgroundWork])
+  expect(results[0]?.status).toBe("fulfilled")
+  const first = await reads.first
+  expect(first.transcript).toBe(held.latestTurn)
+  expect(first.outline).toBe(held.outline)
+  expect(first.row.title).toBe("Ship it")
+  for (const result of results.slice(1)) expect(result).toEqual({ status: "rejected", reason: failure })
 })

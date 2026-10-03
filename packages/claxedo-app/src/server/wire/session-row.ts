@@ -1,6 +1,6 @@
 import { asFiniteNumber, nonEmptyString } from "@claxedo/helpers/guards"
 import type { AgentSession, AgentTurnOutcome, SessionLastTurn } from "@claxedo/agent-runtime-contract"
-import { sessionId, type PlacementId, type ProjectId, type SessionId } from "../ids"
+import { sessionId, type PlacementId, type ProjectId } from "../ids"
 import type { ListedStatus } from "../status-types"
 import type { ModelChoice, SessionLocation, SessionReader, SessionRow, SessionSelections } from "../types"
 import { sessionConfigFromWire } from "./harness-state"
@@ -39,7 +39,7 @@ export function sessionRowFromListItem(item: unknown, address: Address): Session
     updatedAt,
     ...(lastHumanTurnAt !== undefined ? { lastHumanTurnAt } : {}),
     ...(archivedAt ? { archivedAt } : {}),
-    ...(parentSessionId ? { parentSessionId: sessionId(parentSessionId) as SessionId } : {}),
+    ...(parentSessionId ? { parentSessionId: sessionId(parentSessionId) } : {}),
     ...(lastTurn ? { lastTurn } : {}),
   }
 }
@@ -94,7 +94,7 @@ export function sessionRowFromSession(info: AgentSession, ref: SessionLocation):
     updatedAt: updated,
     ...(lastHumanTurnAt !== undefined ? { lastHumanTurnAt } : {}),
     ...(archived ? { archivedAt: archived } : {}),
-    ...(parent ? { parentSessionId: sessionId(parent) as SessionId } : {}),
+    ...(parent ? { parentSessionId: sessionId(parent) } : {}),
     ...(info.lastTurn ? { lastTurn: info.lastTurn } : {}),
     ...configuredSelection(info),
   }

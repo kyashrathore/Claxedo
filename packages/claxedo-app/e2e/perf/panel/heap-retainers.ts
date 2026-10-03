@@ -37,42 +37,42 @@ export function loadGraph(raw: Snapshot): Graph {
   const inCount = new Uint32Array(nodeCount + 1)
   let edgeIndex = 0
   for (let node = 0; node < nodeCount; node += 1) {
-    const end = edgeIndex + nodes[node * width + iEdges]! * edgeWidth
+    const end = edgeIndex + nodes[node * width + iEdges] * edgeWidth
     for (; edgeIndex < end; edgeIndex += edgeWidth) {
-      if (edgeTypes[edges[edgeIndex + eType]!] === "weak") continue
-      inCount[edges[edgeIndex + eTo]! / width + 1] += 1
+      if (edgeTypes[edges[edgeIndex + eType]] === "weak") continue
+      inCount[edges[edgeIndex + eTo] / width + 1] += 1
     }
   }
-  for (let node = 0; node < nodeCount; node += 1) inCount[node + 1]! += inCount[node]!
-  const inFrom = new Uint32Array(inCount[nodeCount]!)
-  const inEdge = new Uint32Array(inCount[nodeCount]!)
+  for (let node = 0; node < nodeCount; node += 1) inCount[node + 1] += inCount[node]
+  const inFrom = new Uint32Array(inCount[nodeCount])
+  const inEdge = new Uint32Array(inCount[nodeCount])
   const fill = inCount.slice()
   edgeIndex = 0
   for (let node = 0; node < nodeCount; node += 1) {
-    const end = edgeIndex + nodes[node * width + iEdges]! * edgeWidth
+    const end = edgeIndex + nodes[node * width + iEdges] * edgeWidth
     for (; edgeIndex < end; edgeIndex += edgeWidth) {
-      if (edgeTypes[edges[edgeIndex + eType]!] === "weak") continue
-      const to = edges[edgeIndex + eTo]! / width
-      inFrom[fill[to]!] = node
-      inEdge[fill[to]!] = edgeIndex
-      fill[to]! += 1
+      if (edgeTypes[edges[edgeIndex + eType]] === "weak") continue
+      const to = edges[edgeIndex + eTo] / width
+      inFrom[fill[to]] = node
+      inEdge[fill[to]] = edgeIndex
+      fill[to] += 1
     }
   }
   const edgeLabel = (index: number) => {
-    const type = edgeTypes[edges[index + eType]!] ?? "?"
-    const nameOrIndex = edges[index + eName]!
+    const type = edgeTypes[edges[index + eType]] ?? "?"
+    const nameOrIndex = edges[index + eName]
     const name = type === "element" || type === "hidden" ? String(nameOrIndex) : strings[nameOrIndex] ?? "?"
     return `${type}:${name}`
   }
   return {
     nodeCount,
-    name: (node) => strings[nodes[node * width + iName]!] ?? "?",
-    type: (node) => nodeTypes[nodes[node * width + iType]!] ?? "?",
-    detached: (node) => (iDetached >= 0 && nodes[node * width + iDetached] === 2) || (strings[nodes[node * width + iName]!] ?? "").startsWith("Detached "),
-    selfSize: (node) => nodes[node * width + iSize]!,
+    name: (node) => strings[nodes[node * width + iName]] ?? "?",
+    type: (node) => nodeTypes[nodes[node * width + iType]] ?? "?",
+    detached: (node) => (iDetached >= 0 && nodes[node * width + iDetached] === 2) || (strings[nodes[node * width + iName]] ?? "").startsWith("Detached "),
+    selfSize: (node) => nodes[node * width + iSize],
     retainers: (node) => {
       const out: { from: number; edge: string }[] = []
-      for (let at = inCount[node]!; at < inCount[node + 1]!; at += 1) out.push({ from: inFrom[at]!, edge: edgeLabel(inEdge[at]!) })
+      for (let at = inCount[node]; at < inCount[node + 1]; at += 1) out.push({ from: inFrom[at], edge: edgeLabel(inEdge[at]) })
       return out
     },
   }

@@ -133,7 +133,7 @@ export function stream(text: string, live: boolean): Block[] {
     const group = [token]
     let raw = token.raw
     while (tokens[index + 1]?.type === "space" && index + 1 < tail) {
-      const space = tokens[++index]!
+      const space = tokens[++index]
       group.push(space)
       raw += space.raw
     }

@@ -555,7 +555,7 @@ describe("store broker ports", () => {
     expect(opening?.parts).toMatchObject([{ type: "text", text: "Agent \"Audit\" finished" }])
     expect(reply?.info).toMatchObject({ id: admitted.turn.assistantMessageId, role: "assistant", parentID: opening?.info.id })
     const laterPromptId = createMessageIds(() => Date.now() + 1)()
-    expect([laterPromptId, opening!.info.id, promptId].sort()).toEqual([promptId, opening!.info.id, laterPromptId])
+    expect([laterPromptId, opening.info.id, promptId].sort()).toEqual([promptId, opening.info.id, laterPromptId])
     expect(store.getMessagePage("s1", { view: "latest-turn" })?.messages.map((message) => message.info.id))
       .toEqual([opening?.info.id, admitted.turn.assistantMessageId])
   })

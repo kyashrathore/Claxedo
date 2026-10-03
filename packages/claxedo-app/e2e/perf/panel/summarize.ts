@@ -23,7 +23,7 @@ type Result = {
 
 const median = (values: number[]) => {
   const sorted = [...values].sort((a, b) => a - b)
-  return sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)]! : -1
+  return sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)] : -1
 }
 
 const files = process.argv.slice(2)

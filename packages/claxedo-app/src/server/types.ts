@@ -185,6 +185,7 @@ export type SessionFirstRead = {
 
 export type SessionReads = {
   readonly first: Promise<SessionFirstRead>
+  readonly runtime: Promise<Pick<SessionFirstRead, "row" | "diff"> | undefined>
   readonly status: Promise<SessionStatus>
   readonly backgroundWork: Promise<BackgroundWork>
   readonly requests: Promise<readonly AgentRequest[]>
@@ -295,4 +296,4 @@ export type FeatureAvailability =
   | { readonly kind: "available" }
   | { readonly kind: "unavailable"; readonly reason: string }
 
-export type FetchQuery<T> = SolidQueryOptions<T, AppError, T, readonly unknown[]> & { readonly initialData?: undefined }
+export type FetchQuery<T> = SolidQueryOptions<T, AppError, T> & { readonly initialData?: undefined }

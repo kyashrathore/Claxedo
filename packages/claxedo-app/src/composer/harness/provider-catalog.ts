@@ -92,7 +92,7 @@ export function createProviderCatalogReadiness(input: { providers: ProviderCatal
     },
   )
   const ready = () => answered() && hydrated.latest === hydrationKey()
-  const unread = () => !!input.harness() && isCatalogHarness(input.harness()!) && !input.providers.resolved()
+  const unread = () => !!input.harness() && isCatalogHarness(input.harness()) && !input.providers.resolved()
   const variants = (model: { providerId?: string; modelId?: string }) => {
     const provider = model.providerId ? input.providers.all().get(model.providerId) : undefined
     const row = Object.values(provider?.models ?? {}).find((item) => item.id === model.modelId)

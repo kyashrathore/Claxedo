@@ -7,7 +7,7 @@ import { createSessionQueue } from "./session-queue"
 import { readTurn } from "./turn"
 import { listSessions } from "./session-list"
 import { sendReaderWrite } from "./session-reader"
-import { onRuntime, sessionEndpoint, type SessionContext } from "./session-context"
+import { sessionEndpoint, type SessionContext } from "./session-context"
 import { startSessionReads } from "./session-reads"
 import { readPart, readTurnPageBefore } from "./transcript-reads"
 import type { HostedAccount } from "./account"
@@ -23,6 +23,7 @@ import { harnessIdentity, harnessSelectionQuery } from "./wire/harness-selection
 import { PROMPT_ROUTE, promptBody, promptDeliveryFromWire } from "./wire/prompt"
 import { permissionReplyBody } from "./wire/requests"
 import { sessionRowFromSession } from "./wire/session-row"
+import { isCheckpointFrozen, isRuntimeUnavailable } from "./wire/connection"
 
 function firstInputBody(prompt: SessionCreateInput["prompt"]) {
   if (!prompt) return {}
@@ -76,8 +77,28 @@ async function replyToRequest(context: SessionContext, ref: SessionLocation, id:
   await transport.runtimeJson<unknown>(where, questionPath("reject"), { method: "POST" })
 }
 
+const CHECKPOINT_SETTLE_ATTEMPTS = 60
+
 async function postPrompt(context: SessionContext, wakes: WorkspaceWakes, ref: SessionLocation, input: PromptInput, messageId: string): Promise<PromptDelivery> {
   await wakes.wakeIfStopped(ref.placementId)
+  let woke = false
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await deliverPrompt(context, ref, input, messageId)
+    } catch (error) {
+      if (isCheckpointFrozen(error) && attempt < CHECKPOINT_SETTLE_ATTEMPTS) {
+        await wakes.settle(ref.placementId)
+        continue
+      }
+      if (woke || !isRuntimeUnavailable(error)) throw error
+      await context.workspaces.refresh()
+      woke = await wakes.wakeIfStopped(ref.placementId)
+      if (!woke) throw error
+    }
+  }
+}
+
+async function deliverPrompt(context: SessionContext, ref: SessionLocation, input: PromptInput, messageId: string): Promise<PromptDelivery> {
   const where = await context.workspaces.route(ref)
   if (input.goal) {
     await startGoal(context.transport, where, ref, input.goal.objective)

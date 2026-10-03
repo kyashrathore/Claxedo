@@ -23,7 +23,6 @@ const entries = [
   "src/image.ts",
   "src/image-name.ts",
   "src/index.ts",
-  "src/lease-policy.ts",
   "src/lease-types.ts",
   "src/runtime-env.ts",
   "src/runtime-version.ts",

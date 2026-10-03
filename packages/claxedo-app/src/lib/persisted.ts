@@ -40,7 +40,7 @@ export function persistedSignal<T>(
   read: PreferenceReader<T>,
   storage: Storage | undefined = preferenceStorage(),
 ): Signal<T> {
-  const signal = createSignal<T>(initial)
+  const signal = createSignal(initial)
   if (!storage) return signal
   const [get, set] = makePersisted<T, Signal<T>>(signal, {
     name: key,

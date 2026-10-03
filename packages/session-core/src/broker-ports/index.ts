@@ -29,7 +29,7 @@ export type StoreBrokerPortOptions = {
 
 export function createStoreBrokerPorts(store: RuntimeStore, options: StoreBrokerPortOptions): BrokerPorts & {
   abortProviderTurn(sessionId: string): void
-  readonly backgroundWork: Pick<BrokerBackgroundWork, "read" | "retireAll">
+  readonly backgroundWork: Pick<BrokerBackgroundWork, "read" | "retireAll" | "activeSessions">
 } {
   const authority = new BrokerAuthority(store, options.ownerGeneration)
   const delivery = new BrokerEventDelivery(store, options.publishers)

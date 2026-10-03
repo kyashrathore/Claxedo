@@ -28,11 +28,13 @@ function fixture(running: { value: boolean }) {
   } as Pick<Transport, "startRuntime"> as Transport
   const workspaces = {
     load: async () => ({ declaration: { serverKind: "daemon", hostAggregate: false, issuesSessions: true, documents: false, connections: false }, placements: [] }),
-    byId: (id: string) => ({ ...placements[id]!, reachable: id === "ws_cloud" && running.value }),
+    byId: (id: string) => ({ ...placements[id], reachable: id === "ws_cloud" && running.value }),
     locate: async (id: string): Promise<RuntimeRoute> => ({ directory: `workspace:${id}`, workspaceId: id, remote: true }),
     refresh: async () => undefined,
   } as Pick<Workspaces, "load" | "byId" | "locate" | "refresh"> as Workspaces
-  return { starts, wakes: createRoot(() => createWorkspaceWakes(transport, workspaces)) }
+  const waits: number[] = []
+  const wait = async (ms: number) => { waits.push(ms) }
+  return { starts, waits, wakes: createRoot(() => createWorkspaceWakes(transport, workspaces, wait)) }
 }
 
 async function settle() {
@@ -51,7 +53,7 @@ test("wakes: a send to an asleep cloud workspace starts it once, however many se
   expect(wakes.runtime(cloud)).toEqual({ kind: "waking", bootMode: "resume" })
 
   running.value = true
-  starts[0]!.resolve()
+  starts[0].resolve()
   await Promise.all([first, second])
   expect(wakes.runtime(cloud)).toEqual({ kind: "live" })
 })
@@ -63,7 +65,7 @@ test("wakes: a refused start leaves the workspace asleep with the server's reaso
 
   const send = wakes.wakeIfStopped(cloud)
   await settle()
-  starts[0]!.reject(refusal)
+  starts[0].reject(refusal)
   await expect(send).rejects.toBe(refusal)
   expect(wakes.runtime(cloud)).toEqual({ kind: "wakeFailed", error: refusal })
 
@@ -71,7 +73,7 @@ test("wakes: a refused start leaves the workspace asleep with the server's reaso
   await settle()
   expect(wakes.runtime(cloud).kind).toBe("waking")
   running.value = true
-  starts[1]!.resolve()
+  starts[1].resolve()
   await retry
   expect(wakes.runtime(cloud)).toEqual({ kind: "live" })
 })
@@ -83,4 +85,18 @@ test("wakes: a live workspace, or a placement that is not in the cloud, is never
   await wakes.wakeIfStopped(cloud)
   await wakes.wakeIfStopped(folder)
   expect(starts).toEqual([])
+})
+
+test("wakes: settling after a checkpoint waits, then starts a workspace the checkpoint stopped, and leaves a running one alone", async () => {
+  const running = { value: true }
+  const { starts, waits, wakes } = fixture(running)
+  expect(await wakes.settle(cloud)).toBe(false)
+  expect(waits).toEqual([5_000])
+  running.value = false
+  const settling = wakes.settle(cloud)
+  await settle()
+  expect(starts).toHaveLength(1)
+  running.value = true
+  starts[0].resolve()
+  expect(await settling).toBe(true)
 })

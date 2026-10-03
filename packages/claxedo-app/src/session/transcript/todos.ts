@@ -17,7 +17,7 @@ function todosRead(facts: TodosFacts, todos: readonly Todo[], sentAt: number): T
 }
 
 export function createSessionTodos(): SessionTodosStore {
-  const [facts, setFacts] = createSignal<TodosFacts>(NO_TODOS)
+  const [facts, setFacts] = createSignal(NO_TODOS)
   return {
     list: () => facts().todos,
     read: (todos, sentAt) => setFacts((current) => todosRead(current, todos, sentAt)),

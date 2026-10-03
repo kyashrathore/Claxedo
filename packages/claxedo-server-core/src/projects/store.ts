@@ -103,7 +103,7 @@ export type ProjectStore = {
 export type ProjectErrorStatus = 400 | 401 | 402 | 403 | 404 | 409 | 501 | 502 | 503
 
 /** A refusal the route answers as `{ error: { code, message } }` with the status it names. */
-export class ProjectStoreError extends ClaxedoError<string> {
+export class ProjectStoreError extends ClaxedoError {
   constructor(status: ProjectErrorStatus, code: string, message: string) {
     super({ code, message, status })
   }

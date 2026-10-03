@@ -14,8 +14,8 @@ describe("Cloudflare transactional email", () => {
     const sender = cloudflareAuthEmailSender({ EMAIL: { send }, CLAXEDO_EMAIL_FROM: "auth@example.com" })!
     await sender.send({ kind, recipient: "person@example.com", actionUrl: "https://app.example.com/invitations#secret&test", token: "secret" })
     expect(send).toHaveBeenCalledOnce()
-    expect(send.mock.calls[0]![0]).toMatchObject({ to: "person@example.com", from: "auth@example.com" })
-    const message = send.mock.calls[0]![0] as { subject: string; html: string; text: string }
+    expect(send.mock.calls[0][0]).toMatchObject({ to: "person@example.com", from: "auth@example.com" })
+    const message = send.mock.calls[0][0] as { subject: string; html: string; text: string }
     expect(message.subject).toBeTruthy()
     expect(message.text).toContain("https://app.example.com/invitations#secret&test")
     expect(message.html).toContain('href="https://app.example.com/invitations#secret&amp;test"')

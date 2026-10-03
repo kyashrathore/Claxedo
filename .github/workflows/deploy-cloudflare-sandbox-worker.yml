@@ -52,6 +52,7 @@ jobs:
   deploy:
     if: ${{ inputs.deploy_worker }}
     runs-on: ubuntu-latest
+    environment: staging
     defaults:
       run:
         working-directory: packages/claxedo-server/scripts/sandbox/cloudflare-worker
@@ -102,11 +103,16 @@ jobs:
             echo "no build-info.json emitted"
           fi
 
+      # The idle stop calls the control plane at CONTROL_PLANE_URL; a Worker
+      # without it refuses to start runtimes, so an empty value fails here.
       - name: Deploy (build image in CI -> push to Cloudflare registry -> deploy worker)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npm run deploy
+          CONTROL_PLANE_URL: ${{ vars.CLAXEDO_STAGING_API_ORIGIN }}
+        run: |
+          [ -n "$CONTROL_PLANE_URL" ] || { echo "::error::CLAXEDO_STAGING_API_ORIGIN is not configured in the staging environment"; exit 1; }
+          npm run deploy -- --var "CONTROL_PLANE_URL:$CONTROL_PLANE_URL"
 
   synchronize-control-token:
     needs: deploy
@@ -129,3 +135,14 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           SANDBOX_CONTROL_TOKEN: ${{ secrets.CLAXEDO_RUNTIME_ADMIN_TOKEN }}
         run: printf '%s' "$SANDBOX_CONTROL_TOKEN" | npx --yes wrangler@4.127.1 secret put API_TOKEN
+
+      # The control plane's deploy uploads the same secret as
+      # CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN; it authorizes the idle stop alone.
+      - name: Synchronize the idle-stop token
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          IDLE_STOP_TOKEN: ${{ secrets.CLAXEDO_SANDBOX_IDLE_STOP_TOKEN }}
+        run: |
+          [ -n "$IDLE_STOP_TOKEN" ] || { echo "::error::CLAXEDO_SANDBOX_IDLE_STOP_TOKEN is not configured in the staging environment"; exit 1; }
+          printf '%s' "$IDLE_STOP_TOKEN" | npx --yes wrangler@4.127.1 secret put IDLE_STOP_TOKEN

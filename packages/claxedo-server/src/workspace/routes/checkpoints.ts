@@ -43,7 +43,7 @@ export function WorkspaceCheckpointRoutes(
       const access = await authorized(c.req.raw, c.req.param("id"), services, options)
       if ("response" in access) return access.response
       const workspaceId = c.req.param("id")
-      const inspected = await service(access.auth, access.role, access.orgId, services!, options).inspect(workspaceId)
+      const inspected = await workspaceCheckpointService(access.auth, access.role, access.orgId, services!, options).inspect(workspaceId)
       if (!access.auth) return c.json(inspected)
       const visible = await requireAuthority(services).listSessions(access.auth, { workspaceId })
       return c.json(filterCheckpointSessions(inspected, visible))
@@ -55,14 +55,9 @@ export function WorkspaceCheckpointRoutes(
       if (body.policy !== undefined && body.policy !== "drain" && body.policy !== "interrupt") {
         return c.json({ error: { code: "workspace_checkpoint_policy_invalid", message: "policy must be drain or interrupt" } }, 400)
       }
-      if (body.retentionExpiresAt !== undefined && !Number.isSafeInteger(body.retentionExpiresAt)) {
-        return c.json({ error: { code: "workspace_checkpoint_retention_invalid", message: "retentionExpiresAt must be an integer" } }, 400)
-      }
       try {
-        const result = await service(access.auth, access.role, access.orgId, services!, options).capture(c.req.param("id"), {
-          ...(body.policy ? { policy: body.policy } : {}),
-          ...(typeof body.retentionExpiresAt === "number" ? { retentionExpiresAt: body.retentionExpiresAt } : {}),
-        })
+        const result = await workspaceCheckpointService(access.auth, access.role, access.orgId, services!, options)
+          .capture(c.req.param("id"), body.policy ? { policy: body.policy } : {})
         return c.json(result, 201)
       } catch (error) {
         return lifecycleError(c, error)
@@ -81,7 +76,7 @@ export function WorkspaceCheckpointRoutes(
         }, 409)
       }
       try {
-        return c.json(await service(access.auth, access.role, access.orgId, services!, options).restore(c.req.param("id"), {
+        return c.json(await workspaceCheckpointService(access.auth, access.role, access.orgId, services!, options).restore(c.req.param("id"), {
           checkpointId: c.req.param("checkpointId"),
         }))
       } catch (error) {
@@ -105,7 +100,7 @@ export function WorkspaceCheckpointRoutes(
         }, 409)
       }
       try {
-        const lifecycle = service(access.auth, access.role, access.orgId, services!, options)
+        const lifecycle = workspaceCheckpointService(access.auth, access.role, access.orgId, services!, options)
         if (operation === "stop") return c.json(await lifecycle.stop(c.req.param("id")))
         if (operation === "replace") {
           return c.json(await lifecycle.replace(c.req.param("id"), (typeof body.checkpointId === "string" ? { checkpointId: body.checkpointId } : {})))
@@ -191,7 +186,7 @@ export function workspaceCheckpointRoleAllowsWrite(role: string | undefined) {
   return role === "editor" || role === "admin" || role === "owner"
 }
 
-function service(
+export function workspaceCheckpointService(
   auth: SignedControlPlaneAuth | undefined,
   role: RelayRole,
   workspaceOrgId: string | undefined,
@@ -222,7 +217,7 @@ function service(
         principalKind: "service" as const,
         actorId: "control-plane",
         actorKind: "agent" as const,
-        orgId: undefined,
+        orgId: workspaceOrgId,
         role: "owner" as const,
       })
   const runtimeRequest = async (workspaceId: string, path: string, init: RequestInit | undefined, resume: boolean) => {

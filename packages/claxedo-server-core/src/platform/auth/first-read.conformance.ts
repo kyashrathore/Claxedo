@@ -43,7 +43,7 @@ export async function exerciseFirstReadConformance(harness: TranscriptConformanc
       { type: "text", text: "Looking." },
       { type: "tool", tool: "read", callID: "call-read", state: { status: "completed", input: {}, output: "x".repeat(2048), title: "read", metadata: {}, time: { start: 21, end: 22 } } },
     ], { parentID: "u2" }),
-    message("a2", "assistant", [{ type: "reasoning", text: "thinking" }, { type: "text", text: "second answer" }], { parentID: "u2" }),
+    message("a2", "assistant", [{ type: "reasoning", text: "thinking", time: { start: 23 } }, { type: "text", text: "second answer" }], { parentID: "u2" }),
   ])
 
   const outlineOnly = await read()

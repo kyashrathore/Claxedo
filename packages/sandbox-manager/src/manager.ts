@@ -24,7 +24,13 @@ import {
   type SandboxManagerOptions
 } from "./contract"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "./constants"
-import { captureSandboxCheckpoint, restoreSandboxCheckpoint, type SandboxCheckpointResult } from "./checkpoint-manager"
+import {
+  captureSandboxCheckpoint,
+  discardSnapshot,
+  restoreSandboxCheckpoint,
+  type SandboxCheckpointCaptureInput,
+  type SandboxCheckpointResult,
+} from "./checkpoint-manager"
 import { applySandboxRuntimeSnapshot } from "./runtime-snapshot"
 import { workspaceRuntimeIdentityEnvConflicts } from "./runtime-env"
 
@@ -391,6 +397,19 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     }
   }
 
+  function capture(manager: Pick<SandboxManager, "target" | "snapshot">, workspaceId: string, request: SandboxCheckpointCaptureInput, endsLease = false) {
+    return captureSandboxCheckpoint({
+      workspaceId,
+      request,
+      leaseStore: options.leaseStore,
+      target: (id) => manager.target(id),
+      snapshot: (id, committed) => manager.snapshot(id, committed),
+      ...(options.driver.deleteSnapshot ? { deleteSnapshot: options.driver.deleteSnapshot } : {}),
+      endsLease,
+      now,
+    })
+  }
+
   return {
     async ensure(workspaceId, input) {
       // Egress disposition, decided BEFORE a lease is acquired.
@@ -519,21 +538,14 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       await options.driver.touch?.(target)
       return { touched: true, status: "ready" }
     },
-    async snapshot(workspaceId) {
+    async snapshot(workspaceId, committed) {
       const target = await this.target(workspaceId)
       if (target.status !== "ready") return { ok: false, reason: target.reason }
       if (!options.driver.snapshot) return { ok: false, reason: "snapshot_unsupported" }
-      return { ok: true, ...(await options.driver.snapshot(target)) }
+      return { ok: true, ...(await options.driver.snapshot(target, committed)) }
     },
     async checkpoint(workspaceId, input) {
-      return await checkpointLifecycle(workspaceId, "checkpoint", () => captureSandboxCheckpoint({
-        workspaceId,
-        request: input,
-        leaseStore: options.leaseStore,
-        target: (id) => this.target(id),
-        snapshot: (id) => this.snapshot(id),
-        now,
-      }))
+      return await checkpointLifecycle(workspaceId, "checkpoint", () => capture(this, workspaceId, input))
     },
     async restore(workspaceId, input) {
       return await checkpointLifecycle(workspaceId, "restore", () => restoreSandboxCheckpoint({
@@ -544,19 +556,28 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         now,
       }))
     },
-    async stop(workspaceId) {
-      return await mutationLifecycle(workspaceId, "stop", async () => {
+    async stop(workspaceId, input = {}) {
+      return await mutationLifecycle(workspaceId, "stop", async (): Promise<SandboxMutationResult> => {
         const lease = await options.leaseStore.get(workspaceId)
-        if (lease?.status === "stopped") return { ok: true as const, status: "stopped" as const }
+        if (input.expectedEpoch !== undefined && lease?.epoch !== input.expectedEpoch) return { ok: false, reason: "runtime_lease_changed" }
+        const stopped = (checkpoint: string | undefined) => ({ ok: true as const, status: "stopped" as const, ...(checkpoint ? { checkpoint } : {}) })
+        if (lease?.status === "stopped") return stopped(lease.checkpoint?.providerReference)
         const target = await this.target(workspaceId)
-        if (target.status !== "ready") return { ok: false as const, reason: target.reason }
-        if (options.driver.metadata.hostStopBehavior !== "not-supported") {
-          await (options.driver.suspend ?? options.driver.stop)?.(target)
-        } else {
-          await options.driver.stop?.(target)
+        if (target.status !== "ready") return { ok: false, reason: target.reason }
+        const stopHost = input.hostStopsItself ? undefined : options.driver.suspend ?? options.driver.stop
+        const persistence = lease?.persistence
+        if (input.runtime && persistence && persistence.capture !== "none") {
+          // The commit stops the lease before the host stops, so a send from here on wakes a restore of this capture.
+          const captured = await capture(this, workspaceId, { runtime: input.runtime, policy: "drain", idleBefore: input.idleBefore }, true)
+          const checkpoint = captured.checkpoint.providerReference
+          if (persistence.captureSource === "preserved") await stopHost?.({ ...target, checkpoint })
+          return stopped(checkpoint)
         }
-        await options.leaseStore.update(workspaceId, target.epoch, { status: "stopped" })
-        return { ok: true as const, status: "stopped" as const }
+        const checkpoint = lease?.checkpoint?.providerReference
+        await stopHost?.({ ...target, ...(checkpoint ? { checkpoint } : {}) })
+        const updated = await options.leaseStore.update(workspaceId, target.epoch, { status: "stopped" })
+        if (!updated) return { ok: false, reason: "runtime_lease_changed" }
+        return stopped(checkpoint)
       })
     },
     async destroy(workspaceId) {
@@ -569,6 +590,9 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         await options.driver.destroy?.(target)
         const updated = await options.leaseStore.update(workspaceId, target.epoch, { status: "destroyed" })
         if (!updated) return { ok: false as const, reason: "runtime_lease_changed" }
+        if (lease.checkpoint && lease.persistence?.capture !== "same-resource") {
+          await discardSnapshot(options.driver.deleteSnapshot, target, lease.checkpoint.providerReference)
+        }
         return { ok: true as const, status: "destroyed" as const }
       })
     },

@@ -170,7 +170,7 @@ projection compose those concerns outside the OSS runtime boundary.
 | --- | --- | --- |
 | `GET  /api/wr/health` | [`server.ts`](src/server.ts) | none; minimal liveness and exposure boundary metadata only |
 | `GET  /api/wr/capabilities` | [`server.ts`](src/server.ts) | exposure-dependent runtime auth |
-| `*    /api/wr/checkpoint/*` | [`routes/checkpoint.ts`](src/routes/checkpoint.ts) | workspace-runtime management auth |
+| `*    /api/wr/checkpoint/*` | [`routes/checkpoint.ts`](src/routes/checkpoint.ts) | workspace-runtime management auth; a `freeze` with `idleBefore` closes admission only when the workspace has been idle since then, else 409 `workspace_not_idle` |
 | `POST /api/wr/config` | [`routes/config.ts`](src/routes/config.ts) | workspace-runtime management auth |
 | `GET  /api/wr/harness-config-options` | [`workspace/runtime.ts`](src/workspace/runtime.ts) | exposure-dependent runtime auth; a draft preview of a harness that serves a provider catalog is the workspace owner's only |
 | `GET  /api/wr/harness-providers` | [`workspace/runtime.ts`](src/workspace/runtime.ts) | exposure-dependent runtime auth; workspace owner only |
@@ -344,7 +344,7 @@ Inbound RHT verification is configured by `relayHostAuthFromEnv()`:
 | `WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM` | Static PEM fallback for RHT verification when JWKS discovery is unavailable. |
 | `WORKSPACE_RUNTIME_WORKSPACE_ID` | Workspace id the runtime hosts; RHT claims and `x-workspace-id` must match it. |
 | `WORKSPACE_RUNTIME_HOST_ID` | Host id expected in the RHT. Defaults to `workspaceId()` when omitted. |
-| `WORKSPACE_RUNTIME_CONFIG_TOKEN` | Supervisor bearer accepted without an RHT on `GET /api/wr/health` only; every other route still needs an RHT or a management token. |
+| `WORKSPACE_RUNTIME_CONFIG_TOKEN` | Supervisor bearer accepted without an RHT on `GET /api/wr/health` only; every other route still needs an RHT or a management token. The Cloudflare sandbox Worker reads `idleSince` there: when the workspace last had no turn, admitted write or background work, no checkpoint in progress and no terminal input or output (an open but quiet shell keeps nothing awake); and `frozenSince`, since when a checkpoint has held it frozen (`workspace/idle.ts`, the one owner the idle freeze also asks). |
 
 Relay-issued RHT requests must include `x-forwarded-by: workspace-relay`.
 `workspace-relay` sets that marker after stripping client-supplied

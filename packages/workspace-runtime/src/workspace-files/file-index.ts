@@ -30,7 +30,7 @@ async function walkFiles(root: string, limit: number) {
   const files: string[] = []
   const queue = [""]
   for (let head = 0; head < queue.length && files.length < limit; head += 1) {
-    const relative = queue[head]!
+    const relative = queue[head]
     let rows
     try {
       rows = await fs.readdir(path.join(root, relative), { withFileTypes: true })

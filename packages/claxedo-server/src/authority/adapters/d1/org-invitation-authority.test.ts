@@ -294,7 +294,7 @@ describe("D1 organization invitations", () => {
       .bind(invitee.principal!.userId)
       .all<{ action: string; user_id: string; metadata_json: string }>()
     expect(audits.results).toHaveLength(1)
-    expect(JSON.parse(audits.results[0]!.metadata_json)).toMatchObject({
+    expect(JSON.parse(audits.results[0].metadata_json)).toMatchObject({
       orgId: "org_acme",
       targetUserId: invitee.principal!.userId,
       before: null,

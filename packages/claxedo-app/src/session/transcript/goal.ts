@@ -32,8 +32,8 @@ export function goalChanged(facts: GoalFacts, incoming: SessionGoal | undefined)
 }
 
 export function createSessionGoal(server: Server, ref: SessionLocation): SessionGoalStore {
-  const [facts, setFacts] = createSignal<GoalFacts>(NO_GOAL)
-  const [actions, setActions] = createSignal<readonly GoalAction[]>(NO_ACTIONS)
+  const [facts, setFacts] = createSignal(NO_GOAL)
+  const [actions, setActions] = createSignal(NO_ACTIONS)
   const [available, setAvailable] = createSignal<boolean>()
   const changed = (incoming: SessionGoal | undefined) => setFacts((current) => goalChanged(current, incoming))
   return {

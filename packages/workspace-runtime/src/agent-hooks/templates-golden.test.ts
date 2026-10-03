@@ -54,7 +54,7 @@ test("nine first-party templates reproduce the base wrappers, configs, hook arti
     ).replaceAll(root, "{{root}}")
     expect(defaultStatusHooks).toHaveLength(9)
     const notify = "data/hooks/notify.sh"
-    expect(withoutComments(actual[notify]!)).toBe(withoutComments(files[notify]))
+    expect(withoutComments(actual[notify])).toBe(withoutComments(files[notify]))
     expect({ ...actual, [notify]: "" }).toEqual({ ...files, [notify]: "" })
   } finally {
     await fs.rm(root, { recursive: true, force: true })

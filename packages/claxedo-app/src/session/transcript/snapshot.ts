@@ -6,6 +6,8 @@ import { applyTranscriptEvent } from "./events"
 import { isOptimisticMessage } from "./merge"
 import { isReading, outlineOf } from "./model"
 
+const RUNTIME_SESSION_MISSING = "session_not_found"
+
 function hasOlderLoaded(context: TranscriptContext, page: TranscriptPage): boolean {
   const first = page.entries[0]?.info.id
   return first !== undefined && context.data.messages.some((message) => !isOptimisticMessage(message) && message.id < first)
@@ -35,6 +37,17 @@ function landSide<T>(context: TranscriptContext, what: string, read: Promise<T>,
 
 function landSides(context: TranscriptContext, reads: SessionReads, sentAt: number): void {
   const { ref, deps } = context
+  reads.runtime.then(
+    () => context.setRuntimeMissing(false),
+    (cause) => context.setRuntimeMissing(toAppError(cause).code === RUNTIME_SESSION_MISSING),
+  )
+  landSide(context, "runtime details", Promise.all([reads.first, reads.runtime]), ([, live]) => {
+    if (!live) return
+    batch(() => {
+      deps.list.readRow(live.row)
+      context.setData("diff", [...live.diff])
+    })
+  })
   landSide(context, "status", reads.status, (status) => deps.list.readStatus(ref, status, sentAt))
   landSide(context, "background work", reads.backgroundWork, (work) => deps.list.readBackgroundWork(ref, work, sentAt))
   reads.requests.then(

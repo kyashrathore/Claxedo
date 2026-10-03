@@ -27,7 +27,7 @@ function fixture(files: Readonly<Record<string, string>>): string[] {
 
 function hooks(text: string, path = "src/view.ts") {
   const [file] = fixture({ [path]: text })
-  return hygiene.testHooks(file!)
+  return hygiene.testHooks(file)
 }
 
 test("production hooks reject probes and E2E switches, preserving plugin protocols and test files", () => {
@@ -40,7 +40,7 @@ test("production hooks reject probes and E2E switches, preserving plugin protoco
 
 function states(text: string): string[] {
   const [file] = fixture({ "src/model.ts": text })
-  return ownership.moduleStates([file!], {}).map((state) => state.binding)
+  return ownership.moduleStates([file], {}).map((state) => state.binding)
 }
 
 for (const [name, source, binding] of [

@@ -16,7 +16,7 @@ export type SandboxDriver = "cloudflare" | "fetch"
 
 /** The Worker secret each full-hosted driver needs. */
 const SANDBOX_DRIVER_SECRETS: Readonly<Record<SandboxDriver, readonly string[]>> = Object.freeze({
-  cloudflare: ["CLOUDFLARE_SANDBOX_API_TOKEN"],
+  cloudflare: ["CLOUDFLARE_SANDBOX_API_TOKEN", "CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN"],
   fetch: [],
 })
 
@@ -211,7 +211,7 @@ export function deployReadSecrets(env: NodeJS.ProcessEnv) {
   if (betterAuthSecret === introspectionSecret) {
     throw new Error("BETTER_AUTH_SECRET and CLAXEDO_AUTH_INTROSPECTION_SECRET must be different secrets")
   }
-  return { betterAuthSecret: betterAuthSecret!, introspectionSecret: introspectionSecret! }
+  return { betterAuthSecret: betterAuthSecret, introspectionSecret: introspectionSecret }
 }
 
 export function authConfigurationId(deployment: UserCloudflareDeployment) {

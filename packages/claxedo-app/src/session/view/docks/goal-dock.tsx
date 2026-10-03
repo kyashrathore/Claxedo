@@ -70,7 +70,7 @@ export function GoalDock(props: { goal: GoalSnapshot; actions: GoalActions }) {
   }
   const confirmDelete = () => {
     const remove = props.actions.remove
-    if (remove) dialog.show(() => <GoalDeleteDialog action={action} remove={remove} />)
+    if (remove) void dialog.show(() => <GoalDeleteDialog action={action} remove={remove} />)
   }
   const metrics = () => goalMetrics(props.goal, t)
 

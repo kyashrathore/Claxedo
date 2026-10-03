@@ -86,7 +86,7 @@ function dropOn(zones: DropZones, current: DragState): boolean {
 }
 
 export function createDragController(): DragController {
-  const [state, setState] = createSignal<DragState>(idle)
+  const [state, setState] = createSignal(idle)
   const zones = createDropZones()
   const ghost = createDragGhost()
   const stop = (current: DragState) => {
@@ -97,7 +97,7 @@ export function createDragController(): DragController {
     active: () => state().active,
     contentId: () => state().contentId,
     sourceKind: () => state().sourceKind,
-    registerDropZone: zones.register,
+    registerDropZone: (zone) => zones.register(zone),
     begin(input) {
       setState({ active: true, contentId: input.contentId, sourceKind: input.sourceKind, x: input.x, y: input.y })
       ghost.show(input.label ?? "", input.x, input.y)

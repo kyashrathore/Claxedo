@@ -31,7 +31,7 @@ function VirtualModelRows(props: ModelRowsProps) {
     },
     getScrollElement: () => scroller ?? null,
     estimateSize: () => 44,
-    getItemKey: (index) => props.items[index]!.id,
+    getItemKey: (index) => props.items[index].id,
     overscan: 5,
   })
   return (
@@ -47,7 +47,7 @@ function VirtualModelRows(props: ModelRowsProps) {
               data-index={row.index}
               style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${row.start}px)` }}
             >
-              <ModelRow entry={props.entry} item={props.items[row.index]!} />
+              <ModelRow entry={props.entry} item={props.items[row.index]} />
             </div>
           )}
         </For>

@@ -134,7 +134,7 @@ export function installRecorder() {
       case "panel-open-files": {
         const files = filesReady()
         const ready = host?.dataset.open === "true" && visible(host) && files.ready
-        return { ready, signature: ready ? `${files.signature}:${getComputedStyle(host!).transform}` : "", debug: `open=${host?.dataset.open}:display=${host?.style.display}:vis=${visible(host)} ${files.debug}` }
+        return { ready, signature: ready ? `${files.signature}:${getComputedStyle(host).transform}` : "", debug: `open=${host?.dataset.open}:display=${host?.style.display}:vis=${visible(host)} ${files.debug}` }
       }
       case "panel-closed": {
         const rect = host?.getBoundingClientRect()

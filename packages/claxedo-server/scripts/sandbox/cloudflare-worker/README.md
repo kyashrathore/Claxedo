@@ -18,8 +18,9 @@ npx tsx build-sandbox-image.ts --bundle-only --out=cloudflare-worker/.build
 cd cloudflare-worker
 npm ci
 wrangler login
-wrangler deploy
+wrangler deploy --var CONTROL_PLANE_URL:https://<control-plane-origin>
 wrangler secret put API_TOKEN
+wrangler secret put IDLE_STOP_TOKEN
 ```
 
 The container image `COPY`s the in-repo workspace-runtime host bundle from
@@ -215,3 +216,57 @@ wrangler secret put R2_SECRET_ACCESS_KEY
 The R2 token needs Object Read & Write access to the checkpoint bucket. The
 committed `wrangler.toml` binds that bucket as `BACKUP_BUCKET`; local
 `wrangler dev` uses the binding without production presigned-URL credentials.
+
+A checkpoint captures the directories the driver names (the workspace and
+`/home/claxedo`, the runtime's HOME), one SDK backup each, sequentially, inside
+the Durable Object; HOME's rebuildable caches (`.cache`, `.npm/_cacache`,
+`.bun/install/cache`) are left out to shorten the freeze. Its provider reference
+is the backup ids joined with commas, in capture order, and a restore mounts
+each id over its directory inside the single runtime launch. The SDK writes
+`backups/<id>/data.sqsh` and `meta.json` and never deletes them, so every
+backup has a deletion rule:
+
+- The object records each backup id as soon as it exists. The next capture or
+  stop names the checkpoint the lease committed (`committed`) and deletes every
+  recorded id outside it, so a capture whose caller gave up, or whose commit
+  never happened, does not outlive the next one. A capture that fails partway
+  deletes what it made at once.
+- `delete-backup` deletes the checkpoint a newer one replaced and the last one
+  of a destroyed workspace.
+
+The backup TTL only bounds how long a sleeping workspace can still restore.
+
+## Idle stop
+
+The SDK's own sleep stops a container after an interval without requests, which
+loses everything outside the backups, while an open browser stream keeps a
+container awake indefinitely. The Worker therefore keeps a ready container alive
+(`setKeepAlive(true)`) and stops it only through a checkpoint:
+
+- `ensure-runtime` records the lease's `workspaceId` and `epoch` labels, gives the
+  runtime a health token as `WORKSPACE_RUNTIME_CONFIG_TOKEN` (kept across boots
+  in Durable Object storage), and refuses with 503 when `CONTROL_PLANE_URL` (a
+  `--var` the deploy sets) or the `IDLE_STOP_TOKEN` secret is missing, because
+  nothing would ever stop that container.
+- Every 30 seconds the Durable Object reads `idleSince` and `frozenSince` from
+  the runtime's `GET /api/wr/health`. The runtime owns those answers: idle means
+  no turn, admitted write or background work, no checkpoint in progress, and no
+  terminal input or output since; an open but quiet shell is not work, nor are
+  HTTP reads and event streams.
+- Once `idleSince` is older than `WORKSPACE_IDLE_MS` (default 600000), or the
+  runtime has been frozen for 15 minutes (longer than any checkpoint holds it),
+  it posts `{ workspaceId, epoch, idleBefore }` to the control plane's
+  `/internal/sandbox/idle-stop` with `IDLE_STOP_TOKEN`, a secret the two share
+  for this call alone (`CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN` on the control
+  plane). The control plane freezes the runtime only if it is still idle since
+  `idleBefore`, captures it, and commits the checkpoint and the stopped lease
+  in one update; a lease it already stopped is answered the same way, and a
+  runtime a failed capture left frozen is thawed and refused. The answer names
+  the committed checkpoint, and the object then stops its own container. From
+  the commit on, a send wakes a restore of this checkpoint.
+- `stop` (the control plane's own stop) is fenced: a sandbox a newer lease
+  generation already took over keeps running.
+
+A failed idle check is logged as `workspace idle stop failed` and retried at the
+next check. After 20 failures in a row the object stops keeping the container
+alive, so the SDK's own sleep bounds what a dead runtime or a refused stop costs.

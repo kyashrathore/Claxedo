@@ -228,6 +228,8 @@ describe("CloudflareSandboxDriver", () => {
       CUSTOM_BOOT_FLAG: "yes",
       WORKSPACE_RUNTIME_LEASE_ID: "lease-claxedo-ws_1",
       WORKSPACE_RUNTIME_EPOCH: "3",
+      HOME: "/home/claxedo",
+      CLAXEDO_DATA_DIR: "/home/claxedo/.claxedo",
     })
   })
 
@@ -298,6 +300,23 @@ describe("CloudflareSandboxDriver", () => {
     expect(seen).toContain("DELETE https://sbx.example.com/sandbox/claxedo-ws_1")
   })
 
+  test("stop names the lease generation it stops, and an unconfirmed stop is a failure", async () => {
+    const { calls, fetch } = harness((call) => ({ status: 200, json: call.body.epoch === 7 ? { ok: true } : { ok: false } }))
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
+    await driver.stop!({ sandboxId: "claxedo-ws_1", url: "https://r/", hostId: "claxedo-ws_1", epoch: 7, checkpoint: "a,b" })
+    expect(calls[0]).toMatchObject({ url: "https://sbx.example.com/sandbox/claxedo-ws_1/stop", body: { epoch: 7, committed: "a,b" } })
+    await expect(driver.stop!({ sandboxId: "claxedo-ws_1", url: "https://r/", hostId: "claxedo-ws_1", epoch: 6 })).rejects.toThrow(/stop failed/)
+  })
+
+  test("a deleted snapshot names its backups to the Worker, and a refused deletion throws", async () => {
+    const { calls, fetch } = harness((call) => ({ status: call.body.backupId === "a,b" ? 200 : 500, json: {} }))
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
+    const target = { sandboxId: "claxedo-ws_1", hostId: "claxedo-ws_1" }
+    await driver.deleteSnapshot!(target, "a,b")
+    expect(calls[0]).toMatchObject({ url: "https://sbx.example.com/sandbox/claxedo-ws_1/delete-backup", body: { backupId: "a,b" } })
+    await expect(driver.deleteSnapshot!(target, "c")).rejects.toThrow(/deletion failed/)
+  })
+
   test("touch propagates transport failures", async () => {
     const error = new Error("connection refused")
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch: (async () => { throw error }) as unknown as typeof fetch })
@@ -342,14 +361,12 @@ describe("CloudflareSandboxDriver", () => {
       bootSource: { kind: "driver-snapshot", snapshotId: "backup-1" },
     })
 
-    // The runtime data dir is captured alongside the workspace so restoring a
-    // sandbox cannot split durable runtime state from projected content.
     expect(calls.find((call) => call.url.endsWith("/backup"))?.body).toEqual({
-      directories: ["/workspace", "/var/lib/claxedo"],
+      directories: ["/workspace", "/home/claxedo"],
     })
     expect(calls.find((call) => call.url.endsWith("/ensure-runtime"))?.body.restore).toEqual({
       backupId: "backup-1",
-      directories: ["/workspace", "/var/lib/claxedo"],
+      directories: ["/workspace", "/home/claxedo"],
     })
   })
 
@@ -362,10 +379,11 @@ describe("CloudflareSandboxDriver", () => {
     const target = await driver.ensureHost({ ...createInput, workspaceRoot: "/repo" })
     if ("provisioning" in target) throw new Error("unexpected provisioning")
 
-    await driver.snapshot!(target)
+    await driver.snapshot!(target, "a,b")
 
     expect(calls.find((call) => call.url.endsWith("/backup"))?.body).toEqual({
-      directories: ["/repo", "/var/lib/claxedo"],
+      directories: ["/repo", "/home/claxedo"],
+      committed: "a,b",
     })
   })
 })

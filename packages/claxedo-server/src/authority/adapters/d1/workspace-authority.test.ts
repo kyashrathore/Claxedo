@@ -655,7 +655,7 @@ describe("a workspace's row carries its placement", () => {
   })
 
   test("reachability is reported for machine-placed rows and withheld from provisioner-owned ones", async () => {
-    const { authority, database } = await setup({ kind: "claxedo-hosted" })
+    const { authority } = await setup({ kind: "claxedo-hosted" })
     const alice = await signed(authority, identity("alice"))
     await two(authority, alice)
 
@@ -737,7 +737,7 @@ describe("workspace creation admission", () => {
   })
 
   test("a user-deployed product admits creation only in its own organization", async () => {
-    const { authority, database } = await setup({
+    const { authority } = await setup({
       kind: "user-deployed",
       organization: { id: "org_house", name: "House" },
       ownerIdentity: identity("alice"),

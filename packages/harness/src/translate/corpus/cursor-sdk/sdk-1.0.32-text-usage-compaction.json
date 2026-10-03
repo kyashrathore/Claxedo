@@ -705,7 +705,6 @@
               "kind": "command_execution",
               "intent": "shell",
               "command": "echo hi",
-              "description": "echo hi",
               "input": {
                 "command": "echo hi",
                 "workingDirectory": "/repo",
@@ -730,7 +729,6 @@
               "kind": "command_execution",
               "intent": "shell",
               "command": "echo hi",
-              "description": "echo hi",
               "input": {
                 "command": "echo hi",
                 "workingDirectory": "/repo",
@@ -751,7 +749,6 @@
               "kind": "command_execution",
               "intent": "shell",
               "command": "echo hi",
-              "description": "echo hi",
               "input": {
                 "command": "echo hi",
                 "workingDirectory": "/repo",
@@ -837,7 +834,6 @@
               "kind": "command_execution",
               "intent": "shell",
               "command": "echo hi",
-              "description": "echo hi",
               "input": {
                 "command": "echo hi",
                 "workingDirectory": "/repo",
@@ -1142,7 +1138,6 @@
               "kind": "command_execution",
               "intent": "shell",
               "command": "echo hi",
-              "description": "echo hi",
               "input": {
                 "command": "echo hi",
                 "workingDirectory": "/repo",

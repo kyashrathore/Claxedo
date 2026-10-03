@@ -621,6 +621,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
       return {
         activeTurns: checkpoint.activeTurnCount(),
         activeWrites: checkpoint.detail().activeWrites,
+        backgroundWork: engine?.ports.backgroundWork.activeSessions() ?? 0,
         checkpointState: checkpoint.state(),
         ...(launchSummary
           ? { launches: { examined: launchSummary.examined, live: launchSummary.live,

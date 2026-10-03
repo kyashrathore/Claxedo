@@ -139,3 +139,12 @@ test("frames: a reader notice becomes the session's readerChanged with the marks
   expect(known && serverEventFromFrame(known, located)).toEqual({ type: "readerChanged", ref, reader: { seenAt: 40 } })
   expect(unknown && serverEventFromFrame(unknown, located)).toBeUndefined()
 })
+
+test("frames: todo and diff frames keep only the entries their contract admits", () => {
+  const todo = { content: "write the parser", status: "pending", priority: "high" }
+  const todos = frameFromWire({ directory: "/work", payload: { type: "todo.updated", properties: { sessionID: "s1", todos: [todo, { content: "no priority", status: "pending" }] } } })
+  const diff = { file: "a.ts", additions: 1, deletions: 0, status: "modified" as const }
+  const diffs = frameFromWire({ directory: "/work", payload: { type: "session.diff", properties: { sessionID: "s1", diff: [diff, { ...diff, status: "renamed" }] } } })
+  expect(todos && serverEventFromFrame(todos, address)).toEqual({ type: "todosChanged", ref, todos: [todo] })
+  expect(diffs && serverEventFromFrame(diffs, address)).toEqual({ type: "diffChanged", ref, diff: [diff] })
+})

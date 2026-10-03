@@ -120,7 +120,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
     preparedImage: false,
     metadata: {
       driverRunsIn: ["worker"],
-      hostStopBehavior: "not-supported", hostResumeBehavior: "same-host",
+      hostStopBehavior: "terminates-host", hostResumeBehavior: "same-host",
       targetAccess: "relay",
       secretBrokering: "native",
       // Credential handlers do not restrict unrelated destinations.
@@ -130,7 +130,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
         capture: "directories",
         clone: false,
         captureSource: "preserved",
-        retention: "provider-managed",
+        retention: "explicit",
         restoreMount: "copy-on-write",
       },
     },

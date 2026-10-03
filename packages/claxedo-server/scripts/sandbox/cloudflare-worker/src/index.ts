@@ -16,6 +16,8 @@ import { RUNTIME_PREPARATION_DEADLINE_MS, WORKSPACE_RUNTIME_BOOT_FAILED } from "
 import { credentialPlaceholder, forwardCredential, parseRegistrations, type EgressRegistration } from "./outbound-credentials"
 import { safeRuntimeLog } from "./runtime-log"
 import { asWorkerRecord, stringMap } from "./worker-json"
+import { backupIds, captureDirectories, deleteBackups, directoryRestore, uncommittedBackups, type DirectoryBackup } from "./directory-backups"
+import { IDLE_CHECK, IDLE_CHECK_FAILURE_LIMIT, IDLE_CHECK_SECONDS, requestIdleStop, workspaceIdlePlacement, type IdleEnv, type WorkspaceIdle } from "./workspace-idle"
 
 /** What a sandbox's credential hosts are intercepted with, from `ctx.exports` (`enable_ctx_exports`). */
 export class CredentialEgress extends WorkerEntrypoint<Env, { sandboxId: string }> {
@@ -31,6 +33,14 @@ export class CredentialEgress extends WorkerEntrypoint<Env, { sandboxId: string 
 
 const CREDENTIAL_HOSTS_KEY = "claxedo.credential-hosts"
 const RUNTIME_READY_KEY = "claxedo.runtime-ready"
+const WORKSPACE_IDLE_KEY = "claxedo.workspace-idle"
+const PENDING_BACKUPS_KEY = "claxedo.pending-backups"
+// Rebuildable state under HOME that would lengthen every capture's freeze.
+const HOME_CACHE_EXCLUDES = [".cache", ".npm/_cacache", ".bun/install/cache"]
+// The SDK refuses to restore a backup past its TTL. A checkpoint's backups are
+// deleted when a newer checkpoint commits or the workspace is destroyed, so the
+// TTL only has to outlive the longest a workspace may sleep.
+const BACKUP_TTL_SECONDS = 10 * 365 * 24 * 60 * 60
 // The platform mints the CA the container trusts with its first HTTPS
 // interception, and `interceptHttps` makes the container refuse to start
 // without that CA. A reserved name no request resolves mints it for a sandbox
@@ -48,9 +58,11 @@ export class Sandbox extends CloudflareSandbox {
   interceptHttps = true
 
   private workspaceRuntimeEnsure?: Promise<RuntimeEnsure>
+  private readonly workerEnv: Env
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
+    this.workerEnv = env
     // An interception belongs to the running container, and the platform
     // offers no removal, so only a restarted object re-installs it.
     void ctx.blockConcurrencyWhile(async () => {
@@ -88,9 +100,17 @@ export class Sandbox extends CloudflareSandbox {
    * registered after boot never becomes its placeholder env var until the
    * process itself is replaced.
    */
-  ensureWorkspaceRuntime(command: string, env: Record<string, string>, port: number, options: { reuseRunning: boolean }) {
+  ensureWorkspaceRuntime(command: string, env: Record<string, string>, port: number, options: { reuseRunning: boolean; restore?: DirectoryBackup[] }) {
     if (this.workspaceRuntimeEnsure) return this.workspaceRuntimeEnsure
-    const operation = ensureRuntimeProcess(this, command, env, port, options)
+    const operation = (async () => {
+      if (options.restore) {
+        // Restoring over an active writer is unsafe: stop the runtime, mount
+        // every captured directory, then boot against the restored state.
+        await stopRuntimeProcess(this, await runtimeProcess(this))
+        for (const backup of options.restore) await this.restoreBackup(backup)
+      }
+      return await ensureRuntimeProcess(this, command, env, port, options)
+    })()
     this.workspaceRuntimeEnsure = operation
     return operation.finally(() => {
       if (this.workspaceRuntimeEnsure === operation) this.workspaceRuntimeEnsure = undefined
@@ -100,6 +120,108 @@ export class Sandbox extends CloudflareSandbox {
   async workspaceRuntimeReady(port: number) {
     const process = await runtimeProcess(this)
     return Boolean(process && await runtimeReady(process, port, 2_000))
+  }
+
+  /** Records this lease generation's idle lifecycle; the health token is the runtime's config token, kept across boots. */
+  async configureWorkspaceIdle(placement: Omit<WorkspaceIdle, "healthToken">) {
+    const previous = await this.ctx.storage.get<WorkspaceIdle>(WORKSPACE_IDLE_KEY)
+    const idle = { ...placement, healthToken: previous?.healthToken ?? `${crypto.randomUUID()}${crypto.randomUUID()}` }
+    await this.ctx.storage.put(WORKSPACE_IDLE_KEY, idle)
+    return idle.healthToken
+  }
+
+  /**
+   * A container stopped by the SDK's request-inactivity sleep loses the state
+   * outside its backups, and an open browser stream keeps it awake forever.
+   * The container is kept alive instead and stops only through a checkpoint,
+   * once the runtime itself reports no work for the idle window.
+   */
+  async watchWorkspaceIdle() {
+    await this.setKeepAlive(true)
+    this.deleteSchedules(IDLE_CHECK)
+    await this.schedule(IDLE_CHECK_SECONDS, IDLE_CHECK)
+  }
+
+  /** Once the control plane has stopped the lease, this object stops its own container rather than waiting to be told. */
+  async checkWorkspaceIdle() {
+    const idle = await this.ctx.storage.get<WorkspaceIdle>(WORKSPACE_IDLE_KEY)
+    if (!idle || !this.ctx.container?.running) return
+    try {
+      const health = await this.containerFetch(new Request("http://runtime/api/wr/health", {
+        headers: { authorization: `Bearer ${idle.healthToken}` },
+      }), idle.port)
+      const stopped = await requestIdleStop(idle, health, this.workerEnv)
+      if (stopped) {
+        await this.stopWorkspace(idle.epoch, stopped.checkpoint)
+        return
+      }
+      if (idle.failures) await this.ctx.storage.put(WORKSPACE_IDLE_KEY, { ...idle, failures: 0 })
+    } catch (error) {
+      const failures = (idle.failures ?? 0) + 1
+      console.error("workspace idle stop failed", { workspaceId: idle.workspaceId, epoch: idle.epoch, failures, error: String(error) })
+      await this.ctx.storage.put(WORKSPACE_IDLE_KEY, { ...idle, failures })
+      if (failures >= IDLE_CHECK_FAILURE_LIMIT) {
+        await this.setKeepAlive(false)
+        return
+      }
+    }
+    await this.schedule(IDLE_CHECK_SECONDS, IDLE_CHECK)
+  }
+
+  /**
+   * Stops the container for lease generation `epoch`; a generation that already
+   * took the sandbox over keeps it. Backups this object made that the lease did
+   * not commit (`committed`) are deleted first.
+   */
+  async stopWorkspace(epoch: number, committed?: string) {
+    const idle = await this.ctx.storage.get<WorkspaceIdle>(WORKSPACE_IDLE_KEY)
+    if (idle && idle.epoch !== epoch) return false
+    await this.settleBackups(committed)
+    this.deleteSchedules(IDLE_CHECK)
+    await this.setKeepAlive(false)
+    await this.stop()
+    return true
+  }
+
+  /**
+   * Backs up each directory and records every id as soon as it exists, so a
+   * capture whose caller gave up is still found: the next capture or stop
+   * deletes whatever the lease did not commit.
+   */
+  async captureBackups(directories: readonly string[], committed: string | undefined) {
+    const bucket = this.backupBucket()
+    await this.settleBackups(committed)
+    const ids: string[] = []
+    try {
+      for (const dir of directories) {
+        const excludes = dir.startsWith("/home/") ? { excludes: HOME_CACHE_EXCLUDES } : {}
+        ids.push((await this.createBackup({ dir, ttl: BACKUP_TTL_SECONDS, ...excludes })).id)
+        await this.ctx.storage.put(PENDING_BACKUPS_KEY, ids)
+      }
+    } catch (error) {
+      await deleteBackups(bucket, ids)
+      await this.ctx.storage.delete(PENDING_BACKUPS_KEY)
+      throw error
+    }
+    return ids.join(",")
+  }
+
+  async deleteCheckpointBackups(ids: readonly string[]) {
+    await deleteBackups(this.backupBucket(), ids)
+    const pending = await this.ctx.storage.get<string[]>(PENDING_BACKUPS_KEY) ?? []
+    await this.ctx.storage.put(PENDING_BACKUPS_KEY, pending.filter((id) => !ids.includes(id)))
+  }
+
+  private async settleBackups(committed: string | undefined) {
+    const pending = await this.ctx.storage.get<string[]>(PENDING_BACKUPS_KEY) ?? []
+    if (pending.length === 0) return
+    await deleteBackups(this.backupBucket(), uncommittedBackups(pending, committed))
+    await this.ctx.storage.delete(PENDING_BACKUPS_KEY)
+  }
+
+  private backupBucket() {
+    if (!this.workerEnv.BACKUP_BUCKET) throw new Error("backups require the BACKUP_BUCKET binding")
+    return this.workerEnv.BACKUP_BUCKET
   }
 
   async runtimeWasReady(process: SandboxProcess) {
@@ -141,7 +263,7 @@ interface RegistryR2 {
   }): Promise<{ objects: RegistryR2Object[]; truncated: boolean; cursor?: string }>
 }
 
-interface Env {
+interface Env extends IdleEnv {
   Sandbox: any
   API_TOKEN: string
   /** KV namespace holding brokered secrets keyed by sandbox id, out of the container. */
@@ -530,8 +652,14 @@ export default {
           if (!command) return json({ error: "ensure-runtime requires `command`" }, 400)
           const restore = directoryRestore(body.restore)
           if (body.restore !== undefined && !restore) {
-            return json({ error: "ensure-runtime restore requires one absolute directory and a backupId" }, 400)
+            return json({ error: "ensure-runtime restore requires one backup id for each captured directory" }, 400)
           }
+          const labels = stringMap(body.labels)
+          const idle = workspaceIdlePlacement(labels, port, env)
+          if (!idle) {
+            return json({ error: "ensure-runtime requires workspaceId and epoch labels, and CONTROL_PLANE_URL for the idle lifecycle" }, 503)
+          }
+          containerEnv.WORKSPACE_RUNTIME_CONFIG_TOKEN = await sandbox.configureWorkspaceIdle(idle)
 
           let previous: EgressRegistration[]
           try {
@@ -563,24 +691,21 @@ export default {
           const placeholdersChanged = registrationNames(previous) !== registrationNames(registrations)
           await sandbox.setCredentialHosts(sandboxId, registrations.flatMap((row) => row.hosts))
           for (const row of registrations) containerEnv[row.name] = credentialPlaceholder(row.name)
-          if (restore) {
-            // Cloudflare backup mounts are ephemeral and restoring over an
-            // active writer is unsafe. Stop the old runtime before mounting
-            // the requested backup, then boot against the restored directory.
-            await stopRuntimeProcess(sandbox, await runtimeProcess(sandbox))
-            await sandbox.restoreBackup({ id: restore.backupId, dir: restore.directory })
-          }
           // Runtime bring-up is a Durable Object RPC with a per-sandbox
           // single-flight promise. Catalog refreshes and execution retries can
           // overlap, but they must join one process launch rather than cancel
           // each other's container operations.
-          const runtime: RuntimeEnsure = await sandbox.ensureWorkspaceRuntime(command, containerEnv, port, { reuseRunning: !placeholdersChanged })
+          const runtime: RuntimeEnsure = await sandbox.ensureWorkspaceRuntime(command, containerEnv, port, {
+            reuseRunning: !placeholdersChanged,
+            ...(restore ? { restore } : {}),
+          })
           if (runtime.state === "exited") return json({ ready: false, exited: true, error: runtime.reason }, 502)
           if (runtime.state === "preparing") return json({ ready: false, error: "workspace-runtime did not become ready" }, 503)
           // Register only once the sandbox is really up, and carry the labels
           // the control plane sent so GC can apply its own ownership and
           // identity checks against real provider state.
-          await registerSandbox(env, sandboxId, stringMap(body.labels))
+          await registerSandbox(env, sandboxId, labels)
+          await sandbox.watchWorkspaceIdle()
           const proxyUrl = `${url.origin}/sandbox/${encodeURIComponent(sandboxId)}/proxy`
           return json({ ready: true, url: proxyUrl, port })
         }
@@ -590,11 +715,26 @@ export default {
           return json({ ok: true, ready: await sandbox.workspaceRuntimeReady(port) })
         }
 
+        case "stop": {
+          if (typeof body.epoch !== "number" || !Number.isSafeInteger(body.epoch)) return json({ error: "stop requires the lease epoch" }, 400)
+          const stopped: boolean = await sandbox.stopWorkspace(body.epoch, typeof body.committed === "string" ? body.committed : undefined)
+          return stopped ? json({ ok: true }) : json({ ok: false, error: "a newer lease generation runs this sandbox" }, 409)
+        }
+
         case "backup": {
-          const directory = singleDirectory(body.directories)
-          if (!directory) return json({ error: "backup requires exactly one absolute directory" }, 400)
-          const backup = await sandbox.createBackup({ dir: directory })
-          return json({ backupId: backup.id, directory: backup.dir })
+          const directories = captureDirectories(body.directories)
+          if (!directories) return json({ error: "backup requires distinct absolute directories, none inside another" }, 400)
+          if (!env.BACKUP_BUCKET) return json({ error: "backup requires the BACKUP_BUCKET binding" }, 503)
+          const backupId: string = await sandbox.captureBackups(directories, typeof body.committed === "string" ? body.committed : undefined)
+          return json({ backupId })
+        }
+
+        case "delete-backup": {
+          const ids = backupIds(body.backupId)
+          if (!ids) return json({ error: "delete-backup requires the checkpoint's backup ids" }, 400)
+          if (!env.BACKUP_BUCKET) return json({ error: "delete-backup requires the BACKUP_BUCKET binding" }, 503)
+          await sandbox.deleteCheckpointBackups(ids)
+          return json({ ok: true })
         }
 
       default:
@@ -609,19 +749,3 @@ export default {
     }
   },
 }
-
-function singleDirectory(input: unknown) {
-  if (!Array.isArray(input) || input.length !== 1 || typeof input[0] !== "string") return undefined
-  const directory = input[0]
-  if (!directory.startsWith("/") || directory.split("/").includes("..")) return undefined
-  return directory
-}
-
-function directoryRestore(input: unknown) {
-  const restore = asWorkerRecord(input)
-  if (!restore) return undefined
-  const directory = singleDirectory(restore.directories)
-  if (!directory || typeof restore.backupId !== "string" || !restore.backupId) return undefined
-  return { backupId: restore.backupId, directory }
-}
-

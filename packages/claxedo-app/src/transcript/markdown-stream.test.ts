@@ -13,7 +13,7 @@ test("a first-paint block parsed from the projection's tokens matches a parse of
     for (const live of [false, true]) {
       const blocks = project(undefined, text, live).blocks.filter((block) => block.tokens)
       expect(blocks.length).toBeGreaterThan(0)
-      for (const block of blocks) expect(transcriptMarked.parser(block.tokens!)).toBe(transcriptMarked.parse(block.src, { async: false }) as string)
+      for (const block of blocks) expect(transcriptMarked.parser(block.tokens!)).toBe(transcriptMarked.parse(block.src, { async: false }))
     }
   }
 })
@@ -52,13 +52,13 @@ const settledShapes = [
 test("while a list streams its live tail draws no nested list or heading its settled text lacks, whatever the chunk size", () => {
   const shape = (html: string) => ({ nested: /<li>\s*<(ul|ol)/.test(html), heading: /<h\d/.test(html) })
   for (const text of settledShapes) {
-    const settled = shape(transcriptMarked.parse(text, { async: false }) as string)
+    const settled = shape(transcriptMarked.parse(text, { async: false }))
     for (let size = 1; size <= 8; size++) {
       let streamed: ReturnType<typeof project> | undefined
       for (let end = size; end < text.length + size; end += size) {
         streamed = project(streamed, text.slice(0, end), true)
         const live = streamed.blocks.at(-1)!
-        const drawn = shape(transcriptMarked.parse(live.src, { async: false }) as string)
+        const drawn = shape(transcriptMarked.parse(live.src, { async: false }))
         if (!settled.nested) expect({ prefix: text.slice(0, end), nested: drawn.nested }).toEqual({ prefix: text.slice(0, end), nested: false })
         if (!settled.heading) expect({ prefix: text.slice(0, end), heading: drawn.heading }).toEqual({ prefix: text.slice(0, end), heading: false })
       }

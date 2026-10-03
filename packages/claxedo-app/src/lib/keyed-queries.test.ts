@@ -8,7 +8,7 @@ import { createWorkspaceServer } from "./test-workspace-server"
 async function mountListings(open: readonly string[]) {
   const workspace = createWorkspaceServer({ alpha: ["alpha-1"], bravo: ["bravo-1"], charlie: ["charlie-1"] })
   onTestFinished(workspace.dispose)
-  const [dirs, setDirs] = createSignal<readonly string[]>(open)
+  const [dirs, setDirs] = createSignal(open)
   const resultOf = workspace.mount(() => keyedQueries(dirs, workspace.listing))
   const cache = workspace.server.queryClient.getQueryCache()
   const hashOf = (dir: string) => hashKey(workspace.listing(dir).queryKey)

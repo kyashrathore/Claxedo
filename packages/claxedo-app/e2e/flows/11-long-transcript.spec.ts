@@ -96,7 +96,7 @@ test("11 long transcript: a #message link opens at that turn and mod+arrows move
     await api.prompt(workspace.directory, session.id, `Link turn ${turn}: Reply with exactly this one token: L${String(turn).padStart(2, "0")}X`)
   }
   const users = (await api.messages(workspace.directory, session.id)).filter((message) => message.info.role === "user")
-  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}#message-${users[1]!.info.id}`)
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}#message-${users[1].info.id}`)
   await expect(app.getByText("Link turn 2:", { exact: false }).first()).toBeInViewport()
   await app.evaluate(() => {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()

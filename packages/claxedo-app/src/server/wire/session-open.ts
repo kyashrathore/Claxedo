@@ -1,3 +1,4 @@
+import { isAgentTodo } from "@claxedo/agent-runtime-contract"
 import { isRecord } from "@claxedo/helpers/guards"
 import { errorFromBody, ServerError } from "../errors"
 import type { BackgroundWork, SessionStatus } from "../status-types"
@@ -53,7 +54,7 @@ export function sessionOpenFromWire(body: unknown): SessionOpenView {
     status: factFromWire(body.status, "status", sessionStatusFromWire),
     backgroundWork: factFromWire(body.status, "status", backgroundWorkFromWire),
     requests: requestsFromWire(factFromWire(body.permissions, "permissions", listFromWire), factFromWire(body.questions, "questions", listFromWire)),
-    todos: factFromWire(body.todos, "todos", (value) => listFromWire(value) as readonly Todo[]),
+    todos: factFromWire(body.todos, "todos", (value) => listFromWire(value).filter(isAgentTodo)),
     goal: factFromWire(body.goal, "goal", goalStateFromWire),
     subagents: factFromWire(body.subagents, "subagents", subagentsFromWire),
   }

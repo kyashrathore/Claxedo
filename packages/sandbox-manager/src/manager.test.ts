@@ -1175,6 +1175,7 @@ describe("sandbox manager", () => {
         hostId: "host_1",
         epoch: 3,
       }),
+      undefined,
     )
   })
 

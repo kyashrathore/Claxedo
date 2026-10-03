@@ -53,6 +53,7 @@ function fakeServer(first: SessionFirstRead = firstRead(latest), pages: readonly
   const olderReads: string[] = []
   const reads = {
     first: Promise.resolve(first),
+    runtime: Promise.resolve(undefined),
     status: Promise.resolve({ kind: "idle" }),
     backgroundWork: Promise.resolve({ agents: 0, shells: 0, other: 0 }),
     requests: Promise.resolve([]),
@@ -136,7 +137,7 @@ test("snapshot: a reread that sends a tool as its header keeps the body the read
     await readSnapshot(context)
     await loadPart(context, "msg_2_r", "p2")
     await readSnapshot(context)
-    expect(context.data.parts["msg_2_r"]).toEqual([shell("a\nb"), withHeader.entries[1]!.parts[1]!])
+    expect(context.data.parts["msg_2_r"]).toEqual([shell("a\nb"), withHeader.entries[1].parts[1]])
     dispose()
   })
 })
@@ -206,7 +207,6 @@ test("snapshot: a refused requests read leaves the transcript on screen and name
   clock.mockRestore()
 })
 
-
 test("settlement: a missed preamble lands before the tool and final answer in the authority's order", async () => {
   const preamble = { ...latest.entries[1].parts[0], id: "preamble", text: "I will check the branch" }
   const final = { ...latest.entries[1].parts[0], text: "dev" }
@@ -243,4 +243,37 @@ test("settlement: a failed authority read preserves the live transcript", async 
   } finally {
     log.mockRestore()
   }
+})
+
+test("snapshot: a missing runtime session keeps the stored transcript and is its own fact, cleared by the next read that finds it", async () => {
+  const { server: base, deps } = fakeServer()
+  const failure = new ServerError({ class: "not_found", status: 404, code: "session_not_found", message: "Session not found" })
+  let runtime: Promise<undefined> = Promise.reject(failure)
+  const server = { ...base, sessions: { ...base.sessions, read: () => ({ ...base.sessions.read(ref, deps.pageShape()), runtime, requests: Promise.reject(failure) }) } } as unknown as Server
+  await createRoot(async (dispose) => {
+    const context = createTranscriptContext(server, ref, deps)
+    await readSnapshot(context)
+    await Promise.allSettled([runtime])
+    expect(context.phase.state().kind).toBe("ready")
+    expect(context.data.messages.map((message) => message.id)).toEqual(["msg_2", "msg_2_r"])
+    expect(context.runtimeMissing()).toBe(true)
+    runtime = Promise.resolve(undefined)
+    await readSnapshot(context)
+    await runtime
+    expect(context.runtimeMissing()).toBe(false)
+    dispose()
+  })
+})
+
+test("snapshot: a runtime read that fails for another reason is not a missing session", async () => {
+  const { server: base, deps } = fakeServer()
+  const runtime = Promise.reject(new ServerError({ class: "network", message: "offline" }))
+  const server = { ...base, sessions: { ...base.sessions, read: () => ({ ...base.sessions.read(ref, deps.pageShape()), runtime }) } } as unknown as Server
+  await createRoot(async (dispose) => {
+    const context = createTranscriptContext(server, ref, deps)
+    await readSnapshot(context)
+    await Promise.allSettled([runtime])
+    expect(context.runtimeMissing()).toBe(false)
+    dispose()
+  })
 })

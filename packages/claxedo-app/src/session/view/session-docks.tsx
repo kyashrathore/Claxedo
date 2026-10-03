@@ -3,6 +3,9 @@ import { persistedSignal, preferenceKey, tabStorage } from "@/lib/persisted"
 import type { SessionControls } from "@/access"
 import type { AgentRequest, AgentRequestReply, AppError } from "@/server"
 import type { SessionView } from "@/session"
+import { draftPath, useShellRoute } from "@/shell"
+import { Button } from "@/ui"
+import { createDockAction } from "./docks/dock-action"
 import { PermissionDock } from "./docks/permission-dock"
 import { QuestionDock } from "./docks/question-dock"
 import { GoalDock } from "./docks/goal-dock"
@@ -53,13 +56,35 @@ function RequestReadError(props: { readonly view: SessionView; readonly error: A
   )
 }
 
+function RuntimeMissingDock(props: { readonly view: SessionView }) {
+  const t = useSessionScreenText()
+  const routing = useShellRoute()
+  const action = createDockAction<"retry">()
+  return (
+    <Show when={props.view.runtimeMissing()}>
+      <section role="alert" class="mb-2 rounded-lg border border-border-weak-base bg-background-base p-3 text-text-base">
+        <div class="text-12-regular">{t("sessionScreen.runtime.missing")}</div>
+        <div class="flex flex-wrap gap-3">
+          <Button variant="neutral" size="small" onClick={() => routing.navigate(draftPath(props.view.ref.placementId))}>
+            {t("sessionScreen.runtime.newSession")}
+          </Button>
+          <Button variant="neutral" size="small" disabled={action.running()} onClick={() => void action.run("retry", props.view.reload)}>
+            {t(action.running() ? "sessionScreen.action.loading" : "sessionScreen.action.retry")}
+          </Button>
+        </div>
+      </section>
+    </Show>
+  )
+}
+
 export function SessionDocks(props: { readonly view: SessionView; readonly controls: SessionControls; readonly todo: ReturnType<typeof createTodoDock> }) {
   const request = createMemo(() => props.view.requests()[0])
   return (
     <>
       <div data-slot="session-docks" hidden={!props.controls.send}>
         <InterruptedDock view={props.view} />
-        <Show when={props.view.requestsError()}>{(error) => <RequestReadError view={props.view} error={error()} />}</Show>
+        <RuntimeMissingDock view={props.view} />
+        <Show when={!props.view.runtimeMissing() && props.view.requestsError()}>{(error) => <RequestReadError view={props.view} error={error()} />}</Show>
         <Show when={request()} keyed>
           {(current) => <RequestDock view={props.view} request={current} />}
         </Show>

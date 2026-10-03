@@ -44,7 +44,7 @@ export function requestConfirm(host: ReturnType<typeof useDialog>, options: Conf
       resolve(value)
       host.close()
     }
-    host.push(
+    void host.push(
       () => <ConfirmBody options={options} onConfirm={() => settle(true)} onCancel={() => settle(false)} />,
       () => settle(false),
     )

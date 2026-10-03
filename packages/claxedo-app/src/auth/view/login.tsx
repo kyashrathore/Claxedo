@@ -115,7 +115,7 @@ function createLoginController(token?: string) {
     setPassword,
     action,
     setAction,
-    continueWith: login.continueWith,
+    continueWith: (method?: BrowserAuthMethod) => login.continueWith(method),
     joined: () => invitation?.state().kind === "joined",
     accept: () => {
       if (invitation) void acceptInvitation(invitation)
