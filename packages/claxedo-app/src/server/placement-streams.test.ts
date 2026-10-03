@@ -20,11 +20,70 @@ const record = {
   placement: { id: placement, projectId: projectId("prj"), kind: "worktree", label: "Shared", reachable: true },
   route: { directory: "workspace:ws_shared", workspaceId: "ws_shared", remote: true },
 }
-const workspaces = { streamRoute: () => record.route } as unknown as Workspaces
+const workspaces = { streamRoute: () => record.route, refresh: async () => undefined } as unknown as Workspaces
 
 function ref(id: string) {
   return { projectId: projectId("prj"), placementId: placement, sessionId: sessionId(id) }
 }
+
+function stoppingWorkspaces(queryClient: QueryClient, serverUrl: string) {
+  let reachable = true
+  let refreshed = 0
+  const refresh = Promise.withResolvers<void>()
+  const workspaces = {
+    streamRoute: () => reachable ? record.route : undefined,
+    refresh: async () => {
+      refreshed += 1
+      reachable = false
+      queryClient.setQueryData(queryKeys.bootstrap(serverUrl), { revision: refreshed })
+      refresh.resolve()
+    },
+  } as unknown as Workspaces
+  return { workspaces, refreshed: () => refreshed, refresh: refresh.promise }
+}
+
+test("a refused owned runtime rereads the catalog, and the stopped placement's stream stays closed without a start", async () => {
+  const queryClient = new QueryClient()
+  const serverUrl = "https://account.test"
+  const catalog = stoppingWorkspaces(queryClient, serverUrl)
+  let opened = 0
+  const transport = { serverUrl, runtime: async () => {
+    opened += 1
+    return Response.json({ error: { code: "runtime_access_token_invalid" } }, { status: 401 })
+  } } as unknown as Transport
+  const streams = createPlacementStreams({ transport, workspaces: catalog.workspaces, queryClient, onFrame: () => undefined, onGap: () => undefined })
+  const detach = streams.attach(ref("ses_idle"))
+  try {
+    await catalog.refresh
+    await settle()
+    expect(catalog.refreshed()).toBe(1)
+    expect(opened).toBe(1)
+    expect(streams.streams(ref("ses_idle"))).toBe(false)
+  } finally { detach(); streams.close(); queryClient.clear() }
+})
+
+test("a dropped stream rereads the catalog before it reconnects, so a stopped sandbox is not reopened", async () => {
+  const queryClient = new QueryClient()
+  const serverUrl = "https://account.test"
+  const catalog = stoppingWorkspaces(queryClient, serverUrl)
+  let opened = 0
+  let body: ReadableStreamDefaultController<Uint8Array> | undefined
+  const transport = { serverUrl, runtime: async () => {
+    opened += 1
+    return new Response(new ReadableStream<Uint8Array>({ start: (controller) => { body = controller } }), { headers: { "content-type": "text/event-stream" } })
+  } } as unknown as Transport
+  const streams = createPlacementStreams({ transport, workspaces: catalog.workspaces, queryClient, onFrame: () => undefined, onGap: () => undefined })
+  const detach = streams.attach(ref("ses_idle"))
+  try {
+    await settle()
+    body?.close()
+    await catalog.refresh
+    await settle()
+    expect(catalog.refreshed()).toBe(1)
+    expect(opened).toBe(1)
+    expect(streams.streams(ref("ses_idle"))).toBe(false)
+  } finally { detach(); streams.close(); queryClient.clear() }
+})
 
 test("a shared placement streams with session scope and a revoked share closes the stream", async () => {
   let listed = true

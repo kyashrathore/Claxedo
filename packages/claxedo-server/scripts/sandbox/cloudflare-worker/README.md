@@ -20,6 +20,7 @@ npm ci
 wrangler login
 wrangler deploy
 wrangler secret put API_TOKEN
+wrangler secret put CONTROL_PLANE_URL
 ```
 
 The container image `COPY`s the in-repo workspace-runtime host bundle from
@@ -215,3 +216,42 @@ wrangler secret put R2_SECRET_ACCESS_KEY
 The R2 token needs Object Read & Write access to the checkpoint bucket. The
 committed `wrangler.toml` binds that bucket as `BACKUP_BUCKET`; local
 `wrangler dev` uses the binding without production presigned-URL credentials.
+
+A checkpoint captures the directories the driver names (the workspace and
+`/home/claxedo`, the runtime's HOME), one SDK backup each, sequentially; its
+provider reference is the backup ids joined with commas, in capture order, and
+a restore mounts each id over its directory inside the single runtime launch. A
+capture that fails partway deletes the backups it made. The SDK writes
+`backups/<id>/data.sqsh` and `meta.json` and never deletes them, so
+`delete-backup` does: the control plane calls it for the checkpoint a newer one
+replaced, for a capture whose commit was fenced, and for the last checkpoint of
+a destroyed workspace. The backup TTL only bounds how long a sleeping workspace
+can still restore.
+
+## Idle stop
+
+The SDK's own sleep stops a container after an interval without requests, which
+loses everything outside the backups, while an open browser stream keeps a
+container awake indefinitely. The Worker therefore keeps a ready container alive
+(`setKeepAlive(true)`) and stops it only through a checkpoint:
+
+- `ensure-runtime` records the lease's `workspaceId` and `epoch` labels, gives the
+  runtime a health token as `WORKSPACE_RUNTIME_CONFIG_TOKEN` (kept across boots
+  in Durable Object storage), and refuses with 503 when `CONTROL_PLANE_URL` is
+  unset, because nothing would ever stop that container.
+- Every 30 seconds the Durable Object reads `idleSince` from the runtime's
+  `GET /api/wr/health`. The runtime owns that answer: no turn, admitted write,
+  background work or terminal, and no checkpoint in progress. HTTP reads and
+  event streams are not work.
+- Once `idleSince` is older than `WORKSPACE_IDLE_MS` (default 600000), it posts
+  `{ workspaceId, epoch, idleBefore }` to the control plane's
+  `/internal/sandbox/idle-stop` with this Worker's `API_TOKEN`. Nothing is
+  stored per sandbox beyond the health token. The control plane freezes the
+  runtime only if it is still idle since `idleBefore`, captures it, commits the
+  checkpoint and the stopped lease in one update, and then calls `stop` with
+  the epoch. From that commit on, a send wakes a restore of this checkpoint.
+- `stop` is fenced: a sandbox a newer lease generation already took over keeps
+  running.
+
+A failed idle stop is logged as `workspace idle stop failed` and retried at the
+next check; the container keeps running meanwhile.

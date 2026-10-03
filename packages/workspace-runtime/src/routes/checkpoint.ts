@@ -19,6 +19,7 @@ import { authorizeManagementAccess, type ManagementAccessOptions } from "./manag
 
 export function CheckpointRoutes(input: {
   checkpoint: WorkspaceCheckpointControl
+  idleSince: () => number | undefined
   worktrees?: WorkspaceWorktreeManager
 } & HostCapabilityAccessOptions & ManagementAccessOptions) {
   return new Hono<{ Variables: RelayHostAuthContext }>()
@@ -49,6 +50,15 @@ export function CheckpointRoutes(input: {
           400,
         )
       }
+      const idleBefore = asNumber(body.idleBefore)
+      if (body.idleBefore !== undefined && (idleBefore === undefined || !Number.isSafeInteger(idleBefore))) {
+        return c.json(errorBody("workspace_checkpoint_freeze_invalid", "idleBefore must be an integer timestamp"), 400)
+      }
+      const idleSince = input.idleSince()
+      if (idleBefore !== undefined && (idleSince === undefined || idleSince > idleBefore)) {
+        return c.json(errorBody("workspace_not_idle", "The workspace has had work since the idle deadline"), 409)
+      }
+      // No await between the idle answer and the freeze: `freeze` closes admission before its first await.
       const result = await input.checkpoint.freeze(policy, {
         deadlineAt: Date.now() + (requested ?? DEFAULT_RECOVERY_BUDGETS.drainMs),
       })

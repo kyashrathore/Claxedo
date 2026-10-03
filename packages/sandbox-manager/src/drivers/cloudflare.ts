@@ -93,6 +93,8 @@ const DEFAULT_TIMEOUT_MS = 45_000
 // caller deadline cancels the Durable Object RPC before its supported cold-
 // start budget can finish, causing every retry to restart the same boot.
 const DEFAULT_ENSURE_TIMEOUT_MS = 300_000
+// A backup archives and uploads the whole workspace and HOME, one directory after the other.
+const DEFAULT_BACKUP_TIMEOUT_MS = 180_000
 const WORKSPACE_DIRECTORY_LABEL = "claxedo.workspaceDirectory"
 
 function deadlineSignal(timeoutMs: number) {
@@ -109,18 +111,16 @@ function deadlineSignal(timeoutMs: number) {
   }
 }
 
-// Module-owned runtime state lives in the app data dir, NOT in the workspace
-// tree. Cloudflare is the only driver with directory-scoped capture, so it must
-// name that directory explicitly to keep durable runtime state and projected
-// workspace content on the same snapshot lifetime.
-//
-// Pinned via CLAXEDO_DATA_DIR rather than inferred from $HOME so the captured
-// path and the path the runtime actually writes cannot drift apart if the base
-// image changes its user.
-const RUNTIME_DATA_DIR = "/var/lib/claxedo"
+// Everything the runtime and the native harnesses keep outside the workspace
+// tree lives under HOME: the runtime store, harness homes, terminal history.
+// Cloudflare captures named directories, and the SDK backs up only paths under
+// /workspace, /home, /tmp, /var/tmp or /app, so HOME is pinned to a captured
+// directory rather than the image user's own. CLAXEDO_DATA_DIR is pinned too,
+// because the runtime resolves it without reading HOME.
+const RUNTIME_HOME = "/home/claxedo"
 
 function captureDirectories(workspaceDirectory: string) {
-  return [workspaceDirectory, RUNTIME_DATA_DIR]
+  return [workspaceDirectory, RUNTIME_HOME]
 }
 
 /** Deterministic driver-scoped sandbox id + hostId for a workspace. */
@@ -160,6 +160,7 @@ export function createCloudflareSandboxDriver(
   const workspaceDir = options.workspaceDir ?? DEFAULT_WORKSPACE_DIR
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const ensureTimeoutMs = options.timeoutMs ?? DEFAULT_ENSURE_TIMEOUT_MS
+  const backupTimeoutMs = options.timeoutMs ?? DEFAULT_BACKUP_TIMEOUT_MS
 
   const base = cloudflareWorkerBaseUrl(options.workerUrl)
   const headers = {
@@ -174,7 +175,7 @@ export function createCloudflareSandboxDriver(
     method: "POST" | "DELETE" = "POST",
   ): Promise<{ status: number; data: Record<string, unknown> }> {
     const url = `${base}/sandbox/${encodeURIComponent(sandboxId)}${action ? `/${action}` : ""}`
-    const deadline = deadlineSignal(action === "ensure-runtime" ? ensureTimeoutMs : timeoutMs)
+    const deadline = deadlineSignal(action === "ensure-runtime" ? ensureTimeoutMs : action === "backup" ? backupTimeoutMs : timeoutMs)
     try {
       const res = await doFetch(url, {
         method,
@@ -205,8 +206,8 @@ export function createCloudflareSandboxDriver(
       host: "0.0.0.0",
       source: input.source,
       env: {
-        // Must match the checkpoint capture set below.
-        CLAXEDO_DATA_DIR: RUNTIME_DATA_DIR,
+        HOME: RUNTIME_HOME,
+        CLAXEDO_DATA_DIR: `${RUNTIME_HOME}/.claxedo`,
         ...input.env,
         ...await options.env?.(input, { id: hostId }),
         // Last, so no caller-supplied variable of the same name can stand in
@@ -381,7 +382,7 @@ export function createCloudflareSandboxDriver(
 
     metadata: {
       driverRunsIn: ["worker"],
-      hostStopBehavior: "not-supported",
+      hostStopBehavior: "terminates-host",
       hostResumeBehavior: "same-host",
       targetAccess: "relay",
       secretBrokering: "native",
@@ -398,10 +399,11 @@ export function createCloudflareSandboxDriver(
       }
     },
 
-    async stop(target: SandboxTarget) {
-      // Cloudflare sandboxes auto-sleep on inactivity; there is no explicit
-      // stop. Leaving it idle is the stop. (capabilities.supportsExplicitStop=false)
-      void target
+    async stop(target) {
+      const { status, data } = await call(target.sandboxId, "stop", { epoch: target.epoch })
+      if (status >= 400 || data.ok !== true) {
+        throw new Error(`Cloudflare stop failed (${status}) for ${target.sandboxId}: ${text(data.error) ?? "not stopped"}`)
+      }
     },
 
     async destroy(target: SandboxResource) {
@@ -423,6 +425,11 @@ export function createCloudflareSandboxDriver(
         throw new Error(`Cloudflare backup failed (${status}): ${text(data.error) ?? "no backup id"}`)
       }
       return { snapshotId: backupId }
+    },
+
+    async deleteSnapshot(target, snapshotId) {
+      const { status, data } = await call(target.sandboxId, "delete-backup", { backupId: snapshotId })
+      if (status >= 400) throw new Error(`Cloudflare backup deletion failed (${status}): ${text(data.error) ?? snapshotId}`)
     },
   }
 }

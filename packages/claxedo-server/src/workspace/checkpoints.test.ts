@@ -16,7 +16,7 @@ test("checkpoint runtime failures preserve the typed authority refusal", async (
 
 function manager() {
   const checkpoint = vi.fn(async (_workspaceId: string, input: SandboxCheckpointCaptureInput) => {
-    await input.runtime.freeze("drain")
+    await input.runtime.freeze("drain", {})
     await input.runtime.flush()
     await input.runtime.scrub()
     await input.runtime.resume()
@@ -139,27 +139,30 @@ describe("workspace checkpoint service", () => {
     expect(runtimeRequest).not.toHaveBeenCalled()
   })
 
-  test("stop captures durable state before stopping a capture-capable provider", async () => {
+  test("an idle stop hands the manager the non-resuming runtime, the deadline and the lease generation", async () => {
     const sandboxManager = manager()
-    const calls: string[] = []
-    sandboxManager.checkpoint.mockImplementation(async (_workspaceId, request) => {
-      calls.push("checkpoint")
-      await request.runtime.freeze("drain")
-      await request.runtime.flush()
-      await request.runtime.scrub()
-      await request.runtime.resume()
-      return { status: "ready", lease: { status: "ready" } }
-    })
-    sandboxManager.stop.mockImplementation(async () => {
-      calls.push("stop")
+    const runtimeRequest = vi.fn(async () => Response.json({ ok: true }))
+    const inspectRuntimeRequest = vi.fn(async () => Response.json({ ok: true }))
+    sandboxManager.stop.mockImplementation(async (_workspaceId, request) => {
+      await request?.runtime?.freeze("drain", { idleBefore: request.idleBefore })
       return { ok: true, status: "stopped" }
     })
-    const service = createWorkspaceCheckpointService({
-      sandboxManager,
-      runtimeRequest: vi.fn(async () => Response.json({ ok: true })),
-    })
+    const service = createWorkspaceCheckpointService({ sandboxManager, runtimeRequest, inspectRuntimeRequest })
 
-    await expect(service.stop("ws_1")).resolves.toEqual({ ok: true, status: "stopped" })
-    expect(calls).toEqual(["checkpoint", "stop"])
+    await expect(service.stop("ws_1", { idleBefore: 1_000, expectedEpoch: 3 })).resolves.toEqual({ ok: true, status: "stopped" })
+    expect(sandboxManager.stop).toHaveBeenCalledWith("ws_1", expect.objectContaining({ idleBefore: 1_000, expectedEpoch: 3 }))
+    expect(inspectRuntimeRequest).toHaveBeenCalledWith("ws_1", "/api/wr/checkpoint/freeze", expect.objectContaining({
+      body: JSON.stringify({ policy: "drain", idleBefore: 1_000 }),
+    }))
+    expect(runtimeRequest).not.toHaveBeenCalled()
+  })
+
+  test("a checkpoint still reaches its runtime through the waking path", async () => {
+    const runtimeRequest = vi.fn(async (_workspaceId: string, _path: string) => Response.json({ ok: true }))
+    const inspectRuntimeRequest = vi.fn(async () => Response.json({ ok: true }))
+    const service = createWorkspaceCheckpointService({ sandboxManager: manager(), runtimeRequest, inspectRuntimeRequest })
+    await service.capture("ws_1")
+    expect(runtimeRequest.mock.calls.map((call) => call[1])).toEqual(["/api/wr/checkpoint/freeze", "/api/wr/checkpoint/flush", "/api/wr/checkpoint/scrub", "/api/wr/checkpoint/resume"])
+    expect(inspectRuntimeRequest).not.toHaveBeenCalled()
   })
 })

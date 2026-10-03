@@ -2,15 +2,16 @@
 import { afterEach, expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/solid-query"
 import { createBrowserHostedAccount } from "./account"
-import { placementId } from "./ids"
-import { createSessionProjection } from "./session-projection"
+import { ServerError } from "./errors"
+import { placementId, projectId, sessionId } from "./ids"
+import { createSessionProjection, type SessionProjection } from "./session-projection"
 import { RESERVATION_HEADER } from "./session-reservation"
 import { createSessionsApi } from "./sessions"
-import { createStatusOwner } from "./status"
+import { createStatusOwner, type StatusOwner } from "./status"
 import { bootstrap } from "./test-session-server"
-import { createTransport } from "./transport"
-import { createWorkspaces } from "./workspaces"
-import { createWorkspaceWakes } from "./workspace-wakes"
+import { createTransport, type Transport } from "./transport"
+import { createWorkspaces, type Workspaces } from "./workspaces"
+import { createWorkspaceWakes, type WorkspaceWakes } from "./workspace-wakes"
 
 const running: Array<{ stop: (force: boolean) => unknown }> = []
 
@@ -57,4 +58,53 @@ test.each([["cloud", false], ["remote machine", true]] as const)("sessions: a %s
     message: `Session ${String(creates[0]?.id)} belongs to another workspace`,
   })
   workspaces.dispose()
+})
+
+function sendFixture(answers: Array<unknown>, stopsOnRefresh: boolean) {
+  const sent: string[] = []
+  let stopped = false
+  const woke: string[] = []
+  const transport = {
+    runtimeJson: async (_route: unknown, path: string) => {
+      sent.push(path)
+      const answer = answers.shift()
+      if (answer instanceof Error) throw answer
+      return answer
+    },
+  } as unknown as Transport
+  const workspaces = {
+    route: async () => ({ directory: "workspace:ws_cloud", workspaceId: "ws_cloud", remote: true }),
+    refresh: async () => { stopped = stopsOnRefresh },
+  } as unknown as Workspaces
+  const wakes = {
+    wakeIfStopped: async (id: string) => {
+      if (!stopped) return false
+      woke.push(id)
+      stopped = false
+      return true
+    },
+  } as unknown as WorkspaceWakes
+  const sessions = createSessionsApi(transport, workspaces, {} as StatusOwner, wakes, {} as SessionProjection)
+  const send = () => sessions.prompt({ projectId: projectId("proj_1"), placementId: placementId("ws_cloud"), sessionId: sessionId("ses_1") },
+    { clientRequestId: "req_1", messageId: "msg_1", text: "hello", attachments: [] })
+  return { sent, woke, send }
+}
+
+test("sessions: a send a sandbox refuses because it stopped since the catalog read wakes it and is sent once more", async () => {
+  const stopped = new ServerError({ class: "conflict", code: "workspace_stopped", message: "The cloud workspace is stopped" })
+  const fixture = sendFixture([stopped, { delivery: "queue" }], true)
+  expect(await fixture.send()).toBe("queue")
+  expect(fixture.sent).toHaveLength(2)
+  expect(fixture.woke).toEqual(["ws_cloud"])
+})
+
+test("sessions: a refused send is not resent when the sandbox did not stop, or when it was refused for another reason", async () => {
+  const stopped = new ServerError({ class: "conflict", code: "workspace_stopped", message: "The cloud workspace is stopped" })
+  const stillLive = sendFixture([stopped], false)
+  await expect(stillLive.send()).rejects.toBe(stopped)
+  expect(stillLive.sent).toHaveLength(1)
+  const denied = new ServerError({ class: "auth", code: "session_access_denied", message: "Not yours" })
+  const refused = sendFixture([denied], true)
+  await expect(refused.send()).rejects.toBe(denied)
+  expect(refused.woke).toEqual([])
 })

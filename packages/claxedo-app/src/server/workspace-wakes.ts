@@ -10,7 +10,7 @@ import type { Workspaces } from "./workspaces"
 export type WorkspaceWakes = {
   readonly runtime: (id: PlacementId) => WorkspaceRuntime
   readonly start: (id: PlacementId) => Promise<void>
-  readonly wakeIfStopped: (id: PlacementId) => Promise<void>
+  readonly wakeIfStopped: (id: PlacementId) => Promise<boolean>
 }
 
 function runtimeOf(wake: WakeState, asleep: boolean): WorkspaceRuntime {
@@ -49,7 +49,9 @@ export function createWorkspaceWakes(transport: Transport, workspaces: Workspace
     start,
     wakeIfStopped: async (id) => {
       await workspaces.load()
-      if (isStoppedCloud(workspaces.byId(id))) await start(id)
+      if (!isStoppedCloud(workspaces.byId(id))) return false
+      await start(id)
+      return true
     },
   }
 }

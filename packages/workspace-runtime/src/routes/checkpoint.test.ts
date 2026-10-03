@@ -38,6 +38,7 @@ describe("workspace checkpoint routes", () => {
     })
     app.route("/", CheckpointRoutes({
       checkpoint: host.checkpoint,
+      idleSince: () => undefined,
       sessionAccessPolicy: {
         ...managedWorkspaceSessionAccessPolicy({ requireActor: true }),
         authorizeHost: () => ({ allowed: false, status: 403, code: "host_access_denied", message: "Admin required" }),
@@ -71,6 +72,28 @@ describe("workspace checkpoint routes", () => {
       body: "{}",
     })).status).not.toBe(423)
 
+    await runtime.dispose()
+  })
+
+  test("an idle freeze answers from the workspace's one idle clock and closes admission only when it is idle", async () => {
+    const runtime = createWorkspaceRuntimeApp({
+      sessionIdWorkspace: () => undefined, placement: loopbackMachineLoginPolicy(), exposure: loopbackWorkspaceRuntimeExposure() })
+    const freeze = (idleBefore: number) => runtime.app.request("/api/wr/checkpoint/freeze", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ policy: "drain", idleBefore }) })
+    const idleSince = async () => (await (await runtime.app.request("/api/wr/health")).json() as { idleSince?: number }).idleSince
+    const since = await idleSince()
+    expect(since).toBeNumber()
+    expect(await (await freeze(since! - 1)).json()).toMatchObject({ error: { code: "workspace_not_idle" } })
+    const endWrite = runtime.host.checkpoint.beginWrite()!
+    expect(await idleSince()).toBeUndefined()
+    expect((await freeze(Date.now())).status).toBe(409)
+    expect(runtime.host.checkpoint.detail().state).toBe("active")
+    endWrite()
+    const resumed = await idleSince()
+    expect(resumed).toBeGreaterThanOrEqual(since!)
+    expect((await freeze(resumed!)).status).toBe(200)
+    expect(runtime.host.checkpoint.detail().state).toBe("frozen")
+    expect(await idleSince()).toBeUndefined()
     await runtime.dispose()
   })
 

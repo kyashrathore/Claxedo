@@ -129,3 +129,10 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           SANDBOX_CONTROL_TOKEN: ${{ secrets.CLAXEDO_RUNTIME_ADMIN_TOKEN }}
         run: printf '%s' "$SANDBOX_CONTROL_TOKEN" | npx --yes wrangler@4.127.1 secret put API_TOKEN
+
+      - name: Point the idle stop at the control plane
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CONTROL_PLANE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+        run: printf '%s' "$CONTROL_PLANE_URL" | npx --yes wrangler@4.127.1 secret put CONTROL_PLANE_URL

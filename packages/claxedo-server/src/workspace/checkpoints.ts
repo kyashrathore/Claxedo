@@ -14,9 +14,9 @@ export function createWorkspaceCheckpointService(input: {
   runtimeRequest: (workspaceId: string, path: string, init?: RequestInit) => Promise<Response>
   inspectRuntimeRequest?: (workspaceId: string, path: string, init?: RequestInit) => Promise<Response>
 }) {
-  const runtime = (workspaceId: string): SandboxCheckpointRuntime => {
+  const runtime = (workspaceId: string, runtimeRequest = input.runtimeRequest): SandboxCheckpointRuntime => {
     const request = async (path: string, body?: unknown) => {
-      const response = await input.runtimeRequest(workspaceId, path, {
+      const response = await runtimeRequest(workspaceId, path, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body ?? {}),
@@ -25,8 +25,8 @@ export function createWorkspaceCheckpointService(input: {
       throw await workspaceRuntimeRequestError(path, response)
     }
     return {
-      freeze: async (policy) => {
-        await request("/api/wr/checkpoint/freeze", { policy })
+      freeze: async (policy, options) => {
+        await request("/api/wr/checkpoint/freeze", { policy, ...options })
       },
       flush: async () => {
         await request("/api/wr/checkpoint/flush")
@@ -78,16 +78,12 @@ export function createWorkspaceCheckpointService(input: {
         runtime: runtime(workspaceId),
       })
     },
-    async stop(workspaceId: string) {
-      const lease = (await input.sandboxManager.list()).find((item) => item.workspaceId === workspaceId)
-      if (lease?.status === "ready" && lease.persistence && lease.persistence.capture !== "none") {
-        const captured = await input.sandboxManager.checkpoint(workspaceId, {
-          runtime: runtime(workspaceId),
-          policy: "drain",
-        })
-        if (captured.lease.status === "stopped") return { ok: true as const, status: "stopped" as const }
-      }
-      return await input.sandboxManager.stop(workspaceId)
+    /** Captures and stops a running workspace; the runtime it controls must already run, so it is reached without waking it. */
+    stop(workspaceId: string, request: { idleBefore?: number; expectedEpoch?: number } = {}) {
+      return input.sandboxManager.stop(workspaceId, {
+        ...request,
+        runtime: runtime(workspaceId, input.inspectRuntimeRequest ?? input.runtimeRequest),
+      })
     },
     replace(workspaceId: string, request: Omit<SandboxCheckpointRestoreInput, "runtime"> = {}) {
       return input.sandboxManager.restore(workspaceId, {

@@ -12,6 +12,10 @@ export class BrokerBackgroundWork {
     return this.sessions.get(sessionId)
   }
 
+  activeSessions(): number {
+    return this.sessions.size
+  }
+
   record(sessionId: string, work: BackgroundWork): void {
     if (sameBackgroundWork(this.sessions.get(sessionId) ?? NO_BACKGROUND_WORK, work)) return
     if (backgroundWorkActive(work)) this.sessions.set(sessionId, work)

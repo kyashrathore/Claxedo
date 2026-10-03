@@ -11,6 +11,7 @@ import { Pty } from "./pty/index"
 import { withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "./target"
 import { WorkspaceWorktreeManager } from "./worktree"
 import { createWorkspaceHost, type WorkspaceHostOptions } from "./workspace"
+import { createWorkspaceIdle, type WorkspaceIdle } from "./workspace/idle"
 import { setupAgentHooks } from "./agent-hooks"
 import { createRelayHostAuthMiddleware, type RelayHostAuthOptions } from "./workspace-host-service-auth"
 import { startWorkspaceRelayHostTunnel, type WorkspaceRelayHostTunnelOptions } from "./workspace-relay-host-tunnel"
@@ -399,7 +400,7 @@ function runtimeProbe(host: Host, options: WorkspaceRuntimeServerOptions) {
   })
 }
 
-async function runtimeLiveness(host: Host, options: WorkspaceRuntimeServerOptions, sessionId?: string) {
+async function runtimeLiveness(host: Host, idle: WorkspaceIdle, options: WorkspaceRuntimeServerOptions, sessionId?: string) {
   const detail = host.detail()
   const harnessHealth = sessionId
     ? await host.readHarnessHealth({
@@ -418,6 +419,7 @@ async function runtimeLiveness(host: Host, options: WorkspaceRuntimeServerOption
     exposure: options.exposure ? { kind: exposureBoundaryName(options.exposure) } : undefined,
     workspaceId: options.target?.workspaceId ?? workspaceId(),
     ptyCount: Pty.list().length,
+    idleSince: idle.since(),
   })
 }
 
@@ -441,6 +443,11 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ?? (options.exposure?.kind === "loopback" || options.exposure?.kind === "embedded"
       ? managedWorkspaceSessionAccessPolicy()
       : remoteWorkspaceSessionAccessPolicyFromEnv())
+  const idle = createWorkspaceIdle(() => {
+    const activity = host.activity()
+    return activity.checkpointState !== "active"
+      || activity.activeTurns + activity.activeWrites + activity.backgroundWork + Pty.activity().running > 0
+  })
   const host = createWorkspaceHost({
     placement: options.placement,
     ...(options.connectionProviders ? { connectionProviders: options.connectionProviders } : {}),
@@ -455,7 +462,10 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
     ...(options.storeFactory ? { storeFactory: options.storeFactory } : {}),
     ...(options.beforeHarnessAcquire ? { beforeHarnessAcquire: options.beforeHarnessAcquire } : {}),
-    ...(options.onActivityChange ? { onActivityChange: options.onActivityChange } : {}),
+    onActivityChange: () => {
+      idle.changed()
+      options.onActivityChange?.()
+    },
     ...(options.configApplyReceiptDir ? { configApplyReceiptDir: options.configApplyReceiptDir } : {}),
     ...(options.onTurnOutcome ? { onTurnOutcome: options.onTurnOutcome } : {}),
     ...(options.onPresentationEvent ? { onPresentationEvent: options.onPresentationEvent } : {}),
@@ -596,6 +606,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   }
   app.route(WorkspaceRuntimeRoutes.checkpoint, CheckpointRoutes({
     checkpoint: host.checkpoint,
+    idleSince: () => idle.since(),
     worktrees,
     sessionAccessPolicy,
     ...(options.managementAuth ? { managementAuth: options.managementAuth } : {}),
@@ -673,7 +684,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       const access = await sessionAccessPolicy.authorize({ ...sessionAccessContext(c), sessionId, operation: "session_meta_read", method: c.req.method, path: c.req.path })
       if (!access.allowed) return sessionAccessDenied(access)
     }
-    return c.json(await runtimeLiveness(host, options, sessionId))
+    return c.json(await runtimeLiveness(host, idle, options, sessionId))
   })
 
   app.get(WorkspaceRuntimeRoutes.capabilities, (c) => c.json(host.capabilities()))
@@ -683,10 +694,12 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.renewalIntervalMs !== undefined ? { renewalIntervalMs: options.renewalIntervalMs } : {}),
   })
 
+  const stopWatchingTerminals = Pty.onActivityChange(idle.changed)
   let cleaned = false
   const dispose = () => {
     if (!cleaned) {
       cleaned = true
+      stopWatchingTerminals()
       routeContributions.dispose()
       worktrees?.close()
     }

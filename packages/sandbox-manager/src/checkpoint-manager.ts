@@ -4,13 +4,14 @@ import type {
   SandboxLease,
   SandboxLeaseStore,
   SandboxManagerInput,
+  SandboxResource,
   SandboxSnapshotManagerResult,
   SandboxTargetResult,
 } from "./contract"
 import { publicApiFailure } from "@claxedo/helpers/api-error"
 
 export type SandboxCheckpointRuntime = {
-  freeze: (policy: "drain" | "interrupt") => Promise<void>
+  freeze: (policy: "drain" | "interrupt", options: { idleBefore?: number }) => Promise<void>
   flush: () => Promise<void>
   scrub: () => Promise<void>
   resume: () => Promise<void>
@@ -21,6 +22,15 @@ export type SandboxCheckpointCaptureInput = {
   runtime: SandboxCheckpointRuntime
   policy?: "drain" | "interrupt"
   retentionExpiresAt?: number
+  /** Capture only a workspace that has had no work since this time; the runtime refuses the freeze otherwise. */
+  idleBefore?: number
+}
+
+export type SandboxStopInput = {
+  /** Present when the workspace's state is captured before its host stops. */
+  runtime?: SandboxCheckpointRuntime
+  idleBefore?: number
+  expectedEpoch?: number
 }
 
 export type SandboxCheckpointRestoreInput = {
@@ -39,6 +49,9 @@ export async function captureSandboxCheckpoint(input: {
   leaseStore: SandboxLeaseStore
   target: (workspaceId: string) => Promise<SandboxTargetResult>
   snapshot: (workspaceId: string) => Promise<SandboxSnapshotManagerResult>
+  deleteSnapshot?: (target: SandboxResource, snapshotId: string) => Promise<void>
+  /** The capture ends this lease: its commit stops it, and the runtime stays frozen for the host stop that follows. */
+  endsLease?: boolean
   now?: () => number
   checkpointId?: () => string
 }): Promise<SandboxCheckpointResult> {
@@ -48,9 +61,11 @@ export async function captureSandboxCheckpoint(input: {
   if (!persistence || persistence.capture === "none") throw publicApiFailure("workspace_checkpoint_conflict", "workspace_checkpoint_unsupported")
   const target = await input.target(input.workspaceId)
   if (target.status !== "ready") throw publicApiFailure("workspace_checkpoint_unavailable", target.reason)
-  await input.request.runtime.freeze(input.request.policy ?? "drain")
+  const discard = persistence.capture === "same-resource" ? undefined : input.deleteSnapshot
   let capturedSource = false
+  let committed = false
   try {
+    await input.request.runtime.freeze(input.request.policy ?? "drain", { idleBefore: input.request.idleBefore })
     await input.request.runtime.flush()
     await input.request.runtime.scrub()
     const captured = persistence.capture === "same-resource"
@@ -76,19 +91,38 @@ export async function captureSandboxCheckpoint(input: {
     const updated = await input.leaseStore.update(input.workspaceId, lease.epoch, {
       checkpoint,
       restore: null,
-      ...(persistence.captureSource === "stopped" || persistence.captureSource === "deleted"
+      ...(input.endsLease || persistence.captureSource === "stopped" || persistence.captureSource === "deleted"
         ? { status: "stopped" as const }
         : {}),
     })
-    if (!updated) throw publicApiFailure("workspace_checkpoint_conflict", "workspace_checkpoint_epoch_fenced")
+    if (!updated) {
+      await discardSnapshot(discard, target, captured.snapshotId)
+      throw publicApiFailure("workspace_checkpoint_conflict", "workspace_checkpoint_epoch_fenced")
+    }
+    committed = true
+    // A lease references one checkpoint, so the one it replaced is no longer restorable from anywhere.
+    if (lease.checkpoint && lease.checkpoint.providerReference !== captured.snapshotId) {
+      await discardSnapshot(discard, target, lease.checkpoint.providerReference)
+    }
     return { status: "ready", lease: updated, checkpoint }
   } finally {
     // A provider can stop/delete the source only after a successful capture.
     // Any earlier failure must thaw the still-live runtime.
-    if (!capturedSource || persistence.captureSource === "preserved") {
+    if (!(committed && input.endsLease) && (!capturedSource || persistence.captureSource === "preserved")) {
       await input.request.runtime.resume()
     }
   }
+}
+
+/** Deletes a provider snapshot no lease references; a failure leaks storage, never the checkpoint just taken. */
+export async function discardSnapshot(
+  discard: ((target: SandboxResource, snapshotId: string) => Promise<void>) | undefined,
+  target: SandboxResource,
+  snapshotId: string,
+) {
+  await discard?.(target, snapshotId).catch((error: unknown) => {
+    console.warn("A superseded sandbox snapshot could not be deleted", { workspaceId: target.workspaceId, snapshotId, error: String(error) })
+  })
 }
 
 export async function restoreSandboxCheckpoint(input: {

@@ -46,6 +46,10 @@ function wanted(state: StreamsState) {
   return sessions
 }
 
+function refreshCatalog(input: StreamsInput) {
+  void input.workspaces.refresh().catch((error) => console.error("The placement catalog could not be refreshed after its event stream ended", error))
+}
+
 function reconcileStreams(state: StreamsState) {
   const { input, sessions } = state
   const want = wanted(state)
@@ -62,8 +66,12 @@ function reconcileStreams(state: StreamsState) {
       open: ({ headers, signal }) => input.transport.runtime(route, path, { headers, signal }),
       onFrame: (frame) => input.onFrame(frame && typeof frame === "object" ? { ...frame, workspaceId: route.workspaceId } : frame),
       onGap: input.onGap,
+      onState: (connection) => {
+        if (!route.sharedSession && connection.kind === "reconnecting" && connection.attempt === 1) refreshCatalog(input)
+      },
       onRefused: () => {
         if (route.sharedSession) void input.workspaces.shared.refresh().then(input.onGap, (error) => console.error("Shared sessions could not be refreshed", error))
+        else refreshCatalog(input)
       },
     }))
   }

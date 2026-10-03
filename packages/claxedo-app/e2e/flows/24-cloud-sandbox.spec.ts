@@ -109,6 +109,22 @@ test("24 a live sandbox streams a turn as it runs", async ({ signedCloud, page }
   await expect.poll(async () => (await storedMessages(signedCloud, workspace, sessionId)).length).toBe(4)
 })
 
+test("24 a sandbox stopping while its session is open shows sleep and keeps history without waking", async ({ signedCloud, page }) => {
+  test.setTimeout(120_000)
+  const workspace = await makeCloudWorkspace(signedCloud, "main")
+  await startCloudWorkspace(signedCloud, workspace)
+  const sessionId = await cloudTurn(signedCloud, workspace, { title: "Idle cloud turn", script: "idle", reply: "Saved before stopping" })
+  const wakes = wakeRequests(page, workspace)
+  await openSession(page, signedCloud, workspace, sessionId)
+  await expect(page.getByText("Saved before stopping")).toBeVisible()
+  await expect(page.getByText(ASLEEP)).toHaveCount(0)
+  await stopCloudWorkspace(signedCloud, workspace)
+  await expect(page.getByText(ASLEEP)).toBeVisible()
+  await expect(page.getByText("Saved before stopping")).toBeVisible()
+  expect(wakes.filter((request) => request.startsWith("POST /api/workspace/"))).toEqual([])
+  expect((await storedMessages(signedCloud, workspace, sessionId)).map((message) => message.info.role)).toEqual(["user", "assistant"])
+})
+
 test("24 a terminal on a live sandbox belongs to the open session, and with no session open the creator refuses before asking the sandbox", async ({ signedCloud, page, isMobile }) => {
   test.skip(isMobile, "the terminal creator runs at desktop width")
   test.setTimeout(150_000)

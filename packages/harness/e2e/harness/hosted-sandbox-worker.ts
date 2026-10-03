@@ -80,6 +80,7 @@ function runtimeEnv(env: Record<string, string>, root: string, sandboxId: string
     "WORKSPACE_RUNTIME_GIT_REPO_URL",
     "WORKSPACE_RUNTIME_GIT_BRANCH",
     "CLAXEDO_DATA_DIR",
+    "HOME",
   ])
   return {
     ...Object.fromEntries(Object.entries(env).filter(([name]) => !omitted.has(name))),
@@ -99,7 +100,7 @@ function source(env: Record<string, string>) {
   }
 }
 
-/** The two trees the Cloudflare driver asks a backup to capture: the workspace and the runtime's data directory. */
+/** What this emulator captures in place of the Cloudflare driver's workspace and runtime HOME. */
 const BACKED_UP = ["sandbox-workspaces", "runtime-data"] as const
 
 async function exists(file: string) {
@@ -206,6 +207,8 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
   if (!destroy) throw new Error("local brokering driver must support destroy")
   const touch = driver.touch
   if (!touch) throw new Error("local brokering driver must support touch")
+  const stop = driver.stop
+  if (!stop) throw new Error("local brokering driver must support stop")
   const sandboxes = new Map<string, RunningSandbox>()
   const ensuring = new Set<Promise<unknown>>()
   const server = createServer({ key: await readFile(input.key), cert: await readFile(input.certificate) }, async (request, res) => {
@@ -255,6 +258,19 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
       if (parts[2] === "backup") {
         if (!sandboxes.has(id)) return response(res, 404, { error: "sandbox not found" })
         return response(res, 200, { backupId: await backUpSandbox(input.root, id) })
+      }
+      if (parts[2] === "delete-backup") {
+        const backupId = (await body(request)).backupId
+        if (typeof backupId !== "string" || !backupId.startsWith("backup-")) return response(res, 400, { error: "unknown backup" })
+        await rm(path.join(input.root, "sandbox-backups", backupId), { recursive: true, force: true })
+        return response(res, 200, { ok: true })
+      }
+      if (parts[2] === "stop") {
+        const running = sandboxes.get(id)
+        if (running && Number(running.labels.epoch) !== (await body(request)).epoch) return response(res, 409, { ok: false, error: "a newer lease generation runs this sandbox" })
+        if (running) await stop(running.target)
+        sandboxes.delete(id)
+        return response(res, 200, { ok: true })
       }
       if (parts[2] !== "ensure-runtime") return response(res, 404, { error: "unknown action" })
       const payload = await body(request)

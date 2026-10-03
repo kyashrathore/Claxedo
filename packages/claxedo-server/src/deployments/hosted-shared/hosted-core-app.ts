@@ -27,7 +27,7 @@ import { HostSessionRowsRoutes } from "../../routes/hosted/host-session-rows"
 import type { SessionRowsPasses } from "../../session/session-rows-pass"
 import { RemoteAccessOwnerRoutes } from "../../routes/remote-access"
 import { hostedRemoteAccessService } from "./hosted-remote-access-service"
-import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
+import { WorkspaceCheckpointRoutes, workspaceCheckpointService } from "../../workspace/routes/checkpoints"
 import { hostConnectEndpointOptions, routeAuth, signedOrError } from "../../workspace/route-support"
 import { HostedControlRoutes } from "../../routes/hosted/control"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-routes/internal-relay"
@@ -538,6 +538,13 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       adminToken: plane.env.CLAXEDO_RUNTIME_ADMIN_TOKEN,
       sandboxManager: services.sandbox.sandboxManager,
       telemetry: services.telemetry,
+      sandboxWorkerToken: plane.env.CLOUDFLARE_SANDBOX_API_TOKEN,
+      idleStop: async (workspaceId, epoch, idleBefore) => {
+        const owner = await services.authority?.resolveWorkspaceOwner?.(workspaceId)
+        if (!owner) return { ok: false, reason: "workspace_owner_unavailable" }
+        return await workspaceCheckpointService(undefined, "owner", owner.orgId, services, { defaultHomeRegion: services.defaultHomeRegion })
+          .stop(workspaceId, { expectedEpoch: epoch, idleBefore })
+      },
     }),
   )
   if (options.integrationRoutes) app.route("/api/claxedo/integrations", options.integrationRoutes)

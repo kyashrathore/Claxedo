@@ -6,6 +6,7 @@ import {
   type SandboxCheckpointCaptureInput,
   type SandboxCheckpointRestoreInput,
   type SandboxCheckpointResult,
+  type SandboxStopInput,
 } from "./checkpoint-manager"
 
 export { DEFAULT_WORKSPACE_RUNTIME_PORT }
@@ -521,9 +522,12 @@ export type SandboxDriver = {
   list?: () => Promise<SandboxTarget[]>
   touch?: (target: SandboxTarget) => Promise<void>
   suspend?: (target: SandboxTarget) => Promise<void>
-  stop?: (target: SandboxTarget) => Promise<void>
+  /** Stops the host; given `epoch`, a host that a newer lease generation already took over keeps running. */
+  stop?: (target: SandboxTarget & { epoch?: number }) => Promise<void>
   destroy?: (target: SandboxResource) => Promise<void>
   snapshot?: (target: SandboxTarget) => Promise<SandboxSnapshotResult>
+  /** Deletes a snapshot `snapshot` returned; implemented by drivers whose snapshots outlive their sandbox. */
+  deleteSnapshot?: (target: SandboxResource, snapshotId: string) => Promise<void>
   inspect?: (target: SandboxTarget) => Promise<SandboxTarget | undefined>
   exec?: (target: SandboxTarget, command: string) => Promise<SandboxCommandResult>
   clone?: (target: SandboxTarget, input: { name: string }) => Promise<SandboxTarget>
@@ -538,7 +542,7 @@ export type SandboxManager = {
   snapshot: (workspaceId: string) => Promise<SandboxSnapshotManagerResult>
   checkpoint: (workspaceId: string, input: SandboxCheckpointCaptureInput) => Promise<SandboxCheckpointResult>
   restore: (workspaceId: string, input: SandboxCheckpointRestoreInput) => Promise<SandboxCheckpointResult>
-  stop: (workspaceId: string) => Promise<SandboxMutationResult>
+  stop: (workspaceId: string, input?: SandboxStopInput) => Promise<SandboxMutationResult>
   destroy: (workspaceId: string) => Promise<SandboxMutationResult>
   release: (workspaceId: string) => Promise<{ released: boolean }>
   garbageCollect: () => Promise<SandboxGarbageCollectResult>

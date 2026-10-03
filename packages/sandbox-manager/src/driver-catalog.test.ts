@@ -30,7 +30,7 @@ describe("sandbox driver catalog", () => {
       capture: "directories",
       clone: false,
       captureSource: "preserved",
-      retention: "provider-managed",
+      retention: "explicit",
       restoreMount: "copy-on-write",
     })
     expect(sandboxDriverCatalog.box.metadata.persistence.capture).toBe("none")

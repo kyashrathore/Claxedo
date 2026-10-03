@@ -17,7 +17,11 @@ seams supplied by the caller:
 - **`SandboxDriver`** — how a sandbox actually gets placed. `id`,
   `metadata` (see the [driver comparison](#driver-comparison) below),
   `ensureHost` (required), and optional `resumeHost`, `list`, `touch`,
-  `suspend`, `stop`, `destroy`, `snapshot`. `ensureHost`/`resumeHost` return
+  `suspend`, `stop`, `destroy`, `snapshot`, `deleteSnapshot`. A driver whose
+  snapshots outlive their sandbox implements `deleteSnapshot`: a lease
+  references one checkpoint, so the manager deletes the snapshot a newer
+  commit replaced, the one a fenced commit never referenced, and the last one
+  when the workspace is destroyed. `ensureHost`/`resumeHost` return
   either a `SandboxTarget` (`sandboxId`, `url`, `hostId`, …) or
   `{ provisioning: true, retryAfterMs }` for drivers whose sandboxes take a
   poll loop to come up.
@@ -100,7 +104,7 @@ credential fields for each provider).
 | Driver | Runs in | `hostStopBehavior` | `hostResumeBehavior` | `targetAccess` | `secretBrokering` |
 | --- | --- | --- | --- | --- | --- |
 | [Box](../src/drivers/box.ts) | `node` | `suspends-host` | `same-host` | `relay` | `none` |
-| [Cloudflare](../src/drivers/cloudflare.ts) | `worker` | `not-supported` | `same-host` | `relay` | `native` |
+| [Cloudflare](../src/drivers/cloudflare.ts) | `worker` | `terminates-host` | `same-host` | `relay` | `native` |
 | [Docker](../src/drivers/docker.ts) | `local` | `terminates-host` | `same-host` | `loopback` | `none` |
 | [Fetch-bridge](../src/drivers/fetch-bridge.ts) | `worker`, `node` | `suspends-host` | `same-host` | `relay` | `none` |
 | [Modal](../src/drivers/modal.ts) | `node` | `terminates-host` | `replacement-host` | `relay` | `none` |
@@ -111,8 +115,10 @@ Column meanings:
 - **Runs in** — where the driver's own code (not the sandbox) can execute.
 - **`hostStopBehavior`** — what `SandboxManager.stop()` actually does to the
   driver-owned resource: `"suspends-host"` (pauses, resumable),
-  `"terminates-host"` (destroys it), or `"not-supported"` (no stop API —
-  Cloudflare Durable Object sandboxes stay up).
+  `"terminates-host"` (destroys it), or `"not-supported"` (no stop API).
+  `stop(workspaceId, { runtime })` first captures the workspace: the capture
+  commits the checkpoint and the stopped lease in one update, the runtime stays
+  frozen, and only then does the host stop, for that lease generation only.
 - **`hostResumeBehavior`** — whether a stopped/stale lease can resume the
   *same* driver-owned resource (`"same-host"`) or must always get a
   replacement (`"replacement-host"`, e.g. Modal/Vercel sandboxes are

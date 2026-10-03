@@ -169,6 +169,8 @@ export type WorkspaceHost = {
   activity: () => {
     activeTurns: number
     activeWrites: number
+    /** Sessions whose harness reports background work still running. */
+    backgroundWork: number
     checkpointState: WorkspaceCheckpointState
     /**
      * What startup reconciliation found. Absent until it settles, because
