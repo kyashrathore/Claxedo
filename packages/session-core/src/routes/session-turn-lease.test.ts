@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { SessionAccessPolicy, SessionTurnLeaseDecision } from "../session-access-policy"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { DEFAULT_RECOVERY_BUDGETS, type RecoveryFacts, type RecoveryOutcome, type RecoveryOperationState, type RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
-import { acquireSessionTurnLease } from "./session-turn-lease"
+import { acquireSessionTurnLease, adoptSessionTurnLease } from "./session-turn-lease"
 
 const target: RecoveryTurnTarget = {
   scope: "turn",
@@ -440,3 +440,68 @@ function expiringLease(onLost: () => Promise<RecoveryOutcome> | RecoveryOutcome)
     onLost,
   })
 }
+
+describe("adopted session turn lease", () => {
+  test("renews under its stored proof and releases like an acquired one", async () => {
+    const calls: Array<[string, { turnId: string; leaseId: string; fencingToken: number }]> = []
+    let renewed!: () => void
+    const renewal = new Promise<void>((resolve) => { renewed = resolve })
+    const lease = adoptSessionTurnLease({
+      policy: policy({
+        renewTurn: async ({ turnId, leaseId, fencingToken }) => {
+          calls.push(["renew", { turnId, leaseId, fencingToken }])
+          renewed()
+          return { allowed: true, turnId, leaseId: "proof_renewed", fencingToken, acquiredAt: Date.now(), expiresAt: Date.now() + 60_000 }
+        },
+        releaseTurn: async ({ turnId, leaseId, fencingToken }) => {
+          calls.push(["release", { turnId, leaseId, fencingToken }])
+          return { released: true }
+        },
+      }),
+      access, lease: { turnId: "msg_adopted", leaseId: "proof_stored", fencingToken: 4, expiresAt: Date.now() + 100 },
+      onLost: () => contained(),
+    })
+    await renewal
+    await Bun.sleep(0)
+    expect(lease.valid()).toBe(true)
+    expect(lease.proof()).toBe("proof_renewed")
+    expect(await lease.release()).toEqual({ released: true })
+    expect(calls).toEqual([
+      ["renew", { turnId: "msg_adopted", leaseId: "proof_stored", fencingToken: 4 }],
+      ["release", { turnId: "msg_adopted", leaseId: "proof_renewed", fencingToken: 4 }],
+    ])
+  })
+
+  test("is lost and contained when the authority refuses its renewal", async () => {
+    let lost!: () => void
+    const loss = new Promise<void>((resolve) => { lost = resolve })
+    const lease = adoptSessionTurnLease({
+      policy: policy({
+        renewTurn: () => ({ allowed: false, status: 401, code: "session_turn_lease_invalid", message: "expired" }),
+        releaseTurn: async () => { throw new Error("A lost lease is never released") },
+      }),
+      access, lease: { turnId: "msg_refused", leaseId: "proof_stored", fencingToken: 2, expiresAt: Date.now() + 100 },
+      onLost: () => { lost(); return contained() },
+    })
+    await loss
+    expect(lease.lost()).toBe(true)
+    expect(lease.signal.aborted).toBe(true)
+    expect(await lease.release()).toEqual({ released: false })
+  })
+
+  test("is lost at once when it expired before it was adopted", async () => {
+    let losses = 0
+    const lease = adoptSessionTurnLease({
+      policy: policy({
+        renewTurn: async () => { throw new Error("An expired lease is never renewed") },
+        releaseTurn: async () => ({ released: true }),
+      }),
+      access, lease: { turnId: "msg_expired", leaseId: "proof_stored", fencingToken: 1, expiresAt: Date.now() - 1 },
+      onLost: () => { losses += 1; return contained() },
+    })
+    expect(lease.lost()).toBe(true)
+    expect(lease.valid()).toBe(false)
+    await Bun.sleep(0)
+    expect(losses).toBe(1)
+  })
+})

@@ -35,6 +35,7 @@ export type SessionRouteCompositionInput<Turn = unknown> = {
   deriveChildSessionId: ChildSessionHost["deriveSessionId"]
   subagentAdmission: (parentSessionId: string, observation: SubagentObservation) => Promise<SubagentUpdatedEvent>
   backgroundWork: (sessionId: string) => BackgroundWork | undefined
+  afterDeleteSession?: SessionRoutesOptions["afterDeleteSession"]
   machine?: SessionRouteMachine<Turn>
 }
 
@@ -51,6 +52,7 @@ export function composeSessionRoutes<Turn>(input: SessionRouteCompositionInput<T
     sessionStarts: input.sessionStarts,
     requestedSessionHarness: (requested) => requested ?? input.currentRunner(),
     resolveRecoveryOwner: () => input.recovery(),
+    ...(input.afterDeleteSession ? { afterDeleteSession: input.afterDeleteSession } : {}),
     ...(input.machine ? machineRouteOptions(input.machine) : {}),
   })
 }

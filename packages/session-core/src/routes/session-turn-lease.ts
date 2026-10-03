@@ -40,7 +40,9 @@ export type SessionTurnLeaseAcquisition =
   | { acquired: true; lease: ActiveSessionTurnLease }
   | { acquired: false; decision: Exclude<SessionTurnLeaseDecision, { allowed: true }> }
 
-function validLease(lease: Extract<SessionTurnLeaseDecision, { allowed: true }>, turnId: string, now: number) {
+type IssuedSessionTurnLease = Extract<SessionTurnLeaseDecision, { allowed: true }>
+
+function validLease(lease: IssuedSessionTurnLease, turnId: string, now: number) {
   return lease.turnId === turnId
     && turnId.trim().length > 0
     && typeof lease.leaseId === "string" && lease.leaseId.trim().length > 0
@@ -49,20 +51,23 @@ function validLease(lease: Extract<SessionTurnLeaseDecision, { allowed: true }>,
     && Number.isFinite(lease.expiresAt) && lease.expiresAt > lease.acquiredAt && lease.expiresAt > now
 }
 
+type HeldSessionTurnLease = {
+  policy: SessionAccessPolicy
+  access: SessionAccessPolicyInput & { sessionId: string }
+  onLost: () => Promise<RecoveryOutcome> | RecoveryOutcome
+  now?: () => number
+}
+
 /**
  * Owns renewal and the local half of the durable fence. Expiry is scheduled
  * independently from the renewal request, so a stalled oracle cannot extend
  * execution past the last authority-confirmed deadline. `valid()` also checks
  * the wall clock synchronously before every runtime producer publication.
  */
-export async function acquireSessionTurnLease(input: {
-  policy: SessionAccessPolicy
-  access: SessionAccessPolicyInput & { sessionId: string }
+export async function acquireSessionTurnLease(input: HeldSessionTurnLease & {
   turnId: string
   /** Proof for acquisition only; the lease itself is what renews and releases. */
   grant?: string
-  onLost: () => Promise<RecoveryOutcome> | RecoveryOutcome
-  now?: () => number
 }): Promise<SessionTurnLeaseAcquisition> {
   const { policy } = input
   if (!policy.acquireTurn || !policy.renewTurn || !policy.releaseTurn) {
@@ -79,11 +84,26 @@ export async function acquireSessionTurnLease(input: {
       decision: denied("session_turn_authority_invalid_response", "Durable session turn authority returned an invalid lease"),
     }
   }
+  return { acquired: true, lease: holdSessionTurnLease(input, acquired) }
+}
 
+/**
+ * Takes over a lease this host was issued before it restarted, as the
+ * authority last renewed it. It is held exactly like an acquired one, so a
+ * lease that already expired, or whose first renewal is refused, is lost.
+ */
+export function adoptSessionTurnLease(input: HeldSessionTurnLease & {
+  lease: Pick<IssuedSessionTurnLease, "turnId" | "leaseId" | "fencingToken" | "expiresAt">
+}): ActiveSessionTurnLease {
+  return holdSessionTurnLease(input, { allowed: true, ...input.lease, acquiredAt: (input.now ?? Date.now)() })
+}
+
+function holdSessionTurnLease(input: HeldSessionTurnLease, issued: IssuedSessionTurnLease): ActiveSessionTurnLease {
+  const policy = input.policy
   const now = input.now ?? Date.now
   const controller = new AbortController()
-  let current = acquired
-  let localExpiresAt = Math.min(acquired.expiresAt, now() + SESSION_TURN_LEASE_TTL_MS)
+  let current = issued
+  let localExpiresAt = Math.min(issued.expiresAt, now() + SESSION_TURN_LEASE_TTL_MS)
   let closed = false
   let leaseLost = false
   let renewTimer: Timer | undefined
@@ -178,30 +198,27 @@ export async function acquireSessionTurnLease(input: {
   schedule()
 
   return {
-    acquired: true,
-    lease: {
-      signal: controller.signal,
-      valid: stillValid,
-      lost: () => leaseLost,
-      fencingToken: () => current.fencingToken,
-      lossResult: () => lossResult,
-      connectionCredential: () => current.connectionCredential,
-      proof: () => current.leaseId,
-      async release() {
-        if (closed) return { released: false }
-        closed = true
-        clearTimers()
-        controller.abort()
-        const turn = {
-          ...input.access,
-          turnId: current.turnId,
-          leaseId: current.leaseId,
-          fencingToken: current.fencingToken,
-        }
-        await Promise.resolve().then(() => policy.endTurn?.(turn)).catch(() => undefined)
-        if (leaseLost) return { released: false }
-        return await policy.releaseTurn!(turn)
-      },
+    signal: controller.signal,
+    valid: stillValid,
+    lost: () => leaseLost,
+    fencingToken: () => current.fencingToken,
+    lossResult: () => lossResult,
+    connectionCredential: () => current.connectionCredential,
+    proof: () => current.leaseId,
+    async release() {
+      if (closed) return { released: false }
+      closed = true
+      clearTimers()
+      controller.abort()
+      const turn = {
+        ...input.access,
+        turnId: current.turnId,
+        leaseId: current.leaseId,
+        fencingToken: current.fencingToken,
+      }
+      await Promise.resolve().then(() => policy.endTurn?.(turn)).catch(() => undefined)
+      if (leaseLost) return { released: false }
+      return await policy.releaseTurn!(turn)
     },
   }
 }

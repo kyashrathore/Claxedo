@@ -2,18 +2,21 @@ import type { PromptModel, SessionConfig, SessionHarness } from "@claxedo/agent-
 import type { AttachInput, DraftLaunch, Locality, PluginProjection, ResolvedCredentials, StartInput, TurnActor } from "@claxedo/harness/contract"
 import type { HarnessBinding } from "@claxedo/harness/contract"
 import { HARNESS_TABLE, isHarnessId, PI_LAUNCH_PROVIDERS, piCredentialProviderIDs } from "@claxedo/agent-runtime-contract"
-import { selectSessionCredentials, type CredentialSelectionInput } from "@claxedo/harness/registry"
+import { selectSessionCredentials, sessionAccountOwner, type CredentialSelectionInput } from "@claxedo/harness/registry"
 
 /**
  * What the workspace composition knows and a session launch needs: the plugin
  * projection the accepted snapshot yields for a harness, the credentials every
- * session spends, and the workspace the launch belongs to.
+ * session spends, and the workspace the launch belongs to. A host that is
+ * handed credentials only for the turn it runs answers none between turns: a
+ * session it opens then holds no account, and its transport refuses a turn
+ * that arrives without one.
  */
 export type LaunchComposer = {
   providerDefinitions?(): StartInput["providerDefinitions"]
   workspaceId: string
   projection(harness: SessionHarness): PluginProjection
-  credentials(): CredentialSelectionInput
+  credentials(): CredentialSelectionInput | undefined
 }
 
 export type SessionLaunch = {
@@ -80,7 +83,17 @@ function accountProviderIds(harness: SessionHarness, model: PromptModel | undefi
   return undefined
 }
 
+export function accountHolder(launch: LaunchComposer, owner: TurnActor): string {
+  const snapshot = launch.credentials()
+  if (snapshot) return sessionAccountOwner(snapshot, owner).userId
+  return owner.kind === "person" ? owner.userId : "machine-owner"
+}
+
 export function sessionCredentials(launch: LaunchComposer, session: Pick<SessionLaunch, "owner" | "config">): ResolvedCredentials {
+  const snapshot = launch.credentials()
+  if (!snapshot) {
+    return { accountOwner: accountHolder(launch, session.owner), machineLoginAllowed: false, providers: {}, secrets: {}, leaseGeneration: "" }
+  }
   const providerIds = accountProviderIds(session.config.harness, session.config.model)
-  return selectSessionCredentials({ ...launch.credentials(), ...(providerIds ? { providerIds } : {}) }, session.owner)
+  return selectSessionCredentials({ ...snapshot, ...(providerIds ? { providerIds } : {}) }, session.owner)
 }
