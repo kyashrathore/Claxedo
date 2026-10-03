@@ -1,4 +1,3 @@
-import type { QueryClient } from "@tanstack/solid-query"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { AccountSources } from "./account-types"
 import type { AccountsApi } from "./api"
@@ -22,8 +21,7 @@ export function accountSourceQueries(transport: Transport) {
   return { sources }
 }
 
-export function createAccountSourceWrites(transport: Transport, queryClient: QueryClient, changed: () => Promise<void>): Pick<AccountsApi, "setSource" | "setScope"> {
-  const server = transport.serverUrl
+export function createAccountSourceWrites(transport: Transport, changed: () => Promise<void>): Pick<AccountsApi, "setSource" | "setScope"> {
   return {
     setSource: async (providerIds, source) => {
       await transport.json(SOURCES_PATH, jsonInit("PUT", { provider_ids: providerIds, source }))

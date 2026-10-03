@@ -46,7 +46,7 @@ export function createAccountsApi(transport: Transport, queryClient: QueryClient
   const changed = () => queryClient.invalidateQueries({ queryKey: queryKeys.accounts(server) })
   const post = (path: string, body: unknown) => transport.json(`${CREDENTIALS_PATH}${path}`, jsonInit("POST", body))
   return {
-    ...createAccountSourceWrites(transport, queryClient, changed),
+    ...createAccountSourceWrites(transport, changed),
     select: async (ids) => {
       await post("/activate", { ids })
       await changed()
