@@ -59,7 +59,7 @@ supplies executables and state roots.
 | Claude | [`ClaudeSdkTransport`](../../packages/harness/src/transports/claude-sdk/index.ts), Claude Agent SDK |
 | Codex | [`CodexAppServerTransport`](../../packages/harness/src/transports/codex-app-server/index.ts), `codex app-server` |
 | Cursor | [`CursorSdkTransport`](../../packages/harness/src/transports/cursor-sdk/index.ts), `@cursor/sdk` in a host process |
-| Pi | [`PiRpcTransport`](../../packages/harness/src/transports/pi-rpc/index.ts), Pi in RPC mode |
+| Pi | [`PiDurableTransport`](../../packages/harness/src/transports/pi-durable/index.ts), an embedded pi-durable `Harness` per session |
 | OpenCode | [`OpenCodeSdkTransport`](../../packages/harness/src/transports/opencode-sdk/transport.ts), the embedded engine |
 | Custom ACP | [`AcpTransport`](../../packages/harness/src/transports/acp/index.ts), a local process or remote peer |
 
@@ -98,10 +98,9 @@ profile README owns where its harness keeps conversations and configuration:
   home for a brokered session.
 - [Cursor](../../packages/harness/src/profiles/cursor/README.md): a
   Claxedo-owned home held by the SDK host.
-- [Pi](../../packages/harness/src/profiles/pi/README.md): `selectPiProfile`
-  chooses the owner's own agent directory or a brokered per-session profile;
-  [`pi-rpc/launch.ts`](../../packages/harness/src/transports/pi-rpc/launch.ts)
-  refuses a prompted session whose session file is gone.
+- [Pi](../../packages/harness/src/transports/pi-durable/README.md): no home or
+  profile; each session keeps its own SQLite store and spends only the direct
+  credentials it is given.
 - [OpenCode](../../packages/harness/src/profiles/opencode/README.md): MCP
   servers and skills through the embedded engine's per-location plugin hooks,
   with nothing written into the project.
