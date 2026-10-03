@@ -50,6 +50,16 @@ test("joining a fork appends it after a draft that already holds text, keeping b
   expect(promptText(saved.at(-1)!.entry.draft.prompt)).toBe("Keep my unsent draft\n\nEdited queue item")
 })
 
+test("joining an emptied fork leaves the draft unchanged", () => {
+  const { store } = recordingStore()
+  store.setPrompt(KEY, text("Keep my unsent draft"), 20)
+  store.forkDraft(KEY, draftOf("Edited queue item"))
+  store.take(KEY)
+  store.joinFork(KEY)
+  expect(store.forked(KEY)).toBe(false)
+  expect(promptText(store.draft(KEY).prompt)).toBe("Keep my unsent draft")
+})
+
 test("an open fork survives the in-memory key cap", () => {
   const { store } = recordingStore()
   store.forkDraft(KEY, draftOf("Edited queue item"))

@@ -162,7 +162,7 @@ function forkActions(table: EntryTable) {
     const { draft, fork } = unwrap(table.entry(key))
     if (!fork) return
     setEntries(key, produce((entry) => {
-      if (keep) entry.draft = draftEmpty(draft) ? fork : appendedDraft(draft, fork)
+      if (keep && !draftEmpty(fork)) entry.draft = draftEmpty(draft) ? fork : appendedDraft(draft, fork)
       delete entry.fork
     }))
     persist(key)
