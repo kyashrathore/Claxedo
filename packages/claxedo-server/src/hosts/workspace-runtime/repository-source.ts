@@ -32,14 +32,14 @@ async function hasCommit(directory: string) {
   }
 }
 
-async function defaultBranch(directory: string) {
+async function originDefaultBranch(directory: string) {
   await git(["remote", "set-head", "origin", "--auto"], directory)
   return (await git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], directory)).trim().replace(/^origin\//, "")
 }
 
 async function checkOut(directory: string, source: RepositorySource) {
   await git(["fetch", "--quiet", "origin"], directory)
-  const branch = source.branch ?? await defaultBranch(directory)
+  const branch = source.branch ?? await originDefaultBranch(directory)
   await git(["checkout", "--quiet", "--force", "-B", branch, "--track", `origin/${branch}`], directory)
 }
 
