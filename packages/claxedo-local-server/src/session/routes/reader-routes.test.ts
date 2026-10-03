@@ -14,7 +14,8 @@ process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 
 const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
 const { controlBus } = await import("@claxedo/server-core/platform/runtime/lib/bus")
-const { deleteSessionMeta, putSessionMeta, recordSessionLastTurn } = await import("@claxedo/server-core/session/meta/index")
+const { deleteSessionMeta, putSessionMeta, recordSessionLastTurn, syncSessionMetas } = await import("@claxedo/server-core/session/meta/index")
+const { writeSessionReader } = await import("@claxedo/server-core/session/meta/reads")
 const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
 const { parseSessionListQuery } = await import("@claxedo/server-core/session/navigation-list")
 const { localSessionListPage } = await import("../list/session-list-page")
@@ -81,19 +82,19 @@ describe("the machine user's seen and settled marks", () => {
     recordSessionLastTurn(ws.id, "ses_settled", { status: "completed", completedAt: 60 })
     await putSessionMeta("ses_other", { ws, title: "Other", createdAt: 2, updatedAt: 2 })
 
-    expect(await (await write("ses_settled", "settle", { settled: true })).json()).toEqual({ settledAt: 60 })
+    expect(await (await write("ses_settled", "settle", { settled: true, through: 0 })).json()).toEqual({ settledAt: 60 })
     expect(Object.keys(await page(ws))).toEqual(["ses_other"])
     expect((await page(ws, "all")).ses_settled).toEqual({ seenAt: undefined, settledAt: 60 })
 
     recordSessionLastTurn(ws.id, "ses_settled", { status: "failed", completedAt: 70 })
     expect(Object.keys(await page(ws))).toEqual(["ses_settled", "ses_other"])
 
-    await write("ses_settled", "settle", { settled: true })
+    await write("ses_settled", "settle", { settled: true, through: 0 })
     expect(Object.keys(await page(ws))).toEqual(["ses_other"])
     await putSessionMeta("ses_settled", { ws, lastHumanTurnAt: 80, updatedAt: 80 })
     expect(Object.keys(await page(ws))).toEqual(["ses_settled", "ses_other"])
 
-    await write("ses_settled", "settle", { settled: true })
+    await write("ses_settled", "settle", { settled: true, through: 0 })
     expect(await (await write("ses_settled", "settle", { settled: false })).json()).toEqual({})
     expect(Object.keys(await page(ws))).toEqual(["ses_settled", "ses_other"])
   })
@@ -164,5 +165,53 @@ describe("the machine user's seen and settled marks", () => {
     expect(plan).toContainEqual(expect.stringMatching(/^SEARCH m USING INDEX claxedo_session_meta_workspace_archive_human_turn_idx \(workspace_id=\? AND archived_at=\?\)$/))
     expect(plan).toContainEqual(expect.stringMatching(/^SEARCH r USING INDEX sqlite_autoindex_claxedo_session_reads_1 \(user_id=\? AND session_ref=\?\)/))
     expect(plan.filter((step) => step.startsWith("SCAN"))).toEqual([])
+  })
+
+  test("a settle holds through the activity the reader saw, and a seen mark never passes the later of the last turn end and the clock", async () => {
+    const ws = await workspace("through")
+    await putSessionMeta("ses_through", { ws, title: "Through", createdAt: 1, updatedAt: 1, lastHumanTurnAt: 50 })
+    recordSessionLastTurn(ws.id, "ses_through", { status: "completed", completedAt: 60 })
+
+    expect(await (await write("ses_through", "settle", { settled: true, through: 90 })).json()).toEqual({ settledAt: 90 })
+    recordSessionLastTurn(ws.id, "ses_through", { status: "completed", completedAt: 90 })
+    expect(Object.keys(await page(ws))).toEqual([])
+    expect((await write("ses_through", "settle", { settled: true })).status).toBe(400)
+
+    expect(await writeSessionReader("local", "ses_through", { seenThrough: 5_000 }, 1_000)).toMatchObject({ seenAt: 1_000 })
+    expect(await writeSessionReader("local", "ses_through", { seenThrough: 900 }, 100)).toMatchObject({ seenAt: 1_000 })
+  })
+
+  test("a ref change moves each reader's marks, and a reader with marks on both refs keeps the later of each", async () => {
+    const base = { id: `ws_rekey_${randomUUID()}`, project_id: "proj_rekey", directory: path.join(root, "rekey"), created_at: 1, updated_at: 1 }
+    await syncSessionMetas({ ...base, kind: "cloud" }, [{ id: "ses_rekey", title: "Rekey", time: { created: 10, updated: 12 } }])
+    const oldRef = `workspace:${base.id}:session:ses_rekey`
+    const newRef = `local:${base.directory}:session:ses_rekey`
+    await writeSessionReader("local", "ses_rekey", { seenThrough: 100 }, 1_000)
+    await writeSessionReader("local", "ses_rekey", { settled: true, through: 50 })
+    await writeSessionReader("other", "ses_rekey", { seenThrough: 70 }, 1_000)
+    ClaxedoDB.raw().prepare("INSERT INTO claxedo_session_reads (user_id, session_ref, seen_at, settled_at) VALUES (?, ?, ?, ?)").run("local", newRef, 200, null)
+
+    await putSessionMeta("ses_rekey", { ws: { ...base, kind: "local" as const } })
+
+    expect(ClaxedoDB.raw().prepare("SELECT user_id, session_ref, seen_at, settled_at FROM claxedo_session_reads WHERE session_ref IN (?, ?) ORDER BY user_id").all(oldRef, newRef)).toEqual([
+      { user_id: "local", session_ref: newRef, seen_at: 200, settled_at: 50 },
+      { user_id: "other", session_ref: newRef, seen_at: 70, settled_at: null },
+    ])
+  })
+
+  test("the stale sweep deletes a swept session's reader rows", async () => {
+    const ws = { id: `ws_sweep_${randomUUID()}`, project_id: "proj_sweep", directory: path.join(root, "sweep"), kind: "cloud" as const, created_at: 1, updated_at: 1 }
+    await syncSessionMetas(ws, [
+      { id: "ses_swept", title: "Swept", time: { created: 10, updated: 12 } },
+      { id: "ses_kept", title: "Kept", time: { created: 11, updated: 13 } },
+    ])
+    await writeSessionReader("local", "ses_swept", { seenThrough: 5 }, 1_000)
+    await writeSessionReader("local", "ses_kept", { seenThrough: 5 }, 1_000)
+
+    await syncSessionMetas(ws, [{ id: "ses_kept", title: "Kept", time: { created: 11, updated: 20 } }])
+
+    expect(ClaxedoDB.raw().prepare("SELECT session_ref FROM claxedo_session_reads WHERE session_ref LIKE ? ORDER BY session_ref").all(`%${ws.id}%`)).toEqual([
+      { session_ref: `workspace:${ws.id}:session:ses_kept` },
+    ])
   })
 })

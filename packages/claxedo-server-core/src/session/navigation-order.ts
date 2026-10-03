@@ -78,9 +78,11 @@ export type SessionSettledColumns = {
 /**
  * The rows a reader has not settled: a session stays settled only while its
  * reader settled it at or after both its last human turn and its last turn's
- * end, so a new send or turn result un-settles it with no write. Both stores
- * are SQLite, whose many-argument `max` is NULL when any argument is, hence
- * the coalesces.
+ * end, so a new send or turn result un-settles it with no write. The compared
+ * values are all runtime timestamps: `settled_at` stores the activity the
+ * reader settled through, never the store's clock. Both stores are SQLite,
+ * whose many-argument `max` is NULL when any argument is, hence the
+ * coalesces.
  */
 export function unsettledSql(columns: SessionSettledColumns): string {
   const { settledAt, lastHumanTurnAt, lastTurnCompletedAt } = columns

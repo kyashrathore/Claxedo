@@ -34,7 +34,6 @@ export type SessionMeta = {
 }
 
 export type SessionMetaNavigationListInput = {
-  /** The reading user, whose seen and settled marks the rows carry. */
   reader: string
   workspaceID?: string
   directory?: string

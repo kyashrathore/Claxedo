@@ -9,11 +9,11 @@ import type {
   SessionPageQuery,
 } from "./private-session-authority"
 import type { LatestView } from "../../session/latest-view-page"
-import type { TurnPageQuery, TurnPageRequest, TurnPage, FirstRead } from "@claxedo/agent-runtime-contract"
-import type { AgentContentPart } from "@claxedo/agent-runtime-contract"
+import type { AgentContentPart, TurnPageQuery, TurnPageRequest, TurnPage, FirstRead } from "@claxedo/agent-runtime-contract"
 import type { HostSessionRowsAuthority } from "./host-session-rows"
 import type { OrgAccessAuthority } from "./org-access-authority"
 import type { SessionShareAuthority } from "./session-share-authority"
+import type { SessionReaderAuthority } from "./session-reader-authority"
 
 export {
   DEFAULT_SESSION_SHARE_LEVEL,
@@ -129,7 +129,7 @@ export type ChannelMachineIdentity = { channel: string; externalUserId: string; 
 /** The same identity carrying the binding generation the authority admitted it under. */
 export type AuthorizedChannelIdentity = ChannelMachineIdentity & { identityVersion: number }
 
-export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & {
+export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Partial<SessionReaderAuthority> & {
   /** Internal host delegation, answered only for the workspace's owner, whose actor the authority rechecks. */
   resolveRuntimeMachineAccess: (actorId: string, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole }>
   resolveChannelMachineAccess: (identity: ChannelMachineIdentity, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole; identityVersion: number }>

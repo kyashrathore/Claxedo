@@ -878,10 +878,10 @@ describe("hosted-core session reader marks", () => {
   test("a settle that lands answers even when its ring fails, and an unreadable session or a malformed body writes nothing", async () => {
     const record = vi.fn(async (_auth: unknown, input: { sessionId: string }) => (input.sessionId === "ses_1" ? { workspaceId: "ws_1", settledAt: 9 } : undefined))
     const { app } = core(record, () => new Response("down", { status: 503 }))
-    const settled = await post(app, "/api/control/sessions/ses_1/settle", { settled: true })
+    const settled = await post(app, "/api/control/sessions/ses_1/settle", { settled: true, through: 9 })
     expect(settled.status).toBe(200)
     await expect(settled.json()).resolves.toEqual({ settledAt: 9 })
-    expect((await post(app, "/api/control/sessions/ses_hidden/settle", { settled: true })).status).toBe(404)
+    expect((await post(app, "/api/control/sessions/ses_hidden/settle", { settled: true, through: 9 })).status).toBe(404)
     expect((await post(app, "/api/control/sessions/ses_1/settle", { settled: "yes" })).status).toBe(400)
     expect(record).toHaveBeenCalledTimes(2)
   })

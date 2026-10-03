@@ -76,7 +76,7 @@ export const serverWorkerd: Policy = {
   // replay-gap frame from `live-sync-replay-gap.ts`. A reader's seen and
   // settled marks are written by `session/routes/session-reader.ts` into the
   // D1 `session_reads` store (`authority/adapters/d1/session-reader-store.ts`).
-  ceilings: { modules: 123, packages: 19 },
+  ceilings: { modules: 125, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

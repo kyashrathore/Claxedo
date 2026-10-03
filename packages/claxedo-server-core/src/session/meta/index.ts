@@ -607,9 +607,9 @@ function rekeySessionRef(
 /**
  * Carry tag, attachment and reader rows across a ref change by updating them in
  * place. A child whose key already exists under the destination ref cannot be
- * updated onto it, so the source's copy is dropped first: a tag or attachment
- * duplicate carries nothing the destination lacks, and a reader's marks on the
- * surviving ref are the ones the surviving row was read with.
+ * updated onto it: a tag or attachment duplicate carries nothing the
+ * destination lacks and is dropped first, and a reader's two rows merge into
+ * the destination, each mark the later of the two.
  */
 function moveSessionMetaChildren(db: ClaxedoDB.Client, from: string, to: string) {
   const heldTags = new Set(
@@ -663,20 +663,24 @@ function moveSessionMetaChildren(db: ClaxedoDB.Client, from: string, to: string)
     .where(eq(ClaxedoSessionAttachmentTable.session_ref, from))
     .run()
 
-  const heldReaders = db.select({ user_id: ClaxedoSessionReadTable.user_id })
-    .from(ClaxedoSessionReadTable)
-    .where(eq(ClaxedoSessionReadTable.session_ref, to))
-    .all()
-    .map((item) => item.user_id)
-  if (heldReaders.length) {
-    db.delete(ClaxedoSessionReadTable)
-      .where(and(eq(ClaxedoSessionReadTable.session_ref, from), inArray(ClaxedoSessionReadTable.user_id, heldReaders)))
+  for (const mark of db.select().from(ClaxedoSessionReadTable).where(eq(ClaxedoSessionReadTable.session_ref, from)).all()) {
+    const reader = (ref: string) => and(eq(ClaxedoSessionReadTable.session_ref, ref), eq(ClaxedoSessionReadTable.user_id, mark.user_id))
+    const held = db.select().from(ClaxedoSessionReadTable).where(reader(to)).get()
+    if (!held) {
+      db.update(ClaxedoSessionReadTable).set({ session_ref: to }).where(reader(from)).run()
+      continue
+    }
+    db.update(ClaxedoSessionReadTable)
+      .set({ seen_at: laterMark(held.seen_at, mark.seen_at), settled_at: laterMark(held.settled_at, mark.settled_at) })
+      .where(reader(to))
       .run()
+    db.delete(ClaxedoSessionReadTable).where(reader(from)).run()
   }
-  db.update(ClaxedoSessionReadTable)
-    .set({ session_ref: to })
-    .where(eq(ClaxedoSessionReadTable.session_ref, from))
-    .run()
+}
+
+function laterMark(held: number | null, moved: number | null): number | null {
+  if (held === null) return moved
+  return moved === null ? held : Math.max(held, moved)
 }
 
 function deleteSessionMetaRefs(sessionRefs: string[]) {

@@ -2,6 +2,8 @@ import { afterEach, describe, expect, test } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { d1Authority } from "../../../test-support/d1-authority"
 import { D1SessionAuthority } from "./session-authority"
+import { recordD1SessionReader } from "./session-reader-store"
+import type { SessionReaderWrite } from "@claxedo/server-core/session/reader"
 
 const disposals: Array<() => Promise<void>> = []
 
@@ -60,7 +62,7 @@ describe("D1 session reader marks", () => {
     const { authority, alice, bob, lastActivity, page } = await sharedSession()
     await lastActivity("ses_shared", { humanTurn: 300, turnEnd: 400 })
 
-    await expect(authority.recordSessionReader(alice, { sessionId: "ses_shared", write: { settled: true } }))
+    await expect(authority.recordSessionReader(alice, { sessionId: "ses_shared", write: { settled: true, through: 0 } }))
       .resolves.toEqual({ workspaceId: "ws_main", settledAt: 400 })
     expect(Object.keys(await page(alice))).toEqual(["ses_other"])
     expect((await page(alice, "all")).ses_shared).toEqual({ seen: undefined, settled: 400 })
@@ -69,20 +71,37 @@ describe("D1 session reader marks", () => {
     await lastActivity("ses_shared", { turnEnd: 450 })
     expect(Object.keys(await page(alice))).toEqual(["ses_shared", "ses_other"])
 
-    await authority.recordSessionReader(alice, { sessionId: "ses_shared", write: { settled: true } })
+    await authority.recordSessionReader(alice, { sessionId: "ses_shared", write: { settled: true, through: 0 } })
     await lastActivity("ses_shared", { humanTurn: 460 })
     expect(Object.keys(await page(alice))).toEqual(["ses_shared", "ses_other"])
 
-    await authority.recordSessionReader(alice, { sessionId: "ses_shared", write: { settled: true } })
+    await authority.recordSessionReader(alice, { sessionId: "ses_shared", write: { settled: true, through: 0 } })
     await expect(authority.recordSessionReader(alice, { sessionId: "ses_shared", write: { settled: false } }))
       .resolves.toEqual({ workspaceId: "ws_main" })
     expect(Object.keys(await page(alice))).toEqual(["ses_shared", "ses_other"])
   })
 
+  test("a settle holds through the activity the reader saw when this row lags the machine, and a seen mark never passes the clock", async () => {
+    const { plane, alice, lastActivity, page } = await sharedSession()
+    await lastActivity("ses_shared", { humanTurn: 300, turnEnd: 400 })
+    const record = (write: SessionReaderWrite, now = 10_000) =>
+      recordD1SessionReader(plane.database, "test", alice, { sessionId: "ses_shared", write }, now)
+
+    await expect(record({ settled: true, through: 600 })).resolves.toEqual({ workspaceId: "ws_main", settledAt: 600 })
+    await lastActivity("ses_shared", { turnEnd: 600 })
+    expect(Object.keys(await page(alice))).toEqual(["ses_other"])
+    await lastActivity("ses_shared", { turnEnd: 700 })
+    expect(Object.keys(await page(alice))).toEqual(["ses_shared", "ses_other"])
+    await expect(record({ settled: true, through: 100 })).resolves.toEqual({ workspaceId: "ws_main", settledAt: 700 })
+
+    await expect(record({ seenThrough: 9_000 })).resolves.toMatchObject({ seenAt: 9_000 })
+    await expect(record({ seenThrough: 5_000_000 })).resolves.toMatchObject({ seenAt: 10_000 })
+  })
+
   test("a caller who may not read the session records nothing", async () => {
     const { plane, authority, outsider } = await sharedSession()
     await expect(authority.recordSessionReader(outsider, { sessionId: "ses_shared", write: { seenThrough: 5 } })).resolves.toBeUndefined()
-    await expect(authority.recordSessionReader(outsider, { sessionId: "ses_missing", write: { settled: true } })).resolves.toBeUndefined()
+    await expect(authority.recordSessionReader(outsider, { sessionId: "ses_missing", write: { settled: true, through: 0 } })).resolves.toBeUndefined()
     expect(await plane.database.prepare("select count(*) as n from session_reads").first()).toEqual({ n: 0 })
   })
 

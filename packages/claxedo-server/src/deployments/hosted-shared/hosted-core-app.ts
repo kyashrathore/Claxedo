@@ -52,8 +52,6 @@ import {
 import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
 import { createSessionReadRoutes, authoritySessionReads } from "../../session/routes/session-read"
 import { createSessionReaderRoutes } from "../../session/routes/session-reader"
-import { isComposedAuthorityPort } from "../../authority/composed-authority"
-import type { SessionReaderAuthority } from "@claxedo/server-core/platform/auth/session-reader-authority"
 import type { HostedControlPlane } from "../../authority/hosted-services"
 import type { IdempotencyCoordinator } from "../../authority/http/idempotency"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
@@ -456,12 +454,10 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       if (!result.auth) return Response.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, { status: 401 })
       return result.auth
     },
-    authority: () => {
-      const authority = services.authority ?? undefined
-      if (!isComposedAuthorityPort<SessionReaderAuthority>(authority, ["recordSessionReader"])) {
-        throw new ControlPlaneAuthError(503, "authority_unavailable", "Workspace authority is unavailable")
-      }
-      return authority
+    record: (auth, input) => {
+      const record = requireAuthority(services).recordSessionReader
+      if (!record) throw new ControlPlaneAuthError(503, "authority_unavailable", "Workspace authority is unavailable")
+      return record(auth, input)
     },
     publish: async (auth, event) => {
       const orgId = await requireAuthority(services).resolveOrgId(auth)

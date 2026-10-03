@@ -298,10 +298,10 @@ export const HOSTED_OPERATIONS = {
   }),
   "session.settle": defineOperation({
     method: "POST", path: operationPath("/api/control/sessions/:sessionId/settle"),
-    input: operationInput({ sessionId: requiredParameter, settled: bodyField }),
+    input: operationInput({ sessionId: requiredParameter, settled: bodyField, through: bodyField }),
     output: object, retry: "never",
     exposure: { renderer: true, app: false },
-    body: selectBody("settled"),
+    body: selectBody("settled", "through"),
   }),
   "session.shares.list": defineOperation({
     method: "GET", path: operationPath("/api/control/sessions/:sessionId/shares", { query: ["workspaceId"] }),

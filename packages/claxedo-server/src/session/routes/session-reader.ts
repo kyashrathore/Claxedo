@@ -12,7 +12,7 @@ import { sessionReaderWrite, type SessionReaderAction } from "@claxedo/server-co
  */
 export function createSessionReaderRoutes(options: {
   authenticate(request: Request): Promise<SignedControlPlaneAuth | Response>
-  authority(): SessionReaderAuthority
+  record: SessionReaderAuthority["recordSessionReader"]
   publish(auth: SignedControlPlaneAuth, event: SessionReaderChangedEvent): Promise<unknown>
 }) {
   const write = (action: SessionReaderAction) => async (c: Context) => {
@@ -22,7 +22,7 @@ export function createSessionReaderRoutes(options: {
       const input = sessionReaderWrite(action, await c.req.json().catch(() => undefined))
       if (!input) return c.json({ error: { code: "invalid_input", message: `Invalid ${action} body` } }, 400)
       const sessionId = c.req.param("sessionId")!
-      const recorded = await options.authority().recordSessionReader(auth, { sessionId, write: input })
+      const recorded = await options.record(auth, { sessionId, write: input })
       if (!recorded) return c.json({ error: { code: "SESSION_NOT_FOUND", message: "Session not found" } }, 404)
       const { workspaceId, ...state } = recorded
       const event = { type: "session.reader.changed", ownerUserId: auth.user.subject, sessionId, workspaceId, ...state, ts: Date.now() } as const

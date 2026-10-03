@@ -152,7 +152,7 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     ...bindMethods(sessions, D1_SESSION_TURN_AUTHORITY_METHODS),
     ...bindMethods(hosts, HOST_LIFECYCLE_METHODS),
     machineAuth: hosts.machineAuth,
-    recordSessionReader: (auth, input) => recordD1SessionReader(database, options.deploymentId, auth, input),
+    recordSessionReader: (auth, input) => recordD1SessionReader(database, options.deploymentId, auth, input, (options.now ?? Date.now)()),
     publishHostSessionRows: (publisher, publication) =>
       publishD1HostSessionRows(database, (options.now ?? Date.now)(), publisher, publication),
   }
