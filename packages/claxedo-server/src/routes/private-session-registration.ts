@@ -69,7 +69,7 @@ export function PrivateSessionRegistrationRoutes(options: PrivateSessionRegistra
     const kind = body?.kind
     const parentSessionId = optionalIdentifier(body?.parentSessionId)
     const title = optionalTitle(body?.title)
-    const harness = sessionHarness(body?.harness)
+    const harness = reservedHarness(body?.harness)
     if (
       !operationId
       || !sessionId
@@ -148,7 +148,7 @@ function errorMessage(error: unknown) {
   return error instanceof Error && error.message ? error.message : "Session reservation was denied"
 }
 
-function sessionHarness(value: unknown): { id: string; access: "native" | "connection" } | undefined {
+function reservedHarness(value: unknown): { id: string; access: "native" | "connection" } | undefined {
   const row = asRecord(value)
   const id = identifier(row?.id)
   const access = row?.access
