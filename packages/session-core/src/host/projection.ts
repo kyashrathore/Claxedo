@@ -1,14 +1,10 @@
 import type { SessionHarness } from "@claxedo/agent-runtime-contract"
 import { harnessDefinition } from "@claxedo/agent-runtime-contract"
 import { parseNotApplied, parsePluginSelection, parseProjectedMcpServers, projectMcpForHarness } from "@claxedo/harness/contract"
-import type { NotApplied, PluginProjection, ProjectedMcpServer, SkillRoot } from "@claxedo/harness/contract"
+import type { NotApplied, PluginProjection, ProjectedMcpServer, RuntimeConfigSnapshotPlugins, SkillRoot } from "@claxedo/harness/contract"
 import { isRecord } from "@claxedo/helpers/guards"
 
-export type ProjectionSource = {
-  generation: string
-  mcp: Record<string, unknown>
-  harnessLaunch: Record<string, Record<string, unknown>>
-}
+export type ProjectionSource = RuntimeConfigSnapshotPlugins & { generation: string }
 
 function skillRoot(harnessId: string, value: unknown): SkillRoot {
   if (!isRecord(value) || typeof value.pluginInstanceId !== "string" || typeof value.root !== "string" || typeof value.dataRoot !== "string"

@@ -39,6 +39,10 @@ Everything a transport sees. The types say the shapes; this file says the rules 
 - **`sessionTools` is optional.** A transport that dispatches host-scoped tools inside its engine implements it; the host hands every other harness the tools as a prompt.
 - **`services.spawn` takes the caller's `signal`.** A spawn whose signal is already aborted, or aborts before the process is handed back, rejects and leaves nothing running. A process that was handed back is the caller's to retire; the signal does not retire it.
 
+## Session host delivery
+
+- **A turn delivery is the control plane's answer to one turn lease of a session hosted in its own Durable Object** (`session-host-delivery.ts`). It carries only the session owner's direct credentials: `parseTurnDelivery` refuses a snapshot with any brokered `accounts` row, because a Durable Object has no egress broker to spend one through. `expiresAt` is the earlier of the lease's and the credentials' expiries, after which the host asks again. `TurnExecutionAccess` is the session-scoped Runtime Access Token the host uses to reach the workspace machine's execution routes through the relay.
+
 ## Configuration
 
 - **`config.options` previews one model.** `ConfigPreviewTarget` is a session with an optional requested `model`, or a draft. A draft previews its own `model`; a session previews the requested `model` when given and its current model otherwise. The result is `{ options, resolvedModel? }` in the route's own shape, and `resolvedModel` is derived from the model select's current value and the label the harness published for it, through `configOptionsPreview`; it is absent when the harness named no current model or no label for it. A model row that is an alias carries `resolvedModel`, the full model id it runs, so a session stored on that id reads the alias row as current.
