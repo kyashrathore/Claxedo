@@ -41,7 +41,7 @@ CREATE TABLE agent_plugin_artifact_pins (
 
 CREATE TABLE agent_plugin_claxedo_defaults (
   plugin_instance_id text not null,
-  harness_id text not null check (harness_id in ('opencode', 'claude', 'codex', 'cursor', 'acp')),
+  harness_id text not null check (harness_id in ('opencode', 'claude', 'codex', 'cursor', 'acp', 'pi')),
   updated_at integer not null,
   primary key (plugin_instance_id, harness_id)
 );
@@ -49,7 +49,7 @@ CREATE TABLE agent_plugin_claxedo_defaults (
 CREATE TABLE agent_plugin_organization_defaults (
   org_id text not null references orgs (org_id) deferrable initially deferred,
   plugin_instance_id text not null,
-  harness_id text not null check (harness_id in ('opencode', 'claude', 'codex', 'cursor', 'acp')),
+  harness_id text not null check (harness_id in ('opencode', 'claude', 'codex', 'cursor', 'acp', 'pi')),
   updated_at integer not null,
   primary key (org_id, plugin_instance_id, harness_id)
 );
@@ -59,7 +59,7 @@ CREATE TABLE agent_plugin_project_overrides (
   owner_user_id text not null references users (user_id) deferrable initially deferred,
   project_id text not null references projects (project_id) deferrable initially deferred,
   plugin_instance_id text not null,
-  harness_id text not null check (harness_id in ('opencode', 'claude', 'codex', 'cursor', 'acp')),
+  harness_id text not null check (harness_id in ('opencode', 'claude', 'codex', 'cursor', 'acp', 'pi')),
   enabled integer not null check (enabled in (0, 1)),
   updated_at integer not null,
   primary key (org_id, owner_user_id, project_id, plugin_instance_id, harness_id)
@@ -99,7 +99,7 @@ CREATE TABLE agent_plugin_user_defaults (
   org_id text not null references orgs (org_id) deferrable initially deferred,
   owner_user_id text not null references users (user_id) deferrable initially deferred,
   plugin_instance_id text not null,
-  harness_id text not null check (harness_id in ('opencode', 'claude', 'codex', 'cursor', 'acp')),
+  harness_id text not null check (harness_id in ('opencode', 'claude', 'codex', 'cursor', 'acp', 'pi')),
   enabled integer not null check (enabled in (0, 1)),
   updated_at integer not null,
   primary key (org_id, owner_user_id, plugin_instance_id, harness_id)
@@ -613,7 +613,7 @@ CREATE TABLE sessions (
   max_event_ordinal integer not null default 0 check (max_event_ordinal >= 0),
   snapshot_generation integer not null default 0 check (snapshot_generation >= 0),
   snapshot_hash text,
-  snapshot_token text, last_human_turn_at integer, archived_at integer, status text check (status is null or status in ('idle', 'busy', 'retry', 'interrupted')), status_at integer, awaiting_input integer not null default 0 check (awaiting_input in (0, 1)), runtime_updated_at integer, last_turn_status text check (last_turn_status is null or last_turn_status in ('completed', 'failed', 'cancelled')), last_turn_completed_at integer,
+  snapshot_token text, last_human_turn_at integer, archived_at integer, status text check (status is null or status in ('idle', 'busy', 'retry', 'interrupted')), status_at integer, awaiting_input integer not null default 0 check (awaiting_input in (0, 1)), runtime_updated_at integer, last_turn_status text check (last_turn_status is null or last_turn_status in ('completed', 'failed', 'cancelled')), last_turn_completed_at integer, session_host_root text,
   unique (session_id, workspace_id, org_id, project_id),
   foreign key (workspace_id, org_id, project_id)
     references workspaces (workspace_id, org_id, project_id) deferrable initially deferred
@@ -1225,7 +1225,7 @@ end;
 
 CREATE TRIGGER sessions_scope_immutable
 before update of operation_id, workspace_id, org_id, project_id, creator_actor_id,
-  lifecycle_generation, created_at
+  lifecycle_generation, created_at, session_host_root
 on sessions
 when new.operation_id != old.operation_id
   or new.workspace_id != old.workspace_id
@@ -1234,6 +1234,7 @@ when new.operation_id != old.operation_id
   or new.creator_actor_id != old.creator_actor_id
   or new.lifecycle_generation != old.lifecycle_generation
   or new.created_at != old.created_at
+  or new.session_host_root is not old.session_host_root
 BEGIN
   select raise(abort, 'session scope is immutable');
 end;
