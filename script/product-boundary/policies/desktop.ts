@@ -477,8 +477,12 @@ export const desktopRenderer: Policy = {
   // selected placement's live Git status and new-workspace base choice.
   // The Browser tab's retained pages, their eviction and their disposal when a
   // placement is deleted are `browser/tab-cache.ts`, split from the provider
-  // that owns the context. 1266/36, no headroom.
-  ceilings: { modules: 1266, packages: 36 },
+  // that owns the context. The composer's pure prompt edits (insert a part,
+  // renumber offsets, set image marks) are `composer/prompt-edits.ts`, split
+  // from the draft store; the harness selector's model, effort and fast writes
+  // and their refusal toast are `composer/view/selection-writes.ts`.
+  // 1268/36, no headroom.
+  ceilings: { modules: 1268, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

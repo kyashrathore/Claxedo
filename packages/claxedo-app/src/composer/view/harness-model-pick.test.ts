@@ -20,6 +20,7 @@ test("model picker ignores absent, unlisted and unchanged picks, opens providers
       catalogSelected: () => true,
       catalogVariants: () => [],
       openProviders: () => { opened++ },
+      refused: () => { throw new Error("no write was refused") },
     })
     for (const modelId of [undefined, "missing", "current", "disconnected"]) picker().set(modelId ? { providerId: "codex", modelId } : undefined)
     expect(writes).toEqual([])
@@ -34,6 +35,29 @@ test("model picker ignores absent, unlisted and unchanged picks, opens providers
     await Promise.resolve()
     picker().set(next)
     expect(writes).toEqual([next, next])
+    dispose()
+  })
+})
+
+test("a refused model pick reaches the picker's refusal surface", async () => {
+  await createRoot(async (dispose) => {
+    const refusals: unknown[] = []
+    const refusal = new Error("session_config_refused")
+    const picker = createModelPickerState({
+      controller: () => ({ setModel: async () => { throw refusal }, setThoughtLevel: () => {} }),
+      scope: () => "session:s1",
+      scopeInput: () => ({}),
+      selection: () => ({ selectedModelKey: { providerId: "codex", modelId: "current" }, selectedThoughtLevel: undefined }),
+      rows: () => [{ id: "next", name: "next", provider: { id: "codex", name: "Codex" }, connected: true }],
+      picked: () => undefined,
+      catalogSelected: () => false,
+      catalogVariants: () => [],
+      openProviders: () => {},
+      refused: (error) => { refusals.push(error) },
+    })
+    picker().set({ providerId: "codex", modelId: "next" })
+    await Bun.sleep(0)
+    expect(refusals).toEqual([refusal])
     dispose()
   })
 })

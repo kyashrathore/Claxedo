@@ -99,7 +99,6 @@ export function wireModelWriter(wiring: HarnessWiring, fetchConfigOptions: Fetch
       setSessionModel: (ref, model) => api.updateSessionConfig(ref, { model: { providerId: model.providerId, modelId: model.modelId } }),
       setSessionEffort: (ref, effort) => api.updateSessionConfig(ref, { variant: effort ?? null }),
     },
-    cache: wiring.caches.sessionModel,
   })
 }
 

@@ -41,7 +41,7 @@ export function createComposerHarness(props: ComposerProps, key: Accessor<Compos
   })
   const submission = async (): Promise<Submission> => {
     const scope = key()
-    await submit.settledModel(scope)
+    await submit.settledConfig(scope)
     const held = submit.heldHarness(scope)
     const model = submit.modelKeyForSubmit(scope)
     const tier = submit.serviceTierForSubmit(scope)

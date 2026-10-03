@@ -9,6 +9,7 @@ type EffortControlsInput = {
   scope: Accessor<string>
   scopeInput: Accessor<HarnessScopeInput>
   controller: Accessor<HarnessSelectionController>
+  refused: (error: unknown) => void
 }
 
 export function createEffortControls(input: EffortControlsInput) {
@@ -24,8 +25,7 @@ export function createEffortControls(input: EffortControlsInput) {
     harnessThoughtLevels().find((item) => item.id === value)?.name ?? value
   const select = (value: string) => {
     const effort = input.catalogSelected() && value === "default" ? undefined : value
-    void Promise.resolve(input.controller().setThoughtLevel(input.scope(), effort, input.scopeInput()))
-      .catch((error: unknown) => console.warn(`The session refused effort ${effort ?? "default"}; the previous effort is kept`, error))
+    void Promise.resolve(input.controller().setThoughtLevel(input.scope(), effort, input.scopeInput())).catch(input.refused)
   }
   return { variants, showEffort, currentVariant, levelName, select }
 }

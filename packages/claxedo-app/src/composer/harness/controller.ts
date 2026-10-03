@@ -48,7 +48,7 @@ export type HarnessSubmitControllerStore = HarnessSelectionControllerStore & {
   promote(from: string, to: string): void
   harnessReadyForSubmit(scope: string): boolean
   harnessModelKeyForSubmit(scope: string): ModelChoice | undefined
-  settledModel?(scope: string): Promise<void>
+  settledConfig?(scope: string): Promise<void>
   harnessServiceTierForSubmit(scope: string): string | undefined
   releaseHeldHarness?(scope: string): void
 }
@@ -138,7 +138,7 @@ export function createHarnessSubmitController(store: HarnessSubmitControllerStor
     canCreateWithoutModel: (scope: string) => store?.canCreateWithoutModel?.(scope) ?? false,
     readyForSubmit: (scope: string) => store?.harnessReadyForSubmit(scope) ?? false,
     modelKeyForSubmit: (scope: string) => store?.harnessModelKeyForSubmit(scope),
-    settledModel: (scope: string) => store?.settledModel?.(scope) ?? Promise.resolve(),
+    settledConfig: (scope: string) => store?.settledConfig?.(scope) ?? Promise.resolve(),
     serviceTierForSubmit: (scope: string) => store?.harnessServiceTierForSubmit(scope),
     setHarness: (scope: string, type: HarnessType, input?: HarnessScopeInput) =>
       store?.setHarness(scope, type, input) ?? Promise.resolve(),

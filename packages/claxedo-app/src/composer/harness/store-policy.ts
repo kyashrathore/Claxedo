@@ -46,11 +46,6 @@ export function harnessChangeKey(input: HarnessScopeInput, type: HarnessType) {
   return JSON.stringify([input.placementId ?? "", input.sessionId ?? "", type])
 }
 
-export function sessionModelSyncKey(input: HarnessScopeInput) {
-  if (!input.placementId || !input.sessionId || input.sessionId === "new") return undefined
-  return JSON.stringify([input.placementId, input.sessionId])
-}
-
 function messageModel(message: TranscriptMessage): ModelChoice | undefined {
   const providerId = message.providerID ?? message.model?.providerID
   const modelId = message.modelID ?? message.model?.modelID

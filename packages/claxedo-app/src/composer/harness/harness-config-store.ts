@@ -7,6 +7,7 @@ import { createHarnessStore } from "./harness-store"
 import { harnessOptionsReads, harnessSelectionReads } from "./harness-store-reads"
 import { rememberDraftModelInWorkspace, resolveCurrentDraftDefault, wireHydrator, wireModelWriter, wireOptionsLoader, wireSwitcher, type FetchConfigOptions, type HarnessWiring } from "./harness-wiring"
 import { createScopeCaches } from "./scope-caches"
+import type { HarnessScopeInput } from "./store-policy"
 import { applyPushedHarnessHealth, commitSessionSelection, probeHarnessHealth } from "./session-harness"
 
 export function createHarnessConfigStore(server: Server, storage: DraftDefaultStorage) {
@@ -27,14 +28,14 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
   return {
     hydrate: hydrator.hydrate,
     reprobe: hydrator.reprobe,
-    commitSessionSelection: commitSessionSelection.bind(null, wiring),
+    commitSessionSelection: (scope: string, input: HarnessScopeInput) => modelWriter.inOrder(scope, () => commitSessionSelection(wiring, scope, input)),
     probeHealth: probeHarnessHealth.bind(null, wiring),
     markUnavailable: (scope: string) => store.setReadiness(scope, "error"),
     promote: store.promote,
     rememberDraftModel: rememberDraftModelInWorkspace.bind(null, wiring),
     resolveDraftDefault: resolveCurrentDraftDefault.bind(null, wiring),
     setModel: modelWriter.setModel,
-    settledModel: modelWriter.settledModel,
+    settledConfig: modelWriter.settledConfig,
     setHarness: ((scope, type, input) => {
       hydrator.cancel(scope)
       return switcher.setHarness(scope, type, input)

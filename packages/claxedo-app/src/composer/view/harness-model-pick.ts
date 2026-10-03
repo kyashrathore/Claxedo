@@ -13,6 +13,7 @@ type ModelPickInput = {
   catalogSelected: Accessor<boolean>
   catalogVariants: (model: { providerId?: string; modelId?: string }) => string[]
   openProviders: () => void
+  refused: (error: unknown) => void
 }
 
 function writeModelPick(input: ModelPickInput, model: ModelChoice) {
@@ -57,7 +58,7 @@ export function createModelPickerState(input: ModelPickInput): Accessor<PickerSt
         input.openProviders()
         return
       }
-      void choose({ providerId: hit.provider.id, modelId: hit.id })
+      void choose({ providerId: hit.provider.id, modelId: hit.id }).catch(input.refused)
     },
   }))
 }

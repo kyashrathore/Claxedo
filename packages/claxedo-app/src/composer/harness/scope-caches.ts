@@ -1,5 +1,4 @@
 import type { HarnessHydratorCache } from "./harness-hydrator"
-import type { HarnessSessionModelSyncCache, SessionModelSyncState } from "./harness-model-writer"
 import type { HarnessOptionsLoaderCache } from "./harness-options-loader"
 import type { HarnessSwitcherCache } from "./harness-switcher"
 import type { HarnessScopeInput } from "./store-policy"
@@ -40,18 +39,6 @@ function hydratorCache(): HarnessHydratorCache<HarnessScopeInput> {
   }
 }
 
-function sessionModelCache(): HarnessSessionModelSyncCache {
-  const states = new Map<string, SessionModelSyncState>()
-  const syncs = pendingSlots<Promise<void>>()
-  return {
-    getState: (key) => states.get(key),
-    setState: (key, value) => void states.set(key, value),
-    getPending: (key, model) => syncs.get(`${key}\n${model}`),
-    setPending: (key, model, value) => syncs.set(`${key}\n${model}`, value),
-    removePending: (key, model, value) => syncs.remove(`${key}\n${model}`, value),
-  }
-}
-
 export type ScopeCaches = ReturnType<typeof createScopeCaches>
 
 export function createScopeCaches() {
@@ -62,5 +49,5 @@ export function createScopeCaches() {
     setPending: switches.set,
     removePending: switches.remove,
   }
-  return { options, hydrator: hydratorCache(), switcher, sessionModel: sessionModelCache() }
+  return { options, hydrator: hydratorCache(), switcher }
 }

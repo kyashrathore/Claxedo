@@ -11,9 +11,7 @@ import { useModelNames } from "../harness/model-names"
 import { useModelVisibility } from "../harness/model-visibility"
 import { publishComposerNotice } from "./composer-notice"
 import { HarnessConnectionBadge } from "./harness-connection-badge"
-import { createEffortControls, createFastControl } from "./harness-effort-controls"
 import { createModelAvailability } from "./harness-model-availability"
-import { createModelPickerState } from "./harness-model-pick"
 import { HarnessModelPicker } from "./harness-model-picker"
 import { createHarnessModelRows } from "./harness-model-rows"
 import { HarnessOptionIcon } from "./harness-option-icon"
@@ -21,6 +19,7 @@ import { createHarnessSwitch } from "./harness-switch"
 import { createHarnessTriggerLabel, createTriggerStyle, triggerStateOf } from "./harness-trigger"
 import { createSelectorCatalog } from "./selector-catalog"
 import { createSelectorNotice } from "./selector-notice"
+import { createSelectionWrites } from "./selection-writes"
 import { createScopeSelection, createSelectorScope } from "./selector-scope"
 
 interface AgentHarnessSelectorProps {
@@ -72,17 +71,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const openProviders = () => {
     navigate(settingsPath("models"))
   }
-  const model = createModelPickerState({
-    controller,
-    scope,
-    scopeInput,
-    selection,
-    rows,
-    picked,
-    catalogSelected,
-    catalogVariants: catalog.variants,
-    openProviders,
-  })
+  const { model, effort, fast } = createSelectionWrites({ controller, scope, scopeInput, selection, rows, picked, catalogSelected, catalog, openProviders })
   const availability = createModelAvailability({ harness, selection, connectionDeclaration, catalog, rows, switching: harnessSwitch.switching })
   const trigger = createHarnessTriggerLabel({
     selection,
@@ -109,8 +98,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     harnessLabel: optionList.label,
     openProviders,
   })
-  const effort = createEffortControls({ selection, catalogSelected, catalog, scope, scopeInput, controller })
-  const fast = createFastControl({ selection, catalogSelected, scope, controller })
 
   publishComposerNotice(notice)
 
