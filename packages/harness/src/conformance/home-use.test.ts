@@ -4,8 +4,8 @@ import os from "node:os"
 import path from "node:path"
 import { PassThrough } from "node:stream"
 import type { HarnessTransport, SessionBroker, StartInput } from "../contract"
-import { CodexAppServerTransport, CodexProcessPool } from "../transports/codex-app-server"
-import { CursorHostRegistry, CursorSdkTransport } from "../transports/cursor-sdk"
+import { CodexAppServerTransport } from "../transports/codex-app-server"
+import { CursorSdkTransport } from "../transports/cursor-sdk"
 import { createTestServices } from "./test-support/services"
 
 for (const kind of ["codex", "cursor"] as const) {
@@ -44,12 +44,10 @@ for (const kind of ["codex", "cursor"] as const) {
         return { pid: 5_000_010, stdin, stdout, stderr: new PassThrough(), exited: exit.promise,
           retire: async () => { order.push("retire"); exit.resolve({ code: 0, signal: null }); return { stopped: true } } }
       }
-      const pool = new CodexProcessPool({ clock: services.clock, log: services.log, idleMs: 0 })
-      const hosts = new CursorHostRegistry(services.clock, services.log)
       const transport: HarnessTransport = kind === "codex"
-        ? new CodexAppServerTransport(services, { binary: "scripted", homeRoot: path.join(root, "homes"), ownerHome: path.join(root, "owner"), pool })
+        ? new CodexAppServerTransport(services, { binary: "scripted", homeRoot: path.join(root, "homes"), ownerHome: path.join(root, "owner"), idleMs: 0 })
         : new CursorSdkTransport(services, { homeRoot: path.join(root, "homes"), ownerCursorDir: path.join(root, ".cursor"), worker: { file: process.execPath, args: ["cursor-worker.js"] }, env: { HOME: root, CURSOR_API_KEY: "fixture" },
-          placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true, hosts })
+          placement: "loopback", machineOwnerUserId: "owner", canUseOwnLogin: true })
       const input: StartInput = { sessionId: "session", workspaceId: "workspace", directory: root, locality: "local", owner: { kind: "machine-owner" },
         config: { harness: { id: kind, access: "native" } },
         projection: { generation: "one", mcpServers: [], pluginRoots: [], notApplied: [] }, credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "one" } }
@@ -63,12 +61,7 @@ for (const kind of ["codex", "cursor"] as const) {
           await transport.close(session)
         }
         expect(order).toEqual(refuse ? ["use", "spawn"] : ["use", "spawn", "retire"])
-      } finally {
-        await transport.dispose()
-        await pool.dispose()
-        await hosts.dispose()
-        await fs.rm(root, { recursive: true, force: true })
-      }
+      } finally { await transport.dispose(); await fs.rm(root, { recursive: true, force: true }) }
     })
   }
 }

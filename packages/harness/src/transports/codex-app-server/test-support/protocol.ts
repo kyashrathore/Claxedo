@@ -70,7 +70,7 @@ export class CodexPeer {
   private readonly archived = new Set<string>()
   readonly logins: string[] = []
 
-  constructor(private readonly models: unknown[], private readonly script: { modelListFailures?: number; turnSettingsFailures?: number; turnStartError?: string; goal?: unknown; userAgent?: string; backgroundTerminals?: string[] } = {}) {}
+  constructor(private readonly models: unknown[], private readonly script: { modelListFailures?: number; turnSettingsFailures?: number; turnStartError?: string; goal?: unknown; userAgent?: string; backgroundTerminals?: string[]; archiveFailures?: number } = {}) {}
 
   request(id: number) { this.pending.add(id) }
 
@@ -110,6 +110,7 @@ export class CodexPeer {
       return {}
     }
     if (frame.method === "thread/archive") {
+      if (this.script.archiveFailures) { this.script.archiveFailures--; throw new CodexScriptedFailure("archive refused") }
       this.threads.delete(String(params.threadId))
       this.archived.add(String(params.threadId))
       return {}

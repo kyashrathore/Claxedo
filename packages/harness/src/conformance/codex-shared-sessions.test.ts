@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import { PassThrough } from "node:stream"
-import { codexBackend, codexOptions, entryHome, hashes, makeCodexTransport, OWNER_KEY, ownLoginContext, type CodexBackend } from "../../e2e/harness/codex-conformance"
+import { codexBackend, codexOptions, entryHome, hashes, OWNER_KEY, ownLoginContext, type CodexBackend } from "../../e2e/harness/codex-conformance"
 import { createSessionBroker, createTurnBroker } from "../broker"
-import type { PluginProjection, ResolvedCredentials, RoutedEvent } from "../contract"
+import type { PluginProjection, ResolvedCredentials, RoutedEvent, SessionBroker } from "../contract"
 import { CodexAppServerTransport } from "../transports/codex-app-server"
 import { authority, origin } from "./test-support/memory-ports"
 import { setupConformance } from "./test-support/run"
@@ -63,28 +63,24 @@ test("a Codex session keeps its thread and goal when its plugin selection mode a
   } finally { await context.close() }
 }, 180_000)
 
-type Workspaces = Awaited<ReturnType<typeof twoWorkspaces>>
+type Shared = Awaited<ReturnType<typeof sharedWorkspace>>
 
-function accountCredentials(state: CodexBackend, credentialId: string): ResolvedCredentials {
-  const binding = state.credentials.providers.openai!
-  return { ...state.credentials, providers: { openai: { ...binding, account: { credentialId, providerId: "openai" } } } }
+function binding(state: CodexBackend, workspaceId: string, credentialId: string): ResolvedCredentials {
+  return { ...state.credentials, providers: { openai: { baseUrl: `${state.server.url}/bindings/${workspaceId}`, placeholder: `placeholder-${workspaceId}`,
+    authMode: "api-key", account: { credentialId, providerId: "openai" } } } }
 }
 
-async function twoWorkspaces(name: string, accounts: [string, string], options: { idleMs?: number; prepare?: (services: TestServices) => void } = {}) {
-  const state = await codexBackend(options.idleMs)
-  const workspaceB = createTestServices()
-  const b = new CodexAppServerTransport(workspaceB, codexOptions(state))
+async function sharedWorkspace(name: string, accounts: [string, string], options: { idleMs?: number; prepare?: (services: TestServices) => void } = {}) {
+  const state = await codexBackend()
   const context = await setupConformance({ name, makeTransport: (services, backend) => {
     options.prepare?.(services)
-    return makeCodexTransport(services, backend)
-  }, backend: async () => ({ ...state, credentials: accountCredentials(state, accounts[0]) }) })
-  context.ports.current.set("s2", { ...authority, sessionId: "s2", workspaceId: "w2", directory: state.directory })
+    return new CodexAppServerTransport(services, codexOptions(backend, { idleMs: options.idleMs ?? 0 }))
+  }, backend: async () => ({ ...state, credentials: binding(state, "w1", accounts[0]) }) })
+  context.ports.current.set("s2", { ...authority, sessionId: "s2", directory: state.directory })
   context.ports.directories.set("s2", state.directory)
-  const broker = createSessionBroker(context.owner, { sessionId: "s2", workspaceId: "w2", directory: state.directory, origin })
-  const second = await b.start({ ...context.start, sessionId: "s2", workspaceId: "w2", credentials: accountCredentials(state, accounts[1]) }, broker)
-  const processes = () => [...context.services.processes, ...workspaceB.processes]
-  const close = async () => { await b.dispose(); await context.close() }
-  return { state, context, b, second, processes, close,
+  const broker = createSessionBroker(context.owner, { sessionId: "s2", workspaceId: "w1", directory: state.directory, origin })
+  const second = await context.transport.start({ ...context.start, sessionId: "s2", credentials: binding(state, "w1", accounts[1]) }, broker)
+  return { state, context, second, processes: () => context.services.processes, close: () => context.close(),
     secondTurn: (message: string) => ({ ...context.turn(message), turnId: `b-${message}` }),
     secondBroker: () => createTurnBroker(context.owner, { authority: context.ports.current.get("s2")!, origin, signal: new AbortController().signal }) }
 }
@@ -95,20 +91,25 @@ async function text(stream: AsyncIterable<RoutedEvent>): Promise<string> {
   return deltas.join("")
 }
 
-const first = (w: Workspaces, marker: string) => text(w.context.transport.send(w.context.session, w.context.turn(`Reply with exactly this one token: ${marker}`), w.context.turnBroker()))
-const other = (w: Workspaces, marker: string) => text(w.b.send(w.second, w.secondTurn(`Reply with exactly this one token: ${marker}`), w.secondBroker()))
+const marked = (marker: string) => `Reply with exactly this one token: ${marker}`
+const first = (w: Shared, marker: string) => text(w.context.transport.send(w.context.session, w.context.turn(marked(marker)), w.context.turnBroker()))
+const other = (w: Shared, marker: string) => text(w.context.transport.send(w.second, w.secondTurn(marked(marker)), w.secondBroker()))
+const authorizations = (state: CodexBackend, marker: string) => state.server.requests.filter((request) => request.prompt.includes(marker)).map((request) => request.authorization)
 
-test("two workspaces' sessions of one owner and account share one app-server; a different account gets its own", async () => {
-  const same = await twoWorkspaces("codex-share-same", ["account-one", "account-one"])
+function aliveAfter(process: TestServices["processes"][number], ms: number) {
+  return Promise.race([process.exited.then(() => "exited"), new Promise((resolve) => setTimeout(() => resolve("alive"), ms))])
+}
+
+test("two sessions of one workspace, owner and account share one app-server; a different account gets its own", async () => {
+  const same = await sharedWorkspace("codex-share-same", ["account-one", "account-one"])
   try {
     expect(await first(same, "SHAREDA")).toContain("SHAREDA")
     expect(await other(same, "SHAREDB")).toContain("SHAREDB")
     expect(same.processes()).toHaveLength(1)
     expect(await fs.readdir(entryHome(same.context.transport, "s1"))).not.toContain("auth.json")
-    expect(same.state.server.requests.filter((request) => request.prompt.includes("SHARED")).map((request) => request.authorization))
-      .toEqual(["Bearer codex-conformance-placeholder", "Bearer codex-conformance-placeholder"])
+    expect(authorizations(same.state, "SHARED")).toEqual(["Bearer placeholder-w1", "Bearer placeholder-w1"])
   } finally { await same.close() }
-  const split = await twoWorkspaces("codex-share-split", ["account-one", "account-two"])
+  const split = await sharedWorkspace("codex-share-split", ["account-one", "account-two"])
   try {
     expect(await first(split, "SPLITA")).toContain("SPLITA")
     expect(await other(split, "SPLITB")).toContain("SPLITB")
@@ -116,27 +117,91 @@ test("two workspaces' sessions of one owner and account share one app-server; a 
   } finally { await split.close() }
 }, 180_000)
 
+test("two workspaces of one owner and account keep separate app-servers, and disposing one leaves the other's session running", async () => {
+  const w = await sharedWorkspace("codex-share-workspaces", ["account-one", "account-one"])
+  const workspaceB = createTestServices()
+  const b = new CodexAppServerTransport(workspaceB, codexOptions(w.state))
+  try {
+    const broker = createSessionBroker(w.context.owner, { sessionId: "s3", workspaceId: "w2", directory: w.state.directory, origin })
+    w.context.ports.current.set("s3", { ...authority, sessionId: "s3", workspaceId: "w2", directory: w.state.directory })
+    w.context.ports.directories.set("s3", w.state.directory)
+    const session = await b.start({ ...w.context.start, sessionId: "s3", workspaceId: "w2", credentials: binding(w.state, "w2", "account-one") }, broker)
+    const turnBroker = createTurnBroker(w.context.owner, { authority: w.context.ports.current.get("s3")!, origin, signal: new AbortController().signal })
+    expect(await text(b.send(session, { ...w.context.turn(marked("WORKSPACEB")), turnId: "w2-turn" }, turnBroker))).toContain("WORKSPACEB")
+    expect(authorizations(w.state, "WORKSPACEB")).toEqual(["Bearer placeholder-w2"])
+    expect(w.processes()).toHaveLength(1)
+    expect(workspaceB.processes).toHaveLength(1)
+    expect(workspaceB.processes[0]!.pid).not.toBe(w.processes()[0]!.pid)
+    await b.dispose()
+    expect(await workspaceB.processes[0]!.exited).toBeDefined()
+    expect(await first(w, "AFTERDISPOSE")).toContain("AFTERDISPOSE")
+    expect(await aliveAfter(w.processes()[0]!, 300)).toBe("alive")
+  } finally { await b.dispose(); await w.close() }
+}, 180_000)
+
 test("an account change moves only that session to a new app-server while its sibling's turn completes on the shared one", async () => {
-  const w = await twoWorkspaces("codex-share-move", ["account-one", "account-one"])
+  const w = await sharedWorkspace("codex-share-move", ["account-one", "account-one"])
   try {
     expect(await first(w, "BEFOREMOVE")).toContain("BEFOREMOVE")
     const release = w.state.server.holdTextReplies("SIBLINGHELD")
     const sibling = other(w, "SIBLINGHELD")
     await w.state.server.textGateReached("SIBLINGHELD")
-    expect(await w.context.transport.configure(w.context.session, { credentials: accountCredentials(w.state, "account-two") })).toEqual({ state: "applied" })
+    expect(await w.context.transport.configure(w.context.session, { credentials: binding(w.state, "w1", "account-two") })).toEqual({ state: "applied" })
     expect(w.processes()).toHaveLength(2)
     release()
     expect(await sibling).toContain("SIBLINGHELD")
     const moved = await first(w, "AFTERMOVE")
     expect(moved).toContain("AFTERMOVE")
     expect(w.state.server.requests.find((request) => request.prompt.includes("AFTERMOVE"))?.prompt).toContain("BEFOREMOVE")
-    expect(await Promise.race([w.processes()[0]!.exited.then(() => "exited"), new Promise((resolve) => setTimeout(() => resolve("alive"), 300))])).toBe("alive")
+    expect(await aliveAfter(w.processes()[0]!, 300)).toBe("alive")
   } finally { await w.close() }
+}, 180_000)
+
+test("a session lost to a turn/start timeout archives its thread on the live app-server, so it resumes on another one", async () => {
+  const expire = { armed: false }
+  const w = await sharedWorkspace("codex-share-lost", ["account-one", "account-one"], { prepare: (services) => {
+    const setTimer = services.clock.setTimeout
+    services.clock = { ...services.clock, setTimeout: (callback, ms) => {
+      if (!expire.armed || ms !== 60_000) return setTimer(callback, ms)
+      expire.armed = false
+      queueMicrotask(callback)
+      return undefined
+    } }
+  } })
+  try {
+    expect(await first(w, "BEFORELOST")).toContain("BEFORELOST")
+    expire.armed = true
+    await expect(first(w, "TIMEDOUT")).rejects.toThrow("turn/start")
+    expect(w.context.transport.health!.runtime(w.state.directory, "s1")).toMatchObject({ status: "degraded" })
+    expect(await w.context.transport.configure(w.context.session, { credentials: binding(w.state, "w1", "account-two") })).toEqual({ state: "applied" })
+    const resumed = await first(w, "AFTERLOST")
+    expect(resumed).toContain("AFTERLOST")
+    expect(w.state.server.requests.find((request) => request.prompt.includes("AFTERLOST"))?.prompt).toContain("BEFORELOST")
+    expect(w.processes()).toHaveLength(2)
+    expect(await other(w, "SIBLINGKEPT")).toContain("SIBLINGKEPT")
+    expect(w.context.transport.health!.runtime(w.state.directory, "s1")).toEqual({ status: "ok" })
+  } finally { await w.close() }
+}, 180_000)
+
+test("the first starts of two accounts of one owner on a fresh store both initialize", async () => {
+  const state = await codexBackend()
+  const services = createTestServices()
+  const transport = new CodexAppServerTransport(services, codexOptions(state))
+  const broker = (sessionId: string) => ({ rebind: async (upstreamSessionId: string) => ({ sessionId, workspaceId: "w1", directory: state.directory,
+    connectionId: "codex-app-server", upstreamSessionId }), goal: { read: () => null, publish: async () => {} }, reportFailure: () => {}, publish: async () => {} }) as unknown as SessionBroker
+  const input = (sessionId: string, credentialId: string) => ({ sessionId, workspaceId: "w1", directory: state.directory, locality: "local" as const, owner: state.owner,
+    config: { harness: state.harness, model: state.model }, model: state.model, credentials: binding(state, "w1", credentialId),
+    projection: { generation: "g1", mcpServers: [], pluginRoots: [], notApplied: [] } })
+  try {
+    const sessions = await Promise.all([transport.start(input("s1", "account-one"), broker("s1")), transport.start(input("s2", "account-two"), broker("s2"))])
+    expect(sessions.map((session) => session.binding.upstreamSessionId).every(Boolean)).toBe(true)
+    expect(services.processes).toHaveLength(2)
+  } finally { await transport.dispose(); await state.close() }
 }, 180_000)
 
 test("a stray frame and 300 early frames for threads no session owns fail no session on the shared app-server", async () => {
   let inject: (line: string) => void = () => { throw new Error("Codex was not spawned") }
-  const w = await twoWorkspaces("codex-share-stray", ["account-one", "account-one"], { prepare: (services) => {
+  const w = await sharedWorkspace("codex-share-stray", ["account-one", "account-one"], { prepare: (services) => {
     const spawn = services.spawn.bind(services)
     services.spawn = async (command, options) => {
       const owned = await spawn(command, options)
@@ -155,19 +220,19 @@ test("a stray frame and 300 early frames for threads no session owns fail no ses
     expect(b).toContain("STRAYAFTERB")
     expect(a).not.toContain("STRAY ")
     expect(w.context.transport.health!.runtime(w.state.directory, "s1")).toEqual({ status: "ok" })
-    expect(w.b.health.runtime(w.state.directory, "s2")).toEqual({ status: "ok" })
+    expect(w.context.transport.health!.runtime(w.state.directory, "s2")).toEqual({ status: "ok" })
     expect(w.processes()).toHaveLength(1)
   } finally { await w.close() }
 }, 180_000)
 
 test("the shared app-server outlives its last session for the idle window and is then retired", async () => {
-  const w = await twoWorkspaces("codex-share-idle", ["account-one", "account-one"], { idleMs: 1_000 })
+  const w = await sharedWorkspace("codex-share-idle", ["account-one", "account-one"], { idleMs: 1_000 })
   try {
     expect(await first(w, "IDLEA")).toContain("IDLEA")
     await w.context.transport.close(w.context.session)
-    await w.b.close(w.second)
+    await w.context.transport.close(w.second)
     const process = w.processes()[0]!
-    expect(await Promise.race([process.exited.then(() => "exited"), new Promise((resolve) => setTimeout(() => resolve("alive"), 300))])).toBe("alive")
-    expect(await Promise.race([process.exited.then(() => "exited"), new Promise((resolve) => setTimeout(() => resolve("alive"), 5_000))])).toBe("exited")
+    expect(await aliveAfter(process, 300)).toBe("alive")
+    expect(await aliveAfter(process, 5_000)).toBe("exited")
   } finally { await w.close() }
 }, 180_000)

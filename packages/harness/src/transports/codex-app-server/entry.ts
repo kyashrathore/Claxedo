@@ -5,11 +5,10 @@ import type { CodexChildren } from "./children"
 import type { CodexModel } from "./models"
 import type { CodexProviderTurn } from "./provider-turn"
 import type { CodexMember } from "./member"
-import type { CodexProcessPool } from "./pool"
 import type { CodexTerminals } from "./terminals"
 import type { CodexUsageLedger } from "./usage"
 
-export type CodexTransportOptions = { binary: string; homeRoot: string; ownerHome?: string; env?: NodeJS.ProcessEnv; pool: CodexProcessPool }
+export type CodexTransportOptions = { binary: string; homeRoot: string; ownerHome?: string; env?: NodeJS.ProcessEnv; idleMs?: number }
 
 export type EntryState = "ready" | "busy" | "lost" | "retiring"
 

@@ -93,7 +93,8 @@ test("a turn/start that never answers fails only its session, interrupts the tur
     peer.emit({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-current", status: "completed" } } })
     await second
     expect(peer.spawned()).toBe(1)
-    expect(peer.frames.filter((frame) => frame.method === "thread/resume")).toHaveLength(1)
+    expect(peer.frames.filter((frame) => frame.method?.startsWith("thread/") && frame.method !== "thread/start").map((frame) => frame.method))
+      .toEqual(["thread/archive", "thread/resume", "thread/unarchive", "thread/resume", "thread/goal/get"])
     expect(peer.transport.health.runtime(peer.root, "s1")).toEqual({ status: "ok" })
   } finally { await peer.close() }
 })

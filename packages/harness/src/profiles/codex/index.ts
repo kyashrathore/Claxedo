@@ -101,7 +101,7 @@ function personalConfig(content: string, projection: PluginProjection): string {
   return stringify(config).trimEnd()
 }
 
-function selectedCodexAccount(credentials: ResolvedCredentials) {
+export function selectedCodexAccount(credentials: ResolvedCredentials) {
   const selected = codexCredential(credentials)
   if (selected && "unavailable" in selected) throw new CredentialSelectionError("account_unavailable", `Codex account unavailable: ${selected.reason}`)
   if (!selected && !credentials.machineLoginAllowed) {

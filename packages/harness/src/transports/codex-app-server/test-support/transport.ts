@@ -3,15 +3,15 @@ import os from "node:os"
 import path from "node:path"
 import type { Clock, HarnessServices, SessionBroker, StartInput } from "../../../contract"
 import { ScriptedProcess } from "../../../test-support/scripted-process"
-import { CodexAppServerTransport, CodexProcessPool } from ".."
+import { CodexAppServerTransport } from ".."
 import { CodexPeer, CodexScriptedFailure, type Frame } from "./protocol"
 export type { Frame } from "./protocol"
 
 type CodexProcess = { wire: ScriptedProcess<Frame>; protocol: CodexPeer }
 
 export async function scriptedTransport(options: { holdTurnStart?: boolean; clock?: Clock; idleMs?: number; models?: unknown[]; completeTurns?: boolean
-  modelListFailures?: number; turnSettingsFailures?: number; turnStartError?: string; goal?: unknown; userAgent?: string; backgroundTerminals?: string[] } = {}) {
-  const script = { modelListFailures: options.modelListFailures, turnSettingsFailures: options.turnSettingsFailures, turnStartError: options.turnStartError, goal: options.goal, userAgent: options.userAgent, backgroundTerminals: options.backgroundTerminals }
+  modelListFailures?: number; turnSettingsFailures?: number; turnStartError?: string; goal?: unknown; userAgent?: string; backgroundTerminals?: string[]; archiveFailures?: number } = {}) {
+  const script = { modelListFailures: options.modelListFailures, turnSettingsFailures: options.turnSettingsFailures, turnStartError: options.turnStartError, goal: options.goal, userAgent: options.userAgent, backgroundTerminals: options.backgroundTerminals, archiveFailures: options.archiveFailures }
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-scripted-"))
   const frames: Frame[] = []
   const violations: unknown[] = []
@@ -51,15 +51,13 @@ export async function scriptedTransport(options: { holdTurnStart?: boolean; cloc
   const warnings: { message: string; fields?: unknown }[] = []
   const log = { debug() {}, info() {}, warn: (message: string, fields?: unknown) => { warnings.push({ message, fields }) }, error() {} }
   const services = { spawn, recordHomeUse: async () => {}, healthChanged: () => { healthChanges.count += 1 }, firstPartyMcp: () => undefined, clock, log } as unknown as HarnessServices
-  const pool = new CodexProcessPool({ clock, log, idleMs: options.idleMs ?? 0 })
-  const transportOptions = { binary: "unused", homeRoot: path.join(root, "homes"), ownerHome: path.join(root, "owner"), env: {}, pool }
+  const transportOptions = { binary: "unused", homeRoot: path.join(root, "homes"), ownerHome: path.join(root, "owner"), env: {}, idleMs: options.idleMs ?? 0 }
   const transport = new CodexAppServerTransport(services, transportOptions)
   const startInput: StartInput = { workspaceId: "w1", sessionId: "s1", directory: root, locality: "local", owner: { kind: "machine-owner" },
     config: { harness: { id: "codex", access: "native" } }, credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "g1" },
     projection: { generation: "g1", pluginRoots: [], notApplied: [], mcpServers: [] } }
   const close = async () => {
     await transport.dispose()
-    await pool.dispose()
     await fs.rm(root, { recursive: true, force: true })
     if (violations.length) throw new AggregateError(violations, "The transport broke the Codex app-server protocol")
   }
@@ -69,7 +67,7 @@ export async function scriptedTransport(options: { holdTurnStart?: boolean; cloc
     process.wire.send(error ? { id: heldTurnStart, error: { code: -32603, message: error } } : { id: heldTurnStart, result: { turn: { id: "turn-current" } } })
   }
   const liveBroker = (sessionId = "s1", workspaceId = "w1") => ({ rebind: async (upstreamSessionId: string) => Object.freeze({ sessionId, workspaceId, directory: root, connectionId: "codex-app-server", upstreamSessionId }), goal: { read: () => null, publish: async () => {} }, reportFailure: () => {}, publish: async () => {}, meter: () => {} } as unknown as SessionBroker)
-  return { root, environments, transport, transportOptions, pool, services, warnings, startInput, started, frames, releaseTurnStart, liveBroker, close, healthChanges,
+  return { root, environments, transport, transportOptions, services, warnings, startInput, started, frames, releaseTurnStart, liveBroker, close, healthChanges,
     retired: () => processes.reduce((total, process) => total + process.wire.retirements, 0),
     logins: () => processes.flatMap((process) => process.protocol.logins),
     request: (id: number, method: string, params: unknown) => { latest().protocol.request(id); latest().wire.send({ id, method, params }) },

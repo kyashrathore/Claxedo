@@ -4,16 +4,7 @@ import { CodexRequestRefusal, CodexTransportError } from "./errors"
 import type { CodexRouter } from "./router"
 import type { CodexConnection, CodexRequestHandler, RpcMessage } from "./rpc"
 
-type MemberState = "joined" | "failed" | "left"
-type MemberMove = "fail" | "leave"
-
-const MOVES: Record<MemberState, Partial<Record<MemberMove, MemberState>>> = {
-  joined: { fail: "failed", leave: "left" },
-  failed: { leave: "left" },
-  left: {},
-}
-
-const LOGIN_BEFORE: readonly string[] = ["turn/start", "thread/goal/set"]
+const LOGIN_BEFORE: readonly string[] = ["thread/start", "thread/resume", "turn/start", "thread/goal/set"]
 const OPENING: readonly string[] = ["thread/resume", "thread/unarchive"]
 
 function resultThread(result: unknown): string | undefined {
@@ -21,7 +12,7 @@ function resultThread(result: unknown): string | undefined {
 }
 
 export class CodexMember implements CodexConnection {
-  private state: MemberState = "joined"
+  private state: "joined" | "failed" | "left" = "joined"
   private readonly listeners = new Set<(message: RpcMessage) => void>()
   private readonly failures = new Set<(error: Error) => void>()
   private handler?: CodexRequestHandler
@@ -70,7 +61,8 @@ export class CodexMember implements CodexConnection {
   }
 
   fail(error: Error): void {
-    if (!this.move("fail")) return
+    if (this.state !== "joined") return
+    this.state = "failed"
     for (const listener of this.failures) listener(error)
   }
 
@@ -82,14 +74,14 @@ export class CodexMember implements CodexConnection {
     }).then(undefined, (cause: unknown) => this.router.log.warn("Codex could not interrupt a turn whose start timed out", { threadId, error: errorMessage(cause) }))
   }
 
-  leave(): void {
-    if (this.move("leave")) this.router.leave(this)
+  async archive(threadId: string): Promise<void> {
+    if (this.state === "left" || !this.router.raw.alive) return
+    await this.router.raw.request("thread/archive", { threadId })
   }
 
-  private move(move: MemberMove): boolean {
-    const next = MOVES[this.state][move]
-    if (!next) return false
-    this.state = next
-    return true
+  leave(): void {
+    if (this.state === "left") return
+    this.state = "left"
+    this.router.leave(this)
   }
 }

@@ -1,4 +1,4 @@
-import { errorMessage, stringRecord } from "@claxedo/helpers"
+import { createKeyedSerializer, errorMessage, stringRecord } from "@claxedo/helpers"
 import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import { harnessVersionStanding, type HarnessServices, type StartInput } from "../../contract"
 import { CODEX_BROKER_PROVIDER, CODEX_DEFAULT_PROVIDER, codexProfilePaths, prepareCodexProfile, type CodexProfile } from "../../profiles/codex"
@@ -6,7 +6,7 @@ import type { CodexTransportOptions } from "./entry"
 import { CodexTransportError } from "./errors"
 import { codexLaunchKey } from "./launch-key"
 import { CodexMember } from "./member"
-import type { CodexLease } from "./pool"
+import { CodexProcessPool } from "./pool"
 import { CodexRouter } from "./router"
 import { CodexRpc, codexRetirementDeadline, type CodexConnection } from "./rpc"
 import { CODEX_RANGE, codexReportedVersion } from "./version"
@@ -30,6 +30,7 @@ async function startCodexProcess(profile: CodexProfile, options: CodexTransportO
   const router = new CodexRouter(rpc, services.clock, services.log)
   const abandon = () => { void rpc.retire(codexRetirementDeadline(services)).then(undefined, (error: unknown) => services.log.error("Codex app-server retirement failed", { error: errorMessage(error) })) }
   signal.addEventListener("abort", abandon, { once: true })
+  if (signal.aborted) abandon()
   try {
     const version = codexReportedVersion(await rpc.request("initialize",
       { clientInfo: { name: "claxedo", version: "0.1.0" }, capabilities: { experimentalApi: true, requestAttestation: false } }))
@@ -51,20 +52,25 @@ export async function codexModelProvider(launch: { brokered: boolean; member: Co
 export class CodexLaunches {
   private readonly abort = new AbortController()
   private readonly probes = new Set<CodexRpc>()
+  private readonly pool: CodexProcessPool
+  private readonly firstStarts = createKeyedSerializer()
+  private readonly initializedStores = new Set<string>()
 
-  constructor(private readonly services: HarnessServices, private readonly options: CodexTransportOptions) {}
+  constructor(private readonly services: HarnessServices, private readonly options: CodexTransportOptions) {
+    this.pool = new CodexProcessPool(services.clock, services.log, options.idleMs)
+  }
 
   assertLive(stage: string): void {
     if (this.abort.signal.aborted) throw new CodexTransportError("process", `Codex transport disposed${stage}`)
   }
 
-  key(input: StartInput): string { return codexLaunchKey(input, this.options) }
+  key(input: StartInput): string { return codexLaunchKey(input, this.options.homeRoot) }
 
   async join(input: StartInput, apiKey: () => string | undefined): Promise<CodexLaunch> {
     this.assertLive("")
     const key = this.key(input)
     const profile = await prepareProfile(input, this.options, this.services)
-    const lease = await this.untilDisposed(this.options.pool.acquire(key, (signal) => startCodexProcess(profile, this.options, this.services, signal)))
+    const lease = await this.pool.acquire(key, (signal) => this.start(profile, signal))
     const { router, version } = lease.process
     const member = new CodexMember(router, apiKey)
     const release = async () => {
@@ -77,7 +83,7 @@ export class CodexLaunches {
   async probe<T>(input: StartInput, read: (rpc: CodexRpc) => Promise<T>): Promise<T> {
     this.assertLive("")
     const profile = await prepareProfile(input, this.options, this.services)
-    const { rpc } = await startCodexProcess(profile, this.options, this.services, this.abort.signal)
+    const { rpc } = await this.start(profile, this.abort.signal)
     this.probes.add(rpc)
     try { return await read(rpc) }
     finally {
@@ -89,16 +95,15 @@ export class CodexLaunches {
   async dispose(): Promise<void> {
     this.abort.abort()
     for (const rpc of this.probes) await rpc.retire(codexRetirementDeadline(this.services))
+    await this.pool.dispose()
   }
 
-  private async untilDisposed(pending: Promise<CodexLease<CodexProcess>>): Promise<CodexLease<CodexProcess>> {
-    const disposed = Promise.withResolvers<never>()
-    const abort = () => disposed.reject(new CodexTransportError("process", "Codex transport disposed during startup"))
-    this.abort.signal.addEventListener("abort", abort, { once: true })
-    try { return await Promise.race([pending, disposed.promise]) }
-    catch (error) {
-      void pending.then((lease) => lease.release(), (cause: unknown) => this.services.log.debug("Codex app-server startup failed after its transport left", { error: errorMessage(cause) }))
-      throw error
-    } finally { this.abort.signal.removeEventListener("abort", abort) }
+  private start(profile: CodexProfile, signal: AbortSignal): Promise<CodexProcess> {
+    if (this.initializedStores.has(profile.store)) return startCodexProcess(profile, this.options, this.services, signal)
+    return this.firstStarts.run(profile.store, async () => {
+      const started = await startCodexProcess(profile, this.options, this.services, signal)
+      this.initializedStores.add(profile.store)
+      return started
+    })
   }
 }

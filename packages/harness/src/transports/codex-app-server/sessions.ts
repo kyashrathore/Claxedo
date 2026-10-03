@@ -79,15 +79,15 @@ export class CodexSessions implements CodexSessionHost {
   }
 
   private async replace(entry: Entry): Promise<Entry> {
-    if (entry.state !== "lost") {
-      if (entry.children.hasLive || await entry.terminals.hasBackgroundTasks(codexRetirementDeadline(this.services))) {
-        throw new CodexTransportError("configuration", "Claxedo cannot replace the Codex process while background tasks are running. Wait for them to finish or explicitly stop them before changing launch settings.")
-      }
-      entry.state = "retiring"
-      await releaseCodexThreads(entry, codexRetirementDeadline(this.services))
+    if (entry.state !== "lost" && (entry.children.hasLive || await entry.terminals.hasBackgroundTasks(codexRetirementDeadline(this.services)))) {
+      throw new CodexTransportError("configuration", "Claxedo cannot replace the Codex process while background tasks are running. Wait for them to finish or explicitly stop them before changing launch settings.")
     }
-    await entry.release()
-    entry.state = "lost"
+    entry.state = "retiring"
+    try { await releaseCodexThreads(entry, codexRetirementDeadline(this.services)) }
+    finally {
+      await entry.release()
+      entry.state = "lost"
+    }
     entry.start = mergeStartInput(entry.start, entry.pendingUpdate ?? {})
     entry.pendingUpdate = undefined
     try { return await this.open(entry.start, entry.broker, entry.session.binding.upstreamSessionId) }

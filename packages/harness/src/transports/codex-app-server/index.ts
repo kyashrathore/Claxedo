@@ -24,7 +24,6 @@ import { codexSessionTitle } from "./titles"
 import { runCodexTurn } from "./turn"
 
 export type { CodexTransportOptions, Entry } from "./entry"
-export { CodexProcessPool } from "./pool"
 
 export class CodexAppServerTransport implements HarnessTransport {
   readonly kind = "codex-app-server" as const

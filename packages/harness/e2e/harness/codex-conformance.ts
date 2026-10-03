@@ -11,28 +11,21 @@ import { PINNED_CODEX } from "./pinned-codex"
 import { listenOnLoopback, reservePort, releasePort } from "./ports"
 import { startScriptedModelServer } from "./scripted-model-server"
 import { egressProxyEnv, startEgressGuard, unexpectedEgress } from "./egress-guard"
-import { CodexAppServerTransport, CodexProcessPool, type CodexTransportOptions, type Entry } from "../../src/transports/codex-app-server"
+import { CodexAppServerTransport, type CodexTransportOptions, type Entry } from "../../src/transports/codex-app-server"
 import type { HarnessTransport, ResolvedCredentials } from "../../src/contract"
 
 export type CodexBackend = SuiteBackend & {
   root: string
   env: NodeJS.ProcessEnv
-  pool: CodexProcessPool
   server: Awaited<ReturnType<typeof startScriptedModelServer>>
 }
 
-const silent = { debug() {}, info() {}, warn() {}, error() {} }
-
-export function codexPool(idleMs = 0): CodexProcessPool {
-  return new CodexProcessPool({ clock: { now: Date.now, setTimeout, clearTimeout }, log: silent, idleMs })
-}
-
-export function codexOptions(state: ConformanceBackend, ownerHome?: string): CodexTransportOptions {
+export function codexOptions(state: ConformanceBackend, options: { ownerHome?: string; idleMs?: number } = {}): CodexTransportOptions {
   const codex = state as CodexBackend
-  return { binary: PINNED_CODEX, homeRoot: path.join(codex.root, "homes"), env: codex.env, pool: codex.pool, ...(ownerHome ? { ownerHome } : {}) }
+  return { binary: PINNED_CODEX, homeRoot: path.join(codex.root, "homes"), env: codex.env, idleMs: 0, ...options }
 }
 
-export async function codexBackend(idleMs = 0): Promise<CodexBackend> {
+export async function codexBackend(): Promise<CodexBackend> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-conformance-"))
   const directory = path.join(root, "work")
   await fs.mkdir(directory)
@@ -43,9 +36,8 @@ export async function codexBackend(idleMs = 0): Promise<CodexBackend> {
   const brokered = (placeholder: string): ResolvedCredentials => ({ machineLoginAllowed: false, accountOwner: "fixture-owner", secrets: {}, leaseGeneration: placeholder,
     providers: { openai: { baseUrl: server.v1Url, placeholder, authMode: "api-key" } } })
   const guard = await startEgressGuard(guardPort)
-  const pool = codexPool(idleMs)
   return {
-    root, directory, server, pool, env: { ...process.env, ...egressProxyEnv(guard.url) },
+    root, directory, server, env: { ...process.env, ...egressProxyEnv(guard.url) },
     harness: { id: "codex", access: "native" }, credentialsAfterActiveTurns: true,
     model: { providerID: "codex", modelID: "gpt-4.1" },
     credentials: brokered("codex-conformance-placeholder"),
@@ -60,7 +52,6 @@ export async function codexBackend(idleMs = 0): Promise<CodexBackend> {
     unrunnableTurn: withUndeliverableFile,
     cleanupWithoutCommands: "verified_clear",
     close: async () => {
-      await pool.dispose()
       console.log(`Codex outbound attempts: ${JSON.stringify(guard.attempts)}`)
       const unexpected = unexpectedEgress(guard.attempts)
       await guard.close()
@@ -130,7 +121,7 @@ export async function ownLoginContext(name: string, providers: ResolvedCredentia
       releasePort(mcpPort)
       await state.close()
     } }
-  const context = await setupConformance({ name, backend: async () => ownLogin, makeTransport: (services, backendState) => new CodexAppServerTransport(services, codexOptions(backendState, ownerHome)) })
+  const context = await setupConformance({ name, backend: async () => ownLogin, makeTransport: (services, backendState) => new CodexAppServerTransport(services, codexOptions(backendState, { ownerHome })) })
   return { context, ownerHome, mcpRequests, homes: path.join(state.root, "homes") }
 }
 

@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test"
 import type { Clock } from "../../contract"
-import { CodexProcessPool, type PooledCodex } from "./pool"
+import { ScriptedProcess } from "../../test-support/scripted-process"
+import type { CodexProcess } from "./launch"
+import { CodexProcessPool } from "./pool"
+import { CodexRouter } from "./router"
+import { CodexRpc } from "./rpc"
+
+const silent = { debug() {}, info() {}, warn() {}, error() {} }
 
 function fakeClock() {
   let now = 0
@@ -19,79 +25,79 @@ function fakeClock() {
   return { clock, advance }
 }
 
-type FakeProcess = PooledCodex & { id: number; retired: boolean; exit(error: Error): void }
-
-function harness(options: { idleMs?: number; capacity?: number } = {}) {
+function harness(idleMs?: number) {
   const { clock, advance } = fakeClock()
-  const created: FakeProcess[] = []
-  const create = async () => {
-    const failures = new Set<(error: Error) => void>()
-    const process: FakeProcess = { id: created.length + 1, retired: false,
-      rpc: { onFailure: (listener) => { failures.add(listener); return () => failures.delete(listener) }, retire: async () => { process.retired = true } },
-      exit: (error) => { for (const listener of failures) listener(error) } }
-    created.push(process)
-    return process
+  const wires: ScriptedProcess<unknown>[] = []
+  const create = async (): Promise<CodexProcess> => {
+    const wire = new ScriptedProcess<unknown>(() => {})
+    wires.push(wire)
+    const rpc = new CodexRpc(wire.owned(), clock)
+    return { rpc, router: new CodexRouter(rpc, clock, silent), home: "home", brokered: true, plugins: [], version: "0.159.2" }
   }
-  const pool = new CodexProcessPool<FakeProcess>({ clock, log: { debug() {}, info() {}, warn() {}, error() {} }, ...options })
-  return { pool, create, created, advance }
+  const pool = new CodexProcessPool(clock, silent, idleMs)
+  const retired = (index: number) => wires[index]!.retirements > 0
+  return { pool, create, wires, retired, advance }
 }
 
 test("members of one key share a process, and it retires 30 s after the last member leaves", async () => {
-  const { pool, create, created, advance } = harness()
+  const { pool, create, wires, retired, advance } = harness()
   const a = await pool.acquire("owner-account", create)
   const b = await pool.acquire("owner-account", create)
   expect(a.process).toBe(b.process)
   await a.release()
   await advance(60_000)
-  expect(created[0]!.retired).toBe(false)
+  expect(retired(0)).toBe(false)
   await b.release()
   await advance(29_999)
-  expect(created[0]!.retired).toBe(false)
+  expect(retired(0)).toBe(false)
   await advance(1)
-  expect(created[0]!.retired).toBe(true)
-  const c = await pool.acquire("owner-account", create)
-  expect(c.process).toBe(created[1]!)
+  expect(retired(0)).toBe(true)
+  await pool.acquire("owner-account", create)
+  expect(wires).toHaveLength(2)
   await pool.dispose()
 })
 
 test("a member joining within the idle window keeps the process", async () => {
-  const { pool, create, created, advance } = harness()
-  await (await pool.acquire("key", create)).release()
+  const { pool, create, wires, retired, advance } = harness()
+  const first = await pool.acquire("key", create)
+  await first.release()
   await advance(20_000)
   const again = await pool.acquire("key", create)
   await advance(30_000)
-  expect(again.process).toBe(created[0]!)
-  expect(created[0]!.retired).toBe(false)
+  expect(again.process).toBe(first.process)
+  expect(retired(0)).toBe(false)
   await again.release()
   await again.release()
   await advance(30_000)
-  expect(created[0]!.retired).toBe(true)
+  expect(retired(0)).toBe(true)
+  expect(wires).toHaveLength(1)
 })
 
 test("different keys never share, and a ninth member of one key opens a second process", async () => {
-  const { pool, create, created } = harness()
+  const { pool, create, wires, retired } = harness()
   const leases = await Promise.all(Array.from({ length: 9 }, () => pool.acquire("key", create)))
   const other = await pool.acquire("other-account", create)
   expect(new Set(leases.map((lease) => lease.process)).size).toBe(2)
-  expect(leases.filter((lease) => lease.process === created[0]!)).toHaveLength(8)
+  expect(leases.filter((lease) => lease.process === leases[0]!.process)).toHaveLength(8)
   expect(other.process).not.toBe(leases[0]!.process)
   await pool.dispose()
-  expect(created.every((process) => process.retired)).toBe(true)
+  expect(wires.map((_, index) => retired(index))).toEqual([true, true, true])
 })
 
-test("a process that fails is evicted, so the next member starts a new one", async () => {
-  const { pool, create, created } = harness()
+test("a process that exits is evicted, so the next member starts a new one", async () => {
+  const { pool, create, wires, retired } = harness()
   const a = await pool.acquire("key", create)
-  created[0]!.exit(new Error("exited"))
+  wires[0]!.exit({ code: 1, signal: null })
+  await new Promise((resolve) => setTimeout(resolve, 0))
   const b = await pool.acquire("key", create)
-  expect(b.process).toBe(created[1]!)
+  expect(b.process).not.toBe(a.process)
   await a.release()
-  expect(created[0]!.retired).toBe(false)
+  expect(retired(0)).toBe(false)
   await pool.dispose()
 })
 
 test("a failed start rejects every waiting member and leaves no entry behind", async () => {
-  const { pool, create, created } = harness()
+  const { pool, create, wires } = harness()
   let fail = true
   const flaky = async () => {
     if (fail) throw new Error("initialize refused")
@@ -99,13 +105,14 @@ test("a failed start rejects every waiting member and leaves no entry behind", a
   }
   await expect(Promise.all([pool.acquire("key", flaky), pool.acquire("key", flaky)])).rejects.toThrow("initialize refused")
   fail = false
-  expect((await pool.acquire("key", flaky)).process).toBe(created[0]!)
+  await pool.acquire("key", flaky)
+  expect(wires).toHaveLength(1)
   await pool.dispose()
   await expect(pool.acquire("key", create)).rejects.toThrow("disposed")
 })
 
 test("with no idle retention the last release retires the process before it resolves", async () => {
-  const { pool, create, created } = harness({ idleMs: 0 })
+  const { pool, create, retired } = harness(0)
   await (await pool.acquire("key", create)).release()
-  expect(created[0]!.retired).toBe(true)
+  expect(retired(0)).toBe(true)
 })

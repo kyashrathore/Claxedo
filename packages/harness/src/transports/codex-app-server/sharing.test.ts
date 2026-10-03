@@ -50,17 +50,16 @@ const account = (credentialId: string): StartInput["credentials"] => ({ machineL
 
 async function shared(options: Parameters<typeof scriptedTransport>[0] = {}, credentials?: StartInput["credentials"]) {
   const peer = await scriptedTransport(options)
-  const b = new CodexAppServerTransport(peer.services, peer.transportOptions)
   const bDirectory = path.join(peer.root, "b")
   await fs.mkdir(bDirectory)
   const aInput = { ...peer.startInput, ...(credentials ? { credentials } : {}) }
   const aSession = await peer.transport.start(aInput, peer.liveBroker())
-  const bSession = await b.start({ ...aInput, sessionId: "s2", workspaceId: "w2", directory: bDirectory }, peer.liveBroker("s2", "w2"))
+  const bSession = await peer.transport.start({ ...aInput, sessionId: "s2", directory: bDirectory }, peer.liveBroker("s2"))
   const turnStarts = () => peer.frames.filter((frame) => frame.method === "turn/start")
-  return { peer, b, aSession, bSession, bDirectory, turnStarts, close: async () => { await b.dispose(); await peer.close() } }
+  return { peer, b: peer.transport, aSession, bSession, bDirectory, turnStarts, close: () => peer.close() }
 }
 
-test("two workspaces' sessions of one owner and account share one app-server with their own cwd, approvals, text and usage", async () => {
+test("two sessions of one workspace, owner and account share one app-server with their own cwd, approvals, text and usage", async () => {
   const { peer, b, aSession, bSession, bDirectory, turnStarts, close } = await shared()
   const a = asking()
   const other = asking()
@@ -117,6 +116,8 @@ test("one session's turn/start timeout fails only that session while its sibling
     expect(text(await bRunning)).toBe("B_CONTINUES")
     expect(b.health.runtime(bDirectory, "s2")).toEqual({ status: "ok" })
     expect(peer.retired()).toBe(0)
+    await peer.transport.close(aSession)
+    expect(peer.frames.filter((frame) => frame.method === "thread/archive").map((frame) => frame.params)).toEqual([{ threadId: "thread-1" }])
   } finally { await close() }
 })
 
@@ -194,7 +195,7 @@ test("an account change moves only that session to a new app-server while its si
     peer.emit(turnCompleted("thread-2", "turn-current"), 0)
     expect(text(await bRunning)).toBe("B_STAYS")
     expect(peer.retired()).toBe(0)
-    expect(peer.logins()).toEqual(["placeholder-account-one"])
+    expect(peer.logins()).toEqual(["placeholder-account-one", "placeholder-account-two"])
   } finally { await close() }
 })
 
@@ -208,5 +209,16 @@ test("a process exit fails every session on it, and each resumes its own thread 
     await collect(b.send(bSession, turn("B"), asking().broker))
     expect(peer.spawned()).toBe(2)
     expect(peer.frames.filter((frame) => frame.method === "thread/resume").map((frame) => frame.params?.threadId)).toEqual(["thread-1", "thread-2"])
+  } finally { await close() }
+})
+
+test("a move whose thread release fails leaves the session lost, and its next turn resumes on the new app-server", async () => {
+  const { peer, aSession, close } = await shared({ completeTurns: true, archiveFailures: 1 }, account("account-one"))
+  try {
+    await expect(peer.transport.configure(aSession, { credentials: account("account-two") })).rejects.toThrow("archive refused")
+    await collect(peer.transport.send(aSession, turn("A"), asking().broker))
+    expect(peer.spawned()).toBe(2)
+    expect(peer.frames.find((frame) => frame.method === "thread/resume")?.params).toMatchObject({ threadId: "thread-1" })
+    expect(peer.logins()).toEqual(["placeholder-account-one", "placeholder-account-two"])
   } finally { await close() }
 })

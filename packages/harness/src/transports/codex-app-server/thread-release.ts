@@ -10,10 +10,11 @@ async function interruptChildren(entry: Entry): Promise<void> {
 }
 
 export async function releaseCodexThreads(entry: Entry, deadline: Deadline): Promise<void> {
-  if (!entry.rpc.alive) return
-  const turnId = entry.turn?.id ?? entry.providerTurn?.id
-  if (turnId) await entry.terminals.stop(turnId, deadline)
-  await interruptChildren(entry)
-  await entry.terminals.clear(deadline)
-  await entry.rpc.request("thread/archive", { threadId: entry.session.binding.upstreamSessionId })
+  if (entry.rpc.alive) {
+    const turnId = entry.turn?.id ?? entry.providerTurn?.id
+    if (turnId) await entry.terminals.stop(turnId, deadline)
+    await interruptChildren(entry)
+    await entry.terminals.clear(deadline)
+  }
+  await entry.rpc.archive(entry.session.binding.upstreamSessionId)
 }

@@ -1,34 +1,23 @@
 import { errorMessage } from "@claxedo/helpers"
-import type { Clock, Deadline, Logger } from "../../contract"
+import type { Clock, Logger } from "../../contract"
 import { CodexTransportError } from "./errors"
 import type { CodexProcess } from "./launch"
 
-export type PooledCodex = { rpc: { onFailure(listener: (error: Error) => void): () => void; retire(deadline: Deadline): Promise<void> } }
+export type CodexLease = { process: CodexProcess; release(): Promise<void> }
 
-export type CodexLease<T> = { process: T; release(): Promise<void> }
+type PoolEntry = { key: string; process: Promise<CodexProcess>; members: number; idle?: unknown; evicted: boolean }
 
-type PoolEntry<T> = { key: string; process: Promise<T>; members: number; idle?: unknown; evicted: boolean }
+const CAPACITY = 8
 
-export type CodexPoolOptions = { clock: Clock; log: Logger; idleMs?: number; capacity?: number }
-
-export class CodexProcessPool<T extends PooledCodex = CodexProcess> {
-  private readonly entries = new Map<string, PoolEntry<T>[]>()
+export class CodexProcessPool {
+  private readonly entries = new Map<string, PoolEntry[]>()
   private readonly disposal = new AbortController()
-  private readonly clock: Clock
-  private readonly log: Logger
-  private readonly idleMs: number
-  private readonly capacity: number
 
-  constructor(options: CodexPoolOptions) {
-    this.clock = options.clock
-    this.log = options.log
-    this.idleMs = options.idleMs ?? 30_000
-    this.capacity = options.capacity ?? 8
-  }
+  constructor(private readonly clock: Clock, private readonly log: Logger, private readonly idleMs = 30_000) {}
 
-  async acquire(key: string, create: (signal: AbortSignal) => Promise<T>): Promise<CodexLease<T>> {
+  async acquire(key: string, create: (signal: AbortSignal) => Promise<CodexProcess>): Promise<CodexLease> {
     if (this.disposal.signal.aborted) throw new CodexTransportError("process", "Codex app-server pool disposed")
-    const entry = this.entries.get(key)?.find((candidate) => candidate.members < this.capacity) ?? this.create(key, create)
+    const entry = this.entries.get(key)?.find((candidate) => candidate.members < CAPACITY) ?? this.create(key, create)
     this.clock.clearTimeout(entry.idle)
     entry.idle = undefined
     entry.members += 1
@@ -51,14 +40,14 @@ export class CodexProcessPool<T extends PooledCodex = CodexProcess> {
     await Promise.all(entries.map((entry) => this.retire(entry)))
   }
 
-  private create(key: string, create: (signal: AbortSignal) => Promise<T>): PoolEntry<T> {
-    const entry: PoolEntry<T> = { key, process: create(this.disposal.signal), members: 0, evicted: false }
+  private create(key: string, create: (signal: AbortSignal) => Promise<CodexProcess>): PoolEntry {
+    const entry: PoolEntry = { key, process: create(this.disposal.signal), members: 0, evicted: false }
     this.entries.set(key, [...this.entries.get(key) ?? [], entry])
     entry.process.then((process) => { process.rpc.onFailure(() => this.evict(entry)) }, () => this.evict(entry))
     return entry
   }
 
-  private async release(entry: PoolEntry<T>): Promise<void> {
+  private async release(entry: PoolEntry): Promise<void> {
     entry.members -= 1
     if (entry.members > 0 || entry.evicted) return
     if (this.idleMs === 0) return this.retire(entry)
@@ -67,7 +56,7 @@ export class CodexProcessPool<T extends PooledCodex = CodexProcess> {
     }, this.idleMs)
   }
 
-  private evict(entry: PoolEntry<T>): void {
+  private evict(entry: PoolEntry): void {
     entry.evicted = true
     this.clock.clearTimeout(entry.idle)
     const remaining = (this.entries.get(entry.key) ?? []).filter((candidate) => candidate !== entry)
@@ -75,7 +64,7 @@ export class CodexProcessPool<T extends PooledCodex = CodexProcess> {
     else this.entries.delete(entry.key)
   }
 
-  private async retire(entry: PoolEntry<T>): Promise<void> {
+  private async retire(entry: PoolEntry): Promise<void> {
     this.evict(entry)
     const process = await entry.process.catch((error: unknown) => {
       this.log.debug("Codex app-server never started, so there is nothing to retire", { key: entry.key, error: errorMessage(error) })
