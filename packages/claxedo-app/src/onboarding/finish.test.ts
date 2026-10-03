@@ -7,15 +7,21 @@ import type { Created } from "./model"
 
 const project = { id: projectId("prj_1"), name: "widgets" } as Pick<Project, "id" | "name"> as Project
 
-function world(plan: ReadonlyArray<Created | Error>, openFailures: readonly Error[]) {
+type Step = Created | Error | { readonly held: Created; readonly then: Error }
+
+function world(plan: ReadonlyArray<Step>, openFailures: readonly Error[]) {
   let creates = 0
   const opens: Created[] = []
   const failures = [...openFailures]
   const steps: FinishSteps = {
-    create: async () => {
+    create: async (hold) => {
       creates += 1
       const next = plan[creates - 1] ?? new Error("Nothing left to create")
       if (next instanceof Error) throw next
+      if ("held" in next) {
+        hold(next.held)
+        throw next.then
+      }
       return next
     },
     open: async (created) => {
@@ -67,5 +73,17 @@ test("a workspace create that failed creates again on the next click, then stays
   expect(opens).toEqual([workspace])
   expect(finish.finished()).toBe(true)
   expect(finish.created()).toEqual(workspace)
+  dispose()
+})
+
+test("a workspace that exists before its create failed is opened on the next click, never created again", async () => {
+  const workspace: Created = { kind: "workspace", placementId: placementId("ws_1") }
+  const { finish, creates, opens, dispose } = world([{ held: workspace, then: new Error("Catalog unavailable") }], [])
+  await finish.run()
+  expect(finish.failure()).toBe("created, not opened: Catalog unavailable")
+  expect(finish.created()).toEqual(workspace)
+  await finish.run()
+  expect([creates(), opens]).toEqual([1, [workspace]])
+  expect(finish.finished()).toBe(true)
   dispose()
 })

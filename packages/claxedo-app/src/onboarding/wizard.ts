@@ -35,7 +35,7 @@ function useOnboardingFinish(placing: Accessor<Placing | undefined>) {
     return current
   }
   return createFinish({
-    create: () => createOnboardingTarget(server, t, held()),
+    create: (hold) => createOnboardingTarget(server, t, held(), hold),
     open: async (created) => navigate(draftPath(openedPlacement(t, created, (project) => primaryPlacement(server.placements.list(), project)?.id))),
     describe: (error, created) => finishFailure(t, error, created),
   })

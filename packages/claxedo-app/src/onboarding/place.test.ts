@@ -16,7 +16,11 @@ function fakeServer() {
       create: async (input: unknown) => (calls.push({ call: "projects.create", input }), created),
     },
     cloud: {
-      create: async (input: CloudCreateInput) => (calls.push({ call: "cloud.create", input }), { id: placementId("ws_created") }),
+      create: async ({ onCreated, ...input }: CloudCreateInput & { onCreated?: (id: PlacementId) => void }) => {
+        calls.push({ call: "cloud.create", input })
+        onCreated?.(placementId("ws_created"))
+        return { id: placementId("ws_created") }
+      },
     },
   } as unknown as Server
   return { server, calls }
@@ -24,16 +28,18 @@ function fakeServer() {
 
 test("a signed desktop that picked the cloud creates a cloud workspace from the repository, not a local project", async () => {
   const { server, calls } = fakeServer()
-  const target = await createOnboardingTarget(server, t, { draft: { source: repository, name: "Widgets" }, choice: "cloud" })
+  const held: Created[] = []
+  const target = await createOnboardingTarget(server, t, { draft: { source: repository, name: "Widgets" }, choice: "cloud" }, (created) => held.push(created))
   expect(target).toEqual({ kind: "workspace", placementId: placementId("ws_created") })
+  expect(held).toEqual([target])
   expect(calls).toEqual([{ call: "cloud.create", input: { source: repository, name: "Widgets" } }])
 })
 
 test("a desktop that keeps this machine creates the project; a cloud choice never takes a local folder", async () => {
   const { server, calls } = fakeServer()
   const folder: ProjectSource = { kind: "folder", path: "/home/me/widgets" }
-  expect(await createOnboardingTarget(server, t, { draft: { source: folder }, choice: "local" })).toEqual({ kind: "project", project: created })
-  const refused = createOnboardingTarget(server, t, { draft: { source: folder }, choice: "cloud" })
+  expect(await createOnboardingTarget(server, t, { draft: { source: folder }, choice: "local" }, () => {})).toEqual({ kind: "project", project: created })
+  const refused = createOnboardingTarget(server, t, { draft: { source: folder }, choice: "cloud" }, () => {})
   await expect(refused).rejects.toBeInstanceOf(ServerError)
   await expect(refused).rejects.toThrow("onboarding.reason.execution.folder")
   expect(calls).toEqual([{ call: "projects.create", input: { source: folder } }])
@@ -42,7 +48,7 @@ test("a desktop that keeps this machine creates the project; a cloud choice neve
 test("a hosted plane creates the cloud workspace from the connected repository in one signed-account call", async () => {
   const { server, calls } = fakeServer()
   const source: ProjectSource = { kind: "connectedRepository", connectionId: "gh_1", fullName: "acme/widgets" }
-  expect(await createOnboardingTarget(server, t, { draft: { source }, choice: "cloud" })).toEqual({ kind: "workspace", placementId: placementId("ws_created") })
+  expect(await createOnboardingTarget(server, t, { draft: { source }, choice: "cloud" }, () => {})).toEqual({ kind: "workspace", placementId: placementId("ws_created") })
   expect(calls).toEqual([{ call: "cloud.create", input: { source } }])
 })
 

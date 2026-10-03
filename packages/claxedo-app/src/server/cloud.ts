@@ -68,8 +68,9 @@ function createForSource(workspaces: Workspaces, account: HostedAccount | undefi
   return async (options: CloudSourceCreateInput) => {
     if (!account) throw new ServerError({ class: "invalid", message: "A repository's cloud workspace is created on a signed control plane, and this app has none" })
     const created: Created = await account.run("workspace.create", { ...(options.name ? { workspaceName: options.name } : {}), ...accountSourceInput(options.source) })
-    await workspaces.refresh()
     const id = typeof created.workspaceId === "string" ? placementId(created.workspaceId) : undefined
+    if (id) options.onCreated?.(id)
+    await workspaces.refresh()
     return createdWorkspace(created, id ? workspaces.byId(id)?.projectId : undefined)
   }
 }

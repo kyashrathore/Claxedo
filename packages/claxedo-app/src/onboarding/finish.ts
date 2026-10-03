@@ -4,7 +4,7 @@ import { toAppError, type AppError } from "@/server"
 import type { Created } from "./model"
 
 export type FinishSteps = {
-  readonly create: () => Promise<Created>
+  readonly create: (hold: (created: Created) => void) => Promise<Created>
   readonly open: (created: Created) => Promise<void>
   readonly describe: (error: unknown, created: Created | undefined) => string
 }
@@ -14,7 +14,7 @@ function createResumableTarget(create: FinishSteps["create"]) {
   const reach = async (): Promise<Created> => {
     const held = created()
     if (held) return held
-    const made = await create()
+    const made = await create(setCreated)
     setCreated(made)
     return made
   }

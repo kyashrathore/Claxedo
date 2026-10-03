@@ -25,7 +25,7 @@ function worker(options: { unauthorized?: boolean; malformed?: boolean; identity
     if (url.pathname === "/api/cp/events") {
       return new Response(new ReadableStream({ start(controller) { init?.signal?.addEventListener("abort", () => controller.close(), { once: true }) } }))
     }
-    if (url.pathname === "/api/workspace/create") return Response.json({ workspaceId: "ws_cloud", projectId: "prj_app", directory: "workspace:ws_cloud" })
+    if (url.pathname === "/api/workspace/create") return Response.json({ workspaceId: "ws_cloud", directory: "workspace:ws_cloud" })
     if (url.pathname === "/api/workspace") {
       if (options.identityUnavailable) return Response.json({ error: { code: "auth_verifier_unavailable", message: "Application identity mapping is unavailable", retryable: false } }, { status: 503 })
       if (options.unauthorized) return Response.json({ error: { code: "session_expired", message: "Sign in again" } }, { status: 401 })
@@ -110,7 +110,7 @@ test("a signed browser creates a cloud workspace from a connected repository thr
     try {
       await server.ready
       const workspace = await server.cloud.create({ source: { kind: "connectedRepository", connectionId: "github_1", fullName: "owner/app" } })
-      expect(String(workspace.id)).toBe("ws_cloud")
+      expect([String(workspace.id), String(workspace.projectId)]).toEqual(["ws_cloud", "prj_app"])
       const request = calls.find((call) => call.path === "/api/workspace/create")
       expect(request?.init?.credentials).toBe("include")
       const body = request?.init?.body
