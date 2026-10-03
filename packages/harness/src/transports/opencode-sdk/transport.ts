@@ -249,8 +249,10 @@ export class OpenCodeSdkTransport implements HarnessTransport {
   } }
 
   readonly commands = { list: async (target: ConfigTarget): Promise<readonly AgentCommand[]> => {
-    const scope = this.targetScope(target)
-    return (await this.runtime.catalog.commands(scope)).map((row) => ({ name: row.name,
+    const entry = "session" in target ? this.entry(target.session) : undefined
+    const rows = entry ? await this.runtime.sessionCommands(entry.scope, entry.upstream)
+      : await this.runtime.catalog.commands(this.targetScope(target))
+    return rows.map((row) => ({ name: row.name,
       ...(row.description ? { description: row.description } : {}) }))
   } }
 

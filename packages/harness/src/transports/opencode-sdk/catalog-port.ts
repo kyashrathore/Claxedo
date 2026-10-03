@@ -61,7 +61,10 @@ async function agents(host: OpenCodeHost, scope: WorkspaceScope): Promise<readon
 
 async function commands(host: OpenCodeHost, scope: WorkspaceScope): Promise<readonly CommandEntry[]> {
       const client = await openCodeLocationClient(host, scope.directory)
-      const response = await engineRead("command.list", scope, () => client.command.list({ location: { directory: scope.directory } }))
+      return commandEntries(await engineRead("command.list", scope, () => client.command.list({ location: { directory: scope.directory } })))
+}
+
+export function commandEntries(response: unknown): readonly CommandEntry[] {
       return rows(response).map((row) => {
         const model = modelRef(row.model)
         return {

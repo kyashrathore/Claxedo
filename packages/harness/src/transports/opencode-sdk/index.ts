@@ -36,10 +36,8 @@ export {
 export {
   createInteractionPort,
   type FormFieldValue,
-  type FormRequest,
   type OpenCodeInteractionPort,
   type PermissionReply,
-  type PermissionRequest,
 } from "./interaction-port.js"
 export {
   createToolPort,

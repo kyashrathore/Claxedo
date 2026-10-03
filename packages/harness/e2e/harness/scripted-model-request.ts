@@ -21,6 +21,7 @@ const TOOL_RESULTS = new Set(["function_call_output", "custom_tool_call_output",
 
 export const MARKER_PROMPT = /reply with exactly this one token[^:]*:\s*\\?"?([A-Za-z0-9._-]+)/gi
 const TITLE_INSTRUCTION = JSON.stringify(SESSION_TITLE_SYSTEM_PROMPT).slice(1, -1)
+const OPENCODE_TITLE_PROMPT = "You are a title generator. You output ONLY a thread title."
 const GOAL_EVALUATOR_PROMPT = "You are an independent completion evaluator."
 const CLAUDE_GOAL_EVALUATOR_PROMPT =
   "Based on the conversation transcript above, has the following stopping condition been satisfied?"
@@ -38,7 +39,7 @@ export function isGoalEvaluatorPrompt(prompt: string) {
 }
 
 export function isTitlePrompt(text: string) {
-  return text.includes(TITLE_INSTRUCTION) || text.includes(SESSION_TITLE_SYSTEM_PROMPT)
+  return text.includes(TITLE_INSTRUCTION) || text.includes(SESSION_TITLE_SYSTEM_PROMPT) || text.includes(OPENCODE_TITLE_PROMPT)
 }
 
 export function dialectFor(path: string): ScriptedDialect {

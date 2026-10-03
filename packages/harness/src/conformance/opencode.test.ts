@@ -97,7 +97,7 @@ function transport(services: ConstructorParameters<typeof OpenCodeSdkTransport>[
     databasePath: path.join(state.root, "opencode.db"),
     configContent: JSON.stringify({ model: "proof/proof", small_model: "proof/proof", enabled_providers: ["proof"],
       provider: { proof: proofProvider() },
-      agent: { pi: { description: "Conformance", prompt: "Follow the instruction exactly" }, title: { disable: true } },
+      agent: { pi: { description: "Conformance", prompt: "Follow the instruction exactly" } },
       permission: { shell: "ask", question: "allow" },
       ...config,
     }) })
@@ -504,12 +504,64 @@ test("a child session runs in its parent's instance and a session outside every 
     const scope = WorkspaceScope.authorize({ workspaceID: context.start.workspaceId, directory: context.backend.directory })
     const children = (await runtime.sessions.list(scope)).sessions.filter((row) => row.id !== context.session.binding.upstreamSessionId)
     expect(children).toHaveLength(1)
-    expect(await runtime.interactions.permissions(scope, children[0]!.id)).toEqual([])
+    expect((await runtime.sessionCommands(scope, children[0]!.id)).length).toBeGreaterThan(0)
     const stranger = await runtime.sessions.create(scope, { title: "stranger" })
-    await expect(runtime.interactions.permissions(scope, stranger.id)).rejects.toThrow()
+    await expect(runtime.sessionCommands(scope, stranger.id)).rejects.toThrow()
     await expect(runtime.sessions.prompt(scope, stranger.id, { text: "Reply with exactly STRANGER" })).rejects.toThrow()
     expect(state.server.requests.some((row) => row.prompt.includes("STRANGER"))).toBe(false)
   } finally { await context.close(); await alpha?.mcp.close() }
+}, 90_000)
+
+test("an MCP prompt is listed as the session's command and a turn naming it runs the prompt", async () => {
+  const port = await reservePort()
+  const fetched: unknown[] = []
+  const mcp = Bun.serve({ hostname: "127.0.0.1", port, async fetch(request) {
+    if (request.method !== "POST") return new Response(null, { status: 405 })
+    const message = await request.json() as { id?: number; method: string; params?: { name?: string; arguments?: unknown } }
+    if (message.id === undefined) return new Response(null, { status: 202 })
+    if (message.method === "prompts/get") fetched.push(message.params)
+    const result = message.method === "initialize"
+      ? { protocolVersion: "2025-06-18", capabilities: { tools: {}, prompts: {} }, serverInfo: { name: "docs", version: "1" } }
+      : message.method === "tools/list" ? { tools: [] }
+      : message.method === "prompts/list" ? { prompts: [{ name: "review", description: "Review a focus", arguments: [{ name: "focus" }] }] }
+      : message.method === "prompts/get"
+        ? { messages: [{ role: "user", content: { type: "text", text: `PROMPTBODY focus=${String((message.params?.arguments as { focus?: string } | undefined)?.focus)}` } }] }
+        : {}
+    return Response.json({ jsonrpc: "2.0", id: message.id, result })
+  } })
+  const context = await setupConformance({ name: "opencode-mcp-prompt", backend: async () => Object.assign(await backend(), {
+    projection: { generation: "prompt", pluginRoots: [], notApplied: [],
+      mcpServers: [{ kind: "http" as const, name: "docs", url: `http://127.0.0.1:${port}/mcp`, origin: "configured" as const }] } }),
+  makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
+  const state = context.backend as OpenCodeBackend
+  try {
+    const listed = await (context.transport as OpenCodeSdkTransport).commands.list({ session: context.session })
+    expect(listed.map((command) => command.name)).toContain("docs:review")
+    expect((await collect(context, context.turn("/docs:review security"))).some((item) => item.event.type === "finish")).toBe(true)
+    expect(fetched).toEqual([{ name: "review", arguments: { focus: "security" } }])
+    expect(state.server.requests.some((row) => row.prompt.includes("PROMPTBODY focus=security"))).toBe(true)
+    expect(state.server.requests.some((row) => row.prompt.includes("/docs:review"))).toBe(false)
+  } finally { await context.close(); await mcp.stop(true); releasePort(port) }
+}, 90_000)
+
+test("a new instance whose MCP server never settles prompts at the bound, reports it once, and never waits again", async () => {
+  const port = await reservePort()
+  const stalled = Promise.withResolvers<Response>()
+  const mcp = Bun.serve({ hostname: "127.0.0.1", port, fetch: () => stalled.promise })
+  const context = await setupConformance({ name: "opencode-mcp-unsettled", backend: async () => Object.assign(await backend(), {
+    projection: { generation: "stalled", pluginRoots: [], notApplied: [],
+      mcpServers: [{ kind: "http" as const, name: "stalled", url: `http://127.0.0.1:${port}/mcp`, origin: "configured" as const }] } }),
+  makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
+  try {
+    const diagnostics = (events: RoutedEvent[]) => events.flatMap((item) => item.event.type === "diagnostic" ? [item.event.diagnostic] : [])
+    const first = await collect(context, context.turn("Reply with exactly STALLEDFIRST"))
+    expect(first.some((item) => item.event.type === "finish")).toBe(true)
+    expect(diagnostics(first)).toContainEqual(expect.objectContaining({ code: "opencode_mcp_unsettled", message: expect.stringContaining("stalled") }))
+    const started = Date.now()
+    const second = await collect(context, context.turn("Reply with exactly STALLEDSECOND"))
+    expect(Date.now() - started).toBeLessThan(5_000)
+    expect(diagnostics(second).map((diagnostic) => diagnostic.code)).not.toContain("opencode_mcp_unsettled")
+  } finally { stalled.resolve(new Response(null, { status: 503 })); await context.close(); await mcp.stop(true); releasePort(port) }
 }, 90_000)
 
 test("a projection change reaches only that OpenCode session, at its next turn", async () => {
@@ -600,7 +652,7 @@ test("a turn runs its resolved effort as the variant", async () => {
     const state = context.backend as OpenCodeBackend
     const events = await collect(context, { ...context.turn("Reply with exactly EFFORTHIGH"), effort: "high" })
     expect(events.some((item) => item.event.type === "finish")).toBe(true)
-    const request = state.server.requests.find((row) => row.prompt.includes("EFFORTHIGH"))
+    const request = state.server.requests.find((row) => row.prompt.includes("EFFORTHIGH") && row.tools.length)
     expect((request?.body as Record<string, unknown> | undefined)?.reasoning_effort).toBe("high")
   } finally { await context.close() }
 }, 60_000)

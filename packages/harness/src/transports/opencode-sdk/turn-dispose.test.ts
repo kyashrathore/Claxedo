@@ -21,7 +21,7 @@ test("disposing the transport ends a turn that is waiting on engine events", asy
   state.runtime = { ...state.runtime,
     close: async () => {},
     events: { ...state.runtime.events, ready: async () => {}, subscribe: () => () => {}, subscribeLoss: () => () => {} },
-    instances: { ...state.runtime.instances, ready: async () => {} },
+    instances: { ready: async () => [] },
     sessions: { ...state.runtime.sessions,
       get: async () => ({ tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }),
       switchModel: async () => {},

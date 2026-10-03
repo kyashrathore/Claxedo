@@ -1,5 +1,6 @@
 import { singleFlightUntil } from "@claxedo/helpers"
-import { createCatalogPort, type OpenCodeCatalogPort } from "./catalog-port.js"
+import { createCatalogPort, type CommandEntry, type OpenCodeCatalogPort } from "./catalog-port.js"
+import { instanceCommands } from "./instance-commands.js"
 import { createConfigurationPort, type OpenCodeConfigurationPort } from "./configuration-port.js"
 import { createEventPump, type EventPump, type ProjectedEvent } from "./event-pump.js"
 import { createOpenCodeHost, type OpenCodeHost, type OpenCodeHostOptions } from "./host.js"
@@ -25,6 +26,7 @@ export type OpenCodeRuntime = Readonly<{
 
   providerUnavailableReason(providerID: string): string | undefined
   instances: OpenCodeInstances
+  sessionCommands(scope: WorkspaceScope, sessionID: string): Promise<readonly CommandEntry[]>
   interactions: OpenCodeInteractionPort
   tools: OpenCodeToolPort
   events: Readonly<{
@@ -104,6 +106,7 @@ export function createOpenCodeRuntime(options: OpenCodeRuntimeOptions): OpenCode
     bindProviders: (binding) => bindings.apply(binding),
     providerUnavailableReason: (providerID) => bindings.unavailableReason(providerID),
     instances,
+    sessionCommands: (scope, sessionID) => instanceCommands(host, instances, scope, sessionID),
     interactions: createInteractionPort(host),
     tools,
     events,
