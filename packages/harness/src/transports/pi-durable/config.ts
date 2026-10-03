@@ -16,7 +16,7 @@ export function piModelRef(model: PromptModel | undefined): ModelRef {
 }
 
 export function piCatalog(credentials: PiCredentials) {
-  return credentials.connected().flatMap((provider) => credentials.models.getModels(provider)
+  return credentials.catalogProviders().flatMap((provider) => credentials.models.getModels(provider)
     .map((model) => ({ id: `${provider}/${model.id}`, name: model.name || model.id, connected: true as const })))
 }
 
