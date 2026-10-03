@@ -48,6 +48,8 @@ const ENTRIES = [
   // for status notices (`d1/session-status-notices.ts`), and the live-sync
   // room's nudge admission and replay-gap frame
   // (`hosted-workerd/live-sync-admission.ts`, `live-sync-replay-gap.ts`).
+  // Every entry writes a reader's seen and settled marks
+  // (`session/routes/session-reader.ts` over `d1/session-reader-store.ts`).
   { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 123, packages: 19 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the

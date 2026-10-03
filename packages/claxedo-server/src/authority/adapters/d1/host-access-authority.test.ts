@@ -2279,11 +2279,12 @@ describe("machine session rows", () => {
     }
     const publish = (publication: Partial<HostSessionRowsPublication>, as = publisher) =>
       publishD1HostSessionRows(input.database, input.now(), as, { rows: [], removed: [], ...publication })
-    const page = async (auth: SignedControlPlaneAuth, archived: "active" | "all" = "active") =>
+    const page = async (auth: SignedControlPlaneAuth, archived: "active" | "all" = "active", settled: "active" | "all" = "active") =>
       await sessions.listSessionPage(auth, {
         projectId: people.local.project_id,
         sort: "human_turn_desc",
         archived,
+        settled,
         limit: 50,
       })
     return { input, ...people, sessions, publisher, publish, page }
@@ -2420,7 +2421,7 @@ describe("machine session rows", () => {
     })
     const sessions = new D1SessionAuthority(recording, { deploymentId: "deployment-a", now: input.now })
 
-    await sessions.listSessionPage(alice, { projectId: local.project_id, sort: "human_turn_desc", archived: "active", limit: 50 })
+    await sessions.listSessionPage(alice, { projectId: local.project_id, sort: "human_turn_desc", archived: "active", settled: "active", limit: 50 })
 
     const listRead = reads.find((read) => /from sessions s\b/.test(read.sql) && read.sql.includes("last_turn_status"))
     if (!listRead) throw new Error("the list read was not observed")

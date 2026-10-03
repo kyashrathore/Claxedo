@@ -73,7 +73,9 @@ export const serverWorkerd: Policy = {
   // through its own module (`authority/adapters/d1/session-status-notices.ts`),
   // and the live-sync room admits a publisher's nudge through
   // `deployments/hosted-workerd/live-sync-admission.ts` and writes its
-  // replay-gap frame from `live-sync-replay-gap.ts`.
+  // replay-gap frame from `live-sync-replay-gap.ts`. A reader's seen and
+  // settled marks are written by `session/routes/session-reader.ts` into the
+  // D1 `session_reads` store (`authority/adapters/d1/session-reader-store.ts`).
   ceilings: { modules: 123, packages: 19 },
 
   emitted: {

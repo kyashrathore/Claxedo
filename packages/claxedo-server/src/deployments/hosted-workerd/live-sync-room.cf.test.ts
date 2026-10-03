@@ -396,6 +396,24 @@ describe("LiveSyncRoom — fan-out core", () => {
     expect(await readFrame(aliceReader)).toEqual(event)
   })
 
+  test("a reader's marks reach only that reader's connection in the org room, live or on replay, with only the fields the room verified", async () => {
+    const namespace = createFakeNamespace()
+    const room = liveSyncRoomNameForPrincipal({ orgId: "org_internal_acme" })
+    const aliceRes = await connectLiveSyncRoom(namespace, subscriber("alice", "org_internal_acme"), 60_000)
+    const carolRes = await connectLiveSyncRoom(namespace, subscriber("carol", "org_internal_acme"), 60_000)
+    const aliceReader = aliceRes.body!.getReader()
+    expect(await readFrame(aliceReader)).toEqual({ type: "heartbeat" })
+    expect(await readFrame(carolRes.body!.getReader())).toEqual({ type: "heartbeat" })
+
+    const marks = { type: "session.reader.changed", ownerUserId: "alice", sessionId: "ses_1", workspaceId: "ws_1", seenAt: 40, ts: 7 } as const
+    const result = await nudgeLiveSyncRoom(namespace, room, { ...marks, settledAt: "soon", title: "not verified" } as unknown as ControlPlaneEvent)
+    expect(result).toEqual({ delivered: 1, held: 2 })
+    expect(await readFrame(aliceReader)).toEqual(marks)
+
+    const replayed = await openRoom(namespace.instances.get(room)!, { subject: "carol", org: "org_internal_acme", lastEventId: "0" })
+    expect(JSON.stringify(replayed.frames)).not.toContain("session.reader.changed")
+  })
+
   test("a Page or provision nudge reaches no member of the org room, live or on replay", async () => {
     const namespace = createFakeNamespace()
     const room = liveSyncRoomNameForPrincipal({ orgId: "org_internal_acme" })

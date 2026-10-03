@@ -5,7 +5,7 @@ import { asRecord, numberField, parseJson } from "@claxedo/server-core/platform/
 import { latestViewPage, type LatestView } from "@claxedo/server-core/session/latest-view-page"
 import type { D1Database } from "@cloudflare/workers-types"
 import type { SessionPageQuery } from "@claxedo/server-core/platform/auth/private-session-authority"
-import { sessionOrderSql } from "@claxedo/server-core/session/navigation-order"
+import { sessionOrderSql, unsettledSql } from "@claxedo/server-core/session/navigation-order"
 import { requireHuman } from "./access-context"
 import { maySql, type BoundSql } from "./authorization"
 import type { D1ActorProfile } from "./workspace-authority"
@@ -27,6 +27,8 @@ type SessionPageRow = {
   background_other: number
   last_turn_status: string | null
   last_turn_completed_at: number | null
+  seen_at: number | null
+  settled_at: number | null
 }
 
 const COLUMNS = {
@@ -36,10 +38,20 @@ const COLUMNS = {
   sessionRef: "('workspace:' || s.workspace_id || ':session:' || s.session_id)",
 }
 
-/** `access` is the caller's read predicate over `s`, with the values its placeholders bind. */
-export async function readD1SessionPage(database: D1Database, query: SessionPageQuery, access: BoundSql) {
+const READER_COLUMNS = {
+  settledAt: "r.settled_at",
+  lastHumanTurnAt: "s.last_human_turn_at",
+  lastTurnCompletedAt: "s.last_turn_completed_at",
+}
+
+/**
+ * `access` is the caller's read predicate over `s`, with the values its
+ * placeholders bind; `readerUserId` is whose seen and settled marks the rows
+ * carry and the settled filter reads.
+ */
+export async function readD1SessionPage(database: D1Database, query: SessionPageQuery, access: BoundSql, readerUserId: string) {
   const where = ["s.deleted_at is null"]
-  const params: unknown[] = []
+  const params: unknown[] = [readerUserId]
   if ("projectId" in query) {
     where.push("s.project_id = ?")
     params.push(query.projectId)
@@ -49,6 +61,7 @@ export async function readD1SessionPage(database: D1Database, query: SessionPage
   }
   if (query.archived === "archived") where.push("s.archived_at is not null")
   if (query.archived === "active") where.push("s.archived_at is null")
+  if (query.settled !== "all") where.push(unsettledSql(READER_COLUMNS))
   if (query.search) {
     where.push("lower(coalesce(s.title, '')) like ?")
     params.push(`%${query.search.toLowerCase()}%`)
@@ -65,8 +78,9 @@ export async function readD1SessionPage(database: D1Database, query: SessionPage
       select s.session_id, s.workspace_id, s.project_id, s.title, s.created_at, s.updated_at,
         s.last_human_turn_at, s.archived_at, s.status, s.status_at, s.awaiting_input,
         s.background_agents, s.background_shells, s.background_other,
-        s.last_turn_status, s.last_turn_completed_at
+        s.last_turn_status, s.last_turn_completed_at, r.seen_at, r.settled_at
       from sessions s
+      left join session_reads r on r.user_id = ? and r.session_id = s.session_id
       where ${where.join(" and ")}
       order by ${order.orderBy}
       limit ?
@@ -97,6 +111,8 @@ function pageRowJson(row: SessionPageRow) {
     ...(row.last_turn_status === null || row.last_turn_completed_at === null
       ? {}
       : { last_turn_status: row.last_turn_status, last_turn_completed_at: row.last_turn_completed_at }),
+    ...(row.seen_at === null ? {} : { seen_at: row.seen_at }),
+    ...(row.settled_at === null ? {} : { settled_at: row.settled_at }),
   }
 }
 

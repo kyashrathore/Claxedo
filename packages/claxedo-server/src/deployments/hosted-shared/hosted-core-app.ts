@@ -1,4 +1,5 @@
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-origins"
@@ -50,6 +51,9 @@ import {
 } from "../../platform/auth/request-guard"
 import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
 import { createSessionReadRoutes, authoritySessionReads } from "../../session/routes/session-read"
+import { createSessionReaderRoutes } from "../../session/routes/session-reader"
+import { isComposedAuthorityPort } from "../../authority/composed-authority"
+import type { SessionReaderAuthority } from "@claxedo/server-core/platform/auth/session-reader-authority"
 import type { HostedControlPlane } from "../../authority/hosted-services"
 import type { IdempotencyCoordinator } from "../../authority/http/idempotency"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
@@ -445,6 +449,25 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         ),
     }),
   )
+  app.route("/api/control", createSessionReaderRoutes({
+    authenticate: async (request) => {
+      const result = await signedOrError(request, { authentication: options.authentication, requireSigned: true }, services)
+      if ("error" in result) return Response.json(result.error, { status: result.status })
+      if (!result.auth) return Response.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, { status: 401 })
+      return result.auth
+    },
+    authority: () => {
+      const authority = services.authority ?? undefined
+      if (!isComposedAuthorityPort<SessionReaderAuthority>(authority, ["recordSessionReader"])) {
+        throw new ControlPlaneAuthError(503, "authority_unavailable", "Workspace authority is unavailable")
+      }
+      return authority
+    },
+    publish: async (auth, event) => {
+      const orgId = await requireAuthority(services).resolveOrgId(auth)
+      return await nudgeLiveSyncRoom(options.liveSyncRoom, liveSyncRoomNameForPrincipal({ ownerUserId: event.ownerUserId, orgId }), event)
+    },
+  }))
   if (options.usageLedger) {
     app.route("/api/claxedo/usage", UsageRoutes({
       ledger: options.usageLedger,

@@ -1,5 +1,7 @@
 export type SessionListSort = "updated_desc" | "created_desc" | "human_turn_desc"
 
+export type SessionListSettledMode = "active" | "all"
+
 export type SessionOrderKey = {
   updatedAt: number
   createdAt: number
@@ -65,4 +67,22 @@ export function sessionOrderSql(
       params: [at, at, after.sessionRef],
     },
   }
+}
+
+export type SessionSettledColumns = {
+  settledAt: string
+  lastHumanTurnAt: string
+  lastTurnCompletedAt: string
+}
+
+/**
+ * The rows a reader has not settled: a session stays settled only while its
+ * reader settled it at or after both its last human turn and its last turn's
+ * end, so a new send or turn result un-settles it with no write. Both stores
+ * are SQLite, whose many-argument `max` is NULL when any argument is, hence
+ * the coalesces.
+ */
+export function unsettledSql(columns: SessionSettledColumns): string {
+  const { settledAt, lastHumanTurnAt, lastTurnCompletedAt } = columns
+  return `(${settledAt} IS NULL OR ${settledAt} < max(coalesce(${lastHumanTurnAt}, 0), coalesce(${lastTurnCompletedAt}, 0)))`
 }

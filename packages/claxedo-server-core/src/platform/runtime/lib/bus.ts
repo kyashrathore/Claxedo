@@ -140,6 +140,21 @@ export type SessionInventoryChangedEvent = {
 }
 
 /**
+ * One reader's seen and settled state of one session, after a write to it.
+ * The reader's own fact: `ownerUserId` is that reader's subject, and only that
+ * subject's connections receive it (`event-visibility.ts`).
+ */
+export type SessionReaderChangedEvent = {
+  type: "session.reader.changed"
+  ownerUserId: string
+  sessionId: string
+  workspaceId: string
+  seenAt?: number
+  settledAt?: number
+  ts: number
+}
+
+/**
  * Figures for the Usage-limits view landed from one of their sources: a stored
  * account's Check, the harnesses' own logins, or the machine-wide probe. Names
  * nothing, so it carries nothing a subscriber could not already read; the
@@ -174,14 +189,16 @@ export type PluginsChangedEvent = {
  * publisher per event kind: the sandbox provisioner, the worktree routes, the
  * documents backend, the session-share authority, the hosted session-row
  * ingest, the session-meta store (`session/meta/index.ts`), the usage quota
- * reader (`usage/quota.ts`).
+ * reader (`usage/quota.ts`), the session reader stores
+ * (`session/meta/reads.ts` and the hosted `session_reads`).
  *
  * The local daemon serves every kind it publishes to its unsigned user. A
- * signed subscriber gets only share, status and quota notices
+ * signed subscriber gets only share, status, quota and its own reader notices
  * (`event-visibility.ts`), and the hosted plane's room
- * (`hosted-workerd/live-sync-room.cf.ts`) carries `session.share.changed` and
- * `session.status.changed` alone, so a signed client learns of a provision
- * step or a Page change by its next read, not by a notice.
+ * (`hosted-workerd/live-sync-room.cf.ts`) carries `session.share.changed`,
+ * `session.status.changed` and `session.reader.changed` alone, so a signed
+ * client learns of a provision step or a Page change by its next read, not by
+ * a notice.
  */
 export type ControlPlaneEvent =
   | {
@@ -203,6 +220,7 @@ export type ControlPlaneEvent =
   | SessionShareChangedEvent
   | SessionStatusChangedEvent
   | SessionInventoryChangedEvent
+  | SessionReaderChangedEvent
   | UsageQuotaChangedEvent
   | PluginsChangedEvent
 

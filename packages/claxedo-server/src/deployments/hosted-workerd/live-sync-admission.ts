@@ -1,6 +1,7 @@
 import { parseBackgroundWork, type SessionLastTurn } from "@claxedo/agent-runtime-contract"
 import { storedSessionShareLevel } from "@claxedo/server-core/platform/auth/session-share-level"
-import { asRecord } from "@claxedo/server-core/platform/json/index"
+import { asRecord, numberField } from "@claxedo/server-core/platform/json/index"
+import { sessionReaderState } from "@claxedo/server-core/session/reader"
 import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 
 function lastTurnOf(turn: Record<string, unknown> | undefined): SessionLastTurn | undefined {
@@ -28,9 +29,9 @@ function sessionStatusEvent(row: Record<string, unknown>, ts: number): ControlPl
 
 /**
  * The events this room admits onto a client stream, a session share's
- * doorbell and a session's status notice, rebuilt field by field so the room
- * forwards exactly the fields it verified and nothing else the sender put in
- * the object.
+ * doorbell, a session's status notice and a reader's own marks, rebuilt field
+ * by field so the room forwards exactly the fields it verified and nothing
+ * else the sender put in the object.
  */
 function liveSyncEvent(input: unknown): ControlPlaneEvent | undefined {
   const row = asRecord(input)
@@ -49,6 +50,9 @@ function liveSyncEvent(input: unknown): ControlPlaneEvent | undefined {
     return phase === "granted"
       ? { ...base, phase, level: storedSessionShareLevel(row.level) }
       : { ...base, phase }
+  }
+  if (row.type === "session.reader.changed" && typeof ownerUserId === "string" && ownerUserId && typeof sessionId === "string" && typeof workspaceId === "string") {
+    return { type: "session.reader.changed", ts, ownerUserId, sessionId, workspaceId, ...sessionReaderState(numberField(row, "seenAt"), numberField(row, "settledAt")) }
   }
   return undefined
 }

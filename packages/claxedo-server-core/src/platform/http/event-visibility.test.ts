@@ -34,6 +34,14 @@ describe("control-plane event visibility", () => {
     expect(eventVisibleTo({ mode: "signed", subject: "user_member", orgId: "org_a" }, event)).toBe(false)
   })
 
+  test("a reader's own marks reach only that reader, never another reader of the session or a member of its org", () => {
+    const event = { type: "session.reader.changed", ownerUserId: "user_reader", sessionId: "ses_shared", workspaceId: "ws_a", seenAt: 5, ts: 1 } as const
+    expect(eventVisibleTo({ mode: "signed", subject: "user_reader", orgId: "org_a" }, event)).toBe(true)
+    expect(eventVisibleTo({ mode: "signed", subject: "user_owner", orgId: "org_a" }, event)).toBe(false)
+    expect(eventVisibleTo({ mode: "signed", subject: "user_other" }, event)).toBe(false)
+    expect(eventVisibleTo({ mode: "unsigned-local" }, event)).toBe(true)
+  })
+
   test("a live plugin notice reaches no signed subscriber, only the unsigned machine's single user", () => {
     const event = { type: "plugins.changed", pluginId: "notes", status: "ready", hash: "a".repeat(16), ts: 1 } as const
     expect(eventVisibleTo({ mode: "unsigned-local" }, event)).toBe(true)

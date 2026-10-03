@@ -10,8 +10,8 @@ import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/li
  * re-reads when nudged, so a lost one stalls live sync until the next
  * unrelated mutation), a share grant. `createSseReplayBuffer` keeps these in
  * its second, independent ring; a provision's intermediate steps, quota
- * doorbells and session status notices are the frames it lets the main ring
- * evict, and an evicted one surfaces as a replay gap.
+ * doorbells, session status notices and reader notices are the frames it lets
+ * the main ring evict, and an evicted one surfaces as a replay gap.
  */
 export function isRetainedControlPlaneEvent(event: ControlPlaneEvent): boolean {
   switch (event.type) {
@@ -38,9 +38,11 @@ export function isRetainedControlPlaneEvent(event: ControlPlaneEvent): boolean {
 }
 
 /**
- * A status notice states the whole status of one session for one reader, so a
- * later one makes an earlier one moot: a replay sends the latest of each.
+ * A status notice states the whole status of one session for one reader, and
+ * a reader notice all of one reader's marks on it, so a later one of the same
+ * kind makes an earlier one moot: a replay sends the latest of each.
  */
 export function supersededControlPlaneEventKey(event: ControlPlaneEvent): string | undefined {
-  return event.type === "session.status.changed" ? `${event.ownerUserId}\u0000${event.sessionId}` : undefined
+  if (event.type !== "session.status.changed" && event.type !== "session.reader.changed") return undefined
+  return `${event.type}\u0000${event.ownerUserId}\u0000${event.sessionId}`
 }

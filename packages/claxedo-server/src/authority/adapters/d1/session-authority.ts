@@ -1181,7 +1181,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
 
   async listSessionPage(auth: SignedControlPlaneAuth, query: SessionPageQuery) {
     const who = await this.requirePrincipal(auth)
-    return await readD1SessionPage(this.database, query, maySql(who, "read", { kind: "session", alias: "s" }))
+    return await readD1SessionPage(this.database, query, maySql(who, "read", { kind: "session", alias: "s" }), who.userId)
   }
 
   async resolveSession(auth: SignedControlPlaneAuth, args: { sessionId: string }) {

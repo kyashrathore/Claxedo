@@ -54,6 +54,21 @@ export const ClaxedoSessionMetaTable = sqliteTable(
   ],
 )
 
+/** One reader's marks on one session, keyed by the session's stored ref like its tags and attachments. */
+export const ClaxedoSessionReadTable = sqliteTable(
+  "claxedo_session_reads",
+  {
+    user_id: text().notNull(),
+    session_ref: text().notNull(),
+    seen_at: integer(),
+    settled_at: integer(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.user_id, table.session_ref] }),
+    index("claxedo_session_reads_ref_idx").on(table.session_ref),
+  ],
+)
+
 export const ClaxedoSessionAttachmentTable = sqliteTable(
   "claxedo_session_attachment",
   {

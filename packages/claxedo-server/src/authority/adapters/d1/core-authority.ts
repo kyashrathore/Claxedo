@@ -7,6 +7,7 @@ import {
   type PrivateSessionAuthority,
 } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
+import type { SessionReaderAuthority } from "@claxedo/server-core/platform/auth/session-reader-authority"
 import {
   D1WorkspaceAuthority,
   D1_WORKSPACE_AUTHORITY_METHODS,
@@ -33,6 +34,7 @@ import {
 } from "./channel-runtime-authority"
 import { D1OrgInvitationAuthority, D1_ORG_INVITATION_AUTHORITY_METHODS, type D1OrgInvitationAuthorityPort } from "./org-invitation-authority"
 import { publishD1HostSessionRows } from "./host-session-rows"
+import { recordD1SessionReader } from "./session-reader-store"
 import { D1TeamAuthority, D1_TEAM_AUTHORITY_METHODS, type D1TeamAuthorityPort } from "./team-authority"
 import {
   D1OrgMemberAuthority,
@@ -76,6 +78,7 @@ export type D1CoreAuthorityBoundary = WorkspaceAuthority &
   Pick<D1WorkspaceAuthority, (typeof WORKSPACE_LIFECYCLE_METHODS)[number]> &
   PrivateSessionAuthority &
   SessionTurnAuthority &
+  SessionReaderAuthority &
   Pick<D1HostAccessAuthority, (typeof HOST_LIFECYCLE_METHODS)[number]>
 
 type RequiredWorkspaceAuthorityCapability = {
@@ -149,6 +152,7 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     ...bindMethods(sessions, D1_SESSION_TURN_AUTHORITY_METHODS),
     ...bindMethods(hosts, HOST_LIFECYCLE_METHODS),
     machineAuth: hosts.machineAuth,
+    recordSessionReader: (auth, input) => recordD1SessionReader(database, options.deploymentId, auth, input),
     publishHostSessionRows: (publisher, publication) =>
       publishD1HostSessionRows(database, (options.now ?? Date.now)(), publisher, publication),
   }

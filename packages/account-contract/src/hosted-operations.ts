@@ -225,8 +225,8 @@ export const HOSTED_OPERATIONS = {
     exposure: { renderer: true, app: false },
   }),
   "session.page": defineOperation({
-    method: "GET", path: operationPath("/api/control/session-list?scope=project", { query: ["projectId", "limit"], optionalQuery: ["sort", "after"] }),
-    input: operationInput({ projectId: requiredParameter, limit: requiredParameter, sort: optionalParameter, after: optionalParameter }),
+    method: "GET", path: operationPath("/api/control/session-list?scope=project", { query: ["projectId", "limit"], optionalQuery: ["sort", "after", "settled"] }),
+    input: operationInput({ projectId: requiredParameter, limit: requiredParameter, sort: optionalParameter, after: optionalParameter, settled: optionalParameter }),
     output: withArrays("items"), retry: "safe",
     exposure: { renderer: true, app: false },
   }),
@@ -288,6 +288,20 @@ export const HOSTED_OPERATIONS = {
     output: withStrings("enrollment_id", "display_name"), retry: "never",
     exposure: { renderer: false, app: false },
     body: selectBody("displayName"),
+  }),
+  "session.seen": defineOperation({
+    method: "POST", path: operationPath("/api/control/sessions/:sessionId/seen"),
+    input: operationInput({ sessionId: requiredParameter, completedAt: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("completedAt"),
+  }),
+  "session.settle": defineOperation({
+    method: "POST", path: operationPath("/api/control/sessions/:sessionId/settle"),
+    input: operationInput({ sessionId: requiredParameter, settled: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("settled"),
   }),
   "session.shares.list": defineOperation({
     method: "GET", path: operationPath("/api/control/sessions/:sessionId/shares", { query: ["workspaceId"] }),

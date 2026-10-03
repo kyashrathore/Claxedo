@@ -411,6 +411,7 @@ describe("session metadata routes", () => {
       projectId: "proj_pages",
       sort: "human_turn_desc",
       archived: "active",
+      settled: "active",
       limit: 2,
     })
     expect(svc.authority?.listWorkspaces).not.toHaveBeenCalled()

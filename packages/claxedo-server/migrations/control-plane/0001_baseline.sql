@@ -499,6 +499,14 @@ CREATE TABLE session_messages (
     references sessions (session_id, workspace_id, org_id, project_id) deferrable initially deferred
 );
 
+CREATE TABLE session_reads (
+  user_id text not null references users (user_id) on delete cascade,
+  session_id text not null references sessions (session_id) on delete cascade,
+  seen_at integer,
+  settled_at integer,
+  primary key (user_id, session_id)
+);
+
 CREATE TABLE session_registration_operations (
   operation_id text primary key,
   session_id text not null unique,

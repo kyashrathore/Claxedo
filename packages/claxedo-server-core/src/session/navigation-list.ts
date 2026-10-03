@@ -3,9 +3,9 @@ import { parseBackgroundWork, type BackgroundWork, type SessionLastTurn } from "
 import { jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
-import type { SessionListSort, SessionOrderKey } from "./navigation-order"
+import type { SessionListSettledMode, SessionListSort, SessionOrderKey } from "./navigation-order"
 
-export type { SessionListSort, SessionOrderKey } from "./navigation-order"
+export type { SessionListSettledMode, SessionListSort, SessionOrderKey } from "./navigation-order"
 export type SessionListScope = "global" | "project" | "workspace"
 export type SessionListArchiveMode = "active" | "all" | "archived"
 
@@ -15,6 +15,7 @@ export type SessionListQuery = {
   workspaceId?: string
   directory?: string
   archived: SessionListArchiveMode
+  settled: SessionListSettledMode
   status: string[]
   search?: string
   sort: SessionListSort
@@ -47,6 +48,9 @@ export type SessionNavigationRow = {
   lastHumanTurnAt?: number
   /** The outcome of the session's last turn the runtime recorded; absent until one ends. */
   lastTurn?: SessionLastTurn
+  /** The reading principal's own marks: the last turn end it has seen, and the activity it settled the session through. */
+  seenAt?: number
+  settledAt?: number
   archivedAt?: number
   tags: string[]
   attachments: Array<{ kind: string; targetId?: string }>
@@ -98,6 +102,7 @@ type CursorShape = SessionOrderKey & { query: string }
 export type SessionListKeysetPage = {
   sort: SessionListSort
   archived: SessionListArchiveMode
+  settled: SessionListSettledMode
   search?: string
   limit: number
   after?: SessionOrderKey
@@ -111,6 +116,7 @@ export function parseSessionListQuery(url: URL): SessionListQuery {
     ...(trimToUndefined(url.searchParams.get("workspaceId")) ? { workspaceId: trimToUndefined(url.searchParams.get("workspaceId")) } : {}),
     ...(trimToUndefined(url.searchParams.get("directory")) ? { directory: trimToUndefined(url.searchParams.get("directory")) } : {}),
     archived: archivedValue(url.searchParams.get("archived")),
+    settled: url.searchParams.get("settled") === "all" ? "all" : "active",
     status: list(url.searchParams.get("status")),
     ...(trimToUndefined(url.searchParams.get("search")) ? { search: trimToUndefined(url.searchParams.get("search")) } : {}),
     sort: sortValue(url.searchParams.get("sort")),
@@ -150,6 +156,7 @@ export function sessionListKeysetPage(query: SessionListQuery): SessionListKeyse
   return {
     sort: query.sort,
     archived: query.archived,
+    settled: query.settled,
     ...(query.search ? { search: query.search } : {}),
     limit: query.limit + 1,
     ...(cursor ? { after: sessionOrderKey(cursor) } : {}),
@@ -164,6 +171,7 @@ export function sessionListStorePageFilter(query: SessionListQuery) {
     ...(query.scope === "workspace" && query.directory ? { directory: query.directory } : {}),
     global: query.scope === "global",
     archived: page.archived,
+    settled: page.settled,
     status: query.status,
     search: page.search,
     limit: page.limit,
@@ -219,6 +227,7 @@ function sessionNavigationRow(session: unknown): SessionNavigationRow | undefine
     updatedAt,
     ...(lastHumanTurnAt !== undefined ? { lastHumanTurnAt } : {}),
     ...lastTurnFromSession(item),
+    ...readerFromSession(item),
     ...(archivedAt ? { archivedAt } : {}),
     tags: stringArray(item.tags),
     attachments: arrayValue(item.attachments).flatMap((attachment) => {
@@ -252,6 +261,12 @@ function lastTurnFromSession(item: Record<string, unknown>): { lastTurn?: Sessio
   const completedAt = numberValue(nested.completedAt) ?? numberValue(item.last_turn_completed_at)
   if ((status !== "completed" && status !== "failed" && status !== "cancelled") || completedAt === undefined) return {}
   return { lastTurn: { status, completedAt } }
+}
+
+function readerFromSession(item: Record<string, unknown>): Pick<SessionNavigationRow, "seenAt" | "settledAt"> {
+  const seenAt = numberValue(item.seenAt) ?? numberValue(item.seen_at)
+  const settledAt = numberValue(item.settledAt) ?? numberValue(item.settled_at)
+  return { ...(seenAt === undefined ? {} : { seenAt }), ...(settledAt === undefined ? {} : { settledAt }) }
 }
 
 function statusKind(input: unknown): SessionRowStatusKind | undefined {
@@ -467,6 +482,7 @@ function querySignature(query: SessionListQuery) {
     workspaceId: query.workspaceId,
     directory: query.directory,
     archived: query.archived,
+    settled: query.settled,
     status: query.status,
     search: query.search,
     sort: query.sort,

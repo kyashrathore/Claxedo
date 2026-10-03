@@ -323,13 +323,13 @@ export class LiveSyncRoom {
    * per-process anything to hang it on.
    *
    * Retention is the shared 256 + 64 the sibling streams use. `liveSyncEvent`
-   * admits share doorbells, held in the terminal reserve, and session status
-   * notices, held in the main ring only, so a burst of status cannot evict a
-   * doorbell; a principal's replay sends only the latest notice per session.
-   * One reader's notices fill its own ring at a few per turn, far fewer than
-   * 256 across the worst client gap (the app's 40 s stall timeout plus a
-   * reconnect backoff that starts at 250 ms and caps at 15 s); a longer gap
-   * becomes a replay-gap notice and a list re-read.
+   * admits share doorbells, held in the terminal reserve, and status and
+   * reader notices, held in the main ring only, so neither can evict a
+   * doorbell; a replay sends only the latest of each kind per session. One
+   * reader's notices fill its own ring at a few per turn plus one seen write
+   * per open or shown turn end, far fewer than 256 across the worst client gap
+   * (the app's 40 s stall timeout plus a reconnect backoff capped at 15 s); a
+   * longer gap becomes a replay-gap notice and a list re-read.
    *
    * ## Why in-memory and not `state.storage`
    *
