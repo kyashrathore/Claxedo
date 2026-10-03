@@ -80,7 +80,6 @@ const DENY = [
   // which an unsigned desktop has no way to demand.
   "/config",
   "/provider",
-  "/auth",
   // Family `project-files`' inventory half. `/project/current` answers for a
   // caller it authenticates as the machine's own user when nothing signed it,
   // so it names the project of whatever workspace or directory the caller

@@ -87,7 +87,6 @@ export function cloudConfig({ mode }: { mode: string }, binding?: AccountBinding
       ...(devTls() ? { https: devTls() } : {}),
       proxy: [
         "/api",
-        "/auth",
         "/experimental",
         "/file",
         "/find",

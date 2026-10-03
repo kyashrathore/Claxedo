@@ -93,7 +93,7 @@ const ROUTE_RULES = [
   exact(["/api/cp/events"], RouteDomain.ClaxedoControlPlane, central),
   prefix(["/api/claxedo/remote-access"], RouteDomain.ClaxedoControlPlane, central),
   prefix(
-    ["/config", "/provider", "/auth", "/api/claxedo/agent-config", "/api/claxedo/credentials"],
+    ["/config", "/provider", "/api/claxedo/agent-config", "/api/claxedo/credentials"],
     RouteDomain.AgentConfigRegistry,
     central,
   ),

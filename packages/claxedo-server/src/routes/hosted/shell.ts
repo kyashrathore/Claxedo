@@ -44,7 +44,7 @@ import type { RelayRole } from "@claxedo/workspace-relay"
 import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
 import { asRecord, asString } from "@claxedo/helpers/guards"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
-import { providerAuthMethodsForHarness } from "@claxedo/server-core/credentials/provider-auth/service"
+import { providerAuthMethodsForHarness } from "@claxedo/server-core/credentials/provider-auth/methods"
 
 export type HostedShellRouteOptions = {
   authentication?: RequestAuthenticationAdapter

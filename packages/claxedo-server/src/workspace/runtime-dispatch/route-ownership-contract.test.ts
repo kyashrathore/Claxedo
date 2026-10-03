@@ -96,7 +96,6 @@ describe("route ownership", () => {
       "/config",
       "/provider/auth",
       "/provider/claude-acp/oauth/start",
-      "/auth/openai",
       "/api/claxedo/agent-config",
       "/api/claxedo/agent-config/providers",
       "/api/claxedo/agent-config/providers/auth",

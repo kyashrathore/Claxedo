@@ -23,7 +23,7 @@ import { piProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/partition"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody, controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import { requestActor, requestOrg } from "@claxedo/server-core/credentials/routes/credential"
-import { providerAuthMethodsForHarness } from "@claxedo/server-core/credentials/provider-auth/service"
+import { providerAuthMethodsForHarness } from "@claxedo/server-core/credentials/provider-auth/methods"
 import { controlPlaneRouteAuth } from "@claxedo/server-core/platform/http/control-plane-route-auth"
 
 const log = Log.create({ service: "agent-config-providers" })
