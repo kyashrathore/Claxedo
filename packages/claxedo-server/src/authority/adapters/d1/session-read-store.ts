@@ -55,9 +55,17 @@ export async function readD1SessionPage(database: D1Database, query: SessionPage
   if ("projectId" in query) {
     where.push("s.project_id = ?")
     params.push(query.projectId)
-  } else {
+  } else if ("workspaceId" in query) {
     where.push("s.workspace_id = ?")
     params.push(query.workspaceId)
+  } else {
+    where.push(`(s.workspace_id in (select w.workspace_id from workspaces w where w.owner_user_id = ? and w.deleted_at is null)
+      or s.session_id in (select g.session_id from session_share_grants g where g.target_user_id = ? and g.revoked_at is null))`)
+    params.push(readerUserId, readerUserId)
+  }
+  if (query.sessionId) {
+    where.push("s.session_id = ?")
+    params.push(query.sessionId)
   }
   if (query.archived === "archived") where.push("s.archived_at is not null")
   if (query.archived === "active") where.push("s.archived_at is null")
@@ -82,7 +90,7 @@ export async function readD1SessionPage(database: D1Database, query: SessionPage
       from sessions s
       left join session_reads r on r.user_id = ? and r.session_id = s.session_id
       where ${where.join(" and ")}
-      order by ${order.orderBy}
+      ${query.sessionId ? "" : `order by ${order.orderBy}`}
       limit ?
     `)
     .bind(...params, query.limit)

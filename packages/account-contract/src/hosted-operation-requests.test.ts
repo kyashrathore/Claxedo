@@ -103,6 +103,12 @@ describe("resolveHostedOperation", () => {
     })
     expect(() => resolveHostedOperation("session.page", { limit: 50 })).toThrow(MissingOperationParameter)
   })
+  test("the every-session page keeps its fixed scope and may name one session", () => {
+    expect(resolveHostedOperation("session.activity.page", { limit: 20, settled: "all", sessionId: "ses_1", projectId: "prj_1" })).toEqual({
+      method: "GET",
+      path: "/api/control/session-list?scope=all&limit=20&settled=all&sessionId=ses_1",
+    })
+  })
 
   test("appends only declared query keys from input", () => {
     expect(resolveHostedOperation("session.shares.list", {

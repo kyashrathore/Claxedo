@@ -6,7 +6,7 @@ import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import type { SessionListSettledMode, SessionListSort, SessionOrderKey } from "./navigation-order"
 
 export type { SessionListSettledMode, SessionListSort, SessionOrderKey } from "./navigation-order"
-export type SessionListScope = "global" | "project" | "workspace"
+export type SessionListScope = "global" | "project" | "workspace" | "all"
 export type SessionListArchiveMode = "active" | "all" | "archived"
 
 export type SessionListQuery = {
@@ -14,6 +14,7 @@ export type SessionListQuery = {
   projectId?: string
   workspaceId?: string
   directory?: string
+  sessionId?: string
   archived: SessionListArchiveMode
   settled: SessionListSettledMode
   status: string[]
@@ -89,7 +90,6 @@ export type SessionListResponse = {
   nextCursor?: string
   /** The `after` that reads the next page; present only when more rows follow. */
   nextAfter?: string
-  totalKnown?: number
 }
 
 type CursorShape = SessionOrderKey & { query: string }
@@ -100,6 +100,7 @@ type CursorShape = SessionOrderKey & { query: string }
  * whether another page follows without a count.
  */
 export type SessionListKeysetPage = {
+  sessionId?: string
   sort: SessionListSort
   archived: SessionListArchiveMode
   settled: SessionListSettledMode
@@ -115,6 +116,7 @@ export function parseSessionListQuery(url: URL): SessionListQuery {
     ...(trimToUndefined(url.searchParams.get("projectId")) ? { projectId: trimToUndefined(url.searchParams.get("projectId")) } : {}),
     ...(trimToUndefined(url.searchParams.get("workspaceId")) ? { workspaceId: trimToUndefined(url.searchParams.get("workspaceId")) } : {}),
     ...(trimToUndefined(url.searchParams.get("directory")) ? { directory: trimToUndefined(url.searchParams.get("directory")) } : {}),
+    ...(trimToUndefined(url.searchParams.get("sessionId")) ? { sessionId: trimToUndefined(url.searchParams.get("sessionId")) } : {}),
     archived: archivedValue(url.searchParams.get("archived")),
     settled: url.searchParams.get("settled") === "all" ? "all" : "active",
     status: list(url.searchParams.get("status")),
@@ -145,7 +147,6 @@ export function buildSessionListResponse(input: {
   return {
     view: view(input.query),
     items: page.items,
-    totalKnown: rows.length,
     ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
     ...(page.nextAfter ? { nextAfter: page.nextAfter } : {}),
   }
@@ -154,6 +155,7 @@ export function buildSessionListResponse(input: {
 export function sessionListKeysetPage(query: SessionListQuery): SessionListKeysetPage {
   const cursor = cursorOfQuery(query)
   return {
+    ...(query.sessionId ? { sessionId: query.sessionId } : {}),
     sort: query.sort,
     archived: query.archived,
     settled: query.settled,
@@ -169,6 +171,7 @@ export function sessionListStorePageFilter(query: SessionListQuery) {
     ...(query.scope === "project" && query.projectId ? { projectID: query.projectId } : {}),
     ...(query.scope === "workspace" && query.workspaceId ? { workspaceID: query.workspaceId } : {}),
     ...(query.scope === "workspace" && query.directory ? { directory: query.directory } : {}),
+    ...(page.sessionId ? { sessionID: page.sessionId } : {}),
     global: query.scope === "global",
     archived: page.archived,
     settled: page.settled,
@@ -339,6 +342,8 @@ function stringArray(input: unknown) {
 }
 
 function rowInScope(row: SessionNavigationRow, query: SessionListQuery) {
+  if (query.sessionId && row.sessionId !== query.sessionId) return false
+  if (query.scope === "all") return true
   if (query.scope === "global") return row.tags.includes("global:default") || row.tags.includes("global") || row.directory === "global"
   if (query.scope === "project") return !query.projectId || row.projectId === query.projectId
   if (query.workspaceId && row.workspaceId === query.workspaceId) return true
@@ -481,6 +486,7 @@ function querySignature(query: SessionListQuery) {
     projectId: query.projectId,
     workspaceId: query.workspaceId,
     directory: query.directory,
+    sessionId: query.sessionId,
     archived: query.archived,
     settled: query.settled,
     status: query.status,
@@ -491,7 +497,7 @@ function querySignature(query: SessionListQuery) {
 }
 
 function scopeValue(input: string | null): SessionListScope {
-  if (input === "project" || input === "workspace") return input
+  if (input === "project" || input === "workspace" || input === "all") return input
   return "global"
 }
 

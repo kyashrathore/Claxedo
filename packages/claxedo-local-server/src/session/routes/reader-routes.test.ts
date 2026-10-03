@@ -55,7 +55,7 @@ async function page(ws: { id: string }, settled?: "all") {
   const response = await localSessionListPage({
     query: parseSessionListQuery(new URL(`http://daemon.test/api/claxedo/session-list?${query}`)),
     workspace: ws as never,
-    projectWorkspaces: async () => [],
+    coveredWorkspaces: async () => [],
     readRuntimeStatus: async () => undefined,
   })
   return Object.fromEntries(response.items.map((row) => [row.sessionId, { seenAt: row.seenAt, settledAt: row.settledAt }]))

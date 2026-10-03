@@ -413,6 +413,10 @@ export async function listSessionNavigationMetas(input: SessionMetaNavigationLis
     where.push("m.project_id = ?")
     params.push(input.projectID)
   }
+  if (input.sessionID) {
+    where.push("m.session_id = ?")
+    params.push(input.sessionID)
+  }
   if (input.global) {
     where.push(`(
       m.directory = 'global'
@@ -450,7 +454,7 @@ export async function listSessionNavigationMetas(input: SessionMetaNavigationLis
         FROM claxedo_session_meta m
         LEFT JOIN claxedo_session_reads r ON r.user_id = ? AND r.session_ref = m.session_ref
         WHERE ${where.join(" AND ")}
-        ORDER BY ${order.orderBy}
+        ${input.sessionID ? "" : `ORDER BY ${order.orderBy}`}
         LIMIT ?
       `)
       .all(...params, Math.max(0, input.limit))

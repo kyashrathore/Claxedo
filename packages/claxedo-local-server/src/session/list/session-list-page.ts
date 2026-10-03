@@ -18,8 +18,8 @@ export type SessionListPageInput = {
   query: SessionListQuery
   /** The workspace a workspace-scoped query names, once resolved. */
   workspace: Workspace | undefined
-  /** The local workspaces whose sessions a project-scoped query covers. */
-  projectWorkspaces: () => Promise<Workspace[]>
+  /** The local workspaces whose sessions a project-scoped or an all-scoped query covers. */
+  coveredWorkspaces: () => Promise<Workspace[]>
   refreshSessionProjection?: (workspace: Workspace) => Promise<void>
   /** What a workspace's mounted runtime reports right now, read in process. */
   readRuntimeStatus: RuntimeStatusRead
@@ -59,8 +59,9 @@ export async function signedSessionListPage(
  */
 export async function localSessionListPage(input: SessionListPageInput): Promise<SessionListResponse> {
   const { query } = input
-  const covered = query.scope === "project" && query.projectId && !input.workspace
-    ? await input.projectWorkspaces()
+  const broad = query.scope === "all" || (query.scope === "project" && query.projectId)
+  const covered = broad && !input.workspace
+    ? await input.coveredWorkspaces()
     : input.workspace ? [input.workspace] : []
   await Promise.all(covered.map((workspace) => input.refreshSessionProjection?.(workspace)))
   const metas = await listSessionNavigationMetas({ ...sessionListStorePageFilter(query), reader: LOCAL_USER_ID })

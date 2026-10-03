@@ -45,12 +45,13 @@ export const ClaxedoSessionMetaTable = sqliteTable(
     index("claxedo_session_meta_directory_archive_created_idx").on(table.directory, table.archived_at, table.created_at, table.session_ref),
     index("claxedo_session_meta_project_archive_created_idx").on(table.project_id, table.archived_at, table.created_at, table.session_ref),
     index("claxedo_session_meta_project_archive_updated_idx").on(table.project_id, table.archived_at, table.updated_at, table.session_ref),
-    // The session list's own order, whole: scope, then archive, then
-    // `last_human_turn_at DESC, created_at DESC, session_ref DESC` — the three
-    // keys its keyset cursor walks.
+    // The session list's own order, whole: scope (none for the list of every
+    // session), then archive, then `last_human_turn_at DESC, created_at DESC,
+    // session_ref DESC` — the three keys its keyset cursor walks.
     index("claxedo_session_meta_workspace_archive_human_turn_idx").on(table.workspace_id, table.archived_at, table.last_human_turn_at, table.created_at, table.session_ref),
     index("claxedo_session_meta_directory_archive_human_turn_idx").on(table.directory, table.archived_at, table.last_human_turn_at, table.created_at, table.session_ref),
     index("claxedo_session_meta_project_archive_human_turn_idx").on(table.project_id, table.archived_at, table.last_human_turn_at, table.created_at, table.session_ref),
+    index("claxedo_session_meta_archive_human_turn_idx").on(table.archived_at, table.last_human_turn_at, table.created_at, table.session_ref),
   ],
 )
 

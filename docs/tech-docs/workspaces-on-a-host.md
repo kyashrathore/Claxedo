@@ -375,21 +375,29 @@ because the machine publishes them.
 **D.1 The page** — the session list's reads
 (`packages/claxedo-app/src/session/list/reads.ts`) call
 `server.sessions.list`, which is `listSessions`
-(`packages/claxedo-app/src/server/session-list.ts`), and `sourcesOf` builds
-the sources:
+(`packages/claxedo-app/src/server/session-list.ts`). A project's page is built
+by `projectSources`:
 - `serverSource` reads the attached server's list: `GET
   /api/claxedo/session-list` on a loopback server (the daemon's
   `packages/claxedo-local-server/src/session/routes/meta-routes.ts`), and
   `GET /api/control/session-list` otherwise (`signedSessionList` in
   `packages/claxedo-server/src/session/list.ts`, served by
   `packages/claxedo-server/src/deployments/hosted-shared/hosted-core-app.ts`).
-  It always asks `scope=project` with the project id, `sort=human_turn_desc`,
+  It asks `scope=project` with the project id, `sort=human_turn_desc`,
   `limit` and `after`. This source is required.
 - On a signed desktop, `accountSource` reads each control-plane project that
   `accountProjectIds` pairs with the project, through the account operation
   `session.page` (`GET /api/control/session-list?scope=project`). It is
   optional, except for a project that exists only in the account catalog,
   where it is the only source and required.
+
+The Activity view's page (`every: true`) is built by `everySources`: the same
+`serverSource` with `scope=all`, every session the reader may read (the
+daemon's projection of every local workspace; on the control plane, the
+workspaces the reader owns and the sessions shared to it), and on a signed
+desktop the account's `session.activity.page` (`GET
+/api/control/session-list?scope=all`), optional. A `sessionId` narrows either
+to that one session, which is how the list reads one row it was not holding.
 
 `readSessionSources` (`packages/claxedo-app/src/server/session-sources.ts`)
 reads every source after the same order key and takes the first `limit` rows

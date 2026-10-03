@@ -241,7 +241,8 @@ export function SessionMetaRoutes(options: Options = {}) {
       if (authResult.error) return c.json(authResult.error, authResult.status)
       try {
         const query = parseSessionListQuery(new URL(c.req.url))
-        const named = query.scope === "project" && query.projectId && !c.req.query("workspaceId") && !c.req.query("directory")
+        const broad = query.scope === "all" || (query.scope === "project" && query.projectId)
+        const named = broad && !c.req.query("workspaceId") && !c.req.query("directory")
           ? undefined
           : await workspace(c)
         if (authResult.auth) {
@@ -250,8 +251,8 @@ export function SessionMetaRoutes(options: Options = {}) {
         return c.json(await localSessionListPage({
           query,
           workspace: named,
-          projectWorkspaces: async () => (await listWorkspaces()).filter((item) =>
-            item.project_id === query.projectId && item.kind !== "cloud"),
+          coveredWorkspaces: async () => (await listWorkspaces()).filter((item) =>
+            (query.scope === "all" || item.project_id === query.projectId) && item.kind !== "cloud"),
           ...(options.refreshSessionProjection ? { refreshSessionProjection: options.refreshSessionProjection } : {}),
           readRuntimeStatus: readMountedEmbeddedWorkspaceRuntime,
         }))

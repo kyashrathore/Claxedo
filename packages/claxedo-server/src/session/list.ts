@@ -50,7 +50,8 @@ export async function signedSessionList(
   return buildSessionListResponse({ query, sessions, cursorApplied: true })
 }
 
-function sessionPageScope(query: SessionListQuery): { workspaceId: string } | { projectId: string } {
+function sessionPageScope(query: SessionListQuery): { workspaceId: string } | { projectId: string } | { everyReadable: true } {
+  if (query.scope === "all") return { everyReadable: true }
   if (query.scope === "workspace" && query.workspaceId) return { workspaceId: query.workspaceId }
   if (query.scope === "project" && query.projectId) return { projectId: query.projectId }
   throw new SessionListRequestError("session_list_scope_required", "Name a project or a workspace")

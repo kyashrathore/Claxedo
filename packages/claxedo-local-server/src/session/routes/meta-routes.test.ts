@@ -300,11 +300,9 @@ describe("session metadata routes", () => {
     const firstBody = await first.json() as {
       items: Array<{ sessionId: string; directory: string }>
       nextCursor?: string
-      totalKnown: number
     }
     expect(firstBody.items).toHaveLength(1)
     expect(firstBody.items[0]?.directory).toBe(directory)
-    expect(firstBody.totalKnown).toBe(2)
     expect(firstBody.nextCursor).toEqual(expect.any(String))
 
     const second = await SessionMetaRoutes().request(

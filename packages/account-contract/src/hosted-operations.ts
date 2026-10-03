@@ -230,6 +230,12 @@ export const HOSTED_OPERATIONS = {
     output: withArrays("items"), retry: "safe",
     exposure: { renderer: true, app: false },
   }),
+  "session.activity.page": defineOperation({
+    method: "GET", path: operationPath("/api/control/session-list?scope=all", { query: ["limit"], optionalQuery: ["sort", "after", "settled", "sessionId"] }),
+    input: operationInput({ limit: requiredParameter, sort: optionalParameter, after: optionalParameter, settled: optionalParameter, sessionId: optionalParameter }),
+    output: withArrays("items"), retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
   "session.projection.register": defineOperation({
     method: "POST", path: operationPath("/api/control/workspaces/:workspaceId/sessions/:sessionId/register"),
     input: operationInput({ workspaceId: requiredParameter, sessionId: requiredParameter, idempotencyKey: bodyField, reason: bodyField, expectedEventOrdinal: bodyField }),

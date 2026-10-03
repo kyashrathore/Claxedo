@@ -38,6 +38,7 @@ export type SessionMetaNavigationListInput = {
   workspaceID?: string
   directory?: string
   projectID?: string
+  sessionID?: string
   global?: boolean
   archived?: "active" | "all" | "archived"
   settled?: SessionListSettledMode

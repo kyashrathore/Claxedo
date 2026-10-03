@@ -70,7 +70,7 @@ describe("localSessionListPage", () => {
     const page = await Promise.all([running, asleep].map((ws) => localSessionListPage({
       query: parseSessionListQuery(new URL(`http://daemon.test/api/claxedo/session-list?scope=workspace&workspaceId=${ws.id}&limit=10`)),
       workspace: ws,
-      projectWorkspaces: async () => [],
+      coveredWorkspaces: async () => [],
       readRuntimeStatus: fake.read,
       now: () => 7_000,
     })))
@@ -99,7 +99,7 @@ describe("localSessionListPage", () => {
     const page = await localSessionListPage({
       query: parseSessionListQuery(new URL(`http://daemon.test/api/claxedo/session-list?scope=workspace&workspaceId=${ws.id}&limit=10`)),
       workspace: ws,
-      projectWorkspaces: async () => [],
+      coveredWorkspaces: async () => [],
       readRuntimeStatus: runtime({}).read,
     })
 
@@ -130,7 +130,7 @@ describe("localSessionListPage", () => {
       await localSessionListPage({
         query: parseSessionListQuery(new URL(`http://daemon.test/api/claxedo/session-list?scope=workspace&workspaceId=${ws.id}&limit=10`)),
         workspace: ws,
-        projectWorkspaces: async () => [],
+        coveredWorkspaces: async () => [],
         readRuntimeStatus: runtime({}).read,
       })
     } finally {
@@ -144,5 +144,45 @@ describe("localSessionListPage", () => {
 
     expect(plan(write)).toEqual([expect.stringMatching(/^SEARCH claxedo_session_meta USING INDEX claxedo_session_meta_session_idx \(session_id=\?\)$/)])
     expect(plan(read)).toEqual([expect.stringMatching(/^SEARCH claxedo_session_meta USING INDEX sqlite_autoindex_claxedo_session_meta_1 \(session_ref=\?\)$/)])
+  })
+
+  test("an all-scoped page lists every workspace's root sessions in one human-turn order, an exact session read answers that one row, and both read by index", async () => {
+    const left = await workspace("all-left")
+    const right = await workspace("all-right")
+    const recent = 9_000_000_000_000
+    await putSessionMeta("ses_all_old", { ws: left, title: "Old", createdAt: 1, updatedAt: 1, lastHumanTurnAt: recent + 10 })
+    await putSessionMeta("ses_all_new", { ws: right, title: "New", createdAt: 2, updatedAt: 2, lastHumanTurnAt: recent + 30 })
+    await putSessionMeta("ses_all_mid", { ws: left, title: "Mid", createdAt: 3, updatedAt: 3, lastHumanTurnAt: recent + 20 })
+    await putSessionMeta("ses_all_child", { ws: right, title: "Child", parentID: "ses_all_new", createdAt: 4, updatedAt: 4, lastHumanTurnAt: recent + 40 })
+    await putSessionMeta("ses_all_archived", { ws: right, title: "Archived", archived: 5, createdAt: 5, updatedAt: 5, lastHumanTurnAt: recent + 50 })
+    const db = ClaxedoDB.raw()
+    const statements: Array<{ sql: string; params: unknown[] }> = []
+    const prepare = db.prepare
+    db.prepare = ((sql: string) => {
+      const statement = prepare.call(db, sql)
+      const all = statement.all.bind(statement)
+      return Object.assign(statement, { all: (...params: unknown[]) => (statements.push({ sql, params }), all(...params)) })
+    }) as typeof db.prepare
+    const read = (search: string) => localSessionListPage({
+      query: parseSessionListQuery(new URL(`http://daemon.test/api/claxedo/session-list?scope=all&sort=human_turn_desc&limit=3${search}`)),
+      workspace: undefined,
+      coveredWorkspaces: async () => [left, right],
+      readRuntimeStatus: runtime({}).read,
+    })
+    try {
+      const page = await read("")
+      const exact = await read("&sessionId=ses_all_mid")
+      expect(page.items.map((row) => row.sessionId)).toEqual(["ses_all_new", "ses_all_mid", "ses_all_old"])
+      expect(exact.items.map((row) => row.sessionId)).toEqual(["ses_all_mid"])
+    } finally {
+      db.prepare = prepare
+    }
+    const plan = ({ sql, params }: { sql: string; params: unknown[] }) =>
+      (db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...params) as Array<{ detail: string }>).map((step) => step.detail)
+    const [list, exact] = statements.filter((statement) => statement.sql.includes("LEFT JOIN claxedo_session_reads"))
+    if (!list || !exact) throw new Error("the list reads were not observed")
+    expect(plan(list)).toContainEqual(expect.stringMatching(/^SEARCH m USING INDEX claxedo_session_meta_archive_human_turn_idx \(archived_at=\?\)$/))
+    expect(plan(exact)).toContainEqual(expect.stringMatching(/^SEARCH m USING INDEX claxedo_session_meta_session_idx \(session_id=\?\)$/))
+    expect([...plan(list), ...plan(exact)].filter((step) => step.startsWith("SCAN") || step.includes("TEMP B-TREE"))).toEqual([])
   })
 })
