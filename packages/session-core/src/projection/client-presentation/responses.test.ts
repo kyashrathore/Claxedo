@@ -57,7 +57,7 @@ test("a tool the withdrawn response never ran settles as withdrawn; one that ran
   )
   const tools = payloads(projection, { type: "response-retracted", responseIds: ["msg_refused"], reason: "refusal" })
     .flatMap((event) => (event.type === "message.part.updated" && event.properties.part.type === "tool" ? [event.properties.part] : []))
-  expect(tools).toMatchObject([{ callID: "pending", state: { status: "error", error: "Withdrawn: the model refused this response" } }])
+  expect(tools).toMatchObject([{ callID: "pending", state: { status: "error", error: "Withdrawn: the model refused this response" }, retracted: { reason: "refusal" } }])
 })
 
 test("a retraction is applied once, and an unknown response retracts nothing", () => {

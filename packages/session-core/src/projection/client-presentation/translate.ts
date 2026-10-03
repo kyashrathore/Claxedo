@@ -98,7 +98,7 @@ export function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: Com
       return enterResponse(ctx, chunk)
 
     case "response-retracted":
-      return retractResponses(ctx, chunk, (tools) => terminalizeOpenTools(ctx, WITHDRAWN_TOOL, now, tools))
+      return retractResponses(ctx, chunk, (tools) => terminalizeOpenTools(ctx, WITHDRAWN_TOOL, now, { tools, retraction: { reason: chunk.reason } }))
 
     case "auth-status":
     case "rate-limit":

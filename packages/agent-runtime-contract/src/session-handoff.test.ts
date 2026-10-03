@@ -49,16 +49,34 @@ describe("session handoff", () => {
     expect(transcript).toContain(name)
   })
 
-  test("preserves every message in order and labels canonical agent authors", () => {
+  test("preserves every message in order, names agent authors and labels people only by role", () => {
     const wake = user("wake", "child result")
     wake.info.claxedo = { author: { id: "ses_child", name: "Worker <one>", kind: "agent" } }
+    const person = user("u2", "unanswered")
+    person.info.claxedo = { author: { id: "actor_public_bob", name: "Bob Example", kind: "human" } }
     const transcript = renderSessionTranscript([
       user("u1", "start"), assistant("a1", "u1", [textPart("a1", "first step")]),
-      wake, assistant("a2", "u1", [textPart("a2", "second step")]), user("u2", "unanswered"),
+      wake, assistant("a2", "u1", [textPart("a2", "second step")]), person,
     ])
-    const pieces = ["start", "first step", "Agent", "Worker &lt;one&gt;", "ses_child", "child result", "second step", "unanswered"]
+    const pieces = ["start", "first step", "Agent", "Worker &lt;one&gt;", "child result", "second step", "User:\nunanswered"]
     expect(pieces.map((piece) => transcript.indexOf(piece))).toEqual(pieces.map((piece) => transcript.indexOf(piece)).toSorted((a, b) => a - b))
     for (const piece of pieces) expect(transcript).toContain(piece)
+    for (const identity of ["ses_child", "Bob Example", "actor_public_bob"]) expect(transcript).not.toContain(identity)
+  })
+
+  test("leaves out text and tools the model withdrew", () => {
+    const transcript = renderSessionTranscript([user("u1", "work"), assistant("a1", "u1", [
+      { id: "withdrawn-text", sessionID: SESSION, messageID: "a1", type: "text", text: "WITHDRAWN_TEXT", retracted: { reason: "refusal" } },
+      {
+        id: "withdrawn-tool", sessionID: SESSION, messageID: "a1", type: "tool", callID: "call-w", tool: "bash",
+        state: { status: "error", input: {}, error: "WITHDRAWN_TOOL", time: { start: 1, end: 2 } }, retracted: { reason: "refusal" },
+      },
+      textPart("a1", "safe answer"),
+    ])])
+    expect(transcript).not.toContain("WITHDRAWN_TEXT")
+    expect(transcript).not.toContain("WITHDRAWN_TOOL")
+    expect(transcript).not.toContain("[bash")
+    expect(transcript).toContain("safe answer")
   })
 
   test("bounds long ordered histories while retaining the newest messages", () => {

@@ -1,4 +1,4 @@
-import type { AgentContentPart } from "@claxedo/agent-runtime-contract"
+import type { AgentContentPart, AgentPartRetraction } from "@claxedo/agent-runtime-contract"
 import { partEvent, seqId, type CompatContext } from "./context"
 import { attachmentPart } from "./file-parts"
 
@@ -65,6 +65,7 @@ function toolPart(input: {
   now: number
   output?: string
   error?: string
+  retracted?: AgentPartRetraction
 }): ToolPart {
   return {
     id: seqId(input.ctx, input.toolCallId, `${input.ctx.assistantMsgId}-${input.toolCallId}`),
@@ -84,6 +85,7 @@ function toolPart(input: {
       ...(input.error !== undefined ? { error: input.error } : {}),
     }),
     ...(input.status === "pending" && input.metadata && Object.keys(input.metadata).length ? { metadata: input.metadata } : {}),
+    ...(input.retracted ? { retracted: input.retracted } : {}),
   }
 }
 

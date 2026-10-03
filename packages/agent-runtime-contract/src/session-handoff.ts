@@ -14,8 +14,8 @@ function quoted(value: string) {
 }
 
 function partText(part: AgentContentPart) {
-  if (part.type === "text") return part.text
-  if (part.type !== "tool") return ""
+  if (part.type === "text") return part.retracted ? "" : part.text
+  if (part.type !== "tool" || part.retracted) return ""
   const state = part.state
   if (state.status !== "completed" && state.status !== "error") return ""
   const output = state.status === "completed" ? state.output : state.error
@@ -28,10 +28,9 @@ function messageText(message: AgentMessage) {
   const error = message.info.error
   if (!content && !error) return ""
   const author = message.info.claxedo?.author
-  const role = message.info.role === "assistant" ? "Assistant" : author?.kind === "agent" ? "Agent" : "User"
-  const attribution = author ? ` ${JSON.stringify(author.name)} (${author.id})` : ""
+  const label = message.info.role === "assistant" ? "Assistant" : author?.kind === "agent" ? `Agent ${JSON.stringify(author.name)}` : "User"
   const outcome = error ? `\n[Turn ended: ${error.name}]` : ""
-  return `${quoted(`${role}${attribution}`)}:\n${quoted(`${content}${outcome}`)}`
+  return `${quoted(label)}:\n${quoted(`${content}${outcome}`)}`
 }
 
 export function renderSessionTranscript(rows: readonly AgentMessage[]) {

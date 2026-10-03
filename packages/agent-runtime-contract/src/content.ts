@@ -222,6 +222,7 @@ export type AgentToolPart = AgentPartBase<"tool"> & {
   metadata?: Record<string, unknown>
   /** A read sent only what the collapsed row draws (`toolPartHeader`); the whole part is read when the row opens. */
   headerOnly?: true
+  retracted?: AgentPartRetraction
 }
 
 /**
@@ -496,6 +497,7 @@ function hasVariantFields(part: Record<string, unknown>): boolean {
       return isStringField(part, "mime") && isFilePartUrl(part.url)
     case "tool":
       return isStringField(part, "callID") && isStringField(part, "tool") && isToolState(part.state)
+        && optionalIs(part, "retracted", isRetraction)
     case "subtask":
       return isStringField(part, "prompt") && isStringField(part, "description") && isStringField(part, "agent")
     case "step-start":

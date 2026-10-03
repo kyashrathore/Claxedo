@@ -1,6 +1,6 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import { canonicalToolName } from "@claxedo/agent-runtime-contract"
-import type { AgentEventEnvelope, AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import type { AgentEventEnvelope, AgentPartRetraction, AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { withDir } from "../presentation-events"
 import type { CompatContext } from "./context"
 import { lossyCompatDiagnostic, projectionDiagnostic } from "./diagnostics"
@@ -260,11 +260,16 @@ export function translateToolTerminal(ctx: CompatContext, chunk: RuntimeEvent<"t
   })]
 }
 
-export function terminalizeOpenTools(ctx: CompatContext, error: string, now: () => number, only?: ReadonlySet<string>): AgentEventEnvelope[] {
+export function terminalizeOpenTools(
+  ctx: CompatContext,
+  error: string,
+  now: () => number,
+  withdrawn?: { tools: ReadonlySet<string>; retraction: AgentPartRetraction },
+): AgentEventEnvelope[] {
   const endedAt = now()
   const events: AgentEventEnvelope[] = []
   for (const [toolCallId, status] of ctx.toolStatusByCallId) {
-    if ((status !== "running" && status !== "pending") || (only && !only.has(toolCallId))) continue
+    if ((status !== "running" && status !== "pending") || (withdrawn && !withdrawn.tools.has(toolCallId))) continue
     const tool = ctx.toolNamesByCallId.get(toolCallId) ?? toolCallId
     const metadata = ctx.toolMetadataByCallId.get(toolCallId) ?? {}
     const input = hydrateToolInput(tool, ctx.toolInputsByCallId.get(toolCallId), metadata, ctx.toolDisplaysByCallId.get(toolCallId))
@@ -280,6 +285,7 @@ export function terminalizeOpenTools(ctx: CompatContext, error: string, now: () 
       metadata,
       now: endedAt,
       error,
+      ...(withdrawn ? { retracted: withdrawn.retraction } : {}),
     }))
   }
   return events
