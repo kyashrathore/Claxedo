@@ -487,8 +487,15 @@ export const desktopRenderer: Policy = {
   // and their refusal toast are `composer/view/selection-writes.ts`.
   // server/startup.ts owns startup failure and retry; shell/view/startup.tsx
   // presents that state through the existing failure notice. Both belong in
-  // the shared desktop renderer and add no package edge. 1270/36, no headroom.
-  ceilings: { modules: 1270, packages: 36 },
+  // the shared desktop renderer and add no package edge.
+  // `app.tsx` mounts the session state owners through `session/index.ts`'s
+  // `SessionStoresProvider` (`session/store/*`): the session list
+  // (`session/list/*`), the pending permissions and questions
+  // (`session/requests/*`) and each open session's transcript
+  // (`session/transcript/*`). The renderer draws all of them; they add no
+  // package edge.
+  // 1301/36, no headroom.
+  ceilings: { modules: 1301, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
