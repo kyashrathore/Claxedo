@@ -36,5 +36,6 @@ export { type AdoptRefusedSession, WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL, remo
 export { type SqliteDatabase } from "./sqlite/database"
 export { openNativeSqliteDatabase } from "./sqlite/native"
 export { RuntimeStoreSchemaMismatchError } from "./store-schema"
-export { AgentRuntimeStaleTurnError, RuntimeStore, type RuntimeStoreDatabase, type WorkspaceWorktreeRecord } from "./store"
+export { AgentRuntimeStaleTurnError, RuntimeStore, type RuntimeStoreDatabase } from "./store"
+export type { WorkspaceWorktreeRecord, WorktreeRecords } from "./session/worktree-records"
 export { durableObjectSqliteDatabase, type DurableObjectSqlStorage } from "./sqlite/durable-object"

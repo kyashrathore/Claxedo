@@ -37,7 +37,7 @@ async function fixture() {
     workspaceId: "workspace-1",
     sourceDirectory: source,
     root: path.join(root, "hidden"),
-    store: () => store,
+    store: () => store.worktrees,
   })
   return { source, store, manager, core }
 }
@@ -49,7 +49,7 @@ afterEach(async () => {
 describe("WorkspaceWorktreeManager", () => {
   test("does not expose another workspace's worktree for the same session id", async () => {
     const { manager, store } = await fixture()
-    store.putWorktree({
+    store.worktrees.put({
       workspaceId: "workspace-other",
       sessionId: "session-shared",
       branch: "claxedo/session/session-shared",
@@ -78,7 +78,7 @@ describe("WorkspaceWorktreeManager", () => {
     expect(first.baseCommit).toBe(second.baseCommit)
     await fs.writeFile(path.join(first.path, "only-a.txt"), "a\n")
     expect(await fs.stat(path.join(second.path, "only-a.txt")).then(() => true, () => false)).toBe(false)
-    expect(store.listWorktrees("workspace-1").map((item) => item.sessionId).sort()).toEqual([
+    expect(store.worktrees.list("workspace-1").map((item) => item.sessionId).sort()).toEqual([
       "session-a",
       "session-b",
     ])
@@ -116,7 +116,7 @@ describe("WorkspaceWorktreeManager", () => {
 
   test("does not return another workspace's record from the shared store", async () => {
     const { manager, store } = await fixture()
-    store.putWorktree({
+    store.worktrees.put({
       workspaceId: "workspace-2",
       sessionId: "session-foreign",
       branch: "claxedo/session/session-foreign",
