@@ -3,7 +3,7 @@ import type { ComposerTextKey } from "../i18n"
 import { FileIcon, Tooltip } from "@/ui"
 import { getDirectory, getFilename, getFilenameTruncated } from "@/ui/utils"
 import { ImageMarkBadge } from "@/lib/image-mark-badge"
-import type { FileContextItem } from "../model"
+import type { FileContextItem, ImageNoteContextItem } from "../model"
 import type { NumberedImageMark } from "../marks/marks"
 import { ChipRemoveButton, CONTEXT_CHIP_CLASS } from "./context-chip"
 import { AnnotationsChip, type AnnotationsChipProps } from "./annotations-chip"
@@ -21,12 +21,14 @@ type ContextItemsProps = {
   imageMarks: NumberedImageMark[]
   openImageMark: (entry: NumberedImageMark) => void
   removeImageMark: (entry: NumberedImageMark) => void
+  imageNotes: ImageNoteContextItem[]
+  removeImageNote: (note: ImageNoteContextItem) => void
   t: ContextText
 }
 
 export const PromptContextItems: Component<ContextItemsProps> = (props) => {
   return (
-    <Show when={props.items.length > 0 || props.annotations.items.length > 0 || props.imageMarks.length > 0}>
+    <Show when={props.items.length > 0 || props.annotations.items.length > 0 || props.imageMarks.length > 0 || props.imageNotes.length > 0}>
       <div class="flex flex-nowrap items-start gap-2 p-2 overflow-x-auto no-scrollbar">
         <For each={props.items}>
           {(item) => (
@@ -44,8 +46,11 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
         </Show>
         <For each={props.imageMarks}>
           {(entry) => (
-            <ImageMarkChip entry={entry} open={props.openImageMark} remove={props.removeImageMark} t={props.t} />
+            <ImageMarkChip number={entry.number} comment={entry.mark.comment} open={() => props.openImageMark(entry)} remove={() => props.removeImageMark(entry)} t={props.t} />
           )}
+        </For>
+        <For each={props.imageNotes}>
+          {(note) => <ImageMarkChip number={note.number} comment={note.comment} remove={() => props.removeImageNote(note)} t={props.t} />}
         </For>
       </div>
     </Show>
@@ -109,22 +114,17 @@ function FileContextChip(props: {
   )
 }
 
-function ImageMarkChip(props: {
-  entry: NumberedImageMark
-  open: (entry: NumberedImageMark) => void
-  remove: (entry: NumberedImageMark) => void
-  t: ContextText
-}) {
+function ImageMarkChip(props: { number: number; comment: string; open?: () => void; remove: () => void; t: ContextText }) {
   return (
     <div
-      data-mark-number={props.entry.number}
+      data-mark-number={props.number}
       class={`${CONTEXT_CHIP_CLASS} bg-background-stronger hover:bg-surface-interactive-weak`}
-      onClick={() => props.open(props.entry)}
+      onClick={() => props.open?.()}
     >
       <div class="flex items-start gap-1.5 min-w-0">
-        <ImageMarkBadge number={props.entry.number} />
-        <span class="min-w-0 text-12-regular text-text-strong line-clamp-2 break-words">{props.entry.mark.comment}</span>
-        <ChipRemoveButton label={props.t("prompt.imageMarks.remove")} onRemove={() => props.remove(props.entry)} />
+        <ImageMarkBadge number={props.number} />
+        <span class="min-w-0 text-12-regular text-text-strong line-clamp-2 break-words">{props.comment}</span>
+        <ChipRemoveButton label={props.t("prompt.imageMarks.remove")} onRemove={props.remove} />
       </div>
     </div>
   )

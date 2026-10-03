@@ -1,5 +1,5 @@
 import type { useDialog } from "@/ui"
-import type { ImagePart } from "../model"
+import type { ImageNoteContextItem, ImagePart } from "../model"
 import type { ComposerSetup } from "../setup"
 import { ImageMarkEditor } from "../marks/editor"
 import { firstMarkNumber, numberImageMarks, type NumberedImageMark } from "../marks/marks"
@@ -8,7 +8,7 @@ import type { PromptContextStripProps } from "./context-strip"
 export function createPromptImageMarkBindings(input: {
   composer: ComposerSetup
   dialog: ReturnType<typeof useDialog>
-}): Pick<PromptContextStripProps, "imageAttachments" | "imageMarks" | "openImageMarks" | "removeImageMark" | "removeAttachment"> {
+}): Pick<PromptContextStripProps, "imageAttachments" | "imageMarks" | "openImageMarks" | "removeImageMark" | "imageNotes" | "removeImageNote" | "removeAttachment"> {
   const composer = input.composer
 
   const openMarks = (image: ImagePart, focusIndex?: number) => {
@@ -35,6 +35,10 @@ export function createPromptImageMarkBindings(input: {
     },
     openImageMarks: openMarks,
     removeImageMark,
+    get imageNotes() {
+      return composer.draft().context.filter((item): item is ImageNoteContextItem => item.type === "image-note")
+    },
+    removeImageNote: (note) => composer.store.removeContext(composer.key(), note.key),
     removeAttachment: (id) => composer.store.removeImage(composer.key(), id),
   }
 }

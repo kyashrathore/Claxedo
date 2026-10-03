@@ -1,14 +1,7 @@
 import { untrack } from "solid-js"
 import { asRecord, isRecord } from "@claxedo/helpers/guards"
 import { readField, readString } from "@claxedo/helpers/readers"
-import {
-  parseCommentNote,
-  parseImageMarkNote,
-  parseQuoteNote,
-  readCommentMetadata,
-  readImageMarkMetadata,
-  type QuoteSource,
-} from "@/lib/comment-note"
+import { parsePromptNote, readCommentMetadata, readImageMarkMetadata, type QuoteSource } from "@/lib/comment-note"
 import type {
   AgentAssistantMessage as AssistantMessage,
   AgentContentPart as Part,
@@ -490,16 +483,13 @@ export namespace MessageComment {
   export const asImageMark = (comment: MessageComment) => (comment.kind === "image-mark" ? comment : undefined)
   export const asQuote = (comment: MessageComment) => (comment.kind === "quote" ? comment : undefined)
 
-  const noteOf = (text: string) => text.slice(text.indexOf("\n") + 1)
-
   export const fromPart = (part: Part): MessageComment | undefined => {
     if (part.type !== "text" || !part.synthetic) return undefined
-    const note = noteOf(part.text)
-    const quote = parseQuoteNote(note)
-    if (quote) return { kind: "quote", ...quote }
-    const mark = readImageMarkMetadata(part.metadata) ?? parseImageMarkNote(note)
-    if (mark) return { kind: "image-mark", ...mark }
-    const next = readCommentMetadata(part.metadata) ?? parseCommentNote(note)
+    const note = parsePromptNote(part.text)
+    if (note?.kind === "quote") return note
+    const mark = readImageMarkMetadata(part.metadata) ?? (note?.kind === "image-mark" ? note : undefined)
+    if (mark) return { kind: "image-mark", filename: mark.filename, number: mark.number, comment: mark.comment }
+    const next = readCommentMetadata(part.metadata) ?? (note?.kind === "file" ? note : undefined)
     if (!next) return undefined
     return {
       kind: "file",

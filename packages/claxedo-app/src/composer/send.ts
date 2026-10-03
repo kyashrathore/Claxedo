@@ -54,10 +54,15 @@ export function historyComments(draft: Draft): HistoryComment[] {
   })
 }
 
+function imageMarkAttachment(note: { filename: string; number: number; comment: string }): PromptAttachment {
+  return { kind: "text", text: formatImageMarkNote(note), label: `${note.filename} #${note.number}` }
+}
+
 function noteAttachments(draft: Draft): PromptAttachment[] {
   const comments = draft.context.flatMap((item): PromptAttachment[] => {
     if (item.type === "text") return [{ kind: "text", text: item.text, label: item.label }]
     if (item.type === "quote") return [{ kind: "text", text: formatQuoteNote(item), label: quoteLabel(item.source) }]
+    if (item.type === "image-note") return [imageMarkAttachment(item)]
     const comment = item.comment?.trim()
     if (!comment) return []
     const text = formatCommentNote({ path: item.path, selection: item.selection, comment })
@@ -66,8 +71,7 @@ function noteAttachments(draft: Draft): PromptAttachment[] {
   const marks = numberImageMarks(promptImages(draft.prompt)).flatMap((entry): PromptAttachment[] => {
     const comment = entry.mark.comment.trim()
     if (!comment) return []
-    const note = { filename: entry.filename, number: entry.number, comment }
-    return [{ kind: "text", text: formatImageMarkNote(note), label: `${entry.filename} #${entry.number}` }]
+    return [imageMarkAttachment({ filename: entry.filename, number: entry.number, comment })]
   })
   return [...comments, ...marks]
 }
@@ -170,7 +174,6 @@ async function deliverDraft(input: SendInput, draft: Draft, goal: GoalIntent, cl
   if (!existing) return startDraftSession(input, submission, { ...prompt, clientRequestId }, setBooting)
   if (replace) {
     if (!await replace(prompt)) throw new ServerError({ class: "conflict", code: "queue_edit_conflict", message: "The queued message changed; your edit has not been sent" })
-    input.store.reset(key)
     input.normalMode()
     return existing
   }

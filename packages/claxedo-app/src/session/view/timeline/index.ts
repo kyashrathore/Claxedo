@@ -8,7 +8,7 @@ export type {
   TimelineSettings,
   TimelineTextKey,
 } from "./model"
-export { queuedMessageText, turnActive } from "./model"
+export { turnActive } from "./model"
 export { useTranscriptTypography } from "./transcript-typography"
 export { PreviousMessagesRow, TimelineThinkingRow } from "./message-timeline-turn-rows"
 export type { SessionErrorClass } from "./turn-recovery"

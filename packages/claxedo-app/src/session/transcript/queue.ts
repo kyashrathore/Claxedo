@@ -1,8 +1,12 @@
 import { createSignal, type Accessor, type Setter } from "solid-js"
 import { ServerError, toAppError, type AppError, type PromptInput, type QueuedPrompt, type QueuedPromptAction, type Server, type SessionLocation } from "@/server"
-import type { QueuedMessage, QueuedMessages } from "../view/timeline/model"
+import type { QueuedMessages } from "../view/timeline/model"
 
-export type QueueInternal = QueuedMessages & {
+export type SessionQueue = Omit<QueuedMessages, "beginEdit"> & {
+  readonly beginEdit: (seq: number, editable: boolean) => Promise<boolean>
+}
+
+export type QueueInternal = SessionQueue & {
   readonly reread: () => Promise<void>
   readonly replace: (seq: number, input: PromptInput) => Promise<boolean>
 }
@@ -24,7 +28,7 @@ type QueueContext = {
 const NO_ITEMS: readonly QueuedPrompt[] = Object.freeze([])
 
 function signalField<T>(initial: T): Field<T> {
-  const [get, set] = createSignal<T>(initial)
+  const [get, set] = createSignal(initial)
   return { get, set }
 }
 
@@ -74,13 +78,15 @@ async function replace(context: QueueContext, seq: number, input: PromptInput): 
   return replaced
 }
 
-async function beginEdit(context: QueueContext, record: QueuedMessage): Promise<void> {
-  if (context.editing.get() !== undefined) return
-  if (!record.parts.every((part) => part.type === "text" && part.text !== undefined || part.type === "file" && part.url && part.mime && part.filename)) {
+async function beginEdit(context: QueueContext, seq: number, editable: boolean): Promise<boolean> {
+  if (context.editing.get() !== undefined) return false
+  if (!editable) {
     context.controlError.set({ class: "invalid", message: "This queued attachment cannot be edited", retryable: false })
-    return
+    return false
   }
-  if (await control(context, record.seq, "hold")) context.editing.set(record.seq)
+  if (!(await control(context, seq, "hold"))) return false
+  context.editing.set(seq)
+  return true
 }
 
 export function createQueue(server: Server, ref: SessionLocation, onRead: (items: readonly QueuedPrompt[]) => void): QueueInternal {
@@ -104,7 +110,7 @@ export function createQueue(server: Server, ref: SessionLocation, onRead: (items
     reload: () => void reread(context),
     sendNow: (seq) => void control(context, seq, "steer"),
     remove: (seq) => void control(context, seq, "cancel"),
-    beginEdit: (record) => void beginEdit(context, record),
+    beginEdit: (seq, editable) => beginEdit(context, seq, editable),
     cancelEdit: (seq) => {
       if (!context.items.get().some((item) => item.seq === seq)) context.editing.set(undefined)
       else void control(context, seq, "release")

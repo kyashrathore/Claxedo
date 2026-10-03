@@ -1,9 +1,9 @@
-import { ServerError, type AppError, type ModelChoice, type QueuedPromptPart } from "@/server"
+import type { AppError, ModelChoice, QueuedPromptPart } from "@/server"
 import type { FileSelection } from "@/lib/file-selection"
-import type { QuoteSource } from "@/lib/comment-note"
 import type { Transition } from "@/lib/machine"
 import { unreachable } from "@/lib/machine"
 import { uuid } from "@/lib/uuid"
+import { parsePromptNote, type QuoteSource } from "@/lib/comment-note"
 
 export type { FileSelection, QuoteSource }
 
@@ -60,7 +60,15 @@ export type QuoteContextItem = {
   comment: string
 }
 
-export type ContextItem = FileContextItem | TextContextItem | QuoteContextItem
+export type ImageNoteContextItem = {
+  type: "image-note"
+  key: string
+  filename: string
+  number: number
+  comment: string
+}
+
+export type ContextItem = FileContextItem | TextContextItem | QuoteContextItem | ImageNoteContextItem
 
 export type EditorMode = "normal" | "shell"
 
@@ -96,26 +104,30 @@ export const emptyPrompt = (): Prompt => [{ type: "text", content: "", start: 0,
 
 export const emptyDraft = (): Draft => ({ prompt: emptyPrompt(), cursor: undefined, context: [], goalArmed: false })
 
-export function queuedDraft(parts: readonly QueuedPromptPart[]): Draft {
+function noteItem(text: string, key: string): ContextItem {
+  const note = parsePromptNote(text)
+  if (note?.kind === "quote") return { type: "quote", key, source: note.source, quote: note.quote, comment: note.comment }
+  if (note?.kind === "image-mark") return { type: "image-note", key, filename: note.filename, number: note.number, comment: note.comment }
+  if (note?.kind === "file") return { type: "file", key, path: note.path, comment: note.comment, ...(note.selection ? { selection: note.selection } : {}) }
+  return { type: "text", key, label: "", text }
+}
+
+export function queuedDraft(parts: readonly QueuedPromptPart[]): Draft | undefined {
   const context: ContextItem[] = []
+  const text: PromptPart[] = []
+  const images: PromptPart[] = []
   let offset = 0
-  const prompt = parts.flatMap((part, index): PromptPart[] => {
-    if (part.type === "text" && part.text !== undefined) {
-      if (part.synthetic) {
-        context.push({ type: "text", key: `queued-note-${index}`, label: "", text: part.text })
-        return []
-      }
+  for (const [index, part] of parts.entries()) {
+    if (part.type === "text" && part.text !== undefined && part.synthetic) context.push(noteItem(part.text, `queued-note-${index}`))
+    else if (part.type === "text" && part.text !== undefined) {
       const content = `${offset ? "\n\n" : ""}${part.text}`
-      const start = offset
+      text.push({ type: "text", content, start: offset, end: offset + content.length })
       offset += content.length
-      return [{ type: "text", content, start, end: offset }]
-    }
-    if (part.type === "file" && part.url && part.mime && part.filename) {
-      return [{ type: "image", id: `queued-file-${index}`, filename: part.filename, mime: part.mime, dataUrl: part.url }]
-    }
-    throw new ServerError({ class: "invalid", code: "queue_part_unsupported", message: "This queued attachment cannot be edited" })
-  })
-  return { prompt, context, goalArmed: false }
+    } else if (part.type === "file" && part.url && part.mime && part.filename) {
+      images.push({ type: "image", id: `queued-file-${index}`, filename: part.filename, mime: part.mime, dataUrl: part.url })
+    } else return undefined
+  }
+  return { prompt: [...(text.length ? text : emptyPrompt()), ...images], context, goalArmed: false }
 }
 
 export const randomId = () => uuid()

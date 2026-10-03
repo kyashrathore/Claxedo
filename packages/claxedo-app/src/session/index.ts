@@ -23,7 +23,7 @@ import type {
 import type { TranscriptConversation } from "@/transcript"
 import type { TranscriptViewport } from "./transcript-viewport"
 import type { SessionSubagent } from "./transcript/subagent-merge"
-import type { QueuedMessages } from "./view/timeline/model"
+import type { SessionQueue } from "./transcript/queue"
 
 export type SessionStatusView = SessionStatus | { readonly kind: "unknown" }
 
@@ -96,7 +96,7 @@ export type SessionView = {
   readonly commitDeltas: () => void
   readonly conversation: Accessor<TranscriptConversation | undefined>
   readonly turnSettlePending: (userMessageId: string) => boolean
-  readonly queue: QueuedMessages
+  readonly queue: SessionQueue
   readonly replaceQueued: (seq: number, input: PromptInput) => Promise<boolean>
   readonly requests: Accessor<readonly AgentRequest[]>
   readonly requestsError: Accessor<AppError | undefined>

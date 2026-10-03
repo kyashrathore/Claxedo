@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, Match, on, Show, Switch } from "solid-js"
-import { Composer, promptText, SelectionComment, useComposerStore } from "@/composer"
+import { Composer, promptText, SelectionComment, sessionComposerKey, useComposerStore } from "@/composer"
 import { usePhone } from "@/lib/viewport"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { sessionId, useServer, type SessionLocation } from "@/server"
@@ -92,7 +92,8 @@ function SessionBody(props: {
     const parent = parentId()
     if (parent) routing.navigate(sessionPath({ placementId: props.view.ref.placementId, sessionId: parent }))
   }
-  const queueEdit = createQueueEdit(props.view)
+  const composers = useComposerStore()
+  const queueEdit = createQueueEdit(props.view, composers)
   const working = () => {
     const status = props.view.status()
     return status.kind !== "unknown" && turnActive(status)
@@ -109,10 +110,9 @@ function SessionBody(props: {
     turns: () => users().length,
   })
   const transcriptCollapsed = () => props.floating && !peek.peeked()
-  const composers = useComposerStore()
   let body: HTMLDivElement | undefined
   let timeline: HTMLDivElement | undefined
-  const draft = () => composers.draft(queueEdit.key())
+  const draft = () => composers.draft(sessionComposerKey(props.view.ref))
   const driving = () => props.active && !props.readOnly
   const composing = () => (!parentId() || !props.controls.owner) && !props.readOnly
   installSessionScreenKeydown({
@@ -134,7 +134,7 @@ function SessionBody(props: {
           <FloatingPeekRow count={users().length} peek={peek} t={host.t} />
         </Show>
         <Show when={props.active && composing() && props.controls.send}>
-          <SelectionComment root={() => timeline} composerKey={queueEdit.key} source={{ kind: "conversation" }} />
+          <SelectionComment root={() => timeline} composerKey={() => sessionComposerKey(props.view.ref)} source={{ kind: "conversation" }} />
         </Show>
         <div
           ref={timeline}
@@ -142,7 +142,7 @@ function SessionBody(props: {
           data-session-transcript-collapsed={transcriptCollapsed() ? "true" : undefined}
           classList={{ "session-floating-timeline": props.floating, "session-floating-timeline-collapsed": transcriptCollapsed() }}
         >
-          <SessionTimeline view={props.view} navTurns={turns()} host={host} active={props.active} onScreen={!transcriptCollapsed()} scroll={scroll} onRecover={props.controls.owner ? recovery.recover : undefined} follow={!props.controls.send} />
+          <SessionTimeline view={props.view} queued={queueEdit.queued} navTurns={turns()} host={host} active={props.active} onScreen={!transcriptCollapsed()} scroll={scroll} onRecover={props.controls.owner ? recovery.recover : undefined} follow={!props.controls.send} />
         </div>
       </div>
       <div
@@ -164,7 +164,7 @@ function SessionBody(props: {
             <Composer
               readOnly={!props.controls.send}
               manageSession={props.controls.owner}
-              composerKey={queueEdit.key()}
+              composerKey={sessionComposerKey(props.view.ref)}
               placementId={props.view.ref.placementId}
               view={props.view}
               attachmentWorkspace={props.controls.owner}

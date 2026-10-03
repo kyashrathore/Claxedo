@@ -134,3 +134,18 @@ export function parseQuoteNote(text: string): QuoteNote | undefined {
     .join("\n")
   return { source: quoteSourceOf(match[1]), quote, comment: match[3] }
 }
+
+export type PromptNote =
+  | ({ readonly kind: "quote" } & QuoteNote)
+  | ({ readonly kind: "image-mark" } & PromptImageMarkComment)
+  | ({ readonly kind: "file" } & PromptComment)
+
+export function parsePromptNote(partText: string): PromptNote | undefined {
+  const note = partText.slice(partText.indexOf("\n") + 1)
+  const quote = parseQuoteNote(note)
+  if (quote) return { kind: "quote", ...quote }
+  const mark = parseImageMarkNote(note)
+  if (mark) return { kind: "image-mark", ...mark }
+  const comment = parseCommentNote(note)
+  return comment && { kind: "file", ...comment }
+}

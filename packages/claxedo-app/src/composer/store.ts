@@ -1,4 +1,4 @@
-import { batch, createContext, useContext } from "solid-js"
+import { createContext, useContext } from "solid-js"
 import { createStore, produce, unwrap } from "solid-js/store"
 import type { PlacementId, SessionLocation } from "@/server"
 import type {
@@ -26,6 +26,7 @@ export const draftComposerKey = (placementId: PlacementId): ComposerKey => `draf
 
 type Entry = {
   draft: Draft
+  fork?: Draft
   history: History
   attachments: AttachmentState[]
 }
@@ -38,7 +39,7 @@ function createEntryTable(persistence: ComposerPersistence | undefined) {
   const retained = new Map<ComposerKey, number>()
   const evict = () => {
     while (recent.length > MAX_ENTRIES) {
-      const victim = recent.find((key) => !retained.has(key))
+      const victim = recent.find((key) => !retained.has(key) && !entries[key]?.fork)
       if (!victim) return
       recent.splice(recent.indexOf(victim), 1)
       setEntries(produce((all) => delete all[victim]))
@@ -69,33 +70,51 @@ function createEntryTable(persistence: ComposerPersistence | undefined) {
     const { goalArmed: _armed, ...draft } = entry.draft
     persistence.save(key, { draft, history: entry.history })
   }
-  return { setEntries, ensure, retain, persist, entry: (key: ComposerKey): Entry => entries[key] ?? emptyEntry() }
+  const entry = (key: ComposerKey): Entry => entries[key] ?? emptyEntry()
+  return { setEntries, ensure, retain, persist, entry, draft: (key: ComposerKey) => entry(key).fork ?? entry(key).draft }
 }
 
-type EntryTable = ReturnType<typeof createEntryTable>
+function visibleDraftWrites(table: ReturnType<typeof createEntryTable>) {
+  const { ensure, setEntries, persist } = table
+  return {
+    ...table,
+    updateDraft: (key: ComposerKey, update: (draft: Draft) => void) => {
+      ensure(key)
+      setEntries(key, produce((entry) => update(entry.fork ?? entry.draft)))
+      persist(key)
+    },
+    replaceDraft: (key: ComposerKey, draft: Draft) => {
+      ensure(key)
+      setEntries(key, produce((entry) => {
+        if (entry.fork) entry.fork = draft
+        else entry.draft = draft
+      }))
+      persist(key)
+    },
+  }
+}
+
+type EntryTable = ReturnType<typeof visibleDraftWrites>
 
 function promptActions(table: EntryTable) {
-  const setPrompt = (key: ComposerKey, prompt: Prompt, cursor?: number) => {
-    table.ensure(key)
-    batch(() => {
-      table.setEntries(key, "draft", "prompt", prompt)
-      table.setEntries(key, "draft", "cursor", cursor)
+  const setPrompt = (key: ComposerKey, prompt: Prompt, cursor?: number) =>
+    table.updateDraft(key, (draft) => {
+      draft.prompt = prompt
+      draft.cursor = cursor
     })
-    table.persist(key)
-  }
   return {
     setPrompt,
     addPart: (key: ComposerKey, part: PromptPart, cursor?: number) => {
-      const draft = table.entry(key).draft
+      const draft = table.draft(key)
       const at = cursor ?? draft.cursor ?? promptText(draft.prompt).length
       setPrompt(key, insertPart(draft.prompt, at, part), at + ("content" in part ? part.content.length : 0))
     },
     removeImage: (key: ComposerKey, id: string) => {
-      const draft = table.entry(key).draft
+      const draft = table.draft(key)
       setPrompt(key, draft.prompt.filter((part) => part.type !== "image" || part.id !== id), draft.cursor)
     },
     setImageMarks: (key: ComposerKey, id: string, marks: ImageMark[]) => {
-      const draft = table.entry(key).draft
+      const draft = table.draft(key)
       setPrompt(key, withImageMarks(draft.prompt, id, marks), draft.cursor)
     },
   }
@@ -111,57 +130,62 @@ function withImageMarks(prompt: Prompt, id: string, marks: ImageMark[]): Prompt 
 }
 
 function draftActions(table: EntryTable) {
-  const { ensure, setEntries, persist } = table
+  const { updateDraft } = table
   return {
-    setCursor: (key: ComposerKey, cursor: number) => {
-      ensure(key)
-      setEntries(key, "draft", "cursor", cursor)
-      persist(key)
-    },
-    reset: (key: ComposerKey) => {
-      ensure(key)
-      setEntries(key, "draft", emptyDraft())
-      persist(key)
-    },
+    setCursor: (key: ComposerKey, cursor: number) => updateDraft(key, (draft) => (draft.cursor = cursor)),
+    reset: (key: ComposerKey) => table.replaceDraft(key, emptyDraft()),
     addContext: (key: ComposerKey, item: ContextItem) => {
-      ensure(key)
-      if (table.entry(key).draft.context.some((existing) => existing.key === item.key)) return
-      setEntries(key, "draft", "context", (items) => [...items, item])
-      persist(key)
+      if (table.draft(key).context.some((existing) => existing.key === item.key)) return
+      updateDraft(key, (draft) => draft.context.push(item))
     },
-    setContext: (key: ComposerKey, items: ContextItem[]) => {
-      ensure(key)
-      setEntries(key, "draft", "context", items)
-      persist(key)
-    },
-    removeContext: (key: ComposerKey, itemKey: string) => {
-      ensure(key)
-      setEntries(key, "draft", "context", (items) => items.filter((item) => item.key !== itemKey))
-      persist(key)
-    },
-    setGoalArmed: (key: ComposerKey, armed: boolean) => {
-      ensure(key)
-      setEntries(key, "draft", "goalArmed", armed)
-    },
+    setContext: (key: ComposerKey, items: ContextItem[]) => updateDraft(key, (draft) => (draft.context = items)),
+    removeContext: (key: ComposerKey, itemKey: string) =>
+      updateDraft(key, (draft) => (draft.context = draft.context.filter((item) => item.key !== itemKey))),
+    setGoalArmed: (key: ComposerKey, armed: boolean) => updateDraft(key, (draft) => (draft.goalArmed = armed)),
   }
 }
 
 function sentDraftActions(table: EntryTable) {
-  const { ensure, setEntries, persist } = table
   return {
     take: (key: ComposerKey): Draft => {
-      ensure(key)
-      const taken = { ...unwrap(table.entry(key).draft) }
-      setEntries(key, "draft", emptyDraft())
-      persist(key)
+      const taken = { ...unwrap(table.draft(key)) }
+      table.replaceDraft(key, emptyDraft())
       return taken
     },
-    restore: (key: ComposerKey, draft: Draft) => {
-      ensure(key)
-      setEntries(key, "draft", draft)
-      persist(key)
-    },
+    restore: (key: ComposerKey, draft: Draft) => table.replaceDraft(key, draft),
   }
+}
+
+function forkActions(table: EntryTable) {
+  const { ensure, setEntries, persist } = table
+  const end = (key: ComposerKey, keep: boolean) => {
+    const { draft, fork } = unwrap(table.entry(key))
+    if (!fork) return
+    setEntries(key, produce((entry) => {
+      if (keep) entry.draft = draftEmpty(draft) ? fork : appendedDraft(draft, fork)
+      delete entry.fork
+    }))
+    persist(key)
+  }
+  return {
+    forkDraft: (key: ComposerKey, draft: Draft) => {
+      ensure(key)
+      setEntries(key, "fork", draft)
+    },
+    forked: (key: ComposerKey) => table.entry(key).fork !== undefined,
+    dropFork: (key: ComposerKey) => end(key, false),
+    joinFork: (key: ComposerKey) => end(key, true),
+  }
+}
+
+function draftEmpty(draft: Draft) {
+  return draft.context.length === 0 && draft.prompt.every((part) => part.type === "text" && part.content === "")
+}
+
+function appendedDraft(draft: Draft, fork: Draft): Draft {
+  const separator: PromptPart = { type: "text", content: "\n\n", start: 0, end: 0 }
+  const context = [...draft.context, ...fork.context.filter((item) => !draft.context.some((existing) => existing.key === item.key))]
+  return { prompt: withOffsets([...draft.prompt, separator, ...fork.prompt]), cursor: undefined, context, goalArmed: draft.goalArmed }
 }
 
 function entryActions(table: EntryTable) {
@@ -184,15 +208,16 @@ function entryActions(table: EntryTable) {
 }
 
 export function createComposerStore(persistence?: ComposerPersistence) {
-  const table = createEntryTable(persistence)
+  const table = visibleDraftWrites(createEntryTable(persistence))
   return {
     retain: table.retain,
-    draft: (key: ComposerKey) => table.entry(key).draft,
+    draft: table.draft,
     attachments: (key: ComposerKey) => table.entry(key).attachments,
     history: (key: ComposerKey, mode: EditorMode): HistoryEntry[] => table.entry(key).history[mode],
     ...promptActions(table),
     ...draftActions(table),
     ...sentDraftActions(table),
+    ...forkActions(table),
     ...entryActions(table),
   }
 }

@@ -89,35 +89,37 @@ test("a refused queue replacement preserves the edit and never sends a fresh pro
   expect(send.state().kind).toBe("rejected")
 })
 
-test("saving captures its edit before asynchronous settings and never clears the restored original draft", async () => {
+test("saving a queue edit captures it before asynchronous settings and leaves the unsent draft alone once the edit ends", async () => {
   const store = createComposerStore()
-  const editingKey = `${KEY}:queue:1`
   store.setPrompt(KEY, [{ type: "text", content: "Original draft", start: 0, end: 14 }, IMAGE], 14)
   store.setGoalArmed(KEY, true)
-  store.setPrompt(editingKey, [{ type: "text", content: "/goal edited input", start: 0, end: 18 }], 18)
-  let key = editingKey
+  store.forkDraft(KEY, { prompt: [{ type: "text", content: "/goal edited input", start: 0, end: 18 }], context: [], goalArmed: false })
   let replacing = true
   let sends = 0
   const prompts: Awaited<ReturnType<typeof buildPromptInput>>[] = []
   let release = () => {}
   const settings = new Promise<void>((resolve) => { release = resolve })
   const view = { send: async () => { sends++ } } as unknown as SessionView
+  const replace = async (prompt: Awaited<ReturnType<typeof buildPromptInput>>) => {
+    prompts.push(prompt)
+    store.dropFork(KEY)
+    return true
+  }
   const send = createRoot(() => createComposerSend({
-    key: () => key, store, mode: () => "normal", normalMode: () => undefined,
+    key: () => KEY, store, mode: () => "normal", normalMode: () => undefined,
     submission: async () => { await settings; return {} }, working: () => true, goalCapable: () => true,
-    view: () => view, queuedReplace: () => replacing ? async (prompt) => { prompts.push(prompt); return true } : undefined,
+    view: () => view, queuedReplace: () => replacing ? replace : undefined,
     focusEditor: () => undefined, goalStopFailed: () => undefined,
   }))
   const saved = send.send()
   replacing = false
-  key = KEY
   release()
   await saved
   expect(sends).toBe(0)
   expect(prompts).toHaveLength(1)
   expect(prompts[0]?.text).toBe("/goal edited input")
   expect(prompts[0]?.goal).toBeUndefined()
-  expect(promptText(store.draft(editingKey).prompt)).toBe("")
+  expect(store.forked(KEY)).toBe(false)
   expect(promptText(store.draft(KEY).prompt)).toBe("Original draft")
   expect(promptImages(store.draft(KEY).prompt)).toEqual([IMAGE])
   expect(store.draft(KEY).goalArmed).toBe(true)

@@ -11,7 +11,7 @@ const parts: readonly Part[] = [
   { name: "Server adapter", folders: ["src/server"] },
   { name: "Session client", budget: 9500, folders: ["src/session"], except: ["src/session/view"] },
   { name: "Session screen", budget: 14300, folders: ["src/session/view"] },
-  { name: "Composer", budget: 12163, folders: ["src/composer"] },
+  { name: "Composer", budget: 12291, folders: ["src/composer"] },
   { name: "Rail and workbench", budget: 8300, folders: ["src/rail", "src/workbench"] },
   { name: "Browser tabs", budget: 1443, folders: ["src/browser"] },
   { name: "Shell and platform", budget: 6628, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },

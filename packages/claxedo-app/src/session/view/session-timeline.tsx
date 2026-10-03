@@ -6,6 +6,7 @@ import type { SessionView } from "@/session"
 import { sessionLinkPath } from "@/shell"
 import { DataProvider, TranscriptKitProviders, type SubagentStopAnswer, type TranscriptUserMessage } from "@/transcript"
 import { MessageTimeline, type SessionErrorClass, type TimelineHost, type TimelineNavTurn } from "./timeline"
+import type { QueuedMessages } from "./timeline/model"
 import type { TimelineScroll } from "./timeline-scroll"
 import { subagentViews } from "./subagent-views"
 import { useSessionScreenText } from "./text"
@@ -19,6 +20,7 @@ export function userMessages(view: SessionView): TranscriptUserMessage[] {
 
 export function SessionTimeline(props: {
   readonly view: SessionView
+  readonly queued: QueuedMessages
   readonly navTurns: TimelineNavTurn[]
   readonly host: TimelineHost
   readonly active: boolean
@@ -70,7 +72,7 @@ export function SessionTimeline(props: {
             title={() => props.view.row()?.title}
             parentId={props.view.row()?.parentSessionId}
             onFirstTurnRecovery={props.onRecover}
-            queued={props.view.queue}
+            queued={props.queued}
             progressBlocked={() => !!props.view.requestsError()}
           />
         </Show>

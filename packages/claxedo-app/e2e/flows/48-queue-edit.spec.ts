@@ -51,21 +51,41 @@ test("48 saving and cancelling queue edits preserve attachments and the unsent c
   await expect(app.locator('[data-component="queued-message"]')).toContainText("Saved queue edit")
 })
 
-test("48 a queued message removed by another client cannot turn its edit into a new send", async ({ stack, api, app }) => {
+test("48 a queued message removed by another client cannot turn its edit into a new send, and the edit stays in the composer", async ({ stack, api, app }) => {
   const item = await arrange(stack, api, app)
   await app.locator('[data-component="queued-message"]').hover()
   await app.getByRole("button", { name: "Edit", exact: true }).click()
   await expect(item.editor).toHaveText("Queued original")
   await item.editor.fill("Do not duplicate this")
-  const record = (await item.queue())[0]!
+  const record = (await item.queue())[0]
   expect((await app.request.post(`${item.route}/queue/${record.seq}/cancel${item.query}`, { data: {} })).ok()).toBe(true)
   await expect.poll(async () => (await item.queue()).length).toBe(0)
   await item.editor.press("Enter")
   await expect(app.getByText(/The queued message .*your edit has not been sent/)).toBeVisible()
-  await expect(item.editor).toHaveText("Do not duplicate this")
+  await expect(app.getByRole("button", { name: "Cancel edit", exact: true })).toHaveCount(0)
+  await expect(item.editor).toContainText("Keep my unsent draft")
+  await expect(item.editor).toContainText("Do not duplicate this")
   expect(await item.queue()).toEqual([])
   const users = (await api.messages(item.workspace.directory, item.session.id)).filter((message) => message.info.role === "user")
   expect(users).toHaveLength(1)
-  await item.editor.press("Escape")
-  await expect(item.editor).toHaveText("Keep my unsent draft")
+  await item.editor.press("Enter")
+  await expect.poll(async () => (await item.queue()).map((queued) => queued.parts[0]?.text)).toEqual(["Keep my unsent draft\n\nDo not duplicate this"])
+})
+
+test("48 a queued message that disappears while it is edited returns the edit to the session composer", async ({ stack, api, app }) => {
+  const item = await arrange(stack, api, app)
+  await item.editor.fill("")
+  await app.locator('[data-component="queued-message"]').hover()
+  await app.getByRole("button", { name: "Edit", exact: true }).click()
+  await expect(item.editor).toHaveText("Queued original")
+  await item.editor.fill("Edited before it vanished")
+  const record = (await item.queue())[0]
+  expect((await app.request.post(`${item.route}/queue/${record.seq}/cancel${item.query}`, { data: {} })).ok()).toBe(true)
+  await stack.acp.release("queue-edit-held")
+  await expect(app.locator('[data-component="queued-message"]')).toHaveCount(0)
+  await expect(app.getByRole("button", { name: "Cancel edit", exact: true })).toHaveCount(0)
+  await expect(item.editor).toHaveText("Edited before it vanished")
+  await item.editor.press("Enter")
+  await expect.poll(async () => (await api.messages(item.workspace.directory, item.session.id)).filter((message) => message.info.role === "user").length).toBe(2)
+  await expect(item.editor).toHaveText("")
 })

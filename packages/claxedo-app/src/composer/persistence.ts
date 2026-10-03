@@ -84,6 +84,12 @@ function contextOf(value: unknown): ContextItem | undefined {
     return label !== undefined && text !== undefined ? { type: "text", key, label, text } : undefined
   }
   if (value.type === "quote") return quoteOf(key, value)
+  if (value.type === "image-note") {
+    const filename = readString(value, "filename")
+    const number = readFiniteNumber(value, "number")
+    const comment = readString(value, "comment")
+    return filename !== undefined && number !== undefined && comment !== undefined ? { type: "image-note", key, filename, number, comment } : undefined
+  }
   const path = readString(value, "path")
   if (value.type !== "file" || !path) return undefined
   const selection = storedSelection(value.selection)
