@@ -23,8 +23,8 @@ accepted traffic to the selected host with a freshly minted relay-host token.
 
 Runtime access tokens and host tunnel tokens bind issuer, audience, subject,
 workspace id, host id, expiry, issue time, and JTI. Runtime access tokens also
-bind role. Relay-host tokens additionally bind the placement: `cloud-vm` or
-`local-worktree`.
+bind role. Relay-host tokens additionally bind the placement: `cloud-vm`,
+`local-worktree` or `durable-object`.
 
 A cloud runtime access token carries `routing_id`, a UUID owned by the lease
 store's address transition. It changes when the address or resource changes and
@@ -96,6 +96,13 @@ For `local-worktree` targets, `Cookie` is stripped before forwarding. A host
 tunnel ends on a machine someone uses, whose browser cookie jar the host
 service may share, so browser cookies must not be passed through to it. Cloud
 VM targets may receive cookies when the caller intentionally sends them.
+
+A `durable-object` target is a session served by its own Durable Object, host
+`session-do:<root>`. The control plane resolves it with an empty `baseUrl`, and
+the room forwards HTTP to the `SESSION_HOST` binding's object named by the root,
+cookies stripped as for a host tunnel and response streams passed through. A
+WebSocket upgrade to it is refused with `400 durable_object_websocket_unsupported`:
+a session host serves its events over HTTP streams.
 
 ### CORS
 
