@@ -55,11 +55,15 @@ export function sessionRowFromListItem(row: unknown, address: Address): SessionR
 }
 
 export function sessionHostRootFromListItem(item: unknown): string | undefined {
-  return item && typeof item === "object" ? nonEmptyString((item as { sessionHostRoot?: unknown }).sessionHostRoot) : undefined
+  return nonEmptyString(readField(item, "sessionHostRoot"))
+}
+
+function isTurnOutcome(lastTurn: NonNullable<SessionRow["lastTurn"]>): lastTurn is AgentTurnOutcome {
+  return lastTurn.status !== "failed" || "error" in lastTurn
 }
 
 export function turnOutcome(lastTurn: SessionRow["lastTurn"]): AgentTurnOutcome | undefined {
-  return lastTurn && (lastTurn.status !== "failed" || "error" in lastTurn) ? (lastTurn as AgentTurnOutcome) : undefined
+  return lastTurn && isTurnOutcome(lastTurn) ? lastTurn : undefined
 }
 
 export function turnDetailed(lastTurn: NonNullable<SessionRow["lastTurn"]>): boolean {
@@ -67,15 +71,15 @@ export function turnDetailed(lastTurn: NonNullable<SessionRow["lastTurn"]>): boo
 }
 
 export function lastTurnFromWire(value: unknown): SessionLastTurn | undefined {
-  if (!value || typeof value !== "object") return undefined
-  const { status, completedAt } = value as { status?: unknown; completedAt?: unknown }
+  if (!isRecord(value)) return undefined
+  const { status, completedAt } = value
   const at = asFiniteNumber(completedAt)
   return (status === "completed" || status === "failed" || status === "cancelled") && at !== undefined ? { status, completedAt: at } : undefined
 }
 
 export function readerFromWire(value: unknown): SessionReader {
-  if (!value || typeof value !== "object") return {}
-  const { seenAt, settledAt } = value as { seenAt?: unknown; settledAt?: unknown }
+  if (!isRecord(value)) return {}
+  const { seenAt, settledAt } = value
   const seen = asFiniteNumber(seenAt)
   const settled = asFiniteNumber(settledAt)
   return { ...(seen === undefined ? {} : { seenAt: seen }), ...(settled === undefined ? {} : { settledAt: settled }) }

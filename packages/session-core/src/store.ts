@@ -355,6 +355,8 @@ const readColumn = {
    * straight from the event's own `properties.questions`.
    */
   questions: (json: string): AgentQuestion["questions"] => JSON.parse(json),
+  /** `session_subagent_observation.event_json`. */
+  subagentEvent: (json: string): SubagentUpdatedEvent => JSON.parse(json),
 }
 
 /**
@@ -715,7 +717,7 @@ export class RuntimeStore {
         `,
           )
           .get(input.parentSessionId, input.observation.observationId)
-        if (existing) return { ...admitted, event: JSON.parse(existing.event_json) as SubagentUpdatedEvent, published: !!existing.published }
+        if (existing) return { ...admitted, event: readColumn.subagentEvent(existing.event_json), published: !!existing.published }
         const freshKeys = subagentCorrelationKeys(input.observation).filter((correlationKey) => this.db.prepare(`INSERT OR IGNORE
           INTO session_subagent_correlation (parent_session_id, correlation_key, subagent_key) VALUES (?, ?, ?)`)
           .run(input.parentSessionId, correlationKey, admitted.event.subagentKey).changes === 1)

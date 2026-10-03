@@ -38,7 +38,6 @@ import {
   type SessionPromptBody,
 } from "../session/service"
 import {
-  normalizeSessionConfigUpdate,
   normalizeSessionCreateConfig,
   normalizeSessionCreateBody,
   sessionCreateGroup,

@@ -26,6 +26,8 @@ export function navigationStatus(row: SessionRowView): NavigationStatus {
       const unseen = unseenOutcome(row)
       return unseen ? UNSEEN_MARK[unseen] : "idle"
     }
+    default:
+      return unreachable(activity)
   }
 }
 

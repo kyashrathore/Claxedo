@@ -63,6 +63,7 @@ export function createAppLifecycle(input: {
   let exited = false
   let deciding = false
   let confirming: AbortController | undefined
+  const exitInFlight = (): Promise<void> | undefined => exiting
 
   const open = () => {
     const win = input.window()
@@ -126,8 +127,9 @@ export function createAppLifecycle(input: {
         deciding = false
         confirming = undefined
       }
-      if (exiting) {
-        await exiting
+      const running = exitInFlight()
+      if (running) {
+        await running
         return false
       }
     }

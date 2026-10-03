@@ -161,6 +161,8 @@ function ownWrite(state: ListState, event: OwnWrite): ListData {
       return confirmReaderWrite(state, event.sessionId, event.writeId, event.reader, event.at)
     case "readerWriteFailed":
       return failReaderWrite(state, event.sessionId, event.writeId)
+    default:
+      return unreachable(event)
   }
 }
 

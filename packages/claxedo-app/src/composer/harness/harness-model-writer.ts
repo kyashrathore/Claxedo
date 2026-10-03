@@ -3,18 +3,18 @@ import type { DraftDefaultLabels } from "./draft-defaults"
 import type { HarnessScopeInput } from "./store-policy"
 
 type ModelWriterInput<ScopeInput extends HarnessScopeInput> = {
-  seed(scope: string): void
-  acceptsDraftModel(scope: string, model: ModelChoice): boolean
-  currentModel(scope: string): ModelChoice | undefined
-  setSelectedModel(scope: string, model: ModelChoice): void
-  holdsHarness(scope: string): boolean
-  reloadOptions(scope: string, params?: ScopeInput): Promise<void> | void
-  rememberDraftModel(scope: string, model: ModelChoice, input?: ScopeInput, labels?: DraftDefaultLabels): void
-  selectedEffort(scope: string): string | undefined
-  setSelectedEffort(scope: string, effort: string | undefined): void
+  seed: (scope: string) => void
+  acceptsDraftModel: (scope: string, model: ModelChoice) => boolean
+  currentModel: (scope: string) => ModelChoice | undefined
+  setSelectedModel: (scope: string, model: ModelChoice) => void
+  holdsHarness: (scope: string) => boolean
+  reloadOptions: (scope: string, params?: ScopeInput) => Promise<void> | void
+  rememberDraftModel: (scope: string, model: ModelChoice, input?: ScopeInput, labels?: DraftDefaultLabels) => void
+  selectedEffort: (scope: string) => string | undefined
+  setSelectedEffort: (scope: string, effort: string | undefined) => void
   runtime: {
-    setSessionModel(ref: SessionLocation, model: ModelChoice): Promise<void>
-    setSessionEffort(ref: SessionLocation, effort: string | undefined): Promise<void>
+    setSessionModel: (ref: SessionLocation, model: ModelChoice) => Promise<void>
+    setSessionEffort: (ref: SessionLocation, effort: string | undefined) => Promise<void>
   }
 }
 

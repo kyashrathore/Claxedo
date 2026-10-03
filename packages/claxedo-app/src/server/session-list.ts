@@ -1,4 +1,4 @@
-import { readArray, readString } from "@claxedo/helpers/readers"
+import { readArray, readField, readFiniteNumber, readString } from "@claxedo/helpers/readers"
 import type { ProjectId, SessionId } from "./ids"
 import type { SessionContext } from "./session-context"
 import { accountHoldsReader, sessionSettled } from "./session-reader"
@@ -8,26 +8,19 @@ import type { ListedStatus } from "./status-types"
 import type { SessionListInput, SessionPage, SessionReader, SessionRow, SettledFilter } from "./types"
 import { lastTurnFromWire, listedStatusFromListItem, readerFromWire, SESSION_LIST_SORT, sessionHostRootFromListItem, sessionRowFromListItem } from "./wire/session-row"
 
-
 type PageQuery = { readonly limit: number; readonly settled: SettledFilter }
 
 type AccountReaders = Map<string, SessionReader>
 
-function itemField(item: unknown, key: "sessionId" | "workspaceId"): string | undefined {
-  const value = (item as Record<string, unknown>)[key]
-  return typeof value === "string" ? value : undefined
-}
-
 function listedReader(context: SessionContext, item: unknown, account: AccountReaders): SessionReader | undefined {
-  if (!accountHoldsReader(context, itemField(item, "workspaceId"), false)) return readerFromWire(item)
-  return account.get(itemField(item, "sessionId") ?? "")
+  if (!accountHoldsReader(context, readString(item, "workspaceId"), false)) return readerFromWire(item)
+  return account.get(readString(item, "sessionId") ?? "")
 }
 
 function settledItem(context: SessionContext, item: unknown, account: AccountReaders): boolean {
   const reader = listedReader(context, item, account)
-  const row = item as { lastHumanTurnAt?: unknown; lastTurn?: unknown }
-  const lastHumanTurnAt = typeof row.lastHumanTurnAt === "number" ? row.lastHumanTurnAt : undefined
-  return reader !== undefined && sessionSettled({ lastHumanTurnAt, lastTurn: lastTurnFromWire(row.lastTurn) }, reader)
+  const lastHumanTurnAt = readFiniteNumber(item, "lastHumanTurnAt")
+  return reader !== undefined && sessionSettled({ lastHumanTurnAt, lastTurn: lastTurnFromWire(readField(item, "lastTurn")) }, reader)
 }
 
 async function listedOf(context: SessionContext, items: readonly unknown[], account: AccountReaders) {
@@ -42,7 +35,7 @@ async function listedOf(context: SessionContext, items: readonly unknown[], acco
       await context.workspaces.learn(directory)
       row = sessionRowFromListItem(item, address)
     }
-    if (!row && itemField(item, "workspaceId")) {
+    if (!row && readString(item, "workspaceId")) {
       await context.workspaces.shared.load()
       row = sessionRowFromListItem(item, address)
     }
@@ -77,8 +70,8 @@ function accountSource(read: (after: string | undefined) => Promise<unknown>, re
   return {
     required: false,
     read: async (after) => {
-      const page = sourcePage((await read(after)) as { items?: unknown; nextAfter?: unknown })
-      for (const item of page.items) readers.set(itemField(item, "sessionId") ?? "", readerFromWire(item))
+      const page = sourcePage(await read(after))
+      for (const item of page.items) readers.set(readString(item, "sessionId") ?? "", readerFromWire(item))
       return page
     },
   }
@@ -102,7 +95,7 @@ function everySources(context: SessionContext, sessionId: SessionId | undefined,
     ...server,
     read: async (after) => {
       const page = await server.read(after)
-      return { ...page, items: page.items.filter((item) => !accountHoldsReader(context, itemField(item, "workspaceId"), false)) }
+      return { ...page, items: page.items.filter((item) => !accountHoldsReader(context, readString(item, "workspaceId"), false)) }
     },
   }
   return [machineOnly, accountSource((after) => account.run("session.activity.page", { ...query, ...one, sort: SESSION_LIST_SORT, ...(after ? { after } : {}) }), readers)]

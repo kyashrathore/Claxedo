@@ -7,7 +7,7 @@ import type { Created } from "./model"
 
 const project = { id: projectId("prj_1"), name: "widgets" } as Pick<Project, "id" | "name"> as Project
 
-type Step = Created | Error | { readonly held: Created; readonly then: Error }
+type Step = Created | Error | { readonly held: Created; readonly failure: Error }
 
 function world(plan: ReadonlyArray<Step>, openFailures: readonly Error[]) {
   let creates = 0
@@ -20,7 +20,7 @@ function world(plan: ReadonlyArray<Step>, openFailures: readonly Error[]) {
       if (next instanceof Error) throw next
       if ("held" in next) {
         hold(next.held)
-        throw next.then
+        throw next.failure
       }
       return next
     },
@@ -78,7 +78,7 @@ test("a workspace create that failed creates again on the next click, then stays
 
 test("a workspace that exists before its create failed is opened on the next click, never created again", async () => {
   const workspace: Created = { kind: "workspace", placementId: placementId("ws_1") }
-  const { finish, creates, opens, dispose } = world([{ held: workspace, then: new Error("Catalog unavailable") }], [])
+  const { finish, creates, opens, dispose } = world([{ held: workspace, failure: new Error("Catalog unavailable") }], [])
   await finish.run()
   expect(finish.failure()).toBe("created, not opened: Catalog unavailable")
   expect(finish.created()).toEqual(workspace)

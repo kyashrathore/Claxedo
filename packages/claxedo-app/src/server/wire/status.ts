@@ -48,6 +48,8 @@ function sessionStatusFromRuntime(status: AgentRuntimeStatus): SessionStatus {
       }
     case "interrupted":
       return { kind: "interrupted", message: status.message }
+    default:
+      return unreachable(status)
   }
 }
 

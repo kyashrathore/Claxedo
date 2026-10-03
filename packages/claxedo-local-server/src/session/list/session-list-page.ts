@@ -61,7 +61,8 @@ export async function localSessionListPage(input: SessionListPageInput): Promise
   const covered = broad && !input.workspace
     ? await input.coveredWorkspaces()
     : input.workspace ? [input.workspace] : []
-  await Promise.all(covered.map((workspace) => input.refreshSessionProjection?.(workspace)))
+  const refresh = input.refreshSessionProjection
+  if (refresh) await Promise.all(covered.map((workspace) => refresh(workspace)))
   const live = query.scope === "all" ? { workspaceIDs: covered.map((workspace) => workspace.id) } : {}
   const metas = await listSessionNavigationMetas({ ...sessionListStorePageFilter(query), ...live, reader: LOCAL_USER_ID })
   return buildSessionListResponse({

@@ -149,7 +149,7 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
       }
     }
 
-  const configWrites = createKeyedSerializer<string>()
+  const configWrites = createKeyedSerializer()
   /**
    * One config write of a session at a time: each reads the config it changes,
    * and a native control can take long enough for a second write to read the

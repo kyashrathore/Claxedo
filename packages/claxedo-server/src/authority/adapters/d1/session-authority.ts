@@ -80,7 +80,6 @@ import {
   type RegistrationRow,
   type SessionRow,
   type SessionShareRow,
-  type SessionShareTarget,
   type TurnGrantRow,
   type TurnLeaseRow,
   type WorkspaceAccessRow,

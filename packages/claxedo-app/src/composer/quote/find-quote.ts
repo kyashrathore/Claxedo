@@ -9,11 +9,12 @@ export function findQuoteRange(root: Node, quote: string): Range | undefined {
   const characters: string[] = []
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!(node instanceof Text)) continue
     const value = node.nodeValue ?? ""
     for (let offset = 0; offset < value.length; offset++) {
       if (WHITESPACE.test(value[offset])) continue
       characters.push(value[offset])
-      positions.push({ node: node as Text, offset })
+      positions.push({ node, offset })
     }
   }
   const start = characters.join("").indexOf(target)

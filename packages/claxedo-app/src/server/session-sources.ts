@@ -1,3 +1,4 @@
+import { readString } from "@claxedo/helpers/readers"
 import { compareListOrder, encodeListAfter, listOrderKey, type ListOrderKey } from "./wire/list-order"
 
 export type SourcePage = { readonly items: readonly unknown[]; readonly nextAfter?: string }
@@ -14,8 +15,9 @@ type Keyed = { readonly key: ListOrderKey; readonly item: unknown; readonly iden
 type Round = { readonly ordered: readonly Keyed[]; readonly exhausted: boolean; readonly degraded: boolean }
 
 function sessionIdentity(item: unknown, key: ListOrderKey): string {
-  const { workspaceId, sessionId } = item as { workspaceId?: unknown; sessionId?: unknown }
-  return typeof workspaceId === "string" && typeof sessionId === "string" ? `${workspaceId}\u0000${sessionId}` : key.sessionRef
+  const workspaceId = readString(item, "workspaceId")
+  const sessionId = readString(item, "sessionId")
+  return workspaceId !== undefined && sessionId !== undefined ? `${workspaceId}\u0000${sessionId}` : key.sessionRef
 }
 
 function keyed(items: readonly unknown[]): Keyed[] {

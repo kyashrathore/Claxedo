@@ -105,9 +105,9 @@ describe("app lifecycle", () => {
     expect(trays).toHaveLength(1)
 
     win.close()
-    trays[0]!.open()
+    trays[0].open()
     expect(win.visible).toBe(true)
-    trays[0]!.quit()
+    trays[0].quit()
     await settle()
     expect(quit()).toBe(true)
     expect(app.quits).toBe(2)

@@ -56,5 +56,7 @@ export function matchesActivityFilter(row: SessionRowView, filter: ActivityFilte
       return row.pending || activity === "working" || activity === "background"
     case "needsYou":
       return activity === "waiting" || activity === "interrupted" || unseenOutcome(row) !== undefined
+    default:
+      return unreachable(filter)
   }
 }

@@ -148,9 +148,9 @@ describe("the machine user's seen and settled marks", () => {
     await putSessionMeta("ses_plan", { ws, title: "Plan", createdAt: 1, updatedAt: 1 })
     const db = ClaxedoDB.raw()
     const statements: Array<{ sql: string; params: unknown[] }> = []
-    const prepare = db.prepare
+    const prepare = db.prepare.bind(db)
     db.prepare = ((sql: string) => {
-      const statement = prepare.call(db, sql)
+      const statement = prepare(sql)
       const all = statement.all.bind(statement)
       return Object.assign(statement, { all: (...params: unknown[]) => (statements.push({ sql, params }), all(...params)) })
     }) as typeof db.prepare

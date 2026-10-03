@@ -116,9 +116,9 @@ describe("localSessionListPage", () => {
     await putSessionMeta("ses_planned", { ws, title: "Planned", createdAt: 1, updatedAt: 1 })
     const db = ClaxedoDB.raw()
     const statements: Array<{ sql: string; params: unknown[] }> = []
-    const prepare = db.prepare
+    const prepare = db.prepare.bind(db)
     db.prepare = ((sql: string) => {
-      const statement = prepare.call(db, sql)
+      const statement = prepare(sql)
       const recorded = (method: "all" | "get" | "run") => {
         const run = statement[method].bind(statement)
         return (...params: unknown[]) => (statements.push({ sql, params }), run(...params))
@@ -138,7 +138,7 @@ describe("localSessionListPage", () => {
     }
     const plan = ({ sql, params }: { sql: string; params: unknown[] }) =>
       (db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...params) as Array<{ detail: string }>).map((step) => step.detail)
-    const write = statements.find((statement) => /^update "claxedo_session_meta" set "last_turn_status"/.test(statement.sql))
+    const write = statements.find((statement) => statement.sql.startsWith('update "claxedo_session_meta" set "last_turn_status"'))
     const read = statements.find((statement) => /^select .*"last_turn_status".* from "claxedo_session_meta" where "claxedo_session_meta"."session_ref" in/.test(statement.sql))
     if (!write || !read) throw new Error(`the record or the row read was not observed: ${statements.map((statement) => statement.sql).join("\n")}`)
 
@@ -159,9 +159,9 @@ describe("localSessionListPage", () => {
     await putSessionMeta("ses_all_archived", { ws: right, title: "Archived", archived: 5, createdAt: 5, updatedAt: 5, lastHumanTurnAt: recent + 50 })
     const db = ClaxedoDB.raw()
     const statements: Array<{ sql: string; params: unknown[] }> = []
-    const prepare = db.prepare
+    const prepare = db.prepare.bind(db)
     db.prepare = ((sql: string) => {
-      const statement = prepare.call(db, sql)
+      const statement = prepare(sql)
       const all = statement.all.bind(statement)
       return Object.assign(statement, { all: (...params: unknown[]) => (statements.push({ sql, params }), all(...params)) })
     }) as typeof db.prepare

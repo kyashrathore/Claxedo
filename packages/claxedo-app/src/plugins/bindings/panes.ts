@@ -40,7 +40,11 @@ export function paneBindings(scope: BindingScope): Panes {
       register: <State>(pane: PaneDefinition<State>) => {
         const kind = paneKind(scope, pane)
         const dispose = scope.sink.add(scope.services.registries.paneKinds, paneKindEntry(kind))
-        openers.set(pane.kind, (state) => scope.services.workbench.openPane(kind, state as State))
+        openers.set(pane.kind, (state) => {
+          const parsed = pane.restore.parse(state)
+          if (parsed === undefined) throw new PluginEntryError(scope.manifest.id, `pane kind ${pane.kind} refused the state it was opened with`)
+          scope.services.workbench.openPane(kind, parsed)
+        })
         return () => {
           openers.delete(pane.kind)
           dispose()
