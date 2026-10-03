@@ -72,6 +72,7 @@ test("49 Activity lists every project's sessions in one order, the reader's send
   await expect(rail(app).getByRole("heading", { name: "Activity" })).toBeVisible()
   await expect.poll(() => rowTitles(app, titles)).toEqual(await serverTitles(stack, titles))
   await expect(row(app, "Two")).toContainText("Bravo")
+  await expect(row(app, "Two")).toContainText("<1m")
 
   await row(app, "One").getByRole("button", { name: "One", exact: true }).click()
   await sendPrompt(app, `Hold on. ${acpScriptToken("held")}`)
@@ -160,6 +161,10 @@ test("49 hidden working statuses show on hover, the Activity filter cycles Worki
   await option(app, false, "menuitemcheckbox", "Hide working statuses")
   await expect(rail(app).getByRole("heading", { name: "Activity" })).toBeVisible()
   await expect.poll(() => rowTitles(app, titles)).toEqual(["Busy", "Done", "Calm"])
+  await option(app, false, "menuitemcheckbox", "Hide working statuses")
+  await expect(rail(app).getByRole("heading", { name: "Activity" })).toBeVisible()
+  await expect(rail(app).getByRole("button", { name: "Show working sessions" })).toBeVisible()
+  await option(app, false, "menuitemcheckbox", "Hide working statuses")
   await stack.acp.release("busy")
 
   const dot = row(app, "Done").locator("[data-sidebar-status]")

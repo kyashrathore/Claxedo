@@ -2,14 +2,13 @@ import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { usePreferences } from "@/settings"
 import { settingsPath, useShellRoute } from "@/shell"
-import { createActivityFilter } from "../activity-filter"
 import { railDictionary } from "../i18n"
 import { AccountCard, USAGE_SECTION } from "./account-card"
 import { ActivityView } from "./activity-view"
 import { GlobalNavigation } from "./global-navigation"
 import { ProjectTree } from "./project-tree"
 import { moveRowFocus } from "./row-navigation"
-import { SessionsHeading } from "./sessions-heading"
+import { createActivityFilter, SessionsHeading } from "./sessions-heading"
 import { SharedSessionsSection } from "./shared-sessions"
 import { ClaxedoIcon as Icon, Tooltip } from "@/ui"
 
@@ -44,7 +43,7 @@ export function MainSidebar(): JSX.Element {
         style={{ "scrollbar-width": "thin", "scrollbar-color": "var(--scrollbar-thumb) transparent" }}
       >
         <GlobalNavigation />
-        <SessionsHeading filter={shownFilter()} onCycle={() => filter.send({ type: "cycled" })} />
+        <SessionsHeading filter={shownFilter()} onCycle={() => filter.send({ type: "cycled" })} onShowWorking={() => filter.send({ type: "reset" })} />
         <div class="flex-1 flex flex-col" onKeyDown={moveRowFocus}>
           <Show when={preferences.sidebar.view === "activity"} fallback={<><ProjectTree /><SharedSessionsSection /></>}>
             <ActivityView filter={shownFilter()} />

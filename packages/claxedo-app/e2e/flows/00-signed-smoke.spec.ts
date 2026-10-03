@@ -16,7 +16,7 @@ test("00 signed smoke: a signed-out reader is sent to /login; the owner signs in
   if (isMobile) await page.getByRole("button", { name: UI.openRail }).click()
   const rail = page.getByRole("navigation", { name: UI.rail })
   await expect(page.getByRole("button", { name: signed.owner.name, exact: true })).toBeVisible()
-  await rail.getByRole("button", { name: "Signed turn" }).click()
+  await rail.getByRole("button", { name: "Signed turn", exact: true }).click()
   await expect(page.getByText("Signed hello")).toBeVisible()
 
   if (isMobile) await page.getByRole("button", { name: UI.openRail }).click()

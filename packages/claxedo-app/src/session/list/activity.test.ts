@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test"
 import { placementId, projectId, sessionId } from "@/server"
 import type { SessionRowView, SessionStatusView } from "@/session"
-import { sessionActivity, unseenOutcome } from "./activity"
+import { canSettle, matchesActivityFilter, sessionActivity, unseenOutcome } from "./activity"
 
 function row(status: SessionStatusView, waitingOnUser = false): SessionRowView {
   return {
@@ -43,4 +43,31 @@ test("unseen outcome: a finished or failed turn ending after the reader's seen m
   expect(ended("completed", undefined, { kind: "runningInBackground" })).toBeUndefined()
   expect(ended("failed", undefined, { kind: "idle" }, true)).toBeUndefined()
   expect(unseenOutcome(row({ kind: "idle" }))).toBeUndefined()
+})
+
+test("settle: a pending create never settles, a settled row always returns, and a session that waits on the reader or runs a turn does not settle", () => {
+  expect(canSettle(row({ kind: "idle" }))).toBe(true)
+  expect(canSettle(row({ kind: "runningInBackground" }))).toBe(true)
+  expect(canSettle(row({ kind: "working" }))).toBe(false)
+  expect(canSettle(row({ kind: "idle" }, true))).toBe(false)
+  expect(canSettle({ ...row({ kind: "working" }), settled: true })).toBe(true)
+  expect(canSettle({ ...row({ kind: "idle" }), pending: true })).toBe(false)
+})
+
+test("activity filter: Working is a pending, running or background session; Needs you is a wait, an interruption or an unseen result, never just idle", () => {
+  const unseen = { ...row({ kind: "idle" }), lastTurn: { status: "failed" as const, completedAt: 9 } }
+  const cases = [
+    ["idle", row({ kind: "idle" })],
+    ["working", row({ kind: "working" })],
+    ["background", row({ kind: "runningInBackground" })],
+    ["pending", { ...row({ kind: "idle" }), pending: true }],
+    ["waiting", row({ kind: "idle" }, true)],
+    ["interrupted", row({ kind: "interrupted" })],
+    ["unseen", unseen],
+    ["seen", { ...unseen, seenAt: 9 }],
+  ] as const
+  const matching = (filter: "all" | "working" | "needsYou") => cases.filter(([, view]) => matchesActivityFilter(view, filter)).map(([name]) => name)
+  expect(matching("all")).toEqual(cases.map(([name]) => name))
+  expect(matching("working")).toEqual(["working", "background", "pending"])
+  expect(matching("needsYou")).toEqual(["waiting", "interrupted", "unseen"])
 })

@@ -1,4 +1,4 @@
-import { createSignal, Show, type JSX } from "solid-js"
+import { createMemo, createSignal, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { useAgeClock } from "@/lib/clock"
 import { canSettle, type SessionRowView } from "@/session"
@@ -8,7 +8,6 @@ import { railDictionary } from "../i18n"
 import { navigationStatus, sessionAge, sessionAgeSince, type SessionMarker } from "../model"
 import { NavigationRow, NavigationRowStatusGutter } from "./navigation-row"
 import { SessionRowMenu, type SessionRowMenuActions } from "./session-row-menu"
-import { SessionTitle } from "./session-title"
 import "../session-navigation.css"
 import { ClaxedoIcon as Icon } from "@/ui"
 
@@ -20,6 +19,23 @@ export type SessionRowProps = SessionRowMenuActions & {
   readonly active: boolean
   readonly onActivate: (row: SessionRowView) => void
   readonly prepareDrag?: () => string | undefined
+}
+
+const MARQUEE_MS_PER_PIXEL = 28
+
+function SessionTitle(props: { readonly title: string; readonly hovered: boolean }): JSX.Element {
+  let clip: HTMLSpanElement | undefined
+  const overflow = createMemo(() => (props.hovered && props.title && clip ? Math.max(0, clip.scrollWidth - clip.clientWidth) : 0))
+  return (
+    <span
+      ref={clip}
+      data-marquee={overflow() > 0 ? "true" : undefined}
+      class="ui-session-navigation-title ui-session-title leading-tight flex-1 min-w-0"
+      style={{ "--session-title-distance": `${overflow()}px`, "--session-title-duration": `${overflow() * MARQUEE_MS_PER_PIXEL}ms` }}
+    >
+      <span class="ui-session-title-text">{props.title}</span>
+    </span>
+  )
 }
 
 const MARKER_ICON = { cloud: "cloud", machine: "server", worktree: "worktree" } as const
@@ -40,7 +56,7 @@ function MarkerIcon(props: { readonly marker: SessionMarker; readonly projectLab
   )
 }
 
-function SettleButton(props: { readonly row: SessionRowView; readonly onToggleSettled: (row: SessionRowView) => Promise<void> }): JSX.Element {
+function SettleButton(props: { readonly row: SessionRowView; readonly touch: boolean; readonly onToggleSettled: (row: SessionRowView) => Promise<void> }): JSX.Element {
   const t = useTranslator(railDictionary)
   const [busy, setBusy] = createSignal(false)
   return (
@@ -50,7 +66,8 @@ function SettleButton(props: { readonly row: SessionRowView; readonly onToggleSe
       aria-label={t(props.row.settled ? "rail.returnSession" : "rail.settleSession", { title: props.row.title })}
       title={t(props.row.settled ? "rail.returnToActive" : "rail.settle")}
       disabled={busy() || !canSettle(props.row)}
-      class="ui-session-navigation-settle absolute inset-0 pointer-events-auto flex items-center justify-end border-none bg-transparent p-0 cursor-pointer disabled:cursor-default disabled:opacity-40"
+      class="pointer-events-auto flex items-center justify-end border-none bg-transparent p-0 cursor-pointer disabled:cursor-default disabled:opacity-40"
+      classList={{ "ui-session-navigation-settle-touch z-10 size-6 shrink-0": props.touch, "absolute inset-0": !props.touch }}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => {
         event.stopPropagation()
@@ -96,10 +113,13 @@ export function RailSessionRow(props: SessionRowProps): JSX.Element {
         <span class="ui-session-navigation-time flex items-center justify-end text-xs tabular-nums">
           {sessionAge(props.row, now())}
         </span>
-        <Show when={engagement.engaged() || layout.phone()}>
-          <SettleButton row={props.row} onToggleSettled={props.onToggleSettled} />
+        <Show when={engagement.engaged() && !layout.coarsePointer()}>
+          <SettleButton row={props.row} touch={false} onToggleSettled={props.onToggleSettled} />
         </Show>
       </div>
+      <Show when={layout.coarsePointer()}>
+        <SettleButton row={props.row} touch onToggleSettled={props.onToggleSettled} />
+      </Show>
       <Show when={menu()}>
         {(at) => <SessionRowMenu at={at()} row={props.row} onRename={props.onRename} onToggleSettled={props.onToggleSettled} onDismiss={() => setMenu(undefined)} />}
       </Show>

@@ -61,18 +61,6 @@
   animation: none;
 }
 
-@media (max-width: 767px) {
-  .ui-session-navigation-time {
-    opacity: 0;
-  }
-
-  .ui-session-navigation-settle::before {
-    content: "";
-    position: absolute;
-    inset: min(0px, calc(50% - var(--touch-target) / 2));
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .ui-session-title[data-marquee="true"] {
     text-overflow: ellipsis;

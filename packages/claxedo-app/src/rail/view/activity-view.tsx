@@ -3,41 +3,41 @@ import { useTranslator } from "@/i18n"
 import { useProjectList } from "@/projects"
 import { ACTIVITY_WINDOW, matchesActivityFilter, useSessionStores, type ActivityFilter } from "@/session"
 import { railDictionary } from "../i18n"
-import { sessionRowKey } from "../model"
+import { SESSION_GROUP_PAGE_SIZE, sessionRowKey } from "../model"
 import { createRowNavigation } from "./row-navigation"
 import { createSessionActions } from "./session-actions"
-import { SessionListNotice } from "./session-list-notice"
+import { SessionListNotice, SessionLoadMore } from "./session-list-notice"
 import { RailSessionRow } from "./session-row"
 
-function ActivityNotices(props: { readonly empty: boolean }): JSX.Element {
+function ActivityNotices(props: { readonly count: number }): JSX.Element {
   const t = useTranslator(railDictionary)
   const list = useSessionStores().list
-  const reading = () => list.moreState(ACTIVITY_WINDOW).kind === "loading" || list.state().kind === "subscribing" || list.state().kind === "fetching"
-  const failed = () => list.state().kind === "failed" || list.pageFailure(ACTIVITY_WINDOW) !== undefined || list.moreState(ACTIVITY_WINDOW).kind === "failed"
+  const more = () => list.moreState(ACTIVITY_WINDOW)
+  const reading = () => more().kind === "loading" || list.state().kind === "subscribing" || list.state().kind === "fetching"
+  const failed = () => list.state().kind === "failed" || list.pageFailure(ACTIVITY_WINDOW) !== undefined
+  const loaded = () => !reading() && !failed()
   return (
     <>
-      <Show when={props.empty && reading()}>
+      <Show when={props.count === 0 && reading()}>
         <SessionListNotice variant="loading">{t("rail.loadingSessions")}</SessionListNotice>
       </Show>
       <Show when={failed()}>
         <SessionListNotice variant="error" actionLabel={t("rail.retry")} onAction={() => void list.reload()}>{t("rail.loadFailed")}</SessionListNotice>
       </Show>
-      <Show when={list.pageDegraded(ACTIVITY_WINDOW)}>
-        <SessionListNotice variant="error" actionLabel={t("rail.retry")} onAction={() => void list.reload()}>{t("rail.partialLoad")}</SessionListNotice>
-      </Show>
-      <Show when={props.empty && !reading() && !failed()}>
+      <Show when={props.count === 0 && loaded()}>
         <SessionListNotice variant="empty">{t("rail.activity.empty")}</SessionListNotice>
       </Show>
       <Show when={list.hasMore(ACTIVITY_WINDOW)}>
-        <button
-          type="button"
-          data-testid="rail-sidebar-session-load-more"
-          class="text-sm text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left max-md:min-h-11"
-          disabled={list.moreState(ACTIVITY_WINDOW).kind === "loading"}
-          onClick={() => void list.loadMore(ACTIVITY_WINDOW)}
-        >
-          {list.moreState(ACTIVITY_WINDOW).kind === "loading" ? t("rail.loadingMore") : t("rail.loadMore")}
-        </button>
+        <SessionLoadMore loading={more().kind === "loading"} onLoad={() => void list.loadMore(ACTIVITY_WINDOW)} />
+      </Show>
+      <Show when={more().kind === "failed"}>
+        <SessionListNotice variant="error" actionLabel={t("rail.retry")} onAction={() => void list.loadMore(ACTIVITY_WINDOW)}>{t("rail.loadMoreFailed")}</SessionListNotice>
+      </Show>
+      <Show when={list.pageDegraded(ACTIVITY_WINDOW)}>
+        <SessionListNotice variant="error" actionLabel={t("rail.retry")} onAction={() => void list.reload()}>{t("rail.partialLoad")}</SessionListNotice>
+      </Show>
+      <Show when={loaded() && props.count > SESSION_GROUP_PAGE_SIZE && !list.hasMore(ACTIVITY_WINDOW)}>
+        <SessionListNotice variant="done">{t("rail.allLoaded")}</SessionListNotice>
       </Show>
     </>
   )
@@ -76,7 +76,7 @@ export function ActivityView(props: { readonly filter: ActivityFilter }): JSX.El
           </Show>
         )}
       </For>
-      <ActivityNotices empty={sessionIds().length === 0} />
+      <ActivityNotices count={sessionIds().length} />
     </div>
   )
 }

@@ -50,7 +50,7 @@ async function english(stack: Stack, api: ClaxedoApi, app: Page): Promise<Arrang
   await expectWithinBaseline(app, "home")
   const arranged = await arrange(stack, api)
   await app.goto(`${stack.url}/`)
-  await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Sprache" }).click()
+  await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Sprache", exact: true }).click()
   await expect(app).toHaveURL(new RegExp(`/s/${arranged.session.id}$`))
   await expectSessionOpen(stack, app, UI.rail, "Sprache")
   await expectWithinBaseline(app, "session-page")
@@ -89,7 +89,7 @@ async function german(stack: Stack, api: ClaxedoApi, app: Page, arranged: Arrang
   await app.goto(`${stack.url}/`)
   await expectGerman(app)
   const title = (await api.session(arranged.workspace.directory, arranged.session.id)).title
-  await app.getByRole("navigation", { name: "Projekte und Sitzungen" }).getByRole("button", { name: title }).click()
+  await app.getByRole("navigation", { name: "Projekte und Sitzungen" }).getByRole("button", { name: title, exact: true }).click()
   await expectSessionOpen(stack, app, "Projekte und Sitzungen", title)
   await expectWithinBaseline(app, "session-page")
 }

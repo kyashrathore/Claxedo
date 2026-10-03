@@ -1,9 +1,29 @@
 import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
+import { machine, unreachable, type Machine } from "@/lib/machine"
 import type { ActivityFilter } from "@/session"
 import { usePreferences } from "@/settings"
 import { ClaxedoIcon as Icon, DropdownMenu, Tooltip } from "@/ui"
 import { railDictionary, type RailKey } from "../i18n"
+
+export type ActivityFilterState = { readonly kind: ActivityFilter }
+
+export type ActivityFilterEvent = { readonly type: "cycled" } | { readonly type: "reset" }
+
+const NEXT: Readonly<Record<ActivityFilter, ActivityFilter>> = { all: "working", working: "needsYou", needsYou: "all" }
+
+export function activityFilterTransition(state: ActivityFilterState, event: ActivityFilterEvent): ActivityFilterState {
+  switch (event.type) {
+    case "cycled":
+      return { kind: NEXT[state.kind] }
+    case "reset":
+      return state.kind === "all" ? state : { kind: "all" }
+    default:
+      return unreachable(event)
+  }
+}
+
+export const createActivityFilter = (): Machine<ActivityFilterState, ActivityFilterEvent> => machine({ kind: "all" }, activityFilterTransition)
 
 const FILTER_STATES = {
   all: { heading: "rail.activity", next: "rail.activity.showWorking", icon: "circle-dashed" },
@@ -13,7 +33,7 @@ const FILTER_STATES = {
 
 const OPTION_BUTTON = "flex size-7 max-md:size-11 shrink-0 items-center justify-center rounded-md text-icon-weak-base hover:text-icon-base hover:bg-surface-base-hover/40"
 
-function SessionOptions(): JSX.Element {
+function SessionOptions(props: { readonly onShowWorking: () => void }): JSX.Element {
   const t = useTranslator(railDictionary)
   const preferences = usePreferences()
   return (
@@ -34,7 +54,10 @@ function SessionOptions(): JSX.Element {
           <DropdownMenu.CheckboxItem checked={preferences.sidebar.showSettled} closeOnSelect={false} onChange={(shown: boolean) => preferences.setSidebar("showSettled", shown)}>
             {t("rail.options.showSettled")}
           </DropdownMenu.CheckboxItem>
-          <DropdownMenu.CheckboxItem checked={preferences.sidebar.hideWorkingStatus} closeOnSelect={false} onChange={(hidden: boolean) => preferences.setSidebar("hideWorkingStatus", hidden)}>
+          <DropdownMenu.CheckboxItem checked={preferences.sidebar.hideWorkingStatus} closeOnSelect={false} onChange={(hidden: boolean) => {
+              preferences.setSidebar("hideWorkingStatus", hidden)
+              if (!hidden) props.onShowWorking()
+            }}>
             {t("rail.options.hideWorking")}
           </DropdownMenu.CheckboxItem>
         </DropdownMenu.Content>
@@ -43,7 +66,7 @@ function SessionOptions(): JSX.Element {
   )
 }
 
-export function SessionsHeading(props: { readonly filter: ActivityFilter; readonly onCycle: () => void }): JSX.Element {
+export function SessionsHeading(props: { readonly filter: ActivityFilter; readonly onCycle: () => void; readonly onShowWorking: () => void }): JSX.Element {
   const t = useTranslator(railDictionary)
   const preferences = usePreferences()
   const activity = () => preferences.sidebar.view === "activity"
@@ -59,7 +82,7 @@ export function SessionsHeading(props: { readonly filter: ActivityFilter; readon
             </button>
           </Tooltip>
         </Show>
-        <SessionOptions />
+        <SessionOptions onShowWorking={props.onShowWorking} />
       </div>
     </div>
   )
