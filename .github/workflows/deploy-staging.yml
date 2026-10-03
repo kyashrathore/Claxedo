@@ -135,7 +135,7 @@ jobs:
       CLAXEDO_SESSION_HOST_WORKER_NAME: claxedo-session-host-staging
       CLAXEDO_AGENT_PLUGINS_BUCKET: claxedo-agent-plugins-staging
       CLAXEDO_SANDBOX_POSTURE: full-hosted
-      CLAXEDO_SANDBOX_DRIVER: cloudflare
+      CLAXEDO_SANDBOX_DRIVER: ${{ vars.CLAXEDO_STAGING_SANDBOX_DRIVER }}
       CLAXEDO_AUTH_METHODS: ${{ vars.CLAXEDO_AUTH_METHODS }}
       GITHUB_CLIENT_ID: ${{ vars.CLAXEDO_GITHUB_CLIENT_ID }}
       # The GitHub App the GitHub connection's device sign-in runs on. Optional:
@@ -150,7 +150,10 @@ jobs:
       CLAXEDO_WORKSPACE_RELAY_URL: ${{ vars.CLAXEDO_STAGING_WORKSPACE_RELAY_URL }}
       CLAXEDO_AUTH_D1_DATABASE_NAME: ${{ vars.CLAXEDO_STAGING_AUTH_D1_DATABASE_NAME }}
       CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME: ${{ vars.CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME }}
-      CLAXEDO_SANDBOX_WORKER_URL: ${{ vars.CLAXEDO_STAGING_SANDBOX_WORKER_URL }}
+      CLAXEDO_SANDBOX_WORKER_URL: ${{ vars.CLAXEDO_STAGING_SANDBOX_DRIVER == 'cloudflare' && vars.CLAXEDO_STAGING_SANDBOX_WORKER_URL || '' }}
+      CLOUDFLARE_SANDBOX_API_TOKEN: ${{ vars.CLAXEDO_STAGING_SANDBOX_DRIVER == 'cloudflare' && secrets.CLOUDFLARE_SANDBOX_API_TOKEN || '' }}
+      CLAXEDO_SANDBOX_IMAGE: ${{ vars.CLAXEDO_STAGING_SANDBOX_DRIVER == 'boat' && vars.CLAXEDO_STAGING_SANDBOX_IMAGE || '' }}
+      BOAT_API_KEY: ${{ vars.CLAXEDO_STAGING_SANDBOX_DRIVER == 'boat' && secrets.BOAT_API_KEY || '' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -159,11 +162,16 @@ jobs:
       - name: Verify the deploy inputs are configured
         run: |
           set -euo pipefail
+          case "$CLAXEDO_SANDBOX_DRIVER" in
+            cloudflare) driver_inputs="CLAXEDO_SANDBOX_WORKER_URL" ;;
+            boat) driver_inputs="CLAXEDO_SANDBOX_IMAGE BOAT_API_KEY" ;;
+            *) echo "::error::CLAXEDO_STAGING_SANDBOX_DRIVER must be set to cloudflare or boat in the staging environment (got '$CLAXEDO_SANDBOX_DRIVER')"; exit 1 ;;
+          esac
           for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID BETTER_AUTH_SECRET \
             CLAXEDO_AUTH_INTROSPECTION_SECRET CLAXEDO_AUTH_METHODS GITHUB_CLIENT_ID \
             CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME \
             CLAXEDO_DEPLOYMENT_ID CLAXEDO_API_ORIGIN CLAXEDO_APP_ORIGIN CLAXEDO_WORKSPACE_RELAY_URL \
-            CLAXEDO_AUTH_D1_DATABASE_NAME CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME CLAXEDO_SANDBOX_WORKER_URL; do
+            CLAXEDO_AUTH_D1_DATABASE_NAME CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME $driver_inputs; do
             [ -n "${!name}" ] || { echo "::error::$name is not configured in the staging environment"; exit 1; }
           done
 
