@@ -37,7 +37,7 @@ export class PiCredentials {
   private rows: Readonly<Record<string, ProviderDirect>> = {}
   private definitions: readonly CustomProviderDefinition[] = []
   private readonly refreshed = new Map<string, Credential>()
-  private readonly writes = createKeyedSerializer<string>()
+  private readonly writes = createKeyedSerializer()
 
   constructor(credentials: ResolvedCredentials, definitions: readonly CustomProviderDefinition[], private readonly refreshRow: PiDirectRefresh) {
     this.models = createModels({ credentials: this.store(), authContext: NO_AMBIENT_AUTH })

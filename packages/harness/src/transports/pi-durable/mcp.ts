@@ -1,5 +1,5 @@
 import { errorMessage } from "@claxedo/helpers"
-import type { TSchema } from "@earendil-works/pi-ai"
+import { Type } from "@earendil-works/pi-ai"
 import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable"
 import { McpClient, toLlmContent, type McpTransport, type Tool } from "@earendil-works/pi-mcp"
 import type { ProjectedMcpServer } from "../../contract"
@@ -72,13 +72,13 @@ export class PiMcpTools {
     return defineTool({
       name: piMcpToolName(server.name, tool.name),
       description: tool.description ?? `${tool.name} from MCP server ${server.name}`,
-      parameters: tool.inputSchema as unknown as TSchema,
+      parameters: Type.Unsafe<Record<string, unknown>>(tool.inputSchema),
       execute: async (args, _api, context) => {
         const client = await this.client(server).catch((error: unknown) => {
           this.clients.delete(server.name)
           throw new Error(`MCP server ${server.name} is unavailable: ${errorMessage(error)}`, { cause: error })
         })
-        const result = await client.callTool(tool.name, args as Record<string, unknown>, context.abortSignal ? { signal: context.abortSignal } : {})
+        const result = await client.callTool(tool.name, args, context.abortSignal ? { signal: context.abortSignal } : {})
         return { content: toLlmContent(result), isError: result.isError === true }
       },
     })

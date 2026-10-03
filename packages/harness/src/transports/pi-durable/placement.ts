@@ -32,7 +32,7 @@ export function piHarnessOptions(input: {
   models: Models
   registry: Registry
   env: HarnessOptions["env"]
-  onReport(error: unknown): void
+  onReport: (error: unknown) => void
 }): HarnessOptions {
   return { models: input.models, registry: input.registry, env: input.env, onReport: input.onReport }
 }

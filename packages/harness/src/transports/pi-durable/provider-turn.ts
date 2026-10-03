@@ -22,11 +22,11 @@ export class PiProviderTurn {
   private finished = false
 
   constructor(private readonly host: PiProviderHost) {
-    void host.broker.admitProviderTurn({ reason: "continuation", current: host.current }, (broker) => this.stream(broker)).then((admission) => {
+    void host.broker.admitProviderTurn({ reason: "continuation", current: () => host.current() }, (broker) => this.stream(broker)).then(async (admission) => {
       if (admission.admitted) return
       host.ended()
-      if (admission.reason === "closed") return host.stop()
-      host.log.warn("Pi resumed a run Claxedo could not admit as a turn", { reason: admission.reason })
+      if (admission.reason === "closed") await host.stop()
+      else host.log.warn("Pi resumed a run Claxedo could not admit as a turn", { reason: admission.reason })
     }).then(undefined, (error: unknown) => {
       host.log.error("Pi continuation turn failed", { error: errorMessage(error) })
       host.broker.reportFailure(error)

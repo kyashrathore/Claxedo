@@ -1,19 +1,18 @@
+import type { Database, SQLQueryBindings } from "bun:sqlite"
 import type { Storage } from "@earendil-works/pi-durable"
 import { SqliteStorage, type SqliteDatabase, type SqliteExecutor, type SqliteValue } from "@earendil-works/pi-durable/storage/sqlite"
 
-type BunStatement = { run(...params: SqliteValue[]): unknown; get(...params: SqliteValue[]): unknown; all(...params: SqliteValue[]): unknown[] }
-type BunDatabase = { exec(sql: string): void; prepare(sql: string): BunStatement; close(): void }
-
-function executor(db: BunDatabase, run: <T>(operation: () => T) => Promise<T>): SqliteExecutor {
+function executor(db: Database, run: <T>(operation: () => T) => Promise<T>): SqliteExecutor {
+  const bindings = (params: SqliteValue[]): SQLQueryBindings[] => params
   return {
     exec: (sql) => run(() => { db.exec(sql) }),
-    run: (sql, ...params) => run(() => { db.prepare(sql).run(...params) }),
-    get: <T extends object>(sql: string, ...params: SqliteValue[]) => run(() => (db.prepare(sql).get(...params) ?? undefined) as T | undefined),
-    all: <T extends object>(sql: string, ...params: SqliteValue[]) => run(() => db.prepare(sql).all(...params) as T[]),
+    run: (sql, ...params) => run(() => { db.prepare(sql).run(...bindings(params)) }),
+    get: <T extends object>(sql: string, ...params: SqliteValue[]) => run(() => db.prepare<T, SQLQueryBindings[]>(sql).get(...bindings(params)) ?? undefined),
+    all: <T extends object>(sql: string, ...params: SqliteValue[]) => run(() => db.prepare<T, SQLQueryBindings[]>(sql).all(...bindings(params))),
   }
 }
 
-function bunPiDatabase(db: BunDatabase): SqliteDatabase {
+function bunPiDatabase(db: Database): SqliteDatabase {
   let tail: Promise<unknown> = Promise.resolve()
   const queued = <T>(operation: () => T | Promise<T>): Promise<T> => {
     const next = tail.then(operation)
@@ -52,5 +51,5 @@ export async function openPiStorage(file: string): Promise<Storage> {
   const db = new Database(file, { create: true })
   db.exec("PRAGMA journal_mode = WAL")
   db.exec("PRAGMA synchronous = NORMAL")
-  return SqliteStorage.open(bunPiDatabase(db as unknown as BunDatabase))
+  return SqliteStorage.open(bunPiDatabase(db))
 }

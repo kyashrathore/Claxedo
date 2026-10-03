@@ -1,6 +1,7 @@
 import { errorMessage } from "@claxedo/helpers"
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 import { watchEvents, type AgentEvent, type AgentEventStream } from "@earendil-works/pi-durable"
+import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import type { Logger, OutsideTurnEvent, RoutedEvent, SessionBroker } from "../../contract"
 import { piDurableEvents, type PiEvents } from "./events"
 import { piSession } from "./errors"
@@ -13,6 +14,8 @@ type Owner = { kind: "idle" } | { kind: "turn"; run: PiRun } | { kind: "provider
 export type PiStreamHost = { sessionId: string; runtime: PiSessionRuntime; broker: SessionBroker; log: Logger; stop(): Promise<void> }
 
 const OUTSIDE: readonly string[] = ["harness-notice", "diagnostic", "mcp-server-status"]
+
+const outsideTurn = (event: AgentRuntimeEvent): event is OutsideTurnEvent => OUTSIDE.includes(event.type)
 
 export class PiSessionStream {
   private owner: Owner = { kind: "idle" }
@@ -77,7 +80,7 @@ export class PiSessionStream {
 
   private outside(events: readonly RoutedEvent[]): void {
     for (const { event } of events) {
-      if (OUTSIDE.includes(event.type)) void this.host.broker.publish(event as OutsideTurnEvent).then(undefined, (error: unknown) =>
+      if (outsideTurn(event)) void this.host.broker.publish(event).then(undefined, (error: unknown) =>
         this.host.log.error("Pi notice publication failed", { error: errorMessage(error) }))
       else this.host.log.debug("Pi event outside any turn has no session surface", { type: event.type })
     }

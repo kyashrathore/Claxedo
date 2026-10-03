@@ -17,8 +17,8 @@ export const CLAXEDO_PI_EXTENSION = "claxedo"
 export function claxedoPiExtension(host: PiExtensionHost, mcpTools: readonly ToolRegistration[]): Extension {
   return defineExtension({
     name: CLAXEDO_PI_EXTENSION,
-    tools: [piQuestionTool({ sessionId: host.sessionId, asker: host.asker }), ...mcpTools],
-    sections: [piSkillsSection(host.skills)],
+    tools: [piQuestionTool({ sessionId: host.sessionId, asker: () => host.asker() }), ...mcpTools],
+    sections: [piSkillsSection(() => host.skills())],
     hooks: [hook(ToolTask, {
       beforeTool: (call, _api, context) => piAsks(host.config(), call.name)
         ? piToolApproval({ sessionId: host.sessionId, call, asker: host.asker(), signal: context.abortSignal })

@@ -54,7 +54,7 @@ function change(state: PiDurableTranslatorState, value: unknown): PiStep {
 }
 
 export function piMessageUpdate(state: PiDurableTranslatorState, frame: Frame): PiStep {
-  return asArray(frame.changes).reduce<PiStep>((step, value) => {
+  return asArray(frame.changes).reduce((step: PiStep, value) => {
     const next = change(step.state, value)
     return piStep(next.state, [...step.events, ...next.events])
   }, piStep(state))

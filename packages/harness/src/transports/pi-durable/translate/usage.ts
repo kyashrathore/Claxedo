@@ -6,7 +6,7 @@ const count = (value: unknown) => typeof value === "number" ? value : 0
 export function piUsageTotals(usage: unknown): PiUsageTotals {
   const state = row(usage)
   const buckets = [...Object.values(row(state.models)), ...Object.values(row(state.tools))].map(row)
-  return buckets.reduce<PiUsageTotals>((total, bucket) => ({
+  return buckets.reduce((total: PiUsageTotals, bucket) => ({
     input: total.input + count(bucket.input), output: total.output + count(bucket.output),
     reasoning: total.reasoning + count(bucket.reasoning),
     cacheRead: total.cacheRead + count(bucket.cacheRead), cacheWrite: total.cacheWrite + count(bucket.cacheWrite),

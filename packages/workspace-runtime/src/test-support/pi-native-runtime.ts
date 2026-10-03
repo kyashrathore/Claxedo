@@ -34,7 +34,7 @@ export function piNativeRuntime(roots: PiNativeRoots) {
 }
 
 if (process.argv[2] === "crash-child") {
-  const roots = JSON.parse(process.argv[3]!) as PiNativeRoots
+  const roots = JSON.parse(process.argv[3] ?? "") as PiNativeRoots
   const runtime = piNativeRuntime(roots)
   await runtime.host.apply(piNativeSnapshot(roots.providerUrl))
   const post = (resource: string, body: object) => runtime.app.request(`http://localhost/${resource}`,
