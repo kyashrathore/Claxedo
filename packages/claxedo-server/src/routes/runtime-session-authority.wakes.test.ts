@@ -133,15 +133,23 @@ function relayed(token: string, body: Record<string, unknown>, headers: Record<s
 /**
  * A host over the store behind the relay ingress. The same shape serves a
  * fresh process: it keeps nothing but the store, so what it delivers after a
- * restart is what the store says.
+ * restart is what the store says. `endsBeforeReceipt` is a process that ends
+ * after a wake's turn started and before the receipt naming that delivery was
+ * written.
  */
-function hostOver(store: RuntimeStore, policy: SessionAccessPolicy, execution: Awaited<ReturnType<typeof wakeRuntime>>, relayKey: CryptoKey) {
+function hostOver(store: RuntimeStore, policy: SessionAccessPolicy, execution: Awaited<ReturnType<typeof wakeRuntime>>, relayKey: CryptoKey,
+  options: { endsBeforeReceipt?: boolean } = {}) {
   const { runtime } = execution
+  const stored = storeBackedHostOptions(store)
   const host = SessionRoutes(async () => runtime, { ...testSessionRoutePorts(),
     sessionAccessPolicy: policy,
     requestedSessionHarness: (requested) => requested ?? { id: "pi", access: "native" },
     queuedPrompts: () => queuedPromptStore(store),
-    ...storeBackedHostOptions(store),
+    ...stored,
+    childSessions: { ...stored.childSessions!, admit: async (parentSessionId, observation) => {
+      if (options.endsBeforeReceipt && observation.wakeReceipt) throw new Error("the process ended before the delivery receipt was written")
+      return await stored.childSessions!.admit(parentSessionId, observation)
+    } },
   })
   const disposeRoutes = host.dispose
   host.dispose = async () => {
@@ -201,13 +209,14 @@ async function processEndedBeforeTheOffer(item: Awaited<ReturnType<typeof childC
 }
 
 /** A new process over the same store, with its own connection to the plane. */
-async function restarted(item: { storeRoot: string; plane: Awaited<ReturnType<typeof controlPlane>> }, options: Parameters<typeof wakeRuntime>[1] = {}) {
+async function restarted(item: { storeRoot: string; plane: Awaited<ReturnType<typeof controlPlane>> }, options: Parameters<typeof wakeRuntime>[1] = {},
+  host: Parameters<typeof hostOver>[4] = {}) {
   const store = reopened(item.storeRoot)
   const { policy, calls, attempts } = remotePolicy(item.plane.app)
   const execution = await wakeRuntime(store, options)
   const { prompts } = execution
-  const { host } = hostOver(store, policy, execution, item.plane.relayKey.publicKey)
-  return { store, host, calls, attempts, prompts }
+  const { host: restartedHost } = hostOver(store, policy, execution, item.plane.relayKey.publicKey, host)
+  return { store, host: restartedHost, calls, attempts, prompts }
 }
 
 const bearer = (token: string) => `Bearer ${token}`
@@ -312,7 +321,7 @@ test("a grant past its expiry is refused over the wire and the wake stays pendin
   expect(store.listSubagents(PARENT)).toMatchObject([{ wake: "pending" }])
 })
 
-test("the same wake re-offered after delivery is refused as redeemed, and no second producer is written", async () => {
+test("a second result naming the delivered reply re-offers the redeemed wake turn, which is refused, and no second producer is written", async () => {
   const item = await childCreatedOverTheRelay()
   const { seeded } = item
   await processEndedBeforeTheOffer(item)
@@ -324,6 +333,29 @@ test("the same wake re-offered after delivery is refused as redeemed, and no sec
   delivered.store.close()
   const { store, host, calls, prompts } = await restarted(item)
   expect(store.listSubagents(PARENT)).toMatchObject([{ wake: "pending" }])
+
+  await wake(host)
+  await until(() => calls.some((call) => call.action === "turn_acquire"), "the re-offer to present its grant")
+
+  expect(calls).toEqual([{ action: "turn_acquire", authorization: null, grant: true, turnId: WAKE_TURN, status: 401, code: "session_turn_grant_redeemed" }])
+  expect(prompts).toEqual([])
+  expect(await producers(seeded)).toHaveLength(1)
+  expect(await grantRows(seeded)).toMatchObject([{ redeemed_turn_id: WAKE_TURN }])
+  expect(store.listSubagents(PARENT)).toMatchObject([{ wake: "pending" }])
+})
+
+test("a wake whose delivery receipt was lost is re-offered after a restart and refused as redeemed, with no second prompt or producer", async () => {
+  const item = await childCreatedOverTheRelay()
+  const { seeded } = item
+  await processEndedBeforeTheOffer(item)
+  const delivering = await restarted(item, {}, { endsBeforeReceipt: true })
+  await wake(delivering.host)
+  await until(() => delivering.calls.some((call) => call.action === "turn_release"), "the first delivery")
+  expect(delivering.prompts).toEqual([{ sessionId: PARENT, messageId: WAKE_TURN }])
+  expect(delivering.store.listSubagents(PARENT)).toMatchObject([{ wake: "pending" }])
+  await delivering.host.dispose()
+  delivering.store.close()
+  const { store, host, calls, prompts } = await restarted(item)
 
   await wake(host)
   await until(() => calls.some((call) => call.action === "turn_acquire"), "the re-offer to present its grant")
