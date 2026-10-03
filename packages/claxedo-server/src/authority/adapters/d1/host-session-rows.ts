@@ -25,8 +25,10 @@ type ServedWorkspace = { workspace_id: string; owner_actor_id: string; org_id: s
  * Republishing is idempotent: turn and update times only move forward, a
  * status (with its wait and background work) replaces the held one only when
  * it was reported at or after it, and a last turn replaces the held one only
- * when it ended later. Each row's update returns what it left, so the status
- * notices compare the committed row with the one read before the batch.
+ * when it ended later. The batch first reads the rows it updates and each
+ * update returns what it left, so the status notices compare two reads of
+ * one transaction: a concurrent publish can neither hide a change nor report
+ * one twice.
  */
 export async function publishD1HostSessionRows(
   database: D1Database,
@@ -39,7 +41,9 @@ export async function publishD1HostSessionRows(
   const existing = await registeredD1Sessions(database, [...new Set(touched.map((row) => row.sessionId))])
   const plan = planHostSessionRows(publication, served, existing)
   const adoptions = plan.adopt.flatMap(({ row, workspace }) => adoptionStatements(database, now, workspace, row))
+  const updated = plan.update.map((row) => row.sessionId)
   const statements = [
+    ...(updated.length ? [statusColumnsRead(database, updated)] : []),
     ...adoptions,
     ...plan.update.map((row) => listFieldsStatement(database, row)),
     ...plan.remove.map((ref) =>
@@ -49,9 +53,16 @@ export async function publishD1HostSessionRows(
   ]
   if (!statements.length) return { ...plan.result, statusNotices: [] }
   const results = await database.batch<SessionStatusColumns>(statements)
-  const written = results.slice(adoptions.length, adoptions.length + plan.update.length).flatMap((result) => result.results)
-  const before = new Map([...existing].flatMap(([sessionId, session]) => (session.status ? [[sessionId, session.status]] : [])))
+  if (!updated.length) return { ...plan.result, statusNotices: [] }
+  const before = new Map(results[0]!.results.map((row) => [row.session_id, row]))
+  const written = results.slice(1 + adoptions.length, 1 + adoptions.length + updated.length).flatMap((result) => result.results)
   return { ...plan.result, statusNotices: await sessionStatusNotices(database, before, written) }
+}
+
+function statusColumnsRead(database: D1Database, sessionIds: readonly string[]) {
+  return database
+    .prepare(`select ${SESSION_STATUS_COLUMNS} from sessions where session_id in (${sessionIds.map(() => "?").join(", ")})`)
+    .bind(...sessionIds)
 }
 
 async function servedD1Workspaces(
@@ -86,16 +97,13 @@ async function servedD1Workspaces(
   return new Map(result.results.map((row) => [row.workspace_id, row]))
 }
 
-type RegisteredSession = { workspaceId: string; deleted: boolean; status?: SessionStatusColumns }
-
 async function registeredD1Sessions(database: D1Database, sessionIds: string[]) {
-  if (!sessionIds.length) return new Map<string, RegisteredSession>()
+  if (!sessionIds.length) return new Map<string, { workspaceId: string; deleted: boolean }>()
   const result = await database
-    .prepare(`select ${SESSION_STATUS_COLUMNS}, deleted_at from sessions where session_id in (${sessionIds.map(() => "?").join(", ")})`)
+    .prepare(`select session_id, workspace_id, deleted_at from sessions where session_id in (${sessionIds.map(() => "?").join(", ")})`)
     .bind(...sessionIds)
-    .all<SessionStatusColumns & { deleted_at: number | null }>()
-  return new Map(result.results.map(({ deleted_at, ...status }): [string, RegisteredSession] =>
-    [status.session_id, { workspaceId: status.workspace_id, deleted: deleted_at !== null, status }]))
+    .all<{ session_id: string; workspace_id: string; deleted_at: number | null }>()
+  return new Map(result.results.map((row) => [row.session_id, { workspaceId: row.workspace_id, deleted: row.deleted_at !== null }]))
 }
 
 function adoptionStatements(database: D1Database, now: number, workspace: ServedWorkspace, row: HostSessionRow) {

@@ -21,6 +21,8 @@ import { D1HostAccessAuthority } from "./host-access-authority"
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { D1SessionAuthority } from "./session-authority"
 import { publishD1HostSessionRows } from "./host-session-rows"
+import { LiveSyncRoom, liveSyncRoomConnectHeaders } from "../../../deployments/hosted-workerd/live-sync-room.cf"
+import { controlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import type { HostSessionRow, HostSessionRowsPublication } from "@claxedo/server-core/platform/auth/host-session-rows"
 import { buildSessionListResponse, parseSessionListQuery } from "@claxedo/server-core/session/navigation-list"
 import { applyControlPlaneBaseline } from "../../../test-support/control-plane-migrations"
@@ -2429,7 +2431,7 @@ describe("machine session rows", () => {
   })
 
   test("notifies only rows whose status, wait, background work or last turn changed", async () => {
-    const { publish } = await served()
+    const { publish, alice } = await served()
     const notified = async (publication: Partial<HostSessionRowsPublication>) =>
       (await publish(publication)).statusNotices.map((notice) => notice.sessionId)
 
@@ -2454,7 +2456,7 @@ describe("machine session rows", () => {
     })
     expect(ended.statusNotices).toEqual([{
       type: "session.status.changed",
-      ownerUserId: "alice",
+      ownerUserId: alice.principal!.userId,
       orgId: "org_acme",
       sessionId: "ses_a",
       workspaceId: "ws_local",
@@ -2480,10 +2482,66 @@ describe("machine session rows", () => {
     })
 
     expect(statusNotices.map((notice) => [notice.sessionId, notice.ownerUserId]).sort()).toEqual([
-      ["ses_private", "alice"],
-      ["ses_shared", "alice"],
-      ["ses_shared", "bob"],
-    ])
+      ["ses_private", alice.principal!.userId],
+      ["ses_shared", alice.principal!.userId],
+      ["ses_shared", bob.principal!.userId],
+    ].sort())
+  })
+
+  test("a share recipient hears nothing once the session read rule no longer admits them", async () => {
+    const { input, publish, sessions, alice, bob } = await served()
+    await publish({ rows: [row("ses_orphan")] })
+    await sessions.grantSessionShare(alice, { sessionId: "ses_orphan", workspaceId: "ws_local", grantedToUserId: bob.principal!.userId, level: "follow" })
+    await input.database.prepare("update users set state = 'suspended', suspended_at = ? where user_id = ?").bind(input.now(), alice.principal!.userId).run()
+
+    const { statusNotices } = await publish({ rows: [row("ses_orphan", { status: { kind: "busy", awaitingInput: false, at: 400 } })] })
+
+    expect(statusNotices).toEqual([])
+  })
+
+  test("a publish racing another one reports each change once, a status the guard kept included", async () => {
+    const { input, publish } = await served()
+    await publish({ rows: [row("ses_race")] })
+    const land = (status: string, at: number) => input.beforeNextBatch(async () => {
+      await input.database.prepare("update sessions set status = ?, status_at = ? where session_id = 'ses_race'").bind(status, at).run()
+    })
+
+    land("busy", 400)
+    expect((await publish({ rows: [row("ses_race", { status: { kind: "busy", awaitingInput: false, at: 400 } })] })).statusNotices).toEqual([])
+
+    land("retry", 600)
+    expect((await publish({ rows: [row("ses_race", { status: { kind: "idle", awaitingInput: false, at: 500 } })] })).statusNotices).toEqual([])
+  })
+
+  test("a notice reaches the live-sync room of the person an authenticated request names, and nobody else's", async () => {
+    const { publish, sessions, alice, bob, admin } = await served()
+    await publish({ rows: [row("ses_live")] })
+    await sessions.grantSessionShare(alice, { sessionId: "ses_live", workspaceId: "ws_local", grantedToUserId: bob.principal!.userId, level: "follow" })
+    const { statusNotices } = await publish({ rows: [row("ses_live", { status: { kind: "busy", awaitingInput: false, at: 400 } })] })
+    const room = new LiveSyncRoom({}, {})
+    await room.fetch(new Request("https://live-sync-room.internal/nudge", { method: "POST", body: JSON.stringify(statusNotices) }))
+
+    const heard = async (who: SignedControlPlaneAuth) => {
+      const auth = await controlPlaneAuthContext(new Request("https://api.example.test/api/cp/events", { headers: { authorization: "Bearer t" } }), {
+        authentication: { descriptor: {} as never, authenticate: async () => who.principal!, introspect: async () => ({}) } as never,
+      })
+      const response = await room.fetch(new Request("https://live-sync-room.internal/connect", {
+        headers: liveSyncRoomConnectHeaders({ auth, orgId: "org_acme" }, undefined, "0"),
+      }))
+      const reader = response.body!.getReader()
+      let text = ""
+      for (let reads = 0; reads < 8; reads += 1) {
+        const next = await Promise.race([reader.read(), new Promise<undefined>((resolve) => setTimeout(resolve, 0))])
+        if (!next || next.done) break
+        text += new TextDecoder().decode(next.value)
+      }
+      await reader.cancel()
+      return text.includes("ses_live")
+    }
+
+    expect(await heard(alice)).toBe(true)
+    expect(await heard(bob)).toBe(true)
+    expect(await heard(admin)).toBe(false)
   })
 
   test("the readers of a changed session are found through indexes, never a scan", async () => {
@@ -2514,9 +2572,7 @@ describe("machine session rows", () => {
     )
     const readersPlan = plans.find((plan) => plan.some((detail) => detail.includes("session_share_grants")))
     expect(readersPlan).toContainEqual(expect.stringMatching(/^SEARCH g USING INDEX session_share_grants_/))
-    expect(readersPlan).toContainEqual(expect.stringMatching(/^SEARCH ai USING INDEX auth_identities_by_user/))
-    const tables = /^SCAN (s|w|g|u|ai|sessions|workspaces|session_share_grants|users|auth_identities|member_org|member_row|orgs|org_memberships)\b/
-    expect(plans.flat().filter((detail) => tables.test(detail))).toEqual([])
+    expect(plans.flat().filter((detail) => /^SCAN (?!r$)/.test(detail))).toEqual([])
   })
 
   test("refuses rows for a workspace the enrollment does not serve at this generation", async () => {

@@ -2,7 +2,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 import type { SessionLastTurn } from "@claxedo/agent-runtime-contract"
 import type { SessionStatusChangedEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import type { SessionRowStatusKind } from "@claxedo/server-core/session/navigation-list"
-import { orgMemberSql } from "./authorization"
+import { sessionReaderSql } from "./authorization"
 
 /** A session's status columns as `sessions` holds them, before or after a publication. */
 export type SessionStatusColumns = {
@@ -38,10 +38,10 @@ function changed(before: SessionStatusColumns | undefined, after: SessionStatusC
 }
 
 /**
- * The people who read each session and hear its status: the owner of its
- * workspace and every person it is shared with directly, while each is active
- * and stands in the session's organization, under every subject they sign in
- * with. A share to an organization or a team names no person and hears nothing.
+ * The people who hear each session's status: the owner of its workspace and
+ * every person it is shared with, each only while the session read rule
+ * still admits them, by their canonical user id, which their live-sync
+ * connection is keyed by.
  */
 async function readSessionReaders(database: D1Database, sessionIds: readonly string[]) {
   const marks = sessionIds.map(() => "?").join(", ")
@@ -53,19 +53,17 @@ async function readSessionReaders(database: D1Database, sessionIds: readonly str
         where s.session_id in (${marks})
         union
         select g.session_id, g.target_user_id from session_share_grants g
-        where g.session_id in (${marks}) and g.revoked_at is null and g.target_user_id is not null
+        where g.session_id in (${marks}) and g.revoked_at is null
       )
-      select r.session_id, ai.subject
+      select r.session_id, r.user_id
       from readers r
       join sessions s on s.session_id = r.session_id
-      join users u on u.user_id = r.user_id and u.state = 'active'
-      join auth_identities ai on ai.user_id = r.user_id and ai.unlinked_at is null
-      where ${orgMemberSql("s.org_id", "r.user_id")}
+      where ${sessionReaderSql("s", "r.user_id")}
     `)
     .bind(...sessionIds, ...sessionIds)
-    .all<{ session_id: string; subject: string }>()
+    .all<{ session_id: string; user_id: string }>()
   const readers = new Map<string, Set<string>>()
-  for (const row of result.results) readers.set(row.session_id, (readers.get(row.session_id) ?? new Set()).add(row.subject))
+  for (const row of result.results) readers.set(row.session_id, (readers.get(row.session_id) ?? new Set()).add(row.user_id))
   return readers
 }
 
@@ -98,5 +96,5 @@ export async function sessionStatusNotices(
     changed(before.get(row.session_id), row))
   if (!changes.length) return []
   const readers = await readSessionReaders(database, changes.map((row) => row.session_id))
-  return changes.flatMap((row) => [...(readers.get(row.session_id) ?? [])].map((subject) => statusNoticeFor(row, subject)))
+  return changes.flatMap((row) => [...(readers.get(row.session_id) ?? [])].map((userId) => statusNoticeFor(row, userId)))
 }

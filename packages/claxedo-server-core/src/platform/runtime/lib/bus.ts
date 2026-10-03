@@ -101,8 +101,9 @@ export type SessionShareChangedEvent = {
 /**
  * A session's list status as the hosted registry holds it after a machine or
  * cloud runtime published a row that changed its status, wait, background
- * work or last turn. One per reader: `ownerUserId` is the recipient subject
- * (the session's owner or a person it is shared with), never the publisher.
+ * work or last turn. One per reader: `ownerUserId` is the recipient's
+ * canonical user id (the session's owner or a person it is shared with),
+ * which their live-sync connection is keyed by, never the publisher.
  * Unlike a doorbell it carries the state, so a reader updates the row in
  * place instead of re-reading the list.
  */

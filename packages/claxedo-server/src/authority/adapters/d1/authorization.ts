@@ -102,6 +102,15 @@ export function mayGuard<K extends ResourceKind>(
   return { sql: `exists (${query.sql})`, bind: query.bind }
 }
 
+/**
+ * `read` on session `s` for the person a column of the caller's query names
+ * (`user`, an SQL expression), not a bound principal: the same rule `maySql`
+ * applies, for a query that asks who may read rather than whether one may.
+ */
+export function sessionReaderSql(s: string, user: string): string {
+  return `(${activePrincipalSql(false)} and ${sessionRuleSql("read", s, false)})`.replaceAll(USER, user)
+}
+
 /** That the principal is still an active person with an active actor, for a write that names no resource. */
 export function activeGuard(principal: AuthorizationPrincipal): BoundSql {
   return bindPrincipal(activePrincipalSql(principal.actorId !== undefined), principal)
