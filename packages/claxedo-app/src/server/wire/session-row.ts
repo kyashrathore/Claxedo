@@ -42,7 +42,6 @@ export function sessionRowFromListItem(item: unknown, address: Address): Session
   }
 }
 
-/** The root of the Durable Object a listed session runs in, when one serves it. */
 export function sessionHostRootFromListItem(item: unknown): string | undefined {
   return item && typeof item === "object" ? nonEmptyString((item as { sessionHostRoot?: unknown }).sessionHostRoot) : undefined
 }

@@ -29,7 +29,6 @@ export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
   readonly locate: (id: PlacementId) => Promise<RuntimeRoute>
   readonly home: (ref: SessionLocation) => Promise<SessionHome>
   readonly learn: (directory: string) => Promise<void>
-  /** Records that a session is served by its own Durable Object, so its reads and writes go there and not to the workspace's runtime. */
   readonly hostSession: (ref: Pick<SessionLocation, "placementId" | "sessionId">, root: string) => void
   readonly catalog: () => BootstrapCatalog | undefined
   readonly load: () => Promise<BootstrapCatalog>
@@ -72,10 +71,18 @@ function observeQuery(queryClient: QueryClient, key: readonly unknown[]): { read
 
 function placementReads(records: () => readonly PlacementRecord[]) {
   const recordOf = (id: PlacementId) => records().find((record) => record.placement.id === id)
-  return {
-    recordOf,
+  const hosts: SessionHosts = new Map()
+  const published: Pick<Workspaces, "byId" | "list" | "hostSession"> = {
     byId: (id: PlacementId) => recordOf(id)?.placement,
     list: () => records().map((record) => record.placement),
+    hostSession: (ref, root) => {
+      hosts.set(sessionHostKey(ref), root)
+    },
+  }
+  return {
+    recordOf,
+    hosts,
+    published,
     address: {
       placementFor: (directory: string, workspaceId?: string) => {
         const record = placementRecordAt(records(), directory, workspaceId)
@@ -195,20 +202,15 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
     return merged.merge(await readCatalogs(queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: Number.POSITIVE_INFINITY }), accountPlacements?.load()))
   }
   const reads = placementReads(() => merged.catalog()?.placements ?? [])
-  const { recordOf, byId, list } = reads
-  const hosts: SessionHosts = new Map()
+  const { recordOf, hosts } = reads
   return {
     shared,
-    byId,
-    list,
+    ...reads.published,
     ...sharedAware(reads, shared, hosts),
     ...placementRoutes(async (id) => {
       await load()
       return recordOf(id)
     }, shared, hosts),
-    hostSession: (ref, root) => {
-      hosts.set(sessionHostKey(ref), root)
-    },
     learn: async (directory) => {
       if (relearned.has(directory)) return
       await reread()

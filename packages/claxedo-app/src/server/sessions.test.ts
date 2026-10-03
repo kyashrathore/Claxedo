@@ -59,9 +59,9 @@ test.each([["cloud", false], ["remote machine", true]] as const)("sessions: a %s
   workspaces.dispose()
 })
 
-test("sessions: a Pi create on a cloud workspace mints its session host's connection first, is created through it, and is then read there", async () => {
-  const minted: unknown[] = []
-  const hosted: Array<{ method: string; path: string; authorization: string | null; id?: unknown; operation: string | null }> = []
+type HostedRequest = { method: string; path: string; authorization: string | null; id?: unknown; operation: string | null }
+
+function sessionHostServer(minted: unknown[], hosted: HostedRequest[]) {
   let origin = ""
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -88,8 +88,15 @@ test("sessions: a Pi create on a cloud workspace mints its session host's connec
       return Response.json({ error: { code: "unexpected", message: url.pathname } }, { status: 500 })
     },
   })
-  running.push(server)
   origin = `http://127.0.0.1:${server.port}`
+  running.push(server)
+  return origin
+}
+
+test("sessions: a Pi create on a cloud workspace mints its session host's connection first, is created through it, and is then read there", async () => {
+  const minted: unknown[] = []
+  const hosted: HostedRequest[] = []
+  const origin = sessionHostServer(minted, hosted)
   const transport = createTransport({ serverUrl: origin, cookies: true })
   const account = createBrowserHostedAccount(transport)
   const workspaces = createWorkspaces(transport, new QueryClient())

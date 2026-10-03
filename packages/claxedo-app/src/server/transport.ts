@@ -24,7 +24,6 @@ export type Transport = {
   readonly json: <T>(path: string, init?: RequestInit) => Promise<T>
   readonly runtimeJson: <T>(route: RuntimeRoute, path: string, init?: RequestInit) => Promise<T>
   readonly startRuntime: (workspaceId: string, options?: StartOptions) => Promise<void>
-  /** Mints a session's connection before it is created; answers the root of the Durable Object that will serve it, if one will. */
   readonly connectSession: (workspaceId: string, sessionId: string, harness: SessionHarness) => Promise<string | undefined>
 }
 
@@ -75,7 +74,6 @@ async function readJsonResponse<T>(response: Response, label: string): Promise<T
   return (await response.json()) as T
 }
 
-/** The one session a route's relay connection is scoped to: a share's, or the session a Durable Object serves. */
 function sessionScope(route: RuntimeRoute) {
   return route.sharedSession?.sessionId ?? route.sessionHost?.sessionId
 }
