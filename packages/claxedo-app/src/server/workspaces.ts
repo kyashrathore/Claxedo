@@ -73,10 +73,10 @@ function observeQuery(queryClient: QueryClient, key: readonly unknown[]): { read
 
 function placementReads(records: () => readonly PlacementRecord[]) {
   const recordOf = (id: PlacementId) => records().find((record) => record.placement.id === id)
-  const hosts: SessionHosts = { roots: new Map(), answered: new Map() }
+  const hosts: SessionHosts = { roots: new Map(), askedOrServedByWorkspace: new Map() }
   const answer = (key: string, root: string | undefined) => {
     if (root) hosts.roots.set(key, root)
-    hosts.answered.set(key, Promise.resolve())
+    hosts.askedOrServedByWorkspace.set(key, Promise.resolve())
   }
   const learnSessionHost = (workspaceId: string, sessionId: string, root: string) => {
     const placement = records().find((record) => record.route.workspaceId === workspaceId)?.placement.id ?? placementId(workspaceId)
@@ -101,8 +101,7 @@ function placementReads(records: () => readonly PlacementRecord[]) {
   }
 }
 
-/** A session in `answered` with no entry in `roots` is served by its workspace. */
-type SessionHosts = { readonly roots: Map<string, string>; readonly answered: Map<string, Promise<unknown>> }
+type SessionHosts = { readonly roots: Map<string, string>; readonly askedOrServedByWorkspace: Map<string, Promise<unknown>> }
 
 const sessionHostKey = (ref: Pick<SessionLocation, "placementId" | "sessionId">) => JSON.stringify([ref.placementId, ref.sessionId])
 
@@ -113,18 +112,17 @@ function hostedRoute(record: PlacementRecord, hosts: SessionHosts, ref: Pick<Ses
 
 type HostFinder = Transport["findSessionHost"]
 
-/** A cold open can route a cloud session before any list page has named its host, so its first route asks the control plane. */
 function cloudSessionHosts(find: HostFinder, hosts: SessionHosts) {
   return async (record: PlacementRecord, ref: Pick<SessionLocation, "placementId" | "sessionId">) => {
     if (record.placement.kind !== "cloud") return hostedRoute(record, hosts, ref)
     const key = sessionHostKey(ref)
-    const pending = hosts.answered.get(key) ?? find(record.route.workspaceId, ref.sessionId).then((root) => {
+    const pending = hosts.askedOrServedByWorkspace.get(key) ?? find(record.route.workspaceId, ref.sessionId).then((root) => {
       if (root) hosts.roots.set(key, root)
     }, (error: unknown) => {
-      hosts.answered.delete(key)
+      hosts.askedOrServedByWorkspace.delete(key)
       throw error
     })
-    hosts.answered.set(key, pending)
+    hosts.askedOrServedByWorkspace.set(key, pending)
     await pending
     return hostedRoute(record, hosts, ref)
   }
@@ -172,7 +170,7 @@ function sharedAware(reads: ReturnType<typeof placementReads>, shared: SharedSes
     streamRoute: (ref) => {
       const record = reads.recordOf(ref.placementId)
       if (!record) return shared.route(ref)
-      if (record.placement.kind === "cloud" && !hosts.answered.has(sessionHostKey(ref))) return undefined
+      if (record.placement.kind === "cloud" && !hosts.askedOrServedByWorkspace.has(sessionHostKey(ref))) return undefined
       return hostedRoute(record, hosts, ref) ?? (record.route.remote && record.placement.reachable ? record.route : undefined)
     },
   }

@@ -8,7 +8,6 @@ export type Relay = {
   readonly adopt: (link: RelayConnection) => void
 }
 
-/** Where a signed-in person's relay links outlive a reload: the tab's storage, under that person's own scope. */
 export type RelayLinkStorage = { readonly scope: string; readonly storage: Pick<Storage, "getItem" | "setItem"> }
 
 const REFRESH_WINDOW_MS = 60_000
@@ -61,7 +60,7 @@ async function sendThroughRelay(link: RelayConnection, path: string, init?: Requ
   }
 }
 
-export function createRelay(read: WorkspaceConnections["read"], links?: RelayLinkStorage): Relay {
+function relayConnections(read: WorkspaceConnections["read"], links: RelayLinkStorage | undefined) {
   const connections = new Map<string, Promise<RelayConnection>>()
   const stored = storedLinks(links)
   const hold = async (key: string, pending: Promise<RelayConnection>) => {
@@ -89,6 +88,15 @@ export function createRelay(read: WorkspaceConnections["read"], links?: RelayLin
     const current = await connection(workspaceId, sessionId)
     return usable(current) ? current : connection(workspaceId, sessionId, true)
   }
+  const adopt = (link: RelayConnection) => {
+    connections.set(key(link.workspaceId, link.sessionId), Promise.resolve(link))
+    stored.write(key(link.workspaceId, link.sessionId), link)
+  }
+  return { connection, fresh, adopt }
+}
+
+export function createRelay(read: WorkspaceConnections["read"], links?: RelayLinkStorage): Relay {
+  const { connection, fresh, adopt } = relayConnections(read, links)
   return {
     fetch: async (workspaceId, path, init, sessionId) => {
       const response = await sendThroughRelay(await fresh(workspaceId, sessionId), path, init)
@@ -98,9 +106,6 @@ export function createRelay(read: WorkspaceConnections["read"], links?: RelayLin
       const link = await fresh(workspaceId, sessionId)
       return new WebSocket(workspaceUrl(link, path).replace(/^http/, "ws"), [`${RUNTIME_ACCESS_TOKEN_PROTOCOL}${link.runtimeAccessToken}`])
     },
-    adopt: (link) => {
-      connections.set(key(link.workspaceId, link.sessionId), Promise.resolve(link))
-      stored.write(key(link.workspaceId, link.sessionId), link)
-    },
+    adopt,
   }
 }

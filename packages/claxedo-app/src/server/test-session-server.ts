@@ -70,23 +70,21 @@ function controlPlaneAnswer(options: FakeServerOptions, path: string): Response 
   return Response.json({ error: { code: "unexpected", message: path } }, { status: 500 })
 }
 
-export function fakeServer(options: FakeServerOptions) {
-  const requests: string[] = []
-  const runtimeCalls: string[] = []
-  const hostedCalls: string[] = []
-  const hostReads: string[] = []
+type FakeCalls = { readonly requests: string[]; readonly runtimeCalls: string[]; readonly hostedCalls: string[]; readonly hostReads: string[] }
+
+function fakeTransport(options: FakeServerOptions, calls: FakeCalls): Transport {
   const request = async (path: string) => {
-    requests.push(path)
+    calls.requests.push(path)
     options.requested?.(path)
     return controlPlaneAnswer(options, path)
   }
   const runtime = async (route: RuntimeRoute, path: string) => {
-    runtimeCalls.push(path)
-    if (route.sessionHost) hostedCalls.push(path)
+    calls.runtimeCalls.push(path)
+    if (route.sessionHost) calls.hostedCalls.push(path)
     return options.runtime ? options.runtime(path) : Response.json({ error: { message: "unexpected runtime read" } }, { status: 500 })
   }
   const readJson = async (response: Response): Promise<unknown> => response.json()
-  const transport = {
+  return {
     serverUrl: "https://cp.test",
     loopback: false,
     request,
@@ -104,10 +102,15 @@ export function fakeServer(options: FakeServerOptions) {
     connectSession: async () => undefined,
     onSessionHost: () => () => undefined,
     findSessionHost: async (_workspaceId: string, sessionId: string) => {
-      hostReads.push(sessionId)
+      calls.hostReads.push(sessionId)
       return options.sessionHosts?.[sessionId]
     },
-  } satisfies Transport
+  }
+}
+
+export function fakeServer(options: FakeServerOptions) {
+  const calls: FakeCalls = { requests: [], runtimeCalls: [], hostedCalls: [], hostReads: [] }
+  const transport = fakeTransport(options, calls)
   const workspaces = createWorkspaces(transport, new QueryClient())
-  return { context: { transport, workspaces, status: createStatusOwner(transport) }, requests, runtimeCalls, hostedCalls, hostReads }
+  return { context: { transport, workspaces, status: createStatusOwner(transport) }, ...calls }
 }
