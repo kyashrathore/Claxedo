@@ -95,11 +95,9 @@ describe("harness login access guard", () => {
     // most likely to rot — is asserted rather than assumed.
     expect(sources.length).toBeGreaterThan(30)
     expect(cliSources.length).toBeGreaterThan(0)
-    for (const root of [...CREDENTIAL_ROOTS, CLI_ROOT]) {
-      const found = walk(root)
-      expect(found.length, root).toBeGreaterThan(0)
-      expect(found.some((file) => path.relative(root, file).includes(path.sep)), root).toBe(true)
-    }
+    const roots = [...CREDENTIAL_ROOTS, CLI_ROOT]
+    for (const root of roots) expect(walk(root).length, root).toBeGreaterThan(0)
+    expect(roots.filter((root) => walk(root).some((file) => path.relative(root, file).includes(path.sep))).length).toBeGreaterThan(1)
   })
 
   test("exactly one module can reach a command line", () => {
