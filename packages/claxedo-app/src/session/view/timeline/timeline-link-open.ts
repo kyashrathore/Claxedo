@@ -1,7 +1,8 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import { readString } from "@claxedo/helpers/readers"
 import type { TimelineFocus, TimelinePlatform } from "./model"
-import { resolveTimelinePath, timelineAbsoluteFilePath, timelineAnchorClickTarget, timelineExternalSourceClickTarget, timelineFileFocus } from "./timeline-file-paths"
+import { splitFileLineSuffix } from "@/lib/workspace-file-focus"
+import { resolveTimelinePath, stripMentionSigil, timelineAbsoluteFilePath, timelineAnchorClickTarget, timelineExternalSourceClickTarget, timelineFileFocus } from "./timeline-file-paths"
 
 const loopbackHosts: readonly string[] = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]"]
 
@@ -26,8 +27,7 @@ function fileOpeners(host: TimelineLinkHost) {
     const target = timelineFileFocus(raw, host.placementPath)
     if (target) host.openFocus({ kind: "file", ...target })
     else {
-      const path = timelineAbsoluteFilePath(raw)
-      if (path && host.platform.canReadLocalFiles) host.openFocus({ kind: "file", path })
+      if (timelineAbsoluteFilePath(raw) && host.platform.canReadLocalFiles) host.openFocus({ kind: "file", ...splitFileLineSuffix(stripMentionSigil(raw)) })
       else host.onError(new Error("This file cannot be opened on this computer."))
     }
   }

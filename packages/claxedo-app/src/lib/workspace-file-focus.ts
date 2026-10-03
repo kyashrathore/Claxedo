@@ -4,21 +4,23 @@ export type WorkspaceFileFocusTarget = {
   col?: number
 }
 
+export function splitFileLineSuffix(raw: string): WorkspaceFileFocusTarget {
+  const path = raw.trim()
+  const suffix = path.match(/:(\d+)(?::(\d+))?$/)
+  if (!suffix) return { path }
+  return {
+    path: path.slice(0, -suffix[0].length),
+    line: Number.parseInt(suffix[1], 10),
+    col: suffix[2] ? Number.parseInt(suffix[2], 10) : undefined,
+  }
+}
+
 export function resolveWorkspaceFileFocus(
   raw: string,
   workspaceDir: string,
 ): WorkspaceFileFocusTarget | undefined {
-  let path = raw.trim()
-  if (!path) return undefined
-
-  let line: number | undefined
-  let col: number | undefined
-  const suffix = path.match(/:(\d+)(?::(\d+))?$/)
-  if (suffix) {
-    path = path.slice(0, -suffix[0].length)
-    line = Number.parseInt(suffix[1], 10)
-    if (suffix[2]) col = Number.parseInt(suffix[2], 10)
-  }
+  const { line, col, ...target } = splitFileLineSuffix(raw)
+  let path = target.path
 
   if (path.startsWith("~")) return undefined
 
