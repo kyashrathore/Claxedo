@@ -14,9 +14,7 @@ export function FirstProjectCanvas(_props: PageProps) {
   const capabilities = () => server.capabilities()
   return (
     <main class="first-project" data-testid="first-project-canvas">
-      <div class="first-project-field" aria-hidden="true" />
-      <div class="first-project-glow" aria-hidden="true" />
-      <div class="first-project-vignette" aria-hidden="true" />
+      <div class="first-project-plate" aria-hidden="true" />
       <div class="first-project-content">
         <Show when={capabilities()}>
           {(known) => (

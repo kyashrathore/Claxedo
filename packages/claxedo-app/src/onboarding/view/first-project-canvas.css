@@ -1,8 +1,5 @@
 .first-project {
-  --first-project-rule: color-mix(in oklab, var(--border-base) 42%, transparent);
-  --first-project-dot: color-mix(in oklab, var(--border-base) 85%, transparent);
-  --first-project-hatch: color-mix(in oklab, var(--border-base) 34%, transparent);
-  --first-project-glow-tint: color-mix(in oklab, var(--text-interactive-base) 13%, transparent);
+  --first-project-plate-ink: color-mix(in oklab, var(--text-base) 42%, transparent);
   --first-project-edge: color-mix(in oklab, var(--text-interactive-base) 58%, transparent);
 
   position: relative;
@@ -34,57 +31,43 @@
   flex-shrink: 0;
 }
 
-.first-project-field {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image:
-    repeating-linear-gradient(to right, var(--first-project-rule) 0 1px, transparent 1px 32px),
-    repeating-linear-gradient(to bottom, var(--first-project-rule) 0 1px, transparent 1px 32px),
-    radial-gradient(circle at 1px 1px, var(--first-project-dot) 0 1.5px, transparent 1.6px);
-  background-size:
-    auto,
-    auto,
-    128px 128px;
-  -webkit-mask-image: radial-gradient(125% 105% at 50% 38%, black 0%, black 34%, transparent 76%);
-  mask-image: radial-gradient(125% 105% at 50% 38%, black 0%, black 34%, transparent 76%);
-}
-
-.first-project-glow {
+.first-project-plate {
+  --dot: 2px;
   position: absolute;
   inset: 0;
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
-  background-image: radial-gradient(44rem 30rem at 50% 36%, var(--first-project-glow-tint) 0%, transparent 68%);
+  -webkit-mask-image: radial-gradient(ellipse 58% 62% at 50% 46%, rgb(0 0 0 / 0.22), #000 92%);
+  mask-image: radial-gradient(ellipse 58% 62% at 50% 46%, rgb(0 0 0 / 0.22), #000 92%);
 }
 
-.first-project-glow::before {
+.first-project-plate::before {
   content: "";
   position: absolute;
-  inset: -30%;
-  background-image: repeating-linear-gradient(-38deg, var(--first-project-hatch) 0 1px, transparent 1px 15px);
-  -webkit-mask-image: linear-gradient(105deg, transparent 14%, black 40%, black 56%, transparent 80%);
-  mask-image: linear-gradient(105deg, transparent 14%, black 40%, black 56%, transparent 80%);
-  animation: first-project-drift 64s ease-in-out infinite alternate;
+  left: 50%;
+  bottom: 0;
+  width: calc(960 * var(--dot));
+  aspect-ratio: 960 / 609;
+  translate: -50% 0;
+  background-color: var(--first-project-plate-ink);
+  image-rendering: pixelated;
+  -webkit-mask: url("./assets/daniell-taj-dither.webp") 0 0 / 100% 100% no-repeat;
+  mask: url("./assets/daniell-taj-dither.webp") 0 0 / 100% 100% no-repeat;
 }
 
-@keyframes first-project-drift {
-  from {
-    transform: translate3d(-3.5%, -2%, 0);
-  }
-  to {
-    transform: translate3d(3.5%, 2%, 0);
-  }
+html[data-color-scheme="dark"] .first-project {
+  --first-project-plate-ink: color-mix(in oklab, var(--text-base) 20%, transparent);
 }
 
-.first-project-vignette {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image: radial-gradient(115% 92% at 50% 40%, transparent 38%, var(--background-base) 100%);
+html[data-color-scheme="dark"] .first-project-plate::before {
+  -webkit-mask:
+    url("./assets/daniell-taj-dither.webp") 0 0 / 100% 100% no-repeat,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    url("./assets/daniell-taj-dither.webp") 0 0 / 100% 100% no-repeat exclude,
+    linear-gradient(#000 0 0);
 }
 
 .first-project-steps {
@@ -246,8 +229,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .first-project-reveal,
-  .first-project-card [data-step-panel="project"] > form > *,
-  .first-project-glow::before {
+  .first-project-card [data-step-panel="project"] > form > * {
     animation: none;
   }
 }
