@@ -96,6 +96,38 @@ export async function refreshCredentialSecret(
   }
 }
 
+export type StoredCredentialSecret = {
+  read(): Promise<string | null | undefined>
+  write(next: RefreshedCredentialSecret): Promise<unknown>
+}
+
+const storedRefreshes = new Map<string, Promise<RefreshedCredentialSecret>>()
+
+/**
+ * Renew a stored login and write it back, one exchange per credential id in
+ * this process: a provider that rotates its refresh token accepts the first
+ * exchange and refuses every later one that presents the same token. The
+ * secret is read inside the flight, so a caller holding a copy from before
+ * another caller's exchange presents the rotated token, not the spent one.
+ */
+export function refreshStoredCredential(
+  credential: CredentialMetadata,
+  stored: StoredCredentialSecret,
+  options: { fetch?: typeof fetch; now?: () => number } = {},
+): Promise<RefreshedCredentialSecret> {
+  const running = storedRefreshes.get(credential.id)
+  if (running) return running
+  const started = (async () => {
+    const secret = await stored.read()
+    if (!secret) throw new CredentialRefreshError("Credential has no stored secret")
+    const next = await refreshCredentialSecret(credential, secret, options)
+    await stored.write(next)
+    return next
+  })().finally(() => storedRefreshes.delete(credential.id))
+  storedRefreshes.set(credential.id, started)
+  return started
+}
+
 /**
  * Write the new tokens back into every mirrored position the secret already
  * uses, and only those — consumers read different canonical provider fields,

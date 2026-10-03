@@ -38,7 +38,12 @@ export type CredentialVerificationOutcome = {
 export async function verifyCredential(
   credential: CredentialMetadata,
   secret: string,
-  options: { fetch?: typeof fetch; now?: () => number } = {},
+  options: {
+    fetch?: typeof fetch
+    now?: () => number
+    /** Renews a stale login; a caller verifying a stored row passes the shared stored-row refresh. */
+    refresh?: (credential: CredentialMetadata, secret: string) => Promise<RefreshedCredentialSecret>
+  } = {},
 ): Promise<CredentialVerificationOutcome> {
   const now = options.now ?? Date.now
   const stale = credential.expires_at !== null && credential.expires_at !== undefined && credential.expires_at <= now()
@@ -50,7 +55,8 @@ export async function verifyCredential(
   let refreshed: RefreshedCredentialSecret | undefined
   if (stale) {
     if (!isRefreshableCredential(credential) || !credentialRefreshToken(secret)) return { health: "expired" }
-    const renewed = await refreshCredentialSecret(credential, secret, options).catch((error: unknown) => {
+    const refresh = options.refresh ?? ((row: CredentialMetadata, current: string) => refreshCredentialSecret(row, current, options))
+    const renewed = await refresh(credential, secret).catch((error: unknown) => {
       // Never swallowed: "expired" with no trace of an attempted renewal is
       // indistinguishable from never having tried.
       log.warn("Credential refresh failed", {

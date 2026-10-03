@@ -25,6 +25,7 @@ const {
 } = await import("@claxedo/server-core/credentials/registry")
 const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
 const { createLocalCredentialBroker } = await import("./broker")
+const { checkCredential } = await import("@claxedo/server-core/credentials/operations/check")
 const { providerProjection } = await import("@claxedo/agent-runtime-contract")
 
 type Projection = Awaited<ReturnType<ReturnType<typeof createLocalCredentialBroker>["projectAuth"]>>["accounts"][string][string]
@@ -213,6 +214,33 @@ describe("local binding authority", () => {
     expect(JSON.parse((await readSecretById(credential.id)) ?? "{}")).toEqual({ tokens: { access_token: "access-new", refresh_token: "refresh-2" } })
     await local.projectAuth({ workspaceId })
     expect(exchanged).toEqual(["refresh-1"])
+  })
+
+  test("a Check and a projection renewing the same login share one token exchange", async () => {
+    const credential = await activeRow(JSON.stringify({ tokens: { access_token: "access-old", refresh_token: "refresh-1" } }), "openai", "oauth_token")
+    await updateCredentialSecret(credential.id, JSON.stringify({ tokens: { access_token: "access-old", refresh_token: "refresh-1" } }), Date.now() + 10 * 60_000)
+    const exchanged: string[] = []
+    const provider = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (!String(url).endsWith("/oauth/token")) return new Response("{}")
+      exchanged.push(new URLSearchParams(String(init?.body)).get("refresh_token") ?? "")
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      return Response.json({ access_token: "access-new", refresh_token: "refresh-2" })
+    }) as typeof fetch
+    const local = createLocalCredentialBroker({ machineOwnerUserId: () => "local", dataDir: root, brokerOrigin, fetch: provider })
+    const registry = { updateCredentialHealth: async (id: string, health: Parameters<typeof updateCredentialHealth>[1], at: number, org?: string) =>
+      updateCredentialHealth(id, health, at, org), resolveCredentialSecretById: readSecretById, updateCredentialSecret,
+      updateCredentialUsage: async () => {}, updateCredentialLabel: async () => true }
+    const row = credentialById(credential.id, { onOutage: "throw" })!
+
+    const [checked, rows] = await Promise.all([
+      checkCredential(registry, row, { org: "__local__", fetch: provider, now: () => Date.now() + 20 * 60_000 }),
+      local.projectAuth({ workspaceId }),
+    ])
+
+    expect(exchanged).toEqual(["refresh-1"])
+    expect(checked).toMatchObject({ status: "checked" })
+    expect(rows.direct?.local?.openai?.secret).toBe("access-new")
+    expect(JSON.parse((await readSecretById(credential.id)) ?? "{}")).toEqual({ tokens: { access_token: "access-new", refresh_token: "refresh-2" } })
   })
 
   test("an OAuth login whose refresh is refused is projected as failed auth, not as its stale token", async () => {

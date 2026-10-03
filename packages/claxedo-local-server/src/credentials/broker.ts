@@ -51,7 +51,7 @@ import {
   updateCredentialSecret,
   SINGLE_TENANT_ORG,
 } from "@claxedo/server-core/credentials/registry"
-import { isRefreshableCredential, refreshCredentialSecret } from "@claxedo/server-core/credentials/operations/refresh"
+import { isRefreshableCredential, refreshStoredCredential } from "@claxedo/server-core/credentials/operations/refresh"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import {
   destinationAuthMode,
@@ -242,8 +242,6 @@ export function createLocalCredentialBroker(input: {
 }): LocalCredentialBroker {
   const defaultOrg = input.org ?? SINGLE_TENANT_ORG
   const now = input.now ?? Date.now
-  /** One refresh per credential at a time: a rotating refresh token is spent by the first exchange. */
-  const refreshing = new Map<string, Promise<CredentialMetadata>>()
   const minted = new Map<string, MintedBinding>()
   const projected = new Set<string>()
   const usedAt = new Map<string, number>()
@@ -319,24 +317,14 @@ export function createLocalCredentialBroker(input: {
         : { credential: row.credential, unavailable: row.unavailable ?? "no_destination" })
   }
 
-  async function refreshed(credential: CredentialMetadata, org: string): Promise<CredentialMetadata> {
-    const secret = await readSecretById(credential.id, org)
-    if (!secret) throw new Error("credential has no stored secret")
-    const next = await refreshCredentialSecret(credential, secret, { ...(input.fetch ? { fetch: input.fetch } : {}), now })
-    await updateCredentialSecret(credential.id, next.secret, next.expiresAt, org)
-    return credentialById(credential.id, { onOutage: "throw" }, org) ?? credential
-  }
-
   /** The row to bind, renewed first when it is an OAuth login close to expiring. */
-  function current(credential: CredentialMetadata, org: string): Promise<CredentialMetadata> {
-    if (!isRefreshableCredential(credential) || !credential.expires_at || credential.expires_at - now() > REFRESH_WITHIN_MS) {
-      return Promise.resolve(credential)
-    }
-    const running = refreshing.get(credential.id)
-    if (running) return running
-    const started = refreshed(credential, org).finally(() => refreshing.delete(credential.id))
-    refreshing.set(credential.id, started)
-    return started
+  async function current(credential: CredentialMetadata, org: string): Promise<CredentialMetadata> {
+    if (!isRefreshableCredential(credential) || !credential.expires_at || credential.expires_at - now() > REFRESH_WITHIN_MS) return credential
+    await refreshStoredCredential(credential, {
+      read: () => readSecretById(credential.id, org),
+      write: (next) => updateCredentialSecret(credential.id, next.secret, next.expiresAt, org),
+    }, { ...(input.fetch ? { fetch: input.fetch } : {}), now })
+    return credentialById(credential.id, { onOutage: "throw" }, org) ?? credential
   }
 
   /**
