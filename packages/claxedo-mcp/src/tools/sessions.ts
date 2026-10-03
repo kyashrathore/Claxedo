@@ -260,7 +260,7 @@ export function registerSessionTools(registry: ToolRegistrar) {
     "session_delete",
     {
       description:
-        "Delete a session, every session under it and their transcripts, after the person confirms. Refused while any of them is working or waiting for input. This cannot be undone. "
+        "Delete a session, every session under it and their transcripts, after the person confirms. Refused while any of them is working, waiting for input or held by another operation. This cannot be undone. "
         + "Part of the default-on sessions group; inside a session it reaches only that session's own workspace, and only from a session its owner alone has driven.",
       inputSchema: { ...SESSION_ARG, ...WORKSPACE_TARGET_SCHEMA },
       access: runtimeToolAccess("session_delete", { audiences: ["runtime", "user"], scope: "admin", destructive: true, ownerDriven: true }),

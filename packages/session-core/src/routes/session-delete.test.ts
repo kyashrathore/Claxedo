@@ -148,6 +148,26 @@ describe("DELETE /session/:id", () => {
     expect(await f.remove("parent")).toMatchObject({ status: 409, body: { error: { details: { sessionId: "parent", deletedSessionIds: ["child"] } } } })
   })
 
+  test("refuses a provider's subagent session as a root of its own, and removes it with its parent", async () => {
+    const f = deleteFixture()
+    await f.seed("parent")
+    const { childSessionId } = await f.host.runtime.subagents.admit("parent", {
+      observationId: "provider-child", providerId: "provider-child", providerKind: "test", status: "completed", transcript: { kind: "messages" },
+    })
+    const child = childSessionId!
+    expect(f.store.getSession(child)?.parentID).toBe("parent")
+
+    expect(await f.remove(child)).toMatchObject({
+      status: 409,
+      body: { error: { code: "session_delete_refused", details: { sessionId: child, reason: "owned_by_parent" } } },
+    })
+    expect(f.store.getSession(child)).not.toBeNull()
+    expect(f.events).toEqual([])
+
+    expect(await f.remove("parent")).toEqual({ status: 200, body: { ok: true, deletedSessionIds: ["parent"] } })
+    expect(f.store.getSession(child)).toBeNull()
+  })
+
   test("answers 404 for a session the runtime does not hold", async () => {
     expect(await deleteFixture().remove("missing")).toMatchObject({ status: 404, body: { error: { code: "session_not_found" } } })
   })

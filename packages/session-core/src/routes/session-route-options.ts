@@ -119,7 +119,6 @@ export type SessionRouteOptions = {
     updates: { title?: string; time?: { archived?: number } },
   ) => Promise<void> | void
   beforeDeleteSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<void> | void
-  afterDeleteSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<void> | void
   afterMessageCheckpoint?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, messages: AgentMessage[]) => Promise<void> | void
   disposeSessionDocuments?: (sessionId: string) => Promise<void>
   readAttachment?: AttachmentReader

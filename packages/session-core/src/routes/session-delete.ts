@@ -12,8 +12,10 @@ import { requestSecretAuthority, type SessionRouteContext as Ctx, type SessionRo
 export type SessionChange = <T>(sessionId: string, change: () => Promise<T>) => Promise<T>
 
 const REFUSALS = {
+  owned_by_parent: "runs on its parent's harness and is deleted with its parent",
   working: "is working",
   awaiting_input: "is waiting for input",
+  held: "is held by another operation",
 } as const
 
 /**
@@ -64,7 +66,6 @@ async function removeLeafFirst(
       await opts.beforeDeleteSession?.(c, directory, sessionId)
       await opts.disposeSessionDocuments?.(sessionId)
       await runtime.sessions.delete(sessionId, directory, requestSecretAuthority(c).secretAuthority)
-      await opts.afterDeleteSession?.(c, directory, sessionId)
       // A deletion that got this far removed the session the creation owns, so
       // the id goes back. A failure above keeps the owner, which is what lets a
       // caller distinguish a freed id from a half-deleted one.

@@ -59,7 +59,8 @@ caller runs in, whatever the account allows on other machines, and runs only
 once the person accepts a confirmation that names the session and how many
 sessions sit under it. The runtime removes the session and
 every session under it leaf-first, and refuses the whole tree while any of
-them is working or waiting for input.
+them is working, waiting for input or held by another operation; a
+provider's subagent session is removed only with its parent.
 
 ## App plugins
 

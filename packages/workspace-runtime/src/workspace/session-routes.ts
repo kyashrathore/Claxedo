@@ -56,9 +56,11 @@ export function mountSessionRoutes(input: SessionRoutesMountInput) {
     },
     afterCreateSession: input.afterCreateSession,
     beforeDeleteSession: async ({ sessionId }) => {
-      // Stop only this session's host readers while their execution binding
-      // still exists. Deleting first can fence out the terminal frame that
-      // those readers need to release their residency pins.
+      // A delete runs only once the session's turn has released its admission,
+      // but the host reader of that turn's stream ends after the release: it
+      // still reads the transcript and drops its residency pin. It is drained
+      // here while the execution binding exists, because deleting first fences
+      // out the reads it needs to finish.
       const deadlineAt = Date.now() + DEFAULT_RECOVERY_BUDGETS.gracefulCancelMs
       const results = await Promise.all(checkpoint.turnsOf(sessionId).map((turn) => checkpoint.cancelActiveTurn(turn, deadlineAt)))
       const stuck = results.filter((result) => !result.drained)

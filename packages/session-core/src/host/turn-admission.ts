@@ -148,15 +148,23 @@ export function createTurnAdmissions(
      * The gate, taken only on a session nothing runs on or waits for here, and
      * the store lease, which is refused while a turn, a provider turn or a
      * child turn holds the session from any instance sharing the store.
+     * `held` is a gate another operation (a recovery, a harness switch, a
+     * turn's settling, another delete) already holds.
      */
-    holdIdle(sessionId: string): { release: () => void } | undefined {
-      if (active.has(sessionId) || handed.has(sessionId) || waiting.get(sessionId)?.length) return undefined
+    holdIdle(sessionId: string): { release: () => void } | { refused: "working" | "held" } {
+      if (active.has(sessionId) || handed.has(sessionId) || waiting.get(sessionId)?.length) return { refused: "working" }
       const held = gate(sessionId)
-      if (!held) return undefined
-      const leaseId = store.acquireTurnLease(sessionId)
+      if (!held) return { refused: "held" }
+      let leaseId: string | undefined
+      try {
+        leaseId = store.acquireTurnLease(sessionId)
+      } catch (error) {
+        held.release()
+        throw error
+      }
       if (!leaseId) {
         held.release()
-        return undefined
+        return { refused: "working" }
       }
       return {
         release: () => {

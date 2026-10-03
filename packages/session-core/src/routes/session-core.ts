@@ -470,7 +470,6 @@ async function compensateRegistration(input: {
   if (!begun.allowed) throw new Error(`Session compensation was denied: ${begun.code}`)
   try {
     await (await input.opts.runtime(input.c)).sessions.delete(input.sessionId, input.directory, requestSecretAuthority(input.c).secretAuthority)
-    await input.opts.afterDeleteSession?.(input.c, input.directory, input.sessionId)
   } catch (error) {
     throw new Error("Session compensation could not delete runtime state", { cause: error })
   }
@@ -619,7 +618,6 @@ async function rollbackCreatedSession(
 ) {
   try {
     await (await opts.runtime(c)).sessions.delete(sessionId, directory, requestSecretAuthority(c).secretAuthority)
-    await opts.afterDeleteSession?.(c, directory, sessionId)
   } catch (cleanupError) {
     throw new SessionRollbackError("runtime", cause, cleanupError)
   }

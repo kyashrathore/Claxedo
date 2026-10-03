@@ -1994,15 +1994,15 @@ test("delete publishes the removed identity only after durable deletion succeeds
   for (const fail of [false, true]) {
     const events: AgentEventEnvelope[] = []
     const order: string[] = []
-    const h = harness({ onClose: () => { order.push("harness") } })
+    const h = harness({ onClose: () => { order.push("harness"); if (fail) throw new Error("harness refused the close") } })
     await seed(h, "deleted")
     const app = sessionRoutes(h, {
-      afterDeleteSession: () => { order.push("store"); if (fail) throw new Error("store deletion failed") },
       publishGlobal: (event) => { order.push("event"); events.push(event) },
     })
     const result = await app.request("http://localhost/session/deleted", { method: "DELETE" })
     expect(result.status).toBe(fail ? 500 : 200)
-    expect(order).toEqual(fail ? ["harness", "store"] : ["harness", "store", "event"])
+    expect(order).toEqual(fail ? ["harness"] : ["harness", "event"])
+    expect(h.store.getSession("deleted") === null).toBe(!fail)
     expect(events).toEqual(fail ? [] : [{ directory: WORKSPACE, payload: { type: "session.deleted", properties: { info: { id: "deleted", directory: WORKSPACE } } } }])
   }
 })
