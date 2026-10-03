@@ -1,12 +1,10 @@
 import assert from "node:assert/strict"
-import fs from "node:fs/promises"
-import path from "node:path"
 import { assistantText } from "../harness/api"
 import { hostedFetch } from "../harness/hosted-auth"
-import { hostedApi, hostedOwner, hostedWorkspace } from "../harness/hosted-flow"
+import { hostedPiSession, hostedSessionHostRoot } from "../harness/hosted-cloud"
+import { hostedOwner, hostedWorkspace } from "../harness/hosted-flow"
 import { startHostedStack } from "../harness/hosted-stack"
-import { frameSessionId, frameType, openEventStream } from "../harness/stream"
-import { waitForTitle } from "../harness/turn-observations"
+import { frameSessionId, frameType } from "../harness/stream"
 
 export async function run() {
   const stack = await startHostedStack("h19-hosted-pi")
@@ -18,44 +16,22 @@ export async function run() {
     }, owner)
     assert.equal(stored.status, 200, `hosted Pi credential: ${await stored.text()}`)
     const workspace = await hostedWorkspace(stack, owner, "H19 hosted Pi")
-    const target = JSON.parse(await fs.readFile(path.join(stack.root, "local-broker-targets", `${workspace.id}.json`), "utf8")) as { secretNames: string[]; home: string }
-    const openaiNames = target.secretNames.filter((name) => name.startsWith("CLAXEDO_PROVIDER_OPENAI_"))
-    assert.equal(openaiNames.length, 1, `C-1: hosted Pi sandbox has no single OpenAI broker registration for its owner: ${JSON.stringify(target.secretNames)}`)
-    const openaiName = openaiNames[0]
-    const offered = await fetch(`${stack.relayUrl}/workspaces/${workspace.id}/api/wr/harness-config-options?nativeHarness=pi`, {
-      headers: { authorization: `Bearer ${workspace.runtimeAccessToken}` },
-    })
-    const offeredBody = await offered.json() as { options?: Array<{ id: string; selectOptions?: Array<{ id: string; connected?: boolean }> }> }
-    assert.equal(offered.status, 200, `Hosted Pi model options returned ${offered.status}`)
-    const offeredModel = offeredBody.options?.find((option) => option.id === "model")?.selectOptions?.find((choice) => choice.id === "openai/gpt-4.1")
-    const modelFiles = (await fs.readdir(target.home, { recursive: true })).filter((name) => name.endsWith("models.json"))
-    const modelOverlays = await Promise.all(modelFiles.map(async (file) => {
-      const models = JSON.parse(await fs.readFile(path.join(target.home, file), "utf8")) as { providers?: Record<string, { apiKey?: string }> }
-      return { file, providers: Object.keys(models.providers ?? {}), brokeredOpenAI: models.providers?.openai?.apiKey === `claxedo-broker:${openaiName}` }
-    }))
-    assert.ok(offeredModel?.connected, `C-1: hosted Pi model is unavailable after config push: ${JSON.stringify({ offeredModel, modelOverlays })}`)
-    const api = hostedApi(stack, workspace, owner)
-    const stream = await openEventStream(stack.relayUrl, workspace.directory, {
-      relayWorkspaceId: workspace.id,
-      authorization: `Bearer ${workspace.runtimeAccessToken}`,
-    })
+    const session = await hostedPiSession(stack, owner, workspace, { providerId: "pi", modelId: "openai/gpt-4.1" })
+    await session.create()
+    const stream = await session.events()
     try {
-      const model = { providerId: "pi", modelId: "openai/gpt-4.1" }
-      const session = await api.createSession(workspace.directory, { harness: { id: "pi", access: "native" }, model })
-      await api.prompt(workspace.directory, session.id, "Reply with exactly this one token: HOSTEDPITURN", { model, title: true })
-      const settled = await stream.waitFor((frame) => frameSessionId(frame) === session.id &&
-        (frameType(frame) === "session.idle" || frameType(frame) === "session.error"), { label: "hosted Pi settlement", timeoutMs: 60_000 })
-      const messages = await api.messages(workspace.directory, session.id)
-      if (frameType(settled) !== "session.idle" || !assistantText(messages).includes("HOSTEDPITURN")) {
-        if (!target.secretNames.length && stack.model.requests.length === 0) {
-          throw new Error(`C-1: hosted Pi sandbox has ${target.secretNames.length} brokered secrets, ${stack.model.requests.length} model requests, live ${frameType(settled)}, and stored assistant text ${JSON.stringify(assistantText(messages))}`)
-        }
-        throw new Error(`hosted Pi turn failed after credential delivery: secrets=${JSON.stringify(target.secretNames)} modelRequests=${stack.model.requests.length} settlement=${JSON.stringify(settled)}`)
+      for (const token of ["HOSTEDPITURN", "HOSTEDPIAGAIN"]) {
+        const before = stream.frames.length
+        await session.prompt(`Reply with exactly this one token: ${token}`)
+        const settled = await stream.waitFor((frame) => stream.frames.indexOf(frame) >= before && frameSessionId(frame) === session.sessionId
+          && (frameType(frame) === "session.idle" || frameType(frame) === "session.error"), { label: `hosted Pi ${token}`, timeoutMs: 60_000 })
+        assert.equal(frameType(settled), "session.idle", `hosted Pi ${token} failed: ${JSON.stringify(settled)}`)
       }
-      await waitForTitle(stream, session.id)
-      assert.ok(stream.frames.some((frame) => frameType(frame) === "message.part.updated"))
-      assert.equal((await api.session(workspace.directory, session.id)).id, session.id)
-      assert.ok(stack.model.requests.some((request) => request.prompt.includes("HOSTEDPITURN")))
+      const text = assistantText(await session.messages())
+      assert.ok(text.includes("HOSTEDPITURN") && text.includes("HOSTEDPIAGAIN"), `the session host's transcript: ${text}`)
+      const spent = new Set(stack.model.requests.filter((request) => request.prompt.includes("HOSTEDPI")).map((request) => request.authorization))
+      assert.deepEqual(spent, new Set(["Bearer hosted-owner-openai-key"]), "the session host spent anything but the owner's own key")
+      assert.equal(await hostedSessionHostRoot(stack, owner, workspace.id, session.sessionId), session.sessionId)
     } finally {
       stream.close()
     }

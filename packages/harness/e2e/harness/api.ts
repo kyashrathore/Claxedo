@@ -124,13 +124,13 @@ export class ClaxedoApi {
     return this.call<unknown>("POST", "/api/claxedo/agent-config/harness", { directory, body: { harness: selection } })
   }
 
-  private async reserveSession(directory: string, title?: string): Promise<Reservation> {
+  private async reserveSession(directory: string, harness: SessionHarness, title?: string): Promise<Reservation> {
     const workspaceId = this.options.workspaceId
       ? await this.options.workspaceId(directory)
       : (await this.call<{ workspaceId: string }>("GET", "/api/workspace/resolve", { directory })).workspaceId
     const reservation = { operationId: `session_registration_${randomUUID()}`, sessionId: `ses_${randomUUID()}` }
     await this.call<unknown>("POST", "/api/control/session-registrations/reserve", {
-      body: { ...reservation, workspaceId, kind: "create", ...(title ? { title } : {}) },
+      body: { ...reservation, workspaceId, kind: "create", harness, ...(title ? { title } : {}) },
     })
     return reservation
   }
@@ -142,7 +142,7 @@ export class ClaxedoApi {
     const query: Record<string, string> = input.harness.access === "native"
       ? { nativeHarness: input.harness.id }
       : { connectionId: input.harness.id }
-    const reservation = this.options.reserveSessions ? await this.reserveSession(directory, input.title) : undefined
+    const reservation = this.options.reserveSessions ? await this.reserveSession(directory, input.harness, input.title) : undefined
     return this.call<SessionRow>("POST", "/session", {
       directory,
       query,

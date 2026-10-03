@@ -1,14 +1,26 @@
 import { spawn } from "node:child_process"
 import fs from "node:fs/promises"
 import path from "node:path"
+import { renderSessionHostWranglerConfig } from "../../../claxedo-server/scripts/deploy/wrangler-config"
 import { HOSTED_SIGNING_PRIVATE_KEY, HOSTED_SIGNING_PUBLIC_KEY } from "./hosted-keys"
 import { waitForHealth } from "./health"
 import { captureOutput, stopProcess } from "./process"
 
-export async function startHostedRelay(input: { root: string; port: number; controlPlaneUrl: string; certificate: string; allowedOrigins: readonly string[] }) {
+export async function startHostedRelay(input: { root: string; port: number; controlPlaneUrl: string; certificate: string; allowedOrigins: readonly string[];
+  modelUrl: string }) {
   const root = path.join(input.root, "relay")
   const home = path.join(root, "home")
   await fs.mkdir(home, { recursive: true })
+  const sessionHostDirectory = path.join(root, "session-host")
+  await fs.mkdir(sessionHostDirectory, { recursive: true })
+  const sessionHostConfig = path.join(sessionHostDirectory, "wrangler.toml")
+  await fs.writeFile(sessionHostConfig, renderSessionHostWranglerConfig({
+    workerName: "claxedo-session-host", controlPlaneWorkerName: "claxedo-hosted-e2e", configDirectory: sessionHostDirectory,
+    variables: {
+      WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: `${input.controlPlaneUrl}/api/runtime-authority/session-authorize`,
+      WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: HOSTED_SIGNING_PUBLIC_KEY,
+    },
+  }))
   const child = spawn(process.env.CLAXEDO_E2E_NODE ?? "node", [path.join(import.meta.dirname, "relay-workerd.mjs")], {
     detached: process.platform !== "win32",
     stdio: ["ignore", "pipe", "pipe"],
@@ -25,6 +37,7 @@ export async function startHostedRelay(input: { root: string; port: number; cont
       NODE_EXTRA_CA_CERTS: input.certificate,
       CLAXEDO_E2E_RELAY_WORKER: JSON.stringify({
         root, port: input.port, certificate: input.certificate,
+        sessionHost: { config: sessionHostConfig, controlPlaneUrl: input.controlPlaneUrl, modelUrl: input.modelUrl },
         bindings: {
           CLAXEDO_RELAY_RESOLVER_URL: `${input.controlPlaneUrl}/internal/relay`,
           CLAXEDO_RELAY_RESOLVER_TOKEN: "hosted-e2e-relay-resolver-token",
