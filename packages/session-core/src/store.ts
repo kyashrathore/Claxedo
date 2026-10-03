@@ -1,7 +1,8 @@
 import { SessionAuthoringOwnership } from "./session/authoring-ownership"
 import type { TurnOutline, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { readTurnOutline } from "./session/turn-outline"
-import { isContiguousTurn, readLatestTurn, readTurnEvidence, readTurnExtent, readTurnPromptIds, readTurnReply, readTurnEndOrd, readTurnReplyId, readUpstreamHasTurns } from "./session/turn-evidence"
+import { readLatestTurnView, type MessageProjectionRow } from "./session/latest-turn-view"
+import { isContiguousTurn, readJournaledTurn, readTurnEvidence, readTurnId, readTurnPrompts, readTurnReply, readTurnEndOrd, readTurnReplyId, readUpstreamHasTurns } from "./session/turn-evidence"
 import type { SessionConfig, SessionConfigUpdate, SessionHandoff, SessionHandoffSource, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { recoveryScopeKey, recoveryTargetSessionId, decodeMessagePageCursor, encodeMessagePageCursor, AgentMessagePageError, type AgentMessagePage, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
 import { AGENT_MESSAGE_PAGE_LIMIT, projectLatestSurfaceMessages, type AgentTurnCoverage, type AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
@@ -303,22 +304,8 @@ type RuntimeJournalRow = {
   source_json: string | null
 }
 
-type MessageProjectionRow = {
-  id: string
-  ord: number
-  info_json: string
-}
-
 type MessageClose = {
   ts: number
-}
-
-type SurfaceTurnRow = {
-  id: string
-  ord: number
-  role: string
-  info_id: string | null
-  parent_id: string | null
 }
 
 const MESSAGE_PAGE_CURSOR_PREFIX = "wrmp2:"
@@ -1163,10 +1150,9 @@ export class RuntimeStore {
   }
 
   recoverBusySessions() {
-    // Adapter-store recovery runs only when no turn or delivery from the
-    // previous runtime can still be active. A crash cannot release its durable
-    // lease or settle its delivery claims, so clear those stale ownership rows
-    // at the same boundary that interrupts busy sessions and their pending tools.
+    // Valid only when no turn, delivery or host-child run of the previous
+    // runtime can still be active: a crash settles none of their durable rows,
+    // so this boot boundary is the one place they are settled.
     this.turnLeases.clear()
     this.deliveryQueue.settleOrphanedDispatches()
     this.interruptPreviousSessions()
@@ -1572,23 +1558,27 @@ export class RuntimeStore {
     return max.ord + 1
   }
 
-  private upsertMessage(envelope: object, ts: number) {
+  /** A message keeps the place and the turn of the row that first projected it. */
+  private upsertMessage(envelope: object, row: Pick<Row, "sessionId" | "seq" | "ts">) {
     const info = envelopeRecord(envelope)
     const sessionId = asString(info.sessionID)
     const id = asString(info.id)
     const role = asString(info.role)
     if (!sessionId || !id || !role) return
     const prev = this.db
-      .prepare<{ created_at: number; info_json: string }>("SELECT created_at, info_json FROM message WHERE id = ?")
+      .prepare<{ created_at: number; info_json: string; turn_id: string | null }>("SELECT created_at, info_json, turn_id FROM message WHERE id = ?")
       .get(id)
     const merged = preserveClaxedoAuthor(prev ? readColumn.messageRecord(prev.info_json) : undefined, info)
     const observations = role === "assistant" ? this.messageUsageObservations(sessionId, id) : []
     if (observations.length) merged.tokens = assistantMessageTokens(observations)
     this.db
       .prepare(
-        "INSERT OR REPLACE INTO message (id, session_id, role, ord, info_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT OR REPLACE INTO message (id, session_id, role, ord, info_json, created_at, turn_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
       )
-      .run(id, sessionId, role, this.messageOrd(sessionId, id), JSON.stringify(merged), prev?.created_at ?? ts)
+      .run(
+        id, sessionId, role, this.messageOrd(sessionId, id), JSON.stringify(merged), prev?.created_at ?? row.ts,
+        prev ? prev.turn_id : readJournaledTurn(this.db, row.sessionId, row.seq),
+      )
   }
 
   /** Usage folds from the journal, not the previous row, so a later rebuild of the message cannot drop it. */
@@ -1925,7 +1915,7 @@ export class RuntimeStore {
             ...(control.variant ? { variant: control.variant } : {}),
             ...(control.author ? { author: control.author } : {}),
           }),
-          row.ts,
+          row,
         )
         // No harness writes the user's prompt parts back, so these rows are the
         // prompt's only record, including when the harness never answers.
@@ -1943,7 +1933,7 @@ export class RuntimeStore {
           directory,
           created: row.ts,
         }),
-        row.ts,
+        row,
       )
       this.upsertSession({
         id: row.sessionId,
@@ -2045,7 +2035,7 @@ export class RuntimeStore {
     if (this.deleted(row.sessionId)) return
     switch (event.type) {
       case "message.updated":
-        this.upsertMessage(event.properties.info, row.ts)
+        this.upsertMessage(event.properties.info, row)
         return
 
       case "message.part.updated":
@@ -2129,7 +2119,7 @@ export class RuntimeStore {
       case "session.usage": {
         const messageId = event.properties.messageID
         const info = messageId ? this.storedAssistantMessage(row.sessionId, messageId) : undefined
-        if (info && event.properties.observation) this.upsertMessage(info, row.ts)
+        if (info && event.properties.observation) this.upsertMessage(info, row)
         return
       }
 
@@ -2140,7 +2130,7 @@ export class RuntimeStore {
         if (!rowInfo) return
         const info = readColumn.messageRecord(rowInfo.info_json)
         info.time = { ...asRecord(info.time), completed: row.ts }
-        this.upsertMessage(info, row.ts)
+        this.upsertMessage(info, row)
         return
       }
 
@@ -2507,7 +2497,6 @@ export class RuntimeStore {
       this.assertFencingToken(input.sessionId, input.fencingToken)
       const active = this.db
         .prepare<{
-        seq: number
         provider_session_id: string | null
         user_message_id: string | null
         assistant_message_id: string | null
@@ -2515,7 +2504,7 @@ export class RuntimeStore {
         created_at: number
       }>(
           `
-        SELECT seq, provider_session_id, user_message_id, assistant_message_id, payload_json, created_at
+        SELECT provider_session_id, user_message_id, assistant_message_id, payload_json, created_at
         FROM runtime_journal
         WHERE session_id = ? AND kind = 'control' AND type = 'turn.start'
         ORDER BY seq DESC
@@ -2526,7 +2515,7 @@ export class RuntimeStore {
       if (!active?.assistant_message_id) return { events: [] }
       if (input.assistantMessageId && input.assistantMessageId !== active.assistant_message_id) return { events: [] }
       if (this.hasTurnFinished(input.sessionId, active.assistant_message_id)) return { events: [] }
-      const segment = this.latestReplySegment(input.sessionId, active.seq)
+      const segment = this.latestReplySegment(input.sessionId, active.assistant_message_id)
       const agentSession = active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}
       const terminal = (payload: AgentPresentationEvent) =>
         this.commitInside({
@@ -2581,8 +2570,8 @@ export class RuntimeStore {
     })
   }
 
-  private latestReplySegment(sessionId: string, turnStartSeq: number) {
-    const reply = readTurnReply(this.db, sessionId, turnStartSeq)
+  private latestReplySegment(sessionId: string, turnId: string) {
+    const reply = readTurnReply(this.db, sessionId, turnId)
     const message = reply ? readColumn.messageInfo(reply.info_json) : undefined
     return message?.role === "assistant" ? message : undefined
   }
@@ -3098,6 +3087,7 @@ export class RuntimeStore {
       return {
         info,
         parts: close ? messageParts.map((part) => this.terminalizedPart(part, close)) : messageParts,
+        ...(msg.turn_id ? { turnId: msg.turn_id } : {}),
       }
     })
   }
@@ -3132,13 +3122,14 @@ export class RuntimeStore {
     return projectLatestSurfaceMessages(msgs.map((msg) => ({
       info: readColumn.messageInfo(msg.info_json),
       parts: partsByMessage.get(msg.id) ?? [],
+      ...(msg.turn_id ? { turnId: msg.turn_id } : {}),
     })))
   }
 
   getMessages(sessionId: string): AgentMessage[] {
     this.settleDeltas(sessionId)
     const msgs = this.db
-      .prepare<MessageProjectionRow>("SELECT id, ord, info_json FROM message WHERE session_id = ? ORDER BY ord ASC")
+      .prepare<MessageProjectionRow>("SELECT id, ord, info_json, turn_id FROM message WHERE session_id = ? ORDER BY ord ASC")
       .all(sessionId)
     return this.hydrateMessages(sessionId, msgs)
   }
@@ -3196,105 +3187,11 @@ export class RuntimeStore {
     if (!projection) return undefined
     if ("view" in page && page.view !== undefined) {
       const endOrd = page.before === undefined ? undefined : decodeMessagePageCursor(MESSAGE_PAGE_CURSOR_PREFIX, sessionId, page.before)
-      const latest = readLatestTurn(this.db, sessionId, endOrd)
-      if (!latest && endOrd !== undefined) return { messages: [] }
-      if (!latest) {
-        throw new AgentMessagePageError(409, `Latest turn boundary is unavailable for session: ${sessionId}`)
-      }
-      const { boundary, prompts } = latest
-      const owned = [...prompts]
-      const ownedList = owned.map(() => "?").join(", ")
-      if (page.view === "latest-surface") {
-        const boundaryInfo = this.db
-          .prepare<Pick<SurfaceTurnRow, "info_id">>(
-            `
-            SELECT json_extract(info_json, '$.id') AS info_id
-            FROM message
-            WHERE session_id = ? AND ord = ?
-          `,
-          )
-          .get(sessionId, boundary.ord)
-        if (boundaryInfo?.info_id !== boundary.id) {
-          throw new AgentMessagePageError(409, `Latest turn projection is not contiguous for session: ${sessionId}`)
-        }
-        const final = this.db
-          .prepare<SurfaceTurnRow>(
-            `
-            SELECT
-              id,
-              ord,
-              role,
-              json_extract(info_json, '$.id') AS info_id,
-              json_extract(info_json, '$.parentID') AS parent_id
-            FROM message
-            WHERE session_id = ? AND ord >= ?
-            ORDER BY ord DESC
-            LIMIT 1
-          `,
-          )
-          .get(sessionId, boundary.ord)
-        const invalidAssistant = this.db
-          .prepare<{ present: number }>(
-            `
-            SELECT 1 AS present
-            FROM message
-            WHERE session_id = ?
-              AND ord > ?
-              AND NOT (
-                json_extract(info_json, '$.id') IS id
-                AND (
-                  (role IS 'user' AND id IN (${ownedList}))
-                  OR (role IS 'assistant' AND COALESCE(json_extract(info_json, '$.parentID'), '') IN (${ownedList}))
-                )
-              )
-            LIMIT 1
-          `,
-          )
-          .get(sessionId, boundary.ord, ...owned, ...owned)
-        if (!final || invalidAssistant) {
-          throw new AgentMessagePageError(409, `Latest turn projection is not contiguous for session: ${sessionId}`)
-        }
-        const selected = this.db
-          .prepare<MessageProjectionRow>(
-            `
-            SELECT id, ord, info_json
-            FROM message
-            WHERE session_id = ? AND ord >= ? AND (id IN (${ownedList}) OR id = ?)
-            ORDER BY ord ASC
-          `,
-          )
-          .all(sessionId, boundary.ord, ...owned, final.id)
-        const older = this.db
-          .prepare<{ present: number }>("SELECT 1 AS present FROM message WHERE session_id = ? AND ord < ? LIMIT 1")
-          .get(sessionId, boundary.ord)
-        const intermediate = this.db
-          .prepare<{ present: number }>("SELECT 1 AS present FROM message WHERE session_id = ? AND ord > ? AND ord < ? LIMIT 1")
-          .get(sessionId, boundary.ord, final.ord)
-        return {
-          messages: this.hydrateSurfaceMessages(sessionId, selected),
-          ...(older || intermediate ? { nextCursor: encodeMessagePageCursor(MESSAGE_PAGE_CURSOR_PREFIX, sessionId, final.ord) } : {}),
-        }
-      }
-      const turn = this.db
-        .prepare<MessageProjectionRow>(
-          `
-          SELECT id, ord, info_json
-          FROM message
-          WHERE session_id = ? AND ord >= ?${endOrd === undefined ? "" : " AND ord < ?"}
-          ORDER BY ord ASC
-        `,
-        )
-        .all(...(endOrd === undefined ? [sessionId, boundary.ord] : [sessionId, boundary.ord, endOrd]))
-      if (!isContiguousTurn(turn, prompts)) {
-        throw new AgentMessagePageError(409, `Latest turn projection is not contiguous for session: ${sessionId}`)
-      }
-      const older = this.db
-        .prepare<{ present: number }>("SELECT 1 AS present FROM message WHERE session_id = ? AND ord < ? LIMIT 1")
-        .get(sessionId, boundary.ord)
-      return {
-        messages: this.hydrateMessages(sessionId, turn),
-        ...(older ? { nextCursor: encodeMessagePageCursor(MESSAGE_PAGE_CURSOR_PREFIX, sessionId, boundary.ord) } : {}),
-      }
+      return readLatestTurnView(this.db, sessionId, page.view, endOrd, {
+        hydrate: (rows) => this.hydrateMessages(sessionId, rows),
+        hydrateSurface: (rows) => this.hydrateSurfaceMessages(sessionId, rows),
+        cursorAt: (ord) => encodeMessagePageCursor(MESSAGE_PAGE_CURSOR_PREFIX, sessionId, ord),
+      })
     }
     if (!Number.isSafeInteger(page.limit) || page.limit < 1 || page.limit > AGENT_MESSAGE_PAGE_LIMIT) {
       throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${AGENT_MESSAGE_PAGE_LIMIT}`)
@@ -3306,7 +3203,7 @@ export class RuntimeStore {
     const rows = this.db
       .prepare<MessageProjectionRow>(
         `
-        SELECT id, ord, info_json
+        SELECT id, ord, info_json, turn_id
         FROM message
         WHERE session_id = ?${beforeOrd === undefined ? "" : " AND ord < ?"}
         ORDER BY ord DESC
@@ -3338,7 +3235,7 @@ export class RuntimeStore {
     }
     const replay = this.replayJournal(sessionId)
     const evidence = this.turnEvidence(sessionId, turnId)
-    const extent = readTurnExtent(this.db, sessionId, turnId)
+    const ownTurn = readTurnId(this.db, sessionId, turnId)
     const answer = (
       coverage: AgentTurnCoverage,
       detail: { reason?: string; messages?: AgentMessage[] },
@@ -3351,7 +3248,7 @@ export class RuntimeStore {
       messages: detail.messages ?? [],
     })
 
-    if (!extent) {
+    if (!ownTurn) {
       // A turn this session never ran is not a turn that can never be covered:
       // answering `unavailable` tells a caller to stop asking, and it would
       // then discharge an obligation that another session still owes. Only a
@@ -3404,13 +3301,12 @@ export class RuntimeStore {
     if (!boundary) {
       return answer("partial", { reason: `The projection holds no user message owning ${turnId}` })
     }
-    const prompts = readTurnPromptIds(this.db, sessionId, extent)
-    prompts.add(boundary.id)
+    const prompts = new Set([boundary.id, ...readTurnPrompts(this.db, sessionId, ownTurn).map((prompt) => prompt.id)])
     const end = readTurnEndOrd(this.db, sessionId, boundary.ord, prompts)
     const rows = this.db
       .prepare<MessageProjectionRow>(
         `
-        SELECT id, ord, info_json
+        SELECT id, ord, info_json, turn_id
         FROM message
         WHERE session_id = ? AND ord >= ? AND (? IS NULL OR ord < ?)
         ORDER BY ord ASC
@@ -3463,7 +3359,7 @@ export class RuntimeStore {
     this.settleDeltas(sessionId)
     const replyId = readTurnReplyId(this.db, sessionId, turnId)
     if (!replyId) return undefined
-    const rows = this.db.prepare<MessageProjectionRow>("SELECT id, ord, info_json FROM message WHERE session_id = ? AND id = ?").all(sessionId, replyId)
+    const rows = this.db.prepare<MessageProjectionRow>("SELECT id, ord, info_json, turn_id FROM message WHERE session_id = ? AND id = ?").all(sessionId, replyId)
     return this.hydrateMessages(sessionId, rows)[0]
   }
 

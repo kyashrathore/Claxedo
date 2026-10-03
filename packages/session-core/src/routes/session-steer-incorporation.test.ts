@@ -147,3 +147,31 @@ test("the latest-turn pages hold the whole steered turn, including a later step 
     ["msg_a_step", "stepped"],
   ])
 })
+
+test("a steered prompt and every reply after it carry the turn they were taken into, and a rebuild assigns the same turns", async () => {
+  const fixture = steeredTurn({ type: "finish", sessionId: "session_1" }, [
+    { type: "step-start", newMessageId: "msg_a_step" },
+    { type: "text-delta", delta: "stepped" },
+  ])
+  await steerMidTurn(fixture)
+  const steeredTurns = fixture.transport.turns.length
+  const next = await fixture.post("/session/session_1/prompt_async", { messageID: "msg_c_next", parts: [{ type: "text", text: "next" }] })
+  expect(next.status).toBe(204)
+  await until(() => fixture.transport.turns.length === steeredTurns + 1, "the next turn reached the harness")
+  await until(() => fixture.host.store.getSession("session_1")?.status !== "busy", "the next turn ended")
+
+  const turns = () => fixture.host.store.getMessages("session_1").map((message) => [message.info.id, message.turnId])
+  const expected = [
+    ["msg_a_open", "msg_a_open_r"],
+    ["msg_a_open_r", "msg_a_open_r"],
+    ["msg_b_steer", "msg_a_open_r"],
+    ["msg_b_steer_r", "msg_a_open_r"],
+    ["msg_a_step", "msg_a_open_r"],
+    ["msg_c_next", "msg_c_next_r"],
+    ["msg_c_next_r", "msg_c_next_r"],
+  ]
+  expect(turns()).toEqual(expected)
+  expect(fixture.host.store.turnReply("session_1", "msg_a_open")?.info.id).toBe("msg_a_step")
+  fixture.host.store.rebuildProjection("session_1")
+  expect(turns()).toEqual(expected)
+})

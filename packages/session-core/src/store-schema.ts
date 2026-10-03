@@ -23,6 +23,11 @@ const SCHEMA: readonly string[] = [
     WHERE kind = 'event' AND type = 'session.usage'`,
   `CREATE INDEX runtime_journal_part_snapshot_idx ON runtime_journal (session_id, part_id, seq)
     WHERE kind = 'event' AND type = 'message.part.updated' AND part_id IS NOT NULL`,
+  // A message is projected into the turn of the newest `turn.start` at or
+  // before its row, and every read naming a turn by either message id starts
+  // from that row; without this index both walk every streamed delta.
+  `CREATE INDEX runtime_journal_turn_start_idx ON runtime_journal (session_id, seq)
+    WHERE kind = 'control' AND type = 'turn.start'`,
   // `lastTurn` reads a session's outcome from its newest terminal row on every
   // session read and listing; without this partial index that walks the whole
   // journal backwards. The predicate must stay textually identical to the one
@@ -221,9 +226,11 @@ const SCHEMA: readonly string[] = [
     role TEXT NOT NULL,
     ord INTEGER NOT NULL,
     info_json TEXT NOT NULL,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    turn_id TEXT
   )`,
   `CREATE INDEX message_session_ord_idx ON message (session_id, ord DESC)`,
+  `CREATE INDEX message_session_turn_ord_idx ON message (session_id, turn_id, ord)`,
   `CREATE TABLE part (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,

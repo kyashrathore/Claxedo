@@ -94,6 +94,13 @@ export type AgentMessage = {
   info: AgentMessageInfo
   parts: AgentContentPart[]
   harnessPayload?: unknown
+  /**
+   * The turn the runtime projected this message in, named by the assistant
+   * message id that turn's start opened. A prompt steered into a running turn
+   * and every reply after it carry that turn's id; a message no turn holds has
+   * none.
+   */
+  turnId?: string
 }
 
 type AgentPartBase<Type extends string> = {
