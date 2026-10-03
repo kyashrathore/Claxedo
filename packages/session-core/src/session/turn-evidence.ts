@@ -1,13 +1,15 @@
-import type { AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
+import type { AgentMessage, AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
 
 export type TurnEvidenceDatabase = {
   prepare<Row>(sql: string): { get(...params: unknown[]): Row | null | undefined }
 }
 
+type TurnRowsDatabase = { prepare<Row>(sql: string): { all(...params: unknown[]): Row[] } }
+
 export type TurnEvidence = { started: boolean; finished: boolean; outcome?: AgentTurnOutcome }
 
 const TURN_START_SQL = `
-  SELECT seq, assistant_message_id FROM runtime_journal
+  SELECT seq, assistant_message_id, user_message_id FROM runtime_journal
   WHERE session_id = ? AND kind = 'control' AND type = 'turn.start'
     AND (assistant_message_id = ? OR user_message_id = ?)
   ORDER BY seq DESC LIMIT 1
@@ -30,6 +32,12 @@ const TURN_REPLY_SQL = `
   WHERE session_id = ? AND seq > ? AND seq < ? AND kind = 'event' AND type = 'message.updated'
     AND json_extract(payload_json, '$.properties.info.role') = 'assistant'
   ORDER BY seq DESC LIMIT 1
+`
+
+const TURN_STEERED_PROMPTS_SQL = `
+  SELECT json_extract(payload_json, '$.properties.info.id') AS id FROM runtime_journal
+  WHERE session_id = ? AND seq > ? AND seq < ? AND kind = 'event' AND type = 'message.updated'
+    AND json_extract(payload_json, '$.properties.info.role') = 'user'
 `
 
 const UPSTREAM_TURN_SQL = `
@@ -57,14 +65,68 @@ export function readTurnEvidence(db: TurnEvidenceDatabase, sessionId: string, tu
 }
 
 /**
+ * A turn's span of its session's journal: from its start row up to the next
+ * turn's. Every prompt steered into the turn and every reply it opened is
+ * journaled inside it, so this is the one rule for which messages a turn holds.
+ */
+export type TurnExtent = { startSeq: number; endSeq: number; userMessageId?: string; assistantMessageId: string }
+
+function turnEndSeq(db: TurnEvidenceDatabase, sessionId: string, startSeq: number) {
+  return db.prepare<{ seq: number | null }>(NEXT_TURN_START_SQL).get(sessionId, startSeq)?.seq ?? Number.MAX_SAFE_INTEGER
+}
+
+/** The extent of the turn either of its message ids names. */
+export function readTurnExtent(db: TurnEvidenceDatabase, sessionId: string, turnId: string): TurnExtent | undefined {
+  const start = db.prepare<{ seq: number; assistant_message_id: string; user_message_id: string | null }>(TURN_START_SQL).get(sessionId, turnId, turnId)
+  if (!start) return undefined
+  return {
+    startSeq: start.seq,
+    endSeq: turnEndSeq(db, sessionId, start.seq),
+    ...(start.user_message_id ? { userMessageId: start.user_message_id } : {}),
+    assistantMessageId: start.assistant_message_id,
+  }
+}
+
+/** The turn's own prompt and every prompt steered into it. */
+export function readTurnPromptIds(db: TurnRowsDatabase, sessionId: string, extent: TurnExtent): Set<string> {
+  const steered = db.prepare<{ id: string }>(TURN_STEERED_PROMPTS_SQL).all(sessionId, extent.startSeq, extent.endSeq)
+  return new Set([...(extent.userMessageId ? [extent.userMessageId] : []), ...steered.map((row) => row.id)])
+}
+
+/** Where the projected messages of the turn whose prompt sits at `boundaryOrd` end: at the first prompt it did not take in. */
+export function readTurnEndOrd(db: TurnEvidenceDatabase, sessionId: string, boundaryOrd: number, prompts: ReadonlySet<string>): number | null {
+  const owned = [...prompts]
+  return db.prepare<{ ord: number | null }>(
+    `SELECT MIN(ord) AS ord FROM message WHERE session_id = ? AND role = 'user' AND ord > ? AND id NOT IN (${owned.map(() => "?").join(", ")})`,
+  ).get(sessionId, boundaryOrd, ...owned)?.ord ?? null
+}
+
+/**
+ * One whole turn: its user message, then only the `prompts` taken into it
+ * and assistants that answer one of them. Without `prompts` the turn took in
+ * nothing but its own.
+ */
+export function isContiguousTurn(rows: ReadonlyArray<{ id: string; info_json: string }>, prompts?: ReadonlySet<string>) {
+  const first = rows[0]
+  if (!first) return false
+  const user: AgentMessage["info"] = JSON.parse(first.info_json)
+  if (user.role !== "user" || user.id !== first.id) return false
+  const owned = prompts ?? new Set([user.id])
+  return rows.slice(1).every((row) => {
+    const message: AgentMessage["info"] = JSON.parse(row.info_json)
+    if (message.role === "user") return owned.has(message.id)
+    return message.role === "assistant" && message.parentID !== undefined && owned.has(message.parentID)
+  })
+}
+
+/**
  * The reply a turn is writing, or ended in, with its message info JSON. A
  * harness step or a steered prompt continues a turn in a new reply, so this is
- * the newest assistant message journaled between the turn's start and the
- * next turn's, not the one its own prompt opened.
+ * the newest assistant message journaled in the turn's extent, not the one its
+ * own prompt opened.
  */
 export function readTurnReply(db: TurnEvidenceDatabase, sessionId: string, turnStartSeq: number) {
-  const next = db.prepare<{ seq: number | null }>(NEXT_TURN_START_SQL).get(sessionId, turnStartSeq)?.seq ?? Number.MAX_SAFE_INTEGER
-  return db.prepare<{ id: string; info_json: string }>(TURN_REPLY_SQL).get(sessionId, turnStartSeq, next) ?? undefined
+  return db.prepare<{ id: string; info_json: string }>(TURN_REPLY_SQL).get(sessionId, turnStartSeq, turnEndSeq(db, sessionId, turnStartSeq)) ?? undefined
 }
 
 /**
@@ -73,9 +135,9 @@ export function readTurnReply(db: TurnEvidenceDatabase, sessionId: string, turnS
  * another.
  */
 export function readTurnReplyId(db: TurnEvidenceDatabase, sessionId: string, turnId: string): string | undefined {
-  const start = db.prepare<{ seq: number; assistant_message_id: string }>(TURN_START_SQL).get(sessionId, turnId, turnId)
-  if (!start) return undefined
-  return readTurnReply(db, sessionId, start.seq)?.id ?? start.assistant_message_id
+  const extent = readTurnExtent(db, sessionId, turnId)
+  if (!extent) return undefined
+  return readTurnReply(db, sessionId, extent.startSeq)?.id ?? extent.assistantMessageId
 }
 
 /**

@@ -112,3 +112,18 @@ test("stopping a turn after a steer closes the reply it stopped in and frees the
   ])
   expect(fixture.host.store.getSession("session_1")?.status).not.toBe("busy")
 })
+
+test("a steered turn's coverage holds the steered prompt and the reply it ended in, and stops at the next turn", async () => {
+  const fixture = steeredTurn({ type: "finish", sessionId: "session_1" })
+  await steerMidTurn(fixture)
+  const steeredTurns = fixture.transport.turns.length
+  const next = await fixture.post("/session/session_1/prompt_async", { messageID: "msg_c_next", parts: [{ type: "text", text: "next" }] })
+  expect(next.status).toBe(204)
+  await until(() => fixture.transport.turns.length === steeredTurns + 1, "the next turn reached the harness")
+
+  for (const turnId of ["msg_a_open", "msg_a_open_r"]) {
+    const coverage = fixture.host.store.turnCoverage("session_1", turnId)
+    expect(coverage.coverage).toBe("complete")
+    expect(coverage.messages.map((message) => message.info.id)).toEqual(["msg_a_open", "msg_a_open_r", "msg_b_steer", "msg_b_steer_r"])
+  }
+})

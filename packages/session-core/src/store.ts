@@ -1,7 +1,7 @@
 import { SessionAuthoringOwnership } from "./session/authoring-ownership"
 import type { TurnOutline, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { readTurnOutline } from "./session/turn-outline"
-import { readTurnEvidence, readTurnReply, readTurnReplyId, readUpstreamHasTurns } from "./session/turn-evidence"
+import { isContiguousTurn, readTurnEvidence, readTurnExtent, readTurnPromptIds, readTurnReply, readTurnEndOrd, readTurnReplyId, readUpstreamHasTurns } from "./session/turn-evidence"
 import type { SessionConfig, SessionConfigUpdate, SessionHandoff, SessionHandoffSource, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { recoveryScopeKey, recoveryTargetSessionId, decodeMessagePageCursor, encodeMessagePageCursor, AgentMessagePageError, type AgentMessagePage, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
 import { AGENT_MESSAGE_PAGE_LIMIT, projectLatestSurfaceMessages, type AgentTurnCoverage, type AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
@@ -3292,7 +3292,7 @@ export class RuntimeStore {
         `,
         )
         .all(...(endOrd === undefined ? [sessionId, boundary.ord] : [sessionId, boundary.ord, endOrd]))
-      if (!this.isContiguousTurn(turn)) {
+      if (!isContiguousTurn(turn)) {
         throw new AgentMessagePageError(409, `Latest turn projection is not contiguous for session: ${sessionId}`)
       }
       const older = this.db
@@ -3329,18 +3329,6 @@ export class RuntimeStore {
     }
   }
 
-  /** One whole turn: its user message, then only assistants that name it as parent. */
-  private isContiguousTurn(rows: MessageProjectionRow[]) {
-    const first = rows[0]
-    if (!first) return false
-    const user = readColumn.messageInfo(first.info_json)
-    if (user.role !== "user" || user.id !== first.id) return false
-    return rows.slice(1).every((row) => {
-      const message = readColumn.messageInfo(row.info_json)
-      return message.role === "assistant" && message.parentID === user.id
-    })
-  }
-
   /**
    * How much of one turn this store's projection accounts for, for a reader
    * deciding whether the transcript it already holds for that turn is final.
@@ -3357,6 +3345,7 @@ export class RuntimeStore {
     }
     const replay = this.replayJournal(sessionId)
     const evidence = this.turnEvidence(sessionId, turnId)
+    const extent = readTurnExtent(this.db, sessionId, turnId)
     const answer = (
       coverage: AgentTurnCoverage,
       detail: { reason?: string; messages?: AgentMessage[] },
@@ -3369,7 +3358,7 @@ export class RuntimeStore {
       messages: detail.messages ?? [],
     })
 
-    if (!evidence.started) {
+    if (!extent) {
       // A turn this session never ran is not a turn that can never be covered:
       // answering `unavailable` tells a caller to stop asking, and it would
       // then discharge an obligation that another session still owes. Only a
@@ -3422,12 +3411,9 @@ export class RuntimeStore {
     if (!boundary) {
       return answer("partial", { reason: `The projection holds no user message owning ${turnId}` })
     }
-    const next = this.db
-      .prepare<{ ord: number | null }>(
-        "SELECT MIN(ord) AS ord FROM message WHERE session_id = ? AND role = 'user' AND ord > ?",
-      )
-      .get(sessionId, boundary.ord)
-    const end = next?.ord ?? null
+    const prompts = readTurnPromptIds(this.db, sessionId, extent)
+    prompts.add(boundary.id)
+    const end = readTurnEndOrd(this.db, sessionId, boundary.ord, prompts)
     const rows = this.db
       .prepare<MessageProjectionRow>(
         `
@@ -3439,7 +3425,7 @@ export class RuntimeStore {
       )
       .all(sessionId, boundary.ord, end, end)
     const messages = this.hydrateMessages(sessionId, rows)
-    if (!this.isContiguousTurn(rows)) {
+    if (!isContiguousTurn(rows, prompts)) {
       return answer("partial", { reason: `Turn ${turnId} is not contiguous in the projection`, messages })
     }
     if (!evidence.finished) {
