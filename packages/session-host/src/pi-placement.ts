@@ -31,6 +31,7 @@ export class DurablePiPlacement implements PiPlacement {
   private readonly registry = createRegistry()
   private sessionModels: Models | undefined
   private opened: Promise<Harness> | undefined
+  private turn: AbortSignal | undefined
   private readonly models = new Proxy<Models>(Object.create(null), {
     get: (_target, key) => {
       if (!this.sessionModels) throw new Error("No Pi session is open in this session host")
@@ -46,10 +47,21 @@ export class DurablePiPlacement implements PiPlacement {
       const options: HarnessOptions = { models: this.models, registry: this.registry, env: this.env(), onReport: (error) => this.host.report(error) }
       const opening = Harness.open(storage, options, context)
       this.opened = opening
-      await opening
-      await boot()
+      try {
+        await opening
+        await boot()
+      } catch (error) {
+        this.opened = undefined
+        await opening.then((harness) => harness.close(BACKGROUND_CONTEXT), () => undefined)
+        throw error
+      }
       return opening
     }
+  }
+
+  /** Every wait on the workspace machine ends with this signal: the running turn's, or at boot the adopted lease's. */
+  turnStarted(signal: AbortSignal): void {
+    this.turn = signal
   }
 
   harness(): Promise<Harness> {
@@ -69,17 +81,22 @@ export class DurablePiPlacement implements PiPlacement {
   }
 
   env(): HarnessOptions["env"] {
-    return async (_target, context) => new RemoteExecutionEnv(await this.host.execution(context.abortSignal ?? new AbortController().signal))
+    return async (_target, context) => new RemoteExecutionEnv(await this.host.execution(context.abortSignal ?? this.turnSignal()))
   }
 
   async mcpTransport(server: ProjectedMcpServer): Promise<McpTransport> {
-    if (server.kind === "stdio") return new RelayedStdioMcpTransport(server.name, () => this.host.execution(new AbortController().signal))
+    if (server.kind === "stdio") return new RelayedStdioMcpTransport(server.name, () => this.host.execution(this.turnSignal()))
     if (server.kind === "sse") throw new Error(`Pi cannot load SSE MCP server ${server.name}`)
     return new StreamableHttpTransport({ url: server.url, headers: { ...server.headers } })
   }
 
   prepareTurn(_sessionId: string, signal: AbortSignal): Promise<PiTurnContext> {
+    this.turnStarted(signal)
     return this.host.turnContext(signal)
+  }
+
+  private turnSignal(): AbortSignal {
+    return this.turn ?? AbortSignal.abort(new Error("No turn is running in this session host"))
   }
 
   refreshCredential(credentialProviderId: string): Promise<ProviderDirect | undefined> {

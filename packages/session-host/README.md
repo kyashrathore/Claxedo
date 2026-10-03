@@ -9,8 +9,8 @@ Clients reach the object through the workspace relay: a Runtime Access Token for
 ## A turn
 
 1. The session routes acquire the control plane's turn lease. `TurnLeases` records each lease the authority issues or renews in `session_host_turn_lease`, and forgets it when the turn ends.
-2. Before the transport submits, `prepareTurn` posts the lease to `/turn-delivery` once per lease (`turnId:fencingToken`): the session owner's provider accounts as direct secrets, the Pi plugin launch and provider definitions. Pi calls the provider directly with them; no control-plane call is made per model request. An OAuth refresh repeats the delivery.
-3. Pi's first file or command call posts the lease to `/turn-execution` for a session-scoped token for the workspace machine; a `409 cloud_runtime_unavailable` is waited out for its `retryAfterMs`. The first answer's `directory` is the session's machine directory for good, and a later turn answered with another is refused.
+2. Before the transport submits, `prepareTurn` posts the lease to `/turn-delivery` once per lease (`turnId:fencingToken`): the provider accounts of the session's creator as direct secrets, whoever sends the turn, the Pi plugin launch and provider definitions. Pi calls the provider directly with them; no control-plane call is made per model request. An OAuth refresh, or a delivery past its `expiresAt`, repeats the delivery.
+3. Pi's first file or command call, or a plugin's stdio MCP server starting, posts the lease to `/turn-execution` for a session-scoped token for the workspace machine; a `409 cloud_runtime_unavailable` is waited out for its `retryAfterMs`, until the turn ends or is stopped. The answer's `directory` is the session's machine directory: another directory from the same machine (host and routing id) is refused, and one from a sandbox provisioned again replaces it.
 4. `RemoteExecutionEnv` serves Pi's `ExecutionEnv` over the machine's `/api/wr/execution-env/fs` and `/exec` routes through the relay; aborting a command aborts its request, which ends the command. A plugin's stdio MCP server runs on the machine and is reached over one WebSocket to `/api/wr/execution-env/mcp/<name>`; HTTP MCP servers are called directly. Claxedo's first-party MCP server is not offered here.
 
 Pi runs one round's tool calls together, so commands of one round reach the machine with no ordering between them.
@@ -23,7 +23,11 @@ An evicted object is restarted by Pi's own wake job and alarm, so a run continue
 
 ## Deletion
 
-Deleting the session deletes the object's whole storage once the delete has run, and the object restarts empty.
+`DELETE /session/<root>` runs the shared delete route, whose first step posts the request's own relay host token to the control plane's `/session-host-delete`: the control plane deletes the session's row as that request's actor, or refuses, and then nothing is deleted. Once it has deleted the row, the object's whole storage is deleted after the request, and the object restarts empty.
+
+## A store this build does not read
+
+The object starts its Lifecycle before it answers anything. When that fails, a request with a valid relay host token is answered `409 session_host_unsupported_store` for a runtime store written by another schema, else `503 session_host_unavailable`, without a stack; nothing is cached, so the next request starts again. Deletion still works: the control plane's delete, then the storage.
 
 ## Configuration
 

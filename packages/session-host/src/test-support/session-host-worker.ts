@@ -48,11 +48,12 @@ export async function startSessionHostWorker(input: { script: string; persist: s
   return Object.assign(miniflare, { stderr: () => stderr.join("") })
 }
 
-/** A client of one session's object, reaching it as the relay does: a relay host token for its host and the relay's markers. */
-export function sessionHostClient(miniflare: Miniflare & { stderr(): string }, input: { root: string; relayHostSigningKey: CryptoKey }) {
+/** A client of one session's object for one person, reaching it as the relay does: a relay host token for its host and the relay's markers. */
+export function sessionHostClient(miniflare: Miniflare & { stderr(): string }, input: { root: string; relayHostSigningKey: CryptoKey; user?: string }) {
+  const user = input.user ?? OWNER
   const headers = async () => ({
     authorization: `Bearer ${await mintRelayHostToken({
-      principalKind: "user", actorId: OWNER, userId: OWNER, actorKind: "human", orgId: "org_1", workspaceId: WORKSPACE_ID,
+      principalKind: "user", actorId: user, userId: user, actorKind: "human", orgId: "org_1", workspaceId: WORKSPACE_ID,
       hostId: sessionHostId(input.root), role: "editor", sessionId: input.root, backing: "durable-object", parentJti: `rat_${crypto.randomUUID()}`,
     }, input.relayHostSigningKey, "EdDSA")}`,
     "x-workspace-id": WORKSPACE_ID,

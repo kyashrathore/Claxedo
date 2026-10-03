@@ -10,7 +10,7 @@ import type { PluginProjection, RuntimeConfigSnapshotPlugins } from "@claxedo/ha
 import { startScriptedModelServer, type ScriptedModelServer } from "../../harness/e2e/harness/scripted-model-server"
 import { eventually } from "../../harness/e2e/harness/eventually"
 import { releasePort, reservePort } from "../../harness/e2e/harness/ports"
-import { controlPlaneStandIn } from "./test-support/control-plane"
+import { controlPlaneStandIn, OWNER } from "./test-support/control-plane"
 import { bundleSessionHostWorker, sessionHostClient, startSessionHostWorker } from "./test-support/session-host-worker"
 import { startWorkspaceMachine } from "./test-support/workspace-machine"
 
@@ -73,21 +73,25 @@ void describe("SessionDO under workerd with PiHarness", () => {
     await rm(persist, { recursive: true, force: true })
   })
 
-  async function session(root: string, options: { leaseTtlMs?: number } = {}) {
+  const openai = (secret: string) => ({ openai: { delivery: "direct" as const, baseUrl: model.url, apiPath: "/v1", secret, authKind: "api-key" as const } })
+
+  async function session(root: string, options: { leaseTtlMs?: number; creator?: string; reservation?: string; accounts?: Record<string, ReturnType<typeof openai>> } = {}) {
+    const creator = options.creator ?? OWNER
     const controlPlane = controlPlaneStandIn({
       root, relayHostKey: relayHost.publicKey, runtimeAccessKey: runtimeAccess.privateKey,
-      direct: () => ({ delivery: "direct", baseUrl: model.url, apiPath: "/v1", secret: SECRET, authKind: "api-key" }), plugins: () => plugins, machine: () => ({ relayUrl: machine.relayUrl, directory }),
+      accounts: () => options.accounts ?? { [OWNER]: openai(SECRET) }, plugins: () => plugins, machine: () => ({ relayUrl: machine.relayUrl, directory }),
     })
     if (options.leaseTtlMs) controlPlane.control.leaseTtlMs = options.leaseTtlMs
     const boot = async () => {
       const worker = await startSessionHostWorker({ script, persist, relayHostKey: relayHost.publicKey, controlPlane: controlPlane.fetch })
       running.push(worker)
-      return { worker, client: sessionHostClient(worker, { root, relayHostSigningKey: relayHost.privateKey }) }
+      return worker
     }
-    let current = await boot()
-    await current.client.json(`/session/${root}`, { method: "POST", headers: { "x-claxedo-session-registration-operation": `op_${root}` },
+    let worker = await boot()
+    const as = (user: string) => sessionHostClient(worker, { root, relayHostSigningKey: relayHost.privateKey, user })
+    await as(creator).json(`/session/${root}`, { method: "POST", headers: { "x-claxedo-session-registration-operation": options.reservation ?? `op_${root}` },
       body: { harness: { id: "pi", access: "native" }, model: { providerID: MODEL.providerID, id: MODEL.modelID } } })
-    const json = <T>(...args: Parameters<typeof current.client.json>) => current.client.json<T>(...args)
+    const json = <T>(...args: Parameters<ReturnType<typeof as>["json"]>) => as(creator).json<T>(...args)
     const prompt = (messageID: string, text: string) =>
       json(`/session/${root}/prompt_async`, { method: "POST", body: { parts: [{ type: "text", text }], messageID, model: MODEL } })
     const messages = () => json<StoredMessage[]>(`/session/${root}/message`)
@@ -95,23 +99,28 @@ void describe("SessionDO under workerd with PiHarness", () => {
       const read = await messages()
       return assistantText(read).includes(marker) ? read : undefined
     }, 30_000).catch(async (error: unknown) => {
-      throw new Error(`${String(error)}\n${JSON.stringify(await messages())}\nmodel: ${JSON.stringify(model.requests.slice(-3).map((request) => [request.prompt.slice(-300), request.reply, request.tools.map((tool) => tool.name)]))}\ncontrol plane: ${JSON.stringify(controlPlane.calls)}\n${current.worker.stderr()}`)
+      throw new Error(`${String(error)}\n${JSON.stringify(await messages())}\nmodel: ${JSON.stringify(model.requests.slice(-3).map((request) => [request.prompt.slice(-300), request.reply, request.tools.map((tool) => tool.name)]))}\ncontrol plane: ${JSON.stringify(controlPlane.calls)}\n${worker.stderr()}`)
     })
+    const sqlite = async () => path.join(persist, "-SessionDO", `${(await worker.getDurableObjectNamespace("SESSION_HOST")).idFromName(root).toString()}.sqlite`)
     /** The machine the object ran on dies; a new workerd opens the same storage and nothing asks it anything. */
-    const crash = async () => {
-      running.splice(running.indexOf(current.worker), 1)
-      await current.worker.dispose()
-      current = await boot()
+    const crash = async (offline?: (database: DatabaseSync) => void) => {
+      const file = await sqlite()
+      running.splice(running.indexOf(worker), 1)
+      await worker.dispose()
+      if (offline) {
+        const database = new DatabaseSync(file)
+        try { offline(database) } finally { database.close() }
+      }
+      worker = await boot()
     }
     /** The tables in the object's SQLite file, read beside workerd. */
     const tables = async () => {
-      const id = (await current.worker.getDurableObjectNamespace("SESSION_HOST")).idFromName(root).toString()
-      const database = new DatabaseSync(path.join(persist, "-SessionDO", `${id}.sqlite`), { readOnly: true })
+      const database = new DatabaseSync(await sqlite(), { readOnly: true })
       try {
         return database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '_cf_%'").all().map((row) => String(row.name))
       } finally { database.close() }
     }
-    return { json, controlPlane, prompt, messages, settled, crash, tables }
+    return { json, as, controlPlane, prompt, messages, settled, crash, tables, sqlite }
   }
 
   async function pidFrom(file: string) {
@@ -209,16 +218,101 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.ok(JSON.stringify(messages).includes(`MACHINE_MCP:M1:${directory}`), JSON.stringify(messages))
   })
 
-  void it("wipes the object's storage once its session is deleted", { timeout: 120_000 }, async () => {
+  void it("spends the accounts of the person who created the session, and a creator without any spends nobody's", { timeout: 120_000 }, async () => {
+    const member = "user_member"
+    const accounts = { [OWNER]: openai(SECRET), [member]: openai("member-secret") }
+    const host = await session("ses_member", { creator: member, accounts })
+    await host.prompt("msg_member", "Reply with exactly this one token: PIMEMBER")
+    await host.settled("PIMEMBER")
+    const spent = new Set(model.requests.filter((request) => request.prompt.includes("PIMEMBER")).map((request) => request.authorization))
+    assert.deepEqual(spent, new Set(["Bearer member-secret"]))
+
+    const bare = await session("ses_bare", { creator: "user_bare", accounts })
+    const answered = model.requests.length
+    await bare.prompt("msg_bare", "Reply with exactly this one token: PIBARE")
+    const refused = await eventually("the turn refused for want of an account", async () => {
+      const reply = (await bare.messages()).find((message) => message.info.role === "assistant" && message.info.time?.completed)
+      return reply ? JSON.stringify(reply.info) : undefined
+    }, 30_000)
+    assert.match(refused, /No selected account for session owner user_bare/)
+    assert.equal(model.requests.slice(answered).some((request) => request.prompt.includes("PIBARE")), false)
+  })
+
+  void it("is refused what the control plane refuses: a create its reservation does not name, a viewer's turn and delete", { timeout: 120_000 }, async () => {
+    await assert.rejects(session("ses_unreserved", { reservation: "op_someone_else" }), /answered 403/)
+
+    const root = "ses_viewer"
+    const host = await session(root)
+    host.controlPlane.control.viewers.add("user_viewer")
+    const viewer = host.as("user_viewer")
+    await assert.rejects(viewer.json(`/session/${root}/prompt_async`, { method: "POST", body: { parts: [{ type: "text", text: "PIVIEWER" }], messageID: "msg_viewer", model: MODEL } }), /answered 403/)
+    await assert.rejects(viewer.json(`/session/${root}`, { method: "DELETE" }), /answered 403/)
+    assert.deepEqual(host.controlPlane.calls.deliveries, [])
+    assert.deepEqual(host.controlPlane.calls.deletes, [])
+    assert.ok((await host.tables()).includes("session_host_meta"))
+    assert.ok(await host.json(`/session/${root}`))
+  })
+
+  void it("deletes the session at the control plane first, and erases the object only once that succeeded", { timeout: 120_000 }, async () => {
     const root = "ses_delete"
     const host = await session(root)
     await host.prompt("msg_delete", "Reply with exactly this one token: PIDELETE")
     await host.settled("PIDELETE")
+    host.controlPlane.control.deleteUnavailable = true
+    await assert.rejects(host.json(`/session/${root}`, { method: "DELETE" }), /answered 503/)
+    assert.equal(assistantText(await host.messages()).includes("PIDELETE"), true)
+    host.controlPlane.control.deleteUnavailable = false
     await host.crash()
     assert.ok((await host.tables()).includes("session_host_meta"))
-    assert.deepEqual(await host.json(`/session/${root}`, { method: "DELETE" }), { ok: true })
+    assert.deepEqual(await host.json(`/session/${root}`, { method: "DELETE" }), { ok: true, deletedSessionIds: [root] })
+    assert.deepEqual(host.controlPlane.calls.deletes, [OWNER])
     await host.crash()
     assert.deepEqual(await host.tables(), [])
-    await assert.rejects(host.messages(), /answered 404/)
+    await assert.rejects(host.messages(), /answered 403/)
+  })
+
+  void it("refuses a store this build does not read with a typed answer, retries its start on the next request, and can still be deleted", { timeout: 120_000 }, async () => {
+    const root = "ses_unsupported"
+    const host = await session(root)
+    await host.prompt("msg_unsupported", "Reply with exactly this one token: PIUNSUPPORTED")
+    await host.settled("PIUNSUPPORTED")
+    let identity = ""
+    await host.crash((database) => {
+      identity = String(database.prepare("SELECT identity FROM runtime_store_schema").get()?.identity)
+      database.prepare("UPDATE runtime_store_schema SET identity = 'an older build'").run()
+    })
+    const refused = await host.as(OWNER).fetch(`/session/${root}/message`)
+    assert.equal(refused.status, 409)
+    assert.deepEqual(await refused.json(), { error: { code: "session_host_unsupported_store", message: "This session's stored state was written by a build this one does not read" } })
+
+    const database = new DatabaseSync(await host.sqlite())
+    try { database.prepare("UPDATE runtime_store_schema SET identity = ?").run(identity) } finally { database.close() }
+    assert.equal(assistantText(await host.messages()).includes("PIUNSUPPORTED"), true)
+
+    await host.crash((stale) => { stale.prepare("UPDATE runtime_store_schema SET identity = 'an older build'").run() })
+    assert.deepEqual(await host.json(`/session/${root}`, { method: "DELETE" }), { ok: true, deletedSessionIds: [root] })
+    assert.deepEqual(host.controlPlane.calls.deletes, [OWNER])
+    await host.crash()
+    assert.deepEqual(await host.tables(), [])
+  })
+
+  void it("stops a turn whose plugin MCP server waits for a machine that is still provisioning", { timeout: 120_000 }, async () => {
+    const root = "ses_mcp_wait"
+    projection = { generation: "g2", pluginRoots: [], notApplied: [],
+      mcpServers: [{ kind: "stdio", name: "waiting", origin: "plugin", command: process.execPath, args: ["-e", ""] }] }
+    plugins = { harnessLaunch: { pi: { generation: "g2", execution: { mode: "default" }, pluginRoots: [], notApplied: [],
+      mcpServers: [{ kind: "stdio", name: "waiting", origin: "plugin", command: "waiting" }] } }, mcp: {} }
+    const host = await session(root)
+    host.controlPlane.control.executionUnavailable = true
+    await host.prompt("msg_mcp_wait", "Reply with exactly this one token: PIWAIT")
+    await eventually("the MCP server waiting on the machine", async () => host.controlPlane.calls.executions.length >= 2 ? true : undefined, 30_000)
+    const inspected = await host.json<{ target: { ownerGeneration: string } }>(`/session/${root}/recovery`)
+    const waited = host.controlPlane.calls.executions.length
+    await host.json(`/session/${root}/recovery`, { method: "POST", body: {
+      requestId: "stop_wait", action: "cancel_turn", target: inspected.target, scopeRevision: inspected.target.ownerGeneration, attempt: 1,
+    } })
+    assert.ok(host.controlPlane.calls.executions.length - waited <= 1, `${host.controlPlane.calls.executions.length - waited} more waits after the stop`)
+    await eventually("the stopped turn's lease released", async () => host.controlPlane.calls.releases.includes("msg_mcp_wait") ? true : undefined, 15_000)
+    assert.equal(assistantText(await host.messages()).includes("PIWAIT"), false)
   })
 })

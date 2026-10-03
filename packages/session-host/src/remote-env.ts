@@ -3,6 +3,7 @@ import { ExecutionError, FileError, type ExecutionEnv, type FileErrorCode, type 
   type ShellExecResult, type TextLineReader } from "@earendil-works/pi-durable/env"
 import type { TurnExecutionAccess } from "@claxedo/harness/contract"
 import { asNumber, asRecord, asString } from "@claxedo/helpers/guards"
+import { serverSentEvents } from "./server-sent-events"
 
 type WireError = { code: string; message: string; path?: string }
 type WireResult = { ok: true; value?: unknown } | { ok: false; error: WireError }
@@ -172,21 +173,4 @@ function execResult(result: WireResult): Result<ShellExecResult, ExecutionError>
   }
   const code = EXECUTION_ERROR_CODES.find((known) => known === result.error.code) ?? "unknown"
   return { ok: false, error: new ExecutionError(code, result.error.message) }
-}
-
-async function* serverSentEvents(body: ReadableStream<Uint8Array>): AsyncIterable<{ name: string; data: string }> {
-  const decoder = new TextDecoder()
-  const reader = body.getReader()
-  let buffered = ""
-  for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
-    buffered += decoder.decode(chunk.value, { stream: true })
-    const blocks = buffered.split("\n\n")
-    buffered = blocks.pop() ?? ""
-    for (const block of blocks) {
-      const lines = block.split("\n")
-      const name = lines.find((line) => line.startsWith("event:"))?.slice(6).trim() ?? "message"
-      const data = lines.filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n")
-      yield { name, data }
-    }
-  }
 }

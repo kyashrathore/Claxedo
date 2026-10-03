@@ -25,7 +25,7 @@ export type SessionHostCompositionInput = {
   policy: SessionAccessPolicy
   placement: PiPlacement
   held: () => HeldTurn | undefined
-  deleted: (sessionId: string) => void
+  beforeDelete: (sessionId: string, credential: string | undefined) => Promise<void>
 }
 
 function launchFromTurn(workspaceId: string, held: () => HeldTurn | undefined): LaunchComposer {
@@ -102,7 +102,7 @@ export function composeSessionHost(input: SessionHostCompositionInput) {
     deriveChildSessionId: () => { throw new Error("A session host's Pi session has no subagents") },
     subagentAdmission: (parentSessionId, observation) => runtime.subagents.admit(parentSessionId, observation),
     backgroundWork: (sessionId) => ports.backgroundWork.read(sessionId),
-    afterDeleteSession: ({ sessionId }) => input.deleted(sessionId),
+    beforeDeleteSession: ({ sessionId, credential }) => input.beforeDelete(sessionId, credential),
   })
   const events = core.events({
     directory: SESSION_HOST_DIRECTORY, workspaceId, policy: sessionEventDeliveryPolicy(policy), sessionAccessPolicy: policy, sessionStarts: store.sessionStarts,

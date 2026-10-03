@@ -50,10 +50,12 @@ export class SessionHostTurns {
     const lease = this.lease(sessionId)
     const key = turnLeaseKey(lease)
     const held = this.deliveries.get(key)
-    if (held && !options.renew) return held
+    const expired = (this.delivered.get(key)?.delivery.expiresAt ?? Infinity) <= Date.now()
+    if (held && !options.renew && !expired) return held
     const fetched = this.post("turn-delivery", lease).then(async (body) => {
       const delivery = parseTurnDelivery(body)
       if (!delivery) throw new TurnAuthorityError(502, "turn_delivery_invalid")
+      if (delivery.expiresAt <= Date.now()) throw new TurnAuthorityError(502, "turn_delivery_expired")
       const turn = { key, delivery, generation: await deliveryGeneration([delivery.plugins, delivery.providerDefinitions]) }
       if (this.deliveries.get(key) === fetched) this.delivered.set(key, turn)
       return turn

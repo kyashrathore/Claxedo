@@ -6,8 +6,7 @@ import { volatileLaunchOwnership } from "@claxedo/process-ownership/launch"
 import type { PluginProjection } from "@claxedo/harness/contract"
 import { createRelayHostAuthMiddleware } from "@claxedo/session-core/relay-host"
 import { mintRelayHostToken, relayHostInputFromRuntimeClaims, verifyRuntimeAccessToken } from "@claxedo/workspace-relay"
-import { ExecutionEnvRoutes } from "../../../workspace-runtime/src/routes/execution-env"
-import { createSpawnService } from "../../../workspace-runtime/src/spawn-service"
+import { createSpawnService, ExecutionEnvRoutes } from "@claxedo/workspace-runtime/execution-env"
 import { MACHINE_HOST, WORKSPACE_ID } from "./control-plane"
 
 const PREFIX = `/workspaces/${WORKSPACE_ID}`
