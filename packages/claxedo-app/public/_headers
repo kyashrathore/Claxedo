@@ -1,23 +1,28 @@
 # ---------------------------------------------------------------------------
 # Security headers.
 #
-# This file is the ONLY place they can land for the web app. The SPA is
-# published to Cloudflare Pages (`wrangler pages deploy dist`, see
-# .github/workflows/deploy-claxedo-app.yml) and is served entirely by Pages —
-# the HTML document never passes through the control-plane Worker, so the Hono
+# This file is the ONLY place they can land for the web app. The SPA has two
+# publishers, and both serve this file: Cloudflare Pages
+# (`wrangler pages deploy dist` in .github/workflows/deploy-claxedo-app.yml) and
+# the user deployment's static-assets Worker
+# (packages/claxedo-server/scripts/deploy/deploy-user-cloudflare.ts). Neither
+# routes the HTML document through the control-plane Worker, so the Hono
 # `securityHeaders()` middleware in
 # packages/claxedo-server/src/deployments/hosted-shared/hosted-core-app.ts
 # covers the API responses and NOTHING here. Both surfaces need their own set.
 #
-# Pages MERGES overlapping rules (see the caching note below), so these live on
-# a single `/*` rule and share no header name with the cache/MIME rules — every
-# response ends up with exactly one of each.
+# Cloudflare joins the values of a header that several matching rules set with
+# commas. Cache-Control is the one name shared on purpose: every response gets
+# `no-transform`, so edge features that rewrite HTML or scripts (Rocket Loader,
+# email obfuscation, injected beacons) cannot add inline scripts the build's
+# meta Content-Security-Policy refuses, and the rules below add the lifetime.
 /*
+  Cache-Control: no-transform
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
-  # Pages serves this project over HTTPS only, so the HSTS pin is unconditional
-  # here. (The control plane's HSTS is gated on transport because it also runs
-  # plaintext on localhost; Pages never does.) No `preload` — that is a
+  # Both publishers serve this project over HTTPS only, so the HSTS pin is
+  # unconditional here. (The control plane's HSTS is gated on transport because
+  # it also runs plaintext on localhost; the app's publishers never do.) No `preload` — that is a
   # one-way door that needs a deliberate submission, not a config default.
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   # Legacy clickjacking header, kept for pre-CSP2 browsers only. Every current
@@ -31,9 +36,8 @@
   Content-Security-Policy: frame-ancestors 'self'
 
 # Vite emits content-hashed filenames under /assets (e.g. main-DUtf99h4.js), so
-# they are immutable. Pages MERGES overlapping rules, so set Cache-Control once
-# on the /assets/* catch-all and the MIME type on the specific extensions —
-# every /assets file ends up with exactly one of each header (no duplicates).
+# they are immutable. The lifetime joins `no-transform` above, and the MIME type
+# is set once on the specific extensions.
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 
@@ -47,7 +51,7 @@
   Content-Type: text/css
 
 # Root-level scripts/styles may be unhashed (service worker, etc.) — keep the
-# correct MIME but let Pages' default revalidation apply (no immutable cache).
+# correct MIME but let the publisher's default revalidation apply (no immutable cache).
 /*.js
   Content-Type: application/javascript
 
