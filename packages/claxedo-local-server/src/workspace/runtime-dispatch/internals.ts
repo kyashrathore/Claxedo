@@ -12,7 +12,8 @@ import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { markEmbeddedMachineUserRequest } from "@claxedo/workspace-runtime/exposure"
 import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "./embedded-relay-host-auth"
-import { isInProcessDaemonRequest, resolveIngressProvenance, type IngressProvenance } from "./ingress-provenance"
+import { isInProcessDaemonRequest } from "../../platform/in-process-request"
+import { resolveIngressProvenance, type IngressProvenance } from "./ingress-provenance"
 
 const log = Log.create({ service: "runtime-dispatch" })
 

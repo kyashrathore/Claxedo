@@ -60,7 +60,7 @@ import { HostProviderConfigRoutes } from "../workspace/host-provider-config-rout
 import { BootstrapRoutes } from "../deployments/shared-routes/bootstrap"
 import { daemonAdmission, machineRecoveryFence } from "./daemon-admission"
 import { relayReplayAdmission } from "../workspace/runtime-dispatch/relay-admission"
-import { markInProcessDaemonRequest } from "../workspace/runtime-dispatch/ingress-provenance"
+import { markInProcessDaemonRequest } from "../platform/in-process-request"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "../deployments/local/server-workspace-pty-proxy"
 import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
 import {

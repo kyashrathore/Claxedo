@@ -29,7 +29,7 @@
 import { timingSafeEqual } from "node:crypto"
 import type { MiddlewareHandler } from "hono"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
-import { isInProcessDaemonRequest } from "../workspace/runtime-dispatch/ingress-provenance"
+import { isInProcessDaemonRequest } from "../platform/in-process-request"
 
 export const DAEMON_CAPABILITY_HEADER = "x-claxedo-daemon-capability"
 
