@@ -2325,6 +2325,24 @@ describe("machine session rows", () => {
     expect(await page(outsider)).toEqual([])
   })
 
+  test("lands an interrupted session's status alongside the rest of its batch", async () => {
+    const { publish, page, alice } = await served()
+
+    await expect(
+      publish({
+        rows: [
+          row("ses_interrupted", { status: { kind: "interrupted", awaitingInput: false, at: 310 } }),
+          row("ses_idle"),
+        ],
+      }),
+    ).resolves.toEqual({ accepted: 2, refused: [] })
+
+    expect(await page(alice)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ session_id: "ses_interrupted", status: "interrupted", status_at: 310 }),
+      expect.objectContaining({ session_id: "ses_idle", status: "idle" }),
+    ]))
+  })
+
   test("republishing is idempotent and never moves a turn or a status backwards", async () => {
     const { publish, page, alice } = await served()
     const publication = {
