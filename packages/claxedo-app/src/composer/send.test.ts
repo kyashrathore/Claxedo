@@ -119,7 +119,6 @@ test("saving a queue edit captures it before asynchronous settings and leaves th
   expect(prompts).toHaveLength(1)
   expect(prompts[0]?.text).toBe("/goal edited input")
   expect(prompts[0]?.goal).toBeUndefined()
-  expect(store.forked(KEY)).toBe(false)
   expect(promptText(store.draft(KEY).prompt)).toBe("Original draft")
   expect(promptImages(store.draft(KEY).prompt)).toEqual([IMAGE])
   expect(store.draft(KEY).goalArmed).toBe(true)

@@ -26,7 +26,6 @@ test("a fork takes every draft write for its key and is never persisted", () => 
   expect(saved.map(({ entry }) => promptText(entry.draft.prompt))).not.toContain("Edited")
   expect(saved.flatMap(({ entry }) => entry.draft.context)).toEqual([])
   store.dropFork(KEY)
-  expect(store.forked(KEY)).toBe(false)
   expect(promptText(store.draft(KEY).prompt)).toBe("Keep my unsent draft")
   expect(store.draft(KEY).context).toEqual([])
 })
@@ -35,7 +34,6 @@ test("joining a fork moves it into an empty draft", () => {
   const { store } = recordingStore()
   store.forkDraft(KEY, draftOf("Edited queue item"))
   store.joinFork(KEY)
-  expect(store.forked(KEY)).toBe(false)
   expect(promptText(store.draft(KEY).prompt)).toBe("Edited queue item")
 })
 
@@ -50,13 +48,12 @@ test("joining a fork appends it after a draft that already holds text, keeping b
   expect(promptText(saved.at(-1)!.entry.draft.prompt)).toBe("Keep my unsent draft\n\nEdited queue item")
 })
 
-test("joining an emptied fork leaves the draft unchanged", () => {
+test("joining a fork whose text the person cleared leaves the draft unchanged", () => {
   const { store } = recordingStore()
   store.setPrompt(KEY, text("Keep my unsent draft"), 20)
   store.forkDraft(KEY, draftOf("Edited queue item"))
-  store.take(KEY)
+  store.setPrompt(KEY, text(""), 0)
   store.joinFork(KEY)
-  expect(store.forked(KEY)).toBe(false)
   expect(promptText(store.draft(KEY).prompt)).toBe("Keep my unsent draft")
 })
 

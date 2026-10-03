@@ -172,7 +172,6 @@ function forkActions(table: EntryTable) {
       ensure(key)
       setEntries(key, "fork", draft)
     },
-    forked: (key: ComposerKey) => table.entry(key).fork !== undefined,
     dropFork: (key: ComposerKey) => end(key, false),
     joinFork: (key: ComposerKey) => end(key, true),
   }
