@@ -11,6 +11,8 @@ export type SandboxPassRecord = Readonly<{
 
 export type SandboxPassRevocation = Readonly<{
   workspaceId: string
+  /** One reader's passes, or every reader's in the workspace when absent. */
+  principal?: Readonly<{ userId: string; orgId: string }>
   /** One audience's passes, or every audience's when absent. */
   audience?: string
   reason: string
@@ -30,7 +32,7 @@ export type SandboxPassRevocation = Readonly<{
 export type SandboxPassRegister = Readonly<{
   record(pass: SandboxPassRecord): Promise<void>
   revoked(jti: string): Promise<boolean>
-  /** Revokes the outstanding passes of one workspace; answers how many it found. */
+  /** Revokes the outstanding passes of one workspace that the revocation selects; answers how many it found. */
   revoke(input: SandboxPassRevocation): Promise<number>
   /** The unexpired, unrevoked passes under one organization, one audience. */
   outstanding(input: { orgId: string; audience: string }): Promise<readonly SandboxPassRecord[]>
@@ -55,6 +57,7 @@ export function memorySandboxPassRegister(options: { now?: () => number } = {}):
       let count = 0
       for (const pass of passes.values()) {
         if (pass.scope.workspaceId !== input.workspaceId) continue
+        if (input.principal && (pass.scope.userId !== input.principal.userId || pass.scope.orgId !== input.principal.orgId)) continue
         if (input.audience !== undefined && pass.audience !== input.audience) continue
         if (!live(pass)) continue
         pass.revokedAt = now()
