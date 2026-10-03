@@ -34,7 +34,7 @@ export async function exerciseTurnPageConformance(harness: TranscriptConformance
     message("a1", "assistant", [readTool("call-1", 11), { type: "text", text: "first answer" }], { parentID: "u1" }),
     message("u2", "user", [{ type: "text", text: "second" }]),
     message("a2-work", "assistant", [{ type: "text", text: "Looking." }, readTool("call-2", 21)], { parentID: "u2" }),
-    message("a2", "assistant", [{ type: "reasoning", text: "thinking" }, { type: "text", text: "second answer" }], { parentID: "u2" }),
+    message("a2", "assistant", [{ type: "reasoning", text: "thinking", time: { start: 23 } }, { type: "text", text: "second answer" }], { parentID: "u2" }),
     message("u3", "user", [{ type: "text", text: "third" }]),
     message("a3", "assistant", [{ type: "text", text: "third answer" }], { parentID: "u3" }),
   ])
