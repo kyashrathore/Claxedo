@@ -66,9 +66,10 @@ export const serverWorkerd: Policy = {
   // `documents/relay-http.ts`). The hosted runtime delivery asks a workspace's
   // recorded backing before it provisions a sandbox for it
   // (`workspace/cloud-root-backing.ts`), so a machine-placed workspace gets none.
-  // The D1 workspace authority's refusal type and its owner identity and
-  // bootstrap-claim helpers are modules of their own
-  // (`authority/adapters/d1/workspace-authority-error.ts`, `owner-identity.ts`).
+  // The D1 workspace authority's refusal type, its owner identity and
+  // bootstrap-claim helpers and the statements it creates a workspace with are
+  // modules of their own (`authority/adapters/d1/workspace-authority-error.ts`,
+  // `owner-identity.ts`, `workspace-creation.ts`).
   // The machine session-row ingest finds who hears a changed session's status
   // through its own module (`authority/adapters/d1/session-status-notices.ts`),
   // and the live-sync room admits a publisher's nudge through
@@ -76,11 +77,10 @@ export const serverWorkerd: Policy = {
   // replay-gap frame from `live-sync-replay-gap.ts`. A reader's seen and
   // settled marks are written by `session/routes/session-reader.ts` into the
   // D1 `session_reads` store (`authority/adapters/d1/session-reader-store.ts`).
-  // The statements that create a workspace live in
-  // `authority/adapters/d1/workspace-creation.ts`. Hosted account setup mounts
-  // the shared credential and provider-login routes over the per-org stores
-  // (`credentials/worker/routes.ts`, `org-routed.ts`) with the D1 store a device
-  // login waits in across instances (`provider-auth-pending.ts`).
+  // Hosted account setup mounts the shared credential and provider-login
+  // routes over the per-org stores (`credentials/worker/routes.ts`,
+  // `org-routed.ts`) with the D1 store a device login waits in across instances
+  // (`provider-auth-pending.ts`).
   ceilings: { modules: 128, packages: 19 },
 
   emitted: {
