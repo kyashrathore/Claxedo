@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import type { CredentialWrite } from "@claxedo/server-core/credentials/types"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/partition"
-import { createProviderAuthService, ProviderAuthError } from "./service"
+import { createProviderAuthService, ProviderAuthError, providerAuthMethods, providerAuthMethodsForHarness } from "./service"
 import { ProviderAuthRoutes } from "../routes/provider-auth"
 
 /** A fetch body this suite always sends as JSON text; anything else is a bug in the test. */
@@ -407,5 +407,29 @@ describe("what a completed ChatGPT sign-in leaves behind", () => {
     await auth.authorize({ owner: "local", providerId: "codex-app-server", org: "org-a" })
     await auth.callback({ owner: "local", providerId: "codex-app-server", org: "org-a" })
     expect(c.writes[0].input.label).toBe("ChatGPT OAuth")
+  })
+})
+
+describe("where every session runs in a cloud sandbox", () => {
+  test("only methods whose account a sandbox can be delivered are served, for every harness", () => {
+    const cloud = providerAuthMethods("cloud")
+    expect(cloud["codex-app-server"]).toEqual([{ type: "api", label: "API Key" }])
+    expect(cloud.openai).toEqual([{ type: "api", label: "API Key" }])
+    expect(cloud["claude-sdk"]?.map((method) => method.type)).toEqual(["token", "api"])
+    expect(providerAuthMethodsForHarness("codex", { reach: "cloud" })).toEqual({ "codex-app-server": [{ type: "api", label: "API Key" }] })
+    expect(providerAuthMethodsForHarness("pi", { reach: "cloud" })).not.toHaveProperty("openai-codex")
+    expect(providerAuthMethodsForHarness("pi")?.["openai-codex"]).toEqual([{ type: "oauth", label: "ChatGPT Pro/Plus (headless)" }])
+  })
+
+  test("a ChatGPT sign-in cannot be started", async () => {
+    const { registry } = credentials()
+    const requests: string[] = []
+    const service = createProviderAuthService(registry, {
+      reach: "cloud",
+      fetch: (async (input: string | URL) => (requests.push(String(input)), json({}))) as typeof fetch,
+    })
+    await expect(service.authorize({ providerId: "openai", method: 0, owner: "alice" })).rejects.toMatchObject({ code: "provider_auth_method_not_oauth" })
+    await expect(service.authorize({ providerId: "codex-app-server", method: 0, owner: "alice" })).rejects.toMatchObject({ code: "provider_auth_method_not_oauth" })
+    expect(requests).toEqual([])
   })
 })

@@ -539,6 +539,7 @@ describe("credential routes", () => {
           "credentials": [
             {
               "account_id": null,
+              "activated_at": null,
               "consent": null,
               "created_at": 1,
               "deliverable": {
@@ -697,6 +698,7 @@ describe("credential routes", () => {
         account_id: null,
         owner: "local",
         is_active: false,
+        activated_at: null,
         status: "available",
         health: null,
         has_secret: true,

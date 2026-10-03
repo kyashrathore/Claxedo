@@ -3,6 +3,7 @@ import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/partition"
 import { OPENAI_CLIENT_ID, OPENAI_ISSUER } from "@claxedo/server-core/credentials/provider-auth/openai-oauth"
 import { accountIdFromClaims, emailFromClaims, HARNESS_TABLE, isHarnessId, PI_LAUNCH_PROVIDERS } from "@claxedo/agent-runtime-contract"
 import { isNonEmptyString, jsonNumber as num, jsonRecord as record } from "../../platform/runtime/lib/json"
+import { credentialReach } from "../reach"
 import { VENDOR_PROVIDER_NAMES } from "../vendor-providers"
 
 const text = (value: unknown) => (isNonEmptyString(value) ? value : undefined)
@@ -106,7 +107,15 @@ export type ProviderAuthPendingStore = {
   take(key: string): Promise<CodexPending | undefined>
 }
 
+/**
+ * Where the accounts a method connects are spent. `cloud` serves only the
+ * methods whose stored credential a cloud sandbox can be delivered, for a host
+ * that runs every session in one.
+ */
+export type ProviderAuthReach = "any" | "cloud"
+
 export type ProviderAuthOptions = {
+  reach?: ProviderAuthReach
   pending?: ProviderAuthPendingStore
   fetch?: typeof fetch
   now?: () => number
@@ -125,7 +134,7 @@ export type ProviderAuthOptions = {
  */
 export const DEFAULT_PENDING_TTL_MS = 15 * 60 * 1000
 
-export function providerAuthMethods(): ProviderAuthMethods {
+function allProviderAuthMethods(): ProviderAuthMethods {
   return {
     ...Object.fromEntries(Object.keys(VENDOR_PROVIDER_NAMES).map((id) => [id, [{ type: "api" as const, label: "API Key" }]])),
     anthropic: [
@@ -148,22 +157,44 @@ export function providerAuthMethods(): ProviderAuthMethods {
   }
 }
 
+/** A pasted subscription token is stored as the plan login it is, like an OAuth sign-in. */
+function reachesCloud(providerId: string, method: ProviderAuthMethod) {
+  return credentialReach({ provider_id: providerId, kind: method.type === "api" ? "api_key" : "oauth_token" }).cloud
+}
+
+export function providerAuthMethods(reach: ProviderAuthReach = "any"): ProviderAuthMethods {
+  const methods = allProviderAuthMethods()
+  if (reach === "any") return methods
+  return Object.fromEntries(Object.entries(methods).flatMap(([providerId, listed]) => {
+    const served = listed.filter((method) => reachesCloud(providerId, method))
+    return served.length ? [[providerId, served]] : []
+  }))
+}
+
 /**
  * The sign-in methods a harness's accounts are connected with. A catalog
  * harness lists every provider it can launch on; Pi's ChatGPT plan is the
  * Codex login alone, and its OpenAI provider a key alone, because each is a
  * different endpoint. A native harness has the one provider its login is
- * stored against. Undefined for a harness with no methods.
+ * stored against. OpenCode also offers a key for every provider the caller's
+ * organization declared. Undefined for a harness with no methods.
  */
-export function providerAuthMethodsForHarness(harness: string): ProviderAuthMethods | undefined {
-  const methods = providerAuthMethods()
-  if (harness === "opencode") return methods
+export function providerAuthMethodsForHarness(
+  harness: string,
+  input: { reach?: ProviderAuthReach; customProviderIds?: readonly string[] } = {},
+): ProviderAuthMethods | undefined {
+  const methods = providerAuthMethods(input.reach)
+  if (harness === "opencode") {
+    const key: ProviderAuthMethod[] = [{ type: "api", label: "API Key" }]
+    return { ...Object.fromEntries((input.customProviderIds ?? []).map((id) => [id, key])), ...methods }
+  }
   if (harness === "pi") {
-    return Object.fromEntries(PI_LAUNCH_PROVIDERS.map((id) => [id,
-      id === "openai-codex" ? methods["codex-app-server"].filter((method) => method.type === "oauth")
-        : id === "openai" ? methods.openai.filter((method) => method.type === "api")
-          : methods[id],
-    ]))
+    return Object.fromEntries(PI_LAUNCH_PROVIDERS.flatMap((id) => {
+      const served = id === "openai-codex" ? methods["codex-app-server"]?.filter((method) => method.type === "oauth")
+        : id === "openai" ? methods.openai?.filter((method) => method.type === "api")
+          : methods[id]
+      return served?.length ? [[id, served]] : []
+    }))
   }
   if (!isHarnessId(harness)) return undefined
   const provider = HARNESS_TABLE[harness].connectProvider
@@ -214,7 +245,8 @@ export function createProviderAuthService(
   const pollingSafetyMs = options.pollingSafetyMs ?? 3_000
   const pendingTtlMs = options.pendingTtlMs ?? DEFAULT_PENDING_TTL_MS
 
-  const methods = () => providerAuthMethods()
+  const reach = options.reach ?? "any"
+  const methods = () => providerAuthMethods(reach)
 
   const authorize = async (input: { providerId: string; method?: number; org?: string; owner: string }) => {
     const method = requireMethod(methods(), input.providerId, input.method ?? 0)

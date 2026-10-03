@@ -108,7 +108,6 @@ export type HostedCoreAppOptions = {
   productWorkspace?: HostedCoreProductWorkspaceOptions
   agentConfigRepository?: UserAgentConfigRepository
   settingsChanged?: (userId: string) => Promise<void>
-  credentialsChanged?: (orgId: string) => Promise<void>
   /**
    * The shared account setup routes (`/api/claxedo/credentials`, `/provider/*`)
    * over the plane's per-org credential stores: where a provider device login
@@ -330,7 +329,6 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       ...hostedPiCredentials({
         resolveOrgId: (auth) => requireAuthority(services).resolveOrgId(auth),
         credentials: plane.orgCredentials,
-        ...(options.credentialsChanged ? { changed: options.credentialsChanged } : {}),
       }),
     }),
   )

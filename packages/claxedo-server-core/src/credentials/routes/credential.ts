@@ -106,6 +106,7 @@ function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialB
     account_id: cred.account_id,
     owner: cred.owner ?? null,
     is_active: cred.is_active === true,
+    activated_at: cred.activated_at ?? null,
     status: cred.status,
     health: cred.health ?? null,
     has_secret: !!cred.secure_ref,

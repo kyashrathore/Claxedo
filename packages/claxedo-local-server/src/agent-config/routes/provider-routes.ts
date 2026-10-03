@@ -2,6 +2,7 @@ import { Hono, type Context, type MiddlewareHandler } from "hono"
 import {
   CustomProviderInvalidError,
   deleteCustomProvider,
+  listCustomProviders,
   putCustomProvider,
   readCustomProvider,
 } from "@claxedo/server-core/credentials/custom-provider"
@@ -61,14 +62,22 @@ export function agentConfigProviderRoutes(options: AgentConfigRouteOptions = {})
         throw error
       }
     })
-    .get("/providers/auth", (c) => {
+    .get("/providers/auth", async (c) => {
       const harness = c.req.query("nativeHarness")
       if (!harness || c.req.query("connectionId")) {
         return c.json(unsupportedHarness("Provider authentication requires a nativeHarness"), 400)
       }
-      const methods = providerAuthMethodsForHarness(harness)
-      if (!methods) return c.json(unsupportedHarness(`No sign-in methods are served for nativeHarness=${harness}`), 400)
-      return c.json(methods)
+      try {
+        const customProviderIds = harness === "opencode"
+          ? listCustomProviders(await requestOrg(c.req.raw, authOptions)).map((provider) => provider.providerID)
+          : []
+        const methods = providerAuthMethodsForHarness(harness, { customProviderIds })
+        if (!methods) return c.json(unsupportedHarness(`No sign-in methods are served for nativeHarness=${harness}`), 400)
+        return c.json(methods)
+      } catch (error) {
+        if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
+        throw error
+      }
     })
     .delete("/providers/custom/:providerId", requireCatalogHarness, async (c) => {
       if (c.req.query("nativeHarness") !== "opencode") return c.json(unsupportedHarness("Custom providers require OpenCode"), 400)

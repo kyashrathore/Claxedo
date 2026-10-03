@@ -377,8 +377,6 @@ const ECHO_ROUTES: readonly string[] = ["GET /path"]
  * any credential is read. Anything else above 499 fails the sweep.
  */
 const UNAVAILABLE_ROUTES: Record<string, number> = {
-  // No Pi credential store is composed, and the route says so first.
-  "DELETE /auth/:providerID": 503,
   // The fixture's authority admits no machine caller and redeems no
   // invitation; none of these three takes an account credential, and each
   // says so before it looks at one. The beat is on this list because a

@@ -28,6 +28,10 @@ export function orgRoutedCredentials(
       if (!store.effectiveCredentials) throw new Error("A hosted credential store reports its effective accounts")
       return await store.effectiveCredentials(scope, org)
     },
+    setActiveCredentials: (ids, org, actor) => write(org, async (store) => {
+      if (!store.setActiveCredentials) throw new Error("A hosted credential store chooses between a person's accounts")
+      return await store.setActiveCredentials(ids, org, actor)
+    }),
     getCredentialByProvider: (providerId, read, org) => at(org).getCredentialByProvider(providerId, read, org),
     getCredential: async (id, org) => await at(org).getCredential?.(id, org),
     resolveCredentialSecretById: async (id, org) => (await at(org).resolveCredentialSecretById?.(id, org)) ?? null,

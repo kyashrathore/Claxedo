@@ -13,7 +13,6 @@
  *   GET    /path                                synthetic path derived from ?directory
  *   GET    /api/claxedo/agent-config/providers  Pi provider catalog
  *   GET    /api/claxedo/agent-config/providers/auth  a harness's sign-in methods
- *   DELETE /auth/:providerID?harness=pi         remove an org Pi credential
  *   GET    /api/claxedo/agent-config/connections  always unsupported on a central
  *   GET    /api/claxedo/agent-config/harness    a placement's harness health, read over
  *                                               the relay
@@ -78,7 +77,6 @@ export type HostedShellRouteOptions = {
    * that does.
    */
   piProviderCatalog?: (auth: SignedControlPlaneAuth) => Promise<Record<string, unknown>>
-  deletePiCredential?: (auth: SignedControlPlaneAuth, providerID: string) => Promise<void>
   /**
    * Ask the runtime of a workspace placed on a machine for harness health and
    * identity,
@@ -517,20 +515,9 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
       try {
         const auth = await signedAuth(c, options)
         if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
-        const methods = providerAuthMethodsForHarness(c.req.query("nativeHarness") ?? "")
+        const methods = providerAuthMethodsForHarness(c.req.query("nativeHarness") ?? "", { reach: "cloud" })
         if (!methods || c.req.query("connectionId")) return c.json({ error: { code: "provider_catalog_unsupported", message: "Provider authentication requires a native harness" } }, 400)
         return c.json(methods)
-      } catch (err) {
-        return authErrorResponse(c, err)
-      }
-    })
-    .delete("/auth/:providerID", async (c) => {
-      if (c.req.query("harness") !== "pi" || !options.deletePiCredential) return c.json({ error: { code: "pi_credentials_unavailable", message: "Pi credential storage is unavailable" } }, 503)
-      try {
-        const auth = await signedAuth(c, options)
-        if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
-        await options.deletePiCredential(auth, c.req.param("providerID"))
-        return c.json({})
       } catch (err) {
         return authErrorResponse(c, err)
       }

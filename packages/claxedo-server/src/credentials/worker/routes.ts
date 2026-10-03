@@ -31,7 +31,7 @@ export function hostedCredentialRoutes(input: HostedCredentialRoutesInput) {
     return await input.resolveOrgId(auth)
   }
   const auth = { authentication: input.authentication, authConfig: input.authConfig, resolveOrg }
-  const service = createProviderAuthService(credentials, { pending: input.pending, ...(input.fetch ? { fetch: input.fetch } : {}) })
+  const service = createProviderAuthService(credentials, { reach: "cloud", pending: input.pending, ...(input.fetch ? { fetch: input.fetch } : {}) })
   return new Hono()
     .route("/api/claxedo/credentials", CredentialRoutes(credentials, auth))
     .route("/", ProviderAuthRoutes({ service, ...auth }))

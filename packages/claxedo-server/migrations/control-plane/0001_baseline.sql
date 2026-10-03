@@ -325,6 +325,7 @@ CREATE TABLE hosted_provider_credentials (
   last_error text,
   secret_envelope text not null,
   revision integer not null,
+  activated_at integer,
   created_at integer not null,
   updated_at integer not null,
   primary key (org_id, id)

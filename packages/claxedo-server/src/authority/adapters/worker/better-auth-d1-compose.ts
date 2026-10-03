@@ -1,4 +1,3 @@
-import type { SandboxDriver, SandboxLeaseStore } from "@claxedo/sandbox-manager"
 import { d1ProviderAuthPending } from "../../../credentials/worker/provider-auth-pending"
 import { oauthProviderAuthServerMetadata } from "@better-auth/oauth-provider"
 import type { D1Database } from "@cloudflare/workers-types"
@@ -268,7 +267,6 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       agentConfigRepository: settings,
       ...(delivery ? {
         settingsChanged: delivery.settingsChanged,
-        credentialsChanged: delivery.reconcileCredentialDelivery,
         accountSetup: { pending: d1ProviderAuthPending(input.controlPlaneDatabase, input.env), changed: delivery.reconcileCredentialDelivery },
         productWorkspace: {
           prepareRuntime: delivery.prepareRuntime,

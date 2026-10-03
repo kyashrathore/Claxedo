@@ -29,19 +29,18 @@ const authentication: RequestAuthenticationAdapter = {
   },
 }
 
+const upstream: string[] = []
 const deviceLogin: typeof fetch = Object.assign(async (input: Parameters<typeof fetch>[0]) => {
-  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-  if (url.endsWith("/usercode")) return Response.json({ device_auth_id: "device-1", user_code: "CODE-1234", interval: 1 })
-  if (url.endsWith("/deviceauth/token")) return Response.json({ authorization_code: "code-1", code_verifier: "verifier-1" })
-  if (url.endsWith("/oauth/token")) return Response.json({ access_token: "access-1", refresh_token: "refresh-1", expires_in: 3600 })
-  throw new Error(`unexpected provider request ${url}`)
+  upstream.push(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
+  return Response.json({})
 }, { preconnect() {} })
 
 let sequence = 0
 function rig() {
   const org = `setup-${++sequence}`
   const changes: string[] = []
-  const store = (orgId: string) => hostedOrgCredentials(orgId, { database: database.database, env })
+  let at = 1_000
+  const store = (orgId: string) => hostedOrgCredentials(orgId, { database: database.database, env }, { now: () => ++at })
   const app = () => hostedCredentialRoutes({
     authentication,
     authConfig,
@@ -103,15 +102,28 @@ describe("hosted account setup through the shared credential routes", () => {
     expect(JSON.stringify(await (await call(app(), "/api/claxedo/credentials/account-sources")).json())).toContain(orgAccount.id)
   })
 
-  test("a Codex device login completes on another Worker instance, once, and only for the person who started it", async () => {
+  test("no ChatGPT sign-in is offered or started, because a cloud sandbox cannot spend one", async () => {
     const { store, app } = rig()
-    const route = "/provider/codex-app-server/oauth"
-    expect((await call(app(), `${route}/authorize`, { method: "POST", body: { method: 0 } })).status).toBe(200)
-    const stolen = await call(app(), `${route}/callback`, { method: "POST", body: { method: 0 }, person: "bob" })
-    expect(await stolen.json()).toMatchObject({ error: { code: "provider_auth_missing_pending" } })
-    expect((await call(app(), `${route}/callback`, { method: "POST", body: { method: 0 } })).status).toBe(200)
-    expect((await store().getCredentialByProvider("codex-app-server", { owner: "alice" }))?.kind).toBe("oauth_token")
-    expect((await call(app(), `${route}/callback`, { method: "POST", body: { method: 0 } })).status).toBe(400)
+    const methods = await (await call(app(), "/provider/auth")).json()
+    expect(methods["codex-app-server"]).toEqual([{ type: "api", label: "API Key" }])
+    expect(methods.openai).toEqual([{ type: "api", label: "API Key" }])
+    const started = await call(app(), "/provider/codex-app-server/oauth/authorize", { method: "POST", body: { method: 0 } })
+    expect([started.status, (await started.json()).error.code]).toEqual([400, "provider_auth_method_not_oauth"])
+    expect(upstream).toEqual([])
+    expect(await store().listCredentials()).toEqual([])
+  })
+
+  test("choosing an account makes it the person's most recent mark, and only their own can be chosen", async () => {
+    const { store, app } = rig()
+    await call(app(), "/api/claxedo/credentials", { method: "PUT", body: key("anthropic", "sk-ant-api03-alice") })
+    await call(app(), "/api/claxedo/credentials", { method: "PUT", body: key("claude-sdk", "sk-ant-oat01-alice") })
+    const marked = async () => (await (await call(app(), "/api/claxedo/credentials/effective")).json()).credentials.map((row: { provider_id: string }) => row.provider_id)
+    expect(await marked()).toEqual(["claude-sdk", "anthropic"])
+    const anthropic = (await store().listCredentials()).find((row) => row.provider_id === "anthropic")!
+    expect((await call(app(), "/api/claxedo/credentials/activate", { method: "POST", body: { ids: [anthropic.id] }, person: "bob" })).status).toBe(404)
+    expect(await marked()).toEqual(["claude-sdk", "anthropic"])
+    expect((await call(app(), "/api/claxedo/credentials/activate", { method: "POST", body: { ids: [anthropic.id] } })).status).toBe(200)
+    expect(await marked()).toEqual(["anthropic", "claude-sdk"])
   })
 
   test("a waiting device login is sealed, expires, and has a single consumer", async () => {
