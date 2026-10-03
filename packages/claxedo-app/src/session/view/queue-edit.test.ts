@@ -14,7 +14,7 @@ const REF = { projectId: projectId("p"), placementId: placementId("w"), sessionI
 const RECORD: QueuedPrompt = { seq: 1, messageId: "m", queuedAt: 1, held: false, parts: [{ type: "text", text: "Queued original" }] }
 
 function arrange(parts = RECORD.parts) {
-  let rows: QueuedPrompt[] = [{ ...RECORD, parts }]
+  let rows: QueuedPrompt[] | undefined = [{ ...RECORD, parts }]
   const actions: QueuedPromptAction[] = []
   const server = {
     sessions: {
@@ -47,10 +47,10 @@ function arrange(parts = RECORD.parts) {
   })
   const begin = async () => {
     await queue.reread()
-    edit.queued.beginEdit(queue.items()[0])
+    edit.queued.beginEdit(queue.items()[0]!)
     await Bun.sleep(0)
   }
-  return { queue, edit, actions, drafts, begin, remove: () => (rows = []) }
+  return { queue, edit, actions, drafts, begin, remove: () => (rows = []), unreachable: () => (rows = undefined), reachable: () => (rows = [{ ...RECORD, parts, held: true }]) }
 }
 
 test("editing a queued message forks the session draft with the record's content", async () => {
@@ -70,6 +70,23 @@ test("a queued message that disappears while it is edited ends the edit and keep
   expect(edit.edit.active()).toBe(false)
   expect(drafts.fork).toBeUndefined()
   expect(drafts.kept).toEqual(["Edited"])
+})
+
+test("an edit stays open while the session's runtime is unreachable and its record is unknown", async () => {
+  const { queue, edit, drafts, actions, begin, unreachable, reachable } = arrange()
+  await begin()
+  drafts.fork = "Edited"
+  unreachable()
+  await queue.reread()
+  expect(queue.editing()).toBe(1)
+  expect(queue.items().map((item) => item.seq)).toEqual([1])
+  expect(drafts).toMatchObject({ fork: "Edited", kept: [] })
+  reachable()
+  await queue.reread()
+  edit.edit.cancel()
+  await Bun.sleep(0)
+  expect(actions).toEqual(["hold", "release"])
+  expect(drafts).toMatchObject({ fork: undefined, kept: [] })
 })
 
 test("cancelling or saving an edit discards its fork", async () => {

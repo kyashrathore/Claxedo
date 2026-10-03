@@ -100,7 +100,8 @@ export type SessionsApi = {
   readonly archive: (ref: SessionLocation, archived: boolean) => Promise<void>
   readonly remove: (ref: SessionLocation) => Promise<void>
   readonly newMessageId: () => string
-  readonly queue: (ref: SessionLocation) => Promise<readonly QueuedPrompt[]>
+  // `undefined` while the session's runtime is unreachable: the queue lives there, so its contents are unknown rather than empty.
+  readonly queue: (ref: SessionLocation) => Promise<readonly QueuedPrompt[] | undefined>
   readonly controlQueued: (ref: SessionLocation, seq: number, action: QueuedPromptAction) => Promise<QueuedPromptControl>
   readonly replaceQueued: (ref: SessionLocation, seq: number, input: PromptInput, messageId: string) => Promise<boolean>
   readonly controlGoal: (ref: SessionLocation, action: GoalAction) => Promise<SessionGoal | undefined>

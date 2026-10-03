@@ -35,6 +35,7 @@ function signalField<T>(initial: T): Field<T> {
 async function read(context: QueueContext): Promise<void> {
   try {
     const next = await context.server.sessions.queue(context.ref)
+    if (!next) return
     context.items.set(next)
     context.readError.set(undefined)
     context.onRead(next)
