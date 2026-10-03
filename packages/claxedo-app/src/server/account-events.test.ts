@@ -51,3 +51,31 @@ test("account events: a stream error fails the body, and an abort closes the str
   expect(fake.calls.at(-1)).toEqual(["close", "stream_1"])
   expect(fake.listening()).toBe(0)
 })
+
+test("account events: an abort while reading fails the read, so the stream reconnects, and closes the stream in main", async () => {
+  const fake = streamingBridge()
+  const aborted = new AbortController()
+  const response = await accountEvents(fake.bridge)({ signal: aborted.signal })
+  const reading = response.body!.getReader().read()
+
+  aborted.abort(new Error("No heartbeat within the timeout"))
+
+  await expect(reading).rejects.toThrow("No heartbeat within the timeout")
+  expect(fake.calls.at(-1)).toEqual(["close", "stream_1"])
+  expect(fake.listening()).toBe(0)
+})
+
+test("account events: an abort while the stream opens closes it in main and never starts it", async () => {
+  const fake = streamingBridge()
+  const aborted = new AbortController()
+  const opened = Promise.withResolvers<unknown>()
+  const bridge = { ...fake.bridge, streamOpen: (operation: string, input?: Readonly<Record<string, unknown>>) => (fake.calls.push(["open", operation, input]), opened.promise) }
+  const opening = accountEvents(bridge)({ signal: aborted.signal })
+
+  aborted.abort(new Error("closed"))
+  opened.resolve({ streamId: "stream_1" })
+
+  await expect(opening).rejects.toThrow("closed")
+  expect(fake.calls).toEqual([["open", "controlPlane.events", {}], ["close", "stream_1"]])
+  expect(fake.listening()).toBe(0)
+})

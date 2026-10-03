@@ -14,15 +14,28 @@ export function accountEvents(bridge: AccountStreamPort): AccountEvents {
   return async ({ lastEventId, signal }) => {
     const streamId = readString(await bridge.streamOpen("controlPlane.events", lastEventId ? { lastEventId } : {}), "streamId")
     if (!streamId) throw new Error("The desktop account opened the event stream without an id")
-    const encoder = new TextEncoder()
-    const listeners: (() => void)[] = []
-    const detach = () => listeners.splice(0).forEach((stop) => stop())
-    const close = () => {
-      detach()
+    const closeInMain = () => {
       void bridge.streamClose(streamId).catch((error: unknown) => console.error("The account event stream could not be closed", { streamId, error }))
     }
-    const body = new ReadableStream<Uint8Array>({
+    if (signal.aborted) {
+      closeInMain()
+      throw signal.reason
+    }
+    const encoder = new TextEncoder()
+    const listeners: (() => void)[] = []
+    let body!: ReadableStreamDefaultController<Uint8Array>
+    const detach = () => {
+      listeners.splice(0).forEach((stop) => stop())
+      signal.removeEventListener("abort", abort)
+    }
+    const abort = () => {
+      detach()
+      closeInMain()
+      body.error(signal.reason)
+    }
+    const stream = new ReadableStream<Uint8Array>({
       start: (controller) => {
+        body = controller
         listeners.push(
           bridge.onStreamChunk((payload) => {
             if (payload.streamId === streamId) controller.enqueue(encoder.encode(payload.text))
@@ -39,10 +52,13 @@ export function accountEvents(bridge: AccountStreamPort): AccountEvents {
           }),
         )
       },
-      cancel: close,
+      cancel: () => {
+        detach()
+        closeInMain()
+      },
     })
-    signal.addEventListener("abort", close, { once: true })
+    signal.addEventListener("abort", abort, { once: true })
     await bridge.streamStart(streamId)
-    return new Response(body, { headers: { "content-type": "text/event-stream" } })
+    return new Response(stream, { headers: { "content-type": "text/event-stream" } })
   }
 }
