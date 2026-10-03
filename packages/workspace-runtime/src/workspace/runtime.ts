@@ -43,6 +43,7 @@ import { workspaceRuntimeStoreDir } from "../env"
 import { assertWorkspaceRuntimeExposure } from "../exposure"
 import { firstPartyMcpServerFor } from "../first-party-mcp/index"
 import { createHarnessServices } from "../harness-services"
+import { createSpawnService } from "../spawn-service"
 import { defaultHarnessStateRoot, harnessCompositionOptions, sweepIdleHarnessHomes } from "../host/composition"
 import { createElicitationPatternEvaluator } from "../host/pattern-evaluator"
 import { Log } from "../log"
@@ -566,6 +567,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
     firstPartyMcpServer(sessionId) {
       return options.firstPartyMcpLaunch ? firstPartyMcpServerFor(options.firstPartyMcpLaunch, sessionId) : undefined
     },
+    spawn: (command, spawnOptions) => createSpawnService(launchOwnership())(command, spawnOptions),
+    piProjection: () => launch.projection({ id: "pi", access: "native" }),
     apply,
     detail() {
       const health = runnerHealth()

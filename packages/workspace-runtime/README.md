@@ -180,11 +180,33 @@ projection compose those concerns outside the OSS runtime boundary.
 | `*    /api/wr/pty/*` | [`routes/pty.ts`](src/routes/pty.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/hook/*` | [`routes/agent-hook.ts`](src/routes/agent-hook.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/worktrees/*` | [`routes/worktree.ts`](src/routes/worktree.ts) | exposure-dependent runtime auth |
+| `*    /api/wr/execution-env/*` | [`routes/execution-env.ts`](src/routes/execution-env.ts), [`routes/mcp-stdio-relay.ts`](src/routes/mcp-stdio-relay.ts) | relay exposure only: a `cloud-vm` Relay Host Token with a `session_id` claim and role editor or above; no control-plane call per request |
 | `*    /session/*` | `SessionRoutes` (mounted via `mountWorkspaceCore`) | implicit (host-level) |
 | `*    /mcp/*` | MCP routes | implicit |
 | `*    /lsp`, `*    /vcs` | client-presentation routes mounted by host | implicit |
 
 The capability response is versioned with `api_version: 2`.
+
+### Execution environment
+
+A relay-exposed runtime serves a Durable-Object-hosted Pi session the
+workspace machine as Pi's `ExecutionEnv`. Every request carries a `cloud-vm`
+Relay Host Token with the session's `session_id` and role editor or above;
+any other backing answers 404, and nothing calls the control plane per request.
+
+- `POST /api/wr/execution-env/fs` takes `{ op, args }`, where `op` names a
+  pi-durable `FileSystem` method other than `openTextLineReader` and `cleanup`,
+  and answers `{ ok: true, value } | { ok: false, error: { code, message, path? } }`
+  with status 200. Bytes travel as `{ base64 }`.
+- `POST /api/wr/execution-env/exec` takes `{ command, cwd?, env?, inheritEnv?, timeout? }`
+  and streams `output` events (`{ text }`) then one `result` event. The shell is
+  spawned through the workspace's launch ownership with the harness env
+  allowlist, and a client disconnect retires it. Output is never spilled to a
+  file, so a result never carries `spillPath`.
+- `GET /api/wr/execution-env/mcp/:serverName` upgrades to a WebSocket bridged
+  to the stdin and stdout of the plugin stdio MCP server of that name in the
+  runtime's Pi projection, one JSON-RPC message per frame. The server is spawned
+  on open and retired on close; the caller never sends a command.
 
 ## Event contract
 

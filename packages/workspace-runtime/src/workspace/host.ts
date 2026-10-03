@@ -12,6 +12,7 @@ import type { FirstPartyMcpServerEntry } from "../first-party-mcp/index"
 import type { ConnectionRuntimeStatus, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
 import type { LaunchOwnershipRecord } from "@claxedo/process-ownership/launch"
 import type { LaunchOwnershipReconciliation } from "../ownership/reconcile-launch-ownership"
+import type { HarnessServices, PluginProjection } from "@claxedo/harness/contract"
 
 export type WorkspaceConnectionState = ConnectionRuntimeStatus & { connectionId: string }
 
@@ -148,6 +149,8 @@ export type WorkspaceHost = {
   runtimeCredentialIssuer: () => RuntimeCredentialIssuer | undefined
   /** The `claxedo` MCP entry this runtime injects into a session's harness config, absent for the same reason. */
   firstPartyMcpServer: (sessionId: string) => FirstPartyMcpServerEntry | undefined
+  spawn: HarnessServices["spawn"]
+  piProjection: () => PluginProjection
   apply: (snapshot: RuntimeSnapshot) => Promise<void>
   detail: () => {
     state: "ready" | "applying" | "error"

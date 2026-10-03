@@ -99,12 +99,13 @@ describe("workspace host service relay auth", () => {
       ["/session/ses_1/prompt_async", "POST"],
       ["/api/wr/events?sessionID=ses_1", "GET"],
       ["/question/question_1/reply", "POST"],
+      ["/api/wr/execution-env/fs", "POST"],
     ] as const) {
       const allowed = await call(path, method)
       expect(allowed.status, `${method} ${path}`).toBe(200)
       await expect(allowed.json()).resolves.toEqual({ sessionScope: "ses_1" })
     }
-    for (const path of ["/api/wr/health", "/api/wr/pty", "/api/wr/git/status", "/session/ses_2", "/api/wr/events", "/file?path=a"]) {
+    for (const path of ["/api/wr/health", "/api/wr/pty", "/api/wr/git/status", "/session/ses_2", "/api/wr/events", "/file?path=a", "/api/wr/execution-env"]) {
       const refused = await call(path)
       expect(refused.status, path).toBe(403)
       await expect(refused.json()).resolves.toEqual({

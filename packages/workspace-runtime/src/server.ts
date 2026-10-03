@@ -25,6 +25,7 @@ import { WorkspaceRuntimeRoutes } from "./routes/manifest"
 import { WorktreeRoutes } from "./routes/worktree"
 import { workspaceRuntimeLivenessResponse, workspaceRuntimeProbeResponse } from "./routes/health"
 import { CheckpointRoutes } from "./routes/checkpoint"
+import { ExecutionEnvRoutes } from "./routes/execution-env"
 import {
   assertWorkspaceRuntimeExposure,
   createWorkspaceRuntimeExposureMiddleware,
@@ -667,6 +668,10 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     exposure: options.exposure!,
     ...(options.renewalIntervalMs !== undefined ? { renewalIntervalMs: options.renewalIntervalMs } : {}),
   })
+  if (options.exposure?.kind === "relay") {
+    app.route(WorkspaceRuntimeRoutes.executionEnv, ExecutionEnvRoutes({ directory: options.target?.directory ?? workspaceDir(),
+      env: options.env ?? process.env, spawn: host.spawn, piProjection: host.piProjection, upgradeWebSocket: nodeWebSocket.upgradeWebSocket }))
+  }
 
   let cleaned = false
   const dispose = () => {
