@@ -51,7 +51,7 @@ function publishBackgroundWork(broker: SessionBroker, work: BackgroundWork): voi
   void broker.publish({ type: "background-work", ...work }).catch((error: unknown) => broker.reportFailure(error))
 }
 
-function listen(host: CodexSessionHost, launch: CodexLaunch, input: StartInput): (entry: Entry) => void {
+function listenUntilBound(host: CodexSessionHost, launch: CodexLaunch, input: StartInput): (entry: Entry) => void {
   let entry: Entry | undefined
   const early: RpcMessage[] = []
   launch.member.onRequest((message, signal) => entry ? host.answer(entry, message, signal)
@@ -85,7 +85,7 @@ export async function openCodexSession(host: CodexSessionHost, input: StartInput
   let opened: Entry | undefined
   const launch = await host.launches.join(input, () => codexLoginKey(opened?.start ?? input))
   try {
-    const bind = listen(host, launch, input)
+    const bind = listenUntilBound(host, launch, input)
     await host.versions.admit(launch.version, "initialize", broker)
     const launched = { ...launch, modelProvider: await codexModelProvider(launch, input.directory) }
     const threadId = await openThread(host, launched, input, resumed)

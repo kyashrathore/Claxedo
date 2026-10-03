@@ -39,12 +39,12 @@ import { createLocalControlPlaneServices } from "./local-services"
 import {
   configureEmbeddedWorkspaceRuntime,
   ensureEmbeddedWorkspaceRuntime,
-  startEmbeddedWorkspaceRuntimeConfigRenewal,
   readEmbeddedWorkspaceSessionConfig,
   shutdownEmbeddedWorkspaceRuntimes,
   verifyEmbeddedRuntimeCredential,
   type EmbeddedRetirementResult,
 } from "../deployments/local/embedded-workspace-runtime"
+import { startEmbeddedWorkspaceRuntimeConfigRenewal } from "../deployments/local/embedded-config-renewal-timer"
 import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
 import { localBuiltinToolGroupsReader } from "../agent-plugins/builtin-groups"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"

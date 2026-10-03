@@ -4,14 +4,12 @@ import { embeddedConfigModeForPath } from "../../workspace/runtime-dispatch/inte
 import path from "path"
 import {
   createRuntimeCredentialIssuer,
-  createSharedHarnessHosts,
   createWorkspaceRuntimeApp,
   runtimeCredentialWorkspaceId,
   type RuntimeCredentialClaims,
-  type SharedHarnessHosts,
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
-import { clearOpaqueTimer, errorMessage } from "@claxedo/helpers"
+import { embeddedHarnessHosts, retireEmbeddedHarnessHosts } from "./embedded-harness-hosts"
 import { managedWorkspaceSessionAccessPolicy, type WorkspaceEventFramesTap } from "@claxedo/session-core"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
 import { DESKTOP_PLACEMENT } from "./connection-secret-scope"
@@ -135,30 +133,6 @@ export class EmbeddedWorkspaceRuntimeRetirementUnresolvedError extends Error {
 }
 
 const hosts = new Map<string, EmbeddedRuntime>()
-let harnessHosts: SharedHarnessHosts | undefined
-
-function sharedHarnessHosts(): SharedHarnessHosts {
-  if (harnessHosts) return harnessHosts
-  const hostLog = Log.create({ service: "shared-harness-hosts" })
-  harnessHosts = createSharedHarnessHosts({
-    clock: { now: () => Date.now(), setTimeout: (callback, ms) => setTimeout(callback, ms), clearTimeout: clearOpaqueTimer },
-    log: { debug: (message, fields) => hostLog.info(message, fields), info: (message, fields) => hostLog.info(message, fields),
-      warn: (message, fields) => hostLog.warn(message, fields), error: (message, fields) => hostLog.error(message, fields) },
-  })
-  return harnessHosts
-}
-
-async function retireSharedHarnessHosts(): Promise<boolean> {
-  const retiring = harnessHosts
-  harnessHosts = undefined
-  try {
-    await retiring?.dispose()
-    return true
-  } catch (error) {
-    log.error("the shared harness processes did not retire", { error: errorMessage(error) })
-    return false
-  }
-}
 const retiring = new Map<string, EmbeddedRetirement>()
 let shutdownGeneration = 0
 
@@ -416,7 +390,7 @@ function options(
   return {
     ...(harness ? { harness } : {}),
     placement: DESKTOP_PLACEMENT,
-    sharedHarnessHosts: sharedHarnessHosts(),
+    sharedHarnessHosts: embeddedHarnessHosts(),
     connectionProviders: configuredConnectionProviders,
     resolveConnectionSecrets: configuredConnectionSecretResolver,
     onActivityChange: activityChanged,
@@ -690,8 +664,6 @@ export async function syncEmbeddedWorkspaceRuntimes() {
   if (broken.length > 0) throw new AggregateError(broken, `${broken.length} embedded runtime(s) failed to re-configure`)
 }
 
-/** How often the renewal check runs; what it renews is decided from each placeholder's expiry. */
-const RENEWAL_CHECK_INTERVAL_MS = 30_000
 const RENEWAL_RETRY_BASE_MS = 5_000
 const RENEWAL_RETRY_CEILING_MS = 5 * 60_000
 
@@ -726,20 +698,6 @@ export async function renewEmbeddedWorkspaceRuntimeConfigs(input: { at: number; 
   }
 }
 
-/** Drive {@link renewEmbeddedWorkspaceRuntimeConfigs} off a timer. Returns the stop. */
-export function startEmbeddedWorkspaceRuntimeConfigRenewal(options: { now?: () => number } = {}) {
-  const now = options.now ?? Date.now
-  let lastCheck = now()
-  const timer = setInterval(() => {
-    const at = now()
-    const slept = at - lastCheck > RENEWAL_CHECK_INTERVAL_MS * 2
-    lastCheck = at
-    void renewEmbeddedWorkspaceRuntimeConfigs({ at, all: slept })
-  }, RENEWAL_CHECK_INTERVAL_MS)
-  timer.unref()
-  return () => clearInterval(timer)
-}
-
 export async function shutdownEmbeddedWorkspaceRuntimes(): Promise<{ ok: boolean; results: EmbeddedRetirementResult[] }> {
   shutdownGeneration++
   // Owners already retiring are collected before the live ones start, so
@@ -754,7 +712,7 @@ export async function shutdownEmbeddedWorkspaceRuntimes(): Promise<{ ok: boolean
     outcome.status === "fulfilled"
       ? outcome.value
       : { workspaceId: pending[index].workspaceId, state: "retire_failed", attempt: 0, error: String(outcome.reason) })
-  const harnessProcessesRetired = await retireSharedHarnessHosts()
+  const harnessProcessesRetired = await retireEmbeddedHarnessHosts()
   return { ok: harnessProcessesRetired && results.every((result) => result.state === "retired"), results }
 }
 
