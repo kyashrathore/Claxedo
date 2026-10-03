@@ -1,5 +1,5 @@
 import windowState from "electron-window-state"
-import { app, BrowserWindow, nativeImage, type WebContents } from "electron"
+import { app, BrowserWindow, nativeImage, nativeTheme, type WebContents } from "electron"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import log from "electron-log/main.js"
@@ -26,6 +26,10 @@ type Globals = {
 }
 
 const root = dirname(fileURLToPath(import.meta.url))
+
+function systemBackgroundColor() {
+  return nativeTheme.shouldUseDarkColors ? "#131010" : "#F8F7F7"
+}
 
 /**
  * The one document every build's main window loads, and the only one
@@ -69,7 +73,7 @@ export function createMainWindow(globals: Globals, options?: { deferLoad?: boole
     width: requestedWindowSize?.width ?? state.width,
     height: requestedWindowSize?.height ?? state.height,
     show: false,
-    backgroundColor: "#111111",
+    backgroundColor: systemBackgroundColor(),
     title: app.getName(),
     icon: brandedIcon(iconPath()),
     ...(process.platform === "darwin"
@@ -182,6 +186,7 @@ export function createLoadingWindow(globals: Globals) {
     resizable: false,
     center: true,
     show: true,
+    backgroundColor: systemBackgroundColor(),
     icon: iconPath(),
     ...(process.platform === "darwin" ? { titleBarStyle: "hidden" as const } : {}),
     ...(process.platform === "win32"
