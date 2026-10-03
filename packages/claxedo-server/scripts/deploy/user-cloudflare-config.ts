@@ -88,6 +88,7 @@ export function allocatedRequestLimiterNamespaceId(deploymentId: string, workerN
 export type UserCloudflareTarget = Readonly<{
   workerName: string
   appWorkerName: string
+  sessionHostWorkerName: string
   deploymentId: string
   apiOrigin: string
   appOrigin: string
@@ -111,6 +112,7 @@ export function userCloudflareTarget(env: NodeJS.ProcessEnv): UserCloudflareTarg
   return Object.freeze({
     workerName,
     appWorkerName,
+    sessionHostWorkerName: requireNonLegacyWorkerName(setting(env, "CLAXEDO_SESSION_HOST_WORKER_NAME", `${workerName}-session-host`)),
     deploymentId: setting(env, "CLAXEDO_DEPLOYMENT_ID", workerName),
     apiOrigin,
     appOrigin,
@@ -244,6 +246,14 @@ export function workerVariables(deployment: UserCloudflareDeployment, configurat
     ...(deployment.artifact.agentPlugins
       ? { CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1", CLAXEDO_PUBLIC_URL: deployment.apiOrigin }
       : {}),
+  }
+}
+
+/** The session-host Worker's variables: where its control plane authorizes sessions and where the relay publishes its host-token keys. */
+export function sessionHostVariables(deployment: UserCloudflareDeployment): Record<string, string> {
+  return {
+    WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: `${deployment.apiOrigin}/api/runtime-authority/session-authorize`,
+    WORKSPACE_RUNTIME_RELAY_JWKS_URL: `${deployment.relayUrl}/.well-known/jwks.json`,
   }
 }
 

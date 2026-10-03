@@ -44,6 +44,13 @@ export type DeferredGrantBinding = { transport: "deferred-grant"; grantId: strin
 
 export type SessionProofBinding = SessionStreamLeaseBinding | DeferredGrantBinding
 
+/** The principal a proof or lease names, without the rest of its claims. */
+export function sessionLeasePrincipal(claims: PrivateSessionRuntimePrincipal): PrivateSessionRuntimePrincipal {
+  return claims.principalKind === "user"
+    ? { principalKind: "user", actorId: claims.actorId, actorKind: "human" }
+    : { principalKind: "service", actorId: claims.actorId, actorKind: "agent" }
+}
+
 export type SessionProofClaims = PrivateSessionRuntimePrincipal & SessionProofBinding & {
   orgId: string
   workspaceId: string

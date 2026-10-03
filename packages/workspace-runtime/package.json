@@ -83,6 +83,13 @@
       "import": "./dist/routes.mjs",
       "default": "./dist/routes.mjs"
     },
+    "./execution-env": {
+      "development": "./src/execution-env.ts",
+      "bun": "./src/execution-env.ts",
+      "types": "./dist/execution-env.d.ts",
+      "import": "./dist/execution-env.mjs",
+      "default": "./dist/execution-env.mjs"
+    },
     "./route-contribution": {
       "development": "./src/route-contribution.ts",
       "bun": "./src/route-contribution.ts",

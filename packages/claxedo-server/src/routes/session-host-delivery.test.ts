@@ -213,3 +213,35 @@ describe("/turn-execution", () => {
     })).rejects.toThrow(/session's own host/)
   })
 })
+
+describe("/session-host-delete", () => {
+  const deleted = async (sessionId: string) => (await plane.database.prepare("select deleted_at from sessions where session_id = ?").bind(sessionId).first<{ deleted_at: number | null }>())?.deleted_at
+  const remove = (sessionId: string, proof: string) => plane.post("/session-host-delete", { sessionId }, proof)
+
+  test("deletes the row for the session's own host, as an actor who controls the session, and the host is never admitted again", async () => {
+    const root = "ses_pi_delete"
+    const proof = await plane.createHostedSession(root)
+    const answer = await remove(root, proof)
+    expect(answer.status).toBe(200)
+    expect(await answer.json()).toEqual({ deleted: true })
+    expect(await deleted(root)).toEqual(expect.any(Number))
+    expect((await plane.post("/session-authorize", { action: "read", sessionId: root }, proof)).status).toBe(403)
+    expect((await remove(root, proof)).status).toBe(403)
+  })
+
+  test("refuses another host, a machine, a member who may only send, and a forged proof", async () => {
+    const root = "ses_pi_delete_refused"
+    await plane.createHostedSession(root)
+    await plane.store.grantSessionShare!(plane.owner, { sessionId: root, workspaceId: WORKSPACE_ID, grantedToUserId: plane.member.principal!.userId, level: "send" })
+    const member = await plane.relayProof(plane.member, { hostId: sessionHostId(root), backing: "durable-object", sessionId: root, jti: "rat_member_delete" })
+    for (const proof of [await hostProof("rat_other_host_delete", ROOT), await vmProof("rat_vm_delete"), member]) {
+      const answer = await remove(root, proof)
+      expect(answer.status).toBe(403)
+      expect(await answer.json()).toEqual({ error: { code: "session_host_delete_denied" } })
+    }
+    expect((await remove(root, "not-a-token")).status).toBe(401)
+    expect((await remove(VM, await vmProof("rat_vm_delete_own"))).status).toBe(403)
+    expect(await deleted(root)).toBeNull()
+    expect(await deleted(VM)).toBeNull()
+  })
+})

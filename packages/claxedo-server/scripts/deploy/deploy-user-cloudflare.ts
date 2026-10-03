@@ -13,6 +13,7 @@ import {
   authConfigurationId,
   deployReadSecrets,
   oauthCallbackUrls,
+  sessionHostVariables,
   userCloudflareDeployment,
   workerVariables,
   type UserCloudflareDeployment,
@@ -24,13 +25,15 @@ import {
   probeWrangler,
   runWrangler,
 } from "./wrangler-cli"
-import { renderAppWranglerConfig, renderWorkerWranglerConfig } from "./wrangler-config"
+import { renderAppWranglerConfig, renderSessionHostWranglerConfig, renderWorkerWranglerConfig } from "./wrangler-config"
 
 /**
  * `wrangler deploy --dry-run` bundles offline and never resolves a resource,
  * so the plan bundles against obviously-fake database IDs instead of asking
  * Cloudflare for the real ones.
  */
+const SESSION_HOST_TSCONFIG = path.resolve(SERVER_ROOT, "../session-host/tsconfig.json")
+
 const DRY_RUN_DATABASE_IDS = Object.freeze({
   AUTH_DB: "00000000-0000-4000-8000-00000000a001",
   CONTROL_PLANE_DB: "00000000-0000-4000-8000-00000000c001",
@@ -83,6 +86,7 @@ export function deployPlan(
     `Worker              ${deployment.workerName} (${deployment.artifact.artifactId})`,
     `API                 ${deployment.apiOrigin}  (custom domain ${host(deployment.apiOrigin)})`,
     `App Worker          ${deployment.appWorkerName}`,
+    `Session host        ${deployment.sessionHostWorkerName} (SessionDO, bound by the relay as SESSION_HOST)`,
     `App                 ${deployment.appOrigin}  (custom domain ${host(deployment.appOrigin)})`,
     `D1 databases        AUTH_DB=${deployment.databases.AUTH_DB}  CONTROL_PLANE_DB=${deployment.databases.CONTROL_PLANE_DB}  (created if missing)`,
     `R2 bucket           ${deployment.documentsBucket}  (Pages)`,
@@ -98,6 +102,7 @@ export function deployPlan(
     "",
     "Steps: find or create both D1 databases -> apply their migrations -> provision the native OAuth clients",
     "       -> build the app -> wrangler deploy the Worker with its secrets -> wait for /health to name the new version",
+    "       -> wrangler deploy the session-host Worker, which binds the Worker as CONTROL_PLANE",
     "       -> wrangler deploy the app assets -> wait for the app to serve the new build",
   ].join("\n")
 }
@@ -189,6 +194,14 @@ async function main() {
       )
     const configArgs = ["--config", workerConfig]
     const tsconfig = path.join(SERVER_ROOT, "tsconfig.auth-d1.json")
+    const sessionHostConfig = path.join(temporary, "session-host-wrangler.toml")
+    await writeFile(sessionHostConfig, renderSessionHostWranglerConfig({
+      workerName: deployment.sessionHostWorkerName,
+      controlPlaneWorkerName: deployment.workerName,
+      configDirectory: temporary,
+      variables: sessionHostVariables(deployment),
+    }))
+    const sessionHostArgs = ["deploy", "--config", sessionHostConfig, "--tsconfig", SESSION_HOST_TSCONFIG]
 
     if (args.dryRun) {
       await writeWorkerConfig(DRY_RUN_DATABASE_IDS)
@@ -196,7 +209,8 @@ async function main() {
         ["deploy", ...configArgs, "--dry-run", "--outdir", path.join(temporary, "bundle"), "--tsconfig", tsconfig],
         { env: offlineEnvironment() },
       )
-      console.log(`\nDry run: the ${deployment.artifact.artifactId} Worker bundles; nothing was sent to Cloudflare.`)
+      await runWrangler([...sessionHostArgs, "--dry-run", "--outdir", path.join(temporary, "session-host-bundle")], { env: offlineEnvironment() })
+      console.log(`\nDry run: the ${deployment.artifact.artifactId} and session-host Workers bundle; nothing was sent to Cloudflare.`)
       return
     }
 
@@ -238,6 +252,9 @@ async function main() {
     const versionId = deployedVersionId(await readFile(outputFile, "utf8"), deployment.workerName)
     await verifyDeployedVersion(deployment.apiOrigin, versionId)
     console.log(`✓ Worker deployed: ${deployment.apiOrigin} serves version ${versionId}`)
+
+    await runWrangler([...sessionHostArgs, "--keep-vars=false"])
+    console.log(`✓ Session host deployed: ${deployment.sessionHostWorkerName}`)
 
     const appConfig = path.join(temporary, "app-wrangler.toml")
     await writeFile(appConfig, renderAppWranglerConfig({ appWorkerName: deployment.appWorkerName, browserDirectory: BROWSER_DIRECTORY }))

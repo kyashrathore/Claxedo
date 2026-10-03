@@ -133,4 +133,18 @@ export const storeCoreScenarios: Record<string, (harness: StoreHarness) => void>
     }
     throw new Error("a store with another schema opened")
   },
+
+  "a database that already holds another owner's tables takes the store beside them, and a store table without the schema is refused"(database) {
+    database.exec("CREATE TABLE pi_conversations (id INTEGER PRIMARY KEY)")
+    bound(database.open())
+    same(database.open().sessionOwner("s1"), OWNER, "owner beside the other tables")
+    database.exec("DROP TABLE runtime_store_schema")
+    try {
+      database.open()
+    } catch (error) {
+      if (!(error instanceof RuntimeStoreSchemaMismatchError)) throw error
+      return
+    }
+    throw new Error("a store without its schema record opened")
+  },
 }

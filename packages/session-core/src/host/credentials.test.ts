@@ -86,3 +86,16 @@ test("the machine owner re-creating their session by name is the same account ho
     expect(f.transport.starts.map((input) => input.credentials.accountOwner)).toEqual(["A", "A"])
   } finally { await f.dispose() }
 })
+
+test("a host that holds credentials only during a turn opens a session with no account and keeps its owner", async () => {
+  const transport = new FakeTransport()
+  const launch: LaunchComposer = { workspaceId: "ws", projection: () => ({ generation: "test", mcpServers: [], pluginRoots: [], notApplied: [] }),
+    credentials: () => undefined }
+  const f = createHostFixture({ transports: { pi: transport }, launch })
+  try {
+    await f.runtime.sessions.create({ ...sessionCreate({ id: "per-turn" }), owner: { kind: "person", userId: "A" } })
+    expect(transport.starts[0].credentials).toEqual({ accountOwner: "A", machineLoginAllowed: false, providers: {}, secrets: {}, leaseGeneration: "" })
+    await expect(f.runtime.sessions.create({ ...sessionCreate({ id: "per-turn" }), owner: { kind: "person", userId: "B" } }))
+      .rejects.toMatchObject({ code: "account_unavailable" })
+  } finally { await f.dispose() }
+})

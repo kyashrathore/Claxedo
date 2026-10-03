@@ -115,7 +115,8 @@ export type SessionRoutesOptions = {
   createActiveTurnScope?: (input: { directory: string; sessionId: string }) => { signal?: AbortSignal; dispose?: () => void } | undefined
   transformPromptBody?: (input: { sessionId: string; directory: string; body: SessionPromptBody }) => Promise<SessionPromptBody> | SessionPromptBody
   getSessionConfig?: (input: { directory: string; sessionId: string }) => Promise<SessionConfig>
-  beforeDeleteSession?: (input: { directory: string; sessionId: string }) => Promise<void> | void
+  /** `credential` is the deleting request's own proof, for a host that deletes the session at its authority first. */
+  beforeDeleteSession?: (input: { directory: string; sessionId: string; credential?: string }) => Promise<void> | void
   /**
    * Observe a session update (title, archive) after the runtime applies it,
    * so a store-owned inventory does not serve stale titles or resurrect
@@ -393,7 +394,10 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
       ? (_c, directory, session, updates) => options.afterUpdateSession!({ directory: requiredDirectory(directory), sessionId: session.id, updates })
       : undefined,
     beforeDeleteSession: options.beforeDeleteSession
-      ? (_c, directory, sessionId) => options.beforeDeleteSession!({ directory: requiredDirectory(directory), sessionId })
+      ? (c, directory, sessionId) => {
+        const credential = c.req.header("authorization")
+        return options.beforeDeleteSession!({ directory: requiredDirectory(directory), sessionId, ...(credential ? { credential } : {}) })
+      }
       : undefined,
   })
   return {

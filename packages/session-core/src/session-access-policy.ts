@@ -500,7 +500,11 @@ export function managedWorkspaceSessionAccessPolicy(
   const authority = options.authority
   const authorize = async (input: SessionAccessPolicyInput) => {
     const workspace = authorizeManaged(input, options.requireActor === true)
-    if (!workspace.allowed || !input.authority || !input.sessionId) return workspace
+    // A create that claims a reservation names a session the authority has no
+    // row for yet; the reservation is what it decides, in `authorizeSessionStart`.
+    if (!workspace.allowed || !input.authority || !input.sessionId || (input.operation === "session_create" && input.registrationOperationId)) {
+      return workspace
+    }
     if (!input.actor) return workspace
     if (!authority) {
       return {

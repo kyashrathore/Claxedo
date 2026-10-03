@@ -42,7 +42,8 @@ export async function startHostedStack(label: string, options: HostedStackOption
     })
     control = await startHostedControlPlane({ root, port: workerPort, sandboxOrigin, gitUrl: git.url, relayUrl, credentials,
       apiOrigin: workerUrl, appOrigin: options.appOrigin ?? workerUrl, emailPassword: options.emailPassword })
-    relay = await startHostedRelay({ root, port: relayPort, controlPlaneUrl: workerUrl, certificate: credentials.certificate, allowedOrigins: [options.appOrigin ?? workerUrl] })
+    relay = await startHostedRelay({ root, port: relayPort, controlPlaneUrl: workerUrl, certificate: credentials.certificate, allowedOrigins: [options.appOrigin ?? workerUrl],
+      modelUrl: model.url })
   } catch (error) {
     if (relay) await relay.close()
     if (control) await control.close()

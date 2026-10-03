@@ -6,11 +6,13 @@ export async function sessionOperationGuard(
   c: Ctx,
   sessionId: string,
   operation: SessionAccessOperation,
+  registrationOperationId?: string,
 ) {
   const decision = await opts.sessionAccessPolicy?.authorize({
     ...sessionAccessContext(c),
     sessionId,
     operation,
+    ...(registrationOperationId ? { registrationOperationId } : {}),
     method: c.req.method,
     path: c.req.path,
   })

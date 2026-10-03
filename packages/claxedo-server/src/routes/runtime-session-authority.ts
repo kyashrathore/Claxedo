@@ -39,6 +39,7 @@ import { placedSessionHostRoot, type SessionHostAuthority } from "../authority/s
 import {
   proofHost,
   relayProofVerifier,
+  sessionLeasePrincipal,
   streamLeaseMinter,
   streamLeaseVerifier,
   turnLeaseMinter,
@@ -124,12 +125,6 @@ export async function authorizeRuntimeSessionStream(
     action: claims.action,
   })
   return { allowed: true, ...await streamLeaseMinter(options.env ?? process.env)(claims) }
-}
-
-function sessionLeasePrincipal(claims: PrivateSessionRuntimePrincipal): PrivateSessionRuntimePrincipal {
-  return claims.principalKind === "user"
-    ? { principalKind: "user", actorId: claims.actorId, actorKind: "human" }
-    : { principalKind: "service", actorId: claims.actorId, actorKind: "agent" }
 }
 
 async function runtimeAccessTokenDenial(
@@ -667,15 +662,13 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
   }
 
   const app = new Hono()
-  if (options.connectionSecrets) app.route("/connection-secrets", RuntimeConnectionSecretRoutes({
-    ...options.connectionSecrets, authority: options.authority, verifyRelayProof: options.verifyRelayProof ?? relayProofVerifier(env),
+  const proofs = {
+    authority: options.authority, verifyRelayProof: options.verifyRelayProof ?? relayProofVerifier(env),
     verifyTurnLease: options.verifyTurnLease ?? turnLeaseVerifier(env),
-    turnLeaseDenial: (claims) => proofDenial({ authority: options.authority, resolveWorkspaceOwner }, claims),
-  }))
-  if (options.sessionHostDelivery) app.route("/", SessionHostDeliveryRoutes({
-    ...options.sessionHostDelivery, authority: options.authority, verifyTurnLease: options.verifyTurnLease ?? turnLeaseVerifier(env),
-    turnLeaseDenial: (claims) => proofDenial({ authority: options.authority, resolveWorkspaceOwner }, claims),
-  }))
+    turnLeaseDenial: (claims: TurnLeaseClaims) => proofDenial({ authority: options.authority, resolveWorkspaceOwner }, claims),
+  }
+  if (options.connectionSecrets) app.route("/connection-secrets", RuntimeConnectionSecretRoutes({ ...options.connectionSecrets, ...proofs }))
+  if (options.sessionHostDelivery) app.route("/", SessionHostDeliveryRoutes({ ...options.sessionHostDelivery, ...proofs }))
   return app.post("/session-authorize", limitedBody, async (context) => {
     const body = await readJsonRecord(context.req.raw)
     if (body?.action === USAGE_REPORT_ACTION) return reportUsage(context, body)
