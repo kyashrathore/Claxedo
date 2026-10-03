@@ -1,5 +1,5 @@
 import { credentialSnapshot, type CredentialSnapshot } from "@claxedo/agent-runtime-contract"
-import { isRecord } from "@claxedo/helpers/guards"
+import { isNonEmptyString, isRecord } from "@claxedo/helpers/guards"
 import { readProviderDefinitions, type CustomProviderDefinition } from "./provider-definitions"
 
 export type RuntimeConfigSnapshotPlugins = {
@@ -34,10 +34,6 @@ function epochMillis(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0
 }
 
-function text(value: unknown): value is string {
-  return typeof value === "string" && value !== ""
-}
-
 function plugins(input: unknown): RuntimeConfigSnapshotPlugins | undefined {
   if (!isRecord(input) || !onlyKeys(input, ["harnessLaunch", "mcp"])) return undefined
   const { harnessLaunch, mcp } = input
@@ -63,7 +59,7 @@ export function parseTurnDelivery(input: unknown): TurnDelivery | undefined {
 export function parseTurnExecutionAccess(input: unknown): TurnExecutionAccess | undefined {
   if (!isRecord(input) || !onlyKeys(input, ["relayUrl", "workspaceId", "hostId", "routingId", "runtimeAccessToken", "expiresAt", "directory"])) return undefined
   const { relayUrl, workspaceId, hostId, routingId, runtimeAccessToken, expiresAt, directory } = input
-  if (!text(relayUrl) || !text(workspaceId) || !text(hostId) || !text(runtimeAccessToken) || !text(directory)) return undefined
-  if (!epochMillis(expiresAt) || (routingId !== undefined && !text(routingId))) return undefined
+  if (!isNonEmptyString(relayUrl) || !isNonEmptyString(workspaceId) || !isNonEmptyString(hostId) || !isNonEmptyString(runtimeAccessToken) || !isNonEmptyString(directory)) return undefined
+  if (!epochMillis(expiresAt) || (routingId !== undefined && !isNonEmptyString(routingId))) return undefined
   return { relayUrl, workspaceId, hostId, ...(routingId === undefined ? {} : { routingId }), runtimeAccessToken, expiresAt, directory }
 }
