@@ -71,8 +71,6 @@ test("47 shared sessions: follow sees live turns, send reaches the owner, revoke
   await expect(page.getByText("Recipient's answer", { exact: true })).toBeVisible()
   await expect.poll(async () => assistantText(await signed.owner.api.messages(workspace.directory, session.id))).toContain("Recipient's answer")
 
-  // The revoke's doorbell reaches the recipient's live room, so the row goes
-  // without a refresh.
   await share("DELETE")
   if (isMobile) await page.getByRole("button", { name: UI.openRail }).click()
   await expect(row).toHaveCount(0)
