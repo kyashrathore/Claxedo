@@ -48,25 +48,25 @@
   left: 50%;
   bottom: 0;
   width: calc(960 * var(--dot));
-  aspect-ratio: 960 / 609;
+  aspect-ratio: 960 / 661;
   translate: -50% 0;
   background-color: var(--first-project-plate-ink);
   image-rendering: pixelated;
-  -webkit-mask: url("./assets/daniell-taj-dither.webp") 0 0 / 100% 100% no-repeat;
-  mask: url("./assets/daniell-taj-dither.webp") 0 0 / 100% 100% no-repeat;
+  -webkit-mask: url("./assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat;
+  mask: url("./assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat;
 }
 
 html[data-color-scheme="dark"] .first-project {
-  --first-project-plate-ink: color-mix(in oklab, var(--text-base) 20%, transparent);
+  --first-project-plate-ink: color-mix(in oklab, var(--text-base) 15%, transparent);
 }
 
 html[data-color-scheme="dark"] .first-project-plate::before {
   -webkit-mask:
-    url("./assets/daniell-taj-dither.webp") 0 0 / 100% 100% no-repeat,
+    url("./assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat,
     linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask:
-    url("./assets/daniell-taj-dither.webp") 0 0 / 100% 100% no-repeat exclude,
+    url("./assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat exclude,
     linear-gradient(#000 0 0);
 }
 
