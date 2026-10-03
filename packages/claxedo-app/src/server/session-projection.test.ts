@@ -46,12 +46,13 @@ test("session projection: a folder's session, or one with no account, is never p
   }
 })
 
-test("session projection: a session served by its own host is registered, and never asked for a checkpoint it does not keep", async () => {
+test("session projection: a session served by its own host keeps its transcript there, so each turn end pulls its row again, never a checkpoint", async () => {
   const { runs, projection } = fixture("cloud", true, { sessionId: "ses_1" })
 
   await projection.created(ref)
   projection.observe({ type: "statusChanged", ref, status: { kind: "idle" } })
   await settle()
 
-  expect(runs.map((run) => run.operation)).toEqual(["session.projection.register"])
+  expect(runs.map((run) => run.operation)).toEqual(["session.projection.register", "session.projection.register"])
+  expect(runs[1]?.input).toMatchObject({ workspaceId: "ws_1", sessionId: "ses_1", reason: "message-checkpoint" })
 })
