@@ -60,7 +60,8 @@ const DEFAULT_PROVISION_INTERVAL_MS = 2_000
 const DEFAULT_HEALTH_TIMEOUT_MS = 60_000
 const DEFAULT_HEALTH_INTERVAL_MS = 1_000
 // An image pull needs Boat's documented command maximum.
-const DOCKER_RUN_TIMEOUT_SECONDS = 600
+const CONTAINER_START_TIMEOUT_SECONDS = 600
+const DOCKER_DAEMON_WAIT_SECONDS = 120
 // Written via PUT /sandboxes/{id}/files — the provider's file channel — so env
 // and registry credentials never appear in a /commands body, which Boat
 // executes and can log. Paths are relative to the sandbox work directory,
@@ -70,6 +71,9 @@ const RUNTIME_ENV_PATH = ".claxedo-runtime-env"
 const REGISTRY_PASSWORD_PATH = ".claxedo-registry-password"
 const CONTAINER_ENV_PATH = "/run/claxedo-runtime.env"
 
+const STDERR_TAIL_CHARS = 600
+const REDACTED_VALUE_MIN_LENGTH = 8
+
 const READY_STATES = new Set(["ready", "idle", "running"])
 const PENDING_STATES = new Set(["init", "provisioning", "provisioned", "cloning"])
 
@@ -78,6 +82,17 @@ const TRANSIENT_MARKERS = ["transport_failed", "idempotency_in_progress"] as con
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Redacts before bounding, so a secret the tail would cut in half is already
+ * gone. Values shorter than the floor (ports, flags) are left readable.
+ */
+function scrubbedTail(text: string, secrets: readonly string[]) {
+  const redacted = secrets
+    .filter((secret) => secret.length >= REDACTED_VALUE_MIN_LENGTH)
+    .reduce((output, secret) => output.split(secret).join("[redacted]"), text)
+  return redacted.trim().slice(-STDERR_TAIL_CHARS)
 }
 
 class BoatDriverError extends Error {
@@ -131,10 +146,17 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     })
   }
 
-  async function execOrThrow(sandboxId: string, command: string, label: string, timeoutSeconds?: number) {
-    const result = await client.command(sandboxId, { command, ...(timeoutSeconds ? { timeoutSeconds } : {}) })
+  async function execOrThrow(
+    sandboxId: string,
+    command: string,
+    label: string,
+    input: { timeoutSeconds?: number; secrets?: readonly string[] } = {},
+  ) {
+    const result = await client.command(sandboxId, { command, ...(input.timeoutSeconds ? { timeoutSeconds: input.timeoutSeconds } : {}) })
     if (result.timedOut || result.exitCode !== 0) {
-      throw new BoatDriverError(`Boat ${sandboxId} ${label} ${result.timedOut ? "timed out" : `failed (exit ${result.exitCode ?? "signal"})`}`)
+      const outcome = result.timedOut ? "timed out" : `failed (exit ${result.exitCode ?? "signal"})`
+      const stderr = scrubbedTail(result.stderr, input.secrets ?? [])
+      throw new BoatDriverError(`Boat ${sandboxId} ${label} ${outcome}${stderr ? `: ${stderr}` : ""}`)
     }
     return result
   }
@@ -153,32 +175,42 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
   }
 
   /**
-   * The run command carries only paths: env arrives through the staged file
-   * (mounted read-only, sourced by the entrypoint so multi-line values like
-   * PEMs survive — `docker run --env-file` cannot express them), and the
-   * registry password is piped to `docker login` from a file that is removed
-   * whatever the outcome. A failed login aborts the chain before `docker run`.
+   * The command carries only paths: env arrives through the staged file
+   * (mounted read-only, sourced by the entrypoint at every container start so
+   * multi-line values like PEMs survive — `docker run --env-file` cannot
+   * express them), and the registry password is piped to `docker login` from a
+   * file that is removed whatever the outcome; a failed login aborts the chain.
+   *
+   * A resume reboots the VM, and Docker comes up as a systemd service some
+   * time after Boat reports the sandbox ready, so the chain first waits for
+   * the daemon. The workspace lives in the container's own filesystem, so an
+   * existing container of the same image is started again rather than
+   * replaced; only a missing one, or one of another image, is (re)created.
    */
-  function dockerRunScript(input: SandboxDriverEnsureInput): string {
+  function containerStartScript(input: SandboxDriverEnsureInput): string {
     const port = runtimePort(input)
     const directory = workspaceDirectory(input)
+    const image = shell(resolveImage(input))
     const bootScript = [
       `. ${CONTAINER_ENV_PATH}`,
       `mkdir -p ${shell(directory)}`,
       `cd ${shell(directory)}`,
       `exec ${runtimeCommand}`,
     ].join(" && ")
+    const run = `docker run -d --name ${containerName} -p ${port}:${port} `
+      + `-v "$(pwd)/${RUNTIME_ENV_PATH}:${CONTAINER_ENV_PATH}:ro" `
+      + `--entrypoint sh ${image} -lc ${shell(bootScript)}`
     const steps = [
       `chmod 600 ${RUNTIME_ENV_PATH}`,
+      `timeout ${DOCKER_DAEMON_WAIT_SECONDS} sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'`,
       ...(options.registryAuth
         ? [`{ chmod 600 ${REGISTRY_PASSWORD_PATH}; docker login ${shell(options.registryAuth.server)} `
           + `--username ${shell(options.registryAuth.username)} --password-stdin < ${REGISTRY_PASSWORD_PATH}; `
           + `rc=$?; rm -f ${REGISTRY_PASSWORD_PATH}; (exit $rc); }`]
         : []),
-      `{ docker rm -f ${containerName} >/dev/null 2>&1 || true; }`,
-      `docker run -d --name ${containerName} -p ${port}:${port} `
-      + `-v "$(pwd)/${RUNTIME_ENV_PATH}:${CONTAINER_ENV_PATH}:ro" `
-      + `--entrypoint sh ${shell(resolveImage(input))} -lc ${shell(bootScript)}`,
+      `if [ "$(docker inspect --format '{{.Config.Image}}' ${containerName} 2>/dev/null)" = ${image} ]; `
+      + `then docker start ${containerName} >/dev/null; `
+      + `else { docker rm -f ${containerName} >/dev/null 2>&1 || true; } && ${run}; fi`,
     ]
     return steps.join(" && ")
   }
@@ -201,26 +233,27 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
 
   async function startContainer(sandboxId: string, input: SandboxDriverEnsureInput, hostId: string) {
     const env = { ...bootEnv(input, hostId), ...(await options.env?.(input, { id: hostId })) }
-    const script = dockerRunScript(input)
+    const script = containerStartScript(input)
     await client.writeFile(sandboxId, { path: RUNTIME_ENV_PATH, content: envFile(env) })
     if (options.registryAuth) {
       await client.writeFile(sandboxId, { path: REGISTRY_PASSWORD_PATH, content: options.registryAuth.password })
     }
+    const secrets = [...Object.values(env), ...(options.registryAuth ? [options.registryAuth.password] : [])]
     const failures: unknown[] = []
     try {
-      await execOrThrow(sandboxId, script, "docker run", DOCKER_RUN_TIMEOUT_SECONDS)
+      await execOrThrow(sandboxId, script, "container start", { timeoutSeconds: CONTAINER_START_TIMEOUT_SECONDS, secrets })
     } catch (error) {
       failures.push(error)
     }
     // The login step removes the staged password when it runs; this covers
     // failures before the command reaches it.
     try {
-      if (options.registryAuth) await execOrThrow(sandboxId, `rm -f ${REGISTRY_PASSWORD_PATH}`, "registry password cleanup")
+      if (options.registryAuth) await execOrThrow(sandboxId, `rm -f ${REGISTRY_PASSWORD_PATH}`, "registry password cleanup", { secrets })
     } catch (error) {
       failures.push(error)
     }
     if (failures.length === 1) throw failures[0]
-    if (failures.length > 1) throw new AggregateError(failures, `Boat ${sandboxId} docker run and registry password cleanup failed`)
+    if (failures.length > 1) throw new AggregateError(failures, `Boat ${sandboxId} container start and registry password cleanup failed`)
   }
 
   async function boot(sandboxId: string, input: SandboxDriverEnsureInput, hostId: string): Promise<SandboxTarget> {

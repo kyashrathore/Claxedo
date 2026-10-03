@@ -1,3 +1,7 @@
+import { spawnSync } from "node:child_process"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import { describe, expect, test } from "vitest"
 import { createBoatSandboxDriver, type BoatFetch } from "./boat"
 import { createSandboxManager, type SandboxDriverEnsureInput } from ".."
@@ -45,7 +49,7 @@ function commandFinished(input: { stdout?: string; stderr?: string; exitCode?: n
  * creation → readiness polling → command execution (docker run / host /
  * health probe / host url). Records every call so tests can assert on it.
  */
-function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnce?: boolean; failCommandsEchoing?: boolean }) {
+function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnce?: boolean; failingStderr?: string }) {
   const calls: Call[] = []
   const states = options?.states ?? ["ready"]
   let stateIdx = 0
@@ -72,7 +76,7 @@ function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnc
     }
     if (path === `/sandboxes/${ID}/commands` && method === "POST") {
       const command: string = body.command
-      if (options?.failCommandsEchoing) return json(commandFinished({ stderr: command, exitCode: 1 }))
+      if (options?.failingStderr) return json(commandFinished({ stderr: options.failingStderr, exitCode: 125 }))
       if (command.includes("/global/health")) {
         healthChecks++
         const healthy = options?.failHealthOnce ? healthChecks > 1 : true
@@ -93,6 +97,44 @@ function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnc
     return Response.json({ ok: false, code: "not_found", message: `unhandled ${method} ${path}` }, { status: 404 })
   }
   return { fetchImpl, calls, get healthChecks() { return healthChecks } }
+}
+
+/**
+ * Runs the driver's container start command under a real `sh`, with `docker`
+ * and `timeout` replaced by recorders: `docker info` fails until the daemon
+ * has been asked `daemonUpAfter` times, and `docker inspect` answers the
+ * image of the container the VM already holds, if any.
+ */
+function runStartCommand(command: string, vm: { existingImage?: string; daemonUpAfter?: number }) {
+  const dir = mkdtempSync(path.join(tmpdir(), "boat-start-"))
+  const bin = path.join(dir, "bin")
+  mkdirSync(bin)
+  const log = path.join(dir, "docker.log")
+  writeFileSync(log, "")
+  writeFileSync(path.join(dir, ".claxedo-runtime-env"), "")
+  const tool = (name: string, body: string) => {
+    writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`)
+    chmodSync(path.join(bin, name), 0o755)
+  }
+  tool("timeout", 'shift\nexec "$@"')
+  tool("docker", [
+    `echo "$*" >> ${log}`,
+    `if [ "$1" = info ]; then n=$(($(cat ${dir}/info 2>/dev/null || echo 0) + 1)); echo $n > ${dir}/info; [ $n -gt ${vm.daemonUpAfter ?? 0} ]; exit $?; fi`,
+    `if [ "$1" = inspect ]; then [ -n "${vm.existingImage ?? ""}" ] || exit 1; echo "${vm.existingImage ?? ""}"; fi`,
+  ].join("\n"))
+  tool("sleep", "exit 0")
+  const result = spawnSync("sh", ["-c", command], { cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8" })
+  const calls = readFileSync(log, "utf8").split("\n").filter(Boolean).map((line) => line.split(" ").slice(0, 2).join(" "))
+  return { status: result.status, calls }
+}
+
+async function startCommand() {
+  const boat = fakeBoat()
+  const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0 })
+  await driver.ensureHost(ensureInput())
+  const command = commandsOf(boat.calls).find((c) => c.includes("docker info"))
+  if (!command) throw new Error("no container start command")
+  return command
 }
 
 const commandsOf = (calls: Call[]) => calls.filter((c) => c.path.endsWith("/commands")).map((c) => c.body.command as string)
@@ -309,6 +351,24 @@ describe("boat sandbox driver", () => {
     expect(failure?.message).not.toContain("synthetic-host-token")
   })
 
+  test("a fresh VM waits for the Docker daemon, then creates the runtime container", async () => {
+    const run = runStartCommand(await startCommand(), { daemonUpAfter: 2 })
+    expect(run.status).toBe(0)
+    expect(run.calls).toEqual(["info", "info", "info", "inspect --format", "rm -f", "run -d"])
+  })
+
+  test("a resumed VM starts its existing runtime container, keeping the workspace inside it", async () => {
+    const run = runStartCommand(await startCommand(), { existingImage: IMAGE, daemonUpAfter: 1 })
+    expect(run.status).toBe(0)
+    expect(run.calls).toEqual(["info", "info", "inspect --format", "start claxedo-runtime"])
+  })
+
+  test("a container of another image is replaced by one of the image this boot names", async () => {
+    const run = runStartCommand(await startCommand(), { existingImage: "ghcr.io/test/sandbox:0" })
+    expect(run.status).toBe(0)
+    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d"])
+  })
+
   test("keeps env values and registry credentials out of command strings", async () => {
     const boat = fakeBoat()
     const driver = createBoatSandboxDriver({
@@ -345,8 +405,10 @@ describe("boat sandbox driver", () => {
     expect(run).toContain("$(pwd)/.claxedo-runtime-env:/run/claxedo-runtime.env:ro")
   })
 
-  test("a failed run cannot echo secrets back through diagnostics", async () => {
-    const boat = fakeBoat({ failCommandsEchoing: true })
+  test("a failed run reports docker's stderr with every staged secret redacted", async () => {
+    const boat = fakeBoat({
+      failingStderr: "docker: Error response from daemon: Conflict. env synthetic-runtime-secret login synthetic-registry-pw",
+    })
     const driver = createBoatSandboxDriver({
       apiKey: "k",
       image: IMAGE,
@@ -357,15 +419,17 @@ describe("boat sandbox driver", () => {
 
     const failure = await driver.ensureHost(ensureInput()).then(
       () => { throw new Error("expected ensure to fail") },
-      (err: unknown) => err as Error,
+      (err: unknown) => err as AggregateError,
     )
-    expect(failure.message).toContain("docker run")
     expect(failure).toBeInstanceOf(AggregateError)
-    expect((failure as AggregateError).errors).toHaveLength(2)
-    expect((failure as AggregateError).errors[1].message).toContain("registry password cleanup")
-    expect(failure.message).not.toContain("synthetic-runtime-secret")
-    expect(failure.message).not.toContain("synthetic-registry-pw")
-    for (const error of (failure as AggregateError).errors) expect(error.message).not.toContain("--entrypoint")
+    expect(failure.errors).toHaveLength(2)
+    expect(failure.errors[0].message).toContain("container start failed (exit 125): docker: Error response from daemon: Conflict.")
+    expect(failure.errors[1].message).toContain("registry password cleanup")
+    for (const error of failure.errors) {
+      expect(error.message).toContain("[redacted]")
+      expect(error.message).not.toContain("synthetic-runtime-secret")
+      expect(error.message).not.toContain("synthetic-registry-pw")
+    }
   })
 
   test("a command request outlasts its command, while other calls keep the client timeout", async () => {
@@ -407,14 +471,14 @@ describe("boat sandbox driver", () => {
     expect(boat.calls.filter((call) => call.method === "DELETE")).toHaveLength(1)
   })
 
-  test("a timed-out docker run fails the boot", async () => {
+  test("a timed-out container start fails the boot", async () => {
     const boat = fakeBoat()
     const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async (url, init) => {
       const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
       if (body?.command?.includes("docker run")) return Response.json({ ok: true, ...commandFinished({ exitCode: null, timedOut: true }) })
       return boat.fetchImpl(url, init)
     } })
-    await expect(driver.ensureHost(ensureInput())).rejects.toThrow(/docker run timed out/)
+    await expect(driver.ensureHost(ensureInput())).rejects.toThrow(/container start timed out/)
     expect(commandsOf(boat.calls).some((command) => command.startsWith("host "))).toBe(false)
   })
 
