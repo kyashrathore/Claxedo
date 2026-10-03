@@ -63,6 +63,7 @@ async function addAttachment(input: ReaderInput, file: File): Promise<boolean> {
   const lifecycle = machine<AttachmentState, AttachmentEvent>({ kind: "reading", id, filename: file.name }, attachmentTransition)
   input.store.setAttachment(key, lifecycle.state())
   const editor = input.editor()
+  const target = input.store.draftTarget(key)
   const cursor = input.store.draft(key).cursor ?? (editor ? getCursorPosition(editor) : undefined)
   lifecycle.send(await readAttachment(input, file, id))
   const state = lifecycle.state()
@@ -71,8 +72,7 @@ async function addAttachment(input: ReaderInput, file: File): Promise<boolean> {
     return false
   }
   input.store.removeAttachment(key, id)
-  input.store.addPart(key, state.part, cursor)
-  return true
+  return input.store.addPartTo(target, state.part, cursor)
 }
 
 async function addFiles(input: ReaderInput, files: File[]): Promise<boolean> {

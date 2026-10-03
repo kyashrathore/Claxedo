@@ -24,9 +24,12 @@ export type ComposerKey = string
 export const sessionComposerKey = (ref: SessionLocation): ComposerKey => `session:${ref.sessionId}`
 export const draftComposerKey = (placementId: PlacementId): ComposerKey => `draft:${placementId}`
 
+export type DraftTarget = { readonly key: ComposerKey; readonly forkId?: number }
+
 type Entry = {
   draft: Draft
   fork?: Draft
+  forkId?: number
   history: History
   attachments: AttachmentState[]
 }
@@ -96,6 +99,11 @@ function visibleDraftWrites(table: ReturnType<typeof createEntryTable>) {
 
 type EntryTable = ReturnType<typeof visibleDraftWrites>
 
+function withPart(draft: Draft, part: PromptPart, cursor?: number): Pick<Draft, "prompt" | "cursor"> {
+  const at = cursor ?? draft.cursor ?? promptText(draft.prompt).length
+  return { prompt: insertPart(draft.prompt, at, part), cursor: at + ("content" in part ? part.content.length : 0) }
+}
+
 function promptActions(table: EntryTable) {
   const setPrompt = (key: ComposerKey, prompt: Prompt, cursor?: number) =>
     table.updateDraft(key, (draft) => {
@@ -105,9 +113,8 @@ function promptActions(table: EntryTable) {
   return {
     setPrompt,
     addPart: (key: ComposerKey, part: PromptPart, cursor?: number) => {
-      const draft = table.draft(key)
-      const at = cursor ?? draft.cursor ?? promptText(draft.prompt).length
-      setPrompt(key, insertPart(draft.prompt, at, part), at + ("content" in part ? part.content.length : 0))
+      const next = withPart(table.draft(key), part, cursor)
+      setPrompt(key, next.prompt, next.cursor)
     },
     removeImage: (key: ComposerKey, id: string) => {
       const draft = table.draft(key)
@@ -158,22 +165,42 @@ function sentDraftActions(table: EntryTable) {
 
 function forkActions(table: EntryTable) {
   const { ensure, setEntries, persist } = table
+  let forks = 0
+  const joined = new Set<number>()
   const end = (key: ComposerKey, keep: boolean) => {
-    const { draft, fork } = unwrap(table.entry(key))
+    const { draft, fork, forkId } = unwrap(table.entry(key))
     if (!fork) return
+    if (keep && forkId !== undefined) joined.add(forkId)
     setEntries(key, produce((entry) => {
       if (keep && !draftEmpty(fork)) entry.draft = draftEmpty(draft) ? fork : appendedDraft(draft, fork)
       delete entry.fork
+      delete entry.forkId
     }))
+    persist(key)
+  }
+  const updateBaseDraft = (key: ComposerKey, update: (draft: Draft) => void) => {
+    setEntries(key, produce((entry) => update(entry.draft)))
     persist(key)
   }
   return {
     forkDraft: (key: ComposerKey, draft: Draft) => {
       ensure(key)
-      setEntries(key, "fork", draft)
+      setEntries(key, produce((entry) => {
+        entry.fork = draft
+        entry.forkId = ++forks
+      }))
     },
     dropFork: (key: ComposerKey) => end(key, false),
     joinFork: (key: ComposerKey) => end(key, true),
+    draftTarget: (key: ComposerKey): DraftTarget => ({ key, forkId: table.entry(key).forkId }),
+    addPartTo: (target: DraftTarget, part: PromptPart, cursor?: number): boolean => {
+      const { key, forkId } = target
+      if (forkId === table.entry(key).forkId) table.updateDraft(key, (draft) => Object.assign(draft, withPart(draft, part, cursor)))
+      else if (forkId === undefined) updateBaseDraft(key, (draft) => Object.assign(draft, withPart(draft, part, cursor)))
+      else if (joined.has(forkId)) updateBaseDraft(key, (draft) => Object.assign(draft, withPart(draft, part)))
+      else return false
+      return true
+    },
   }
 }
 
