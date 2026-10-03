@@ -16,6 +16,7 @@ declare module "@cloudflare/sandbox" {
 
   export interface SandboxOperations {
     listProcesses(): Promise<SandboxProcess[]>
+    getProcess(id: string): Promise<SandboxProcess | null>
     startProcess(command: string, options: {
       env: Record<string, string>
       processId: string

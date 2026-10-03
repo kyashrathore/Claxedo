@@ -1,15 +1,10 @@
 import { mkdir, readdir } from "node:fs/promises"
 import { asRecord } from "@claxedo/helpers/guards"
 import { createBoundedGit, GIT_CLONE_TIMEOUT_MS, GitTimeoutError } from "@claxedo/workspace-runtime/host"
-import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { RUNTIME_PREPARATION_DEADLINE_MS } from "./boot-contract"
+import { clearStaleShallowLock } from "./repository-history"
 
 const git = createBoundedGit({ timeoutMs: GIT_CLONE_TIMEOUT_MS })
-const log = Log.create({ service: "runtime-repository" })
-
-// Each deepening fetch is kept once it finishes, so a runtime stopped while the
-// history arrives loses at most one step.
-const HISTORY_STEP_COMMITS = 1_000
 
 type RepositorySource = { repoUrl: string; branch?: string }
 type Git = (args: string[], directory: string) => Promise<string>
@@ -60,6 +55,14 @@ async function checkOut(run: Git, directory: string, source: RepositorySource) {
   await run(["fetch", "--quiet", "--depth=1", "origin", `+refs/heads/${branch}:refs/remotes/origin/${branch}`], directory)
   await run(["checkout", "--quiet", "--force", "-B", branch, "--track", `origin/${branch}`], directory)
   if (!source.branch) await run(["symbolic-ref", "refs/remotes/origin/HEAD", `refs/remotes/origin/${branch}`], directory)
+  return branch
+}
+
+/** The branch an earlier boot checked out: the selected one, else the origin default it recorded. */
+async function preparedBranch(directory: string, source: RepositorySource) {
+  if (source.branch) return source.branch
+  const head = await git(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"], directory).catch(() => "")
+  return head.trim().replace(/^origin\//, "") || undefined
 }
 
 /**
@@ -67,18 +70,19 @@ async function checkOut(run: Git, directory: string, source: RepositorySource) {
  * ready, within one deadline for the whole preparation. The checkout is made in
  * place, so a boot stopped mid-fetch leaves a repository whose HEAD names no
  * commit yet, which the next boot finishes. A checkout with a commit is the
- * person's work and is left exactly as it is. Answers whether a repository
- * was selected.
+ * person's work and is left exactly as it is. Answers, when a repository is
+ * selected, the branch whose history is still to come.
  */
 export async function prepareRuntimeRepository(directory: string, env: NodeJS.ProcessEnv) {
   const source = selectedSource(env)
-  if (!source) return false
+  if (!source) return undefined
   const run = untilDeadline(Date.now() + RUNTIME_PREPARATION_DEADLINE_MS)
   try {
     await mkdir(directory, { recursive: true })
     const entries = await readdir(directory)
     if (entries.includes(".git")) {
-      if (await hasCommit(directory)) return true
+      await clearStaleShallowLock(directory)
+      if (await hasCommit(directory)) return { branch: await preparedBranch(directory, source) }
       const origin = (await run(["remote", "get-url", "origin"], directory)).trim()
       if (origin !== source.repoUrl) throw new Error("The workspace checkout's origin is not the selected repository")
     } else {
@@ -86,27 +90,11 @@ export async function prepareRuntimeRepository(directory: string, env: NodeJS.Pr
       await run(["init", "--quiet"], directory)
       await run(["remote", "add", "origin", source.repoUrl], directory)
     }
-    await checkOut(run, directory, source)
-    return true
+    return { branch: await checkOut(run, directory, source) }
   } catch (error) {
     if (error instanceof GitTimeoutError) {
       throw new Error(`The selected repository was not checked out within ${RUNTIME_PREPARATION_DEADLINE_MS / 60_000} minutes`, { cause: error })
     }
     throw error
-  }
-}
-
-/**
- * Fetches the history a prepared checkout started without, in steps, while the
- * runtime serves. A step that fails is logged and the next boot continues from
- * the last finished one.
- */
-export async function completeRuntimeRepositoryHistory(directory: string) {
-  try {
-    while ((await git(["rev-parse", "--is-shallow-repository"], directory)).trim() === "true") {
-      await git(["fetch", "--quiet", `--deepen=${HISTORY_STEP_COMMITS}`, "origin"], directory)
-    }
-  } catch (error) {
-    log.warn("repository history fetch stopped", { error: error instanceof Error ? error.message : String(error) })
   }
 }

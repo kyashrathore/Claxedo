@@ -328,19 +328,32 @@ describe("workspace-runtime process env", () => {
     }
   }
 
-  function operations(existing: ReturnType<typeof process> | null, started = process()) {
-    const ready = new Set<number>()
+  /**
+   * The container's view of the runtime process. As in the SDK, the process
+   * `startProcess` answers is stamped with the Worker's clock, while
+   * `listProcesses` and `getProcess` report the container's own start time.
+   */
+  function operations(
+    existing: ReturnType<typeof process> | null,
+    started = process(),
+    containerStart = new Date(started.startTime.getTime() - 1_234),
+  ) {
+    let readyAt: number | undefined
     let listed = existing
     return {
       started,
-      ready,
+      markReady: (entry: { startTime: Date }) => { readyAt = entry.startTime.getTime() },
       listProcesses: vi.fn(async () => (listed ? [listed] : [])),
-      startProcess: vi.fn(async () => started),
+      getProcess: vi.fn(async () => listed),
+      startProcess: vi.fn(async () => {
+        listed = { ...started, startTime: containerStart }
+        return started
+      }),
       cleanupCompletedProcesses: vi.fn(async () => {
         if (listed && !["starting", "running"].includes(await listed.getStatus())) listed = null
       }),
-      runtimeWasReady: vi.fn(async (entry: { startTime: Date }) => ready.has(entry.startTime.getTime())),
-      recordRuntimeReady: vi.fn(async (entry: { startTime: Date }) => { ready.add(entry.startTime.getTime()) }),
+      runtimeWasReady: vi.fn(async (entry: { startTime: Date }) => readyAt === entry.startTime.getTime()),
+      recordRuntimeReady: vi.fn(async (entry: { startTime: Date }) => { readyAt = entry.startTime.getTime() }),
     }
   }
 
@@ -410,6 +423,22 @@ describe("workspace-runtime process env", () => {
     expect(sandbox.startProcess).not.toHaveBeenCalled()
   })
 
+  test("a runtime this ensure started is remembered by the container's start time, so a later slow health check keeps it", async () => {
+    let healthy = true
+    const started = process({ waitForPort: vi.fn(async () => { if (!healthy) throw new Error("health check timed out") }) })
+    const sandbox = operations(null, started, new Date(Date.now() - 40 * 60_000))
+    const ensure = () => ensureRuntimeProcess(sandbox as never, "runtime", {}, 2593, { reuseRunning: true })
+
+    await expect(ensure()).resolves.toEqual({ state: "ready" })
+    await expect(ensure()).resolves.toEqual({ state: "ready" })
+    expect(sandbox.recordRuntimeReady).toHaveBeenCalledTimes(1)
+    healthy = false
+    await expect(ensure()).resolves.toEqual({ state: "preparing" })
+
+    expect(started.kill).not.toHaveBeenCalled()
+    expect(sandbox.startProcess).toHaveBeenCalledTimes(1)
+  })
+
   test("a runtime whose boot exits answers with the boot's own reason instead of starting the same boot again", async () => {
     const exited = process({
       waitForPort: vi.fn(async () => { throw new Error("process exited before ready") }),
@@ -440,7 +469,7 @@ describe("workspace-runtime process env", () => {
   test("a runtime that exited after serving is replaced even when the env is unchanged", async () => {
     const existing = process({ status: "failed", getStatus: vi.fn(async () => "failed") })
     const sandbox = operations(existing)
-    sandbox.ready.add(existing.startTime.getTime())
+    sandbox.markReady(existing)
 
     await expect(ensureRuntimeProcess(sandbox as never, "runtime", {}, 2593, { reuseRunning: true })).resolves.toEqual({ state: "ready" })
 

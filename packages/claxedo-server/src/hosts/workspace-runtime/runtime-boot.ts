@@ -21,7 +21,8 @@ import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/
 import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
 import { sandboxConnectionSecrets } from "./connection-secrets"
 import { configureRuntimeGitAuth } from "./git-auth"
-import { completeRuntimeRepositoryHistory, prepareRuntimeRepository } from "./repository-source"
+import { prepareRuntimeRepository } from "./repository-source"
+import { repositoryHistory } from "./repository-history"
 import { workspaceRuntimeOwnerGrant } from "./owner-grant"
 import { workspaceRuntimeTasksGrant } from "./tasks-grant"
 import { cloudWorkspaceUsage, createSandboxUsageLedger } from "./cloud-usage"
@@ -37,6 +38,8 @@ export type ClaxedoWorkspaceRuntimeBoot = {
   port: number
   hostname: string
   options: WorkspaceRuntimeServerOptions
+  /** Work the host starts once the server is listening; the drain stops it. */
+  onListening?: () => void
 }
 
 export function claxedoWorkspaceRuntimeLaunch(input: {
@@ -136,7 +139,8 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   const targetDirectory = workspaceDir(env)
   const harness = claxedoRuntimeHarnessFromEnv(env)
   await configureRuntimeGitAuth(env)
-  if (await prepareRuntimeRepository(targetDirectory, env)) void completeRuntimeRepositoryHistory(targetDirectory)
+  const checkout = await prepareRuntimeRepository(targetDirectory, env)
+  const history = checkout?.branch ? repositoryHistory(targetDirectory, checkout.branch) : undefined
   // The owner the control plane launched this root for, presented on the
   // runtime's own session calls. Its unverified `user_id` names the actor in
   // the MCP audit trail; nothing here trusts it for more than that.
@@ -205,8 +209,13 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
             usage?.onPresentationEvent(event)
             sessionRows?.onPresentationEvent(event)
           },
+        }
+      : {}),
+    ...(usage || sessionRows || history
+      ? {
           onDrain: async () => {
             sessionRows?.stop()
+            await history?.stop()
             await usage?.drain()
             usageLedger?.close()
           },
@@ -232,7 +241,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
       }),
     ],
   }
-  return { port, hostname, options }
+  return { port, hostname, options, ...(history ? { onListening: () => void history.start() } : {}) }
 }
 
 function assertRuntimePort(port: number, label: string) {

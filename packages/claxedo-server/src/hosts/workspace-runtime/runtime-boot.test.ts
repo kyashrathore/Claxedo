@@ -103,6 +103,34 @@ describe("claxedo workspace-runtime boot policy", () => {
     }
   }, 90_000)
 
+  test("a booted checkout's history waits for the listener, and the drain ends a fetch still running", async () => {
+    const origin = await serveGitOrigin()
+    const directory = path.join(origin.directory, "workspace")
+    let fetches = 0
+    origin.served.onRequest = (request) => { if (request.url?.endsWith("/git-upload-pack")) fetches++ }
+    try {
+      const boot = await claxedoWorkspaceRuntimeBootFromEnv({
+        WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-history",
+        WORKSPACE_RUNTIME_DIRECTORY: directory,
+        WORKSPACE_RUNTIME_SOURCE_KIND: "git",
+        WORKSPACE_RUNTIME_GIT_REPO_URL: origin.repoUrl,
+      })
+      const checkoutFetches = fetches
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      expect(fetches).toBe(checkoutFetches)
+      expect(origin.git(["rev-list", "--count", "HEAD"], directory)).toBe("1")
+
+      origin.served.stalled = true
+      boot.onListening!()
+      await vi.waitFor(() => expect(fetches).toBe(checkoutFetches + 1))
+      const draining = Date.now()
+      await boot.options.onDrain!()
+      expect(Date.now() - draining).toBeLessThan(5_000)
+    } finally {
+      await origin.close()
+    }
+  })
+
   test("launches the package bin with workspace-and-epoch scoped short-lived credentials", () => {
     const launch = claxedoWorkspaceRuntimeLaunch({
       workspaceId: "ws_1",

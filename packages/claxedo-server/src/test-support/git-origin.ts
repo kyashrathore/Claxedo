@@ -14,7 +14,14 @@ export type GitOrigin = {
    * `reachable: false` answers 503 to every request and `uploads: false` to
    * every object fetch; with `authorization` set, any other header is a 401.
    */
-  served: { reachable: boolean; uploads: boolean; authorization?: string; onRequest?: (request: IncomingMessage) => void }
+  served: {
+    reachable: boolean
+    uploads: boolean
+    /** Holds every object fetch open, unanswered, while true. */
+    stalled?: boolean
+    authorization?: string
+    onRequest?: (request: IncomingMessage) => void
+  }
   close: () => Promise<void>
 }
 
@@ -42,6 +49,7 @@ export async function serveGitOrigin(commits = 5): Promise<GitOrigin> {
     served.onRequest?.(request)
     const url = new URL(request.url!, "http://localhost")
     const upload = url.pathname.endsWith("/git-upload-pack")
+    if (upload && served.stalled) return
     if (!served.reachable || (upload && !served.uploads)) {
       response.writeHead(503).end()
       return
@@ -89,6 +97,7 @@ export async function serveGitOrigin(commits = 5): Promise<GitOrigin> {
     git,
     served,
     close: async () => {
+      server.closeAllConnections()
       await new Promise<void>((resolve) => server.close(() => resolve()))
       await rm(directory, { recursive: true, force: true })
     },

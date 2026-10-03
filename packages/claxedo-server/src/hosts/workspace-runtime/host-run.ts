@@ -46,4 +46,5 @@ export async function runWorkspaceRuntimeHost(
     `[claxedo-workspace-runtime] listening on http://${started.hostname}:${port}`
     + ` workspaceId=${started.options.target?.workspaceId} directory=${started.options.target?.directory}`,
   )
+  started.onListening?.()
 }

@@ -162,24 +162,38 @@ one depth-1 fetch of the selected branch, in place, within a 30-minute deadline
 for the whole preparation (`RUNTIME_PREPARATION_DEADLINE_MS` in
 `boot-contract.ts`). A boot stopped mid-fetch leaves a repository with no
 commit yet, which the next boot finishes. A checkout with a commit is the
-person's work and boots as it is, without reaching the repository. Once the tip
-is checked out, the runtime fetches the rest of the history in the background,
-1,000 commits per fetch; each finished fetch is kept, so a runtime stopped
-partway resumes from there on its next boot. A private repository's clone
-credential is the brokered `CLAXEDO_GITHUB_CLONE_AUTH`, scoped to that
-repository's path and minted on every boot from the connection the workspace
-was created through.
+person's work and boots as it is, without reaching the repository. Once the
+runtime is listening, it deepens the selected branch alone in the background
+(`repository-history.ts`), 1,000 generations per fetch, 5 seconds apart, with
+`--no-auto-maintenance`. Each finished fetch is kept, so a runtime stopped
+partway resumes from there on its next boot. The steps end when the checkout is
+complete, when a step brings nothing (the commit the checkout began from was
+amended or force-pushed away), at the first failure, or when the runtime drains,
+which ends the running fetch with its whole process group so no git outlives it
+holding `shallow.lock`. While another git holds that lock the steps wait
+without fetching, a step that meets it mid-fetch waits and tries again, and no
+step deepens a checkout that is already complete. At boot, a `shallow.lock` is
+removed when `ps` shows no git process that could hold it.
+
+A private repository's clone credential is the brokered
+`CLAXEDO_GITHUB_CLONE_AUTH`, scoped to that repository's path and minted on
+every boot from the connection the workspace was created through.
 
 `ensure-runtime` decides about an existing runtime as follows:
 
 - A live runtime that has answered ready once is kept, however long it has run;
-  a slow health check answers 503 (still starting) and never replaces it.
+  a slow health check answers 503 (still starting) and never replaces it. The
+  Worker records the start time the container reports for it (read back with
+  `getProcess` once it is ready, because `startProcess` answers with the
+  Worker's own clock), in Durable Object storage, and writes only when it
+  changes.
 - A live runtime that has never answered ready is still preparing its
   repository and is kept, until it is 35 minutes old (the preparation deadline
   plus 5 minutes), when it is wedged and replaced.
 - A runtime that exited before it was ever ready failed its boot. The answer is
   502 `{ ready: false, exited: true, error }` with the reason the runtime
-  printed (a revoked token, a branch that does not exist), and the exited
+  printed (a revoked token, a branch that does not exist), credentials blanked
+  by `src/runtime-log.ts`, and the exited
   process is cleared so the next ensure boots afresh. The driver reports it as a
   failed ensure, never as provisioning, and the connect answers
   `cloud_runtime_boot_failed` with the reason.

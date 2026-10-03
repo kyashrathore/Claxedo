@@ -14,6 +14,7 @@ import {
 } from "@cloudflare/sandbox"
 import { RUNTIME_PREPARATION_DEADLINE_MS, WORKSPACE_RUNTIME_BOOT_FAILED } from "../../../../src/hosts/workspace-runtime/boot-contract"
 import { credentialPlaceholder, forwardCredential, parseRegistrations, type EgressRegistration } from "./outbound-credentials"
+import { safeRuntimeLog } from "./runtime-log"
 import { asWorkerRecord, stringMap } from "./worker-json"
 
 /** What a sandbox's credential hosts are intercepted with, from `ctx.exports` (`enable_ctx_exports`). */
@@ -299,7 +300,10 @@ async function stopRuntimeProcess(sandbox: SandboxOperations, existing: SandboxP
   await bounded(sandbox.cleanupCompletedProcesses(), "workspace-runtime process cleanup")
 }
 
-/** Remembers the one process that has answered ready, by its start time. */
+/**
+ * Remembers the one process that has answered ready, by the start time the
+ * container reports for it (`listProcesses`, `getProcess`).
+ */
 export type RuntimeReadiness = {
   runtimeWasReady(process: SandboxProcess): Promise<boolean>
   recordRuntimeReady(process: SandboxProcess): Promise<void>
@@ -358,7 +362,10 @@ async function settledRuntime(
   port: number,
 ): Promise<RuntimeEnsure> {
   if (await runtimeReady(process, port)) {
-    await sandbox.recordRuntimeReady(process)
+    // `startProcess` stamps its answer with the Worker's clock, never the
+    // container's, so the time a later `listProcesses` reports comes from a read.
+    const listed = await bounded(sandbox.getProcess(RUNTIME_PROCESS_ID), "workspace-runtime process read")
+    if (listed && !await sandbox.runtimeWasReady(listed)) await sandbox.recordRuntimeReady(listed)
     return { state: "ready" }
   }
   const status = await bounded(process.getStatus(), "workspace-runtime process status")
@@ -388,14 +395,6 @@ function bootFailure(stderr: string) {
   if (at < 0) return undefined
   const [failure = ""] = stderr.slice(at + BOOT_FAILURE_LINE.length).split(/\n\s+at /)
   return safeRuntimeLog(failure.trim().replace(/^Error: /, "")).slice(0, 1_000) || undefined
-}
-
-function safeRuntimeLog(value: string) {
-  return value
-    .slice(-4_000)
-    .replace(/-----BEGIN [^-]+-----[\s\S]*?-----END [^-]+-----/g, "[REDACTED PEM]")
-    .replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED]")
-    .replace(/\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PRIVATE_KEY|COOKIE)[A-Z0-9_]*)=\S+/gi, "$1=[REDACTED]")
 }
 
 function json(data: unknown, status = 200) {

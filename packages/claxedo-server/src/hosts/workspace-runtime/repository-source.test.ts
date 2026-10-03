@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { serveGitOrigin, type GitOrigin } from "../../test-support/git-origin"
-import { completeRuntimeRepositoryHistory, prepareRuntimeRepository } from "./repository-source"
+import { prepareRuntimeRepository } from "./repository-source"
 
 const active: GitOrigin[] = []
 afterEach(async () => {
@@ -32,9 +32,10 @@ describe("sandbox repository preparation", () => {
     expect(f.git(["branch", "--show-current"], f.checkout)).toBe("feature")
   })
 
-  test("without a selected branch the origin's default branch is checked out and tracked", async () => {
+  test("without a selected branch the origin's default branch is checked out at its tip and tracked", async () => {
     const f = await origin()
-    await prepareRuntimeRepository(f.checkout, f.env)
+    await expect(prepareRuntimeRepository(f.checkout, f.env)).resolves.toEqual({ branch: "trunk" })
+    expect(f.git(["rev-list", "--count", "HEAD"], f.checkout)).toBe("1")
     expect(f.git(["branch", "--show-current"], f.checkout)).toBe("trunk")
     expect(f.git(["rev-parse", "--abbrev-ref", "trunk@{upstream}"], f.checkout)).toBe("origin/trunk")
     expect(f.git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], f.checkout)).toBe("origin/trunk")
@@ -44,30 +45,6 @@ describe("sandbox repository preparation", () => {
     const f = await origin()
     await expect(prepareRuntimeRepository(f.checkout, { ...f.env, WORKSPACE_RUNTIME_GIT_BRANCH: "missing" }))
       .rejects.toThrow("couldn't find remote ref refs/heads/missing")
-  })
-
-  test("the runtime is ready on the tip alone, and the rest of the history arrives after it", async () => {
-    const f = await origin(12)
-    await prepareRuntimeRepository(f.checkout, f.env)
-    expect(f.git(["rev-list", "--count", "HEAD"], f.checkout)).toBe("1")
-    await completeRuntimeRepositoryHistory(f.checkout)
-    expect(f.git(["rev-parse", "--is-shallow-repository"], f.checkout)).toBe("false")
-    expect(f.git(["rev-list", "--count", "HEAD"], f.checkout)).toBe("12")
-    expect(f.git(["rev-list", "--count", "origin/feature"], f.checkout)).toBe("9")
-  })
-
-  test("a history fetch that fails leaves the checkout as it was, and a later boot completes it", async () => {
-    const f = await origin()
-    await prepareRuntimeRepository(f.checkout, f.env)
-    await writeFile(path.join(f.checkout, "hello.txt"), "work in progress")
-    f.served.uploads = false
-    await expect(completeRuntimeRepositoryHistory(f.checkout)).resolves.toBeUndefined()
-    expect(f.git(["rev-parse", "--is-shallow-repository"], f.checkout)).toBe("true")
-    f.served.uploads = true
-    await prepareRuntimeRepository(f.checkout, f.env)
-    await completeRuntimeRepositoryHistory(f.checkout)
-    expect(f.git(["rev-list", "--count", "HEAD"], f.checkout)).toBe("5")
-    expect(await readFile(path.join(f.checkout, "hello.txt"), "utf8")).toBe("work in progress")
   })
 
   test("a boot whose fetch failed leaves nothing that refuses the next boot, which finishes the checkout", async () => {
@@ -101,7 +78,7 @@ describe("sandbox repository preparation", () => {
     const f = await origin()
     await prepareRuntimeRepository(f.checkout, f.env)
     f.git(["remote", "set-url", "origin", "https://github.com/acme/fork.git"], f.checkout)
-    await expect(prepareRuntimeRepository(f.checkout, f.env)).resolves.toBe(true)
+    await expect(prepareRuntimeRepository(f.checkout, f.env)).resolves.toEqual({ branch: "trunk" })
     expect(f.git(["remote", "get-url", "origin"], f.checkout)).toBe("https://github.com/acme/fork.git")
   })
 
@@ -126,3 +103,4 @@ describe("sandbox repository preparation", () => {
     await expect(readdir(f.checkout)).rejects.toThrow()
   })
 })
+
