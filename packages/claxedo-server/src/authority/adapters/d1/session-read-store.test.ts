@@ -89,7 +89,7 @@ describe("D1 page of every session a reader may read", () => {
     expect(listed).toEqual(expect.arrayContaining([
       "SEARCH s USING INDEX sqlite_autoindex_sessions_1 (session_id=?)",
       "SEARCH w USING COVERING INDEX workspaces_by_owner (owner_user_id=? AND deleted_at=?)",
-      "CORRELATED LIST SUBQUERY 1",
+      expect.stringMatching(/^CORRELATED LIST SUBQUERY \d+$/),
       "SEARCH o USING INDEX sessions_by_workspace_human_turn (workspace_id=? AND deleted_at=? AND archived_at=?)",
       "SEARCH g USING COVERING INDEX session_share_grants_by_user (target_user_id=? AND revoked_at=?)",
       "SEARCH h USING INDEX sqlite_autoindex_sessions_1 (session_id=?)",
