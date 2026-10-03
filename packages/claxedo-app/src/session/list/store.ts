@@ -114,7 +114,7 @@ function routeServerEvent(list: Machine<ListState, ListEvent>, reads: ListReads,
       const { ref, status, lastTurn, waitingOnUser, backgroundWork } = event
       list.send({ type: "statusChanged", ref, status, ...(lastTurn ? { lastTurn } : {}), ...(waitingOnUser !== undefined ? { waitingOnUser } : {}), at })
       if (backgroundWork) list.send({ type: "backgroundWorkChanged", ref, work: backgroundWork, at })
-      if (lastTurn && mayUnsettle(list.state(), ref, options.showSettled())) void reads.readExact(ref)
+      if (lastTurn && mayUnsettle(list.state(), ref, options.showSettled())) void reads.readTurnEndRow(ref, lastTurn)
       return
     }
     case "backgroundWorkChanged":

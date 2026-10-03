@@ -139,7 +139,7 @@ export type ListEvent =
   | { readonly type: "rereadFetched"; readonly window: FetchedWindow; readonly mode: RereadMode }
   | { readonly type: "rereadFailed"; readonly error: AppError }
   | { readonly type: "rowRead"; readonly row: SessionRow }
-  | { readonly type: "rowsFetched"; readonly window: FetchedWindow }
+  | { readonly type: "turnEndRowRead"; readonly window: FetchedWindow; readonly ref: SessionLocation; readonly lastTurn: SessionLastTurn }
   | { readonly type: "statusRead"; readonly ref: SessionLocation; readonly status: SessionStatus; readonly sentAt: number }
   | { readonly type: "backgroundWorkRead"; readonly ref: SessionLocation; readonly work: BackgroundWork; readonly sentAt: number }
   | { readonly type: "sessionOpened"; readonly sessionId: SessionId }

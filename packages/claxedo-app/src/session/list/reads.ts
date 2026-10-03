@@ -1,3 +1,4 @@
+import type { SessionLastTurn } from "@claxedo/agent-runtime-contract"
 import { machine, type Machine } from "@/lib/machine"
 import { toAppError, type Server, type SessionListScope, type SessionLocation, type SettledFilter } from "@/server"
 import {
@@ -24,7 +25,7 @@ export type ListReads = {
   readonly loadMore: (windowKey: WindowKey) => Promise<void>
   readonly reread: (mode: RereadMode) => Promise<void>
   readonly requestReread: (mode: RereadMode) => void
-  readonly readExact: (ref: SessionLocation) => Promise<void>
+  readonly readTurnEndRow: (ref: SessionLocation, lastTurn: SessionLastTurn) => Promise<void>
 }
 
 export type ListReadOptions = { readonly settled: () => SettledFilter; readonly activityShown: () => boolean }
@@ -104,12 +105,12 @@ async function loadMore(context: ReadContext, windowKey: WindowKey): Promise<voi
   afterRead(context)
 }
 
-async function readExact(context: ReadContext, ref: SessionLocation): Promise<void> {
+async function readTurnEndRow(context: ReadContext, ref: SessionLocation, lastTurn: SessionLastTurn): Promise<void> {
   const sentAt = Date.now()
   try {
-    const page = await context.server.sessions.list({ every: true, sessionId: ref.sessionId, limit: 1, settled: context.settled() })
+    const page = await context.server.sessions.list({ every: true, sessionId: ref.sessionId, limit: 1, settled: "all" })
     const read: FetchedPage = { windowKey: ref.projectId, rows: page.rows, statuses: page.statuses, readers: page.readers, nextAfter: undefined, degraded: false }
-    context.list.send({ type: "rowsFetched", window: { pages: [read], failures: [], sentAt } })
+    context.list.send({ type: "turnEndRowRead", window: { pages: [read], failures: [], sentAt }, ref, lastTurn })
   } catch (cause) {
     console.warn("A session's row could not be read for the list", { sessionId: ref.sessionId, error: toAppError(cause) })
   }
@@ -140,6 +141,6 @@ export function createListReads(server: Server, list: Machine<ListState, ListEve
     loadMore: (windowKey) => loadMore(context, windowKey),
     reread: (mode) => rereadList(context, mode),
     requestReread: (mode) => requestReread(context, mode),
-    readExact: (ref) => readExact(context, ref),
+    readTurnEndRow: (ref, lastTurn) => readTurnEndRow(context, ref, lastTurn),
   }
 }

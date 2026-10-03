@@ -119,12 +119,12 @@ function fetchEvent(state: ListState, event: ListEvent): ListState | undefined {
   }
 }
 
-function sessionRead(state: ListState, event: Extract<ListEvent, { type: "rowRead" | "rowsFetched" | "statusRead" | "backgroundWorkRead" }>): ListData {
+function sessionRead(state: ListState, event: Extract<ListEvent, { type: "rowRead" | "turnEndRowRead" | "statusRead" | "backgroundWorkRead" }>): ListData {
   switch (event.type) {
     case "rowRead":
       return upsertRow(state, event.row)
-    case "rowsFetched":
-      return pageReadersRead(pageStatusesRead(rowsRead(state, event.window), event.window), event.window)
+    case "turnEndRowRead":
+      return turnEnded(pageReadersRead(pageStatusesRead(rowsRead(state, event.window), event.window), event.window), event.ref, event.lastTurn)
     case "statusRead":
       return statusRead(state, event.ref, event.status, event.sentAt)
     case "backgroundWorkRead":
@@ -174,7 +174,7 @@ export function listTransition(state: ListState, event: ListEvent): ListState {
     case "rereadFailed":
       return fetchEvent(state, event) ?? state
     case "rowRead":
-    case "rowsFetched":
+    case "turnEndRowRead":
     case "statusRead":
     case "backgroundWorkRead":
       return withData(state, sessionRead(state, event))

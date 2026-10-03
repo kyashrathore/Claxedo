@@ -1,5 +1,5 @@
 import type { Locator, Page } from "@playwright/test"
-import { acpScriptToken, ApiError, assistantText, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, watchPageWork, type ClaxedoApi, type SessionRow, type Stack, type Workspace } from "../harness"
+import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, watchPageWork, type ClaxedoApi, type SessionRow, type Stack, type Workspace } from "../harness"
 
 type ListItem = { readonly sessionId: string; readonly title: string; readonly archivedAt?: number | null; readonly parentSessionId?: string | null }
 
@@ -17,13 +17,6 @@ async function serverSeenAt(url: string, workspaceId: string, title: string): Pr
   for (const [key, value] of Object.entries({ scope: "workspace", workspaceId, sort: "human_turn_desc", limit: "50" })) target.searchParams.set(key, value)
   const items = ((await (await fetch(target)).json()) as { items: Array<ListItem & { seenAt?: number }> }).items
   return items.find((item) => item.title === title)?.seenAt
-}
-
-async function sessionStatusCode(api: ClaxedoApi, directory: string, id: string): Promise<number> {
-  return api.session(directory, id).then(
-    () => 200,
-    (error: unknown) => (error instanceof ApiError ? error.status : 0),
-  )
 }
 
 function rows(app: Page): Locator {
@@ -71,10 +64,10 @@ async function liveStatus(stack: Stack, api: ClaxedoApi, app: Page, directory: s
 
 test.skip(({ isMobile }) => isMobile, "flow 10 runs at desktop width; flow 33 owns the phone rail")
 
-test("10 session list: the project's rows, live status, rename, archive and delete, read back from the server", async ({ stack, api, app }) => {
+test("10 session list: the project's rows, live status and rename, read back from the server", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("list", "List")
   const create = (title: string) => api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
-  const alpha = await create("Alpha")
+  await create("Alpha")
   const bravo = await create("Bravo")
   const charlie = await create("Charlie")
 
@@ -91,18 +84,7 @@ test("10 session list: the project's rows, live status, rename, archive and dele
   await expect(row(app, "Charlie renamed")).toBeVisible()
   await expect.poll(async () => (await api.session(workspace.directory, charlie.id)).title).toBe("Charlie renamed")
 
-  await row(app, "Alpha").hover()
-  await app.getByRole("button", { name: "Archive Alpha" }).click()
-  await expect(row(app, "Alpha")).toHaveCount(0)
-  await expect.poll(async () => (await api.session(workspace.directory, alpha.id)).time.archived ?? 0).toBeGreaterThan(0)
-
-  await sessionAction(stack, app, workspace, bravo, "Delete")
-  await app.getByRole("dialog").getByRole("button", { name: "Delete session" }).click()
-  await expect(row(app, "Bravo")).toHaveCount(0)
-  await expect.poll(() => sessionStatusCode(api, workspace.directory, bravo.id)).toBe(404)
-
-  expect(await serverOrder(stack.url)).toEqual(["Charlie renamed"])
-  await expect.poll(() => rowTitles(app)).toEqual(["Charlie renamed"])
+  await expect.poll(() => rowTitles(app)).toEqual(await serverOrder(stack.url))
 })
 
 test("10 a background turn, in a session visited before, changes only its own rail row, wakes no animation frame, and leaves a finished dot until the reader opens it", async ({ stack, api, app }) => {

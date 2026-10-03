@@ -52,10 +52,13 @@ test("the reader's own send moves a row to the top of activity before the server
   expect(activity(touched)).toEqual(["a1", "b1", "a2"])
 })
 
-test("an exact row read admits a row inside the activity window, and a row after every window stays out", () => {
-  const read = (rows: SessionRow[]) => run(booted, { type: "rowsFetched", window: pages(2_000, page(BRAVO, rows)) })
-  expect(activity(read([row(BRAVO, "b-settled", 75)]))).toEqual(["a1", "b1", "b-settled", "a2"])
-  expect(read([row(BRAVO, "b-old", 10)]).entries.has(sessionId("b-old"))).toBe(false)
+test("a turn end's row read admits a row inside the activity window with the turn the notice named, and a row after every window stays out", () => {
+  const ended = { status: "completed" as const, completedAt: 500 }
+  const read = (listed: SessionRow) => run(booted, { type: "turnEndRowRead", window: pages(2_000, page(BRAVO, [listed])), ref: listed.ref, lastTurn: ended })
+  const settled = { ...row(BRAVO, "b-settled", 75), lastTurn: { status: "completed" as const, completedAt: 100 } }
+  const admitted = run(read(settled), { type: "readerChanged", ref: settled.ref, reader: { settledAt: 100 }, at: 3_000 })
+  expect(activity(admitted)).toEqual(["a1", "b1", "b-settled", "a2"])
+  expect(read(row(BRAVO, "b-old", 10)).entries.has(sessionId("b-old"))).toBe(false)
 })
 
 test("a replace re-read drops a row only when every window holding it was read", () => {
