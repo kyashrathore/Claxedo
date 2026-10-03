@@ -35,6 +35,7 @@ import {
 } from "./channel-runtime-authority"
 import { D1OrgInvitationAuthority, D1_ORG_INVITATION_AUTHORITY_METHODS, type D1OrgInvitationAuthorityPort } from "./org-invitation-authority"
 import { publishD1HostSessionRows } from "./host-session-rows"
+import { deleteD1HostedSession } from "./hosted-session-delete"
 import { recordD1SessionReader } from "./session-reader-store"
 import { D1TeamAuthority, D1_TEAM_AUTHORITY_METHODS, type D1TeamAuthorityPort } from "./team-authority"
 import {
@@ -157,6 +158,7 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     readSessionHostPlacement: (input) => readD1SessionHostPlacement(database, input),
     recordTurnRuntimeAccessToken: (actorId, token) => channelsAndRuntime.recordTurnRuntimeAccessToken(actorId, token),
     turnLeaseLive: (input) => readD1TurnLeaseLive(database, input, (options.now ?? Date.now)()),
+    deleteHostedSession: (input) => deleteD1HostedSession(database, input, (options.now ?? Date.now)()),
     recordSessionReader: (auth, input) => recordD1SessionReader(database, options.deploymentId, auth, input, (options.now ?? Date.now)()),
     publishHostSessionRows: (publisher, publication) =>
       publishD1HostSessionRows(database, (options.now ?? Date.now)(), publisher, publication),

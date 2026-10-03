@@ -351,10 +351,11 @@ export async function readD1TurnLeaseLive(
 export async function readD1SessionHostPlacement(database: D1Database, input: { workspaceId: string; sessionId: string }): Promise<SessionHostPlacement | undefined> {
   const row = await database.prepare(`
     select w.backing, w.remote_directory,
-      s.workspace_id as session_workspace_id, s.session_host_root, s.deleted_at as session_deleted_at,
+      s.workspace_id as session_workspace_id, s.session_host_root, s.deleted_at as session_deleted_at, creator.user_id as session_creator_user_id,
       r.workspace_id as reservation_workspace_id, r.session_host_root as reservation_host_root
     from workspaces w
     left join sessions s on s.session_id = ?
+    left join actors creator on creator.actor_id = s.creator_actor_id
     left join session_registration_operations r on r.session_id = ? and r.state <> 'compensated'
     where w.workspace_id = ? and w.deleted_at is null
   `).bind(input.sessionId, input.sessionId, input.workspaceId).first<{
@@ -363,6 +364,7 @@ export async function readD1SessionHostPlacement(database: D1Database, input: { 
     session_workspace_id: string | null
     session_host_root: string | null
     session_deleted_at: number | null
+    session_creator_user_id: string | null
     reservation_workspace_id: string | null
     reservation_host_root: string | null
   }>()
@@ -370,7 +372,10 @@ export async function readD1SessionHostPlacement(database: D1Database, input: { 
   return {
     workspace: { backing: row.backing, directory: row.remote_directory },
     ...(row.session_workspace_id === null ? {} : {
-      session: { workspaceId: row.session_workspace_id, sessionHostRoot: row.session_host_root, deleted: row.session_deleted_at !== null },
+      session: {
+        workspaceId: row.session_workspace_id, sessionHostRoot: row.session_host_root, deleted: row.session_deleted_at !== null,
+        creatorUserId: row.session_creator_user_id,
+      },
     }),
     ...(row.reservation_workspace_id === null ? {} : {
       reservation: { workspaceId: row.reservation_workspace_id, sessionHostRoot: row.reservation_host_root },
