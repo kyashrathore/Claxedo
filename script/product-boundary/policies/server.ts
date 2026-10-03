@@ -79,8 +79,10 @@ export const serverWorkerd: Policy = {
   // of their own. A reservation places its session by the creator's default
   // harness when it names none (`session/default-session-harness.ts`), and a
   // session host and an enrolled owner's machine are both handed the owner's
-  // Pi accounts by one owner (`credentials/pi-direct-rows.ts`).
-  ceilings: { modules: 127, packages: 19 },
+  // Pi accounts by one owner (`credentials/pi-direct-rows.ts`). The session
+  // authority's signed proofs, its leases and the relay's host tokens, are
+  // minted and read in one module (`session/runtime-session-proofs.ts`).
+  ceilings: { modules: 128, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
