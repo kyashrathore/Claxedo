@@ -1,6 +1,6 @@
-import type { ScriptedModelServer } from "../../../e2e/harness/scripted-model-server"
-import { piCredentials, piTransport } from "./pi"
-import { setupConformance, withUndeliverableFile } from "./run"
+import type { ScriptedModelServer } from "./scripted-model-server"
+import { piCredentials, piTransport } from "./pi-conformance"
+import { setupConformance, withUndeliverableFile } from "../../src/conformance/test-support/run"
 
 const [root, directory, modelUrl] = process.argv.slice(2) as [string, string, string]
 const server = { url: modelUrl } as ScriptedModelServer

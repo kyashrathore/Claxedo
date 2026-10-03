@@ -5,7 +5,7 @@ import { processAlive } from "../../e2e/harness/process-alive"
 import { SESSION_TITLE_SYSTEM_PROMPT } from "../../e2e/harness/config"
 import type { RoutedEvent } from "../contract"
 import { pollUntil } from "./test-support/poll"
-import { piBackend, piTransport, type PiBackend } from "./test-support/pi"
+import { piBackend, piTransport, type PiBackend } from "../../e2e/harness/pi-conformance"
 import { runConformance, setupConformance } from "./test-support/run"
 
 runConformance({ name: "pi-durable", backend: () => piBackend(), makeTransport: (services, backend) => piTransport(services, backend as PiBackend) })

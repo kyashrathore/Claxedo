@@ -7,14 +7,14 @@ import type { HarnessBinding, RoutedEvent } from "../contract"
 import { processAlive } from "../../e2e/harness/process-alive"
 import { pollUntil } from "./test-support/poll"
 import { authority, MemoryPorts, origin } from "./test-support/memory-ports"
-import { piBackend, piTransport } from "./test-support/pi"
+import { piBackend, piTransport } from "../../e2e/harness/pi-conformance"
 import { createTestServices } from "./test-support/services"
 
 test("a Pi run killed mid-tool resumes on attach as a continuation turn that answers with the interrupted result", async () => {
   const backend = await piBackend("pi-resume")
   const pidFile = path.join(backend.directory, "sleep.pid")
   backend.server.scriptTool({ name: "bash", input: { command: `echo $$ > ${pidFile}; exec sleep 60` }, whenPromptIncludes: "PICRASH" })
-  const child = spawn(process.execPath, [path.join(import.meta.dirname, "test-support/pi-crash-child.ts"), backend.root, backend.directory, backend.server.url],
+  const child = spawn(process.execPath, [path.join(import.meta.dirname, "../../e2e/harness/pi-crash-child.ts"), backend.root, backend.directory, backend.server.url],
     { stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, HOME: path.join(backend.root, "home") } })
   let output = ""
   child.stdout.on("data", (chunk: Buffer) => { output += chunk.toString() })

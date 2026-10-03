@@ -13,7 +13,7 @@ const exhaustions: Record<string, RoutedEvent[]> = {
 
 for (const [sequence, events] of Object.entries(exhaustions)) {
   test(`${sequence} exhausted without a parent terminal fails the turn and retains pending handoff`, async () => {
-    const transport = new FakeTransport({ kind: "pi-rpc" })
+    const transport = new FakeTransport({ kind: "pi-durable" })
     transport.send = async function* () { yield* events }
     const fixture = createHostFixture({ transports: { pi: transport } })
     try {

@@ -6,7 +6,7 @@ import type { McpServerSpec, ProjectedMcpServer, ResolvedCredentials, RoutedEven
 import { createSessionBroker, createTurnBroker } from "../broker"
 import { MCP_PROOF_TOOL, startMcpProofEndpoint, type McpProofEndpoint } from "../test-support/mcp-proof-endpoint"
 import { authority, origin } from "./test-support/memory-ports"
-import { piCredentials, piTransport } from "./test-support/pi"
+import { piCredentials, piTransport } from "../../e2e/harness/pi-conformance"
 import { setupConformance, withUndeliverableFile } from "./test-support/run"
 import { reservePort, releasePort } from "../../e2e/harness/ports"
 import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"

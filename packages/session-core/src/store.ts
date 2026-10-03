@@ -1139,7 +1139,7 @@ export class RuntimeStore {
     }
   }
 
-  private interruptPreviousSessions() {
+  private interruptPreviousSessions(): string[] {
     const rows = this.db.prepare<{
       id: string
       agent_session_id: string | null
@@ -1147,16 +1147,18 @@ export class RuntimeStore {
     for (const row of rows) {
       this.markSessionInterrupted(row.id, SESSION_INTERRUPTED, row.agent_session_id)
     }
+    return rows.map((row) => row.id)
   }
 
-  recoverBusySessions() {
+  recoverBusySessions(): readonly string[] {
     // Valid only when no turn, delivery or host-child run of the previous
     // runtime can still be active: a crash settles none of their durable rows,
     // so this boot boundary is the one place they are settled.
     this.turnLeases.clear()
     this.deliveryQueue.settleOrphanedDispatches()
-    this.interruptPreviousSessions()
+    const interrupted = this.interruptPreviousSessions()
     this.interruptHostChildRuns()
+    return interrupted
   }
 
   putWorktree(record: WorkspaceWorktreeRecord) {
