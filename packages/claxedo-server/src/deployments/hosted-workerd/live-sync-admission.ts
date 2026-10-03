@@ -32,7 +32,7 @@ function sessionStatusEvent(row: Record<string, unknown>, ts: number): ControlPl
  * forwards exactly the fields it verified and nothing else the sender put in
  * the object.
  */
-export function liveSyncEvent(input: unknown): ControlPlaneEvent | undefined {
+function liveSyncEvent(input: unknown): ControlPlaneEvent | undefined {
   const row = asRecord(input)
   const ts = row?.ts
   if (!row || typeof ts !== "number" || !Number.isFinite(ts)) return undefined
@@ -51,4 +51,10 @@ export function liveSyncEvent(input: unknown): ControlPlaneEvent | undefined {
       : { ...base, phase }
   }
   return undefined
+}
+
+/** A nudge's events, one or a batch for one room; nothing when any of them is not admitted. */
+export function liveSyncEvents(input: unknown): ControlPlaneEvent[] | undefined {
+  const events = (Array.isArray(input) ? input : [input]).map(liveSyncEvent)
+  return events.length > 0 && events.every((event) => event !== undefined) ? events : undefined
 }

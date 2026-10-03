@@ -846,6 +846,23 @@ describe("LiveSyncRoom — session status notices", () => {
     expect(bob.frames.slice(1).map((frame) => (frame.data as { sessionId: string }).sessionId)).toEqual(["ses_2"])
   })
 
+  test("one nudge carries a room's batch of notices, each to its own reader; a batch with a refused notice lands nothing", async () => {
+    const room = new LiveSyncRoom({}, {})
+    const batch = [statusChanged("alice", "ses_1", "busy", 1), statusChanged("bob", "ses_2", "busy", 2)]
+    const response = await room.fetch(new Request("https://live-sync-room.internal/nudge", { method: "POST", body: JSON.stringify(batch) }))
+    expect(response.status).toBe(200)
+    const refused = await room.fetch(new Request("https://live-sync-room.internal/nudge", {
+      method: "POST",
+      body: JSON.stringify([statusChanged("alice", "ses_3", "busy", 3), { ...statusChanged("alice", "ses_4", "busy", 4), status: "thinking" }]),
+    }))
+    expect(refused.status).toBe(400)
+
+    const alice = await openRoom(room, { subject: "alice", lastEventId: "0" })
+    const bob = await openRoom(room, { subject: "bob", lastEventId: "0" })
+    expect(alice.frames.slice(1).map((frame) => (frame.data as { sessionId: string }).sessionId)).toEqual(["ses_1"])
+    expect(bob.frames.slice(1).map((frame) => (frame.data as { sessionId: string }).sessionId)).toEqual(["ses_2"])
+  })
+
   test("refuses a status notice that names no reader or an unknown status", async () => {
     const room = new LiveSyncRoom({}, {})
     for (const body of [{ ...statusChanged("alice", "ses_1", "busy"), ownerUserId: "" }, { ...statusChanged("alice", "ses_1", "busy"), status: "thinking" }]) {

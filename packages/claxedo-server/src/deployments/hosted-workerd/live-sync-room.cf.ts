@@ -49,7 +49,8 @@ import { eventVisibleTo, type EventScopePrincipal } from "@claxedo/server-core/p
 import { isRetainedControlPlaneEvent, supersededControlPlaneEventKey } from "@claxedo/server-core/platform/http/event-retention"
 import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { liveSyncRoomNameForPrincipal, type LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
-import { liveSyncEvent } from "./live-sync-admission"
+import { liveSyncEvents } from "./live-sync-admission"
+import { cursorAhead, replayGapEvent, type LiveSyncStreamGapEvent } from "./live-sync-replay-gap"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 
 /**
@@ -113,26 +114,6 @@ const HEADER_LAST_EVENT_ID = "x-livesync-last-event-id"
  */
 const HEADER_CURSOR = "x-livesync-cursor"
 
-/**
- * Synthetic frame written in place of a replay when the requested cursor has
- * already fallen out of the room's retention window (or belongs to a sequence
- * this room no longer has — see `cursorAhead`). Deliberately the same shape and
- * `code` as `ControlPlaneStreamGapEvent` in the local daemon's `shell/events.ts`:
- * hosted and local serve the same route to the same claxedo-app bundle, so a
- * consumer that grows a handler must not have to learn two spellings. Declared
- * here rather than imported because that module pulls the process-local
- * `controlBus` and `hono/streaming`, neither of which may enter the Worker
- * bundle.
- */
-export type LiveSyncStreamGapEvent = {
-  type: "stream.replay-gap"
-  code: "cp.sse_replay_gap"
-  message: string
-  severity: "warn"
-  lastEventId?: string
-  throughId?: string
-}
-
 type LiveSyncFrame = ControlPlaneEvent | LiveSyncStreamGapEvent
 
 /**
@@ -143,44 +124,6 @@ type LiveSyncFrame = ControlPlaneEvent | LiveSyncStreamGapEvent
  * line, exactly like the three already-resumable streams.
  */
 type LiveSyncWireFrame = { id: string; frame: LiveSyncFrame }
-
-function replayGapEvent(lastEventId?: string, throughId?: string): LiveSyncStreamGapEvent {
-  return {
-    type: "stream.replay-gap",
-    code: "cp.sse_replay_gap",
-    message: "Control plane event replay cursor is no longer available; refetch project and workspace state.",
-    severity: "warn",
-    ...(lastEventId ? { lastEventId } : {}),
-    ...(throughId ? { throughId } : {}),
-  }
-}
-
-function numericId(id: string | undefined) {
-  if (!id) return 0
-  const parsed = Number.parseInt(id, 10)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
-}
-
-/**
- * True when the presented cursor is numerically ahead of everything this room
- * has ever assigned — proof that the sequence it came from is gone.
- *
- * Ids only ever increase within one room instance, so strictly-greater is
- * impossible in normal operation. It happens when the Durable Object was
- * evicted (its in-memory ring, and with it the counter, resets to zero) or when
- * the caller's room name changed (an org grant moves a client from
- * `owner:<subject>` to `org:<id>`, whose sequence is unrelated).
- *
- * `SseReplayBuffer` cannot detect this on its own: `hasGap` short-circuits to
- * false whenever `after >= through`, and `replayAfter` filters to the empty
- * set, so a stale-high cursor is served silence — the client keeps a cursor
- * that will never match again and never learns its incremental view is stale.
- * Silence is the one failure mode a replay contract must not have, so the room
- * converts it into the same explicit gap notice a genuine eviction produces.
- */
-function cursorAhead(cursor: string | undefined, throughId: string | undefined) {
-  return numericId(cursor) > numericId(throughId)
-}
 
 /** Structural type of the CF `DurableObjectState` bits the room touches. */
 export type LiveSyncSocket = EventTarget & {
@@ -600,8 +543,8 @@ export class LiveSyncRoom {
   }
 
   /**
-   * Fan a nudge (a `ControlPlaneEvent` `liveSyncEvent` admits)
-   * to every held connection the event is visible to. Returns
+   * Fan a nudge (one `ControlPlaneEvent` `liveSyncEvents` admits, or a batch
+   * of them) to every held connection each event is visible to. Returns
    * `{ delivered, held }` for the caller's diagnostics.
    */
   private async handleNudge(request: Request): Promise<Response> {
@@ -611,8 +554,13 @@ export class LiveSyncRoom {
     } catch {
       return Response.json({ error: "invalid nudge body" }, { status: 400 })
     }
-    const event = liveSyncEvent(input)
-    if (!event) return Response.json({ error: "invalid nudge body" }, { status: 400 })
+    const events = liveSyncEvents(input)
+    if (!events) return Response.json({ error: "invalid nudge body" }, { status: 400 })
+    const delivered = events.reduce((count, event) => count + this.fanOut(event), 0)
+    return Response.json({ delivered, held: this.connections.size + (this.state.getWebSockets?.() ?? []).length })
+  }
+
+  private fanOut(event: ControlPlaneEvent): number {
     // Retain before fanning out, and once for the whole room, so a principal
     // first seen after this nudge can seed its filtered ring. Each known
     // principal then mints its own compact id after `eventVisibleTo`; that same
@@ -668,7 +616,7 @@ export class LiveSyncRoom {
       if (this.send(socket, event, delivery.id)) delivered += 1
       else socket.close(1011, "live-sync delivery failed")
     }
-    return Response.json({ delivered, held: this.connections.size + sockets.length })
+    return delivered
   }
 
   /** Push one frame onto the internal socket in the id-carrying envelope. */

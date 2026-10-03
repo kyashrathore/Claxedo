@@ -1,4 +1,4 @@
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import { bodyLimit } from "hono/body-limit"
 import { z } from "zod"
 import { bearerToken } from "@claxedo/helpers/string"
@@ -38,8 +38,24 @@ const publication = z.object({
   removed: z.array(rowRef).max(MAX_HOST_SESSION_ROWS),
 }).strict()
 
-/** Delivers one status notice to its reader's live-sync room. */
-export type SessionStatusNoticeSink = (event: SessionStatusChangedEvent) => Promise<unknown>
+/** Delivers one room's status notices to it in one nudge. */
+export type SessionStatusNoticeSink = (orgId: string, notices: readonly SessionStatusChangedEvent[]) => Promise<unknown>
+
+function noticesByRoom(notices: readonly SessionStatusChangedEvent[]) {
+  const rooms = new Map<string, SessionStatusChangedEvent[]>()
+  for (const notice of notices) rooms.set(notice.orgId, [...(rooms.get(notice.orgId) ?? []), notice])
+  return rooms
+}
+
+/** The Worker's `waitUntil`, so delivery outlives the response; nothing where the request has no execution context. */
+function background(c: Context): ((work: Promise<unknown>) => void) | undefined {
+  try {
+    const context = c.executionCtx
+    return (work) => context.waitUntil(work)
+  } catch {
+    return undefined
+  }
+}
 
 /**
  * `POST /api/claxedo/host/session-rows`: a machine publishes its sessions'
@@ -47,9 +63,10 @@ export type SessionStatusNoticeSink = (event: SessionStatusChangedEvent) => Prom
  * names the host, its owner and the workspaces it may serve; the authority
  * admits each row against what that enrollment serves right now.
  *
- * The rows are committed before any notice goes out, and the notices go out
- * together; one that fails is logged and costs its reader a re-read, never
- * the machine's publish.
+ * The rows are committed before any notice goes out. Each room's notices go
+ * in one nudge, all rooms at once, after the answer where the Worker can keep
+ * running; a failed nudge is logged and costs its readers a re-read, never the
+ * machine's publish.
  */
 export function HostSessionRowsRoutes(services: ControlPlaneServices, options: { notify?: SessionStatusNoticeSink } = {}) {
   const app = new Hono()
@@ -85,10 +102,13 @@ export function HostSessionRowsRoutes(services: ControlPlaneServices, options: {
         { rows: parsed.data.rows, removed: parsed.data.removed },
       )
       const notify = options.notify
-      if (notify) {
-        await Promise.all(statusNotices.map((notice) => notify(notice).catch((error: unknown) => {
-          console.error("[claxedo-server] WARN  session.status.changed nudge failed:", { sessionId: notice.sessionId, error: String(error) })
+      if (notify && statusNotices.length) {
+        const delivery = Promise.all([...noticesByRoom(statusNotices)].map(([orgId, notices]) => notify(orgId, notices).catch((error: unknown) => {
+          console.error("[claxedo-server] WARN  session.status.changed nudge failed:", { orgId, notices: notices.length, error: String(error) })
         })))
+        const later = background(c)
+        if (later) later(delivery)
+        else await delivery
       }
       return c.json(result)
     },

@@ -94,29 +94,30 @@ describe("POST /api/claxedo/host/session-rows", () => {
     expect(publish).not.toHaveBeenCalled()
   })
 
-  test("nudges every reader's notice after the write and answers the machine without them", async () => {
-    const delivered: unknown[] = []
+  test("nudges each room once with all its notices and answers the machine without them", async () => {
+    const nudges: Array<[string, unknown[]]> = []
     const second = { ...notice, ownerUserId: "user_reader" }
+    const elsewhere = { ...notice, orgId: "org_2" }
     const { app } = routes({
-      publish: vi.fn(async () => ({ accepted: 1, refused: [], statusNotices: [notice, second] })),
-      notify: async (event) => void delivered.push(event),
+      publish: vi.fn(async () => ({ accepted: 1, refused: [], statusNotices: [notice, second, elsewhere] })),
+      notify: async (orgId, notices) => void nudges.push([orgId, [...notices]]),
     })
 
     const response = await post(app, body)
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({ accepted: 1, refused: [] })
-    expect(delivered).toEqual([notice, second])
+    expect(nudges).toEqual([["org_1", [notice, second]], ["org_2", [elsewhere]]])
   })
 
-  test("a failed nudge is logged and the committed publish still answers 200", async () => {
+  test("a failed nudge is logged, the other rooms still get theirs, and the committed publish answers 200", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {})
-    const delivered: unknown[] = []
+    const delivered: string[] = []
     const { app } = routes({
-      publish: vi.fn(async () => ({ accepted: 1, refused: [], statusNotices: [notice, { ...notice, ownerUserId: "user_reader" }] })),
-      notify: async (event) => {
-        if (event.ownerUserId === "user_owner") throw new Error("room unavailable")
-        delivered.push(event.ownerUserId)
+      publish: vi.fn(async () => ({ accepted: 1, refused: [], statusNotices: [notice, { ...notice, orgId: "org_2" }] })),
+      notify: async (orgId) => {
+        if (orgId === "org_1") throw new Error("room unavailable")
+        delivered.push(orgId)
       },
     })
 
@@ -124,9 +125,30 @@ describe("POST /api/claxedo/host/session-rows", () => {
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({ accepted: 1, refused: [] })
-    expect(delivered).toEqual(["user_reader"])
-    expect(error).toHaveBeenCalledWith(expect.stringContaining("session.status.changed nudge failed"), expect.objectContaining({ sessionId: "ses_1" }))
+    expect(delivered).toEqual(["org_2"])
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("session.status.changed nudge failed"), expect.objectContaining({ orgId: "org_1" }))
     error.mockRestore()
+  })
+
+  test("on a Worker the nudges run after the answer, under waitUntil", async () => {
+    const pending: Promise<unknown>[] = []
+    let release = () => {}
+    const { app } = routes({
+      publish: vi.fn(async () => ({ accepted: 1, refused: [], statusNotices: [notice] })),
+      notify: () => new Promise<void>((resolve) => { release = resolve }),
+    })
+    const executionCtx = { waitUntil: (work: Promise<unknown>) => void pending.push(work), passThroughOnException: () => {}, props: {} }
+
+    const response = await app.request("/", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer tunnel-token" },
+      body: JSON.stringify(body),
+    }, undefined, executionCtx)
+
+    expect(response.status).toBe(200)
+    expect(pending).toHaveLength(1)
+    release()
+    await pending[0]
   })
 
   test("takes a row's background work with its status and refuses a malformed count", async () => {
