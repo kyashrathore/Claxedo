@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto"
 import { expect } from "@playwright/test"
 import { acpScriptToken } from "../../../harness/e2e/harness/acp/script"
 import { SCRIPTED_ACP_HARNESS } from "../../../harness/e2e/harness/acp/connection"
-import { connectHostedWorkspace } from "../../../harness/e2e/harness/hosted-flow"
+import { connectHostedWorkspace, hostedRuntimeTransport } from "../../../harness/e2e/harness/hosted-flow"
+import type { MessageRow } from "../../../harness/e2e/harness/api"
 import type { SignedStack } from "./signed-stack"
 
 export type CloudWorkspace = { id: string; projectId: string }
@@ -59,7 +60,8 @@ type CloudSessionInput = {
 export async function createCloudSession(signed: SignedStack, workspace: CloudWorkspace, input: CloudSessionInput) {
   const sessionId = `ses_${randomUUID().replaceAll("-", "")}`
   const operationId = `session_registration_${randomUUID().replaceAll("-", "")}`
-  await asOwner(signed)("POST", "/api/control/session-registrations/reserve", { operationId, sessionId, workspaceId: workspace.id, kind: "create", title: input.title })
+  await asOwner(signed)("POST", "/api/control/session-registrations/reserve",
+    { operationId, sessionId, workspaceId: workspace.id, kind: "create", title: input.title, harness: input.harness })
   const query = input.harness.access === "native" ? `nativeHarness=${input.harness.id}` : `connectionId=${input.harness.id}`
   await runtimeCall(signed, workspace,
     "POST",
@@ -90,4 +92,35 @@ export async function cloudTurn(signed: SignedStack, workspace: CloudWorkspace, 
 export async function storedMessages(signed: SignedStack, workspace: CloudWorkspace, sessionId: string) {
   const page = await asOwner(signed)("GET", `/api/control/sessions/${sessionId}/messages?workspaceId=${workspace.id}&limit=50`)
   return (JSON.parse(page.body) as { messages: { info: { role: string } }[] }).messages
+}
+
+export async function storeOwnerKey(signed: SignedStack, providerId: string, secret: string) {
+  await asOwner(signed)("PUT", "/api/claxedo/credentials", { provider_id: providerId, kind: "api_key", source: "managed", label: providerId, secret })
+}
+
+export async function listedSessions(signed: SignedStack, workspace: CloudWorkspace) {
+  const listed = await asOwner(signed)("GET", `/api/control/session-list?scope=workspace&workspaceId=${encodeURIComponent(workspace.id)}`)
+  return (JSON.parse(listed.body) as { items: Array<{ sessionId: string; sessionHostRoot?: string }> }).items
+}
+
+export async function sessionConnection(signed: SignedStack, workspace: CloudWorkspace, sessionId: string) {
+  const answer = await asOwner(signed)("POST", `/api/workspace/${encodeURIComponent(workspace.id)}/connection`, { session: { sessionId } })
+  const connection = JSON.parse(answer.body) as { backing: string; hostId: string; runtimeAccessToken: string }
+  const transport = hostedRuntimeTransport(signed.hosted, { id: workspace.id, runtimeAccessToken: connection.runtimeAccessToken })
+  return {
+    ...connection,
+    call: async (method: string, route: string) => {
+      const reply = await transport({ method, url: new URL(route, signed.hosted.relayUrl).toString(), headers: {} })
+      if (reply.status < 200 || reply.status >= 300) throw new Error(`${method} ${route} answered ${reply.status}: ${reply.body}`)
+      return reply.body ? JSON.parse(reply.body) as unknown : undefined
+    },
+  }
+}
+
+export async function cloudPrompt(signed: SignedStack, workspace: CloudWorkspace, sessionId: string, text: string) {
+  await runtimeCall(signed, workspace, "POST", `/session/${sessionId}/prompt_async`, { parts: [{ type: "text", text }] })
+}
+
+export async function cloudMessages(signed: SignedStack, workspace: CloudWorkspace, sessionId: string): Promise<MessageRow[]> {
+  return JSON.parse((await runtimeCall(signed, workspace, "GET", `/session/${sessionId}/message`)).body) as MessageRow[]
 }
