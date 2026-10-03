@@ -19,7 +19,7 @@ function todoEvents(input: Record<string, unknown>): AgentRuntimeEvent[] {
 }
 
 function assistantEvents(state: CursorSdkAdapterState, message: Assistant): CursorTranslation {
-  return message.message.content.reduce<CursorTranslation>((current, block) => {
+  return message.message.content.reduce((current, block) => {
     if (block.type === "text") return block.text ? unchanged(current.state, [...current.events, { type: "text-delta", delta: block.text }]) : current
     const input = toolInput(block.input)
     if (isTodoTool(block.name)) return unchanged(current.state, [...current.events, ...todoEvents(input)])

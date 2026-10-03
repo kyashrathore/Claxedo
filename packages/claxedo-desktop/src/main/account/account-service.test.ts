@@ -676,7 +676,7 @@ describe("bound desktop account lifecycle", () => {
     const h = harness({
       store: memoryStore(CREDENTIAL),
       fetch: async (url, init) => {
-        calls.push({ url: String(url), init })
+        calls.push({ url, init })
         return Response.json({ status: "stopped", workspaceId: "ws_1" })
       },
     })

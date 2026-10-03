@@ -12,7 +12,7 @@ export function createKeyedReads<K, V>(source: Accessor<ReadonlyMap<K, V>>): (ke
   const readerOf = (key: K) => {
     const known = readers.get(key)
     if (known) return known
-    const [read, write] = createSignal<V | undefined>(current.get(key))
+    const [read, write] = createSignal(current.get(key))
     const created: Reader<V> = { read, write, readers: 0 }
     readers.set(key, created)
     return created

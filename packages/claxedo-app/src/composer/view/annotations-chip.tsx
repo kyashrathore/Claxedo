@@ -23,7 +23,7 @@ export function AnnotationsChip(props: AnnotationsChipProps): JSX.Element {
   const [chip, setChip] = createSignal<HTMLElement>()
   const edited = createMemo(() => {
     const index = props.items.findIndex((item) => item.key === editing())
-    return index < 0 ? undefined : { item: props.items[index]!, number: index + 1 }
+    return index < 0 ? undefined : { item: props.items[index], number: index + 1 }
   })
   const label = () => {
     const count = String(props.items.length)

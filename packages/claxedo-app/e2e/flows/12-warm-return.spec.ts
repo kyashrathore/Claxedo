@@ -132,7 +132,6 @@ test("12 a return after a walk past the open-session cache does the same work fo
   await app.addInitScript(installPaintedFrames)
   await app.goto(`${stack.url}${sessionRoute(home.id, anchor.id)}`)
   await expect(app.getByText("Anchor reply 2").first()).toBeVisible()
-  const rail = app.getByRole("navigation", { name: UI.rail })
   const settled = apiRequests(app, stack.url)
   await settled()
   const cdp = await app.context().newCDPSession(app)

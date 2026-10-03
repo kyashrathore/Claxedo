@@ -46,7 +46,7 @@ const unknown = names.filter((name) => !(name in PROGRAMS))
 if (unknown.length) throw new Error(`No ranged program ${unknown.join(", ")}; known: ${Object.keys(PROGRAMS).join(", ")}`)
 const outcomes: string[] = []
 for (const name of names.length ? names : Object.keys(PROGRAMS)) {
-  const program = PROGRAMS[name]!
+  const program = PROGRAMS[name]
   for (const end of ["min", "max"] as const) {
     const env = { ...process.env, [program.variable]: end }
     const version = `${name} ${end} ${program.range[end]}`

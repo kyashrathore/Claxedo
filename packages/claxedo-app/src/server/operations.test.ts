@@ -7,7 +7,7 @@ test("only declared body fields reach the server", async () => {
   const requests: RequestInit[] = []
   const transport = { json: async (_path: string, init: RequestInit) => (requests.push(init), {}) } as unknown as Transport
   await createOperations(transport, undefined).run("documents.create", { display_name: "Notes", markdown: "# Hi", admin: true })
-  expect(JSON.parse(requests[0]!.body as string)).toEqual({ display_name: "Notes", markdown: "# Hi" })
+  expect(JSON.parse(requests[0].body as string)).toEqual({ display_name: "Notes", markdown: "# Hi" })
 })
 
 test("a document id cannot be normalized into a different route", () => {

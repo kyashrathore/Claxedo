@@ -54,6 +54,6 @@ export function createDockFollow(scroll: TimelineScroll) {
   })
   createResizeObserver(dock, ({ height }) => setDockHeight(height))
   createEffect(() => handler.resize(dockHeight() + overhang()))
-  onCleanup(handler.dispose)
+  onCleanup(() => handler.dispose())
   return { ref: setDock, overhang, setOverhang }
 }

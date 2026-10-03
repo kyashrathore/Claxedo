@@ -603,7 +603,7 @@ describe("D1 access changes that must not undo or outlive a decision", () => {
   })
 
   test("a removal that finds the member already gone writes no allow row", async () => {
-    const { authority, database, alice, bob, audit } = await setup()
+    const { database, alice, bob, audit } = await setup()
     await inviteOrgMember(database, alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" })
     const context = new D1WorkspaceAuthority(
       racing(database, (target) => target.prepare("update org_memberships set revoked_at = 1 where user_id = ?").bind(id(bob)).run()),
@@ -723,7 +723,7 @@ describe("D1 user-deployed invitation membership", () => {
     const bob = await signed(authority, "bob")
     expect(await authority.listOrgs(bob)).toEqual([])
 
-    await authority.acceptOrgInvitation!(bob, { token: tokens[0]! })
+    await authority.acceptOrgInvitation!(bob, { token: tokens[0] })
     expect(await authority.listOrgMembers!(alice, { orgId: "org_deploy" }))
       .toEqual(expect.arrayContaining([expect.objectContaining({ user_id: id(bob), role: "admin" })]))
     expect(await authority.admitInvitedIdentity(identity("carol"), "bob@example.test")).toMatchObject({ state: "unavailable" })

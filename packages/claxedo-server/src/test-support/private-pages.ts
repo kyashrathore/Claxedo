@@ -35,7 +35,7 @@ export function privatePagesFixture(env?: NodeJS.ProcessEnv) {
     revoke: async (principal, page, shareId) => {
       if (page.creator_id !== principal.userId) throw new DocumentAccessError()
       const index = shares.findIndex((share) => share.document_id === page.id && share.id === shareId)
-      if (index >= 0) shares[index] = { ...shares[index]!, revoked_at: Date.now() }
+      if (index >= 0) shares[index] = { ...shares[index], revoked_at: Date.now() }
     },
     findLink: async (hash) =>
       shares.find((share) => share.target === "link" && share.target_id === hash && share.revoked_at === null),
@@ -124,7 +124,7 @@ export function privatePagesFixture(env?: NodeJS.ProcessEnv) {
   const create = async () => {
     const response = await request("creator", "/documents", "POST", { project_id: "project", display_name: "Private" })
     expect(response.status).toBe(201)
-    return (await response.json()) as any
+    return (await response.json())
   }
   const share = (id: string, target: DocumentShare["target"], targetId: string, level: DocumentShare["level"]) =>
     shares.push({

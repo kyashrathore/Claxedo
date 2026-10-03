@@ -85,7 +85,7 @@ export class D1OrgInvitationAuthority implements D1OrgInvitationAuthorityPort {
         )
         .bind(invitationId, orgId, email, args.role, tokenHash, who.userId, now, now + INVITATION_TTL_MS, ...permitted.bind),
     ])
-    if (result!.meta.changes !== 1) {
+    if (result.meta.changes !== 1) {
       await this.adminOrganization(who, orgId)
       if (args.role === "owner" && !(await may(this.context.database, who, "own", { kind: "org", orgId })))
         throw new D1AccessAuthorityError("org_owner_required")
@@ -145,7 +145,7 @@ export class D1OrgInvitationAuthority implements D1OrgInvitationAuthorityPort {
         .bind(now, invitationId, ...pending.bind),
       ...retireOrphanedInvitationUsers(this.context, { invitationId, orgId, now, permission }),
     ])
-    return { revoked: result!.meta.changes === 1 }
+    return { revoked: result.meta.changes === 1 }
   }
 
   async acceptOrgInvitation(auth: SignedControlPlaneAuth, args: { token: string }) {

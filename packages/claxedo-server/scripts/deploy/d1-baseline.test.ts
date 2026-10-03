@@ -30,7 +30,7 @@ async function deploy(database: Database.Database) {
       return ""
     }
     if (args[2] !== "CONTROL_PLANE_DB") throw new Error("auth provisioning starts")
-    return JSON.stringify([{ success: true, results: database.prepare(args[args.indexOf("--command") + 1]!).all() }])
+    return JSON.stringify([{ success: true, results: database.prepare(args[args.indexOf("--command") + 1]).all() }])
   })
   return prepareD1Databases(input)
 }

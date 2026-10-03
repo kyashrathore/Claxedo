@@ -37,7 +37,7 @@ export function resolveModelVisibility(input: { readonly model: ModelChoice; rea
 export type ModelVisibility = ReturnType<typeof createModelVisibility>
 
 export function createModelVisibility() {
-  const [store, setStore] = persistedStore<VisibilityRecord>(preferenceKey("model-visibility"), { entries: {}, groups: {} }, readVisibility)
+  const [store, setStore] = persistedStore(preferenceKey("model-visibility"), { entries: {}, groups: {} }, readVisibility)
   return {
     visible: (model: ModelChoice, context: ModelVisibilityContext = {}) =>
       resolveModelVisibility({

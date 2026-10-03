@@ -28,7 +28,7 @@ function fixture(running: { value: boolean }) {
   } as Pick<Transport, "startRuntime"> as Transport
   const workspaces = {
     load: async () => ({ declaration: { serverKind: "daemon", hostAggregate: false, issuesSessions: true, documents: false, connections: false }, placements: [] }),
-    byId: (id: string) => ({ ...placements[id]!, reachable: id === "ws_cloud" && running.value }),
+    byId: (id: string) => ({ ...placements[id], reachable: id === "ws_cloud" && running.value }),
     locate: async (id: string): Promise<RuntimeRoute> => ({ directory: `workspace:${id}`, workspaceId: id, remote: true }),
     refresh: async () => undefined,
   } as Pick<Workspaces, "load" | "byId" | "locate" | "refresh"> as Workspaces
@@ -51,7 +51,7 @@ test("wakes: a send to an asleep cloud workspace starts it once, however many se
   expect(wakes.runtime(cloud)).toEqual({ kind: "waking", bootMode: "resume" })
 
   running.value = true
-  starts[0]!.resolve()
+  starts[0].resolve()
   await Promise.all([first, second])
   expect(wakes.runtime(cloud)).toEqual({ kind: "live" })
 })
@@ -63,7 +63,7 @@ test("wakes: a refused start leaves the workspace asleep with the server's reaso
 
   const send = wakes.wakeIfStopped(cloud)
   await settle()
-  starts[0]!.reject(refusal)
+  starts[0].reject(refusal)
   await expect(send).rejects.toBe(refusal)
   expect(wakes.runtime(cloud)).toEqual({ kind: "wakeFailed", error: refusal })
 
@@ -71,7 +71,7 @@ test("wakes: a refused start leaves the workspace asleep with the server's reaso
   await settle()
   expect(wakes.runtime(cloud).kind).toBe("waking")
   running.value = true
-  starts[1]!.resolve()
+  starts[1].resolve()
   await retry
   expect(wakes.runtime(cloud)).toEqual({ kind: "live" })
 })

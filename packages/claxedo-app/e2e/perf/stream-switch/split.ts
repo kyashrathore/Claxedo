@@ -17,7 +17,7 @@ const rows = inputs.map((input, index) => {
   const task = onMain.find((event) => event.name === "RunTask" && event.ts <= input.ts && event.ts + (event.dur ?? 0) >= input.ts + (input.dur ?? 0))
   const clickTask = onMain
     .filter((event) => event.name === "RunTask" && event.ts >= input.ts && event.ts < input.ts + 40_000 && event !== task)
-    .reduce<TraceEvent | undefined>((longest, event) => ((event.dur ?? 0) > (longest?.dur ?? 0) ? event : longest), task)
+    .reduce((longest, event) => ((event.dur ?? 0) > (longest?.dur ?? 0) ? event : longest), task)
   const start = Math.min(task?.ts ?? input.ts, clickTask?.ts ?? input.ts)
   const end = Math.max((task?.ts ?? 0) + (task?.dur ?? 0), (clickTask?.ts ?? 0) + (clickTask?.dur ?? 0))
   const inside = onMain.filter((event) => event.ts >= start && event.ts + (event.dur ?? 0) <= end)

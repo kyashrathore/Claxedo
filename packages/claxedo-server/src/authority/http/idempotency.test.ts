@@ -220,7 +220,7 @@ describe("D1 projection command idempotency rows", () => {
     const ahead = vi.fn(async () => ({ ok: "ahead" }))
     await expect(createIdempotencyCoordinator(store).run(held, ahead, "fp"))
       .rejects.toMatchObject({ status: 409, code: "control_plane_idempotency_in_flight" })
-    await createIdempotencyCoordinator(store).run(registerKey("other")!, async () => ({ ok: true }), "fp")
+    await createIdempotencyCoordinator(store).run(registerKey("other"), async () => ({ ok: true }), "fp")
     expect(ahead).not.toHaveBeenCalled()
     expect(await rows(d1.database)).toEqual([held, registerKey("other")!].toSorted())
   })

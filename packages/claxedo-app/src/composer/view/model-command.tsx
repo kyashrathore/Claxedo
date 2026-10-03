@@ -12,7 +12,7 @@ export type ModelDialogChoice = {
 
 export function showModelDialog(dialog: ReturnType<typeof useDialog>, labels: { title: string; connect: string }, choice: ModelDialogChoice, connect: () => void) {
   const current = () => choice.items.find((item) => item.id === choice.current?.modelId && item.provider.id === choice.current.providerId)
-  dialog.show(() => (
+  void dialog.show(() => (
     <Dialog size="large" fit containerClass="long-dialog-container">
       <DialogHeader>
         <DialogTitle>{labels.title}</DialogTitle>

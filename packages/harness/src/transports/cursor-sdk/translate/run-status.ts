@@ -20,7 +20,7 @@ const statusProtocolMap: Partial<Record<Extract<SDKMessage, { type: "status" }>[
 
 export function statusEvents(state: CursorSdkAdapterState, message: Extract<SDKMessage, { type: "status" }>): CursorTranslation {
   const status = own(statusProtocolMap, message.status)
-  if (status === undefined) return unknownKind(state, `status:${String(message.status)}`)
+  if (status === undefined) return unknownKind(state, `status:${message.status}`)
   return unchanged(state, status ? [{ type: "session-status", status }] : [])
 }
 

@@ -81,7 +81,7 @@ function useOAuth(input: ConnectFormInput, methods: ReturnType<typeof useConnect
     setStore({ methodIndex: index, authorization: undefined, state: "pending", error: undefined, saving: true })
     try {
       const authorization = await server.providerConnect.authorize(methods.authProviderId(), index)
-      if (!authorization) return void (await complete())
+      if (!authorization) return await complete()
       setStore({ authorization, state: authorization.method, saving: authorization.method === "auto" })
       if (authorization.method === "auto") void finish()
     } catch (error) {

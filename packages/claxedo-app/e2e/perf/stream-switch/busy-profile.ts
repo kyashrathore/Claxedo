@@ -23,7 +23,7 @@ export function readBusyProfile(file: string, distDir: string, minMs: number) {
   if (current.length) segments.push(current)
   return {
     parent,
-    busy: segments.filter((segment) => (segment.at(-1)!.at - segment[0]!.at) / 1000 >= minMs),
+    busy: segments.filter((segment) => (segment.at(-1)!.at - segment[0].at) / 1000 >= minMs),
     label: (id: number) => profileFrameLabel(mapper, frame(id)),
     sourceFile: (id: number) => profileFrameSource(mapper, frame(id)).split(":")[0] ?? "",
   }

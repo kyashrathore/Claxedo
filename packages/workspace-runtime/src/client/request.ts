@@ -1,6 +1,6 @@
 import { decodeApiError } from "@claxedo/helpers/api-error"
 import { errorMessage } from "@claxedo/helpers"
-import { asRecord, asRecordOrEmpty } from "@claxedo/helpers/guards"
+import { asRecord } from "@claxedo/helpers/guards"
 
 /** The callable half of `fetch`; a bare `typeof fetch` differs per runtime lib (Bun's carries `preconnect`). */
 export type WorkspaceRuntimeTransport = (input: string | URL | Request, init?: RequestInit) => Promise<Response>

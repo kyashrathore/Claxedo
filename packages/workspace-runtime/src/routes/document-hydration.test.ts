@@ -2,7 +2,7 @@ import { documentAuthorizedFetch } from "../test-support/document-authorized-fet
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { fetchBodyJson, fetchDouble, fetchUrl } from "../test-support/fetch-double"
+import { fetchBodyJson, fetchUrl } from "../test-support/fetch-double"
 import { asRecord, asString } from "@claxedo/helpers/guards"
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, test, mock, spyOn } from "bun:test"

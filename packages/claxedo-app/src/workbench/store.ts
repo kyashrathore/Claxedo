@@ -171,7 +171,7 @@ function openRoute(kinds: readonly AnyPaneKind[], open: Open, route: PaneRoute, 
 }
 
 export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPaneKind[]>): WorkbenchStore {
-  const [record, setRecord] = persistedSignal<WorkbenchRecord>(
+  const [record, setRecord] = persistedSignal(
     key,
     { layout: constructWorkbenchState.empty(), contents: {} },
     readWorkbenchRecord,

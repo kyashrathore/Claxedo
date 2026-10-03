@@ -8,13 +8,11 @@ import {
   createSignal,
   For,
   Index,
-  Match,
   on,
   onCleanup,
   onMount,
   Show,
   mapArray,
-  Switch,
   untrack,
   type Accessor,
   type JSX,
@@ -84,7 +82,6 @@ import { formatDuration } from "@/transcript"
 import { installTimelineMermaid } from "./mermaid-timeline"
 import { installTimelineTables } from "./table-timeline"
 import { sessionMessageScrollInset } from "./session-message-scroll-position"
-import type { TranscriptUserMessage as UserMessage } from "@/transcript"
 import { TimelineUserMessage } from "./timeline-user-message"
 import {
   timelineFileCandidateIsOpenable,

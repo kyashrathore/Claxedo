@@ -37,11 +37,11 @@ export function FilesProvider(props: ParentProps): JSX.Element {
   const { placementId, current, write } = createPlacementState(emptyFiles)
   const files: Files = {
     placementId,
-    expanded: (dir) => current().expanded[dir] === true,
-    expandedDirs: () => Object.keys(current().expanded).filter((dir) => current().expanded[dir] === true),
+    expanded: (dir) =>  current().expanded[dir],
+    expandedDirs: () => Object.keys(current().expanded).filter((dir) =>  current().expanded[dir]),
     setExpanded: (dir, expanded) =>
       write((previous) =>
-        (previous.expanded[dir] === true) === expanded ? previous : { ...previous, expanded: { ...previous.expanded, [dir]: expanded } },
+        (previous.expanded[dir]) === expanded ? previous : { ...previous, expanded: { ...previous.expanded, [dir]: expanded } },
       ),
     search: () => current().search,
     setSearch: (search) => write((previous) => ({ ...previous, search })),
@@ -54,9 +54,9 @@ export function FilesProvider(props: ParentProps): JSX.Element {
         return { ...previous, batches: { ...previous.batches, [dir]: { ...batches, [side]: batches[side] + 1 } } }
       }),
     resetBatches: () => write((previous) => (Object.keys(previous.batches).length === 0 ? previous : { ...previous, batches: {} })),
-    markdownSource: (path) => current().markdownSource[path] === true,
+    markdownSource: (path) =>  current().markdownSource[path],
     toggleMarkdownSource: (path) =>
-      write((previous) => ({ ...previous, markdownSource: { ...previous.markdownSource, [path]: previous.markdownSource[path] !== true } })),
+      write((previous) => ({ ...previous, markdownSource: { ...previous.markdownSource, [path]: ! previous.markdownSource[path] } })),
   }
   return createComponent(FilesContext.Provider, {
     value: files,

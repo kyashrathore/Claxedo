@@ -13,7 +13,7 @@ import type { OpenCodeRuntime } from "../transports/opencode-sdk/runtime"
 import { WorkspaceScope } from "../transports/opencode-sdk/scope"
 import { terminal } from "../transports/opencode-sdk/translate/event"
 import type { RoutedEvent, TurnInput } from "../contract"
-import { runConformance, setupConformance, type ConformanceBackend, type SuiteBackend } from "./test-support/run"
+import { runConformance, setupConformance, type SuiteBackend } from "./test-support/run"
 import { createTestServices } from "./test-support/services"
 
 type ScriptedServer = Awaited<ReturnType<typeof startScriptedModelServer>>

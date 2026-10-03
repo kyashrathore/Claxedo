@@ -56,7 +56,7 @@ function createTerminalRows() {
     },
     remove: (terminalId: TerminalId) => setState("rows", (rows) => rows.filter((row) => row.id !== terminalId)),
     markLost: (terminalId: TerminalId) => setState("lost", terminalId, true),
-    lost: (terminalId: TerminalId) => state.lost[terminalId] === true,
+    lost: (terminalId: TerminalId) =>  state.lost[terminalId],
     setAgentStatus: (terminalId: TerminalId, agentStatus: TerminalAgentStatus) => {
       const at = index(terminalId)
       if (at !== -1) setState("rows", at, (row) => ({ ...row, agentStatus, seen: agentStatus !== "idle" || row.seen }))
