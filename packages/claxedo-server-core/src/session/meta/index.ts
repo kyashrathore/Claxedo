@@ -417,6 +417,10 @@ export async function listSessionNavigationMetas(input: SessionMetaNavigationLis
     where.push("m.session_id = ?")
     params.push(input.sessionID)
   }
+  if (input.workspaceIDs) {
+    where.push(input.workspaceIDs.length ? `m.workspace_id IN (${input.workspaceIDs.map(() => "?").join(", ")})` : "0")
+    params.push(...input.workspaceIDs)
+  }
   if (input.global) {
     where.push(`(
       m.directory = 'global'

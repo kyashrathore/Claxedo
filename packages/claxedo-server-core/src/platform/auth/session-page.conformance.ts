@@ -1,5 +1,5 @@
 import type { SignedControlPlaneAuth } from "./auth"
-import type { PrivateSessionAuthority, PrivateSessionRuntimePrincipal } from "./private-session-authority"
+import { sessionPageScope, type PrivateSessionAuthority, type PrivateSessionRuntimePrincipal } from "./private-session-authority"
 import type { SessionTurnAuthority } from "./session-turn-authority"
 import {
   buildSessionListResponse,
@@ -149,7 +149,8 @@ export async function exerciseSessionPageConformance(
 
 async function readListPage(authority: PrivateSessionAuthority, auth: SignedControlPlaneAuth, search: string) {
   const query = parseSessionListQuery(new URL(`https://control.test/api/control/session-list?sort=human_turn_desc&${search}`))
-  const scope = query.scope === "project" ? { projectId: query.projectId! } : { workspaceId: query.workspaceId! }
+  const scope = sessionPageScope(query)
+  if (!scope) throw new Error(`the conformance read names no page: ${search}`)
   const sessions = await authority.listSessionPage(auth, { ...sessionListKeysetPage(query), ...scope })
   const response = buildSessionListResponse({ query, sessions, cursorApplied: true })
   return { rows: response.items ?? [], nextCursor: response.nextCursor, nextAfter: response.nextAfter }

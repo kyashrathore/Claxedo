@@ -36,6 +36,8 @@ export type SessionMeta = {
 export type SessionMetaNavigationListInput = {
   reader: string
   workspaceID?: string
+  /** The live workspaces a list of every session covers; a session of any other is not listed. */
+  workspaceIDs?: readonly string[]
   directory?: string
   projectID?: string
   sessionID?: string

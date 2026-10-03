@@ -17,7 +17,7 @@ const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
 const { putSessionMeta, recordSessionLastTurn } = await import("@claxedo/server-core/session/meta/index")
 const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
 const { parseSessionListQuery } = await import("@claxedo/server-core/session/navigation-list")
-const { localSessionListPage } = await import("./session-list-page")
+const { localSessionListPage, signedSessionListPage } = await import("./session-list-page")
 ClaxedoDB.Drizzle()
 
 afterAll(async () => {
@@ -146,14 +146,16 @@ describe("localSessionListPage", () => {
     expect(plan(read)).toEqual([expect.stringMatching(/^SEARCH claxedo_session_meta USING INDEX sqlite_autoindex_claxedo_session_meta_1 \(session_ref=\?\)$/)])
   })
 
-  test("an all-scoped page lists every workspace's root sessions in one human-turn order, an exact session read answers that one row, and both read by index", async () => {
+  test("an all-scoped page lists every live workspace's root sessions in one human-turn order, an exact session read answers that one row, and both read by index", async () => {
     const left = await workspace("all-left")
     const right = await workspace("all-right")
+    const gone = await workspace("all-gone")
     const recent = 9_000_000_000_000
     await putSessionMeta("ses_all_old", { ws: left, title: "Old", createdAt: 1, updatedAt: 1, lastHumanTurnAt: recent + 10 })
     await putSessionMeta("ses_all_new", { ws: right, title: "New", createdAt: 2, updatedAt: 2, lastHumanTurnAt: recent + 30 })
     await putSessionMeta("ses_all_mid", { ws: left, title: "Mid", createdAt: 3, updatedAt: 3, lastHumanTurnAt: recent + 20 })
     await putSessionMeta("ses_all_child", { ws: right, title: "Child", parentID: "ses_all_new", createdAt: 4, updatedAt: 4, lastHumanTurnAt: recent + 40 })
+    await putSessionMeta("ses_all_gone", { ws: gone, title: "Gone", createdAt: 6, updatedAt: 6, lastHumanTurnAt: recent + 35 })
     await putSessionMeta("ses_all_archived", { ws: right, title: "Archived", archived: 5, createdAt: 5, updatedAt: 5, lastHumanTurnAt: recent + 50 })
     const db = ClaxedoDB.raw()
     const statements: Array<{ sql: string; params: unknown[] }> = []
@@ -184,5 +186,13 @@ describe("localSessionListPage", () => {
     expect(plan(list)).toContainEqual(expect.stringMatching(/^SEARCH m USING INDEX claxedo_session_meta_archive_human_turn_idx \(archived_at=\?\)$/))
     expect(plan(exact)).toContainEqual(expect.stringMatching(/^SEARCH m USING INDEX claxedo_session_meta_session_idx \(session_id=\?\)$/))
     expect([...plan(list), ...plan(exact)].filter((step) => step.startsWith("SCAN") || step.includes("TEMP B-TREE"))).toEqual([])
+  })
+
+  test("a signed caller's all-scoped page asks the authority for every session it may read", async () => {
+    const asked: unknown[] = []
+    const authority = { listSessionPage: async (_auth: unknown, input: unknown) => (asked.push(input), []) } as unknown as Parameters<typeof signedSessionListPage>[0]
+    const query = parseSessionListQuery(new URL("http://daemon.test/api/claxedo/session-list?scope=all&sort=human_turn_desc&limit=5"))
+    await signedSessionListPage(authority, {} as Parameters<typeof signedSessionListPage>[1], { query, workspace: undefined })
+    expect(asked).toEqual([expect.objectContaining({ everyReadable: true, limit: 6 })])
   })
 })

@@ -1,4 +1,4 @@
-import type { SessionListKeysetPage } from "../../session/navigation-list"
+import type { SessionListKeysetPage, SessionListQuery } from "../../session/navigation-list"
 import type { SignedControlPlaneAuth } from "./auth"
 import type { LatestView } from "../../session/latest-view-page"
 import type { TurnPageQuery, TurnPageRequest, TurnPage, FirstRead } from "@claxedo/agent-runtime-contract"
@@ -76,7 +76,17 @@ export type RegisterRuntimePrivateSessionInput = PrivateSessionRuntimePrincipal 
  * workspace and project. Authorization is the list query's own predicate, so a
  * page is never short because rows were dropped after the read.
  */
-export type SessionPageQuery = SessionListKeysetPage & ({ projectId: string } | { workspaceId: string } | { everyReadable: true })
+export type SessionPageScope = { projectId: string } | { workspaceId: string } | { everyReadable: true }
+
+export type SessionPageQuery = SessionListKeysetPage & SessionPageScope
+
+/** The page a list query names, with the workspace a caller resolved for a workspace scope; nothing when it names none. */
+export function sessionPageScope(query: SessionListQuery, workspaceId: string | undefined = query.workspaceId): SessionPageScope | undefined {
+  if (query.scope === "all") return { everyReadable: true }
+  if (query.scope === "project" && query.projectId) return { projectId: query.projectId }
+  if (query.scope === "workspace" && workspaceId) return { workspaceId }
+  return undefined
+}
 
 export type AdoptRuntimePrivateSessionInput = PrivateSessionRuntimePrincipal & RuntimeSessionTimes & {
   sessionId: string
