@@ -87,7 +87,7 @@ Examples:
 - Owned process group exited, but SQLite rejects finalization: execution terminal if that group was the exclusive execution owner, cleanup verified clear, persistence unavailable. Do not claim the transcript is reconciled.
 - A remote cancel request timed out: execution unknown; disconnecting the local client does not prove remote termination.
 
-Reuse `AgentRuntimeStatus.recovering` with `uncertain_execution` for unresolved execution and existing health states `degraded`/`unavailable`. Recovery progress and storage failure belong in the recovery/health response; do not force every failure into `busy`, or add a parallel session-status authority.
+Report unresolved execution as the `unknown` execution fact and through the existing health states `degraded`/`unavailable`; a session whose turn a restart lost reads `AgentRuntimeStatus.interrupted`. Recovery progress and storage failure belong in the recovery/health response; do not force every failure into `busy`, or add a parallel session-status authority.
 
 ## 6. Public operation contract
 

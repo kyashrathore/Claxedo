@@ -104,11 +104,6 @@ type SessionInterrupted = {
   message: string
 }
 
-type LegacyProcessLost = {
-  type: "process.lost"
-  message: string
-}
-
 type SessionUpdate = {
   type: "session.update"
   updates: {
@@ -131,11 +126,6 @@ type PermissionStaled = {
 type QuestionStaled = {
   type: "question.staled"
   questionId: string
-}
-
-type LegacySessionRecovering = {
-  type: "session.recovering"
-  message: string
 }
 
 type NoticeAcknowledged = {
@@ -164,12 +154,10 @@ type Control =
   | Turn
   | TurnFinish
   | SessionInterrupted
-  | LegacyProcessLost
   | SessionUpdate
   | SessionDelete
   | PermissionStaled
   | QuestionStaled
-  | LegacySessionRecovering
   | NoticeAcknowledged
   | NoticeCreated
   | ProjectionResetRequested
@@ -1317,18 +1305,19 @@ export class RuntimeStore {
     const rows = this.db.prepare<{
       id: string
       agent_session_id: string | null
-    }>("SELECT id, agent_session_id FROM session WHERE status IN ('busy', 'retry', 'recovering')").all()
+    }>("SELECT id, agent_session_id FROM session WHERE status IN ('busy', 'retry')").all()
     for (const row of rows) {
       this.markSessionInterrupted(row.id, SESSION_INTERRUPTED, row.agent_session_id)
     }
   }
 
   recoverBusySessions() {
-    // Adapter-store recovery runs only when no turn from the previous runtime
-    // can still be active. A crash cannot release its durable lease, so clear
-    // those stale ownership rows at the same boundary that interrupts busy
-    // sessions and their pending tools.
+    // Adapter-store recovery runs only when no turn or delivery from the
+    // previous runtime can still be active. A crash cannot release its durable
+    // lease or settle its delivery claims, so clear those stale ownership rows
+    // at the same boundary that interrupts busy sessions and their pending tools.
     this.turnLeases.clear()
+    this.deliveryQueue.settleOrphanedDispatches()
     this.interruptPreviousSessions()
   }
 
@@ -2174,7 +2163,7 @@ export class RuntimeStore {
     if (control.type === "projection.reset_requested") {
       return
     }
-    if (control.type === "session.interrupted" || control.type === "process.lost" || control.type === "session.recovering") {
+    if (control.type === "session.interrupted") {
       this.db
         .prepare(
           "UPDATE pending_permission SET status = 'stale', updated_at = ? WHERE session_id = ? AND status = 'pending'",
@@ -2578,58 +2567,6 @@ export class RuntimeStore {
         control: row.control,
       }),
     } satisfies RuntimeStoreTurnStartOutput
-  }
-
-  markDirectorySessionsInterrupted(directory: string, message = SESSION_INTERRUPTED) {
-    const rows = this.db
-      .prepare<{ id: string; agent_session_id: string | null }>(
-        `
-        SELECT s.id, s.agent_session_id
-        FROM session s
-        WHERE s.directory = ?
-          AND (
-            s.status = 'busy'
-            OR EXISTS (
-              SELECT 1 FROM pending_permission p
-              WHERE p.session_id = s.id AND p.status = 'pending'
-            )
-            OR EXISTS (
-              SELECT 1 FROM pending_question q
-              WHERE q.session_id = s.id AND q.status = 'pending'
-            )
-          )
-      `,
-      )
-      .all(directory)
-    for (const row of rows) {
-      this.markSessionInterrupted(row.id, message, row.agent_session_id)
-    }
-  }
-
-  markSessionsInterruptedByOwner(ownerKey: string, message = SESSION_INTERRUPTED) {
-    const rows = this.db
-      .prepare<{ id: string; agent_session_id: string | null }>(
-        `
-        SELECT s.id, s.agent_session_id
-        FROM session s
-        WHERE s.process_key = ?
-          AND (
-            s.status = 'busy'
-            OR EXISTS (
-              SELECT 1 FROM pending_permission p
-              WHERE p.session_id = s.id AND p.status = 'pending'
-            )
-            OR EXISTS (
-              SELECT 1 FROM pending_question q
-              WHERE q.session_id = s.id AND q.status = 'pending'
-            )
-          )
-      `,
-      )
-      .all(ownerKey)
-    for (const row of rows) {
-      this.markSessionInterrupted(row.id, message, row.agent_session_id)
-    }
   }
 
   markSessionInterrupted(sessionId: string, message = SESSION_INTERRUPTED, agentSessionId?: string | null) {
@@ -3211,14 +3148,6 @@ export class RuntimeStore {
       process_key: string | null
     }>("SELECT process_key FROM session WHERE id = ?").get(id)
     return row?.process_key ?? null
-  }
-
-  listSessionsByOwnerKey(ownerKey: string) {
-    return (
-      this.db.prepare<{
-        id: string
-      }>("SELECT id FROM session WHERE process_key = ? ORDER BY created_at ASC").all(ownerKey)
-    ).map((row) => row.id)
   }
 
   getSessionByAgent(agentSessionId: string) {

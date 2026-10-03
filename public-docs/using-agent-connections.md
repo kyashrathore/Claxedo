@@ -171,7 +171,7 @@ anything else, and the paths the agent named. You answer **Allow once**,
 | Area | What happens |
 |---|---|
 | Parallel turns | Sessions have independent turn admission. One session cannot run overlapping turns, but it does not hold another session behind a process-wide prompt queue. |
-| Process loss | If the agent exits mid-turn, the turn fails with `ACP connection closed`, every session on that process is marked recovering, and the next turn starts a fresh process. The agent's own stderr is not part of that message, so read the server log to find out why it died. Nothing is retried for you. |
+| Process loss | If the agent exits mid-turn, the turn fails with `ACP connection closed` and the next turn starts a fresh process. The agent's own stderr is not part of that message, so read the server log to find out why it died. Nothing is retried for you. |
 | Restart and resume | After the server restarts, the next turn asks the agent to resume its own session. An agent that cannot resume or load sessions fails that turn; only "not found" starts a fresh agent session automatically. Claxedo's transcript is always kept. |
 | Questions and other controls | ACP forms use the existing question dock and a JSON answer validated by the SDK. Published commands appear in the slash menu; plans render as todos. Negotiated child sessions use existing subagent transcripts. Revert remains unsupported. |
 | Fork | Requires negotiated agent support. Support survives idle process disposal; the runtime restores the source before forking. |

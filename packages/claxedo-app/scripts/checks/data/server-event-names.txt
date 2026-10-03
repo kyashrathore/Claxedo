@@ -35,7 +35,6 @@ session.execution.succeeded
 session.idle
 session.inventory.changed
 session.lifecycle
-session.recovering
 session.share.changed
 session.status
 session.status.timeout

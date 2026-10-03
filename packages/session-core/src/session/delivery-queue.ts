@@ -235,6 +235,14 @@ export class DeliveryQueue {
       .run(JSON.stringify(steering), sessionId, seq, steering.operationId).changes === 1
   }
 
+  /** Called only when no operation of a previous runtime can still be dispatching. */
+  settleOrphanedDispatches() {
+    this.db.prepare(`UPDATE runtime_delivery
+      SET steering_json = json_set(steering_json, '$.state', 'unknown', '$.message', ?)
+      WHERE json_extract(steering_json, '$.state') = 'dispatching'`)
+      .run("The runtime restarted before this input's delivery was confirmed")
+  }
+
   deleteQueuedPrompt(sessionId: string, seq: number) {
     return this.db.prepare(`DELETE FROM runtime_delivery WHERE session_id = ? AND seq = ?
       AND (steering_json IS NULL OR json_extract(steering_json, '$.state') IN ('rejected', 'unknown'))`).run(sessionId, seq).changes === 1

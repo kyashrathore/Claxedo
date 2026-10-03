@@ -44,8 +44,8 @@ the session route options every host answers from its own store: listings,
 transcript reads, turn coverage, configuration, the durable prompt queue and
 child-session records. A host spreads it into `core.sessionRoutes(...)` and adds
 only what it alone supplies. A host boots in two steps once its store is open:
-`store.recoverBusySessions()` ends the turns its previous instance left running,
-then `recoverQueuedPrompts()` on the session routes re-issues the prompts still
+`store.recoverBusySessions()` ends the turns its previous instance left running
+and marks the deliveries it left dispatching as unknown, then `recoverQueuedPrompts()` on the session routes re-issues the prompts still
 queued.
 
 IDs use Web Crypto. Harness child admission derives its deterministic key with

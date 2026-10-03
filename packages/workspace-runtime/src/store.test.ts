@@ -2199,7 +2199,7 @@ void describe("RuntimeStore", () => {
         ],
       }),
     })
-    first.markDirectorySessionsInterrupted("/work", "ACP process restarted")
+    first.markSessionInterrupted("s1", "ACP process restarted")
 
     const next = new RuntimeStore(root)
     assert.deepEqual(next.listPermissions("/work"), [])
@@ -2247,62 +2247,6 @@ void describe("RuntimeStore", () => {
     next.close()
   })
 
-  void it("marks only matching owner-key sessions stale after interruption", () => {
-    const root = tmp()
-    const first = new RuntimeStore(root)
-    first.bindSession({
-      owner: { kind: "machine-owner" },
-      sessionId: "s1",
-      directory: "/work",
-      agentSessionId: "a1",
-      ownerKey: "process-a",
-      createdAt: 1,
-    })
-    first.bindSession({
-      owner: { kind: "machine-owner" },
-      sessionId: "s2",
-      directory: "/work",
-      agentSessionId: "a2",
-      ownerKey: "process-b",
-      createdAt: 2,
-    })
-    first.appendEvent({
-      sessionId: "s1",
-      agentSessionId: "a1",
-      payload: permissionAsked({
-        id: "p1",
-        sessionID: "s1",
-        permission: "bash",
-        patterns: ["/tmp/a"],
-        metadata: {},
-        always: ["/tmp/a"],
-      }),
-    })
-    first.appendEvent({
-      sessionId: "s2",
-      agentSessionId: "a2",
-      payload: permissionAsked({
-        id: "p2",
-        sessionID: "s2",
-        permission: "bash",
-        patterns: ["/tmp/b"],
-        metadata: {},
-        always: ["/tmp/b"],
-      }),
-    })
-    first.markSessionsInterruptedByOwner("process-a", "ACP shared process exited")
-
-    const next = new RuntimeStore(root)
-    assert.equal(next.getSessionOwnerKey("s1"), "process-a")
-    assert.deepEqual(next.listSessionsByOwnerKey("process-b"), ["s2"])
-    assert.deepEqual(
-      next.listPermissions("/work").map((row) => row.id),
-      ["p2"],
-    )
-    assert.equal((next.getSession("s1") as { status?: string } | null)?.status, "interrupted")
-    assert.equal((next.getSession("s2") as { status?: string } | null)?.status, undefined)
-  })
-
   void it("terminalizes running tool parts after interruption", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
@@ -2340,7 +2284,7 @@ void describe("RuntimeStore", () => {
       }),
     })
 
-    first.markDirectorySessionsInterrupted("/work", "The agent runtime restarted. Send a message to continue the interrupted work.")
+    first.markSessionInterrupted("s1")
 
     const current = first.getMessages("s1") as Array<{
       parts: Array<{ id: string; type: string; state?: { status?: string; error?: string } }>
@@ -2499,37 +2443,26 @@ void describe("RuntimeStore", () => {
     assert.equal(after?.recovery_error ?? null, null)
   })
 
-  void it("replays a historical recovery control as an interruption", () => {
-    const store = new RuntimeStore(tmp())
-    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
-    store.markSessionInterrupted("s1", "Historical restart")
-    db(store).prepare("UPDATE runtime_journal SET type = 'session.recovering', payload_json = json_set(payload_json, '$.type', 'session.recovering') WHERE type = 'session.interrupted'").run()
-    assert.equal(store.rebuildProjection("s1").rebuilt, true)
-    assert.equal((store.getSession("s1") as { status: string }).status, "interrupted")
+  void it("interrupts a persisted retrying session once without starting work", () => {
+    const root = tmp()
+    const first = new RuntimeStore(root)
+    first.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    db(first).prepare("UPDATE session SET status = 'retry' WHERE id = 's1'").run()
+    first.close()
+
+    const next = new RuntimeStore(root)
+    next.recoverBusySessions()
+    assert.equal((next.getSession("s1") as { status: string }).status, "interrupted")
+    assert.deepEqual(next.getMessages("s1"), [])
+    const count = () => db(next).prepare("SELECT COUNT(*) AS count FROM runtime_journal WHERE type = 'session.interrupted'").get()
+    assert.deepEqual(count(), { count: 1 })
+    next.recoverBusySessions()
+    assert.deepEqual(count(), { count: 1 })
+    next.close()
+
+    const reopened = new RuntimeStore(root)
+    assert.equal((reopened.getSession("s1") as { status: string }).status, "interrupted")
   })
-
-  for (const previousStatus of ["recovering", "retry"]) {
-    void it(`interrupts persisted ${previousStatus} sessions once without starting work`, () => {
-      const root = tmp()
-      const first = new RuntimeStore(root)
-      first.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
-      db(first).prepare("UPDATE session SET status = ? WHERE id = 's1'").run(previousStatus)
-      first.close()
-
-      const next = new RuntimeStore(root)
-      next.recoverBusySessions()
-      assert.equal((next.getSession("s1") as { status: string }).status, "interrupted")
-      assert.deepEqual(next.getMessages("s1"), [])
-      const count = () => db(next).prepare("SELECT COUNT(*) AS count FROM runtime_journal WHERE type = 'session.interrupted'").get()
-      assert.deepEqual(count(), { count: 1 })
-      next.recoverBusySessions()
-      assert.deepEqual(count(), { count: 1 })
-      next.close()
-
-      const reopened = new RuntimeStore(root)
-      assert.equal((reopened.getSession("s1") as { status: string }).status, "interrupted")
-    })
-  }
 
   void it("finishTurn clears a busy turn through replayable terminal events", () => {
     const root = tmp()
@@ -3337,11 +3270,10 @@ void describe("session ordering timestamps", () => {
     const db = (store as unknown as { db: { prepare(sql: string): { run(...p: unknown[]): unknown } } }).db
     db.prepare("UPDATE session SET updated_at = ? WHERE id = ?").run(111, "s1")
 
-    // The three recovery paths: the runtime's own bookkeeping, never the reader
-    // speaking to the session, so the sidebar must not reorder behind them.
+    // Recovery is the runtime's own bookkeeping, never the reader speaking to
+    // the session, so the sidebar must not reorder behind it.
     store.markSessionInterrupted("s1", "interrupted")
     store.createNotice("s1", { notice: "recovery_error", message: "created notice" })
-    store.markDirectorySessionsInterrupted("/work", "ACP process restarted")
 
     const after = store.getSession("s1") as
       | { status?: string; time?: { created?: number; updated?: number } }

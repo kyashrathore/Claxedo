@@ -605,9 +605,26 @@ for (const mode of ["start", "steer"] as const) {
       expect(await host.control("session_1", queued.seq, "cancel")).toMatchObject(state === "unknown" ? { ok: true } : { status: "provider_owned" })
       await host.dispose()
       runtimeStore.close()
-      expect(store(directory).deliveryQueue.listQueuedPrompts()).toHaveLength(state === "unknown" ? 0 : 1)
+      const reopened = store(directory)
+      reopened.recoverBusySessions()
+      const settled = { dispatching: ["unknown"], accepted: ["accepted"], unknown: [] } as const
+      expect(reopened.deliveryQueue.listQueuedPrompts().map((row) => row.steering?.state)).toEqual([...settled[state]])
     })
   }
+  test(`a ${mode} a previous runtime left dispatching is removable after restart recovery`, async () => {
+    const directory = root()
+    const first = store(directory)
+    const queued = first.deliveryQueue.queuePrompt({ sessionId: "session_1", messageId: "orphaned", parts: [], delivery: "queue" })
+    first.deliveryQueue.claimQueuedPromptDelivery("session_1", queued.seq, "operation", mode)
+    first.close()
+    const reopened = store(directory)
+    reopened.recoverBusySessions()
+    expect(reopened.deliveryQueue.listQueuedPrompts()[0]?.steering).toMatchObject({ operationId: "operation", mode, state: "unknown" })
+    const host = owner(reopened)
+    expect(await host.control("session_1", queued.seq, "steer")).toMatchObject(mode === "start" ? { status: "provider_owned" } : { status: "unknown" })
+    expect(await host.control("session_1", queued.seq, "cancel")).toEqual({ ok: true })
+    expect(reopened.deliveryQueue.listQueuedPrompts()).toEqual([])
+  })
 }
 
 test("removing an uncertain start unblocks the next queued prompt without replaying it", async () => {

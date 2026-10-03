@@ -70,11 +70,13 @@ same problem after a crash, and the same two calls answer it at boot. The
 object makes them in its constructor, inside `blockConcurrencyWhile`, so no
 request reaches it before they finish:
 
-1. `store.recoverBusySessions()` deletes every turn lease and commits a
-   `session.interrupted` row for each busy or retrying session and each persisted legacy recovering session. That row moves the session
-   to `interrupted` with a message explaining that the runtime restarted and
-   a new message can continue the work. It ends the session's running tool calls
-   with "Tool execution interrupted" and marks its pending
+1. `store.recoverBusySessions()` deletes every turn lease, settles every
+   queued row still `dispatching` to `unknown` (no operation is left to report
+   its outcome, so it is never resent and Remove can delete it), and commits a
+   `session.interrupted` row for each busy or retrying session. That row moves
+   the session to `interrupted` with a message explaining that the runtime
+   restarted and a new message can continue the work. It ends the session's
+   running tool calls with "Tool execution interrupted" and marks its pending
    permissions and questions stale. The text the turn had already streamed
    stays in the transcript.
 2. `sessions.recoverQueuedPrompts()` wakes every session that has an eligible

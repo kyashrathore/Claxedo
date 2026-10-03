@@ -261,7 +261,7 @@ test("two Steer requests observe one dispatch and neither succeeds before accept
   expect(queue.host.list("session_1")[0].steering?.state).toBe("accepted")
 })
 
-test("a lost receipt remains unknown and cannot resend, edit, cancel, or start on idle", async () => {
+test("a lost receipt remains unknown and cannot resend, edit, or start on idle, but can be removed", async () => {
   const queue = durableQueue()
   const starts: AgentRuntimeTurnStartInput[] = []
   let idle!: () => void
@@ -280,12 +280,13 @@ test("a lost receipt remains unknown and cannot resend, edit, cancel, or start o
   expect(response.status).toBe(202)
   expect(await response.json()).toMatchObject({ ok: false, status: "unknown" })
   expect((await app.request(`${url}/steer`, { method: "POST" })).status).toBe(202)
-  expect((await app.request(`${url}/cancel`, { method: "POST" })).status).toBe(423)
   expect((await app.request(`${url}/replace`, prompt({ parts: [{ type: "text", text: "replacement" }] }))).status).toBe(423)
   idle()
   await new Promise((resolve) => setTimeout(resolve, 10))
   expect(starts).toHaveLength(1)
   expect(queue.host.list("session_1")[0].steering?.state).toBe("unknown")
+  expect((await app.request(`${url}/cancel`, { method: "POST" })).status).toBe(200)
+  expect(queue.host.list("session_1")).toEqual([])
 })
 
 test("an explicit refusal reaches HTTP and preserves the queue", async () => {
