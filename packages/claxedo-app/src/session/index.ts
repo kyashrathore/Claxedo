@@ -6,7 +6,6 @@ import type {
   BackgroundWork,
   FileDiff,
   GoalAction,
-  ProjectId,
   PromptInput,
   RequestId,
   SessionCreateInput,
@@ -14,6 +13,7 @@ import type {
   SessionId,
   SessionOutline,
   SessionLocation,
+  SessionReader,
   SessionRow,
   SessionStatus,
   Todo,
@@ -24,15 +24,17 @@ import type { TranscriptConversation } from "@/transcript"
 import type { TranscriptViewport } from "./transcript-viewport"
 import type { SessionSubagent } from "./transcript/subagent-merge"
 import type { SessionQueue } from "./transcript/queue"
+import type { WindowKey } from "./list/model"
 
 export type SessionStatusView = SessionStatus | { readonly kind: "unknown" }
 
 export type SentPrompt = PromptInput & { readonly messageId: string; readonly sentAt: number }
 
-export type SessionRowView = SessionRow & {
+export type SessionRowView = SessionRow & SessionReader & {
   readonly status: SessionStatusView
   readonly waitingOnUser: boolean
   readonly pending: boolean
+  readonly settled: boolean
 }
 
 export type SessionListState =
@@ -50,15 +52,19 @@ export type LoadMoreState =
 export type SessionList = {
   readonly state: Accessor<SessionListState>
   readonly order: Accessor<readonly SessionLocation[]>
+  readonly activityOrder: Accessor<readonly SessionLocation[]>
   readonly view: (sessionId: SessionId) => SessionRowView | undefined
   readonly rowOf: (sessionId: SessionId) => SessionRow | undefined
-  readonly hasMore: (projectId: ProjectId) => boolean
-  readonly moreState: (projectId: ProjectId) => LoadMoreState
-  readonly pageFailure: (projectId: ProjectId) => AppError | undefined
-  readonly pageDegraded: (projectId: ProjectId) => boolean
-  readonly loadMore: (projectId: ProjectId) => Promise<void>
+  readonly hasMore: (windowKey: WindowKey) => boolean
+  readonly moreState: (windowKey: WindowKey) => LoadMoreState
+  readonly pageFailure: (windowKey: WindowKey) => AppError | undefined
+  readonly pageDegraded: (windowKey: WindowKey) => boolean
+  readonly loadMore: (windowKey: WindowKey) => Promise<void>
   readonly reload: () => Promise<void>
   readonly create: (input: SessionCreateInput) => Promise<SessionLocation>
+  readonly readerOf: (sessionId: SessionId) => SessionReader
+  readonly markSeen: (ref: SessionLocation, completedAt: number) => Promise<void>
+  readonly settle: (ref: SessionLocation, settled: boolean) => Promise<void>
 }
 
 export type SessionLoadState =
@@ -122,19 +128,16 @@ export type SessionView = {
 
 export type { SessionSubagent }
 
-export type UnseenOutcome = "finished" | "failed"
+export type SessionAttention = { readonly kind: "finished" | "failed" | "waiting"; readonly ref: SessionLocation }
 
 export type SessionStores = {
   readonly list: SessionList
-  readonly unseenOutcomes: {
-    readonly of: (sessionId: SessionId) => UnseenOutcome | undefined
-    readonly raised: (sessionId: SessionId, outcome: UnseenOutcome) => void
-    readonly seen: (sessionId: SessionId) => void
-  }
+  readonly onAttention: (listener: (attention: SessionAttention) => void) => () => void
   readonly open: (ref: SessionLocation) => SessionView
   readonly recordViewport: (viewport: TranscriptViewport) => void
 }
 
 export { SessionStoresProvider, useSessionStores } from "./store/provider"
-export { sessionActivity, type SessionActivity } from "./list/activity"
+export { canSettle, matchesActivityFilter, sessionActivity, unseenOutcome, type ActivityFilter, type SessionActivity, type UnseenOutcome } from "./list/activity"
+export { ACTIVITY_WINDOW, type WindowKey } from "./list/model"
 export { draftSessionPaneKind, sessionPaneKind, subagentPanelView } from "./view"

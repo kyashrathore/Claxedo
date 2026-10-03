@@ -58,9 +58,7 @@ export type SessionShareRow = {
   workspace_id: string
   org_id: string
   project_id: string
-  target_user_id: string | null
-  target_org_id: string | null
-  target_team_id: string | null
+  target_user_id: string
   granted_by_actor_id: string
   granted_at: number
   revoked_at: number | null

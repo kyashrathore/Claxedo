@@ -1,4 +1,4 @@
-import { createMemo, type Accessor } from "solid-js"
+import { createEffect, createMemo, on, type Accessor } from "solid-js"
 import { harnessSelectionOf } from "@/lib/harness-selection"
 import { machine, type Machine } from "@/lib/machine"
 import { uuid } from "@/lib/uuid"
@@ -10,7 +10,6 @@ import {
   type AppError,
   type BackgroundWork,
   type PlacementId,
-  type ProjectId,
   type Server,
   type ServerEvent,
   type SessionCreateInput,
@@ -21,11 +20,14 @@ import {
 } from "@/server"
 import type { LoadMoreState, SessionList, SessionListState, SessionStatusView } from "@/session"
 import type { RequestsInternal } from "../requests"
-import { hasMorePages, initialListState, type ListEvent, type ListState, type MorePhase } from "./model"
+import { ACTIVITY_WINDOW, hasMorePages, initialListState, type ListEvent, type ListState, type MorePhase, type WindowKey } from "./model"
 import { createKeyedReads } from "./keyed-reads"
 import { createListReads, type ListReads } from "./reads"
+import { createTurnEndReads, type TurnEndNotice } from "./turn-end-reads"
 import { listTransition } from "./transition"
 import { createRowViewCache, rowViews, UNKNOWN_STATUS, visibleOrder } from "./visible-rows"
+import { shownReader } from "./readers"
+import { writeReader } from "./reader-writes"
 
 export type SessionListInternal = SessionList & {
   readonly start: () => void
@@ -95,16 +97,26 @@ async function createPendingSession(server: Server, list: Machine<ListState, Lis
   }
 }
 
-function routeServerEvent(list: Machine<ListState, ListEvent>, reads: ListReads, event: ServerEvent): void {
+export type SessionListOptions = { readonly showSettled: Accessor<boolean>; readonly activityShown: Accessor<boolean> }
+
+function routeServerEvent(list: Machine<ListState, ListEvent>, reads: ListReads, turnEnded: (notice: TurnEndNotice) => void, event: ServerEvent): void {
   switch (event.type) {
     case "sessionUpserted":
       return list.send(event)
     case "sessionRemoved":
       return list.send({ type: "sessionRemoved", ref: event.ref, at: Date.now() })
-    case "statusChanged":
-      return list.send({ type: "statusChanged", ref: event.ref, status: event.status, ...(event.lastTurn ? { lastTurn: event.lastTurn } : {}), at: Date.now() })
+    case "statusChanged": {
+      const at = Date.now()
+      const { ref, status, lastTurn, waitingOnUser, backgroundWork } = event
+      list.send({ type: "statusChanged", ref, status, ...(lastTurn ? { lastTurn } : {}), ...(waitingOnUser !== undefined ? { waitingOnUser } : {}), at })
+      if (backgroundWork) list.send({ type: "backgroundWorkChanged", ref, work: backgroundWork, at })
+      turnEnded(event)
+      return
+    }
     case "backgroundWorkChanged":
       return list.send({ type: "backgroundWorkChanged", ref: event.ref, work: event.work, at: Date.now() })
+    case "readerChanged":
+      return list.send({ type: "readerChanged", ref: event.ref, reader: event.reader, at: Date.now() })
     case "streamGap":
       return reads.requestReread("replace")
     case "sessionsChanged":
@@ -114,18 +126,24 @@ function routeServerEvent(list: Machine<ListState, ListEvent>, reads: ListReads,
   }
 }
 
-function createRowReads(state: Accessor<ListState>, requests: RequestsInternal, windows: Accessor<ListState["windows"]>) {
+function createRowReads(state: Accessor<ListState>, requests: RequestsInternal, windows: Accessor<ListState["windows"]>, showSettled: Accessor<boolean>) {
   const cache = createRowViewCache()
   const entries = createMemo(() => state().entries)
   const statuses = createMemo(() => state().statuses)
   const backgroundWork = createMemo(() => state().backgroundWork)
-  const order = createMemo(() => visibleOrder({ entries: entries(), windows: windows() }))
-  const views = createMemo(() => rowViews({ order: order(), data: { entries: entries(), statuses: statuses(), backgroundWork: backgroundWork() }, openRequests: requests.openBySession(), cache }))
+  const readers = createMemo(() => state().readers)
+  const orderData = () => ({ entries: entries(), windows: windows(), readers: readers() })
+  const order = createMemo(() => visibleOrder(orderData(), showSettled(), "projects"))
+  const activityOrder = createMemo(() => (windows().has(ACTIVITY_WINDOW) ? visibleOrder(orderData(), showSettled(), ACTIVITY_WINDOW) : []))
+  const shown = createMemo(() => [...order(), ...activityOrder()])
+  const views = createMemo(() => rowViews({ order: shown(), data: { entries: entries(), statuses: statuses(), backgroundWork: backgroundWork(), readers: readers() }, openRequests: requests.openBySession(), cache }))
   const entryOf = createKeyedReads(entries)
   const statusOf = createKeyedReads(statuses)
   const backgroundWorkOf = createKeyedReads(backgroundWork)
+  const readerEntryOf = createKeyedReads(readers)
   return {
     order,
+    activityOrder,
     view: createKeyedReads(views),
     rowOf: (sessionId: SessionId) => {
       const entry = entryOf(sessionId)
@@ -133,13 +151,20 @@ function createRowReads(state: Accessor<ListState>, requests: RequestsInternal, 
     },
     statusOf: (sessionId: SessionId) => sessionStatusWithBackgroundWork(statusOf(sessionId)?.status ?? UNKNOWN_STATUS, backgroundWorkOf(sessionId)?.work ?? NO_BACKGROUND_WORK),
     backgroundWorkOf: (sessionId: SessionId) => backgroundWorkOf(sessionId)?.work ?? NO_BACKGROUND_WORK,
+    readerOf: (sessionId: SessionId) => shownReader(readerEntryOf(sessionId)),
   }
 }
 
-export function createSessionList(server: Server, requests: RequestsInternal): SessionListInternal {
+export function createSessionList(server: Server, requests: RequestsInternal, options: SessionListOptions): SessionListInternal {
+  const { showSettled } = options
   const list = machine(initialListState, listTransition)
-  const reads = createListReads(server, list)
+  const reads = createListReads(server, list, { settled: () => (showSettled() ? "all" : "active"), activityShown: options.activityShown })
+  createEffect(on(showSettled, () => reads.requestReread("replace"), { defer: true }))
+  createEffect(on(options.activityShown, (shown) => {
+    if (shown) void reads.openActivity()
+  }, { defer: true }))
   const { state, send } = list
+  const turnEnded = createTurnEndReads({ state, showSettled, read: (ref, lastTurn) => void reads.readTurnEndRow(ref, lastTurn) })
   const windows = createMemo(() => state().windows)
   const more = createMemo(() => {
     const current = state()
@@ -148,17 +173,19 @@ export function createSessionList(server: Server, requests: RequestsInternal): S
   const failures = createMemo(() => state().failures)
   const degraded = createMemo(() => state().degraded)
   return {
-    ...createRowReads(state, requests, windows),
+    ...createRowReads(state, requests, windows, showSettled),
     state: createMemo(() => publicState(state())),
-    hasMore: (projectId: ProjectId) => hasMorePages(windows(), projectId),
-    moreState: (projectId: ProjectId) => moreState(more()?.get(projectId)),
-    pageFailure: (projectId: ProjectId) => failures().get(projectId),
-    pageDegraded: (projectId: ProjectId) => degraded().has(projectId),
+    hasMore: (windowKey: WindowKey) => hasMorePages(windows(), windowKey),
+    moreState: (windowKey: WindowKey) => moreState(more()?.get(windowKey)),
+    pageFailure: (windowKey: WindowKey) => failures().get(windowKey),
+    pageDegraded: (windowKey: WindowKey) => degraded().has(windowKey),
     loadMore: reads.loadMore,
     reload: () => reads.reread("replace"),
     create: (input) => createPendingSession(server, list, input),
+    markSeen: (ref, completedAt) => writeReader(server, list, ref, { kind: "seen", completedAt }),
+    settle: (ref, settled) => writeReader(server, list, ref, { kind: "settle", settled }),
     start: () => void reads.fetchFirst(),
-    apply: (event) => routeServerEvent(list, reads, event),
+    apply: (event) => routeServerEvent(list, reads, turnEnded, event),
     readRow: (row) => send({ type: "rowRead", row }),
     readStatus: (ref, status, sentAt) => send({ type: "statusRead", ref, status, sentAt }),
     readBackgroundWork: (ref, work, sentAt) => send({ type: "backgroundWorkRead", ref, work, sentAt }),

@@ -2,9 +2,12 @@
 import type { RunHostedOperation } from "@claxedo/account-contract"
 import { ServerError } from "./errors"
 
+export type AccountEvents = (init: { readonly lastEventId?: string; readonly signal: AbortSignal }) => Promise<Response>
+
 export type ServerConfig = {
   readonly serverUrl?: string
   readonly account?: RunHostedOperation
+  readonly accountEvents?: AccountEvents
   readonly thisMachineReport?: () => Promise<unknown>
   readonly cookies?: boolean
   readonly eventSocket?: boolean

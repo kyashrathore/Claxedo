@@ -47,7 +47,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: LoaderInput<ScopeI
         optionsSource: "empty",
         optionsStale: true,
         optionsLoading: false,
-        configError: error instanceof ServerError && error.status !== undefined ? error.message : "Failed to load model options",
+        configError: error instanceof ServerError ? error.message : "Failed to load model options",
       })
       return undefined
     }

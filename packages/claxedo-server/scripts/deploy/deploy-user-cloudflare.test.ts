@@ -68,6 +68,13 @@ describe("deploy-user-cloudflare", () => {
     expect(missingSecrets(deployment, provided, onWorker)).toEqual([])
   })
 
+  test("uploads the GitHub App's client secret when the environment carries it, and never requires it", () => {
+    const deployment = userCloudflareDeployment(env, { agentPlugins: false })
+    const withApp = providedSecrets(deployment, { ...env, CLAXEDO_INTEGRATION_GITHUB_CLIENT_SECRET: "app-secret" })
+    expect(Object.keys(withApp)).toEqual(["CLAXEDO_INTEGRATION_GITHUB_CLIENT_SECRET"])
+    expect(missingSecrets(deployment, {}, deployment.requiredSecrets)).toEqual([])
+  })
+
   test("prints a plan that names every resource and variable and no secret value", () => {
     const deployment = userCloudflareDeployment(env, { agentPlugins: false })
     const plan = deployPlan(deployment, workerVariables(deployment, "sha256:config"), {

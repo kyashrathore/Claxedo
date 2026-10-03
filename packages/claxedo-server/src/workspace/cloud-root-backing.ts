@@ -30,3 +30,12 @@ export async function cloudRootBacking(database: D1Database, workspaceId: string
   if (backing === undefined) throw new HostedRuntimeNotReadyError(workspaceId)
   return backing === "cloud-vm" ? "cloud" : "elsewhere"
 }
+
+/** The private repository a cloud root clones and the connection it was created through; absent when anyone can clone it. */
+export async function cloudRootPrivateRepository(database: D1Database, workspaceId: string) {
+  const row = await database
+    .prepare("select repo_url, repo_connection_id from workspaces where workspace_id = ? and deleted_at is null")
+    .bind(workspaceId)
+    .first<{ repo_url: string | null; repo_connection_id: string | null }>()
+  return row?.repo_url && row.repo_connection_id ? { repoUrl: row.repo_url, connectionId: row.repo_connection_id } : undefined
+}

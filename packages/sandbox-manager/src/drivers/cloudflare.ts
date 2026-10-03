@@ -29,6 +29,7 @@ import {
   type SandboxDriver,
   type SandboxDriverEnsureInput,
   type SandboxListingUnsupported,
+  SandboxRuntimeBootError,
   type SandboxTarget,
   type SandboxResource,
 } from "../contract"
@@ -283,6 +284,7 @@ export function createCloudflareSandboxDriver(
     if (status === 503 && data.error === "workspace-runtime did not become ready") {
       return { provisioning: true as const, retryAfterMs: 2_000 }
     }
+    if (data.exited === true) throw new SandboxRuntimeBootError(text(data.error) ?? "The workspace runtime exited before it was ready")
     if (status >= 400 || !runtimeUrl) {
       throw new Error(`Cloudflare ensure-runtime failed (${status}): ${text(data.error) ?? "no runtime url"}`)
     }

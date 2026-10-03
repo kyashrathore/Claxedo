@@ -338,6 +338,18 @@ describe("createSseReplayBuffer", () => {
     expect(replay.replayAfter(cursor).map((event) => event.payload.value)).toEqual(["2", "3"])
   })
 
+  test("replays only the latest of the events one key supersedes, without a gap", () => {
+    const replay = createSseReplayBuffer<TestEvent>({ supersedes: (event) => (event.type === "delta" ? event.value.split(":")[0] : undefined) })
+    replay.push({ type: "delta", value: "a:1" })
+    replay.push({ type: "idle", value: "done" })
+    replay.push({ type: "delta", value: "b:1" })
+    replay.push({ type: "delta", value: "a:2" })
+
+    expect(replay.replayAfter("0").map((event) => [event.id, event.payload.value])).toEqual([["2", "done"], ["3", "b:1"], ["4", "a:2"]])
+    expect(replay.replayAfter("3").map((event) => event.payload.value)).toEqual(["a:2"])
+    expect(replay.hasGap("1")).toBe(false)
+  })
+
   test("keeps terminal events in a reserve outside the normal replay window", () => {
     const replay = createSseReplayBuffer<TestEvent>({
       maxEvents: 1,

@@ -7,6 +7,7 @@ export type LinkedCatalog = {
   readonly placements: readonly PlacementRecord[]
   readonly projects: readonly Project[]
   readonly accountProjectIds: (projectId: ProjectId) => readonly ProjectId[]
+  readonly knowsWorkspace: (workspaceId: string) => boolean
 }
 
 function localProjectsByWorkspace(local: readonly PlacementRecord[]) {
@@ -49,9 +50,11 @@ export function linkAccountCatalog(local: readonly PlacementRecord[], account: A
       return home ? { ...record, placement: { ...record.placement, projectId: home } } : record
     })
   const ids = accountIdsOf(account, pairs)
+  const known = new Set(account.placements.flatMap((record) => (record.route.workspaceId ? [record.route.workspaceId] : [])))
   return {
     placements,
     projects: account.projects.filter((project) => !pairs.has(project.id)),
     accountProjectIds: (projectId) => ids.get(projectId) ?? [],
+    knowsWorkspace: (workspaceId) => known.has(workspaceId),
   }
 }

@@ -6,6 +6,7 @@ import { controlGoal, startGoal } from "./session-goal"
 import { createSessionQueue } from "./session-queue"
 import { readTurn } from "./turn"
 import { listSessions } from "./session-list"
+import { sendReaderWrite } from "./session-reader"
 import { onRuntime, sessionEndpoint, type SessionContext } from "./session-context"
 import { startSessionReads } from "./session-reads"
 import { readPart, readTurnPageBefore } from "./transcript-reads"
@@ -95,6 +96,8 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
   const newMessageId = createMessageIds()
   return {
     list: (options) => listSessions(context, options),
+    markSeen: (ref, completedAt) => sendReaderWrite(context, ref, { kind: "seen", completedAt }),
+    settle: (ref, write) => sendReaderWrite(context, ref, { kind: "settle", ...write }),
     read: (ref, shape, held) => startSessionReads(context, ref, shape, held),
     page: (ref, shape, before) => readTurnPageBefore(context, ref, shape, before),
     part: (ref, messageId, partId) => readPart(context, ref, messageId, partId),
@@ -109,11 +112,6 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
     stopBackgroundTask: async (ref, toolCallId) => stopBackgroundTask(transport, await workspaces.route(ref), ref, toolCallId),
     reply: (ref, id, answer) => replyToRequest(context, ref, id, answer),
     rename: (ref, title) => patchSession(context, ref, { title }),
-    archive: (ref, archived) => patchSession(context, ref, { time: { archived: archived ? Date.now() : 0 } }),
-    remove: async (ref) => {
-      await transport.runtimeJson<unknown>(await workspaces.route(ref), sessionEndpoint(ref), { method: "DELETE" })
-      status.forget(ref)
-    },
     newMessageId,
     ...createSessionQueue(context),
     controlGoal: async (ref, action) => controlGoal(transport, await workspaces.route(ref), ref, action),

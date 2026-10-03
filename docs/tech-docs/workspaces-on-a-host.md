@@ -375,21 +375,32 @@ because the machine publishes them.
 **D.1 The page** — the session list's reads
 (`packages/claxedo-app/src/session/list/reads.ts`) call
 `server.sessions.list`, which is `listSessions`
-(`packages/claxedo-app/src/server/session-list.ts`), and `sourcesOf` builds
-the sources:
+(`packages/claxedo-app/src/server/session-list.ts`). A project's page is built
+by `projectSources`:
 - `serverSource` reads the attached server's list: `GET
   /api/claxedo/session-list` on a loopback server (the daemon's
   `packages/claxedo-local-server/src/session/routes/meta-routes.ts`), and
   `GET /api/control/session-list` otherwise (`signedSessionList` in
   `packages/claxedo-server/src/session/list.ts`, served by
   `packages/claxedo-server/src/deployments/hosted-shared/hosted-core-app.ts`).
-  It always asks `scope=project` with the project id, `sort=human_turn_desc`,
+  It asks `scope=project` with the project id, `sort=human_turn_desc`,
   `limit` and `after`. This source is required.
 - On a signed desktop, `accountSource` reads each control-plane project that
   `accountProjectIds` pairs with the project, through the account operation
   `session.page` (`GET /api/control/session-list?scope=project`). It is
   optional, except for a project that exists only in the account catalog,
   where it is the only source and required.
+
+The Activity view's page (`every: true`) is built by `everySources`: the same
+`serverSource` with `scope=all`, every session the reader may read (the
+daemon's projection of every local workspace; on the control plane, the
+first rows of each workspace the reader owns, read in index order, and the
+sessions shared to it), and on a signed
+desktop the account's `session.activity.page` (`GET
+/api/control/session-list?scope=all`), optional, under the reader's own settled
+filter; the daemon's page then drops the sessions the account knows, and the
+page is one round of the two sources, never refilled. A `sessionId` narrows either
+to that one session, which is how the list reads one row it was not holding.
 
 `readSessionSources` (`packages/claxedo-app/src/server/session-sources.ts`)
 reads every source after the same order key and takes the first `limit` rows
@@ -400,18 +411,46 @@ then maps each row to its placement through `address.placementFor` (B.3),
 re-reading the catalog once for a directory it cannot place and dropping a
 row that stays unplaced.
 
-**D.2 Where a machine's rows come from** — the daemon's
-`startSessionRowsPublisher`
-(`packages/claxedo-local-server/src/session/publish/start-session-rows-publisher.ts`,
-started by `packages/claxedo-local-server/src/app/start-local-server.ts`)
-publishes this machine's session rows, built from its session projection and
-its embedded runtimes' status. It posts them to the session-rows URL its
-heartbeat delivers, `POST /api/claxedo/host/session-rows`
+**D.2 Where a host's rows come from** — one publisher,
+`createSessionRowsPublisher`
+(`packages/claxedo-server-core/src/session/publish/session-rows-publisher.ts`),
+with the status tracker beside it (`runtime-session-status.ts`), posts a
+host's session rows to `POST /api/claxedo/host/session-rows`
 (`HostSessionRowsRoutes` in
-`packages/claxedo-server/src/routes/hosted/host-session-rows.ts`), with the
-serving credential. The route admits each row against what that enrollment
-serves at that moment. These rows are what `/api/control/session-list` lists
-for a machine-placed workspace.
+`packages/claxedo-server/src/routes/hosted/host-session-rows.ts`). Two hosts
+compose it:
+- A machine: the daemon's `startSessionRowsPublisher`
+  (`packages/claxedo-local-server/src/session/publish/start-session-rows-publisher.ts`,
+  started by `packages/claxedo-local-server/src/app/start-local-server.ts`)
+  builds rows from its session projection and its embedded runtimes' status,
+  and posts them to the URL its heartbeat delivers with the serving
+  credential. The route admits each row against what that enrollment serves at
+  that moment.
+- A cloud runtime: `cloudSessionRows`
+  (`packages/claxedo-server/src/hosts/workspace-runtime/cloud-session-rows.ts`,
+  composed by `runtime-boot.ts` for a relay-exposed runtime with a session
+  authority) builds rows from the runtime's own store and presentation events.
+  Its full republish reads every session in the store whatever directory it is
+  filed under (a worktree session's is its worktree), with the status, open
+  requests and background work the runtime's `GET /session/status` reports.
+  It posts them with a session rows pass
+  (`packages/claxedo-server/src/session/session-rows-pass.ts`): a sandbox pass
+  naming one workspace, its owner and the lease epoch. The control plane hands
+  it over after each config push (`hosted-runtime-delivery.ts`), as its service
+  actor over the relay to the runtime's `PUT /api/claxedo/session-rows/pass`,
+  unless the runtime already holds one for the current epoch that is not yet
+  due. That reaches a process an ensure reused as well as a new one. The route
+  admits the pass only while the workspace's lease row serves that epoch and
+  its user still owns the workspace by the authority's owner rule, and each row
+  only for that one cloud workspace. An empty publication past half the pass's
+  life trades it for a fresh one, revoking the old; the runtime sends one at
+  half-life through the same renewal loop the Tasks grant uses
+  (`half-life-renewal.ts`). Before its store closes the runtime flushes what is
+  pending, so the sessions' final status is published.
+
+These rows are what `/api/control/session-list` lists for a machine- or
+cloud-placed workspace, and each status change they make sends the readers'
+`session.status.changed` notice.
 
 ## E. Opening a session and creating one
 

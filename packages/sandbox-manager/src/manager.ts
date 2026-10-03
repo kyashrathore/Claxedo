@@ -19,6 +19,8 @@ import {
   type SandboxMutationResult,
   type SandboxGarbageCollectResult,
   isSandboxListingUnsupported,
+  isSandboxRuntimeBootFailure,
+  sandboxRuntimeBootFailedError,
   type SandboxManagerOptions
 } from "./contract"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "./constants"
@@ -357,12 +359,14 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         homeRegion,
       }
     } catch (err) {
-      const error = err instanceof Error ? err.message : String(err)
-      if (lease.status === "ready") {
+      const message = err instanceof Error ? err.message : String(err)
+      const bootFailed = isSandboxRuntimeBootFailure(err)
+      const error = bootFailed ? sandboxRuntimeBootFailedError(message) : message
+      if (lease.status === "ready" && !bootFailed) {
         // A single resume blip must not demote a serving lease: the existing
         // ready target keeps resolving for relay routing while we record the
-        // error for observability only. Cold-create/acquiring failures below
-        // keep the demotion + backoff behaviour.
+        // error for observability only. A boot that exited left nothing
+        // serving, so it demotes and backs off like a cold-create failure.
         const updated = await options.leaseStore.update(workspaceId, lease.epoch, { lastError: error }, "ready")
         if (updated) {
           const resolved = await leaseTarget(updated)

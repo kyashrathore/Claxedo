@@ -466,6 +466,7 @@ describe("containing a turn whose lease was revoked", () => {
         directory: undefined,
         body: { messageID: "msg_1", parts: [{ type: "text", text: "go" }], delivery: delivery === "queue" ? "queue" : undefined },
         origin: ORIGIN,
+        humanTurn: false,
         publishGlobal: () => {},
         onTurnTarget: lostTurn.set,
       })

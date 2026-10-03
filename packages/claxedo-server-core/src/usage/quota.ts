@@ -17,7 +17,7 @@
 
 import { HARNESS_IDS, HARNESS_TABLE, harnessForProviderId, isHarnessId } from "@claxedo/agent-runtime-contract"
 import { agentUsageOrNone } from "../credentials/machine-agent-usage"
-import { credentialReach } from "../credentials/native-delivery"
+import { credentialReach } from "../credentials/reach"
 import { joinMachineLoginUsage, recordReportedUsage } from "../credentials/machine-login-report"
 import { checkCredential } from "../credentials/operations/check"
 import { isSubscriptionKind } from "../credentials/secret-material"

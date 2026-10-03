@@ -19,8 +19,9 @@ import {
  *
  * Two surfaces, two sets, both pinned here:
  *   - the hosted control plane (this Hono middleware), and
- *   - the SolidJS SPA on Cloudflare Pages, whose only header channel is
- *     packages/claxedo-app/public/_headers — the Worker never serves it.
+ *   - the SolidJS SPA, published by Cloudflare Pages and by the user
+ *     deployment's static-assets Worker, whose only header channel is
+ *     packages/claxedo-app/public/_headers — the control plane never serves it.
  */
 
 const REQUIRED = ["content-security-policy", "x-content-type-options", "x-frame-options", "referrer-policy"] as const
@@ -183,8 +184,8 @@ describe("withSecurityHeaders", () => {
 })
 
 
-describe("Cloudflare Pages headers for the SPA", () => {
-  // The web app is served by Pages, not by the Worker, so this file is the
+describe("Cloudflare static headers for the SPA", () => {
+  // The web app is served by its static publishers, not by the control-plane Worker, so this file is the
   // only surface its headers can land on. Without this test the Hono
   // middleware above would look like full coverage while the actual HTML
   // document shipped bare.

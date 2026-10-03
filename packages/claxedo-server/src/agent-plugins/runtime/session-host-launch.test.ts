@@ -85,7 +85,7 @@ async function plane() {
     context: {
       workspaceId: "workspace-1", directory: "/workspace", stateDirectory: runtimeRoot,
       fetch: (request: Request) => Promise.resolve(machine.fetch(request)),
-      registerSessionTools: () => async () => {}, unregisterSessionTools: () => async () => {},
+      registerSessionTools: () => async () => {}, unregisterSessionTools: () => async () => {}, sessionDrivenOnlyBy: () => false,
     },
   })
   const provisioner = createHostedAgentPluginRuntimeProvisioner({

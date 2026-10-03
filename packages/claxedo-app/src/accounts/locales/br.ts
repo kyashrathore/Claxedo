@@ -16,7 +16,6 @@ export default {
   "provider.connect.token.copyCommand": "Copiar o comando",
   "provider.connect.oauth.start": "Entrar",
   "provider.connect.oauth.hint": "Abre um código para digitar no navegador.",
-  "provider.connect.hosted.signsElsewhere": "O login no {{vendor}} é feito pela CLI do Codex em uma máquina que você executa. Esta implantação guarda apenas chaves coladas, então não há nada a inserir aqui.",
   "provider.connect.oauth.code.visit.prefix": "Visite ",
   "provider.connect.oauth.code.visit.link": "este link",
   "provider.connect.oauth.code.visit.suffix.harness": " para obter seu código de autorização e executar o {{harness}} nesta conta.",

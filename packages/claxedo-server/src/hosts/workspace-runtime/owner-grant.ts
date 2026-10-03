@@ -4,6 +4,8 @@ import { workspaceRuntimeOwnerGrantToken } from "@claxedo/server-core/hosts/work
 export type WorkspaceRuntimeOwnerGrant = Readonly<{
   /** The user the grant names, read without verifying: it seeds audit records, and the control plane verifies. */
   readonly userId: string | undefined
+  /** The owner's actor, read the same way: the actor every turn of a session only the owner drove was started by. */
+  readonly actorId: string | undefined
   readonly expiresAt: number | undefined
   /** The grant while it is live; nothing once it has expired, so an in-process call carries no dead bearer. */
   current(): string | undefined
@@ -12,11 +14,12 @@ export type WorkspaceRuntimeOwnerGrant = Readonly<{
 }>
 
 /** The claims a control-plane-minted grant carries, read without verifying; nothing for a token that is not a JWT. */
-function claims(token: string): { userId?: string; expiresAt?: number } {
+function claims(token: string): { userId?: string; actorId?: string; expiresAt?: number } {
   try {
     const payload = decodeJwt(token)
     return {
       ...(typeof payload.user_id === "string" && payload.user_id ? { userId: payload.user_id } : {}),
+      ...(typeof payload.actor_id === "string" && payload.actor_id ? { actorId: payload.actor_id } : {}),
       ...(typeof payload.exp === "number" ? { expiresAt: payload.exp * 1_000 } : {}),
     }
   } catch {
@@ -41,10 +44,13 @@ export function workspaceRuntimeOwnerGrant(
   if (!initial) return undefined
   const now = options.now ?? Date.now
   let token = initial
-  let { userId, expiresAt } = claims(initial)
+  let { userId, actorId, expiresAt } = claims(initial)
   return {
     get userId() {
       return userId
+    },
+    get actorId() {
+      return actorId
     },
     get expiresAt() {
       return expiresAt
@@ -54,6 +60,7 @@ export function workspaceRuntimeOwnerGrant(
       token = next
       const renewed = claims(next)
       userId = renewed.userId
+      actorId = renewed.actorId
       expiresAt = renewed.expiresAt
     },
   }

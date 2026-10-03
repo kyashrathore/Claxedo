@@ -9,8 +9,9 @@ import { waitForTitle } from "../harness/turn-observations"
 export async function run() {
   const stack = await startHostedCloudStack("h19-cloud-pi")
   try {
-    const stored = await hostedFetch(stack, "/auth/openai?harness=pi", {
-      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ auth: { key: "test-key" } }),
+    const stored = await hostedFetch(stack, "/api/claxedo/credentials", {
+      method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider_id: "openai", kind: "api_key", source: "managed", label: "OpenAI", secret: "test-key" }),
     }, stack.owner)
     assert.equal(stored.status, 200, `Storing the signed Pi account: ${await stored.text()}`)
     const workspace = await hostedWorkspace(stack, stack.owner, "h19-pi")

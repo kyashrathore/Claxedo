@@ -116,7 +116,7 @@ function AccountItem(props: { readonly account: AccountWords; readonly row: Harn
           />
         </span>
       </div>
-      <Show when={account().cloudConsent}>{(consent) => <CloudConsentSwitch account={account()} consent={consent()} accounts={accounts()} />}</Show>
+      <Show when={accounts().onMachine() && account().cloudConsent}>{(consent) => <CloudConsentSwitch account={account()} consent={consent()} accounts={accounts()} />}</Show>
     </div>
   )
 }
@@ -139,6 +139,7 @@ function HarnessHeader(props: { readonly harness: Harness; readonly connecting: 
 }
 
 export function AgentHarnessRow(props: HarnessRowProps) {
+  const t = useAccountsText()
   const dialog = useDialog()
   const [connecting, setConnecting] = createSignal(false)
   const rows = useAccountRows(props)
@@ -171,6 +172,9 @@ export function AgentHarnessRow(props: HarnessRowProps) {
           >
             <For each={rows()}>{(account) => <AccountItem account={account} row={props} selected={selected() === account.key} openConnect={openConnect} />}</For>
           </RadioGroup>
+          <Show when={props.snapshot.cloudOnly}>
+            <p class="mt-2 text-12-regular text-text-weak">{t("settings.providers.agents.cloudChoiceShared", { vendor: props.harness.vendor })}</p>
+          </Show>
         </Show>
       </div>
     </div>

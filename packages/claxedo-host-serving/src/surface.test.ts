@@ -52,8 +52,6 @@ describe("deny — the machine's credential and inventory families", () => {
     "/provider",
     "/provider?harness=opencode",
     "/provider/anthropic",
-    "/auth",
-    "/auth/anthropic",
     "/config",
     "/config?harness=opencode",
     // The project of any workspace this machine holds.

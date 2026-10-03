@@ -49,8 +49,8 @@ import {
   credentialById,
   updateCredentialHealth,
   updateCredentialSecret,
-  SINGLE_TENANT_ORG,
 } from "@claxedo/server-core/credentials/registry"
+import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/partition"
 import { isRefreshableCredential, refreshStoredCredential } from "@claxedo/server-core/credentials/operations/refresh"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import {

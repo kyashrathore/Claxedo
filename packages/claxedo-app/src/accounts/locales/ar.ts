@@ -16,7 +16,6 @@ export default {
   "provider.connect.token.copyCommand": "نسخ الأمر",
   "provider.connect.oauth.start": "تسجيل الدخول",
   "provider.connect.oauth.hint": "يفتح رمزًا لإدخاله في متصفحك.",
-  "provider.connect.hosted.signsElsewhere": "يسجّل {{vendor}} الدخول من Codex CLI على جهاز تشغّله أنت. لا يحتفظ هذا النشر إلا بالمفاتيح الملصقة، لذا لا يوجد ما تدخله هنا.",
   "provider.connect.oauth.code.visit.prefix": "قم بزيارة ",
   "provider.connect.oauth.code.visit.link": "هذا الرابط",
   "provider.connect.oauth.code.visit.suffix.harness": " للحصول على رمز التفويض وتشغيل {{harness}} على هذا الحساب.",

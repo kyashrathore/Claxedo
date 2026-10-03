@@ -1994,15 +1994,15 @@ test("delete publishes the removed identity only after durable deletion succeeds
   for (const fail of [false, true]) {
     const events: AgentEventEnvelope[] = []
     const order: string[] = []
-    const h = harness({ onClose: () => { order.push("harness") } })
+    const h = harness({ onClose: () => { order.push("harness"); if (fail) throw new Error("harness refused the close") } })
     await seed(h, "deleted")
     const app = sessionRoutes(h, {
-      afterDeleteSession: () => { order.push("store"); if (fail) throw new Error("store deletion failed") },
       publishGlobal: (event) => { order.push("event"); events.push(event) },
     })
     const result = await app.request("http://localhost/session/deleted", { method: "DELETE" })
     expect(result.status).toBe(fail ? 500 : 200)
-    expect(order).toEqual(fail ? ["harness", "store"] : ["harness", "store", "event"])
+    expect(order).toEqual(fail ? ["harness"] : ["harness", "event"])
+    expect(h.store.getSession("deleted") === null).toBe(!fail)
     expect(events).toEqual(fail ? [] : [{ directory: WORKSPACE, payload: { type: "session.deleted", properties: { info: { id: "deleted", directory: WORKSPACE } } } }])
   }
 })
@@ -2494,22 +2494,23 @@ describe("a share level reaches the runtime as the authority's answer to a write
   })
 })
 
-/** Only the reads the delete cascade makes; every other member refuses rather than pretending. */
-function startupChildHost(children: Map<string, string[]>): ChildSessionHost {
-  const rows = (parentSessionId: string) => (children.get(parentSessionId) ?? [])
-    .map(childSessionId => ({ parentSessionId, childSessionId, subagentKey: `key-${childSessionId}`, status: "active" }))
-  const unused = (name: string) => () => { throw new Error(`startupChildHost.${name} is not part of the delete cascade`) }
+/**
+ * Admits a child create under its parent and nothing else: a delete reads the
+ * tree from the store's parent links, so this host never answers for one.
+ */
+function startupChildHost(): ChildSessionHost {
+  const unused = (name: string) => () => { throw new Error(`startupChildHost.${name} is not part of a child create`) }
   return {
-    children: async (parentSessionId) => rows(parentSessionId),
-    activeChildren: async (parentSessionId) => rows(parentSessionId),
-    childOf: async (childSessionId) => [...children.keys()].flatMap(rows).find(row => row.childSessionId === childSessionId),
-    recover: async () => {},
-    dispose: () => {},
-    withCreation: unused("withCreation"),
+    withCreation: (_parentSessionId, _directory, create) => create(),
+    activeChildren: async () => [],
+    admitCreated: async ({ childSessionId }) => ({ subagentKey: `key-${childSessionId}` }),
+    children: unused("children"),
+    childOf: unused("childOf"),
     deriveSessionId: unused("deriveSessionId"),
-    admitCreated: unused("admitCreated"),
     onTurnStarted: unused("onTurnStarted"),
     onTurnSettled: unused("onTurnSettled"),
+    recover: async () => {},
+    dispose: () => {},
   }
 }
 
@@ -2522,7 +2523,6 @@ function startupRouteFixture(options: {
   configUpdate?: HarnessConfigOperations["update"]
   refuseDelete?: () => boolean
   beforeProviderDelete?: () => Promise<void>
-  children?: Map<string, string[]>
 } = {}) {
   const lifecycle: SessionLifecycleEvent[] = []
   const replies: string[] = []
@@ -2564,7 +2564,7 @@ function startupRouteFixture(options: {
     getSession: (_c, _directory, id) => h.store.getSession(id) ?? null,
     listSessions: async () => h.store.listSessions(WORKSPACE),
     sessionStarts: h.store.sessionStarts,
-    ...(options.children ? { childSessions: startupChildHost(options.children) } : {}),
+    childSessions: startupChildHost(),
     ...(options.beforeProviderDelete ? { beforeDeleteSession: options.beforeProviderDelete } : {}),
     sessionAccessPolicy: policy,
     publishSessionLifecycle: event => lifecycle.push(event),
@@ -2707,7 +2707,6 @@ describe("public startup question lifecycle", () => {
     const configuring = new Promise<void>(resolve => { entered = resolve })
     const held = new Promise<void>(resolve => { release = resolve })
     const f = startupRouteFixture({
-      children: new Map([["parent", ["child"]]]),
       configUpdate: async () => {
         entered(); await held
         return { harness: CODEX, agent: null, variant: null }
@@ -2717,7 +2716,7 @@ describe("public startup question lifecycle", () => {
     await parent.started
     await f.app.request("/question/question-parent/reply", answer())
     expect((await parent.response).status).toBe(201)
-    const child = f.launch("child", { harness: CODEX })
+    const child = f.launch("child", { harness: CODEX, parentID: "parent" })
     await child.started
     await f.app.request("/question/question-child/reply", answer())
     await configuring
@@ -2765,12 +2764,12 @@ describe("public startup question lifecycle", () => {
   })
 
   test("deleting a parent gives back the creation id of every child it cascades to", async () => {
-    const f = startupRouteFixture({ children: new Map([["parent", ["child"]]]) })
+    const f = startupRouteFixture()
     const parent = f.launch("parent")
     await parent.started
     await f.app.request("/question/question-parent/reply", answer())
     expect((await parent.response).status).toBe(201)
-    const child = f.launch("child")
+    const child = f.launch("child", { parentID: "parent" })
     await child.started
     await f.app.request("/question/question-child/reply", answer())
     expect((await child.response).status).toBe(201)

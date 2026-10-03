@@ -41,21 +41,27 @@ export type McpToolAccess = Readonly<{
   write: boolean
   /** The scope a user credential must hold. */
   scope: McpScope
-  /** Human-only, annotated `destructiveHint`, and requires accepted host elicitation. */
+  /** Annotated `destructiveHint`, and runs only once the host's elicitation is accepted. */
   destructive?: boolean
   /** The Tasks operation this tool performs; a tool that names one exists only while the caller's grant carries it. */
   operation?: TasksOperation
   /** App plugin authoring; a tool that needs it exists only while the client carries the grant. */
   appPlugins?: true
+  /**
+   * Inside a session, exists only while the composition answers that only the
+   * workspace's owner has driven it; a composition with no answer serves none.
+   */
+  ownerDriven?: true
 }>
 
 /** What the client was granted beyond the credential, read from the client rather than the credential. */
-export type McpToolGrants = Readonly<{ tasks?: readonly TasksOperation[]; appPlugins?: boolean }>
+export type McpToolGrants = Readonly<{ tasks?: readonly TasksOperation[]; appPlugins?: boolean; ownerDriven?: boolean }>
 
 export function toolGrants(client: ClaxedoMcpClient): McpToolGrants {
   return {
     ...(client.tasks ? { tasks: client.tasks.operations } : {}),
     appPlugins: client.appPlugins?.allowed() === true,
+    ownerDriven: client.ownerDriven?.() === true,
   }
 }
 
@@ -77,7 +83,17 @@ export type McpToolContext = Readonly<{
 
 export class McpAccessDenied extends Error {
   constructor(
-    readonly code: "audience" | "read-only" | "scope" | "cross-machine" | "own-children-only" | "recursion" | "tasks" | "app-plugins",
+    readonly code:
+      | "audience"
+      | "read-only"
+      | "scope"
+      | "cross-machine"
+      | "own-workspace-only"
+      | "own-children-only"
+      | "owner-driven"
+      | "recursion"
+      | "tasks"
+      | "app-plugins",
     message: string,
   ) {
     super(message)
@@ -117,6 +133,9 @@ export function assertToolAccess(
     }
   }
   if (access.appPlugins && !grants.appPlugins) throw appPluginsDenied(name)
+  if (access.ownerDriven && credential.kind === "runtime" && !grants.ownerDriven) {
+    throw new McpAccessDenied("owner-driven", `${name} runs only in a session only its owner has driven`)
+  }
 }
 
 export function appPluginsDenied(tool: string): McpAccessDenied {

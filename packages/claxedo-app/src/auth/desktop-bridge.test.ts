@@ -4,10 +4,15 @@ import { desktopAccountBridge, desktopAccountState } from "./desktop-bridge"
 
 const member = () => Promise.resolve(undefined)
 
-test("desktop bridge: only a preload exposing all five account members is a bridge", () => {
-  const account = { state: member, onState: () => () => undefined, signIn: member, signOut: member, run: member }
+test("desktop bridge: only a preload exposing every account member, its event stream's included, is a bridge", () => {
+  const unsubscribe = () => () => undefined
+  const account = {
+    state: member, onState: unsubscribe, signIn: member, signOut: member, run: member,
+    streamOpen: member, streamStart: member, streamClose: member, onStreamChunk: unsubscribe, onStreamEnd: unsubscribe, onStreamError: unsubscribe,
+  }
   expect(desktopAccountBridge({ api: { account } })).toBe(account)
   expect(desktopAccountBridge({ api: { account: { ...account, run: undefined } } })).toBeUndefined()
+  expect(desktopAccountBridge({ api: { account: { ...account, onStreamChunk: undefined } } })).toBeUndefined()
   expect(desktopAccountBridge({})).toBeUndefined()
 })
 

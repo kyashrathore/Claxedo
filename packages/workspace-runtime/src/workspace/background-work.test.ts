@@ -62,7 +62,7 @@ async function fixture(backgroundTasks?: BackgroundTaskOperations) {
   const statuses = async () => (await request("/session/status")).json()
   const openStatus = async () => ((await (await request("/session/s?view=open")).json()) as { status: unknown }).status
   expect((await request("/session", "POST", { id: "s" })).status).toBe(201)
-  return { transport, brokers, frames, prompt, statuses, openStatus, stopTask, capabilities, request }
+  return { host, transport, brokers, frames, prompt, statuses, openStatus, stopTask, capabilities, request }
 }
 
 test("background work started in a turn outlives it as a status fact that never holds the next prompt", async () => {
@@ -73,6 +73,8 @@ test("background work started in a turn outlives it as a status fact that never 
   expect(await f.statuses()).toEqual({ s: { type: "idle", backgroundWork: running } })
   expect(await f.openStatus()).toEqual({ value: { type: "idle", backgroundWork: running } })
 
+  expect(f.host.sessionStatus()).toEqual(await f.statuses())
+
   expect((await f.prompt("what else?")).status).toBe(200)
   expect(f.transport.turns).toHaveLength(2)
   expect(f.transport.turns[1]!.session).toBe(f.transport.turns[0]!.session)
@@ -81,6 +83,7 @@ test("background work started in a turn outlives it as a status fact that never 
   await f.brokers[0]!.publish({ type: "background-work", agents: 1, shells: 0, other: 0 })
   await f.brokers[0]!.publish({ type: "background-work", agents: 0, shells: 0, other: 0 })
   expect(await f.statuses()).toEqual({})
+  expect(f.host.sessionStatus()).toEqual({})
   expect(await f.openStatus()).toEqual({ value: null })
   expect(f.frames.filter((frame) => frame.type === "session.background-work")).toEqual([
     { type: "session.background-work", properties: { sessionID: "s", agents: 1, shells: 0, other: 0 } },

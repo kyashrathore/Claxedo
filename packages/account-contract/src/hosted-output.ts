@@ -37,33 +37,18 @@ export function withArrays(...fields: string[]) {
 }
 
 export function sessionPeople(raw: unknown): DecodeResult<Record<string, unknown>> {
-  const shape = withArrays("grants", "teams")(raw)
+  const shape = withArrays("grants")(raw)
   if (!shape.ok) return shape
   if (typeof shape.value.can_manage_shares !== "boolean") {
     return { ok: false, reason: 'expected a boolean "can_manage_shares"' }
   }
-  const teams = asArray(shape.value.teams)
-  const grants = asArray(shape.value.grants)
-  for (const [index, team] of teams.entries()) {
-    const row = object(team)
-    if (!row.ok) return { ok: false, reason: `expected teams[${index}] to be an object` }
-    for (const field of ["team_id", "name", "is_shared"] as const) {
-      const expected = field === "is_shared" ? "boolean" : "string"
-      if (typeof row.value[field] !== expected) {
-        return { ok: false, reason: `expected teams[${index}].${field} to be a ${expected}` }
-      }
-    }
-  }
-  for (const [index, grant] of grants.entries()) {
+  for (const [index, grant] of asArray(shape.value.grants).entries()) {
     const row = object(grant)
     if (!row.ok || typeof row.value.grant_id !== "string") {
       return { ok: false, reason: `expected grants[${index}].grant_id to be a string` }
     }
-
-    for (const field of ["granted_to_user_id", "granted_to_org_id", "granted_to_team_id"] as const) {
-      if (row.value[field] != null && typeof row.value[field] !== "string") {
-        return { ok: false, reason: `expected grants[${index}].${field} to be a string when present` }
-      }
+    if (typeof row.value.granted_to_user_id !== "string") {
+      return { ok: false, reason: `expected grants[${index}].granted_to_user_id to be a string` }
     }
   }
   return shape

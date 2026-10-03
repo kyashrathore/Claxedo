@@ -6,7 +6,8 @@ import { invalidateFor } from "./queries"
 import type { StatusOwner } from "./status"
 import { createTurnWrites, type TurnWrites } from "./turn-writes"
 import type { Workspaces } from "./workspaces"
-import { frameFromWire, frameSessionId, placementDirectory, serverEventFromFrame, type Frame } from "./wire/frames"
+import type { SessionLocation } from "./types"
+import { frameFromWire, frameSessionId, placementDirectory, serverEventFromFrame, STATUS_NOTICE, type Frame } from "./wire/frames"
 
 export type EventIntake = {
   readonly frame: (raw: unknown) => void
@@ -20,6 +21,7 @@ type IntakeInput = {
   readonly queryClient: QueryClient
   readonly workspaces: Workspaces
   readonly status: StatusOwner
+  readonly streamed: (ref: SessionLocation) => boolean
 }
 
 type Listeners = Set<(event: ServerEvent) => void>
@@ -53,19 +55,21 @@ function unplacedDirectory(workspaces: Workspaces, frame: Frame): string | undef
   return directory && !workspaces.address.placementFor(directory, frame.workspaceId, frameSessionId(frame)) ? directory : undefined
 }
 
-function mapFrame(workspaces: Workspaces, publish: Publish, frame: Frame): void {
-  const event = serverEventFromFrame(frame, workspaces.address)
-  if (event) publish(event)
+function mapFrame(input: IntakeInput, publish: Publish, frame: Frame): void {
+  const event = serverEventFromFrame(frame, input.workspaces.address)
+  if (!event) return
+  if (frame.type === STATUS_NOTICE && "ref" in event && input.streamed(event.ref)) return
+  publish(event)
 }
 
-async function learnThenMap(workspaces: Workspaces, publish: Publish, frame: Frame, directory: string) {
+async function learnThenMap(input: IntakeInput, publish: Publish, frame: Frame, directory: string) {
   try {
-    await workspaces.learn(directory)
+    await input.workspaces.learn(directory)
   } catch (error) {
     console.error("The placement catalog could not be re-read for an event frame", { type: frame.type, directory, error: toAppError(error) })
     return publish({ type: "streamGap" })
   }
-  mapFrame(workspaces, publish, frame)
+  mapFrame(input, publish, frame)
 }
 
 export function createEventIntake(input: IntakeInput): EventIntake {
@@ -74,10 +78,10 @@ export function createEventIntake(input: IntakeInput): EventIntake {
   let learning: Promise<void> | undefined
   const mapInOrder = (frame: Frame) => {
     const unplaced = unplacedDirectory(input.workspaces, frame)
-    return unplaced ? learnThenMap(input.workspaces, publish, frame, unplaced) : mapFrame(input.workspaces, publish, frame)
+    return unplaced ? learnThenMap(input, publish, frame, unplaced) : mapFrame(input, publish, frame)
   }
   const intake = (frame: Frame) => {
-    if (!learning && !unplacedDirectory(input.workspaces, frame)) return mapFrame(input.workspaces, publish, frame)
+    if (!learning && !unplacedDirectory(input.workspaces, frame)) return mapFrame(input, publish, frame)
     const tail = (learning ?? Promise.resolve()).then(() => mapInOrder(frame))
     learning = tail
     void tail.then(() => {

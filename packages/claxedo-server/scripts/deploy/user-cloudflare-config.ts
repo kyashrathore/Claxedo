@@ -32,12 +32,16 @@ export type UserCloudflareDeployment = UserCloudflareTarget & Readonly<{
   authMethods: readonly BetterAuthMethod[]
   emailFrom?: string
   providerClientIds: Readonly<Record<string, string>>
+  /** The GitHub App the GitHub connection's device sign-in runs on; absent, GitHub connects by pasted token. */
+  integrationClientIds: Readonly<Record<string, string>>
   requestLimiterNamespaceId: string
   artifact: CertifiedHostedWorkerArtifact
   documentsBucket: string
   agentPluginsBucket?: string
   sandbox?: Readonly<{ driver: SandboxDriver; variables: Readonly<Record<string, string>> }>
   requiredSecrets: readonly string[]
+  /** Uploaded when the environment carries them; a deploy without them still publishes. */
+  optionalSecrets: readonly string[]
 }>
 
 function setting(env: NodeJS.ProcessEnv, name: string, fallback?: string) {
@@ -145,6 +149,9 @@ export function userCloudflareDeployment(
     }),
   )
 
+  const githubAppClientId = env.CLAXEDO_INTEGRATION_GITHUB_CLIENT_ID?.trim()
+  const integrationClientIds: Record<string, string> = githubAppClientId ? { CLAXEDO_INTEGRATION_GITHUB_CLIENT_ID: githubAppClientId } : {}
+
   const driver = fullHosted ? (profile.sandboxDriver as SandboxDriver) : undefined
   if (driver && !(driver in SANDBOX_DRIVER_SECRETS)) {
     throw new Error(`full-hosted supports drivers ${Object.keys(SANDBOX_DRIVER_SECRETS).join(", ")}; got ${driver}`)
@@ -172,6 +179,7 @@ export function userCloudflareDeployment(
     authMethods,
     ...(emailFrom ? { emailFrom } : {}),
     providerClientIds,
+    integrationClientIds,
     requestLimiterNamespaceId: allocatedRequestLimiterNamespaceId(target.deploymentId, target.workerName),
     artifact,
     documentsBucket: setting(env, "CLAXEDO_DOCUMENTS_BUCKET", `${target.workerName}-documents`),
@@ -189,6 +197,7 @@ export function userCloudflareDeployment(
       ...(artifact.agentPlugins ? ["CLAXEDO_CREDENTIALS_KEK"] : []),
       ...(driver ? SANDBOX_DRIVER_SECRETS[driver] : []),
     ],
+    optionalSecrets: ["CLAXEDO_INTEGRATION_GITHUB_CLIENT_SECRET"],
   })
 }
 
@@ -232,6 +241,7 @@ export function workerVariables(deployment: UserCloudflareDeployment, configurat
     CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME: deployment.organization.name,
     ...(deployment.emailFrom ? { CLAXEDO_EMAIL_FROM: deployment.emailFrom } : {}),
     ...deployment.providerClientIds,
+    ...deployment.integrationClientIds,
     ...deployment.sandbox?.variables,
     ...(deployment.artifact.agentPlugins
       ? { CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1", CLAXEDO_PUBLIC_URL: deployment.apiOrigin }

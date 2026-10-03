@@ -30,6 +30,7 @@ export const RELAY_ALLOWED_REQUEST_HEADERS = [
   "X-Claxedo-Runner",
   "X-Claxedo-Model",
   "X-Claxedo-Draft-Id",
+  "X-Claxedo-Session-Registration-Operation",
   "X-Claxedo-Binary",
 ].join(", ")
 

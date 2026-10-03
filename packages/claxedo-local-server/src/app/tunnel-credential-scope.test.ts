@@ -332,8 +332,6 @@ const CREDENTIAL_CALLS = [
   { method: "GET", path: "/provider/auth" },
   { method: "POST", path: "/provider/anthropic/oauth/authorize", body: { method: 0 } },
   { method: "POST", path: "/provider/anthropic/oauth/callback", body: { method: 0, code: "stolen-code" } },
-  { method: "PUT", path: "/auth/anthropic", body: { type: "api", key: "sk-attacker" } },
-  { method: "DELETE", path: "/auth/anthropic" },
   { method: "GET", path: "/config" },
   // The same families reached by climbing out of the workspace prefix the
   // tunnel is about to paste this path behind.

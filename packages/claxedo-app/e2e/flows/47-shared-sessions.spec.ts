@@ -73,7 +73,6 @@ test("47 shared sessions: follow sees live turns, send reaches the owner, revoke
 
   await share("DELETE")
   if (isMobile) await page.getByRole("button", { name: UI.openRail }).click()
-  await section.getByRole("button", { name: "Refresh shared sessions" }).click()
   await expect(row).toHaveCount(0)
   if (isMobile) await page.getByRole("button", { name: UI.hideSidebar }).click()
   await expect(page.getByTestId("session-unavailable")).toBeVisible()
@@ -83,8 +82,9 @@ test("47 a send share's turn spends the session owner's account, never the sende
   test.setTimeout(150_000)
   const recipient = await ownersColleague(signed, "Grace Recipient")
   for (const [person, key] of [[signed.owner.person, "ss47-owner-key"], [recipient.person, "ss47-recipient-key"]] as const) {
-    const stored = await hostedFetch(signed.hosted, "/auth/openai?harness=pi", {
-      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ auth: { key } }),
+    const stored = await hostedFetch(signed.hosted, "/api/claxedo/credentials", {
+      method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider_id: "openai", kind: "api_key", source: "managed", label: "OpenAI", secret: key }),
     }, person)
     expect(stored.status, await stored.text()).toBe(200)
   }

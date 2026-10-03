@@ -3,6 +3,7 @@ import type { McpOAuthDiscovery } from "./discovery"
 import {
   createMcpOAuthIntegration,
   createMcpOAuthIntegrationFromAttempt,
+  isMcpOAuthIntegrationId,
   mcpOAuthIntegrationId,
 } from "./integration"
 
@@ -32,6 +33,11 @@ describe("MCP OAuth Connections integration", () => {
     expect(await mcpOAuthIntegrationId(input)).toBe(await mcpOAuthIntegrationId(input))
     expect(await mcpOAuthIntegrationId({ ...input, serverName: "issues" })).not.toBe(await mcpOAuthIntegrationId(input))
     expect(await mcpOAuthIntegrationId({ ...input, pluginInstanceId: "other@sha256:abc" })).not.toBe(await mcpOAuthIntegrationId(input))
+  })
+
+  it("recognizes its own identities and no built-in integration's", async () => {
+    expect(isMcpOAuthIntegrationId(await mcpOAuthIntegrationId({ pluginInstanceId: "plugin@sha256:abc", serverName: "docs" }))).toBe(true)
+    for (const id of ["github", "linear", "mcp-short", "mcp-" + "a".repeat(44)]) expect(isMcpOAuthIntegrationId(id)).toBe(false)
   })
 
   it("creates a PKCE authorization request bound to the exact resource", async () => {

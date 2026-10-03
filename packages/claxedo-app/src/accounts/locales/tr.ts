@@ -16,7 +16,6 @@ export default {
   "provider.connect.token.copyCommand": "Komutu kopyala",
   "provider.connect.oauth.start": "Oturum aç",
   "provider.connect.oauth.hint": "Tarayıcınızda gireceğiniz bir kod açar.",
-  "provider.connect.hosted.signsElsewhere": "{{vendor}} oturumu, sizin çalıştırdığınız bir makinedeki Codex CLI üzerinden açılır. Bu dağıtım yalnızca yapıştırılan anahtarları tutar, bu yüzden burada girilecek bir şey yok.",
   "provider.connect.oauth.code.visit.prefix": "Hesabınızı bağlamak ve OpenCode'da modelleri kullanmak için ",
   "provider.connect.oauth.code.visit.link": "bu bağlantıya",
   "provider.connect.oauth.code.visit.suffix.harness": " adresinden yetkilendirme kodunuzu alın ve {{harness}} uygulamasını bu hesapla çalıştırın.",

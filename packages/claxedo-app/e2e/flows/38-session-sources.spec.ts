@@ -146,7 +146,7 @@ test("38 a stopped sandbox's session paints its stored surface, and its project 
 
   await page.goto(`${signedCloud.url}${sessionRoute(workspace.id, sessionId)}`)
   await expect(page.getByText("Kept by the control plane")).toBeVisible()
-  await expect(page.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Stored turn" })).toBeVisible()
+  await expect(page.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Stored turn", exact: true })).toBeVisible()
 
   expect(reads.filter((read) => read.includes(`/api/control/sessions/${sessionId}/outline`) && read.includes("rows=")), "one first read").toHaveLength(1)
   expect(reads.filter((read) => read.includes(`/workspaces/${workspace.id}/`)), "runtime reads of the stopped sandbox").toEqual([])
@@ -165,7 +165,7 @@ test("38 desktop: a stopped sandbox's session paints its stored surface and wake
   await signedDesktop.window.reload()
   await signInDesktop(signedCloud, signedDesktop, page)
   const window = signedDesktop.window
-  const row = window.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Stored turn" })
+  const row = window.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "Stored turn", exact: true })
   await expect(row).toBeVisible()
   await row.click()
   await expect(window.getByText("Kept by the control plane")).toBeVisible()

@@ -4,7 +4,7 @@ import type { QueryClient } from "@tanstack/solid-query"
 import type { SharedSessions } from "./shared-sessions"
 import type { StartupState } from "./startup"
 import type { RuntimeCommand } from "@claxedo/agent-runtime-contract"
-import type { Account, AccountCheck, AccountSources, EffectiveAccounts, HostedAccountSources, MachineLogin } from "./account-types"
+import type { Account, AccountCheck, AccountSources, EffectiveAccounts, MachineLogin } from "./account-types"
 import type { CloudCreateInput, CloudWorkspace, CodeHostRepository, WorkspaceRuntime } from "./cloud-types"
 import type { HarnessOptions } from "./harness-types"
 import type { ConnectionState, ServerEvent } from "./events"
@@ -75,6 +75,7 @@ import type {
   SessionGoal,
   SessionListInput,
   SessionPage,
+  SessionReader,
   SessionReads,
   SessionLocation,
   SessionRow,
@@ -88,6 +89,8 @@ import type { LivePlugin } from "./live-plugin-types"
 
 export type SessionsApi = {
   readonly list: (input: SessionListInput) => Promise<SessionPage>
+  readonly markSeen: (ref: SessionLocation, completedAt: number) => Promise<SessionReader>
+  readonly settle: (ref: SessionLocation, write: { readonly settled: true; readonly through: number } | { readonly settled: false }) => Promise<SessionReader>
   readonly read: (ref: SessionLocation, shape: PageShape, held?: HeldSessionReads) => SessionReads
   readonly page: (ref: SessionLocation, shape: PageShape, before: string) => Promise<TranscriptPage>
   readonly part: (ref: SessionLocation, messageId: string, partId: string) => Promise<TranscriptPart>
@@ -98,8 +101,6 @@ export type SessionsApi = {
   readonly stopBackgroundTask: (ref: SessionLocation, toolCallId: string) => Promise<BackgroundTaskStop>
   readonly reply: (ref: SessionLocation, requestId: RequestId, reply: AgentRequestReply) => Promise<void>
   readonly rename: (ref: SessionLocation, title: string) => Promise<void>
-  readonly archive: (ref: SessionLocation, archived: boolean) => Promise<void>
-  readonly remove: (ref: SessionLocation) => Promise<void>
   readonly newMessageId: () => string
   readonly queue: (ref: SessionLocation) => Promise<readonly QueuedPrompt[] | undefined>
   readonly controlQueued: (ref: SessionLocation, seq: number, action: QueuedPromptAction) => Promise<QueuedPromptControl>
@@ -129,7 +130,6 @@ export type TerminalsApi = {
   readonly update: (placementId: PlacementId, terminalId: TerminalId, input: TerminalUpdateInput) => Promise<void>
   readonly remove: (placementId: PlacementId, terminalId: TerminalId) => Promise<void>
   readonly presence: (placementId: PlacementId, terminalId: TerminalId) => Promise<TerminalPresence>
-  readonly agents: (placementId: PlacementId) => Promise<readonly string[]>
   readonly agentStatus: (placementId: PlacementId, terminalId: TerminalId) => Promise<TerminalAgentStatus | undefined>
   readonly attach: (input: TerminalAttachInput) => Promise<TerminalStream>
 }
@@ -153,12 +153,12 @@ export type AccountsApi = {
   readonly select: (ids: readonly string[]) => Promise<void>
   readonly selectMachineLogin: (providerIds: readonly string[]) => Promise<void>
   readonly setSource: (providerIds: readonly string[], source: AccountSource) => Promise<void>
-  readonly setHostedSource: (harness: string, providerId: string, source: AccountSource) => Promise<void>
   readonly setScope: (ids: readonly string[], scope: AccountScope) => Promise<void>
   readonly remove: (ids: readonly string[]) => Promise<void>
   readonly check: (id: string) => Promise<AccountCheck>
   readonly checkMachineLogin: (harness: string) => Promise<readonly MachineLogin[]>
   readonly rescan: () => Promise<void>
+  readonly refresh: () => Promise<void>
 }
 
 export type MarketplaceApi = {
@@ -212,7 +212,6 @@ export type ServerQueries = {
     readonly effective: () => FetchQuery<EffectiveAccounts>
     readonly machineLogins: () => FetchQuery<readonly MachineLogin[]>
     readonly sources: () => FetchQuery<AccountSources>
-    readonly hostedSources: (harness: string) => FetchQuery<HostedAccountSources>
   }
   readonly usage: { readonly summary: (input: UsageRequest) => FetchQuery<UsageSummary> }
   readonly marketplace: {

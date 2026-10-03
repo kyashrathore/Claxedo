@@ -7,45 +7,41 @@ import { beforeEach, describe, expect, test, vi } from "vitest"
 // Cloudflare sandbox can be enumerated (DO namespaces are not listable), so it
 // is what the control plane's GC sweep depends on.
 const sandboxStub = {
-  setOutboundByHosts: vi.fn(async (_handlers: Record<string, { method: string; params: unknown }>) => {}),
+  setCredentialHosts: vi.fn(async (_sandboxId: string, _hosts: readonly string[]) => {}),
   ensureWorkspaceRuntime: vi.fn(async (
     _command: string,
     _env: Record<string, string>,
     _port: number,
     _options: { reuseRunning: boolean },
-  ) => true),
+  ): Promise<{ state: "ready" } | { state: "preparing" } | { state: "exited"; reason: string }> => ({ state: "ready" })),
   workspaceRuntimeReady: vi.fn(async () => true),
   destroy: vi.fn(async () => {}),
   createBackup: vi.fn(async () => ({ id: "bk_1", dir: "/workspace" })),
   restoreBackup: vi.fn(async () => {}),
   containerFetch: vi.fn(async () => new Response("ok")),
+  wsConnect: vi.fn(async (_request: Request, _port: number) => new Response("ok")),
 }
 const getSandboxMock = vi.fn(() => sandboxStub)
-const containerProxyStub = class ContainerProxy { readonly stub = "container-proxy" }
+const lifecycle: string[] = []
 
 // `@cloudflare/containers` cannot be imported outside workerd (its module scope
-// pulls `cloudflare:workers`), so the one piece of the base class our code
-// depends on is reproduced exactly: `outboundHandlers` is a registry-backed
-// static ACCESSOR, keyed by class name. A static field on the subclass shadows
-// it and the SDK then finds no handler — that is what this base is here to
-// catch.
-const outboundHandlersRegistry = new Map<string, Record<string, unknown>>()
-
+// pulls `cloudflare:workers`), so the base class keeps only what the subclass
+// extends: the object state it was built with and the two start paths.
 vi.mock("@cloudflare/sandbox", () => ({
   getSandbox: getSandboxMock,
   Sandbox: class Sandbox {
-    readonly stub = "sandbox"
-    static get outboundHandlers() {
-      return outboundHandlersRegistry.get(this.name)
-    }
-    static set outboundHandlers(handlers: Record<string, unknown> | undefined) {
-      outboundHandlersRegistry.set(this.name, handlers ?? {})
-    }
+    constructor(readonly ctx: unknown, readonly env: unknown) {}
+    async start() { lifecycle.push("start") }
+    async startAndWaitForPorts() { lifecycle.push("startAndWaitForPorts") }
   },
-  ContainerProxy: containerProxyStub,
+}))
+vi.mock("cloudflare:workers", () => ({
+  WorkerEntrypoint: class WorkerEntrypoint {
+    constructor(readonly ctx: unknown, readonly env: unknown) {}
+  },
 }))
 
-const { default: worker, ContainerProxy, Sandbox, ensureRuntimeProcess } = await import("./index")
+const { default: worker, CredentialEgress, Sandbox, ensureRuntimeProcess } = await import("./index")
 
 type Metadata = Record<string, string>
 
@@ -119,17 +115,8 @@ describe("cloudflare sandbox Worker registry (W1.2)", () => {
     })
   })
 
-  test("exports the SDK ContainerProxy so intercepted HTTPS can leave the sandbox", () => {
-    expect(ContainerProxy).toBe(containerProxyStub)
-  })
-
-  test("the credential handler is registered through the inherited setter, not shadowed by a field", async () => {
-    expect(Object.getOwnPropertyDescriptor(Sandbox, "outboundHandlers")).toBeUndefined()
-    const handlers = outboundHandlersRegistry.get("Sandbox")
-    expect(handlers).toBeDefined()
-    // The same key setOutboundByHosts dispatches on below.
-    expect(Object.keys(handlers!)).toEqual(["credential"])
-
+  test("ensure-runtime hands the sandbox exactly the hosts its registrations name, before the runtime starts", async () => {
+    sandboxStub.setCredentialHosts.mockClear()
     await call("/sandbox/handler-name/ensure-runtime", env({
       EGRESS_SECRETS: { get: async () => null, put: async () => {}, delete: async () => {} },
     }), {
@@ -137,12 +124,13 @@ describe("cloudflare sandbox Worker registry (W1.2)", () => {
       body: JSON.stringify({
         command: "runtime",
         env: {},
-        egress: [{ name: "KEY", hosts: ["api.vendor.test"], header: "Authorization", value: "Bearer v" }],
+        egress: [{ name: "KEY", hosts: ["api.vendor.test"], header: "Authorization", value: "Bearer v", methods: ["POST"], pathPrefixes: ["/v1"] }],
       }),
     })
-    expect(sandboxStub.setOutboundByHosts).toHaveBeenLastCalledWith({
-      "api.vendor.test": { method: Object.keys(handlers!)[0], params: { sandboxId: "handler-name" } },
-    })
+    expect(sandboxStub.setCredentialHosts).toHaveBeenLastCalledWith("handler-name", ["api.vendor.test"])
+    expect(sandboxStub.setCredentialHosts.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      sandboxStub.ensureWorkspaceRuntime.mock.invocationCallOrder.at(-1)!,
+    )
   })
 
   test("ensure-runtime records the sandbox, and GET /sandboxes enumerates it", async () => {
@@ -160,6 +148,20 @@ describe("cloudflare sandbox Worker registry (W1.2)", () => {
       supported: true,
       sandboxes: [{ sandboxId: "claxedo-ws_1", app: "claxedo", workspaceId: "ws_1", epoch: "7" }],
     })
+  })
+
+  test("a runtime whose boot failed answers ensure-runtime with that reason as an exit, not as one still starting", async () => {
+    const workerEnv = env()
+    sandboxStub.ensureWorkspaceRuntime.mockResolvedValueOnce({ state: "exited", reason: "fatal: couldn't find remote ref refs/heads/missing" })
+
+    const ensure = await call("/sandbox/claxedo-ws_9/ensure-runtime", workerEnv, {
+      method: "POST",
+      body: ensureBody({ app: "claxedo", workspaceId: "ws_9", epoch: "1" }),
+    })
+
+    expect(ensure.status).toBe(502)
+    await expect(ensure.json()).resolves.toEqual({ ready: false, exited: true, error: "fatal: couldn't find remote ref refs/heads/missing" })
+    await expect(call("/sandboxes", workerEnv).then((res) => res.json())).resolves.toEqual({ supported: true, sandboxes: [] })
   })
 
   test("labels are capped, so one oversized label cannot make a sandbox unregisterable", async () => {
@@ -270,12 +272,12 @@ describe("native credential registration", () => {
       method: "POST", body: JSON.stringify({ command: "runtime", env: {}, egress: [registration] }),
     })
     expect(response.status).toBe(200)
-    expect(sandboxStub.setOutboundByHosts).toHaveBeenCalledWith({ "api.vendor.test": { method: "credential", params: { sandboxId: "native-proof" } } })
+    expect(sandboxStub.setCredentialHosts).toHaveBeenCalledWith("native-proof", ["api.vendor.test"])
     const bootEnv = sandboxStub.ensureWorkspaceRuntime.mock.calls.at(-1)?.[1]
     expect(bootEnv).toMatchObject({ MODEL_KEY: "claxedo-broker:MODEL_KEY" })
     expect(JSON.stringify(bootEnv)).not.toContain("real-secret")
   })
-  test("explicit empty registrations withdraw stored values and handlers", async () => {
+  test("explicit empty registrations withdraw stored values and every credential host", async () => {
     const kv = credentials()
     await kv.put("withdraw-proof", JSON.stringify([registration]))
     const response = await call("/sandbox/withdraw-proof/ensure-runtime", env({ EGRESS_SECRETS: kv }), {
@@ -283,7 +285,7 @@ describe("native credential registration", () => {
     })
     expect(response.status).toBe(200)
     expect(JSON.parse(kv.values.get("withdraw-proof")!)).toEqual([])
-    expect(sandboxStub.setOutboundByHosts).toHaveBeenLastCalledWith({})
+    expect(sandboxStub.setCredentialHosts).toHaveBeenLastCalledWith("withdraw-proof", [])
   })
   test("omitted registrations preserve the authority and placeholders on wake", async () => {
     const kv = credentials()
@@ -317,6 +319,7 @@ describe("workspace-runtime process env", () => {
     return {
       id: "claxedo-workspace-runtime",
       status: "running",
+      startTime: new Date(),
       waitForPort: vi.fn(async () => {}),
       getStatus: vi.fn(async () => "running"),
       kill: vi.fn(async () => {}),
@@ -325,15 +328,41 @@ describe("workspace-runtime process env", () => {
     }
   }
 
-  function operations(existing: ReturnType<typeof process> | null) {
-    const started = process()
+  /**
+   * The container's view of the runtime process. As in the SDK, the process
+   * `startProcess` answers is stamped with the Worker's clock, while
+   * `listProcesses` and `getProcess` report the container's own start time.
+   */
+  function operations(
+    existing: ReturnType<typeof process> | null,
+    started = process(),
+    containerStart = new Date(started.startTime.getTime() - 1_234),
+  ) {
+    let readyAt: number | undefined
+    let listed = existing
     return {
       started,
-      listProcesses: vi.fn(async () => (existing ? [existing] : [])),
-      startProcess: vi.fn(async () => started),
-      cleanupCompletedProcesses: vi.fn(async () => {}),
+      markReady: (entry: { startTime: Date }) => { readyAt = entry.startTime.getTime() },
+      listProcesses: vi.fn(async () => (listed ? [listed] : [])),
+      getProcess: vi.fn(async () => listed),
+      startProcess: vi.fn(async () => {
+        listed = { ...started, startTime: containerStart }
+        return started
+      }),
+      cleanupCompletedProcesses: vi.fn(async () => {
+        if (listed && !["starting", "running"].includes(await listed.getStatus())) listed = null
+      }),
+      runtimeWasReady: vi.fn(async (entry: { startTime: Date }) => readyAt === entry.startTime.getTime()),
+      recordRuntimeReady: vi.fn(async (entry: { startTime: Date }) => { readyAt = entry.startTime.getTime() }),
     }
   }
+
+  const bootFailure = [
+    "[claxedo-workspace-runtime] workspace_runtime_boot_failed: Error: Command failed: git fetch --quiet --depth=1 origin",
+    "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+    "    at ChildProcess.exithandler (node:child_process:422:12)",
+    "",
+  ].join("\n")
 
   test("a running runtime is left alone when the caller says its env is unchanged", async () => {
     const existing = process()
@@ -343,10 +372,109 @@ describe("workspace-runtime process env", () => {
       ensureRuntimeProcess(sandbox as never, "runtime", { MODEL_KEY: "claxedo-broker:MODEL_KEY" }, 2593, {
         reuseRunning: true,
       }),
-    ).resolves.toBe(true)
+    ).resolves.toEqual({ state: "ready" })
 
     expect(sandbox.startProcess).not.toHaveBeenCalled()
     expect(existing.kill).not.toHaveBeenCalled()
+  })
+
+  test("a live runtime still preparing its repository keeps running across polls, so a large clone can finish", async () => {
+    let ready = false
+    const existing = process({ waitForPort: vi.fn(async () => { if (!ready) throw new Error("not listening") }) })
+    const sandbox = operations(existing)
+    const poll = () => ensureRuntimeProcess(sandbox as never, "runtime", {}, 2593, { reuseRunning: true })
+
+    await expect(poll()).resolves.toEqual({ state: "preparing" })
+    await expect(poll()).resolves.toEqual({ state: "preparing" })
+    ready = true
+    await expect(poll()).resolves.toEqual({ state: "ready" })
+
+    expect(existing.kill).not.toHaveBeenCalled()
+    expect(sandbox.startProcess).not.toHaveBeenCalled()
+  })
+
+  test("a live runtime still not ready past the preparation limit is wedged and replaced", async () => {
+    const existing = process({
+      startTime: new Date(Date.now() - 36 * 60_000),
+      waitForPort: vi.fn(async () => { throw new Error("not listening") }),
+    })
+    const sandbox = operations(existing)
+
+    await expect(ensureRuntimeProcess(sandbox as never, "runtime", {}, 2593, { reuseRunning: true })).resolves.toEqual({ state: "ready" })
+
+    expect(existing.kill).toHaveBeenCalled()
+    expect(sandbox.startProcess).toHaveBeenCalledTimes(1)
+  })
+
+  test("a runtime that has answered ready is never replaced for a slow health check, however long it has run", async () => {
+    let healthy = true
+    const existing = process({
+      startTime: new Date(Date.now() - 3 * 24 * 60 * 60_000),
+      waitForPort: vi.fn(async () => { if (!healthy) throw new Error("health check timed out") }),
+    })
+    const sandbox = operations(existing)
+    const poll = () => ensureRuntimeProcess(sandbox as never, "runtime", {}, 2593, { reuseRunning: true })
+
+    await expect(poll()).resolves.toEqual({ state: "ready" })
+    healthy = false
+    await expect(poll()).resolves.toEqual({ state: "preparing" })
+
+    expect(existing.kill).not.toHaveBeenCalled()
+    expect(sandbox.startProcess).not.toHaveBeenCalled()
+  })
+
+  test("a runtime this ensure started is remembered by the container's start time, so a later slow health check keeps it", async () => {
+    let healthy = true
+    const started = process({ waitForPort: vi.fn(async () => { if (!healthy) throw new Error("health check timed out") }) })
+    const sandbox = operations(null, started, new Date(Date.now() - 40 * 60_000))
+    const ensure = () => ensureRuntimeProcess(sandbox as never, "runtime", {}, 2593, { reuseRunning: true })
+
+    await expect(ensure()).resolves.toEqual({ state: "ready" })
+    await expect(ensure()).resolves.toEqual({ state: "ready" })
+    expect(sandbox.recordRuntimeReady).toHaveBeenCalledTimes(1)
+    healthy = false
+    await expect(ensure()).resolves.toEqual({ state: "preparing" })
+
+    expect(started.kill).not.toHaveBeenCalled()
+    expect(sandbox.startProcess).toHaveBeenCalledTimes(1)
+  })
+
+  test("a runtime whose boot exits answers with the boot's own reason instead of starting the same boot again", async () => {
+    const exited = process({
+      waitForPort: vi.fn(async () => { throw new Error("process exited before ready") }),
+      getStatus: vi.fn(async () => "failed"),
+      getLogs: vi.fn(async () => ({ stdout: "", stderr: bootFailure })),
+    })
+    const sandbox = operations(null, exited)
+
+    await expect(ensureRuntimeProcess(sandbox as never, "runtime", {}, 2593, { reuseRunning: true })).resolves.toEqual({
+      state: "exited",
+      reason: "Command failed: git fetch --quiet --depth=1 origin\nfatal: could not read Username for 'https://github.com': terminal prompts disabled",
+    })
+    expect(sandbox.cleanupCompletedProcesses).toHaveBeenCalled()
+  })
+
+  test("a runtime found exited before it was ever ready is reported once and cleared, so the next ensure boots afresh", async () => {
+    const existing = process({ status: "failed", getStatus: vi.fn(async () => "failed"), getLogs: vi.fn(async () => ({ stdout: "", stderr: bootFailure })) })
+    const sandbox = operations(existing)
+
+    const ensure = () => ensureRuntimeProcess(sandbox as never, "runtime", {}, 2593, { reuseRunning: true })
+
+    await expect(ensure()).resolves.toMatchObject({ state: "exited", reason: expect.stringContaining("could not read Username") })
+    expect(sandbox.startProcess).not.toHaveBeenCalled()
+    await expect(ensure()).resolves.toEqual({ state: "ready" })
+    expect(sandbox.startProcess).toHaveBeenCalledTimes(1)
+  })
+
+  test("a runtime that exited after serving is replaced even when the env is unchanged", async () => {
+    const existing = process({ status: "failed", getStatus: vi.fn(async () => "failed") })
+    const sandbox = operations(existing)
+    sandbox.markReady(existing)
+
+    await expect(ensureRuntimeProcess(sandbox as never, "runtime", {}, 2593, { reuseRunning: true })).resolves.toEqual({ state: "ready" })
+
+    expect(existing.kill).not.toHaveBeenCalled()
+    expect(sandbox.startProcess).toHaveBeenCalledTimes(1)
   })
 
   test("a running runtime is replaced when the caller says its env changed", async () => {
@@ -359,7 +487,7 @@ describe("workspace-runtime process env", () => {
 
     await expect(
       ensureRuntimeProcess(sandbox as never, "runtime", env, 2593, { reuseRunning: false }),
-    ).resolves.toBe(true)
+    ).resolves.toEqual({ state: "ready" })
 
     expect(existing.kill).toHaveBeenCalled()
     expect(sandbox.startProcess).toHaveBeenCalledWith("runtime", {
@@ -415,5 +543,104 @@ describe("runtime env reconciliation on ensure-runtime", () => {
     })
 
     expect(sandboxStub.ensureWorkspaceRuntime.mock.calls.at(-1)?.[3]).toEqual({ reuseRunning: false })
+  })
+})
+
+describe("credential host interception", () => {
+  const TRUST_ANCHOR = "claxedo-credential-trust.invalid"
+
+  function objectState(running: boolean) {
+    const intercepted: string[] = []
+    const stored = new Map<string, unknown>()
+    const ctx = {
+      container: {
+        running,
+        interceptOutboundHttps: vi.fn(async (host: string, egress: { props: { sandboxId: string } }) => {
+          intercepted.push(`${host}->${egress.props.sandboxId}`)
+          lifecycle.push(`intercept ${host}`)
+        }),
+      },
+      storage: { get: async (key: string) => stored.get(key), put: async (key: string, value: unknown) => { stored.set(key, value) } },
+      exports: { CredentialEgress: (options: { props: { sandboxId: string } }) => options },
+      blockConcurrencyWhile: async (callback: () => Promise<unknown>) => callback(),
+    }
+    return { ctx, intercepted }
+  }
+
+  beforeEach(() => { lifecycle.length = 0 })
+
+  test("a fresh sandbox with no credential host intercepts only the unresolvable trust anchor, before its container starts", async () => {
+    const { ctx, intercepted } = objectState(false)
+    const sandbox = new Sandbox(ctx as never, {} as never)
+    expect(intercepted).toEqual([])
+    await sandbox.startAndWaitForPorts()
+    expect(intercepted).toEqual([`${TRUST_ANCHOR}->`])
+    expect(lifecycle).toEqual([`intercept ${TRUST_ANCHOR}`, "startAndWaitForPorts"])
+  })
+
+  test("a fresh sandbox's first ensure-runtime records its hosts and boots without any SDK outbound configuration", async () => {
+    sandboxStub.setCredentialHosts.mockClear()
+    sandboxStub.ensureWorkspaceRuntime.mockClear()
+    const response = await call("/sandbox/fresh-sandbox/ensure-runtime", env(), { method: "POST", body: JSON.stringify({ command: "runtime", env: {}, egress: [] }) })
+    expect(response.status).toBe(200)
+    expect(sandboxStub.setCredentialHosts).toHaveBeenCalledWith("fresh-sandbox", [])
+    expect(sandboxStub.ensureWorkspaceRuntime).toHaveBeenCalledTimes(1)
+  })
+
+  test("registered hosts are intercepted on every container start, and at once on a running container", async () => {
+    const stopped = objectState(false)
+    const cold = new Sandbox(stopped.ctx as never, {} as never)
+    await cold.setCredentialHosts("ws_1", ["api.vendor.test", "github.com", "api.vendor.test"])
+    expect(stopped.intercepted).toEqual([])
+    await cold.start()
+    expect(stopped.intercepted).toEqual([`${TRUST_ANCHOR}->ws_1`, "api.vendor.test->ws_1", "github.com->ws_1"])
+    expect(lifecycle.at(-1)).toBe("start")
+
+    const running = objectState(true)
+    const live = new Sandbox(running.ctx as never, {} as never)
+    await live.setCredentialHosts("ws_2", ["api.vendor.test"])
+    expect(running.intercepted.slice(-2)).toEqual([`${TRUST_ANCHOR}->ws_2`, "api.vendor.test->ws_2"])
+  })
+
+  test("the egress entrypoint spends only the registrations of the sandbox it was created for", async () => {
+    const registration = { name: "KEY", hosts: ["api.vendor.test"], header: "Authorization", value: "Bearer real", methods: ["POST"], pathPrefixes: ["/v1"] }
+    const kv = { get: async (id: string) => (id === "ws_1" ? JSON.stringify([registration]) : null) }
+    const upstream = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => new Response((input as Request).headers.get("authorization")))
+    try {
+      const request = () => new Request("https://api.vendor.test/v1/messages", { method: "POST", headers: { authorization: "claxedo-broker:KEY" } })
+      const own = new CredentialEgress({ props: { sandboxId: "ws_1" } } as never, { EGRESS_SECRETS: kv } as never)
+      expect(await (await own.fetch(request() as never)).text()).toBe("Bearer real")
+      const other = new CredentialEgress({ props: { sandboxId: "ws_2" } } as never, { EGRESS_SECRETS: kv } as never)
+      expect((await other.fetch(request() as never)).status).toBe(403)
+    } finally {
+      upstream.mockRestore()
+    }
+  })
+})
+
+describe("runtime proxy transports", () => {
+  beforeEach(() => {
+    sandboxStub.containerFetch.mockClear()
+    sandboxStub.wsConnect.mockClear()
+  })
+
+  test("a WebSocket upgrade reaches the runtime port through the SDK's fetch boundary and keeps the upgrade answer", async () => {
+    const upgraded = { status: 101, webSocket: {} } as unknown as Response
+    sandboxStub.wsConnect.mockResolvedValueOnce(upgraded)
+    const response = await worker.fetch(new Request("https://sbx.test/sandbox/claxedo-ws/proxy/api/wr/pty/pty_1/connect?cursor=42", {
+      headers: { upgrade: "websocket", connection: "Upgrade", authorization: "Bearer relay-host-token" },
+    }), env())
+    expect(response).toBe(upgraded)
+    expect(sandboxStub.containerFetch).not.toHaveBeenCalled()
+    const [request, port] = sandboxStub.wsConnect.mock.calls.at(-1)!
+    expect(new URL(request.url).pathname + new URL(request.url).search).toBe("/api/wr/pty/pty_1/connect?cursor=42")
+    expect(request.headers.get("authorization")).toBe("Bearer relay-host-token")
+    expect(port).toBe(2593)
+  })
+
+  test("ordinary runtime HTTP stays on containerFetch", async () => {
+    await worker.fetch(new Request("https://sbx.test/sandbox/claxedo-ws/proxy/api/wr/health"), env())
+    expect(sandboxStub.containerFetch).toHaveBeenCalledTimes(1)
+    expect(sandboxStub.wsConnect).not.toHaveBeenCalled()
   })
 })

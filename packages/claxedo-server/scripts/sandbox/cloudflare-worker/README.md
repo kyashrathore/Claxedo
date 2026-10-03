@@ -31,6 +31,20 @@ modules and ACP bins are npm-installed inside the image from the generated
 `@claxedo/workspace-runtime` to npm is a separate release concern and no longer
 gates image builds.
 
+### Deploying over existing sandboxes
+
+A sandbox created by a Worker that used the SDK's runtime outbound overrides
+(`setOutboundByHosts` or `setOutboundHandler`) persisted that configuration in
+its Durable Object storage. On its next container start `@cloudflare/containers`
+re-applies it through the SDK `ContainerProxy` export, which this Worker no
+longer has, and the start throws. `DELETE /sandbox/:id` is not enough: the SDK's
+destroy keeps that key (`OUTBOUND_CONFIGURATION`), and the control plane names a
+sandbox by its workspace, so a recreated one reads it back. Before rolling this
+Worker out, reset the `Sandbox` namespace's storage: `wrangler delete` the
+Worker (which deletes its Durable Object namespaces and their storage), then
+deploy, and let the control plane recreate workspaces' sandboxes. No migration
+is provided; only sandboxes created by this Worker start.
+
 ## Pinning the control plane to a specific build
 
 Deleting the npm-publish gate removed content immutability at a fixed
@@ -86,8 +100,8 @@ are present. You can also set `CLAXEDO_SANDBOX_DRIVER=cloudflare` explicitly.
 ## Native credential brokering
 
 The API-token-gated `ensure-runtime` action accepts named egress registrations.
-The Worker stores values in `EGRESS_SECRETS` KV and configures SDK native HTTPS
-outbound handlers. Container environment variables contain only
+The Worker stores values in `EGRESS_SECRETS` KV and intercepts HTTPS to the
+registered hosts with its `CredentialEgress` entrypoint. Container environment variables contain only
 `claxedo-broker:<name>` placeholders. Clients use the original upstream URL.
 Authorization clients may send the placeholder as the complete header or with
 one Bearer prefix; the handler replaces it with the complete registered value.
@@ -106,43 +120,85 @@ a live registration for that host over HTTPS on port 443, or it is refused.
 The handler rejects unmatched placeholders and redirects; it does not redact
 response bodies or restrict unrelated destinations.
 
-### Interception is whole-container, and cannot be narrowed
+### Only credential hosts are intercepted
 
-`Sandbox.interceptHttps = true` plus `setOutboundByHosts` puts EVERY outbound
-request from the container through this Worker, not only the registered hosts.
-This is a property of `@cloudflare/containers` as bundled in
-`@cloudflare/sandbox` 0.12.9, not a choice here:
+The SDK's runtime host overrides (`setOutboundByHosts`, `setOutboundHandler`)
+promote a container to intercepting every outbound request
+(`@cloudflare/containers` 0.3.7 `shouldInterceptAllOutbound()`), which would put
+this Worker in the path of all sandbox traffic. The Worker does not use them.
+`Sandbox.setCredentialHosts` records the hosts the registrations name and
+installs `ctx.container.interceptOutboundHttps(host, CredentialEgress)` for
+exactly those, on a running container at once and on every container start
+(the `start` and `startAndWaitForPorts` overrides run before the SDK starts it).
+Every other host keeps its direct route.
 
-- `shouldInterceptAllOutbound()` returns true as soon as
-  `outboundByHostOverrides` is non-empty, and `setOutboundByHosts` is the only
-  runtime API that registers a host — so the first registration promotes the
-  container to intercept-all.
-- The promotion latches in `hasInterceptAllRegistration` and stays until the
-  instance restarts.
-- Under intercept-all with `interceptHttps`, the SDK installs
-  `interceptOutboundHttps('*')` and `interceptAllOutboundHttp`.
-- Per-host interception exists only for the STATIC `outboundByHost` class
-  registry, which is fixed at deploy time and cannot carry per-sandbox
-  registrations read from KV.
+`interceptHttps = true` makes the container server trust the platform CA and
+refuse to start without it, and the platform mints that CA with the first HTTPS
+interception. Every container therefore also intercepts
+`claxedo-credential-trust.invalid`, a reserved name no request resolves, so a
+sandbox that starts before it holds any credential host still has the CA, and
+a host registered later is intercepted without restarting the container.
 
-Unregistered hosts still reach the internet — `ContainerProxy` falls through to
-`fetch(request)` on the `enableInternet` path — but they do so through a
-Worker-terminated TLS connection.
+The platform offers no way to remove an interception, so a withdrawn host stays
+routed through `CredentialEgress` until the container restarts; without a
+registration it forwards requests without a placeholder unchanged and refuses
+ones that carry a placeholder.
 
-Only Node and Bun HTTPS clients have been exercised against this
-(Appendix E item 3, local probe). The CLIs baked into `Dockerfile` —
-`claude`, `codex`, `gemini`, `pi`, `cursor-agent`, `amp`, `droid` — were not
-probed, and an agent CLI that pins its own CA bundle or ships its own TLS stack
-will fail against an intercepted connection in a way no local test here shows.
-That is why deployed acceptance is still required before this adapter is called
-complete.
+Node and Bun HTTPS clients passed the local probe. The CLIs baked into
+`Dockerfile` — `claude`, `codex`, `gemini`, `pi`, `cursor-agent`, `amp`,
+`droid` — were not probed against an intercepted connection, and an agent CLI
+that pins its own CA bundle or ships its own TLS stack fails against one in a
+way no local test here shows. Deployed acceptance is still required.
 
 The former `/egress` JWT route and signing secret are removed. Deploy the
-Worker and matching driver together, then destroy and recreate existing
-sandboxes with fresh named registrations. No legacy registration migration or
-proxy compatibility route is provided.
-Local native HTTPS interception passed; deployed acceptance remains pending
-because the isolated probe image upload failed (see the implementation report).
+Worker and matching driver together, after destroying existing sandboxes (see
+"Deploying over existing sandboxes").
+
+## Repository preparation
+
+The runtime checks out the tip of the workspace's repository before it reports
+ready (`src/hosts/workspace-runtime/repository-source.ts` in claxedo-server):
+one depth-1 fetch of the selected branch, in place, within a 30-minute deadline
+for the whole preparation (`RUNTIME_PREPARATION_DEADLINE_MS` in
+`boot-contract.ts`). A boot stopped mid-fetch leaves a repository with no
+commit yet, which the next boot finishes. A checkout with a commit is the
+person's work and boots as it is, without reaching the repository. Once the
+runtime is listening, it deepens the selected branch alone in the background
+(`repository-history.ts`), 1,000 generations per fetch, 5 seconds apart, with
+`--no-auto-maintenance`. Each finished fetch is kept, so a runtime stopped
+partway resumes from there on its next boot. The steps end when the checkout is
+complete, when a step brings nothing (the commit the checkout began from was
+amended or force-pushed away), at the first failure, or when the runtime drains,
+which ends the running fetch with its whole process group so no git outlives it
+holding `shallow.lock`. While another git holds that lock the steps wait
+without fetching, a step that meets it mid-fetch waits and tries again, and no
+step deepens a checkout that is already complete. At boot, a `shallow.lock` is
+removed when `ps` shows no git process that could hold it.
+
+A private repository's clone credential is the brokered
+`CLAXEDO_GITHUB_CLONE_AUTH`, scoped to that repository's path and minted on
+every boot from the connection the workspace was created through.
+
+`ensure-runtime` decides about an existing runtime as follows:
+
+- A live runtime that has answered ready once is kept, however long it has run;
+  a slow health check answers 503 (still starting) and never replaces it. The
+  Worker records the start time the container reports for it (read back with
+  `getProcess` once it is ready, because `startProcess` answers with the
+  Worker's own clock), in Durable Object storage, and writes only when it
+  changes.
+- A live runtime that has never answered ready is still preparing its
+  repository and is kept, until it is 35 minutes old (the preparation deadline
+  plus 5 minutes), when it is wedged and replaced.
+- A runtime that exited before it was ever ready failed its boot. The answer is
+  502 `{ ready: false, exited: true, error }` with the reason the runtime
+  printed (a revoked token, a branch that does not exist), credentials blanked
+  by `src/runtime-log.ts`, and the exited
+  process is cleared so the next ensure boots afresh. The driver reports it as a
+  failed ensure, never as provisioning, and the connect answers
+  `cloud_runtime_boot_failed` with the reason.
+- A runtime that exited after it had served, or any runtime when the set of
+  credential names changed, is replaced.
 
 ## Workspace checkpoint storage
 

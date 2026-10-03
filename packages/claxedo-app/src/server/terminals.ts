@@ -84,10 +84,6 @@ export function createTerminalsApi(transport: Transport, workspaces: Workspaces)
       await transport.runtimeJson<unknown>(await route(placementId), ptyPath(terminalId), { method: "DELETE" })
     },
     presence: async (placementId, terminalId) => presenceOf(transport, await route(placementId), terminalId),
-    agents: async (placementId) => {
-      const body = await transport.runtimeJson<{ installed?: unknown }>(await route(placementId), `${PTY_PATH}/agents`)
-      return Array.isArray(body.installed) ? body.installed.filter((item): item is string => typeof item === "string") : []
-    },
     agentStatus: async (placementId, terminalId) => {
       const body = await transport.runtimeJson<{ session?: { eventType?: unknown } | null }>(await route(placementId), withQuery(TERMINAL_HOOK_PATH, { terminalId }))
       return agentStatusFromWire(body.session?.eventType)

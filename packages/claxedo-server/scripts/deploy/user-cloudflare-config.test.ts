@@ -19,6 +19,13 @@ const env = {
 } satisfies NodeJS.ProcessEnv
 
 describe("user-deployed Cloudflare configuration", () => {
+  test("names the GitHub App the connection signs in with only when one is configured", () => {
+    expect(workerVariables(userCloudflareDeployment(env, { agentPlugins: false }), "sha256:config")).not.toHaveProperty("CLAXEDO_INTEGRATION_GITHUB_CLIENT_ID")
+    const deployment = userCloudflareDeployment({ ...env, CLAXEDO_INTEGRATION_GITHUB_CLIENT_ID: " Iv1.app " }, { agentPlugins: false })
+    expect(workerVariables(deployment, "sha256:config").CLAXEDO_INTEGRATION_GITHUB_CLIENT_ID).toBe("Iv1.app")
+    expect(deployment.requiredSecrets).not.toContain("CLAXEDO_INTEGRATION_GITHUB_CLIENT_SECRET")
+  })
+
   test("carries the email sender as a named deploy variable", () => {
     const deployment = userCloudflareDeployment({ ...env, CLAXEDO_EMAIL_FROM: "auth@example.com" }, { agentPlugins: false })
     expect(workerVariables(deployment, "sha256:config").CLAXEDO_EMAIL_FROM).toBe("auth@example.com")

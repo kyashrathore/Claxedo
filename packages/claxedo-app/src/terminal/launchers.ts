@@ -1,4 +1,4 @@
-import { TERMINAL_AGENTS, terminalAgentInstalled, type TerminalAgentIcon } from "./agents"
+import { TERMINAL_AGENTS, type TerminalAgentIcon } from "./agents"
 
 export type TerminalLauncher = {
   readonly id: string
@@ -8,14 +8,10 @@ export type TerminalLauncher = {
   readonly title?: string
 }
 
-export function terminalLaunchers(
-  shellName: string,
-  installed: readonly string[] | undefined,
-): readonly TerminalLauncher[] {
-  const agents = TERMINAL_AGENTS.filter((agent) => !installed || terminalAgentInstalled(agent, installed))
+export function terminalLaunchers(shellName: string): readonly TerminalLauncher[] {
   return [
     { id: "shell", name: shellName, icon: "terminal" },
-    ...agents.map((agent) => ({
+    ...TERMINAL_AGENTS.map((agent) => ({
       id: agent.id,
       name: agent.label,
       command: agent.defaultCommand,

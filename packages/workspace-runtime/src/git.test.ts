@@ -135,6 +135,18 @@ describe("default git exec", () => {
     expect(stdout.trim()).toBe("/scratch/claxedo-index")
   })
 
+  test("an aborted run ends the git process and is not reported as a timeout", async () => {
+    const git = createBoundedGit()
+    const abort = new AbortController()
+    const started = Date.now()
+    const run = git(["-c", "alias.wait=!sleep 30", "wait"], process.cwd(), { signal: abort.signal })
+    setTimeout(() => abort.abort(), 100)
+    const failure = await run.catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(Error)
+    expect(failure).not.toBeInstanceOf(GitTimeoutError)
+    expect(Date.now() - started).toBeLessThan(10_000)
+  })
+
   test("git applies a credential to https on the host it names and to nothing else", async () => {
     const git = createBoundedGit()
     const credential = { host: "example.test", authorization: "Bearer synthetic-token" }

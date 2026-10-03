@@ -4,6 +4,7 @@ import { QueryClient } from "@tanstack/solid-query"
 import { placementId } from "./ids"
 import { createProviderCatalogsApi, providerCatalogQueries } from "./provider-catalogs"
 import type { Transport } from "./transport"
+import { providerCatalogFromWire } from "./wire/provider-catalog"
 import type { Workspaces } from "./workspaces"
 
 const placement = placementId("plc_app")
@@ -55,4 +56,16 @@ test("provider catalogs: a read without a placement, and pi's read, name no work
 
   expect(paths.map(workspaceOf)).toEqual([null, null])
   expect(queries.catalog("pi", placement).queryKey).toEqual(queries.catalog("pi").queryKey)
+})
+
+test("provider catalogs: a Pi provider connected through another harness's login keeps that harness, and no Disconnect source", () => {
+  const catalog = providerCatalogFromWire({
+    all: [
+      { id: "anthropic", name: "Anthropic", source: "harness", harness: "claude", models: {} },
+      { id: "openai", name: "OpenAI", source: "api", models: {} },
+    ],
+    connected: ["anthropic", "openai"],
+    default: {},
+  }, "pi")
+  expect(catalog.all.map((provider) => [provider.id, provider.source, provider.harness])).toEqual([["anthropic", "harness", "claude"], ["openai", "api", undefined]])
 })

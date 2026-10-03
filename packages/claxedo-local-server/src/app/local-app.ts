@@ -48,17 +48,19 @@ import { createHostAggregateEventsHandler } from "../shell/host-events"
 import { embeddedSessionDrivenOnlyByMachineUser, onEmbeddedWorkspaceRuntime } from "../deployments/local/embedded-workspace-runtime"
 import { ProjectRoutes } from "@claxedo/server-core/projects/routes"
 import { localProjectStore, systemRepoAddresses } from "@claxedo/server-core/projects/local-store"
-import { requireSignedControlPlaneRoute } from "../platform/http/control-plane-route-auth"
-import { CredentialRoutes } from "../credentials/routes/credential"
+import { requireSignedControlPlaneRoute } from "@claxedo/server-core/platform/http/control-plane-route-auth"
+import { CredentialRoutes } from "@claxedo/server-core/credentials/routes/credential"
 import { readMachineAgentUsage } from "../usage/adapters/token-tracker-usage-limits"
-import { ProviderAuthRoutes } from "../credentials/routes/provider-auth"
+import { ProviderAuthRoutes } from "@claxedo/server-core/credentials/routes/provider-auth"
+import { createProviderAuthService } from "@claxedo/server-core/credentials/provider-auth/service"
 import { NetworkPolicyRoutes } from "../sandbox/network/network-policy-routes"
 import { hostServingEnrollmentId } from "@claxedo/host-serving/serving"
 import { HostServingRoutes } from "../workspace/host-serving-routes"
 import { HostProviderConfigRoutes } from "../workspace/host-provider-config-routes"
 import { BootstrapRoutes } from "../deployments/shared-routes/bootstrap"
-import { daemonAdmission, machineRecoveryFence, markInProcessDaemonRequest } from "./daemon-admission"
+import { daemonAdmission, machineRecoveryFence } from "./daemon-admission"
 import { relayReplayAdmission } from "../workspace/runtime-dispatch/relay-admission"
+import { markInProcessDaemonRequest } from "../platform/in-process-request"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "../deployments/local/server-workspace-pty-proxy"
 import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
 import {
@@ -441,7 +443,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     hostEnrollmentId: hostServingEnrollmentId,
     ...authRouteOptions(services),
   }))
-  app.route("/", ProviderAuthRoutes(services, authRouteOptions(services)))
+  app.route("/", ProviderAuthRoutes({ service: createProviderAuthService(services.credentials), ...authRouteOptions(services) }))
   app.route("/api/claxedo/credentials", CredentialRoutes(services.credentials, {
     agentUsage: readMachineAgentUsage,
     ...authRouteOptions(services),
@@ -557,7 +559,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
           credential,
           request,
           ...(ownerDriven
-            ? { appPlugins: appPluginAuthoring({ roots: [workspace.directory], ownerDriven }) }
+            ? { ownerDriven, appPlugins: appPluginAuthoring({ roots: [workspace.directory], ownerDriven }) }
             : {}),
           documents: { fetch: localFetch },
           tasks: {

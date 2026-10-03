@@ -312,12 +312,21 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "registry",
-    module: "../../claxedo-local-server/src/credentials/provider-auth/service.ts",
+    module: "../../claxedo-server-core/src/credentials/provider-auth/service.ts",
     status: OwnershipStatus.Canonical,
-    owner: "provider auth method service (Claxedo local adapter)",
+    owner: "provider device login (local daemon)",
     reason:
-      "A service, not a route, with three local importers; it stays with the local credentials adapter rather than behind a shared barrel.",
-    tests: ["../../claxedo-local-server/src/credentials/routes/provider-auth.test.ts"],
+      "Only the local daemon serves a provider device login: every sign-in it completes is a ChatGPT plan, which no cloud sandbox can be delivered.",
+    tests: ["../../claxedo-server-core/src/credentials/routes/provider-auth.test.ts"],
+  },
+  {
+    area: "registry",
+    module: "../../claxedo-server-core/src/credentials/provider-auth/methods.ts",
+    status: OwnershipStatus.Canonical,
+    owner: "provider sign-in method lists (local daemon and hosted plane)",
+    reason:
+      "Both serve one method list per harness; the hosted plane asks for only the methods whose account reaches a cloud sandbox.",
+    tests: ["../../claxedo-server-core/src/credentials/provider-auth/methods.test.ts"],
   },
   {
     area: "registry",

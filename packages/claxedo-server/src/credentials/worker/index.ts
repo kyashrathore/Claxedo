@@ -48,6 +48,9 @@ import {
   type EnvelopeAdmin,
 } from "@claxedo/server-core/credentials/envelope"
 import { trimToUndefined } from "@claxedo/helpers/string"
+import { storedCredentialKind } from "@claxedo/server-core/credentials/secret-material"
+import { fanoutEligible, fanoutEligibleAuth } from "@claxedo/server-core/credentials/account-kinds"
+import { deliveryOrigin } from "@claxedo/server-core/credentials/native-delivery-plan"
 import { ACCOUNT_SOURCES, type AccountSource } from "@claxedo/account-contract/vocabulary"
 
 type WorkerCredentialEnv = Record<string, string | undefined>
@@ -74,7 +77,7 @@ export type HostedCredentialStoreInput = {
 }
 
 const METADATA_COLUMNS =
-  "id, owner, org_id, provider_id, kind, source, label, account_id, status, health, expires_at, last_validated_at, last_error, revision, created_at, updated_at"
+  "id, owner, org_id, provider_id, kind, source, label, account_id, status, health, expires_at, last_validated_at, last_error, revision, activated_at, created_at, updated_at"
 
 /** Default-off feature flag for the hosted credential surface. */
 export const HOSTED_CREDENTIALS_FLAG = "CLAXEDO_HOSTED_CREDENTIALS_ENABLED"
@@ -177,15 +180,42 @@ export function hostedOrgCredentials(
     return row ? cipher.open(id, requiredTextColumn(row, "secret_envelope")) : null
   }
 
+  const readCredential = async (id: string) => {
+    const row = await database.prepare(`select ${METADATA_COLUMNS} from hosted_provider_credentials where org_id = ? and id = ?`).bind(org, id).first()
+    return row ? credentialMetadataRow(row) : undefined
+  }
+
+  /**
+   * The mark a save leaves on its row. A sandbox is delivered one account per
+   * origin, the most recently marked, so a save takes the mark only when none
+   * of the person's other marked accounts is delivered to the same origin:
+   * adding a key for one harness never moves another harness off the account
+   * it runs on. Only `setActiveCredentials` switches an origin.
+   */
+  const savedMark = async (row: { owner: string | null; provider_id: string; kind: CredentialKind }, id: string, timestamp: number) => {
+    if (!fanoutEligibleAuth(row.kind, row.provider_id)) return null
+    const current = (await readCredential(id))?.activated_at ?? null
+    const origin = deliveryOrigin(row)
+    const marked = await database
+      .prepare("select provider_id, kind from hosted_provider_credentials where org_id = ? and owner is ? and id <> ? and activated_at is not null")
+      .bind(org, row.owner, id)
+      .all()
+    const held = origin !== undefined && marked.results.some((other) =>
+      deliveryOrigin({ provider_id: requiredTextColumn(other, "provider_id"), kind: enumColumn(other, "kind", CREDENTIAL_KINDS) }) === origin)
+    return held ? current : (current ?? timestamp)
+  }
+
   const upsert = async (input: CredentialWrite, id: string) => {
     const timestamp = now()
     const owner = input.owner
+    const kind = storedCredentialKind(input)
+    const mark = await savedMark({ owner, provider_id: input.provider_id, kind }, id, timestamp)
     const row = await database
       .prepare(
         `insert into hosted_provider_credentials (
            id, owner, org_id, provider_id, kind, source, label, account_id, status, health,
-           expires_at, last_validated_at, last_error, secret_envelope, revision, created_at, updated_at
-          ) values (?, ?, ?, ?, ?, ?, ?, ?, 'available', null, ?, null, null, ?, 1, ?, ?)
+           expires_at, last_validated_at, last_error, secret_envelope, revision, activated_at, created_at, updated_at
+          ) values (?, ?, ?, ?, ?, ?, ?, ?, 'available', null, ?, null, null, ?, 1, ?, ?, ?)
          on conflict (org_id, id) do update set
            kind = excluded.kind,
            source = excluded.source,
@@ -198,6 +228,7 @@ export function hostedOrgCredentials(
            last_error = null,
            secret_envelope = excluded.secret_envelope,
            revision = hosted_provider_credentials.revision + 1,
+           activated_at = excluded.activated_at,
            updated_at = excluded.updated_at
          on conflict (org_id, ifnull(owner, ''), provider_id) do nothing
          returning ${METADATA_COLUMNS}`,
@@ -207,12 +238,13 @@ export function hostedOrgCredentials(
         owner,
         org,
         input.provider_id,
-        input.kind,
+        kind,
         input.source,
         input.label ?? null,
         input.account_id ?? null,
         input.expires_at ?? null,
         await cipher.seal(id, input.secret),
+        mark,
         timestamp,
         timestamp,
       )
@@ -222,19 +254,44 @@ export function hostedOrgCredentials(
 
   const changed = async (statement: HostedCredentialStatement) => ((await statement.run()).meta.changes ?? 0) > 0
 
+  const listCredentials = async () => {
+    const rows = await database
+      .prepare(`select ${METADATA_COLUMNS} from hosted_provider_credentials where org_id = ? order by provider_id`)
+      .bind(org)
+      .all()
+    return rows.results.map(credentialMetadataRow)
+  }
+
   return {
-    listCredentials: async () => {
+    listCredentials,
+    // One row per person and provider, so each marked row is its provider's
+    // account; between two providers answering on one vendor host, delivery
+    // spends the more recent mark.
+    effectiveCredentials: async () => {
       const rows = await database
-        .prepare(`select ${METADATA_COLUMNS} from hosted_provider_credentials where org_id = ? order by provider_id`)
+        .prepare(`select ${METADATA_COLUMNS} from hosted_provider_credentials where org_id = ? and activated_at is not null order by activated_at desc`)
         .bind(org)
         .all()
       return rows.results.map(credentialMetadataRow)
     },
-    getCredentialByProvider: (providerId, { owner, kind }) => metadataByProvider(providerId, owner, kind),
-    getCredential: async (id) => {
-      const row = await database.prepare(`select ${METADATA_COLUMNS} from hosted_provider_credentials where org_id = ? and id = ?`).bind(org, id).first()
-      return row ? credentialMetadataRow(row) : undefined
+    setActiveCredentials: async (ids, _org, actor) => {
+      const rows: CredentialMetadata[] = []
+      for (const id of ids) {
+        const row = await readCredential(id)
+        if (!row || row.owner !== actor) return { ok: false, reason: "not_found" }
+        if (!fanoutEligible(row)) return { ok: false, reason: "not_eligible" }
+        rows.push(row)
+      }
+      if (new Set(rows.map((row) => row.provider_id)).size !== rows.length) return { ok: false, reason: "ambiguous" }
+      const timestamp = now()
+      await database
+        .prepare(`update hosted_provider_credentials set activated_at = ?, updated_at = ? where org_id = ? and owner = ? and id in (${rows.map(() => "?").join(", ")})`)
+        .bind(timestamp, timestamp, org, actor, ...rows.map((row) => row.id))
+        .run()
+      return { ok: true, credentials: rows.map((row) => ({ ...row, is_active: true, activated_at: timestamp, updated_at: timestamp })) }
     },
+    getCredentialByProvider: (providerId, { owner, kind }) => metadataByProvider(providerId, owner, kind),
+    getCredential: readCredential,
     // Available-status-only, mirroring credentials/registry.ts resolveSecret;
     // the gate is in the same statement as the read, so a revocation landing
     // between two reads cannot hand out the secret.
@@ -419,6 +476,8 @@ function credentialMetadataRow(row: Record<string, unknown>): CredentialMetadata
     id: requiredTextColumn(row, "id"),
     owner: row.owner === null ? null : requiredTextColumn(row, "owner"),
     scope: "shared",
+    is_active: column(row, "activated_at") !== null,
+    activated_at: nullableIntegerColumn(row, "activated_at"),
     org_id: requiredTextColumn(row, "org_id"),
     provider_id: providerId,
     kind: enumColumn(row, "kind", CREDENTIAL_KINDS),

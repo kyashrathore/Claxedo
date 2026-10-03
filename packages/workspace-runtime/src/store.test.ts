@@ -3308,30 +3308,36 @@ void describe("session ordering timestamps", () => {
     assert.equal(after?.time?.created, 1_000)
   })
 
-  void it("only a human turn records lastHumanTurn; an agent turn moves updated alone", () => {
+  void it("only a human turn records lastHumanTurn; any other turn moves updated alone", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-    const turn = (sessionId: string, actorKind?: "human" | "agent") =>
+    const turn = (sessionId: string, humanTurn: boolean) =>
       store.startTurn({
         sessionId,
-        assistantMessageId: `m-${sessionId}-${actorKind ?? "none"}`,
+        assistantMessageId: `m-${sessionId}`,
         agent: "claude",
         model: { providerID: "anthropic", modelID: "claude-opus-5" },
         parts: [{ type: "text", text: "hi" }],
-        ...(actorKind ? { actorId: "actor-1", actorKind } : {}),
+        actorId: "actor-1",
+        actorKind: "human",
+        ...(humanTurn ? { humanTurn: true as const } : {}),
       })
     const read = (id: string) =>
       store.getSession(id) as { time?: { updated?: number; lastHumanTurn?: number } } | null
 
-    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "human", directory: "/work", agentSessionId: "ah", createdAt: 1 })
-    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "agent", directory: "/work", agentSessionId: "aa", createdAt: 1 })
-    turn("human", "human")
-    turn("agent", "agent")
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "sent", directory: "/work", agentSessionId: "ah", createdAt: 1 })
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "woken", directory: "/work", agentSessionId: "aa", createdAt: 1 })
+    const sent = turn("sent", true)
+    const woken = turn("woken", false)
 
-    assert.ok(typeof read("human")?.time?.lastHumanTurn === "number")
-    // A wake or subagent driving a session must not make it look freshly spoken to.
-    assert.equal(read("agent")?.time?.lastHumanTurn, undefined)
-    assert.ok(typeof read("agent")?.time?.updated === "number")
+    assert.ok(typeof read("sent")?.time?.lastHumanTurn === "number")
+    // A wake reissued under the person who admitted it still names them as its actor.
+    assert.equal(read("woken")?.time?.lastHumanTurn, undefined)
+    assert.ok(typeof read("woken")?.time?.updated === "number")
+    const rows = (events: Array<{ type: string; properties: unknown }>) =>
+      events.filter((event) => event.type === "session.updated").map((event) => (event.properties as { info: { time?: { lastHumanTurn?: number } } }).info.time?.lastHumanTurn)
+    assert.deepEqual(rows(sent.events), [read("sent")?.time?.lastHumanTurn])
+    assert.deepEqual(rows(woken.events), [])
   })
 
   void it("an agent turn after a human one leaves the human stamp where it was", () => {
@@ -3346,6 +3352,7 @@ void describe("session ordering timestamps", () => {
       parts: [{ type: "text", text: "hi" }],
       actorId: "actor-1",
       actorKind: "human",
+      humanTurn: true,
     })
     const db = (store as unknown as { db: { prepare(sql: string): { run(...p: unknown[]): unknown } } }).db
     db.prepare("UPDATE session SET last_human_turn_at = ? WHERE id = ?").run(222, "s1")
@@ -3377,6 +3384,7 @@ void describe("session ordering timestamps", () => {
       parts: [{ type: "text", text: "hi" }],
       actorId: "actor-1",
       actorKind: "human",
+      humanTurn: true,
     })
     store.startTurn({
       sessionId: "quiet",

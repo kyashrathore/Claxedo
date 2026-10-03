@@ -51,8 +51,9 @@ export async function run() {
   try {
     const owner = await hostedOwner(stack)
     const key = `h30-secret-${crypto.randomUUID()}`
-    const stored = await hostedFetch(stack, "/auth/openai?harness=pi", {
-      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ auth: { key } }),
+    const stored = await hostedFetch(stack, "/api/claxedo/credentials", {
+      method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider_id: "openai", kind: "api_key", source: "managed", label: "OpenAI", secret: key }),
     }, owner)
     assert.equal(stored.status, 200, `Storing a cloud account: ${await stored.text()}`)
     assert.ok((await connectedPiProviders(stack, owner)).includes("openai"), "stored account was not connected in the server readback")
@@ -71,9 +72,7 @@ export async function run() {
       throw new Error(`The stored account did not reach its cloud sandbox as a placeholder; delivered names: ${first.secretNames.join(",")}`)
     }
 
-    const revoked = await hostedFetch(stack, "/auth/openai?harness=pi", {
-      method: "DELETE", headers: { "content-type": "application/json" }, body: "{}",
-    }, owner)
+    const revoked = await hostedFetch(stack, "/api/claxedo/credentials/provider/openai", { method: "DELETE" }, owner)
     assert.equal(revoked.status, 200, `Revoking the cloud account: ${await revoked.text()}`)
     const until = Date.now() + 20_000
     let next = first

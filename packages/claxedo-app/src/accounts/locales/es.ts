@@ -16,7 +16,6 @@ export default {
   "provider.connect.token.copyCommand": "Copiar el comando",
   "provider.connect.oauth.start": "Iniciar sesión",
   "provider.connect.oauth.hint": "Abre un código para introducir en tu navegador.",
-  "provider.connect.hosted.signsElsewhere": "En {{vendor}} se inicia sesión desde la CLI de Codex en una máquina que tú ejecutas. Esta instalación solo guarda claves pegadas, así que aquí no hay nada que introducir.",
   "provider.connect.oauth.code.visit.prefix": "Visita ",
   "provider.connect.oauth.code.visit.link": "este enlace",
   "provider.connect.oauth.code.visit.suffix.harness": " para obtener tu código de autorización y ejecutar {{harness}} con esta cuenta.",

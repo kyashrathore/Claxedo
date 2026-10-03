@@ -36,6 +36,7 @@ export type CloudProjectCreateInput = {
 export type CloudSourceCreateInput = {
   readonly source: Exclude<ProjectSource, { readonly kind: "folder" }>
   readonly name?: string
+  readonly onCreated?: (id: PlacementId) => void
 }
 
 export type CloudCreateInput = CloudProjectCreateInput | CloudSourceCreateInput

@@ -1,6 +1,6 @@
 import { createContext, createEffect, createSignal, on, useContext, type Accessor, type JSX } from "solid-js"
 import { desktopBridge } from "@/lib/desktop-bridge"
-import { usePhone } from "@/lib/viewport"
+import { useCoarsePointer, usePhone } from "@/lib/viewport"
 import { createShellLayout, panelOpen, persistedSidebar, sidebarPinned, sidebarShown, type ShellLayoutEvent, type ShellLayoutState } from "./model"
 import { clampWidth, createShellPreferences, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from "./store"
 import { isMac } from "./palette/keybinding"
@@ -12,6 +12,7 @@ export type ShellLayout = {
   readonly state: Accessor<ShellLayoutState>
   readonly send: (event: ShellLayoutEvent) => void
   readonly phone: Accessor<boolean>
+  readonly coarsePointer: Accessor<boolean>
   readonly sidebarShown: Accessor<boolean>
   readonly sidebarPinned: Accessor<boolean>
   readonly peekMuted: Accessor<boolean>
@@ -52,6 +53,7 @@ export function ShellLayoutProvider(props: { readonly scope: string; readonly ch
     state: machine.state,
     send,
     phone,
+    coarsePointer: useCoarsePointer(),
     sidebarShown: () => sidebarShown(machine.state()),
     sidebarPinned: () => sidebarPinned(machine.state()),
     peekMuted,

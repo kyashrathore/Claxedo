@@ -8,6 +8,7 @@ import {
   type HostedCredentialDatabase,
 } from "./index"
 import { hostedPiCredentials } from "./pi"
+import { piCredentialProviderIDs } from "@claxedo/server-core/credentials/pi-provider-projection"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { checkCredential } from "@claxedo/server-core/credentials/operations/check"
 import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
@@ -147,10 +148,23 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     const pi = hostedPiCredentials({ resolveOrgId: async () => orgId, credentials: () => credentials })
     const as = (subject: string) => ({ mode: "signed" as const, user: { subject, tokenIdentifier: subject, issuer: "test" } })
     expect((await pi.piProviderCatalog(as("A"))).connected).not.toContain("anthropic")
-    await pi.putPiAccountSource(as("A"), "anthropic", "org")
+    await credentials.setAccountSources(piCredentialProviderIDs("anthropic"), "org", undefined, "A")
     expect((await pi.piProviderCatalog(as("A"))).connected).toContain("anthropic")
     expect((await pi.piProviderCatalog(as("B"))).connected).not.toContain("anthropic")
-    expect(await pi.piAccountSources(as("A"))).toMatchObject({ sources: { anthropic: "org" }, org: ["anthropic"] })
+  })
+
+  test("Pi's Anthropic connected by a Claude Code login says so and is not Pi's own key; Pi's own key is", async () => {
+    const orgId = freshOrg("pi-via")
+    const credentials = store(orgId)
+    const pi = hostedPiCredentials({ resolveOrgId: async () => orgId, credentials: () => credentials })
+    const as = { mode: "signed" as const, user: { subject: "A", tokenIdentifier: "A", issuer: "test" } }
+    const anthropic = async () => (await pi.piProviderCatalog(as)).all.find((provider) => provider.id === "anthropic")
+    await credentials.putCredential({ owner: "A", provider_id: "claude-sdk", kind: "oauth_token", source: "managed", secret: "sk-ant-oat01-a" })
+    expect((await pi.piProviderCatalog(as)).connected).toContain("anthropic")
+    expect(await anthropic()).toMatchObject({ source: "harness", harness: "claude" })
+    await credentials.putCredential({ owner: "A", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-a" })
+    expect(await anthropic()).toMatchObject({ source: "api" })
+    expect(await anthropic()).not.toHaveProperty("harness")
   })
 
   test("fails closed: flag off, blank org, or missing KEK all throw", () => {

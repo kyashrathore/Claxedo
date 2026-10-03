@@ -13,6 +13,7 @@ type Submit =
 export type ProjectCreateFormProps = {
   size?: "compact" | "comfortable"
   localExecution: boolean
+  connectedRepositoryOnly?: boolean
   pickFolder?: () => Promise<string | undefined>
   onCancel?: () => void
 } & Submit
@@ -56,7 +57,7 @@ function NameField(props: { look: CreateFormLook; name: string; onName: (name: s
   )
 }
 
-function createRepositoryChoice(active: Accessor<boolean>) {
+function createRepositoryChoice(active: Accessor<boolean>, connectedOnly: Accessor<boolean>) {
   const server = useServer()
   const connectionsServed = () => server.capabilities()?.features.connections === true
   const offered = useQuery(() => ({ ...server.queries.integrations.catalog(), enabled: active() && connectionsServed() }))
@@ -65,17 +66,19 @@ function createRepositoryChoice(active: Accessor<boolean>) {
   const [chosenId, setChosenId] = createSignal<string>()
   const connection = createMemo(() => usable().find((item) => item.id === chosenId()) ?? usable()[0])
   const [entry, setEntry] = createSignal<"list" | "url">("list")
-  const view = (): "checking" | "url" | "connect" | "list" => {
-    if (!connectionsServed()) return "url"
+  const view = (): "checking" | "url" | "connect" | "list" | "failed" | "unavailable" => {
+    if (!connectionsServed()) return connectedOnly() ? "unavailable" : "url"
     if (offered.isPending) return "checking"
-    if (!integration() || entry() === "url") return "url"
+    if (offered.error) return "failed"
+    if (!integration()) return connectedOnly() ? "unavailable" : "url"
+    if (!connectedOnly() && entry() === "url") return "url"
     return connection() ? "list" : "connect"
   }
   const repositories = useQuery(() => {
     const id = connection()?.id ?? ""
     return { ...server.queries.codeHost.repositories(id), enabled: active() && view() === "list" && id !== "" }
   })
-  return { integration, usable, connection, setChosenId, entry, setEntry, view, repositories }
+  return { integration, usable, connection, setChosenId, entry, setEntry, view, repositories, error: () => offered.error, retry: () => offered.refetch(), connectedOnly }
 }
 
 type RepositoryChoice = ReturnType<typeof createRepositoryChoice>
@@ -97,6 +100,13 @@ function RepositorySection(props: {
     <div class="flex flex-col gap-3">
       <Show when={props.choice.view() === "checking"}>
         <span class={props.look.hint}>{t("projects.create.checking")}</span>
+      </Show>
+      <Show when={props.choice.view() === "failed"}>
+        <p role="alert" class="text-12-regular text-icon-warning-base">{toAppError(props.choice.error()).message}</p>
+        <Button type="button" variant="neutral" class="self-start" onClick={() => void props.choice.retry()}>{t("projects.create.retry")}</Button>
+      </Show>
+      <Show when={props.choice.view() === "unavailable"}>
+        <p role="alert" class={props.look.hint}>{t("projects.create.hostUnavailable")}</p>
       </Show>
       <Show when={props.choice.view() === "connect" ? props.choice.integration() : undefined}>
         {(integration) => <ConnectCodeHost look={props.look} integration={integration()} />}
@@ -123,7 +133,7 @@ function RepositorySection(props: {
       <Show when={props.choice.view() === "url"}>
         <UrlField look={props.look} url={props.url} onUrl={props.onUrl} host={host()} />
       </Show>
-      <Show when={host()}>
+      <Show when={!props.choice.connectedOnly() && host()}>
         {(name) => (
           <button type="button" class={`${props.look.link} self-start`} onClick={() => props.onEntry()}>
             {props.choice.entry() === "url" ? t("projects.create.choose", { host: name() }) : t("projects.add.pasteUrl")}
@@ -145,7 +155,7 @@ function createFormState(props: ProjectCreateFormProps) {
   const [selected, setSelected] = createSignal<string>()
   const offersFolder = () => props.localExecution && Boolean(props.pickFolder)
   const mode = () => (offersFolder() ? source() : "repository")
-  const choice = createRepositoryChoice(() => mode() === "repository")
+  const choice = createRepositoryChoice(() => mode() === "repository", () => props.connectedRepositoryOnly === true)
   const chosen = (): ProjectSource | undefined => {
     if (mode() === "folder") return folder() ? { kind: "folder", path: folder() } : undefined
     const connection = choice.connection()

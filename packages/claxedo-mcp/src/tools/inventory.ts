@@ -103,6 +103,7 @@ export type McpToolGating = Readonly<{
   audiences: readonly McpAudience[]
   scope: McpScope
   destructive?: boolean
+  ownerDriven?: true
 }>
 
 /**
@@ -134,6 +135,7 @@ export function runtimeToolAccess(tool: McpRuntimeToolName, gating: McpToolGatin
     write,
     scope: gating.scope,
     ...(gating.destructive ? { destructive: true } : {}),
+    ...(gating.ownerDriven ? { ownerDriven: true } : {}),
   }
 }
 
@@ -159,5 +161,6 @@ export function declaredToolAccess(
     ...(gating.destructive ? { destructive: true } : {}),
     ...(gating.operation ? { operation: gating.operation } : {}),
     ...(gating.appPlugins ? { appPlugins: true } : {}),
+    ...(gating.ownerDriven ? { ownerDriven: true } : {}),
   }
 }
