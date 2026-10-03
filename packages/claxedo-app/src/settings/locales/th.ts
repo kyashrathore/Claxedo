@@ -87,8 +87,6 @@ export default {
   "settings.connections.secretRequired": "ป้อนข้อมูลลับที่จำเป็นก่อนเชื่อมต่อ",
   "settings.machines.description": "คอมพิวเตอร์ที่บัญชีนี้เข้าถึงได้ และสิ่งที่แต่ละเครื่องให้บริการ",
   "settings.machines.remoteAccess": "การเข้าถึงระยะไกล",
-  "settings.machines.remoteAccess.unavailable": "ยังไม่พร้อมใช้งาน",
-  "settings.machines.remoteAccess.unavailable.description": "การเข้าถึงระยะไกลจะมาเร็วๆ นี้ การลงชื่อเข้าใช้อุปกรณ์และรีเลย์แบบโฮสต์ยังไม่พร้อมใช้งาน",
   "settings.machines.remoteAccess.enable": "เปิดใช้การเข้าถึงระยะไกล",
   "settings.machines.yours": "เครื่องของคุณ",
   "settings.machines.yours.description": "แต่ละเครื่องให้บริการพื้นที่ทำงานที่ตนมี การเพิกถอนเครื่องจะสิ้นสุดการเข้าถึงระยะไกล",

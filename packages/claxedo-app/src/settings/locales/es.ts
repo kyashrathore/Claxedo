@@ -86,8 +86,6 @@ export default {
   "settings.connections.secretRequired": "Introduce el secreto necesario antes de conectar.",
   "settings.machines.description": "Los equipos a los que llega esta cuenta y lo que sirve cada uno.",
   "settings.machines.remoteAccess": "Acceso remoto",
-  "settings.machines.remoteAccess.unavailable": "Aún no disponible",
-  "settings.machines.remoteAccess.unavailable.description": "El acceso remoto llegará pronto. El inicio de sesión de dispositivos y el relé alojado aún no están disponibles.",
   "settings.machines.remoteAccess.enable": "Activar acceso remoto",
   "settings.machines.yours": "Tus máquinas",
   "settings.machines.yours.description": "Cada una sirve los espacios de trabajo que contiene. Revocar una máquina pone fin a su acceso remoto.",

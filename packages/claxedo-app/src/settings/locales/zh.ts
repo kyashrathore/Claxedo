@@ -87,8 +87,6 @@ export default {
   "settings.connections.secretRequired": "连接前请输入所需的密钥。",
   "settings.machines.description": "此账户可访问的计算机，以及每台提供的内容。",
   "settings.machines.remoteAccess": "远程访问",
-  "settings.machines.remoteAccess.unavailable": "暂不可用",
-  "settings.machines.remoteAccess.unavailable.description": "远程访问即将推出。设备登录和托管中继暂不可用。",
   "settings.machines.remoteAccess.enable": "启用远程访问",
   "settings.machines.yours": "你的机器",
   "settings.machines.yours.description": "每台机器提供其持有的工作区。撤销机器会结束其远程访问。",

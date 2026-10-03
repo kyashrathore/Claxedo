@@ -85,8 +85,6 @@ export default {
   "settings.connections.secretRequired": "Indtast den krævede hemmelighed, før du forbinder.",
   "settings.machines.description": "De computere, denne konto kan nå, og hvad hver enkelt leverer.",
   "settings.machines.remoteAccess": "Fjernadgang",
-  "settings.machines.remoteAccess.unavailable": "Ikke tilgængelig endnu",
-  "settings.machines.remoteAccess.unavailable.description": "Fjernadgang kommer snart. Enhedslogin og det hostede relæ er ikke tilgængelige endnu.",
   "settings.machines.remoteAccess.enable": "Aktivér fjernadgang",
   "settings.machines.yours": "Dine maskiner",
   "settings.machines.yours.description": "Hver leverer de arbejdsområder, den har. Tilbagekaldes en maskine, ophører dens fjernadgang.",

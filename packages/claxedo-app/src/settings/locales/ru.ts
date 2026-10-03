@@ -86,8 +86,6 @@ export default {
   "settings.connections.secretRequired": "Перед подключением введите нужный секрет.",
   "settings.machines.description": "Компьютеры, доступные этому аккаунту, и что обслуживает каждый.",
   "settings.machines.remoteAccess": "Удалённый доступ",
-  "settings.machines.remoteAccess.unavailable": "Пока недоступно",
-  "settings.machines.remoteAccess.unavailable.description": "Удалённый доступ скоро появится. Вход с устройств и облачный ретранслятор пока недоступны.",
   "settings.machines.remoteAccess.enable": "Включить удалённый доступ",
   "settings.machines.yours": "Ваши машины",
   "settings.machines.yours.description": "Каждая обслуживает свои рабочие области. Отзыв машины прекращает её удалённый доступ.",

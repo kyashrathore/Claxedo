@@ -87,8 +87,6 @@ export default {
   "settings.connections.secretRequired": "أدخل السر المطلوب قبل الاتصال.",
   "settings.machines.description": "أجهزة الكمبيوتر التي يصل إليها هذا الحساب وما يقدّمه كل منها.",
   "settings.machines.remoteAccess": "الوصول عن بُعد",
-  "settings.machines.remoteAccess.unavailable": "غير متاح بعد",
-  "settings.machines.remoteAccess.unavailable.description": "الوصول عن بُعد قادم قريبًا. تسجيل دخول الأجهزة والمرحّل المستضاف غير متاحين بعد.",
   "settings.machines.remoteAccess.enable": "تفعيل الوصول عن بُعد",
   "settings.machines.yours": "أجهزتك",
   "settings.machines.yours.description": "يقدّم كل جهاز مساحات العمل التي يحتفظ بها. إلغاء جهاز يُنهي وصوله عن بُعد.",

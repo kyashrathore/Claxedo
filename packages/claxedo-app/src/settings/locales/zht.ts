@@ -87,8 +87,6 @@ export default {
   "settings.connections.secretRequired": "連線前請輸入必要的密鑰。",
   "settings.machines.description": "此帳戶可連線的電腦，以及每台提供的內容。",
   "settings.machines.remoteAccess": "遠端存取",
-  "settings.machines.remoteAccess.unavailable": "尚無法使用",
-  "settings.machines.remoteAccess.unavailable.description": "遠端存取即將推出。裝置登入與代管中繼尚無法使用。",
   "settings.machines.remoteAccess.enable": "啟用遠端存取",
   "settings.machines.yours": "你的機器",
   "settings.machines.yours.description": "每台機器提供其持有的工作區。撤銷機器會結束其遠端存取。",

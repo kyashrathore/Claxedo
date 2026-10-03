@@ -1,5 +1,6 @@
 import { createMemo, createSignal, For, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
+import { useAuth } from "@/auth"
 import { useTranslator } from "@/i18n"
 import { copyText } from "@/lib/clipboard"
 import { useServer, type Machine } from "@/server"
@@ -95,7 +96,9 @@ function MachineRow(props: { readonly machine: Machine }) {
 
 export function MachinesSection() {
   const t = useTranslator(settingsDictionary)
+  const auth = useAuth()
   const server = useServer()
+  const signedIn = () => auth.state().kind === "signedIn"
   const query = useQuery(() => server.queries.machines.list())
   const machines = createMemo(() => listedMachines(query.data ?? []))
   return (
@@ -105,8 +108,8 @@ export function MachinesSection() {
         <SettingsList variant="outline">
           <SettingsRow
             leading={<span class="settings-dot" data-tone="muted" aria-hidden="true" />}
-            title={t("settings.machines.remoteAccess.unavailable")}
-            description={t("settings.machines.remoteAccess.unavailable.description")}
+            title={t(signedIn() ? "settings.machines.remoteAccess.unavailable" : "settings.machines.remoteAccess.signIn")}
+            description={t(signedIn() ? "settings.machines.remoteAccess.unavailable.description" : "settings.machines.remoteAccess.signIn.description")}
           >
             <Button size="small" variant="neutral" disabled>
               {t("settings.machines.remoteAccess.enable")}

@@ -87,8 +87,6 @@ export default {
   "settings.connections.secretRequired": "연결하기 전에 필요한 비밀 값을 입력하세요.",
   "settings.machines.description": "이 계정이 연결할 수 있는 컴퓨터와 각 컴퓨터가 제공하는 것입니다.",
   "settings.machines.remoteAccess": "원격 액세스",
-  "settings.machines.remoteAccess.unavailable": "아직 사용할 수 없음",
-  "settings.machines.remoteAccess.unavailable.description": "원격 액세스가 곧 제공됩니다. 기기 로그인과 호스팅 릴레이는 아직 사용할 수 없습니다.",
   "settings.machines.remoteAccess.enable": "원격 액세스 사용",
   "settings.machines.yours": "내 머신",
   "settings.machines.yours.description": "각 머신은 보유한 작업 공간을 제공합니다. 머신을 취소하면 원격 액세스가 종료됩니다.",

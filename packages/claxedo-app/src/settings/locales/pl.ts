@@ -84,8 +84,6 @@ export default {
   "settings.connections.secretRequired": "Przed połączeniem wpisz wymagany sekret.",
   "settings.machines.description": "Komputery, do których ma dostęp to konto, i co każdy z nich udostępnia.",
   "settings.machines.remoteAccess": "Dostęp zdalny",
-  "settings.machines.remoteAccess.unavailable": "Jeszcze niedostępne",
-  "settings.machines.remoteAccess.unavailable.description": "Dostęp zdalny już wkrótce. Logowanie urządzeń i hostowany przekaźnik nie są jeszcze dostępne.",
   "settings.machines.remoteAccess.enable": "Włącz dostęp zdalny",
   "settings.machines.yours": "Twoje maszyny",
   "settings.machines.yours.description": "Każda udostępnia obszary robocze, które przechowuje. Odwołanie maszyny kończy jej dostęp zdalny.",

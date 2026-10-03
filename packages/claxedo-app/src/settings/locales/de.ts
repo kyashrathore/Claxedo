@@ -85,8 +85,6 @@ export default {
   "settings.connections.secretRequired": "Gib vor dem Verbinden das erforderliche Geheimnis ein.",
   "settings.machines.description": "Die Computer, die dieses Konto erreicht, und was jeder bereitstellt.",
   "settings.machines.remoteAccess": "Fernzugriff",
-  "settings.machines.remoteAccess.unavailable": "Noch nicht verfügbar",
-  "settings.machines.remoteAccess.unavailable.description": "Fernzugriff kommt bald. Geräteanmeldung und das gehostete Relay sind noch nicht verfügbar.",
   "settings.machines.remoteAccess.enable": "Fernzugriff aktivieren",
   "settings.machines.yours": "Deine Maschinen",
   "settings.machines.yours.description": "Jede stellt die Arbeitsbereiche bereit, die sie hält. Wer eine Maschine widerruft, beendet ihren Fernzugriff.",

@@ -84,8 +84,6 @@ export default {
   "settings.connections.secretRequired": "Saisissez le secret requis avant de vous connecter.",
   "settings.machines.description": "Les ordinateurs que ce compte peut joindre, et ce que chacun sert.",
   "settings.machines.remoteAccess": "Accès à distance",
-  "settings.machines.remoteAccess.unavailable": "Pas encore disponible",
-  "settings.machines.remoteAccess.unavailable.description": "L'accès à distance arrive bientôt. La connexion des appareils et le relais hébergé ne sont pas encore disponibles.",
   "settings.machines.remoteAccess.enable": "Activer l'accès à distance",
   "settings.machines.yours": "Vos machines",
   "settings.machines.yours.description": "Chacune sert les espaces de travail qu'elle contient. Révoquer une machine met fin à son accès à distance.",

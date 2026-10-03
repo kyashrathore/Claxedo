@@ -87,8 +87,6 @@ export default {
   "settings.connections.secretRequired": "接続する前に必要なシークレットを入力してください。",
   "settings.machines.description": "このアカウントが接続できるコンピューターと、それぞれが提供するもの。",
   "settings.machines.remoteAccess": "リモートアクセス",
-  "settings.machines.remoteAccess.unavailable": "まだ利用できません",
-  "settings.machines.remoteAccess.unavailable.description": "リモートアクセスは近日提供予定です。デバイスのサインインとホスト型リレーはまだ利用できません。",
   "settings.machines.remoteAccess.enable": "リモートアクセスを有効にする",
   "settings.machines.yours": "あなたのマシン",
   "settings.machines.yours.description": "各マシンは保持するワークスペースを提供します。マシンを取り消すとリモートアクセスが終了します。",

@@ -86,8 +86,6 @@ export default {
   "settings.connections.secretRequired": "Bağlanmadan önce gerekli gizli bilgiyi girin.",
   "settings.machines.description": "Bu hesabın erişebildiği bilgisayarlar ve her birinin sunduğu şeyler.",
   "settings.machines.remoteAccess": "Uzaktan erişim",
-  "settings.machines.remoteAccess.unavailable": "Henüz kullanılamıyor",
-  "settings.machines.remoteAccess.unavailable.description": "Uzaktan erişim yakında geliyor. Cihaz oturumu ve barındırılan aktarıcı henüz kullanılamıyor.",
   "settings.machines.remoteAccess.enable": "Uzaktan erişimi etkinleştir",
   "settings.machines.yours": "Makineleriniz",
   "settings.machines.yours.description": "Her biri tuttuğu çalışma alanlarını sunar. Bir makineyi iptal etmek uzaktan erişimini sonlandırır.",

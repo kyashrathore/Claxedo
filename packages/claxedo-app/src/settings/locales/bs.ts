@@ -86,8 +86,6 @@ export default {
   "settings.connections.secretRequired": "Unesite potrebnu tajnu prije povezivanja.",
   "settings.machines.description": "Računari do kojih ovaj račun dopire i šta svaki od njih poslužuje.",
   "settings.machines.remoteAccess": "Daljinski pristup",
-  "settings.machines.remoteAccess.unavailable": "Još nije dostupno",
-  "settings.machines.remoteAccess.unavailable.description": "Daljinski pristup uskoro dolazi. Prijava uređaja i hostovani relej još nisu dostupni.",
   "settings.machines.remoteAccess.enable": "Omogući daljinski pristup",
   "settings.machines.yours": "Vaše mašine",
   "settings.machines.yours.description": "Svaka poslužuje radne prostore koje drži. Opoziv mašine prekida njen daljinski pristup.",

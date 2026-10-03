@@ -85,8 +85,6 @@ export default {
   "settings.connections.secretRequired": "Skriv inn den nødvendige hemmeligheten før du kobler til.",
   "settings.machines.description": "Datamaskinene denne kontoen når, og hva hver av dem leverer.",
   "settings.machines.remoteAccess": "Fjerntilgang",
-  "settings.machines.remoteAccess.unavailable": "Ikke tilgjengelig ennå",
-  "settings.machines.remoteAccess.unavailable.description": "Fjerntilgang kommer snart. Enhetspålogging og det hostede reléet er ikke tilgjengelig ennå.",
   "settings.machines.remoteAccess.enable": "Aktiver fjerntilgang",
   "settings.machines.yours": "Dine maskiner",
   "settings.machines.yours.description": "Hver leverer arbeidsområdene den har. Å tilbakekalle en maskin avslutter fjerntilgangen.",
