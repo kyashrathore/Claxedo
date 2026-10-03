@@ -70,6 +70,8 @@ const DOCKER_DAEMON_WAIT_SECONDS = 120
 const RUNTIME_ENV_PATH = ".claxedo-runtime-env"
 const REGISTRY_PASSWORD_PATH = ".claxedo-registry-password"
 const CONTAINER_ENV_PATH = "/run/claxedo-runtime.env"
+const WORKSPACE_MOUNT_PATH = "claxedo-workspace"
+const START_LOCK_PATH = ".claxedo-runtime.lock"
 
 const STDERR_TAIL_CHARS = 600
 const REDACTED_VALUE_MIN_LENGTH = 8
@@ -181,11 +183,13 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
    * express them), and the registry password is piped to `docker login` from a
    * file that is removed whatever the outcome; a failed login aborts the chain.
    *
-   * A resume reboots the VM, and Docker comes up as a systemd service some
-   * time after Boat reports the sandbox ready, so the chain first waits for
-   * the daemon. The workspace lives in the container's own filesystem, so an
-   * existing container of the same image is started again rather than
-   * replaced; only a missing one, or one of another image, is (re)created.
+   * A resume reboots the VM onto a fresh Docker store (the image is pulled
+   * again and no container survives), and Docker comes up as a systemd
+   * service after Boat reports the sandbox ready; the chain waits for the
+   * daemon. The workspace directory is bind-mounted from the VM's own
+   * filesystem, which the stop snapshot keeps. Boat delivered one resumed
+   * boot's command twice, so the chain holds a file lock: the second delivery
+   * finds the container the first created and only starts it.
    */
   function containerStartScript(input: SandboxDriverEnsureInput): string {
     const port = runtimePort(input)
@@ -199,9 +203,13 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     ].join(" && ")
     const run = `docker run -d --name ${containerName} -p ${port}:${port} `
       + `-v "$(pwd)/${RUNTIME_ENV_PATH}:${CONTAINER_ENV_PATH}:ro" `
+      + `-v "$(pwd)/${WORKSPACE_MOUNT_PATH}:${directory}" `
       + `--entrypoint sh ${image} -lc ${shell(bootScript)}`
     const steps = [
+      `exec 9>${START_LOCK_PATH}`,
+      "flock 9",
       `chmod 600 ${RUNTIME_ENV_PATH}`,
+      `mkdir -p ${WORKSPACE_MOUNT_PATH}`,
       `timeout ${DOCKER_DAEMON_WAIT_SECONDS} sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'`,
       ...(options.registryAuth
         ? [`{ chmod 600 ${REGISTRY_PASSWORD_PATH}; docker login ${shell(options.registryAuth.server)} `

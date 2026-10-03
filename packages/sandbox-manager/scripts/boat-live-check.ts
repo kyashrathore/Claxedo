@@ -63,6 +63,12 @@ async function archived(id: string) {
   return "archived"
 }
 
+async function inWorkspace(id: string, command: string) {
+  const result = await client.command(id, { command: `docker exec claxedo-runtime sh -c ${JSON.stringify(command)}` })
+  if (result.exitCode !== 0) throw new Error(`workspace command exited ${result.exitCode}`)
+  return result.stdout.trim()
+}
+
 async function containerFacts(id: string) {
   const command = [
     "systemctl is-active docker",
@@ -92,11 +98,14 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 try {
   const first = await timed("booted", async () => booted(await driver.ensureHost(ensure)), (target) => ({ sandboxId: target.sandboxId, url: target.url }))
   await timed("public health", () => publicHealth(first.url), (status) => ({ status }))
+  await timed("workspace marker written", () => inWorkspace(first.sandboxId, `echo ${workspaceId} > .live-check`))
   await timed("stop requested", () => client.stop(first.sandboxId))
   await timed("stopped", () => archived(first.sandboxId), (state) => ({ state }))
   const lease = sandboxLease({ workspaceId, driver: "boat", sandboxId: first.sandboxId, hostId: first.hostId, url: first.url, status: "stopped" })
   const second = await timed("resumed", async () => booted(await driver.resumeHost?.({ lease, ensure })), (target) => ({ url: target.url, sameUrl: target.url === first.url }))
   await timed("public health after resume", () => publicHealth(second.url), (status) => ({ status }))
+  const marker = await timed("workspace marker read", () => inWorkspace(second.sandboxId, "cat .live-check"), (text) => ({ survived: text === workspaceId }))
+  if (marker !== workspaceId) throw new Error("the workspace did not survive stop and resume")
   report("passed")
 } catch (error) {
   const errors = error instanceof AggregateError ? error.errors : [error]

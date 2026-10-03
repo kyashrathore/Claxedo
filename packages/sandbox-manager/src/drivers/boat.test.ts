@@ -117,6 +117,7 @@ function runStartCommand(command: string, vm: { existingImage?: string; daemonUp
     chmodSync(path.join(bin, name), 0o755)
   }
   tool("timeout", 'shift\nexec "$@"')
+  tool("flock", `echo "flock $*" >> ${log}`)
   tool("docker", [
     `echo "$*" >> ${log}`,
     `if [ "$1" = info ]; then n=$(($(cat ${dir}/info 2>/dev/null || echo 0) + 1)); echo $n > ${dir}/info; [ $n -gt ${vm.daemonUpAfter ?? 0} ]; exit $?; fi`,
@@ -334,6 +335,7 @@ describe("boat sandbox driver", () => {
     expect(run?.body.command).toContain("ghcr.io/test/sandbox:1")
     expect(run?.body.command).toContain("-p 2593:2593")
     expect(run?.body.command).toContain(".claxedo-runtime-env:/run/claxedo-runtime.env:ro")
+    expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-workspace:/workspace"`)
     expect(run?.body.command).not.toContain("--env ")
     const envWrite = boat.calls.find((c) => c.path.endsWith("/files") && c.body?.path === ".claxedo-runtime-env")
     expect(envWrite?.body).toMatchObject({ encoding: "utf8" })
@@ -354,19 +356,19 @@ describe("boat sandbox driver", () => {
   test("a fresh VM waits for the Docker daemon, then creates the runtime container", async () => {
     const run = runStartCommand(await startCommand(), { daemonUpAfter: 2 })
     expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["info", "info", "info", "inspect --format", "rm -f", "run -d"])
+    expect(run.calls).toEqual(["flock 9", "info", "info", "info", "inspect --format", "rm -f", "run -d"])
   })
 
-  test("a resumed VM starts its existing runtime container, keeping the workspace inside it", async () => {
+  test("a repeated start finds the container the first one created and only starts it", async () => {
     const run = runStartCommand(await startCommand(), { existingImage: IMAGE, daemonUpAfter: 1 })
     expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["info", "info", "inspect --format", "start claxedo-runtime"])
+    expect(run.calls).toEqual(["flock 9", "info", "info", "inspect --format", "start claxedo-runtime"])
   })
 
   test("a container of another image is replaced by one of the image this boot names", async () => {
     const run = runStartCommand(await startCommand(), { existingImage: "ghcr.io/test/sandbox:0" })
     expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d"])
+    expect(run.calls).toEqual(["flock 9", "info", "inspect --format", "rm -f", "run -d"])
   })
 
   test("keeps env values and registry credentials out of command strings", async () => {
