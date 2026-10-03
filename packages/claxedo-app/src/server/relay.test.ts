@@ -102,3 +102,36 @@ test("relay: session links are isolated from siblings and owned links, including
   expect(reads).toEqual([["ws_1", "ses_a"], ["ws_1", "ses_b"], ["ws_1", undefined], ["ws_1", "ses_a"], ["ws_1", "ses_b"]])
   expect(new Headers(runtimeFetch.mock.calls.at(-1)?.[1]?.headers).get("authorization")).toBe("Bearer ses_b:5")
 })
+
+function tab() {
+  const items = new Map<string, string>()
+  return { getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => void items.set(key, value), items }
+}
+
+test("relay: a signed-in person's link outlives a reload of the page, so reloads within its life mint nothing more", async () => {
+  const server = control({ sessionId: "ses_pi", relayUrl: link.relayUrl, runtimeAccessToken: "rat", tokenExpiresAt: link.tokenExpiresAt })
+  runtimeFetch.mockImplementation(Object.assign(async () => Response.json([]), { preconnect: fetch.preconnect }))
+  const storage = tab()
+  for (let reload = 0; reload < 5; reload++) {
+    const relay = createRelay(server.read, { scope: "usr_ada", storage })
+    await relay.fetch("ws_1", "/session/ses_pi", undefined, "ses_pi")
+    await relay.fetch("ws_1", "/api/wr/events?sessionID=ses_pi", undefined, "ses_pi")
+  }
+  expect(server.calls).toEqual([{ path: "/api/workspace/ws_1/connection?sessionId=ses_pi", method: undefined }])
+  expect(runtimeFetch).toHaveBeenCalledTimes(10)
+  const other = createRelay(server.read, { scope: "usr_bob", storage })
+  await other.fetch("ws_1", "/session/ses_pi", undefined, "ses_pi")
+  expect(server.calls, "another person's reload never reuses Ada's link").toHaveLength(2)
+})
+
+test("relay: a kept link near its expiry is minted again on the next reload and kept in its place", async () => {
+  const server = control({ relayUrl: link.relayUrl, runtimeAccessToken: "renewed", tokenExpiresAt: Date.now() + 3_600_000 })
+  runtimeFetch.mockImplementation(Object.assign(async () => Response.json([]), { preconnect: fetch.preconnect }))
+  const storage = tab()
+  storage.setItem(`claxedo:relay-link:usr_ada:${JSON.stringify(["ws_1", null])}`, JSON.stringify({ ...link, runtimeAccessToken: "expiring", tokenExpiresAt: Date.now() + 30_000 }))
+  await createRelay(server.read, { scope: "usr_ada", storage }).fetch("ws_1", "/api/wr/health")
+  expect(server.calls).toHaveLength(1)
+  expect(new Headers(runtimeFetch.mock.calls[0]?.[1]?.headers).get("authorization")).toBe("Bearer renewed")
+  await createRelay(server.read, { scope: "usr_ada", storage }).fetch("ws_1", "/api/wr/health")
+  expect(server.calls, "the renewed link serves the next reload").toHaveLength(1)
+})

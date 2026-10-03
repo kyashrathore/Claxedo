@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import type { RunHostedOperation } from "@claxedo/account-contract"
 import { ServerError } from "./errors"
+import type { RelayLinkStorage } from "./relay"
 
 export type AccountEvents = (init: { readonly lastEventId?: string; readonly signal: AbortSignal }) => Promise<Response>
 
@@ -11,6 +12,7 @@ export type ServerConfig = {
   readonly thisMachineReport?: () => Promise<unknown>
   readonly cookies?: boolean
   readonly eventSocket?: boolean
+  readonly relayLinks?: RelayLinkStorage
 }
 
 const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"])

@@ -164,7 +164,7 @@ export function createTransport(config: ServerConfig): Transport {
   const account = config.account ? createHostedAccount(config.account) : undefined
   const connections = createWorkspaceConnections(request, account)
   const hosts = sessionHostSignals()
-  const relay = createRelay(async (workspaceId, sessionId) => hosts.learned(workspaceId, sessionId, await connections.read(workspaceId, sessionId)))
+  const relay = createRelay(async (workspaceId, sessionId) => hosts.learned(workspaceId, sessionId, await connections.read(workspaceId, sessionId)), config.relayLinks)
   const daemonProxy = loopback && config.account === undefined
   const runtime = (route: RuntimeRoute, path: string, init?: RequestInit) => {
     if (!route.remote) return request(withQuery(path, { directory: route.directory }), init)

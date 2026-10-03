@@ -4,6 +4,7 @@ import { AuthProvider, useAuth, type Auth, type AuthState } from "@/auth"
 import { I18nProvider } from "@/i18n"
 import { desktopMachineReport } from "@/lib/desktop-bridge"
 import { ClockProvider } from "@/lib/clock"
+import { tabStorage } from "@/lib/persisted"
 import { ProjectListProvider } from "@/projects"
 import { CompactSwitcher, MainSidebar } from "@/rail"
 import { createServer, ServerProvider, type ServerConfig } from "@/server"
@@ -20,12 +21,14 @@ function principalOf(state: AuthState): string | undefined {
   return state.kind === "signedIn" ? state.user.id : undefined
 }
 
-type ServerAccess = Pick<ServerConfig, "account" | "accountEvents" | "cookies">
+type ServerAccess = Pick<ServerConfig, "account" | "accountEvents" | "cookies" | "relayLinks">
 
 function serverAccess(auth: Auth, principal: string | undefined): ServerAccess {
   if (principal === undefined) return {}
   const access = auth.controlPlane
-  return access.kind === "port" ? { account: access.run, accountEvents: access.events } : { cookies: true }
+  const storage = tabStorage()
+  const relayLinks = storage ? { relayLinks: { scope: principal, storage } } : {}
+  return access.kind === "port" ? { account: access.run, accountEvents: access.events, ...relayLinks } : { cookies: true, ...relayLinks }
 }
 
 function ServerScope(props: ParentProps<{ readonly access: ServerAccess; readonly serverUrl?: string }>): JSX.Element {

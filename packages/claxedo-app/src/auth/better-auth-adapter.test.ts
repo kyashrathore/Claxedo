@@ -47,12 +47,17 @@ function fakeServer(methods: readonly string[] = ["email-password", "github"], s
   return { calls, adapter: createBetterAuthBrowserAdapter({ request, createClient: () => client }) }
 }
 
-beforeEach(() => {
+function installStorage(name: "localStorage" | "sessionStorage") {
   const items = new Map<string, string>()
-  Object.defineProperty(globalThis, "localStorage", {
+  Object.defineProperty(globalThis, name, {
     configurable: true,
     value: new Proxy({ getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => void items.set(key, value), removeItem: (key: string) => void items.delete(key) }, { ownKeys: () => [...items.keys()], getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }) }),
   })
+}
+
+beforeEach(() => {
+  installStorage("localStorage")
+  installStorage("sessionStorage")
 })
 
 test("better auth: a server that issues no sessions leaves sign-in unavailable", async () => {
@@ -78,8 +83,10 @@ test("better auth: an email sign-in lands on the app and adopts the user; sign-o
   const auth = adapter.useAuth()
   await auth.signIn({ method: "email-password", email: "ada@claxedo.test", password: "secret" })
   expect(auth.user()).toEqual({ id: "user-1", email: "ada@claxedo.test" })
+  sessionStorage.setItem("claxedo:relay-link:user-1:[\"ws_1\",null]", "{}")
   await auth.signOut()
   expect(auth.user()).toBeNull()
+  expect(sessionStorage.getItem("claxedo:relay-link:user-1:[\"ws_1\",null]"), "sign-out drops the tab's relay links").toBeNull()
   expect(calls).toEqual([`email ada@claxedo.test ${app}/`, "sign-out"])
 })
 

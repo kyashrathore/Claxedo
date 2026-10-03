@@ -28,17 +28,6 @@ async function runningCloudWorkspace(signed: SignedStack) {
   return workspace
 }
 
-function sessionConnections(page: Page, workspace: CloudWorkspace) {
-  const answers: Array<{ backing: string; hostId: string }> = []
-  page.on("response", async (response) => {
-    const url = new URL(response.url())
-    const scoped = url.searchParams.has("sessionId") || response.request().postData()?.includes("sessionId")
-    if (url.pathname !== `/api/workspace/${workspace.id}/connection` || !scoped || !response.ok()) return
-    answers.push(await response.json() as { backing: string; hostId: string })
-  })
-  return answers
-}
-
 async function startPiFromComposer(page: Page, signed: SignedStack, workspace: CloudWorkspace, prompt: string) {
   await page.goto(`${signed.url}${sessionRoute(workspace.id)}`)
   await page.getByRole("button", { name: /^Select harness and model/ }).click()
@@ -68,10 +57,13 @@ test("51 Pi started from the composer on a cloud workspace runs in its own sessi
   await expect(page.getByText("CLOUDPIWROTE", { exact: true })).toBeVisible({ timeout: 60_000 })
   expect((await listedSessions(signedCloud, workspace)).find((row) => row.sessionId === sessionId)?.sessionHostRoot).toBe(sessionId)
 
-  const connections = sessionConnections(page, workspace)
-  await page.reload()
-  await expect(page.getByText("CLOUDPIWROTE", { exact: true })).toBeVisible()
-  expect(connections).toContainEqual(expect.objectContaining({ backing: "durable-object", hostId: `session-do:${sessionId}` }))
+  const mints: string[] = []
+  page.on("request", (request) => { if (new URL(request.url()).pathname === `/api/workspace/${workspace.id}/connection`) mints.push(request.url()) })
+  for (let reload = 0; reload < 3; reload++) {
+    await page.reload()
+    await expect(page.getByText("CLOUDPIWROTE", { exact: true })).toBeVisible()
+  }
+  expect(mints, "reloads reuse the tab's still-valid links").toEqual([])
   await sendPrompt(page, "Reply with exactly this one token: CLOUDPIAGAIN")
   await expect(page.getByText("CLOUDPIAGAIN", { exact: true })).toBeVisible({ timeout: 60_000 })
 
