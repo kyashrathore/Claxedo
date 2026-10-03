@@ -1,9 +1,8 @@
 import { createEffect, onCleanup, type JSX, type ParentProps } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { useServer } from "@/server"
 import { useSessionStores, type UnseenOutcome } from "@/session"
 import { sessionPath, useShellRoute } from "@/shell"
-import { createAlertDetector, type AlertKind, type AlertPreferences } from "./alerts"
+import { ALERT_OF, type AlertKind, type AlertPreferences } from "./alerts"
 import { notificationsDictionary, type NotificationKey } from "./i18n"
 import { createSoundPlayer } from "./sounds"
 import { showSystemNotification } from "./system"
@@ -18,10 +17,8 @@ const OUTCOME: Readonly<Partial<Record<AlertKind, UnseenOutcome>>> = { agent: "f
 
 export function AttentionAlerts(props: ParentProps<{ readonly preferences: AlertPreferences }>): JSX.Element {
   const t = useTranslator(notificationsDictionary)
-  const server = useServer()
   const stores = useSessionStores()
   const routing = useShellRoute()
-  const detect = createAlertDetector()
   const sound = createSoundPlayer()
   const unseen = stores.unseenOutcomes
   const shownSession = () => {
@@ -33,9 +30,8 @@ export function AttentionAlerts(props: ParentProps<{ readonly preferences: Alert
     if (sessionId) unseen.seen(sessionId)
   })
   onCleanup(
-    server.subscribe((event) => {
-      const alert = detect(event)
-      if (!alert) return
+    stores.onAttention((attention) => {
+      const alert = { kind: ALERT_OF[attention.kind], ref: attention.ref }
       const row = stores.list.view(alert.ref.sessionId)
       if (!row || row.parentSessionId) return
       if (shownSession() !== alert.ref.sessionId) {

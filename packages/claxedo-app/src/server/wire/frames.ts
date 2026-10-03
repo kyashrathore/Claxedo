@@ -7,7 +7,7 @@ import { goalFromWire } from "./goal"
 import { connectionStateFromWire, harnessHealthFromWire } from "./harness-state"
 import { subagentFromWire } from "./subagents"
 import { isPermissionWire, isQuestionWire, requestFromPermission, requestFromQuestion } from "./requests"
-import { lastTurnFromWire, sessionLocationFor, sessionRowFromSession, type Address } from "./session-row"
+import { lastTurnFromWire, listedStatusFromListItem, sessionLocationFor, sessionRowFromSession, type Address } from "./session-row"
 import { sessionStatusFromTurnError, sessionStatusFromWire } from "./status"
 import { terminalEvent } from "./terminals"
 import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
@@ -233,9 +233,32 @@ function controlEvent(frame: Frame, address: Address): ServerEvent | undefined {
   }
 }
 
+function statusNotice(frame: Frame, address: Address): ServerEvent | undefined {
+  const { sessionId, workspaceId, status, awaitingInput, backgroundWork, lastTurn, replayed } = frame.raw
+  const id = nonEmptyString(sessionId)
+  const workspace = nonEmptyString(workspaceId)
+  const listed = listedStatusFromListItem({ status: { kind: status, awaitingInput, backgroundWork } })
+  if (!id || !workspace || !listed) return undefined
+  const ref = sessionLocationFor(address, { directory: `workspace:${workspace}`, workspaceId: workspace, sessionId: id })
+  if (!ref) return undefined
+  const turn = lastTurnFromWire(lastTurn)
+  return {
+    type: "statusChanged",
+    ref,
+    status: listed.status,
+    waitingOnUser: listed.waitingOnUser,
+    backgroundWork: listed.backgroundWork,
+    ...(turn ? { lastTurn: turn } : {}),
+    ...(replayed === true ? { replayed } : {}),
+  }
+}
+
+export const STATUS_NOTICE = "session.status.changed"
+
 const SESSION_FRAME = /^(message\.|session\.(status|idle|error|updated|deleted|diff|background-work)$|todo\.updated$|goal\.(updated|cleared)$|subagent\.updated$|harness\.health$|permission\.|question\.)/
 
 export function serverEventFromFrame(frame: Frame, address: Address): ServerEvent | undefined {
+  if (frame.type === STATUS_NOTICE) return statusNotice(frame, address)
   if (!SESSION_FRAME.test(frame.type)) return controlEvent(frame, address)
   const ref = refOf(frame, address)
   if (!ref) return undefined

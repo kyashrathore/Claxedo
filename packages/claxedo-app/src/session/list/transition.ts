@@ -45,7 +45,7 @@ function applyListEvent<S extends ListData>(state: S, event: ServerListEvent): S
     case "sessionRemoved":
       return tombstoneRow(state, event.ref, event.at)
     case "statusChanged": {
-      const next = statusChanged(state, event.ref, event.status, event.at)
+      const next = statusChanged(state, event.ref, event.status, event.at, event.waitingOnUser)
       return event.lastTurn ? turnEnded(next, event.ref, event.lastTurn) : next
     }
     case "backgroundWorkChanged":

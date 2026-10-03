@@ -87,3 +87,43 @@ test("frames: a part retraction names the withdrawn parts and why", () => {
   })
   expect(frame && serverEventFromFrame(frame, address)).toEqual({ type: "partsRetracted", ref, reason: "refusal", parts: [{ messageId: "m1", partId: "p1" }] })
 })
+
+test("frames: a hosted status notice becomes the session's statusChanged with its wait, background work and last turn", () => {
+  const byWorkspace: Address = {
+    placementFor: (directory, workspaceId) => (directory === "workspace:ws_1" && workspaceId === "ws_1" ? { placementId: placementId("p1"), projectId: projectId("j1") } : undefined),
+  }
+  const notice = (fields: Record<string, unknown>) => frameFromWire({
+    type: "session.status.changed",
+    ownerUserId: "user_reader",
+    orgId: "org_1",
+    sessionId: "s1",
+    workspaceId: "ws_1",
+    status: "idle",
+    awaitingInput: false,
+    ts: 9,
+    ...fields,
+  })
+  const ended = notice({ lastTurn: { status: "failed", completedAt: 9 } })
+  const waiting = notice({ status: "busy", awaitingInput: true, backgroundWork: { agents: 1, shells: 0, other: 0 }, replayed: true })
+  const unknownStatus = notice({ status: "thinking" })
+  const elsewhere = notice({ workspaceId: "ws_2" })
+
+  expect(ended && serverEventFromFrame(ended, byWorkspace)).toEqual({
+    type: "statusChanged",
+    ref,
+    status: { kind: "idle" },
+    waitingOnUser: false,
+    backgroundWork: { agents: 0, shells: 0, other: 0 },
+    lastTurn: { status: "failed", completedAt: 9 },
+  })
+  expect(waiting && serverEventFromFrame(waiting, byWorkspace)).toEqual({
+    type: "statusChanged",
+    ref,
+    status: { kind: "working" },
+    waitingOnUser: true,
+    backgroundWork: { agents: 1, shells: 0, other: 0 },
+    replayed: true,
+  })
+  expect(unknownStatus && serverEventFromFrame(unknownStatus, byWorkspace)).toBeUndefined()
+  expect(elsewhere && serverEventFromFrame(elsewhere, byWorkspace)).toBeUndefined()
+})

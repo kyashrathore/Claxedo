@@ -70,7 +70,14 @@ export type ListData = {
 export type ServerListEvent =
   | { readonly type: "sessionUpserted"; readonly row: SessionRow }
   | { readonly type: "sessionRemoved"; readonly ref: SessionLocation; readonly at: number }
-  | { readonly type: "statusChanged"; readonly ref: SessionLocation; readonly status: SessionStatus; readonly lastTurn?: SessionLastTurn; readonly at: number }
+  | {
+      readonly type: "statusChanged"
+      readonly ref: SessionLocation
+      readonly status: SessionStatus
+      readonly lastTurn?: SessionLastTurn
+      readonly waitingOnUser?: boolean
+      readonly at: number
+    }
   | { readonly type: "backgroundWorkChanged"; readonly ref: SessionLocation; readonly work: BackgroundWork; readonly at: number }
 
 export type MorePhase =

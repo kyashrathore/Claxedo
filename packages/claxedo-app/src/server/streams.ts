@@ -1,4 +1,4 @@
-import type { ServerConfig } from "./config"
+import type { AccountEvents, ServerConfig } from "./config"
 import type { ConnectionState } from "./events"
 import { openEventStream, type Stream } from "./stream"
 import type { Transport } from "./transport"
@@ -86,23 +86,39 @@ function openEventsAt(input: StreamsInput, path: string, socket: boolean, report
   })
 }
 
+function openAccountEvents(input: StreamsInput, events: AccountEvents): Stream {
+  return openEventStream({
+    open: ({ headers, signal }) => {
+      const lastEventId = headers.get("Last-Event-ID")
+      return events({ ...(lastEventId ? { lastEventId } : {}), signal })
+    },
+    onFrame: input.onFrame,
+    onGap: input.onGap,
+  })
+}
+
 export function createEventStreams(input: StreamsInput): EventStreams {
   const { config, transport } = input
   const streams: Stream[] = []
+  let account: Stream | undefined
   const report = () => input.onState(aggregate(streams.map((stream) => stream.state())))
   const socket = config.eventSocket === true && transport.loopback
   return {
     open: (declaration) => {
       streams.push(openEventsAt(input, CONTROL_PLANE_EVENTS_PATH, socket, report))
       if (declaration.hostAggregate) streams.push(openEventsAt(input, WORKSPACE_EVENTS_PATH, false, report))
+      if (config.accountEvents) account = openAccountEvents(input, config.accountEvents)
       report()
     },
     retry: () => {
       for (const stream of streams) stream.retry()
+      account?.retry()
     },
     close: () => {
       for (const stream of streams) stream.close()
       streams.length = 0
+      account?.close()
+      account = undefined
     },
   }
 }

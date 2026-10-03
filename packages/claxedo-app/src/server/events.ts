@@ -11,7 +11,15 @@ export type PartAddress = { readonly messageId: string; readonly partId: string 
 export type ServerEvent =
   | { readonly type: "sessionUpserted"; readonly row: SessionRow }
   | { readonly type: "sessionRemoved"; readonly ref: SessionLocation }
-  | { readonly type: "statusChanged"; readonly ref: SessionLocation; readonly status: SessionStatus; readonly lastTurn?: SessionLastTurn }
+  | {
+      readonly type: "statusChanged"
+      readonly ref: SessionLocation
+      readonly status: SessionStatus
+      readonly lastTurn?: SessionLastTurn
+      readonly waitingOnUser?: boolean
+      readonly backgroundWork?: BackgroundWork
+      readonly replayed?: boolean
+    }
   | { readonly type: "backgroundWorkChanged"; readonly ref: SessionLocation; readonly work: BackgroundWork }
   | { readonly type: "messageUpserted"; readonly ref: SessionLocation; readonly message: TranscriptMessage }
   | { readonly type: "messageRemoved"; readonly ref: SessionLocation; readonly messageId: string }

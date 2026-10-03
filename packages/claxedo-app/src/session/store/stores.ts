@@ -1,23 +1,27 @@
 import { createSignal, getOwner, onCleanup, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { ReaderSettings, Server, ServerEvent, SessionId } from "@/server"
-import type { SessionStores, UnseenOutcome } from "@/session"
+import type { SessionAttention, SessionStores, UnseenOutcome } from "@/session"
 import { createSessionList, type SessionListInternal } from "../list"
 import { createRequests, type RequestsInternal } from "../requests"
+import { attentionRaised, createAttentionChannel } from "./attention"
 import { createSessionTranscript } from "../transcript"
 import { transcriptViewport } from "../transcript-viewport"
 import { CACHED_TURN_LIMIT, OPEN_SESSION_LIMIT, createOpenSessions, type OpenSessions } from "./open-sessions"
 
-function dispatchServerEvent(event: ServerEvent, list: SessionListInternal, requests: RequestsInternal, open: OpenSessions): void {
+function dispatchServerEvent(event: ServerEvent, list: SessionListInternal, requests: RequestsInternal, open: OpenSessions): SessionAttention | undefined {
+  const attention = attentionRaised(event, list)
   list.apply(event)
   requests.apply(event)
   if (event.type === "streamGap") {
     open.forgetCached()
-    return open.forEach((session) => session.gap())
+    open.forEach((session) => session.gap())
+    return attention
   }
-  if (!("ref" in event)) return
+  if (!("ref" in event)) return attention
   open.forgetCached(event.ref.sessionId)
   open.byId(event.ref.sessionId)?.apply(event)
+  return attention
 }
 
 export function createSessionStores(server: Server, settings: () => ReaderSettings): SessionStores {
@@ -34,14 +38,17 @@ export function createSessionStores(server: Server, settings: () => ReaderSettin
     onEvicted: (sessionId) => list.closed(sessionId),
     stamp: (sessionId) => list.rowOf(sessionId)?.updatedAt,
   })
-  const unsubscribe = server.subscribe((event) => dispatchServerEvent(event, list, requests, open))
+  const attention = createAttentionChannel()
+  const unsubscribe = server.subscribe((event) => attention.raise(dispatchServerEvent(event, list, requests, open)))
   onCleanup(() => {
     unsubscribe()
+    attention.clear()
     open.disposeAll()
   })
   list.start()
   return {
     list,
+    onAttention: attention.subscribe,
     unseenOutcomes: {
       of: (sessionId) => unseen[sessionId],
       raised: (sessionId, outcome) => setUnseen(sessionId, outcome),

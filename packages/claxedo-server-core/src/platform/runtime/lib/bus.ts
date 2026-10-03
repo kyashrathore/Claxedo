@@ -119,6 +119,8 @@ export type SessionStatusChangedEvent = {
   lastTurn?: SessionLastTurn
   /** When the runtime reported the status, as the registry holds it. */
   ts: number
+  /** Set by the live-sync room on a notice it replays to a reconnecting reader: state the reader missed, which raises no alert. */
+  replayed?: true
 }
 
 /**

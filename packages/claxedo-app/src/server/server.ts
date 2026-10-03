@@ -20,6 +20,7 @@ import { createHarnessConfigApi } from "./harness-config"
 import { createLivePluginsApi } from "./live-plugins"
 import { createOperations } from "./operations"
 import type { ProjectId } from "./ids"
+import type { SessionLocation } from "./types"
 import type { Server, ServerQueries } from "./api"
 import { createProjectsApi } from "./projects"
 import { queryKeys } from "./query-keys"
@@ -105,7 +106,8 @@ export function createServer(config: ServerConfig): ServerHandle {
   const account = port ?? (config.cookies ? createBrowserHostedAccount(transport) : undefined)
   const workspaces = createWorkspaces(transport, queryClient, account)
   const status = createStatusOwner(transport)
-  const intake = createEventIntake({ serverUrl: transport.serverUrl, queryClient, workspaces, status })
+  const streamed = (ref: SessionLocation) => workspaces.servedHere(ref.placementId) || placementStreams.streams(ref)
+  const intake = createEventIntake({ serverUrl: transport.serverUrl, queryClient, workspaces, status, streamed })
   const [connection, setConnection] = createSignal<ConnectionState>({ kind: "connecting" })
   const streams = createEventStreams({ config, transport, onFrame: intake.frame, onGap: intake.gap, onState: setConnection })
   const capabilities = createCapabilities(transport, workspaces)

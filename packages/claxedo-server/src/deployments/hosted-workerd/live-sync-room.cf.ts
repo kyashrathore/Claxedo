@@ -556,7 +556,10 @@ export class LiveSyncRoom {
     return replay
       .replayAfter(cursor, throughId)
       .filter((event) => eventVisibleTo(principal, event.payload))
-      .map((event) => ({ id: event.id, frame: event.payload }))
+      .map((event) => ({
+        id: event.id,
+        frame: event.payload.type === "session.status.changed" ? { ...event.payload, replayed: true as const } : event.payload,
+      }))
   }
 
   async fetch(request: Request): Promise<Response> {

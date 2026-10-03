@@ -841,6 +841,7 @@ describe("LiveSyncRoom — session status notices", () => {
       awaitingInput: false,
       lastTurn: { status: "completed", completedAt: 5 },
       ts: 5,
+      replayed: true,
     }])
     expect(bob.frames.slice(1).map((frame) => (frame.data as { sessionId: string }).sessionId)).toEqual(["ses_2"])
   })
@@ -851,6 +852,19 @@ describe("LiveSyncRoom — session status notices", () => {
       const response = await room.fetch(new Request("https://live-sync-room.internal/nudge", { method: "POST", body: JSON.stringify(body) }))
       expect(response.status).toBe(400)
     }
+  })
+
+  test("a notice delivered live is not marked replayed", async () => {
+    const namespace = createFakeNamespace()
+    const response = await connectLiveSyncRoom(namespace, subscriber("alice", "acme"), 60_000)
+    const reader = response.body!.getReader()
+    await readFrame(reader)
+    await nudgeLiveSyncRoom(namespace, "org:acme", statusChanged("alice", "ses_live", "busy", 7))
+
+    const frame = await readFrame(reader)
+    expect(frame).toMatchObject({ type: "session.status.changed", sessionId: "ses_live" })
+    expect(frame).not.toHaveProperty("replayed")
+    await reader.cancel()
   })
 
   test("a replay sends the latest notice of each session, doorbells kept in order", async () => {

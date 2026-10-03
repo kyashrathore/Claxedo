@@ -8,9 +8,9 @@ function readIsStale(current: Timed | undefined, sentAt: number): boolean {
   return current.source === "event" ? current.at >= sentAt : current.at > sentAt
 }
 
-export function statusChanged<S extends ListData>(data: S, ref: SessionLocation, status: SessionStatus, at: number): S {
+export function statusChanged<S extends ListData>(data: S, ref: SessionLocation, status: SessionStatus, at: number, waitingOnUser = false): S {
   const statuses = new Map(data.statuses)
-  statuses.set(ref.sessionId, { status, at, source: "event", waitingOnUser: false })
+  statuses.set(ref.sessionId, { status, at, source: "event", waitingOnUser })
   return { ...data, statuses }
 }
 

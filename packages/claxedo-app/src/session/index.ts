@@ -124,8 +124,11 @@ export type { SessionSubagent }
 
 export type UnseenOutcome = "finished" | "failed"
 
+export type SessionAttention = { readonly kind: "finished" | "failed" | "waiting"; readonly ref: SessionLocation }
+
 export type SessionStores = {
   readonly list: SessionList
+  readonly onAttention: (listener: (attention: SessionAttention) => void) => () => void
   readonly unseenOutcomes: {
     readonly of: (sessionId: SessionId) => UnseenOutcome | undefined
     readonly raised: (sessionId: SessionId, outcome: UnseenOutcome) => void

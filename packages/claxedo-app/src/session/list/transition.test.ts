@@ -195,6 +195,9 @@ test("a listed status is a read at the page's send time: a newer event beats it,
     window: window([page(ALPHA, [row(ALPHA, "a1", 50)], undefined, [["a1", { status: { kind: "working" }, waitingOnUser: true, backgroundWork: { agents: 0, shells: 0, other: 0 } }]])], [], 1_200),
   })
   expect(stale.statuses.get(sessionId("a1"))).toMatchObject({ status: { kind: "idle" }, source: "event" })
+
+  const notified = run(stale, { type: "statusChanged", ref: row(ALPHA, "a1", 50).ref, status: { kind: "working" }, waitingOnUser: true, at: 1_600 })
+  expect(notified.statuses.get(sessionId("a1")), "a status notice states the wait itself").toMatchObject({ status: { kind: "working" }, waitingOnUser: true, source: "event" })
 })
 
 test("a turn's status that lands before its session's row is the row's status once the row arrives", () => {

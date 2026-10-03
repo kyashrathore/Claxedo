@@ -1,4 +1,5 @@
 import { createSignal, onCleanup, type Accessor } from "solid-js"
+import { accountEvents } from "@/server"
 import type { AccountBinding, ControlPlaneAccess, AccountSession } from "./binding"
 import { desktopAccountState, type DesktopAccountBridge, type DesktopAccountState } from "./desktop-bridge"
 
@@ -29,6 +30,7 @@ function followBridge(bridge: DesktopAccountBridge) {
 function portAccess(bridge: DesktopAccountBridge, refresh: () => Promise<void>): ControlPlaneAccess {
   return {
     kind: "port",
+    events: accountEvents(bridge),
     run: async (operation, input) => {
       try {
         return await bridge.run(operation, input)
