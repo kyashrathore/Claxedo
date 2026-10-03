@@ -1,7 +1,7 @@
 import { batch } from "solid-js"
 import { toAppError, type AppError, type TranscriptPage } from "@/server"
 import type { TranscriptContext } from "./context"
-import { prependPage } from "./conversation"
+import { mergePage } from "./conversation"
 
 type OlderOutcome = { readonly page: TranscriptPage } | { readonly error: AppError } | undefined
 
@@ -32,7 +32,7 @@ function landOlderPage(context: TranscriptContext, outcome: OlderOutcome): void 
   }
   const { page } = outcome
   batch(() => {
-    prependPage(context.setData, page)
+    mergePage(context.setData, page)
     context.setOlderCursor(page.olderCursor)
     context.older.send({ type: "olderLanded" })
   })

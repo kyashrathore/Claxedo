@@ -3,7 +3,7 @@ import { expect, test } from "bun:test"
 import { createRoot, createEffect } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { TranscriptPage, TranscriptPart } from "@/server"
-import { appendDelta, prependPage, retractParts, upsertPart } from "./conversation"
+import { appendDelta, mergePage, retractParts, upsertPart } from "./conversation"
 import { emptyTranscript } from "./model"
 
 function textPart(id: string, text: string): TranscriptPart {
@@ -45,7 +45,7 @@ test("a page read records the parts it brings with text", () => {
   const page = {
     entries: [{ info: { id: "msg_1", role: "assistant" }, parts: [textPart("prt_1", "read back"), textPart("prt_2", "   ")] }],
   } as unknown as TranscriptPage
-  prependPage(set, page)
+  mergePage(set, page)
   expect(data.partsWithText).toEqual({ prt_1: true })
 })
 

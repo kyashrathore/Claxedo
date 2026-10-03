@@ -102,10 +102,10 @@ function landedParts(current: readonly TranscriptPart[] | undefined, read: reado
   return read.map((part) => mergedPart(byId.get(part.id), part))
 }
 
-export function prependPage(set: SetTranscript, page: TranscriptPage): void {
-  const older = pageMessages(page)
+export function mergePage(set: SetTranscript, page: TranscriptPage): void {
+  const read = pageMessages(page)
   batch(() => {
-    set("messages", (messages) => mergeSortedById(older, messages))
+    set("messages", (messages) => mergeSortedById(messages, read))
     set(
       "parts",
       produce((parts) => {
