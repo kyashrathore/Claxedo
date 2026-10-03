@@ -101,27 +101,34 @@ function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnc
 
 /**
  * Runs the driver's container start command under a real `sh`, with `docker`
- * and `timeout` replaced by recorders: `docker info` fails until the daemon
- * has been asked `daemonUpAfter` times, and `docker inspect` answers the
- * image of the container the VM already holds, if any.
+ * and `timeout` replaced by a recorder over one container slot: `docker info`
+ * fails until the daemon has been asked `daemonUpAfter` times, `inspect`
+ * answers the slot's image, and `run` fills the slot unless Boat's own
+ * recreation (`recreatedDuringRun`) fills it first and the create conflicts.
  */
-function runStartCommand(command: string, vm: { existingImage?: string; daemonUpAfter?: number }) {
+function runStartCommand(command: string, vm: { existingImage?: string; daemonUpAfter?: number; recreatedDuringRun?: string }) {
   const dir = mkdtempSync(path.join(tmpdir(), "boat-start-"))
   const bin = path.join(dir, "bin")
   mkdirSync(bin)
   const log = path.join(dir, "docker.log")
+  const slot = path.join(dir, "container")
   writeFileSync(log, "")
   writeFileSync(path.join(dir, ".claxedo-runtime-env"), "")
+  if (vm.existingImage) writeFileSync(slot, vm.existingImage)
   const tool = (name: string, body: string) => {
     writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`)
     chmodSync(path.join(bin, name), 0o755)
   }
   tool("timeout", 'shift\nexec "$@"')
-  tool("flock", `echo "flock $*" >> ${log}`)
   tool("docker", [
     `echo "$*" >> ${log}`,
-    `if [ "$1" = info ]; then n=$(($(cat ${dir}/info 2>/dev/null || echo 0) + 1)); echo $n > ${dir}/info; [ $n -gt ${vm.daemonUpAfter ?? 0} ]; exit $?; fi`,
-    `if [ "$1" = inspect ]; then [ -n "${vm.existingImage ?? ""}" ] || exit 1; echo "${vm.existingImage ?? ""}"; fi`,
+    `case "$1" in`,
+    `  info) n=$(($(cat ${dir}/info 2>/dev/null || echo 0) + 1)); echo $n > ${dir}/info; [ $n -gt ${vm.daemonUpAfter ?? 0} ] ;;`,
+    `  inspect) cat ${slot} 2>/dev/null ;;`,
+    `  rm) rm -f ${slot} ;;`,
+    `  run) if [ -n "${vm.recreatedDuringRun ?? ""}" ]; then echo "${vm.recreatedDuringRun ?? ""}" > ${slot}; echo Conflict >&2; exit 125; fi; echo ${IMAGE} > ${slot} ;;`,
+    `  start) [ -f ${slot} ] ;;`,
+    `esac`,
   ].join("\n"))
   tool("sleep", "exit 0")
   const result = spawnSync("sh", ["-c", command], { cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8" })
@@ -359,7 +366,7 @@ describe("boat sandbox driver", () => {
   test("a fresh VM waits for the Docker daemon, then creates the runtime container", async () => {
     const run = runStartCommand(await startCommand(), { daemonUpAfter: 2 })
     expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["flock 9", "info", "info", "info", "inspect --format", "rm -f", "run -d"])
+    expect(run.calls).toEqual(["info", "info", "info", "inspect --format", "rm -f", "run -d"])
     for (const state of ["workspace", "claxedo", "workspace-runtime"]) {
       expect(existsSync(path.join(run.dir, "claxedo-persistent", state))).toBe(true)
     }
@@ -368,13 +375,25 @@ describe("boat sandbox driver", () => {
   test("a repeated start finds the container the first one created and only starts it", async () => {
     const run = runStartCommand(await startCommand(), { existingImage: IMAGE, daemonUpAfter: 1 })
     expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["flock 9", "info", "info", "inspect --format", "start claxedo-runtime"])
+    expect(run.calls).toEqual(["info", "info", "inspect --format", "start claxedo-runtime"])
   })
 
   test("a container of another image is replaced by one of the image this boot names", async () => {
     const run = runStartCommand(await startCommand(), { existingImage: "ghcr.io/test/sandbox:0" })
     expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["flock 9", "info", "inspect --format", "rm -f", "run -d"])
+    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d"])
+  })
+
+  test("a create that loses the race to Boat's recreation starts the container Boat recreated", async () => {
+    const run = runStartCommand(await startCommand(), { recreatedDuringRun: IMAGE })
+    expect(run.status).toBe(0)
+    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d", "inspect --format", "start claxedo-runtime"])
+  })
+
+  test("a create that fails for any other reason fails the start", async () => {
+    const run = runStartCommand(await startCommand(), { recreatedDuringRun: "ghcr.io/test/sandbox:0" })
+    expect(run.status).not.toBe(0)
+    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d", "inspect --format"])
   })
 
   test("keeps env values and registry credentials out of command strings", async () => {

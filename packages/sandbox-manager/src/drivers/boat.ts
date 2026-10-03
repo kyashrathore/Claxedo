@@ -76,7 +76,6 @@ const CONTAINER_ENV_PATH = "/run/claxedo-runtime.env"
 // the image runs as root).
 const PERSISTENT_ROOT = "claxedo-persistent"
 const PERSISTENT_HOME_MOUNTS = [["claxedo", "/root/.claxedo"], ["workspace-runtime", "/root/.workspace-runtime"]] as const
-const START_LOCK_PATH = ".claxedo-runtime.lock"
 
 const STDERR_TAIL_CHARS = 600
 const REDACTED_VALUE_MIN_LENGTH = 8
@@ -188,13 +187,14 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
    * express them), and the registry password is piped to `docker login` from a
    * file that is removed whatever the outcome; a failed login aborts the chain.
    *
-   * A resume reboots the VM onto a fresh Docker store (the image is pulled
-   * again and no container survives), and Docker comes up as a systemd
-   * service after Boat reports the sandbox ready; the chain waits for the
-   * daemon. The workspace and the runtime's own state are bind-mounted from
-   * the VM's filesystem, which the stop snapshot keeps. Boat delivered one resumed
-   * boot's command twice, so the chain holds a file lock: the second delivery
-   * finds the container the first created and only starts it.
+   * A resume reboots the VM: Docker comes up as a systemd service after
+   * Boat reports the sandbox ready, so the chain waits for the daemon. Boat
+   * then recreates the containers that were running, pulling their images
+   * again (docs.boat.dev/snapshots, "What is captured"), while the driver
+   * boots the runtime too. Whichever creates the container first wins: an
+   * existing container of this image is started, and a create that loses the
+   * race starts the one that won. The workspace and the runtime's own state
+   * are bind-mounted from the sandbox filesystem the snapshot keeps.
    */
   function containerStartScript(input: SandboxDriverEnsureInput): string {
     const port = runtimePort(input)
@@ -211,9 +211,8 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
       + `-v "$(pwd)/${RUNTIME_ENV_PATH}:${CONTAINER_ENV_PATH}:ro" `
       + mounts.map(([source, target]) => `-v "$(pwd)/${PERSISTENT_ROOT}/${source}":${shell(target)} `).join("")
       + `--entrypoint sh ${image} -lc ${shell(bootScript)}`
+    const ours = `[ "$(docker inspect --format '{{.Config.Image}}' ${containerName} 2>/dev/null)" = ${image} ]`
     const steps = [
-      `exec 9>${START_LOCK_PATH}`,
-      "flock 9",
       `chmod 600 ${RUNTIME_ENV_PATH}`,
       `mkdir -p ${mounts.map(([source]) => `${PERSISTENT_ROOT}/${source}`).join(" ")}`,
       `timeout ${DOCKER_DAEMON_WAIT_SECONDS} sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'`,
@@ -222,9 +221,9 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
           + `--username ${shell(options.registryAuth.username)} --password-stdin < ${REGISTRY_PASSWORD_PATH}; `
           + `rc=$?; rm -f ${REGISTRY_PASSWORD_PATH}; (exit $rc); }`]
         : []),
-      `if [ "$(docker inspect --format '{{.Config.Image}}' ${containerName} 2>/dev/null)" = ${image} ]; `
-      + `then docker start ${containerName} >/dev/null; `
-      + `else { docker rm -f ${containerName} >/dev/null 2>&1 || true; } && ${run}; fi`,
+      `if ${ours}; then docker start ${containerName} >/dev/null; `
+      + `else { docker rm -f ${containerName} >/dev/null 2>&1 || true; } `
+      + `&& { ${run} || { ${ours} && docker start ${containerName} >/dev/null; }; }; fi`,
     ]
     return steps.join(" && ")
   }
