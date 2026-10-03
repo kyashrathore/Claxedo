@@ -44,15 +44,21 @@ const ENTRIES = [
   // provisions a sandbox, which the Agent Plugins entries already carried.
   // Every entry carries the D1 workspace authority's refusal type and owner
   // identity helpers as modules of their own (`d1/workspace-authority-error.ts`,
-  // `d1/owner-identity.ts`).
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 120, packages: 19 },
+  // `d1/owner-identity.ts`). Every entry serves a Pi session on a cloud
+  // workspace from its own Durable Object: the session host port
+  // (`authority/session-hosts.ts`), its connection mint
+  // (`connections/session-host-connection.ts`) and its per-turn routes
+  // (`routes/session-host-delivery.ts`), with the session authority's request
+  // parsing (`routes/runtime-session-authority-request.ts`) and the D1 session
+  // row shapes (`d1/session-rows.ts`) as modules of their own.
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 125, packages: 19 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
   // plus `agent-plugins/signed-scope.ts`, the caller and write guard the
   // activation and source stores share.
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 170, packages: 23 },
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 175, packages: 23 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 175, packages: 23 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 180, packages: 23 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

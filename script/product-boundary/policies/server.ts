@@ -69,7 +69,15 @@ export const serverWorkerd: Policy = {
   // The D1 workspace authority's refusal type and its owner identity and
   // bootstrap-claim helpers are modules of their own
   // (`authority/adapters/d1/workspace-authority-error.ts`, `owner-identity.ts`).
-  ceilings: { modules: 120, packages: 19 },
+  // A Pi session on a cloud workspace is served by its own Durable Object:
+  // the plane resolves and admits that host (`authority/session-hosts.ts`),
+  // mints its connection (`connections/session-host-connection.ts`) and
+  // answers its per-turn delivery and execution calls
+  // (`routes/session-host-delivery.ts`); the session authority's request
+  // parsing (`routes/runtime-session-authority-request.ts`) and the D1 session
+  // tables' row shapes (`authority/adapters/d1/session-rows.ts`) are modules
+  // of their own.
+  ceilings: { modules: 125, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
