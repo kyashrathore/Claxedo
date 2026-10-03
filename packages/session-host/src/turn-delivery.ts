@@ -15,12 +15,12 @@ export class TurnAuthorityError extends Error {
 
 const EXECUTION_RENEW_MS = 60_000
 
-async function digest(value: unknown): Promise<string> {
+async function deliveryGeneration(value: unknown): Promise<string> {
   const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value))))
   return Array.from(bytes.slice(0, 8), (byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
-function pause(ms: number, signal: AbortSignal): Promise<void> {
+function waitRetryAfter(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(resolve, ms)
     signal.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason) }, { once: true })
@@ -54,7 +54,7 @@ export class SessionHostTurns {
     const fetched = this.post("turn-delivery", lease).then(async (body) => {
       const delivery = parseTurnDelivery(body)
       if (!delivery) throw new TurnAuthorityError(502, "turn_delivery_invalid")
-      const turn = { key, delivery, generation: await digest([delivery.plugins, delivery.providerDefinitions]) }
+      const turn = { key, delivery, generation: await deliveryGeneration([delivery.plugins, delivery.providerDefinitions]) }
       if (this.deliveries.get(key) === fetched) this.delivered.set(key, turn)
       return turn
     })
@@ -88,7 +88,7 @@ export class SessionHostTurns {
         return access
       } catch (error) {
         if (!(error instanceof TurnAuthorityError) || error.retryAfterMs === undefined) throw error
-        await pause(error.retryAfterMs, signal)
+        await waitRetryAfter(error.retryAfterMs, signal)
       }
     }
   }

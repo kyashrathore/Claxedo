@@ -17,30 +17,30 @@ function base64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
-function invalid(what: string): never {
+function invalidAnswer(what: string): never {
   throw new Error(`The workspace machine answered an invalid ${what}`)
 }
 
-const text: Read<string> = (value) => typeof value === "string" ? value : invalid("path or text")
-const flag: Read<boolean> = (value) => typeof value === "boolean" ? value : invalid("answer")
-const none: Read<void> = () => undefined
-const lines: Read<string[]> = (value) => Array.isArray(value) ? value.map(text) : invalid("line list")
+const answerText: Read<string> = (value) => typeof value === "string" ? value : invalidAnswer("path or text")
+const answerFlag: Read<boolean> = (value) => typeof value === "boolean" ? value : invalidAnswer("answer")
+const answerNone: Read<void> = () => undefined
+const answerLines: Read<string[]> = (value) => Array.isArray(value) ? value.map(answerText) : invalidAnswer("line list")
 
-const bytes: Read<Uint8Array> = (value) => {
-  const encoded = asString(asRecord(value)?.base64) ?? invalid("binary content")
+const answerBytes: Read<Uint8Array> = (value) => {
+  const encoded = asString(asRecord(value)?.base64) ?? invalidAnswer("binary content")
   return Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0))
 }
 
-const info: Read<FileInfo> = (value) => {
+const answerInfo: Read<FileInfo> = (value) => {
   const row = asRecord(value)
-  const kind = row?.kind === "file" || row?.kind === "directory" || row?.kind === "symlink" ? row.kind : invalid("file kind")
-  return { name: text(row?.name), path: text(row?.path), kind, size: asNumber(row?.size) ?? invalid("file size"), mtimeMs: asNumber(row?.mtimeMs) ?? invalid("file time") }
+  const kind = row?.kind === "file" || row?.kind === "directory" || row?.kind === "symlink" ? row.kind : invalidAnswer("file kind")
+  return { name: answerText(row?.name), path: answerText(row?.path), kind, size: asNumber(row?.size) ?? invalidAnswer("file size"), mtimeMs: asNumber(row?.mtimeMs) ?? invalidAnswer("file time") }
 }
 
-const infos: Read<FileInfo[]> = (value) => Array.isArray(value) ? value.map(info) : invalid("directory listing")
+const answerInfos: Read<FileInfo[]> = (value) => Array.isArray(value) ? value.map(answerInfo) : invalidAnswer("directory listing")
 
 function wireResult(value: unknown): WireResult {
-  const row = asRecord(value) ?? invalid("result")
+  const row = asRecord(value) ?? invalidAnswer("result")
   if (row.ok === true) return { ok: true, value: row.value }
   const error = asRecord(row.error)
   const path = asString(error?.path)
@@ -112,31 +112,31 @@ export class RemoteExecutionEnv implements ExecutionEnv {
     }
   }
 
-  absolutePath(path: string, context: Context) { return this.fs("absolutePath", [path], context, text) }
-  joinPath(parts: string[], context: Context) { return this.fs("joinPath", [parts], context, text) }
-  readTextFile(path: string, context: Context) { return this.fs("readTextFile", [path], context, text) }
+  absolutePath(path: string, context: Context) { return this.fs("absolutePath", [path], context, answerText) }
+  joinPath(parts: string[], context: Context) { return this.fs("joinPath", [parts], context, answerText) }
+  readTextFile(path: string, context: Context) { return this.fs("readTextFile", [path], context, answerText) }
   readTextLines(path: string, options: { maxLines?: number } | undefined, context: Context) {
-    return this.fs("readTextLines", [path, options ?? null], context, lines)
+    return this.fs("readTextLines", [path, options ?? null], context, answerLines)
   }
-  readBinaryFile(path: string, context: Context) { return this.fs("readBinaryFile", [path], context, bytes) }
-  writeFile(path: string, data: string | Uint8Array, context: Context) { return this.fs("writeFile", [path, content(data)], context, none) }
-  appendFile(path: string, data: string | Uint8Array, context: Context) { return this.fs("appendFile", [path, content(data)], context, none) }
-  truncateFile(path: string, size: number, context: Context) { return this.fs("truncateFile", [path, size], context, none) }
-  flushFile(path: string, context: Context) { return this.fs("flushFile", [path], context, none) }
-  renameFile(source: string, destination: string, context: Context) { return this.fs("renameFile", [source, destination], context, none) }
-  fileInfo(path: string, context: Context) { return this.fs("fileInfo", [path], context, info) }
-  listDir(path: string, context: Context) { return this.fs("listDir", [path], context, infos) }
-  canonicalPath(path: string, context: Context) { return this.fs("canonicalPath", [path], context, text) }
-  exists(path: string, context: Context) { return this.fs("exists", [path], context, flag) }
+  readBinaryFile(path: string, context: Context) { return this.fs("readBinaryFile", [path], context, answerBytes) }
+  writeFile(path: string, data: string | Uint8Array, context: Context) { return this.fs("writeFile", [path, content(data)], context, answerNone) }
+  appendFile(path: string, data: string | Uint8Array, context: Context) { return this.fs("appendFile", [path, content(data)], context, answerNone) }
+  truncateFile(path: string, size: number, context: Context) { return this.fs("truncateFile", [path, size], context, answerNone) }
+  flushFile(path: string, context: Context) { return this.fs("flushFile", [path], context, answerNone) }
+  renameFile(source: string, destination: string, context: Context) { return this.fs("renameFile", [source, destination], context, answerNone) }
+  fileInfo(path: string, context: Context) { return this.fs("fileInfo", [path], context, answerInfo) }
+  listDir(path: string, context: Context) { return this.fs("listDir", [path], context, answerInfos) }
+  canonicalPath(path: string, context: Context) { return this.fs("canonicalPath", [path], context, answerText) }
+  exists(path: string, context: Context) { return this.fs("exists", [path], context, answerFlag) }
   createDir(path: string, options: { recursive?: boolean } | undefined, context: Context) {
-    return this.fs("createDir", [path, options ?? null], context, none)
+    return this.fs("createDir", [path, options ?? null], context, answerNone)
   }
   remove(path: string, options: { recursive?: boolean; force?: boolean } | undefined, context: Context) {
-    return this.fs("remove", [path, options ?? null], context, none)
+    return this.fs("remove", [path, options ?? null], context, answerNone)
   }
-  createTempDir(prefix: string | undefined, context: Context) { return this.fs("createTempDir", [prefix ?? null], context, text) }
+  createTempDir(prefix: string | undefined, context: Context) { return this.fs("createTempDir", [prefix ?? null], context, answerText) }
   createTempFile(options: { prefix?: string; suffix?: string } | undefined, context: Context) {
-    return this.fs("createTempFile", [options ?? null], context, text)
+    return this.fs("createTempFile", [options ?? null], context, answerText)
   }
 
   async openTextLineReader(path: string, context: Context): Promise<Result<TextLineReader, FileError>> {
@@ -154,7 +154,7 @@ export class RemoteExecutionEnv implements ExecutionEnv {
         return { ok: false, error: new ExecutionError("unknown", `The workspace machine answered ${response.status}: ${await response.text()}`) }
       }
       for await (const event of serverSentEvents(response.body)) {
-        if (event.name === "output") onOutput?.(text(asRecord(JSON.parse(event.data))?.text), context)
+        if (event.name === "output") onOutput?.(answerText(asRecord(JSON.parse(event.data))?.text), context)
         if (event.name === "result") return execResult(wireResult(JSON.parse(event.data)))
       }
       return { ok: false, error: new ExecutionError("unknown", "The workspace machine ended the command without a result") }
@@ -168,7 +168,7 @@ function execResult(result: WireResult): Result<ShellExecResult, ExecutionError>
   if (result.ok) {
     const value = asRecord(result.value)
     const spillPath = asString(value?.spillPath)
-    return { ok: true, value: { exitCode: asNumber(value?.exitCode) ?? invalid("exit code"), ...(spillPath ? { spillPath } : {}) } }
+    return { ok: true, value: { exitCode: asNumber(value?.exitCode) ?? invalidAnswer("exit code"), ...(spillPath ? { spillPath } : {}) } }
   }
   const code = EXECUTION_ERROR_CODES.find((known) => known === result.error.code) ?? "unknown"
   return { ok: false, error: new ExecutionError(code, result.error.message) }

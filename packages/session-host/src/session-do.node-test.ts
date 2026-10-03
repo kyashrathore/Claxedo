@@ -8,6 +8,7 @@ import { after, afterEach, before, describe, it } from "node:test"
 import { generateKeyPair } from "jose"
 import type { PluginProjection, RuntimeConfigSnapshotPlugins } from "@claxedo/harness/contract"
 import { startScriptedModelServer, type ScriptedModelServer } from "../../harness/e2e/harness/scripted-model-server"
+import { eventually } from "../../harness/e2e/harness/eventually"
 import { releasePort, reservePort } from "../../harness/e2e/harness/ports"
 import { controlPlaneStandIn } from "./test-support/control-plane"
 import { bundleSessionHostWorker, sessionHostClient, startSessionHostWorker } from "./test-support/session-host-worker"
@@ -31,16 +32,6 @@ type StoredMessage = { info: { role: string; time?: { completed?: number } }; pa
 
 const assistantText = (messages: StoredMessage[]) =>
   messages.filter((message) => message.info.role === "assistant").flatMap((message) => message.parts).filter((part) => part.type === "text").map((part) => part.text ?? "").join("")
-
-async function eventually<T>(read: () => Promise<T | undefined>, what: string, withinMs = 30_000): Promise<T> {
-  const at = Date.now() + withinMs
-  for (;;) {
-    const value = await read()
-    if (value !== undefined) return value
-    if (Date.now() > at) throw new Error(`${what} did not happen within ${withinMs} ms`)
-    await new Promise((resolve) => setTimeout(resolve, 100))
-  }
-}
 
 function pidAlive(pid: number) {
   try { process.kill(pid, 0); return true } catch { return false }
@@ -100,10 +91,10 @@ void describe("SessionDO under workerd with PiHarness", () => {
     const prompt = (messageID: string, text: string) =>
       json(`/session/${root}/prompt_async`, { method: "POST", body: { parts: [{ type: "text", text }], messageID, model: MODEL } })
     const messages = () => json<StoredMessage[]>(`/session/${root}/message`)
-    const settled = (marker: string) => eventually(async () => {
+    const settled = (marker: string) => eventually(`the answer ${marker}`, async () => {
       const read = await messages()
       return assistantText(read).includes(marker) ? read : undefined
-    }, `the answer ${marker}`).catch(async (error: unknown) => {
+    }, 30_000).catch(async (error: unknown) => {
       throw new Error(`${String(error)}\n${JSON.stringify(await messages())}\nmodel: ${JSON.stringify(model.requests.slice(-3).map((request) => [request.prompt.slice(-300), request.reply, request.tools.map((tool) => tool.name)]))}\ncontrol plane: ${JSON.stringify(controlPlane.calls)}\n${current.worker.stderr()}`)
     })
     /** The machine the object ran on dies; a new workerd opens the same storage and nothing asks it anything. */
@@ -124,7 +115,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
   }
 
   async function pidFrom(file: string) {
-    return eventually(async () => existsSync(file) ? Number(await readFile(file, "utf8")) || undefined : undefined, `${file} written`)
+    return eventually(`${file} written`, async () => existsSync(file) ? Number(await readFile(file, "utf8")) || undefined : undefined, 30_000)
   }
 
   void it("runs a Pi turn in the object with its tool on the machine, reads the transcript from the object, and asks for one delivery", { timeout: 120_000 }, async () => {
@@ -156,7 +147,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     await host.json(`/session/${root}/recovery`, { method: "POST", body: {
       requestId: "stop_1", action: "cancel_turn", target: inspected.target, scopeRevision: inspected.target.ownerGeneration, attempt: 1,
     } })
-    await eventually(async () => pidAlive(pid) ? undefined : true, `bash ${pid} retired`, 15_000)
+    await eventually(`bash ${pid} retired`, async () => pidAlive(pid) ? undefined : true, 15_000)
     assert.equal(assistantText(await host.messages()).includes("PISTOP"), false)
   })
 
@@ -169,12 +160,11 @@ void describe("SessionDO under workerd with PiHarness", () => {
     const pid = await pidFrom(pidFile)
     const answeredBefore = model.requests.length
     await host.crash()
-    await eventually(async () => pidAlive(pid) ? undefined : true, `bash ${pid} retired with the lost object`, 15_000)
-    await eventually(async () => host.controlPlane.calls.deliveries.length === 2 && model.requests.length > answeredBefore ? true : undefined,
-      "the alarm restarting the object and Pi asking the model again", 60_000)
+    await eventually(`bash ${pid} retired with the lost object`, async () => pidAlive(pid) ? undefined : true, 15_000)
+    await eventually("the alarm restarting the object and Pi asking the model again", async () => host.controlPlane.calls.deliveries.length === 2 && model.requests.length > answeredBefore ? true : undefined, 60_000)
     const messages = await host.settled("PIEVICT")
     assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_evict", "msg_evict"])
-    await eventually(async () => host.controlPlane.calls.releases.includes("msg_evict") ? true : undefined, "the taken-over lease released once Pi went idle")
+    await eventually("the taken-over lease released once Pi went idle", async () => host.controlPlane.calls.releases.includes("msg_evict") ? true : undefined)
     assert.ok(messages.some((message) => message.parts.some((part) => part.state?.status === "error" && /interrupted/.test(part.state.error ?? ""))),
       JSON.stringify(messages))
   })
@@ -193,12 +183,12 @@ void describe("SessionDO under workerd with PiHarness", () => {
       await host.crash()
       await host.messages()
       await model.textGateReached("PIREFUSED")
-      await eventually(async () => host.controlPlane.calls.renewals > renewals ? true : undefined, "the taken-over lease's renewal refused", 20_000)
-      await eventually(async () => {
+      await eventually("the taken-over lease's renewal refused", async () => host.controlPlane.calls.renewals > renewals ? true : undefined, 20_000)
+      await eventually("the continuation ending once its lease was refused", async () => {
         const messages = await host.messages()
         const last = messages.at(-1)
         return last?.info.role === "assistant" && last.info.time?.completed ? messages : undefined
-      }, "the continuation ending once its lease was refused", 20_000)
+      }, 20_000)
     } finally { release() }
     assert.equal(assistantText(await host.messages()).includes("PIREFUSED"), false)
     assert.deepEqual(host.controlPlane.calls.releases.includes("msg_refused"), false)
