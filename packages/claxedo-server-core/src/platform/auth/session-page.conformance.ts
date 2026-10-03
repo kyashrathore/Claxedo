@@ -21,14 +21,19 @@ export type SessionPageConformanceUser = {
  * `projectId`, so the project page holds sessions the reader may not read.
  * `stranger` belongs to another organization, with its own workspace and
  * project.
- * `now` is the clock `authority` stamps turns with, and the runner stamps its
- * runtime sessions from it too. Each read must be later than the last: the
- * runner prompts and creates faster than a millisecond, and two equal keys
- * are ordered by session ref, not by which came first.
+ * `now` is the clock the runner stamps its runtime sessions and their human
+ * turns from. Each read must be later than the last: the runner prompts and
+ * creates faster than a millisecond, and two equal keys are ordered by session
+ * ref, not by which came first.
+ *
+ * `publishHumanTurn` lands a runtime's published `lastHumanTurnAt` in the
+ * store `authority` reads; the runtime is that value's one writer, and no
+ * turn lease the authority grants moves it.
  */
 export type SessionPageConformanceHarness = {
   authority: PrivateSessionAuthority & SessionTurnAuthority
   now: () => number
+  publishHumanTurn: (input: { sessionId: string; workspaceId: string; at: number }) => Promise<void>
   projectId: string
   workspaceIds: [string, string]
   reader: SessionPageConformanceUser
@@ -52,7 +57,7 @@ export type SessionPageConformanceReport = {
 export async function exerciseSessionPageConformance(
   harness: SessionPageConformanceHarness,
 ): Promise<SessionPageConformanceReport> {
-  const { authority, now, reader, colleague, stranger, workspaceIds, projectId } = harness
+  const { authority, now, reader, colleague, stranger, workspaceIds, projectId, publishHumanTurn } = harness
   let sequence = 0
   const create = async (user: SessionPageConformanceUser, workspaceId: string) => {
     const sessionId = `ses_page_${String(++sequence).padStart(2, "0")}`
@@ -66,6 +71,7 @@ export async function exerciseSessionPageConformance(
     const turnId = `turn_${sessionId}_${++sequence}`
     const runtime = { ...user.runtime, sessionId, workspaceId }
     const lease = await authority.acquireSessionTurn({ ...runtime, turnId })
+    await publishHumanTurn({ sessionId, workspaceId, at: now() })
     await authority.releaseSessionTurn({ ...runtime, turnId, leaseId: lease.leaseId, fencingToken: lease.fencingToken })
   }
 

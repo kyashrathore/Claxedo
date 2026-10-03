@@ -569,7 +569,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       && row.released_at === null
       && row.expires_at > now
     ) {
-      await this.stampHumanTurn(actor, sessionId, workspaceId, row.acquired_at)
       return turnLeaseJson(row)
     }
 
@@ -777,26 +776,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       .bind(this.now(), reason, sessionId ?? null, subjectSessionId ?? null)
       .run()
     return { revoked: result.meta.changes }
-  }
-
-  /**
-   * A subagent's completion or a channel message admits a turn the same way
-   * the reader does, so only the actor kind this store resolved for the admitted
-   * principal tells them apart. Stamping the lease's own admission time makes an
-   * exact retry idempotent; max() stops a host whose clock ran backwards from
-   * moving a session's last prompt earlier than one already recorded.
-   */
-  private async stampHumanTurn(actor: Principal, sessionId: string, workspaceId: string, admittedAt: number) {
-    if (actor.actorKind !== "human") return
-    await this.database
-      .prepare(
-        `
-      update sessions set last_human_turn_at = max(coalesce(last_human_turn_at, 0), ?)
-      where session_id = ? and workspace_id = ? and deleted_at is null
-    `,
-      )
-      .bind(admittedAt, sessionId, workspaceId)
-      .run()
   }
 
   async renewSessionTurn(input: OwnedSessionTurnInput): Promise<SessionTurnLease> {

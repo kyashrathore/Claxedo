@@ -1162,71 +1162,18 @@ describe("D1 private multiplayer session authority", () => {
     ])
   })
 
-  test("stamps the admitted human turn and refuses to move it backwards", async () => {
+  test("a turn lease records no human turn: the runtime's published row is that column's one writer", async () => {
     const input = await setup()
     const { alice } = await sharedWorkspace(input)
     await reserveAndRegister(input.sessions, alice, { operationId: "op_turn", sessionId: "ses_turn" })
-    const runtime = {
-      principalKind: "user" as const,
-      actorId: alice.principal!.actorId,
-      actorKind: "human" as const,
-      sessionId: "ses_turn",
-      workspaceId: "ws_main",
-    }
-
-    const first = await input.sessions.acquireSessionTurn({ ...runtime, turnId: "m1" })
-    expect(await input.sessions.listSessions(alice, { workspaceId: "ws_main" })).toEqual([
-      expect.objectContaining({ session_id: "ses_turn", last_human_turn_at: first.acquiredAt }),
-    ])
-
-    await input.sessions.releaseSessionTurn({
-      ...runtime,
-      turnId: "m1",
-      leaseId: first.leaseId,
-      fencingToken: first.fencingToken,
-    })
-    input.rewindTo(first.acquiredAt - 10_000)
-    const second = await input.sessions.acquireSessionTurn({ ...runtime, turnId: "m2" })
-
-    expect(second.acquiredAt).toBeLessThan(first.acquiredAt)
-    expect(await input.sessions.listSessions(alice, { workspaceId: "ws_main" })).toEqual([
-      expect.objectContaining({ session_id: "ses_turn", last_human_turn_at: first.acquiredAt }),
-    ])
-  })
-
-  test("leaves a session an agent drove unprompted", async () => {
-    const input = await setup()
-    const { alice } = await sharedWorkspace(input)
-    // Every identity this store mints is a human actor, so the agent row a
-    // service principal arrives with has no entrypoint and is seeded directly.
-    await input.database
-      .prepare(
-        `insert into actors (actor_id, user_id, kind, state, created_at, updated_at, revoked_at)
-         values (?, ?, 'agent', 'active', 1, 1, null)`,
-      )
-      .bind("actor_agent", alice.principal!.userId)
-      .run()
-    const agent = { principalKind: "service" as const, actorId: "actor_agent", actorKind: "agent" as const }
-    await input.sessions.reserveRuntimeSession(agent, {
-      operationId: "op_agent",
-      sessionId: "ses_agent",
-      workspaceId: "ws_main",
-      kind: "create",
-    })
-    await input.sessions.registerRuntimeSession({
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      ...agent,
-      operationId: "op_agent",
-      sessionId: "ses_agent",
-      workspaceId: "ws_main",
-    })
 
     await input.sessions.acquireSessionTurn({
-      ...agent,
-      sessionId: "ses_agent",
+      principalKind: "user",
+      actorId: alice.principal!.actorId,
+      actorKind: "human",
+      sessionId: "ses_turn",
       workspaceId: "ws_main",
-      turnId: "m_agent",
+      turnId: "m1",
     })
 
     const rows = await input.sessions.listSessions(alice, { workspaceId: "ws_main" })
@@ -1240,24 +1187,12 @@ describe("D1 private multiplayer session authority", () => {
     for (const sessionId of ["ses_first", "ses_second", "ses_quiet"]) {
       await reserveAndRegister(input.sessions, alice, { operationId: `op_${sessionId}`, sessionId })
     }
-    const prompt = async (sessionId: string, turnId: string) => {
-      const runtime = {
-        principalKind: "user" as const,
-        actorId: alice.principal!.actorId,
-        actorKind: "human" as const,
-        sessionId,
-        workspaceId: "ws_main",
-      }
-      const lease = await input.sessions.acquireSessionTurn({ ...runtime, turnId })
-      await input.sessions.releaseSessionTurn({
-        ...runtime,
-        turnId,
-        leaseId: lease.leaseId,
-        fencingToken: lease.fencingToken,
-      })
+    // What the runtimes' published rows leave in the column.
+    const published = async (sessionId: string, at: number) => {
+      await input.database.prepare("update sessions set last_human_turn_at = ? where session_id = ?").bind(at, sessionId).run()
     }
-    await prompt("ses_first", "m_first")
-    await prompt("ses_second", "m_second")
+    await published("ses_first", 1_900_000_000_001)
+    await published("ses_second", 1_900_000_000_002)
 
     const sessions = await input.sessions.listSessions(alice, { workspaceId: "ws_main" })
     const page = buildSessionListResponse({ query: sessionListQuery("limit=2"), sessions })
@@ -1315,6 +1250,12 @@ describe("D1 session list pages", () => {
     const report = await exerciseSessionPageConformance({
       authority: input.sessions,
       now: input.now,
+      publishHumanTurn: async ({ sessionId, workspaceId, at }) => {
+        await input.database
+          .prepare("update sessions set last_human_turn_at = max(coalesce(last_human_turn_at, 0), ?) where session_id = ? and workspace_id = ?")
+          .bind(at, sessionId, workspaceId)
+          .run()
+      },
       projectId: second.project_id,
       workspaceIds: ["ws_main", "ws_second"],
       reader: user(alice),
