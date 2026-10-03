@@ -436,7 +436,8 @@ async function apply(runtime: EmbeddedRuntime) {
     workspaceId: runtime.workspace.id,
   })
   await runtime.host.apply(snapshot)
-  const renewAt = Math.min(...Object.values(snapshot.auth.accounts).map((providers) => projectionRenewalDueAt(providers, appliedAt) ?? Infinity))
+  const renewAt = Math.min(...[...Object.values(snapshot.auth.accounts), ...Object.values(snapshot.auth.direct ?? {})]
+    .map((providers) => projectionRenewalDueAt(providers, appliedAt) ?? Infinity))
   runtime.renewAt = Number.isFinite(renewAt) ? renewAt : undefined
   runtime.renewFailures = 0
 }

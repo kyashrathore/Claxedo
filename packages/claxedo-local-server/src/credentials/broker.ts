@@ -54,6 +54,7 @@ import {
 } from "@claxedo/server-core/credentials/native-delivery"
 
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { machineOwnerDirectRows, type BoundRow } from "./direct-rows"
 
 const log = Log.create({ service: "credentials-broker" })
 
@@ -438,15 +439,16 @@ export function createLocalCredentialBroker(input: {
       const resolved: { owner: string | null; providerId: string; projection: ProviderProjectionSource }[] = []
       const project = (credential: CredentialMetadata, projection: ProviderProjectionSource) =>
         resolved.push({ owner: credential.owner ?? null, providerId: credential.provider_id, projection })
-      const snapshot = (): CredentialSnapshot => ({
-        machineOwnerUserId,
-        accounts: selectedAccounts({
+      const snapshot = (bound: readonly BoundRow[] = []): CredentialSnapshot => {
+        const accounts = selectedAccounts({
           machineOwnerUserId,
           rows: resolved,
           selections,
-          missingOrgAccount: () => ({ unavailable: true, reason: ORG_ACCOUNT_UNAVAILABLE }),
-        }),
-      })
+          missingOrgAccount: () => ({ unavailable: true as const, reason: ORG_ACCOUNT_UNAVAILABLE }),
+        })
+        const direct = machineOwnerDirectRows(accounts[machineOwnerUserId], bound)
+        return { machineOwnerUserId, accounts, ...(Object.keys(direct).length ? { direct: { [machineOwnerUserId]: direct } } : {}) }
+      }
       let state: BrokerState
       try {
         state = await brokerState()
@@ -519,7 +521,7 @@ export function createLocalCredentialBroker(input: {
         const account = { credentialId: credential.id, providerId: credential.provider_id, ...(credential.label ? { label: credential.label } : {}) }
         project(credential, { ...route, placeholder: lease.placeholder, expiresAt: lease.expiresAt, account })
       }
-      return snapshot()
+      return snapshot(bindable)
     },
   }
 }

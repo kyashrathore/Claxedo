@@ -178,6 +178,20 @@ describe("local binding authority", () => {
     expect(resolved?.binding.injection).toEqual({ header: "Authorization", scheme: "Bearer" })
   })
 
+  test("the machine owner's Pi and Codex accounts also project as the credential itself, other providers never", async () => {
+    const openai = await activeRow("sk-openai-direct", "openai")
+    await activeRow("sk-ant-oat01-direct-plan", "anthropic", "oauth_token")
+    await activeRow("sk-ant-api03-claude-sdk", "claude-sdk")
+    await activeRow("pplx-not-direct", "perplexity")
+    const rows = await broker().projectAuth({ workspaceId })
+
+    expect(Object.keys(rows.direct?.local ?? {}).sort()).toEqual(["anthropic", "claude-sdk", "openai"])
+    expect(rows.direct?.local?.openai).toEqual({ delivery: "direct", baseUrl: "https://api.openai.com", apiPath: "/v1", secret: "sk-openai-direct",
+      authKind: "api-key", account: { credentialId: openai.id, providerId: "openai" } })
+    expect(rows.direct?.local?.anthropic).toMatchObject({ baseUrl: "https://api.anthropic.com", secret: "sk-ant-oat01-direct-plan", authKind: "subscription" })
+    expect(bound(rows.accounts.local.openai).placeholder).not.toContain("sk-openai-direct")
+  })
+
   test("a rotated secret is served on the next resolve with no other call", async () => {
     const credential = await activeRow("sk-ant-api03-before")
     const local = broker()

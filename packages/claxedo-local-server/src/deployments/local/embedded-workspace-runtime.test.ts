@@ -1,5 +1,4 @@
-import { afterAll, beforeAll, afterEach, describe, expect, test, vi } from "vitest"
-import { installFakePiRpc } from "../../../../workspace-runtime/src/test-support/home/fake-pi-rpc.mjs"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -1217,13 +1216,3 @@ describe("embedded runtime route ownership", () => {
   })
 })
 
-// These exercise host authorization/projection with a deterministic native wire
-// peer. The workspace HTTP proof separately uses the real pinned Pi binary.
-const originalPiExecutable = process.env.PI_EXECUTABLE
-let piFixture: Awaited<ReturnType<typeof installFakePiRpc>>
-beforeAll(async () => { piFixture = await installFakePiRpc(); process.env.PI_EXECUTABLE = piFixture.binary })
-afterAll(async () => {
-  if (originalPiExecutable === undefined) delete process.env.PI_EXECUTABLE
-  else process.env.PI_EXECUTABLE = originalPiExecutable
-  await piFixture.dispose()
-})
