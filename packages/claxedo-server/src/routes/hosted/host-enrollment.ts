@@ -1,4 +1,4 @@
-import type { ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
+import type { ProviderDirect, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
 /**
  * Machine-wide remote-access routes.
  *
@@ -236,6 +236,8 @@ export type HostEnrollmentRouteOptions = WorkspaceRouteOptions & {
   invitationRedeemRateLimiter?: ConnectionRateLimiter
   /** The verifier's clock; tests pin it to sign requests at a known time. */
   now?: () => number
+  /** The owner's Pi accounts as secrets, sealed beside their pushed rows; absent where the plane stores no accounts. */
+  ownerPiDirectRows?: (auth: SignedControlPlaneAuth) => Promise<Record<string, ProviderDirect>>
 }
 
 type Budget = { limiter: ConnectionRateLimiter; key: string; action: string }
@@ -619,7 +621,8 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
           })
         }
         const providers = body.providers
-        const providerIds = Object.keys(providers).sort()
+        const direct = Object.keys(providers).length > 0 && options.ownerPiDirectRows ? await options.ownerPiDirectRows(auth) : {}
+        const providerIds = [...new Set([...Object.keys(providers), ...Object.keys(direct)])].sort()
         const target = await authority.hostProviderConfigTarget(auth, { enrollmentId: routeParam(c, "id") })
         if (target.sealing_public_key === null) {
           throw new HostProviderConfigError({
@@ -637,7 +640,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
           ? null
           : await sealForMachine(
             target.sealing_public_key,
-            serializeHostProviderConfig(providers, auth.user.subject),
+            serializeHostProviderConfig(providers, auth.user.subject, direct),
             machineSealAad({ enrollmentId, revision }),
           )
         const result = await authority.pushHostProviderConfig(auth, {

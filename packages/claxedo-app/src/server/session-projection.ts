@@ -16,6 +16,7 @@ export function createSessionProjection(workspaces: Workspaces, account: HostedA
   const pull = async (ref: SessionLocation, action: Action, reason: Reason, idempotencyKey: string) => {
     if (!account || workspaces.byId(ref.placementId)?.kind !== "cloud") return
     try {
+      if (action === "checkpoint" && (await workspaces.home(ref)).route.sessionHost) return
       const { workspaceId } = await workspaces.locate(ref.placementId)
       await account.run(action === "register" ? "session.projection.register" : "session.projection.checkpoint", { workspaceId, sessionId: ref.sessionId, idempotencyKey, reason })
     } catch (error) {

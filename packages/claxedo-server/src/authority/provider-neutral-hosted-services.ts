@@ -34,6 +34,7 @@ import type { HostedDeviceAuthProvider } from "../routes/hosted/device-auth"
 import type { RuntimeSessionAuthorityOptions } from "../routes/runtime-session-authority"
 import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/relay/index"
 import { sandboxRelayTargetLookup, type HostTunnelTargetResolver } from "./sandbox-relay-target"
+import type { SessionHostAuthority } from "./session-hosts"
 import type { RelayTargetLookup } from "../deployments/shared-routes/internal-relay"
 import type { SandboxDriver, SandboxEgressUnenforcedEvent } from "@claxedo/sandbox-manager"
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
@@ -246,6 +247,8 @@ export type HostedControlPlaneAdapterBindings = {
   auth: ControlPlaneAuthAdapter
   authority: WorkspaceAuthority
   hostTunnelResolver: HostTunnelTargetResolver
+  /** Admits sessions served by their own Durable Object; absent, the relay resolves no session host. */
+  sessionHosts?: SessionHostAuthority
   /** Required only when the static sandbox posture selects a driver. */
   sandbox?: { driver: SandboxDriver; leaseStore: SandboxLeaseStore }
   /**
@@ -333,6 +336,7 @@ export function composeProviderNeutralHostedControlPlane(
   const relayTargetLookup = sandboxRelayTargetLookup({
     ...(manager ? { sandboxManager: manager } : {}),
     hostTunnelResolver: bindings.hostTunnelResolver,
+    ...(bindings.sessionHosts ? { sessionHosts: bindings.sessionHosts } : {}),
     telemetry,
     env,
   })
@@ -367,6 +371,7 @@ export function composeProviderNeutralHostedControlPlane(
     localExecution: { enabled: false },
     defaultHomeRegion: homeRegion,
     authority: bindings.authority,
+    ...(bindings.sessionHosts ? { sessionHosts: bindings.sessionHosts } : {}),
   }
 
   return {

@@ -1,4 +1,4 @@
-import type { CredentialSnapshot, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
+import type { CredentialSnapshot, ProviderDirect, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
 /**
  * What the owner sealed for a host, once it is open again.
  *
@@ -27,8 +27,18 @@ export type HostProviderConfig = {
   credentials: CredentialSnapshot
 }
 
-export function serializeHostProviderConfig(providers: Record<string, ProviderProjectionSource>, owner: string): string {
-  return JSON.stringify({ version: HOST_PROVIDER_CONFIG_VERSION, credentials: { machineOwnerUserId: owner, accounts: { [owner]: providers } } })
+/** `direct` is the owner's accounts their machine's in-process Pi spends as secrets; nobody else's rows ever ride here. */
+export function serializeHostProviderConfig(
+  providers: Record<string, ProviderProjectionSource>,
+  owner: string,
+  direct: Record<string, ProviderDirect> = {},
+): string {
+  const credentials: CredentialSnapshot = {
+    machineOwnerUserId: owner,
+    accounts: { [owner]: providers },
+    ...(Object.keys(direct).length > 0 ? { direct: { [owner]: direct } } : {}),
+  }
+  return JSON.stringify({ version: HOST_PROVIDER_CONFIG_VERSION, credentials })
 }
 
 /**

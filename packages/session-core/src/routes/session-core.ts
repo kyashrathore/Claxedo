@@ -2,7 +2,6 @@ import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import type {
-  AgentGoalMutationResult,
   AgentQuestion,
   AgentSession,
   AgentSessionStartBinding,
@@ -25,12 +24,9 @@ import type { RuntimeDirectory } from "../host/contracts"
 import { AgentMessagePageError, parseMessagePageQuery, type AgentMessagePage, type AgentMessagePageInput, type AgentMessageReadInput, type AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
 import { TurnPageQueryError, parseOlderTurnPageQuery, parseTurnPageQuery, readFirstRead, readTurnPage, type TurnRead } from "@claxedo/agent-runtime-contract"
 import { asRecord, asNumber, asString } from "@claxedo/helpers/guards"
-import { routeParam } from "@claxedo/helpers/route-param"
 import {
-  isAgentRuntimeGoalError,
   isAgentRuntimeMessageIdConflictError,
   isAgentRuntimeTurnAdmissionError as isAgentRuntimeTurnConflictError,
-  type AgentRuntime,
   type HarnessTarget,
 } from "../host/runtime"
 import { PreviewModelInvalidError } from "../host/config-ops"
@@ -54,7 +50,6 @@ import {
   sessionAccessDenied,
   sessionTurnOrigin,
   type SessionAccessDecision,
-  type SessionAccessOperation,
 } from "../session-access-policy"
 import { SessionRollbackError } from "../session-rollback-error"
 import { elicitationError } from "./elicitation-error"
@@ -76,6 +71,7 @@ import {
   unsupportedOperation,
 } from "./session-harness-refusal"
 import { sessionOperationGuard, sessionPromptAdmitted } from "./session-operation-guard"
+import { goalMutationResponse, goalRoute, goalRuntimeErrorResponse, goalStartInvocation, invokeGoalRuntime, resolveGoalRuntime } from "./session-goal-route"
 import { sessionConfigWrite } from "./session-config-write"
 import {
   admitQuestionOperation,
@@ -306,72 +302,6 @@ function sessionNotFound() {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Session creation failed"
-}
-
-function goalRuntimeErrorResponse(c: Ctx, error: unknown) {
-  if (!isAgentRuntimeGoalError(error)) throw error
-  const status = error.code === "goal_invalid_objective"
-    ? 400
-    : error.code === "goal_session_not_found"
-    ? 404
-    : 409
-  return noStoreJson(c, errorBody(error.code, error.message), status)
-}
-
-function goalMutationResponse(
-  c: Ctx,
-  result: AgentGoalMutationResult,
-  successStatus: 200 | 201 = 200,
-) {
-  if (result.ok) return noStoreJson(c, result, successStatus)
-  const status = result.status === "not_found"
-    ? 404
-    : result.status === "failed"
-    ? 502
-    : 409
-  return noStoreJson(c, result, status)
-}
-
-async function resolveGoalRuntime(opts: Opts, c: Ctx) {
-  return await opts.runtime(c)
-}
-
-type GoalInvocation = (input: {
-  c: Ctx
-  sessionId: string
-  directory: RuntimeDirectory
-  runtime: AgentRuntime
-}) => Promise<Response> | Response
-
-/**
- * The scaffold every Goal start or control shares, `/session/:id/goal*` and a
- * create that carries its first goal alike: admit the operation, resolve the
- * Goal runtime, and translate a thrown `AgentRuntimeGoalError` into its typed
- * HTTP response. Each caller supplies only the runtime call that makes it
- * different, so a new admission or error rule lands on every Goal endpoint at
- * once instead of being copied into each handler.
- */
-function goalRoute(opts: Opts, operation: SessionAccessOperation, invoke: GoalInvocation) {
-  return async (c: Ctx): Promise<Response> => {
-    const sessionId = routeParam(c, "id")
-    const guarded = await sessionOperationGuard(opts, c, sessionId, operation)
-    if (guarded) return guarded
-    return invokeGoalRuntime(opts, c, sessionId, await opts.resolveDirectory(c, { sessionId }), invoke)
-  }
-}
-
-async function invokeGoalRuntime(opts: Opts, c: Ctx, sessionId: string, directory: RuntimeDirectory, invoke: GoalInvocation) {
-  const runtime = await resolveGoalRuntime(opts, c)
-  try {
-    return await invoke({ c, sessionId, directory, runtime })
-  } catch (error) {
-    return goalRuntimeErrorResponse(c, error)
-  }
-}
-
-function goalStartInvocation(objective: string): GoalInvocation {
-  return async ({ c, sessionId, directory, runtime }) =>
-    goalMutationResponse(c, await runtime.goals.start({ sessionId, objective }, directory), 201)
 }
 
 const rootsOnly = (c: Ctx) => c.req.query("roots") === "true" || c.req.query("roots") === "1"
@@ -896,11 +826,16 @@ export function createSessionRoutes(opts: Opts) {
       const directory = await opts.resolveDirectory(c)
       return c.json(await filterSessionStatus(opts, c, await opts.getStatus?.(c, directory) ?? {}))
     })
-    .post("/session", async (c) => {
+    .on("POST", ["/session", "/session/:id"], async (c) => {
       const directory = await opts.resolveDirectory(c)
       const wire = await boundedJsonRecord(c)
       const body = normalizeSessionCreateBody(wire)
-      const guarded = await sessionOperationGuard(opts, c, "", "session_create")
+      const named = c.req.param("id")
+      if (named && body.id !== undefined && body.id !== named) {
+        return c.json(errorBody("session_id_mismatch", "A create names its session in its path or its body, the same id in both"), 400)
+      }
+      if (named) body.id = named
+      const guarded = await sessionOperationGuard(opts, c, named ?? "", "session_create")
       if (guarded) return guarded
       const group = sessionCreateGroup(wire)
       if (group && "field" in group) {

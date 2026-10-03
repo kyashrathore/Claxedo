@@ -29,6 +29,7 @@ export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
   readonly locate: (id: PlacementId) => Promise<RuntimeRoute>
   readonly home: (ref: SessionLocation) => Promise<SessionHome>
   readonly learn: (directory: string) => Promise<void>
+  readonly hostSession: (ref: Pick<SessionLocation, "placementId" | "sessionId">, root: string) => void
   readonly catalog: () => BootstrapCatalog | undefined
   readonly load: () => Promise<BootstrapCatalog>
   readonly refresh: () => Promise<void>
@@ -70,10 +71,23 @@ function observeQuery(queryClient: QueryClient, key: readonly unknown[]): { read
 
 function placementReads(records: () => readonly PlacementRecord[]) {
   const recordOf = (id: PlacementId) => records().find((record) => record.placement.id === id)
-  return {
-    recordOf,
+  const hosts: SessionHosts = new Map()
+  const learnSessionHost = (workspaceId: string, sessionId: string, root: string) => {
+    const placement = records().find((record) => record.route.workspaceId === workspaceId)?.placement.id ?? placementId(workspaceId)
+    hosts.set(sessionHostKey({ placementId: placement, sessionId: asSessionId(sessionId) }), root)
+  }
+  const published: Pick<Workspaces, "byId" | "list" | "hostSession"> = {
     byId: (id: PlacementId) => recordOf(id)?.placement,
     list: () => records().map((record) => record.placement),
+    hostSession: (ref, root) => {
+      hosts.set(sessionHostKey(ref), root)
+    },
+  }
+  return {
+    recordOf,
+    hosts,
+    learnSessionHost,
+    published,
     address: {
       placementFor: (directory: string, workspaceId?: string) => {
         const record = placementRecordAt(records(), directory, workspaceId)
@@ -83,10 +97,21 @@ function placementReads(records: () => readonly PlacementRecord[]) {
   }
 }
 
-function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | undefined>, shared: Workspaces["shared"]): Pick<Workspaces, "route" | "locate" | "home"> {
+type SessionHosts = Map<string, string>
+
+const sessionHostKey = (ref: Pick<SessionLocation, "placementId" | "sessionId">) => JSON.stringify([ref.placementId, ref.sessionId])
+
+function hostedRoute(record: PlacementRecord, hosts: SessionHosts, ref: Pick<SessionLocation, "placementId" | "sessionId">): RuntimeRoute | undefined {
+  const root = hosts.get(sessionHostKey(ref))
+  return root ? { ...record.route, sessionHost: { sessionId: root } } : undefined
+}
+
+function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | undefined>, shared: Workspaces["shared"], hosts: SessionHosts): Pick<Workspaces, "route" | "locate" | "home"> {
   const resolve = async (ref: Pick<SessionLocation, "placementId" | "sessionId"> | PlacementId) => {
     const id = typeof ref === "string" ? ref : ref.placementId
     const record = await find(id)
+    const hosted = record && typeof ref !== "string" ? hostedRoute(record, hosts, ref) : undefined
+    if (hosted) return { route: hosted, central: false, live: true, stopped: false }
     if (!record && typeof ref !== "string") {
       await shared.load()
       const route = shared.route(ref)
@@ -108,7 +133,7 @@ function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | un
   }
 }
 
-function sharedAware(reads: ReturnType<typeof placementReads>, shared: SharedSessions): Pick<Workspaces, "address" | "streamRoute"> {
+function sharedAware(reads: ReturnType<typeof placementReads>, shared: SharedSessions, hosts: SessionHosts): Pick<Workspaces, "address" | "streamRoute"> {
   return {
     address: {
       placementFor: (directory, workspaceId, sessionId) => {
@@ -120,7 +145,7 @@ function sharedAware(reads: ReturnType<typeof placementReads>, shared: SharedSes
     streamRoute: (ref) => {
       const record = reads.recordOf(ref.placementId)
       if (!record) return shared.route(ref)
-      return record.route.remote && record.placement.reachable ? record.route : undefined
+      return hostedRoute(record, hosts, ref) ?? (record.route.remote && record.placement.reachable ? record.route : undefined)
     },
   }
 }
@@ -182,16 +207,16 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
     return merged.merge(await readCatalogs(queryClient.fetchQuery({ queryKey: key, queryFn: read, staleTime: Number.POSITIVE_INFINITY }), accountPlacements?.load()))
   }
   const reads = placementReads(() => merged.catalog()?.placements ?? [])
-  const { recordOf, byId, list } = reads
+  const { recordOf, hosts } = reads
+  const forgetSessionHosts = transport.onSessionHost(reads.learnSessionHost)
   return {
     shared,
-    byId,
-    list,
-    ...sharedAware(reads, shared),
+    ...reads.published,
+    ...sharedAware(reads, shared, hosts),
     ...placementRoutes(async (id) => {
       await load()
       return recordOf(id)
-    }, shared),
+    }, shared, hosts),
     learn: async (directory) => {
       if (relearned.has(directory)) return
       await reread()
@@ -207,6 +232,6 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
       await shared.refresh()
     },
     ...accountReads(merged.linked, accountPlacements !== undefined, load),
-    dispose: () => { shared.dispose(); merged.dispose() },
+    dispose: () => { forgetSessionHosts(); shared.dispose(); merged.dispose() },
   }
 }

@@ -9,16 +9,22 @@ import { authoritySessionReads, createSessionReadRoutes } from "../session/route
 import { storedD1Session } from "./d1-stored-session"
 
 async function compose(database: D1Database) {
-  const { auth } = await storedD1Session(database)
+  const { auth, sessions } = await storedD1Session(database)
+  await sessions.reserveSession(auth, { operationId: "op_hosted", sessionId: "ses_hosted", workspaceId: "ws", kind: "create", harnessId: "pi" })
+  await sessions.registerRuntimeSession({
+    principalKind: "user", actorId: auth.principal!.actorId, actorKind: "human",
+    operationId: "op_hosted", sessionId: "ses_hosted", workspaceId: "ws", createdAt: 1, updatedAt: 1, sessionHostRoot: "ses_hosted",
+  })
   const authority = createD1CoreAuthority(database, { deploymentId: "test", product: { kind: "claxedo-hosted" } })
   const services = {
     authority,
+    sessionHosts: authority,
     projectionStore: UNUSED_PROJECTION_STORE,
     durableSessionLog: UNUSED_DURABLE_SESSION_LOG,
     auth: localOnlyAuthAdapter(),
     credentials: {},
     relay: { provider: {
-      mintRuntimeAccessToken: async () => ({ token: "test-runtime-token" }),
+      mintRuntimeAccessToken: async (input: { hostId: string }) => ({ token: `runtime-token-for-${input.hostId}` }),
       getRelayEndpoint: async () => "https://runtime.test",
     } },
     sandbox: { sandboxManager: { target: async () => ({ status: "ready", hostId: "host", homeRegion: "us-east" }) } },

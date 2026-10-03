@@ -28,6 +28,8 @@ export type ReservePrivateSessionInput = {
   kind: "create" | "fork"
   parentSessionId?: string
   title?: string
+  /** The harness the session will run, its default already resolved: it decides whether the session is served by its own host. */
+  harnessId?: string
 }
 
 export type PrivateSessionRegistrationResult = {
@@ -36,6 +38,7 @@ export type PrivateSessionRegistrationResult = {
   sessionId: string
   workspaceId: string
   state: PrivateSessionRegistrationState
+  sessionHostRoot?: string
 }
 
 /**
@@ -67,6 +70,8 @@ export type RegisterRuntimePrivateSessionInput = PrivateSessionRuntimePrincipal 
   sessionId: string
   workspaceId: string
   title?: string
+  /** The session host the registering runtime is; it must be the one the reservation placed the session in. */
+  sessionHostRoot?: string
 }
 
 /**

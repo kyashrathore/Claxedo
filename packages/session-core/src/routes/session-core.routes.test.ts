@@ -51,6 +51,7 @@ const EXPECTED_SESSION_CORE_ROUTES = [
   "POST /question/:id/reject",
   "POST /question/:id/reply",
   "POST /session",
+  "POST /session/:id",
   "POST /session/:id/background-task/stop",
   "POST /session/:id/fork",
   "POST /session/:id/goal",
@@ -65,21 +66,26 @@ const EXPECTED_SESSION_CORE_ROUTES = [
   "PUT /session/:id/permission-mode",
 ]
 
+/** Every route the source registers, one handler per method and path or one handler over several paths. */
+function sessionCoreRoutes(source: string) {
+  const single = [...source.matchAll(/\.(get|post|patch|put|delete)\("([^"]+)"/g)]
+    .map((match) => `${match[1].toUpperCase()} ${match[2]}`)
+  const shared = [...source.matchAll(/\.on\("([A-Z]+)", \[([^\]]+)\]/g)]
+    .flatMap((match) => [...match[2].matchAll(/"([^"]+)"/g)].map((path) => `${match[1]} ${path[1]}`))
+  return [...single, ...shared].sort()
+}
+
 describe("Claxedo client-presentation session route inventory", () => {
   test("keeps the externally consumed route and method set explicit", async () => {
     const source = await Bun.file(new URL("./session-core.ts", import.meta.url)).text()
-    const routes = [...source.matchAll(/\.(get|post|patch|put|delete)\("([^"]+)"/g)]
-      .map((match) => `${match[1].toUpperCase()} ${match[2]}`)
-      .sort()
+    const routes = sessionCoreRoutes(source)
 
     expect(routes).toEqual(EXPECTED_SESSION_CORE_ROUTES)
   })
 
   test("assigns every route an explicit session-policy or workspace decision", async () => {
     const source = await Bun.file(new URL("./session-core.ts", import.meta.url)).text()
-    const routes = [...source.matchAll(/\.(get|post|patch|put|delete)\("([^"]+)"/g)]
-      .map((match) => `${match[1].toUpperCase()} ${match[2]}`)
-      .sort()
+    const routes = sessionCoreRoutes(source)
 
     expect(Object.keys(SESSION_CORE_ROUTE_ACCESS).sort()).toEqual(routes)
     expect(SESSION_CORE_ROUTE_ACCESS).toMatchObject({
@@ -140,6 +146,7 @@ describe("Claxedo client-presentation session route inventory", () => {
       "PATCH /session/:id",
       "PATCH /session/:id/config",
       "POST /session",
+      "POST /session/:id",
       "POST /session/:id/fork",
       "POST /session/:id/goal",
       "POST /session/:id/goal/pause",

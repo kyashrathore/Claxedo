@@ -42,13 +42,20 @@ async function createSession(context: SessionContext, wakes: WorkspaceWakes, inp
   const where = await context.workspaces.route(input.placementId)
   const placement = context.workspaces.byId(input.placementId)
   if (!placement) throw new ServerError({ class: "not_found", message: `Placement ${input.placementId} is not in the catalog` })
-  const path = withQuery("/session", input.harness ? harnessSelectionQuery(input.harness) : {})
   const reservation = where.remote && context.account
-    ? await reserveSession(context.account, { workspaceId: where.workspaceId, ...(input.title ? { title: input.title } : {}) })
+    ? await reserveSession(context.account, {
+      workspaceId: where.workspaceId,
+      ...(input.title ? { title: input.title } : {}),
+      ...(input.harness ? { harness: harnessIdentity(input.harness) } : {}),
+    })
     : undefined
-  const body = { ...createBody(input), ...(reservation ? { id: reservation.sessionId } : {}) }
+  const hosted = reservation?.sessionHostRoot
+  if (hosted) await context.transport.connectSession(where.workspaceId, hosted)
+  const route = hosted ? { ...where, sessionHost: { sessionId: hosted } } : where
+  const path = withQuery(hosted ? `/session/${encodeURIComponent(hosted)}` : "/session", input.harness ? harnessSelectionQuery(input.harness) : {})
+  const body = { ...createBody(input), ...(reservation && !hosted ? { id: reservation.sessionId } : {}) }
   const init = jsonInit("POST", body, reservation ? { headers: { [RESERVATION_HEADER]: reservation.operationId } } : undefined)
-  const created = await context.transport.runtimeJson<AgentPresentationSession>(where, path, init)
+  const created = await context.transport.runtimeJson<AgentPresentationSession>(route, path, init)
   return sessionRowFromSession(created, { projectId: placement.projectId, placementId: input.placementId, sessionId: sessionId(created.id) })
 }
 

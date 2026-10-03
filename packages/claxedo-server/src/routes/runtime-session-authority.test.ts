@@ -1253,6 +1253,7 @@ describe("deferred turn grants over the HTTP oracle", () => {
       iss: DEFERRED_TURN_GRANT_ISSUER,
       aud: DEFERRED_TURN_GRANT_AUDIENCE,
       jti: row.grantId,
+      host_id: "host_1",
       principal_kind: "user",
       actor_id: "actor_1",
       actor_kind: "human",

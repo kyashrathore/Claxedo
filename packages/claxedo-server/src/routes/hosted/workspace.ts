@@ -26,7 +26,7 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
-import { hostedConnectionInfo, hostedConnectionStatus, hostedSessionConnection } from "../../connections/hosted-connection-info"
+import { hostedConnectionInfo, hostedConnectionStatus, hostedSessionConnection, hostedSessionHostConnection } from "../../connections/hosted-connection-info"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { hostedSandboxInput } from "../../workspace/hosted-sandbox-input"
 import { apiError, captureWorkspaceTelemetry, missingBearerBody, parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
@@ -98,6 +98,14 @@ const refreshConnectionBody = z
   })
   .strict()
 
+const connectionBody = z
+  .object({
+    previousJti: z.string().optional(),
+    session: z.object({ sessionId: z.string().min(1) }).strict().optional(),
+  })
+  .strict()
+  .refine((body) => !(body.previousJti && body.session), { message: "A session connection is minted fresh, never refreshed from a previous token" })
+
 const createCloudBody = z
   .object({
     orgId: z.string().optional(),
@@ -158,7 +166,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
     ...options,
     requireSigned: true as const,
   })
-  const connectionResponse = async (c: Context, input: { previousJti?: string; readOnly?: boolean } = {}) => {
+  const connectionResponse = async (c: Context, input: { previousJti?: string; readOnly?: boolean; session?: { sessionId: string } } = {}) => {
     const workspaceId = routeParam(c, "id")
     const authResult = await signedOrError(c.req.raw, authOptions(), services)
     if ("error" in authResult) return c.json(authResult.error, authResult.status)
@@ -187,7 +195,9 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       const sessionId = input.readOnly ? c.req.query("sessionId")?.trim() : undefined
       const result = sessionId
         ? await hostedSessionConnection(services, options, auth, { workspaceId, sessionId })
-        : input.readOnly
+        : input.session
+          ? await hostedSessionHostConnection(services, options, auth, { workspaceId, ...input.session })
+          : input.readOnly
           ? await hostedConnectionStatus(services, options, auth, workspaceId)
           : await hostedConnectionInfo(services, options, auth, workspaceId, input.previousJti)
       if ("error" in result)
@@ -519,9 +529,9 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       })
       .get("/:id/connection", (c) => connectionResponse(c, { readOnly: true }))
       .post("/:id/connection", async (c) => {
-        const body = parsedBody(refreshConnectionBody, await c.req.json().catch(() => ({})))
+        const body = parsedBody(connectionBody, await c.req.json().catch(() => ({})))
         if (!body.ok) return c.json({ error: body.error }, body.status)
-        return connectionResponse(c, { previousJti: body.body.previousJti })
+        return connectionResponse(c, body.body)
       })
       .post("/:id/connection/refresh", async (c) => {
         const body = parsedBody(refreshConnectionBody, await c.req.json().catch(() => ({})))

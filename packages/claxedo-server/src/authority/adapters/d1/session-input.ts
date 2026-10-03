@@ -3,6 +3,8 @@ import { publicApiErrorShape } from "@claxedo/helpers/api-error"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type { WorkspaceVisibility } from "@claxedo/server-core/platform/auth/authority"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
+import type { ReservePrivateSessionInput } from "@claxedo/server-core/platform/auth/private-session-authority"
+import type { RegistrationRow, WorkspaceAccessRow } from "./session-rows"
 
 export type CanonicalMessage = {
   id: string
@@ -122,4 +124,45 @@ export const { requireText, optionalText } = createRequireText((message) => new 
 
 export function byteLength(value: string) {
   return new TextEncoder().encode(value).byteLength
+}
+
+export function normalizeReservation(input: ReservePrivateSessionInput) {
+  const kind = input.kind
+  if (kind !== "create" && kind !== "fork")
+    throw new D1SessionAuthorityError("invalid_input", "Unknown reservation kind")
+  const parentSessionId = optionalText(input.parentSessionId, "parentSessionId")
+  if ((kind === "fork") !== !!parentSessionId) {
+    throw new D1SessionAuthorityError("invalid_input", "Fork reservations require exactly one parent session")
+  }
+  return {
+    operationId: requireText(input.operationId, "operationId"),
+    sessionId: requireText(input.sessionId, "sessionId"),
+    workspaceId: requireText(input.workspaceId, "workspaceId"),
+    kind,
+    parentSessionId,
+    title: optionalText(input.title, "title", 2_000),
+    harnessId: optionalText(input.harnessId, "harnessId"),
+  }
+}
+
+export type ReservationIntent = ReturnType<typeof normalizeReservation>
+
+export function requireSameRegistration(
+  row: RegistrationRow,
+  intent: ReservationIntent & { sessionHostRoot: string | null },
+  workspace: WorkspaceAccessRow,
+  actorId: string,
+) {
+  if (
+    row.session_id !== intent.sessionId ||
+    row.workspace_id !== workspace.workspace_id ||
+    row.org_id !== workspace.org_id ||
+    row.project_id !== workspace.project_id ||
+    row.creator_actor_id !== actorId ||
+    row.operation_kind !== intent.kind ||
+    row.parent_session_id !== (intent.parentSessionId ?? null) ||
+    row.requested_title !== (intent.title ?? null) ||
+    row.session_host_root !== intent.sessionHostRoot
+  )
+    throw new D1SessionAuthorityError("resource_conflict", "Reservation retry changed immutable intent")
 }

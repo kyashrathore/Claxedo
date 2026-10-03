@@ -38,7 +38,7 @@
     "build": "tsx scripts/build.ts",
     "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "mkdir -p .artifacts/unit && node ../../script/test-deadline.mjs bun test src scripts --path-ignore-patterns='**/relay-workerd-*' --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml && node ../../script/test-deadline.mjs bun test src/relay-workerd-backpressure.test.ts src/relay-workerd-binary.test.ts --timeout 240000 --reporter=junit --reporter-outfile=.artifacts/unit/junit-workerd.xml"
+    "test": "mkdir -p .artifacts/unit && node ../../script/test-deadline.mjs bun test src scripts --path-ignore-patterns='**/relay-workerd-*' --timeout 30000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml && node ../../script/test-deadline.mjs bun test src/relay-workerd-backpressure.test.ts src/relay-workerd-binary.test.ts src/relay-workerd-session-host.test.ts --timeout 240000 --reporter=junit --reporter-outfile=.artifacts/unit/junit-workerd.xml"
   },
   "dependencies": {
     "@claxedo/helpers": "workspace:*",

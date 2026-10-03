@@ -5,7 +5,7 @@ import { readSessionSources, type SessionSource, type SourcePage } from "./sessi
 import { withQuery } from "./transport"
 import type { ListedStatus } from "./status-types"
 import type { SessionListInput, SessionPage, SessionRow } from "./types"
-import { listedStatusFromListItem, sessionRowFromListItem } from "./wire/session-row"
+import { listedStatusFromListItem, sessionHostRootFromListItem, sessionRowFromListItem } from "./wire/session-row"
 
 const SORT = "human_turn_desc"
 
@@ -21,6 +21,8 @@ async function listedOf(context: SessionContext, items: readonly unknown[]) {
       row = sessionRowFromListItem(item, address)
     }
     if (!row) continue
+    const hostRoot = sessionHostRootFromListItem(item)
+    if (hostRoot) context.workspaces.hostSession(row.ref, hostRoot)
     rows.push(row)
     const listed = listedStatusFromListItem(item)
     if (listed) statuses.set(row.ref.sessionId, { ...listed, status: context.status.listed(row.ref, listed.status) })

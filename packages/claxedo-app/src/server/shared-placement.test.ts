@@ -17,7 +17,7 @@ test("a shared session routes without admitting its owner's workspace and disapp
   await createRoot(async (dispose) => {
     let rows = [shared]
     const account = createHostedAccount(async (operation) => operation === "session.shared.list" ? { sessions: rows } : { workspaces: [] })
-    const transport = { serverUrl: "https://account.test", json: async () => ({ deployment: { serverKind: "hosted", issuesSessions: true }, project: [] }) }
+    const transport = { serverUrl: "https://account.test", onSessionHost: () => () => undefined, json: async () => ({ deployment: { serverKind: "hosted", issuesSessions: true }, project: [] }) }
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const workspaces = createWorkspaces(transport as never, queryClient, account)
     try {

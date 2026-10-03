@@ -9,7 +9,6 @@ import {
   authorizeWorkspaceRelayRequest,
   createCachedRevocationClient,
   disposeAuditSampler,
-  parseWorkspaceRelayTarget,
   runtimeAccessTokenRevocationDelayMs,
   workspaceRelayForwardHeaders,
   workspaceRelayForwardRequestInit,
@@ -17,6 +16,7 @@ import {
   type WorkspaceRelayAuditEvent,
   type WorkspaceRelayOptions,
 } from "./server"
+import { parseWorkspaceRelayTarget } from "./relay-target"
 
 /**
  * Thea `fetch` double was called with. `fetch` accepts a string, a `URL`
@@ -1758,6 +1758,16 @@ describe("parseWorkspaceRelayTarget", () => {
   test("refuses a target that still states access", () => {
     expect(parseWorkspaceRelayTarget({ ...row, access: "user-hosted", backing: "local-worktree" })).toBeUndefined()
     expect(parseWorkspaceRelayTarget({ ...row, access: "cloud", backing: "cloud-vm" })).toBeUndefined()
+  })
+
+  test("admits a durable-object target only with no baseUrl", () => {
+    expect(parseWorkspaceRelayTarget({ ...row, hostId: "session-do:ses_1", baseUrl: "", backing: "durable-object" })).toEqual({
+      ...row,
+      hostId: "session-do:ses_1",
+      baseUrl: "",
+      backing: "durable-object",
+    })
+    expect(parseWorkspaceRelayTarget({ ...row, backing: "durable-object" })).toBeUndefined()
   })
 
   test("refuses a backing that names no placement", () => {

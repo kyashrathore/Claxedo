@@ -20,6 +20,9 @@ import {
 } from "../workspace/runtime-token-guards"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
+import { sessionHostAdmits } from "../authority/session-hosts"
+import { workspaceRoleAllowsWrite } from "../authority/pulled-session"
+import { mintSessionHostConnection } from "./session-host-connection"
 
 type HostedConnectionDenial = {
   error: ReturnType<typeof apiError>
@@ -319,6 +322,38 @@ export async function hostedConnectionInfo(
   })
 }
 
+/**
+ * The connect path for a session the control plane reserved in its own
+ * Durable Object (POST `/:id/connection` naming the session): its host's
+ * connection, minted before the session is registered so the create itself
+ * travels there. Any other session is refused; it is reached through the
+ * workspace's connection.
+ */
+export async function hostedSessionHostConnection(
+  services: ControlPlaneServices | undefined,
+  options: WorkspaceRouteOptions,
+  auth: SignedControlPlaneAuth,
+  input: { workspaceId: string; sessionId: string },
+) {
+  const { workspaceId, sessionId } = input
+  const ingress = await cloudConnectionIngress(services, options, auth, workspaceId)
+  if ("error" in ingress) return ingress
+  const placement = "tunnel" in ingress ? undefined : await services?.sessionHosts?.readSessionHostPlacement({ workspaceId, sessionId })
+  if ("tunnel" in ingress || !sessionHostAdmits(placement, { workspaceId, sessionId })) {
+    return { error: apiError("session_host_unavailable", "This session is not served by its own host"), status: 409 } as const
+  }
+  if (!workspaceRoleAllowsWrite(ingress.result.role)) {
+    return { error: apiError("workspace_authorization_denied", "Creating a session needs write access to the workspace"), status: 403 } as const
+  }
+  return mintSessionHostConnection(ingress.authority, options, auth, {
+    workspaceId,
+    sessionId,
+    orgId: await runtimeTokenOrgId(ingress.authority, auth, ingress.workspace),
+    relayUrl: ingress.relayUrl,
+    role: "editor",
+  })
+}
+
 /** A read may inspect settings and mint for a running runtime, but never acquire a lease or provision it. */
 export async function hostedConnectionStatus(
   services: ControlPlaneServices | undefined,
@@ -379,8 +414,10 @@ export async function hostedConnectionStatus(
 }
 
 /**
- * A session share holder's connection (GET `/:id/connection?sessionId=`): a
- * Runtime Access Token scoped to the one session their share names, minted
+ * One session's connection (GET `/:id/connection?sessionId=`): a Runtime
+ * Access Token scoped to that session alone. A session served by its own
+ * Durable Object is reached there, as an editor by whoever may send its turns
+ * and as a viewer otherwise; any other session's token is a viewer's, minted
  * off whatever already serves the workspace. It opens nothing of the
  * workspace, reads its organization from the owner's record only once the
  * caller has proven they may read the session, and never starts compute: a
@@ -397,6 +434,16 @@ export async function hostedSessionConnection(
   const authority = requireAuthority(services)
   await authority.authorizeSessionRead(auth, { workspaceId, sessionId })
   const owner = await authority.resolveWorkspaceOwner?.(workspaceId)
+  const placement = await services?.sessionHosts?.readSessionHostPlacement({ workspaceId, sessionId })
+  if (owner && placement?.session && sessionHostAdmits(placement, { workspaceId, sessionId })) {
+    const relayUrl = configuredRelayUrl(options)
+    if (!relayUrl) throw new ControlPlaneAuthError(503, "runtime_access_token_signer_unavailable", "Workspace Relay URL is not configured")
+    const writes = await authority.authorizeSessionWrite(auth, { workspaceId, sessionId }).then(() => true, (error: unknown) => {
+      if (error instanceof ControlPlaneAuthError && error.status === 403) return false
+      throw error
+    })
+    return mintSessionHostConnection(authority, options, auth, { workspaceId, sessionId, orgId: owner.orgId, relayUrl, role: writes ? "editor" : "viewer" })
+  }
   const machine = await services?.relay.hostTunnelResolver?.(workspaceId)
   const sandbox = machine?.active ? undefined : await services?.sandbox.sandboxManager?.target(workspaceId).catch(() => undefined)
   const target = machine?.active

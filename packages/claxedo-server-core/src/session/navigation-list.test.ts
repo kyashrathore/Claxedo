@@ -36,6 +36,20 @@ describe("session list owner mapping", () => {
   })
 })
 
+describe("session host mapping", () => {
+  test("a session served by its own host names that host's root, and no other row does", () => {
+    const query = parseSessionListQuery(new URL("http://test.local/session-list?scope=workspace&workspaceId=ws_1&limit=20"))
+    const response = buildSessionListResponse({
+      query,
+      sessions: [
+        { session_id: "ses_hosted", workspace_id: "ws_1", title: "Hosted", created_at: 10, updated_at: 30, session_host_root: "ses_hosted" },
+        { session_id: "ses_runtime", workspace_id: "ws_1", title: "Runtime", created_at: 10, updated_at: 20 },
+      ],
+    })
+    expect(response.items.map((row) => [row.sessionId, row.sessionHostRoot])).toEqual([["ses_hosted", "ses_hosted"], ["ses_runtime", undefined]])
+  })
+})
+
 describe("human_turn_desc", () => {
   const session = (input: { id: string; created: number; updated: number; humanTurn?: number }) => ({
     session_id: input.id,

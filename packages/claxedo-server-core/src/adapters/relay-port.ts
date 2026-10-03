@@ -1,6 +1,6 @@
 import type { SignedControlPlaneAuth } from "../platform/auth/auth"
 import type { ClaxedoRegion } from "../platform/runtime/region/index"
-import type { RelayRole } from "@claxedo/workspace-relay"
+import type { RelayBacking, RelayRole } from "@claxedo/workspace-relay"
 
 /**
  * The Relay port, without its implementation.
@@ -69,7 +69,7 @@ export type RelayTarget = {
   workspaceId: string
   hostId: string
   baseUrl: string
-  backing: "cloud-vm" | "local-worktree"
+  backing: RelayBacking
 }
 
 /**
@@ -83,7 +83,7 @@ export type RelayTargetResult =
   | {
       found: true
       baseUrl: string
-      backing: "cloud-vm" | "local-worktree"
+      backing: RelayBacking
     }
   | {
       found: false

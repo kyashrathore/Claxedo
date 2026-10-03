@@ -1,15 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { Hono, type Context } from "hono"
 import { bodyLimit } from "hono/body-limit"
-import {
-  createRemoteJWKSet,
-  importJWK,
-  importPKCS8,
-  importSPKI,
-  jwtVerify,
-  SignJWT,
-  type JWTVerifyGetKey,
-} from "jose"
 import { bearerToken } from "@claxedo/server-core/platform/auth/auth"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
@@ -18,16 +9,10 @@ import {
   type PrivateSessionRuntimePrincipal,
   type RelayHostPrivateSessionClaims,
 } from "@claxedo/server-core/platform/auth/private-session-authority"
-import {
-  normalizeGrantSessionTurnInput,
-  SessionTurnGrantError,
-  type SessionTurnAuthority,
-  type SessionTurnGrantIntent,
-} from "@claxedo/server-core/platform/auth/session-turn-authority"
-import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
+import { SessionTurnGrantError, type SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
+import { sessionHostRootOf } from "@claxedo/workspace-relay-protocol"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 import type { WorkspaceAuthority, WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
-import type { SessionWriteClass } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { TurnUsageRevision, UsageOwner } from "@claxedo/server-core/usage/contracts"
 import {
   cloudWorkspaceUsageRevision,
@@ -49,13 +34,31 @@ import {
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { sessionAuthorityErrorAnswer } from "../session/runtime-authority-errors"
 import { RuntimeConnectionSecretRoutes, type RuntimeConnectionSecretOptions } from "./runtime-connection-secrets"
+import { SessionHostDeliveryRoutes, type SessionHostDeliveryOptions } from "./session-host-delivery"
+import { placedSessionHostRoot, type SessionHostAuthority } from "../authority/session-hosts"
+import {
+  proofHost,
+  relayProofVerifier,
+  streamLeaseMinter,
+  streamLeaseVerifier,
+  turnLeaseMinter,
+  turnLeaseVerifier,
+  WORKSPACE_STREAM_LEASE_SESSION,
+  type DeferredGrantBinding,
+  type SessionProofClaims,
+  type SessionStreamLeaseClaims,
+  type TurnLeaseClaims,
+} from "../session/runtime-session-proofs"
+import {
+  isHostAuthorityAction,
+  isTurnAction,
+  parseSessionAuthorityRequest,
+  positiveInteger,
+  type HostAuthorityAction,
+  type SessionAuthorityRequest,
+} from "../session/runtime-authority-request"
 
 const bodyLimitBytes = 16 * 1024
-const streamLeaseIssuer = "claxedo-control-plane"
-const streamLeaseAudience = "workspace-runtime-session-stream"
-const turnLeaseIssuer = "claxedo-control-plane"
-const turnLeaseAudience = "workspace-runtime-session-turn"
-
 type RuntimeSessionAuthorityPort = Pick<
   PrivateSessionAuthority,
   | "registerRuntimeSession"
@@ -91,67 +94,6 @@ export type OwnerGrantProof = {
   /** The grant's scope; rejects a bearer that does not verify, is expired, or was revoked. */
   verify(token: string): Promise<{ userId: string; actorId: string; orgId: string; workspaceId: string }>
   resolveWorkspaceOwner: ResolveWorkspaceOwner
-}
-
-/**
- * How the runtime holding a lease proved its identity, and therefore what a
- * renewal re-checks. A relay host presents a Relay Host Token minted from a
- * durable Runtime Access Token, so every renewal re-checks that parent token
- * is still active. A workspace's own runtime presents the owner grant the
- * control plane launched it with, so every renewal re-resolves the
- * workspace's owner and refuses once the grant's actor is not that owner. An
- * embedded runtime runs inside the control plane process that mints the lease
- * and has no token chain of its own.
- */
-export type SessionStreamLeaseBinding =
-  | { transport: "relay-host"; hostId: string; parentRuntimeAccessTokenJti: string }
-  | { transport: "owner-grant" }
-  | { transport: "embedded" }
-
-/**
- * A background turn redeeming the grant minted for it while its actor's
- * credential was live. It proves a turn and nothing else: the grant row is
- * rechecked by the turn authority inside the acquire, and a lease minted
- * from it renews on the authority's own share recheck, there being no
- * parent token or owner row behind it to re-resolve.
- */
-export type DeferredGrantBinding = { transport: "deferred-grant"; grantId: string }
-
-type SessionProofBinding = SessionStreamLeaseBinding | DeferredGrantBinding
-
-type SessionProofClaims = PrivateSessionRuntimePrincipal & SessionProofBinding & {
-  orgId: string
-  workspaceId: string
-  sessionId: string
-  action: "read" | "write"
-}
-
-export type SessionStreamLeaseClaims = PrivateSessionRuntimePrincipal & SessionStreamLeaseBinding & {
-  orgId: string
-  workspaceId: string
-  /**
-   * The session the lease is bound to, or `"*"`: a WORKSPACE stream lease,
-   * minted by `host_read` for the runtime's unscoped `wr/events` arm, which
-   * proves the reader's identity for every session that first appears on a
-   * connection that outlives its one-request relay host token. It proves who
-   * the reader is, never what they may read: each session is still authorized
-   * on its own when the lease is presented for it.
-   */
-  sessionId: string
-  action: "read" | "write"
-}
-
-export const WORKSPACE_STREAM_LEASE_SESSION = "*"
-
-/** Prompt admission is reached over a proof a runtime presents, never from inside the plane's own process. */
-type TurnLeaseBinding = Exclude<SessionProofBinding, { transport: "embedded" }>
-
-type TurnLeaseClaims = Extract<SessionProofClaims, TurnLeaseBinding> & {
-  turnId: string
-  authorityLeaseId: string
-  fencingToken: number
-  acquiredAt: number
-  expiresAt: number
 }
 
 export type RuntimeSessionStreamDecision =
@@ -236,6 +178,10 @@ async function proofDenial(
 
 export type RuntimeSessionAuthorityOptions = {
   connectionSecrets?: RuntimeConnectionSecretOptions
+  /** Where a session is placed; absent, no session is served by its own host and every session-host proof is refused. */
+  sessionHosts?: Pick<SessionHostAuthority, "readSessionHostPlacement">
+  /** What a session served by its own Durable Object is handed per turn; absent, `/turn-delivery` and `/turn-execution` are not mounted. */
+  sessionHostDelivery?: SessionHostDeliveryOptions
   authority: RuntimeSessionAuthorityPort
   /** Durable prompt admission is selected independently from session visibility. */
   turnAuthority?: SessionTurnAuthority
@@ -330,7 +276,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
           401,
         )
       }
-      if (verified.session_id !== undefined) {
+      if (verified.session_id !== undefined || sessionHostRootOf(verified.host_id)) {
         return context.json(
           { error: { code: "host_authority_denied", message: "A token scoped to one session reaches no workspace capability" } },
           403,
@@ -378,6 +324,19 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
   const resolveWorkspaceOwner = options.ownerGrants?.resolveWorkspaceOwner
 
   /**
+   * A session placed in its own Durable Object answers to that host alone, and
+   * a host answers for no session placed elsewhere: whatever the action, the
+   * host behind the proof must be the one the session's row, or before
+   * registration its reservation, names.
+   */
+  async function sessionHostMismatch(claims: SessionProofClaims, sessionId: string) {
+    const host = proofHost(claims)
+    const proven = host === undefined ? undefined : sessionHostRootOf(host)
+    const placement = await options.sessionHosts?.readSessionHostPlacement({ workspaceId: claims.workspaceId, sessionId })
+    return proven !== placedSessionHostRoot(placement)
+  }
+
+  /**
    * A cloud workspace runtime's usage for one session, proven by a turn lease
    * the plane minted for that session. Session and workspace come from the
    * lease, location and host from the plane; the report names none of them.
@@ -409,6 +368,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         401,
       )
     }
+    if (await sessionHostMismatch(lease, sessionId)) return sessionHostRefusal(context)
     let revisions: Array<{ fact: UsageReportFact; revision: TurnUsageRevision }>
     try {
       revisions = facts.map((fact) => ({ fact, revision: cloudWorkspaceUsageRevision(fact, lease) }))
@@ -483,7 +443,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
           503,
         )
       }
-      const binding: DeferredGrantBinding = { transport: "deferred-grant", grantId: verified.grantId }
+      const binding: DeferredGrantBinding = { transport: "deferred-grant", grantId: verified.grantId, ...(verified.hostId ? { hostId: verified.hostId } : {}) }
       const claims: SessionProofClaims = {
         ...sessionLeasePrincipal(verified),
         ...binding,
@@ -638,7 +598,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         ...(request.registrationOperationId ? { registrationOperationId: request.registrationOperationId } : {}),
         ...(turnId ? { turnId } : {}),
       })
-      const minted = await mintDeferredTurnGrant(deferredTurnGrantClaims(principal, claims.orgId, granted), env)
+      const minted = await mintDeferredTurnGrant(deferredTurnGrantClaims(principal, claims.orgId, granted, proofHost(claims)), env)
       return context.json({ allowed: true, grant: minted.grant, expiresAt: granted.expiresAt })
     }
     const turn = {
@@ -712,6 +672,10 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     verifyTurnLease: options.verifyTurnLease ?? turnLeaseVerifier(env),
     turnLeaseDenial: (claims) => proofDenial({ authority: options.authority, resolveWorkspaceOwner }, claims),
   }))
+  if (options.sessionHostDelivery) app.route("/", SessionHostDeliveryRoutes({
+    ...options.sessionHostDelivery, authority: options.authority, verifyTurnLease: options.verifyTurnLease ?? turnLeaseVerifier(env),
+    turnLeaseDenial: (claims) => proofDenial({ authority: options.authority, resolveWorkspaceOwner }, claims),
+  }))
   return app.post("/session-authorize", limitedBody, async (context) => {
     const body = await readJsonRecord(context.req.raw)
     if (body?.action === USAGE_REPORT_ACTION) return reportUsage(context, body)
@@ -731,6 +695,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     const { sessionId, action, operationId, reason, title, stream, parentSessionId, createdAt, updatedAt } = request
     const verified = await verifySessionProof(context, request)
     if (verified instanceof Response) return verified
+    if (await sessionHostMismatch("turn" in verified ? verified.turn.claims : verified.claims, sessionId)) return sessionHostRefusal(context)
 
     try {
       if ("turn" in verified) {
@@ -773,7 +738,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         // The machine asks on behalf of the person at its keyboard, over the
         // relay, holding the owner's workspace-wide token for THIS request; a
         // lease outlives the token it was minted under and cannot carry this.
-        if (claims.transport !== "relay-host" || relayScope?.sessionId !== undefined) {
+        if (claims.transport !== "relay-host" || relayScope?.sessionId !== undefined || sessionHostRootOf(claims.hostId)) {
           return context.json(
             {
               error: {
@@ -816,6 +781,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         return context.json({ allowed: true })
       }
       if (action === "register") {
+        const sessionHostRoot = claims.transport === "relay-host" ? sessionHostRootOf(claims.hostId) : undefined
         await options.authority.registerRuntimeSession({
           ...principal,
           operationId,
@@ -824,6 +790,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
           createdAt,
           updatedAt,
           ...(title ? { title } : {}),
+          ...(sessionHostRoot ? { sessionHostRoot } : {}),
         })
         return context.json({ allowed: true })
       }
@@ -877,415 +844,6 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
   })
 }
 
-function parseSessionAuthorityRequest(body: Record<string, unknown> | undefined) {
-  const sessionId = trimToUndefined(body?.sessionId)
-  const action = body?.action
-  const writeClass = body?.writeClass
-  const operationId = trimToUndefined(body?.operationId)
-  const reason = optionalText(body?.reason)
-  const title = optionalText(body?.title)
-  const parentSessionId = trimToUndefined(body?.parentSessionId)
-  const stream = body?.stream === true
-  const lease = trimToUndefined(body?.lease)
-  const turnId = trimToUndefined(body?.turnId)
-  const turnLeaseId = trimToUndefined(body?.leaseId)
-  const fencingToken = positiveInteger(body?.fencingToken)
-  const grant = trimToUndefined(body?.grant)
-  const createdAt = finiteTimestamp(body?.createdAt)
-  const updatedAt = finiteTimestamp(body?.updatedAt)
-  if (!sessionId || !isAuthorityAction(action)) return undefined
-  if (
-    (writeClass !== undefined && !isSessionWriteClass(writeClass))
-    || (writeClass !== undefined && action !== "write")
-    || (body?.title !== undefined && title === undefined)
-    || (body?.reason !== undefined && reason === undefined)
-    || (body?.stream !== undefined && typeof body.stream !== "boolean")
-    || (body?.lease !== undefined && !lease)
-    || (!!lease && !stream)
-    || (stream && action !== "read" && action !== "write")
-    || (body?.grant !== undefined && (!grant || action !== "turn_acquire"))
-    || (body?.createdAt !== undefined && (createdAt === undefined || (action !== "register" && action !== "adopt")))
-    || (body?.updatedAt !== undefined && (updatedAt === undefined || (action !== "register" && action !== "adopt")))
-  ) return undefined
-  const fields = {
-    sessionId,
-    operationId,
-    reason,
-    title,
-    stream,
-    lease,
-    turnId,
-    turnLeaseId,
-    fencingToken,
-    parentSessionId,
-    createdAt,
-    updatedAt,
-    ...(isSessionWriteClass(writeClass) ? { writeClass } : {}),
-  }
-  switch (action) {
-    case "reserve":
-      if (!parentSessionId) return undefined
-      return { ...fields, action, parentSessionId }
-    case "start_status":
-    case "start":
-      if (!operationId) return undefined
-      return { ...fields, action, operationId }
-    case "register":
-      if (!operationId || createdAt === undefined || updatedAt === undefined) return undefined
-      return { ...fields, action, operationId, createdAt, updatedAt }
-    case "adopt":
-      if (createdAt === undefined || updatedAt === undefined) return undefined
-      return { ...fields, action, createdAt, updatedAt }
-    case "registration_ambiguous":
-    case "compensation_begin":
-    case "compensation_complete":
-      if (!operationId || !reason) return undefined
-      return { ...fields, action, operationId, reason }
-    case "turn_acquire":
-      if (!turnId || body?.leaseId !== undefined || body?.fencingToken !== undefined) return undefined
-      return { ...fields, action, turnId, ...(grant ? { grant } : {}) }
-    case "turn_grant": {
-      const intent = body?.intent
-      const subjectSessionId = trimToUndefined(body?.subjectSessionId)
-      const registrationOperationId = trimToUndefined(body?.registrationOperationId)
-      if (
-        !isSessionTurnGrantIntent(intent)
-        || body?.leaseId !== undefined || body?.fencingToken !== undefined
-        || (body?.subjectSessionId !== undefined && !subjectSessionId)
-        || (body?.registrationOperationId !== undefined && !registrationOperationId)
-      ) return undefined
-      try {
-        normalizeGrantSessionTurnInput({ intent, subjectSessionId, registrationOperationId, turnId })
-      } catch (error) {
-        if (error instanceof SessionTurnGrantError) return undefined
-        throw error
-      }
-      return { ...fields, action, intent, subjectSessionId, registrationOperationId }
-    }
-    case "turn_renew":
-    case "turn_release":
-      if (!turnId || !turnLeaseId || !fencingToken) return undefined
-      return { ...fields, action, turnId, turnLeaseId, fencingToken }
-    default:
-      return { ...fields, action }
-  }
-}
-
-type SessionAuthorityRequest = NonNullable<ReturnType<typeof parseSessionAuthorityRequest>>
-
-type AuthorityAction =
-  | "read"
-  | "write"
-  | "reserve"
-  | "start_status"
-  | "start"
-  | "register"
-  | "adopt"
-  | "registration_ambiguous"
-  | "compensation_begin"
-  | "compensation_complete"
-  | "turn_acquire"
-  | "turn_renew"
-  | "turn_release"
-  | "turn_grant"
-
-type HostAuthorityAction = "host_read" | "host_admin"
-
-function isHostAuthorityAction(value: unknown): value is HostAuthorityAction {
-  return value === "host_read" || value === "host_admin"
-}
-
-function isAuthorityAction(value: unknown): value is AuthorityAction {
-  return value === "read"
-    || value === "write"
-    || value === "reserve"
-    || value === "start_status"
-    || value === "start"
-    || value === "register"
-    || value === "adopt"
-    || value === "registration_ambiguous"
-    || value === "compensation_begin"
-    || value === "compensation_complete"
-    || value === "turn_acquire"
-    || value === "turn_renew"
-    || value === "turn_release"
-    || value === "turn_grant"
-}
-
-function isSessionTurnGrantIntent(value: unknown): value is SessionTurnGrantIntent {
-  return value === "child_completion" || value === "queued_prompt"
-}
-
-function isSessionWriteClass(value: unknown): value is SessionWriteClass {
-  return value === "agent_turn" || value === "session_control"
-}
-
-function isTurnAction(value: AuthorityAction): value is "turn_acquire" | "turn_renew" | "turn_release" | "turn_grant" {
-  return value === "turn_acquire" || value === "turn_renew" || value === "turn_release" || value === "turn_grant"
-}
-
-function streamLeaseMinter(env: Record<string, string | undefined>) {
-  return async (claims: SessionStreamLeaseClaims) => {
-    const pem = keyPem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM)
-    if (!pem) throw new Error("Stream lease signing key is unavailable")
-    const now = Math.floor(Date.now() / 1_000)
-    const ttlSeconds = SESSION_STREAM_LEASE_TTL_MS / 1_000
-    const expiresAt = (now + ttlSeconds) * 1_000
-    const lease = await new SignJWT({
-      principal_kind: claims.principalKind,
-      actor_id: claims.actorId,
-      actor_kind: claims.actorKind,
-      org_id: claims.orgId,
-      workspace_id: claims.workspaceId,
-      transport: claims.transport,
-      ...(claims.transport === "relay-host"
-        ? { host_id: claims.hostId, parent_jti: claims.parentRuntimeAccessTokenJti }
-        : {}),
-      session_id: claims.sessionId,
-      action: claims.action,
-    })
-      .setProtectedHeader({ alg: "EdDSA" })
-      .setIssuer(streamLeaseIssuer)
-      .setAudience(streamLeaseAudience)
-      .setIssuedAt(now)
-      .setExpirationTime(now + ttlSeconds)
-      .setJti(crypto.randomUUID())
-      .sign(await importPKCS8(pem, "EdDSA"))
-    return { lease, expiresAt }
-  }
-}
-
-function streamLeaseVerifier(env: Record<string, string | undefined>) {
-  return async (lease: string): Promise<SessionStreamLeaseClaims> => {
-    const pem = keyPem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)
-    if (!pem) throw new Error("Stream lease verification key is unavailable")
-    const { payload } = await jwtVerify(lease, await importSPKI(pem, "EdDSA"), {
-      algorithms: ["EdDSA"],
-      issuer: streamLeaseIssuer,
-      audience: streamLeaseAudience,
-    })
-    const principalKind = payload.principal_kind
-    const actorKind = payload.actor_kind
-    if (
-      (principalKind !== "user" && principalKind !== "service")
-      || (actorKind !== "human" && actorKind !== "agent")
-      || (principalKind === "user" && actorKind !== "human")
-      || (principalKind === "service" && actorKind !== "agent")
-    ) throw new Error("Stream lease principal is invalid")
-    const actorId = trimToUndefined(payload.actor_id)
-    const orgId = trimToUndefined(payload.org_id)
-    const workspaceId = trimToUndefined(payload.workspace_id)
-    const hostId = trimToUndefined(payload.host_id)
-    const parentRuntimeAccessTokenJti = trimToUndefined(payload.parent_jti)
-    const sessionId = trimToUndefined(payload.session_id)
-    const action = payload.action
-    const transport = payload.transport
-    if (!actorId || !orgId || !workspaceId || !sessionId
-      || (action !== "read" && action !== "write")) throw new Error("Stream lease claims are invalid")
-    const binding: SessionStreamLeaseBinding = transport === "embedded"
-      ? { transport: "embedded" }
-      : transport === "owner-grant"
-        ? { transport: "owner-grant" }
-        : transport === "relay-host" && hostId && parentRuntimeAccessTokenJti
-          ? { transport: "relay-host", hostId, parentRuntimeAccessTokenJti }
-          : (() => { throw new Error("Stream lease binding is invalid") })()
-    const principal: PrivateSessionRuntimePrincipal = principalKind === "user"
-      ? { principalKind: "user", actorId, actorKind: "human" }
-      : { principalKind: "service", actorId, actorKind: "agent" }
-    return {
-      ...principal,
-      ...binding,
-      orgId,
-      workspaceId,
-      sessionId,
-      action,
-    }
-  }
-}
-
-function turnLeaseMinter(env: Record<string, string | undefined>) {
-  return async (claims: TurnLeaseClaims) => {
-    const pem = keyPem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM)
-    if (!pem) throw new Error("Turn lease signing key is unavailable")
-    const now = Math.floor(Date.now() / 1_000)
-    const expiry = Math.floor(claims.expiresAt / 1_000)
-    if (expiry <= now) throw new Error("Turn lease already expired before proof minting")
-    const lease = await new SignJWT({
-      principal_kind: claims.principalKind,
-      actor_id: claims.actorId,
-      actor_kind: claims.actorKind,
-      org_id: claims.orgId,
-      workspace_id: claims.workspaceId,
-      transport: claims.transport,
-      ...(claims.transport === "relay-host"
-        ? { host_id: claims.hostId, parent_jti: claims.parentRuntimeAccessTokenJti }
-        : claims.transport === "deferred-grant"
-          ? { grant_id: claims.grantId }
-          : {}),
-      session_id: claims.sessionId,
-      action: "write",
-      turn_id: claims.turnId,
-      authority_lease_id: claims.authorityLeaseId,
-      fencing_token: claims.fencingToken,
-      acquired_at: claims.acquiredAt,
-      authority_expires_at: claims.expiresAt,
-    })
-      .setProtectedHeader({ alg: "EdDSA" })
-      .setIssuer(turnLeaseIssuer)
-      .setAudience(turnLeaseAudience)
-      .setIssuedAt(now)
-      .setExpirationTime(expiry)
-      .setJti(crypto.randomUUID())
-      .sign(await importPKCS8(pem, "EdDSA"))
-    return { lease, expiresAt: expiry * 1_000 }
-  }
-}
-
-function turnLeaseVerifier(env: Record<string, string | undefined>) {
-  return async (lease: string): Promise<TurnLeaseClaims> => {
-    const pem = keyPem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)
-    if (!pem) throw new Error("Turn lease verification key is unavailable")
-    const { payload } = await jwtVerify(lease, await importSPKI(pem, "EdDSA"), {
-      algorithms: ["EdDSA"],
-      issuer: turnLeaseIssuer,
-      audience: turnLeaseAudience,
-    })
-    const principalKind = payload.principal_kind
-    const actorKind = payload.actor_kind
-    if (
-      (principalKind !== "user" && principalKind !== "service")
-      || (actorKind !== "human" && actorKind !== "agent")
-      || (principalKind === "user" && actorKind !== "human")
-      || (principalKind === "service" && actorKind !== "agent")
-    ) throw new Error("Turn lease principal is invalid")
-    const actorId = trimToUndefined(payload.actor_id)
-    const orgId = trimToUndefined(payload.org_id)
-    const workspaceId = trimToUndefined(payload.workspace_id)
-    const hostId = trimToUndefined(payload.host_id)
-    const parentRuntimeAccessTokenJti = trimToUndefined(payload.parent_jti)
-    const sessionId = trimToUndefined(payload.session_id)
-    const turnId = trimToUndefined(payload.turn_id)
-    const authorityLeaseId = trimToUndefined(payload.authority_lease_id)
-    const fencingToken = positiveInteger(payload.fencing_token)
-    const acquiredAt = finiteTimestamp(payload.acquired_at)
-    const expiresAt = finiteTimestamp(payload.authority_expires_at)
-    const grantId = trimToUndefined(payload.grant_id)
-    const transport = payload.transport
-    if (
-      !actorId || !orgId || !workspaceId
-      || !sessionId || !turnId || !authorityLeaseId || !fencingToken
-      || acquiredAt === undefined || expiresAt === undefined || expiresAt <= acquiredAt
-    ) throw new Error("Turn lease claims are invalid")
-    const binding: TurnLeaseBinding = transport === "owner-grant"
-      ? { transport: "owner-grant" }
-      : transport === "relay-host" && hostId && parentRuntimeAccessTokenJti
-        ? { transport: "relay-host", hostId, parentRuntimeAccessTokenJti }
-        : transport === "deferred-grant" && grantId
-          ? { transport: "deferred-grant", grantId }
-          : (() => { throw new Error("Turn lease binding is invalid") })()
-    const principal: PrivateSessionRuntimePrincipal = principalKind === "user"
-      ? { principalKind: "user", actorId, actorKind: "human" }
-      : { principalKind: "service", actorId, actorKind: "agent" }
-    return {
-      ...principal,
-      ...binding,
-      orgId,
-      workspaceId,
-      sessionId,
-      action: "write",
-      turnId,
-      authorityLeaseId,
-      fencingToken,
-      acquiredAt,
-      expiresAt,
-    }
-  }
-}
-
-type RelayProofKey = JWTVerifyGetKey
-const relayKeys = new Map<string, RelayProofKey | Promise<RelayProofKey>>()
-
-export function relayProofVerifier(env: Record<string, string | undefined>) {
-  return async (token: string): Promise<RelayHostPrivateSessionClaims> => {
-    const { payload } = await jwtVerify(token, await relayProofKey(env), {
-      algorithms: ["EdDSA", "ES256", "RS256"],
-      issuer: "workspace-relay",
-      audience: "workspace-host-service",
-    })
-    const principalKind = payload.principal_kind
-    const actorKind = payload.actor_kind
-    const role = payload.role
-    const backing = payload.backing
-    const actorId = trimToUndefined(payload.actor_id)
-    const orgId = trimToUndefined(payload.org_id)
-    const workspaceId = trimToUndefined(payload.workspace_id)
-    const hostId = trimToUndefined(payload.host_id)
-    const jti = trimToUndefined(payload.jti)
-    const parentJti = trimToUndefined(payload.parent_jti)
-    const sessionScope = trimToUndefined(payload.session_id)
-    if (
-      (principalKind !== "user" && principalKind !== "service")
-      || (actorKind !== "human" && actorKind !== "agent")
-      || !actorId
-      || !orgId
-      || !workspaceId
-      || !hostId
-      || !jti
-      || !parentJti
-      || (role !== "viewer" && role !== "editor" && role !== "admin" && role !== "owner")
-      || payload.access !== undefined
-      || (payload.session_id !== undefined && !sessionScope)
-      || (backing !== "cloud-vm" && backing !== "local-worktree")
-    ) throw new Error("Relay proof claims are invalid")
-    // Assembled AFTER the checks so the claims object is the narrowed values,
-    // not the raw payload asserted into their type.
-    const claims: RelayHostPrivateSessionClaims = {
-      principal_kind: principalKind,
-      actor_id: actorId,
-      actor_kind: actorKind,
-      org_id: orgId,
-      workspace_id: workspaceId,
-      host_id: hostId,
-      jti,
-      parent_jti: parentJti,
-      role,
-      ...(sessionScope ? { session_id: sessionScope } : {}),
-    }
-    return claims
-  }
-}
-
-function relayProofKey(env: Record<string, string | undefined>): RelayProofKey | Promise<RelayProofKey> {
-  const jwksUrl = trimToUndefined(env.CLAXEDO_RELAY_JWKS_URL)
-  if (jwksUrl) return cachedKey(`jwks:${jwksUrl}`, () => createRemoteJWKSet(new URL(jwksUrl)))
-  const pem = keyPem(env.CLAXEDO_RELAY_HOST_VERIFY_PEM)
-  if (pem) return cachedKey(`pem:${pem}`, () => async () => await importSPKI(pem, "EdDSA"))
-  const jwk = trimToUndefined(env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_JWK)
-  if (jwk) return cachedKey(`jwk:${jwk}`, () => async () => await importJWK(JSON.parse(jwk), "EdDSA"))
-  throw new Error("Relay proof verification is not configured")
-}
-
-function cachedKey(key: string, create: () => RelayProofKey | Promise<RelayProofKey>) {
-  const existing = relayKeys.get(key)
-  if (existing) return existing
-  const value = create()
-  relayKeys.set(key, value)
-  return value
-}
-
-function optionalText(value: unknown) {
-  if (value === undefined) return ""
-  return trimToUndefined(value)
-}
-
-function positiveInteger(value: unknown) {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined
-}
-
-function finiteTimestamp(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined
-}
-
-function keyPem(value: string | undefined) {
-  return trimToUndefined(value)?.replaceAll("\\n", "\n")
+function sessionHostRefusal(context: Context) {
+  return context.json({ error: { code: "session_host_mismatch", message: "This session is served by another host" } }, 403)
 }
