@@ -911,7 +911,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       if (storedSessionShareLevel(existing.level) !== level) {
         await this.setShareLevel(administrator, existing, sessionId, workspaceId, level)
       }
-      return { grant_id: existing.grant_id, level }
+      return { grant_id: existing.grant_id, level, recipientUserId: target }
     }
     const grantId = this.randomId("share")
     const assertionId = this.randomId("assert")
@@ -976,12 +976,12 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
           if (storedSessionShareLevel(raced.level) !== level) {
             await this.setShareLevel(administrator, raced, sessionId, workspaceId, level)
           }
-          return { grant_id: raced.grant_id, level }
+          return { grant_id: raced.grant_id, level, recipientUserId: target }
         }
       }
       throw error
     }
-    return { grant_id: grantId, level }
+    return { grant_id: grantId, level, recipientUserId: target }
   }
 
   /**
@@ -1065,11 +1065,11 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       grants = result.results
     } else {
       const target = await this.resolveShareRecipient(args, true)
-      if (!target) return { revoked: false, runtime_tokens_revoked: 0, revokedTargets: [] }
+      if (!target) return { revoked: false, runtime_tokens_revoked: 0, recipientUserIds: [] }
       const existing = await this.activeShareForTarget(sessionId, target)
       grants = existing && existing.workspace_id === workspaceId ? [existing] : []
     }
-    if (grants.length === 0) return { revoked: false, runtime_tokens_revoked: 0, revokedTargets: [] }
+    if (grants.length === 0) return { revoked: false, runtime_tokens_revoked: 0, recipientUserIds: [] }
     const now = this.now()
     const manages = maySql(administrator, "manage_shares", { kind: "session", alias: "s" })
     let runtimeTokensRevoked = 0
@@ -1124,7 +1124,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     return {
       revoked: true,
       runtime_tokens_revoked: runtimeTokensRevoked,
-      revokedTargets: grants.map(shareFanoutTarget),
+      recipientUserIds: grants.map((grant) => grant.target_user_id),
     }
   }
 
@@ -1952,10 +1952,6 @@ const SESSION_ACTION: Record<SessionAccessQuestion, SessionAction> = {
 function shareSelectorCount(args: SessionShareRecipient) {
   return [args.grantedToTokenIdentifier, args.grantedToSubject, args.grantedToUserId]
     .filter((value) => typeof value === "string" && !!value.trim()).length
-}
-
-function shareFanoutTarget(grant: SessionShareRow) {
-  return { grantedToUserId: grant.target_user_id }
 }
 
 function sessionShareError(code: PublicApiErrorCode) {

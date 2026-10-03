@@ -92,39 +92,10 @@ describe("People route contract", () => {
   }
 })
 
-describe("grantId-only revoke fanout", () => {
+describe("team and organization recipients", () => {
   for (const [routeName, routeFactory] of routeFactories) {
-    test(`${routeName} notifies the person the revoke returned`, async () => {
-      const sink = vi.fn()
-      const authority: Partial<WorkspaceAuthority> = {
-        resolveOrgId: vi.fn(async () => "org_internal" as OrgId),
-        revokeSessionShare: vi.fn(async () => ({
-          revoked: true,
-          runtime_tokens_revoked: 1,
-          revokedTargets: [{ grantedToTokenIdentifier: "https://auth.example.test|user_bob" }],
-        })),
-      }
-      const response = await routeFactory(services(authority), {
-        ...signedOptions,
-        sessionShareChangedSink: sink,
-      }).request("https://control.example.test/sessions/ses_1/shares", {
-        method: "DELETE",
-        headers: { authorization: "Bearer token", "content-type": "application/json" },
-        body: JSON.stringify({ workspaceId: "ws_1", grantId: "ssg_1" }),
-      })
-
-      expect(response.status).toBe(200)
-      expect(sink).toHaveBeenCalledWith(expect.objectContaining({
-        type: "session.share.changed",
-        phase: "revoked",
-        ownerUserId: "user_bob",
-        sessionId: "ses_1",
-        workspaceId: "ws_1",
-      }))
-    })
-
     test(`${routeName} hands the authority no team or organization recipient`, async () => {
-      const grantSessionShare = vi.fn(async () => ({ grant_id: "ssg_1", level: "follow" as const }))
+      const grantSessionShare = vi.fn(async () => ({ grant_id: "ssg_1", level: "follow" as const, recipientUserId: "usr_bob" }))
       await routeFactory(services({ grantSessionShare }), signedOptions).request("https://control.example.test/sessions/ses_1/shares", {
         method: "POST",
         headers: { authorization: "Bearer token", "content-type": "application/json" },
@@ -139,7 +110,7 @@ describe("share level on the grant route", () => {
   for (const [routeName, routeFactory] of routeFactories) {
     test(`${routeName} passes the requested level through and rings the doorbell with it`, async () => {
       const sink = vi.fn()
-      const grantSessionShare = vi.fn(async () => ({ grant_id: "ssg_1", level: "send" as const }))
+      const grantSessionShare = vi.fn(async () => ({ grant_id: "ssg_1", level: "send" as const, recipientUserId: "usr_bob" }))
       const response = await routeFactory(
         services({
           grantSessionShare,
@@ -163,7 +134,7 @@ describe("share level on the grant route", () => {
     })
 
     test(`${routeName} defaults a level-less grant to follow`, async () => {
-      const grantSessionShare = vi.fn(async () => ({ grant_id: "ssg_1", level: "follow" as const }))
+      const grantSessionShare = vi.fn(async () => ({ grant_id: "ssg_1", level: "follow" as const, recipientUserId: "usr_bob" }))
       const response = await routeFactory(services({ grantSessionShare }), signedOptions).request(
         "https://control.example.test/sessions/ses_1/shares",
         {
@@ -181,7 +152,7 @@ describe("share level on the grant route", () => {
     })
 
     test(`${routeName} refuses an unknown level before reaching the authority`, async () => {
-      const grantSessionShare = vi.fn(async () => ({ grant_id: "ssg_1", level: "follow" as const }))
+      const grantSessionShare = vi.fn(async () => ({ grant_id: "ssg_1", level: "follow" as const, recipientUserId: "usr_bob" }))
       const response = await routeFactory(services({ grantSessionShare }), signedOptions).request(
         "https://control.example.test/sessions/ses_1/shares",
         {

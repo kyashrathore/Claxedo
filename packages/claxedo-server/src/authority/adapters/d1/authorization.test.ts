@@ -207,6 +207,32 @@ describe("one authorization owner", () => {
     expect(await authority.listSharedSessions!(follower)).toEqual([expect.objectContaining({ session_id: "ses_alice" })])
   })
 
+  test("a share's doorbell rings the person it names, by user id or by grant id, and never the owner", async () => {
+    const { authority, alice, follower } = await setup()
+    const rung: Array<{ phase: string; ownerUserId: string }> = []
+    const routes = SessionPeopleControlRoutes({ authority } as unknown as ControlPlaneServices, {
+      authConfig: { enabled: true, issuer: "https://auth.test", jwksUrl: "custom:test" },
+      verifier: async () => alice,
+      sessionShareChangedSink: (event) => { rung.push({ phase: event.phase, ownerUserId: event.ownerUserId }) },
+    })
+    const request = (method: "POST" | "DELETE", body: object) => routes.request("https://control.test/sessions/ses_alice/shares", {
+      method,
+      headers: { authorization: "Bearer alice", "content-type": "application/json" },
+      body: JSON.stringify({ workspaceId: "ws_alice", ...body }),
+    })
+    const granted = await request("POST", { grantedToUserId: id(follower) })
+    expect(granted.status).toBe(200)
+    const { grant_id: grantId } = await granted.json() as { grant_id: string }
+    expect((await request("DELETE", { grantId })).status).toBe(200)
+    const identity = follower.principal!.identity
+    expect((await request("POST", { grantedToTokenIdentifier: `${identity.issuer}|${identity.subject}` })).status).toBe(200)
+    expect(rung).toEqual([
+      { phase: "granted", ownerUserId: id(follower) },
+      { phase: "revoked", ownerUserId: id(follower) },
+      { phase: "granted", ownerUserId: id(follower) },
+    ])
+  })
+
   test("revoked grants and grants to people who left the organization never list", async () => {
     const { authority, database, alice, follower, grantees: { teamEditor } } = await setup()
     const input = { sessionId: "ses_alice", workspaceId: "ws_alice" }

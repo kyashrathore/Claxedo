@@ -13,21 +13,21 @@ export type SessionShareRecipient = {
 }
 
 /**
- * Canonical recipient identity resolved by the authority before a session
- * share is revoked. Routes use this target for recipient doorbells, including
- * grant-id-only revokes whose request body carries no recipient selector.
+ * What a revoke ended. `recipientUserIds` are the canonical users the ended
+ * grants named, which is what a doorbell is addressed to, including for a
+ * revoke by grant id whose request names no person.
  */
-export type SessionShareFanoutTarget = SessionShareRecipient
-
 export type SessionShareRevokeResult = {
   revoked: boolean
   runtime_tokens_revoked?: number
-  revokedTargets: SessionShareFanoutTarget[]
+  recipientUserIds: string[]
 }
 
 export type SessionShareGrantResult = {
   grant_id: string
   level: SessionShareLevel
+  /** The canonical user the grant names, however the request named them. */
+  recipientUserId: string
 }
 
 export type SessionPeopleContext = {

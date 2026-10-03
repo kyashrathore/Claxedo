@@ -25,7 +25,6 @@ export {
 } from "./session-share-level"
 export type {
   SessionPeopleContext,
-  SessionShareFanoutTarget,
   SessionShareGrantResult,
   SessionShareRevokeResult,
 } from "./session-share-authority"
