@@ -94,14 +94,15 @@ import {
 } from "./session-permission-ceiling"
 import {
   acquireManagedPromptLease,
+  admitQueuedDelivery,
   createPromptAdmission,
   deferredTurnGrant,
   deferredTurnGrantRefused,
   flushDocumentsAfterTurn,
   messageIdConflict,
   publishTurnFailure,
-  queuedPromptRequester,
   settleChildTurn,
+  steerAnswerStatus,
   turnAdmissionConflict,
   turnScope,
 } from "./session-prompt-admission"
@@ -109,6 +110,7 @@ import {
   after,
   managedSessionLifecycle,
   readSession,
+  recordReaderSend,
   requestSecretAuthority,
   requestTurnSender,
   sessionConfigOf,
@@ -349,8 +351,11 @@ async function invokeGoalRuntime(opts: Opts, c: Ctx, sessionId: string, director
 }
 
 function goalStartInvocation(objective: string): GoalInvocation {
-  return async ({ c, sessionId, directory, runtime }) =>
-    goalMutationResponse(c, await runtime.goals.start({ sessionId, objective }, directory), 201)
+  return async ({ c, sessionId, directory, runtime }) => {
+    const started = await runtime.goals.start({ sessionId, objective }, directory)
+    await recordReaderSend(runtime, c, sessionId)
+    return goalMutationResponse(c, started, 201)
+  }
 }
 
 const rootsOnly = (c: Ctx) => c.req.query("roots") === "true" || c.req.query("roots") === "1"
@@ -1366,18 +1371,12 @@ export function createSessionRoutes(opts: Opts) {
       const permissionRefusal = await rejectPermissionOverride(opts, c, directory, id, body.permissionMode)
       if (permissionRefusal) return permissionRefusal
       if (body.delivery) {
-        if (!opts.queuedPrompts) return c.json({ error: "Queued delivery requires a durable runtime owner" }, 409)
-        body.messageID ??= `msg_${crypto.randomUUID()}`
-        const requester = await queuedPromptRequester(opts, c, id, body.messageID)
-        if ("refused" in requester) return requester.refused
-        const submission = { sessionId: id, body, ...requester }
-        if (body.delivery === "queue") {
-          opts.queuedPrompts.queue(submission)
-          return c.json({ delivery: "queue", messageID: body.messageID }, 202)
-        }
-        const result = await opts.queuedPrompts.steer(submission)
-        if (result.ok) return c.json({ delivery: "steer", messageID: body.messageID })
-        return c.json({ ...result, error: result.message }, result.status === "pending" || result.status === "unknown" ? 202 : 409)
+        const messageID = body.messageID ?? `msg_${crypto.randomUUID()}`
+        const delivered = await admitQueuedDelivery(opts, c, runtime, { sessionId: id, body: { ...body, messageID, delivery: body.delivery } })
+        if ("refused" in delivered) return delivered.refused
+        if ("queued" in delivered) return c.json({ delivery: "queue", messageID }, 202)
+        if (delivered.steered.ok) return c.json({ delivery: "steer", messageID })
+        return c.json({ ...delivered.steered, error: delivered.steered.message }, steerAnswerStatus(delivered.steered))
       }
       const lostTurn = captureTurnTarget((target) => opts.childSessions?.onTurnStarted(id, directory, target.turnId))
       const turnAdmission = await acquireManagedPromptLease({
@@ -1677,6 +1676,7 @@ export function createSessionRoutes(opts: Opts) {
       if (!action) return c.json(errorBody("queue_action_unknown", "Unknown queue action"), 400)
       const result = await opts.queuedPrompts?.control(id, Number(c.req.param("seq")), action)
       if (!result) return c.json(errorBody("queue_unavailable", "Queue is unavailable"), 409)
+      if (result.ok && typeof action === "object") await recordReaderSend(await opts.runtime(c), c, id)
       if (result.ok) return c.json(result)
       return c.json({ ...result, ...errorBody(`queue_${result.status}`, result.message) }, result.status === "pending" || result.status === "unknown" ? 202 : result.status === "provider_owned" ? 423 : 409)
     })

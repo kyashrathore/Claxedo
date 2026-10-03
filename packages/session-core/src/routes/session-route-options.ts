@@ -195,6 +195,11 @@ export function requestTurnSender(c: Ctx): Pick<RuntimePromptTurnInput, "origin"
   }
 }
 
+/** A person's send moves their row when it is admitted, whatever turn later delivers it. */
+export async function recordReaderSend(runtime: AgentRuntime, c: Ctx, sessionId: string) {
+  if (sessionRequestIsHumanTurn(c)) await runtime.sessions.recordHumanTurn(sessionId)
+}
+
 export async function sessionConfigOf(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string): Promise<SessionConfig> {
   if (opts.getSessionConfig) return await opts.getSessionConfig(c, directory, sessionId)
   return await (await opts.runtime(c)).reads.sessionConfig(sessionId, directory, requestSecretAuthority(c).secretAuthority)

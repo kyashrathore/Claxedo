@@ -8,6 +8,7 @@ import {
   AGENT_RUNTIME_TURN_CONFLICT_CODE,
   isAgentRuntimeMessageIdConflictError,
   isAgentRuntimeTurnAdmissionError,
+  type AgentRuntime,
 } from "../host/runtime"
 import {
   envelopeDirectory,
@@ -16,7 +17,7 @@ import {
   type SessionPromptBody,
   type SessionPromptTurnResult,
 } from "../session/service"
-import type { QueuedPromptRequester } from "../session/delivery-owner"
+import type { QueuedPromptRequester, SessionDeliveryOwner } from "../session/delivery-owner"
 import {
   sessionAccessContext,
   sessionAccessDenied,
@@ -30,6 +31,7 @@ import {
   after,
   managedSessionLifecycle,
   readSession,
+  recordReaderSend,
   requestTurnSender,
   type SessionRouteContext as Ctx,
   type SessionRouteOptions as Opts,
@@ -194,6 +196,39 @@ export async function queuedPromptRequester(
   }
 }
 
+type SteerResult = Awaited<ReturnType<SessionDeliveryOwner["steer"]>>
+
+/**
+ * A prompt sent for queued or steered delivery, recorded with its requester.
+ * It is the sender's send now; the turn that later delivers it is the
+ * runtime's own and records none.
+ */
+export async function admitQueuedDelivery(
+  opts: Opts,
+  c: Ctx,
+  runtime: AgentRuntime,
+  input: { sessionId: string; body: SessionPromptBody & { messageID: string; delivery: "queue" | "steer" } },
+): Promise<{ refused: Response } | { queued: true } | { steered: SteerResult }> {
+  const { sessionId, body } = input
+  if (!opts.queuedPrompts) return { refused: c.json({ error: "Queued delivery requires a durable runtime owner" }, 409) }
+  const requester = await queuedPromptRequester(opts, c, sessionId, body.messageID)
+  if ("refused" in requester) return requester
+  const submission = { sessionId, body, ...requester }
+  if (body.delivery === "queue") {
+    opts.queuedPrompts.queue(submission)
+    await recordReaderSend(runtime, c, sessionId)
+    return { queued: true }
+  }
+  const steered = await opts.queuedPrompts.steer(submission)
+  if (steered.ok || steered.status === "pending" || steered.status === "unknown") await recordReaderSend(runtime, c, sessionId)
+  return { steered }
+}
+
+/** A steer the runtime has not refused stands; only a refusal is a conflict. */
+export function steerAnswerStatus(steered: Exclude<SteerResult, { ok: true }>) {
+  return steered.status === "pending" || steered.status === "unknown" ? 202 : 409
+}
+
 type PromptAdmission = { answer: Response; turn?: Promise<void>; failed?: { error: unknown } }
 
 /**
@@ -280,28 +315,19 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
       }
       body.messageID ??= `msg_${crypto.randomUUID()}`
       if (body.delivery) {
-        if (!opts.queuedPrompts) return c.json({ error: "Queued delivery requires a durable runtime owner" }, 409)
-        const requester = await queuedPromptRequester(opts, c, id, body.messageID)
-        if ("refused" in requester) return requester.refused
-        const submission = { sessionId: id, body, ...requester }
-        if (body.delivery === "queue") {
-          try { opts.queuedPrompts.queue(submission) }
-          catch (error) {
-            if (isAgentRuntimeMessageIdConflictError(error)) return messageIdConflict(c)
-            return c.json({ error: streamTurnErrorMessage(error) }, 503)
-          }
-          admittedForExecution = true
-          return c.json({ delivery: "queue" })
-        }
-        let result: Awaited<ReturnType<typeof opts.queuedPrompts.steer>>
-        try { result = await opts.queuedPrompts.steer(submission) }
+        const delivery = body.delivery
+        let delivered: Awaited<ReturnType<typeof admitQueuedDelivery>>
+        try { delivered = await admitQueuedDelivery(opts, c, runtime, { sessionId: id, body: { ...body, messageID: body.messageID, delivery } }) }
         catch (error) {
           if (isAgentRuntimeMessageIdConflictError(error)) return messageIdConflict(c)
+          if (delivery === "queue") return c.json({ error: streamTurnErrorMessage(error) }, 503)
           throw error
         }
+        if ("refused" in delivered) return delivered.refused
         admittedForExecution = true
-        if (result.ok) return c.json({ delivery: "steer" })
-        return c.json({ ...result, error: result.message }, result.status === "pending" || result.status === "unknown" ? 202 : 409)
+        if ("queued" in delivered) return c.json({ delivery: "queue" })
+        if (delivered.steered.ok) return c.json({ delivery: "steer" })
+        return c.json({ ...delivered.steered, error: delivered.steered.message }, steerAnswerStatus(delivered.steered))
       }
       const lostTurn = captureTurnTarget((target) => opts.childSessions?.onTurnStarted(id, directory, target.turnId))
       const turnAdmission = await acquireManagedPromptLease({

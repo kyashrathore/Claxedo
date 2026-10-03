@@ -37,7 +37,8 @@ import { STORED_SESSION_SELECT, type StoredSessionRow } from "./stored-session-r
 import { listSubagentRows, persistSubagentEvent } from "./subagent-rows"
 import { observationStartsNewRun, recordSubagentRun, subagentRunRevision } from "./subagent-status"
 import { pendingSubagentWakes, recordSubagentWake, runningHostChildren, subagentWakeParents } from "./subagent-wakes"
-import { buildAssistantMessage, buildUserMessage, buildUserPromptParts, messageCompleted, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionStatus, sessionUpdated } from "./projection/presentation-events"
+import { buildAssistantMessage, messageCompleted, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionStatus, sessionUpdated } from "./projection/presentation-events"
+import { turnStartMessages } from "./projection/turn-start-messages"
 
 export const SESSION_INTERRUPTED = "The agent runtime restarted. Send a message to continue the interrupted work."
 
@@ -73,7 +74,7 @@ type Bind = {
   updatedAt?: number
 }
 
-type Turn = {
+export type Turn = {
   type: "turn.start"
   userMessageId?: string
   parentMessageId?: string
@@ -115,6 +116,8 @@ type SessionUpdate = {
     time?: {
       archived?: number
     }
+    /** A person's send admitted without starting a turn: queued, steered, a Goal, a queued edit. */
+    humanTurn?: true
   }
 }
 
@@ -1836,6 +1839,9 @@ export class RuntimeStore {
         .prepare("UPDATE session SET archived_at = ?, updated_at = ? WHERE id = ?")
         .run(updates.time.archived, ts, sessionId)
     }
+    if (updates.humanTurn) {
+      this.db.prepare("UPDATE session SET last_human_turn_at = ?, updated_at = ? WHERE id = ?").run(ts, ts, sessionId)
+    }
   }
 
   /**
@@ -1903,40 +1909,14 @@ export class RuntimeStore {
     }
     if (control.type === "turn.start") {
       const directory = this.sessionTimes(row.sessionId).directory
-      if (control.userMessageId) {
-        this.upsertMessage(
-          buildUserMessage({
-            id: control.userMessageId,
-            sessionID: row.sessionId,
-            agent: control.agent,
-            model: control.model,
-            created: row.ts,
-            ...(control.tools ? { tools: control.tools } : {}),
-            ...(control.format ? { format: control.format } : {}),
-            ...(control.system ? { system: control.system } : {}),
-            ...(control.variant ? { variant: control.variant } : {}),
-            ...(control.author ? { author: control.author } : {}),
-          }),
-          row,
-        )
+      const messages = turnStartMessages({ sessionId: row.sessionId, ts: row.ts, directory, control })
+      if (messages.user) {
+        this.upsertMessage(messages.user.info, row)
         // No harness writes the user's prompt parts back, so these rows are the
         // prompt's only record, including when the harness never answers.
-        for (const part of buildUserPromptParts(row.sessionId, control.userMessageId, control.parts)) {
-          this.upsertPart(part, row.ts)
-        }
+        for (const part of messages.user.parts) this.upsertPart(part, row.ts)
       }
-      this.upsertMessage(
-        buildAssistantMessage({
-          id: control.assistantMessageId,
-          sessionID: row.sessionId,
-          parentID: control.userMessageId ?? control.parentMessageId ?? row.sessionId,
-          agent: control.agent,
-          model: control.model,
-          directory,
-          created: row.ts,
-        }),
-        row,
-      )
+      this.upsertMessage(messages.assistant, row)
       this.upsertSession({
         id: row.sessionId,
         directory,
@@ -2270,42 +2250,14 @@ export class RuntimeStore {
 
   private turnStartEvents(row: TurnStartRow): AgentPresentationEvent[] {
     const control = row.control
-    const directory = this.sessionTimes(row.sessionId).directory
+    const messages = turnStartMessages({ sessionId: row.sessionId, ts: row.ts, directory: this.sessionTimes(row.sessionId).directory, control })
     // The list orders on the human turn, and no other event carries the row it moved.
     const moved = control.humanTurn ? this.getSession(row.sessionId) : null
     return [
       sessionStatus(row.sessionId, { type: "busy" }),
       ...(moved ? [sessionUpdated(moved)] : []),
-      ...(control.userMessageId
-        ? [
-            messageUpdated(
-              buildUserMessage({
-                id: control.userMessageId,
-                sessionID: row.sessionId,
-                agent: control.agent,
-                model: control.model,
-                created: row.ts,
-                ...(control.tools ? { tools: control.tools } : {}),
-                ...(control.format ? { format: control.format } : {}),
-                ...(control.system ? { system: control.system } : {}),
-                ...(control.variant ? { variant: control.variant } : {}),
-                ...(control.author ? { author: control.author } : {}),
-              }),
-            ),
-            ...buildUserPromptParts(row.sessionId, control.userMessageId, control.parts).map(messagePartUpdated),
-          ]
-        : []),
-      messageUpdated(
-        buildAssistantMessage({
-          id: control.assistantMessageId,
-          sessionID: row.sessionId,
-          parentID: control.userMessageId ?? control.parentMessageId ?? row.sessionId,
-          agent: control.agent,
-          model: control.model,
-          directory,
-          created: row.ts,
-        }),
-      ),
+      ...(messages.user ? [messageUpdated(messages.user.info), ...messages.user.parts.map(messagePartUpdated)] : []),
+      messageUpdated(messages.assistant),
     ]
   }
 
@@ -3390,7 +3342,7 @@ export class RuntimeStore {
     })
   }
 
-  updateSession(id: string, updates: { title?: string; time?: { archived?: number } }) {
+  updateSession(id: string, updates: SessionUpdate["updates"]) {
     if (!this.getSession(id)) return null
     this.commit({
       seq: this.next(id),

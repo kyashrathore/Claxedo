@@ -43,6 +43,7 @@ function runtimeDouble(input: {
   abandons?: number[]
 }) {
   return {
+    sessions: { recordHumanTurn: async () => {} },
     turns: {
       start: async (turn: AgentRuntimeTurnStartInput) => {
         const refusal = input.refuse?.(input.starts.length + 1)
