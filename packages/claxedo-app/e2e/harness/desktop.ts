@@ -161,11 +161,6 @@ function captureOutput(app: ElectronApplication) {
   return () => output.join("")
 }
 
-/**
- * SIGTERM is the desktop's unattended stop: it stops the daemon without
- * asking. `app.close()` calls `app.quit()`, which raises the native quit
- * confirmation while a test has work running, and nothing here can answer it.
- */
 async function stopDesktop(app: ElectronApplication) {
   const child = app.process()
   if (child.exitCode !== null || child.signalCode !== null) return
