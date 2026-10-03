@@ -199,7 +199,7 @@ The embedded server admits only its application: Electron main stamps a capabili
 | `api` | `ClaxedoApi` for the embedded server, sent through `window` |
 | `url`, `dataDir`, `scripted`, `egress`, `acp`, `makeWorkspace(name, projectName?)`, `log()` | As on `stack` |
 
-Closing the desktop waits for the daemon it started (the `pid` in its data directory's `local-daemon.json`) to exit before deleting that directory: a quitting app asks the daemon to drain, and the daemon writes its compile cache as it exits, up to a second after the app has gone.
+Closing the desktop sends the app SIGTERM, its unattended stop: it stops the daemon without the quit confirmation that `app.close()`'s `app.quit()` would raise while a flow left work running. The fixture then waits for the daemon it started (the `pid` in its data directory's `local-daemon.json`) to exit before deleting that directory: the daemon writes its compile cache as it exits, up to a second after the app has gone.
 
 `bun run dev` in `packages/claxedo-desktop` runs the desktop in development, and `bun run package:mac` packages it.
 
