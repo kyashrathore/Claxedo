@@ -2,7 +2,7 @@ import { workspaceId } from "./target"
 import {
   loadRelayHostVerificationKeyOrJwks,
   type RelayHostAuthOptions,
-} from "./workspace-host-service-auth"
+} from "@claxedo/session-core/relay-host"
 import type { WorkspaceRelayHostTunnelOptions } from "./workspace-relay-host-tunnel"
 import {
   createWorkspaceRuntimeJwtManagementAuth,

@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { embeddedWorkspaceRuntimeExposure, EMBEDDED_RELAY_HOST_AUTH_HEADER, relayWorkspaceRuntimeExposure } from "../exposure"
-import { remoteWorkspaceSessionAccessPolicy } from "../remote-session-authority"
+import { remoteWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
 import { createWorkspaceRuntimeApp, type WorkspaceRuntimeApp } from "../server"
 import { loopbackMachineLoginPolicy } from "../testing"
 

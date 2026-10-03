@@ -24,10 +24,10 @@ import { getRequestListener } from "@hono/node-server"
 import {
   createWorkspaceRuntimeApp,
   relayWorkspaceRuntimeExposure,
-  remoteWorkspaceSessionAccessPolicy,
   type WorkspaceRuntimeApp,
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
+import { remoteWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
 import { relayHostAuthFromEnv } from "@claxedo/workspace-runtime/relay"
 import { isSessionConfigRefusal } from "@claxedo/workspace-runtime/config"
 import { configureAgentConfig } from "@claxedo/server-core/agent-config/index"

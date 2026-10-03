@@ -8,7 +8,7 @@ import {
   type WorkspaceRuntimeManagementVerifierKey,
 } from "./management-auth"
 import { workspaceId as workspaceIdFromEnv } from "./target"
-import type { EmbeddedRelayHostIdentity, RelayHostAuthContext } from "./workspace-host-service-auth"
+import type { EmbeddedRelayHostIdentity, RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 
 export const WORKSPACE_RUNTIME_OWNER_GRANT_ISSUER = "claxedo-control-plane"
 export const WORKSPACE_RUNTIME_OWNER_GRANT_AUDIENCE = "workspace-runtime-owner"

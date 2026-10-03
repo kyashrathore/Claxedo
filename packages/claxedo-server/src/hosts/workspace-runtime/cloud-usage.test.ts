@@ -4,7 +4,6 @@ import os from "node:os"
 import path from "node:path"
 import Database from "better-sqlite3"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { remoteWorkspaceSessionAccessPolicy } from "@claxedo/workspace-runtime"
 import { USAGE_REPORT_MAX_FACTS } from "@claxedo/server-core/usage/usage-report"
 import { cloudWorkspaceUsage, createSandboxUsageLedger, type SandboxUsageLedger } from "./cloud-usage"
 import { usageReportPlane, USAGE_REPORT_URL, type UsageReportPlane } from "../../test-support/usage-report-plane"
@@ -12,6 +11,7 @@ import {
   buildAssistantMessage,
   messageCompleted,
   messageUpdated,
+  remoteWorkspaceSessionAccessPolicy,
   sessionUsage,
 } from "@claxedo/session-core"
 

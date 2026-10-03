@@ -12,7 +12,7 @@ import {
 } from "@claxedo/session-core"
 const testBus = createTestBus<TestBusEvent>()
 import { AgentHookRoutes, lifecycleLogMetadata, TERMINAL_SESSION_MAX_ENTRIES } from "./agent-hook"
-import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 import { Pty } from "../pty/index"
 import { withWorkspaceTarget } from "../target"
 

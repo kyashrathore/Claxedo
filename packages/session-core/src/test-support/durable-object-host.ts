@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
 import { createSessionCore } from "../core"
 import { sessionEventDeliveryPolicy } from "../event-delivery"
-import { storeSessionRoutes } from "../routes/session-store-reads"
+import { composeSessionRoutes } from "../routes/session-route-composition"
 import { managedWorkspaceSessionAccessPolicy } from "../session-access-policy"
 import { durableObjectSqliteDatabase, type DurableObjectSqlStorage } from "../sqlite/durable-object"
 import { RuntimeStore } from "../store"
@@ -66,17 +66,17 @@ export class SessionCoreObject {
       },
     })
     const sessionAccessPolicy = managedWorkspaceSessionAccessPolicy()
-    const sessions = core.sessionRoutes(async () => host.runtime, {
-      ...storeSessionRoutes({
-        store: () => store,
-        subagentAdmission: (parentSessionId, observation) => host.runtime.subagents.admit(parentSessionId, observation),
-        deriveChildSessionId: (identity) => hmacChildSessionId(store.runtimeSecret("child-session"), identity),
-        backgroundWork: (sessionId) => host.backgroundWork.read(sessionId),
-      }),
-      sessionAccessPolicy,
+    const sessions = composeSessionRoutes({
+      core,
+      runtime: async () => host.runtime,
+      recovery: () => host.runtime.recovery,
+      store: () => store,
       sessionStarts: store.sessionStarts,
-      requestedSessionHarness: (requested) => requested ?? { id: "pi", access: "native" },
-      resolveRecoveryOwner: () => host.runtime.recovery,
+      sessionAccessPolicy,
+      currentRunner: () => ({ id: "pi", access: "native" }),
+      deriveChildSessionId: (identity) => hmacChildSessionId(store.runtimeSecret("child-session"), identity),
+      subagentAdmission: (parentSessionId, observation) => host.runtime.subagents.admit(parentSessionId, observation),
+      backgroundWork: (sessionId) => host.backgroundWork.read(sessionId),
     })
     const events = core.events({
       directory,

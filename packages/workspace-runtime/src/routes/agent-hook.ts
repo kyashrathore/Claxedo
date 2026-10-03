@@ -32,7 +32,7 @@ import {
 } from "../agent-hooks"
 import { Pty } from "../pty/index"
 import { authoritativeWorkspaceId } from "../target"
-import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 import { authorizeHostCapability, type HostCapabilityAccessOptions } from "./host-capability-access"
 
 const log = Log.create({ service: "agent-hook" })

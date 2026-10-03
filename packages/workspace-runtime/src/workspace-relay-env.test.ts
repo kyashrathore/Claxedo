@@ -15,7 +15,7 @@ import {
   relayHostAuthFromEnv,
   workspaceRelayRuntimeOptionsFromEnv,
 } from "./workspace-relay-env"
-import { createRelayHostAuthMiddleware } from "./workspace-host-service-auth"
+import { createRelayHostAuthMiddleware } from "@claxedo/session-core/relay-host"
 
 describe("workspace relay runtime env", () => {
   test("leaves Local Personal Mode unsigned when relay env is absent", async () => {

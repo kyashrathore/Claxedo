@@ -2,7 +2,7 @@ import { FileContentError, readFileContent, type FileContentRefusal } from "../f
 import { Hono } from "hono"
 import { WorkspaceTargetError, errorBody } from "@claxedo/session-core"
 import { currentSessionCore } from "../session-context"
-import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 import {
   authorizeWorktreeTarget,
   deniedWorktreeFilter,

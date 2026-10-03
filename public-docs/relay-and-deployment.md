@@ -180,7 +180,7 @@ Implemented in:
 
 - `packages/workspace-runtime/src/workspace-relay-env.ts`
 - `packages/workspace-runtime/src/workspace-relay-host-tunnel.ts`
-- `packages/workspace-runtime/src/workspace-host-service-auth.ts`
+- `packages/session-core/src/relay-host-auth.ts`
 - `packages/workspace-relay-protocol/src/index.ts`
 - `packages/workspace-relay-protocol/src/token-verifier.ts`
 - `packages/workspace-relay/src/server.ts`

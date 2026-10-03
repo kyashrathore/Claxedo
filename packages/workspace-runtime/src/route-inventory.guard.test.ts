@@ -9,7 +9,7 @@ import { createWorkspaceRuntimeApp } from "./server"
 import { relayWorkspaceRuntimeExposure } from "./exposure"
 import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER, type WorkspaceRuntimeManagementAuth } from "./management-auth"
 import { WorkspaceRuntimeRouteManifest, workspaceRuntimeRoute } from "./routes/manifest"
-import type { RelayHostAuthOptions } from "./workspace-host-service-auth"
+import type { RelayHostAuthOptions } from "@claxedo/session-core/relay-host"
 import { loopbackMachineLoginPolicy } from "./testing"
 
 const tempDirs: string[] = []

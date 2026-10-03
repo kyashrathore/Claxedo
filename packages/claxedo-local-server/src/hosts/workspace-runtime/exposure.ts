@@ -6,7 +6,7 @@ import {
   type WorkspaceRuntimeExposure,
   type WorkspaceRuntimeRequestGuard,
 } from "@claxedo/workspace-runtime/exposure"
-import type { RelayHostAuthOptions } from "@claxedo/workspace-runtime/relay"
+import type { RelayHostAuthOptions } from "@claxedo/session-core/relay-host"
 
 export function createClaxedoRuntimeExposure(input:
   | { kind: "embedded"; owner?: string; guard: WorkspaceRuntimeRequestGuard }

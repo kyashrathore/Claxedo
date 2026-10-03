@@ -13,7 +13,7 @@ import {
   type ManagedSessionAuthority,
   type SessionAccessPolicyInput,
 } from "@claxedo/session-core"
-import { createRelayHostAuthMiddleware } from "./workspace-host-service-auth"
+import { createRelayHostAuthMiddleware } from "@claxedo/session-core/relay-host"
 
 function allowAll(): ManagedSessionAuthority {
   return {

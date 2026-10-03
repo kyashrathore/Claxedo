@@ -9,7 +9,7 @@ import { FakeTransport, type FakeTransportOptions, type FakeTurn } from "@claxed
 import { createFakeWorkspaceApp, type FakeWorkspaceApp, type FakeWorkspaceAppOptions } from "../test-support/fake-workspace-app"
 import { loopbackMachineLoginPolicy } from "../testing"
 import { createWorkspaceHost } from "../workspace/runtime"
-import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 
 const apps: FakeWorkspaceApp[] = []
 afterEach(async () => {

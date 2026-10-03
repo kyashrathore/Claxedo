@@ -66,13 +66,6 @@ export { runtimeEnvText } from "./env"
 export { createWorkspaceHost } from "./workspace"
 export type { WorkspaceHost, WorkspaceHostOptions } from "./workspace"
 
-export {
-  WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL,
-  remoteWorkspaceSessionAccessPolicy,
-  remoteWorkspaceSessionAccessPolicyFromEnv,
-} from "./remote-session-authority"
-export type { AdoptRefusedSession } from "./remote-session-authority"
-
 export { Pty } from "./pty/index"
 export {
   authorizePtyAttach,
@@ -88,7 +81,6 @@ export type {
   PtyStreamAccess,
   PtyStreamSocket,
 } from "./pty/authorized-connection"
-export type { EmbeddedRelayHostIdentity } from "./workspace-host-service-auth"
 export type {
   WorkspaceRuntimeStore,
   WorkspaceRuntimeStoreFactory,

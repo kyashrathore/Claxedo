@@ -4,7 +4,7 @@ import { createWorkspaceRuntimeApp } from "./server"
 import { loopbackWorkspaceRuntimeExposure, relayWorkspaceRuntimeExposure } from "./exposure"
 import { createRuntimeCredentialIssuer } from "./first-party-mcp/index"
 import type { WorkspaceRuntimeRouteContribution } from "./route-contribution"
-import type { EmbeddedRelayHostIdentity } from "./workspace-host-service-auth"
+import type { EmbeddedRelayHostIdentity } from "@claxedo/session-core/relay-host"
 import { loopbackMachineLoginPolicy } from "./testing"
 
 function probe(calls: Array<() => Promise<Response>>): WorkspaceRuntimeRouteContribution {

@@ -1,5 +1,5 @@
 import { decodeJwt } from "jose"
-import { WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL } from "@claxedo/workspace-runtime"
+import { WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL } from "@claxedo/session-core"
 import { TASKS_ROUTE_PATH } from "@claxedo/tasks/http"
 import { isTasksOperation, type TasksOperation } from "@claxedo/server-core/tasks-host/capability"
 import {

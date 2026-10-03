@@ -577,8 +577,10 @@
         "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/harness": "workspace:*",
         "@claxedo/helpers": "workspace:*",
+        "@claxedo/workspace-relay": "workspace:*",
         "@claxedo/workspace-relay-protocol": "workspace:*",
         "hono": "catalog:",
+        "jose": "6.0.11",
       },
       "devDependencies": {
         "@claxedo/process-ownership": "workspace:*",
@@ -4619,6 +4621,8 @@
     "@claxedo/host-serving/jose": ["jose@6.0.11", "", {}, "sha512-QxG7EaliDARm1O1S8BGakqncGT9s25bKL1WSf6/oa17Tkqwi8D2ZNglqCF+DsYF88/rV66Q/Q2mFAy697E1DUg=="],
 
     "@claxedo/process-ownership/@tsconfig/bun": ["@tsconfig/bun@1.0.9", "", {}, "sha512-4M0/Ivfwcpz325z6CwSifOBZYji3DFOEpY6zEUt0+Xi2qRhzwvmqQN9XAHJh3OVvRJuAqVTLU2abdCplvp6mwQ=="],
+
+    "@claxedo/session-core/jose": ["jose@6.0.11", "", {}, "sha512-QxG7EaliDARm1O1S8BGakqncGT9s25bKL1WSf6/oa17Tkqwi8D2ZNglqCF+DsYF88/rV66Q/Q2mFAy697E1DUg=="],
 
     "@claxedo/web/typescript": ["typescript@5.8.2", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-aJn6wq13/afZp/jT9QZmwEjDqqvSGp1VT5GVg+f/t6/oVyrgXM6BY1h9BRh/O5p3PlUPAe+WuiEZOmb/49RqoQ=="],
 

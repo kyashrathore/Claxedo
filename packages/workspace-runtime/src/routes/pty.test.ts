@@ -12,7 +12,7 @@ import {
   managedWorkspaceSessionAccessPolicy,
   type SessionAccessPolicy,
 } from "@claxedo/session-core"
-import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 import { createDiskHistory } from "../pty/history-disk"
 import { withWorkspaceTarget } from "../target"
 import { withSessionCore } from "../session-context"

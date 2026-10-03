@@ -3,11 +3,10 @@ import path from "node:path"
 import {
   createRuntimeCredentialIssuer,
   isLoopbackHostname,
-  remoteWorkspaceSessionAccessPolicyFromEnv,
-  WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL,
   workspaceRuntimeListenHostname,
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
+import { remoteWorkspaceSessionAccessPolicyFromEnv, WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL } from "@claxedo/session-core"
 import { isNativeHarnessId } from "@claxedo/server-core/agent-config/connections"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
 import { storeBackedSessionPlacement, workspaceDir, workspaceId, workspaceRuntimeStoreDir } from "@claxedo/workspace-runtime/host"

@@ -22,7 +22,7 @@ import {
   resolveWorkspacePath,
 } from "../target"
 import { currentSessionCore } from "../session-context"
-import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 import { readHistorySessionId } from "../pty/history-disk"
 import {
   authorizePtyAttach,

@@ -11,7 +11,7 @@ import { withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } 
 import { WorkspaceWorktreeManager } from "./worktree"
 import { createWorkspaceHost, type WorkspaceHostOptions } from "./workspace"
 import { setupAgentHooks } from "./agent-hooks"
-import { createRelayHostAuthMiddleware, type RelayHostAuthOptions } from "./workspace-host-service-auth"
+import { createRelayHostAuthMiddleware, type RelayHostAuthOptions } from "@claxedo/session-core/relay-host"
 import { startWorkspaceRelayHostTunnel, type WorkspaceRelayHostTunnelOptions } from "./workspace-relay-host-tunnel"
 import { ConfigRoutes } from "./routes/config"
 import { RuntimeDocumentHydrationRoutes } from "./routes/document-hydration"
@@ -38,8 +38,8 @@ import {
   sessionAccessContext,
   sessionAccessDenied,
   type SessionAccessPolicy,
+  remoteWorkspaceSessionAccessPolicyFromEnv,
 } from "@claxedo/session-core"
-import { remoteWorkspaceSessionAccessPolicyFromEnv } from "./remote-session-authority"
 
 type Host = ReturnType<typeof createWorkspaceHost>
 export type WorkspaceRuntimeApp = {
@@ -432,7 +432,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   const sessionAccessPolicy = options.sessionAccessPolicy
     ?? (options.exposure?.kind === "loopback" || options.exposure?.kind === "embedded"
       ? managedWorkspaceSessionAccessPolicy()
-      : remoteWorkspaceSessionAccessPolicyFromEnv())
+      : remoteWorkspaceSessionAccessPolicyFromEnv(process.env))
   const host = createWorkspaceHost({
     placement: options.placement,
     ...(options.connectionProviders ? { connectionProviders: options.connectionProviders } : {}),

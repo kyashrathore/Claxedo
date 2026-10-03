@@ -6,6 +6,10 @@ Host-created child follow-ups use the admitted runtime turn ID as their durable 
 session HTTP routes and event delivery. Its composition entry is `.`;
 `./access-policy` exports only the session route classification and access
 policy, for readers such as the MCP tool inventory that must not load the core.
+`./relay-host` exports the Relay Host Token middleware and verifier every
+relay-reached session host mounts; it is separate because it loads `jose` and
+`@claxedo/workspace-relay`. The root exports `remoteWorkspaceSessionAccessPolicy`,
+the client of the control plane's session authority.
 `createSessionCore(ports)` creates the bus, placement registry and event hub for
 one owner. `workspace-runtime` supplies machine capabilities and mounts the
 core's routes; a Durable Object host supplies its own ports.
@@ -38,6 +42,12 @@ core that created that PTY.
 | `readAttachment(key, maximumBytes)` | Read bounded bytes as `Uint8Array`. Optional; absent capability answers image unavailable. The machine adapter validates filesystem reads; other hosts may use object keys. |
 | `flushSessionDocuments`, `disposeSessionDocuments` | Optional Pages lifecycle capabilities. There is no machine implementation selected by the core. |
 | `log.warn` | The diagnostic sink for failures the core recovers from (a title the harness refused or timed out). Required. |
+
+`composeSessionRoutes(input)` is the one composition of a host's session routes:
+`storeSessionRoutes` plus the access policy, recovery owner and default harness.
+A machine host adds `machine` (checkpoint turn scopes and deletion drain,
+attachments, Pages documents, the per-session tool prompt); a host without a
+filesystem omits it.
 
 `storeSessionRoutes({ store, subagentAdmission, deriveChildSessionId })` returns
 the session route options every host answers from its own store: listings,

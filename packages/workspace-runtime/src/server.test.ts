@@ -5,7 +5,7 @@ import fs from "fs"
 import os from "os"
 import path from "path"
 import { serve } from "@hono/node-server"
-import type { RelayHostAuthOptions } from "./workspace-host-service-auth"
+import type { RelayHostAuthOptions } from "@claxedo/session-core/relay-host"
 import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER, type WorkspaceRuntimeManagementAuth } from "./management-auth"
 import {
   assertWorkspaceRuntimeListenPolicy,

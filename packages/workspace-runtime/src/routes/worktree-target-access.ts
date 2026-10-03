@@ -32,7 +32,7 @@ import {
 } from "../target"
 import { sessionAccessContext, type SessionAccessPolicy } from "@claxedo/session-core"
 import { authorizeHostCapability } from "./host-capability-access"
-import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 
 export type WorktreeTargetAccessOptions = {
   sessionAccessPolicy?: SessionAccessPolicy

@@ -21,9 +21,8 @@
  * they land. The loopback arm never asks.
  */
 
-import { remoteWorkspaceSessionAccessPolicy, type AdoptRefusedSession } from "@claxedo/workspace-runtime"
-import { type SessionAccessDecision } from "@claxedo/session-core"
-import { createRelayHostTokenVerifier } from "@claxedo/workspace-runtime/relay"
+import { remoteWorkspaceSessionAccessPolicy, type AdoptRefusedSession, type SessionAccessDecision } from "@claxedo/session-core"
+import { createRelayHostTokenVerifier } from "@claxedo/session-core/relay-host"
 import { hostServingIdentity } from "@claxedo/host-serving/serving"
 import type { RuntimeProxyOptions } from "../../workspace/runtime-dispatch/internals"
 import { embeddedWorkspaceRuntimeSessionTime } from "./embedded-workspace-runtime"

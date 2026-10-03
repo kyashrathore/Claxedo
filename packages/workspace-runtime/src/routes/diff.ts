@@ -9,7 +9,7 @@ import { errorMessage } from "@claxedo/helpers"
 import { errorBody, WorkspaceTargetError } from "@claxedo/session-core"
 import { hasWorkspaceTarget } from "../target"
 import { currentSessionCore } from "../session-context"
-import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 import {
   authorizeWorktreeTarget,
   deniedWorktreeFilter,

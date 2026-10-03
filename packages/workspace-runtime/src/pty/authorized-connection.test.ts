@@ -9,7 +9,7 @@ import {
   type PtyStreamSocket,
 } from "./authorized-connection"
 import type { SessionAccessPolicy } from "@claxedo/session-core"
-import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 
 const info: Pty.Info = {
   id: "pty_1",

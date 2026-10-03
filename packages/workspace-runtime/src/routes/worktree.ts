@@ -12,7 +12,7 @@ import {
 } from "@claxedo/session-core"
 
 import type { WorkspaceWorktreeManager } from "../worktree"
-import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 import { authorizeHostCapability, type HostCapabilityAccessOptions } from "./host-capability-access"
 
 export const WORKTREE_CREATE_SUCCESS_STATUS = 201 as const

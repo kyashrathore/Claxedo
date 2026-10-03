@@ -11,7 +11,7 @@ import {
   type RelayHostAuthAuditEvent,
   type RelayHostAuthContext,
   type RelayHostAuthOptions,
-} from "./workspace-host-service-auth"
+} from "./relay-host-auth"
 
 async function app(input: { trustedDirectTokenForRequest?: RelayHostAuthOptions["trustedDirectTokenForRequest"] } = {}) {
   const key = await generateKeyPair("EdDSA", { extractable: true })

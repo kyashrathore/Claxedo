@@ -32,7 +32,7 @@ import {
   type SessionAccessPolicyInput,
   type SessionAccessStreamDecision,
 } from "@claxedo/session-core"
-import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 import type { WebSocketBackpressureSocket } from "./websocket-backpressure"
 
 /** Both entrypoints refuse a workspace viewer with this, and the router says it once more for the rest of the family. */

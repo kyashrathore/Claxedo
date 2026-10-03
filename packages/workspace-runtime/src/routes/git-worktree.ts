@@ -11,7 +11,7 @@ import {
 } from "@claxedo/session-core"
 import { hasRegisteredWorkspaceDirectories } from "../target"
 import { currentSessionCore } from "../session-context"
-import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 import {
   GIT_LOG_DEFAULT_LIMIT,
   GitWorktreeError,

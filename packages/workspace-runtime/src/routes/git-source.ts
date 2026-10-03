@@ -4,7 +4,7 @@ import {
   commitGitSource,
   gitSourceSnapshot,
 } from "../workspace-files/git-source"
-import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 import { asRecord, asString } from "@claxedo/helpers/guards"
 import { boundedJsonRecord, isRequestBodyTooLarge, requestBodyTooLargeBody } from "@claxedo/session-core"
 import { workspaceDir } from "../target"

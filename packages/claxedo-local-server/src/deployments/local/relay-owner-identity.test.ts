@@ -22,6 +22,10 @@ vi.mock("@claxedo/workspace-runtime/relay", async (importOriginal) => ({
     options.onEvent({ type: "connecting" })
     return { close: () => {}, updateRegistration: async () => {} }
   },
+}))
+
+vi.mock("@claxedo/session-core/relay-host", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@claxedo/session-core/relay-host")>(),
   createRelayHostTokenVerifier: () => async ({ token }: { token: string }) => {
     const person = relayed.get(token)
     return person && {

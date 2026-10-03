@@ -18,7 +18,7 @@ import {
   type ManagedSessionAuthority,
   type RuntimeStore,
 } from "@claxedo/session-core"
-import type { RelayHostAuthContext } from "./workspace-host-service-auth"
+import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 import { openRuntimeStore } from "./store-file"
 import { withWorkspaceTarget } from "./target"
 import { loopbackMachineLoginPolicy } from "./testing"

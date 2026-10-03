@@ -11,8 +11,8 @@ import {
   ptyStreamAccess,
   PTY_NOT_FOUND_REFUSAL,
   type AuthorizedPtyConnection,
-  type EmbeddedRelayHostIdentity,
 } from "@claxedo/workspace-runtime"
+import type { EmbeddedRelayHostIdentity } from "@claxedo/session-core/relay-host"
 
 const log = Log.create({ service: "embedded-workspace-runtime" })
 

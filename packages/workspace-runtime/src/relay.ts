@@ -1,4 +1,3 @@
-export { createRelayHostAuthMiddleware, createRelayHostTokenVerifier } from "./workspace-host-service-auth"
 export { startWorkspaceRelayHostTunnel } from "./workspace-relay-host-tunnel"
 export {
   hostTunnelFromEnv,
@@ -6,7 +5,6 @@ export {
   relayHostAuthFromEnv,
   workspaceRelayRuntimeOptionsFromEnv,
 } from "./workspace-relay-env"
-export type { RelayHostAuthAuditEvent, RelayHostAuthOptions, RelayHostTokenVerifier } from "./workspace-host-service-auth"
 export type {
   WorkspaceRelayHostTunnel,
   WorkspaceRelayHostTunnelEvent,

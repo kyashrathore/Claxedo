@@ -119,7 +119,7 @@ each caller.
 Root runtime value exports:
 
 `FIRST_PARTY_MCP_PATH`, `FIRST_PARTY_MCP_SERVER_NAME`, `Pty`, `PTY_NOT_FOUND_REFUSAL`,
-`WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER`, `WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL`,
+`WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER`,
 `WorkspaceRuntimeRouteManifest`, `WorkspaceRuntimeRoutes`, `WorkspaceWorktreeManager`,
 `authorizePtyAttach`, `createAuthorizedPtyConnection`,
 `isPtyStreamSocket`, `ptyAccessRefusalResponse`, `ptyStreamAccess`, 
@@ -129,7 +129,6 @@ Root runtime value exports:
 `loadWorkspaceRuntimeManagementVerificationKey`, `loopbackWorkspaceRuntimeExposure`,
 `normalizeRuntimeSnapshot`, `privateNetworkDevUnsafeWorkspaceRuntimeExposure`,
 `privateNetworkWorkspaceRuntimeExposure`, `relayWorkspaceRuntimeExposure`,
-`remoteWorkspaceSessionAccessPolicy`, `remoteWorkspaceSessionAccessPolicyFromEnv`,
 `runtimeCredentialWorkspaceId`, `runtimeEnvText`, `startServer`, `startWorkspaceRuntime`,
 `waitForWorkspaceRuntimeServerPort`, `workspaceRuntimeListenHostname`, `workspaceRuntimeRoute`,
 `workspaceStorageRoot`, `WORKSPACE_RUNTIME_OWNER_GRANT_AUDIENCE`, `WORKSPACE_RUNTIME_OWNER_GRANT_ISSUER`,
@@ -154,9 +153,12 @@ runtime itself mints per session:
 
 Relay host helpers are intentionally exposed from
 `@claxedo/workspace-runtime/relay`, not the package root:
-`createRelayHostAuthMiddleware`, `startWorkspaceRelayHostTunnel`,
-`hostTunnelFromEnv`, `relayHostAuthFromEnv`, and
-`workspaceRelayRuntimeOptionsFromEnv`.
+`startWorkspaceRelayHostTunnel`, `hostTunnelFromEnv`, `relayHostAuthFromEnv`,
+and `workspaceRelayRuntimeOptionsFromEnv`. The Relay Host Token middleware,
+`createRelayHostAuthMiddleware`, belongs to `@claxedo/session-core/relay-host`,
+and the control-plane session authority client,
+`remoteWorkspaceSessionAccessPolicy`, to `@claxedo/session-core`: every session
+host verifies and authorizes the same way.
 
 The runtime root does not export Claxedo control-plane clients or Agent Plugins
 materializers. Products that need catalog, activation, retained artifacts, or
@@ -457,12 +459,12 @@ hosted control plane, or a self-managed key-table).
 
 ```ts
 import { createStaticTokenVerifier, type RelayHostVerifierClaims } from "@claxedo/workspace-relay-protocol"
-import { createRelayHostAuthMiddleware } from "@claxedo/workspace-runtime/relay"
+import { createRelayHostAuthMiddleware } from "@claxedo/session-core/relay-host"
 
 // Verifier claims are still validated against the relay-host contract:
 // `iss` must be "workspace-relay", `aud` must be "workspace-host-service",
 // `sub`/`org_id`/`workspace_id`/`host_id`/`role`/`exp`/`iat`/`jti` are required,
-// and `backing` must name a placement ("cloud-vm" or "local-worktree").
+// and `backing` must name a placement ("cloud-vm", "local-worktree" or "durable-object").
 // `workspace_id`/`host_id` must match the middleware's expected values.
 const now = Math.floor(Date.now() / 1000)
 const verifier = createStaticTokenVerifier<RelayHostVerifierClaims>({

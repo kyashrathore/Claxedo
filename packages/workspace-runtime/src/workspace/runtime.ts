@@ -22,7 +22,11 @@ import {
   type SessionAccessPolicy,
   runtimeSessionTime,
   harnessHealthChanged,
+  composeSessionRoutes,
 } from "@claxedo/session-core"
+import { deriveChildSessionId } from "../host/child-identity"
+import { readSessionAttachment } from "../host/attachment-files"
+import { flushRuntimeSessionDocuments, disposeRuntimeSessionDocuments } from "../routes/document-hydration"
 import { realDirectoryPath } from "@claxedo/helpers/real-path"
 import { inside } from "@claxedo/helpers/path"
 import { withSessionCore } from "../session-context"
@@ -66,7 +70,6 @@ import {
 } from "./core"
 import type { RuntimeConfigApplyStatus, WorkspaceConnectionState, WorkspaceHost, WorkspaceHostMountOptions } from "./host"
 import { scopedToolPrompt } from "./scoped-tool-prompt"
-import { mountSessionRoutes } from "./session-routes"
 import { assertConnectionRevision, connectionConfigHooks, harnessKey, persistRuntimeConfigApplyStatus, runnerForSelection, runtimeConfigApplyError, runtimeSnapshotSignature, sameAuth, sameRuntimeMcp, validateDescriptors, type RuntimeRunner } from "./snapshot"
 import { createWorkspaceTransports } from "./transports"
 
@@ -510,22 +513,28 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         }
       })
       mountWorkspaceVcs(app)
-      const sessions = mountSessionRoutes({
+      const sessions = composeSessionRoutes({
         core,
         runtime: runtimeForSession,
         recovery: () => engine?.runtime.recovery,
         store,
         sessionStarts,
         sessionAccessPolicy,
-        checkpoint,
         currentRunner,
-        afterCreateSession: options.afterCreateSession,
-        sessionToolPrompt: (sessionId) => {
-          const registration = sessionToolPrompts.get(sessionId)
-          return registration ? scopedToolPrompt(sessionId, registration) : undefined
-        },
+        deriveChildSessionId: (identity) => deriveChildSessionId(store().runtimeSecret("child-session"), identity),
         subagentAdmission: (parentSessionId, observation) => harnessEngine().runtime.subagents.admit(parentSessionId, observation),
         backgroundWork: (sessionId) => engine?.ports.backgroundWork.read(sessionId),
+        machine: {
+          checkpoint,
+          readAttachment: readSessionAttachment,
+          flushSessionDocuments: flushRuntimeSessionDocuments,
+          disposeSessionDocuments: disposeRuntimeSessionDocuments,
+          sessionToolPrompt: (sessionId) => {
+            const registration = sessionToolPrompts.get(sessionId)
+            return registration ? scopedToolPrompt(sessionId, registration) : undefined
+          },
+          afterCreateSession: options.afterCreateSession,
+        },
       })
       disposeDeliveries = sessions.dispose
       app.route("/", sessions.routes)

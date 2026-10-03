@@ -1,5 +1,5 @@
 import type { WorkspaceRuntimeManagementAction, WorkspaceRuntimeManagementAuth, WorkspaceRuntimeManagementTarget } from "../management-auth"
-import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 
 export type ManagementAccessOptions = {
   managementAuth?: WorkspaceRuntimeManagementAuth

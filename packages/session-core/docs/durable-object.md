@@ -32,9 +32,10 @@ Web Crypto child identity `hmacChildSessionId`.
    It is the same composition `createHostFixture` wraps for the Node tests.
 3. `createSessionCore` takes that event hub and the object's placement. It owns
    its own bus and placement registry.
-4. `core.sessionRoutes(...)` gets `storeSessionRoutes(...)`: the listings,
-   transcript reads, queue and child-session records every host answers from
-   its store. The machine's `mountSessionRoutes` composes the same function.
+4. `composeSessionRoutes(...)` builds the session routes from
+   `storeSessionRoutes(...)`: the listings, transcript reads, queue and
+   child-session records every host answers from its store. The machine
+   runtime calls the same function and adds its `machine` port.
 5. `core.events(...)` serves `GET /api/wr/events`.
 
 The object never enters `AsyncLocalStorage` and never reads a process global.

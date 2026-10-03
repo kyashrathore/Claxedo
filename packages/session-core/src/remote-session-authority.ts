@@ -11,8 +11,8 @@ import {
   type SessionWriteClass,
   sessionAccessRequiresWrite,
   sessionAccessWriteClass,
-  type RuntimeSessionTime,
-} from "@claxedo/session-core"
+} from "./session-access-policy"
+import type { RuntimeSessionTime } from "./session/session-time"
 
 export const WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL = "WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL"
 
@@ -358,7 +358,7 @@ function authorityRequestBody(
   }
 }
 
-export function remoteWorkspaceSessionAccessPolicyFromEnv(env: Record<string, string | undefined> = process.env) {
+export function remoteWorkspaceSessionAccessPolicyFromEnv(env: Record<string, string | undefined>) {
   return remoteWorkspaceSessionAccessPolicy({ url: env[WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL] })
 }
 

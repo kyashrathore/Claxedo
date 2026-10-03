@@ -27,7 +27,7 @@ Before claiming a runtime boundary change is complete, run package-local checks 
 
 ```sh
 bun typecheck
-bun test src/public-api.test.ts src/server.test.ts src/workspace-relay-env.test.ts src/workspace-host-service-auth.test.ts src/target.test.ts
+bun test src/public-api.test.ts src/server.test.ts src/workspace-relay-env.test.ts src/target.test.ts
 bun run build
 npm pack --dry-run --json
 ```

@@ -21,6 +21,13 @@
       "import": "./dist/access-policy.mjs",
       "default": "./dist/access-policy.mjs"
     },
+    "./relay-host": {
+      "development": "./src/relay-host-auth.ts",
+      "bun": "./src/relay-host-auth.ts",
+      "types": "./dist/relay-host-auth.d.ts",
+      "import": "./dist/relay-host.mjs",
+      "default": "./dist/relay-host.mjs"
+    },
     "./testing": {
       "development": "./src/testing.ts",
       "bun": "./src/testing.ts",
@@ -43,7 +50,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "bun build src/index.ts --target=browser --format=esm --packages=external --outfile=dist/index.mjs && bun build src/session-access-policy.ts --target=browser --format=esm --packages=external --outfile=dist/access-policy.mjs && bun build src/testing.ts --target=node --format=esm --packages=external --outfile=dist/testing.mjs && tsc -p tsconfig.build.json",
+    "build": "bun build src/index.ts --target=browser --format=esm --packages=external --outfile=dist/index.mjs && bun build src/session-access-policy.ts --target=browser --format=esm --packages=external --outfile=dist/access-policy.mjs && bun build src/relay-host-auth.ts --target=browser --format=esm --packages=external --outfile=dist/relay-host.mjs && bun build src/testing.ts --target=node --format=esm --packages=external --outfile=dist/testing.mjs && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test src && node --import tsx --import ./src/test-support/home/isolated-home.mjs --test src/store-durable-object.node-test.ts src/durable-object.node-test.ts"
   },
@@ -51,8 +58,10 @@
     "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/harness": "workspace:*",
     "@claxedo/helpers": "workspace:*",
+    "@claxedo/workspace-relay": "workspace:*",
     "@claxedo/workspace-relay-protocol": "workspace:*",
-    "hono": "catalog:"
+    "hono": "catalog:",
+    "jose": "6.0.11"
   },
   "devDependencies": {
     "@tsconfig/bun": "catalog:",

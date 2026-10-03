@@ -28,7 +28,7 @@ import {
 import { mintTasksCapability } from "../tasks/capability"
 import { RuntimeSessionAuthorityRoutes, type RuntimeSessionAuthorityOptions } from "./runtime-session-authority"
 import { D1SessionAuthorityError } from "../authority/adapters/d1/session-input"
-import { remoteWorkspaceSessionAccessPolicy } from "../../../workspace-runtime/src/remote-session-authority"
+import { remoteWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
 import { fetchUrl } from "../test-support/fetch-calls"
 
 const RUNTIME_TIMES = { createdAt: 1_000, updatedAt: 1_234 }

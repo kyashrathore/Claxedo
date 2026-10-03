@@ -16,9 +16,9 @@ import {
   createRuntimeCredentialIssuer,
   createWorkspaceRuntimeApp,
   ownerGrantIdentity,
-  remoteWorkspaceSessionAccessPolicy,
   type WorkspaceRuntimeApp,
 } from "@claxedo/workspace-runtime"
+import { remoteWorkspaceSessionAccessPolicy } from "@claxedo/session-core"
 import { relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import { memorySandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
 import { RuntimeSessionAuthorityRoutes } from "../../routes/runtime-session-authority"
