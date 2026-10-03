@@ -3,7 +3,7 @@ import { watchPluginEvents } from "./plugin-events.js"
 
 export type McpSettle = Readonly<{ ready: Promise<void>; close(): Promise<void> }>
 
-const statusEvent = (type: string) => type === "mcp.status.changed"
+const isMcpStatusEvent = (type: string) => type === "mcp.status.changed"
 
 function toolPrefix(server: string): string {
   return `${server.replace(/[^a-zA-Z0-9_-]/g, "_")}_`
@@ -56,6 +56,6 @@ class McpSettleWatch {
 export async function watchMcpSettle(context: Plugin.Context, servers: readonly string[]): Promise<McpSettle> {
   const watch = new McpSettleWatch(context, servers)
   await context.tool.transform((draft) => { watch.observeTools(draft.list().map((tool) => tool.id)) })
-  const events = watchPluginEvents(context, statusEvent, () => watch.refresh(), "OpenCode MCP status watch failed")
+  const events = watchPluginEvents(context, isMcpStatusEvent, () => watch.refresh(), "OpenCode MCP status watch failed")
   return { ready: watch.ready, close: () => events.close() }
 }

@@ -14,7 +14,7 @@ export type OpenCodeInstances = Readonly<{
   ready(sessionID: string): Promise<void>
 }>
 
-function refused(message: string): TransportError {
+function instanceRefusal(message: string): TransportError {
   return new TransportError("opencode", "session", message)
 }
 
@@ -34,19 +34,19 @@ export function createInstances(): OpenCodeInstances {
       const own = keys.get(session.id)
       if (own) return own
       const inherited = session.parentID === undefined ? undefined : keys.get(session.parentID)
-      if (!inherited) throw refused(`OpenCode session ${session.id} has no Claxedo instance`)
+      if (!inherited) throw instanceRefusal(`OpenCode session ${session.id} has no Claxedo instance`)
       keys.set(session.id, inherited)
       return inherited
     },
     plugin(key) {
       const document = documents.get(key)
-      if (!document) throw refused(`OpenCode instance ${key} has no launch document`)
+      if (!document) throw instanceRefusal(`OpenCode instance ${key} has no launch document`)
       return launchPolicyPlugin(document, (ready) => { readiness.set(key, ready) })
     },
     ready(sessionID) {
       const key = keys.get(sessionID)
       const ready = key === undefined ? undefined : readiness.get(key)
-      if (!ready) throw refused(`OpenCode session ${sessionID} has no configured instance`)
+      if (!ready) throw instanceRefusal(`OpenCode session ${sessionID} has no configured instance`)
       return ready
     },
   }
