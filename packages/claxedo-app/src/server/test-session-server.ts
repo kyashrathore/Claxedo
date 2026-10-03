@@ -98,6 +98,7 @@ export function fakeServer(options: FakeServerOptions) {
     },
     startRuntime: async () => undefined,
     connectSession: async () => undefined,
+    onSessionHost: () => () => undefined,
   } satisfies Transport
   const workspaces = createWorkspaces(transport, new QueryClient())
   return { context: { transport, workspaces, status: createStatusOwner(transport) }, requests, runtimeCalls }

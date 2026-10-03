@@ -27,7 +27,7 @@ function transport(posted: Posted[]): Transport {
     posted.push({ path, body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body })
     return { workspaceId: "ws_new", directory: "/workspace/widgets" }
   }
-  return { serverUrl: "http://127.0.0.1:1", loopback: true, json } as Pick<Transport, "serverUrl" | "loopback" | "json"> as Transport
+  return { serverUrl: "http://127.0.0.1:1", loopback: true, json, onSessionHost: () => () => undefined } as Pick<Transport, "serverUrl" | "loopback" | "json" | "onSessionHost"> as Transport
 }
 
 function world(signed: boolean) {

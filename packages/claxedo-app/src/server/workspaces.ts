@@ -72,6 +72,10 @@ function observeQuery(queryClient: QueryClient, key: readonly unknown[]): { read
 function placementReads(records: () => readonly PlacementRecord[]) {
   const recordOf = (id: PlacementId) => records().find((record) => record.placement.id === id)
   const hosts: SessionHosts = new Map()
+  const learnSessionHost = (workspaceId: string, sessionId: string, root: string) => {
+    const placement = records().find((record) => record.route.workspaceId === workspaceId)?.placement.id ?? placementId(workspaceId)
+    hosts.set(sessionHostKey({ placementId: placement, sessionId: asSessionId(sessionId) }), root)
+  }
   const published: Pick<Workspaces, "byId" | "list" | "hostSession"> = {
     byId: (id: PlacementId) => recordOf(id)?.placement,
     list: () => records().map((record) => record.placement),
@@ -82,6 +86,7 @@ function placementReads(records: () => readonly PlacementRecord[]) {
   return {
     recordOf,
     hosts,
+    learnSessionHost,
     published,
     address: {
       placementFor: (directory: string, workspaceId?: string) => {
@@ -203,6 +208,7 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
   }
   const reads = placementReads(() => merged.catalog()?.placements ?? [])
   const { recordOf, hosts } = reads
+  const forgetSessionHosts = transport.onSessionHost(reads.learnSessionHost)
   return {
     shared,
     ...reads.published,
@@ -226,6 +232,6 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
       await shared.refresh()
     },
     ...accountReads(merged.linked, accountPlacements !== undefined, load),
-    dispose: () => { shared.dispose(); merged.dispose() },
+    dispose: () => { forgetSessionHosts(); shared.dispose(); merged.dispose() },
   }
 }

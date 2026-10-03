@@ -20,7 +20,7 @@ const machines = { workspaces: [{ workspace_id: "ws_shared", project_id: "prj_ap
 
 function transport(): Transport {
   const answers: Record<string, unknown> = { "/api/claxedo/bootstrap": bootstrap, "/api/claxedo/projects": projects }
-  return { serverUrl: "http://127.0.0.1:1", loopback: true, json: async (path: string) => answers[path] } as Pick<Transport, "serverUrl" | "loopback" | "json"> as Transport
+  return { serverUrl: "http://127.0.0.1:1", loopback: true, json: async (path: string) => answers[path], onSessionHost: () => () => undefined } as Pick<Transport, "serverUrl" | "loopback" | "json" | "onSessionHost"> as Transport
 }
 
 function world(run: (operation: string) => Promise<unknown>, gcTime?: number) {

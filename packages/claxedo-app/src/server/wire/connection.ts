@@ -1,7 +1,6 @@
 import { ServerError } from "../errors"
 import type { WorkspaceBootMode } from "../cloud-types"
 import { isRecord } from "@claxedo/helpers/guards"
-import type { SessionHarness } from "@claxedo/agent-runtime-contract"
 
 export type RelayConnection = {
   readonly sessionId?: string
@@ -19,7 +18,7 @@ export type ConnectionAnswer =
 export type WorkspaceConnections = {
   readonly read: (workspaceId: string, sessionId?: string) => Promise<ConnectionAnswer>
   readonly start: (workspaceId: string) => Promise<ConnectionAnswer>
-  readonly mintSession: (workspaceId: string, sessionId: string, harness: SessionHarness) => Promise<ConnectionAnswer>
+  readonly mintSession: (workspaceId: string, sessionId: string) => Promise<ConnectionAnswer>
 }
 
 export const WORKSPACE_STOPPED = "workspace_stopped"

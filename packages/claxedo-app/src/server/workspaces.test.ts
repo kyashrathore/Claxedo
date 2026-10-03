@@ -16,7 +16,8 @@ function transport(reads: string[]): Transport {
     serverUrl: "http://127.0.0.1:1",
     loopback: true,
     json: async (path: string) => (reads.push(path), bootstrap),
-  } as Pick<Transport, "serverUrl" | "loopback" | "json"> as Transport
+    onSessionHost: () => () => undefined,
+  } as Pick<Transport, "serverUrl" | "loopback" | "json" | "onSessionHost"> as Transport
 }
 
 test("the placement catalog stays readable once the query cache's collection time has passed with nothing reading it", async () => {

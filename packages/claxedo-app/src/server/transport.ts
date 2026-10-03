@@ -1,11 +1,10 @@
 import { isLoopbackUrl, resolveServerUrl, type ServerConfig } from "./config"
 import { createHostedAccount, type HostedAccount } from "./account"
 import { responseError, toAppError } from "./errors"
-import { createRelay } from "./relay"
+import { createRelay, type Relay } from "./relay"
 import { startWorkspace, type StartOptions } from "./workspace-start"
 import { CLOUD_RUNTIME_UNAVAILABLE, connectionAnswerFromWire, unavailableRetryAfter, type ConnectionAnswer, type WorkspaceConnections } from "./wire/connection"
-import { isRecord } from "@claxedo/helpers/guards"
-import type { SessionHarness } from "@claxedo/agent-runtime-contract"
+import { ServerError } from "./errors"
 
 export type RuntimeRoute = {
   readonly sharedSession?: { readonly sessionId: string; readonly level: "follow" | "send" }
@@ -14,6 +13,8 @@ export type RuntimeRoute = {
   readonly workspaceId: string
   readonly remote: boolean
 }
+
+export type SessionHostListener = (workspaceId: string, sessionId: string, root: string) => void
 
 export type Transport = {
   readonly serverUrl: string
@@ -24,7 +25,8 @@ export type Transport = {
   readonly json: <T>(path: string, init?: RequestInit) => Promise<T>
   readonly runtimeJson: <T>(route: RuntimeRoute, path: string, init?: RequestInit) => Promise<T>
   readonly startRuntime: (workspaceId: string, options?: StartOptions) => Promise<void>
-  readonly connectSession: (workspaceId: string, sessionId: string, harness: SessionHarness) => Promise<string | undefined>
+  readonly connectSession: (workspaceId: string, sessionId: string) => Promise<void>
+  readonly onSessionHost: (listener: SessionHostListener) => () => void
 }
 
 function socketUrl(serverUrl: string, path: string) {
@@ -110,13 +112,34 @@ export function createWorkspaceConnections(request: Request, account?: HostedAcc
     start: async (workspaceId) => account
       ? connectionAnswerFromWire(await account.run("workspace.connection.mint", { id: workspaceId }), workspaceId)
       : requestConnection(request, workspaceId, true),
-    mintSession: async (workspaceId, sessionId, harness) => {
+    mintSession: async (workspaceId, sessionId) => {
       const body = account
-        ? await account.run("session.connection.mint", { id: workspaceId, sessionId, harness })
-        : await readJsonResponse(await request(`/api/workspace/${encodeURIComponent(workspaceId)}/connection`, jsonInit("POST", { session: { sessionId, harness } })), "Session connection")
-      const answer = connectionAnswerFromWire(body, workspaceId)
-      return answer.kind === "ready" && isRecord(body) && body.backing === "durable-object" ? connectionAnswerFromWire(body, workspaceId, sessionId) : answer
+        ? await account.run("session.connection.mint", { id: workspaceId, sessionId })
+        : await readJsonResponse(await request(`/api/workspace/${encodeURIComponent(workspaceId)}/connection`, jsonInit("POST", { session: { sessionId } })), "Session connection")
+      return connectionAnswerFromWire(body, workspaceId, sessionId)
     },
+  }
+}
+
+function sessionHostSignals() {
+  const listeners = new Set<SessionHostListener>()
+  return {
+    learned: (workspaceId: string, sessionId: string | undefined, answer: ConnectionAnswer) => {
+      if (sessionId && answer.kind === "ready" && answer.sessionHostRoot) for (const listener of listeners) listener(workspaceId, sessionId, answer.sessionHostRoot)
+      return answer
+    },
+    onSessionHost: (listener: SessionHostListener) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  }
+}
+
+function sessionHostConnector(connections: WorkspaceConnections, relay: Relay, hosts: ReturnType<typeof sessionHostSignals>): Transport["connectSession"] {
+  return async (workspaceId, sessionId) => {
+    const answer = hosts.learned(workspaceId, sessionId, await connections.mintSession(workspaceId, sessionId))
+    if (answer.kind !== "ready" || !answer.sessionHostRoot) throw new ServerError({ class: "internal", message: `Session ${sessionId} was reserved in its own host, which answered no connection` })
+    relay.adopt(answer.link)
   }
 }
 
@@ -125,7 +148,8 @@ export function createTransport(config: ServerConfig): Transport {
   const loopback = isLoopbackUrl(serverUrl)
   const request = (path: string, init?: RequestInit) => fetchFromServer(config, `${serverUrl}${path}`, init)
   const connections = createWorkspaceConnections(request, config.account ? createHostedAccount(config.account) : undefined)
-  const relay = createRelay(connections.read)
+  const hosts = sessionHostSignals()
+  const relay = createRelay(async (workspaceId, sessionId) => hosts.learned(workspaceId, sessionId, await connections.read(workspaceId, sessionId)))
   const daemonProxy = loopback && config.account === undefined
   const runtime = (route: RuntimeRoute, path: string, init?: RequestInit) => {
     if (!route.remote) return request(withQuery(path, { directory: route.directory }), init)
@@ -152,12 +176,8 @@ export function createTransport(config: ServerConfig): Transport {
       const link = await startWorkspace(connections.start, workspaceId, options)
       if (!daemonProxy) relay.adopt(link)
     },
-    connectSession: async (workspaceId, sessionId, harness) => {
-      const answer = await connections.mintSession(workspaceId, sessionId, harness)
-      if (answer.kind !== "ready" || !answer.sessionHostRoot) return undefined
-      relay.adopt(answer.link)
-      return answer.sessionHostRoot
-    },
+    connectSession: sessionHostConnector(connections, relay, hosts),
+    onSessionHost: hosts.onSessionHost,
   }
 }
 

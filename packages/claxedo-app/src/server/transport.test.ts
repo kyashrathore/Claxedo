@@ -71,26 +71,38 @@ test("signed desktop local placements keep using the daemon with no account call
   expect(calls).toEqual([])
 })
 
-test("a session a Durable Object will serve is minted through the account, and its routes use that session's link alone", async () => {
-  const hostLink = { backing: "durable-object", sessionId: "ses_pi", relayUrl: "https://relay.test", runtimeAccessToken: "host-rat", tokenExpiresAt: Date.now() + 3_600_000 }
+const href = (url: string | URL | Request) => typeof url === "string" ? url : url instanceof URL ? url.href : url.url
+const hostLink = { backing: "durable-object", sessionId: "ses_pi", relayUrl: "https://relay.test", runtimeAccessToken: "host-rat", tokenExpiresAt: Date.now() + 3_600_000 }
+
+test("a session reserved in its own Durable Object is connected through the account, and its routes use that session's link alone", async () => {
   const { transport, calls } = signed(hostLink, link)
   fetcher.mockResolvedValue(Response.json({}))
-  const harness = { id: "pi", access: "native" } as const
-  expect(await transport.connectSession("ws_cloud", "ses_pi", harness)).toBe("ses_pi")
+  const learned: unknown[] = []
+  transport.onSessionHost((...host) => learned.push(host))
+  await transport.connectSession("ws_cloud", "ses_pi")
   await transport.runtime({ ...cloud, sessionHost: { sessionId: "ses_pi" } }, "/session/ses_pi?directory=workspace%3Aws_cloud")
   await transport.runtime(cloud, "/api/wr/health")
+  expect(learned).toEqual([["ws_cloud", "ses_pi", "ses_pi"]])
   expect(calls).toEqual([
-    { operation: "session.connection.mint", input: { id: "ws_cloud", sessionId: "ses_pi", harness } },
+    { operation: "session.connection.mint", input: { id: "ws_cloud", sessionId: "ses_pi" } },
     { operation: "workspace.connection.read", input: { id: "ws_cloud" } },
   ])
-  const href = (url: string | URL | Request) => typeof url === "string" ? url : url instanceof URL ? url.href : url.url
   expect(fetcher.mock.calls.map(([url, init]) => [href(url), new Headers(init?.headers).get("authorization")])).toEqual([
     ["https://relay.test/workspaces/ws_cloud/session/ses_pi", "Bearer host-rat"],
     ["https://relay.test/workspaces/ws_cloud/api/wr/health", "Bearer session-rat"],
   ])
 })
 
-test("a session the workspace's runtime will serve is answered with no session host", async () => {
-  const { transport } = signed(link)
-  expect(await transport.connectSession("ws_cloud", "ses_codex", { id: "codex", access: "native" })).toBeUndefined()
+test("a session's own connection read that answers its Durable Object teaches its host", async () => {
+  const { transport } = signed(hostLink)
+  fetcher.mockResolvedValue(Response.json({}))
+  const learned: unknown[] = []
+  transport.onSessionHost((...host) => learned.push(host))
+  await transport.runtime({ ...cloud, sharedSession: { sessionId: "ses_pi", level: "send" } }, "/session/ses_pi")
+  expect(learned).toEqual([["ws_cloud", "ses_pi", "ses_pi"]])
+})
+
+test("a reservation's host that answers no connection fails the create loudly", async () => {
+  const { transport } = signed(new Error("operation \"session.connection.mint\" failed: 409 (session_host_unavailable)"))
+  await expect(transport.connectSession("ws_cloud", "ses_codex")).rejects.toThrow(/session_host_unavailable/)
 })
