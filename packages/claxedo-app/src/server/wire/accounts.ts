@@ -52,6 +52,7 @@ export function accountFromWire(value: unknown): Account | undefined {
       scope: accountScopeFromWire(row.scope),
       label: asString(row.label),
       accountId: asString(row.account_id),
+      activatedAt: asFiniteNumber(row.activated_at),
       status: asString(row.status),
       health: asString(row.health),
       expiresAt: asFiniteNumber(row.expires_at),

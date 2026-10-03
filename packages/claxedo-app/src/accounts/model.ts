@@ -6,6 +6,7 @@ export type AccountReach = "local-and-cloud" | "local-only"
 type QuotaWindow = NonNullable<Account["usage"]>[number]
 
 export type AccountsSnapshot = {
+  readonly cloudOnly: boolean
   readonly stored: readonly Account[]
   readonly effective: ReadonlyMap<string, Account> | undefined
   readonly machineLogins: readonly MachineLogin[]
@@ -111,12 +112,13 @@ export function harnessAccounts(harness: Harness, rows: readonly Account[]): Har
   return [...accounts.filter((account) => account.active), ...accounts.filter((account) => !account.active)]
 }
 
-export function accountInUse(harness: Harness, effective: ReadonlyMap<string, Account>) {
-  for (const id of harness.providerIds) {
+export function accountInUse(harness: Harness, effective: ReadonlyMap<string, Account>, cloudOnly: boolean) {
+  const marked = harness.providerIds.flatMap((id) => {
     const row = effective.get(id)
-    if (row) return row
-  }
-  return undefined
+    return row ? [row] : []
+  })
+  if (!cloudOnly) return marked[0]
+  return marked.reduce<Account | undefined>((latest, row) => (latest && (latest.activatedAt ?? 0) >= (row.activatedAt ?? 0) ? latest : row), undefined)
 }
 
 export function machineLoginOf(harness: Harness, snapshot: AccountsSnapshot) {
@@ -132,7 +134,7 @@ export function partialMachineLogin(login: MachineLogin) {
 }
 
 function ownAccountInUse(harness: Harness, snapshot: AccountsSnapshot) {
-  const inUse = snapshot.effective ? accountInUse(harness, snapshot.effective) : undefined
+  const inUse = snapshot.effective ? accountInUse(harness, snapshot.effective, snapshot.cloudOnly) : undefined
   return inUse && snapshot.stored.some((row) => row.id === inUse.id) ? inUse : undefined
 }
 
@@ -184,6 +186,7 @@ export function harnessRunnable(harness: Harness, snapshot: AccountsSnapshot, li
     return login?.state === "signed_in" && !strandedBinding(login, harness, snapshot)
   }
   const row = selected === ORG_ACCOUNT_KEY ? orgAccountOf(harness, snapshot) : harnessAccounts(harness, snapshot.stored).find((account) => account.id === selected)
-  const verdict = row ? storedCheck(row, live[row.id])?.verdict : undefined
-  return row !== undefined && !(verdict !== undefined && isRefusal(verdict))
+  if (row === undefined || (snapshot.cloudOnly && row.delivery?.cloud !== true)) return false
+  const verdict = storedCheck(row, live[row.id])?.verdict
+  return !(verdict !== undefined && isRefusal(verdict))
 }

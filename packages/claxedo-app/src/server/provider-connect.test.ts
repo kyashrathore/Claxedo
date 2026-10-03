@@ -36,14 +36,15 @@ test("provider connect: a custom provider is declared with the header its key ri
   ])
 })
 
-test("provider connect: disconnecting a custom provider drops its declaration, and any other provider its auth entry", async () => {
+test("provider connect: disconnecting removes the provider's own account, and a custom provider's declaration too", async () => {
   const { seen, api } = serve()
   await api.disconnect("opencode", { id: "acme", source: "custom" })
   await api.disconnect("opencode", { id: "openrouter", source: "api" })
+  await api.disconnect("pi", { id: "anthropic", source: "api" })
   expect(seen).toEqual([
     "DELETE /api/claxedo/credentials/provider/acme",
     "DELETE /api/claxedo/agent-config/providers/custom/acme?nativeHarness=opencode",
     "DELETE /api/claxedo/credentials/provider/openrouter",
-    "DELETE /auth/openrouter?harness=opencode",
+    "DELETE /api/claxedo/credentials/provider/anthropic",
   ])
 })

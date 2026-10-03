@@ -102,7 +102,6 @@ export function createProviderConnectApi(transport: Transport, queryClient: Quer
     disconnect: async (harness, provider) => {
       await ask(transport, `${CREDENTIALS_PATH}/provider/${encodeURIComponent(provider.id)}`, { method: "DELETE" })
       if (provider.source === "custom") await transport.json<unknown>(withQuery(`${CUSTOM_PATH}/${encodeURIComponent(provider.id)}`, { nativeHarness: harness }), { method: "DELETE" })
-      else await transport.json<unknown>(withQuery(`/auth/${encodeURIComponent(provider.id)}`, { harness }), { method: "DELETE" })
       await changed()
     },
   }

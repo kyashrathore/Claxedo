@@ -15,11 +15,12 @@ function account(id: string, providerId: string, fields: Partial<Account> = {}):
   return { id, providerId, kind: "api_key", source: "managed", active: false, hasSecret: true, ...fields }
 }
 
-function snapshot(fields: { stored?: readonly Account[]; effective?: readonly Account[]; org?: readonly Account[]; sources?: Readonly<Record<string, AccountSource>> } = {}): AccountsSnapshot {
+function snapshot(fields: { cloudOnly?: boolean; stored?: readonly Account[]; effective?: readonly Account[]; org?: readonly Account[]; sources?: Readonly<Record<string, AccountSource>> } = {}): AccountsSnapshot {
   return {
+    cloudOnly: fields.cloudOnly ?? false,
     stored: fields.stored ?? [],
     effective: fields.effective ? new Map(fields.effective.map((row) => [row.providerId, row])) : undefined,
-    machineLogins: [{ harness: "claude", providerIds: claude.providerIds, state: "signed_in" }],
+    machineLogins: fields.cloudOnly ? [] : [{ harness: "claude", providerIds: claude.providerIds, state: "signed_in" }],
     sources: { sources: new Map(Object.entries(fields.sources ?? {})), org: fields.org ?? [], canRemoveOrgAccounts: false },
     scannedAt: 1,
   }
@@ -75,4 +76,21 @@ test("accounts: an account's cloud consent is shared when any of its bindings is
   expect(storedAccountWords(words, unscoped, undefined).cloudConsent).toEqual({ allowed: false, partial: false, deliverable: false })
   const [undelivered] = harnessAccounts(claude, [account("f", "claude-sdk", { scope: "local" })])
   expect(storedAccountWords(words, undelivered, undefined).cloudConsent).toBeUndefined()
+})
+
+test("accounts: where every session runs in the cloud, an account counts only if the server can deliver it there", () => {
+  const codex = harnesses.find((harness) => harness.id === "codex")!
+  const chatgpt = account("chatgpt", "codex-app-server", { kind: "oauth_token", active: true, delivery: { local: true, cloud: false, reason: "native_delivery_needs_companion_header" } })
+  const key = account("key", "codex-app-server", { active: true, delivery: { local: true, cloud: true } })
+  expect(harnessRunnable(codex, snapshot({ cloudOnly: true, stored: [chatgpt], effective: [chatgpt] }), {})).toBe(false)
+  expect(harnessRunnable(codex, snapshot({ cloudOnly: false, stored: [chatgpt], effective: [chatgpt] }), {})).toBe(true)
+  expect(harnessRunnable(codex, snapshot({ cloudOnly: true, stored: [key], effective: [key] }), {})).toBe(true)
+})
+
+test("accounts: in the cloud the most recently chosen of a harness's accounts is the one in use; a machine binds its first provider", () => {
+  const token = account("token", "claude-sdk", { kind: "oauth_token", active: true, activatedAt: 1, delivery: { local: true, cloud: true } })
+  const key = account("key", "anthropic", { active: true, activatedAt: 2, delivery: { local: true, cloud: true } })
+  expect(selectedAccountKey(claude, snapshot({ cloudOnly: true, stored: [token, key], effective: [token, key] }))).toBe("key")
+  expect(selectedAccountKey(claude, snapshot({ cloudOnly: true, stored: [token, key], effective: [{ ...token, activatedAt: 3 }, key] }))).toBe("token")
+  expect(selectedAccountKey(claude, snapshot({ stored: [token, key], effective: [token, key] }))).toBe("token")
 })

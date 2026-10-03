@@ -44,7 +44,7 @@ function useAccountReads(server: Server) {
   const load = createMemo((): AccountsLoad => {
     const scanned = machineLogins()
     if (list.data && effective.data && scanned && sources.data) {
-      const snapshot = { stored: list.data, effective: effectiveByProvider(effective.data), machineLogins: scanned, sources: sources.data, scannedAt: Math.max(...queries.map((query) => query.dataUpdatedAt)) }
+      const snapshot = { cloudOnly: !onMachine(), stored: list.data, effective: effectiveByProvider(effective.data), machineLogins: scanned, sources: sources.data, scannedAt: Math.max(...queries.map((query) => query.dataUpdatedAt)) }
       return { kind: "ready", snapshot }
     }
     const error = queries.map((query) => query.error).find((candidate) => candidate)
@@ -69,10 +69,9 @@ function useActivity() {
   return { activity, setActivity, run }
 }
 
-async function selectAccount(server: Server, onMachine: boolean, harness: Harness, key: string, ids: readonly string[]) {
+async function selectAccount(server: Server, harness: Harness, key: string, ids: readonly string[]) {
   if (key === ORG_ACCOUNT_KEY) return server.accounts.setSource(harness.providerIds, "org")
   await server.accounts.setSource(harness.providerIds, "own")
-  if (!onMachine) return
   return key === MACHINE_LOGIN_KEY ? server.accounts.selectMachineLogin(harness.providerIds) : server.accounts.select(ids)
 }
 
@@ -122,7 +121,7 @@ export function useAccounts(): Accounts {
       setLiveChecks({})
       await (reads.onMachine() ? server.accounts.rescan() : server.accounts.refresh()).finally(() => setRescanning(false))
     }),
-    select: (harness, key, ids) => void run("selecting", key, () => selectAccount(server, reads.onMachine(), harness, key, ids)),
+    select: (harness, key, ids) => void run("selecting", key, () => selectAccount(server, harness, key, ids)),
     remove: (ids) => run("removing", ids[0] ?? "", () => server.accounts.remove(ids)),
     check: (id) =>
       void run("checking", id, async () => {

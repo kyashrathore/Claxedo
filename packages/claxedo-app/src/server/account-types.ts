@@ -13,6 +13,7 @@ export type Account = {
   readonly label?: string
   readonly accountId?: string
   readonly active: boolean
+  readonly activatedAt?: number
   readonly status?: string
   readonly health?: string
   readonly hasSecret: boolean
