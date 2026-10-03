@@ -38,23 +38,26 @@ describe("restart wiring", () => {
     expect(offenders).toEqual([])
   })
 
-  test("both restart entry points route through runRestart", async () => {
-    const index = await read("src/main/index.ts")
-    const ipc = await read("src/main/ipc.ts")
+  test("every restart entry point routes through the one restartApp", async () => {
+    const index = stripComments(await read("src/main/index.ts"))
+    const ipc = stripComments(await read("src/main/ipc.ts"))
 
-    // The application menu item.
-    expect(index).toMatch(/restart:\s*\(\)\s*=>\s*\n?\s*runRestart\(/)
-    // The IPC channel the renderer's platform.restart() sends on. ANY caller of
-    // it gets the safe semantics, which is why it is not a separate branch.
-    expect(ipc).toMatch(/ipcMain\.on\("relaunch"/)
-    expect(ipc).toMatch(/runRestart\(\{/)
-    expect(ipc).toMatch(/packaged: IS_PACKAGED/)
+    expect(index.match(/runRestart\(\{/g)).toHaveLength(1)
+    expect(index).toMatch(/function restartApp\(reload: \(\) => void\) \{\n\s*runRestart\(\{/)
+    expect(index).toMatch(/installUpdate: autoUpdate\.pending\(\) \?/)
+    // The application menu item, recovery's restart, and the IPC channel the
+    // renderer's platform.restart() sends on.
+    expect(index).toMatch(/restart:\s*\(\)\s*=>\s*restartApp\(/)
+    expect(index).toMatch(/onRecovered:[\s\S]*?restartApp\(/)
+    expect(index).toMatch(/restart: restartApp,/)
+    expect(ipc).toMatch(/ipcMain\.on\("relaunch"[\s\S]*?deps\.restart\(/)
+    expect(ipc).not.toMatch(/runRestart|app\.exit\(/)
   })
 
   test("the unpackaged branch reloads the window that asked", async () => {
     // A diagnostics window pressing restart must not reload the main window.
     const ipc = stripComments(await read("src/main/ipc.ts"))
-    expect(ipc).toMatch(/reload:\s*\(\)\s*=>\s*event\.sender\.reloadIgnoringCache\(\)/)
+    expect(ipc).toMatch(/deps\.restart\(\(\)\s*=>\s*event\.sender\.reloadIgnoringCache\(\)\)/)
   })
 
   test("the menu label comes from the policy, never a hardcoded Restart", async () => {

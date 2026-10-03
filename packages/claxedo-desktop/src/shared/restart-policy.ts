@@ -42,10 +42,20 @@ export function restartMenuLabel(packaged: boolean) {
  */
 export function runRestart(input: {
   packaged: boolean
+  /**
+   * Set while a downloaded update is waiting. It installs on any quit, so a
+   * restart is that install and its confirmed quit: a relaunch over it would
+   * come back as the new build, which stops the daemon this one handed off.
+   */
+  installUpdate: (() => void) | undefined
   relaunch: () => void
   quit: () => void
   reload: () => void
 }) {
+  if (input.installUpdate) {
+    input.installUpdate()
+    return
+  }
   if (restartBehavior(input.packaged) === "reload") {
     input.reload()
     return

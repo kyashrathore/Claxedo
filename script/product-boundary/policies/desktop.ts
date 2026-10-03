@@ -227,8 +227,12 @@ export const desktopMainComposition: Policy = {
   // `main/daemon-launch.ts` (adopt, replace or hold a published daemon by
   // build). Reviewed owner: Electron main, which alone holds the window, the
   // lease and the daemon's capability; `electron` and the recovery contract
-  // were already edges. 90/25, no headroom.
-  ceilings: { modules: 90, packages: 25 },
+  // were already edges. 90/25.
+  // +1 module: `main/update-install.ts`, which relaunches this build when a
+  // downloaded update fails to install after the daemon was stopped. Reviewed
+  // owner: Electron main's updater; it is split from `auto-update.ts` only so
+  // it runs without the `electron` runtime. 91/25, no headroom.
+  ceilings: { modules: 91, packages: 25 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,

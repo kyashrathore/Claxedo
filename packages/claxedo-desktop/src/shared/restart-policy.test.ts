@@ -42,16 +42,22 @@ describe("runRestart", () => {
     // Order matters: `app.relaunch()` only registers the re-exec, the quit is
     // what performs it. Quitting first would exit without coming back.
     const c = calls()
-    runRestart({ packaged: true, ...c })
+    runRestart({ packaged: true, installUpdate: undefined, ...c })
     expect(c.log).toEqual(["relaunch", "quit"])
   })
 
   test("unpackaged reloads and never quits", () => {
     // The whole point: no quit, because the quit is what killed the dev server.
     const c = calls()
-    runRestart({ packaged: false, ...c })
+    runRestart({ packaged: false, installUpdate: undefined, ...c })
     expect(c.log).toEqual(["reload"])
     expect(c.log).not.toContain("quit")
     expect(c.log).not.toContain("relaunch")
+  })
+
+  test("with a downloaded update waiting, a restart is that install and nothing else", () => {
+    const c = calls()
+    runRestart({ packaged: true, installUpdate: () => c.log.push("install"), ...c })
+    expect(c.log).toEqual(["install"])
   })
 })

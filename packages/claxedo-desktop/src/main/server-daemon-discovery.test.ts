@@ -131,21 +131,22 @@ describe("Claxedo daemon discovery", () => {
     expect(verified).toBe(`http://127.0.0.1:${record.port}`)
   })
 
-  test("a record that names no build is not a discovery a launcher can compare", () => {
+  test("a present record this build cannot read is unreadable, not absent", () => {
     const root = mkdtempSync(join(tmpdir(), "claxedo-daemon-discovery-"))
     roots.push(root)
     const path = join(root, "daemon.json")
-    writeFileSync(path, JSON.stringify({ ...fixture(), build: "" }))
+    const { build: _build, ...withoutBuild } = fixture()
 
-    expect(readClaxedoDaemonDiscovery(path)).toBeUndefined()
-  })
-
-  test("an identity that is not one is dropped rather than read back as a record", () => {
-    const root = mkdtempSync(join(tmpdir(), "claxedo-daemon-discovery-"))
-    roots.push(root)
-    const path = join(root, "daemon.json")
-    writeFileSync(path, JSON.stringify({ ...fixture(), identity: { pid: 42 } }))
-
+    for (const text of [
+      JSON.stringify(withoutBuild),
+      JSON.stringify({ ...fixture(), build: "" }),
+      JSON.stringify({ ...fixture(), identity: { pid: 42 } }),
+      "{\"service\": \"claxedo-local-daemon\", \"pid\"",
+    ]) {
+      writeFileSync(path, text)
+      expect(readClaxedoDaemonDiscovery(path)).toBe("unreadable")
+    }
+    rmSync(path)
     expect(readClaxedoDaemonDiscovery(path)).toBeUndefined()
   })
 

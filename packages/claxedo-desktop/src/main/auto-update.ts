@@ -2,6 +2,7 @@ import { app, dialog } from "electron"
 import pkg from "electron-updater"
 import { UPDATE_CHANNEL, UPDATER_ENABLED } from "./constants"
 import type { initLogging } from "./logging"
+import { installDownloadedUpdate } from "./update-install"
 
 const { autoUpdater } = pkg
 
@@ -35,7 +36,6 @@ export function createAutoUpdate(input: {
 
   const check = async (): Promise<CheckResult> => {
     if (!UPDATER_ENABLED) return { updateAvailable: false }
-    updateReady = false
     logger.log("checking for updates", {
       currentVersion: app.getVersion(),
       channel: autoUpdater.channel,
@@ -71,7 +71,11 @@ export function createAutoUpdate(input: {
 
   const install = async () => {
     if (!updateReady) return
-    await input.exitForInstall(() => autoUpdater.quitAndInstall())
+    await input.exitForInstall(() => installDownloadedUpdate(autoUpdater, (error) => {
+      logger.error("the update did not install; relaunching this version", error)
+      app.relaunch()
+      app.exit(0)
+    }))
   }
 
   const run = async (alertOnFail: boolean) => {
@@ -117,5 +121,8 @@ export function createAutoUpdate(input: {
     }
   }
 
-  return { setup, check, install, run }
+  /** A downloaded update installs on any quit, so a restart has to be this install. */
+  const pending = () => updateReady
+
+  return { setup, check, install, run, pending }
 }

@@ -11,12 +11,16 @@ import { quitConfirmMessage, type RunningWork } from "./daemon-quit"
  */
 export type ExitIntent = "quit" | "stop" | "handoff"
 
+const WORK_DEADLINE_MS = 3_000
+
 type Preventable = { preventDefault: () => void }
 
 /** The slice of Electron's `app` this module drives. */
 export type LifecycleApp = {
   on(event: "before-quit", listener: (event: Preventable) => void): unknown
   on(event: "window-all-closed" | "activate", listener: () => void): unknown
+  on(event: "second-instance", listener: (event: unknown, argv: string[]) => void): unknown
+  on(event: "open-url", listener: (event: Preventable, url: string) => void): unknown
   quit: () => void
 }
 
@@ -48,12 +52,15 @@ export function createAppLifecycle(input: {
   window: () => LifecycleWindow | undefined
   ready: Promise<unknown>
   createTray: (actions: { open: () => void; quit: () => void }) => void
+  deepLinks: (urls: string[]) => void
   runningWork: () => Promise<RunningWork | undefined>
+  workDeadlineMs?: number
   confirmQuit: (message: string, signal: AbortSignal) => Promise<boolean>
   exit: (intent: ExitIntent) => Promise<void>
   log: (message: string, fields?: Record<string, unknown>) => void
 }) {
-  let approved = false
+  let exiting: Promise<void> | undefined
+  let exited = false
   let deciding = false
   let confirming: AbortController | undefined
 
@@ -64,41 +71,73 @@ export function createAppLifecycle(input: {
     win.focus()
   }
 
-  /** Decides, then runs `then` (normally `app.quit()`) once the exit has done its work. Answers whether it exits. */
+  /**
+   * A daemon that is gone or wedged cannot say what is running, and must not
+   * keep the app from quitting: past the deadline, or on an error, there is
+   * nothing to confirm and the quit goes on to stop it.
+   */
+  const workToConfirm = async (): Promise<RunningWork | undefined> => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const deadline = new Promise<"late">((resolve) => { timer = setTimeout(resolve, input.workDeadlineMs ?? WORK_DEADLINE_MS, "late") })
+    try {
+      const work = await Promise.race([input.runningWork(), deadline])
+      if (work !== "late") return work
+      input.log("the daemon did not report its running work in time; quitting without asking")
+    } catch (error) {
+      input.log("the daemon's running work could not be read; quitting without asking", { error: String(error) })
+    } finally {
+      clearTimeout(timer)
+    }
+    return undefined
+  }
+
+  const confirmed = async (work: RunningWork | undefined) => {
+    const message = work && quitConfirmMessage(work)
+    if (!message || exiting) return true
+    confirming = new AbortController()
+    try {
+      return await input.confirmQuit(message, confirming.signal)
+    } catch (error) {
+      input.log("the quit confirmation failed; quitting", { error: String(error) })
+      return true
+    }
+  }
+
+  /**
+   * Decides, then runs `then` (normally `app.quit()`) once the exit has done
+   * its work. A request made while an exit is running waits for that exit and
+   * leaves the quit to its `then`. Answers whether it exits.
+   */
   const requestExit = async (intent: ExitIntent, then: () => void): Promise<boolean> => {
-    if (approved) {
-      then()
+    if (exiting) {
+      await exiting
       return true
     }
     if (intent === "quit") {
       if (deciding) return false
       deciding = true
       try {
-        const work = await input.runningWork()
-        const message = work && quitConfirmMessage(work)
-        if (message && !approved) {
-          confirming = new AbortController()
-          const confirmed = await input.confirmQuit(message, confirming.signal)
-          if (!confirmed && !approved) {
-            input.log("quit cancelled", { ...work })
-            return false
-          }
+        const work = await workToConfirm()
+        if (!(await confirmed(work)) && !exiting) {
+          input.log("quit cancelled", { ...work })
+          return false
         }
       } finally {
         deciding = false
         confirming = undefined
       }
-      // An unattended exit that arrived while this one was deciding already ran.
-      if (approved) return false
+      if (exiting) {
+        await exiting
+        return false
+      }
     }
     confirming?.abort()
-    approved = true
     input.log("app exiting", { intent })
-    try {
-      await input.exit(intent)
-    } finally {
-      then()
-    }
+    exiting = input.exit(intent)
+      .catch((error: unknown) => input.log("the exit did not complete", { intent, error: String(error) }))
+      .finally(() => { exited = true })
+    await exiting
+    then()
     return true
   }
 
@@ -108,12 +147,23 @@ export function createAppLifecycle(input: {
   }
 
   input.app.on("before-quit", (event) => {
-    if (approved) return
+    if (exited) return
     event.preventDefault()
     void requestExit("quit", () => input.app.quit())
   })
   input.app.on("window-all-closed", () => input.log("all windows closed; Claxedo keeps running"))
   input.app.on("activate", open)
+  input.app.on("second-instance", (_event, argv) => {
+    const urls = argv.filter((arg) => arg.startsWith("claxedo://"))
+    if (urls.length) input.deepLinks(urls)
+    open()
+  })
+  // macOS delivers a link to a running app here, with no `activate`.
+  input.app.on("open-url", (event, url) => {
+    event.preventDefault()
+    input.deepLinks([url])
+    open()
+  })
   // `powerMonitor` and `Tray` are unusable before the app is ready.
   void input.ready.then(() => {
     const power = input.powerMonitor()
@@ -128,13 +178,13 @@ export function createAppLifecycle(input: {
   })
 
   return {
-    quitting: () => approved,
+    quitting: () => exiting !== undefined,
     open,
     requestExit,
     /** Hides instead of closing until an exit is approved, so the renderer keeps its state. */
     keepOnClose(win: LifecycleWindow) {
       win.on("close", (event) => {
-        if (approved) return
+        if (exiting) return
         event.preventDefault()
         win.hide()
       })

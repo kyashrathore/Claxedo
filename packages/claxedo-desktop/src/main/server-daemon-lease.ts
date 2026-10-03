@@ -1,6 +1,6 @@
 import http from "node:http"
-import { readString } from "@claxedo/helpers/readers"
-import { CLAXEDO_DAEMON_CAPABILITY_HEADER } from "./daemon-request"
+import { readFiniteNumber, readString } from "@claxedo/helpers/readers"
+import { CLAXEDO_DAEMON_CAPABILITY_HEADER, type DaemonFetch } from "./daemon-request"
 import { CLAXEDO_DAEMON_PROTOCOL, DAEMON_PROTOCOL_HEADER } from "@claxedo/helpers/claxedo-daemon"
 import type { ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
 
@@ -44,6 +44,23 @@ export async function holdClaxedoDaemonLease(
       return held.id
     },
     stop: release,
+  }
+}
+
+/**
+ * How many leases the daemon holds now, by its own count, or undefined when it
+ * does not answer in time. Every app on this data directory holds one, so a
+ * count above this app's own means another app is still using the daemon.
+ */
+export async function daemonLeaseCount(daemon: DaemonFetch): Promise<number | undefined> {
+  try {
+    const response = await daemon("/api/claxedo/daemon/state", {
+      headers: { [DAEMON_PROTOCOL_HEADER]: String(CLAXEDO_DAEMON_PROTOCOL) },
+      signal: AbortSignal.timeout(1_500),
+    })
+    return response.ok ? readFiniteNumber(await response.json(), "leases") : undefined
+  } catch {
+    return undefined
   }
 }
 

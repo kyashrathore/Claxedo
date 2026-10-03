@@ -12,12 +12,10 @@ import type {
   WslConfig,
 } from "../preload/types"
 import type { BrowserRegistry } from "./browser/registry"
-import { IS_PACKAGED } from "./constants"
 import { isOpenableLinkUrl } from "./navigation-guard"
 import { openIn } from "./open-in"
 import { readLocalFileContent } from "./local-file-content"
 import { persistedServerUrlVerdict } from "./server-url"
-import { runRestart } from "../shared/restart-policy"
 import { clampZoomFactor } from "../shared/zoom-factor"
 import { getStore } from "./store"
 import { assertStoreKey, assertStoreValue } from "./store-policy"
@@ -39,6 +37,8 @@ type Deps = {
   runUpdater: (alertOnFail: boolean) => Promise<void> | void
   checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string }>
   installUpdate: () => Promise<void> | void
+  /** Restarts the app, or reloads `reload`'s window in development. */
+  restart: (reload: () => void) => void
   getStartAtLogin: () => boolean
   setStartAtLogin: (enabled: boolean) => void
   renderMermaid?: (source: string, theme?: Record<string, string>) => Promise<string>
@@ -230,17 +230,10 @@ export function registerIpcHandlers(deps: Deps) {
     win?.show()
   })
 
-  // Every caller of this channel means "restart the app", so it gets the same
-  // dev-aware treatment as the menu item: relaunching out of `electron-vite
-  // dev` takes the renderer's dev server down with it. The reload targets the
-  // window that asked, so a diagnostics window can't reload the main one.
+  // The reload targets the window that asked, so a diagnostics window can't
+  // reload the main one.
   ipcMain.on("relaunch", (event: IpcMainEvent) => {
-    runRestart({
-      packaged: IS_PACKAGED,
-      relaunch: () => app.relaunch(),
-      quit: () => app.exit(0),
-      reload: () => event.sender.reloadIgnoringCache(),
-    })
+    deps.restart(() => event.sender.reloadIgnoringCache())
   })
 
   ipcMain.on("quit", () => {

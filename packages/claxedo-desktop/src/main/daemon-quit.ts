@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto"
 import type { RecoveryAction, RecoveryOutcome } from "@claxedo/agent-runtime-contract"
 
 import { daemonState, recoverPublishedDaemon, type DaemonRecoveryInspection } from "./daemon-recovery"
+import type { DaemonFetch } from "./daemon-request"
 import type { ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
+import { daemonLeaseCount } from "./server-daemon-lease"
 
 const QUIT_DRAIN_MS = 2_000
 const QUIT_STOP_MS = 10_000
@@ -21,6 +23,46 @@ export function runningWork(inspection: DaemonRecoveryInspection): RunningWork {
     sessions: inspection.preview.sessions.length,
     terminals: inspection.owners.filter((owner) => owner.kind === "terminal").length,
   }
+}
+
+/**
+ * Leases other apps hold on this daemon (development worktrees share one), or
+ * undefined when it cannot say. `holding`: this app's own lease is still among them.
+ */
+async function otherLeases(daemon: DaemonFetch, holding: boolean) {
+  const leases = await daemonLeaseCount(daemon)
+  return leases === undefined ? undefined : leases - (holding ? 1 : 0)
+}
+
+/**
+ * The work a quit would stop, read while this app holds its lease. Nothing
+ * while another app holds the daemon: the quit leaves it running, and the work
+ * may be that app's.
+ */
+export async function quitWork(daemon: DaemonFetch, recovery: DaemonRecoveryPort): Promise<RunningWork | undefined> {
+  if (((await otherLeases(daemon, true)) ?? 0) > 0) return undefined
+  return runningWork(await recovery.inspect())
+}
+
+/**
+ * Releases this app's lease, and runs `stop.run` only if no other app holds
+ * the daemon. The other holders are counted before the release, because the
+ * daemon notices a closed lease only some time after it is closed.
+ */
+export async function releaseOrStopDaemon(input: {
+  lease: { stop: () => Promise<void> } | undefined
+  /** Absent for a handoff, or when this app never reached its daemon. */
+  stop: { daemon: DaemonFetch; run: () => Promise<void> } | undefined
+  log: (message: string, fields: Record<string, unknown>) => void
+}) {
+  const others = input.stop ? await otherLeases(input.stop.daemon, input.lease !== undefined) : undefined
+  await input.lease?.stop()
+  if (!input.stop) return
+  if (others !== undefined && others > 0) {
+    input.log("other apps still hold the daemon; it keeps running", { leases: others })
+    return
+  }
+  await input.stop.run()
 }
 
 /** The quit confirmation's message, or nothing when no work would be stopped. */

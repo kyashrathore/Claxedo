@@ -31,15 +31,20 @@ export function claxedoDaemonDiscoveryPath(dataRoot: string) {
   return path.join(dataRoot, CLAXEDO_DAEMON_DISCOVERY_FILE)
 }
 
-export function readClaxedoDaemonDiscovery(file: string): ClaxedoDaemonDiscovery | undefined {
+/**
+ * `unreadable`: a record is there that this build cannot read. Its daemon may
+ * still be serving this data directory, so it is never taken as "no daemon".
+ */
+export function readClaxedoDaemonDiscovery(file: string): ClaxedoDaemonDiscovery | "unreadable" | undefined {
   let parsed: unknown
   try {
     parsed = JSON.parse(fs.readFileSync(file, "utf8"))
   } catch (error) {
-    if (isMissingFile(error) || error instanceof SyntaxError) return undefined
+    if (isMissingFile(error)) return undefined
+    if (error instanceof SyntaxError) return "unreadable"
     throw error
   }
-  return isClaxedoDaemonDiscovery(parsed) ? parsed : undefined
+  return isClaxedoDaemonDiscovery(parsed) ? parsed : "unreadable"
 }
 
 export function writeClaxedoDaemonDiscovery(file: string, record: ClaxedoDaemonDiscovery) {
@@ -49,7 +54,7 @@ export function writeClaxedoDaemonDiscovery(file: string, record: ClaxedoDaemonD
 
 export function clearClaxedoDaemonDiscovery(file: string, owner: ClaxedoDaemonDiscovery) {
   const current = readClaxedoDaemonDiscovery(file)
-  if (!current || current.pid !== owner.pid || current.generation !== owner.generation || current.token !== owner.token) {
+  if (typeof current !== "object" || current.pid !== owner.pid || current.generation !== owner.generation || current.token !== owner.token) {
     return
   }
   try {

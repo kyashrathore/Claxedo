@@ -38,13 +38,17 @@ async function orphan(build: string) {
   return { discovery, exited, alive: () => child.exitCode === null && child.signalCode === null }
 }
 
-const answering = (record: ClaxedoDaemonDiscovery): typeof fetch => async () => Response.json(record)
+/** A daemon answering its identity as `record`, and its state with `leases` held by other apps. */
+const answering = (record: ClaxedoDaemonDiscovery, leases = 0): typeof fetch => async (input) => {
+  const path = new URL(input instanceof Request ? input.url : String(input)).pathname
+  return path === "/api/claxedo/daemon/state" ? Response.json({ state: "running", leases }) : Response.json(record)
+}
 const silent: typeof fetch = async () => {
   throw new TypeError("connection refused")
 }
 
-function verdict(discovery: ClaxedoDaemonDiscovery, build: string, request: typeof fetch) {
-  return publishedDaemonVerdict({ discovery, build, snapshot: () => undefined, request })
+function verdict(published: ClaxedoDaemonDiscovery | "unreadable", build: string, request: typeof fetch) {
+  return publishedDaemonVerdict({ published, file: "/data/daemon.json", build, snapshot: () => undefined, request })
 }
 
 describe("launching over a published daemon", () => {
@@ -54,11 +58,23 @@ describe("launching over a published daemon", () => {
     expect(await verdict(daemon.discovery, "1.4.0", answering(daemon.discovery))).toEqual({
       kind: "adopt",
       url: "http://127.0.0.1:2593",
+      discovery: daemon.discovery,
     })
     expect(daemon.alive()).toBe(true)
   })
 
-  test("a live daemon of another build is stopped and replaced", async () => {
+  test("a live daemon of another build that another app holds is adopted and keeps running", async () => {
+    const daemon = await orphan("1.4.0")
+
+    expect(await verdict(daemon.discovery, "1.5.0", answering(daemon.discovery, 1))).toEqual({
+      kind: "adopt",
+      url: "http://127.0.0.1:2593",
+      discovery: daemon.discovery,
+    })
+    expect(daemon.alive()).toBe(true)
+  })
+
+  test("a live daemon of another build that no app holds is stopped and replaced", async () => {
     const daemon = await orphan("1.4.0")
 
     expect(await verdict(daemon.discovery, "1.5.0", answering(daemon.discovery))).toEqual({ kind: "replace" })
@@ -81,5 +97,12 @@ describe("launching over a published daemon", () => {
     await daemon.exited
 
     expect(await verdict(daemon.discovery, "1.4.0", silent)).toEqual({ kind: "replace" })
+  })
+
+  test("a record this build cannot read is held, never taken as no daemon", async () => {
+    const held = await verdict("unreadable", "1.5.0", silent)
+
+    expect(held.kind).toBe("held")
+    expect(held.kind === "held" && held.message).toContain("/data/daemon.json")
   })
 })

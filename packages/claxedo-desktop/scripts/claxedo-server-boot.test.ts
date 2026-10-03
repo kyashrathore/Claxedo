@@ -15,9 +15,9 @@ import {
 } from "../src/shared/claxedo-server-lifecycle"
 import { resolveDeferredServerEntry } from "./bundle-claxedo-server"
 import { daemonRecoveryBridge } from "../src/main/daemon-recovery"
-import { quitConfirmMessage, runningWork, stopPublishedDaemon } from "../src/main/daemon-quit"
+import { quitConfirmMessage, quitWork, releaseOrStopDaemon, stopPublishedDaemon } from "../src/main/daemon-quit"
 import { readClaxedoDaemonDiscovery } from "../src/main/server-daemon-discovery"
-import { holdClaxedoDaemonLease } from "../src/main/server-daemon-lease"
+import { daemonLeaseCount, holdClaxedoDaemonLease } from "../src/main/server-daemon-lease"
 import { localServerBundleEntry, requireLocalServerBundle } from "./local-server"
 
 // Boot-level coverage for the desktop server composition using the real bundle
@@ -370,7 +370,7 @@ test("a quiescent daemon exits after its bounded idle grace", async () => {
   }
 }, 30_000)
 
-test("a quit with a running terminal confirms it, then stops the daemon through its own stop", async () => {
+test("a quit leaves a daemon another app holds running; the last holder confirms its terminal and stops it", async () => {
   if (!fs.existsSync(SERVER_BUNDLE)) {
     console.warn("[skip] server bundle missing — run `bun run predev` first")
     return
@@ -413,7 +413,7 @@ test("a quit with a running terminal confirms it, then stops the daemon through 
     await waitForHealth(base, child, () => stderr)
     await waitForMessage(messages, (message) => parseClaxedoServerReadyMessage(message) !== null)
     const discovery = readClaxedoDaemonDiscovery(discoveryPath)
-    if (!discovery) throw new Error("the daemon published no discovery record")
+    if (typeof discovery !== "object") throw new Error("the daemon published no discovery record it can read")
     const daemon = createDaemonFetch({ endpoint: () => ({ origin: base, capability: daemonToken }) })
     expect((await daemon(`/api/claxedo/workspace/resolve?directory=${directory}`, { method: "POST" })).status).toBe(200)
     const created = await daemon(`/api/wr/pty?directory=${directory}`, {
@@ -423,17 +423,28 @@ test("a quit with a running terminal confirms it, then stops the daemon through 
     })
     expect(created.status).toBe(200)
     const lease = await holdClaxedoDaemonLease(discovery)
+    const otherApp = await holdClaxedoDaemonLease(discovery)
     const recovery = daemonRecoveryBridge({
       daemon: () => daemon,
       unresolved: () => undefined,
       ownershipView: () => undefined,
       onRecovered: () => {},
     })
-
-    expect(quitConfirmMessage(runningWork(await recovery.inspect()))).toBe("1 terminal is still working. Quitting stops it.")
     const signalled: unknown[] = []
-    await lease.stop()
-    await stopPublishedDaemon(discovery, recovery, (message, fields) => signalled.push({ message, ...fields }))
+    const log = (message: string, fields: Record<string, unknown>) => signalled.push({ message, ...fields })
+    const quit = (held: { stop: () => Promise<void> }) =>
+      releaseOrStopDaemon({ lease: held, stop: { daemon, run: () => stopPublishedDaemon(discovery, recovery, log) }, log })
+
+    expect(await quitWork(daemon, recovery)).toBeUndefined()
+    await quit(otherApp)
+    expect(signalled).toEqual([{ message: "other apps still hold the daemon; it keeps running", leases: 1 }])
+    signalled.length = 0
+    while ((await daemonLeaseCount(daemon)) !== 1) await Bun.sleep(20)
+    expect(child.exitCode).toBeNull()
+
+    const work = await quitWork(daemon, recovery)
+    expect(work && quitConfirmMessage(work)).toBe("1 terminal is still working. Quitting stops it.")
+    await quit(lease)
 
     expect(await Promise.race([exited.then(() => true), Bun.sleep(5_000).then(() => false)])).toBe(true)
     expect(signalled).toEqual([])
