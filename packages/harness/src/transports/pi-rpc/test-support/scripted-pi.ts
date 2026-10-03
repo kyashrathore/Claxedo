@@ -7,7 +7,7 @@ import { ScriptedProcess } from "../../../test-support/scripted-process"
 import { PiRpcTransport } from ".."
 import { PI_RANGE } from "../version"
 
-type Frame = { type: string; id?: string; message?: string; name?: string }
+type Frame = { type: string; id?: string; message?: string; name?: string; provider?: string; modelId?: string; level?: string }
 type Handoff = { file: string; mode: number; content: string }
 type Launch = { command: SpawnCommand; options: SpawnOptions; wire: ScriptedProcess<Frame>; handoffs: Handoff[] }
 
@@ -57,7 +57,8 @@ function versionProcess(version: string) {
 }
 
 export async function scriptedPi(input: { firstPartyMcp?: HarnessServices["firstPartyMcp"]; mcpUnloaded?: true;
-  onLaunch?: (launch: Launch) => void; version?: string; binary?: string } = {}) {
+  onLaunch?: (launch: Launch) => void; version?: string; binary?: string
+  respond?: (frame: Frame, launch: Launch) => unknown } = {}) {
   const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "pi-scripted-")))
   const directory = path.join(root, "work")
   await fs.mkdir(directory)
@@ -73,7 +74,11 @@ export async function scriptedPi(input: { firstPartyMcp?: HarnessServices["first
     const launch: Launch = { command, options, handoffs: [], wire: new ScriptedProcess<Frame>((frame) => {
       if (frame.type === "set_session_name") launch.wire.send({ type: "session_info_changed", name: frame.name?.trim() })
       if (frame.type === "prompt" && frame.message?.startsWith("/claxedo-title ")) launch.wire.send({ type: "session_info_changed", name: "Scripted title" })
-      if (frame.id) launch.wire.send({ type: "response", id: frame.id, command: frame.type, success: true, data: answer(frame, launch) })
+      if (!frame.id) return
+      const reply = (data: unknown) => launch.wire.send({ type: "response", id: frame.id, command: frame.type, success: true, data })
+      const scripted = input.respond?.(frame, launch)
+      if (scripted instanceof Promise) void scripted.then(reply)
+      else reply(scripted ?? answer(frame, launch))
     }) }
     launches.push(launch)
     if (!input.mcpUnloaded) loadMcpExtension(launch)

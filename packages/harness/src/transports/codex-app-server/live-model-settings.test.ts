@@ -36,3 +36,26 @@ test("live settings wait for turn startup, recover from native refusal, and leav
     expect(peer.spawned()).toBe(1)
   } finally { await peer.close() }
 })
+
+test("a turn whose start fails does not fail a live settings change, which still reaches future turns", async () => {
+  const peer = await scriptedTransport({ holdTurnStart: true, models: [
+    { model: "alpha", isDefault: true, defaultReasoningEffort: "low", supportedReasoningEfforts: [{ reasoningEffort: "low" }] },
+    { model: "beta", defaultReasoningEffort: "medium", supportedReasoningEfforts: [{ reasoningEffort: "medium" }, { reasoningEffort: "high" }] },
+  ] })
+  try {
+    const session = await peer.transport.start(peer.startInput, peer.liveBroker())
+    const turn: TurnInput = { turnId: "t1", userMessageId: "u1", assistantMessageId: "a1", todos: [],
+      origin: { actor: peer.startInput.owner, via: "loopback", reissued: false },
+      prompt: { agent: "codex", assistantMessageId: "a1", parts: [{ type: "text", text: "continue working" }] } }
+    const running = (async () => { for await (const _event of peer.transport.send(session, turn, { signal: new AbortController().signal } as TurnBroker)) {} })()
+    const failed = running.then(() => undefined, (error: unknown) => error)
+    await peer.started
+    const updating = peer.transport.config.setModelSettings!(session, { model: { providerID: "codex", modelID: "beta" }, effort: "high" })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    peer.releaseTurnStart("turn start refused")
+    expect(String(await failed)).toContain("turn start refused")
+    await updating
+    expect(peer.frames.some((frame) => frame.method === "turn/settings/update")).toBe(false)
+    expect(peer.frames.find((frame) => frame.method === "thread/settings/update")?.params).toEqual({ threadId: "thread-1", model: "beta", effort: "high" })
+  } finally { await peer.close() }
+})

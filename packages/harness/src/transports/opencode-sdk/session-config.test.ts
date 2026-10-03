@@ -29,3 +29,16 @@ test("draft previews use the resolved draft model", async () => {
 test("a preview without a current model does not resurrect the model saved at attachment", async () => {
   expect((await preview().options({ session: {} as HarnessSession }, "probe")).resolvedModel).toBeUndefined()
 })
+
+test("a live change without a model is refused rather than dropped", async () => {
+  const switched: unknown[] = []
+  const config = openCodeConfigOperations({
+    entry: () => ({ start: draft, scope, upstream: "upstream" }) as unknown as Entry,
+    targetScope: () => scope,
+    models: async () => [{ providerID: "proof", id: "current", name: "current", cost: [], variants: ["high"] }],
+    switchModel: async (_scope, _upstream, model) => { switched.push(model) },
+  })
+  await expect(config.setModelSettings!({} as HarnessSession, { effort: "high" })).rejects.toThrow("OpenCode requires a model")
+  await config.setModelSettings!({} as HarnessSession, { model: { providerID: "proof", modelID: "current" }, effort: null })
+  expect(switched).toEqual([{ providerID: "proof", modelID: "current" }])
+})

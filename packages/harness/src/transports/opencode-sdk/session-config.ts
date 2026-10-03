@@ -19,7 +19,7 @@ export function openCodeConfigOperations(host: OpenCodeConfigHost): ConfigOperat
     setModelSettings: async (session, settings) => {
       const entry = host.entry(session)
       const model = settings.model
-      if (!model) return
+      if (!model) throw new TransportError("opencode", "configuration", "OpenCode requires a model")
       assertProviderAvailable(entry.start, model.providerID)
       const models = await host.models(entry.scope, { session, model })
       const selected = models.find((row) => row.providerID === model.providerID && row.id === model.modelID)

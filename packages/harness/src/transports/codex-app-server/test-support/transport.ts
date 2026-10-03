@@ -59,9 +59,9 @@ export async function scriptedTransport(options: { holdTurnStart?: boolean; cloc
     if (violations.length) throw new AggregateError(violations, "The transport broke the Codex app-server protocol")
   }
   const latest = () => processes.at(-1)!
-  const releaseTurnStart = () => {
+  const releaseTurnStart = (error?: string) => {
     if (heldTurnStart === undefined) throw new Error("No held turn/start")
-    latest().wire.send({ id: heldTurnStart, result: { turn: { id: "turn-current" } } })
+    latest().wire.send(error ? { id: heldTurnStart, error: { code: -32603, message: error } } : { id: heldTurnStart, result: { turn: { id: "turn-current" } } })
   }
   const liveBroker = () => ({ rebind: async (upstreamSessionId: string) => Object.freeze({ sessionId: "s1", workspaceId: "w1", directory: root, connectionId: "codex-app-server", upstreamSessionId }), goal: { read: () => null, publish: async () => {} }, reportFailure: () => {} } as unknown as SessionBroker)
   return { root, environments, transport, startInput, started, frames, releaseTurnStart, liveBroker, close, healthChanges,

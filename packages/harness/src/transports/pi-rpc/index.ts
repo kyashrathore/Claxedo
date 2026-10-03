@@ -1,5 +1,5 @@
 import type { AdapterCancelOutcome, PromptModel, SessionTitleRequest, SteerResult } from "@claxedo/agent-runtime-contract"
-import { errorMessage } from "@claxedo/helpers"
+import { createKeyedSerializer, errorMessage } from "@claxedo/helpers"
 import type {
   AttachInput, ConfigApplied, ConfigTarget, Deadline, HarnessServices, HarnessSession, HarnessTransport,
   ModelSettings, RoutedEvent, SessionBroker, StartInput, TransportCapabilities, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef,
@@ -50,6 +50,7 @@ export class PiRpcTransport implements HarnessTransport {
   private readonly host: PiLaunchHost
   private readonly probes: PiDraftProbes
   private readonly losses: ProcessLosses
+  private readonly configControls = createKeyedSerializer<PiRpc>()
   private disposed = false
 
   constructor(private readonly services: HarnessServices, private readonly options: PiRpcOptions) {
@@ -104,27 +105,32 @@ export class PiRpcTransport implements HarnessTransport {
     return attachedSessionEntry(this.entries, session, () => new TransportError("pi", "session", "Pi session is not attached"))
   }
 
-  private async applyTurnConfig(entry: Entry, model: PromptModel | undefined, effort: string | null | undefined): Promise<void> {
-    if (model) await entry.rpc.request("set_model", piModelSelection(model))
-    if (!effort) return
-    await entry.rpc.request("set_thinking_level", { level: effort })
-    const kept = asString(asRecordOrEmpty(await entry.rpc.request("get_state")).thinkingLevel) || undefined
-    if (kept !== effort) {
-      throw new TransportError("pi", "configuration",
-        `Pi does not run ${model?.modelID ?? "its current model"} at thinking level ${effort}${kept ? `; it kept ${kept}` : ""}`)
-    }
+  private applyTurnConfig(entry: Entry, model: PromptModel | undefined, effort: string | null | undefined): Promise<void> {
+    return this.configControls.run(entry.rpc, async () => {
+      if (model) await entry.rpc.request("set_model", piModelSelection(model))
+      if (!effort) return
+      await entry.rpc.request("set_thinking_level", { level: effort })
+      const kept = asString(asRecordOrEmpty(await entry.rpc.request("get_state")).thinkingLevel) || undefined
+      if (kept !== effort) {
+        throw new TransportError("pi", "configuration",
+          `Pi does not run ${model?.modelID ?? "its current model"} at thinking level ${effort}${kept ? `; it kept ${kept}` : ""}`)
+      }
+    })
   }
 
   private async applyModelSettings(entry: Entry, settings: ModelSettings): Promise<void> {
     const model = settings.model
+    if (!model) throw new TransportError("pi", "configuration", "Pi requires a model")
+    piModelSelection(model)
     const catalog = await this.probes.catalog(entry.start, model, "probe")
-    if (model && !catalog.models.some((row) => row.id === model.modelID)) {
+    if (!catalog.models.some((row) => row.id === model.modelID)) {
       throw new TransportError("pi", "configuration", `Pi does not offer model ${model.modelID}`)
     }
-    if (settings.effort && !catalog.efforts.includes(settings.effort)) {
-      throw new TransportError("pi", "configuration", `Pi does not offer thinking level ${settings.effort} for this model`)
+    const effort = settings.effort ?? catalog.current?.effort
+    if (effort && !catalog.efforts.includes(effort)) {
+      throw new TransportError("pi", "configuration", `Pi does not offer thinking level ${effort} for this model`)
     }
-    try { await this.applyTurnConfig(entry, settings.model, settings.effort) }
+    try { await this.applyTurnConfig(entry, model, effort) }
     catch (cause) { throw new TransportError("pi", "configuration", `Pi refused the model or effort change: ${errorMessage(cause)}`, { cause }) }
   }
 

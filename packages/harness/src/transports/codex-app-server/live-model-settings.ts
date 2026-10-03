@@ -9,8 +9,8 @@ import type { v2 } from "./translate"
 export async function applyCodexModelSettings(entry: Entry, requested: ModelSettings, models: readonly CodexModel[]): Promise<void> {
   const settings = codexTurnSettings(models, { model: requested.model?.modelID, effort: requested.effort })
   const turn = entry.turn
-  if (turn) await turn.started
-  const turnId = entry.turn === turn && !turn?.closing ? turn?.id : undefined
+  const started = turn ? await turn.started.then(() => true, () => false) : false
+  const turnId = started && entry.turn === turn && !turn?.closing ? turn?.id : undefined
   const activeId = turnId ?? entry.providerTurn?.id
   const params: v2.ThreadSettingsUpdateParams = { threadId: entry.session.binding.upstreamSessionId,
     model: settings.model ?? null, effort: settings.effort ?? null }
