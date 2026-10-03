@@ -46,15 +46,16 @@ const ENTRIES = [
   // identity helpers as modules of their own (`d1/workspace-authority-error.ts`,
   // `d1/owner-identity.ts`), and the machine session-row ingest's reader lookup
   // for status notices (`d1/session-status-notices.ts`), and the live-sync
-  // room's nudge admission (`hosted-workerd/live-sync-admission.ts`).
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 122, packages: 19 },
+  // room's nudge admission and replay-gap frame
+  // (`hosted-workerd/live-sync-admission.ts`, `live-sync-replay-gap.ts`).
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 123, packages: 19 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
   // plus `agent-plugins/signed-scope.ts`, the caller and write guard the
   // activation and source stores share.
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 172, packages: 23 },
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 177, packages: 23 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 173, packages: 23 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 178, packages: 23 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

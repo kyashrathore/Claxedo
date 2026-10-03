@@ -72,8 +72,9 @@ export const serverWorkerd: Policy = {
   // The machine session-row ingest finds who hears a changed session's status
   // through its own module (`authority/adapters/d1/session-status-notices.ts`),
   // and the live-sync room admits a publisher's nudge through
-  // `deployments/hosted-workerd/live-sync-admission.ts`.
-  ceilings: { modules: 122, packages: 19 },
+  // `deployments/hosted-workerd/live-sync-admission.ts` and writes its
+  // replay-gap frame from `live-sync-replay-gap.ts`.
+  ceilings: { modules: 123, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
