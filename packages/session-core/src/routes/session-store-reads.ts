@@ -47,7 +47,9 @@ export function storeSessionRoutes(input: StoreSessionRoutesInput) {
     childSessions: {
       admit: input.subagentAdmission,
       deriveSessionId: input.deriveChildSessionId,
-      pendingWakes: () => store().listPendingSubagentWakes(),
+      pendingWakes: (parentSessionId) => store().listPendingSubagentWakes(parentSessionId),
+      wakeParents: () => store().listSubagentWakeParents(),
+      turnReply: (sessionId, turnId) => store().turnReply(sessionId, turnId),
       origins: {
         record: (parentSessionId, subagentKey, origin) => store().recordSubagentOrigin(parentSessionId, subagentKey, origin),
         read: (parentSessionId, subagentKey) => store().subagentOrigin(parentSessionId, subagentKey),

@@ -23,6 +23,7 @@ import type { SessionRequestIdentity } from "../session-access-policy"
 
 type RelayIdentity = SessionRequestIdentity & { principal_kind: "user" | "service" }
 import { SessionRoutes } from "./session"
+import { queuedPromptStore } from "./session-store-reads"
 
 const DIRECTORY = TEST_SESSION_ROUTES_DIRECTORY
 const CODEX: SessionHarness = { id: "codex", access: "native" }
@@ -81,6 +82,10 @@ function fixture(input: {
   read?: (row: AgentSession, calls: { prompts: readonly unknown[] }) => AgentSession | null
   /** The harness refuses to be read once a turn this names has run, so the next turn fails before it starts. */
   failAfterTurnOf?: (sessionId: string) => boolean
+  /** Compose the store's durable prompt queue, which steered input is delivered through. */
+  queue?: true
+  /** Subagent admission refuses every report that a child turn started running. */
+  refuseRunning?: true
 } = {}) {
   const origins = new Map<string, SessionTurnOrigin>()
   const seeded = new Set<string>()
@@ -97,6 +102,9 @@ function fixture(input: {
     session: async () => ({ modes: [...MODES], currentModeId: input.parentMode ?? "read-only", appliesFrom: "next-turn" }),
   }
   const replies = new Map<string, string>()
+  /** Sessions whose turn writes a first reply, then waits for a steered prompt and answers it, ending as named. */
+  const steered = new Map<string, "finish" | "error">()
+  const steers = new Map<string, (messageId: string) => void>()
   const held = new Map<string, () => void>()
   const holding = new Set<string>()
   let failing = false
@@ -117,10 +125,23 @@ function fixture(input: {
         ...(turn.prompt.author ? { author: turn.prompt.author } : {}),
       })
       if (holding.has(sessionId)) await new Promise<void>((resolve) => { held.set(sessionId, resolve) })
+      const ending = steered.get(sessionId)
+      if (ending) {
+        yield { type: "text-delta", delta: "Before the steer" }
+        yield { type: "input-incorporated", messageId: await new Promise<string>((resolve) => { steers.set(sessionId, resolve) }) }
+      }
       const reply = replies.get(sessionId)
       if (reply) yield { type: "text-delta", delta: reply }
+      if (ending === "error") {
+        yield { type: "error", error: "provider went away" }
+        return
+      }
       if (input.failAfterTurnOf?.(sessionId)) failing = true
       yield { type: "finish", sessionId }
+    },
+    steer: async (session, _turn, input) => {
+      steers.get(session.binding.sessionId)?.(input.userMessageId)
+      return { ok: true }
     },
     cancel: async ({ session }) => {
       calls.aborted.push(session.binding.sessionId)
@@ -150,11 +171,17 @@ function fixture(input: {
     },
     getMessages: ({ sessionId }) => store.getMessages(sessionId),
     listSubagents: ({ parentSessionId }) => store.listSubagents(parentSessionId),
+    ...(input.queue ? { queuedPrompts: () => queuedPromptStore(store) } : {}),
     afterUpdateSession: ({ sessionId, updates }) => { store.updateSession(sessionId, updates) },
     childSessions: {
-      admit: (parentSessionId, observation) => runtime.subagents.admit(parentSessionId, observation),
+      admit: async (parentSessionId, observation) => {
+        if (input.refuseRunning && observation.status === "running") throw new Error("subagent admission is unavailable")
+        return runtime.subagents.admit(parentSessionId, observation)
+      },
       deriveSessionId: (input.deriveSessionId ?? ((identity) => hmacChildSessionId("route-test-secret", identity))),
-      pendingWakes: () => store.listPendingSubagentWakes(),
+      pendingWakes: (parentSessionId) => store.listPendingSubagentWakes(parentSessionId),
+      wakeParents: () => store.listSubagentWakeParents(),
+      turnReply: (sessionId, turnId) => store.turnReply(sessionId, turnId),
       origins: {
         record: (parent, key, origin) => {
           if (!origins.has(`${parent}\0${key}`)) origins.set(`${parent}\0${key}`, origin)
@@ -192,7 +219,7 @@ function fixture(input: {
     })
   const hold = (sessionId: string) => { holding.add(sessionId) }
   const release = (sessionId: string) => { holding.delete(sessionId); held.get(sessionId)?.() }
-  return { app, store, runtime, origins, calls, runtimeEvents, globalEvents, seedParent, create, prompt, replies, surface, hold, release }
+  return { app, store, runtime, origins, calls, runtimeEvents, globalEvents, seedParent, create, prompt, replies, steered, steers, surface, hold, release }
 }
 
 /** The id the parent's completion wake carries: the child's turn's assistant message names it. */
@@ -575,6 +602,50 @@ describe("POST /session with parentID", () => {
     expect(wakes[0]?.text).toContain("First result")
     expect(wakes[1]?.text).toContain("Second result")
     expect(item.store.listSubagents("parent")[0]).toMatchObject({ status: "completed", wake: "delivered" })
+  })
+
+  for (const ending of ["finish", "error"] as const) test(`a steered child turn wakes the parent with the reply it ended in (${ending})`, async () => {
+    const item = fixture({ queue: true })
+    await item.seedParent("parent")
+    const child = await (await item.create({ parentID: "parent", title: "Consult" })).json() as { id: string }
+    item.steered.set(child.id, ending)
+    item.replies.set(child.id, "After the steer")
+    const opened = item.prompt(child.id, { messageID: "child-turn", parts: [{ type: "text", text: "Review the plan" }] })
+    while (!item.steers.has(child.id)) await settle()
+    const steer = await item.prompt(child.id, { messageID: "child-steer", delivery: "steer", parts: [{ type: "text", text: "Check the tests too" }] })
+    expect(await steer.json()).toMatchObject({ delivery: "steer" })
+    await opened
+    await settle()
+
+    const wakes = item.calls.prompts.filter((turn) => turn.sessionId === "parent")
+    expect(wakes).toHaveLength(1)
+    expect(wakes[0]?.messageID).toBe(wakeTurnFor(child.id, "child-steer"))
+    expect(wakes[0]?.text).toContain("After the steer")
+    expect(wakes[0]?.text).not.toContain("Before the steer")
+    expect(wakes[0]?.text).toContain(ending === "error" ? '(codex) failed.' : '(codex) completed.')
+    expect(item.store.listSubagents("parent")[0]).toMatchObject({ status: ending === "error" ? "failed" : "completed", wake: "delivered" })
+  })
+
+  test("a child turn whose start bookkeeping fails still runs to its end before the parent is woken", async () => {
+    const item = fixture({ refuseRunning: true })
+    await item.seedParent("parent")
+    const child = await (await item.create({ parentID: "parent", title: "Consult" })).json() as { id: string }
+    item.replies.set(child.id, "Ship it.")
+    item.hold(child.id)
+    const turn = item.prompt(child.id, { messageID: "child-turn", parts: [{ type: "text", text: "Review the plan" }] })
+    while (!item.calls.prompts.some((prompt) => prompt.sessionId === child.id)) await settle()
+    await settle()
+    expect(item.calls.prompts.filter((prompt) => prompt.sessionId === "parent")).toEqual([])
+    item.release(child.id)
+
+    const response = await turn
+    await settle()
+    expect(response.status).toBe(200)
+    expect(item.calls.aborted).toEqual([])
+    expect(item.globalEvents.some(({ payload }) => payload.type === "session.error")).toBe(false)
+    expect(item.calls.prompts.filter((prompt) => prompt.sessionId === "parent")).toMatchObject([
+      { messageID: wakeTurnFor(child.id, "child-turn"), text: 'Subagent "Consult" (codex) completed.\n\nShip it.' },
+    ])
   })
 
   test("a parent that does not exist is a 404 and a missing host is a 501", async () => {
@@ -1066,7 +1137,10 @@ describe("a background turn a managed host refuses", () => {
       observationId: "create", subagentKey: "subagent_wake", status: "pending", providerKind: "claxedo",
       providerId: "child", childSessionId: "child", transcript: { kind: "live" },
     })
-    await runtime.subagents.admit("parent", { observationId: "finished", subagentKey: "subagent_wake", status: "completed", wake: "pending" })
+    await runtime.subagents.admit("parent", {
+      observationId: "finished", subagentKey: "subagent_wake", status: "completed",
+      wakeResult: { status: "completed", text: "", assistantMessageId: "child-reply" },
+    })
     const { policy, calls } = managedPolicy({
       turnAllowed: () => true,
       ...(input.requireActor === false ? { requireActor: false } : {}),
@@ -1098,13 +1172,12 @@ describe("a background turn a managed host refuses", () => {
         },
         listSubagents: ({ parentSessionId }) => store.listSubagents(parentSessionId),
         getSession: ({ sessionId }) => (sessionId === "parent" ? store.getSession("parent") ?? null : child),
-        getMessages: ({ sessionId }) => sessionId === "child"
-          ? [{ info: { id: "child-reply", role: "assistant" as const, sessionID: "child" }, parts: [] }] as never
-          : store.getMessages(sessionId),
         childSessions: {
           admit: (parentSessionId, observation) => runtime.subagents.admit(parentSessionId, observation),
           deriveSessionId: (identity) => hmacChildSessionId("wake-only-secret", identity),
-          pendingWakes: () => [{ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY }],
+          pendingWakes: (parentSessionId) => store.listPendingSubagentWakes(parentSessionId),
+          wakeParents: () => store.listSubagentWakeParents(),
+          turnReply: (sessionId, turnId) => store.turnReply(sessionId, turnId),
           origins: {
             record: () => {},
             read: async () => {

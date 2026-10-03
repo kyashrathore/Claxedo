@@ -168,7 +168,6 @@ function observationEventInput(observation: SubagentObservation) {
     ...(observation.childSessionId ? { childSessionId: observation.childSessionId } : {}),
     ...(observation.transcript ? { transcript: observation.transcript } : {}),
     ...(observation.attention !== undefined ? { attention: observation.attention } : {}),
-    ...(observation.wake ? { wake: observation.wake } : {}),
   }
 }
 

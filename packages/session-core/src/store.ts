@@ -1,7 +1,7 @@
 import { SessionAuthoringOwnership } from "./session/authoring-ownership"
 import type { TurnOutline, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { readTurnOutline } from "./session/turn-outline"
-import { readTurnEvidence, readUpstreamHasTurns } from "./session/turn-evidence"
+import { readTurnEvidence, readTurnReply, readTurnReplyId, readUpstreamHasTurns } from "./session/turn-evidence"
 import type { SessionConfig, SessionConfigUpdate, SessionHandoff, SessionHandoffSource, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { recoveryScopeKey, recoveryTargetSessionId, decodeMessagePageCursor, encodeMessagePageCursor, AgentMessagePageError, type AgentMessagePage, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
 import { AGENT_MESSAGE_PAGE_LIMIT, projectLatestSurfaceMessages, type AgentTurnCoverage, type AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
@@ -32,8 +32,9 @@ import type { SqliteDatabase } from "./sqlite/database"
 import { openRuntimeStoreSchema } from "./store-schema"
 import type { SessionTurnOrigin } from "./session-access-policy"
 import { actorKind, nullable } from "./stored-columns"
-import { observationStartsNewRun, subagentRunRevision, subagentStatusAdvances } from "./subagent-status"
-import { pendingSubagentWakes, subagentWakeAfterReceipt } from "./subagent-wakes"
+import { listSubagentRows, persistSubagentEvent } from "./subagent-rows"
+import { observationStartsNewRun, recordSubagentRun, subagentRunRevision } from "./subagent-status"
+import { pendingSubagentWakes, recordSubagentWake, runningHostChildren, subagentWakeParents } from "./subagent-wakes"
 import { buildAssistantMessage, buildUserMessage, buildUserPromptParts, messageCompleted, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionStatus } from "./projection/presentation-events"
 
 export const SESSION_INTERRUPTED = "The agent runtime restarted. Send a message to continue the interrupted work."
@@ -738,8 +739,11 @@ export class RuntimeStore {
         const startsNewRun = observationStartsNewRun(input.observation, freshKeys)
         const runRevision = startsNewRun ? admitted.event.revision : subagentRunRevision(this.db, input.parentSessionId, admitted.event.subagentKey, input.observation)
         if (runRevision !== undefined) admitted.event.runRevision = runRevision
-        if (input.observation.wakeReceipt) admitted.event.wake = subagentWakeAfterReceipt(this.db, input.parentSessionId, admitted.event.subagentKey, input.observation.wakeReceipt)
-        this.persistSubagentEvent(input.parentSessionId, admitted.event, startsNewRun)
+        const wake = recordSubagentWake(this.db, input.parentSessionId, admitted.event, input.observation)
+        if (wake) admitted.event.wake = wake
+        persistSubagentEvent(this.db, input.parentSessionId, admitted.event, startsNewRun)
+        if (startsNewRun) recordSubagentRun(this.db, input.parentSessionId, admitted.event.subagentKey, freshKeys, admitted.event.revision)
+        const { wakeResult: _result, ...replayed } = input.observation
         this.db
           .prepare(
             `
@@ -754,13 +758,13 @@ export class RuntimeStore {
             input.observation.observationId,
             admitted.event.subagentKey,
             admitted.event.revision,
-            // Persist the EFFECTIVE observation — with the child session the
-            // admission layer resolved or allocated stamped in — so hydrate's
-            // replay rebuilds the same child binding this admit produced. The
-            // raw input may lack the child (admission allocated it), and a
-            // replay without it would forget which row owns the child session.
+            // Persist what hydrate replays: the observation with the child
+            // session admission resolved or allocated stamped in, since a raw
+            // input may lack it and a replay without it would forget which row
+            // owns the child. Its wake result is not replayed; the wake table
+            // holds it until delivery.
             JSON.stringify({
-              ...input.observation,
+              ...replayed,
               ...(admitted.event.childSessionId ? { childSessionId: admitted.event.childSessionId } : {}),
             }),
             JSON.stringify(admitted.event),
@@ -789,58 +793,15 @@ export class RuntimeStore {
   }
 
   listSubagents(parentSessionId: string) {
-    const rows = this.db
-      .prepare<Record<string, string | number | null>>(
-        `
-      SELECT *
-      FROM session_subagent
-      WHERE parent_session_id = ?
-      ORDER BY created_at, subagent_key
-    `,
-      )
-      .all(parentSessionId)
-    const edges = this.db
-      .prepare<{
-      subagent_key: string
-      tool_call_id: string
-      role: "spawn" | "interaction"
-      revision: number
-    }>(
-        `
-      SELECT subagent_key, tool_call_id, role, revision
-      FROM session_subagent_tool_call
-      WHERE parent_session_id = ?
-      ORDER BY created_at, tool_call_id
-    `,
-      )
-      .all(parentSessionId)
-    return rows.map((row) => ({
-      parentSessionId,
-      subagentKey: String(row.subagent_key),
-      revision: Number(row.revision),
-      runRevision: subagentRunRevision(this.db, parentSessionId, String(row.subagent_key)),
-      ...(row.mode ? { mode: String(row.mode) } : {}),
-      ...(row.status ? { status: String(row.status) } : {}),
-      ...(row.label ? { label: String(row.label) } : {}),
-      ...(row.subagent_type ? { subagentType: String(row.subagent_type) } : {}),
-      ...(row.description ? { description: String(row.description) } : {}),
-      ...(row.provider_kind ? { providerKind: String(row.provider_kind) } : {}),
-      ...(row.provider_id ? { providerId: String(row.provider_id) } : {}),
-      ...(row.child_session_id ? { childSessionId: String(row.child_session_id) } : {}),
-      ...(typeof row.attention === "number" ? { attention: row.attention } : {}),
-      ...(row.wake ? { wake: String(row.wake) } : {}),
-      transcript: {
-        kind: String(row.transcript_kind),
-        ...(row.transcript_ref ? { ref: String(row.transcript_ref) } : {}),
-      },
-      toolCallEdges: edges
-        .filter((edge) => edge.subagent_key === row.subagent_key)
-        .map((edge) => ({ toolCallId: edge.tool_call_id, role: edge.role, revision: edge.revision })),
-    }))
+    return listSubagentRows(this.db, parentSessionId)
   }
 
-  listPendingSubagentWakes() {
-    return pendingSubagentWakes(this.db)
+  listPendingSubagentWakes(parentSessionId: string) {
+    return pendingSubagentWakes(this.db, parentSessionId)
+  }
+
+  listSubagentWakeParents() {
+    return subagentWakeParents(this.db)
   }
 
   /**
@@ -952,127 +913,17 @@ export class RuntimeStore {
     }
   }
 
-  private persistSubagentEvent(parentSessionId: string, event: SubagentUpdatedEvent, startsNewRun: boolean) {
-    const now = Date.now()
-    this.db
-      .prepare(
-        `
-      INSERT OR IGNORE INTO session_subagent (
-        parent_session_id, subagent_key, revision, status, transcript_kind, created_at, updated_at
-      ) VALUES (?, ?, 0, 'pending', 'none', ?, ?)
-    `,
-      )
-      .run(parentSessionId, event.subagentKey, now, now)
-    this.db
-      .prepare(
-        `
-      UPDATE session_subagent
-      SET revision = MAX(revision, ?), updated_at = ?
-      WHERE parent_session_id = ? AND subagent_key = ?
-    `,
-      )
-      .run(event.revision, now, parentSessionId, event.subagentKey)
-    for (const [field, column] of [
-      ["mode", "mode"],
-      ["label", "label"],
-      ["subagentType", "subagent_type"],
-      ["description", "description"],
-      ["attention", "attention"],
-      ["wake", "wake"],
-    ] as const) {
-      const value = event[field]
-      if (value === undefined) continue
-      this.db
-        .prepare(
-          `
-        UPDATE session_subagent
-        SET ${column} = ?, ${column}_revision = ?
-        WHERE parent_session_id = ? AND subagent_key = ? AND ${column}_revision < ?
-      `,
-        )
-        .run(value, event.revision, parentSessionId, event.subagentKey, event.revision)
-    }
-    if (event.status !== undefined && (event.runRevision === undefined || event.runRevision >= (subagentRunRevision(this.db, parentSessionId, event.subagentKey) ?? 0))) {
-      const current = requireRow(
-        this.db
-          .prepare<{ status: string; status_revision: number }>(
-            `
-        SELECT status, status_revision
-        FROM session_subagent
-        WHERE parent_session_id = ? AND subagent_key = ?
-      `,
-          )
-          .get(parentSessionId, event.subagentKey),
-        "session_subagent",
-      )
-      if (subagentStatusAdvances(current, { status: event.status, revision: event.revision }, startsNewRun)) {
-        this.db
-          .prepare(
-            `
-          UPDATE session_subagent
-          SET status = ?, status_revision = MAX(status_revision, ?)
-          WHERE parent_session_id = ? AND subagent_key = ?
-        `,
-          )
-          .run(event.status, event.revision, parentSessionId, event.subagentKey)
-      }
-      if (event.revision > current.status_revision) {
-        this.db
-          .prepare(
-            `
-          UPDATE session_subagent
-          SET status_revision = ?
-          WHERE parent_session_id = ? AND subagent_key = ?
-        `,
-          )
-          .run(event.revision, parentSessionId, event.subagentKey)
-      }
-    }
-    for (const [field, column] of [
-      ["providerKind", "provider_kind"],
-      ["providerId", "provider_id"],
-      ["childSessionId", "child_session_id"],
-    ] as const) {
-      const value = event[field]
-      if (value === undefined) continue
-      this.db
-        .prepare(
-          `
-        UPDATE session_subagent
-        SET ${column} = ?, ${column}_revision = ?
-        WHERE parent_session_id = ? AND subagent_key = ? AND ${column} IS NULL
-      `,
-        )
-        .run(value, event.revision, parentSessionId, event.subagentKey)
-    }
-    if (event.transcript) {
-      this.db
-        .prepare(
-          `
-        UPDATE session_subagent
-        SET transcript_kind = ?, transcript_ref = ?, transcript_revision = ?
-        WHERE parent_session_id = ? AND subagent_key = ? AND transcript_revision < ?
-      `,
-        )
-        .run(
-          event.transcript.kind,
-          event.transcript.ref ?? null,
-          event.revision,
-          parentSessionId,
-          event.subagentKey,
-          event.revision,
-        )
-    }
-    if (event.toolCallId && event.toolCallRole) {
-      this.db
-        .prepare(
-          `
-        INSERT OR IGNORE INTO session_subagent_tool_call (
-          parent_session_id, subagent_key, tool_call_id, role, revision, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?)
-      `,
-        )
-        .run(parentSessionId, event.subagentKey, event.toolCallId, event.toolCallRole, event.revision, now)
+  /** A host child's run that ended with the previous runtime owes its parent an interrupted result. */
+  private interruptHostChildRuns() {
+    for (const run of runningHostChildren(this.db)) {
+      const observationId = `host:restart:${run.subagentKey}:${run.revision}`
+      const result = { status: "interrupted" as const, text: SESSION_INTERRUPTED, ...(run.assistantMessageId ? { assistantMessageId: run.assistantMessageId } : {}) }
+      this.admit({
+        parentSessionId: run.parentSessionId,
+        observation: { observationId, subagentKey: run.subagentKey, status: "interrupted", ...(run.parentArchived ? {} : { wakeResult: result }) },
+        allocateKey: () => run.subagentKey,
+      })
+      this.markPublished(run.parentSessionId, observationId)
     }
   }
 
@@ -1319,6 +1170,7 @@ export class RuntimeStore {
     this.turnLeases.clear()
     this.deliveryQueue.settleOrphanedDispatches()
     this.interruptPreviousSessions()
+    this.interruptHostChildRuns()
   }
 
   putWorktree(record: WorkspaceWorktreeRecord) {
@@ -1967,6 +1819,7 @@ export class RuntimeStore {
 
   private deleteSessionProjection(id: string) {
     this.db.prepare("DELETE FROM session_subagent_observation WHERE parent_session_id = ?").run(id)
+    this.db.prepare("DELETE FROM session_subagent_wake WHERE parent_session_id = ?").run(id)
     this.db.prepare("DELETE FROM session_subagent_correlation WHERE parent_session_id = ?").run(id)
     this.db.prepare("DELETE FROM session_subagent_tool_call WHERE parent_session_id = ?").run(id)
     this.db.prepare("DELETE FROM session_subagent WHERE parent_session_id = ?").run(id)
@@ -2728,21 +2581,10 @@ export class RuntimeStore {
     })
   }
 
-  /**
-   * The reply a turn is writing now, when the turn has opened one after its
-   * first: a harness step or a steered prompt continues the turn in a new
-   * reply, and the turn's outcome belongs on the reply it ended in.
-   */
   private latestReplySegment(sessionId: string, turnStartSeq: number) {
-    const row = this.db.prepare<{ info_json: string }>(`
-      SELECT json_extract(payload_json, '$.properties.info') AS info_json FROM runtime_journal
-      WHERE session_id = ? AND seq > ? AND kind = 'event' AND type = 'message.updated'
-        AND json_extract(payload_json, '$.properties.info.role') = 'assistant'
-      ORDER BY seq DESC
-      LIMIT 1
-    `).get(sessionId, turnStartSeq)
-    const info = row ? readColumn.messageInfo(row.info_json) : undefined
-    return info?.role === "assistant" ? info : undefined
+    const reply = readTurnReply(this.db, sessionId, turnStartSeq)
+    const message = reply ? readColumn.messageInfo(reply.info_json) : undefined
+    return message?.role === "assistant" ? message : undefined
   }
 
   private hasMessageCompleted(sessionId: string, messageId: string) {
@@ -3635,6 +3477,15 @@ export class RuntimeStore {
 
   turnEvidence(sessionId: string, turnId: string) {
     return readTurnEvidence(this.db, sessionId, turnId)
+  }
+
+  /** The message one turn's outcome belongs to; either of the turn's message ids names it. */
+  turnReply(sessionId: string, turnId: string): AgentMessage | undefined {
+    this.settleDeltas(sessionId)
+    const replyId = readTurnReplyId(this.db, sessionId, turnId)
+    if (!replyId) return undefined
+    const rows = this.db.prepare<MessageProjectionRow>("SELECT id, ord, info_json FROM message WHERE session_id = ? AND id = ?").all(sessionId, replyId)
+    return this.hydrateMessages(sessionId, rows)[0]
   }
 
   upstreamHasTurns(sessionId: string, upstreamSessionId: string) {

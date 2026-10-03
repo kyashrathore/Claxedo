@@ -7,7 +7,7 @@ import { publishTurnFailure } from "./session-prompt-admission"
 import type { SessionRouteContext } from "./session-route-options"
 import type { SessionStatusSnapshot } from "./session-status-snapshot"
 import { captureTurnTarget, containLostTurn } from "./session-turn-containment"
-import { createChildSessionHost, type ChildOriginStore, type ChildSessionHost, type PendingChildWake } from "./session-children"
+import { createChildSessionHost, type ChildOriginStore, type ChildSessionHost, type ChildSessionHostInput } from "./session-children"
 import type { AttachmentReader } from "./tool-image"
 import { createSessionDeliveryOwner, type SessionDeliveryStore } from "../session/delivery-owner"
 import type { TurnOutline } from "@claxedo/agent-runtime-contract"
@@ -85,13 +85,16 @@ export type SessionRoutesOptions = {
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
   /**
    * Host-owned child sessions (`POST /session` with `parentID`). The host
-   * lends its subagent admission, keyed identity derivation and the
-   * durable pending-wake list; the routes own the rest.
+   * lends its subagent admission, keyed identity derivation, durable
+   * pending wakes and the reply each child turn ended in; the routes own the
+   * rest.
    */
   childSessions?: {
     admit: (parentSessionId: string, observation: SubagentObservation) => Promise<SubagentUpdatedEvent>
     deriveSessionId: ChildSessionHost["deriveSessionId"]
-    pendingWakes: () => PendingChildWake[] | Promise<PendingChildWake[]>
+    pendingWakes: ChildSessionHostInput["pendingWakes"]
+    wakeParents: ChildSessionHostInput["wakeParents"]
+    turnReply: ChildSessionHostInput["turnReply"]
     origins?: ChildOriginStore
   }
   /**
@@ -125,14 +128,15 @@ export type SessionRoutesOptions = {
 
 export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: SessionRoutesOptions) {
   const eventHub = options.eventHub ?? createRuntimeEventHub()
-  const childSessions = options.childSessions && options.listSubagents && options.getSession && options.getMessages
+  const childSessions = options.childSessions && options.listSubagents && options.getSession
     ? createChildSessionHost({
         admit: options.childSessions.admit,
         deriveSessionId: options.childSessions.deriveSessionId,
         pendingWakes: options.childSessions.pendingWakes,
+        wakeParents: options.childSessions.wakeParents,
+        turnReply: options.childSessions.turnReply,
         listSubagents: (parentSessionId, directory) => options.listSubagents!({ directory, parentSessionId }),
         getSession: (sessionId, directory) => options.getSession!({ directory, sessionId }),
-        getMessages: (sessionId, directory) => options.getMessages!({ directory, sessionId }),
         subscribeGlobal: eventHub.subscribeGlobal,
         ...(options.childSessions.origins ? { origins: options.childSessions.origins } : {}),
         startTurn: ({ parentSessionId, ...rest }) => startHostTurn({ sessionId: parentSessionId, ...rest }),
@@ -299,7 +303,8 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
         .then(async () => {
           if (actualDelivery !== "start" || lease?.lost()) return
           await options.flushSessionDocuments?.(input.sessionId).catch((error) => console.error("queued turn document flush failed", error))
-          if (!input.onSettled) await childSessions?.onTurnSettled(input.sessionId, input.directory, lostTurn.get()?.turnId)
+          const turnId = lostTurn.get()?.turnId
+          if (!input.onSettled && turnId) await childSessions?.onTurnSettled(input.sessionId, input.directory, turnId)
         })
         .finally(() => lease?.release())
         .then(() => input.onSettled?.(), (error: unknown) => {

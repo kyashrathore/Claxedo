@@ -75,7 +75,7 @@ export type SubagentObservation = {
   childSessionId?: string
   transcript?: SubagentTranscript
   attention?: number
-  wake?: SubagentWake
+  /** The finished run's outcome, owed to the parent until a `wakeReceipt` names this observation. */
   wakeResult?: { status: SubagentStatus; text: string; assistantMessageId?: string }
   wakeReceipt?: string
 }

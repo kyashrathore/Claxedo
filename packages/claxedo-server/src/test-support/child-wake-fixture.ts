@@ -105,14 +105,18 @@ export function runtimeStoreRoot(root: string) {
   return path.join(root, "runtime")
 }
 
-/** The rows `onTurnSettled` writes when the child's turn ends: finished, and its parent owed a wake. */
-export function admitFinishedChild(store: RuntimeStore, subagentKey: string) {
+/**
+ * The rows `onTurnSettled` writes when the child's turn ends: finished, and
+ * its parent owed the child's reply. Each `observationId` records the reply
+ * as owed once more.
+ */
+export function admitFinishedChild(store: RuntimeStore, subagentKey: string, observationId = "finished") {
   store.admit({
     parentSessionId: PARENT,
-    observation: { observationId: "finished", subagentKey, status: "completed", wake: "pending" },
+    observation: { observationId, subagentKey, status: "completed", wakeResult: { status: "completed", text: "Ship it.", assistantMessageId: REPLY } },
     allocateKey: () => "unused",
   })
-  store.markPublished(PARENT, "finished")
+  store.markPublished(PARENT, observationId)
 }
 
 /**
@@ -206,14 +210,11 @@ export async function wakeRuntime(store: RuntimeStore, options: { holdParent?: b
   }
 }
 
-/** What a host lends the session routes out of its store, plus the child's one reply. */
-export function storeBackedHostOptions(store: RuntimeStore): Pick<HostOptions, "listSubagents" | "getSession" | "getMessages" | "childSessions"> {
+/** What a host lends the session routes out of its store. */
+export function storeBackedHostOptions(store: RuntimeStore): Pick<HostOptions, "listSubagents" | "getSession" | "childSessions"> {
   return {
     listSubagents: ({ parentSessionId }) => store.listSubagents(parentSessionId),
     getSession: ({ sessionId }) => store.getSession(sessionId),
-    getMessages: ({ sessionId }) => (sessionId === CHILD
-      ? [{ info: { id: REPLY, role: "assistant", sessionID: CHILD }, parts: [{ id: "p1", sessionID: CHILD, messageID: REPLY, type: "text", text: "Ship it." }] }]
-      : []),
     childSessions: {
       admit: async (parentSessionId, observation) => {
         const admitted = store.admit({ parentSessionId, observation, allocateKey: () => randomUUID() })
@@ -221,7 +222,9 @@ export function storeBackedHostOptions(store: RuntimeStore): Pick<HostOptions, "
         return admitted.event
       },
       deriveSessionId: (input) => deriveChildSessionId(store.runtimeSecret("child-session"), input),
-      pendingWakes: () => store.listPendingSubagentWakes(),
+      pendingWakes: (parentSessionId) => store.listPendingSubagentWakes(parentSessionId),
+      wakeParents: () => store.listSubagentWakeParents(),
+      turnReply: (sessionId, turnId) => store.turnReply(sessionId, turnId),
       origins: {
         record: (parent, key, origin) => store.recordSubagentOrigin(parent, key, origin),
         read: (parent, key) => store.subagentOrigin(parent, key),

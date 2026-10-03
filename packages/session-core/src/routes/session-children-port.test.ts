@@ -9,8 +9,8 @@ test("child identity comes from the host's durable keyed identity port", () => {
       return "ses_authoritative"
     },
     admit: async () => { throw new Error("unexpected admission") },
-    listSubagents: () => [], pendingWakes: () => [], getSession: () => null,
-    getMessages: () => [], startTurn: async () => "busy",
+    listSubagents: () => [], pendingWakes: () => [], wakeParents: () => [], getSession: () => null,
+    turnReply: () => undefined, startTurn: async () => "busy",
   } as Parameters<typeof createChildSessionHost>[0])
   const input = { callerIdentity: "caller", clientRequestId: "request" }
   expect(host.deriveSessionId(input)).toBe("ses_authoritative")

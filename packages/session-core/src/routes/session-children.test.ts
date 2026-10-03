@@ -30,16 +30,17 @@ function openStore() {
   return store
 }
 
-function assistant(id: string, text: string, error?: { name: string; data: { message?: string } }, parentID?: string): AgentMessage {
+function assistant(id: string, text: string, error?: { name: string; data: { message?: string } }): AgentMessage {
   return {
-    info: { id, role: "assistant", sessionID: "child", ...(error ? { error } : {}), ...(parentID ? { parentID } : {}) },
+    info: { id, role: "assistant", sessionID: "child", ...(error ? { error } : {}) },
     parts: [{ id: `${id}-text`, sessionID: "child", messageID: id, type: "text", text }],
   }
 }
 
 function harness(input: {
   sessions?: Record<string, Partial<AgentSession>>
-  messages?: Record<string, AgentMessage[]>
+  /** The reply each child turn ended in, by session and then turn. */
+  replies?: Record<string, Record<string, AgentMessage>>
   startTurn?: ChildSessionHostInput["startTurn"]
   subscribe?: (fn: (event: AgentEventEnvelope) => void) => () => void
   /** Durable state a "restart" keeps: pass both to rebuild a host over them. */
@@ -85,9 +86,10 @@ function harness(input: {
       read: (parentSessionId, subagentKey) => origins.get(originKey(parentSessionId, subagentKey)),
     },
     listSubagents: (parentSessionId) => store.listSubagents(parentSessionId),
-    pendingWakes: () => store.listPendingSubagentWakes(),
+    pendingWakes: (parentSessionId) => store.listPendingSubagentWakes(parentSessionId),
+    wakeParents: () => store.listSubagentWakeParents(),
     getSession: input.getSession ?? ((sessionId) => sessions.get(sessionId) ?? null),
-    getMessages: (sessionId) => input.messages?.[sessionId] ?? [],
+    turnReply: (sessionId, turnId) => input.replies?.[sessionId]?.[turnId],
     ...(input.subscribe ? { subscribeGlobal: input.subscribe } : {}),
     startTurn: input.startTurn ?? (async (turn) => {
       turns.push({
@@ -112,23 +114,23 @@ const ORIGIN: SessionTurnOrigin = {
 
 describe("host-owned child sessions", () => {
   test("a late first settlement records its own result without settling the second run", async () => {
-    const messages = { child: [assistant("reply-first", "First only", undefined, "first"), assistant("reply-second", "Second only", undefined, "second")] }
-    const item = harness({ sessions: { parent: { status: "busy" }, child: { parentID: "parent" } }, messages })
+    const replies = { child: { first: assistant("reply-first", "First only"), second: assistant("reply-second", "Second only") } }
+    const item = harness({ sessions: { parent: { status: "busy" }, child: { parentID: "parent" } }, replies })
     await item.host.admitCreated({ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY, harness: "codex" })
     await item.host.onTurnStarted("child", DIRECTORY, "first")
     await item.host.onTurnStarted("child", DIRECTORY, "second")
     await item.host.onTurnSettled("child", DIRECTORY, "first")
     expect(item.store.listSubagents("parent")[0]?.status).toBe("running")
-    expect(item.store.listPendingSubagentWakes().map((wake) => wake.result?.summary.text)).toEqual(["First only"])
+    expect(item.store.listPendingSubagentWakes("parent").map((wake) => wake.result.text)).toEqual(["First only"])
     await item.host.onTurnSettled("child", DIRECTORY, "second")
     expect(item.store.listSubagents("parent")[0]?.status).toBe("completed")
-    expect(item.store.listPendingSubagentWakes().map((wake) => wake.result?.summary.text)).toEqual(["First only", "Second only"])
+    expect(item.store.listPendingSubagentWakes("parent").map((wake) => wake.result.text)).toEqual(["First only", "Second only"])
     await item.host.dispose()
   })
 
   test("every result survives a busy parent, a later child run and a store restart", async () => {
-    const messages = { child: [assistant("reply-z", "First result", undefined, "first")] }
-    const item = harness({ sessions: { parent: { status: "busy" }, child: { parentID: "parent" } }, messages })
+    const replies: Record<string, Record<string, AgentMessage>> = { child: { first: assistant("reply-z", "First result") } }
+    const item = harness({ sessions: { parent: { status: "busy" }, child: { parentID: "parent" } }, replies })
     await item.host.admitCreated({ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY, harness: "codex" })
     await item.host.onTurnStarted("child", DIRECTORY, "first")
     await item.host.onTurnSettled("child", DIRECTORY, "first")
@@ -136,9 +138,9 @@ describe("host-owned child sessions", () => {
     expect(await item.host.activeChildren("parent", DIRECTORY)).toHaveLength(1)
     await item.host.onTurnSettled("child", DIRECTORY, "first")
     expect(item.store.listSubagents("parent")[0]?.status).toBe("running")
-    messages.child.push(assistant("reply-a", "Partial second", { name: "MessageAbortedError", data: {} }, "second"))
+    replies.child.second = assistant("reply-a", "Partial second", { name: "MessageAbortedError", data: {} })
     await item.host.onTurnSettled("child", DIRECTORY, "second")
-    expect(item.store.listPendingSubagentWakes().map((wake) => wake.result?.summary.assistantMessageId)).toEqual(["reply-z", "reply-a"])
+    expect(item.store.listPendingSubagentWakes("parent").map((wake) => wake.result.assistantMessageId)).toEqual(["reply-z", "reply-a"])
     expect(item.turns).toEqual([])
     await item.host.dispose()
     const openedStore = opened.find((entry) => entry.store === item.store)!
@@ -149,14 +151,35 @@ describe("host-owned child sessions", () => {
     expect(restarted.turns).toHaveLength(1)
     expect(restarted.turns[0]?.messageID).toBe(wakeMessageId("child", "reply-z"))
     expect(restarted.turns[0]?.text).toContain("First result")
-    await restarted.host.onTurnSettled("parent", DIRECTORY)
+    await restarted.host.onTurnSettled("parent", DIRECTORY, "parent-turn")
     expect(restarted.turns).toHaveLength(2)
     expect(restarted.turns[1]?.messageID).toBe(wakeMessageId("child", "reply-a"))
     expect(restarted.turns[1]?.text).toContain("Partial second")
     expect(restarted.turns[1]?.text).toContain("killed")
-    expect(restarted.store.listPendingSubagentWakes()).toEqual([])
+    expect(restarted.store.listPendingSubagentWakes("parent")).toEqual([])
     await restarted.host.onTurnStarted("child", DIRECTORY, "second")
     expect(restarted.store.listSubagents("parent")[0]?.status).toBe("killed")
+    await restarted.host.dispose()
+  })
+
+  test("a follow-up still running when the runtime stopped is interrupted at recovery and wakes its parent", async () => {
+    const item = harness({ sessions: { parent: { status: "idle" }, child: { parentID: "parent" } }, startTurn: async () => "busy" })
+    await item.host.admitCreated({ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY, harness: "codex", title: "Consult" })
+    await item.host.onTurnStarted("child", DIRECTORY, "turn")
+    await item.host.dispose()
+    const openedStore = opened.find((entry) => entry.store === item.store)!
+    item.store.close()
+    openedStore.store = openTestRuntimeStore(openedStore.root)
+    expect(openedStore.store.listSubagents("parent")[0]?.status).toBe("running")
+
+    openedStore.store.recoverBusySessions()
+
+    expect(openedStore.store.listSubagents("parent")[0]).toMatchObject({ status: "interrupted", wake: "pending" })
+    const restarted = harness({ store: openedStore.store, sessions: { parent: { status: "idle" }, child: { parentID: "parent" } } })
+    expect(await restarted.host.activeChildren("parent", DIRECTORY)).toEqual([])
+    await restarted.host.recover()
+    expect(restarted.turns).toMatchObject([{ parentSessionId: "parent", text: expect.stringContaining('Subagent "Consult" (codex) interrupted.') }])
+    expect(restarted.store.listSubagents("parent")[0]).toMatchObject({ status: "interrupted", wake: "delivered" })
     await restarted.host.dispose()
   })
 
@@ -164,7 +187,7 @@ describe("host-owned child sessions", () => {
     const item = harness({ getSession: () => { throw new Error("Workspace runtime is disposed") } })
     await item.host.dispose()
     await item.host.onTurnStarted("child", DIRECTORY, "turn")
-    await item.host.onTurnSettled("child", DIRECTORY)
+    await item.host.onTurnSettled("child", DIRECTORY, "turn")
     expect(item.turns).toEqual([])
     expect(item.admitted).toEqual([])
   })
@@ -210,13 +233,13 @@ describe("host-owned child sessions", () => {
   test("a finished child wakes an idle parent exactly once with its summary", async () => {
     const item = harness({
       sessions: { parent: { status: "idle" }, child: { parentID: "parent" } },
-      messages: { child: [assistant("m1", "The plan is sound; ship it.")] },
+      replies: { child: { turn: assistant("m1", "The plan is sound; ship it.") } },
     })
     const { subagentKey } = await item.host.admitCreated({ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY, harness: "codex", title: "Consult" })
     await item.host.onTurnStarted("child", DIRECTORY, "turn")
     expect(item.store.listSubagents("parent")).toMatchObject([{ status: "running" }])
 
-    await item.host.onTurnSettled("child", DIRECTORY)
+    await item.host.onTurnSettled("child", DIRECTORY, "turn")
 
     expect(item.turns).toEqual([{
       parentSessionId: "parent",
@@ -226,17 +249,36 @@ describe("host-owned child sessions", () => {
     }])
     expect(item.store.listSubagents("parent")).toMatchObject([{ subagentKey, status: "completed", wake: "delivered" }])
 
-    await item.host.onTurnSettled("child", DIRECTORY)
+    await item.host.onTurnSettled("child", DIRECTORY, "turn")
     expect(item.turns).toHaveLength(1)
+  })
+
+  test("a parent is offered only its own results, and a delivered result keeps no text", async () => {
+    const item = harness({
+      sessions: { parent: { status: "idle" }, other: { status: "busy" }, child: { parentID: "parent" }, sibling: { parentID: "other" } },
+      replies: { child: { turn: assistant("m1", "PARENT_RESULT") }, sibling: { turn: assistant("m2", "OTHER_RESULT") } },
+    })
+    await item.host.admitCreated({ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY, harness: "codex" })
+    await item.host.admitCreated({ parentSessionId: "other", childSessionId: "sibling", directory: DIRECTORY, harness: "codex" })
+    await item.host.onTurnSettled("sibling", DIRECTORY, "turn")
+    await item.host.onTurnSettled("child", DIRECTORY, "turn")
+
+    expect(item.turns.map((turn) => turn.parentSessionId)).toEqual(["parent"])
+    expect(item.store.listPendingSubagentWakes("parent")).toEqual([])
+    expect(item.store.listPendingSubagentWakes("other").map((wake) => wake.result.text)).toEqual(["OTHER_RESULT"])
+    const stored = item.store.database().prepare<{ text: string | null }>("SELECT text FROM session_subagent_wake WHERE parent_session_id = 'parent'").all()
+    expect(stored).toEqual([{ text: null }])
+    const observations = item.store.database().prepare<{ observation_json: string }>("SELECT observation_json FROM session_subagent_observation").all()
+    expect(JSON.stringify(observations)).not.toContain("PARENT_RESULT")
   })
 
   test("a wake runs as the actor that created the child, and shows the child as its author", async () => {
     const item = harness({
       sessions: { parent: { status: "idle" }, child: { parentID: "parent" } },
-      messages: { child: [assistant("m1", "done")] },
+      replies: { child: { turn: assistant("m1", "done") } },
     })
     await item.host.admitCreated({ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY, harness: "claude", origin: ORIGIN })
-    await item.host.onTurnSettled("child", DIRECTORY)
+    await item.host.onTurnSettled("child", DIRECTORY, "turn")
 
     expect(item.turns).toMatchObject([{
       parentSessionId: "parent",
@@ -253,7 +295,7 @@ describe("host-owned child sessions", () => {
     const duringWrite: Array<{ wake?: string; turns: number }> = []
     item = harness({
       sessions: { parent: { status: "idle" }, child: { parentID: "parent" } },
-      messages: { child: [assistant("m1", "done")] },
+      replies: { child: { turn: assistant("m1", "done") } },
       onRecord: async () => {
         await item.host.recover()
         duringWrite.push({ wake: item.store.listSubagents("parent")[0]?.wake, turns: item.turns.length })
@@ -263,25 +305,25 @@ describe("host-owned child sessions", () => {
 
     expect(duringWrite).toEqual([{ wake: undefined, turns: 0 }])
 
-    await item.host.onTurnSettled("child", DIRECTORY)
+    await item.host.onTurnSettled("child", DIRECTORY, "turn")
     expect(item.turns).toMatchObject([{ messageID: "msg_wake_child_m1", origin: ORIGIN }])
   })
 
   test("a restart re-offers the wake under the stored actor, once, and a second recovery adds nothing", async () => {
     const first = harness({
       sessions: { parent: { status: "idle" }, child: { parentID: "parent" } },
-      messages: { child: [assistant("m1", "done")] },
+      replies: { child: { turn: assistant("m1", "done") } },
       startTurn: async () => "busy",
     })
     await first.host.admitCreated({ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY, harness: "claude", origin: ORIGIN })
-    await first.host.onTurnSettled("child", DIRECTORY)
+    await first.host.onTurnSettled("child", DIRECTORY, "turn")
     expect(first.store.listSubagents("parent")).toMatchObject([{ wake: "pending" }])
 
     const restarted = harness({
       store: first.store,
       origins: first.origins,
       sessions: { parent: { status: "idle" }, child: { parentID: "parent" } },
-      messages: { child: [assistant("m1", "done")] },
+      replies: { child: { turn: assistant("m1", "done") } },
     })
     await restarted.host.recover()
 
@@ -294,10 +336,10 @@ describe("host-owned child sessions", () => {
   test("a child admitted with no origin offers a wake naming no actor, which a managed host refuses", async () => {
     const item = harness({
       sessions: { parent: { status: "idle" }, child: { parentID: "parent" } },
-      messages: { child: [assistant("m1", "done")] },
+      replies: { child: { turn: assistant("m1", "done") } },
     })
     await item.host.admitCreated({ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY, harness: "claude" })
-    await item.host.onTurnSettled("child", DIRECTORY)
+    await item.host.onTurnSettled("child", DIRECTORY, "turn")
 
     expect(item.turns).toMatchObject([{ messageID: "msg_wake_child_m1" }])
     expect(item.turns[0].origin).toBeUndefined()
@@ -318,16 +360,16 @@ describe("host-owned child sessions", () => {
     const parent: Partial<AgentSession> = { status: "busy" }
     const item = harness({
       sessions: { parent, child: { parentID: "parent" } },
-      messages: { child: [assistant("m1", "done")] },
+      replies: { child: { turn: assistant("m1", "done") } },
     })
     await item.host.admitCreated({ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY, harness: "claude" })
-    await item.host.onTurnSettled("child", DIRECTORY)
+    await item.host.onTurnSettled("child", DIRECTORY, "turn")
 
     expect(item.turns).toHaveLength(0)
     expect(item.store.listSubagents("parent")).toMatchObject([{ status: "completed", wake: "pending" }])
 
     item.sessions.set("parent", { ...item.sessions.get("parent")!, status: "idle" })
-    await item.host.onTurnSettled("parent", DIRECTORY)
+    await item.host.onTurnSettled("parent", DIRECTORY, "parent-turn")
 
     expect(item.turns).toMatchObject([{ parentSessionId: "parent", messageID: "msg_wake_child_m1" }])
     expect(item.store.listSubagents("parent")).toMatchObject([{ wake: "delivered" }])
@@ -337,14 +379,14 @@ describe("host-owned child sessions", () => {
     const offered: Array<string | undefined> = []
     const item = harness({
       sessions: { parent: { status: "idle" }, child: { parentID: "parent" } },
-      messages: { child: [assistant("m1", "done")] },
+      replies: { child: { turn: assistant("m1", "done") } },
       startTurn: async (turn) => {
         offered.push(turn.body.messageID)
         return offered.length === 1 ? "busy" : "started"
       },
     })
     await item.host.admitCreated({ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY, harness: "claude" })
-    await item.host.onTurnSettled("child", DIRECTORY)
+    await item.host.onTurnSettled("child", DIRECTORY, "turn")
     expect(item.store.listSubagents("parent")).toMatchObject([{ wake: "pending" }])
 
     await item.host.recover()
@@ -361,13 +403,13 @@ describe("host-owned child sessions", () => {
   test("wakes queue behind each other: the next is offered when the wake turn settles", async () => {
     const item = harness({
       sessions: { parent: { status: "idle" }, a: { parentID: "parent" }, b: { parentID: "parent" } },
-      messages: { a: [assistant("ma", "A")], b: [assistant("mb", "B")] },
+      replies: { a: { turn: assistant("ma", "A") }, b: { turn: assistant("mb", "B") } },
     })
     await item.host.admitCreated({ parentSessionId: "parent", childSessionId: "a", directory: DIRECTORY, harness: "claude" })
     await item.host.admitCreated({ parentSessionId: "parent", childSessionId: "b", directory: DIRECTORY, harness: "claude" })
-    await item.host.onTurnSettled("a", DIRECTORY)
+    await item.host.onTurnSettled("a", DIRECTORY, "turn")
     item.sessions.set("parent", { ...item.sessions.get("parent")!, status: "busy" })
-    await item.host.onTurnSettled("b", DIRECTORY)
+    await item.host.onTurnSettled("b", DIRECTORY, "turn")
     expect(item.turns.map((turn) => turn.messageID)).toEqual(["msg_wake_a_ma"])
 
     item.sessions.set("parent", { ...item.sessions.get("parent")!, status: "idle" })
@@ -380,10 +422,10 @@ describe("host-owned child sessions", () => {
   test("an archived parent gets an interrupted child and no wake", async () => {
     const item = harness({
       sessions: { parent: { time: { created: 1, updated: 1, archived: 5 } }, child: { parentID: "parent" } },
-      messages: { child: [assistant("m1", "done")] },
+      replies: { child: { turn: assistant("m1", "done") } },
     })
     await item.host.admitCreated({ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY, harness: "claude" })
-    await item.host.onTurnSettled("child", DIRECTORY)
+    await item.host.onTurnSettled("child", DIRECTORY, "turn")
 
     expect(item.turns).toHaveLength(0)
     expect(item.store.listSubagents("parent")).toMatchObject([{ status: "interrupted" }])
@@ -420,15 +462,15 @@ describe("host-owned child sessions", () => {
     expect(item.store.listSubagents("parent")).toMatchObject([{ attention: 0 }])
   })
 
-  test("summarises the child's last assistant message and classifies failures", () => {
-    expect(childSummary([assistant("m1", "first"), assistant("m2", "last")])).toEqual({ status: "completed", text: "last", assistantMessageId: "m2" })
-    expect(childSummary([assistant("m1", "partial", { name: "UnknownError", data: { message: "boom" } })])).toEqual({
+  test("summarises the reply a child turn ended in and classifies failures", () => {
+    expect(childSummary(assistant("m2", "last"))).toEqual({ status: "completed", text: "last", assistantMessageId: "m2" })
+    expect(childSummary(assistant("m1", "partial", { name: "UnknownError", data: { message: "boom" } }))).toEqual({
       status: "failed",
       text: "partial\n\nError: boom",
       assistantMessageId: "m1",
     })
-    expect(childSummary([assistant("m1", "", { name: "MessageAbortedError", data: { message: "Aborted by user" } })])).toMatchObject({ status: "killed" })
-    expect(childSummary([])).toEqual({ status: "completed", text: "" })
+    expect(childSummary(assistant("m1", "", { name: "MessageAbortedError", data: { message: "Aborted by user" } }))).toMatchObject({ status: "killed" })
+    expect(childSummary(undefined)).toEqual({ status: "completed", text: "" })
   })
 })
 

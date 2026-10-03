@@ -7,7 +7,7 @@ export type TurnEvidenceDatabase = {
 export type TurnEvidence = { started: boolean; finished: boolean; outcome?: AgentTurnOutcome }
 
 const TURN_START_SQL = `
-  SELECT assistant_message_id FROM runtime_journal
+  SELECT seq, assistant_message_id FROM runtime_journal
   WHERE session_id = ? AND kind = 'control' AND type = 'turn.start'
     AND (assistant_message_id = ? OR user_message_id = ?)
   ORDER BY seq DESC LIMIT 1
@@ -16,6 +16,19 @@ const TURN_START_SQL = `
 const TURN_FINISH_SQL = `
   SELECT payload_json FROM runtime_journal
   WHERE session_id = ? AND kind = 'control' AND type = 'turn.finish' AND assistant_message_id = ?
+  ORDER BY seq DESC LIMIT 1
+`
+
+const NEXT_TURN_START_SQL = `
+  SELECT MIN(seq) AS seq FROM runtime_journal
+  WHERE session_id = ? AND seq > ? AND kind = 'control' AND type = 'turn.start'
+`
+
+const TURN_REPLY_SQL = `
+  SELECT json_extract(payload_json, '$.properties.info.id') AS id, json_extract(payload_json, '$.properties.info') AS info_json
+  FROM runtime_journal
+  WHERE session_id = ? AND seq > ? AND seq < ? AND kind = 'event' AND type = 'message.updated'
+    AND json_extract(payload_json, '$.properties.info.role') = 'assistant'
   ORDER BY seq DESC LIMIT 1
 `
 
@@ -41,6 +54,28 @@ export function readTurnEvidence(db: TurnEvidenceDatabase, sessionId: string, tu
   if (!finish) return { started: true, finished: false }
   const payload: { outcome: AgentTurnOutcome } = JSON.parse(finish.payload_json)
   return { started: true, finished: true, outcome: payload.outcome }
+}
+
+/**
+ * The reply a turn is writing, or ended in, with its message info JSON. A
+ * harness step or a steered prompt continues a turn in a new reply, so this is
+ * the newest assistant message journaled between the turn's start and the
+ * next turn's, not the one its own prompt opened.
+ */
+export function readTurnReply(db: TurnEvidenceDatabase, sessionId: string, turnStartSeq: number) {
+  const next = db.prepare<{ seq: number | null }>(NEXT_TURN_START_SQL).get(sessionId, turnStartSeq)?.seq ?? Number.MAX_SAFE_INTEGER
+  return db.prepare<{ id: string; info_json: string }>(TURN_REPLY_SQL).get(sessionId, turnStartSeq, next) ?? undefined
+}
+
+/**
+ * The id of the reply the turn either of its message ids names ended in: its
+ * newest reply segment, or the reply its start opened when it never began
+ * another.
+ */
+export function readTurnReplyId(db: TurnEvidenceDatabase, sessionId: string, turnId: string): string | undefined {
+  const start = db.prepare<{ seq: number; assistant_message_id: string }>(TURN_START_SQL).get(sessionId, turnId, turnId)
+  if (!start) return undefined
+  return readTurnReply(db, sessionId, start.seq)?.id ?? start.assistant_message_id
 }
 
 /**

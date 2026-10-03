@@ -290,7 +290,7 @@ describe("subagent identity", () => {
     expect(item.published.map(({ event }) => event.toolCallRole)).toEqual([undefined, undefined])
   })
 
-  test("attention and wake travel from the observation onto the published event", async () => {
+  test("attention travels from the observation onto the published event", async () => {
     const item = subagentFixture()
     const created = await item.boundary.admit("parent", {
       observationId: "host-create",
@@ -311,17 +311,9 @@ describe("subagent identity", () => {
       subagentKey: "subagent_host",
       attention: 0,
     })
-    const wake = await item.boundary.admit("parent", {
-      observationId: "host-wake",
-      subagentKey: "subagent_host",
-      status: "completed",
-      wake: "pending",
-    })
-
     expect(created.attention).toBeUndefined()
     expect(attention).toMatchObject({ subagentKey: "subagent_host", revision: 2, attention: 2 })
     expect(cleared).toMatchObject({ revision: 3, attention: 0 })
-    expect(wake).toMatchObject({ revision: 4, status: "completed", wake: "pending" })
   })
 })
 

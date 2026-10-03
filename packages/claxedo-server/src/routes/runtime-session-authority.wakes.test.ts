@@ -1,8 +1,6 @@
 import { testSessionRoutePorts } from "@claxedo/session-core/testing"
-import path from "node:path"
 import { afterEach, expect, test, vi } from "vitest"
 import { Hono } from "hono"
-import Database from "better-sqlite3"
 import { decodeJwt, exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { mintRelayHostToken } from "@claxedo/workspace-relay"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -212,16 +210,6 @@ async function restarted(item: { storeRoot: string; plane: Awaited<ReturnType<ty
   return { store, host, calls, attempts, prompts }
 }
 
-function resetWake(storeRoot: string, subagentKey: string) {
-  const db = new Database(path.join(storeRoot, "state.db"))
-  try {
-    const reset = db.prepare(`UPDATE session_subagent SET wake = 'pending' WHERE parent_session_id = ? AND subagent_key = ?`).run(PARENT, subagentKey)
-    expect(reset.changes).toBe(1)
-  } finally {
-    db.close()
-  }
-}
-
 const bearer = (token: string) => `Bearer ${token}`
 
 test("a child created over a Relay Host Token takes its grant over the wire and records it beside the origin", async () => {
@@ -332,8 +320,8 @@ test("the same wake re-offered after delivery is refused as redeemed, and no sec
   await wake(delivered.host)
   await until(() => delivered.store.listSubagents(PARENT)[0]?.wake === "delivered" && delivered.calls.some((call) => call.action === "turn_release"), "the first delivery")
   await delivered.host.dispose()
+  admitFinishedChild(delivered.store, item.subagentKey, "finished-again")
   delivered.store.close()
-  resetWake(item.storeRoot, item.subagentKey)
   const { store, host, calls, prompts } = await restarted(item)
   expect(store.listSubagents(PARENT)).toMatchObject([{ wake: "pending" }])
 

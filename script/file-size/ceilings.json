@@ -22,7 +22,7 @@
   "packages/claxedo-server/src/deployments/hosted-workerd/live-sync-room.cf.ts": 929,
   "packages/claxedo-server/src/routes/runtime-session-authority.ts": 1291,
   "packages/session-core/src/routes/session-core.ts": 1865,
-  "packages/session-core/src/store.ts": 4069,
+  "packages/session-core/src/store.ts": 3920,
   "packages/workspace-relay/src/cloudflare.ts": 2610,
   "packages/workspace-relay/src/server.ts": 1198,
   "packages/workspace-runtime/src/workspace-relay-host-tunnel.ts": 815

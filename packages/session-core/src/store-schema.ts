@@ -126,7 +126,7 @@ const SCHEMA: readonly string[] = [
     transcript_kind TEXT NOT NULL DEFAULT 'none',
     transcript_ref TEXT,
     attention INTEGER,
-    wake TEXT,
+    run_revision INTEGER,
     origin_provenance TEXT,
     origin_actor_id TEXT,
     origin_actor_kind TEXT,
@@ -143,7 +143,6 @@ const SCHEMA: readonly string[] = [
     child_session_id_revision INTEGER NOT NULL DEFAULT 0,
     transcript_revision INTEGER NOT NULL DEFAULT 0,
     attention_revision INTEGER NOT NULL DEFAULT 0,
-    wake_revision INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (parent_session_id, subagent_key)
@@ -177,8 +176,24 @@ const SCHEMA: readonly string[] = [
     parent_session_id TEXT NOT NULL,
     correlation_key TEXT NOT NULL,
     subagent_key TEXT NOT NULL,
+    run_revision INTEGER,
     PRIMARY KEY (parent_session_id, correlation_key, subagent_key)
   )`,
+  // One row per child result the parent is owed. Delivery keeps the row, so
+  // the subagent still reads as delivered, and drops the result text.
+  `CREATE TABLE session_subagent_wake (
+    parent_session_id TEXT NOT NULL,
+    observation_id TEXT NOT NULL,
+    subagent_key TEXT NOT NULL,
+    revision INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    text TEXT,
+    assistant_message_id TEXT,
+    delivered INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (parent_session_id, observation_id)
+  )`,
+  `CREATE INDEX session_subagent_wake_subagent_idx ON session_subagent_wake (parent_session_id, subagent_key, delivered)`,
   `CREATE TABLE session_map (
     session_id TEXT PRIMARY KEY,
     agent_session_id TEXT NOT NULL UNIQUE

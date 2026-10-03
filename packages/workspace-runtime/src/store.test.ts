@@ -466,7 +466,7 @@ void describe("RuntimeStore", () => {
       ["create", { status: "pending", providerKind: "claxedo", providerId: "child", childSessionId: "child", transcript: { kind: "live" } }],
       ["attention-2", { attention: 2 }],
       ["attention-0", { attention: 0 }],
-      ["finished", { status: "completed", wake: "pending" }],
+      ["finished", { status: "completed", wakeResult: { status: "completed", text: "Done", assistantMessageId: "reply" } }],
     ]
     for (const [observationId, observation] of observations) {
       store.admit({
@@ -476,9 +476,12 @@ void describe("RuntimeStore", () => {
       })
       store.markPublished("parent", observationId)
     }
-    assert.deepEqual(store.listPendingSubagentWakes(), [
-      { parentSessionId: "parent", subagentKey: "subagent_host", childSessionId: "child", directory: "/workspace" },
-    ])
+    assert.deepEqual(store.listPendingSubagentWakes("parent"), [{
+      subagentKey: "subagent_host",
+      childSessionId: "child",
+      observationId: "finished",
+      result: { status: "completed", text: "Done", assistantMessageId: "reply" },
+    }])
     store.close()
 
     const reopened = new RuntimeStore(root)
@@ -489,11 +492,11 @@ void describe("RuntimeStore", () => {
     assert.equal(row?.wake, "pending")
     reopened.admit({
       parentSessionId: "parent",
-      observation: { observationId: "woken", subagentKey: "subagent_host", wake: "delivered" },
+      observation: { observationId: "woken", subagentKey: "subagent_host", wakeReceipt: "finished" },
       allocateKey: () => "unused",
     })
     assert.equal(reopened.listSubagents("parent")[0]?.wake, "delivered")
-    assert.deepEqual(reopened.listPendingSubagentWakes(), [])
+    assert.deepEqual(reopened.listPendingSubagentWakes("parent"), [])
     reopened.close()
   })
 
@@ -521,7 +524,7 @@ void describe("RuntimeStore", () => {
     assert.deepEqual(store.subagentOrigin("parent", "subagent_host"), origin)
     store.admit({
       parentSessionId: "parent",
-      observation: { observationId: "finished", subagentKey: "subagent_host", status: "completed", wake: "pending" },
+      observation: { observationId: "finished", subagentKey: "subagent_host", status: "completed", wakeResult: { status: "completed", text: "" } },
       allocateKey: () => "unused",
     })
     store.markPublished("parent", "finished")
@@ -567,7 +570,7 @@ void describe("RuntimeStore", () => {
     const reopened = new RuntimeStore(root)
     assert.deepEqual(reopened.subagentOrigin("parent", "subagent_host"), origin)
     assert.equal(JSON.stringify(reopened.listSubagents("parent")).includes(grant), false)
-    assert.equal(JSON.stringify(reopened.listPendingSubagentWakes()).includes(grant), false)
+    assert.equal(JSON.stringify(reopened.listPendingSubagentWakes("parent")).includes(grant), false)
     reopened.close()
   })
 

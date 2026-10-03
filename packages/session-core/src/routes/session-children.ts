@@ -10,7 +10,6 @@ import type { SessionTurnOrigin } from "../session-access-policy"
 export const HOST_CHILD_PROVIDER_KIND = "claxedo"
 export const MAX_ACTIVE_CHILDREN_PER_PARENT = 4
 const ACTIVE_CHILD_STATUSES: ReadonlySet<string> = new Set(["pending", "running", "paused"])
-const TERMINAL_CHILD_STATUSES: ReadonlySet<string> = new Set(["completed", "failed", "killed", "interrupted"])
 const WAKE_SUMMARY_MAX_CHARS = 8_000
 
 export type HostChildRow = {
@@ -24,13 +23,18 @@ export type HostChildRow = {
   wake?: SubagentWake
 }
 
+export type WakeParent = { parentSessionId: string; directory: string }
+
 export type ChildWakeAuthor = { id: string; name: string; kind: "agent" }
 
 export type PendingChildWake = {
-  parentSessionId: string
+  subagentKey: string
   childSessionId: string
-  directory: string
-  result?: { observationId: string; summary: NonNullable<SubagentObservation["wakeResult"]> }
+  label?: string
+  subagentType?: string
+  /** The result's observation, which the delivery's `wakeReceipt` names. */
+  observationId: string
+  result: ChildSummary
 }
 
 /**
@@ -53,9 +57,13 @@ export type ChildSessionHostInput = {
   deriveSessionId: ChildSessionHost["deriveSessionId"]
   origins?: ChildOriginStore
   listSubagents: (parentSessionId: string, directory: string) => Promise<unknown[]> | unknown[]
-  pendingWakes: () => Promise<PendingChildWake[]> | PendingChildWake[]
+  /** One parent's undelivered child results, oldest first. */
+  pendingWakes: (parentSessionId: string) => Promise<PendingChildWake[]> | PendingChildWake[]
+  /** Every parent still owed a wake, with the directory its turns run in. */
+  wakeParents: () => Promise<WakeParent[]> | WakeParent[]
   getSession: (sessionId: string, directory: string) => Promise<AgentSession | null | undefined> | AgentSession | null | undefined
-  getMessages: (sessionId: string, directory: string) => Promise<AgentMessage[] | undefined> | AgentMessage[] | undefined
+  /** The message a turn ended in, after any prompt steered into it; either of the turn's message ids names it. */
+  turnReply: (sessionId: string, turnId: string) => Promise<AgentMessage | undefined> | AgentMessage | undefined
   subscribeGlobal?: (fn: (event: AgentEventEnvelope) => void) => () => void
   /**
    * Starts the parent turn that carries a child's summary. Resolves once the
@@ -91,7 +99,7 @@ export type ChildSessionHost = {
     origin?: SessionTurnOrigin
   }): Promise<{ subagentKey: string }>
   onTurnStarted(sessionId: string, directory: RuntimeDirectory, turnId: string): Promise<void>
-  onTurnSettled(sessionId: string, directory: RuntimeDirectory, turnId?: string): Promise<void>
+  onTurnSettled(sessionId: string, directory: RuntimeDirectory, turnId: string): Promise<void>
   /** Re-offers every wake still pending, once, after a restart. */
   recover(): Promise<void>
   /** Refuses new background work and waits for what is already running. */
@@ -138,13 +146,9 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
     try {
       const parent = await input.getSession(parentSessionId, directory)
       if (!parent || parent.time?.archived !== undefined || parent.status === "busy") return
-      const pending = (await input.pendingWakes()).filter((wake) => wake.parentSessionId === parentSessionId && wake.directory === directory)
-      const wake = pending[0]
+      const wake = (await input.pendingWakes(parentSessionId))[0]
       if (!wake) return
-      const next = (await children(parentSessionId, directory)).find((row) => row.childSessionId === wake.childSessionId)
-      if (!next || (!wake.result && next.wake !== "pending")) return
-      const summary = wake.result?.summary ?? childSummary(await input.getMessages(next.childSessionId, directory) ?? [])
-      const origin = await input.origins?.read(parentSessionId, next.subagentKey)
+      const origin = await input.origins?.read(parentSessionId, wake.subagentKey)
       // Disposal may have begun while this offer was reading. Starting a turn
       // now would ask a closing workspace for an adapter it refuses to build.
       if (stopped) return
@@ -152,10 +156,10 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
         parentSessionId,
         directory,
         body: {
-          messageID: wakeMessageId(next.childSessionId, summary.assistantMessageId),
-          parts: [{ type: "text", text: wakeText(next, summary) }],
+          messageID: wakeMessageId(wake.childSessionId, wake.result.assistantMessageId),
+          parts: [{ type: "text", text: wakeText(wake) }],
         },
-        author: { id: next.childSessionId, name: next.label ?? "Subagent", kind: "agent" },
+        author: { id: wake.childSessionId, name: wake.label ?? "Subagent", kind: "agent" },
         ...(origin ? { origin } : {}),
         onSettled: () => {
           if (offering.has(parentSessionId)) {
@@ -169,10 +173,9 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
       })
       if (started !== "started") return
       await admit(parentSessionId, directory, {
-        observationId: `host:wake:delivered:${wake.result?.observationId ?? crypto.randomUUID()}`,
-        subagentKey: next.subagentKey,
-        wake: "delivered",
-        ...(wake.result ? { wakeReceipt: wake.result.observationId } : {}),
+        observationId: `host:wake:delivered:${wake.observationId}`,
+        subagentKey: wake.subagentKey,
+        wakeReceipt: wake.observationId,
       })
     } finally {
       offering.delete(parentSessionId)
@@ -244,16 +247,23 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
     },
     async onTurnStarted(sessionId, directory, turnId) {
       if (stopped) return
-      const row = await childOf(sessionId, directory)
-      if (stopped || !row) return
-      await admit(row.parentSessionId, requireDirectory(directory), {
-        observationId: `host:running:${sessionId}:${turnId}`,
-        subagentKey: row.subagentKey,
-        providerKind: HOST_CHILD_PROVIDER_KIND,
-        stableCorrelationId: turnId,
-        harnessExecutionId: sessionId,
-        status: "running",
-      })
+      // The harness is already running this turn, so a failure here is the
+      // bookkeeping's alone: thrown, it would end the admission as failed and
+      // settle a turn that is still writing.
+      try {
+        const row = await childOf(sessionId, directory)
+        if (stopped || !row) return
+        await admit(row.parentSessionId, requireDirectory(directory), {
+          observationId: `host:running:${sessionId}:${turnId}`,
+          subagentKey: row.subagentKey,
+          providerKind: HOST_CHILD_PROVIDER_KIND,
+          stableCorrelationId: turnId,
+          harnessExecutionId: sessionId,
+          status: "running",
+        })
+      } catch (error) {
+        console.error(`child session bookkeeping for the start of ${sessionId} failed`, error)
+      }
     },
     async onTurnSettled(sessionId, requested, turnId) {
       if (stopped) return
@@ -264,32 +274,26 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
         await offerWakes(sessionId, directory)
         return
       }
-      if (turnId === undefined && TERMINAL_CHILD_STATUSES.has(row.status ?? "")) return
-      const messages = await input.getMessages(sessionId, directory) ?? []
-      const summary = childSummary(turnId === undefined ? messages : messages.filter((message) => message.info.parentID === turnId))
+      const summary = childSummary(await input.turnReply(sessionId, turnId))
       if (stopped) return
       const parent = await input.getSession(row.parentSessionId, directory)
       if (stopped) return
       const parentGone = !parent || parent.time?.archived !== undefined
       await admit(row.parentSessionId, directory, {
-        observationId: `host:finished:${sessionId}:${summary.assistantMessageId ?? crypto.randomUUID()}`,
+        observationId: `host:finished:${sessionId}:${turnId}`,
         subagentKey: row.subagentKey,
-        ...(turnId === undefined ? {} : { providerKind: HOST_CHILD_PROVIDER_KIND, harnessExecutionId: sessionId, stableCorrelationId: turnId }),
+        providerKind: HOST_CHILD_PROVIDER_KIND,
+        harnessExecutionId: sessionId,
+        stableCorrelationId: turnId,
         status: parentGone ? "interrupted" : summary.status,
-        ...(parentGone ? {} : { wake: "pending", wakeResult: summary }),
+        ...(parentGone ? {} : { wakeResult: summary }),
       })
       if (!parentGone) await offerWakes(row.parentSessionId, directory)
     },
     recover() {
       if (stopped) return Promise.resolve()
       recovered ??= track((async () => {
-        const offered = new Set<string>()
-        for (const wake of await input.pendingWakes()) {
-          const key = JSON.stringify([wake.parentSessionId, wake.directory])
-          if (offered.has(key)) continue
-          offered.add(key)
-          await offerWakes(wake.parentSessionId, wake.directory)
-        }
+        for (const parent of await input.wakeParents()) await offerWakes(parent.parentSessionId, parent.directory)
       })().catch((error) => {
         console.error("child session wake recovery failed", error)
       }))
@@ -352,12 +356,11 @@ export function hostChildRow(parentSessionId: string, value: unknown): HostChild
 type ChildSummary = { status: SubagentStatus; text: string; assistantMessageId?: string }
 
 /**
- * The child's outcome as its transcript records it: the last assistant
- * message's error decides failed versus killed, and its text is the summary
- * the parent is woken with.
+ * A child turn's outcome as the reply it ended in records it: the reply's
+ * error decides failed versus killed, and its text is the summary the parent
+ * is woken with.
  */
-export function childSummary(messages: AgentMessage[]): ChildSummary {
-  const last = [...messages].reverse().find((message) => message.info.role === "assistant")
+export function childSummary(last: AgentMessage | undefined): ChildSummary {
   if (!last) return { status: "completed", text: "" }
   const error = last.info.error
   const status: SubagentStatus = !error
@@ -377,9 +380,9 @@ export function childSummary(messages: AgentMessage[]): ChildSummary {
   }
 }
 
-function wakeText(row: HostChildRow, summary: ChildSummary) {
-  const heading = `Subagent "${row.label ?? row.subagentKey}"${row.subagentType ? ` (${row.subagentType})` : ""} ${summary.status}.`
-  return summary.text ? `${heading}\n\n${summary.text}` : `${heading}\n\n(no summary was produced)`
+function wakeText(wake: PendingChildWake) {
+  const heading = `Subagent "${wake.label ?? wake.subagentKey}"${wake.subagentType ? ` (${wake.subagentType})` : ""} ${wake.result.status}.`
+  return wake.result.text ? `${heading}\n\n${wake.result.text}` : `${heading}\n\n(no summary was produced)`
 }
 
 function attentionChange(payload: AgentEventEnvelope["payload"]): { kind: "add" | "remove"; sessionId: string; requestId: string } | undefined {
