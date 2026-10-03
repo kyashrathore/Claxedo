@@ -58,10 +58,11 @@ const ENTRIES = [
   // activation and source stores share.
   { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 175, packages: 23 },
   // The full-hosted entry alone carries the session rows pass
-  // (`session/session-rows-pass.ts`): it mints the pass each cloud lease epoch
-  // launches with and admits it at the session-rows ingest, and only this entry
-  // has cloud runtimes to publish rows.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 180, packages: 23 },
+  // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
+  // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
+  // ready cloud runtime and admits it at the session-rows ingest, and only
+  // this entry has cloud runtimes to publish rows.
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 182, packages: 23 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

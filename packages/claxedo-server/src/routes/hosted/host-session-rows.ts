@@ -65,8 +65,8 @@ function background(c: Context): ((work: Promise<unknown>) => void) | undefined 
  * which names the host, its owner and the workspaces it may serve; a cloud
  * runtime sends its session rows pass, which names one workspace and the
  * lease epoch it was launched under. The authority admits each row against
- * what that host serves right now. A cloud runtime's empty publication asks
- * for a fresh pass, answered beside the result while its epoch still holds.
+ * what that host serves right now. A cloud runtime's empty publication past
+ * half its pass's life asks for a fresh pass, answered beside the result.
  *
  * The rows are committed before any notice goes out. Each room's notices go
  * in one nudge, all rooms at once, after the answer where the Worker can keep
@@ -104,7 +104,9 @@ export function HostSessionRowsRoutes(
         if (!holder) return c.json({ error: { code: "invalid_session_rows_pass", message: "Session rows pass refused" } }, 401)
         if (!rows.length && !removed.length) {
           const credential = await cloud.renew(holder)
-          if (!credential) return c.json({ error: { code: "invalid_session_rows_pass", message: "Session rows pass refused" } }, 401)
+          if (credential === "early") {
+            return c.json({ error: { code: "session_rows_pass_not_due", message: "A session rows pass renews from half its life" } }, 409)
+          }
           return c.json({ accepted: 0, refused: [], credential })
         }
         publisher = holder

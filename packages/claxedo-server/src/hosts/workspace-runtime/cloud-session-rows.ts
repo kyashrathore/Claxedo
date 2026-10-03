@@ -1,24 +1,32 @@
+import { decodeJwt } from "jose"
+import { Hono } from "hono"
+import { createMiddleware } from "hono/factory"
 import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { RuntimeStore } from "@claxedo/session-core"
 import type { WorkspaceRuntimeServerOptions } from "@claxedo/workspace-runtime"
+import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
+import type { RelayHostAuthContext } from "@claxedo/workspace-runtime/relay"
 import { workspaceId } from "@claxedo/workspace-runtime/host"
 import type { HostSessionRow } from "@claxedo/server-core/platform/auth/host-session-rows"
+import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { SessionRowStatus } from "@claxedo/server-core/session/navigation-list"
-import { WORKSPACE_RUNTIME_SESSION_ROWS_PASS } from "@claxedo/server-core/hosts/workspace-runtime/env"
+import { SESSION_ROWS_PASS_PATH, type SessionRowsPassHeld } from "@claxedo/server-core/hosts/workspace-runtime/env"
 import { createRuntimeSessionStatus } from "@claxedo/server-core/session/publish/runtime-session-status"
 import { createSessionRowsPublisher, type SessionRowSource } from "@claxedo/server-core/session/publish/session-rows-publisher"
 import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { controlPlaneOrigin, expiryOf } from "./tasks-grant"
+import { controlPlaneOrigin } from "./tasks-grant"
+import { expiryOf, halfLifeRenewal, nodeRenewalTimers, type RenewalOutcome, type RenewalTimers } from "./half-life-renewal"
 
 const log = Log.create({ service: "cloud-session-rows" })
-const RENEWAL_RETRY_MS = 30_000
 
 type SessionReads = Parameters<NonNullable<WorkspaceRuntimeServerOptions["bindSessionReads"]>>[0]
-type RuntimeSession = ReturnType<RuntimeStore["listSessions"]>[number]
+type RuntimeSession = ReturnType<RuntimeStore["listEverySession"]>[number]
 type FrameListener = (frame: unknown) => void
 
-export type CloudSessionRows = Required<Pick<WorkspaceRuntimeServerOptions, "onPresentationEvent" | "bindSessionReads">> & {
+export type CloudSessionRows = Required<Pick<WorkspaceRuntimeServerOptions, "onPresentationEvent" | "bindSessionReads" | "beforeStoreClose">> & {
+  /** Where the control plane hands this runtime its pass, and asks which one it holds. */
+  routes: WorkspaceRuntimeRouteContribution
   stop: () => void
 }
 
@@ -37,22 +45,38 @@ function hostSessionRow(workspaceId: string, session: RuntimeSession, status: Se
   }
 }
 
+function held(token: string | undefined): SessionRowsPassHeld {
+  if (!token) return null
+  try {
+    const claims = decodeJwt(token)
+    const epoch = Number(claims.lease_epoch)
+    if (!Number.isSafeInteger(epoch) || typeof claims.iat !== "number" || typeof claims.exp !== "number") return null
+    return { epoch, issuedAt: claims.iat * 1_000, expiresAt: claims.exp * 1_000 }
+  } catch {
+    return null
+  }
+}
+
+function fromControlPlane(auth: RelayHostAuthContext["relayHostAuth"]) {
+  return !!auth && "principal_kind" in auth
+    && auth.principal_kind === CONTROL_PLANE_RUNTIME_ACTOR.principalKind && auth.actor_id === CONTROL_PLANE_RUNTIME_ACTOR.actorId
+}
+
 /**
  * A cloud runtime's publisher of its sessions' list rows: the shared
  * publisher and status tracker, fed from this runtime's own presentation
  * events and store, every session of the workspace whatever directory it is
- * filed under (a worktree session's is its worktree), and sent with the session rows pass the control plane
- * launched this lease epoch with. At half the pass's life it trades it for a
- * fresh one through the same endpoint; once the control plane refuses that,
- * the epoch is over and nothing more is published or renewed.
+ * filed under (a worktree session's is its worktree). It publishes nothing
+ * until the control plane, as its service actor over the relay, hands it a
+ * session rows pass for its lease epoch; it renews that pass at half-life,
+ * and a pass the control plane hands it later replaces it.
  */
 export function cloudSessionRows(
   env: NodeJS.ProcessEnv,
-  options: { fetch?: typeof fetch; now?: () => number } = {},
+  options: { fetch?: typeof fetch; now?: () => number; timers?: RenewalTimers } = {},
 ): CloudSessionRows | undefined {
-  const initial = env[WORKSPACE_RUNTIME_SESSION_ROWS_PASS]?.trim()
   const origin = controlPlaneOrigin(env)
-  if (!initial || !origin) return undefined
+  if (!origin) return undefined
   const send = options.fetch ?? fetch
   const now = options.now ?? Date.now
   const url = new URL("/api/claxedo/host/session-rows", origin).toString()
@@ -60,9 +84,7 @@ export function cloudSessionRows(
   const hostId = env.WORKSPACE_RUNTIME_HOST_ID?.trim() || workspace
   const frames = new Set<FrameListener>()
   let reads: SessionReads | undefined
-  let token = initial
-  let timer: ReturnType<typeof setTimeout> | undefined
-  let stopped = false
+  let token: string | undefined
 
   const mounted = () => {
     if (!reads) throw new Error("the workspace runtime has not bound its session reads yet")
@@ -76,7 +98,7 @@ export function cloudSessionRows(
     read: async (_workspaceId, path) => {
       if (!reads) return undefined
       if (path === "/session/status") return Response.json(reads.sessionStatus())
-      return Response.json(path === "/permission" ? reads.store().listPermissions() : reads.store().listQuestions())
+      return Response.json(path === "/permission" ? reads.store().listEveryPermission() : reads.store().listEveryQuestion())
     },
     onChange: (workspaceId, sessionId) => publisher.sessionChanged(workspaceId, sessionId),
   })
@@ -84,7 +106,7 @@ export function cloudSessionRows(
     listRows: async (workspaceId) => {
       const store = mounted().store()
       const live = await status.snapshot(workspaceId)
-      return store.listSessions()
+      return store.listEverySession()
         .filter((session) => !session.parentID)
         .map((session) => hostSessionRow(workspaceId, session, live.get(session.id) ?? status.current(workspaceId, session.id)))
     },
@@ -97,39 +119,45 @@ export function cloudSessionRows(
   }
   const publisher = createSessionRowsPublisher({ source, url: () => url, ...(options.fetch ? { fetch: options.fetch } : {}) })
 
-  const schedule = (ms: number) => {
-    if (stopped) return
-    timer = setTimeout(() => void renew(), Math.max(0, ms))
-    timer.unref?.()
-  }
   const adopt = (next: string) => {
+    const expiresAt = expiryOf(next)
+    if (expiresAt === undefined) return false
     token = next
     publisher.credentialChanged({ hostId, token, workspaceIds: [workspace] })
-    const expiresAt = expiryOf(next)
-    if (expiresAt !== undefined) schedule((expiresAt - now()) / 2)
+    renewal.track(expiresAt)
+    return true
   }
-  const renew = async () => {
-    const remaining = (expiryOf(token) ?? 0) - now()
+  const renew = async (): Promise<RenewalOutcome> => {
+    const sent = token
     try {
       const response = await send(url, {
         method: "POST",
-        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        headers: { authorization: `Bearer ${sent}`, "content-type": "application/json" },
         body: JSON.stringify({ hostId, rows: [], removed: [] }),
       })
       if (response.status === 401) {
-        log.warn("session rows pass refused; this epoch publishes no more rows", { workspaceId: workspace })
-        return
+        log.warn("session rows pass refused; waiting for the control plane to deliver one", { workspaceId: workspace })
+        return { kind: "refused" }
       }
       const next = stringField(asRecord(asRecord(await response.json().catch(() => undefined))?.credential), "token")
-      if (!response.ok || !next) throw new Error(`control plane answered ${response.status} without a pass`)
-      adopt(next)
+      const expiresAt = next === undefined ? undefined : expiryOf(next)
+      if (!response.ok || !next || expiresAt === undefined) throw new Error(`control plane answered ${response.status} without a pass`)
+      if (token !== sent) return { kind: "refused" }
+      token = next
+      publisher.credentialChanged({ hostId, token, workspaceIds: [workspace] })
+      return { kind: "renewed", expiresAt }
     } catch (error) {
       log.warn("session rows pass renewal failed", { workspaceId: workspace, error: String(error) })
-      if (remaining > 0) schedule(Math.min(RENEWAL_RETRY_MS, remaining))
+      return { kind: "failed" }
     }
   }
+  const renewal = halfLifeRenewal({
+    renew,
+    lapsed: () => log.warn("session rows pass lapsed; waiting for the control plane to deliver one", { workspaceId: workspace }),
+    now,
+    timers: options.timers ?? nodeRenewalTimers(),
+  })
 
-  adopt(initial)
   return {
     onPresentationEvent: (event: AgentEventEnvelope) => {
       for (const listener of frames) listener(event)
@@ -140,9 +168,29 @@ export function cloudSessionRows(
     bindSessionReads: (bound) => {
       reads = bound
     },
+    beforeStoreClose: () => publisher.flush(),
+    routes: {
+      id: "session-rows",
+      mount: () => {
+        const routes = new Hono()
+        // The relay host auth middleware the runtime mounts ahead of every contribution sets `relayHostAuth`.
+        routes.use(SESSION_ROWS_PASS_PATH, createMiddleware<{ Variables: RelayHostAuthContext }>(async (c, next) => {
+          if (!fromControlPlane(c.get("relayHostAuth"))) {
+            return c.json({ error: { code: "forbidden", message: "Only the control plane hands this runtime its session rows pass" } }, 403)
+          }
+          return await next()
+        }))
+        routes.get(SESSION_ROWS_PASS_PATH, (c) => c.json({ held: held(token) }))
+        routes.put(SESSION_ROWS_PASS_PATH, async (c) => {
+          const next = stringField(asRecord(await c.req.json().catch(() => undefined)), "token")
+          if (!next || !adopt(next)) return c.json({ error: { code: "invalid_session_rows_pass", message: "A session rows pass is required" } }, 400)
+          return c.body(null, 204)
+        })
+        return { path: "/", routes, dispose: () => {} }
+      },
+    },
     stop: () => {
-      stopped = true
-      if (timer) clearTimeout(timer)
+      renewal.stop()
       publisher.stop()
       status.stop()
     },

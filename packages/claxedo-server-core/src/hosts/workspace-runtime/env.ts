@@ -68,16 +68,11 @@ export function workspaceRuntimeOwnerGrantToken(env: Record<string, string | und
   return env[WORKSPACE_RUNTIME_OWNER_GRANT]?.trim() || undefined
 }
 
-export const WORKSPACE_RUNTIME_SESSION_ROWS_PASS = "WORKSPACE_RUNTIME_SESSION_ROWS_PASS"
+/** Where a cloud runtime takes, and answers about, the pass it publishes its sessions' list rows with. */
+export const SESSION_ROWS_PASS_PATH = "/api/claxedo/session-rows/pass"
 
-/**
- * The pass a cloud runtime publishes its sessions' list rows with, minted for
- * the lease epoch this launch boots under. Not agent-readable: harness
- * children never inherit it (`process-ownership`'s spawn env denies it).
- */
-export function workspaceRuntimeSessionRowsPassEnv(input: { token: string }): Record<string, string> {
-  return { [WORKSPACE_RUNTIME_SESSION_ROWS_PASS]: input.token }
-}
+/** The pass a runtime holds, as its claims read without verifying; null before the control plane delivered one. */
+export type SessionRowsPassHeld = { epoch: number; issuedAt: number; expiresAt: number } | null
 
 export function workspaceRuntimeTargetEnv(input: {
   workspaceId: string

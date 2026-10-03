@@ -406,6 +406,26 @@ describe("the machine session-rows publisher", () => {
     expect(h.sent[1]?.body.removed).toEqual([{ workspaceId: WS_A, sessionId: "a1" }])
   })
 
+  test("flush sends what is pending at once, a retry included, and settles after it", async () => {
+    const h = up()
+    h.put(row(WS_A, "a1"))
+    h.answer(() => new Response("down", { status: 503 }))
+    h.serve([WS_A])
+    await settle()
+    expect(h.sent, "the first publish failed and waits for its retry").toHaveLength(1)
+
+    await h.publisher.flush()
+
+    expect(h.sent).toHaveLength(2)
+    h.put(row(WS_A, "a1", { title: "last" }))
+    h.publisher.sessionChanged(WS_A, "a1")
+    await h.publisher.flush()
+    expect(h.sent.at(-1)?.body.rows).toEqual([row(WS_A, "a1", { title: "last" })])
+    expect(vi.getTimerCount(), "nothing is left scheduled").toBe(0)
+    await h.publisher.flush()
+    expect(h.sent, "with nothing pending a flush sends nothing").toHaveLength(3)
+  })
+
   test("stop cancels a pending publish", async () => {
     const h = up()
     h.put(row(WS_A, "a1"))

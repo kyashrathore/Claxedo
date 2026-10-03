@@ -52,6 +52,8 @@ export type SessionRowsPublisher = {
   credentialChanged: (credential: SessionRowsCredential | undefined) => void
   /** Republish every workspace the credential names. */
   resync: () => void
+  /** Sends what is pending now, without waiting out the debounce or a retry, and settles once that publish has. */
+  flush: () => Promise<void>
   stop: () => void
 }
 
@@ -123,6 +125,7 @@ export function createSessionRowsPublisher(options: SessionRowsPublisherOptions)
   let staleToken: string | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
   let inFlight = false
+  let running: Promise<void> | undefined
   let failures = 0
   let stopped = false
 
@@ -149,7 +152,7 @@ export function createSessionRowsPublisher(options: SessionRowsPublisherOptions)
     if (!credential || !options.url() || staleToken === credential.token) return
     timer = setTimeout(() => {
       timer = undefined
-      void flush()
+      void publish()
     }, failures ? retryDelay() : debounceMs)
     timer.unref?.()
   }
@@ -266,6 +269,13 @@ export function createSessionRowsPublisher(options: SessionRowsPublisherOptions)
     }
   }
 
+  const publish = () => {
+    running = flush().finally(() => {
+      running = undefined
+    })
+    return running
+  }
+
   const markSession = (workspaceId: string, sessionId: string) => {
     if (!served(workspaceId)) return
     dirtySessions.set(publishedRowKey(workspaceId, sessionId), { workspaceId, sessionId })
@@ -308,6 +318,12 @@ export function createSessionRowsPublisher(options: SessionRowsPublisherOptions)
         resyncPending = true
       }
       schedule()
+    },
+    flush: async () => {
+      await running
+      if (!pending()) return
+      clearTimer()
+      await publish()
     },
     stop: () => {
       stopped = true

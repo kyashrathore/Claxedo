@@ -35,7 +35,7 @@ import type { RuntimeSessionAuthorityOptions } from "../routes/runtime-session-a
 import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/relay/index"
 import { sandboxRelayTargetLookup, type HostTunnelTargetResolver } from "./sandbox-relay-target"
 import type { RelayTargetLookup } from "../deployments/shared-routes/internal-relay"
-import type { SandboxDriver, SandboxEgressUnenforcedEvent, SandboxManagerOptions } from "@claxedo/sandbox-manager"
+import type { SandboxDriver, SandboxEgressUnenforcedEvent } from "@claxedo/sandbox-manager"
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT, createSandboxManager, type SandboxLeaseStore } from "@claxedo/sandbox-manager"
@@ -148,11 +148,14 @@ export function sandboxEgressUnenforcedSink(telemetry: ControlPlaneTelemetry) {
   }
 }
 
-/** A full-hosted deployment's sandbox driver, durable lease store, and the env each lease epoch's launch adds. */
+/**
+ * A full-hosted deployment's sandbox driver and durable lease store, and how a
+ * ready sandbox's runtime is handed the pass it publishes session rows with.
+ */
 export type HostedSandboxBinding = {
   driver: SandboxDriver
   leaseStore: SandboxLeaseStore
-  launchEnv?: SandboxManagerOptions["launchEnv"]
+  deliverSessionRowsPass?: (workspaceId: string) => Promise<void>
 }
 
 function sandboxManager(
@@ -187,7 +190,6 @@ function sandboxManager(
     retryAfterMs: positiveInteger(env, "CLAXEDO_SANDBOX_PROVISIONING_RETRY_MS", 2_000),
     maxRetryCount: limits.sandboxMaxRetryCount,
     onEgressUnenforced: sandboxEgressUnenforcedSink(telemetry),
-    ...(sandbox.launchEnv ? { launchEnv: sandbox.launchEnv } : {}),
   })
 }
 

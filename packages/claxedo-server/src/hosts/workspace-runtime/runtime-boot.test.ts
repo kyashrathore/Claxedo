@@ -275,27 +275,31 @@ describe("claxedo workspace-runtime boot policy", () => {
     }
   })
 
-  test("a launch with a session rows pass takes the runtime's session reads and events for its publisher, and stops it on drain", async () => {
-    const env = {
+  test("a relay runtime that answers to a session authority publishes its session rows: reads, events, the pass route and a flush before the store closes", async () => {
+    const store = await mkdtemp(path.join(os.tmpdir(), "claxedo-runtime-rows-"))
+    const local = {
       WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_rows",
       WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
+      WORKSPACE_RUNTIME_STORE_DIR: store,
       WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: "https://core.test/api/runtime-authority/session-authorize",
     }
-    const unpassed = await claxedoWorkspaceRuntimeBootFromEnv(env)
-    expect(unpassed.options.bindSessionReads).toBeUndefined()
-    expect(unpassed.options.onPresentationEvent).toBeUndefined()
-
-    const send = vi.fn(async () => Response.json({ accepted: 0, refused: [] }))
-    vi.stubGlobal("fetch", send)
     try {
-      const { options } = await claxedoWorkspaceRuntimeBootFromEnv({ ...env, WORKSPACE_RUNTIME_SESSION_ROWS_PASS: "rows-pass" })
+      const unrelayed = await claxedoWorkspaceRuntimeBootFromEnv(local)
+      expect(unrelayed.options.bindSessionReads).toBeUndefined()
+      expect(unrelayed.options.beforeStoreClose).toBeUndefined()
+
+      const { options } = await claxedoWorkspaceRuntimeBootFromEnv({
+        ...local,
+        WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI((await generateKeyPair("EdDSA", { extractable: true })).publicKey),
+        WORKSPACE_RUNTIME_RELAY_URL: "https://relay.example",
+      })
       expect(options.bindSessionReads).toBeTypeOf("function")
       expect(options.onPresentationEvent).toBeTypeOf("function")
+      expect(options.beforeStoreClose).toBeTypeOf("function")
+      expect(options.routeContributions?.map((contribution) => contribution.id)).toContain("session-rows")
       await options.onDrain!()
-      await new Promise((resolve) => setTimeout(resolve, 400))
-      expect(send).not.toHaveBeenCalled()
     } finally {
-      vi.unstubAllGlobals()
+      await rm(store, { recursive: true, force: true })
     }
   })
 

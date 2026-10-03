@@ -65,6 +65,7 @@ export type WorkspaceRuntimeServiceExposure = {
 export type WorkspaceRuntimeServerOptions = {
   onTurnOutcome?: WorkspaceHostOptions["onTurnOutcome"]
   onPresentationEvent?: WorkspaceHostOptions["onPresentationEvent"]
+  beforeStoreClose?: WorkspaceHostOptions["beforeStoreClose"]
   onRuntimeEvent?: WorkspaceHostOptions["onRuntimeEvent"]
   sessionParents?: WorkspaceEventParents
   relayHostAuth?: RelayHostAuthOptions
@@ -457,6 +458,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.configApplyReceiptDir ? { configApplyReceiptDir: options.configApplyReceiptDir } : {}),
     ...(options.onTurnOutcome ? { onTurnOutcome: options.onTurnOutcome } : {}),
     ...(options.onPresentationEvent ? { onPresentationEvent: options.onPresentationEvent } : {}),
+    ...(options.beforeStoreClose ? { beforeStoreClose: options.beforeStoreClose } : {}),
     ...(options.onRuntimeEvent ? { onRuntimeEvent: options.onRuntimeEvent } : {}),
     ...(options.sessionParents ? { sessionParents: options.sessionParents } : {}),
     ...(options.firstPartyMcpLaunch ? { firstPartyMcpLaunch: options.firstPartyMcpLaunch } : {}),

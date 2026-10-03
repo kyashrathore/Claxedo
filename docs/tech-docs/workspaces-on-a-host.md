@@ -417,16 +417,25 @@ compose it:
   that moment.
 - A cloud runtime: `cloudSessionRows`
   (`packages/claxedo-server/src/hosts/workspace-runtime/cloud-session-rows.ts`,
-  composed by `runtime-boot.ts`) builds rows from the runtime's own store and
-  presentation events, and posts them. Its full republish reads every session
-  in the store whatever directory it is filed under (a worktree session's is
-  its worktree), with the status, open requests and background work the
-  runtime's `GET /session/status` reports. It posts them with the session rows pass
-  (`packages/claxedo-server/src/session/session-rows-pass.ts`) that the sandbox
-  manager's `launchEnv` minted for the lease epoch it booted under. The route
-  admits the pass only while the workspace's lease row holds that epoch, and
-  each row only for that one cloud workspace. An empty publication trades a
-  live pass for a fresh one; the runtime sends one at half the pass's life.
+  composed by `runtime-boot.ts` for a relay-exposed runtime with a session
+  authority) builds rows from the runtime's own store and presentation events.
+  Its full republish reads every session in the store whatever directory it is
+  filed under (a worktree session's is its worktree), with the status, open
+  requests and background work the runtime's `GET /session/status` reports.
+  It posts them with a session rows pass
+  (`packages/claxedo-server/src/session/session-rows-pass.ts`): a sandbox pass
+  naming one workspace, its owner and the lease epoch. The control plane hands
+  it over after each config push (`hosted-runtime-delivery.ts`), as its service
+  actor over the relay to the runtime's `PUT /api/claxedo/session-rows/pass`,
+  unless the runtime already holds one for the current epoch that is not yet
+  due. That reaches a process an ensure reused as well as a new one. The route
+  admits the pass only while the workspace's lease row serves that epoch and
+  its user still owns the workspace by the authority's owner rule, and each row
+  only for that one cloud workspace. An empty publication past half the pass's
+  life trades it for a fresh one, revoking the old; the runtime sends one at
+  half-life through the same renewal loop the Tasks grant uses
+  (`half-life-renewal.ts`). Before its store closes the runtime flushes what is
+  pending, so the sessions' final status is published.
 
 These rows are what `/api/control/session-list` lists for a machine- or
 cloud-placed workspace, and each status change they make sends the readers'

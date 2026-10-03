@@ -6,7 +6,7 @@ export {
   relayHostAuthFromEnv,
   workspaceRelayRuntimeOptionsFromEnv,
 } from "./workspace-relay-env"
-export type { RelayHostAuthAuditEvent, RelayHostAuthOptions, RelayHostTokenVerifier } from "./workspace-host-service-auth"
+export type { RelayHostAuthAuditEvent, RelayHostAuthContext, RelayHostAuthOptions, RelayHostTokenVerifier } from "./workspace-host-service-auth"
 export type {
   WorkspaceRelayHostTunnel,
   WorkspaceRelayHostTunnelEvent,
