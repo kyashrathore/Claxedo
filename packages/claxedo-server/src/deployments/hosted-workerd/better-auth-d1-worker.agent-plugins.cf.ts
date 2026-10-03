@@ -13,6 +13,7 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createTasksRootCapability, createTasksRootGrant } from "../../tasks/root-capability"
 import { createOwnerGrantMinter, createOwnerRootCapability } from "../../session/owner-grant"
 import { createD1SandboxPassRegister } from "../../platform/auth/d1-sandbox-pass-register"
+import type { SessionRowsPasses } from "../../session/session-rows-pass"
 import { hostedControlPlaneOrigin } from "../../authority/adapters/worker/control-plane-origin"
 import type { WorkspaceRuntimeContext } from "../../workspace/route-support"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
@@ -40,16 +41,20 @@ export function stringEnvironment(
  * The Agent Plugins composition over the plain Worker.
  *
  * `extra` is what a further feature entry adds to the base composition input —
- * the full-hosted entry passes its sandbox driver and D1 lease store — so every
- * feature entry shares this one wiring instead of re-declaring it.
+ * the full-hosted entry passes its sandbox driver and D1 lease store, and the
+ * session rows pass its cloud runtimes publish with — so every feature entry
+ * shares this one wiring instead of re-declaring it.
  */
 export function composeBetterAuthD1AgentPlugins(
   env: BetterAuthD1AgentPluginsWorkerEnv,
-  extra: Pick<Parameters<typeof composeBetterAuthD1UserDeployedControlPlane>[0], "sandbox"> = {},
+  extra: Pick<Parameters<typeof composeBetterAuthD1UserDeployedControlPlane>[0], "sandbox"> & {
+    sessionRowsPasses?: SessionRowsPasses
+  } = {},
 ) {
+  const { sessionRowsPasses, ...input } = extra
   const base = composeBetterAuthD1UserDeployedControlPlane({
     ...betterAuthD1CompositionInput(env),
-    ...extra,
+    ...input,
   })
   const signingEnv = stringEnvironment(env)
   const passes = createD1SandboxPassRegister({ database: env.CONTROL_PLANE_DB })
@@ -129,6 +134,7 @@ export function composeBetterAuthD1AgentPlugins(
     options: {
       ...base.options,
       sandboxPasses: passes,
+      ...(sessionRowsPasses ? { sessionRowsPasses } : {}),
       routeContributions: [...feature.routeContributions, ...tasks, pluginBackends],
       integrationRoutes: feature.integrationRoutes,
       productWorkspace: {

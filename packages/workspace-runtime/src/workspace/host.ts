@@ -6,7 +6,7 @@ import type { WorkspaceCapabilities } from "../capabilities"
 import type { WorkspaceProfile } from "../profile"
 import type { AgentRuntimeHealth } from "@claxedo/agent-runtime-contract"
 import type { WorkspaceRuntimeExposure } from "../exposure"
-import type { WorkspaceEventFramesTap, RuntimeSessionTime, RuntimeStore, SessionCore } from "@claxedo/session-core"
+import type { WorkspaceEventFramesTap, RuntimeSessionTime, RuntimeStore, SessionCore, SessionStatusSnapshot } from "@claxedo/session-core"
 import type { RuntimeCredentialIssuer } from "../first-party-mcp/credential"
 import type { FirstPartyMcpServerEntry } from "../first-party-mcp/index"
 import type { ConnectionRuntimeStatus, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
@@ -122,6 +122,8 @@ export type WorkspaceHost = {
    * with none would report an owner as having nothing left to reconcile.
    */
   unresolvedLaunches: () => Promise<LaunchOwnershipRecord[]>
+  /** What `GET /session/status` answers for the directory, read in process without a caller. */
+  sessionStatus: (directory: string) => SessionStatusSnapshot
   /** The session's times in this runtime's store; undefined when the store holds no such session or holds it without both times. */
   sessionTime: (sessionId: string) => RuntimeSessionTime | undefined
   /**

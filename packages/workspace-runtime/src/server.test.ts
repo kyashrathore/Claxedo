@@ -20,6 +20,7 @@ import {
   workspaceRuntimeRouteAuthBoundary,
   workspaceRuntimeListenHostname,
   workspaceRuntimeServiceExposureFromEnv,
+  type WorkspaceRuntimeServerOptions,
 } from "./server"
 import { Pty } from "./pty/index"
 import { withSessionCore } from "./session-context"
@@ -242,6 +243,33 @@ describe("a store this build refuses", () => {
       }
     } finally {
       process.off("unhandledRejection", record)
+    }
+  })
+})
+
+describe("a composition's own session reads", () => {
+  test("read the runtime's store and answer the status its route answers, without a caller", async () => {
+    const directory = await pinTempWorkspaceDirectory()
+    let reads: Parameters<NonNullable<WorkspaceRuntimeServerOptions["bindSessionReads"]>>[0] | undefined
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+      placement,
+      exposure: loopbackWorkspaceRuntimeExposure(),
+      target: { workspaceId: "ws_reads", directory },
+      storeRoot: path.join(directory, ".state"),
+      bindSessionReads: (bound) => { reads = bound },
+    })
+    try {
+      if (!reads) throw new Error("the runtime bound no session reads")
+      const store = reads.store()
+      store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "ses_reads", workspaceId: "ws_reads", directory, agentSessionId: "agent_reads" })
+      store.markSessionInterrupted("ses_reads")
+
+      const route = await runtime.app.request(`http://localhost/session/status?directory=${encodeURIComponent(directory)}`)
+      expect(reads.store().listSessions(directory).map((session) => session.id)).toEqual(["ses_reads"])
+      expect(reads.sessionStatus(directory)).toEqual(await route.json())
+      expect(reads.sessionStatus(directory)).toMatchObject({ ses_reads: { type: "interrupted" } })
+    } finally {
+      await runtime.host.dispose()
     }
   })
 })

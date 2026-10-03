@@ -1431,6 +1431,33 @@ describe("sandbox manager", () => {
     )
   })
 
+  test("each launch carries the env composed for the epoch it provisions, beside the caller's", async () => {
+    const store = createMemoryLeaseStore([
+      sandboxLease({ workspaceId: "ws_1", status: "acquiring", epoch: 2, updatedAt: 1_000, createdAt: 1_000 }),
+    ])
+    const driver = fakeDriver()
+    const launchEnv = vi.fn(async (lease: { workspaceId: string; epoch: number }) => ({ EPOCH_PASS: `${lease.workspaceId}@${lease.epoch}` }))
+    const manager = createSandboxManager({ leaseStore: store, driver, launchEnv, now: () => 70_000, staleAfterMs: 60_000 })
+
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east", env: { MODEL_KEY: "sk-model" } }))
+      .resolves.toMatchObject({ status: "ready", epoch: 3 })
+
+    expect(launchEnv).toHaveBeenCalledWith({ workspaceId: "ws_1", epoch: 3 })
+    expect(driver.ensureHost).toHaveBeenCalledWith(expect.objectContaining({ epoch: 3, env: { MODEL_KEY: "sk-model", EPOCH_PASS: "ws_1@3" } }))
+  })
+
+  test("a launch env that cannot be composed fails the provision instead of booting without it", async () => {
+    const driver = fakeDriver()
+    const manager = createSandboxManager({
+      leaseStore: createMemoryLeaseStore(),
+      driver,
+      launchEnv: async () => { throw new Error("pass unavailable") },
+    })
+
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", error: "pass unavailable" })
+    expect(driver.ensureHost).not.toHaveBeenCalled()
+  })
+
   test("brokered secrets fail closed on a driver that cannot broker (none)", async () => {
     const driver = fakeDriver({ metadata: { secretBrokering: "none" } as never })
     const manager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })

@@ -1,6 +1,8 @@
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { hostedSandboxDriver } from "../../authority/adapters/worker/hosted-sandbox-driver"
 import { createD1SandboxLeaseStore } from "../../sandbox/stores/d1"
+import { createD1SandboxPassRegister } from "../../platform/auth/d1-sandbox-pass-register"
+import { createSessionRowsPasses } from "../../session/session-rows-pass"
 import {
   composeBetterAuthD1AgentPlugins,
   PluginOutbound,
@@ -35,12 +37,18 @@ const composition = settledCompositionCache(
         "full-hosted entry requires a completely configured CLAXEDO_SANDBOX_DRIVER",
       )
     }
-    return composeBetterAuthD1AgentPlugins(env, {
-      sandbox: {
-        driver,
-        leaseStore: createD1SandboxLeaseStore({ database: env.CONTROL_PLANE_DB }),
-      },
+    const leaseStore = createD1SandboxLeaseStore({ database: env.CONTROL_PLANE_DB })
+    const sessionRowsPasses = createSessionRowsPasses({
+      signingEnv: stringEnvironment(env),
+      passes: createD1SandboxPassRegister({ database: env.CONTROL_PLANE_DB }),
+      leases: leaseStore,
+      workspaceOwner: async (workspaceId) => await composed.plane.services.authority?.resolveWorkspaceOwner?.(workspaceId),
     })
+    const composed = composeBetterAuthD1AgentPlugins(env, {
+      sandbox: { driver, leaseStore, launchEnv: sessionRowsPasses.launchEnv },
+      sessionRowsPasses,
+    })
+    return composed
   },
   (created) => created.authReady,
 )

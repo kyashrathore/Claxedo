@@ -138,6 +138,12 @@ export type WorkspaceRuntimeServerOptions = {
    */
   bindSessionParents?: (read: Host["parentSessionIdFor"]) => void
   /**
+   * Receives this runtime's own session reads once the host exists, unfiltered
+   * by any caller's access: for a composition that publishes every session's
+   * list row and status from outside the runtime.
+   */
+  bindSessionReads?: (reads: Pick<Host, "store" | "sessionStatus">) => void
+  /**
    * Host-owned work the process drain awaits last, once the runtime's
    * sessions, processes and PTYs are disposed: whatever a disposed turn left
    * behind is still the host's to settle before the process exits.
@@ -457,6 +463,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   })
   options.bindSessionConfig?.((sessionId) => host.getSessionConfig(sessionId))
   options.bindSessionParents?.((sessionId) => host.parentSessionIdFor(sessionId))
+  options.bindSessionReads?.({ store: host.store, sessionStatus: host.sessionStatus })
   const worktrees = options.target
       ? new WorkspaceWorktreeManager({
         workspaceId: options.target.workspaceId,

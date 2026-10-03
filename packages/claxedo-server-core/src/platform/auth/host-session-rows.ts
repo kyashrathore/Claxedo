@@ -5,9 +5,12 @@ import type { SessionStatusChangedEvent } from "../runtime/lib/bus"
 export const MAX_HOST_SESSION_ROWS = 100
 
 /**
- * The machine publishing, as its Host Tunnel Token names it. The token already
- * lets its holder serve `workspaceIds` over the relay, so publishing those
- * workspaces' list rows asks for nothing the token does not grant.
+ * The host publishing. A machine is named by its Host Tunnel Token, which
+ * already lets its holder serve `workspaceIds` over the relay, so publishing
+ * those workspaces' list rows asks for nothing the token does not grant. A
+ * cloud runtime (`servedBy: "sandbox"`) is named by its session rows pass:
+ * one workspace, owned by `ownerUserId`, whose sandbox lease held the pass's
+ * epoch when the pass was admitted.
  */
 export type HostSessionRowsPublisher = {
   hostId: string
@@ -15,6 +18,7 @@ export type HostSessionRowsPublisher = {
   workspaceIds: readonly string[]
   enrollmentId?: string
   generation?: number
+  servedBy?: "sandbox"
 }
 
 /** A session's list entry as its machine holds it. Never a transcript. */

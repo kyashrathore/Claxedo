@@ -692,5 +692,12 @@ export type SandboxManagerOptions = {
    * Pass `() => {}` only if you have another way to surface it.
    */
   onEgressUnenforced?: (event: SandboxEgressUnenforcedEvent) => void
+  /**
+   * Env added to every launch of a lease epoch, asked for once the manager
+   * holds that epoch: the one place a credential bound to the epoch can be
+   * minted, since `SandboxManagerInput.env` is composed before `ensure`
+   * decides which epoch it provisions. A throw fails that provision.
+   */
+  launchEnv?: (lease: { workspaceId: string; epoch: number }) => Promise<Record<string, string>>
 }
 

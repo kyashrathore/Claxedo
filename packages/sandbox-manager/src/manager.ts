@@ -90,6 +90,7 @@ function ensureHostInput(input: {
   lease: SandboxLease
   homeRegion: SandboxRegion
   managerInput?: SandboxManagerInput
+  launchEnv?: Record<string, string>
   appLabel: string
 }): SandboxDriverEnsureInput {
   const egress = sandboxEgressDisposition(input.driver.metadata.egressControl, input.managerInput?.net)
@@ -117,7 +118,7 @@ function ensureHostInput(input: {
     workspaceRoot: input.managerInput?.workspaceRoot ?? "/workspace",
     runtimeCwd: input.managerInput?.runtimeCwd,
     workspaceRuntimePort: input.managerInput?.workspaceRuntimePort ?? DEFAULT_WORKSPACE_RUNTIME_PORT,
-    env: input.managerInput?.env ?? {},
+    env: { ...input.managerInput?.env, ...input.launchEnv },
     // Brokered secrets ride their own channel — NEVER merged into labels or env.
     // Presence of the key, not its length, is the signal: `[]` is the caller
     // withdrawing every brokered secret, and dropping it would reach the driver
@@ -288,6 +289,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         homeRegion,
         lease,
         managerInput,
+        ...(options.launchEnv ? { launchEnv: await options.launchEnv({ workspaceId, epoch: lease.epoch }) } : {}),
         appLabel: options.appLabel ?? DEFAULT_APP_LABEL,
       })
       // Fail-closed: a brokered secret must never be downgraded to readable

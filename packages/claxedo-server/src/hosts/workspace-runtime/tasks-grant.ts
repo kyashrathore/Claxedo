@@ -34,7 +34,7 @@ function grantedOperations(value: string | undefined): readonly TasksOperation[]
 }
 
 /** The `exp` a control-plane-minted capability carries, read without verifying: the control plane verifies. */
-function expiryOf(token: string): number | undefined {
+export function expiryOf(token: string): number | undefined {
   try {
     const exp = decodeJwt(token).exp
     return typeof exp === "number" ? exp * 1_000 : undefined

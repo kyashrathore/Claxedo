@@ -24,6 +24,7 @@ import { configureRuntimeGitAuth } from "./git-auth"
 import { workspaceRuntimeOwnerGrant } from "./owner-grant"
 import { workspaceRuntimeTasksGrant } from "./tasks-grant"
 import { cloudWorkspaceUsage, createSandboxUsageLedger } from "./cloud-usage"
+import { cloudSessionRows } from "./cloud-session-rows"
 import {
   sandboxLeaseEnv,
   workspaceRuntimeMcpToolGroups,
@@ -154,6 +155,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   // later moment to start this at, and the timer holds nothing open.
   const tasks = workspaceRuntimeTasksGrant(env, ownerGrant ? { ownerGrant } : {})
   tasks?.start()
+  const sessionRows = cloudSessionRows(env)
   // A relay-exposed runtime answers to the control plane's session authority,
   // which is also where its turns' usage is reported.
   const authorityUrl = text(env, WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL)
@@ -190,16 +192,25 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
     ...(usage
       ? {
           sessionAccessPolicy: usage.sessionAccessPolicy,
-          onPresentationEvent: usage.onPresentationEvent,
           onTurnOutcome: usage.onTurnOutcome,
           bindSessionConfig: usage.bindSessionConfig,
           bindSessionParents: usage.bindSessionParents,
+        }
+      : {}),
+    ...(usage || sessionRows
+      ? {
+          onPresentationEvent: (event) => {
+            usage?.onPresentationEvent(event)
+            sessionRows?.onPresentationEvent(event)
+          },
           onDrain: async () => {
-            await usage.drain()
+            sessionRows?.stop()
+            await usage?.drain()
             usageLedger?.close()
           },
         }
       : {}),
+    ...(sessionRows ? { bindSessionReads: sessionRows.bindSessionReads } : {}),
     // A sandbox is nobody's desktop: the owner's logins never reach it, and
     // every session runs on brokered credentials.
     placement: { placement: "cloud", machineOwnerUserId: ownerGrant?.userId ?? "", canUseOwnLogin: false },

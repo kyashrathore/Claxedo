@@ -68,6 +68,17 @@ export function workspaceRuntimeOwnerGrantToken(env: Record<string, string | und
   return env[WORKSPACE_RUNTIME_OWNER_GRANT]?.trim() || undefined
 }
 
+export const WORKSPACE_RUNTIME_SESSION_ROWS_PASS = "WORKSPACE_RUNTIME_SESSION_ROWS_PASS"
+
+/**
+ * The pass a cloud runtime publishes its sessions' list rows with, minted for
+ * the lease epoch this launch boots under. Not agent-readable: harness
+ * children never inherit it (`process-ownership`'s spawn env denies it).
+ */
+export function workspaceRuntimeSessionRowsPassEnv(input: { token: string }): Record<string, string> {
+  return { [WORKSPACE_RUNTIME_SESSION_ROWS_PASS]: input.token }
+}
+
 export function workspaceRuntimeTargetEnv(input: {
   workspaceId: string
   hostId?: string

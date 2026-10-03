@@ -275,6 +275,30 @@ describe("claxedo workspace-runtime boot policy", () => {
     }
   })
 
+  test("a launch with a session rows pass takes the runtime's session reads and events for its publisher, and stops it on drain", async () => {
+    const env = {
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_rows",
+      WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
+      WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: "https://core.test/api/runtime-authority/session-authorize",
+    }
+    const unpassed = await claxedoWorkspaceRuntimeBootFromEnv(env)
+    expect(unpassed.options.bindSessionReads).toBeUndefined()
+    expect(unpassed.options.onPresentationEvent).toBeUndefined()
+
+    const send = vi.fn(async () => Response.json({ accepted: 0, refused: [] }))
+    vi.stubGlobal("fetch", send)
+    try {
+      const { options } = await claxedoWorkspaceRuntimeBootFromEnv({ ...env, WORKSPACE_RUNTIME_SESSION_ROWS_PASS: "rows-pass" })
+      expect(options.bindSessionReads).toBeTypeOf("function")
+      expect(options.onPresentationEvent).toBeTypeOf("function")
+      await options.onDrain!()
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      expect(send).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   test("seeds the first-party issuer with the owner the grant names, and verifies that grant with the management key", async () => {
     const key = await generateKeyPair("EdDSA", { extractable: true })
     const signing = {

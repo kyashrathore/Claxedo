@@ -57,6 +57,10 @@ const ENTRIES = [
   // plus `agent-plugins/signed-scope.ts`, the caller and write guard the
   // activation and source stores share.
   { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 175, packages: 23 },
+  // The full-hosted entry alone carries the session rows pass
+  // (`session/session-rows-pass.ts`): it mints the pass each cloud lease epoch
+  // launches with and admits it at the session-rows ingest, and only this entry
+  // has cloud runtimes to publish rows.
   { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 180, packages: 23 },
 ] as const
 

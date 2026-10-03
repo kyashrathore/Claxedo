@@ -24,6 +24,7 @@ import { HostedDeviceAuthRoutes } from "../../routes/hosted/device-auth"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
 import { HostEnrollmentRoutes, HostInvitationRoutes } from "../../routes/hosted/host-enrollment"
 import { HostSessionRowsRoutes } from "../../routes/hosted/host-session-rows"
+import type { SessionRowsPasses } from "../../session/session-rows-pass"
 import { RemoteAccessOwnerRoutes } from "../../routes/remote-access"
 import { hostedRemoteAccessService } from "./hosted-remote-access-service"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
@@ -131,6 +132,11 @@ export type HostedCoreAppOptions = {
    * base core, which mints none.
    */
   sandboxPasses?: Pick<SandboxPassRegister, "revoked">
+  /**
+   * The pass a cloud runtime publishes its sessions' list rows with. Absent on
+   * every entry without cloud workspaces, which then takes machine rows only.
+   */
+  sessionRowsPasses?: SessionRowsPasses
   /**
    * The store cloud workspace runtimes report usage into and the signed
    * account's usage view reads from. Absent, `/api/claxedo/usage` is not
@@ -363,6 +369,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, workspaceOptions))
   app.route("/api/claxedo/host/session-rows", HostSessionRowsRoutes(services, {
     notify: (orgId, notices) => nudgeLiveSyncRoom(options.liveSyncRoom, liveSyncRoomNameForPrincipal({ orgId }), notices),
+    ...(options.sessionRowsPasses ? { sessionRowsPasses: options.sessionRowsPasses } : {}),
   }))
   app.route("/api/claxedo/host/invitations", HostInvitationRoutes(services, workspaceOptions))
   app.route("/api/claxedo/remote-access", RemoteAccessOwnerRoutes({

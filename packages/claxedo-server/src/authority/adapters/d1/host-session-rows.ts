@@ -13,14 +13,16 @@ import { SESSION_STATUS_COLUMNS, sessionStatusNotices, type SessionStatusColumns
 type ServedWorkspace = { workspace_id: string; owner_actor_id: string; org_id: string; project_id: string }
 
 /**
- * Lands a machine's published list rows in the session registry.
+ * Lands a host's published list rows in the session registry.
  *
- * A row is admitted only for a workspace this enrollment serves right now, by
- * the same predicate that routes the relay and mints the tunnel credential,
- * so a machine that lost the assignment or was superseded by a newer serving
- * generation stops publishing on its next call. A session the registry has
- * never seen is adopted for the enrollment owner, as `adoptRuntimeSession`
- * adopts one: the machine held it before anyone reached it through the plane.
+ * A machine's row is admitted only for a workspace its enrollment serves
+ * right now, by the same predicate that routes the relay and mints the tunnel
+ * credential, so a machine that lost the assignment or was superseded by a
+ * newer serving generation stops publishing on its next call. A cloud
+ * runtime's row is admitted only for the one live cloud workspace its pass
+ * names, still owned by the pass's user. A session the registry has never
+ * seen is adopted for the workspace owner, as `adoptRuntimeSession` adopts
+ * one: the host held it before anyone reached it through the plane.
  *
  * Republishing is idempotent: turn and update times only move forward, a
  * status (with its wait and background work) replaces the held one only when
@@ -37,7 +39,10 @@ export async function publishD1HostSessionRows(
   publication: HostSessionRowsPublication,
 ): Promise<HostSessionRowsOutcome> {
   const touched = [...publication.rows, ...publication.removed]
-  const served = await servedD1Workspaces(database, now, publisher, [...new Set(touched.map((row) => row.workspaceId))])
+  const claimed = [...new Set(touched.map((row) => row.workspaceId))].filter((id) => publisher.workspaceIds.includes(id))
+  const served = publisher.servedBy === "sandbox"
+    ? await sandboxD1Workspaces(database, publisher, claimed)
+    : await servedD1Workspaces(database, now, publisher, claimed)
   const existing = await registeredD1Sessions(database, [...new Set(touched.map((row) => row.sessionId))])
   const plan = planHostSessionRows(publication, served, existing)
   const adoptions = plan.adopt.flatMap(({ row, workspace }) => adoptionStatements(database, now, workspace, row))
@@ -69,9 +74,8 @@ async function servedD1Workspaces(
   database: D1Database,
   now: number,
   publisher: HostSessionRowsPublisher,
-  workspaceIds: string[],
+  claimed: string[],
 ) {
-  const claimed = workspaceIds.filter((id) => publisher.workspaceIds.includes(id))
   if (!claimed.length) return new Map<string, ServedWorkspace>()
   const fence = publisher.enrollmentId !== undefined && publisher.generation !== undefined
   const result = await database
@@ -93,6 +97,21 @@ async function servedD1Workspaces(
       ...(fence ? [publisher.enrollmentId, publisher.generation] : []),
       now,
     )
+    .all<ServedWorkspace>()
+  return new Map(result.results.map((row) => [row.workspace_id, row]))
+}
+
+async function sandboxD1Workspaces(database: D1Database, publisher: HostSessionRowsPublisher, claimed: string[]) {
+  if (!claimed.length) return new Map<string, ServedWorkspace>()
+  const result = await database
+    .prepare(`
+      select w.workspace_id, owner.actor_id as owner_actor_id, w.org_id, w.project_id
+      from workspaces w
+      join actors owner on owner.user_id = w.owner_user_id and owner.kind = 'human'
+      where w.workspace_id in (${claimed.map(() => "?").join(", ")})
+        and w.owner_user_id = ? and w.backing = 'cloud-vm' and w.deleted_at is null
+    `)
+    .bind(...claimed, publisher.ownerUserId)
     .all<ServedWorkspace>()
   return new Map(result.results.map((row) => [row.workspace_id, row]))
 }
