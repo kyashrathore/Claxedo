@@ -13,7 +13,7 @@ import type { OpenCodeRuntime } from "../transports/opencode-sdk/runtime"
 import { WorkspaceScope } from "../transports/opencode-sdk/scope"
 import { terminal } from "../transports/opencode-sdk/translate/event"
 import type { RoutedEvent, TurnInput } from "../contract"
-import { runConformance, setupConformance, type ConformanceBackend, type SuiteBackend } from "./test-support/run"
+import { runConformance, setupConformance, type SuiteBackend } from "./test-support/run"
 import { createTestServices } from "./test-support/services"
 
 type ScriptedServer = Awaited<ReturnType<typeof startScriptedModelServer>>
@@ -127,20 +127,20 @@ test("OpenCode loads projected MCP and skills through engine hooks without writi
   const context = await setupConformance({ name: "opencode-mcp", backend: async () => {
     const state = await backend()
     const plugin = await writeSkill(state.root, "plugin", "conform-skill", "SKILL_MARKER")
-    return { ...state, projection: { generation: "mcp", pluginRoots: [
+    return Object.assign(state, { projection: { generation: "mcp", pluginRoots: [
       { pluginInstanceId: "conform", root: plugin, skillNames: ["conform-skill"], dataRoot: plugin },
     ], notApplied: [], mcpServers: [
       { kind: "http" as const, name: "proof", url: mcp.url, origin: "configured" as const },
-    ] } }
+    ] } })
   }, makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
   try {
+    const state = context.backend as OpenCodeBackend
+    state.server.scriptTool({ name: "skill", input: { id: "conform-skill" }, whenPromptIncludes: "OPENCODESKILL" })
+    const events = await collect(context, context.turn("Use conform-skill for OPENCODESKILL"))
+    expect(JSON.stringify(events)).toContain("SKILL_MARKER")
     expect(mcp.methods).toContain("initialize")
     expect(mcp.methods).toContain("tools/list")
     expect(await fs.readdir(context.backend.directory)).not.toContain("opencode.json")
-    const state = context.backend as OpenCodeBackend
-    state.server.scriptToolSequence("OPENCODESKILL", [{ name: "skill", input: { id: "conform-skill" } }])
-    const events = await collect(context, context.turn("Use conform-skill for OPENCODESKILL"))
-    expect(JSON.stringify(events)).toContain("SKILL_MARKER")
   } finally { await context.close(); await mcp.close() }
 }, 60_000)
 
@@ -259,7 +259,7 @@ test("an account switch rebinds the engine once for every session of the owner",
   } finally { target.runtime = actual; await context.close() }
 }, 60_000)
 
-test("a failed OpenCode open releases its launch document ownership", async () => {
+test("a failed OpenCode open removes its session row and the folder opens another selection", async () => {
   const context = await setupConformance({ name: "opencode-failed-open", backend,
     makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
   try {
@@ -449,24 +449,90 @@ test("a bound provider runs on its placeholder while its own variable is set", a
   }
 }, 60_000)
 
-test("a projection change reaches every OpenCode session in the folder", async () => {
-  const context = await setupConformance({ name: "opencode-folder-projection", backend,
-    makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
+function joined(context: Awaited<ReturnType<typeof setupConformance>>, sessionId: string) {
+  return { ...context.sessionBroker, rebind: async (upstreamSessionId: string) => ({ ...context.session.binding, sessionId, upstreamSessionId }) }
+}
+
+async function selection(root: string, name: string) {
+  const mcp = await startScriptedMcpServer({ name: `${name}_probe`, description: `Probe for ${name}`,
+    inputSchema: { type: "object", properties: {} }, result: () => ({ content: [{ type: "text", text: name }] }) })
+  const plugin = await writeSkill(root, `${name}-plugin`, `${name}-skill`, `${name.toUpperCase()}_SKILL_MARKER`)
+  return { mcp, projection: { generation: name, notApplied: [], mcpServers: [{ kind: "http" as const, name, url: mcp.url, origin: "configured" as const }],
+    pluginRoots: [{ pluginInstanceId: name, root: plugin, skillNames: [`${name}-skill`], dataRoot: plugin }] } }
+}
+
+function offered(state: OpenCodeBackend, marker: string) {
+  const request = state.server.requests.find((row) => row.prompt.includes(marker) && row.tools.length)
+  const body = JSON.stringify(request?.body ?? null)
+  return { mcp: ["alpha_probe", "beta_probe"].filter((name) => body.includes(name)),
+    skills: ["alpha-skill", "beta-skill"].filter((name) => new RegExp(`id(?:>|&gt;)${name}(?:<|&lt;)/id`).test(body)) }
+}
+
+test("two sessions in one folder each see only their own MCP servers and skills from their first request", async () => {
+  let alpha: Awaited<ReturnType<typeof selection>> | undefined
+  const context = await setupConformance({ name: "opencode-instances", backend: async () => {
+    const state = await backend()
+    alpha = await selection(state.root, "alpha")
+    return Object.assign(state, { projection: alpha.projection })
+  }, makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
+  const state = context.backend as OpenCodeBackend
+  const beta = await selection(state.root, "beta")
   try {
-    const state = context.backend as OpenCodeBackend
-    const second = await context.transport.start({ ...context.start, sessionId: "s2" },
-      { ...context.sessionBroker, rebind: async (upstreamSessionId) => ({ ...context.session.binding, sessionId: "s2", upstreamSessionId }) })
-    const plugin = await writeSkill(state.root, "folder-plugin", "folder-skill", "FOLDER_SKILL_MARKER")
-    const projection = { ...context.start.projection, generation: "folder",
-      pluginRoots: [{ pluginInstanceId: "folder", root: plugin, skillNames: ["folder-skill"], dataRoot: plugin }] }
-    expect((await context.transport.configure(context.session, { projection })).state).toBe("applied")
-    state.server.scriptToolSequence("FOLDERSKILL", [{ name: "skill", input: { id: "folder-skill" } }])
-    const events = []
-    for await (const event of context.transport.send(second, context.turn("Use folder-skill for FOLDERSKILL"), context.turnBroker())) events.push(event)
-    expect(JSON.stringify(events)).toContain("FOLDER_SKILL_MARKER")
-    expect((await context.transport.configure(second, { projection })).state).toBe("applied")
-  } finally { await context.close() }
-}, 60_000)
+    const second = await context.transport.start({ ...context.start, sessionId: "s2", projection: beta.projection }, joined(context, "s2"))
+    expect((await collect(context, context.turn("Reply with exactly ALPHAFIRST"))).some((item) => item.event.type === "finish")).toBe(true)
+    await collectEvents(context.transport.send(second, context.turn("Reply with exactly BETAFIRST"), context.turnBroker()))
+    expect(offered(state, "ALPHAFIRST")).toEqual({ mcp: ["alpha_probe"], skills: ["alpha-skill"] })
+    expect(offered(state, "BETAFIRST")).toEqual({ mcp: ["beta_probe"], skills: ["beta-skill"] })
+    expect(await fs.readdir(context.backend.directory)).not.toContain("opencode.json")
+  } finally { await context.close(); await alpha?.mcp.close(); await beta.mcp.close() }
+}, 90_000)
+
+test("a child session runs in its parent's instance and a session outside every instance is refused", async () => {
+  let alpha: Awaited<ReturnType<typeof selection>> | undefined
+  const context = await setupConformance({ name: "opencode-instance-child", backend: async () => {
+    const state = await backend()
+    alpha = await selection(state.root, "alpha")
+    return Object.assign(state, { projection: alpha.projection })
+  }, makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
+  const state = context.backend as OpenCodeBackend
+  try {
+    state.server.scriptTool({ name: "subagent", input: { agent: "general", description: "child task", prompt: "Reply with exactly CHILDTURN" },
+      whenPromptIncludes: "SPAWNCHILD" })
+    expect((await collect(context, context.turn("Spawn a subagent for SPAWNCHILD"))).some((item) => item.event.type === "finish")).toBe(true)
+    expect(offered(state, "CHILDTURN")).toEqual({ mcp: ["alpha_probe"], skills: ["alpha-skill"] })
+    const runtime = (context.transport as unknown as { runtime: OpenCodeRuntime }).runtime
+    const scope = WorkspaceScope.authorize({ workspaceID: context.start.workspaceId, directory: context.backend.directory })
+    const children = (await runtime.sessions.list(scope)).sessions.filter((row) => row.id !== context.session.binding.upstreamSessionId)
+    expect(children).toHaveLength(1)
+    expect(await runtime.interactions.permissions(scope, children[0]!.id)).toEqual([])
+    const stranger = await runtime.sessions.create(scope, { title: "stranger" })
+    await expect(runtime.interactions.permissions(scope, stranger.id)).rejects.toThrow()
+    await expect(runtime.sessions.prompt(scope, stranger.id, { text: "Reply with exactly STRANGER" })).rejects.toThrow()
+    expect(state.server.requests.some((row) => row.prompt.includes("STRANGER"))).toBe(false)
+  } finally { await context.close(); await alpha?.mcp.close() }
+}, 90_000)
+
+test("a projection change reaches only that OpenCode session, at its next turn", async () => {
+  const context = await setupConformance({ name: "opencode-session-projection", backend,
+    makeTransport: (services, state) => transport(services, state as OpenCodeBackend) })
+  const state = context.backend as OpenCodeBackend
+  const alpha = await selection(state.root, "alpha")
+  const release = state.server.holdTextReplies("HELDTURN")
+  let running: Promise<unknown> | undefined
+  try {
+    const second = await context.transport.start({ ...context.start, sessionId: "s2" }, joined(context, "s2"))
+    running = collect(context, context.turn("Reply with exactly HELDTURN"))
+    await state.server.textGateReached("HELDTURN")
+    expect(await context.transport.configure(context.session, { projection: alpha.projection })).toEqual({ state: "deferred", until: "after-active-turns" })
+    release()
+    await running
+    expect(offered(state, "HELDTURN")).toEqual({ mcp: [], skills: [] })
+    await collectEvents(context.transport.send(second, context.turn("Reply with exactly SIBLINGTURN"), context.turnBroker()))
+    await collect(context, context.turn("Reply with exactly CHANGEDTURN"))
+    expect(offered(state, "SIBLINGTURN")).toEqual({ mcp: [], skills: [] })
+    expect(offered(state, "CHANGEDTURN")).toEqual({ mcp: ["alpha_probe"], skills: ["alpha-skill"] })
+  } finally { release(); await running; await context.close(); await alpha.mcp.close() }
+}, 90_000)
 
 test("a broker abort interrupts the engine once and ends the turn as cancelled, never as finished", async () => {
   const context = await setupConformance({ name: "opencode-abort-interrupt", backend,

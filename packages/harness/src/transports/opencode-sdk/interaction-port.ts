@@ -25,12 +25,12 @@ export type FormRequest = Readonly<{
 }>
 
 export type OpenCodeInteractionPort = Readonly<{
-  permissions(scope: WorkspaceScope): Promise<readonly PermissionRequest[]>
+  permissions(scope: WorkspaceScope, sessionID: string): Promise<readonly PermissionRequest[]>
   replyPermission(
     scope: WorkspaceScope,
     input: { sessionID: string; requestID: string; reply: PermissionReply; message?: string },
   ): Promise<void>
-  forms(scope: WorkspaceScope): Promise<readonly FormRequest[]>
+  forms(scope: WorkspaceScope, sessionID: string): Promise<readonly FormRequest[]>
   replyForm(
     scope: WorkspaceScope,
     input: { sessionID: string; formID: string; answer: Readonly<Record<string, FormFieldValue>> },
@@ -40,7 +40,7 @@ export type OpenCodeInteractionPort = Readonly<{
 
 function rows(response: unknown): readonly Record<string, unknown>[] {
   const out: Record<string, unknown>[] = []
-  for (const row of arr(rec(response)?.data) ?? []) {
+  for (const row of arr(response) ?? []) {
     const item = rec(row)
     if (item) out.push(item)
   }
@@ -57,12 +57,11 @@ async function assertOwned(host: OpenCodeHost, scope: WorkspaceScope, sessionID:
   assertLocationInScope(scope, (session as { location?: { directory?: string } }).location?.directory)
 }
 
-async function permissions(host: OpenCodeHost, scope: WorkspaceScope): Promise<readonly PermissionRequest[]> {
-
+async function permissions(host: OpenCodeHost, scope: WorkspaceScope, sessionID: string): Promise<readonly PermissionRequest[]> {
       if (host.status().lifecycle !== "ready") return []
       const client = await host.client()
-      const response = await engineRead("permission.request.list", scope, () =>
-        client.permission.request.list({ location: { directory: scope.directory } }))
+      await assertOwned(host, scope, sessionID)
+      const response = await engineRead("permission.list", scope, () => client.permission.list({ sessionID }))
       return rows(response).map((row) => {
         const at = createdAt(row)
         return {
@@ -76,11 +75,11 @@ async function permissions(host: OpenCodeHost, scope: WorkspaceScope): Promise<r
       })
 }
 
-async function forms(host: OpenCodeHost, scope: WorkspaceScope): Promise<readonly FormRequest[]> {
+async function forms(host: OpenCodeHost, scope: WorkspaceScope, sessionID: string): Promise<readonly FormRequest[]> {
       if (host.status().lifecycle !== "ready") return []
       const client = await host.client()
-      const response = await engineRead("form.request.list", scope, () =>
-        client.form.request.list({ location: { directory: scope.directory } }))
+      await assertOwned(host, scope, sessionID)
+      const response = await engineRead("form.list", scope, () => client.form.list({ sessionID }))
       return rows(response).map((row) => {
         const at = createdAt(row)
         return {
@@ -95,7 +94,7 @@ async function forms(host: OpenCodeHost, scope: WorkspaceScope): Promise<readonl
 
 export function createInteractionPort(host: OpenCodeHost): OpenCodeInteractionPort {
   return {
-    permissions: (scope) => permissions(host, scope),
+    permissions: (scope, sessionID) => permissions(host, scope, sessionID),
     async replyPermission(scope, input) {
       const client = await host.client()
       await assertOwned(host, scope, input.sessionID)
@@ -107,7 +106,7 @@ export function createInteractionPort(host: OpenCodeHost): OpenCodeInteractionPo
       })
     },
 
-    forms: (scope) => forms(host, scope),
+    forms: (scope, sessionID) => forms(host, scope, sessionID),
 
     async replyForm(scope, input) {
       const client = await host.client()

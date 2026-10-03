@@ -72,6 +72,7 @@ function engine(root: string, options?: Record<string, unknown>): { runtime: Ope
 
 async function turn(runtime: OpenCodeRuntime, scope: WorkspaceScope, until: () => boolean) {
   const session = await runtime.sessions.create(scope, { title: "routing" })
+  runtime.instances.assign(session.id, runtime.instances.define(scope.directory, { skills: [], mcp: {} }))
   await runtime.sessions.switchModel(scope, session.id, { providerID: "proof", modelID: "proof" })
   await runtime.sessions.prompt(scope, session.id, { text: "say hello" })
   for (let wait = 0; wait < 300 && !until(); wait++) await new Promise((resolve) => setTimeout(resolve, 50))
@@ -233,6 +234,7 @@ test("a vendor provider the engine only catalogs is enabled by its binding and r
     await runtime.bindProviders({ overlays: { openai: { baseURL: brokerUrl, apiKey: "vendor-placeholder" } }, unbound: "disabled" })
     expect((await runtime.catalog.models(scope)).some((model) => model.providerID === "openai" && model.id === "gpt-4.1")).toBe(true)
     const session = await runtime.sessions.create(scope, { title: "vendor" })
+    runtime.instances.assign(session.id, runtime.instances.define(scope.directory, { skills: [], mcp: {} }))
     await runtime.sessions.switchModel(scope, session.id, { providerID: "openai", modelID: "gpt-4.1" })
     await runtime.sessions.prompt(scope, session.id, { text: "say hello" })
     for (let wait = 0; wait < 300 && broker.requests.length === 0; wait++) await new Promise((resolve) => setTimeout(resolve, 50))

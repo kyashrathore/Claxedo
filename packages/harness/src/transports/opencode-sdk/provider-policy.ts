@@ -11,47 +11,60 @@ export type ProviderConfigStore = {
   write(patch: { disabled_providers: string[] }): Promise<Record<string, unknown>>
 }
 
-async function setupProviderPolicy(context: Plugin.Context, stores: Map<string, ProviderConfigStore>) {
-  const key = `disabled-providers:${context.location.directory}`
+type DirectoryPolicy = { disabled: string[]; catalogs: Set<() => Promise<void>>; store: ProviderConfigStore }
+
+async function readDisabled(context: Plugin.Context, key: string): Promise<string[]> {
   const raw = await context.storage.get(key)
   const saved = arr(raw)
   if (raw !== undefined && !saved?.every((id) => typeof id === "string")) {
     throw new Error("Invalid persisted OpenCode provider policy")
   }
-  let disabled: string[] = saved?.filter((id): id is string => typeof id === "string") ?? []
+  return saved?.filter((id): id is string => typeof id === "string") ?? []
+}
+
+function directoryPolicy(context: Plugin.Context, key: string, disabled: string[]): DirectoryPolicy {
   const serializer = createKeyedSerializer()
-  await context.catalog.transform((draft) => {
-    for (const id of disabled) draft.provider.update(id, (provider) => { provider.activation = "disabled" })
-  })
-  const store: ProviderConfigStore = {
-    read: () => serializer.run(key, async () => ({ disabled_providers: [...disabled] })),
+  const policy: DirectoryPolicy = { disabled, catalogs: new Set(), store: {
+    read: () => serializer.run(key, async () => ({ disabled_providers: [...policy.disabled] })),
     write(patch) {
       const next = [...new Set(patch.disabled_providers)]
       return serializer.run(key, async () => {
         await context.storage.set(key, next)
-        disabled = next
-        await context.catalog.reload()
-        return { disabled_providers: [...disabled] }
+        policy.disabled = next
+        await Promise.all([...policy.catalogs].map((reload) => reload()))
+        return { disabled_providers: [...policy.disabled] }
       })
     },
-  }
-  stores.set(context.location.directory, store)
-  return () => { if (stores.get(context.location.directory) === store) stores.delete(context.location.directory) }
+  } }
+  return policy
+}
+
+async function setupProviderPolicy(context: Plugin.Context, policies: Map<string, DirectoryPolicy>) {
+  const directory = context.location.directory
+  const key = `disabled-providers:${directory}`
+  const policy = policies.get(directory) ?? directoryPolicy(context, key, await readDisabled(context, key))
+  policies.set(directory, policy)
+  await context.catalog.transform((draft) => {
+    for (const id of policy.disabled) draft.provider.update(id, (provider) => { provider.activation = "disabled" })
+  })
+  const reload = () => context.catalog.reload()
+  policy.catalogs.add(reload)
+  return () => { policy.catalogs.delete(reload) }
 }
 
 export function createProviderPolicy() {
-  const stores = new Map<string, ProviderConfigStore>()
+  const policies = new Map<string, DirectoryPolicy>()
   const plugin: Plugin.Plugin = {
     id: "claxedo-provider-policy",
-    setup: (context) => setupProviderPolicy(context, stores),
+    setup: (context) => setupProviderPolicy(context, policies),
   }
   return {
     plugin,
     async store(host: OpenCodeHost, scope: WorkspaceScope): Promise<ProviderConfigStore> {
       await openCodeLocationClient(host, scope.directory)
-      const store = stores.get(scope.directory)
-      if (!store) throw new Error("OpenCode provider policy was not initialized for the workspace")
-      return store
+      const policy = policies.get(scope.directory)
+      if (!policy) throw new Error("OpenCode provider policy was not initialized for the workspace")
+      return policy.store
     },
   }
 }

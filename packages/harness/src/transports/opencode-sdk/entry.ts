@@ -2,4 +2,4 @@ import type { HarnessSession, ScopedSessionTools, SessionBroker, StartInput } fr
 import type { WorkspaceScope } from "./scope.js"
 
 export type Entry = { session: HarnessSession; start: StartInput; broker: SessionBroker; scope: WorkspaceScope;
-  upstream: string; active: boolean; assistantMessageID?: string; steers: Set<string>; firstParty?: ScopedSessionTools; scoped?: ScopedSessionTools }
+  upstream: string; active: boolean; assistantMessageID?: string; steers: Set<string>; pendingInstance?: string; firstParty?: ScopedSessionTools; scoped?: ScopedSessionTools }

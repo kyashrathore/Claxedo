@@ -1,5 +1,4 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import { openCodeLocationClient, type OpenCodeHost } from "./host.js"
 import type { SessionTool, SessionToolCall } from "../../contract"
 import type { WorkspaceScope } from "./scope.js"
 
@@ -11,6 +10,7 @@ export type SessionToolRegistration = Readonly<{
 }>
 
 export type OpenCodeToolPort = Readonly<{
+  plugin: Plugin.Plugin
   registerSession(input: SessionToolRegistration): Promise<void>
   unregisterSession(sessionID: string): Promise<void>
 }>
@@ -22,18 +22,18 @@ function sameDefinition(left: SessionTool, right: SessionTool) {
 }
 
 function definitionsFor(sessions: Map<string, SessionToolRegistration>, directory: string): Map<string, SessionTool> {
-        const definitions = new Map<string, SessionTool>()
-        for (const registration of sessions.values()) {
-          if (registration.scope.directory !== directory) continue
-          for (const tool of registration.tools) {
-            const existing = definitions.get(tool.name)
-            if (existing && !sameDefinition(existing, tool)) {
-              throw new Error(`Conflicting OpenCode Session tool definition for ${tool.name}`)
-            }
-            definitions.set(tool.name, tool)
-          }
-        }
-        return definitions
+  const definitions = new Map<string, SessionTool>()
+  for (const registration of sessions.values()) {
+    if (registration.scope.directory !== directory) continue
+    for (const tool of registration.tools) {
+      const existing = definitions.get(tool.name)
+      if (existing && !sameDefinition(existing, tool)) {
+        throw new Error(`Conflicting OpenCode Session tool definition for ${tool.name}`)
+      }
+      definitions.set(tool.name, tool)
+    }
+  }
+  return definitions
 }
 
 async function executeTool(
@@ -50,72 +50,52 @@ async function executeTool(
 }
 
 function createToolPlugin(
-  sessions: Map<string, SessionToolRegistration>, reloads: Map<string, () => Promise<void>>,
+  sessions: Map<string, SessionToolRegistration>, reloads: Map<string, Set<() => Promise<void>>>,
 ): Plugin.Plugin {
   return {
     id: "claxedo-session-tools",
     async setup(context) {
+      const directory = context.location.directory
       await context.tool.transform((draft) => {
-        const definitions = definitionsFor(sessions, context.location.directory)
-        for (const tool of definitions.values()) {
+        for (const tool of definitionsFor(sessions, directory).values()) {
           draft.add({
             name: tool.name,
             description: tool.description,
             input: tool.inputSchema,
             options: { codemode: false },
             execute: (input: unknown, toolContext: { sessionID: unknown; id: unknown }) =>
-              executeTool(sessions, context.location.directory, tool, input, toolContext),
+              executeTool(sessions, directory, tool, input, toolContext),
           })
         }
       })
       await context.session.hook("context", (input) => {
-        const offered = definitionsFor(sessions, context.location.directory)
+        const offered = definitionsFor(sessions, directory)
         const own = new Set(sessions.get(String(input.sessionID))?.tools.map((tool) => tool.name))
         for (const name of Object.keys(input.tools)) if (offered.has(name) && !own.has(name)) delete input.tools[name]
       })
-      reloads.set(context.location.directory, context.tool.reload)
-      return () => {
-        if (reloads.get(context.location.directory) === context.tool.reload) reloads.delete(context.location.directory)
-      }
+      const reload = () => context.tool.reload()
+      const live = reloads.get(directory) ?? new Set()
+      reloads.set(directory, live.add(reload))
+      return () => { live.delete(reload) }
     },
   }
 }
 
-export function createToolPort(host: OpenCodeHost): OpenCodeToolPort {
-  const sessions = new Map<string, SessionToolRegistration>()
-  const reloads = new Map<string, () => Promise<void>>()
-  let installing: Promise<void> | undefined
-  const plugin = createToolPlugin(sessions, reloads)
-
-  async function ensureInstalled() {
-    installing ??= host.client().then((client) => client.plugin(plugin)).catch((error) => {
-      installing = undefined
-      throw error
-    })
-    await installing
-  }
-
-  return toolOperations(host, sessions, reloads, ensureInstalled, () => installing)
+async function reloadDirectory(reloads: Map<string, Set<() => Promise<void>>>, directory: string): Promise<void> {
+  await Promise.all([...reloads.get(directory) ?? []].map((reload) => reload()))
 }
 
-function toolOperations(
-  host: OpenCodeHost,
-  sessions: Map<string, SessionToolRegistration>,
-  reloads: Map<string, () => Promise<void>>,
-  ensureInstalled: () => Promise<void>,
-  installed: () => Promise<void> | undefined,
-): OpenCodeToolPort {
+export function createToolPort(): OpenCodeToolPort {
+  const sessions = new Map<string, SessionToolRegistration>()
+  const reloads = new Map<string, Set<() => Promise<void>>>()
   return {
+    plugin: createToolPlugin(sessions, reloads),
     async registerSession(input) {
       const previous = sessions.get(input.sessionID)
       if (previous && previous.scope.directory !== input.scope.directory) throw new Error("Session tools belong to another workspace")
       sessions.set(input.sessionID, input)
       try {
-        await ensureInstalled()
-        await openCodeLocationClient(host, input.scope.directory)
-        const reload = reloads.get(input.scope.directory)
-        if (!reload) throw new Error("OpenCode tool plugin was not initialized for the workspace")
-        await reload()
+        await reloadDirectory(reloads, input.scope.directory)
       } catch (error) {
         if (previous) sessions.set(input.sessionID, previous)
         else sessions.delete(input.sessionID)
@@ -126,11 +106,7 @@ function toolOperations(
       const registration = sessions.get(sessionID)
       if (!registration) return
       sessions.delete(sessionID)
-      const pending = installed()
-      if (pending) {
-        await pending
-        await reloads.get(registration.scope.directory)?.()
-      }
+      await reloadDirectory(reloads, registration.scope.directory)
     },
   }
 }

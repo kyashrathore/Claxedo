@@ -10,6 +10,7 @@ export type OpenCodeHostOptions = Readonly<{
   configContent?: string
   persistEvents?: boolean
   plugins?: OpenCodeSdk.OpenCode.CreateOptions["plugins"]
+  instances?: OpenCodeSdk.OpenCode.CreateOptions["instances"]
 }>
 
 export class OpenCodeUnavailableError extends Error {
@@ -62,6 +63,7 @@ class EmbeddedOpenCodeHost implements OpenCodeHost {
       const { OpenCode } = await import("@opencode-ai/sdk")
       const created = await OpenCode.create({
         plugins: this.options.plugins,
+        instances: this.options.instances,
         database: { path: this.options.databasePath },
         events: { persist: this.options.persistEvents ?? true },
         fs: { fff: false },

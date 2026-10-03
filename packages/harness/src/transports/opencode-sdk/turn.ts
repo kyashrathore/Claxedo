@@ -14,15 +14,17 @@ import { declaredCommand } from "./command-invocation.js"
 import { flattenTurnPrompt } from "../../translate/prompt"
 
 export type OpenCodeTurnState = { start: StartInput; scope: WorkspaceScope; upstream: string;
-  active: boolean; assistantMessageID?: string; steers: Set<string> }
+  active: boolean; assistantMessageID?: string; steers: Set<string>; pendingInstance?: string }
 
 const STREAM_LOSS_WAIT_MS = 60_000
 const INTERRUPT_WAIT_MS = 5_000
 const SNAPSHOT_READ_MS = 5_000
+const MCP_SETTLE_MS = 10_000
 
 class StreamLost extends Error {}
 class TurnAborted extends Error {}
 class InterruptWaitExpired extends Error {}
+class McpSettleExpired extends Error {}
 
 export function promptRequest(turn: TurnInput) {
   const files: Array<{ ref: string; name?: string }> = []
@@ -63,8 +65,17 @@ async function admitOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnSt
   if (turn.prompt.agent) await runtime.sessions.switchAgent(state.scope, state.upstream, turn.prompt.agent)
   await runtime.sessions.switchModel(state.scope, state.upstream, { providerID: model.providerID, modelID: model.modelID,
     ...(turn.effort ? { variant: turn.effort } : {}) })
-  if (signal.aborted) throw new TurnAborted("OpenCode turn was aborted")
+  await awaitInstanceMcp(runtime, state, signal)
   return { usage, admittedAt: await submitOpenCodeTurn(runtime, state, turn) }
+}
+
+async function awaitInstanceMcp(runtime: OpenCodeRuntime, state: OpenCodeTurnState, signal: AbortSignal): Promise<void> {
+  try {
+    await settleAtRequestDeadline("OpenCode MCP settle", { deadlineAt: Date.now() + MCP_SETTLE_MS, signal },
+      runtime.instances.ready(state.upstream), () => {}, (what, aborted) => aborted ? new TurnAborted("OpenCode turn was aborted") : new McpSettleExpired(what))
+  } catch (error) {
+    if (!(error instanceof McpSettleExpired)) throw error
+  }
 }
 
 async function submitOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, turn: TurnInput): Promise<number> {
@@ -165,6 +176,8 @@ export async function* runOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCode
     broker.signal.removeEventListener("abort", abort)
     closed.removeEventListener("abort", dispose)
     state.active = false
+    if (state.pendingInstance) runtime.instances.assign(state.upstream, state.pendingInstance)
+    state.pendingInstance = undefined
     state.assistantMessageID = undefined
     state.steers.clear()
   }

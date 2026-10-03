@@ -152,9 +152,11 @@ describe("catalog and interaction ports", () => {
     expect(Array.isArray(await catalog.models(alpha))).toBe(true)
   })
 
-  test("pending interactions list per workspace and start empty", async () => {
-    expect(await interactions.permissions(alpha)).toEqual([])
-    expect(await interactions.forms(alpha)).toEqual([])
+  test("pending interactions list per session, start empty, and refuse another workspace", async () => {
+    const mine = await sessions.create(alpha, { title: "pending interactions" })
+    expect(await interactions.permissions(alpha, mine.id)).toEqual([])
+    expect(await interactions.forms(alpha, mine.id)).toEqual([])
+    await expect(interactions.permissions(beta, mine.id)).rejects.toBeInstanceOf(WorkspaceScopeError)
   })
 
   test("replying into another workspace's session fails closed", async () => {
