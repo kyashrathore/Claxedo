@@ -1,6 +1,6 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import type { SubagentStatus } from "@claxedo/agent-runtime-contract"
-import { asText as text } from "@claxedo/agent-runtime-contract"
+import { asText as text, isSubagentStatus } from "@claxedo/agent-runtime-contract"
 
 export const HOST_SUBAGENT_MCP_SERVER = "claxedo"
 export const HOST_SUBAGENT_TOOL = "create_subagent"
@@ -62,10 +62,8 @@ function* candidates(value: unknown): Generator {
   if (row.type === "text" && typeof row.text === "string") yield* candidates(row.text)
 }
 
-const STATUSES: readonly SubagentStatus[] = ["pending", "running", "paused", "interrupted", "completed", "failed", "killed"]
-
 function hostBindingStatus(value: unknown): SubagentStatus | undefined {
-  return STATUSES.find((status) => status === value)
+  return isSubagentStatus(value) ? value : undefined
 }
 
 export type HostSubagentObservation = {

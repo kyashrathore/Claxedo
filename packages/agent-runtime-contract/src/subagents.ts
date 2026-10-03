@@ -19,22 +19,37 @@ export function isRuntimeGoalStatus(value: unknown): value is RuntimeGoalStatus 
   return typeof value === "string" && (RUNTIME_GOAL_STATUSES as readonly string[]).includes(value)
 }
 
-export type SubagentStatus = "pending" | "running" | "paused" | "interrupted" | "completed" | "failed" | "killed"
+export const SUBAGENT_STATUSES = ["pending", "running", "paused", "interrupted", "completed", "failed", "killed"] as const
+export type SubagentStatus = typeof SUBAGENT_STATUSES[number]
 
 export function isTerminalSubagentStatus(status: string | undefined): boolean {
   return status === "completed" || status === "failed" || status === "killed" || status === "interrupted"
 }
-export type SubagentMode = "foreground" | "background"
-export type SubagentToolCallRole = "spawn" | "interaction"
+export const SUBAGENT_MODES = ["foreground", "background"] as const
+export type SubagentMode = typeof SUBAGENT_MODES[number]
+export const SUBAGENT_TOOL_CALL_ROLES = ["spawn", "interaction"] as const
+export type SubagentToolCallRole = typeof SUBAGENT_TOOL_CALL_ROLES[number]
 /**
  * The completion wake a host-owned child owes its parent: `pending` until the
  * runtime has started the parent turn that carries the child's summary.
  */
-export type SubagentWake = "pending" | "delivered"
+export const SUBAGENT_WAKES = ["pending", "delivered"] as const
+export type SubagentWake = typeof SUBAGENT_WAKES[number]
+export const SUBAGENT_TRANSCRIPT_KINDS = ["live", "file", "messages", "none"] as const
 export type SubagentTranscript = {
-  kind: "live" | "file" | "messages" | "none"
+  kind: typeof SUBAGENT_TRANSCRIPT_KINDS[number]
   ref?: string
 }
+
+function isMember<T extends string>(members: readonly T[], value: unknown): value is T {
+  return members.some((member) => member === value)
+}
+
+export const isSubagentStatus = (value: unknown): value is SubagentStatus => isMember(SUBAGENT_STATUSES, value)
+export const isSubagentMode = (value: unknown): value is SubagentMode => isMember(SUBAGENT_MODES, value)
+export const isSubagentToolCallRole = (value: unknown): value is SubagentToolCallRole => isMember(SUBAGENT_TOOL_CALL_ROLES, value)
+export const isSubagentWake = (value: unknown): value is SubagentWake => isMember(SUBAGENT_WAKES, value)
+export const isSubagentTranscriptKind = (value: unknown): value is SubagentTranscript["kind"] => isMember(SUBAGENT_TRANSCRIPT_KINDS, value)
 
 /** One revision of a subagent row, as the runtime observed it. */
 export type AgentSubagentUpdate = {
