@@ -24,8 +24,8 @@ function Home(props: { readonly api: PluginApi; readonly hostTheme?: () => strin
   const projectId = () => api.projects.currentId() ?? api.projects.list()[0]?.id ?? ""
   const createDocument = async () => {
     await api.server.operation("documents.create", { project_id: projectId(), display_name: "Fixture page", markdown: "# Fixture" })
-    const listed = await api.server.operation<readonly unknown[]>("documents.list", { project_id: projectId() })
-    add("documents " + listed.length)
+    const listed = await api.server.operation("documents.list", { project_id: projectId() })
+    add("documents " + (Array.isArray(listed) ? listed.length : "unreadable"))
   }
   const probeIsolation = () => {
     const attempt = (name: string, read: () => unknown) => {

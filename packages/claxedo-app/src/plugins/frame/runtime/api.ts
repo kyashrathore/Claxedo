@@ -137,7 +137,7 @@ function dataApi(scope: FrameScope): Pick<PluginApi, "sessions" | "projects" | "
     projects: { list: () => link.mirror.projects, currentId: () => link.mirror.currentProjectId },
     server: {
       fetch: async (path, init) => response(frameResponseFromHost(await link.call({ method: "server.fetch", path, init: requestInit(init) }))),
-      operation: async <Result>(name: string, input?: unknown) => (await link.call({ method: "server.operation", name, input })) as Result,
+      operation: (name, input) => link.call({ method: "server.operation", name, input }),
     },
     context: {
       ...context,

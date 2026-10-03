@@ -74,7 +74,7 @@ Asking for more access makes the app ask the person again.
 | \`api.projects.list\` | \`() => ProjectSummary[]\` | The user's projects |
 | \`api.projects.currentId\` | \`() => string \\| undefined\` | The current project's id |
 | \`api.server.fetch\` | \`(path, init?) => Promise<Response>\` | An authenticated call to a route the manifest names |
-| \`api.server.operation\` | \`(name, input?) => Promise<Result>\` | A control-plane operation the manifest names |
+| \`api.server.operation\` | \`(name, input?) => Promise<unknown>\` | A control-plane operation the manifest names; the plugin parses its result |
 | \`api.context\` | \`{ pluginId, pluginVersion, platform, locale, currentProjectId(), currentSession(), signal }\` | Where the plugin runs; \`signal\` aborts when the plugin is disposed |
 | \`api.ui.toast\` | \`({ kind, title, description? }) => void\` | A toast |
 | \`api.ui.confirm\` | \`({ title, description?, confirmLabel?, cancelLabel? }) => Promise<boolean>\` | A confirmation dialog |
