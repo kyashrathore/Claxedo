@@ -11,9 +11,15 @@ const SEEDS: Record<Mode, { background: HexColor; foreground: HexColor }> = {
 
 const SELECTION_ALPHA: Record<Mode, number> = { light: 0.2, dark: 0.25 }
 
+function isOpaqueHexColor(value: string): value is HexColor {
+  return /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)
+}
+
 function hexColor(value: string): HexColor | undefined {
-  if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)) return value as HexColor
-  return /^#[0-9a-f]{8}$/i.test(value) ? (value.slice(0, 7) as HexColor) : undefined
+  if (isOpaqueHexColor(value)) return value
+  if (!/^#[0-9a-f]{8}$/i.test(value)) return undefined
+  const opaque = value.slice(0, 7)
+  return isOpaqueHexColor(opaque) ? opaque : undefined
 }
 
 function currentMode(): Mode {

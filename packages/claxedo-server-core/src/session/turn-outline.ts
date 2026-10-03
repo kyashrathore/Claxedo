@@ -41,10 +41,10 @@ export async function readStoredTurnOutline(
   workspaceId: string,
   bounds: TurnOutlineBounds = TURN_OUTLINE_BOUNDS,
 ): Promise<TurnOutline> {
-  const newest = (await query(newestUsersSql(column), [sessionId, workspaceId, bounds.limit + 1])) as UserRow[]
+  const newest = await query<UserRow>(newestUsersSql(column), [sessionId, workspaceId, bounds.limit + 1])
   const users = newest.slice(0, bounds.limit).reverse()
   const oldest = users[0]
   if (!oldest) return { turns: [], complete: true }
-  const texts = (await query(userTextsSql(column), [bounds.snippetLength, sessionId, workspaceId, oldest.ordinal])) as OutlineTextRow[]
+  const texts = await query<OutlineTextRow>(userTextsSql(column), [bounds.snippetLength, sessionId, workspaceId, oldest.ordinal])
   return foldTurnOutline({ users, texts, complete: newest.length <= bounds.limit }, bounds.snippetLength)
 }

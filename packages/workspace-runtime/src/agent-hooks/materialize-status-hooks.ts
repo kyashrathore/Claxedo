@@ -113,18 +113,27 @@ function valueAt(value: Record<string, unknown>, keys: string[]): Record<string,
   return asRecord(current)
 }
 
+function hookEntries(rendered: unknown): Record<string, Record<string, unknown>> {
+  return Object.fromEntries(Object.entries(asRecord(rendered) ?? {}).map(([event, entry]): [string, Record<string, unknown>] => {
+    const handler = asRecord(entry)
+    if (!handler) throw new Error(`Hook entry ${event} is not an object; refusing to write it`)
+    return [event, handler]
+  }))
+}
+
 async function mergeTemplate(template: StatusHookTemplate, input: MaterializeAgentHooksOptions) {
   const install = template.install
   if (install.type !== "config-merge") return
   const file = path.join(input.homeDir, install.path.slice(2))
-  if (install.shape === "text") {
+  // The manifest schema pairs string entries with the text shape and only it.
+  if (typeof install.entries === "string") {
     const original = await readFileIfExists(file)
     if (original !== undefined && !original.startsWith(install.ownedPrefix!))
       throw new Error(`Refusing to overwrite an unrecognized plugin at ${file}`)
     await writeMergedConfig(
       file,
       original,
-      renderHookText(install.entries as string, hookVariables(template, input.notifyPath)),
+      renderHookText(install.entries, hookVariables(template, input.notifyPath)),
     )
     return
   }
@@ -138,10 +147,7 @@ async function mergeTemplate(template: StatusHookTemplate, input: MaterializeAge
   const target = selected === alternate ? alternateFile! : file
   const targetBase = selected === alternate ? effective!.base : base
   const container = valueAt(selected.value, targetBase)
-  const entries = renderHookValue(install.entries, hookVariables(template, input.notifyPath)) as Record<
-    string,
-    Record<string, unknown>
-  >
+  const entries = hookEntries(renderHookValue(install.entries, hookVariables(template, input.notifyPath)))
   const isManaged = await loadManagedHookCommands(install.managedScript!, primary.value, alternate?.value)
   const desiredCommands = new Set(hookCommands(entries))
   const owns = (command: string | undefined) =>

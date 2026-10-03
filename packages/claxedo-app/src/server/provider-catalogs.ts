@@ -31,7 +31,7 @@ function catalogQueryKey(server: string, harness: string, placementId: Placement
 async function readCatalog(transport: Transport, workspaces: Workspaces, harness: string, placementId: PlacementId | undefined, request: CatalogRequest) {
   const placement = catalogPlacement(harness, placementId)
   const workspaceId = placement ? (await workspaces.locate(placement)).workspaceId : undefined
-  return providerCatalogFromWire(await transport.json<unknown>(withQuery(PROVIDERS_PATH, { nativeHarness: harness, workspaceId, ...request })), harness)
+  return providerCatalogFromWire(await transport.json(withQuery(PROVIDERS_PATH, { nativeHarness: harness, workspaceId, ...request })), harness)
 }
 
 function needsDetail(catalog: ProviderCatalog | undefined, providerId: string): boolean {

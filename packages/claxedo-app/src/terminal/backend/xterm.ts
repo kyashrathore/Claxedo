@@ -1,6 +1,6 @@
 import "@xterm/xterm/css/xterm.css"
 import "./terminal.css"
-import type { Terminal as XTerm } from "@xterm/xterm"
+import type { IDisposable, Terminal as XTerm } from "@xterm/xterm"
 import { createTerminalInstance, type TerminalInstance, type TerminalInstanceOptions } from "./renderer"
 import { setupResizeHandlers } from "./resize-handlers"
 import { createXtermModeTracker, type ModeTracker } from "./modes"
@@ -64,6 +64,10 @@ function backendOf(parts: BackendParts): TerminalBackend {
   }
 }
 
+function disposerOf(disposable: IDisposable): Disposer {
+  return () => disposable.dispose()
+}
+
 function disposalOrder(input: {
   container: HTMLDivElement
   instance: TerminalInstance
@@ -80,8 +84,8 @@ function disposalOrder(input: {
     tracker.dispose,
     ...installInput({ container, xterm, options, tracker, emitData: listeners.emitData }),
     input.resizeCleanup,
-    xterm.onData(listeners.emitData).dispose,
-    xterm.onKey((event) => listeners.emitKey(event.key)).dispose,
+    disposerOf(xterm.onData(listeners.emitData)),
+    disposerOf(xterm.onKey((event) => listeners.emitKey(event.key))),
   ]
   const blink = blinkWhileFocused(xterm)
   if (blink) cleanups.push(blink)

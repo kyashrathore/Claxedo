@@ -83,7 +83,10 @@ export function requestApproval(input: ApprovalRequest, plugin: PluginSummary): 
   const decide = (approved: boolean) => {
     input.dialog.close()
     if (!approved) return
-    if (!input.host.approve(plugin.id, hash)) return void showToast({ variant: "error", description: input.t("plugins.approval.stale", { name: plugin.name }) })
+    if (!input.host.approve(plugin.id, hash)) {
+      showToast({ variant: "error", description: input.t("plugins.approval.stale", { name: plugin.name }) })
+      return
+    }
     input.host.switchOn(plugin.id)
   }
   void input.dialog.show(() => <ApprovalDialog plugin={plugin} platform={input.platform} decide={decide} />)

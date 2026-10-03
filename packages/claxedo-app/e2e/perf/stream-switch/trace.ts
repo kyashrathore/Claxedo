@@ -1,4 +1,4 @@
-import type { TraceEvent } from "../../harness/trace-events"
+import { traceText, type TraceEvent } from "../../harness/trace-events"
 import { createSourceMapper } from "../panel/trace"
 import { forcingFrame, mapTraceFrame, readMainThread } from "./main-thread"
 
@@ -12,14 +12,14 @@ function label(event: TraceEvent) {
   const data = event.args?.data ?? {}
   const ms = ((event.dur ?? 0) / 1000).toFixed(1).padStart(6)
   if (event.name === "FunctionCall") {
-    return `${ms} FunctionCall ${String(data.functionName || "(anon)")} ${mapTraceFrame(mapper, { url: String(data.url ?? ""), lineNumber: Number(data.lineNumber ?? 1), columnNumber: Number(data.columnNumber ?? 1) })}`
+    return `${ms} FunctionCall ${traceText(data.functionName) || "(anon)"} ${mapTraceFrame(mapper, { url: traceText(data.url) ?? "", lineNumber: Number(data.lineNumber ?? 1), columnNumber: Number(data.columnNumber ?? 1) })}`
   }
   if (event.name === "EventDispatch") return `${ms} Event:${String(data.type)}`
   if (event.name === "Layout") {
     const begin = (event.args as { beginData?: { dirtyObjects?: number; totalObjects?: number; partialLayout?: boolean } }).beginData
     return `${ms} Layout dirty=${begin?.dirtyObjects} total=${begin?.totalObjects}${forcingFrame(event) ? " FORCED" : ""}`
   }
-  if (event.name === "UpdateLayoutTree") return `${ms} UpdateLayoutTree elements=${String((event.args as { elementCount?: number }).elementCount ?? data.elementCount ?? "")}`
+  if (event.name === "UpdateLayoutTree") return `${ms} UpdateLayoutTree elements=${(event.args as { elementCount?: number }).elementCount ?? traceText(data.elementCount) ?? ""}`
   return `${ms} ${event.name}`
 }
 

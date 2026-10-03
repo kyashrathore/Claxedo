@@ -1,3 +1,4 @@
+import { readArray, readString } from "@claxedo/helpers/readers"
 import type { ProjectId, SessionId } from "./ids"
 import type { SessionContext } from "./session-context"
 import { accountHoldsReader, sessionSettled } from "./session-reader"
@@ -36,8 +37,8 @@ async function listedOf(context: SessionContext, items: readonly unknown[], acco
   const readers = new Map<SessionId, SessionReader>()
   for (const item of items) {
     let row = sessionRowFromListItem(item, address)
-    const directory = (item as { directory?: unknown }).directory
-    if (!row && typeof directory === "string") {
+    const directory = readString(item, "directory")
+    if (!row && directory !== undefined) {
       await context.workspaces.learn(directory)
       row = sessionRowFromListItem(item, address)
     }
@@ -56,8 +57,9 @@ async function listedOf(context: SessionContext, items: readonly unknown[], acco
   return { rows, statuses, readers }
 }
 
-function sourcePage(body: { items?: unknown; nextAfter?: unknown }): SourcePage {
-  return { items: Array.isArray(body.items) ? body.items : [], ...(typeof body.nextAfter === "string" ? { nextAfter: body.nextAfter } : {}) }
+function sourcePage(body: unknown): SourcePage {
+  const nextAfter = readString(body, "nextAfter")
+  return { items: readArray(body, "items") ?? [], ...(nextAfter !== undefined ? { nextAfter } : {}) }
 }
 
 type ScopeParams = Readonly<Record<string, string>>

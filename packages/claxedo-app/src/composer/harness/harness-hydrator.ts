@@ -10,7 +10,7 @@ import {
   type HarnessScopeInput,
 } from "./store-policy"
 
-export type HarnessHydratorCache<ScopeInput extends HarnessScopeInput> = {
+export type HarnessHydratorCache = {
   getSeen(scope: string): string | undefined
   setSeen(scope: string, key: string): void
   clearSeen(scope: string): void
@@ -37,7 +37,7 @@ type HydratorInput<ScopeInput extends HarnessScopeInput> = {
     placementKind(placementId: PlacementId): PlacementKind | undefined
     folderHarness(placementId: PlacementId): Promise<HarnessState | undefined>
   }
-  cache: HarnessHydratorCache<ScopeInput>
+  cache: HarnessHydratorCache
 }
 
 type Run<ScopeInput> = {
@@ -76,7 +76,7 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
   }
 }
 
-function createRunTracker<ScopeInput extends HarnessScopeInput>(cache: HarnessHydratorCache<ScopeInput>) {
+function createRunTracker(cache: HarnessHydratorCache) {
   const generations = new Map<string, number>()
   const pending = new Map<string, { key: string; run: Promise<void> }>()
   let nextGeneration = 0

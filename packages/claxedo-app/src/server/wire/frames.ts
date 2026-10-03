@@ -1,4 +1,4 @@
-import { isAgentContentPart, isAgentMessageInfo, isAgentSnapshotFileDiff, isAgentTodo, parseBackgroundWork, type AgentSession } from "@claxedo/agent-runtime-contract"
+import { isAgentContentPart, isAgentMessageInfo, isAgentSnapshotFileDiff, isAgentTodo, parseBackgroundWork } from "@claxedo/agent-runtime-contract"
 import type { ServerEvent } from "../events"
 import { placementId as asPlacementId, projectId, requestId } from "../ids"
 import type { SessionLocation } from "../types"
@@ -7,7 +7,7 @@ import { goalFromWire } from "./goal"
 import { connectionStateFromWire, harnessHealthFromWire } from "./harness-state"
 import { subagentFromWire } from "./subagents"
 import { isPermissionWire, isQuestionWire, requestFromPermission, requestFromQuestion } from "./requests"
-import { lastTurnFromWire, listedStatusFromListItem, readerFromWire, sessionLocationFor, sessionRowFromSession, type Address } from "./session-row"
+import { isSessionWire, lastTurnFromWire, listedStatusFromListItem, readerFromWire, sessionLocationFor, sessionRowFromSession, type Address } from "./session-row"
 import { sessionStatusFromTurnError, sessionStatusFromWire } from "./status"
 import { terminalEvent } from "./terminals"
 import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
@@ -18,10 +18,6 @@ export type Frame = {
   readonly type: string
   readonly properties?: Record<string, unknown>
   readonly raw: Record<string, unknown>
-}
-
-function isSessionInfo(value: unknown): value is AgentSession {
-  return isRecord(value) && typeof value.id === "string"
 }
 
 export function frameFromWire(input: unknown): Frame | undefined {
@@ -139,7 +135,7 @@ function lifecycleEvent(frame: Frame, ref: SessionLocation): ServerEvent | undef
   const properties = frame.properties ?? {}
   switch (frame.type) {
     case "session.updated":
-      return isSessionInfo(properties.info) ? { type: "sessionUpserted", row: sessionRowFromSession(properties.info, ref) } : undefined
+      return isSessionWire(properties.info) ? { type: "sessionUpserted", row: sessionRowFromSession(properties.info, ref) } : undefined
     case "session.deleted":
       return { type: "sessionRemoved", ref }
     case "session.diff": {

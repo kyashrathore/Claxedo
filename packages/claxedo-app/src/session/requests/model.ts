@@ -64,7 +64,11 @@ function rememberClosed(data: RequestsData, requestId: RequestId, at: number): R
   const closedAt = new Map(data.closedAt)
   closedAt.delete(requestId)
   closedAt.set(requestId, at)
-  while (closedAt.size > CLOSED_MEMORY) closedAt.delete(closedAt.keys().next().value as RequestId)
+  while (closedAt.size > CLOSED_MEMORY) {
+    const oldest = closedAt.keys().next()
+    if (oldest.done) break
+    closedAt.delete(oldest.value)
+  }
   return closedAt
 }
 

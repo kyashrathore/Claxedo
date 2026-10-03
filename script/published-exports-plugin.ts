@@ -91,7 +91,7 @@ function matchesExternal(specifier: string, patterns: readonly string[]): boolea
   })
 }
 
-export function publishedExportsPlugin(): BunPlugin {
+export function publishedExportsPlugin() {
   return {
     name: "claxedo-published-exports",
     setup(build) {
@@ -107,5 +107,5 @@ export function publishedExportsPlugin(): BunPlugin {
         return { path: resolved ?? fs.realpathSync(Bun.resolveSync(args.path, args.resolveDir)) }
       })
     },
-  }
+  } satisfies BunPlugin
 }

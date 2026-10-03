@@ -155,7 +155,8 @@ export function installRecorder() {
         const ready = session.ready && panel.ready && (predicate.panel === undefined || predicate.panel === "closed" || (own && host?.dataset.open === "true"))
         return { ready, signature: ready ? `${session.signature}|${panel.signature}` : "" }
       }
-      case "maximized": {
+      case "maximized":
+      default: {
         const column = document.querySelector<HTMLElement>("[data-testid='workbench-column']")
         const available = host?.parentElement?.clientWidth ?? 0
         const width = host?.getBoundingClientRect().width ?? 0

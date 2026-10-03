@@ -1,3 +1,5 @@
+import { isRecord } from "@claxedo/helpers/guards"
+import { unreachable } from "../../lib/machine"
 import { ServerError } from "../errors"
 import { projectId } from "../ids"
 import type { MissingCheckout, Project, ProjectCommands, ProjectIcon, ProjectSource } from "../types"
@@ -17,9 +19,8 @@ type WireProject = {
 }
 
 function isWireProject(value: unknown): value is WireProject {
-  const row = value as Partial<WireProject> | null
-  return !!row && typeof row.id === "string" && typeof row.name === "string" && typeof row.available === "boolean"
-    && typeof row.created_at === "number" && typeof row.updated_at === "number"
+  return isRecord(value) && typeof value.id === "string" && typeof value.name === "string" && typeof value.available === "boolean"
+    && typeof value.created_at === "number" && typeof value.updated_at === "number"
 }
 
 function sourceOf(project: WireProject): ProjectSource | undefined {
@@ -72,6 +73,8 @@ export function projectSourceBody(source: ProjectSource) {
       return { kind: "repository", repoUrl: source.url }
     case "connectedRepository":
       return { kind: "repository", connectionId: source.connectionId, repo: { fullName: source.fullName } }
+    default:
+      return unreachable(source)
   }
 }
 

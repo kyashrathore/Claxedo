@@ -1,9 +1,7 @@
 import { AgentMessagePageError } from "@claxedo/agent-runtime-contract"
 import { projectTurn, type PageTurn, type ReaderSettings, type TurnPage, type TurnPageRequest } from "@claxedo/agent-runtime-contract"
-import type { AgentMessage, AgentToolPart } from "@claxedo/agent-runtime-contract"
-import { registerTranscriptSession, syncTranscript, syncedMessage, type SyncedMessage, type TranscriptConformanceHarness } from "./stored-transcript.conformance"
-
-type LatestTurn = { messages: AgentMessage[]; nextCursor?: string }
+import type { AgentToolPart } from "@claxedo/agent-runtime-contract"
+import { registerTranscriptSession, storedMessagePage, syncTranscript, syncedMessage, type SyncedMessage, type TranscriptConformanceHarness } from "./stored-transcript.conformance"
 
 const sessionId = "ses_turn_page"
 const toolOutput = "x".repeat(4096)
@@ -40,7 +38,7 @@ export async function exerciseTurnPageConformance(harness: TranscriptConformance
   ])
 
   const latestTurn = async (before?: string) =>
-    (await authority.readSessionMessages(creator.auth, { sessionId, workspaceId, view: "latest-turn", ...(before ? { before } : {}) })) as LatestTurn
+    storedMessagePage(await authority.readSessionMessages(creator.auth, { sessionId, workspaceId, view: "latest-turn", ...(before ? { before } : {}) }))
   const third = await latestTurn()
   const second = await latestTurn(third.nextCursor)
   const first = await latestTurn(second.nextCursor)

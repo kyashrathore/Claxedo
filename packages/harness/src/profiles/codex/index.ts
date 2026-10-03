@@ -31,7 +31,7 @@ function validatedCodexPluginSegment(name: string): string {
 }
 
 async function installedPlugins(folder: string): Promise<string[]> {
-  return (await fs.readdir(folder).catch((error: NodeJS.ErrnoException) => {
+  return (await fs.readdir(folder).catch((error: NodeJS.ErrnoException): string[] => {
     if (error.code === "ENOENT") return []
     throw error
   })).sort()

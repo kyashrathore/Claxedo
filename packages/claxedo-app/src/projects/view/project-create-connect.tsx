@@ -39,10 +39,14 @@ function createConnect(integration: () => Integration) {
     const outcome = await server.integrations.connect(integration().id, method === "oauth" ? { method } : { method, secret: secret() })
     if (outcome.kind === "authorize") {
       setGrant(outcome.grant)
-      return void awaitApproval(outcome.grant)
+      void awaitApproval(outcome.grant)
+      return
     }
     setBusy(false)
-    if (outcome.kind === "failed") return void setFailure(outcome.reason)
+    if (outcome.kind === "failed") {
+      setFailure(outcome.reason)
+      return
+    }
     setSecret("")
   }
   return { secret, setSecret, busy, failure, grant, connect }

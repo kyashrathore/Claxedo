@@ -7,7 +7,7 @@ window.__firstSendWatch = (text) => {
     sample: () => ({ message: has('[data-component="user-message"]', text), token: has('[data-component="text-part"]', "") }),
     painted: (seen, at) => {
       const marks = window.__firstSend
-      if (marks.down === undefined) return
+      if (marks.down === undefined) return false
       if (marks.message === undefined && seen.message) marks.message = at - marks.down
       if (marks.token === undefined && seen.token) marks.token = at - marks.down
       return marks.message !== undefined && marks.token !== undefined

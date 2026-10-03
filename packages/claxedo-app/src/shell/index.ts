@@ -1,10 +1,12 @@
 export type {
   AnyPaneKind,
   CommandEntry,
+  ContentViewProps,
   Disposer,
   Json,
   MentionEntry,
   MentionSource,
+  OpenedContent,
   PageEntry,
   PageProps,
   PaneKind,
@@ -20,6 +22,8 @@ export type {
   ThemeEntry,
 } from "./types"
 export type { FirstPartyEntries } from "./registries"
+export { isJson } from "./json"
+export { paneKindEntry } from "./pane-kind-entry"
 export { byOrder, createShellRegistries, ShellRegistriesContext, useShellRegistries } from "./registries"
 export { draftPath, fillPattern, sessionLinkPath, panePlacementOf, sessionPath, settingsPath } from "./routes"
 export type { ShellRouterComponent, ShellRouting } from "./router"

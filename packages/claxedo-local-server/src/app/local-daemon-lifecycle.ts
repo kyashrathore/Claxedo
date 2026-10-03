@@ -386,7 +386,7 @@ export function createLocalDaemonLifecycle(options: {
   }
 
   function signalChange() {
-    for (const wake of [...changeWaiters]) wake()
+    for (const wake of changeWaiters) wake()
   }
 
   /** Resolves on the next change to work, leases or the gate, or after `timeoutMs`. */

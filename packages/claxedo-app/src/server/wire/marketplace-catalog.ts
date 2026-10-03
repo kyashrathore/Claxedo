@@ -1,6 +1,7 @@
 import { isRecord, isString, isStringList } from "@claxedo/helpers/guards"
 import type {
   MarketplaceCatalog,
+  MarketplaceCatalogError,
   PluginActivation,
   PluginCandidate,
   PluginHarness,
@@ -19,11 +20,11 @@ export const PLUGIN_HARNESSES: readonly PluginHarness[] = ["opencode", "claude",
 
 const SOURCE_KINDS: readonly PluginSourceKind[] = ["claxedo", "personal", "organization"]
 
-function isOptionalString(value: unknown) {
+function isOptionalString(value: unknown): value is string | null | undefined {
   return value === undefined || value === null || isString(value)
 }
 
-function isOptionalBoolean(value: unknown) {
+function isOptionalBoolean(value: unknown): value is boolean | undefined {
   return value === undefined || typeof value === "boolean"
 }
 
@@ -165,7 +166,7 @@ function isCandidate(value: unknown): value is PluginCandidate {
   return isRecord(harnesses) && PLUGIN_HARNESSES.every((id) => isActivation(harnesses[id]))
 }
 
-function isCatalogErrors(value: unknown): boolean {
+function isCatalogErrors(value: unknown): value is MarketplaceCatalogError[] {
   return (
     Array.isArray(value) &&
     value.every(
@@ -179,7 +180,7 @@ function isCatalogErrors(value: unknown): boolean {
   )
 }
 
-function isProjects(value: unknown): boolean {
+function isProjects(value: unknown): value is MarketplaceCatalog["projects"] {
   return (
     value === undefined ||
     (Array.isArray(value) &&
@@ -195,7 +196,16 @@ export function marketplaceCatalogFromWire(value: unknown): MarketplaceCatalog |
     return undefined
   if (!Array.isArray(value.candidates) || !value.candidates.every(isCandidate) || !isCatalogErrors(value.errors))
     return undefined
-  return value as MarketplaceCatalog
+  return {
+    revision: value.revision,
+    supportedHarnesses: value.supportedHarnesses,
+    projects: value.projects,
+    selectedProjectId: value.selectedProjectId,
+    canManageOrganizationDefaults: value.canManageOrganizationDefaults,
+    canManageOrganizationConnections: value.canManageOrganizationConnections,
+    candidates: value.candidates,
+    errors: value.errors,
+  }
 }
 
 export function pluginSkillFromWire(value: unknown): PluginSkillDocument | undefined {

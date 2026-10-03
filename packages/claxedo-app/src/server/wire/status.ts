@@ -2,6 +2,7 @@ import { NO_BACKGROUND_WORK, parseBackgroundWork, type AgentRuntimeStatus, type 
 import { turnError } from "../errors"
 import type { RetryAction, SessionStatus } from "../status-types"
 import { isRecord } from "@claxedo/helpers/guards"
+import { unreachable } from "../../lib/machine"
 
 function retryActionFromWire(value: unknown): RetryAction | undefined {
   if (!isRecord(value)) return undefined

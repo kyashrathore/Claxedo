@@ -29,8 +29,7 @@ const TOOL_NAMES: Readonly<Record<string, string>> = Object.fromEntries(
   Object.values(ITEM_KINDS).flatMap(([kind, name]) => name ? [[kind, name]] : []))
 
 export function canonicalItemType(raw: unknown) {
-  const type = text(raw)
-  return type && Object.hasOwn(ITEM_KINDS, type) ? ITEM_KINDS[type as v2.ThreadItem["type"]][0] : "dynamic_tool_call"
+  return own(ITEM_KINDS, text(raw) ?? "")?.[0] ?? "dynamic_tool_call"
 }
 
 export function toolNameForItem(itemType: string, row: Record<string, unknown>) {

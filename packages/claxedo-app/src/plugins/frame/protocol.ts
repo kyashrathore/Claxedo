@@ -1,3 +1,4 @@
+import { isRecord } from "@claxedo/helpers/guards"
 import type {
   CommandContext,
   Confirmation,
@@ -103,3 +104,56 @@ export type FrameToHost =
   | { readonly type: "result"; readonly id: number; readonly ok: false; readonly reason: string }
   | { readonly type: "activated" }
   | { readonly type: "failed"; readonly reason: string }
+
+export class FrameProtocolError extends Error {
+  constructor(what: string) {
+    super(`The plugin frame sent ${what} that does not match its protocol`)
+    this.name = "FrameProtocolError"
+  }
+}
+
+function mentionItemFromFrame(value: unknown): MentionItem | undefined {
+  if (!isRecord(value) || typeof value.id !== "string" || typeof value.label !== "string") return undefined
+  return {
+    id: value.id,
+    label: value.label,
+    ...(typeof value.description === "string" ? { description: value.description } : {}),
+    ...(typeof value.icon === "string" ? { icon: value.icon } : {}),
+  }
+}
+
+function mentionInsertFromFrame(value: unknown): MentionInsert | undefined {
+  if (!isRecord(value) || typeof value.text !== "string") return undefined
+  if (value.attachment === undefined) return { text: value.text }
+  const { attachment } = value
+  if (!isRecord(attachment) || typeof attachment.kind !== "string" || typeof attachment.reference !== "string") return undefined
+  return { text: value.text, attachment: { kind: attachment.kind, reference: attachment.reference } }
+}
+
+function foundMentionFromFrame(value: unknown): FoundMention {
+  const item = isRecord(value) ? mentionItemFromFrame(value.item) : undefined
+  const insert = isRecord(value) ? mentionInsertFromFrame(value.insert) : undefined
+  if (!item || !insert) throw new FrameProtocolError("a mention")
+  return { item, insert }
+}
+
+export function foundMentionsFromFrame(value: unknown): FoundMention[] {
+  if (!Array.isArray(value)) throw new FrameProtocolError("mention results")
+  return value.map(foundMentionFromFrame)
+}
+
+function isHeaderPair(value: unknown): value is readonly [string, string] {
+  return Array.isArray(value) && value.length === 2 && typeof value[0] === "string" && typeof value[1] === "string"
+}
+
+export function frameResponseFromHost(value: unknown): FrameResponse {
+  if (!isRecord(value) || typeof value.status !== "number" || typeof value.statusText !== "string" || typeof value.body !== "string") throw new FrameProtocolError("a response")
+  const { headers } = value
+  if (!Array.isArray(headers) || !headers.every(isHeaderPair)) throw new FrameProtocolError("response headers")
+  return { status: value.status, statusText: value.statusText, headers, body: value.body }
+}
+
+export function sessionRefFromHost(value: unknown): SessionRef {
+  if (!isRecord(value) || typeof value.sessionId !== "string" || typeof value.workspaceId !== "string") throw new FrameProtocolError("a session")
+  return { sessionId: value.sessionId, workspaceId: value.workspaceId }
+}

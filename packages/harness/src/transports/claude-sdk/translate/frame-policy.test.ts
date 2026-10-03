@@ -43,6 +43,19 @@ describe("Claude frames the pinned SDK does not declare", () => {
   })
 })
 
+describe("Claude frames missing the fields the transport reads", () => {
+  test("a malformed assistant or stream frame is one warning that names its kind, never an adapter error", () => {
+    const agent = runtime()
+    const warning = (kind: string) => [{ type: "diagnostic", diagnostic: { code: "claude_sdk.malformed_frame", severity: "warn",
+      message: `Claude frame ${kind} is missing the fields this transport reads and is ignored` } }]
+    expect(ingest(agent, { type: "assistant", message: null, parent_tool_use_id: null, ...session })).toMatchObject(warning("assistant"))
+    expect(ingest(agent, { type: "stream_event", event: { type: "message_start" }, parent_tool_use_id: null, ...session }))
+      .toMatchObject(warning("stream_event/message_start"))
+    expect(ingest(agent, { type: "stream_event", event: { type: "content_block_delta", index: 0 }, parent_tool_use_id: null, ...session }))
+      .toMatchObject(warning("stream_event/content_block_delta"))
+  })
+})
+
 describe("Claude side-channel frames the person should see", () => {
   test("an API retry is the session retrying, with Claude's attempt, delay and cause", () => {
     expect(ingest(runtime(), system("api_retry", { attempt: 1, max_retries: 10, retry_delay_ms: 5000, error_status: 429, error: "rate_limit" })))

@@ -9,6 +9,10 @@ export type TraceEvent = {
   args?: { data?: Record<string, unknown> }
 }
 
+export function traceText(value: unknown): string | undefined {
+  return typeof value === "string" ? value : typeof value === "number" ? String(value) : undefined
+}
+
 export function traceEventsFrom(payload: unknown): TraceEvent[] {
   if (!payload || typeof payload !== "object" || !("value" in payload) || !Array.isArray(payload.value)) return []
   return payload.value.filter((event): event is TraceEvent =>

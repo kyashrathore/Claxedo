@@ -38,7 +38,7 @@ function producer() {
       }
     },
     changed: () => {
-      for (const listener of [...listeners]) listener()
+      for (const listener of listeners) listener()
     },
   }
 }

@@ -1,3 +1,4 @@
+import { unreachable } from "@/lib/machine"
 import { formatCompactAge } from "@/lib/relative-time"
 import type { MachineId, Placement, ProjectId, SessionId, SessionLocation } from "@/server"
 import { sessionActivity, unseenOutcome, type SessionRowView, type UnseenOutcome } from "@/session"

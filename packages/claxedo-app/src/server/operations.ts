@@ -1,4 +1,5 @@
 import { HOSTED_OPERATIONS, isHostedOperationName, resolveHostedOperation, type ResolvedRequest } from "@claxedo/account-contract"
+import { isRecord } from "@claxedo/helpers/guards"
 import type { HostedAccount } from "./account"
 import { ServerError } from "./errors"
 import type { Transport } from "./transport"
@@ -11,7 +12,7 @@ function operationInputError(operation: string, message: string): ServerError {
 
 function inputOf(operation: string, value: unknown): Input {
   if (value === undefined) return {}
-  if (typeof value === "object" && value !== null && !Array.isArray(value)) return value as Input
+  if (isRecord(value)) return value
   throw operationInputError(operation, "the input is not an object")
 }
 
@@ -29,7 +30,7 @@ export function hostedOperationRequest(name: string, input: unknown, exposure: "
 }
 
 export function sendHostedRequest(transport: Transport, request: ResolvedRequest): Promise<unknown> {
-  return transport.json<unknown>(request.path, {
+  return transport.json(request.path, {
     method: request.method,
     ...(request.headers ? { headers: request.headers } : {}),
     ...(request.body ? { body: JSON.stringify(request.body) } : {}),

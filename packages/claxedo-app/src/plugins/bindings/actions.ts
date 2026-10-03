@@ -6,7 +6,7 @@ type Actions = Pick<PluginApi, "commands" | "mentions">
 
 function pluginCommandEntry(scope: BindingScope, command: CommandDefinition): CommandEntry {
   const context = () => commandContext(scope.services)
-  const enabled = command.enabled
+  const enabled = command.enabled?.bind(command)
   return {
     id: entryId(scope.manifest.id, command.id),
     title: () => command.title,

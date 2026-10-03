@@ -10,7 +10,10 @@ function serveFiles(served: string): Server {
   return createServer((request, response) => {
     const requested = decodeURIComponent(new URL(request.url ?? "/", "http://remote").pathname)
     const file = path.join(served, path.normalize(requested))
-    if (!file.startsWith(served + path.sep)) return void response.writeHead(404).end()
+    if (!file.startsWith(served + path.sep)) {
+      response.writeHead(404).end()
+      return
+    }
     fs.readFile(file).then(
       (body) => response.writeHead(200).end(body),
       (error: NodeJS.ErrnoException) => response.writeHead(error.code === "ENOENT" ? 404 : 500).end(error.code ?? ""),

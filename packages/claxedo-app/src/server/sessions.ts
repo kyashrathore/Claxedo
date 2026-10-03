@@ -1,4 +1,4 @@
-import { createMessageIds, type AgentPresentationSession } from "@claxedo/agent-runtime-contract"
+import { createMessageIds } from "@claxedo/agent-runtime-contract"
 import type { SessionsApi } from "./api"
 import { ServerError } from "./errors"
 import { sessionId, type RequestId } from "./ids"
@@ -22,7 +22,7 @@ import type { Workspaces } from "./workspaces"
 import { harnessIdentity, harnessSelectionQuery } from "./wire/harness-selection"
 import { PROMPT_ROUTE, promptBody, promptDeliveryFromWire } from "./wire/prompt"
 import { permissionReplyBody } from "./wire/requests"
-import { sessionRowFromSession } from "./wire/session-row"
+import { sessionFromWire, sessionRowFromSession } from "./wire/session-row"
 import { isCheckpointFrozen, isRuntimeUnavailable } from "./wire/connection"
 
 function firstInputBody(prompt: SessionCreateInput["prompt"]) {
@@ -57,7 +57,7 @@ async function createSession(context: SessionContext, wakes: WorkspaceWakes, inp
   const path = withQuery(hosted ? `/session/${encodeURIComponent(hosted)}` : "/session", input.harness ? harnessSelectionQuery(input.harness) : {})
   const body = { ...createBody(input), ...(reservation && !hosted ? { id: reservation.sessionId } : {}) }
   const init = jsonInit("POST", body, reservation ? { headers: { [RESERVATION_HEADER]: reservation.operationId } } : undefined)
-  const created = await context.transport.runtimeJson<AgentPresentationSession>(route, path, init)
+  const created = sessionFromWire(await context.transport.runtimeJson(route, path, init))
   return sessionRowFromSession(created, { projectId: placement.projectId, placementId: input.placementId, sessionId: sessionId(created.id) })
 }
 
@@ -67,14 +67,14 @@ async function replyToRequest(context: SessionContext, ref: SessionLocation, id:
   const questionPath = (action: "reply" | "reject") => withQuery(`/question/${encodeURIComponent(id)}/${action}`, { sessionId: ref.sessionId })
   const permissionPath = sessionEndpoint(ref, `/permissions/${encodeURIComponent(id)}`)
   if (answer.kind === "permission") {
-    await transport.runtimeJson<unknown>(where, permissionPath, jsonInit("POST", permissionReplyBody(answer.reply)))
+    await transport.runtimeJson(where, permissionPath, jsonInit("POST", permissionReplyBody(answer.reply)))
     return
   }
   if (answer.kind === "question") {
-    await transport.runtimeJson<unknown>(where, questionPath("reply"), jsonInit("POST", { answers: answer.answers }))
+    await transport.runtimeJson(where, questionPath("reply"), jsonInit("POST", { answers: answer.answers }))
     return
   }
-  await transport.runtimeJson<unknown>(where, questionPath("reject"), { method: "POST" })
+  await transport.runtimeJson(where, questionPath("reject"), { method: "POST" })
 }
 
 const CHECKPOINT_SETTLE_ATTEMPTS = 60
@@ -104,12 +104,12 @@ async function deliverPrompt(context: SessionContext, ref: SessionLocation, inpu
     await startGoal(context.transport, where, ref, input.goal.objective)
     return "start"
   }
-  const answer = await context.transport.runtimeJson<unknown>(where, sessionEndpoint(ref, PROMPT_ROUTE), jsonInit("POST", promptBody(input, messageId)))
+  const answer = await context.transport.runtimeJson(where, sessionEndpoint(ref, PROMPT_ROUTE), jsonInit("POST", promptBody(input, messageId)))
   return promptDeliveryFromWire(answer)
 }
 
 async function patchSession(context: SessionContext, ref: SessionLocation, patch: Record<string, unknown>) {
-  await context.transport.runtimeJson<unknown>(await context.workspaces.route(ref), sessionEndpoint(ref), jsonInit("PATCH", patch))
+  await context.transport.runtimeJson(await context.workspaces.route(ref), sessionEndpoint(ref), jsonInit("PATCH", patch))
 }
 
 export function createSessionsApi(transport: Transport, workspaces: Workspaces, status: StatusOwner, wakes: WorkspaceWakes, projection: SessionProjection, account?: HostedAccount): SessionsApi {

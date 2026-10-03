@@ -118,13 +118,11 @@ export function LineCommentEditorV2(props: LineCommentEditorV2Props) {
 
   const currentMention = () => {
     const textarea = textareaRef
-    if (!textarea) return
-    if (!local.mention) return
-    if (textarea.selectionStart !== textarea.selectionEnd) return
+    if (!textarea || !local.mention || textarea.selectionStart !== textarea.selectionEnd) return undefined
 
     const end = textarea.selectionStart
     const match = textarea.value.slice(0, end).match(/@(\S*)$/)
-    if (!match) return
+    if (!match) return undefined
 
     return {
       query: match[1] ?? "",

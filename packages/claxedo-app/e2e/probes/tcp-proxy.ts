@@ -6,7 +6,10 @@ export function startTcpProxy(target: URL): Promise<Proxy> {
   const sockets = new Set<net.Socket>()
   let accepting = true
   const server = net.createServer((client) => {
-    if (!accepting) return client.destroy()
+    if (!accepting) {
+      client.destroy()
+      return
+    }
     const upstream = net.connect(Number(target.port), target.hostname)
     for (const socket of [client, upstream]) {
       sockets.add(socket)

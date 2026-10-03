@@ -44,7 +44,7 @@ export type TerminalStoreInput = {
 type TerminalRows = ReturnType<typeof createTerminalRows>
 
 function createTerminalRows() {
-  const [state, setState] = createStore<{ rows: TerminalRow[]; lost: Record<string, true> }>({ rows: [], lost: {} })
+  const [state, setState] = createStore<{ rows: TerminalRow[]; lost: Partial<Record<string, true>> }>({ rows: [], lost: {} })
   const index = (terminalId: TerminalId) => state.rows.findIndex((row) => row.id === terminalId)
   return {
     all: () => state.rows,
@@ -56,7 +56,7 @@ function createTerminalRows() {
     },
     remove: (terminalId: TerminalId) => setState("rows", (rows) => rows.filter((row) => row.id !== terminalId)),
     markLost: (terminalId: TerminalId) => setState("lost", terminalId, true),
-    lost: (terminalId: TerminalId) =>  state.lost[terminalId],
+    lost: (terminalId: TerminalId) => state.lost[terminalId] === true,
     setAgentStatus: (terminalId: TerminalId, agentStatus: TerminalAgentStatus) => {
       const at = index(terminalId)
       if (at !== -1) setState("rows", at, (row) => ({ ...row, agentStatus, seen: agentStatus !== "idle" || row.seen }))

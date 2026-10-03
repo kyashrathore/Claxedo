@@ -44,9 +44,19 @@ export type PaneKind<State = Json> = {
   readonly toRoute?: (state: State) => PaneRoute | undefined
 }
 
-export type AnyPaneKind = Omit<PaneKind<never>, "decode" | "fromRoute"> & {
-  readonly decode: (value: Json) => unknown
-  readonly fromRoute?: (route: PaneRoute) => unknown
+export type OpenedContent = {
+  readonly state: unknown
+  readonly title: () => string
+  readonly encode: () => Json
+  readonly route: () => PaneRoute | undefined
+}
+
+export type ContentViewProps = { readonly content: OpenedContent; readonly paneId: string; readonly active: boolean }
+
+export type AnyPaneKind = Pick<PaneKind, "kind" | "singleton" | "keepMounted" | "icon"> & {
+  readonly view: Component<ContentViewProps>
+  readonly decode: (value: Json) => OpenedContent | undefined
+  readonly fromRoute: (route: PaneRoute) => OpenedContent | undefined
 }
 
 export type PanelViewProps = {
@@ -99,7 +109,7 @@ export type MentionEntry = {
 
 export type MentionSource = {
   readonly id: string
-  readonly search: (query: string) => readonly MentionEntry[] | Promise<readonly MentionEntry[]>
+  readonly search: (query: string) => Promise<readonly MentionEntry[]>
 }
 
 export type ThemeEntry = {

@@ -108,7 +108,7 @@ function headerState(state: AgentToolState, shape: HeaderShape | undefined): Age
         metadata: metadata(state.metadata),
         time: state.time,
       }
-    case "error":
+    default:
       return { status: "error", input, error: state.error, metadata: metadata(state.metadata), time: state.time }
   }
 }

@@ -191,7 +191,7 @@ export async function prepareInvitationAdmission(context: D1AccessContext, input
       and accepted_at is null and revoked_at is null and expires_at > ? order by created_at desc, id limit 1`)
     .bind(input.orgId, email, now)
     .first<OrgInvitation>()
-  if (!invitation) return
+  if (!invitation) return undefined
   const inviter = maySql({ userId: invitation.invited_by }, invitation.role === "owner" ? "own" : "administer", { kind: "org", orgId: "invitation.org_id" })
   const guard = {
     sql: `exists (select 1 from org_invitations invitation where invitation.id = ?

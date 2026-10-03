@@ -5,12 +5,11 @@ import type {
   OverlayDefinition,
   PageDefinition,
   PluginApi,
-  SessionRef,
   SettingsSection,
 } from "@claxedo/plugin-api"
 import type { Translations } from "@/i18n"
 import { translated } from "../../dictionary"
-import type { FrameContext, FrameResponse, HostCall, Registration } from "../protocol"
+import { frameResponseFromHost, sessionRefFromHost, type FrameContext, type FrameResponse, type HostCall, type Registration } from "../protocol"
 import type { FrameLink } from "./link"
 
 export class FrameUnsupportedError extends Error {
@@ -131,13 +130,13 @@ function dataApi(scope: FrameScope): Pick<PluginApi, "sessions" | "projects" | "
   const { link, context } = scope
   return {
     sessions: {
-      create: async (input) => (await link.call({ method: "sessions.create", input })) as SessionRef,
+      create: async (input) => sessionRefFromHost(await link.call({ method: "sessions.create", input })),
       status: (ref) => link.mirror.statuses[ref.sessionId] ?? "idle",
       open: (ref) => fireAndReport(scope, { method: "sessions.open", ref }),
     },
     projects: { list: () => link.mirror.projects, currentId: () => link.mirror.currentProjectId },
     server: {
-      fetch: async (path, init) => response((await link.call({ method: "server.fetch", path, init: requestInit(init) })) as FrameResponse),
+      fetch: async (path, init) => response(frameResponseFromHost(await link.call({ method: "server.fetch", path, init: requestInit(init) }))),
       operation: async <Result>(name: string, input?: unknown) => (await link.call({ method: "server.operation", name, input })) as Result,
     },
     context: {

@@ -1,4 +1,5 @@
 import type { AgentEventEnvelope, AgentRuntimeEventOf, TranscriptNotice } from "@claxedo/agent-runtime-contract"
+import { errorMessage } from "@claxedo/helpers"
 import { runtimeDiagnostic, sessionCompacted, withDir } from "../presentation-events"
 import { partEvent, seqId, type CompatContext } from "./context"
 
@@ -48,7 +49,7 @@ function projectHarnessNotice(ctx: CompatContext, chunk: HarnessNotice, now: () 
 function compactionOutcome(chunk: Compaction): TranscriptNotice {
   if (chunk.metadata?.aborted === true) return { kind: "compaction", status: "failed", error: "Compaction was stopped" }
   const error = chunk.metadata?.error
-  if (error) return { kind: "compaction", status: "failed", error: String(error) }
+  if (error) return { kind: "compaction", status: "failed", error: errorMessage(error) }
   return { kind: "compaction", status: "completed" }
 }
 
@@ -77,7 +78,6 @@ export function projectNotice(ctx: CompatContext, chunk: AgentRuntimeEventOf<"se
         ...(chunk.senderName ? { senderName: chunk.senderName } : {}),
         ...(chunk.senderTaskId ? { senderTaskId: chunk.senderTaskId } : {}),
         ...(chunk.sourceSessionId ? { sourceSessionId: chunk.sourceSessionId } : {}) }, now(), chunk.eventId)] : []
-    case "conversation-reset":
-      return projectConversationReset(ctx, chunk, now)
   }
+  return projectConversationReset(ctx, chunk, now)
 }

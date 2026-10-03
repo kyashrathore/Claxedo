@@ -19,13 +19,13 @@ export function projectQueries(transport: Transport, workspaces: Pick<Workspaces
   const hosted = async () => (await workspaces.load()).declaration.serverKind === "hosted"
   const list = async () => {
     if (await hosted()) return workspaces.accountProjects()
-    const [local, account] = await Promise.all([transport.json<unknown>(PROJECTS_PATH), workspaces.accountProjects()])
+    const [local, account] = await Promise.all([transport.json(PROJECTS_PATH), workspaces.accountProjects()])
     return [...projectsFromWire(local), ...account]
   }
   const byId = async (id: ProjectId) => {
     const account = (await workspaces.accountProjects()).find((project) => project.id === id)
     if (!account && (await hosted())) throw new ServerError({ class: "not_found", message: `Project ${id} is not in the account catalog` })
-    return account ?? oneProjectFromWire(await transport.json<unknown>(projectPath(id)))
+    return account ?? oneProjectFromWire(await transport.json(projectPath(id)))
   }
   return {
     list: (): FetchQuery<readonly Project[]> => fetchQuery(queryKeys.projects(transport.serverUrl), list),
@@ -53,27 +53,27 @@ export function createProjectsApi(transport: Transport, queryClient: QueryClient
     create: async (input) => {
       await requireConfiguration()
       const body = { source: projectSourceBody(input.source), ...(input.name ? { name: input.name } : {}) }
-      const project = oneProjectFromWire(await transport.json<unknown>(PROJECTS_PATH, jsonInit("POST", body)))
+      const project = oneProjectFromWire(await transport.json(PROJECTS_PATH, jsonInit("POST", body)))
       remember(project)
       await workspaces.refresh()
       return project
     },
     update: async (id, patch) => {
       await requireConfiguration()
-      const project = oneProjectFromWire(await transport.json<unknown>(projectPath(id), jsonInit("PATCH", patch)))
+      const project = oneProjectFromWire(await transport.json(projectPath(id), jsonInit("PATCH", patch)))
       remember(project)
       return project
     },
     remove: async (id) => {
       await requireConfiguration()
-      await transport.json<unknown>(projectPath(id), { method: "DELETE" })
+      await transport.json(projectPath(id), { method: "DELETE" })
       queryClient.removeQueries({ queryKey: queryKeys.project(transport.serverUrl, id) })
       queryClient.setQueryData<readonly Project[]>(queryKeys.projects(transport.serverUrl), (current) => current?.filter((item) => item.id !== id))
       await workspaces.refresh()
     },
     reclone: async (id) => {
       await requireConfiguration()
-      const project = oneProjectFromWire(await transport.json<unknown>(`${projectPath(id)}/reclone`, { method: "POST" }))
+      const project = oneProjectFromWire(await transport.json(`${projectPath(id)}/reclone`, { method: "POST" }))
       remember(project)
       await workspaces.refresh()
       return project

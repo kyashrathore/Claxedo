@@ -36,5 +36,5 @@ export async function sendReaderWrite(context: SessionContext, ref: SessionLocat
     return readerFromWire(await account.run(operation, { sessionId: ref.sessionId, ...writeBody(write) }))
   }
   const path = transport.loopback ? `/api/claxedo${sessionEndpoint(ref, `/${write.kind}`)}` : `/api/control/sessions/${encodeURIComponent(ref.sessionId)}/${write.kind}`
-  return readerFromWire(await transport.json<unknown>(path, jsonInit("POST", writeBody(write))))
+  return readerFromWire(await transport.json(path, jsonInit("POST", writeBody(write))))
 }

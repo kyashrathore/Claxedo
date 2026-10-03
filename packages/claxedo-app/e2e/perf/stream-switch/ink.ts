@@ -7,7 +7,7 @@ const recording = await readRecording(dir)
 const inputs = recording.rounds.flatMap((round) => round.inputs.map((input) => round.timeOrigin + input.at))
 const ink = async (file: string) => {
   const image = sharp(path.join(dir, "frames", file))
-  const { width = 1440 } = await image.metadata()
+  const { width } = await image.metadata()
   const scale = width / 1440
   const raw = await image
     .extract({ left: Math.round(CONTENT_CROP.left * scale), top: Math.round(CONTENT_CROP.top * scale), width: Math.round(CONTENT_CROP.width * scale), height: Math.round(CONTENT_CROP.height * scale) })
