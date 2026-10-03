@@ -86,8 +86,8 @@ are present. You can also set `CLAXEDO_SANDBOX_DRIVER=cloudflare` explicitly.
 ## Native credential brokering
 
 The API-token-gated `ensure-runtime` action accepts named egress registrations.
-The Worker stores values in `EGRESS_SECRETS` KV and configures SDK native HTTPS
-outbound handlers. Container environment variables contain only
+The Worker stores values in `EGRESS_SECRETS` KV and intercepts HTTPS to the
+registered hosts with its `CredentialEgress` entrypoint. Container environment variables contain only
 `claxedo-broker:<name>` placeholders. Clients use the original upstream URL.
 Authorization clients may send the placeholder as the complete header or with
 one Bearer prefix; the handler replaces it with the complete registered value.
@@ -106,43 +106,40 @@ a live registration for that host over HTTPS on port 443, or it is refused.
 The handler rejects unmatched placeholders and redirects; it does not redact
 response bodies or restrict unrelated destinations.
 
-### Interception is whole-container, and cannot be narrowed
+### Only credential hosts are intercepted
 
-`Sandbox.interceptHttps = true` plus `setOutboundByHosts` puts EVERY outbound
-request from the container through this Worker, not only the registered hosts.
-This is a property of `@cloudflare/containers` as bundled in
-`@cloudflare/sandbox` 0.12.9, not a choice here:
+The SDK's runtime host overrides (`setOutboundByHosts`, `setOutboundHandler`)
+promote a container to intercepting every outbound request
+(`@cloudflare/containers` 0.3.7 `shouldInterceptAllOutbound()`), which would put
+this Worker in the path of all sandbox traffic. The Worker does not use them.
+`Sandbox.setCredentialHosts` records the hosts the registrations name and
+installs `ctx.container.interceptOutboundHttps(host, CredentialEgress)` for
+exactly those, on a running container at once and on every container start
+(the `start` and `startAndWaitForPorts` overrides run before the SDK starts it).
+Every other host keeps its direct route.
 
-- `shouldInterceptAllOutbound()` returns true as soon as
-  `outboundByHostOverrides` is non-empty, and `setOutboundByHosts` is the only
-  runtime API that registers a host — so the first registration promotes the
-  container to intercept-all.
-- The promotion latches in `hasInterceptAllRegistration` and stays until the
-  instance restarts.
-- Under intercept-all with `interceptHttps`, the SDK installs
-  `interceptOutboundHttps('*')` and `interceptAllOutboundHttp`.
-- Per-host interception exists only for the STATIC `outboundByHost` class
-  registry, which is fixed at deploy time and cannot carry per-sandbox
-  registrations read from KV.
+`interceptHttps = true` makes the container server trust the platform CA and
+refuse to start without it, and the platform mints that CA with the first HTTPS
+interception. Every container therefore also intercepts
+`claxedo-credential-trust.invalid`, a reserved name no request resolves, so a
+sandbox that starts before it holds any credential host still has the CA, and
+a host registered later is intercepted without restarting the container.
 
-Unregistered hosts still reach the internet — `ContainerProxy` falls through to
-`fetch(request)` on the `enableInternet` path — but they do so through a
-Worker-terminated TLS connection.
+The platform offers no way to remove an interception, so a withdrawn host stays
+routed through `CredentialEgress` until the container restarts; without a
+registration it forwards requests without a placeholder unchanged and refuses
+ones that carry a placeholder.
 
-Only Node and Bun HTTPS clients have been exercised against this
-(Appendix E item 3, local probe). The CLIs baked into `Dockerfile` —
-`claude`, `codex`, `gemini`, `pi`, `cursor-agent`, `amp`, `droid` — were not
-probed, and an agent CLI that pins its own CA bundle or ships its own TLS stack
-will fail against an intercepted connection in a way no local test here shows.
-That is why deployed acceptance is still required before this adapter is called
-complete.
+Node and Bun HTTPS clients passed the local probe. The CLIs baked into
+`Dockerfile` — `claude`, `codex`, `gemini`, `pi`, `cursor-agent`, `amp`,
+`droid` — were not probed against an intercepted connection, and an agent CLI
+that pins its own CA bundle or ships its own TLS stack fails against one in a
+way no local test here shows. Deployed acceptance is still required.
 
 The former `/egress` JWT route and signing secret are removed. Deploy the
 Worker and matching driver together, then destroy and recreate existing
-sandboxes with fresh named registrations. No legacy registration migration or
-proxy compatibility route is provided.
-Local native HTTPS interception passed; deployed acceptance remains pending
-because the isolated probe image upload failed (see the implementation report).
+sandboxes: one created with the SDK's runtime overrides persisted them, and
+re-applying them needs the SDK `ContainerProxy` export this Worker no longer has. No migration or compatibility route is provided.
 
 ## Repository preparation
 

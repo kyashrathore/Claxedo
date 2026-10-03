@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest"
 // Cloudflare sandbox can be enumerated (DO namespaces are not listable), so it
 // is what the control plane's GC sweep depends on.
 const sandboxStub = {
-  setOutboundByHosts: vi.fn(async (_handlers: Record<string, { method: string; params: unknown }>) => {}),
+  setCredentialHosts: vi.fn(async (_sandboxId: string, _hosts: readonly string[]) => {}),
   ensureWorkspaceRuntime: vi.fn(async (
     _command: string,
     _env: Record<string, string>,
@@ -21,31 +21,26 @@ const sandboxStub = {
   containerFetch: vi.fn(async () => new Response("ok")),
 }
 const getSandboxMock = vi.fn(() => sandboxStub)
-const containerProxyStub = class ContainerProxy { readonly stub = "container-proxy" }
+const lifecycle: string[] = []
 
 // `@cloudflare/containers` cannot be imported outside workerd (its module scope
-// pulls `cloudflare:workers`), so the one piece of the base class our code
-// depends on is reproduced exactly: `outboundHandlers` is a registry-backed
-// static ACCESSOR, keyed by class name. A static field on the subclass shadows
-// it and the SDK then finds no handler — that is what this base is here to
-// catch.
-const outboundHandlersRegistry = new Map<string, Record<string, unknown>>()
-
+// pulls `cloudflare:workers`), so the base class keeps only what the subclass
+// extends: the object state it was built with and the two start paths.
 vi.mock("@cloudflare/sandbox", () => ({
   getSandbox: getSandboxMock,
   Sandbox: class Sandbox {
-    readonly stub = "sandbox"
-    static get outboundHandlers() {
-      return outboundHandlersRegistry.get(this.name)
-    }
-    static set outboundHandlers(handlers: Record<string, unknown> | undefined) {
-      outboundHandlersRegistry.set(this.name, handlers ?? {})
-    }
+    constructor(readonly ctx: unknown, readonly env: unknown) {}
+    async start() { lifecycle.push("start") }
+    async startAndWaitForPorts() { lifecycle.push("startAndWaitForPorts") }
   },
-  ContainerProxy: containerProxyStub,
+}))
+vi.mock("cloudflare:workers", () => ({
+  WorkerEntrypoint: class WorkerEntrypoint {
+    constructor(readonly ctx: unknown, readonly env: unknown) {}
+  },
 }))
 
-const { default: worker, ContainerProxy, Sandbox, ensureRuntimeProcess } = await import("./index")
+const { default: worker, CredentialEgress, Sandbox, ensureRuntimeProcess } = await import("./index")
 
 type Metadata = Record<string, string>
 
@@ -119,17 +114,8 @@ describe("cloudflare sandbox Worker registry (W1.2)", () => {
     })
   })
 
-  test("exports the SDK ContainerProxy so intercepted HTTPS can leave the sandbox", () => {
-    expect(ContainerProxy).toBe(containerProxyStub)
-  })
-
-  test("the credential handler is registered through the inherited setter, not shadowed by a field", async () => {
-    expect(Object.getOwnPropertyDescriptor(Sandbox, "outboundHandlers")).toBeUndefined()
-    const handlers = outboundHandlersRegistry.get("Sandbox")
-    expect(handlers).toBeDefined()
-    // The same key setOutboundByHosts dispatches on below.
-    expect(Object.keys(handlers!)).toEqual(["credential"])
-
+  test("ensure-runtime hands the sandbox exactly the hosts its registrations name, before the runtime starts", async () => {
+    sandboxStub.setCredentialHosts.mockClear()
     await call("/sandbox/handler-name/ensure-runtime", env({
       EGRESS_SECRETS: { get: async () => null, put: async () => {}, delete: async () => {} },
     }), {
@@ -137,12 +123,13 @@ describe("cloudflare sandbox Worker registry (W1.2)", () => {
       body: JSON.stringify({
         command: "runtime",
         env: {},
-        egress: [{ name: "KEY", hosts: ["api.vendor.test"], header: "Authorization", value: "Bearer v" }],
+        egress: [{ name: "KEY", hosts: ["api.vendor.test"], header: "Authorization", value: "Bearer v", methods: ["POST"], pathPrefixes: ["/v1"] }],
       }),
     })
-    expect(sandboxStub.setOutboundByHosts).toHaveBeenLastCalledWith({
-      "api.vendor.test": { method: Object.keys(handlers!)[0], params: { sandboxId: "handler-name" } },
-    })
+    expect(sandboxStub.setCredentialHosts).toHaveBeenLastCalledWith("handler-name", ["api.vendor.test"])
+    expect(sandboxStub.setCredentialHosts.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      sandboxStub.ensureWorkspaceRuntime.mock.invocationCallOrder.at(-1)!,
+    )
   })
 
   test("ensure-runtime records the sandbox, and GET /sandboxes enumerates it", async () => {
@@ -270,12 +257,12 @@ describe("native credential registration", () => {
       method: "POST", body: JSON.stringify({ command: "runtime", env: {}, egress: [registration] }),
     })
     expect(response.status).toBe(200)
-    expect(sandboxStub.setOutboundByHosts).toHaveBeenCalledWith({ "api.vendor.test": { method: "credential", params: { sandboxId: "native-proof" } } })
+    expect(sandboxStub.setCredentialHosts).toHaveBeenCalledWith("native-proof", ["api.vendor.test"])
     const bootEnv = sandboxStub.ensureWorkspaceRuntime.mock.calls.at(-1)?.[1]
     expect(bootEnv).toMatchObject({ MODEL_KEY: "claxedo-broker:MODEL_KEY" })
     expect(JSON.stringify(bootEnv)).not.toContain("real-secret")
   })
-  test("explicit empty registrations withdraw stored values and handlers", async () => {
+  test("explicit empty registrations withdraw stored values and every credential host", async () => {
     const kv = credentials()
     await kv.put("withdraw-proof", JSON.stringify([registration]))
     const response = await call("/sandbox/withdraw-proof/ensure-runtime", env({ EGRESS_SECRETS: kv }), {
@@ -283,7 +270,7 @@ describe("native credential registration", () => {
     })
     expect(response.status).toBe(200)
     expect(JSON.parse(kv.values.get("withdraw-proof")!)).toEqual([])
-    expect(sandboxStub.setOutboundByHosts).toHaveBeenLastCalledWith({})
+    expect(sandboxStub.setCredentialHosts).toHaveBeenLastCalledWith("withdraw-proof", [])
   })
   test("omitted registrations preserve the authority and placeholders on wake", async () => {
     const kv = credentials()
@@ -440,5 +427,67 @@ describe("runtime env reconciliation on ensure-runtime", () => {
     })
 
     expect(sandboxStub.ensureWorkspaceRuntime.mock.calls.at(-1)?.[3]).toEqual({ reuseRunning: false })
+  })
+})
+
+describe("credential host interception", () => {
+  const TRUST_ANCHOR = "claxedo-credential-trust.invalid"
+
+  function objectState(running: boolean) {
+    const intercepted: string[] = []
+    const stored = new Map<string, unknown>()
+    const ctx = {
+      container: {
+        running,
+        interceptOutboundHttps: vi.fn(async (host: string, egress: { props: { sandboxId: string } }) => {
+          intercepted.push(`${host}->${egress.props.sandboxId}`)
+          lifecycle.push(`intercept ${host}`)
+        }),
+      },
+      storage: { get: async (key: string) => stored.get(key), put: async (key: string, value: unknown) => { stored.set(key, value) } },
+      exports: { CredentialEgress: (options: { props: { sandboxId: string } }) => options },
+      blockConcurrencyWhile: async (callback: () => Promise<unknown>) => callback(),
+    }
+    return { ctx, intercepted }
+  }
+
+  beforeEach(() => { lifecycle.length = 0 })
+
+  test("a container that starts with no credential host intercepts only the unresolvable trust anchor, before it starts", async () => {
+    const { ctx, intercepted } = objectState(false)
+    const sandbox = new Sandbox(ctx as never, {} as never)
+    await sandbox.startAndWaitForPorts()
+    expect(intercepted).toEqual([`${TRUST_ANCHOR}->`])
+    expect(lifecycle).toEqual([`intercept ${TRUST_ANCHOR}`, "startAndWaitForPorts"])
+  })
+
+  test("registered hosts are intercepted on every container start, and at once on a running container", async () => {
+    const stopped = objectState(false)
+    const cold = new Sandbox(stopped.ctx as never, {} as never)
+    await cold.setCredentialHosts("ws_1", ["api.vendor.test", "github.com", "api.vendor.test"])
+    expect(stopped.intercepted).toEqual([])
+    await cold.start()
+    expect(stopped.intercepted).toEqual([`${TRUST_ANCHOR}->ws_1`, "api.vendor.test->ws_1", "github.com->ws_1"])
+    expect(lifecycle.at(-1)).toBe("start")
+
+    const running = objectState(true)
+    const live = new Sandbox(running.ctx as never, {} as never)
+    await live.setCredentialHosts("ws_2", ["api.vendor.test"])
+    expect(running.intercepted.slice(-2)).toEqual([`${TRUST_ANCHOR}->ws_2`, "api.vendor.test->ws_2"])
+  })
+
+  test("the egress entrypoint spends only the registrations of the sandbox it was created for", async () => {
+    const registration = { name: "KEY", hosts: ["api.vendor.test"], header: "Authorization", value: "Bearer real", methods: ["POST"], pathPrefixes: ["/v1"] }
+    const kv = { get: async (id: string) => (id === "ws_1" ? JSON.stringify([registration]) : null) }
+    const upstream = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => new Response((input as Request).headers.get("authorization")))
+    try {
+      const request = () => new Request("https://api.vendor.test/v1/messages", { method: "POST", headers: { authorization: "claxedo-broker:KEY" } })
+      const own = new CredentialEgress({ props: { sandboxId: "ws_1" } } as never, { EGRESS_SECRETS: kv } as never)
+      expect(await (await own.fetch(request() as never)).text()).toBe("Bearer real")
+      const other = new CredentialEgress({ props: { sandboxId: "ws_2" } } as never, { EGRESS_SECRETS: kv } as never)
+      expect((await other.fetch(request() as never)).status).toBe(403)
+    } finally {
+      upstream.mockRestore()
+    }
   })
 })

@@ -22,13 +22,19 @@ declare module "@cloudflare/sandbox" {
     cleanupCompletedProcesses(): Promise<number>
   }
 
-  export const ContainerProxy: unknown
+  /** The container lifecycle a subclass extends; both start paths run before the container starts. */
+  export interface SandboxDurableObject {
+    readonly ctx: import("@cloudflare/workers-types").DurableObjectState
+    start(...args: unknown[]): Promise<void>
+    startAndWaitForPorts(...args: unknown[]): Promise<void>
+  }
+
   // The package ships `Sandbox` as a Durable Object class generic over an env
   // this Worker does not supply. Declaring the process operations here — the
   // one file whose job is to state what this repo believes the untyped module
   // provides — is what lets the Worker subclass it and pass `this` straight to
   // the process helpers.
-  export const Sandbox: new (...args: never[]) => SandboxOperations
+  export const Sandbox: new (ctx: import("@cloudflare/workers-types").DurableObjectState, env: unknown) => SandboxOperations & SandboxDurableObject
   export function getSandbox(binding: unknown, id: string, options?: {
     containerTimeouts?: {
       instanceGetTimeoutMS?: number

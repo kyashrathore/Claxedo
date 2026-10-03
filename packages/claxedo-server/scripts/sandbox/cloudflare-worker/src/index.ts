@@ -4,8 +4,9 @@
  * Deploy: cd cloudflare-worker && npm install && wrangler deploy
  * Set secret: wrangler secret put API_TOKEN
  */
+import { WorkerEntrypoint } from "cloudflare:workers"
+import type { DurableObjectState, Fetcher, Request as WorkerRequest, Response as WorkerResponse } from "@cloudflare/workers-types"
 import {
-  ContainerProxy,
   getSandbox,
   Sandbox as CloudflareSandbox,
   type SandboxOperations,
@@ -14,29 +15,70 @@ import {
 import { credentialPlaceholder, forwardCredential, parseRegistrations, type EgressRegistration } from "./outbound-credentials"
 import { asWorkerRecord, stringMap } from "./worker-json"
 
-// Cloudflare routes intercepted container HTTP(S) through this Worker
-// Entrypoint. Without the export, the local sidecar accepts TLS and then has no
-// Worker target to forward to; production uses the same SDK contract.
-export { ContainerProxy }
+/** What a sandbox's credential hosts are intercepted with, from `ctx.exports` (`enable_ctx_exports`). */
+export class CredentialEgress extends WorkerEntrypoint<Env, { sandboxId: string }> {
+  override async fetch(request: WorkerRequest): Promise<WorkerResponse> {
+    // The entrypoint's signature takes workers-types' Request and Response;
+    // the broker is written against the DOM lib's. They are one class at runtime.
+    const answer = await forwardCredential(request as unknown as Request, {
+      registrations: () => readRegistrations(this.env, this.ctx.props.sandboxId),
+    })
+    return answer as unknown as WorkerResponse
+  }
+}
+
+const CREDENTIAL_HOSTS_KEY = "claxedo.credential-hosts"
+// The platform mints the CA the container trusts with its first HTTPS
+// interception, and `interceptHttps` makes the container refuse to start
+// without that CA. A reserved name no request resolves mints it for a sandbox
+// that starts before it holds any credential host, so a host registered later
+// is intercepted without restarting the container and nothing else is.
+const TRUST_ANCHOR_HOST = "claxedo-credential-trust.invalid"
+
+type CredentialHosts = { sandboxId: string; hosts: string[] }
 
 // Local export is required for Wrangler's [[containers]].class_name binding to
 // attach this Worker's Dockerfile to the Durable Object class. The process
 // operations `this` is passed to live on the ambient `@cloudflare/sandbox`
 // declaration, so no call site re-asserts `this`.
-/** Registration and dispatch must name the same handler; a literal on each side is a silent 520. */
-const CREDENTIAL_OUTBOUND_HANDLER = "credential"
-
 export class Sandbox extends CloudflareSandbox {
-  static {
-    // The SDK registers handlers through an inherited setter, not a static field.
-    Object.assign(this, { outboundHandlers: {
-      [CREDENTIAL_OUTBOUND_HANDLER]: (request: Request, env: Env, ctx: { params: { sandboxId: string } }) =>
-        forwardCredential(request, { registrations: () => readRegistrations(env, ctx.params.sandboxId) }),
-    } })
-  }
   interceptHttps = true
 
   private workspaceRuntimeEnsure?: Promise<boolean>
+
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env)
+    // An interception belongs to the running container, and the platform
+    // offers no removal, so only a restarted object re-installs it.
+    void ctx.blockConcurrencyWhile(async () => {
+      if (ctx.container?.running) await this.interceptCredentialHosts()
+    })
+  }
+
+  /** Intercepts exactly the hosts a registration names; every other host keeps its direct route. */
+  async setCredentialHosts(sandboxId: string, hosts: readonly string[]) {
+    await this.ctx.storage.put(CREDENTIAL_HOSTS_KEY, { sandboxId, hosts: [...new Set(hosts)] } satisfies CredentialHosts)
+    if (this.ctx.container?.running) await this.interceptCredentialHosts()
+  }
+
+  async start(...args: unknown[]) {
+    if (!this.ctx.container?.running) await this.interceptCredentialHosts()
+    return super.start(...args)
+  }
+
+  async startAndWaitForPorts(...args: unknown[]) {
+    if (!this.ctx.container?.running) await this.interceptCredentialHosts()
+    return super.startAndWaitForPorts(...args)
+  }
+
+  private async interceptCredentialHosts() {
+    const container = this.ctx.container
+    if (!container) return
+    const recorded = await this.ctx.storage.get<CredentialHosts>(CREDENTIAL_HOSTS_KEY)
+    const exports = this.ctx.exports as unknown as { CredentialEgress(options: { props: { sandboxId: string } }): Fetcher }
+    const egress = exports.CredentialEgress({ props: { sandboxId: recorded?.sandboxId ?? "" } })
+    for (const host of [TRUST_ANCHOR_HOST, ...recorded?.hosts ?? []]) await container.interceptOutboundHttps(host, egress)
+  }
 
   /**
    * `reuseRunning: false` is how a caller says the boot env changed. A running
@@ -452,11 +494,7 @@ export default {
           // NAMES matter: a rotated value keeps the same placeholder, so it
           // needs no new process, while an added or dropped name does.
           const placeholdersChanged = registrationNames(previous) !== registrationNames(registrations)
-          await sandbox.setOutboundByHosts(Object.fromEntries(
-            registrations.flatMap((row) => row.hosts.map((host) =>
-              [host, { method: CREDENTIAL_OUTBOUND_HANDLER, params: { sandboxId } }],
-            )),
-          ))
+          await sandbox.setCredentialHosts(sandboxId, registrations.flatMap((row) => row.hosts))
           for (const row of registrations) containerEnv[row.name] = credentialPlaceholder(row.name)
           if (restore) {
             // Cloudflare backup mounts are ephemeral and restoring over an
