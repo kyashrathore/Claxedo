@@ -48,8 +48,10 @@ import {
   activeCredentialsForScope,
   credentialById,
   updateCredentialHealth,
+  updateCredentialSecret,
   SINGLE_TENANT_ORG,
 } from "@claxedo/server-core/credentials/registry"
+import { isRefreshableCredential, refreshCredentialSecret } from "@claxedo/server-core/credentials/operations/refresh"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import {
   destinationAuthMode,
@@ -92,6 +94,12 @@ function machineOwnerDirectRows(selected: Record<string, ProviderProjectionSourc
 }
 
 const BROKER_TOKEN_TTL_MS = 60 * 60 * 1000
+/**
+ * A direct row is re-pushed at half its remaining life, so a one-hour token is
+ * projected again with thirty minutes left; refreshing inside this window is
+ * what makes that re-push carry a token the harness can still use.
+ */
+const REFRESH_WITHIN_MS = 30 * 60 * 1000
 
 /**
  * How long one vendor refusal counts towards the next.
@@ -230,9 +238,12 @@ export function createLocalCredentialBroker(input: {
   /** The org a caller that names none is answered in. */
   org?: string
   now?: () => number
+  fetch?: typeof fetch
 }): LocalCredentialBroker {
   const defaultOrg = input.org ?? SINGLE_TENANT_ORG
   const now = input.now ?? Date.now
+  /** One refresh per credential at a time: a rotating refresh token is spent by the first exchange. */
+  const refreshing = new Map<string, Promise<CredentialMetadata>>()
   const minted = new Map<string, MintedBinding>()
   const projected = new Set<string>()
   const usedAt = new Map<string, number>()
@@ -306,6 +317,26 @@ export function createLocalCredentialBroker(input: {
       .map((row) => hasProviderDestination(row.credential.provider_id, org)
         ? row
         : { credential: row.credential, unavailable: row.unavailable ?? "no_destination" })
+  }
+
+  async function refreshed(credential: CredentialMetadata, org: string): Promise<CredentialMetadata> {
+    const secret = await readSecretById(credential.id, org)
+    if (!secret) throw new Error("credential has no stored secret")
+    const next = await refreshCredentialSecret(credential, secret, { ...(input.fetch ? { fetch: input.fetch } : {}), now })
+    await updateCredentialSecret(credential.id, next.secret, next.expiresAt, org)
+    return credentialById(credential.id, { onOutage: "throw" }, org) ?? credential
+  }
+
+  /** The row to bind, renewed first when it is an OAuth login close to expiring. */
+  function current(credential: CredentialMetadata, org: string): Promise<CredentialMetadata> {
+    if (!isRefreshableCredential(credential) || !credential.expires_at || credential.expires_at - now() > REFRESH_WITHIN_MS) {
+      return Promise.resolve(credential)
+    }
+    const running = refreshing.get(credential.id)
+    if (running) return running
+    const started = refreshed(credential, org).finally(() => refreshing.delete(credential.id))
+    refreshing.set(credential.id, started)
+    return started
   }
 
   /**
@@ -497,11 +528,19 @@ export function createLocalCredentialBroker(input: {
         credential: CredentialMetadata
         destination: ProviderDestination
       }[] = []
-      for (const { credential, unavailable } of selection) {
+      for (const { credential: selected, unavailable } of selection) {
         // A marked account that cannot be bound is reported, never dropped: the
         // harness has to refuse the turn rather than run on the machine's login.
         if (unavailable) {
-          project(credential, { unavailable: true, reason: unavailable })
+          project(selected, { unavailable: true, reason: unavailable })
+          continue
+        }
+        let credential: CredentialMetadata
+        try {
+          credential = await current(selected, org)
+        } catch (error) {
+          log.warn("credential refresh failed", { id: selected.id, error: String(error) })
+          project(selected, { unavailable: true, reason: "auth_failed" })
           continue
         }
         const destination = await destinationFor(credential, org)
