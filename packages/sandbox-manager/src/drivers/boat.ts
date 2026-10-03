@@ -226,15 +226,18 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
   async function boot(sandboxId: string, input: SandboxDriverEnsureInput, hostId: string): Promise<SandboxTarget> {
     const port = runtimePort(input)
     await startContainer(sandboxId, input, hostId)
-    // `--public` drops Boat's `_token` query, which the relay would lose when it
-    // joins request paths onto this base URL. The runtime then authenticates
-    // every route itself except the anonymous `/global/health` probe, which
-    // answers liveness, the workspace id and the lease epoch.
+    // Boat gates a hosted port behind a `_token` query, and `host url` prints
+    // the gated URL again unless it also carries `--public`. The relay joins
+    // request paths onto this base URL and would drop that query, so the
+    // runtime authenticates every route itself except the anonymous
+    // `/global/health` probe (liveness, the workspace id and the lease epoch).
     await execOrThrow(sandboxId, `host ${port} --public`, "host publish")
     await waitForHealth(sandboxId, input)
-    const urlResult = await execOrThrow(sandboxId, `host url ${port}`, "host url")
+    const urlResult = await execOrThrow(sandboxId, `host url ${port} --public`, "host url")
     const url = trimToUndefined(urlResult.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).pop())
-    if (!url) throw new BoatDriverError(`Boat ${sandboxId} did not return a public URL for port ${port}`)
+    if (!url?.startsWith("https://") || url.includes("?")) {
+      throw new BoatDriverError(`Boat ${sandboxId} did not return an ungated HTTPS URL for port ${port}`)
+    }
     return {
       workspaceId: input.workspaceId,
       sandboxId,

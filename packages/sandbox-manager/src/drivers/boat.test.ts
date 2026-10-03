@@ -298,7 +298,15 @@ describe("boat sandbox driver", () => {
     expect(envWrite?.body?.content).toContain("export WORKSPACE_RUNTIME_WORKSPACE_ID='ws1'")
     expect(envWrite?.body?.content).toContain("export WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL='https://api.example.test/.well-known/jwks.json'")
     expect(commandsOf(boat.calls)).toContain("host 2593 --public")
-    expect(commandsOf(boat.calls)).toContain("host url 2593")
+    expect(commandsOf(boat.calls)).toContain("host url 2593 --public")
+  })
+
+  test("refuses a published URL that still carries Boat's access token", async () => {
+    const boat = fakeBoat({ hostUrl: "https://machine-2593.on.boat.dev?_token=synthetic-host-token" })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0 })
+    const failure = await driver.ensureHost(ensureInput()).then(() => undefined, (error: unknown) => error as Error)
+    expect(failure?.message).toMatch(/ungated HTTPS URL/)
+    expect(failure?.message).not.toContain("synthetic-host-token")
   })
 
   test("keeps env values and registry credentials out of command strings", async () => {
