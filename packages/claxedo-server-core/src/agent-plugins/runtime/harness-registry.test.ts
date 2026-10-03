@@ -17,7 +17,7 @@ describe("Agent Plugins harness registry", () => {
       expect(agentPluginHarnessDescriptor(id)).toEqual({ id, ...AGENT_PLUGIN_HARNESS_REGISTRY[id] })
       expect(isAgentPluginHarnessId(id)).toBe(true)
     }
-    expect(isAgentPluginHarnessId("pi")).toBe(false)
+    expect(isAgentPluginHarnessId("gemini")).toBe(false)
   })
 
   test("builds exactly one value per registered harness", () => {
@@ -38,7 +38,7 @@ describe("Agent Plugins harness registry", () => {
   test("expands all to a copy of today's explicit registry", () => {
     const expanded = allSupportedAgentPluginHarnesses()
     expanded.pop()
-    expect(SUPPORTED_AGENT_PLUGIN_HARNESSES).toEqual(["opencode", "claude", "codex", "cursor", "acp"])
+    expect(SUPPORTED_AGENT_PLUGIN_HARNESSES).toEqual(["opencode", "claude", "codex", "cursor", "pi", "acp"])
   })
 
   test("custom ACP agents are a target that takes MCP servers, and whole plugins only over claude-agent-acp", () => {

@@ -67,6 +67,7 @@ export const AGENT_PLUGIN_HARNESS_REGISTRY = {
   claude: { label: "Claude Code", projection: "generated-view", skillNamespace: "plugin", delivery: NATIVE_DELIVERY },
   codex: { label: "Codex", projection: "standard-root", skillNamespace: "plugin", delivery: NATIVE_DELIVERY },
   cursor: { label: "Cursor", projection: "standard-root", skillNamespace: "plugin", delivery: NATIVE_DELIVERY },
+  pi: { label: "Pi", projection: "standard-root", skillNamespace: "plugin", delivery: NATIVE_DELIVERY },
   acp: {
     label: "Custom ACP agents",
     projection: "session-request",
