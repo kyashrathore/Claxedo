@@ -85,7 +85,7 @@ The app keeps per-session `wr/events?sessionID=` streams only for open sessions 
   - Progress: implemented on `rebuild/b-lastturn` as lane B of `2026-10-03-1500-feat-activity-sidebar-rebuild-plan.md`, which records its design and query plans; awaiting review.
 - [ ] **C. `seenAt` per reader.** Stores, routes, hosted operation, `session.seen` notice and visibility, app write and mapping, deletion of `unseenOutcomes`.
   - Done when: a finished dot survives a reload and a daemon restart (unsigned), and clears on open and stays cleared after a reload; for two signed users on one shared session, one user's open clears only their dot; a second device of the same user clears within one notice; `eventVisibleTo` and `liveSyncEvent` tests prove another principal never receives `session.seen`.
-  - Progress:
+  - Progress: implemented with settle as lane C of `2026-10-03-1500-feat-activity-sidebar-rebuild-plan.md` (the notice is `session.reader.changed`, carrying `seenAt` and `settledAt`); awaiting review. A signed desktop hears the hosted notice once lane A subscribes it to the account's `cp/events`; until then its own writes apply their answers directly.
 - [ ] **D. Records.** `src/server/README.md`, `src/session/README.md`, `src/notifications/README.md`, `src/rail/README.md`, the server-core event docblock in `bus.ts`, and this plan's removal once shipped.
   - Progress:
 
