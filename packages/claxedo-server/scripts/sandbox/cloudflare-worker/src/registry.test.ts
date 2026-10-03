@@ -19,6 +19,7 @@ const sandboxStub = {
   createBackup: vi.fn(async () => ({ id: "bk_1", dir: "/workspace" })),
   restoreBackup: vi.fn(async () => {}),
   containerFetch: vi.fn(async () => new Response("ok")),
+  wsConnect: vi.fn(async (_request: Request, _port: number) => new Response("ok")),
 }
 const getSandboxMock = vi.fn(() => sandboxStub)
 const lifecycle: string[] = []
@@ -489,5 +490,32 @@ describe("credential host interception", () => {
     } finally {
       upstream.mockRestore()
     }
+  })
+})
+
+describe("runtime proxy transports", () => {
+  beforeEach(() => {
+    sandboxStub.containerFetch.mockClear()
+    sandboxStub.wsConnect.mockClear()
+  })
+
+  test("a WebSocket upgrade reaches the runtime port through the SDK's fetch boundary and keeps the upgrade answer", async () => {
+    const upgraded = { status: 101, webSocket: {} } as unknown as Response
+    sandboxStub.wsConnect.mockResolvedValueOnce(upgraded)
+    const response = await worker.fetch(new Request("https://sbx.test/sandbox/claxedo-ws/proxy/api/wr/pty/pty_1/connect?cursor=42", {
+      headers: { upgrade: "websocket", connection: "Upgrade", authorization: "Bearer relay-host-token" },
+    }), env())
+    expect(response).toBe(upgraded)
+    expect(sandboxStub.containerFetch).not.toHaveBeenCalled()
+    const [request, port] = sandboxStub.wsConnect.mock.calls.at(-1)!
+    expect(new URL(request.url).pathname + new URL(request.url).search).toBe("/api/wr/pty/pty_1/connect?cursor=42")
+    expect(request.headers.get("authorization")).toBe("Bearer relay-host-token")
+    expect(port).toBe(2593)
+  })
+
+  test("ordinary runtime HTTP stays on containerFetch", async () => {
+    await worker.fetch(new Request("https://sbx.test/sandbox/claxedo-ws/proxy/api/wr/health"), env())
+    expect(sandboxStub.containerFetch).toHaveBeenCalledTimes(1)
+    expect(sandboxStub.wsConnect).not.toHaveBeenCalled()
   })
 })

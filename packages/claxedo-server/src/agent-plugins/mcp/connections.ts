@@ -11,6 +11,7 @@ import {
   createMcpOAuthIntegration,
   createMcpOAuthIntegrationFromAttempt,
   mcpOAuthDeclaration,
+  isMcpOAuthIntegrationId,
   MCP_BROKERED_PORT,
 } from "@claxedo/server-core/agent-plugins/mcp/integration"
 import type { AgentPluginHttpServer } from "@claxedo/server-core/agent-plugins/catalog/types"
@@ -99,6 +100,9 @@ export function hostedAgentPluginConnectionIntegrations(input: Readonly<{
   // Retained endpoints must pass address validation again when credentials are sent.
   const tokenFetch = createSafeEndpointFetch(input.oauth.fetch, input.oauth.resolve)
   return async (context) => {
+    // Built-in integrations (GitHub's device grant) settle through their own
+    // declaration; decoding their attempt or fields as MCP OAuth fails them.
+    if (context.integrationId && !isMcpOAuthIntegrationId(context.integrationId)) return []
     if (context.attemptContext && context.integrationId) {
       return [await createMcpOAuthIntegrationFromAttempt({
         integrationId: context.integrationId,

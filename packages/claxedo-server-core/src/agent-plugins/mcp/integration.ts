@@ -54,6 +54,10 @@ function base64Url(bytes: Uint8Array) {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
 }
 
+export function isMcpOAuthIntegrationId(value: string): boolean {
+  return /^mcp-[A-Za-z0-9_-]{43}$/.test(value)
+}
+
 export async function mcpOAuthIntegrationId(input: { pluginInstanceId: string; serverName: string }) {
   const identity = JSON.stringify([input.pluginInstanceId, input.serverName])
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(identity)))

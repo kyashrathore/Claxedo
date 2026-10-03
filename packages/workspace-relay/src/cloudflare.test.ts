@@ -348,17 +348,18 @@ describe("workspace relay Cloudflare Durable Object gateway", () => {
 
   test("answers browser preflight for Claxedo app relay requests before auth", async () => {
     const gateway = createWorkspaceRelayDurableObjectGateway()
-    const res = await gateway.fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/health", {
+    const res = await gateway.fetch(new Request("https://relay.test/workspaces/ws_1/session", {
       method: "OPTIONS",
       headers: {
         origin: "https://app.claxedo.com",
-        "access-control-request-method": "GET",
-        "access-control-request-headers": "authorization",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "authorization, content-type, x-claxedo-session-registration-operation",
       },
     }))
 
     expect(res.status).toBe(204)
     expect(res.headers.get("access-control-allow-origin")).toBe("https://app.claxedo.com")
+    expect(res.headers.get("access-control-allow-headers")).toContain("X-Claxedo-Session-Registration-Operation")
     expect(res.headers.get("access-control-allow-headers")).toContain("Authorization")
     expect(res.headers.get("access-control-allow-headers")).toContain("Last-Event-ID")
     expect(res.headers.get("access-control-allow-headers")).toContain("X-Fetch-Bypass-Throttle")

@@ -211,7 +211,7 @@ async function main() {
     const missing = missingSecrets(deployment, provided, await secretsAlreadyOnWorker(deployment.workerName))
     if (missing.length > 0) throw new Error(`set these secrets in the environment and run again: ${missing.join(", ")}`)
 
-    const browserBuildId = await buildBrowserApp(deployment.apiOrigin)
+    const browserBuildId = await buildBrowserApp(deployment.apiOrigin, deployment.relayUrl)
 
     const secretsFile = path.join(temporary, "secrets.json")
     await writeFile(secretsFile, JSON.stringify(provided), { mode: 0o600 })

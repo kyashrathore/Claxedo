@@ -47,6 +47,18 @@ function oauthFetch() {
 }
 
 describe("hosted Agent Plugin Connections adapter", () => {
+  test("leaves a built-in integration's attempt and fields to its own declaration", async () => {
+    const fetch = vi.fn()
+    const provider = hostedAgentPluginConnectionIntegrations({
+      activations: { listKnown: vi.fn() } as never,
+      artifacts: { get: vi.fn() } as never,
+      oauth: { callbackUrl: "https://claxedo.example/callback", fetch, resolve: resolvePublic },
+    })
+    for (const context of [{ connectionFields: { login: "owner" } }, { attemptContext: { device_code: "github-code" } }]) {
+      expect(await provider({ ownerUserId: "owner", orgId: "org", integrationId: "github", ...context })).toEqual([])
+    }
+    expect(fetch).not.toHaveBeenCalled()
+  })
   test("lists only retained streamable-http servers whose OAuth path is supported", async () => {
     const fetch = oauthFetch()
     const artifacts = { get: vi.fn(async (digest: string) => digest === "sha256:user" ? artifact() : undefined) }

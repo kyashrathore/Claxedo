@@ -372,8 +372,13 @@ export default {
       // Rewritten Request inherits method, headers (incl. the relay's RHT) and
       // body; the streamed Response (e.g. SSE event-stream) is returned as-is.
       const proxied = new Request(target.toString(), request)
+      // RPC cannot carry a Response holding a WebSocket, so an upgrade takes
+      // the SDK's fetch-boundary transport.
+      const response = request.headers.get("upgrade")?.toLowerCase() === "websocket"
+        ? await sandbox.wsConnect(proxied, WORKSPACE_RUNTIME_PORT)
+        : await sandbox.containerFetch(proxied, WORKSPACE_RUNTIME_PORT)
       return withServerTiming(
-        await sandbox.containerFetch(proxied, WORKSPACE_RUNTIME_PORT),
+        response,
         "sandbox-container",
         startedAt,
         request.headers.get(TRACE_ID_HEADER),
