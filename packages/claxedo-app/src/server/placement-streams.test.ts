@@ -33,6 +33,7 @@ function stoppingWorkspaces(queryClient: QueryClient, serverUrl: string) {
   const refresh = Promise.withResolvers<void>()
   const workspaces = {
     streamRoute: () => reachable ? record.route : undefined,
+    home,
     refresh: async () => {
       refreshed += 1
       reachable = false

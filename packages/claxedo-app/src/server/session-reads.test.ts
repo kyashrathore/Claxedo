@@ -261,7 +261,9 @@ test("session reads: a cold open of a cloud session its workspace serves asks on
       return Response.json({ error: { message: `unexpected runtime read ${path}` } }, { status: 500 })
     },
   })
-  await startSessionReads(server.context, ref, shape).first
+  const reads = startSessionReads(server.context, ref, shape)
+  await reads.first
+  expect((await reads.runtime)?.row).toMatchObject({ title: "Live title" })
   expect(server.hostReads).toEqual(["ses_1"])
   expect(server.requests.filter((path) => path.startsWith("/api/control/"))).toEqual([centralFirstPath])
   expect([...server.runtimeCalls].sort()).toEqual([sessionEndpoint(ref), openPath].sort())
