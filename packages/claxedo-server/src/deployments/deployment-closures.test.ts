@@ -49,7 +49,7 @@ const ENTRIES = [
   // (`authority/session-hosts.ts`), its connection mint
   // (`connections/session-host-connection.ts`) and its per-turn routes
   // (`routes/session-host-delivery.ts`), with the session authority's request
-  // parsing (`routes/runtime-session-authority-request.ts`) and the D1 session
+  // parsing (`session/runtime-authority-request.ts`) and the D1 session
   // row shapes (`d1/session-rows.ts`) as modules of their own.
   { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 125, packages: 19 },
   // Both Agent Plugins entries carry the plugin-backend platform

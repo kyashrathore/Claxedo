@@ -52,7 +52,7 @@ import {
   positiveInteger,
   type HostAuthorityAction,
   type SessionAuthorityRequest,
-} from "./runtime-session-authority-request"
+} from "../session/runtime-authority-request"
 
 const bodyLimitBytes = 16 * 1024
 const streamLeaseIssuer = "claxedo-control-plane"

@@ -74,7 +74,7 @@ export const serverWorkerd: Policy = {
   // mints its connection (`connections/session-host-connection.ts`) and
   // answers its per-turn delivery and execution calls
   // (`routes/session-host-delivery.ts`); the session authority's request
-  // parsing (`routes/runtime-session-authority-request.ts`) and the D1 session
+  // parsing (`session/runtime-authority-request.ts`) and the D1 session
   // tables' row shapes (`authority/adapters/d1/session-rows.ts`) are modules
   // of their own.
   ceilings: { modules: 125, packages: 19 },
