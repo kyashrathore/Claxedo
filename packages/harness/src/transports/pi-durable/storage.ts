@@ -1,18 +1,20 @@
-import type { Database, SQLQueryBindings } from "bun:sqlite"
 import type { Storage } from "@earendil-works/pi-durable"
 import { SqliteStorage, type SqliteDatabase, type SqliteExecutor, type SqliteValue } from "@earendil-works/pi-durable/storage/sqlite"
 
-function executor(db: Database, run: <T>(operation: () => T) => Promise<T>): SqliteExecutor {
-  const bindings = (params: SqliteValue[]): SQLQueryBindings[] => params
+type BunStatement = { run(...params: SqliteValue[]): unknown; get(...params: SqliteValue[]): unknown; all(...params: SqliteValue[]): unknown[] }
+type BunDatabase = { exec(sql: string): void; prepare(sql: string): BunStatement; close(): void }
+type BunSqlite = { Database: new (file: string, options: { create: boolean }) => BunDatabase }
+
+function executor(db: BunDatabase, run: <T>(operation: () => T) => Promise<T>): SqliteExecutor {
   return {
     exec: (sql) => run(() => { db.exec(sql) }),
-    run: (sql, ...params) => run(() => { db.prepare(sql).run(...bindings(params)) }),
-    get: <T extends object>(sql: string, ...params: SqliteValue[]) => run(() => db.prepare<T, SQLQueryBindings[]>(sql).get(...bindings(params)) ?? undefined),
-    all: <T extends object>(sql: string, ...params: SqliteValue[]) => run(() => db.prepare<T, SQLQueryBindings[]>(sql).all(...bindings(params))),
+    run: (sql, ...params) => run(() => { db.prepare(sql).run(...params) }),
+    get: <T extends object>(sql: string, ...params: SqliteValue[]) => run(() => (db.prepare(sql).get(...params) ?? undefined) as T | undefined),
+    all: <T extends object>(sql: string, ...params: SqliteValue[]) => run(() => db.prepare(sql).all(...params) as T[]),
   }
 }
 
-function bunPiDatabase(db: Database): SqliteDatabase {
+function bunPiDatabase(db: BunDatabase): SqliteDatabase {
   let tail: Promise<unknown> = Promise.resolve()
   const queued = <T>(operation: () => T | Promise<T>): Promise<T> => {
     const next = tail.then(operation)
@@ -47,7 +49,8 @@ function bunPiDatabase(db: Database): SqliteDatabase {
 
 export async function openPiStorage(file: string): Promise<Storage> {
   if (!("Bun" in globalThis)) return (await import("@earendil-works/pi-durable/storage/sqlite/node")).openNodeSqliteStorage(file)
-  const { Database } = await import("bun:sqlite")
+  const bunSqlite = "bun:sqlite"
+  const { Database } = await import(bunSqlite) as BunSqlite
   const db = new Database(file, { create: true })
   db.exec("PRAGMA journal_mode = WAL")
   db.exec("PRAGMA synchronous = NORMAL")
