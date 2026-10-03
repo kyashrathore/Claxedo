@@ -90,4 +90,14 @@ describe("what a host answers once a configuration is pushed", () => {
     pushed = pushedBy("owner")
     expect(await projectAuth({})).toEqual({ machineOwnerUserId: "owner", accounts: { owner: { openai: PUSHED } } })
   })
+
+  test("the owner's direct rows reach only the owner, and a provider they chose the org account for keeps none", async () => {
+    const plan = { delivery: "direct", baseUrl: "https://chatgpt.com", secret: "plan-token", authKind: "subscription" } as const
+    const key = { delivery: "direct", baseUrl: "https://api.openai.com", secret: "sk-owner", authKind: "api-key" } as const
+    const pushed = (): CredentialSnapshot => JSON.parse(serializeHostProviderConfig({ openai: PUSHED }, "owner", { "codex-app-server": plan, openai: key })).credentials
+    expect(parseHostProviderConfig(serializeHostProviderConfig({}, "owner", { "codex-app-server": plan })).credentials.direct).toEqual({ owner: { "codex-app-server": plan } })
+    const answer = await hostProviderConfigProjectAuth(broker, pushed, () => "owner", () => ({ openai: "org" }))({})
+    expect(answer.direct).toEqual({ owner: { "codex-app-server": plan } })
+    expect(Object.keys(answer.direct ?? {})).toEqual(["owner"])
+  })
 })

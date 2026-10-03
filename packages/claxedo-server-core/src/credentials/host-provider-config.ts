@@ -1,4 +1,4 @@
-import type { CredentialSnapshot, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
+import type { CredentialSnapshot, ProviderDirect, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
 /**
  * What the owner sealed for a host, once it is open again.
  *
@@ -27,8 +27,18 @@ export type HostProviderConfig = {
   credentials: CredentialSnapshot
 }
 
-export function serializeHostProviderConfig(providers: Record<string, ProviderProjectionSource>, owner: string): string {
-  return JSON.stringify({ version: HOST_PROVIDER_CONFIG_VERSION, credentials: { machineOwnerUserId: owner, accounts: { [owner]: providers } } })
+/** `direct` is the owner's accounts their machine's in-process Pi spends as secrets; nobody else's rows ever ride here. */
+export function serializeHostProviderConfig(
+  providers: Record<string, ProviderProjectionSource>,
+  owner: string,
+  direct: Record<string, ProviderDirect> = {},
+): string {
+  const credentials: CredentialSnapshot = {
+    machineOwnerUserId: owner,
+    accounts: { [owner]: providers },
+    ...(Object.keys(direct).length > 0 ? { direct: { [owner]: direct } } : {}),
+  }
+  return JSON.stringify({ version: HOST_PROVIDER_CONFIG_VERSION, credentials })
 }
 
 /**
@@ -89,7 +99,14 @@ export function hostProviderConfigProjectAuth<Input>(
     const remote = pushed()
     if (!owner || !remote || remote.machineOwnerUserId !== owner) return local
     const sources = ownerSources(owner, input)
-    const own = Object.fromEntries(Object.entries(remote.accounts[owner] ?? {}).filter(([providerId]) => sources[providerId] !== "org"))
-    return { ...local, machineOwnerUserId: owner, accounts: { ...local.accounts, [owner]: { ...local.accounts[owner], ...own } } }
+    const ownRows = <T>(rows: Record<string, T> | undefined) => Object.fromEntries(Object.entries(rows ?? {}).filter(([providerId]) => sources[providerId] !== "org"))
+    const own = ownRows(remote.accounts[owner])
+    const direct = ownRows(remote.direct?.[owner])
+    return {
+      ...local,
+      machineOwnerUserId: owner,
+      accounts: { ...local.accounts, [owner]: { ...local.accounts[owner], ...own } },
+      ...(Object.keys(direct).length > 0 ? { direct: { ...local.direct, [owner]: { ...local.direct?.[owner], ...direct } } } : {}),
+    }
   }
 }
