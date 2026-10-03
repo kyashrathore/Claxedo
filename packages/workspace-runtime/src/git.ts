@@ -164,8 +164,9 @@ function defaultGit(args: string[], cwd: string, options: GitOptions) {
     let ended = false
     const end = () => { ended = endGit(child) || ended }
     const collect = (stream: "stdout" | "stderr") => (chunk: string) => {
+      if (failure) return
       output[stream] += chunk
-      if (output[stream].length <= options.maxBuffer || failure) return
+      if (output[stream].length <= options.maxBuffer) return
       failure = new RangeError(`git ${stream} maxBuffer length exceeded`)
       end()
     }

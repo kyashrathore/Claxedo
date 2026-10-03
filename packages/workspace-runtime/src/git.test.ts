@@ -185,6 +185,11 @@ describe("default git exec", () => {
     expect(await exits(started)).toBe(true)
   })
 
+  test("output past maxBuffer fails the run instead of returning it", async () => {
+    const git = createBoundedGit({ maxBuffer: 10 })
+    await expect(git(["-c", "alias.big=!printf '%0100d' 0", "big"], process.cwd())).rejects.toThrow()
+  })
+
   test("git applies a credential to https on the host it names and to nothing else", async () => {
     const git = createBoundedGit()
     const credential = { host: "example.test", authorization: "Bearer synthetic-token" }
