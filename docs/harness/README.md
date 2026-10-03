@@ -59,7 +59,7 @@ runs Pi as a library in the process that hosts it.
 | Claude | [`ClaudeSdkTransport`](../../packages/harness/src/transports/claude-sdk/index.ts), Claude Agent SDK |
 | Codex | [`CodexAppServerTransport`](../../packages/harness/src/transports/codex-app-server/index.ts), `codex app-server`, shared by a workspace's sessions of one launch key |
 | Cursor | [`CursorSdkTransport`](../../packages/harness/src/transports/cursor-sdk/index.ts), `@cursor/sdk` in a host process shared across workspaces by one owner, binding and plugin selection |
-| Pi | [`PiDurableTransport`](../../packages/harness/src/transports/pi-durable/index.ts), one embedded pi-durable `Harness` per session, in the daemon's process |
+| Pi | [`PiDurableTransport`](../../packages/harness/src/transports/pi-durable/index.ts), one embedded pi-durable `Harness` per session: in the daemon's process locally, in the session's own `SessionDO` ([session host](../../packages/session-host/README.md)) on a cloud workspace |
 | OpenCode | [`OpenCodeSdkTransport`](../../packages/harness/src/transports/opencode-sdk/transport.ts), the embedded engine, one SDK instance per session launch document |
 | Custom ACP | [`AcpTransport`](../../packages/harness/src/transports/acp/index.ts), a local process or remote peer |
 
@@ -126,7 +126,12 @@ How the processes behind these stores are shared:
 - Cursor: one SDK host per owner, binding and plugin selection, which outlives
   the workspace that started it
   ([transport README](../../packages/harness/src/transports/cursor-sdk/README.md)).
-- Pi: no process of its own; every session's `Harness` runs in the daemon.
+- Pi: no process of its own. Locally every session's `Harness` runs in the
+  daemon; on a cloud workspace each top-level session runs in its own
+  `SessionDO`, which receives the creator's direct credentials per turn
+  (`/turn-delivery`) and runs its tools on the workspace's machine through the
+  relay (`/turn-execution`, `/api/wr/execution-env`), whatever sandbox driver
+  serves it.
 - OpenCode: one embedded engine; each session runs in the SDK instance its
   launch document keys, so sessions in one directory see only their own MCP
   servers and skills
