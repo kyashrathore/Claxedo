@@ -3,6 +3,14 @@
 Claxedo's control plane. It deploys to Cloudflare as the Workers in
 `src/deployments/hosted-workerd/`. The app and harness e2e suites boot the Worker.
 
+`bun run deploy:user-cloudflare` publishes that Worker and the browser app, and
+then the session-host Worker (`packages/session-host`, one `SessionDO` per
+top-level Pi session on a cloud workspace) from `renderSessionHostWranglerConfig`.
+The session host binds the control-plane Worker as its `CONTROL_PLANE` service,
+so it is published after it; the relay binds its `SessionDO` by the session
+host's script name (`CLAXEDO_SESSION_HOST_WORKER_NAME`, default
+`<CLAXEDO_WORKER_NAME>-session-host`), so the relay is deployed after both.
+
 Workspace runtime control tokens are generated separately for each workspace.
 Setting `WORKSPACE_RUNTIME_CONFIG_TOKEN` in the control-plane environment no
 longer overrides those credentials. The supervisor still delivers the generated
