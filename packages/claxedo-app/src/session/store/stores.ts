@@ -9,7 +9,7 @@ import { createSessionTranscript } from "../transcript"
 import { transcriptViewport } from "../transcript-viewport"
 import { CACHED_TURN_LIMIT, OPEN_SESSION_LIMIT, createOpenSessions, type OpenSessions } from "./open-sessions"
 
-function dispatchServerEvent(event: ServerEvent, list: SessionListInternal, requests: RequestsInternal, open: OpenSessions): SessionAttention | undefined {
+function dispatchServerEvent(event: ServerEvent, list: SessionListInternal, requests: RequestsInternal, open: OpenSessions): readonly SessionAttention[] {
   const attention = attentionRaised(event, list)
   list.apply(event)
   requests.apply(event)
