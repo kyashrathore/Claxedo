@@ -43,8 +43,10 @@ Stopping a turn cancels the model request and kills any command Pi is running.
 ## Tools, permissions and questions
 
 Pi has its own `read`, `write`, `edit` and `bash` tools, working in the
-session's directory. Each command runs as a process Claxedo owns, and it ends
-with its command: a background job a command starts does not outlive it.
+session's directory. Each command runs as a process Claxedo owns. A
+background job a command starts (`server &`) keeps running after the command
+returns, and ends when it finishes, when the session closes or when the runtime
+stops.
 Inline image attachments are supported; refer to other files by path.
 
 The permission mode decides whether Pi asks first. **Full access** (the

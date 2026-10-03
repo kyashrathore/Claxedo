@@ -49,18 +49,18 @@ A request selects a built-in with `nativeHarness` or a configured agent with
 `connectionId`, validated in
 [`routes/config.ts`](../../packages/workspace-runtime/src/routes/config.ts).
 [`registry/table.ts`](../../packages/harness/src/registry/table.ts) maps
-built-in IDs to transports and names ACP and Pi RPC as custom connection
-providers;
+built-in IDs to transports and names ACP as the custom connection provider;
 [`host/composition.ts`](../../packages/workspace-runtime/src/host/composition.ts)
-supplies executables and state roots.
+supplies executables and state roots. Pi needs no executable: the transport
+runs Pi as a library in the process that hosts it.
 
 | Selection | Transport |
 |---|---|
 | Claude | [`ClaudeSdkTransport`](../../packages/harness/src/transports/claude-sdk/index.ts), Claude Agent SDK |
-| Codex | [`CodexAppServerTransport`](../../packages/harness/src/transports/codex-app-server/index.ts), `codex app-server` |
-| Cursor | [`CursorSdkTransport`](../../packages/harness/src/transports/cursor-sdk/index.ts), `@cursor/sdk` in a host process |
-| Pi | [`PiDurableTransport`](../../packages/harness/src/transports/pi-durable/index.ts), an embedded pi-durable `Harness` per session |
-| OpenCode | [`OpenCodeSdkTransport`](../../packages/harness/src/transports/opencode-sdk/transport.ts), the embedded engine |
+| Codex | [`CodexAppServerTransport`](../../packages/harness/src/transports/codex-app-server/index.ts), `codex app-server`, shared by a workspace's sessions of one launch key |
+| Cursor | [`CursorSdkTransport`](../../packages/harness/src/transports/cursor-sdk/index.ts), `@cursor/sdk` in a host process shared across workspaces by one owner, binding and plugin selection |
+| Pi | [`PiDurableTransport`](../../packages/harness/src/transports/pi-durable/index.ts), one embedded pi-durable `Harness` per session, in the daemon's process |
+| OpenCode | [`OpenCodeSdkTransport`](../../packages/harness/src/transports/opencode-sdk/transport.ts), the embedded engine, one SDK instance per session launch document |
 | Custom ACP | [`AcpTransport`](../../packages/harness/src/transports/acp/index.ts), a local process or remote peer |
 
 Permission modes and each harness's `defaultModeId` are declared in
@@ -98,9 +98,13 @@ profile README owns where its harness keeps conversations and configuration:
   home for a brokered session.
 - [Cursor](../../packages/harness/src/profiles/cursor/README.md): a
   Claxedo-owned home held by the SDK host.
-- [Pi](../../packages/harness/src/transports/pi-durable/README.md): no home or
-  profile; each session keeps its own SQLite store and spends only the direct
-  credentials it is given.
+- [Pi](../../packages/harness/src/transports/pi-durable/README.md): no CLI,
+  home or profile, and no extension, skill or login of the person's own Pi.
+  Each session keeps its own SQLite store under the harness state root
+  (`sessions/<sessionId>.sqlite`) and spends only direct credentials: the
+  owner's selected key or subscription token, delivered into the process,
+  never a broker placeholder or the machine's own Pi login. A subscription
+  token is renewed by Claxedo's credential authority, never by Pi.
 - [OpenCode](../../packages/harness/src/profiles/opencode/README.md): MCP
   servers and skills through the embedded engine's per-location plugin hooks,
   with nothing written into the project.
@@ -112,6 +116,22 @@ cannot take is reported as `notApplied`. For a remote ACP peer,
 drops first-party and plugin servers, stdio servers and any remote kind the
 peer did not declare.
 
+How the processes behind these stores are shared:
+
+- Codex: sessions of one workspace share an app-server through the transport's
+  `CodexProcessPool`, keyed by home, account `credentialId`, plugin selection
+  and projection generation, never by a secret; at most 8 sessions each, and
+  an app-server whose last session left is retired after 30 s
+  ([transport README](../../packages/harness/src/transports/codex-app-server/README.md)).
+- Cursor: one SDK host per owner, binding and plugin selection, which outlives
+  the workspace that started it
+  ([transport README](../../packages/harness/src/transports/cursor-sdk/README.md)).
+- Pi: no process of its own; every session's `Harness` runs in the daemon.
+- OpenCode: one embedded engine; each session runs in the SDK instance its
+  launch document keys, so sessions in one directory see only their own MCP
+  servers and skills
+  ([transport README](../../packages/harness/src/transports/opencode-sdk/README.md)).
+
 ## Questions and permissions
 
 A provider request goes through the turn or session broker. The
@@ -120,6 +140,22 @@ live state and the
 [store broker ports](../../packages/session-core/src/broker-ports/index.ts)
 persist and publish it; the contract README defines answer, cancellation and
 child-routing rules.
+
+Pi has no approval step of its own. In `ask` mode the transport's `beforeTool`
+hook asks the broker before `write`, `edit`, `bash` and every MCP tool, and
+blocks the call unless the person allows it; `full`, the default, never asks.
+Pi's `question` tool, from Claxedo's extension, asks the person through the
+same broker and returns the answer to the model.
+
+## Restart and resume
+
+At boot the runtime marks every busy session interrupted
+(`RuntimeStore.recoverBusySessions`). A transport that declares `durableRuns`
+(Pi) is attached again once the runtime has applied a configuration snapshot,
+so the session has its credentials: Pi finds the run it committed, gives an
+interrupted tool call an `interrupted` result, and continues the turn as a
+`continuation` provider turn. Every other harness leaves the session
+interrupted until the person resumes it or sends a message.
 
 ## Native subagents and background work
 
