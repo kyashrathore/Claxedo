@@ -10,6 +10,44 @@ export type AccountStreamPort = {
   readonly onStreamError: (listener: (payload: { readonly streamId: string; readonly message: string }) => void) => () => void
 }
 
+function streamBody(bridge: AccountStreamPort, streamId: string, signal: AbortSignal, closeInMain: () => void) {
+  const encoder = new TextEncoder()
+  const listeners: (() => void)[] = []
+  let body!: ReadableStreamDefaultController<Uint8Array>
+  const detach = () => {
+    listeners.splice(0).forEach((stop) => stop())
+    signal.removeEventListener("abort", abort)
+  }
+  const abort = () => {
+    detach()
+    closeInMain()
+    body.error(signal.reason)
+  }
+  const ended = (payload: { readonly streamId: string }, settle: () => void) => {
+    if (payload.streamId !== streamId) return
+    detach()
+    settle()
+  }
+  const stream = new ReadableStream<Uint8Array>({
+    start: (controller) => {
+      body = controller
+      listeners.push(
+        bridge.onStreamChunk((payload) => {
+          if (payload.streamId === streamId) controller.enqueue(encoder.encode(payload.text))
+        }),
+        bridge.onStreamEnd((payload) => ended(payload, () => controller.close())),
+        bridge.onStreamError((payload) => ended(payload, () => controller.error(new Error(payload.message)))),
+      )
+    },
+    cancel: () => {
+      detach()
+      closeInMain()
+    },
+  })
+  signal.addEventListener("abort", abort, { once: true })
+  return stream
+}
+
 export function accountEvents(bridge: AccountStreamPort): AccountEvents {
   return async ({ lastEventId, signal }) => {
     const streamId = readString(await bridge.streamOpen("controlPlane.events", lastEventId ? { lastEventId } : {}), "streamId")
@@ -21,44 +59,8 @@ export function accountEvents(bridge: AccountStreamPort): AccountEvents {
       closeInMain()
       throw signal.reason
     }
-    const encoder = new TextEncoder()
-    const listeners: (() => void)[] = []
-    let body!: ReadableStreamDefaultController<Uint8Array>
-    const detach = () => {
-      listeners.splice(0).forEach((stop) => stop())
-      signal.removeEventListener("abort", abort)
-    }
-    const abort = () => {
-      detach()
-      closeInMain()
-      body.error(signal.reason)
-    }
-    const stream = new ReadableStream<Uint8Array>({
-      start: (controller) => {
-        body = controller
-        listeners.push(
-          bridge.onStreamChunk((payload) => {
-            if (payload.streamId === streamId) controller.enqueue(encoder.encode(payload.text))
-          }),
-          bridge.onStreamEnd((payload) => {
-            if (payload.streamId !== streamId) return
-            detach()
-            controller.close()
-          }),
-          bridge.onStreamError((payload) => {
-            if (payload.streamId !== streamId) return
-            detach()
-            controller.error(new Error(payload.message))
-          }),
-        )
-      },
-      cancel: () => {
-        detach()
-        closeInMain()
-      },
-    })
-    signal.addEventListener("abort", abort, { once: true })
+    const body = streamBody(bridge, streamId, signal, closeInMain)
     await bridge.streamStart(streamId)
-    return new Response(stream, { headers: { "content-type": "text/event-stream" } })
+    return new Response(body, { headers: { "content-type": "text/event-stream" } })
   }
 }
