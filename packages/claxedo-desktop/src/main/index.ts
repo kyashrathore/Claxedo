@@ -42,7 +42,6 @@ void reportInstall(telemetryClient, {
 import type { InitStep, ServerReadyData, WslConfig } from "../preload/types"
 import { ensureAgentPath } from "./agent-path"
 import { checkAppExists, resolveAppPath, wslPath } from "./apps"
-import { resolveSystemClaude } from "./claude-executable"
 import { loadServerEnvForDevelopment, resolveDesktopServerDataDir } from "./server-env"
 import type { BrowserRegistry } from "./browser/registry"
 import { setupBrowserTab } from "./browser/setup"
@@ -72,7 +71,6 @@ import {
   type DaemonRecoveryResult,
 } from "./daemon-recovery"
 import { holdClaxedoDaemonLease } from "./server-daemon-lease"
-import { createDaemonExitLifecycle } from "./daemon-exit-lifecycle"
 import { createDaemonStatus, DAEMON_STATUS_CHANNELS, type DaemonExit } from "./daemon-status"
 import { embeddedServerReadiness } from "./server-readiness"
 import { recordStartupClock } from "../shared/startup-clock-probe"
@@ -127,7 +125,6 @@ let initStep: InitStep = { phase: "server_waiting" }
 
 let mainWindow: BrowserWindow | null = null
 let quitting = false
-const daemonExitLifecycle = createDaemonExitLifecycle()
 let daemonLease: Awaited<ReturnType<typeof holdClaxedoDaemonLease>> | undefined
 /** Held for the recovery IPC while no server connection could be established. */
 let unresolvedDaemon: { discovery: ClaxedoDaemonDiscovery; result: DaemonRecoveryResult } | undefined
@@ -287,14 +284,6 @@ async function startClaxedoServer(
   if (!existsSync(serverPath)) {
     throw new Error(`Claxedo server bundle was not found at ${serverPath}. Rebuild the desktop app and try again.`)
   }
-  // The native SDK harness spawns the user's installed Claude Code CLI. Resolve
-  // it once here so a GUI-trimmed PATH still finds a standard install.
-  if (!process.env.CLAUDE_CODE_EXECUTABLE) {
-    const claude = resolveSystemClaude()
-    if (claude) process.env.CLAUDE_CODE_EXECUTABLE = claude
-    else logger.warn("Claude Code CLI not found; Claude harnesses need `claude` installed and on PATH")
-  }
-
   if (!IS_PACKAGED) {
     try {
       loadServerEnvForDevelopment({
@@ -913,7 +902,7 @@ if (browserTabSetup) {
 async function shutdown() {
   const lease = daemonLease
   daemonLease = undefined
-  await daemonExitLifecycle.release(lease)
+  await lease?.stop()
   hostConnector?.dispose()
 }
 

@@ -1,6 +1,5 @@
 import { describe, expect, mock, test } from "bun:test"
 import { spawn } from "node:child_process"
-import { createDaemonExitLifecycle } from "./daemon-exit-lifecycle"
 import { holdClaxedoDaemonLease } from "./server-daemon-lease"
 import type { ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
 
@@ -99,10 +98,9 @@ describe("Claxedo daemon client lease", () => {
   test("quit releases only its lease and a reopened desktop can acquire another", async () => {
     const daemon = await fakeDaemon()
     try {
-      const lifecycle = createDaemonExitLifecycle()
-      await lifecycle.release(await holdClaxedoDaemonLease(daemon.discovery))
+      await (await holdClaxedoDaemonLease(daemon.discovery)).stop()
       await daemon.settle()
-      await lifecycle.release(await holdClaxedoDaemonLease(daemon.discovery))
+      await (await holdClaxedoDaemonLease(daemon.discovery)).stop()
       await daemon.settle()
       expect(daemon.events).toEqual([
         "POST /api/claxedo/daemon/leases", "lease closed",

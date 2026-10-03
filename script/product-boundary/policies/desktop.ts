@@ -212,9 +212,17 @@ export const desktopMainComposition: Policy = {
   // and install, split out of `index.ts` along its own responsibility.
   // Reviewed owner: Electron main, the only process that drives
   // `electron-updater`, already a package edge. 87/24, no headroom.
-  // Local artifact tabs add main/local-file-content.ts and the published
-  // workspace-runtime/file-content reader: 88 modules / 25 packages, no headroom.
-  ceilings: { modules: 88, packages: 25 },
+  // +1 module / +1 package: `main/local-file-content.ts` over
+  // `@claxedo/workspace-runtime/file-content`. Reviewed owner: workspace-runtime's
+  // canonical file-content reader, which the workspace `/file/content` route
+  // also serves; main applies only the local-path guard before it. The subpath
+  // is one module; its other imports, a contract type and
+  // `@claxedo/helpers/fs`, are already edges. 88/25.
+  // -1 module: `main/claude-executable.ts` is gone; the runtime resolves the
+  // Claude CLI itself from the PATH main hands the daemon. -1 module:
+  // `main/daemon-exit-lifecycle.ts` is gone; shutdown stops the lease directly.
+  // 86/25, no headroom.
+  ceilings: { modules: 86, packages: 25 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
