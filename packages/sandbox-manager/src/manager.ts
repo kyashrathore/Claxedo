@@ -178,7 +178,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
 
   // Boot-time half of the warning. A per-create line lands in request logs and
   // is easy to miss; this one lands wherever the process starts, so an operator
-  // who composed cloudflare/box/docker/modal learns that this deployment
+  // who composed cloudflare/boat/docker/modal learns that this deployment
   // runs sandboxes with unrestricted egress BEFORE the first workspace exists.
   if (egressControl === "none") {
     const key = `${options.driver.id}|${egressControl}`

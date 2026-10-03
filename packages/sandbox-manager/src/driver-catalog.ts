@@ -135,10 +135,10 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
       },
     },
   },
-  box: {
-    id: "box",
-    label: sandboxDriverLabels.box,
-    credentialFields: sandboxDriverCredentialFields.box,
+  boat: {
+    id: "boat",
+    label: sandboxDriverLabels.boat,
+    credentialFields: sandboxDriverCredentialFields.boat,
     runtimeNetwork: { controlPlane: "direct", relay: "configured" },
     runtimeEnv: "callback",
     preparedImage: true,

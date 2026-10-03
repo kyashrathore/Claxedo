@@ -15,7 +15,7 @@ export function snapshotVersion(value: string) {
 
 /**
  * A caller-supplied image string lands verbatim inside provider argv or
- * commands (`docker create` argv, `docker run` inside a Box VM). A value that
+ * commands (`docker create` argv, `docker run` inside a Boat VM). A value that
  * parses as an option — a leading `-` — or that splits into multiple words
  * would be consumed as provider flags, not as an image reference.
  */

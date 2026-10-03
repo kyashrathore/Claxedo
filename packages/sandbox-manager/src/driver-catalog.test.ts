@@ -13,7 +13,7 @@ import { isSandboxDriverID, sandboxDriverIds } from "@claxedo/sandbox-contract"
 
 describe("sandbox driver catalog", () => {
   test("owns every direct sandbox driver id", () => {
-    expect(sandboxDriverIds).toEqual(["modal", "vercel", "cloudflare", "box", "docker"])
+    expect(sandboxDriverIds).toEqual(["modal", "vercel", "cloudflare", "boat", "docker"])
     expect(Object.keys(sandboxDriverCatalog).sort()).toEqual([...sandboxDriverIds].sort())
     expect(isSandboxDriverID("vercel")).toBe(true)
     expect(isSandboxDriverID("fetch")).toBe(false)
@@ -33,7 +33,7 @@ describe("sandbox driver catalog", () => {
       retention: "provider-managed",
       restoreMount: "copy-on-write",
     })
-    expect(sandboxDriverCatalog.box.metadata.persistence.capture).toBe("none")
+    expect(sandboxDriverCatalog.boat.metadata.persistence.capture).toBe("none")
     expect(sandboxDriverCatalog.docker.metadata.persistence.restoreMount).toBe("same-resource")
     for (const driver of Object.values(sandboxDriverCatalog)) {
       expect(validateSandboxPersistenceCapabilities(driver.metadata.persistence)).toEqual({ valid: true })
@@ -62,7 +62,7 @@ describe("sandbox driver catalog", () => {
   })
 
   test("exposes concrete credential field metadata", () => {
-    expect(sandboxDriverCatalog.box.credentialFields).toEqual([{ key: "api_key", label: "API Key", secret: true }])
+    expect(sandboxDriverCatalog.boat.credentialFields).toEqual([{ key: "api_key", label: "API Key", secret: true }])
     expect(sandboxDriverCatalog.cloudflare.credentialFields.map((field) => field.key)).toEqual(["api_token", "worker_url"])
   })
 
@@ -75,8 +75,8 @@ describe("sandbox driver catalog", () => {
       CLOUDFLARE_API_TOKEN: "cf",
       CLOUDFLARE_SANDBOX_WORKER_URL: "https://worker.test",
     })).toEqual({ api_token: "cf", worker_url: "https://worker.test" })
-    expect(sandboxDriverAuth({ auth: { box: { api_key: "bx" } } }, "box")).toEqual({ api_key: "bx" })
-    expect(sandboxDriverAuth(undefined, "box", { BOX_API_KEY: "bx-env" })).toEqual({ api_key: "bx-env" })
+    expect(sandboxDriverAuth({ auth: { boat: { api_key: "bx" } } }, "boat")).toEqual({ api_key: "bx" })
+    expect(sandboxDriverAuth(undefined, "boat", { BOAT_API_KEY: "bx-env" })).toEqual({ api_key: "bx-env" })
   })
 
   test("keeps Docker hidden unless explicitly enabled", () => {

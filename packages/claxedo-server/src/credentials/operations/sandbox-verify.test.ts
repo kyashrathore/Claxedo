@@ -216,21 +216,21 @@ describe("cloudflare", () => {
   })
 })
 
-describe("box", () => {
-  // https://docs.ascii.dev/box/api/reference/account/get-current-box-user.md
+describe("boat", () => {
+  // https://docs.boat.dev/api/reference/account/get-current-boat-user.md
   test("an API key verifies against the documented account read", async () => {
     const transports = transport({ body: JSON.stringify({ ok: true, user: { login: "octocat" } }) })
 
-    const health = await verifySandboxDriverAuth("box", { api_key: "box_key" }, { fetch: transports.stub })
+    const health = await verifySandboxDriverAuth("boat", { api_key: "boat_key" }, { fetch: transports.stub })
 
     expect(health).toBe("ok")
-    expect(transports.first().url).toBe("https://ascii.dev/api/box/v1/me")
+    expect(transports.first().url).toBe("https://boat.dev/api/v1/me")
     expect(transports.first().method).toBe("GET")
-    expect(transports.first().headers.Authorization).toBe("Bearer box_key")
+    expect(transports.first().headers.Authorization).toBe("Bearer boat_key")
     expect(transports.first().body).toBeUndefined()
   })
 
-  test("a rejected Box key is auth_failed", async () => {
+  test("a rejected Boat key is auth_failed", async () => {
     const transports = transport({
       ok: false,
       status: 401,
@@ -238,22 +238,22 @@ describe("box", () => {
     })
 
     await expect(
-      verifySandboxDriverAuth("box", { api_key: "box_revoked" }, { fetch: transports.stub }),
+      verifySandboxDriverAuth("boat", { api_key: "boat_revoked" }, { fetch: transports.stub }),
     ).resolves.toBe("auth_failed")
   })
 
   test("a network failure is inconclusive, never a verdict against the key", async () => {
     await expect(
-      verifySandboxDriverAuth("box", { api_key: "box_key" }, { fetch: offline }),
+      verifySandboxDriverAuth("boat", { api_key: "boat_key" }, { fetch: offline }),
     ).rejects.toBeInstanceOf(CredentialVerificationError)
   })
 
   test("a key pasted with surrounding whitespace is sent bare", async () => {
     const transports = transport({ body: JSON.stringify({ ok: true }) })
 
-    await verifySandboxDriverAuth("box", { api_key: " box_key\n" }, { fetch: transports.stub })
+    await verifySandboxDriverAuth("boat", { api_key: " boat_key\n" }, { fetch: transports.stub })
 
-    expect(transports.first().headers.Authorization).toBe("Bearer box_key")
+    expect(transports.first().headers.Authorization).toBe("Bearer boat_key")
   })
 })
 
@@ -308,7 +308,7 @@ describe("incomplete credentials", () => {
     const transports = transport()
 
     await expect(
-      verifySandboxDriverAuth("box", { api_key: "   " }, { fetch: transports.stub }),
+      verifySandboxDriverAuth("boat", { api_key: "   " }, { fetch: transports.stub }),
     ).rejects.toThrow(/unsupported shape/)
     expect(transports.calls).toHaveLength(0)
   })
@@ -319,7 +319,7 @@ describe("shared status mapping", () => {
     const transports = transport({ ok: false, status: 429, body: "too many requests" })
 
     await expect(
-      verifySandboxDriverAuth("box", { api_key: "box_key" }, { fetch: transports.stub }),
+      verifySandboxDriverAuth("boat", { api_key: "boat_key" }, { fetch: transports.stub }),
     ).resolves.toBe("rate_capped")
   })
 
@@ -327,7 +327,7 @@ describe("shared status mapping", () => {
     const transports = transport({ ok: false, status: 402, body: "payment required" })
 
     await expect(
-      verifySandboxDriverAuth("box", { api_key: "box_key" }, { fetch: transports.stub }),
+      verifySandboxDriverAuth("boat", { api_key: "boat_key" }, { fetch: transports.stub }),
     ).resolves.toBe("no_billing")
   })
 
@@ -335,7 +335,7 @@ describe("shared status mapping", () => {
     const transports = transport({ ok: false, status: 503, body: "service unavailable" })
 
     await expect(
-      verifySandboxDriverAuth("box", { api_key: "box_key" }, { fetch: transports.stub }),
+      verifySandboxDriverAuth("boat", { api_key: "boat_key" }, { fetch: transports.stub }),
     ).rejects.toBeInstanceOf(CredentialVerificationError)
   })
 })

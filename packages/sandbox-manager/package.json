@@ -2,7 +2,7 @@
   "name": "@claxedo/sandbox-manager",
   "version": "0.10.0",
   "type": "module",
-  "description": "Sandbox lifecycle manager with epoch-based leases and pluggable drivers for Modal, Vercel Sandbox, Cloudflare, Box, and Docker",
+  "description": "Sandbox lifecycle manager with epoch-based leases and pluggable drivers for Modal, Vercel Sandbox, Cloudflare, Boat, and Docker",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -16,7 +16,7 @@
     "vercel",
     "cloudflare",
     "docker",
-    "box",
+    "boat",
     "agents"
   ],
   "main": "./dist/index.mjs",
@@ -64,12 +64,12 @@
       "import": "./dist/driver-catalog.mjs",
       "default": "./dist/driver-catalog.mjs"
     },
-    "./drivers/box": {
-      "development": "./src/drivers/box.ts",
-      "bun": "./src/drivers/box.ts",
-      "types": "./dist/drivers/box.d.ts",
-      "import": "./dist/drivers/box.mjs",
-      "default": "./dist/drivers/box.mjs"
+    "./drivers/boat": {
+      "development": "./src/drivers/boat.ts",
+      "bun": "./src/drivers/boat.ts",
+      "types": "./dist/drivers/boat.d.ts",
+      "import": "./dist/drivers/boat.mjs",
+      "default": "./dist/drivers/boat.mjs"
     },
     "./drivers/cloudflare": {
       "development": "./src/drivers/cloudflare.ts",

@@ -74,7 +74,7 @@ export function sandboxDriverVerifiable(id: SandboxDriverID) {
   return VERIFIABLE.has(id)
 }
 
-const VERIFIABLE = new Set<SandboxDriverID>(["vercel", "cloudflare", "box"])
+const VERIFIABLE = new Set<SandboxDriverID>(["vercel", "cloudflare", "boat"])
 
 const REJECTED = (status: number) => status === 401 || status === 403
 
@@ -128,12 +128,12 @@ function sandboxDriverProbe(id: SandboxDriverID, auth: Record<string, string>): 
     }
   }
 
-  // Box by ASCII: "Get current Box user"
-  // (https://docs.ascii.dev/box/api/reference/account/get-current-box-user.md).
-  // O(1) and returns an identity, unlike `GET /boxes` which enumerates.
-  if (id === "box") {
+  // Boat: "Get current Boat user"
+  // (https://docs.boat.dev/api/reference/account/get-current-boat-user.md).
+  // O(1) and returns an identity, unlike `GET /sandboxes` which enumerates.
+  if (id === "boat") {
     return {
-      url: "https://ascii.dev/api/box/v1/me",
+      url: "https://boat.dev/api/v1/me",
       init: { method: "GET", signal: signal(), headers: { Authorization: `Bearer ${auth.api_key}` } },
       rejected: REJECTED,
     }

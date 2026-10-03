@@ -13,7 +13,7 @@ const entries = [
   "src/defaults.ts",
   "src/driver-catalog.ts",
   "src/hosted-network-policy.ts",
-  "src/drivers/box.ts",
+  "src/drivers/boat.ts",
   "src/drivers/cloudflare.ts",
   "src/drivers/docker.ts",
   "src/drivers/local-brokering.ts",

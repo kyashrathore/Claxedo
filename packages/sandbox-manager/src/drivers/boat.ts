@@ -1,0 +1,311 @@
+import { trimToUndefined } from "@claxedo/helpers/string"
+import type {
+  SandboxDriver,
+  SandboxDriverEnsureInput,
+  SandboxLease,
+  SandboxTarget,
+  SandboxResource,
+} from "../contract"
+import { workspaceRuntimeBootEnv } from "../runtime-env"
+import { envFile, shell } from "../command"
+import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
+import { SANDBOX_IMAGE, assertSandboxImageReference } from "../image"
+import { sandboxDriverCatalog } from "../driver-catalog"
+import { createBoatClient, type BoatFetch } from "./boat-client"
+import { isTransientDriverError } from "./transient-error"
+
+// Boat (https://boat.dev) runs persistent Linux microVMs with Docker on the
+// VM's own kernel but no workspace-runtime baked in, so this driver delivers
+// the canonical sandbox OCI image by `docker run`-ing it inside the sandbox
+// and publishes the runtime port with Boat's in-sandbox `host` command. The
+// control plane reaches that URL over the relay like the other remote drivers.
+
+export type { BoatFetch }
+
+export type BoatSandboxDriverOptions = {
+  apiKey: string
+  baseUrl?: string
+  image?: string
+  runtimePort?: number
+  runtimeCommand?: string
+  workspaceDir?: string
+  nativeHarness?: string
+  /** Container name used for the runtime container inside the sandbox. */
+  containerName?: string
+  /**
+   * Boat archives a sandbox after this many seconds. `null` (default) disables
+   * it so the SandboxManager owns the lifecycle.
+   */
+  ttlSeconds?: number | null
+  /**
+   * Optional `docker login` before the pull, for a private runtime registry
+   * (the default image lives on ghcr.io). Omit for public images.
+   */
+  registryAuth?: { server: string; username: string; password: string }
+  env?: (input: SandboxDriverEnsureInput, host: { id: string }) => Record<string, string> | Promise<Record<string, string>>
+  provisionTimeoutMs?: number
+  provisionIntervalMs?: number
+  healthTimeoutMs?: number
+  healthIntervalMs?: number
+  operationTimeoutMs?: number
+  fetchImpl?: BoatFetch
+}
+
+const DEFAULT_RUNTIME_COMMAND = "/usr/local/bin/workspace-runtime"
+const DEFAULT_WORKSPACE_DIR = "/workspace"
+const DEFAULT_CONTAINER_NAME = "claxedo-runtime"
+const DEFAULT_PROVISION_TIMEOUT_MS = 120_000
+const DEFAULT_PROVISION_INTERVAL_MS = 2_000
+const DEFAULT_HEALTH_TIMEOUT_MS = 60_000
+const DEFAULT_HEALTH_INTERVAL_MS = 1_000
+// Boat runs a command for 30 s unless told otherwise; an image pull needs the
+// documented maximum.
+const DOCKER_RUN_TIMEOUT_SECONDS = 600
+// Written via PUT /sandboxes/{id}/files — the provider's file channel — so env
+// and registry credentials never appear in a /commands body, which Boat
+// executes and can log. Paths are relative to the sandbox work directory,
+// where commands also start; the container reads the env through a read-only
+// bind mount.
+const RUNTIME_ENV_PATH = ".claxedo-runtime-env"
+const REGISTRY_PASSWORD_PATH = ".claxedo-registry-password"
+const CONTAINER_ENV_PATH = "/run/claxedo-runtime.env"
+
+const READY_STATES = new Set(["ready", "idle", "running"])
+const PENDING_STATES = new Set(["init", "provisioning", "provisioned", "cloning"])
+
+/** Create is idempotent under its key, so a lost acknowledgement or a create still in flight is retried. */
+const TRANSIENT_MARKERS = ["transport_failed", "idempotency_in_progress"] as const
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+class BoatDriverError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "BoatDriverError"
+  }
+}
+
+export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): SandboxDriver {
+  const client = createBoatClient({
+    apiKey: options.apiKey,
+    ...(options.baseUrl ? { baseUrl: options.baseUrl } : {}),
+    ...(options.operationTimeoutMs ? { timeoutMs: options.operationTimeoutMs } : {}),
+    ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+  })
+  const image = options.image ?? SANDBOX_IMAGE
+  const runtimeCommand = options.runtimeCommand ?? DEFAULT_RUNTIME_COMMAND
+  const workspaceDir = options.workspaceDir ?? DEFAULT_WORKSPACE_DIR
+  const containerName = options.containerName ?? DEFAULT_CONTAINER_NAME
+  const ttlSeconds = options.ttlSeconds === undefined ? null : options.ttlSeconds
+  const provisionTimeoutMs = options.provisionTimeoutMs ?? DEFAULT_PROVISION_TIMEOUT_MS
+  const provisionIntervalMs = options.provisionIntervalMs ?? DEFAULT_PROVISION_INTERVAL_MS
+  const healthTimeoutMs = options.healthTimeoutMs ?? DEFAULT_HEALTH_TIMEOUT_MS
+  const healthIntervalMs = options.healthIntervalMs ?? DEFAULT_HEALTH_INTERVAL_MS
+
+  function runtimePort(input: SandboxDriverEnsureInput) {
+    return input.workspaceRuntimePort ?? options.runtimePort ?? DEFAULT_WORKSPACE_RUNTIME_PORT
+  }
+
+  function workspaceDirectory(input: SandboxDriverEnsureInput) {
+    return input.workspaceRoot ?? workspaceDir
+  }
+
+  function resolveImage(input: SandboxDriverEnsureInput) {
+    return assertSandboxImageReference(
+      input.bootSource?.kind === "image" ? input.bootSource.image : input.snapshot ?? image,
+    )
+  }
+
+  function bootEnv(input: SandboxDriverEnsureInput, hostId: string): Record<string, string> {
+    return workspaceRuntimeBootEnv({
+      workspaceId: input.workspaceId,
+      hostId,
+      directory: workspaceDirectory(input),
+      port: runtimePort(input),
+      host: "0.0.0.0",
+      source: input.source,
+      env: input.env,
+      nativeHarness: options.nativeHarness,
+    })
+  }
+
+  async function execOrThrow(sandboxId: string, command: string, label: string, timeoutSeconds?: number) {
+    const result = await client.command(sandboxId, { command, ...(timeoutSeconds ? { timeoutSeconds } : {}) })
+    if (result.timedOut || result.exitCode !== 0) {
+      const outcome = result.timedOut ? "timed out" : `failed (exit ${result.exitCode ?? "signal"})`
+      throw new BoatDriverError(`Boat ${sandboxId} ${label} ${outcome}: ${trimToUndefined(result.stderr) ?? trimToUndefined(result.stdout) ?? ""}`)
+    }
+    return result
+  }
+
+  async function waitUntilReady(sandboxId: string): Promise<boolean> {
+    const until = Date.now() + provisionTimeoutMs
+    for (;;) {
+      const sandbox = await client.get(sandboxId)
+      if (READY_STATES.has(sandbox.state)) return true
+      if (!PENDING_STATES.has(sandbox.state)) {
+        throw new BoatDriverError(`Boat ${sandboxId} entered non-ready state: ${sandbox.state}`)
+      }
+      if (Date.now() >= until) return false
+      await sleep(provisionIntervalMs)
+    }
+  }
+
+  /**
+   * The run command carries only paths: env arrives through the staged file
+   * (mounted read-only, sourced by the entrypoint so multi-line values like
+   * PEMs survive — `docker run --env-file` cannot express them), and the
+   * registry password is piped to `docker login` from a file that is removed
+   * whatever the outcome. A failed login aborts the chain before `docker run`.
+   */
+  function dockerRunScript(input: SandboxDriverEnsureInput): string {
+    const port = runtimePort(input)
+    const directory = workspaceDirectory(input)
+    const bootScript = [
+      `. ${CONTAINER_ENV_PATH}`,
+      `mkdir -p ${shell(directory)}`,
+      `cd ${shell(directory)}`,
+      `exec ${runtimeCommand}`,
+    ].join(" && ")
+    const steps = [
+      `chmod 600 ${RUNTIME_ENV_PATH}`,
+      ...(options.registryAuth
+        ? [`{ chmod 600 ${REGISTRY_PASSWORD_PATH}; docker login ${shell(options.registryAuth.server)} `
+          + `--username ${shell(options.registryAuth.username)} --password-stdin < ${REGISTRY_PASSWORD_PATH}; `
+          + `rc=$?; rm -f ${REGISTRY_PASSWORD_PATH}; (exit $rc); }`]
+        : []),
+      `{ docker rm -f ${containerName} >/dev/null 2>&1 || true; }`,
+      `docker run -d --name ${containerName} -p ${port}:${port} `
+      + `-v "$(pwd)/${RUNTIME_ENV_PATH}:${CONTAINER_ENV_PATH}:ro" `
+      + `--entrypoint sh ${shell(resolveImage(input))} -lc ${shell(bootScript)}`,
+    ]
+    return steps.join(" && ")
+  }
+
+  async function waitForHealth(sandboxId: string, input: SandboxDriverEnsureInput) {
+    const port = runtimePort(input)
+    const until = Date.now() + healthTimeoutMs
+    let last = "workspace runtime not ready"
+    while (Date.now() < until) {
+      const probe = await client.command(sandboxId, {
+        command: `curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:${port}/global/health || true`,
+      })
+      const code = trimToUndefined(probe.stdout)
+      if (code === "200") return
+      last = `health probe returned ${code ?? "no response"}`
+      await sleep(healthIntervalMs)
+    }
+    throw new BoatDriverError(`Boat ${sandboxId} runtime did not become healthy: ${last}`)
+  }
+
+  async function startContainer(sandboxId: string, input: SandboxDriverEnsureInput, hostId: string) {
+    const env = { ...bootEnv(input, hostId), ...(await options.env?.(input, { id: hostId })) }
+    const script = dockerRunScript(input)
+    await client.writeFile(sandboxId, { path: RUNTIME_ENV_PATH, content: envFile(env) })
+    if (options.registryAuth) {
+      await client.writeFile(sandboxId, { path: REGISTRY_PASSWORD_PATH, content: options.registryAuth.password })
+    }
+    const failures: unknown[] = []
+    try {
+      await execOrThrow(sandboxId, script, "docker run", DOCKER_RUN_TIMEOUT_SECONDS)
+    } catch (error) {
+      failures.push(error)
+    }
+    // The login step removes the staged password when it runs; this covers
+    // failures before the command reaches it.
+    try {
+      if (options.registryAuth) await execOrThrow(sandboxId, `rm -f ${REGISTRY_PASSWORD_PATH}`, "registry password cleanup")
+    } catch (error) {
+      failures.push(error)
+    }
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, `Boat ${sandboxId} docker run and registry password cleanup failed`)
+  }
+
+  async function boot(sandboxId: string, input: SandboxDriverEnsureInput, hostId: string): Promise<SandboxTarget> {
+    const port = runtimePort(input)
+    await startContainer(sandboxId, input, hostId)
+    // `--public` drops Boat's `_token` query: the relay joins request paths
+    // onto this base URL, and the runtime authenticates every caller itself.
+    await execOrThrow(sandboxId, `host ${port} --public`, "host publish")
+    await waitForHealth(sandboxId, input)
+    const urlResult = await execOrThrow(sandboxId, `host url ${port}`, "host url")
+    const url = trimToUndefined(urlResult.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).pop())
+    if (!url) throw new BoatDriverError(`Boat ${sandboxId} did not return a public URL for port ${port}`)
+    return {
+      workspaceId: input.workspaceId,
+      sandboxId,
+      url,
+      hostId,
+      driverResourceId: sandboxId,
+      driver: { id: "boat", resourceId: sandboxId },
+      labels: input.labels,
+    }
+  }
+
+  function assertNetwork(input: SandboxDriverEnsureInput) {
+    if (input.net && input.net.mode !== "allow-all") {
+      throw new BoatDriverError("Boat SandboxDriver cannot enforce host-based network policy")
+    }
+  }
+
+  async function ensureHost(input: SandboxDriverEnsureInput) {
+    assertNetwork(input)
+    const hostId = input.hostId ?? `boat-${input.workspaceId}`
+    const created = await client.create({ idempotencyKey: `claxedo:${input.workspaceId}:${input.epoch}`, ttlSeconds })
+      .catch((err: unknown) => {
+        if (isTransientDriverError(err, TRANSIENT_MARKERS)) return undefined
+        throw err
+      })
+    if (!created) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
+    const resource = { sandboxId: created.id, hostId, driverResourceId: created.id, labels: input.labels }
+    const failures: unknown[] = []
+    try {
+      await input.onResource?.(resource)
+    } catch (handoffError) {
+      failures.push(handoffError)
+      try {
+        await destroy({ ...resource, workspaceId: input.workspaceId })
+      } catch (deleteError) {
+        failures.push(deleteError)
+      }
+    }
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, `Boat ${created.id} resource handoff and deletion failed`)
+    const ready = await waitUntilReady(created.id)
+    if (!ready) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
+    return boot(created.id, input, hostId)
+  }
+
+  async function resumeHost(input: { lease: SandboxLease; ensure: SandboxDriverEnsureInput }) {
+    const sandboxId = input.lease.sandboxId
+    if (!sandboxId) throw new BoatDriverError("Cannot resume Boat without its sandbox id")
+    assertNetwork(input.ensure)
+    const hostId = input.ensure.hostId ?? input.lease.hostId ?? `boat-${input.ensure.workspaceId}`
+    if (input.lease.url !== undefined) await client.resume(sandboxId, { ttlSeconds })
+    const ready = await waitUntilReady(sandboxId)
+    if (!ready) return { provisioning: true as const, retryAfterMs: provisionIntervalMs }
+    return boot(sandboxId, input.ensure, hostId)
+  }
+
+  async function stop(target: SandboxTarget) {
+    await client.stop(target.sandboxId)
+  }
+
+  async function destroy(target: SandboxResource) {
+    await client.delete(target.sandboxId)
+  }
+
+  return {
+    id: "boat",
+    metadata: sandboxDriverCatalog.boat.metadata,
+    ensureHost,
+    resumeHost,
+    async touch() {},
+    suspend: stop,
+    stop,
+    destroy,
+  }
+}
