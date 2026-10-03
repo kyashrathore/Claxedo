@@ -5,12 +5,23 @@ import { parseTurnDelivery, parseTurnExecutionAccess } from "@claxedo/harness/co
 import { DIRECTORY, WORKSPACE_ID, sessionHostPlane, type SessionHostPlane } from "../test-support/session-host-plane"
 
 let plane: SessionHostPlane
+const PI_PLUGINS = {
+  harnessLaunch: { pi: {
+    generation: "generation-1",
+    execution: { mode: "default" },
+    pluginRoots: [{ pluginInstanceId: "claxedo/docs", root: "/plugins/docs", dataRoot: "/plugins/data/docs", skillNames: ["docs"] }],
+    mcpServers: [{ kind: "http", name: "docs", origin: "plugin", url: "https://gateway.test/api/claxedo/plugins/mcp/docs", headers: { Authorization: "Bearer gateway-token" } }],
+    notApplied: [],
+  } },
+  mcp: {},
+}
+const pluginReads: string[] = []
 const ROOT = "ses_pi_root"
 const VM = "ses_vm"
 const VM_HOST = "host_vm"
 
 beforeAll(async () => {
-  plane = await sessionHostPlane()
+  plane = await sessionHostPlane({ plugins: async (workspaceId) => { pluginReads.push(workspaceId); return PI_PLUGINS } })
   const ownerId = plane.owner.principal!.userId
   const memberId = plane.member.principal!.userId
   const accounts = plane.credentials(plane.orgId)
@@ -120,7 +131,8 @@ describe("/turn-delivery", () => {
     expect(answer.headers.get("cache-control")).toBe("no-store")
     const delivery = parseTurnDelivery(await answer.json())
     const ownerId = plane.owner.principal!.userId
-    expect(delivery).toMatchObject({ auth: { machineOwnerUserId: ownerId, accounts: {} }, plugins: { harnessLaunch: {}, mcp: {} }, providerDefinitions: [] })
+    expect(delivery).toMatchObject({ auth: { machineOwnerUserId: ownerId, accounts: {} }, plugins: PI_PLUGINS, providerDefinitions: [] })
+    expect(pluginReads).toEqual([WORKSPACE_ID])
     expect(delivery!.auth.direct).toEqual({
       [ownerId]: { anthropic: expect.objectContaining({ delivery: "direct", baseUrl: "https://api.anthropic.com", secret: "sk-ant-api03-owner", authKind: "api-key" }) },
     })
