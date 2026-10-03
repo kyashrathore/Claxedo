@@ -615,8 +615,14 @@
         "hono": "catalog:",
       },
       "devDependencies": {
-        "@cloudflare/workers-types": "catalog:",
+        "@claxedo/process-ownership": "workspace:*",
+        "@claxedo/workspace-relay": "workspace:*",
+        "@hono/node-server": "1.19.11",
+        "@hono/node-ws": "1.3.1",
+        "@tsconfig/node-lts": "22.0.4",
+        "@types/node": "24.12.2",
         "esbuild": "0.25.12",
+        "jose": "6.0.11",
         "miniflare": "4.20260722.0",
         "tsx": "4.22.3",
         "typescript": "catalog:",
@@ -4760,6 +4766,8 @@
     "@claxedo/process-ownership/@tsconfig/bun": ["@tsconfig/bun@1.0.9", "", {}, "sha512-4M0/Ivfwcpz325z6CwSifOBZYji3DFOEpY6zEUt0+Xi2qRhzwvmqQN9XAHJh3OVvRJuAqVTLU2abdCplvp6mwQ=="],
 
     "@claxedo/session-core/jose": ["jose@6.0.11", "", {}, "sha512-QxG7EaliDARm1O1S8BGakqncGT9s25bKL1WSf6/oa17Tkqwi8D2ZNglqCF+DsYF88/rV66Q/Q2mFAy697E1DUg=="],
+
+    "@claxedo/session-host/jose": ["jose@6.0.11", "", {}, "sha512-QxG7EaliDARm1O1S8BGakqncGT9s25bKL1WSf6/oa17Tkqwi8D2ZNglqCF+DsYF88/rV66Q/Q2mFAy697E1DUg=="],
 
     "@claxedo/web/typescript": ["typescript@5.8.2", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-aJn6wq13/afZp/jT9QZmwEjDqqvSGp1VT5GVg+f/t6/oVyrgXM6BY1h9BRh/O5p3PlUPAe+WuiEZOmb/49RqoQ=="],
 
