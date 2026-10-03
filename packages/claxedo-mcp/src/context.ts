@@ -47,15 +47,21 @@ export type McpToolAccess = Readonly<{
   operation?: TasksOperation
   /** App plugin authoring; a tool that needs it exists only while the client carries the grant. */
   appPlugins?: true
+  /**
+   * Inside a session, exists only while the composition answers that only the
+   * workspace's owner has driven it; a composition with no answer serves none.
+   */
+  ownerDriven?: true
 }>
 
 /** What the client was granted beyond the credential, read from the client rather than the credential. */
-export type McpToolGrants = Readonly<{ tasks?: readonly TasksOperation[]; appPlugins?: boolean }>
+export type McpToolGrants = Readonly<{ tasks?: readonly TasksOperation[]; appPlugins?: boolean; ownerDriven?: boolean }>
 
 export function toolGrants(client: ClaxedoMcpClient): McpToolGrants {
   return {
     ...(client.tasks ? { tasks: client.tasks.operations } : {}),
     appPlugins: client.appPlugins?.allowed() === true,
+    ownerDriven: client.ownerDriven?.() === true,
   }
 }
 
@@ -127,6 +133,9 @@ export function assertToolAccess(
     }
   }
   if (access.appPlugins && !grants.appPlugins) throw appPluginsDenied(name)
+  if (access.ownerDriven && credential.kind === "runtime" && !grants.ownerDriven) {
+    throw new McpAccessDenied("owner-driven", `${name} runs only in a session only its owner has driven`)
+  }
 }
 
 export function appPluginsDenied(tool: string): McpAccessDenied {

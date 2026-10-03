@@ -26,7 +26,7 @@ import { registerWorkspaceTools } from "./workspaces"
  * this one is like the others — is the one that grants.
  */
 export type McpToolGroupReach =
-  /** The workspace runtime this session is already running in. Nothing new is granted by turning it on. */
+  /** The workspace runtime this session is already running in; its tools reach nothing outside that workspace. */
   | "runtime"
   /** A named service some deployments run in this process and others reach as the account's. */
   | Readonly<{ service: string }>

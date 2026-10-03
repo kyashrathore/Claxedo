@@ -40,7 +40,7 @@ const userCredential = (readOnly = false): McpCredential => ({
 })
 
 /** Registers every group against one credential and reports what it declared and what it listed. */
-function surface(credential: McpCredential, grants: Pick<ClaxedoMcpClient, "tasks" | "appPlugins"> = {}) {
+function surface(credential: McpCredential, grants: Pick<ClaxedoMcpClient, "tasks" | "appPlugins" | "ownerDriven"> = {}) {
   const ctx: McpToolContext = { credential, client: { ...client, ...grants }, audit: () => undefined }
   const registry = createToolRegistry(new McpServer({ name: "claxedo", version: "0.0.0" }), ctx)
   for (const group of CLAXEDO_MCP_TOOL_GROUPS) group.register(registry)
@@ -142,7 +142,6 @@ describe("the registered surface", () => {
       "question_reply",
       "session_cancel_turn",
       "session_create",
-      "session_delete",
       "session_get",
       "session_send",
       "session_transcript",
@@ -152,6 +151,11 @@ describe("the registered surface", () => {
       "subagent_list",
       "subagent_status",
     ])
+  })
+
+  test("adds session_delete inside a session only while the composition answers that only its owner drove it", () => {
+    const without = new Set(surface(runtimeCredential).listed)
+    expect(surface(runtimeCredential, { ownerDriven: () => true }).listed.filter((name) => !without.has(name))).toEqual(["session_delete"])
   })
 
   test("adds the Tasks tools the grant covers, and nothing else", () => {
@@ -224,8 +228,8 @@ describe("the registered surface", () => {
       .toSorted(([left], [right]) => left.localeCompare(right))
     expect(destructive.map(([name]) => name)).toEqual(["session_delete", "workspace_lifecycle", "workspace_restore"])
     for (const [name, access] of destructive) {
-      const audiences = name === "session_delete" ? ["runtime", "user"] : ["user"]
-      expect({ name, ...(access as McpToolAccess) }).toEqual({ name, audiences, write: true, scope: "admin", destructive: true })
+      const inside = name === "session_delete" ? { audiences: ["runtime", "user"], ownerDriven: true } : { audiences: ["user"] }
+      expect({ name, ...(access as McpToolAccess) }).toEqual({ name, ...inside, write: true, scope: "admin", destructive: true })
     }
   })
 })

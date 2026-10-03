@@ -647,6 +647,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       directory: options.target?.directory ?? workspaceDir(),
       stateDirectory: options.storeRoot ?? workspaceRuntimeStoreDir(),
       fetch: contributionFetch,
+      sessionDrivenOnlyBy: (sessionId, actorId) => host.drivenOnlyByMachineUser(sessionId, actorId),
       registerSessionTools: registerSessionToolGroup,
       unregisterSessionTools: unregisterSessionToolGroup,
     },

@@ -60,7 +60,11 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
     refresh() { for (const refresh of refreshers) refresh() },
     tool<Shape extends McpToolShape>(name: string, definition: McpToolDefinition<Shape>, handler: McpToolHandler<Shape>) {
       declared.set(name, definition.access)
-      if (!toolListed(ctx.credential, definition.access, { ...toolGrants(ctx.client), appPlugins: ctx.client.appPlugins !== undefined })) return
+      if (!toolListed(ctx.credential, definition.access, {
+        ...toolGrants(ctx.client),
+        appPlugins: ctx.client.appPlugins !== undefined,
+        ownerDriven: ctx.client.ownerDriven !== undefined,
+      })) return
       listed.push(name)
       // `ToolCallback<Shape>` is a conditional type over the shape; it resolves
       // only for a concrete shape, so a callback written once for every shape
@@ -114,7 +118,7 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
         },
         callback,
       )
-      if (definition.access.appPlugins) {
+      if (definition.access.appPlugins || definition.access.ownerDriven) {
         const refresh = () => {
           const allowed = toolListed(ctx.credential, definition.access, toolGrants(ctx.client))
           if (registered.enabled !== allowed) registered.update({ enabled: allowed })

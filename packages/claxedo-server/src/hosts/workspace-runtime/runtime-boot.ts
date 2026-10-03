@@ -214,7 +214,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
         verifyRuntimeCredential: firstPartyMcp.verify,
         enabledToolGroups,
         tasks: () => tasks?.current(),
-        ...(ownerGrant ? { ownerGrant: () => ownerGrant.current() } : {}),
+        ...(ownerGrant ? { ownerGrant: () => ownerGrant.current(), ownerActorId: () => ownerGrant.actorId } : {}),
       }),
     ],
   }

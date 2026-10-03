@@ -48,12 +48,17 @@ sees the `runtime` audience, a user credential the `user` audience, and a
 read-only credential sees no write. A tool outside the audience is not
 registered, so calling it anyway is answered by the SDK as an unknown tool.
 
-`session_delete` is the one destructive tool a session is offered. It exists
-only while the project's `sessions` group is consented to, reaches only the
-sessions of the workspace the caller runs in whatever the account allows on
-other machines, and is refused to a session another person has driven. The
-runtime removes the session and every session under it leaf-first, and
-refuses the whole tree while any of them is working or waiting for input.
+`session_delete` is the one destructive tool a session is offered. It is in
+the `sessions` group, which is on by default for every project. Inside a
+session it exists only while the composition answers that only the
+workspace's owner has driven that session and its ancestors: the desktop
+reads the session's prompt actors, a cloud runtime compares them with its
+owner grant's actor, and a composition with no answer offers no
+`session_delete` at all. It reaches only the sessions of the workspace the
+caller runs in, whatever the account allows on other machines, and runs only
+once the person accepts its confirmation. The runtime removes the session and
+every session under it leaf-first, and refuses the whole tree while any of
+them is working or waiting for input.
 
 ## App plugins
 

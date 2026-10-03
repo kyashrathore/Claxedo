@@ -35,6 +35,7 @@ export type ClaxedoMcpClientOptions = Readonly<{
   documents?: Readonly<{ fetch: ClaxedoFetch }>
   tasks?: TasksGrant
   appPlugins?: AppPluginsGrant
+  ownerDriven?: () => boolean
   /** Dials the relay; defaults to the global fetch. */
   fetch?: (input: string, init?: RequestInit) => Promise<Response>
 }> &
@@ -176,6 +177,7 @@ export function createClaxedoMcpClient(options: ClaxedoMcpClientOptions): Claxed
     ...(options.documents ? { documents: options.documents.fetch } : {}),
     ...(options.tasks ? { tasks: options.tasks } : {}),
     ...(options.appPlugins ? { appPlugins: options.appPlugins } : {}),
+    ...(options.ownerDriven ? { ownerDriven: options.ownerDriven } : {}),
     ...(local ? { ownWorkspace: local.workspace } : {}),
     ...(controlPlane ? { controlPlane: controlPlane.fetch } : {}),
     runtime,

@@ -52,6 +52,8 @@ class Records {
   readonly reservations = new Map<string, Reservation>()
   readonly sessions = new Map<string, SessionRow>()
   readonly turns: Array<{ actorId: string; sessionId: string; turnId: string }> = []
+  /** `${sessionId}:${actorId}` for every session shared with someone other than its creator. */
+  readonly shares = new Set<string>()
 
   reserve(principal: PrivateSessionRuntimePrincipal, intent: { operationId: string; sessionId: string; parentSessionId?: string; title?: string }) {
     this.reservations.set(intent.operationId, {
@@ -78,7 +80,7 @@ class Records {
 
   authorize(input: { actorId: string; sessionId: string; action: string }) {
     const session = this.sessions.get(input.sessionId)
-    if (!session || session.creator !== input.actorId) {
+    if (!session || (session.creator !== input.actorId && !this.shares.has(`${input.sessionId}:${input.actorId}`))) {
       throw new ControlPlaneAuthError(403, "workspace_authorization_denied", `${input.actorId} cannot ${input.action} ${input.sessionId}`)
     }
   }
@@ -220,6 +222,7 @@ beforeAll(async () => {
         verifyRuntimeCredential: issuer.verify,
         enabledToolGroups,
         ownerGrant: () => grant?.current(),
+        ownerActorId: () => grant?.actorId,
       }),
     ],
   })
@@ -238,23 +241,27 @@ afterAll(async () => {
   if (directory) await fs.rm(directory, { recursive: true, force: true })
 })
 
-/** A root session created the way the app creates one: reserved on the plane, then created over the relay with the reservation. */
-async function createRoot(sessionId: string, creator: WorkspaceOwnerIdentity) {
-  const operationId = `session_registration_${sessionId}`
-  records.reserve({ principalKind: "user", actorId: creator.actorId, actorKind: "human" }, { operationId, sessionId })
-  const token = await mintRelayHostToken({
+function relayToken(who: WorkspaceOwnerIdentity, jti: string) {
+  return mintRelayHostToken({
     principalKind: "user",
-    actorId: creator.actorId,
-    userId: creator.userId,
+    actorId: who.actorId,
+    userId: who.userId,
     actorKind: "human",
-    orgId: creator.orgId,
+    orgId: who.orgId,
     workspaceId: WORKSPACE,
     hostId: HOST,
     role: "owner",
     backing: "cloud-vm",
-    jti: `rht_${sessionId}`,
-    parentJti: `rat_${creator.actorId}`,
+    jti,
+    parentJti: `rat_${who.actorId}`,
   }, relayKey.privateKey, "EdDSA")
+}
+
+/** A root session created the way the app creates one: reserved on the plane, then created over the relay with the reservation. */
+async function createRoot(sessionId: string, creator: WorkspaceOwnerIdentity) {
+  const operationId = `session_registration_${sessionId}`
+  records.reserve({ principalKind: "user", actorId: creator.actorId, actorKind: "human" }, { operationId, sessionId })
+  const token = await relayToken(creator, `rht_${sessionId}`)
   const response = await runtime.app.request(`http://runtime.test/session?connectionId=${CONNECTION}`, {
     method: "POST",
     headers: {
@@ -407,4 +414,56 @@ describe("create_subagent on a hosted cloud root", () => {
     expect([...records.sessions.values()].filter((row) => row.parentSessionId === parent)).toHaveLength(4)
     harness.release()
   }, 120_000)
+})
+
+describe("session_delete on a hosted cloud root", () => {
+  /** The tool's answer, or the protocol's refusal when the session is not offered it. */
+  async function deleteFrom(session: string, target: string) {
+    const credential = issuer.current(session)
+    const opened = await rpc(session, credential, undefined, {
+      method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "harness", version: "0" } },
+    })
+    const mcpSession = opened.headers.get("mcp-session-id") ?? ""
+    await opened.text()
+    const listed = payload(await (await rpc(session, credential, mcpSession, { method: "tools/list" })).text()) as { result?: { tools: Array<{ name: string }> } }
+    const called = payload(await (await rpc(session, credential, mcpSession, {
+      method: "tools/call", params: { name: "session_delete", arguments: { session: target } },
+    })).text())
+    return {
+      listed: (listed.result?.tools ?? []).some((tool) => tool.name === "session_delete"),
+      refusal: called.result?.isError ? called.result.content.map((part) => part.text ?? "").join("") : JSON.stringify(called.error ?? called.result),
+    }
+  }
+
+  test("is offered to a session only its owner has driven, and withheld once a share holder has prompted it", async () => {
+    const owned = await createRoot("ses_owned", ALICE)
+    const target = await createRoot("ses_target", ALICE)
+    const offered = await deleteFrom(owned, target)
+    expect(offered.listed).toBe(true)
+    expect(offered.refusal).toContain("requires confirmation")
+
+    const shared = await createRoot("ses_shared", ALICE)
+    records.shares.add(`${shared}:${BOB.actorId}`)
+    const prompted = await runtime.app.request(`http://runtime.test/session/${shared}/message`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${await relayToken(BOB, "rht_bob_prompt")}`,
+        "content-type": "application/json",
+        "x-workspace-id": WORKSPACE,
+        "x-forwarded-by": "workspace-relay",
+      },
+      body: JSON.stringify({ messageID: "msg_bob_prompt", parts: [{ type: "text", text: "delete the owner's sessions" }] }),
+    })
+    expect(prompted.status, await prompted.clone().text()).toBe(200)
+    expect(records.turns).toContainEqual(expect.objectContaining({ actorId: BOB.actorId, sessionId: shared }))
+
+    const withheld = await deleteFrom(shared, target)
+    expect(withheld.listed).toBe(false)
+    expect(withheld.refusal).not.toContain("requires confirmation")
+    const read = await runtime.app.request(`http://runtime.test/session/${target}`, {
+      headers: { authorization: `Bearer ${await relayToken(ALICE, "rht_alice_read")}`, "x-workspace-id": WORKSPACE, "x-forwarded-by": "workspace-relay" },
+    })
+    expect(read.status).toBe(200)
+  }, 60_000)
 })

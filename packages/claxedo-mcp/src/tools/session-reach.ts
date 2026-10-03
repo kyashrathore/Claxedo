@@ -28,20 +28,14 @@ import { targetScope } from "./target"
  */
 export type SessionReach = "own-children" | "itself-or-own-children"
 
-/**
- * Refuses a session another person has driven. Whether only the machine's
- * owner has driven it is carried by the app plugin grant, which a composition
- * hands only to a session it can answer that for; without one there is no
- * answer to refuse on.
- */
-export function assertOwnerDriven(ctx: McpToolContext, refusal: string): void {
-  if (ctx.credential.kind === "runtime" && ctx.client.appPlugins && !ctx.client.appPlugins.allowed()) {
-    throw new McpAccessDenied("owner-driven", refusal)
-  }
-}
-
+/** Refuses a session the composition knows another person has driven; one it cannot answer for may create. */
 export function assertDetachedSessionCreation(ctx: McpToolContext): void {
-  assertOwnerDriven(ctx, "A member-driven session cannot create a detached root session on the owner's behalf; use subagent_spawn to preserve its parent and permissions")
+  if (ctx.credential.kind === "runtime" && ctx.client.ownerDriven?.() === false) {
+    throw new McpAccessDenied(
+      "owner-driven",
+      "A member-driven session cannot create a detached root session on the owner's behalf; use subagent_spawn to preserve its parent and permissions",
+    )
+  }
 }
 
 /**

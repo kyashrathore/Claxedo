@@ -557,7 +557,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
           credential,
           request,
           ...(ownerDriven
-            ? { appPlugins: appPluginAuthoring({ roots: [workspace.directory], ownerDriven }) }
+            ? { ownerDriven, appPlugins: appPluginAuthoring({ roots: [workspace.directory], ownerDriven }) }
             : {}),
           documents: { fetch: localFetch },
           tasks: {

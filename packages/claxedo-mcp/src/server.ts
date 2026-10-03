@@ -74,6 +74,8 @@ export type McpClientInputs = Readonly<{
   documents?: Readonly<{ fetch: ClaxedoFetch }>
   tasks?: TasksGrant
   appPlugins?: AppPluginsGrant
+  /** Whether only the workspace's owner has driven the calling session; see `ClaxedoMcpClient.ownerDriven`. */
+  ownerDriven?: () => boolean
 }>
 
 /** The option every mount takes from its composition root. */
