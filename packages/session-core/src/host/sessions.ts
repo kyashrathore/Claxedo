@@ -8,15 +8,17 @@ import {
   type SessionHarness,
 } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import { createKeyedSerializer } from "@claxedo/helpers"
 import { admitSessionInstructions } from "../session/session-instructions"
 import type { ConnectionSecretAuthority } from "@claxedo/agent-runtime-contract"
 import type { RuntimeDirectory } from "./contracts"
 import { createSessionBroker, type createRequestBroker, type SessionBrokerContext } from "@claxedo/harness/broker"
 import { CredentialSelectionError, sessionAccountOwner } from "@claxedo/harness/registry"
-import { applySessionConfigUpdate, type HarnessSession, type SessionBroker, type TurnActor } from "@claxedo/harness/contract"
+import type { HarnessSession, SessionBroker, TurnActor } from "@claxedo/harness/contract"
 import { SessionAttachments, type AttachedSession } from "./attachments"
 import type { AgentRuntimeEventEnvelope, AgentRuntimeSessionCreateInput, AgentRuntimeStore } from "./contracts"
 import { assertSessionCreateBindingScope, normalizeDirectory, requireExecutionBinding } from "./execution-binding"
+import { applyModelSettings } from "./model-settings"
 import { executeHandoffTransaction, releaseKeptHandoffSource, type OpenedTarget } from "./handoff"
 import { attachInput, startInput, type LaunchComposer } from "./launch"
 import type { PermissionModeWrite, SessionRowWrite } from "./session-row"
@@ -146,8 +148,15 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
       }
     }
 
+  const configWrites = createKeyedSerializer<string>()
+  /**
+   * One config write of a session at a time: each reads the config it changes,
+   * and a native control can take long enough for a second write to read the
+   * same config and revert the first on the harness and in the store.
+   */
   const updateSessionConfig = (sessionId: string, update: SessionConfigUpdate, directory?: RuntimeDirectory,
-    authority?: ConnectionSecretAuthority) => input.writeRow(sessionId, () => writeSessionConfig(sessionId, update, directory, authority))
+    authority?: ConnectionSecretAuthority) => configWrites.run(sessionId,
+    () => input.writeRow(sessionId, () => writeSessionConfig(sessionId, update, directory, authority)))
 
   const writeSessionConfig = async (sessionId: string, update: SessionConfigUpdate, directory?: RuntimeDirectory,
     authority?: ConnectionSecretAuthority) => {
@@ -158,13 +167,7 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
       const harnessConfig = attached.handle.transport.harnessConfig
       const configured = harnessConfig
         ? await harnessConfig.update(attached.session, update)
-        : applySessionConfigUpdate(current!, update)
-      if (!harnessConfig && (configured.model?.providerID !== current?.model?.providerID
-        || configured.model?.modelID !== current?.model?.modelID || (configured.variant ?? null) !== (current?.variant ?? null))) {
-        await attached.handle.transport.config?.setModelSettings?.(attached.session, {
-          model: configured.model, effort: configured.variant,
-        })
-      }
+        : await applyModelSettings(attached, current!, update)
       const persisted = store.updateSessionConfig(sessionId, { ...configured, model: configured.model ?? null, variant: configured.variant ?? null })
       if (!persisted) throw new Error(`Session ${sessionId} has no runtime config`)
       return persisted

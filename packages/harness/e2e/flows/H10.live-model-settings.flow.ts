@@ -82,9 +82,10 @@ async function liveModelSettings(harness: Harness) {
     assert.ok(options.find((option) => option.id === "effort")?.selectOptions?.some((option) => option.id === "high"))
     const requests = await changeDuringTool(stack, api, directory, session.id, harness, `LIVEMODEL${harness.toUpperCase()}`, async () => {
       await refusedSettings(api, directory, session.id, harness)
-      await api.updateSessionConfig(directory, session.id, { model: { providerID: provider, modelID: model }, variant: null })
       await api.updateSessionConfig(directory, session.id, { variant: "high" })
       await api.updateSessionConfig(directory, session.id, { variant: "high" })
+      await api.updateSessionConfig(directory, session.id, { model: { providerID: provider, modelID: model } })
+      assert.equal((await api.sessionConfig(directory, session.id)).variant, "high", "A model-only change keeps an effort the new model offers")
     })
     assert.notEqual(requests[0]?.model, requests.at(-1)?.model)
     assert.equal(effort(requests.at(-1), harness), "high")

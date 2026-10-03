@@ -67,3 +67,63 @@ test("a harness that owns its configuration keeps that single update path", asyn
     expect(updates).toEqual([update])
   } finally { await fixture.dispose() }
 })
+
+const EFFORTS: Record<string, string[]> = { opus: ["low", "high", "max"], sonnet: ["low", "high", "max"], haiku: [] }
+
+function catalogTransport(changes: ModelSettings[], hold?: Promise<void>) {
+  return new FakeTransport({ config: {
+    options: async (target) => {
+      const efforts = EFFORTS["session" in target ? target.model?.modelID ?? "" : ""] ?? []
+      return { options: efforts.length ? [{ id: "effort", category: "thought_level", type: "select", selectOptions: efforts.map((id) => ({ id })) }] : [] }
+    },
+    permissionModes: async () => ({ modes: [], appliesFrom: "next-turn" }),
+    setPermissionMode: async () => ({ modes: [], appliesFrom: "next-turn" }),
+    setModelSettings: async (_session, settings) => {
+      if (settings.effort && !EFFORTS[settings.model?.modelID ?? ""]?.includes(settings.effort)) {
+        throw new Error(`${settings.model?.modelID} does not run at effort ${settings.effort}`)
+      }
+      changes.push(settings)
+      if (settings.model?.modelID === "opus") await hold
+    },
+  } })
+}
+
+test("a model-only change keeps the saved effort the new model offers and drops one it does not", async () => {
+  const changes: ModelSettings[] = []
+  const fixture = createHostFixture({ transports: { claude: catalogTransport(changes) } })
+  try {
+    const session = await fixture.runtime.sessions.create({ ...sessionCreate({ id: "ses_effort", harness: { id: "claude", access: "native" } }),
+      model: { providerID: "anthropic", modelID: "opus" }, variant: "max" })
+    expect(await fixture.runtime.sessions.updateConfig(session.id, { model: { providerID: "anthropic", modelID: "sonnet" } }))
+      .toMatchObject({ model: { modelID: "sonnet" }, variant: "max" })
+    expect(await fixture.runtime.sessions.updateConfig(session.id, { model: { providerID: "anthropic", modelID: "haiku" } }))
+      .toMatchObject({ model: { modelID: "haiku" }, variant: null })
+    expect(fixture.store.getSessionConfig(session.id)).toMatchObject({ model: { modelID: "haiku" }, variant: null })
+    expect(changes).toEqual([{ model: { providerID: "anthropic", modelID: "sonnet" }, effort: "max" },
+      { model: { providerID: "anthropic", modelID: "haiku" }, effort: undefined }])
+    await expect(fixture.runtime.sessions.updateConfig(session.id, { model: { providerID: "anthropic", modelID: "opus" }, variant: "max" }))
+      .resolves.toMatchObject({ variant: "max" })
+    await expect(fixture.runtime.sessions.updateConfig(session.id, { model: { providerID: "anthropic", modelID: "haiku" }, variant: "max" }))
+      .rejects.toThrow("haiku does not run at effort max")
+  } finally { await fixture.dispose() }
+})
+
+test("overlapping config writes of one session apply in order without reverting each other", async () => {
+  const changes: ModelSettings[] = []
+  const held = Promise.withResolvers<void>()
+  const fixture = createHostFixture({ transports: { claude: catalogTransport(changes, held.promise) } })
+  try {
+    const session = await fixture.runtime.sessions.create({ ...sessionCreate({ id: "ses_overlap", harness: { id: "claude", access: "native" } }),
+      model: { providerID: "anthropic", modelID: "sonnet" }, variant: "low" })
+    const model = fixture.runtime.sessions.updateConfig(session.id, { model: { providerID: "anthropic", modelID: "opus" } })
+    await until(() => changes.length === 1)
+    const effort = fixture.runtime.sessions.updateConfig(session.id, { variant: "high" })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(changes).toHaveLength(1)
+    held.resolve()
+    await Promise.all([model, effort])
+    expect(changes).toEqual([{ model: { providerID: "anthropic", modelID: "opus" }, effort: "low" },
+      { model: { providerID: "anthropic", modelID: "opus" }, effort: "high" }])
+    expect(fixture.store.getSessionConfig(session.id)).toMatchObject({ model: { modelID: "opus" }, variant: "high" })
+  } finally { held.resolve(); await fixture.dispose() }
+})
