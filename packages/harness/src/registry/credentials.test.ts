@@ -47,3 +47,12 @@ test("a harness that spends no provider account is never refused for lacking one
   const withdrawn = { ...cloud, accounts: { A: { openai: { unavailable: true as const, reason: "expired" } } } }
   expect(selectSessionCredentials(withdrawn, { kind: "person", userId: "A" }).providers).toEqual(withdrawn.accounts.A)
 })
+
+test("an owner holding only direct credentials is selected with exactly their own direct rows", () => {
+  const key = { delivery: "direct" as const, baseUrl: "https://api.openai.com", secret: "sk-B", authKind: "api-key" as const }
+  const direct = { ...snapshot, accounts: {}, direct: { B: { openai: key }, C: { anthropic: { ...key, secret: "sk-C" } } } }
+  expect(selectSessionCredentials(direct, { kind: "person", userId: "B" })).toEqual({
+    accountOwner: "B", providers: {}, direct: { openai: key }, secrets: {}, leaseGeneration: "lease", machineLoginAllowed: false,
+  })
+  expect(() => selectSessionCredentials(direct, { kind: "person", userId: "C" })).toThrow(CredentialSelectionError)
+})

@@ -1,4 +1,4 @@
-import type { ProviderProjection } from "@claxedo/agent-runtime-contract"
+import type { ProviderDirect, ProviderProjection } from "@claxedo/agent-runtime-contract"
 
 export type McpServerSpec =
   | {
@@ -44,6 +44,7 @@ export type ResolvedCredentials = {
   accountOwner: string
   machineLoginAllowed: boolean
   providers: Readonly<Record<string, ProviderProjection>>
+  direct?: Readonly<Record<string, ProviderDirect>>
   secrets: Readonly<Record<string, string>>
   leaseGeneration: string
 }

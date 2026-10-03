@@ -30,13 +30,15 @@ export function sessionAccountOwner(policy: MachineLoginPolicy, owner: TurnActor
 export function selectSessionCredentials(snapshot: CredentialSelectionInput, owner: TurnActor): ResolvedCredentials {
   const { userId, machineLoginAllowed } = sessionAccountOwner(snapshot, owner)
   const providers = Object.hasOwn(snapshot.accounts, userId) ? snapshot.accounts[userId]! : {}
-  const result = { accountOwner: userId, providers, secrets: {}, leaseGeneration: snapshot.leaseGeneration, machineLoginAllowed }
+  const direct = snapshot.direct && Object.hasOwn(snapshot.direct, userId) ? snapshot.direct[userId] : undefined
+  const result = { accountOwner: userId, providers, ...(direct ? { direct } : {}), secrets: {}, leaseGeneration: snapshot.leaseGeneration, machineLoginAllowed }
   if (!snapshot.providerIds) return result
   const selected = selectedProviderProjection(result, snapshot.providerIds)
   if (selected && "unavailable" in selected) {
     throw new CredentialSelectionError("account_unavailable", selected.reason)
   }
-  if (!selected && !machineLoginAllowed) {
+  const directSelected = direct !== undefined && snapshot.providerIds.some((id) => Object.hasOwn(direct, id))
+  if (!selected && !directSelected && !machineLoginAllowed) {
     throw new CredentialSelectionError("account_unavailable", `No selected account for session owner ${userId}`)
   }
   return result

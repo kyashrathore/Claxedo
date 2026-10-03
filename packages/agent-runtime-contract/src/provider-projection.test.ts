@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import {
+  credentialSnapshot,
+  isProviderDirect,
   projectionRenewalDueAt,
+  providerDirect,
   providerProjection,
   providerProjectionRecord,
 } from "./provider-projection"
@@ -134,5 +137,44 @@ describe("the account a binding spends", () => {
   test("a malformed account makes the row unreadable rather than unnamed", () => {
     expect(providerProjection({ ...minted, account: { providerId: "claude-sdk" } })).toBeUndefined()
     expect(providerProjection({ ...minted, account: { ...account, label: 7 } })).toBeUndefined()
+  })
+})
+
+describe("a direct credential", () => {
+  const direct = {
+    delivery: "direct" as const,
+    baseUrl: "https://chatgpt.com/backend-api",
+    apiPath: "/codex",
+    secret: "access-token",
+    authKind: "subscription" as const,
+    expiresAt: 1_800_000_000_000,
+    account: { credentialId: "cred-2", providerId: "openai-codex" },
+  }
+
+  test("round-trips every field it models", () => {
+    expect(providerDirect(direct)).toEqual(direct)
+    expect(providerDirect(JSON.parse(JSON.stringify(direct)))).toEqual(direct)
+    expect(isProviderDirect(direct)).toBe(true)
+    expect(isProviderDirect(minted)).toBe(false)
+  })
+
+  test("a secret carrying a line break is refused", () => {
+    expect(providerDirect({ ...direct, secret: "token\r\nX-Injected: 1" })).toBeUndefined()
+    expect(providerDirect({ ...direct, secret: "token\n" })).toBeUndefined()
+  })
+
+  test("a field it does not model, or a binding shape, is refused", () => {
+    expect(providerDirect({ ...direct, placeholder: "p" })).toBeUndefined()
+    expect(providerDirect(minted)).toBeUndefined()
+    expect(providerDirect({ ...direct, authKind: "bearer" })).toBeUndefined()
+    expect(providerDirect({ ...direct, secret: "" })).toBeUndefined()
+  })
+
+  test("a snapshot carries direct rows per person and refuses the whole snapshot over one bad row", () => {
+    const key = { delivery: "direct" as const, baseUrl: "https://api.anthropic.com", secret: "sk-ant", authKind: "api-key" as const }
+    const snapshot = { machineOwnerUserId: "A", accounts: {}, direct: { A: { "openai-codex": direct, anthropic: key } } }
+    expect(credentialSnapshot(snapshot, {})).toEqual(snapshot)
+    expect(credentialSnapshot({ ...snapshot, direct: { A: { anthropic: { ...key, secret: "a\nb" } } } }, {})).toBeUndefined()
+    expect(credentialSnapshot({ ...snapshot, direct: [] }, {})).toBeUndefined()
   })
 })
