@@ -457,6 +457,18 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       telemetry: services.telemetry,
     }))
   }
+  const relayProvider = services.relay.provider
+  const signRuntimeAccessToken = services.relay.runtimeAccessTokenSigner
+  const sessionHostDelivery = services.sessionHosts && plane.orgCredentials && relayProvider && signRuntimeAccessToken
+    ? {
+        sessionHosts: services.sessionHosts,
+        resolveWorkspaceOwner: (workspaceId: string) => services.authority?.resolveWorkspaceOwner?.(workspaceId) ?? Promise.resolve(undefined),
+        credentials: plane.orgCredentials,
+        ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
+        relayEndpoint: relayProvider.getRelayEndpoint,
+        signRuntimeAccessToken,
+      }
+    : undefined
   if (plane.runtimeSessionAuthority) {
     app.route(
       "/api/runtime-authority",
@@ -468,6 +480,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
           credentials: plane.orgCredentials,
         } } : {}),
         ...(plane.turnAuthority ? { turnAuthority: plane.turnAuthority } : {}),
+        ...(sessionHostDelivery ? { sessionHostDelivery } : {}),
         ...(options.usageLedger ? { usageWriter: options.usageLedger } : {}),
         ...(services.authority?.resolveWorkspaceOwner
           ? {

@@ -8,8 +8,9 @@ import type {
   WorkspaceAuthority,
 } from "@claxedo/server-core/platform/auth/authority"
 import { asOrgId } from "@claxedo/server-core/platform/auth/branded-id"
-import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
-import { activeGuard, admittingShareSql, batchUnder, may, mayGuard, maySql, readProjectRole, type AuthorizationPrincipal } from "./authorization"
+import { CURRENT_CHANNEL_IDENTITY_VERSION, sessionHostId } from "@claxedo/workspace-relay-protocol"
+import type { TurnRuntimeAccessTokenRecord } from "../../session-hosts"
+import { activeGuard, admittingShareSql, batchUnder, may, mayGuard, maySql, readProjectRole, type AuthorizationPrincipal, type BoundSql } from "./authorization"
 import { requireHuman } from "./access-context"
 import { d1ConstraintFailure } from "../../../platform/db/d1-constraint"
 
@@ -277,6 +278,10 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     return await this.recordUserRuntimeToken(who, args)
   }
 
+  async recordTurnRuntimeAccessToken(actorId: string, token: TurnRuntimeAccessTokenRecord) {
+    return await this.recordUserRuntimeToken(await this.requireActor(actorId), { ...token, role: "editor" })
+  }
+
   async recordRuntimeAccessTokenForService(args: {
     jti: string
     workspaceId: string
@@ -351,7 +356,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     if (!row.minted_for_user_id || row.actor_kind !== "human") {
       return inactive("runtime_access_token_revoked", "Runtime Access Token actor is invalid")
     }
-    if (!(await this.holderMayUse({ userId: row.minted_for_user_id, actorId: row.actor_id }, row.workspace_id, row.session_id))) {
+    if (!(await this.holderMayUse({ userId: row.minted_for_user_id, actorId: row.actor_id }, row.workspace_id, row.session_id, row.role))) {
       return inactive("runtime_access_token_revoked", "Runtime Access Token authority has been revoked")
     }
     return { active: true }
@@ -399,13 +404,13 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
   ) {
     const values = this.tokenValues(args)
     const sessionId = args.sessionId === undefined ? null : requireText(args.sessionId, "sessionId")
-    if (sessionId !== null && args.role !== "viewer") throw denied("A session's runtime token is a viewer's")
-    if (!(await this.holderMayUse(who, values.workspaceId, sessionId))) {
+    if (sessionId !== null && args.role !== "viewer" && !(args.role === "editor" && await this.sessionHosted(sessionId, values.hostId))) {
+      throw denied("A session's runtime token is a viewer's unless the session runs in its own host")
+    }
+    if (!(await this.holderMayUse(who, values.workspaceId, sessionId, args.role))) {
       throw denied(sessionId === null ? "Runtime access to this workspace is its owner's" : "Runtime access to this session is denied")
     }
-    const holder = sessionId === null
-      ? mayGuard(who, "operate", { kind: "workspace", workspaceId: values.workspaceId })
-      : mayGuard(who, "read", { kind: "session", sessionId, workspaceId: values.workspaceId })
+    const holder = holderGuard(who, values.workspaceId, sessionId, args.role)
     const admitting = admittingShareSql(who, "token_session")
     try {
       const result = await this.database.prepare(`
@@ -509,10 +514,19 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
       .first<{ org_id: string }>()
   }
 
-  private async holderMayUse(holder: AuthorizationPrincipal, workspaceId: string, sessionId: string | null) {
-    return sessionId === null
-      ? await may(this.database, holder, "operate", { kind: "workspace", workspaceId })
-      : await may(this.database, holder, "read", { kind: "session", sessionId, workspaceId })
+  private async holderMayUse(holder: AuthorizationPrincipal, workspaceId: string, sessionId: string | null, role: ProjectRole) {
+    const guard = holderGuard(holder, workspaceId, sessionId, role)
+    const row = await this.database.prepare(`select ${guard.sql} as holds`).bind(...guard.bind).first<{ holds: number }>()
+    return row?.holds === 1
+  }
+
+  /** The session's own host, or the machine a session served by its own host reaches for its tools. */
+  private async sessionHosted(sessionId: string, hostId: string) {
+    if (hostId === sessionHostId(sessionId)) return true
+    return !!await this.database
+      .prepare(`select 1 from sessions where session_id = ? and session_host_root = session_id and deleted_at is null`)
+      .bind(sessionId)
+      .first()
   }
 
   private async workspaceExists(workspaceId: string) {
@@ -523,6 +537,20 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
       where workspace.workspace_id = ? and workspace.deleted_at is null
     `).bind(workspaceId).first()
   }
+}
+
+/**
+ * Who may hold a runtime token: a workspace's is its owner's, a session
+ * viewer's is anyone who may read the session, and a session editor's —
+ * minted only for a session served by its own host — is anyone who may send
+ * its turns, or the workspace's owner before the session is registered.
+ */
+function holderGuard(holder: AuthorizationPrincipal, workspaceId: string, sessionId: string | null, role: ProjectRole): BoundSql {
+  const operates = mayGuard(holder, "operate", { kind: "workspace", workspaceId })
+  if (sessionId === null) return operates
+  if (role === "viewer") return mayGuard(holder, "read", { kind: "session", sessionId, workspaceId })
+  const sends = mayGuard(holder, "send", { kind: "session", sessionId, workspaceId })
+  return { sql: `(${operates.sql} or ${sends.sql})`, bind: [...operates.bind, ...sends.bind] }
 }
 
 function requireText(value: unknown, name: string, max = 512) {

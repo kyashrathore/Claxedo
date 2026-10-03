@@ -53,6 +53,7 @@
     "@claxedo/process-ownership": "workspace:*",
     "@claxedo/channels": "workspace:*",
     "@claxedo/connections": "workspace:*",
+    "@claxedo/harness": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/local-server": "workspace:*",
     "@claxedo/mcp": "workspace:*",

@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto"
 import { accountHolderOf, holderAccountSources, ORG_ACCOUNT_UNAVAILABLE, selectedAccounts, spendsAccount, type AccountSelections } from "./account-holder"
-import type { CredentialSnapshot, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
+import type { CredentialSnapshot, ProviderDirect, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
 import { destinationAuthMode, builtInProviderDestination, type ProviderDestination } from "./built-in-destinations"
 import type { CredentialKind, CredentialMetadata } from "./types"
+import { isSubscriptionKind } from "./secret-material"
 import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 
 /**
@@ -128,35 +129,42 @@ function delivery(credential: CredentialMetadata, destination: ProviderDestinati
 
 export type NativeCredentialSelection = { credential: CredentialMetadata; unavailable?: string }
 
-/**
- * What one person's sandbox is delivered: the account they chose for each
- * provider, their own or the org's. Nobody else's account reaches it, because
- * anything delivered can be spent by any code it runs.
- */
-export async function nativeProviderDeliveriesFromRepository(input: {
+type DeliveryWalk = {
   /** The sandbox's owner. */
   owner: string
   machineOwnerUserId: string
   selections: AccountSelections
   selected: readonly NativeCredentialSelection[]
   readSecret(credential: CredentialMetadata): Promise<string | null | undefined>
-  secretBrokering?: SandboxSecretBrokering
   destination?: (input: { providerId: string; kind: CredentialKind; secret: string }) => ProviderDestination | undefined
   secretReadFailure?: (credential: CredentialMetadata, error: unknown) => void
-}): Promise<NativeProviderDelivery[]> {
-  const deliveries: NativeProviderDelivery[] = []
+}
+
+type WalkedAccount =
+  | { refused: NativeProviderDelivery }
+  | { credential: CredentialMetadata; destination: ProviderDestination }
+
+/**
+ * The accounts one person's runtime may spend, most recently marked first,
+ * each resolved to its vendor destination or refused, and at most one account
+ * per vendor host. Both delivery forms walk it, so they spend the same
+ * accounts. `refusal` is the form's own reason to refuse an account before its
+ * secret is read.
+ */
+async function walkDeliverableAccounts(
+  input: DeliveryWalk,
+  refusal: (credential: CredentialMetadata) => string | undefined,
+): Promise<WalkedAccount[]> {
+  const walked: WalkedAccount[] = []
   const claimed = new Map<string, string>()
   const holder = accountHolderOf(input.owner, input.machineOwnerUserId)
   const sources = holderAccountSources(input.selections, holder, input.machineOwnerUserId)
   const entitled = input.selected.filter(({ credential }) => spendsAccount(credential, holder, sources, input.machineOwnerUserId))
   for (const row of byMostRecentMark(entitled)) {
     const providerId = row.credential.provider_id
-    if (row.unavailable) {
-      deliveries.push(undeliverable(row.credential, row.unavailable))
-      continue
-    }
-    if (input.secretBrokering !== "native") {
-      deliveries.push(undeliverable(row.credential, "secret_brokering_unsupported"))
+    const refused = row.unavailable ?? refusal(row.credential)
+    if (refused) {
+      walked.push({ refused: undeliverable(row.credential, refused) })
       continue
     }
     let secret: string | null | undefined
@@ -166,24 +174,74 @@ export async function nativeProviderDeliveriesFromRepository(input: {
       input.secretReadFailure?.(row.credential, error)
     }
     if (!secret) {
-      deliveries.push({ ...undeliverable(row.credential, "unreadable_secret"), unreadable: true })
+      walked.push({ refused: { ...undeliverable(row.credential, "unreadable_secret"), unreadable: true } })
       continue
     }
     const destination = (input.destination ?? builtInProviderDestination)({ providerId, kind: row.credential.kind, secret })
     if (!destination) {
-      deliveries.push(undeliverable(row.credential, "no_destination"))
+      walked.push({ refused: undeliverable(row.credential, "no_destination") })
       continue
     }
     const holder = claimed.get(destination.origin)
     if (holder) {
-      deliveries.push(undeliverable(row.credential,
-        `duplicate_destination_host: ${new URL(destination.origin).host} is delivered for ${holder}, marked more recently`))
+      walked.push({ refused: undeliverable(row.credential,
+        `duplicate_destination_host: ${new URL(destination.origin).host} is delivered for ${holder}, marked more recently`) })
       continue
     }
     claimed.set(destination.origin, providerId)
-    deliveries.push(delivery(row.credential, destination))
+    walked.push({ credential: row.credential, destination })
   }
-  return deliveries
+  return walked
+}
+
+/**
+ * What one person's sandbox is delivered: the account they chose for each
+ * provider, their own or the org's. Nobody else's account reaches it, because
+ * anything delivered can be spent by any code it runs.
+ */
+export async function nativeProviderDeliveriesFromRepository(input: DeliveryWalk & {
+  secretBrokering?: SandboxSecretBrokering
+}): Promise<NativeProviderDelivery[]> {
+  const walked = await walkDeliverableAccounts(input, () => input.secretBrokering === "native" ? undefined : "secret_brokering_unsupported")
+  return walked.map((row) => "refused" in row ? row.refused : delivery(row.credential, row.destination))
+}
+
+/** One account handed to a harness that calls its vendor in process, or the reason it cannot be. */
+export type DirectProviderDelivery = {
+  providerId: string
+  credentialId: string
+  direct?: ProviderDirect
+  unavailable?: string
+}
+
+/**
+ * The same accounts as the native delivery, handed over as the secret itself
+ * for a harness that calls the vendor from its own process. No provider edge
+ * stands between, so a destination that needs a companion header is
+ * deliverable: the harness reads the account from the token.
+ */
+export async function directProviderDeliveriesFromRepository(input: DeliveryWalk): Promise<DirectProviderDelivery[]> {
+  const walked = await walkDeliverableAccounts(input, () => undefined)
+  return walked.map((row) => {
+    if ("refused" in row) {
+      const reason = row.refused.projection
+      return { providerId: row.refused.providerId, credentialId: row.refused.credentialId, unavailable: "reason" in reason ? reason.reason : "unavailable" }
+    }
+    const { credential, destination } = row
+    return {
+      providerId: credential.provider_id,
+      credentialId: credential.id,
+      direct: {
+        delivery: "direct",
+        baseUrl: destination.origin,
+        ...(destination.apiPath ? { apiPath: destination.apiPath } : {}),
+        secret: destination.value,
+        authKind: isSubscriptionKind(credential.kind) ? "subscription" : "api-key",
+        ...(credential.expires_at ? { expiresAt: credential.expires_at } : {}),
+        account: { credentialId: credential.id, providerId: credential.provider_id, ...(credential.label ? { label: credential.label } : {}) },
+      },
+    }
+  })
 }
 
 /**

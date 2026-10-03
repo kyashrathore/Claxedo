@@ -67,6 +67,8 @@ export type RegisterRuntimePrivateSessionInput = PrivateSessionRuntimePrincipal 
   sessionId: string
   workspaceId: string
   title?: string
+  /** The session whose Durable Object hosts this one, recorded once at registration and never changed. */
+  sessionHostRoot?: string
 }
 
 /**

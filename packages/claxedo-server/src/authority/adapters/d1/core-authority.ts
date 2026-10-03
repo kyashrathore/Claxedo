@@ -1,5 +1,6 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import { listD1SharedSessions } from "./session-read-store"
+import { listD1SharedSessions, readD1SessionHostPlacement } from "./session-read-store"
+import type { SessionHostAuthority } from "../../session-hosts"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { OrgInvitationDelivery } from "@claxedo/server-core/platform/auth/org-access-authority"
 import {
@@ -76,6 +77,7 @@ export type D1CoreAuthorityBoundary = WorkspaceAuthority &
   Pick<D1WorkspaceAuthority, (typeof WORKSPACE_LIFECYCLE_METHODS)[number]> &
   PrivateSessionAuthority &
   SessionTurnAuthority &
+  SessionHostAuthority &
   Pick<D1HostAccessAuthority, (typeof HOST_LIFECYCLE_METHODS)[number]>
 
 type RequiredWorkspaceAuthorityCapability = {
@@ -149,6 +151,8 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     ...bindMethods(sessions, D1_SESSION_TURN_AUTHORITY_METHODS),
     ...bindMethods(hosts, HOST_LIFECYCLE_METHODS),
     machineAuth: hosts.machineAuth,
+    readSessionHostPlacement: (input) => readD1SessionHostPlacement(database, input),
+    recordTurnRuntimeAccessToken: (actorId, token) => channelsAndRuntime.recordTurnRuntimeAccessToken(actorId, token),
     publishHostSessionRows: (publisher, publication) =>
       publishD1HostSessionRows(database, (options.now ?? Date.now)(), publisher, publication),
   }

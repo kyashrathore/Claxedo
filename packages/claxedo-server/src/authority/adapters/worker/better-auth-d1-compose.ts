@@ -223,6 +223,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     authority,
     runtimeSessionAuthority: authority,
     privateSessionAuthority: authority,
+    sessionHosts: authority,
     turnAuthority: authority,
     ...(hostedCredentialsEnabled(input.env)
       ? {

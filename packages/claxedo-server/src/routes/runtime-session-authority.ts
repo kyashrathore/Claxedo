@@ -18,16 +18,10 @@ import {
   type PrivateSessionRuntimePrincipal,
   type RelayHostPrivateSessionClaims,
 } from "@claxedo/server-core/platform/auth/private-session-authority"
-import {
-  normalizeGrantSessionTurnInput,
-  SessionTurnGrantError,
-  type SessionTurnAuthority,
-  type SessionTurnGrantIntent,
-} from "@claxedo/server-core/platform/auth/session-turn-authority"
-import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
+import { SessionTurnGrantError, type SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
+import { SESSION_STREAM_LEASE_TTL_MS, sessionHostRootOf } from "@claxedo/workspace-relay-protocol"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 import type { WorkspaceAuthority, WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
-import type { SessionWriteClass } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { TurnUsageRevision, UsageOwner } from "@claxedo/server-core/usage/contracts"
 import {
   cloudWorkspaceUsageRevision,
@@ -49,6 +43,16 @@ import {
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { sessionAuthorityErrorAnswer } from "../session/runtime-authority-errors"
 import { RuntimeConnectionSecretRoutes, type RuntimeConnectionSecretOptions } from "./runtime-connection-secrets"
+import { SessionHostDeliveryRoutes, type SessionHostDeliveryOptions } from "./session-host-delivery"
+import {
+  finiteTimestamp,
+  isHostAuthorityAction,
+  isTurnAction,
+  parseSessionAuthorityRequest,
+  positiveInteger,
+  type HostAuthorityAction,
+  type SessionAuthorityRequest,
+} from "./runtime-session-authority-request"
 
 const bodyLimitBytes = 16 * 1024
 const streamLeaseIssuer = "claxedo-control-plane"
@@ -236,6 +240,8 @@ async function proofDenial(
 
 export type RuntimeSessionAuthorityOptions = {
   connectionSecrets?: RuntimeConnectionSecretOptions
+  /** What a session served by its own Durable Object is handed per turn; absent, `/turn-delivery` and `/turn-execution` are not mounted. */
+  sessionHostDelivery?: SessionHostDeliveryOptions
   authority: RuntimeSessionAuthorityPort
   /** Durable prompt admission is selected independently from session visibility. */
   turnAuthority?: SessionTurnAuthority
@@ -330,7 +336,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
           401,
         )
       }
-      if (verified.session_id !== undefined) {
+      if (verified.session_id !== undefined || sessionHostRootOf(verified.host_id)) {
         return context.json(
           { error: { code: "host_authority_denied", message: "A token scoped to one session reaches no workspace capability" } },
           403,
@@ -558,7 +564,8 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
           401,
         )
       }
-      if (verified.session_id !== undefined && verified.session_id !== sessionId) {
+      const hostRoot = sessionHostRootOf(verified.host_id)
+      if ((verified.session_id !== undefined && verified.session_id !== sessionId) || (hostRoot !== undefined && hostRoot !== sessionId)) {
         return context.json({ error: { code: "session_scope_denied", message: "The relay's token reaches another session" } }, 403)
       }
       try {
@@ -712,6 +719,10 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     verifyTurnLease: options.verifyTurnLease ?? turnLeaseVerifier(env),
     turnLeaseDenial: (claims) => proofDenial({ authority: options.authority, resolveWorkspaceOwner }, claims),
   }))
+  if (options.sessionHostDelivery) app.route("/", SessionHostDeliveryRoutes({
+    ...options.sessionHostDelivery, authority: options.authority, verifyTurnLease: options.verifyTurnLease ?? turnLeaseVerifier(env),
+    turnLeaseDenial: (claims) => proofDenial({ authority: options.authority, resolveWorkspaceOwner }, claims),
+  }))
   return app.post("/session-authorize", limitedBody, async (context) => {
     const body = await readJsonRecord(context.req.raw)
     if (body?.action === USAGE_REPORT_ACTION) return reportUsage(context, body)
@@ -773,7 +784,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         // The machine asks on behalf of the person at its keyboard, over the
         // relay, holding the owner's workspace-wide token for THIS request; a
         // lease outlives the token it was minted under and cannot carry this.
-        if (claims.transport !== "relay-host" || relayScope?.sessionId !== undefined) {
+        if (claims.transport !== "relay-host" || relayScope?.sessionId !== undefined || sessionHostRootOf(claims.hostId)) {
           return context.json(
             {
               error: {
@@ -816,6 +827,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         return context.json({ allowed: true })
       }
       if (action === "register") {
+        const sessionHostRoot = claims.transport === "relay-host" ? sessionHostRootOf(claims.hostId) : undefined
         await options.authority.registerRuntimeSession({
           ...principal,
           operationId,
@@ -824,6 +836,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
           createdAt,
           updatedAt,
           ...(title ? { title } : {}),
+          ...(sessionHostRoot ? { sessionHostRoot } : {}),
         })
         return context.json({ allowed: true })
       }
@@ -875,153 +888,6 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       return context.json(answer.body, answer.status)
     }
   })
-}
-
-function parseSessionAuthorityRequest(body: Record<string, unknown> | undefined) {
-  const sessionId = trimToUndefined(body?.sessionId)
-  const action = body?.action
-  const writeClass = body?.writeClass
-  const operationId = trimToUndefined(body?.operationId)
-  const reason = optionalText(body?.reason)
-  const title = optionalText(body?.title)
-  const parentSessionId = trimToUndefined(body?.parentSessionId)
-  const stream = body?.stream === true
-  const lease = trimToUndefined(body?.lease)
-  const turnId = trimToUndefined(body?.turnId)
-  const turnLeaseId = trimToUndefined(body?.leaseId)
-  const fencingToken = positiveInteger(body?.fencingToken)
-  const grant = trimToUndefined(body?.grant)
-  const createdAt = finiteTimestamp(body?.createdAt)
-  const updatedAt = finiteTimestamp(body?.updatedAt)
-  if (!sessionId || !isAuthorityAction(action)) return undefined
-  if (
-    (writeClass !== undefined && !isSessionWriteClass(writeClass))
-    || (writeClass !== undefined && action !== "write")
-    || (body?.title !== undefined && title === undefined)
-    || (body?.reason !== undefined && reason === undefined)
-    || (body?.stream !== undefined && typeof body.stream !== "boolean")
-    || (body?.lease !== undefined && !lease)
-    || (!!lease && !stream)
-    || (stream && action !== "read" && action !== "write")
-    || (body?.grant !== undefined && (!grant || action !== "turn_acquire"))
-    || (body?.createdAt !== undefined && (createdAt === undefined || (action !== "register" && action !== "adopt")))
-    || (body?.updatedAt !== undefined && (updatedAt === undefined || (action !== "register" && action !== "adopt")))
-  ) return undefined
-  const fields = {
-    sessionId,
-    operationId,
-    reason,
-    title,
-    stream,
-    lease,
-    turnId,
-    turnLeaseId,
-    fencingToken,
-    parentSessionId,
-    createdAt,
-    updatedAt,
-    ...(isSessionWriteClass(writeClass) ? { writeClass } : {}),
-  }
-  switch (action) {
-    case "reserve":
-      if (!parentSessionId) return undefined
-      return { ...fields, action, parentSessionId }
-    case "start_status":
-    case "start":
-      if (!operationId) return undefined
-      return { ...fields, action, operationId }
-    case "register":
-      if (!operationId || createdAt === undefined || updatedAt === undefined) return undefined
-      return { ...fields, action, operationId, createdAt, updatedAt }
-    case "adopt":
-      if (createdAt === undefined || updatedAt === undefined) return undefined
-      return { ...fields, action, createdAt, updatedAt }
-    case "registration_ambiguous":
-    case "compensation_begin":
-    case "compensation_complete":
-      if (!operationId || !reason) return undefined
-      return { ...fields, action, operationId, reason }
-    case "turn_acquire":
-      if (!turnId || body?.leaseId !== undefined || body?.fencingToken !== undefined) return undefined
-      return { ...fields, action, turnId, ...(grant ? { grant } : {}) }
-    case "turn_grant": {
-      const intent = body?.intent
-      const subjectSessionId = trimToUndefined(body?.subjectSessionId)
-      const registrationOperationId = trimToUndefined(body?.registrationOperationId)
-      if (
-        !isSessionTurnGrantIntent(intent)
-        || body?.leaseId !== undefined || body?.fencingToken !== undefined
-        || (body?.subjectSessionId !== undefined && !subjectSessionId)
-        || (body?.registrationOperationId !== undefined && !registrationOperationId)
-      ) return undefined
-      try {
-        normalizeGrantSessionTurnInput({ intent, subjectSessionId, registrationOperationId, turnId })
-      } catch (error) {
-        if (error instanceof SessionTurnGrantError) return undefined
-        throw error
-      }
-      return { ...fields, action, intent, subjectSessionId, registrationOperationId }
-    }
-    case "turn_renew":
-    case "turn_release":
-      if (!turnId || !turnLeaseId || !fencingToken) return undefined
-      return { ...fields, action, turnId, turnLeaseId, fencingToken }
-    default:
-      return { ...fields, action }
-  }
-}
-
-type SessionAuthorityRequest = NonNullable<ReturnType<typeof parseSessionAuthorityRequest>>
-
-type AuthorityAction =
-  | "read"
-  | "write"
-  | "reserve"
-  | "start_status"
-  | "start"
-  | "register"
-  | "adopt"
-  | "registration_ambiguous"
-  | "compensation_begin"
-  | "compensation_complete"
-  | "turn_acquire"
-  | "turn_renew"
-  | "turn_release"
-  | "turn_grant"
-
-type HostAuthorityAction = "host_read" | "host_admin"
-
-function isHostAuthorityAction(value: unknown): value is HostAuthorityAction {
-  return value === "host_read" || value === "host_admin"
-}
-
-function isAuthorityAction(value: unknown): value is AuthorityAction {
-  return value === "read"
-    || value === "write"
-    || value === "reserve"
-    || value === "start_status"
-    || value === "start"
-    || value === "register"
-    || value === "adopt"
-    || value === "registration_ambiguous"
-    || value === "compensation_begin"
-    || value === "compensation_complete"
-    || value === "turn_acquire"
-    || value === "turn_renew"
-    || value === "turn_release"
-    || value === "turn_grant"
-}
-
-function isSessionTurnGrantIntent(value: unknown): value is SessionTurnGrantIntent {
-  return value === "child_completion" || value === "queued_prompt"
-}
-
-function isSessionWriteClass(value: unknown): value is SessionWriteClass {
-  return value === "agent_turn" || value === "session_control"
-}
-
-function isTurnAction(value: AuthorityAction): value is "turn_acquire" | "turn_renew" | "turn_release" | "turn_grant" {
-  return value === "turn_acquire" || value === "turn_renew" || value === "turn_release" || value === "turn_grant"
 }
 
 function streamLeaseMinter(env: Record<string, string | undefined>) {
@@ -1235,7 +1101,7 @@ export function relayProofVerifier(env: Record<string, string | undefined>) {
       || (role !== "viewer" && role !== "editor" && role !== "admin" && role !== "owner")
       || payload.access !== undefined
       || (payload.session_id !== undefined && !sessionScope)
-      || (backing !== "cloud-vm" && backing !== "local-worktree")
+      || (backing !== "cloud-vm" && backing !== "local-worktree" && backing !== "durable-object")
     ) throw new Error("Relay proof claims are invalid")
     // Assembled AFTER the checks so the claims object is the narrowed values,
     // not the raw payload asserted into their type.
@@ -1271,19 +1137,6 @@ function cachedKey(key: string, create: () => RelayProofKey | Promise<RelayProof
   const value = create()
   relayKeys.set(key, value)
   return value
-}
-
-function optionalText(value: unknown) {
-  if (value === undefined) return ""
-  return trimToUndefined(value)
-}
-
-function positiveInteger(value: unknown) {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined
-}
-
-function finiteTimestamp(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined
 }
 
 function keyPem(value: string | undefined) {

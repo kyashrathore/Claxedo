@@ -3,6 +3,7 @@ import { localOnlyAuthAdapter, type ControlPlaneAuthAdapter } from "@claxedo/ser
 import type { DurableSessionLog } from "@claxedo/server-core/platform/auth/durable-session-log"
 import type { SessionWriteMode } from "@claxedo/server-core/platform/runtime/profile"
 import type { ProjectionStore } from "./projection-store"
+import type { SessionHostAuthority } from "./session-hosts"
 import {
   ControlPlaneCompositionError,
   type ControlPlaneCredentials,
@@ -54,6 +55,8 @@ export type ControlPlaneServices = ControlPlaneServicesContract & {
   projectionStore: ProjectionStore
   relay: ControlPlaneRelay
   sandbox: HostedControlPlaneSandbox
+  /** Present on a plane that can serve a session from its own Durable Object. */
+  sessionHosts?: SessionHostAuthority
   /** Releases storage owned by the service composition, when it has any. */
   close?: () => void
 }

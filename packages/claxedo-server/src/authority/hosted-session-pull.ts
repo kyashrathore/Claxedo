@@ -17,6 +17,8 @@ import {
 } from "./pulled-session"
 import { createRelayRuntimeClient } from "../workspace/relay-runtime-client"
 import { txt } from "@claxedo/server-core/session/meta/shape"
+import { defaultHomeRegion, normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
+import { sessionHostId } from "@claxedo/workspace-relay-protocol"
 
 export class HostedSessionPullError extends Error {
   constructor(
@@ -95,6 +97,30 @@ async function verifiedRuntimeJson(
   return await runtimeJson(services, auth, input)
 }
 
+/**
+ * Where a session is pulled from: its own Durable Object when the control
+ * plane recorded one, else the workspace's runtime. A session host is
+ * addressed by the session itself, so it has no workspace identity to verify.
+ */
+async function sessionPullTarget(
+  services: ControlPlaneServices,
+  auth: ReturnType<typeof requireSignedAuth>,
+  workspace: Awaited<ReturnType<typeof hostedWorkspaceForPull>>,
+  sessionId: string,
+) {
+  const root = await sessionHostRoot(services, workspace.workspaceId, sessionId)
+  if (root) {
+    const homeRegion = normalizeClaxedoRegion(txt(workspace.workspace?.home_region), services.defaultHomeRegion ?? defaultHomeRegion())
+    return { ...workspace, hostId: sessionHostId(root), homeRegion, sessionHost: true }
+  }
+  return { ...workspace, ...await resolveWorkspaceRuntimeTarget(services, auth, workspace), sessionHost: false }
+}
+
+async function sessionHostRoot(services: ControlPlaneServices, workspaceId: string, sessionId: string) {
+  const session = (await services.sessionHosts?.readSessionHostPlacement({ workspaceId, sessionId }))?.session
+  return session?.workspaceId === workspaceId ? session.sessionHostRoot ?? undefined : undefined
+}
+
 export async function pullHostedControlSession(
   services: ControlPlaneServices,
   _options: unknown,
@@ -106,14 +132,9 @@ export async function pullHostedControlSession(
   if (!workspaceRoleAllowsWrite(workspace.role)) {
     throw new HostedSessionPullError(403, "workspace_authorization_denied", "Workspace write authority is required")
   }
-  const target = {
-    ...workspace,
-    ...await resolveWorkspaceRuntimeTarget(services, signed, workspace),
-  }
-  const session = await verifiedRuntimeJson(services, signed, {
-    ...target,
-    path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
-  })
+  const target = await sessionPullTarget(services, signed, workspace, input.sessionId)
+  const pull = { ...target, path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`) }
+  const session = target.sessionHost ? await runtimeJson(services, signed, pull) : await verifiedRuntimeJson(services, signed, pull)
   await syncHostedSessionMetadata(services, signed, target, input.sessionId, session)
   return {
     ok: true,
@@ -133,6 +154,9 @@ export async function pullHostedControlSessionMessages(
     sessionId: input.sessionId,
     workspaceId: input.workspaceId,
   })
+  if (await sessionHostRoot(services, input.workspaceId, input.sessionId)) {
+    return { ok: true, skipped: true, reason: "session_host_transcript" }
+  }
   if (input.expectedEventOrdinal !== undefined) {
     const current = asRecord(await requireAuthority(services).readSessionMessages(signed, {
       workspaceId: input.workspaceId, sessionId: input.sessionId, limit: 1,

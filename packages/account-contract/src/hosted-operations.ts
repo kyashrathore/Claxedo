@@ -203,6 +203,14 @@ export const HOSTED_OPERATIONS = {
     output: connection, retry: "safe",
     exposure: { renderer: true, app: false },
   }),
+  // A session about to be created names itself and its harness; the plane answers its own host's connection or the workspace's.
+  "session.connection.mint": defineOperation({
+    method: "POST", path: operationPath("/api/workspace/:id/connection"),
+    input: operationInput({ id: requiredParameter, sessionId: requiredParameter, harness: bodyField }),
+    output: connection, retry: "safe",
+    exposure: { renderer: true, app: false },
+    body: (input) => ({ session: { sessionId: input.sessionId, harness: input.harness } }),
+  }),
   "workspace.connection.refresh": defineOperation({
     method: "POST", path: operationPath("/api/workspace/:id/connection/refresh"),
     input: operationInput({ id: requiredParameter, previousJti: bodyField }),

@@ -1,10 +1,11 @@
-import type { SandboxManager, SandboxTarget } from "@claxedo/sandbox-manager"
-import type { RelayTargetLookup } from "../deployments/shared-routes/internal-relay"
+import type { SandboxManager } from "@claxedo/sandbox-manager"
+import type { RelayTargetLookup, RelayTargetResult } from "../deployments/shared-routes/internal-relay"
+import { sessionHostRootOf } from "@claxedo/workspace-relay-protocol"
+import { sessionHostAdmits, type SessionHostAuthority } from "./session-hosts"
 import type { HostTunnelTargetResolver } from "@claxedo/server-core/adapters/relay-port"
 import type { ControlPlaneTelemetry } from "./services"
 import { emitSandboxLeaseClosed } from "../platform/telemetry/product/metering"
 import { timeoutMsFromEnv, withTimeout } from "../platform/runtime/timeout"
-import { trimToUndefined } from "@claxedo/helpers/string"
 
 export type { HostTunnelTargetResolver, HostTunnelTargetResult } from "@claxedo/server-core/adapters/relay-port"
 
@@ -18,6 +19,7 @@ export function sandboxRelayTargetLookup(input: {
   sandboxManager?: SandboxManager
   telemetry?: ControlPlaneTelemetry
   hostTunnelResolver?: HostTunnelTargetResolver
+  sessionHosts?: Pick<SessionHostAuthority, "readSessionHostPlacement">
   env?: Record<string, string | undefined>
 }): RelayTargetLookup {
   const capture = (properties: Record<string, unknown>) => {
@@ -83,7 +85,15 @@ export function sandboxRelayTargetLookup(input: {
       backing: link.backing,
     }
   }
+  const resolveSessionHost = async (args: { workspaceId: string; hostId: string; routingId?: string }, root: string): Promise<RelayTargetResult> => {
+    if (args.routingId) return { found: false, code: "runtime_access_token_invalid" }
+    const placement = await input.sessionHosts?.readSessionHostPlacement({ workspaceId: args.workspaceId, sessionId: root })
+    if (sessionHostAdmits(placement, { workspaceId: args.workspaceId, sessionId: root })) return { found: true, baseUrl: "", backing: "durable-object" }
+    return { found: false, code: placement ? "relay_resolver_workspace_target_unavailable" : "relay_resolver_workspace_not_found" }
+  }
   return async (args) => {
+    const root = sessionHostRootOf(args.hostId)
+    if (root) return resolveSessionHost(args, root)
     // Cloud workspaces resolve through the SandboxLease.
     if (input.sandboxManager) {
       const target = await withTimeout(

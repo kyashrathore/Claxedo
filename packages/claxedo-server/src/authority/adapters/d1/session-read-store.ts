@@ -9,6 +9,7 @@ import { sessionOrderSql } from "@claxedo/server-core/session/navigation-order"
 import { requireHuman } from "./access-context"
 import { maySql, type BoundSql } from "./authorization"
 import type { D1ActorProfile } from "./workspace-authority"
+import type { SessionHostPlacement } from "../../session-hosts"
 
 type SessionPageRow = {
   session_id: string
@@ -24,6 +25,7 @@ type SessionPageRow = {
   awaiting_input: number
   last_turn_status: string | null
   last_turn_completed_at: number | null
+  session_host_root: string | null
 }
 
 const COLUMNS = {
@@ -61,7 +63,7 @@ export async function readD1SessionPage(database: D1Database, query: SessionPage
     .prepare(`
       select s.session_id, s.workspace_id, s.project_id, s.title, s.created_at, s.updated_at,
         s.last_human_turn_at, s.archived_at, s.status, s.status_at, s.awaiting_input,
-        s.last_turn_status, s.last_turn_completed_at
+        s.last_turn_status, s.last_turn_completed_at, s.session_host_root
       from sessions s
       where ${where.join(" and ")}
       order by ${order.orderBy}
@@ -88,6 +90,32 @@ function pageRowJson(row: SessionPageRow) {
     ...(row.last_turn_status === null || row.last_turn_completed_at === null
       ? {}
       : { last_turn_status: row.last_turn_status, last_turn_completed_at: row.last_turn_completed_at }),
+    ...(row.session_host_root === null ? {} : { session_host_root: row.session_host_root }),
+  }
+}
+
+/**
+ * A workspace and, when it is registered anywhere, the session a Durable
+ * Object would host. The session is read by id alone: an id registered under
+ * another workspace must not be hosted under this one.
+ */
+export async function readD1SessionHostPlacement(database: D1Database, input: { workspaceId: string; sessionId: string }): Promise<SessionHostPlacement | undefined> {
+  const row = await database.prepare(`
+    select w.org_id, w.backing, w.remote_directory, s.workspace_id as session_workspace_id, s.session_host_root
+    from workspaces w
+    left join sessions s on s.session_id = ? and s.deleted_at is null
+    where w.workspace_id = ? and w.deleted_at is null
+  `).bind(input.sessionId, input.workspaceId).first<{
+    org_id: string
+    backing: "cloud-vm" | "local-worktree"
+    remote_directory: string | null
+    session_workspace_id: string | null
+    session_host_root: string | null
+  }>()
+  if (!row) return undefined
+  return {
+    workspace: { orgId: row.org_id, backing: row.backing, directory: row.remote_directory },
+    ...(row.session_workspace_id === null ? {} : { session: { workspaceId: row.session_workspace_id, sessionHostRoot: row.session_host_root } }),
   }
 }
 

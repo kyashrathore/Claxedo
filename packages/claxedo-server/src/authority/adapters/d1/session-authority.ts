@@ -42,7 +42,6 @@ import {
   type RevokeSessionTurnGrantsInput,
   type SessionTurnAuthority,
   type SessionTurnGrant,
-  type SessionTurnGrantIntent,
   type SessionTurnLease,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
@@ -67,6 +66,20 @@ import { readStoredTurnOutline } from "@claxedo/server-core/session/turn-outline
 import { readStoredPart } from "@claxedo/server-core/session/stored-part"
 import type { StoredMessageQuery } from "@claxedo/server-core/session/stored-messages"
 import { readFirstRead, readTurnPage, type TurnPageQuery, type TurnPageRequest, type TurnRead } from "@claxedo/agent-runtime-contract"
+import {
+  registrationResult,
+  sessionJson,
+  turnGrantJson,
+  turnLeaseJson,
+  type ActorRow,
+  type RegistrationRow,
+  type SessionRow,
+  type SessionShareRow,
+  type SessionShareTarget,
+  type TurnGrantRow,
+  type TurnLeaseRow,
+  type WorkspaceAccessRow,
+} from "./session-rows"
 
 export const D1_SESSION_AUTHORITY_METHODS = [
   "authorizeSessionRead",
@@ -104,106 +117,6 @@ type Principal = PrivateSessionActor & AuthorizationPrincipal & { userId: string
 
 type ReadableSession = SessionRow & { role: "owner" | "viewer" }
 
-type ActorRow = {
-  actor_id: string
-  actor_kind: "human" | "agent"
-  actor_state: "active" | "suspended" | "revoked"
-  user_id: string | null
-  user_state: "active" | "suspended" | "deleted" | null
-}
-
-type WorkspaceAccessRow = {
-  workspace_id: string
-  org_id: string
-  project_id: string
-}
-
-type SessionRow = {
-  session_id: string
-  operation_id: string
-  workspace_id: string
-  org_id: string
-  project_id: string
-  creator_actor_id: string
-  lifecycle_generation: number
-  title: string | null
-  created_at: number
-  updated_at: number
-  last_human_turn_at: number | null
-  deleted_at: number | null
-  max_event_ordinal: number
-  snapshot_generation: number
-  snapshot_hash: string | null
-}
-
-type RegistrationRow = {
-  operation_id: string
-  session_id: string
-  workspace_id: string
-  org_id: string
-  project_id: string
-  creator_actor_id: string
-  operation_kind: "create" | "fork"
-  parent_session_id: string | null
-  requested_title: string | null
-  state: SessionRegistrationState
-  state_reason: string | null
-  created_at: number
-  updated_at: number
-}
-
-type SessionShareRow = {
-  grant_id: string
-  session_id: string
-  workspace_id: string
-  org_id: string
-  project_id: string
-  target_user_id: string | null
-  target_org_id: string | null
-  target_team_id: string | null
-  granted_by_actor_id: string
-  granted_at: number
-  revoked_at: number | null
-  level: string
-}
-
-type SessionShareTarget =
-  | { kind: "user"; id: string }
-  | { kind: "org"; id: string }
-  | { kind: "team"; id: string }
-
-type TurnLeaseRow = {
-  session_id: string
-  workspace_id: string
-  org_id: string
-  project_id: string
-  turn_id: string
-  lease_id: string
-  fencing_token: number
-  actor_id: string
-  acquired_at: number
-  expires_at: number
-  released_at: number | null
-}
-
-type TurnGrantRow = {
-  grant_id: string
-  session_id: string
-  workspace_id: string
-  org_id: string
-  project_id: string
-  actor_id: string
-  intent: SessionTurnGrantIntent
-  subject_session_id: string | null
-  turn_id: string | null
-  turn_id_prefix: string | null
-  issued_at: number
-  expires_at: number
-  redeemed_at: number | null
-  redeemed_turn_id: string | null
-  revoked_at: number | null
-  revoke_reason: string | null
-}
 
 /**
  * D1 private-session capability. Unknown transcripts never create sessions:
@@ -315,6 +228,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       title?: string
       createdAt: number
       updatedAt: number
+      sessionHostRoot?: string
     },
   ) {
     const actor = await this.requireRuntimeActor(input)
@@ -340,7 +254,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         "Runtime registration title does not match the reservation",
       )
     }
-    return await this.registerReservation(actor, result, times)
+    return await this.registerReservation(actor, result, times, optionalText(input.sessionHostRoot, "sessionHostRoot") ?? null)
   }
 
   /**
@@ -575,7 +489,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       && row.released_at === null
       && row.expires_at > now
     ) {
-      await this.stampHumanTurn(actor, sessionId, workspaceId, row.acquired_at)
+      await this.stampAdmittedTurn(actor, sessionId, workspaceId, row.acquired_at)
       return turnLeaseJson(row)
     }
 
@@ -786,22 +700,26 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
   }
 
   /**
-   * A subagent's completion or a channel message admits a turn the same way
-   * the reader does, so only the actor kind this store resolved for the admitted
-   * principal tells them apart. Stamping the lease's own admission time makes an
-   * exact retry idempotent; max() stops a host whose clock ran backwards from
-   * moving a session's last prompt earlier than one already recorded.
+   * An admitted turn marks its session busy for a list nobody is watching, and
+   * a human's turn is also its session's last prompt. A subagent's completion
+   * or a channel message admits a turn the same way the reader does, so only
+   * the actor kind this store resolved for the admitted principal tells them
+   * apart. Stamping the lease's own admission time makes an exact retry
+   * idempotent; max() stops a host whose clock ran backwards from moving a
+   * session's last prompt earlier than one already recorded, and the status
+   * stamp yields to a newer one a runtime reported.
    */
-  private async stampHumanTurn(actor: Principal, sessionId: string, workspaceId: string, admittedAt: number) {
-    if (actor.actorKind !== "human") return
+  private async stampAdmittedTurn(actor: Principal, sessionId: string, workspaceId: string, admittedAt: number) {
     await this.database
       .prepare(
         `
-      update sessions set last_human_turn_at = max(coalesce(last_human_turn_at, 0), ?)
+      update sessions set
+        last_human_turn_at = case when ? then max(coalesce(last_human_turn_at, 0), ?) else last_human_turn_at end,
+        ${statusStampSql}
       where session_id = ? and workspace_id = ? and deleted_at is null
     `,
       )
-      .bind(admittedAt, sessionId, workspaceId)
+      .bind(actor.actorKind === "human" ? 1 : 0, admittedAt, ...statusStampBindings("busy", admittedAt), sessionId, workspaceId)
       .run()
   }
 
@@ -876,20 +794,22 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       .bind(now, sessionId, workspaceId, turnId, leaseId, fencingToken, actor.actorId)
       .run()
     const row = await this.turnLease(sessionId)
-    return {
-      released: Boolean(
-        row
-        && row.workspace_id === workspaceId
-        && row.turn_id === turnId
-        && row.lease_id === leaseId
-        && row.fencing_token === fencingToken
-        && row.actor_id === actor.actorId
-        && row.released_at !== null
-      ),
-      sessionId,
-      turnId,
-      fencingToken,
+    const released = Boolean(
+      row
+      && row.workspace_id === workspaceId
+      && row.turn_id === turnId
+      && row.lease_id === leaseId
+      && row.fencing_token === fencingToken
+      && row.actor_id === actor.actorId
+      && row.released_at !== null
+    )
+    if (released) {
+      await this.database
+        .prepare(`update sessions set ${statusStampSql} where session_id = ? and workspace_id = ? and deleted_at is null`)
+        .bind(...statusStampBindings("idle", row!.released_at!), sessionId, workspaceId)
+        .run()
     }
+    return { released, sessionId, turnId, fencingToken }
   }
 
   async grantSessionShare(
@@ -1553,14 +1473,20 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     return { ok: true }
   }
 
-  private async registerReservation(actor: Principal, registration: RegistrationRow, times: { createdAt: number; updatedAt: number }) {
+  private async registerReservation(
+    actor: Principal,
+    registration: RegistrationRow,
+    times: { createdAt: number; updatedAt: number },
+    sessionHostRoot: string | null,
+  ) {
     await this.requireWorkspace(actor, registration.workspace_id, "create_session")
     if (registration.state === "registered") {
       const existing = await this.session(registration.session_id)
       if (
         !existing ||
         existing.creator_actor_id !== actor.actorId ||
-        existing.operation_id !== registration.operation_id
+        existing.operation_id !== registration.operation_id ||
+        existing.session_host_root !== sessionHostRoot
       ) {
         throw new D1SessionAuthorityError("resource_conflict", "Registered session projection is incomplete")
       }
@@ -1614,16 +1540,16 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         insert into sessions (
           session_id, operation_id, workspace_id, org_id, project_id, creator_actor_id,
           lifecycle_generation, title, created_at, updated_at, deleted_at,
-          max_event_ordinal, snapshot_generation, snapshot_hash, snapshot_token
+          max_event_ordinal, snapshot_generation, snapshot_hash, snapshot_token, session_host_root
         )
         select session_id, operation_id, workspace_id, org_id, project_id, creator_actor_id,
-          1, requested_title, ?, ?, null, 0, 0, null, null
+          1, requested_title, ?, ?, null, 0, 0, null, null, ?
         from session_registration_operations
         where operation_id = ? and creator_actor_id = ? and state = 'registered'
         on conflict do nothing
       `,
           )
-          .bind(times.createdAt, times.updatedAt, registration.operation_id, actor.actorId),
+          .bind(times.createdAt, times.updatedAt, sessionHostRoot, registration.operation_id, actor.actorId),
         this.database
           .prepare(
             `
@@ -2128,27 +2054,6 @@ function requireSameRegistration(
     throw new D1SessionAuthorityError("resource_conflict", "Reservation retry changed immutable intent")
 }
 
-function registrationResult(row: RegistrationRow, changed: boolean) {
-  return {
-    changed,
-    operationId: row.operation_id,
-    sessionId: row.session_id,
-    workspaceId: row.workspace_id,
-    state: row.state,
-  }
-}
-
-function sessionJson(row: SessionRow) {
-  return {
-    session_id: row.session_id,
-    project_id: row.project_id,
-    ...(row.title === null ? {} : { title: row.title }),
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    ...(row.last_human_turn_at === null ? {} : { last_human_turn_at: row.last_human_turn_at }),
-  }
-}
-
 function boundedTurnLeaseTtl(value: number | undefined) {
   const ttl = value ?? SESSION_TURN_LEASE_TTL_MS
   if (!Number.isSafeInteger(ttl) || ttl < 5_000 || ttl > 15 * 60_000) {
@@ -2167,37 +2072,12 @@ type TurnAdmission = {
   expiresAt: number
 }
 
-function turnGrantJson(row: TurnGrantRow): SessionTurnGrant
-function turnGrantJson(row: TurnGrantRow | null): SessionTurnGrant | undefined
-function turnGrantJson(row: TurnGrantRow | null): SessionTurnGrant | undefined {
-  if (!row) return undefined
-  return {
-    grantId: row.grant_id,
-    sessionId: row.session_id,
-    workspaceId: row.workspace_id,
-    actorId: row.actor_id,
-    intent: row.intent,
-    ...(row.subject_session_id === null ? {} : { subjectSessionId: row.subject_session_id }),
-    ...(row.turn_id === null ? {} : { turnId: row.turn_id }),
-    ...(row.turn_id_prefix === null ? {} : { turnIdPrefix: row.turn_id_prefix }),
-    issuedAt: row.issued_at,
-    expiresAt: row.expires_at,
-    ...(row.redeemed_at === null ? {} : { redeemedAt: row.redeemed_at }),
-    ...(row.redeemed_turn_id === null ? {} : { redeemedTurnId: row.redeemed_turn_id }),
-    ...(row.revoked_at === null ? {} : { revokedAt: row.revoked_at }),
-  }
-}
+const statusStampSql = `status = case when status_at is null or status_at <= ? then ? else status end,
+        awaiting_input = case when status_at is null or status_at <= ? then 0 else awaiting_input end,
+        status_at = case when status_at is null or status_at <= ? then ? else status_at end`
 
-function turnLeaseJson(row: TurnLeaseRow): SessionTurnLease {
-  return {
-    sessionId: row.session_id,
-    workspaceId: row.workspace_id,
-    turnId: row.turn_id,
-    leaseId: row.lease_id,
-    fencingToken: row.fencing_token,
-    acquiredAt: row.acquired_at,
-    expiresAt: row.expires_at,
-  }
+function statusStampBindings(status: "busy" | "idle", at: number) {
+  return [at, status, at, at, at]
 }
 
 function denied(message = "Session authorization was denied") {
