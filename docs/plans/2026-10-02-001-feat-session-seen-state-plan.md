@@ -82,7 +82,7 @@ The app keeps per-session `wr/events?sessionID=` streams only for open sessions 
   - Progress:
 - [ ] **B. `lastTurn` on list items.** Daemon columns + migration, D1 baseline columns, `HostSessionRow`, turn-end frames, app mapping and README rule 2.
   - Done when: a list read returns `lastTurn` for a session whose last turn completed, failed or was cancelled, read by primary key (show the query plan); a turn-end frame carries the same value; server unit tests cover each status.
-  - Progress:
+  - Progress: implemented on `rebuild/b-lastturn` as lane B of `2026-10-03-1500-feat-activity-sidebar-rebuild-plan.md`, which records its design and query plans; awaiting review.
 - [ ] **C. `seenAt` per reader.** Stores, routes, hosted operation, `session.seen` notice and visibility, app write and mapping, deletion of `unseenOutcomes`.
   - Done when: a finished dot survives a reload and a daemon restart (unsigned), and clears on open and stays cleared after a reload; for two signed users on one shared session, one user's open clears only their dot; a second device of the same user clears within one notice; `eventVisibleTo` and `liveSyncEvent` tests prove another principal never receives `session.seen`.
   - Progress:

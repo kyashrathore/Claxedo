@@ -30,6 +30,9 @@ doc or package README that owns it.
   — planned, not started; the server contract changes await owner sign-off. The rail's finished and failed
   dots become a per-reader server fact (`lastTurn` + `seenAt` on list items, a `session.seen` notice), and
   every readable session's status and attention reach the app as a per-reader `cp/events` notice, never missed.
+- [Activity sidebar, seen state and settle: rebuild](./2026-10-03-1500-feat-activity-sidebar-rebuild-plan.md)
+  — in progress, lanes B and E first. Extends the session seen state plan with the Activity view, per-reader
+  Settle and agent session delete, under the owner's binding rulings; lane B (`lastTurn` on list items) is implemented.
 - [Reducing server, runtime and machine code](./2026-09-29-002-refactor-loc-reduction-plan.md)
   — planned, not started. 254.8k → ~114k in the server, runtime, machine agent, desktop main process and relay
   (app, UI kit and harness out of scope). Keeps Pages, Teams, the browser pane and channels; adds plugin backends,
