@@ -2,6 +2,8 @@ import type { AgentAgent, AgentCommand } from "@claxedo/agent-runtime-contract"
 import type { AttachInput, ConfigApplied, ConfigTarget, HarnessServices, HarnessSession,
   HarnessTransport, DraftLaunch, ScopedSessionTools, SessionBroker, SessionToolOperations, StartInput, TransportConfigUpdate, TurnBroker, TurnInput, TurnRef, Deadline } from "../../contract"
 import { openCodeLaunchDocument } from "../../profiles/opencode/index.js"
+import { loadLaunchDocument } from "./launch-policy.js"
+import { openCodeLocationClient } from "./host.js"
 import { openCodeCapabilities } from "./capabilities.js"
 import { rollbackOpenCodeSession } from "./open-rollback.js"
 import { engineProviderBinding } from "./credentials.js"
@@ -24,7 +26,6 @@ export class OpenCodeSdkTransport implements HarnessTransport {
   readonly kind = "opencode-sdk" as const
   private readonly runtime: OpenCodeRuntime
   private readonly entries = new Map<string, Entry>()
-  private readonly documents = new Map<string, { content: string; users: Set<string> }>()
   private readonly bindingChanges = createKeyedSerializer()
   private providerInput?: DraftLaunch
   private owner?: string
@@ -49,14 +50,11 @@ export class OpenCodeSdkTransport implements HarnessTransport {
       (entry, current) => entry.start.workspaceId === current.binding.workspaceId)
   }
 
-  private async applyProjection(input: StartInput, scope: WorkspaceScope): Promise<void> {
+  private async instanceKey(input: StartInput, scope: WorkspaceScope): Promise<string> {
     const servers = sessionMcpServers(input, this.services, { includeFirstParty: false,
       duplicate: (name) => new Error(`OpenCode MCP server ${name} has conflicting owners`) })
-    const document = openCodeLaunchDocument(input.projection, servers)
-    const content = JSON.stringify(document)
-    const current = this.documents.get(scope.directory)
-    if (current?.content !== content) await (await this.runtime.launch(scope)).write(document)
-    this.documents.set(scope.directory, { content, users: new Set([...(current?.users ?? []), input.sessionId]) })
+    const document = await loadLaunchDocument(openCodeLaunchDocument(input.projection, servers))
+    return this.runtime.instances.define(scope.directory, document)
   }
 
   private assertBindingCompatible(input: DraftLaunch & { sessionId?: string }): void {
@@ -77,14 +75,13 @@ export class OpenCodeSdkTransport implements HarnessTransport {
     if (this.entries.has(input.sessionId)) throw new TransportError("opencode", "session", "OpenCode session is already attached")
     this.assertBindingCompatible(input)
     const scope = this.scope(input)
-    const prior = this.documents.get(scope.directory)
-    const priorDocument = await (await this.runtime.launch(scope)).read()
+    const instance = await this.instanceKey(input, scope)
+    await openCodeLocationClient(this.runtime.host, scope.directory)
     const priorStart = this.providerInput
     let row: Awaited<ReturnType<OpenCodeRuntime["sessions"]["create"]>> | undefined
     let registered = false
     try {
       await this.applyProviders(input)
-      await this.applyProjection(input, scope)
       row = upstream ? await this.runtime.sessions.get(scope, upstream)
         : await this.runtime.sessions.create(scope, input.title ? { title: input.title } : {})
       if (upstream && row.id !== upstream) throw new TransportError("opencode", "session", "OpenCode attached a different session")
@@ -92,17 +89,16 @@ export class OpenCodeSdkTransport implements HarnessTransport {
       registered = firstPartyTools_ !== undefined
       const binding = await broker.rebind(row.id)
       this.owner = input.credentials.accountOwner
+      this.runtime.instances.assign(row.id, instance)
       const session: HarnessSession = { directory: scope.directory, locality: input.locality, binding }
       this.entries.set(input.sessionId, { session, start: input, broker, scope, upstream: row.id, active: false, steers: new Set(),
         ...(firstPartyTools_ ? { firstParty: firstPartyTools_ } : {}) })
       return session
     } catch (error) {
       const failures = await rollbackOpenCodeSession({ runtime: this.runtime, scope, upstream, rowID: row?.id,
-        registered, document: priorDocument, priorDefinitions: priorStart ? engineProviderDefinitions(priorStart) : [],
+        registered, priorDefinitions: priorStart ? engineProviderDefinitions(priorStart) : [],
         ...(priorStart ? { priorBinding: engineProviderBinding(priorStart) } : {}) })
       this.providerInput = priorStart
-      if (prior) this.documents.set(scope.directory, prior)
-      else this.documents.delete(scope.directory)
       if (failures.length) throw new TransportError("opencode", "session",
         `OpenCode open failed and rollback failed: ${failures.map((failure) => errorMessage(failure)).join("; ")}`, { cause: error })
       throw error
@@ -182,12 +178,14 @@ export class OpenCodeSdkTransport implements HarnessTransport {
         credentials: next.credentials, providerDefinitions: next.providerDefinitions,
       })
     }
-    if (update.projection) {
-      await this.applyProjection(next, entry.scope)
-      for (const other of this.entries.values()) {
-        if (other.scope.directory === entry.scope.directory) other.start = { ...other.start, projection: update.projection }
-      }
+    if (!update.projection) return { state: "applied" }
+    const instance = await this.instanceKey(next, entry.scope)
+    entry.start = { ...entry.start, projection: update.projection }
+    if (entry.active) {
+      entry.pendingInstance = instance
+      return { state: "deferred", until: "after-active-turns" }
     }
+    this.runtime.instances.assign(entry.upstream, instance)
     return { state: "applied" }
   }
 
@@ -195,16 +193,13 @@ export class OpenCodeSdkTransport implements HarnessTransport {
     const entry = this.entry(session)
     if (entry.active) throw new TransportError("opencode", "session", "OpenCode session has an active turn")
     await this.runtime.tools.unregisterSession(session.binding.upstreamSessionId)
+    this.runtime.instances.release(entry.upstream)
     this.entries.delete(session.binding.sessionId)
-    const document = this.documents.get(entry.scope.directory)
-    document?.users.delete(session.binding.sessionId)
-    if (document?.users.size === 0) this.documents.delete(entry.scope.directory)
   }
 
   private readonly retire = singleFlightUntil(async () => {
     await this.runtime.close()
     this.entries.clear()
-    this.documents.clear()
   }, () => true)
 
   async dispose(): Promise<void> {
@@ -254,8 +249,10 @@ export class OpenCodeSdkTransport implements HarnessTransport {
   } }
 
   readonly commands = { list: async (target: ConfigTarget): Promise<readonly AgentCommand[]> => {
-    const scope = this.targetScope(target)
-    return (await this.runtime.catalog.commands(scope)).map((row) => ({ name: row.name,
+    const entry = "session" in target ? this.entry(target.session) : undefined
+    const rows = entry ? await this.runtime.sessionCommands(entry.scope, entry.upstream)
+      : await this.runtime.catalog.commands(this.targetScope(target))
+    return rows.map((row) => ({ name: row.name,
       ...(row.description ? { description: row.description } : {}) }))
   } }
 

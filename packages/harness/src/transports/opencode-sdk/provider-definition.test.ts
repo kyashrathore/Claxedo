@@ -86,6 +86,7 @@ async function listed(runtime: OpenCodeRuntime, scope: WorkspaceScope) {
 
 async function turn(runtime: OpenCodeRuntime, scope: WorkspaceScope, until: () => boolean) {
   const session = await runtime.sessions.create(scope, { title: "custom provider" })
+  runtime.instances.assign(session.id, runtime.instances.define(scope.directory, { skills: [], mcp: {} }))
   await runtime.sessions.switchModel(scope, session.id, { providerID: "acme", modelID: "acme-1" })
   await runtime.sessions.prompt(scope, session.id, { text: "say hello" })
   for (let wait = 0; wait < 300 && !until(); wait++) await new Promise((resolve) => setTimeout(resolve, 50))

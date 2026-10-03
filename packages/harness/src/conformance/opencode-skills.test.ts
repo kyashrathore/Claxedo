@@ -6,8 +6,9 @@ import { inspectPluginDirectory } from "../../../claxedo-server-core/src/agent-p
 import { LocalAgentPluginArtifactStore } from "../../../claxedo-local-server/src/agent-plugins/artifacts/local-store"
 import { openCodeAgentPluginAdapter } from "../../../claxedo-local-server/src/agent-plugins/runtime/adapters/opencode"
 import { materializeAgentPluginGeneration, readMaterializedAgentPluginGeneration } from "../../../claxedo-local-server/src/agent-plugins/runtime/materialize"
+import { reservePort, releasePort } from "../../e2e/harness/ports"
+import { startScriptedModelServer } from "../../e2e/harness/scripted-model-server"
 import { OpenCodeSdkTransport } from "../transports/opencode-sdk"
-import type { OpenCodeRuntime } from "../transports/opencode-sdk/runtime"
 import { setupConformance } from "./test-support/run"
 
 test("catalog-approved skills admit an OpenCode session across generation reload", async () => {
@@ -16,6 +17,8 @@ test("catalog-approved skills admit an OpenCode session across generation reload
   const directory = path.join(root, "workspace")
   const runtimeRoot = path.join(root, "generation")
   let context: Awaited<ReturnType<typeof setupConformance>> | undefined
+  const port = await reservePort()
+  const server = await startScriptedModelServer({ port, red: false })
   try {
     await fs.mkdir(directory)
     for (const name of ["review", "broken"]) await fs.mkdir(path.join(source, "skills", name), { recursive: true })
@@ -42,17 +45,22 @@ test("catalog-approved skills admit an OpenCode session across generation reload
       credentials: { machineLoginAllowed: true, accountOwner: "fixture-owner", providers: {}, secrets: {}, leaseGeneration: "one" },
       projection: { generation: generation.generationId, pluginRoots: reloaded!.projections.opencode!.pluginRoots,
         mcpServers: [], notApplied: [] }, close: async () => {},
-    }), makeTransport: (services) => new OpenCodeSdkTransport(services, { databasePath: path.join(root, "opencode.db") }) })
-    expect(context.session.binding.upstreamSessionId).toBeTruthy()
-    const runtime = (context.transport as unknown as { runtime: OpenCodeRuntime }).runtime
-    const client = await runtime.host.client()
-    const { data: skills } = await client.skill.list({ location: { directory } })
-    const projected = skills.filter((skill) => skill.location.startsWith(generation.root))
-    expect(projected).toEqual([expect.objectContaining({ id: "review", content: "Review the diff.\n" })])
-    expect(skills.map((skill) => skill.id)).not.toContain("broken")
+    }), makeTransport: (services) => new OpenCodeSdkTransport(services, { databasePath: path.join(root, "opencode.db"),
+      configContent: JSON.stringify({ model: "proof/proof", small_model: "proof/proof", enabled_providers: ["proof"],
+        provider: { proof: { npm: "@ai-sdk/openai-compatible", name: "Proof", options: { baseURL: server.v1Url, apiKey: "proof" },
+          models: { proof: { name: "Proof", limit: { context: 32_000, output: 1_024 } } } } } }) }) })
+    server.scriptTool({ name: "skill", input: { id: "review" }, whenPromptIncludes: "APPROVEDSKILL" })
+    const events = []
+    for await (const event of context.transport.send(context.session, context.turn("Use review for APPROVEDSKILL"), context.turnBroker())) events.push(event)
+    expect(JSON.stringify(events)).toContain("Review the diff.")
+    const offered = JSON.stringify(server.requests.find((request) => request.tools.length)?.body ?? null)
+    expect(offered).toMatch(/id(?:>|&gt;)review(?:<|&lt;)\/id/)
+    expect(offered).not.toMatch(/id(?:>|&gt;)broken(?:<|&lt;)\/id/)
     expect(inspected.diagnostics).toContainEqual(expect.objectContaining({ code: "skill_invalid", path: "skills/broken/SKILL.md" }))
   } finally {
     await context?.close()
+    await server.close()
+    releasePort(port)
     await fs.rm(root, { recursive: true, force: true })
   }
 }, 60_000)

@@ -1,12 +1,13 @@
 import { singleFlightUntil } from "@claxedo/helpers"
-import { createCatalogPort, type OpenCodeCatalogPort } from "./catalog-port.js"
+import { createCatalogPort, type CommandEntry, type OpenCodeCatalogPort } from "./catalog-port.js"
+import { instanceCommands } from "./instance-commands.js"
 import { createConfigurationPort, type OpenCodeConfigurationPort } from "./configuration-port.js"
 import { createEventPump, type EventPump, type ProjectedEvent } from "./event-pump.js"
 import { createOpenCodeHost, type OpenCodeHost, type OpenCodeHostOptions } from "./host.js"
 import { createInteractionPort, type OpenCodeInteractionPort } from "./interaction-port.js"
 import { createSessionPort, type OpenCodeSessionPort } from "./session-port.js"
 import { createToolPort, type OpenCodeToolPort } from "./tool-port.js"
-import { createLaunchPolicy, type LaunchPolicyStore } from "./launch-policy.js"
+import { createInstances, type OpenCodeInstances } from "./instances.js"
 import { createProviderBindingPolicy, type ProviderBinding } from "./provider-binding.js"
 import { createProviderDefinitionPolicy, type ProviderDefinition } from "./provider-definition.js"
 import { createProviderPolicy, type ProviderConfigStore } from "./provider-policy.js"
@@ -24,9 +25,8 @@ export type OpenCodeRuntime = Readonly<{
   bindProviders(binding: ProviderBinding): Promise<void>
 
   providerUnavailableReason(providerID: string): string | undefined
-
-
-  launch(scope: WorkspaceScope): Promise<LaunchPolicyStore>
+  instances: OpenCodeInstances
+  sessionCommands(scope: WorkspaceScope, sessionID: string): Promise<readonly CommandEntry[]>
   interactions: OpenCodeInteractionPort
   tools: OpenCodeToolPort
   events: Readonly<{
@@ -39,7 +39,7 @@ export type OpenCodeRuntime = Readonly<{
   close(): Promise<void>
 }>
 
-export type OpenCodeRuntimeOptions = OpenCodeHostOptions
+export type OpenCodeRuntimeOptions = Omit<OpenCodeHostOptions, "instances">
 
 function eventSurface(host: OpenCodeHost) {
   const listeners = new Set<(event: ProjectedEvent) => void>()
@@ -87,10 +87,12 @@ export function createOpenCodeRuntime(options: OpenCodeRuntimeOptions): OpenCode
   const policy = createProviderPolicy()
   const definitions = createProviderDefinitionPolicy()
   const bindings = createProviderBindingPolicy()
-  const launch = createLaunchPolicy()
+  const instances = createInstances()
+  const tools = createToolPort()
   const host = createOpenCodeHost({
     ...options,
-    plugins: [...(options.plugins ?? []), policy.plugin, definitions.plugin, bindings.plugin, launch.plugin],
+    plugins: [...(options.plugins ?? []), policy.plugin, definitions.plugin, bindings.plugin],
+    instances: { key: (session) => instances.keyOf(session), configure: (key) => ({ plugins: [instances.plugin(key), tools.plugin] }) },
   })
   const { pump, events } = eventSurface(host)
 
@@ -103,9 +105,10 @@ export function createOpenCodeRuntime(options: OpenCodeRuntimeOptions): OpenCode
     defineProviders: (next) => definitions.apply(next),
     bindProviders: (binding) => bindings.apply(binding),
     providerUnavailableReason: (providerID) => bindings.unavailableReason(providerID),
-    launch: (scope) => launch.store(host, scope),
+    instances,
+    sessionCommands: (scope, sessionID) => instanceCommands(host, instances, scope, sessionID),
     interactions: createInteractionPort(host),
-    tools: createToolPort(host),
+    tools,
     events,
     close: closeRuntime(host, pump),
   }

@@ -1,5 +1,6 @@
 import { isProviderUnavailable, type ProviderUnavailable } from "@claxedo/agent-runtime-contract"
 import type { Plugin } from "@opencode-ai/plugin"
+import { watchPluginEvents } from "./plugin-events.js"
 
 export type ProviderBindingBound = Readonly<{ baseURL: string; apiKey: string }>
 export type ProviderBindingOverlay = ProviderBindingBound | ProviderUnavailable
@@ -15,6 +16,8 @@ type IntegrationDraft = Parameters<Parameters<Plugin.Context["integration"]["tra
 type CatalogProvider = Parameters<Parameters<CatalogDraft["provider"]["update"]>[1]>[0]
 type Registration = Awaited<ReturnType<Plugin.Context["catalog"]["transform"]>>
 type Location = { reload: () => Promise<void>; settle: () => Promise<void> }
+const catalogEvent = (type: string) => type === "catalog.updated" || type === "integration.updated"
+
 type HeldTransform = { register: () => Promise<Registration>; holds: () => Promise<boolean> }
 
 function holds(provider: Pick<CatalogProvider, "settings" | "activation">, overlay: ProviderBindingOverlay): boolean {
@@ -97,29 +100,10 @@ class BindingPolicy {
     }
     const location = { reload: async () => { await context.integration.reload(); await context.catalog.reload() }, settle }
     this.locations.add(location)
-    const subscription = this.watchUpdates(context, settle)
+    const subscription = watchPluginEvents(context, catalogEvent, settle, "OpenCode catalog watch failed")
     return async () => {
       this.locations.delete(location)
       await subscription.close()
-    }
-  }
-
-  private watchUpdates(context: Plugin.Context, settle: () => Promise<void>) {
-    let open = true
-    const events = context.event.subscribe()[Symbol.asyncIterator]()
-    const reading = (async () => {
-      for (let next = await events.next(); !next.done; next = await events.next()) {
-        if (!open) return
-        if (next.value.type === "catalog.updated" || next.value.type === "integration.updated") await settle()
-      }
-    })()
-    void reading.catch((error: unknown) => console.error("OpenCode catalog watch failed", error))
-    return {
-      async close() {
-        open = false
-        await events.return?.()
-        await reading.catch((error: unknown) => console.error("OpenCode catalog watch failed", error))
-      },
     }
   }
 

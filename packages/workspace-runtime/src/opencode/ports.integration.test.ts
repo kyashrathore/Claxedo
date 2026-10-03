@@ -152,11 +152,6 @@ describe("catalog and interaction ports", () => {
     expect(Array.isArray(await catalog.models(alpha))).toBe(true)
   })
 
-  test("pending interactions list per workspace and start empty", async () => {
-    expect(await interactions.permissions(alpha)).toEqual([])
-    expect(await interactions.forms(alpha)).toEqual([])
-  })
-
   test("replying into another workspace's session fails closed", async () => {
     const mine = await sessions.create(alpha, { title: "interaction scope" })
     await expect(

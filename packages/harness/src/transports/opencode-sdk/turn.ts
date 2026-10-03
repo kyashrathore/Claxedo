@@ -14,7 +14,7 @@ import { declaredCommand } from "./command-invocation.js"
 import { flattenTurnPrompt } from "../../translate/prompt"
 
 export type OpenCodeTurnState = { start: StartInput; scope: WorkspaceScope; upstream: string;
-  active: boolean; assistantMessageID?: string; steers: Set<string> }
+  active: boolean; assistantMessageID?: string; steers: Set<string>; pendingInstance?: string }
 
 const STREAM_LOSS_WAIT_MS = 60_000
 const INTERRUPT_WAIT_MS = 5_000
@@ -52,7 +52,7 @@ function listenOpenCodeEvents(runtime: OpenCodeRuntime, state: OpenCodeTurnState
 }
 
 async function admitOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, turn: TurnInput, signal: AbortSignal): Promise<{
-  usage: ReturnType<typeof createTurnUsage>; admittedAt: number }> {
+  usage: ReturnType<typeof createTurnUsage>; admittedAt: number; unsettled: readonly string[] }> {
   const model = turn.model
   if (!model) throw new TransportError("opencode", "configuration", "OpenCode turn requires a resolved model")
   assertProviderAvailable(state.start, model.providerID)
@@ -63,13 +63,27 @@ async function admitOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnSt
   if (turn.prompt.agent) await runtime.sessions.switchAgent(state.scope, state.upstream, turn.prompt.agent)
   await runtime.sessions.switchModel(state.scope, state.upstream, { providerID: model.providerID, modelID: model.modelID,
     ...(turn.effort ? { variant: turn.effort } : {}) })
-  if (signal.aborted) throw new TurnAborted("OpenCode turn was aborted")
-  return { usage, admittedAt: await submitOpenCodeTurn(runtime, state, turn) }
+  const unsettled = await untilAborted(runtime.instances.ready(state.upstream), signal)
+  return { usage, admittedAt: await submitOpenCodeTurn(runtime, state, turn), unsettled }
+}
+
+function untilAborted<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(new TurnAborted("OpenCode turn was aborted"))
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(new TurnAborted("OpenCode turn was aborted"))
+    signal.addEventListener("abort", abort, { once: true })
+    pending.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort))
+  })
+}
+
+function mcpUnsettled(servers: readonly string[]): RoutedEvent {
+  return route({ type: "diagnostic", harness: "opencode", diagnostic: { code: "opencode_mcp_unsettled", severity: "warn",
+    source: "opencode-adapter", message: `OpenCode MCP servers ${servers.join(", ")} did not settle before the session's first prompt; their tools may join later` } })
 }
 
 async function submitOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCodeTurnState, turn: TurnInput): Promise<number> {
   const request = promptRequest(turn)
-  const invocation = await declaredCommand(runtime, state.scope, turn)
+  const invocation = await declaredCommand(() => runtime.sessionCommands(state.scope, state.upstream), turn)
   if (!invocation) return (await runtime.sessions.prompt(state.scope, state.upstream, request)).createdAt
   const submittedAt = Date.now()
   await runtime.sessions.command(state.scope, state.upstream, { ...invocation, delivery: request.delivery })
@@ -152,7 +166,8 @@ export async function* runOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCode
   closed.addEventListener("abort", dispose, { once: true })
   if (closed.aborted) dispose()
   try {
-    const { usage, admittedAt } = await admitOpenCodeTurn(runtime, state, turn, broker.signal)
+    const { usage, admittedAt, unsettled } = await admitOpenCodeTurn(runtime, state, turn, broker.signal)
+    if (unsettled.length) yield mcpUnsettled(unsettled)
     try { yield* streamOpenCodeTurn(runtime, state, queue, usage) }
     catch (error) {
       if (error instanceof StreamLost || error instanceof TurnAborted) {
@@ -165,6 +180,8 @@ export async function* runOpenCodeTurn(runtime: OpenCodeRuntime, state: OpenCode
     broker.signal.removeEventListener("abort", abort)
     closed.removeEventListener("abort", dispose)
     state.active = false
+    if (state.pendingInstance) runtime.instances.assign(state.upstream, state.pendingInstance)
+    state.pendingInstance = undefined
     state.assistantMessageID = undefined
     state.steers.clear()
   }
