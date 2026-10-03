@@ -16,6 +16,7 @@ const wakes: WorkspaceWakes = {
   runtime: () => ({ kind: "live" }),
   start: async () => undefined,
   wakeIfStopped: async () => false,
+  settle: async () => false,
 }
 
 type Posted = { readonly path: string; readonly body: unknown }

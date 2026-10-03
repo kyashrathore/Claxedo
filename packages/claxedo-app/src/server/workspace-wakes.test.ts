@@ -32,7 +32,9 @@ function fixture(running: { value: boolean }) {
     locate: async (id: string): Promise<RuntimeRoute> => ({ directory: `workspace:${id}`, workspaceId: id, remote: true }),
     refresh: async () => undefined,
   } as Pick<Workspaces, "load" | "byId" | "locate" | "refresh"> as Workspaces
-  return { starts, wakes: createRoot(() => createWorkspaceWakes(transport, workspaces)) }
+  const waits: number[] = []
+  const wait = async (ms: number) => { waits.push(ms) }
+  return { starts, waits, wakes: createRoot(() => createWorkspaceWakes(transport, workspaces, wait)) }
 }
 
 async function settle() {
@@ -83,4 +85,18 @@ test("wakes: a live workspace, or a placement that is not in the cloud, is never
   await wakes.wakeIfStopped(cloud)
   await wakes.wakeIfStopped(folder)
   expect(starts).toEqual([])
+})
+
+test("wakes: settling after a checkpoint waits, then starts a workspace the checkpoint stopped, and leaves a running one alone", async () => {
+  const running = { value: true }
+  const { starts, waits, wakes } = fixture(running)
+  expect(await wakes.settle(cloud)).toBe(false)
+  expect(waits).toEqual([5_000])
+  running.value = false
+  const settling = wakes.settle(cloud)
+  await settle()
+  expect(starts).toHaveLength(1)
+  running.value = true
+  starts[0].resolve()
+  expect(await settling).toBe(true)
 })

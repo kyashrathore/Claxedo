@@ -23,7 +23,7 @@ import { harnessIdentity, harnessSelectionQuery } from "./wire/harness-selection
 import { PROMPT_ROUTE, promptBody, promptDeliveryFromWire } from "./wire/prompt"
 import { permissionReplyBody } from "./wire/requests"
 import { sessionRowFromSession } from "./wire/session-row"
-import { isRuntimeUnavailable } from "./wire/connection"
+import { isCheckpointFrozen, isRuntimeUnavailable } from "./wire/connection"
 
 function firstInputBody(prompt: SessionCreateInput["prompt"]) {
   if (!prompt) return {}
@@ -70,15 +70,24 @@ async function replyToRequest(context: SessionContext, ref: SessionLocation, id:
   await transport.runtimeJson<unknown>(where, questionPath("reject"), { method: "POST" })
 }
 
+const CHECKPOINT_SETTLE_ATTEMPTS = 60
+
 async function postPrompt(context: SessionContext, wakes: WorkspaceWakes, ref: SessionLocation, input: PromptInput, messageId: string): Promise<PromptDelivery> {
   await wakes.wakeIfStopped(ref.placementId)
-  try {
-    return await deliverPrompt(context, ref, input, messageId)
-  } catch (error) {
-    if (!isRuntimeUnavailable(error)) throw error
-    await context.workspaces.refresh()
-    if (!await wakes.wakeIfStopped(ref.placementId)) throw error
-    return await deliverPrompt(context, ref, input, messageId)
+  let woke = false
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await deliverPrompt(context, ref, input, messageId)
+    } catch (error) {
+      if (isCheckpointFrozen(error) && attempt < CHECKPOINT_SETTLE_ATTEMPTS) {
+        await wakes.settle(ref.placementId)
+        continue
+      }
+      if (woke || !isRuntimeUnavailable(error)) throw error
+      await context.workspaces.refresh()
+      woke = await wakes.wakeIfStopped(ref.placementId)
+      if (!woke) throw error
+    }
   }
 }
 

@@ -62,11 +62,14 @@ test.each([["cloud", false], ["remote machine", true]] as const)("sessions: a %s
 
 function sendFixture(answers: Array<unknown>, stopsOnRefresh: boolean) {
   const sent: string[] = []
+  const bodies: unknown[] = []
+  let settled = 0
   let stopped = false
   const woke: string[] = []
   const transport = {
-    runtimeJson: async (_route: unknown, path: string) => {
+    runtimeJson: async (_route: unknown, path: string, init?: RequestInit) => {
       sent.push(path)
+      bodies.push(init?.body)
       const answer = answers.shift()
       if (answer instanceof Error) throw answer
       return answer
@@ -83,11 +86,15 @@ function sendFixture(answers: Array<unknown>, stopsOnRefresh: boolean) {
       stopped = false
       return true
     },
+    settle: async () => {
+      settled += 1
+      return false
+    },
   } as unknown as WorkspaceWakes
   const sessions = createSessionsApi(transport, workspaces, {} as StatusOwner, wakes, {} as SessionProjection)
   const send = () => sessions.prompt({ projectId: projectId("proj_1"), placementId: placementId("ws_cloud"), sessionId: sessionId("ses_1") },
     { clientRequestId: "req_1", messageId: "msg_1", text: "hello", attachments: [] })
-  return { sent, woke, send }
+  return { sent, bodies, woke, send, settled: () => settled }
 }
 
 test("sessions: a send a sandbox refuses because it stopped since the catalog read wakes it and is sent once more", async () => {
@@ -107,4 +114,13 @@ test("sessions: a refused send is not resent when the sandbox did not stop, or w
   const refused = sendFixture([denied], true)
   await expect(refused.send()).rejects.toBe(denied)
   expect(refused.woke).toEqual([])
+})
+
+test("sessions: a send the runtime refuses while a checkpoint holds it frozen waits for the checkpoint to settle and is sent again with the same message", async () => {
+  const frozen = new ServerError({ class: "conflict", status: 423, code: "workspace_checkpoint_frozen", message: "Workspace writes are paused for a checkpoint" })
+  const fixture = sendFixture([frozen, frozen, { delivery: "queue" }], false)
+  expect(await fixture.send()).toBe("queue")
+  expect(fixture.settled()).toBe(2)
+  expect(new Set(fixture.bodies).size).toBe(1)
+  expect(fixture.bodies[0]).toContain('"msg_1"')
 })
