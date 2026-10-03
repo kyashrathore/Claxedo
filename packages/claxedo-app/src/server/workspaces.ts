@@ -172,6 +172,7 @@ function sharedAware(reads: ReturnType<typeof placementReads>, shared: SharedSes
     streamRoute: (ref) => {
       const record = reads.recordOf(ref.placementId)
       if (!record) return shared.route(ref)
+      if (record.placement.kind === "cloud" && !hosts.answered.has(sessionHostKey(ref))) return undefined
       return hostedRoute(record, hosts, ref) ?? (record.route.remote && record.placement.reachable ? record.route : undefined)
     },
   }

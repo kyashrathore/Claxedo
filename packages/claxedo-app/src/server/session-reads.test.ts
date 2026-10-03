@@ -238,9 +238,12 @@ test("session reads: a cold open of a cloud session no list page has named asks 
       return Response.json({ error: { message: `unexpected runtime read ${path}` } }, { status: 500 })
     },
   })
+  await server.context.workspaces.load()
+  expect(server.context.workspaces.streamRoute(ref), "no live stream while the host is unknown").toBeUndefined()
   const first = await startSessionReads(server.context, ref, shape).first
   expect(first.transcript.entries.map((entry) => entry.info.id)).toEqual(["msg_1", "msg_2"])
   expect(server.hostReads).toEqual(["ses_1"])
+  expect(server.context.workspaces.streamRoute(ref)).toMatchObject({ sessionHost: { sessionId: "ses_1" } })
   expect(server.requests.filter((path) => path.startsWith("/api/control/"))).toEqual([])
   expect(server.hostedCalls).toEqual(server.runtimeCalls)
   await startSessionReads(server.context, ref, shape).first

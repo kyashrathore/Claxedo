@@ -20,7 +20,8 @@ const record = {
   placement: { id: placement, projectId: projectId("prj"), kind: "worktree", label: "Shared", reachable: true },
   route: { directory: "workspace:ws_shared", workspaceId: "ws_shared", remote: true },
 }
-const workspaces = { streamRoute: () => record.route } as unknown as Workspaces
+const home = async () => ({ route: record.route, central: false, live: true })
+const workspaces = { streamRoute: () => record.route, home } as unknown as Workspaces
 
 function ref(id: string) {
   return { projectId: projectId("prj"), placementId: placement, sessionId: sessionId(id) }
@@ -35,7 +36,7 @@ test("a shared placement streams with session scope and a revoked share closes t
     routes.push(route); signal = init.signal ?? undefined; return openBody()
   } } as unknown as Transport
   const scoped = { ...record.route, sharedSession: { sessionId: "ses_shared", level: "follow" } }
-  const workspaces = { catalog: () => ({ placements: [] }), streamRoute: () => listed ? scoped : undefined } as unknown as Workspaces
+  const workspaces = { catalog: () => ({ placements: [] }), streamRoute: () => listed ? scoped : undefined, home } as unknown as Workspaces
   const streams = createPlacementStreams({ transport, workspaces, queryClient, onFrame: () => undefined, onGap: () => undefined })
   const detach = streams.attach(ref("ses_shared"))
   try {
@@ -80,7 +81,7 @@ for (const catalog of ["bootstrap", "accountCatalog"] as const) test(`a ${catalo
   const paths: string[] = []
   const serverUrl = "http://127.0.0.1:1"
   const queryClient = new QueryClient()
-  const workspaces = { streamRoute: () => reachable ? record.route : undefined } as unknown as Workspaces
+  const workspaces = { streamRoute: () => reachable ? record.route : undefined, home } as unknown as Workspaces
   const transport = { serverUrl, runtime: async (_route: unknown, path: string, init: RequestInit) => {
     paths.push(path)
     signal = init.signal ?? undefined
@@ -115,6 +116,31 @@ test("a placement stream's frames name that placement's workspace, whatever dire
   const detach = streams.attach(ref("ses_shared"))
   await settle()
   expect(frames).toEqual([{ ...frame, workspaceId: "ws_shared" }])
+  detach()
+  streams.close()
+})
+
+test("a cloud session's stream opens only once its host is known, on the host that serves it", async () => {
+  const routes: unknown[] = []
+  const hosted = { ...record.route, sessionHost: { sessionId: "ses_pi" } }
+  let known: typeof hosted | undefined
+  const answered = Promise.withResolvers<void>()
+  const workspaces = {
+    streamRoute: () => known,
+    home: async () => {
+      await answered.promise
+      known = hosted
+      return { route: hosted, central: false, live: true }
+    },
+  } as unknown as Workspaces
+  const transport = { serverUrl: "http://127.0.0.1:1", runtime: async (route: unknown) => (routes.push(route), openBody()) } as unknown as Transport
+  const streams = createPlacementStreams({ transport, workspaces, queryClient: new QueryClient(), onFrame: () => undefined, onGap: () => undefined })
+  const detach = streams.attach(ref("ses_pi"))
+  await settle()
+  expect(routes, "no stream before the host is known").toEqual([])
+  answered.resolve()
+  await settle()
+  expect(routes).toEqual([hosted])
   detach()
   streams.close()
 })
