@@ -5,13 +5,13 @@ will run. **Local** uses a directory on your computer. **Cloud** uses a sandbox.
 Pi and its tools run together on that machine. A Cloud session needs its sandbox
 to start before Pi can run.
 
-Claxedo starts Pi in RPC mode and is tested against Pi 0.99.0 through 0.99.1
+Claxedo starts Pi in RPC mode and is tested against Pi 0.99.0 through 1.0.0
 (`PI_RANGE` in `packages/harness/src/transports/pi-rpc/version.ts`). For Local,
 install a Pi in that range and make `pi` available on PATH, or set
 `PI_EXECUTABLE` to its executable. Claxedo reads `pi --version` at launch and
 caches the result by executable identity, reading it again when the file changes;
 a bare command is read at every launch. An older Pi refuses the session and asks you to update it, and a newer
-one runs with one warning. The sandbox images install Pi 0.99.1. The model picker reads the models available to
+one runs with one warning. The sandbox images install Pi 1.0.0. The model picker reads the models available to
 that Pi process; connect a provider before selecting its model.
 
 Claxedo keeps the visible conversation and controls starting, stopping and
