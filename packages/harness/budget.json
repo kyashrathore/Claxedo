@@ -1,16 +1,16 @@
 {
   "contract": 1200,
   "rpc": 300,
-  "translate": 550,
+  "translate": 555,
   "broker": 2300,
   "registry": 900,
   "capabilities": 450,
-  "profiles": 600,
-  "transports/claude-sdk": 2969,
-  "transports/codex-app-server": 2793,
-  "transports/cursor-sdk": 1652,
-  "transports/acp": 3014,
-  "transports/pi-rpc": 864,
+  "profiles": 656,
+  "transports/claude-sdk": 3374,
+  "transports/codex-app-server": 3089,
+  "transports/cursor-sdk": 1833,
+  "transports/acp": 3108,
+  "transports/pi-rpc": 1423,
   "transports/opencode-sdk": 3000,
   "compose.ts": 62
 }

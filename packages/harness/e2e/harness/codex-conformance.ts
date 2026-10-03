@@ -4,6 +4,7 @@ import { createServer } from "node:http"
 import os from "node:os"
 import path from "node:path"
 import { expect } from "bun:test"
+import { settleAtRequestDeadline } from "@claxedo/helpers"
 import type { Frame } from "../../src/transports/codex-app-server/test-support/transport"
 import { setupConformance, withUndeliverableFile, type ConformanceBackend, type SuiteBackend } from "../../src/conformance/test-support/run"
 import type { TestServices } from "../../src/conformance/test-support/services"
@@ -18,6 +19,14 @@ export type CodexBackend = SuiteBackend & {
   root: string
   env: NodeJS.ProcessEnv
   server: Awaited<ReturnType<typeof startScriptedModelServer>>
+}
+
+export async function commandResult(state: CodexBackend, marker: string): Promise<string> {
+  await settleAtRequestDeadline(`Codex ${marker} command result`,
+    { deadlineAt: Date.now() + 15_000, signal: new AbortController().signal },
+    state.server.textGateReached(marker), () => state.server.close(),
+    (what) => new Error(`${what} did not arrive within 15 seconds`))
+  return state.server.requests.at(-1)!.prompt
 }
 
 export async function codexBackend(): Promise<CodexBackend> {

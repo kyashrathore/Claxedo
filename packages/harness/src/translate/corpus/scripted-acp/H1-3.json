@@ -379,7 +379,6 @@
               "intent": "shell",
               "summary": "Fail example",
               "command": "false",
-              "description": "false",
               "input": {
                 "command": "false"
               }
@@ -407,7 +406,6 @@
               "intent": "shell",
               "summary": "Fail example",
               "command": "false",
-              "description": "false",
               "input": {
                 "command": "false"
               }
@@ -432,15 +430,13 @@
               "command": "false",
               "kind": "execute",
               "intent": "shell",
-              "summary": "Fail example",
-              "description": "false"
+              "summary": "Fail example"
             },
             "display": {
               "kind": "execute",
               "intent": "shell",
               "summary": "Fail example",
               "command": "false",
-              "description": "false",
               "input": {
                 "command": "false"
               }
@@ -509,7 +505,6 @@
               "intent": "shell",
               "summary": "Fail example",
               "command": "false",
-              "description": "false",
               "input": {
                 "command": "false"
               }
@@ -542,7 +537,6 @@
               "intent": "shell",
               "summary": "Fail example",
               "command": "false",
-              "description": "false",
               "input": {
                 "command": "false"
               }
