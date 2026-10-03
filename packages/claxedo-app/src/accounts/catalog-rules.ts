@@ -47,6 +47,7 @@ export function providerNote(id: string): AccountsKey | undefined {
 }
 
 export function providerSourceTag(source: ProviderSource | undefined): AccountsKey {
+  if (source === "harness") return "settings.providers.tag.harness"
   if (source === "env") return "settings.providers.tag.environment"
   if (source === "api") return "settings.providers.tag.apiKey"
   if (source === "config") return "settings.providers.tag.config"

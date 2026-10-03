@@ -51,7 +51,7 @@ const deleteOwn = async (providerId: string) => {
 
 // Force DB initialization
 const { ClaxedoDB } = await import("../platform/db")
-const { piCredentialProviderIDs, piRegistryCredentialProvider, piRegistryProviderConnected } = await import("./pi-credentials")
+const { piCredentialProviderIDs, piRegistryCredentialProvider } = await import("./pi-credentials")
 const { checkCredential } = await import("./operations/check")
 ClaxedoDB.Drizzle() // ensure initialized
 
@@ -184,17 +184,16 @@ describe("credential registry", () => {
     expect(piCredentialProviderIDs("openai-codex")).toEqual(["codex-app-server"])
     // The API key saved first holds the mark, and an API key is not a Codex
     // login however many other accounts the provider holds.
-    expect(piRegistryProviderConnected("openai-codex", "local")).toBe(false)
+    expect(piRegistryCredentialProvider("openai-codex", "local")).toBeUndefined()
 
     setActiveCredentials([oauth.id], undefined, "local")
     expect(piRegistryCredentialProvider("openai-codex", "local")).toBe("codex-app-server")
-    expect(piRegistryProviderConnected("openai-codex", "local")).toBe(true)
 
     updateCredentialStatus(oauth.id, "expired")
-    expect(piRegistryProviderConnected("openai-codex", "local")).toBe(false)
+    expect(piRegistryCredentialProvider("openai-codex", "local")).toBeUndefined()
 
     expect(piRegistryCredentialProvider("anthropic", "local")).toBe("anthropic")
-    expect(piRegistryProviderConnected("unknown", "local")).toBe(false)
+    expect(piRegistryCredentialProvider("unknown", "local")).toBeUndefined()
     await deleteOwn("codex-app-server")
     await deleteOwn("anthropic")
   })

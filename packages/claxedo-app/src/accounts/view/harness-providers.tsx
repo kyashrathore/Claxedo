@@ -52,7 +52,7 @@ function ConnectedProvider(props: { readonly provider: CatalogProvider; readonly
           </div>
         </div>
         <div class="flex shrink-0 items-center gap-2">
-          <Tag>{t(providerSourceTag(props.provider.source))}</Tag>
+          <Tag>{t(providerSourceTag(props.provider.source), { harness: harnessDisplayLabel(props.provider.harness ?? "") })}</Tag>
           <Show when={canDisconnectProvider(props.provider.source)}>
             <Button size="large" variant="ghost" onClick={() => props.onDisconnect()}>
               {t("common.disconnect")}

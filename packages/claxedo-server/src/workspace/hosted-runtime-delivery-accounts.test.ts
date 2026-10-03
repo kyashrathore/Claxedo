@@ -57,7 +57,7 @@ test("a workspace's sandbox is delivered its owner's account alone, and another 
   } finally { await database.dispose() }
 })
 
-test("the account a person chooses for Claude Code is the one its sandbox is delivered, over their other Anthropic account", async () => {
+test("a key saved for Pi never moves Claude Code off its Anthropic login; only choosing the key does", async () => {
   const database = await workspaceBackingDatabase([{ id: "ws-a", backing: "cloud-vm" }])
   try {
     let at = 1_000
@@ -65,7 +65,6 @@ test("the account a person chooses for Claude Code is the one its sandbox is del
       [HOSTED_CREDENTIALS_FLAG]: "1", [CREDENTIALS_KEK_ENV]: Buffer.alloc(32, 7).toString("base64"),
     } }, { now: () => ++at })
     const owner = OWNERS["ws-a"]
-    const key = await credentials.putCredential({ owner, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-key" })
     const token = await credentials.putCredential({ owner, provider_id: "claude-sdk", kind: "oauth_token", source: "managed", secret: "sk-ant-oat01-token" })
     type Input = Parameters<typeof createHostedRuntimeDelivery>[0]
     const delivery = createHostedRuntimeDelivery({
@@ -80,8 +79,12 @@ test("the account a person chooses for Claude Code is the one its sandbox is del
     const delivered = async () => ((await delivery.prepareRuntime({ workspaceId: "ws-a" })).secrets ?? []).map((secret) => secret.value)
 
     expect(await delivered()).toEqual(["sk-ant-oat01-token"])
+    const key = await credentials.putCredential({ owner, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-key" })
+    expect(await delivered()).toEqual(["sk-ant-oat01-token"])
+    await credentials.putCredential({ owner, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-key-2" })
+    expect(await delivered()).toEqual(["sk-ant-oat01-token"])
     expect(await credentials.setActiveCredentials?.([key.id], "org", owner)).toMatchObject({ ok: true })
-    expect(await delivered()).toEqual(["sk-ant-api03-key"])
+    expect(await delivered()).toEqual(["sk-ant-api03-key-2"])
     expect(await credentials.setActiveCredentials?.([token.id], "org", owner)).toMatchObject({ ok: true })
     expect(await delivered()).toEqual(["sk-ant-oat01-token"])
   } finally { await database.dispose() }

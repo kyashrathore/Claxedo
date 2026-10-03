@@ -1,5 +1,4 @@
-import { builtInProviderRow } from "./built-in-destinations"
-import { isSubscriptionKind } from "./secret-material"
+import { builtInProviderDestinationShape } from "./built-in-destinations"
 import type { CredentialKind } from "./types"
 
 /**
@@ -18,7 +17,7 @@ import type { CredentialKind } from "./types"
 export type CredentialReach = { local: true; cloud: boolean; reason?: string }
 
 export function credentialReach(row: { provider_id: string; kind: CredentialKind }): CredentialReach {
-  const destination = builtInProviderRow(row.provider_id)?.({ token: "", form: isSubscriptionKind(row.kind) ? "subscription" : "api-key" })
+  const destination = builtInProviderDestinationShape({ providerId: row.provider_id, kind: row.kind })
   if (!destination) return { local: true, cloud: false, reason: "no_destination" }
   if (destination.injection.headers) {
     return { local: true, cloud: false, reason: "native_delivery_needs_companion_header" }

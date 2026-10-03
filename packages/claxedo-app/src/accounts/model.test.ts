@@ -94,3 +94,10 @@ test("accounts: in the cloud the most recently chosen of a harness's accounts is
   expect(selectedAccountKey(claude, snapshot({ cloudOnly: true, stored: [token, key], effective: [{ ...token, activatedAt: 3 }, key] }))).toBe("token")
   expect(selectedAccountKey(claude, snapshot({ stored: [token, key], effective: [token, key] }))).toBe("token")
 })
+
+test("accounts: in the cloud an account no sandbox can be delivered is never the one in use, however recently chosen", () => {
+  const codex = harnesses.find((harness) => harness.id === "codex")!
+  const key = account("key", "openai", { active: true, activatedAt: 1, delivery: { local: true, cloud: true } })
+  const chatgpt = account("chatgpt", "codex-app-server", { kind: "oauth_token", active: true, activatedAt: 2, delivery: { local: true, cloud: false } })
+  expect(selectedAccountKey(codex, snapshot({ cloudOnly: true, stored: [key, chatgpt], effective: [key, chatgpt] }))).toBe("key")
+})

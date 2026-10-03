@@ -153,6 +153,20 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     expect((await pi.piProviderCatalog(as("B"))).connected).not.toContain("anthropic")
   })
 
+  test("Pi's Anthropic connected by a Claude Code login says so and is not Pi's own key; Pi's own key is", async () => {
+    const orgId = freshOrg("pi-via")
+    const credentials = store(orgId)
+    const pi = hostedPiCredentials({ resolveOrgId: async () => orgId, credentials: () => credentials })
+    const as = { mode: "signed" as const, user: { subject: "A", tokenIdentifier: "A", issuer: "test" } }
+    const anthropic = async () => (await pi.piProviderCatalog(as)).all.find((provider) => provider.id === "anthropic")
+    await credentials.putCredential({ owner: "A", provider_id: "claude-sdk", kind: "oauth_token", source: "managed", secret: "sk-ant-oat01-a" })
+    expect((await pi.piProviderCatalog(as)).connected).toContain("anthropic")
+    expect(await anthropic()).toMatchObject({ source: "harness", harness: "claude" })
+    await credentials.putCredential({ owner: "A", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-a" })
+    expect(await anthropic()).toMatchObject({ source: "api" })
+    expect(await anthropic()).not.toHaveProperty("harness")
+  })
+
   test("fails closed: flag off, blank org, or missing KEK all throw", () => {
     const database = controlPlane.database
     expect(() => hostedOrgCredentials("org-a", { database, env: KEK_ENV })).toThrow(new RegExp(HOSTED_CREDENTIALS_FLAG))

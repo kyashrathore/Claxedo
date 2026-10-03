@@ -100,16 +100,17 @@ describe("hosted account setup through the shared credential routes", () => {
     expect(await store().listCredentials()).toEqual([])
   })
 
-  test("choosing an account makes it the person's most recent mark, and only their own can be chosen", async () => {
+  test("a save marks an account only on a vendor host the person has none on; choosing one makes it the most recent mark, and only their own can be chosen", async () => {
     const { store, app } = rig()
-    await call(app(), "/api/claxedo/credentials", { method: "PUT", body: key("anthropic", "sk-ant-api03-alice") })
     await call(app(), "/api/claxedo/credentials", { method: "PUT", body: key("claude-sdk", "sk-ant-oat01-alice") })
+    await call(app(), "/api/claxedo/credentials", { method: "PUT", body: key("anthropic", "sk-ant-api03-alice") })
+    await call(app(), "/api/claxedo/credentials", { method: "PUT", body: key("openai", "sk-openai-alice") })
     const marked = async () => (await (await call(app(), "/api/claxedo/credentials/effective")).json()).credentials.map((row: { provider_id: string }) => row.provider_id)
-    expect(await marked()).toEqual(["claude-sdk", "anthropic"])
+    expect(await marked()).toEqual(["openai", "claude-sdk"])
     const anthropic = (await store().listCredentials()).find((row) => row.provider_id === "anthropic")!
     expect((await call(app(), "/api/claxedo/credentials/activate", { method: "POST", body: { ids: [anthropic.id] }, person: "bob" })).status).toBe(404)
-    expect(await marked()).toEqual(["claude-sdk", "anthropic"])
+    expect(await marked()).toEqual(["openai", "claude-sdk"])
     expect((await call(app(), "/api/claxedo/credentials/activate", { method: "POST", body: { ids: [anthropic.id] } })).status).toBe(200)
-    expect(await marked()).toEqual(["anthropic", "claude-sdk"])
+    expect(await marked()).toEqual(["anthropic", "openai", "claude-sdk"])
   })
 })

@@ -14,14 +14,16 @@ export function hostedPiCredentials(input: {
 }) {
   return {
     piProviderCatalog: async (auth: SignedControlPlaneAuth) => {
-      if (!input.credentials) return projectPiProviderCatalog(new Set())
+      if (!input.credentials) return projectPiProviderCatalog(new Map())
       const store = input.credentials(await input.resolveOrgId(auth))
       const person = auth.user.subject
       const rows = await store.listCredentials()
       const sources = holderAccountSources(await store.accountSelections(), person, person)
       const account = (id: string) => rows.find((row) => row.provider_id === id && spendsAccount(row, person, sources, person))
-      return projectPiProviderCatalog(new Set(PI_LAUNCH_PROVIDERS.filter((provider) =>
-        piCredentialProviderIDs(provider).some((id) => piCredentialConnected(provider, account(id))))))
+      return projectPiProviderCatalog(new Map(PI_LAUNCH_PROVIDERS.flatMap((provider) => {
+        const by = piCredentialProviderIDs(provider).find((id) => piCredentialConnected(provider, account(id)))
+        return by === undefined ? [] : [[provider, by] as const]
+      })))
     },
   }
 }

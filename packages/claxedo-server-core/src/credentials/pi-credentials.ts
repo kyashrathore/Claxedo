@@ -10,7 +10,3 @@ export function piRegistryCredentialProvider(providerID: string, owner: string, 
   return piCredentialProviderIDs(providerID).find((id) => piCredentialConnected(providerID,
     credentialByProvider(id, { onOutage: "throw", kind: PROVIDER_AUTH_KINDS, owner: spentRowOwner(sources, id, owner) }, org)))
 }
-
-export function piRegistryProviderConnected(providerID: string, owner: string, org?: string) {
-  return piRegistryCredentialProvider(providerID, owner, org) !== undefined
-}

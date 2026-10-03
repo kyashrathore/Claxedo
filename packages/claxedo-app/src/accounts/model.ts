@@ -118,7 +118,9 @@ export function accountInUse(harness: Harness, effective: ReadonlyMap<string, Ac
     return row ? [row] : []
   })
   if (!cloudOnly) return marked[0]
-  return marked.reduce<Account | undefined>((latest, row) => (latest && (latest.activatedAt ?? 0) >= (row.activatedAt ?? 0) ? latest : row), undefined)
+  return marked
+    .filter((row) => row.delivery?.cloud === true)
+    .reduce<Account | undefined>((latest, row) => (latest && (latest.activatedAt ?? 0) >= (row.activatedAt ?? 0) ? latest : row), undefined)
 }
 
 export function machineLoginOf(harness: Harness, snapshot: AccountsSnapshot) {

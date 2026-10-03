@@ -50,6 +50,7 @@ import {
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { storedCredentialKind } from "@claxedo/server-core/credentials/secret-material"
 import { fanoutEligible, fanoutEligibleAuth } from "@claxedo/server-core/credentials/account-kinds"
+import { deliveryOrigin } from "@claxedo/server-core/credentials/native-delivery-plan"
 import { ACCOUNT_SOURCES, type AccountSource } from "@claxedo/account-contract/vocabulary"
 
 type WorkerCredentialEnv = Record<string, string | undefined>
@@ -179,15 +180,36 @@ export function hostedOrgCredentials(
     return row ? cipher.open(id, requiredTextColumn(row, "secret_envelope")) : null
   }
 
+  const readCredential = async (id: string) => {
+    const row = await database.prepare(`select ${METADATA_COLUMNS} from hosted_provider_credentials where org_id = ? and id = ?`).bind(org, id).first()
+    return row ? credentialMetadataRow(row) : undefined
+  }
+
   /**
-   * A save takes its provider's mark, as a save into a partition with no other
-   * usable holder does in the local registry: this store keeps one row per
-   * (owner, provider), so there is never another holder.
+   * The mark a save leaves on its row. A sandbox is delivered one account per
+   * origin, the most recently marked, so a save takes the mark only when none
+   * of the person's other marked accounts is delivered to the same origin:
+   * adding a key for one harness never moves another harness off the account
+   * it runs on. Only `setActiveCredentials` switches an origin.
    */
+  const savedMark = async (row: { owner: string | null; provider_id: string; kind: CredentialKind }, id: string, timestamp: number) => {
+    if (!fanoutEligibleAuth(row.kind, row.provider_id)) return null
+    const current = (await readCredential(id))?.activated_at ?? null
+    const origin = deliveryOrigin(row)
+    const marked = await database
+      .prepare("select provider_id, kind from hosted_provider_credentials where org_id = ? and owner is ? and id <> ? and activated_at is not null")
+      .bind(org, row.owner, id)
+      .all()
+    const held = origin !== undefined && marked.results.some((other) =>
+      deliveryOrigin({ provider_id: requiredTextColumn(other, "provider_id"), kind: enumColumn(other, "kind", CREDENTIAL_KINDS) }) === origin)
+    return held ? current : (current ?? timestamp)
+  }
+
   const upsert = async (input: CredentialWrite, id: string) => {
     const timestamp = now()
     const owner = input.owner
     const kind = storedCredentialKind(input)
+    const mark = await savedMark({ owner, provider_id: input.provider_id, kind }, id, timestamp)
     const row = await database
       .prepare(
         `insert into hosted_provider_credentials (
@@ -222,7 +244,7 @@ export function hostedOrgCredentials(
         input.account_id ?? null,
         input.expires_at ?? null,
         await cipher.seal(id, input.secret),
-        fanoutEligibleAuth(kind, input.provider_id) ? timestamp : null,
+        mark,
         timestamp,
         timestamp,
       )
@@ -238,11 +260,6 @@ export function hostedOrgCredentials(
       .bind(org)
       .all()
     return rows.results.map(credentialMetadataRow)
-  }
-
-  const readCredential = async (id: string) => {
-    const row = await database.prepare(`select ${METADATA_COLUMNS} from hosted_provider_credentials where org_id = ? and id = ?`).bind(org, id).first()
-    return row ? credentialMetadataRow(row) : undefined
   }
 
   return {

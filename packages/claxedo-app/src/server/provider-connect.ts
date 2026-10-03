@@ -1,7 +1,6 @@
 import type { QueryClient } from "@tanstack/solid-query"
-import { readString } from "@claxedo/helpers/readers"
-import { ask } from "./answer"
-import { contractMismatch } from "./errors"
+import { readFiniteNumber, readString } from "@claxedo/helpers/readers"
+import { contractMismatch, ServerError } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
 import { jsonInit, withQuery, type Transport } from "./transport"
@@ -100,7 +99,10 @@ export function createProviderConnectApi(transport: Transport, queryClient: Quer
       await changed()
     },
     disconnect: async (harness, provider) => {
-      await ask(transport, `${CREDENTIALS_PATH}/provider/${encodeURIComponent(provider.id)}`, { method: "DELETE" })
+      const removed = await transport.json<unknown>(`${CREDENTIALS_PATH}/provider/${encodeURIComponent(provider.id)}`, { method: "DELETE" })
+      if (provider.source !== "custom" && !((readFiniteNumber(removed, "deleted") ?? 0) > 0)) {
+        throw new ServerError({ class: "not_found", message: `No ${provider.id} account of yours was stored to disconnect` })
+      }
       if (provider.source === "custom") await transport.json<unknown>(withQuery(`${CUSTOM_PATH}/${encodeURIComponent(provider.id)}`, { nativeHarness: harness }), { method: "DELETE" })
       await changed()
     },

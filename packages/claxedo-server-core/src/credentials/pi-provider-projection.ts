@@ -1,4 +1,5 @@
 import {
+  harnessForProviderId,
   isPiLaunchProvider,
   PI_LAUNCH_PROVIDERS,
   piCredentialProviderIDs,
@@ -36,10 +37,21 @@ export function piCredentialConnected(providerID: string, credential: Credential
 
 const providerNames: Record<PiLaunchProvider, string> = { "openai-codex": "OpenAI Codex", ...VENDOR_PROVIDER_NAMES }
 
-/** Registry connection metadata. Models come from the selected machine runtime. */
-export function projectPiProviderCatalog(connected: ReadonlySet<string>) {
+/**
+ * Registry connection metadata, from each connected Pi provider to the stored
+ * provider id whose row connects it. A provider connected by another harness's
+ * login (Anthropic through Claude Code's) names that harness and is not Pi's
+ * to disconnect. Models come from the selected machine runtime.
+ */
+export function projectPiProviderCatalog(connected: ReadonlyMap<string, string>) {
+  const source = (id: PiLaunchProvider) => {
+    const by = connected.get(id)
+    if (by === undefined) return { source: "config" }
+    const harness = by === id ? undefined : harnessForProviderId(by)
+    return harness ? { source: "harness", harness } : { source: "api" }
+  }
   return {
-    all: PI_LAUNCH_PROVIDERS.map((id) => ({ id, name: providerNames[id], env: [], source: connected.has(id) ? "api" : "config", models: {} })),
+    all: PI_LAUNCH_PROVIDERS.map((id) => ({ id, name: providerNames[id], env: [], ...source(id), models: {} })),
     connected: PI_LAUNCH_PROVIDERS.filter((id) => connected.has(id)),
     default: {},
     modelAvailability: "runtime_required" as const,
