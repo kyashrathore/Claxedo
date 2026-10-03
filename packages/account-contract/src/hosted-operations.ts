@@ -1,11 +1,12 @@
 import { isPluginId } from "@claxedo/plugin-api/id"
 import { sharedSessions } from "./shared-sessions"
 import {
-  defineOperation, operationInput, operationPath, requiredParameter, optionalParameter, bodyField,
+  defineOperation, operationPath, requiredParameter, optionalParameter, bodyField,
   selectBody, operationHeaders, pluginMethod, pluginBody, connectedRepositoryBody,
   type DecodeResult, type OperationDefinition, type ResolvedRequest,
   MissingOperationParameter, UnknownHostedOperation,
 } from "./operation-definition"
+import { operationInput } from "./operation-input"
 import { object, withStrings, array, withArrays, sessionPeople, withRecord, nullable, connection, statusResult } from "./hosted-output"
 
 export const HOSTED_OPERATIONS = {
