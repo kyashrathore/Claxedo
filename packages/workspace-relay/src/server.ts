@@ -846,6 +846,7 @@ function relayHostMintInput(
     orgId: claims.org_id,
     role: claims.role,
     ...(claims.session_id ? { sessionId: claims.session_id } : {}),
+    ...(claims.purpose ? { purpose: claims.purpose } : {}),
     ...target,
     ...(options.relayHostMintKid ? { kid: options.relayHostMintKid } : {}),
   }

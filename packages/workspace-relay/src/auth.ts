@@ -55,6 +55,9 @@ export function toChannelIdentityClaim(input: ChannelIdentityInput): ChannelIden
 
 export type TokenScope = "workspace" | "session"
 
+/** A token minted for one job; only the routes serving that job accept it. */
+export type TokenPurpose = "turn-execution"
+
 export type RuntimeAccessTokenClaims = {
   iss: typeof runtimeAccessTokenIssuer
   aud: typeof runtimeAccessTokenAudience
@@ -76,6 +79,7 @@ export type RuntimeAccessTokenClaims = {
    */
   scope: TokenScope
   session_id?: string
+  purpose?: TokenPurpose
   channel_identity?: ChannelIdentityClaim
   /** Present for cloud workspaces; assigned atomically with the sandbox address. */
   routing_id?: string
@@ -100,6 +104,7 @@ export type RelayHostTokenClaims = {
   role: RelayRole
   scope: TokenScope
   session_id?: string
+  purpose?: TokenPurpose
   channel_identity?: ChannelIdentityClaim
   exp: number
   iat: number
@@ -149,6 +154,7 @@ type RuntimeInput = {
   hostId: string
   role: RelayRole
   sessionId?: string
+  purpose?: TokenPurpose
   channelIdentity?: ChannelIdentityInput
   routingId?: string
   ttlSeconds?: number
@@ -406,6 +412,7 @@ export async function mintRuntimeAccessToken(input: RuntimeInput, key: RelaySign
     host_id: input.hostId,
     role: input.role,
     ...tokenScopePayload(input.sessionId),
+    ...(input.purpose ? { purpose: input.purpose } : {}),
     ...(input.routingId !== undefined ? { routing_id: input.routingId } : {}),
   })
     .setProtectedHeader({ alg: requireAlgorithm(alg) })
@@ -550,6 +557,7 @@ export async function mintRelayHostToken(input: RelayHostInput, key: RelaySignin
     host_id: input.hostId,
     role: input.role,
     ...tokenScopePayload(input.sessionId),
+    ...(input.purpose ? { purpose: input.purpose } : {}),
     backing: input.backing,
     parent_jti: input.parentJti,
   })
@@ -588,8 +596,9 @@ function runtimeClaims(payload: JWTPayload): RuntimeAccessTokenClaims | undefine
   const host_id = stringClaim(payload, "host_id")
   const role = roleClaim(payload)
   const reach = tokenScopeClaims(payload)
+  const purpose = tokenPurposeClaims(payload)
   if (
-    !exp || !iat || !jti || !org_id || !workspace_id || !host_id || !role || !actor_id || !reach
+    !exp || !iat || !jti || !org_id || !workspace_id || !host_id || !role || !actor_id || !reach || !purpose
     || (payload.user_id !== undefined && !user_id)
     || (principal_kind !== "user" && principal_kind !== "service")
     || (actor_kind !== "human" && actor_kind !== "agent")
@@ -615,6 +624,7 @@ function runtimeClaims(payload: JWTPayload): RuntimeAccessTokenClaims | undefine
     host_id,
     role,
     ...reach,
+    ...purpose,
     exp,
     iat,
     jti,
@@ -626,6 +636,12 @@ export function tokenScopePayload(sessionId: string | undefined) {
 }
 
 /** The token's reach, or nothing when it names neither the workspace nor exactly one session. */
+/** The purpose claim, or undefined when it names a purpose this build does not know. */
+export function tokenPurposeClaims(payload: Record<string, unknown>): { purpose?: TokenPurpose } | undefined {
+  if (payload.purpose === undefined) return {}
+  return payload.purpose === "turn-execution" ? { purpose: payload.purpose } : undefined
+}
+
 export function tokenScopeClaims(payload: Record<string, unknown>): { scope: TokenScope; session_id?: string } | undefined {
   const sessionId = stringClaim(payload, "session_id")
   if (payload.scope === "workspace" && payload.session_id === undefined) return { scope: "workspace" }
