@@ -8,7 +8,7 @@ import type { TurnAccount } from "./turn-account"
 import type { RuntimeDiagnostic } from "./diagnostics"
 import type { RawHarnessEvent } from "./raw-harness-event"
 
-export const AGENT_RUNTIME_EVENT_CONTRACT_VERSION = 8
+export const AGENT_RUNTIME_EVENT_CONTRACT_VERSION = 9
 
 export type RuntimeStatus = "busy" | "idle" | "error"
 export type RuntimeToolStatus = "pending" | "running" | "completed" | "failed"
