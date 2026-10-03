@@ -13,7 +13,7 @@ import { CODEX_RANGE, codexReportedVersion } from "./version"
 
 export type CodexProcess = { rpc: CodexRpc; router: CodexRouter; home: string; brokered: boolean; plugins: string[]; version: string }
 
-export type CodexLaunch = { member: CodexMember; key: string; home: string; brokered: boolean; plugins: string[]; version: string; release(): Promise<void> }
+export type CodexLaunch = { member: CodexMember; key: string; home: string; brokered: boolean; plugins: string[]; version: string; release: () => Promise<void> }
 
 async function prepareProfile(input: StartInput, options: CodexTransportOptions, services: HarnessServices): Promise<CodexProfile> {
   const profileInput = { homeRoot: options.homeRoot, credentials: input.credentials, projection: input.projection }

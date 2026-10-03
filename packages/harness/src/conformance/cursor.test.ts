@@ -203,7 +203,7 @@ test("a silent run expires by inactivity, is cancelled alone, and the shared hos
   state.server.script("held", { steps: [], hold: true })
   const services = createTestServices()
   const registry = new CursorHostRegistry(services.clock, services.log)
-  const launch = { spawn: services.spawn, worker: CURSOR_WORKER, env: state.env }
+  const launch = { spawn: services.spawn.bind(services), worker: CURSOR_WORKER, env: state.env }
   const home = path.join(state.root, "deadline-home")
   await fs.mkdir(home, { recursive: true })
   const session = { sessionId: "deadline", directory: state.directory, apiKey: "cursor-conformance-placeholder", model: "scripted",
@@ -233,7 +233,7 @@ test("a run that keeps streaming outlives its inactivity window", async () => {
   ] })
   const services = createTestServices()
   const registry = new CursorHostRegistry(services.clock, services.log)
-  const launch = { spawn: services.spawn, worker: CURSOR_WORKER, env: state.env }
+  const launch = { spawn: services.spawn.bind(services), worker: CURSOR_WORKER, env: state.env }
   const home = path.join(state.root, "slow-home")
   await fs.mkdir(home, { recursive: true })
   const session = { sessionId: "slow", directory: state.directory, apiKey: "cursor-conformance-placeholder", model: "scripted",

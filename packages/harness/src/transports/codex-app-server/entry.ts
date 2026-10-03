@@ -20,7 +20,7 @@ export type Entry = {
   broker: SessionBroker
   rpc: CodexMember
   key: string
-  release(): Promise<void>
+  release: () => Promise<void>
   home: string
   modelProvider: string
   terminals: CodexTerminals

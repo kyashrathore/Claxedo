@@ -224,7 +224,7 @@ export class CursorHostLeases {
 
   async dispose(): Promise<void> {
     this.disposed = true
-    for (const [host, held] of [...this.held]) {
+    for (const [host, held] of this.held) {
       this.held.delete(host)
       for (let count = 0; count < held.count; count += 1) await this.registry.release(held.key, host)
     }

@@ -155,7 +155,7 @@ test("a stray frame and 300 early frames for threads no session owns fail no ses
     expect(b).toContain("STRAYAFTERB")
     expect(a).not.toContain("STRAY ")
     expect(w.context.transport.health!.runtime(w.state.directory, "s1")).toEqual({ status: "ok" })
-    expect(w.b.health!.runtime(w.state.directory, "s2")).toEqual({ status: "ok" })
+    expect(w.b.health.runtime(w.state.directory, "s2")).toEqual({ status: "ok" })
     expect(w.processes()).toHaveLength(1)
   } finally { await w.close() }
 }, 180_000)

@@ -115,11 +115,11 @@ export class CodexPeer {
       return {}
     }
     if (frame.method === "thread/unarchive") {
-      if (!this.archived.delete(String(params.threadId))) throw new CodexScriptedFailure(`no archived rollout found for thread id ${params.threadId}`)
+      if (!this.archived.delete(String(params.threadId))) throw new CodexScriptedFailure(`no archived rollout found for thread id ${String(params.threadId)}`)
       return { thread: { id: params.threadId } }
     }
     if (frame.method === "thread/resume" && this.archived.has(String(params.threadId))) {
-      throw new CodexScriptedFailure(`session ${params.threadId} is archived. Run \`codex unarchive ${params.threadId}\` to unarchive it first.`)
+      throw new CodexScriptedFailure(`session ${String(params.threadId)} is archived. Run \`codex unarchive ${String(params.threadId)}\` to unarchive it first.`)
     }
     if (frame.method === "account/login/start") { this.logins.push(String(params.apiKey)); return { type: "apiKey" } }
     if (frame.method === "turn/start") return this.start(params)

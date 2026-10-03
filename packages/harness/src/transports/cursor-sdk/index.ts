@@ -55,7 +55,7 @@ export class CursorSdkTransport implements HarnessTransport {
 
   constructor(private readonly services: HarnessServices, private readonly options: CursorSdkTransportOptions) {
     this.env = options.env ?? process.env
-    this.registry = new CursorHostLeases(options.hosts, { spawn: services.spawn, worker: options.worker, env: this.env })
+    this.registry = new CursorHostLeases(options.hosts, { spawn: (command, spawnOptions) => services.spawn(command, spawnOptions), worker: options.worker, env: this.env })
   }
 
   async capabilities(context: CapabilityContext): Promise<TransportCapabilities> {
