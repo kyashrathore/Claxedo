@@ -128,8 +128,10 @@ sandbox `docker run`s, for example
 `ghcr.io/kyashrathore/claxedo-sandbox:workspace-runtime-0-10-0-149c6f9a9d-v8`.
 `claxedo-sandbox-image.yml` builds and pushes it (`linux/amd64`, public on
 ghcr.io) on pushes to `dev` that touch the runtime, and prints the tag in its
-job summary; the `sandbox-image` component of this workflow deploys the
-Cloudflare sandbox Worker instead and is not what Boat pulls. Switching drivers
+job summary. The `sandbox-image` component of this workflow deploys the
+Cloudflare sandbox Worker, which only the `cloudflare` driver uses, so `plan`
+(bound to the `staging` environment to read the driver) selects it for that
+driver alone. Switching drivers
 leaves the other driver's secret on the Worker, where nothing reads it.
 
 `bun run --cwd packages/sandbox-manager live:boat -- --yes-live --image=<tag>`

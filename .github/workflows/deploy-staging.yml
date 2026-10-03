@@ -35,6 +35,9 @@ jobs:
   plan:
     name: select components
     runs-on: ubuntu-latest
+    # The sandbox driver is a staging environment variable, readable only from
+    # a job bound to that environment.
+    environment: staging
     outputs:
       control_plane: ${{ steps.select.outputs.control_plane }}
       relay: ${{ steps.select.outputs.relay }}
@@ -61,14 +64,17 @@ jobs:
         env:
           REQUESTED: ${{ inputs.components || 'all' }}
           SANDBOX_CHANGED: ${{ steps.changed.outputs.sandbox_image }}
+          SANDBOX_DRIVER: ${{ vars.CLAXEDO_STAGING_SANDBOX_DRIVER }}
         run: |
           set -euo pipefail
           selected() { [ "$REQUESTED" = "all" ] || [ "$REQUESTED" = "$1" ]; }
 
           # Naming the image on a dispatch builds it whether or not the policy
-          # saw a change; `all` still defers to the policy.
+          # saw a change; `all` still defers to the policy. The image is the
+          # Cloudflare sandbox Worker's, so no other driver deploys it.
           sandbox=$SANDBOX_CHANGED
           [ "$REQUESTED" = "sandbox-image" ] && sandbox=true
+          [ "$SANDBOX_DRIVER" = cloudflare ] || sandbox=false
 
           {
             selected control-plane && echo "control_plane=true" || echo "control_plane=false"
