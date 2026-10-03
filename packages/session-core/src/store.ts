@@ -18,7 +18,7 @@ import { sessionHandoff, sessionHandoffJson } from "./session/handoff-column"
 import type { AgentMessage, AgentPermission, AgentQuestion, AgentTurnOutcome, PromptFormat, PromptInput, SessionHarness, SessionModelGroup } from "@claxedo/agent-runtime-contract"
 import type { AdmittedSubagentObservation } from "@claxedo/harness/broker"
 import type { ChildSessionRef, TurnActor } from "@claxedo/harness/contract"
-import type { AgentContentPart, AgentSessionTitleSource, AgentExecutionBinding, AgentSessionCommand, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
+import type { AgentContentPart, AgentSessionTitleSource, AgentExecutionBinding, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 import {
   effectivePermissionModeId,
   effectiveSessionModel,
@@ -27,13 +27,13 @@ import {
   type RecoveryOperation,
 } from "@claxedo/agent-runtime-contract"
 import { foldUsageObservations, type RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
-import { type RuntimeGoalSnapshot, type SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"
+import { type RuntimeGoalSnapshot } from "@claxedo/agent-runtime-contract"
 import { base64UrlEncode } from "@claxedo/helpers/crypto"
 import { asRecord, isRecord, asNumber, asString } from "@claxedo/helpers/guards"
 import type { SqliteDatabase } from "./sqlite/database"
 import { openRuntimeStoreSchema } from "./store-schema"
 import type { SessionTurnOrigin } from "./session-access-policy"
-import { actorKind, nullable } from "./stored-columns"
+import { actorKind, nullable, readColumn } from "./stored-columns"
 import { STORED_SESSION_SELECT, type StoredSessionRow } from "./stored-session-row"
 import { listSubagentRows, persistSubagentEvent } from "./subagent-rows"
 import { observationStartsNewRun, recordSubagentRun, subagentRunRevision } from "./subagent-status"
@@ -99,7 +99,7 @@ export type Turn = {
   }
 }
 
-type TurnFinish = {
+export type TurnFinish = {
   type: "turn.finish"
   assistantMessageId: string
   outcome: AgentTurnOutcome
@@ -328,35 +328,6 @@ const MESSAGE_HYDRATION_BATCH_SIZE = 500
  */
 function envelopeRecord(value: object): Record<string, unknown> {
   return { ...value }
-}
-
-const readColumn = {
-  sessionCommands: (json: string): AgentSessionCommand[] => JSON.parse(json),
-  messageInfo: (json: string): AgentMessage["info"] => JSON.parse(json),
-  messageRecord: (json: string): Record<string, unknown> => JSON.parse(json),
-  messagePart: (json: string): AgentMessage["parts"][number] => JSON.parse(json),
-  partRecord: (json: string): Record<string, unknown> => JSON.parse(json),
-  /** `runtime_journal.payload_json` on a `kind='control'`, `type='turn.start'` row. */
-  turnStart: (json: string): Turn => JSON.parse(json),
-  /** `runtime_journal.payload_json` on a `kind='control'`, `type='turn.finish'` row. */
-  turnFinish: (json: string): TurnFinish => JSON.parse(json),
-  /** `runtime_journal.payload_json` on a `kind='event'` row: an engine envelope. */
-  eventPayload: (json: string): { properties?: Record<string, unknown> } => JSON.parse(json),
-  /** `runtime_journal.payload_json` on a `kind='event'`, `type='session.usage'` row. */
-  usagePayload: (json: string): Extract<AgentPresentationEvent, { type: "session.usage" }> => JSON.parse(json),
-  /** `pending_permission.patterns_json`. */
-  permissionPatterns: (json: string): string[] => JSON.parse(json),
-  /** `pending_permission.options_json`: absent is distinct from no offered options. */
-  permissionOptions: (json: string): NonNullable<AgentPermission["options"]> => JSON.parse(json),
-  /** `pending_permission.metadata_json`. */
-  permissionMetadata: (json: string): Record<string, unknown> => JSON.parse(json),
-  /**
-   * `pending_question.questions_json`, written by the `question.asked` handler
-   * straight from the event's own `properties.questions`.
-   */
-  questions: (json: string): AgentQuestion["questions"] => JSON.parse(json),
-  /** `session_subagent_observation.event_json`. */
-  subagentEvent: (json: string): SubagentUpdatedEvent => JSON.parse(json),
 }
 
 /**
