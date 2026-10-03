@@ -26,12 +26,12 @@ function isWake(value: unknown): value is SubagentWake {
   return typeof value === "string" && WAKES.has(value)
 }
 
-function isTranscriptKind(value: unknown): value is SubagentTranscript["kind"] {
+function isWireTranscriptKind(value: unknown): value is SubagentTranscript["kind"] {
   return typeof value === "string" && TRANSCRIPT_KINDS.has(value)
 }
 
 function transcriptFromWire(value: unknown): SubagentTranscript | undefined {
-  if (!isRecord(value) || !isTranscriptKind(value.kind)) return undefined
+  if (!isRecord(value) || !isWireTranscriptKind(value.kind)) return undefined
   return { kind: value.kind, ...(typeof value.ref === "string" ? { ref: value.ref } : {}) }
 }
 

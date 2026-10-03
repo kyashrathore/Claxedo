@@ -49,7 +49,7 @@ export function diffFilesFromWire(body: unknown): DiffFile[] {
   return body.flatMap((row) => diffFileFromWire(row) ?? [])
 }
 
-function strings(value: unknown): string[] {
+function stringMembers(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
 }
 
@@ -57,8 +57,8 @@ export function gitRefsFromWire(row: unknown): GitRefs {
   const record = isRecord(row) ? row : {}
   const recent = Array.isArray(record.recent) ? record.recent : []
   return {
-    branches: strings(record.branches),
-    tags: strings(record.tags),
+    branches: stringMembers(record.branches),
+    tags: stringMembers(record.tags),
     recent: recent.flatMap((entry) => (isRecord(entry) && typeof entry.hash === "string" && typeof entry.subject === "string" ? [{ hash: entry.hash, subject: entry.subject }] : [])),
   }
 }
@@ -67,7 +67,7 @@ export function gitBasesFromWire(body: unknown): GitBases {
   const row = isRecord(body) ? body : {}
   return {
     ...(typeof row.defaultRef === "string" ? { defaultRef: row.defaultRef } : {}),
-    candidates: strings(row.candidates),
+    candidates: stringMembers(row.candidates),
   }
 }
 
