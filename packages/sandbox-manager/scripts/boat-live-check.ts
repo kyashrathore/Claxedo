@@ -64,7 +64,7 @@ async function archived(id: string) {
 }
 
 async function containerFacts(id: string) {
-  const result = await client.command(id, { command: "docker ps -a --filter name=claxedo-runtime --format '{{.Status}}'; docker logs --tail 20 claxedo-runtime 2>&1" })
+  const result = await client.command(id, { command: "systemctl is-active docker; docker ps -a --filter name=claxedo-runtime --format '{{.Status}} created {{.CreatedAt}}'; docker logs --tail 20 claxedo-runtime 2>&1" })
   return result.stdout.split("\n").filter(Boolean)
 }
 
