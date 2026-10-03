@@ -584,6 +584,7 @@ test("the renderer-visible operation set stays pinned", async () => {
     "project.members.grant",
     "project.members.revoke",
     "session.activity.page",
+    "session.connection.mint",
     "session.connection.read",
     "session.gateway",
     "session.list",
