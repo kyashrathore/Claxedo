@@ -40,17 +40,10 @@ A `SandboxLease` (`src/index.ts`) is the manager's own persisted row shape:
 (`"acquiring" | "ready" | "unavailable" | "stopped" | "destroyed"`),
 `retryCount`, timestamps, and the resolved `sandboxId` / `url` / `hostId` /
 `driverResourceId` once ready. This is distinct from `SandboxLeaseRow`
-(`src/lease-types.ts`), a richer DB-shaped row (`snake_case`, extra states
-like `"unhealthy"` / `"backoff"` / `"stopping"`, acceleration fields) used by
-the standalone `lease-policy` decision functions described next — an
-application's own scheduler/cron can use `lease-policy` against its own
-row storage independently of (or alongside) `SandboxManager`.
+(`src/lease-types.ts`), the DB-shaped row (`snake_case`) a lease store
+persists.
 
-## Lease-policy: epoch and retry model
-
-Two retry/epoch mechanisms live in this package, at different layers.
-
-### Inside `SandboxManager`: epoch-guarded optimistic concurrency
+## Epoch and retry model
 
 Every `SandboxLease` carries an `epoch`, bumped by `leaseStore.acquire` each
 time a fresh placement is started. All mutations (`update`, `recordFailure`)
@@ -81,20 +74,6 @@ the existing target keeps resolving for routing while the error is recorded
 for observability only; only a cold acquire/`"acquiring"` failure bumps
 `retryCount` and schedules backoff.
 
-### Standalone: `src/lease-policy.ts` row-status decision functions
-
-`decideSandboxStart`, `decideSandboxHealthFailure`, `decideSandboxIdle`, and
-`nextSandboxRetryAt` are pure functions over a `SandboxLeaseRow` (the
-richer row shape above) and a driver's `SandboxDriverPlacement`
-capabilities (`sandboxDriverPlacement(driverId)`, from a table keyed by
-`SandboxDriverID`). They decide, given a row's status: resume the same
-resource, restore a filesystem snapshot, start from a prepared image, cold
-start, wait out a backoff timer, stop an idle sandbox, or mark the lease
-permanently failed after `config.maxRetries`. `DEFAULT_WORKSPACE_HOST_DECISION_CONFIG`
-is `{ maxRetries: 8, idleMs: 10 * 60_000, backoffMaxMs: 30_000, healthTimeoutMs: 60_000 }`.
-These are building blocks for a scheduler that owns its own row storage and
-health/idle polling loop; `SandboxManager` does not call them itself.
-
 ## Driver comparison
 
 All eight metadata fields come straight from each driver's `metadata` object
@@ -119,6 +98,8 @@ Column meanings:
   `stop(workspaceId, { runtime })` first captures the workspace: the capture
   commits the checkpoint and the stopped lease in one update, the runtime stays
   frozen, and only then does the host stop, for that lease generation only.
+  With `hostStopsItself` the caller is the host and stops itself; the answer's
+  `checkpoint` names the snapshot the stopped lease references, for it to keep.
 - **`hostResumeBehavior`** — whether a stopped/stale lease can resume the
   *same* driver-owned resource (`"same-host"`) or must always get a
   replacement (`"replacement-host"`, e.g. Modal/Vercel sandboxes are

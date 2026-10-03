@@ -109,8 +109,7 @@ function isCheckpointMetadata(value: unknown): value is CheckpointMetadata {
     isRecord(value) &&
     CAPTURE_SCOPES.some((scope) => scope === value.scope) &&
     CAPTURE_SOURCE_BEHAVIORS.some((behavior) => behavior === value.sourceBehavior) &&
-    RESTORE_MOUNTS.some((mount) => mount === value.restoreMount) &&
-    (value.retentionExpiresAt === undefined || typeof value.retentionExpiresAt === "number")
+    RESTORE_MOUNTS.some((mount) => mount === value.restoreMount)
   )
 }
 

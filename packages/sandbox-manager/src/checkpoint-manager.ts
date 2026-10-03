@@ -21,7 +21,6 @@ export type SandboxCheckpointRuntime = {
 export type SandboxCheckpointCaptureInput = {
   runtime: SandboxCheckpointRuntime
   policy?: "drain" | "interrupt"
-  retentionExpiresAt?: number
   /** Capture only a workspace that has had no work since this time; the runtime refuses the freeze otherwise. */
   idleBefore?: number
 }
@@ -31,6 +30,8 @@ export type SandboxStopInput = {
   runtime?: SandboxCheckpointRuntime
   idleBefore?: number
   expectedEpoch?: number
+  /** The caller is the host: it stops itself once the lease says stopped, so the manager stops no host. */
+  hostStopsItself?: boolean
 }
 
 export type SandboxCheckpointRestoreInput = {
@@ -48,7 +49,7 @@ export async function captureSandboxCheckpoint(input: {
   request: SandboxCheckpointCaptureInput
   leaseStore: SandboxLeaseStore
   target: (workspaceId: string) => Promise<SandboxTargetResult>
-  snapshot: (workspaceId: string) => Promise<SandboxSnapshotManagerResult>
+  snapshot: (workspaceId: string, committed?: string) => Promise<SandboxSnapshotManagerResult>
   deleteSnapshot?: (target: SandboxResource, snapshotId: string) => Promise<void>
   /** The capture ends this lease: its commit stops it, and the runtime stays frozen for the host stop that follows. */
   endsLease?: boolean
@@ -70,7 +71,7 @@ export async function captureSandboxCheckpoint(input: {
     await input.request.runtime.scrub()
     const captured = persistence.capture === "same-resource"
       ? { ok: true as const, snapshotId: target.driverResourceId ?? target.sandboxId }
-      : await input.snapshot(input.workspaceId)
+      : await input.snapshot(input.workspaceId, (await input.leaseStore.get(input.workspaceId))?.checkpoint?.providerReference)
     if (!captured.ok) throw publicApiFailure("workspace_checkpoint_conflict", captured.reason)
     capturedSource = true
     const capturedAt = (input.now ?? Date.now)()
@@ -82,12 +83,10 @@ export async function captureSandboxCheckpoint(input: {
       metadata: {
         scope: persistence.capture,
         sourceBehavior: requireCaptureSource(persistence.captureSource),
-        ...(input.request.retentionExpiresAt === undefined
-          ? {}
-          : { retentionExpiresAt: input.request.retentionExpiresAt }),
         restoreMount: requireRestoreMount(persistence.restoreMount),
       },
     }
+    const replaced = (await input.leaseStore.get(input.workspaceId))?.checkpoint
     const updated = await input.leaseStore.update(input.workspaceId, lease.epoch, {
       checkpoint,
       restore: null,
@@ -101,8 +100,8 @@ export async function captureSandboxCheckpoint(input: {
     }
     committed = true
     // A lease references one checkpoint, so the one it replaced is no longer restorable from anywhere.
-    if (lease.checkpoint && lease.checkpoint.providerReference !== captured.snapshotId) {
-      await discardSnapshot(discard, target, lease.checkpoint.providerReference)
+    if (replaced && replaced.providerReference !== captured.snapshotId) {
+      await discardSnapshot(discard, target, replaced.providerReference)
     }
     return { status: "ready", lease: updated, checkpoint }
   } finally {

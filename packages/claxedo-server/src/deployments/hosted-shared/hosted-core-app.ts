@@ -538,12 +538,12 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       adminToken: plane.env.CLAXEDO_RUNTIME_ADMIN_TOKEN,
       sandboxManager: services.sandbox.sandboxManager,
       telemetry: services.telemetry,
-      sandboxWorkerToken: plane.env.CLOUDFLARE_SANDBOX_API_TOKEN,
+      idleStopToken: plane.env.CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN,
       idleStop: async (workspaceId, epoch, idleBefore) => {
         const owner = await services.authority?.resolveWorkspaceOwner?.(workspaceId)
         if (!owner) return { ok: false, reason: "workspace_owner_unavailable" }
         return await workspaceCheckpointService(undefined, "owner", owner.orgId, services, { defaultHomeRegion: services.defaultHomeRegion })
-          .stop(workspaceId, { expectedEpoch: epoch, idleBefore })
+          .stop(workspaceId, { expectedEpoch: epoch, idleBefore, hostStopsItself: true })
       },
     }),
   )

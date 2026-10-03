@@ -34,6 +34,12 @@ export function directoryRestore(input: unknown): DirectoryBackup[] | undefined 
   return directories.map((dir, index) => ({ id: ids[index], dir }))
 }
 
+/** The pending backup ids a lease did not commit: nothing will ever reference or delete them. */
+export function uncommittedBackups(pending: readonly string[], committed: string | undefined) {
+  const kept = new Set(backupIds(committed) ?? [])
+  return pending.filter((id) => !kept.has(id))
+}
+
 /** @cloudflare/sandbox 0.12.9 stores a backup as `backups/<id>/data.sqsh` plus `meta.json` and never deletes either. */
 export async function deleteBackups(bucket: BackupBucket, ids: readonly string[]) {
   await Promise.all(ids.flatMap((id) => [`backups/${id}/data.sqsh`, `backups/${id}/meta.json`].map((key) => bucket.delete(key))))

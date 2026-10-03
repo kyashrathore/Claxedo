@@ -4,6 +4,7 @@ import type {
   SandboxCheckpointRestoreInput,
   SandboxCheckpointRuntime,
   SandboxManager,
+  SandboxStopInput,
 } from "@claxedo/sandbox-manager"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 
@@ -79,7 +80,7 @@ export function createWorkspaceCheckpointService(input: {
       })
     },
     /** Captures and stops a running workspace; the runtime it controls must already run, so it is reached without waking it. */
-    stop(workspaceId: string, request: { idleBefore?: number; expectedEpoch?: number } = {}) {
+    stop(workspaceId: string, request: Omit<SandboxStopInput, "runtime"> = {}) {
       return input.sandboxManager.stop(workspaceId, {
         ...request,
         runtime: runtime(workspaceId, input.inspectRuntimeRequest ?? input.runtimeRequest),

@@ -303,8 +303,8 @@ describe("CloudflareSandboxDriver", () => {
   test("stop names the lease generation it stops, and an unconfirmed stop is a failure", async () => {
     const { calls, fetch } = harness((call) => ({ status: 200, json: call.body.epoch === 7 ? { ok: true } : { ok: false } }))
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
-    await driver.stop!({ sandboxId: "claxedo-ws_1", url: "https://r/", hostId: "claxedo-ws_1", epoch: 7 })
-    expect(calls[0]).toMatchObject({ url: "https://sbx.example.com/sandbox/claxedo-ws_1/stop", body: { epoch: 7 } })
+    await driver.stop!({ sandboxId: "claxedo-ws_1", url: "https://r/", hostId: "claxedo-ws_1", epoch: 7, checkpoint: "a,b" })
+    expect(calls[0]).toMatchObject({ url: "https://sbx.example.com/sandbox/claxedo-ws_1/stop", body: { epoch: 7, committed: "a,b" } })
     await expect(driver.stop!({ sandboxId: "claxedo-ws_1", url: "https://r/", hostId: "claxedo-ws_1", epoch: 6 })).rejects.toThrow(/stop failed/)
   })
 
@@ -379,10 +379,11 @@ describe("CloudflareSandboxDriver", () => {
     const target = await driver.ensureHost({ ...createInput, workspaceRoot: "/repo" })
     if ("provisioning" in target) throw new Error("unexpected provisioning")
 
-    await driver.snapshot!(target)
+    await driver.snapshot!(target, "a,b")
 
     expect(calls.find((call) => call.url.endsWith("/backup"))?.body).toEqual({
       directories: ["/repo", "/home/claxedo"],
+      committed: "a,b",
     })
   })
 })

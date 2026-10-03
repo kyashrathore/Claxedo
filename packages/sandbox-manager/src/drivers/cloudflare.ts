@@ -400,7 +400,7 @@ export function createCloudflareSandboxDriver(
     },
 
     async stop(target) {
-      const { status, data } = await call(target.sandboxId, "stop", { epoch: target.epoch })
+      const { status, data } = await call(target.sandboxId, "stop", { epoch: target.epoch, ...(target.checkpoint ? { committed: target.checkpoint } : {}) })
       if (status >= 400 || data.ok !== true) {
         throw new Error(`Cloudflare stop failed (${status}) for ${target.sandboxId}: ${text(data.error) ?? "not stopped"}`)
       }
@@ -413,12 +413,12 @@ export function createCloudflareSandboxDriver(
       }
     },
 
-    async snapshot(target) {
+    async snapshot(target, committed) {
       const directory = target.labels?.[WORKSPACE_DIRECTORY_LABEL] ?? workspaceDir
       const { status, data } = await call(
         target.sandboxId,
         "backup",
-        { directories: captureDirectories(directory) },
+        { directories: captureDirectories(directory), ...(committed ? { committed } : {}) },
       )
       const backupId = text(data.backupId)
       if (status >= 400 || !backupId) {

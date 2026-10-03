@@ -130,6 +130,7 @@ describe("user-deployed Cloudflare configuration", () => {
     })
     expect(deployment.requiredSecrets).toContain("CLAXEDO_CREDENTIALS_KEK")
     expect(deployment.requiredSecrets).toContain("CLOUDFLARE_SANDBOX_API_TOKEN")
+    expect(deployment.requiredSecrets).toContain("CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN")
     expect(() =>
       userCloudflareDeployment(
         { ...env, CLAXEDO_SANDBOX_POSTURE: "full-hosted", CLAXEDO_SANDBOX_DRIVER: "cloudflare" },

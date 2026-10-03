@@ -16,8 +16,8 @@ import { RUNTIME_PREPARATION_DEADLINE_MS, WORKSPACE_RUNTIME_BOOT_FAILED } from "
 import { credentialPlaceholder, forwardCredential, parseRegistrations, type EgressRegistration } from "./outbound-credentials"
 import { safeRuntimeLog } from "./runtime-log"
 import { asWorkerRecord, stringMap } from "./worker-json"
-import { backupIds, captureDirectories, deleteBackups, directoryRestore, type DirectoryBackup } from "./directory-backups"
-import { IDLE_CHECK, IDLE_CHECK_SECONDS, requestIdleStop, workspaceIdlePlacement, type IdleEnv, type WorkspaceIdle } from "./workspace-idle"
+import { backupIds, captureDirectories, deleteBackups, directoryRestore, uncommittedBackups, type DirectoryBackup } from "./directory-backups"
+import { IDLE_CHECK, IDLE_CHECK_FAILURE_LIMIT, IDLE_CHECK_SECONDS, requestIdleStop, workspaceIdlePlacement, type IdleEnv, type WorkspaceIdle } from "./workspace-idle"
 
 /** What a sandbox's credential hosts are intercepted with, from `ctx.exports` (`enable_ctx_exports`). */
 export class CredentialEgress extends WorkerEntrypoint<Env, { sandboxId: string }> {
@@ -34,6 +34,9 @@ export class CredentialEgress extends WorkerEntrypoint<Env, { sandboxId: string 
 const CREDENTIAL_HOSTS_KEY = "claxedo.credential-hosts"
 const RUNTIME_READY_KEY = "claxedo.runtime-ready"
 const WORKSPACE_IDLE_KEY = "claxedo.workspace-idle"
+const PENDING_BACKUPS_KEY = "claxedo.pending-backups"
+// Rebuildable state under HOME that would lengthen every capture's freeze.
+const HOME_CACHE_EXCLUDES = [".cache", ".npm/_cacache", ".bun/install/cache"]
 // The SDK refuses to restore a backup past its TTL. A checkpoint's backups are
 // deleted when a newer checkpoint commits or the workspace is destroyed, so the
 // TTL only has to outlive the longest a workspace may sleep.
@@ -55,11 +58,11 @@ export class Sandbox extends CloudflareSandbox {
   interceptHttps = true
 
   private workspaceRuntimeEnsure?: Promise<RuntimeEnsure>
-  private readonly idleEnv: IdleEnv
+  private readonly workerEnv: Env
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
-    this.idleEnv = env
+    this.workerEnv = env
     // An interception belongs to the running container, and the platform
     // offers no removal, so only a restarted object re-installs it.
     void ctx.blockConcurrencyWhile(async () => {
@@ -139,6 +142,7 @@ export class Sandbox extends CloudflareSandbox {
     await this.schedule(IDLE_CHECK_SECONDS, IDLE_CHECK)
   }
 
+  /** Once the control plane has stopped the lease, this object stops its own container rather than waiting to be told. */
   async checkWorkspaceIdle() {
     const idle = await this.ctx.storage.get<WorkspaceIdle>(WORKSPACE_IDLE_KEY)
     if (!idle || !this.ctx.container?.running) return
@@ -146,21 +150,78 @@ export class Sandbox extends CloudflareSandbox {
       const health = await this.containerFetch(new Request("http://runtime/api/wr/health", {
         headers: { authorization: `Bearer ${idle.healthToken}` },
       }), idle.port)
-      if (await requestIdleStop(idle, health, this.idleEnv)) return
+      const stopped = await requestIdleStop(idle, health, this.workerEnv)
+      if (stopped) {
+        await this.stopWorkspace(idle.epoch, stopped.checkpoint)
+        return
+      }
+      if (idle.failures) await this.ctx.storage.put(WORKSPACE_IDLE_KEY, { ...idle, failures: 0 })
     } catch (error) {
-      console.error("workspace idle stop failed", { workspaceId: idle.workspaceId, epoch: idle.epoch, error: String(error) })
+      const failures = (idle.failures ?? 0) + 1
+      console.error("workspace idle stop failed", { workspaceId: idle.workspaceId, epoch: idle.epoch, failures, error: String(error) })
+      await this.ctx.storage.put(WORKSPACE_IDLE_KEY, { ...idle, failures })
+      if (failures >= IDLE_CHECK_FAILURE_LIMIT) {
+        await this.setKeepAlive(false)
+        return
+      }
     }
     await this.schedule(IDLE_CHECK_SECONDS, IDLE_CHECK)
   }
 
-  /** Stops the container for lease generation `epoch`; a generation that already took the sandbox over keeps it. */
-  async stopWorkspace(epoch: number) {
+  /**
+   * Stops the container for lease generation `epoch`; a generation that already
+   * took the sandbox over keeps it. Backups this object made that the lease did
+   * not commit (`committed`) are deleted first.
+   */
+  async stopWorkspace(epoch: number, committed?: string) {
     const idle = await this.ctx.storage.get<WorkspaceIdle>(WORKSPACE_IDLE_KEY)
     if (idle && idle.epoch !== epoch) return false
+    await this.settleBackups(committed)
     this.deleteSchedules(IDLE_CHECK)
     await this.setKeepAlive(false)
     await this.stop()
     return true
+  }
+
+  /**
+   * Backs up each directory and records every id as soon as it exists, so a
+   * capture whose caller gave up is still found: the next capture or stop
+   * deletes whatever the lease did not commit.
+   */
+  async captureBackups(directories: readonly string[], committed: string | undefined) {
+    const bucket = this.backupBucket()
+    await this.settleBackups(committed)
+    const ids: string[] = []
+    try {
+      for (const dir of directories) {
+        const excludes = dir.startsWith("/home/") ? { excludes: HOME_CACHE_EXCLUDES } : {}
+        ids.push((await this.createBackup({ dir, ttl: BACKUP_TTL_SECONDS, ...excludes })).id)
+        await this.ctx.storage.put(PENDING_BACKUPS_KEY, ids)
+      }
+    } catch (error) {
+      await deleteBackups(bucket, ids)
+      await this.ctx.storage.delete(PENDING_BACKUPS_KEY)
+      throw error
+    }
+    return ids.join(",")
+  }
+
+  async deleteCheckpointBackups(ids: readonly string[]) {
+    await deleteBackups(this.backupBucket(), ids)
+    const pending = await this.ctx.storage.get<string[]>(PENDING_BACKUPS_KEY) ?? []
+    await this.ctx.storage.put(PENDING_BACKUPS_KEY, pending.filter((id) => !ids.includes(id)))
+  }
+
+  private async settleBackups(committed: string | undefined) {
+    const pending = await this.ctx.storage.get<string[]>(PENDING_BACKUPS_KEY) ?? []
+    if (pending.length === 0) return
+    await deleteBackups(this.backupBucket(), uncommittedBackups(pending, committed))
+    await this.ctx.storage.delete(PENDING_BACKUPS_KEY)
+  }
+
+  private backupBucket() {
+    if (!this.workerEnv.BACKUP_BUCKET) throw new Error("backups require the BACKUP_BUCKET binding")
+    return this.workerEnv.BACKUP_BUCKET
   }
 
   async runtimeWasReady(process: SandboxProcess) {
@@ -204,6 +265,7 @@ interface RegistryR2 {
 
 interface Env extends IdleEnv {
   Sandbox: any
+  API_TOKEN: string
   /** KV namespace holding brokered secrets keyed by sandbox id, out of the container. */
   EGRESS_SECRETS?: EgressKV
   /**
@@ -655,7 +717,7 @@ export default {
 
         case "stop": {
           if (typeof body.epoch !== "number" || !Number.isSafeInteger(body.epoch)) return json({ error: "stop requires the lease epoch" }, 400)
-          const stopped: boolean = await sandbox.stopWorkspace(body.epoch)
+          const stopped: boolean = await sandbox.stopWorkspace(body.epoch, typeof body.committed === "string" ? body.committed : undefined)
           return stopped ? json({ ok: true }) : json({ ok: false, error: "a newer lease generation runs this sandbox" }, 409)
         }
 
@@ -663,21 +725,15 @@ export default {
           const directories = captureDirectories(body.directories)
           if (!directories) return json({ error: "backup requires distinct absolute directories, none inside another" }, 400)
           if (!env.BACKUP_BUCKET) return json({ error: "backup requires the BACKUP_BUCKET binding" }, 503)
-          const ids: string[] = []
-          try {
-            for (const dir of directories) ids.push((await sandbox.createBackup({ dir, ttl: BACKUP_TTL_SECONDS })).id)
-          } catch (error) {
-            await deleteBackups(env.BACKUP_BUCKET, ids)
-            throw error
-          }
-          return json({ backupId: ids.join(",") })
+          const backupId: string = await sandbox.captureBackups(directories, typeof body.committed === "string" ? body.committed : undefined)
+          return json({ backupId })
         }
 
         case "delete-backup": {
           const ids = backupIds(body.backupId)
           if (!ids) return json({ error: "delete-backup requires the checkpoint's backup ids" }, 400)
           if (!env.BACKUP_BUCKET) return json({ error: "delete-backup requires the BACKUP_BUCKET binding" }, 503)
-          await deleteBackups(env.BACKUP_BUCKET, ids)
+          await sandbox.deleteCheckpointBackups(ids)
           return json({ ok: true })
         }
 

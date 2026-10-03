@@ -403,7 +403,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       request,
       leaseStore: options.leaseStore,
       target: (id) => manager.target(id),
-      snapshot: (id) => manager.snapshot(id),
+      snapshot: (id, committed) => manager.snapshot(id, committed),
       ...(options.driver.deleteSnapshot ? { deleteSnapshot: options.driver.deleteSnapshot } : {}),
       endsLease,
       now,
@@ -538,11 +538,11 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       await options.driver.touch?.(target)
       return { touched: true, status: "ready" }
     },
-    async snapshot(workspaceId) {
+    async snapshot(workspaceId, committed) {
       const target = await this.target(workspaceId)
       if (target.status !== "ready") return { ok: false, reason: target.reason }
       if (!options.driver.snapshot) return { ok: false, reason: "snapshot_unsupported" }
-      return { ok: true, ...(await options.driver.snapshot(target)) }
+      return { ok: true, ...(await options.driver.snapshot(target, committed)) }
     },
     async checkpoint(workspaceId, input) {
       return await checkpointLifecycle(workspaceId, "checkpoint", () => capture(this, workspaceId, input))
@@ -557,23 +557,27 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       }))
     },
     async stop(workspaceId, input = {}) {
-      return await mutationLifecycle(workspaceId, "stop", async () => {
+      return await mutationLifecycle(workspaceId, "stop", async (): Promise<SandboxMutationResult> => {
         const lease = await options.leaseStore.get(workspaceId)
-        if (input.expectedEpoch !== undefined && lease?.epoch !== input.expectedEpoch) return { ok: false as const, reason: "runtime_lease_changed" }
-        if (lease?.status === "stopped") return { ok: true as const, status: "stopped" as const }
+        if (input.expectedEpoch !== undefined && lease?.epoch !== input.expectedEpoch) return { ok: false, reason: "runtime_lease_changed" }
+        const stopped = (checkpoint: string | undefined) => ({ ok: true as const, status: "stopped" as const, ...(checkpoint ? { checkpoint } : {}) })
+        if (lease?.status === "stopped") return stopped(lease.checkpoint?.providerReference)
         const target = await this.target(workspaceId)
-        if (target.status !== "ready") return { ok: false as const, reason: target.reason }
+        if (target.status !== "ready") return { ok: false, reason: target.reason }
+        const stopHost = input.hostStopsItself ? undefined : options.driver.suspend ?? options.driver.stop
         const persistence = lease?.persistence
         if (input.runtime && persistence && persistence.capture !== "none") {
           // The commit stops the lease before the host stops, so a send from here on wakes a restore of this capture.
-          await capture(this, workspaceId, { runtime: input.runtime, policy: "drain", idleBefore: input.idleBefore }, true)
-          if (persistence.captureSource === "preserved") await (options.driver.suspend ?? options.driver.stop)?.(target)
-          return { ok: true as const, status: "stopped" as const }
+          const captured = await capture(this, workspaceId, { runtime: input.runtime, policy: "drain", idleBefore: input.idleBefore }, true)
+          const checkpoint = captured.checkpoint.providerReference
+          if (persistence.captureSource === "preserved") await stopHost?.({ ...target, checkpoint })
+          return stopped(checkpoint)
         }
-        await (options.driver.suspend ?? options.driver.stop)?.(target)
+        const checkpoint = lease?.checkpoint?.providerReference
+        await stopHost?.({ ...target, ...(checkpoint ? { checkpoint } : {}) })
         const updated = await options.leaseStore.update(workspaceId, target.epoch, { status: "stopped" })
-        if (!updated) return { ok: false as const, reason: "runtime_lease_changed" }
-        return { ok: true as const, status: "stopped" as const }
+        if (!updated) return { ok: false, reason: "runtime_lease_changed" }
+        return stopped(checkpoint)
       })
     },
     async destroy(workspaceId) {

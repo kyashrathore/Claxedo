@@ -11,8 +11,8 @@ export type HostedSandboxAdminOptions = {
   adminToken?: string
   sandboxManager?: SandboxManager
   telemetry?: ControlPlaneTelemetry
-  /** The sandbox Worker's API token, which the Worker presents back when its idle check asks for a stop. */
-  sandboxWorkerToken?: string
+  /** The secret the sandbox Worker and this plane share for the idle stop alone. */
+  idleStopToken?: string
   idleStop?: (workspaceId: string, epoch: number, idleBefore: number) => Promise<SandboxMutationResult>
 }
 
@@ -29,8 +29,8 @@ export function HostedSandboxAdminRoutes(options: HostedSandboxAdminOptions = {}
   const app = new Hono()
 
   app.post("/internal/sandbox/idle-stop", async (c) => {
-    if (!internalAdminAuthorized(c.req.raw, trimToUndefined(options.sandboxWorkerToken))) {
-      return c.json(errorBody("sandbox_worker_unauthorized", "Idle stop requires the sandbox Worker's bearer token"), 401)
+    if (!internalAdminAuthorized(c.req.raw, trimToUndefined(options.idleStopToken))) {
+      return c.json(errorBody("sandbox_idle_stop_unauthorized", "Idle stop requires the idle-stop bearer token"), 401)
     }
     const body = await readJsonRecord(c.req.raw)
     const workspaceId = trimToUndefined(stringField(body, "workspaceId"))

@@ -55,14 +55,9 @@ export function WorkspaceCheckpointRoutes(
       if (body.policy !== undefined && body.policy !== "drain" && body.policy !== "interrupt") {
         return c.json({ error: { code: "workspace_checkpoint_policy_invalid", message: "policy must be drain or interrupt" } }, 400)
       }
-      if (body.retentionExpiresAt !== undefined && !Number.isSafeInteger(body.retentionExpiresAt)) {
-        return c.json({ error: { code: "workspace_checkpoint_retention_invalid", message: "retentionExpiresAt must be an integer" } }, 400)
-      }
       try {
-        const result = await workspaceCheckpointService(access.auth, access.role, access.orgId, services!, options).capture(c.req.param("id"), {
-          ...(body.policy ? { policy: body.policy } : {}),
-          ...(typeof body.retentionExpiresAt === "number" ? { retentionExpiresAt: body.retentionExpiresAt } : {}),
-        })
+        const result = await workspaceCheckpointService(access.auth, access.role, access.orgId, services!, options)
+          .capture(c.req.param("id"), body.policy ? { policy: body.policy } : {})
         return c.json(result, 201)
       } catch (error) {
         return lifecycleError(c, error)

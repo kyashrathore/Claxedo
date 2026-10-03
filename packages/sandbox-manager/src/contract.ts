@@ -53,7 +53,6 @@ export type SandboxCheckpointReference = {
   metadata: {
     scope: Exclude<SandboxCaptureScope, "none">
     sourceBehavior: Exclude<SandboxCaptureSourceBehavior, "not-applicable">
-    retentionExpiresAt?: number
     restoreMount: Exclude<SandboxRestoreMountBehavior, "not-applicable">
   }
 }
@@ -522,10 +521,14 @@ export type SandboxDriver = {
   list?: () => Promise<SandboxTarget[]>
   touch?: (target: SandboxTarget) => Promise<void>
   suspend?: (target: SandboxTarget) => Promise<void>
-  /** Stops the host; given `epoch`, a host that a newer lease generation already took over keeps running. */
-  stop?: (target: SandboxTarget & { epoch?: number }) => Promise<void>
+  /**
+   * Stops the host; given `epoch`, a host that a newer lease generation already
+   * took over keeps running. `checkpoint` names the snapshot the lease references.
+   */
+  stop?: (target: SandboxTarget & { epoch?: number; checkpoint?: string }) => Promise<void>
   destroy?: (target: SandboxResource) => Promise<void>
-  snapshot?: (target: SandboxTarget) => Promise<SandboxSnapshotResult>
+  /** `committed` names the snapshot the lease references now; a driver tracking uncommitted snapshots drops the rest. */
+  snapshot?: (target: SandboxTarget, committed?: string) => Promise<SandboxSnapshotResult>
   /** Deletes a snapshot `snapshot` returned; implemented by drivers whose snapshots outlive their sandbox. */
   deleteSnapshot?: (target: SandboxResource, snapshotId: string) => Promise<void>
   inspect?: (target: SandboxTarget) => Promise<SandboxTarget | undefined>
@@ -539,7 +542,7 @@ export type SandboxManager = {
   heartbeat: (workspaceId: string, input: SandboxRuntimeSnapshotInput) => Promise<SandboxMutationResult>
   target: (workspaceId: string) => Promise<SandboxTargetResult>
   touch: (workspaceId: string) => Promise<SandboxTouchResult>
-  snapshot: (workspaceId: string) => Promise<SandboxSnapshotManagerResult>
+  snapshot: (workspaceId: string, committed?: string) => Promise<SandboxSnapshotManagerResult>
   checkpoint: (workspaceId: string, input: SandboxCheckpointCaptureInput) => Promise<SandboxCheckpointResult>
   restore: (workspaceId: string, input: SandboxCheckpointRestoreInput) => Promise<SandboxCheckpointResult>
   stop: (workspaceId: string, input?: SandboxStopInput) => Promise<SandboxMutationResult>
@@ -633,7 +636,8 @@ export type SandboxTargetResult =
     }
 
 export type SandboxTouchResult = { touched: boolean; status: SandboxLeaseStatus | "missing" }
-export type SandboxMutationResult = { ok: true; status: SandboxLeaseStatus } | { ok: false; reason: string }
+/** A stop's answer names the snapshot the stopped lease references (`checkpoint`), so a host that stops itself keeps it. */
+export type SandboxMutationResult = { ok: true; status: SandboxLeaseStatus; checkpoint?: string } | { ok: false; reason: string }
 export type SandboxSnapshotManagerResult =
   | ({ ok: true } & SandboxSnapshotResult)
   | { ok: false; reason: string }

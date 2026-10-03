@@ -23,6 +23,7 @@ declare module "@cloudflare/sandbox" {
     }): Promise<SandboxProcess>
     cleanupCompletedProcesses(): Promise<number>
     restoreBackup(backup: { id: string; dir: string }): Promise<unknown>
+    createBackup(options: { dir: string; ttl: number; excludes?: string[] }): Promise<{ id: string; dir: string }>
   }
 
   /** The container lifecycle a subclass extends; both start paths run before the container starts. */

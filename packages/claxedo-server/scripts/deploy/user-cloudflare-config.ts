@@ -16,7 +16,7 @@ export type SandboxDriver = "cloudflare" | "fetch"
 
 /** The Worker secret each full-hosted driver needs. */
 const SANDBOX_DRIVER_SECRETS: Readonly<Record<SandboxDriver, readonly string[]>> = Object.freeze({
-  cloudflare: ["CLOUDFLARE_SANDBOX_API_TOKEN"],
+  cloudflare: ["CLOUDFLARE_SANDBOX_API_TOKEN", "CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN"],
   fetch: [],
 })
 

@@ -18,9 +18,10 @@ const sandboxStub = {
   workspaceRuntimeReady: vi.fn(async () => true),
   configureWorkspaceIdle: vi.fn(async (_idle: { workspaceId: string; epoch: number; port: number; idleMs: number }) => "health-token"),
   watchWorkspaceIdle: vi.fn(async () => {}),
-  stopWorkspace: vi.fn(async (epoch: number) => epoch === 1),
+  stopWorkspace: vi.fn(async (epoch: number, _committed?: string) => epoch === 1),
+  captureBackups: vi.fn(async (_directories: readonly string[], _committed?: string) => `${backupIdFor("/workspace")},${backupIdFor("/home")}`),
+  deleteCheckpointBackups: vi.fn(async (_ids: readonly string[]) => {}),
   destroy: vi.fn(async () => {}),
-  createBackup: vi.fn(async (options: { dir: string; ttl: number }) => ({ id: backupIdFor(options.dir), dir: options.dir })),
   restoreBackup: vi.fn(async () => {}),
   containerFetch: vi.fn(async () => new Response("ok")),
   wsConnect: vi.fn(async (_request: Request, _port: number) => new Response("ok")),
@@ -77,7 +78,7 @@ function fakeR2(seed: Array<[string, Metadata]> = []) {
 }
 
 function env(overrides: Record<string, unknown> = {}) {
-  return { Sandbox: {}, API_TOKEN: "tok", CONTROL_PLANE_URL: "https://control.test", BACKUP_BUCKET: fakeR2(), ...overrides } as never
+  return { Sandbox: {}, API_TOKEN: "tok", CONTROL_PLANE_URL: "https://control.test", IDLE_STOP_TOKEN: "idle-token", BACKUP_BUCKET: fakeR2(), ...overrides } as never
 }
 
 function call(path: string, workerEnv: never, init: RequestInit = {}) {
@@ -685,81 +686,75 @@ describe("workspace idle lifecycle and checkpoints", () => {
     expect((await call("/sandbox/claxedo-ws_9/ensure-runtime", env(), { method: "POST", body: body(WORKSPACE) })).status).toBe(400)
   })
 
-  test("a backup captures each directory with the checkpoint TTL, and a partial capture leaves no backup behind", async () => {
-    sandboxStub.createBackup.mockClear()
-    const bucket = fakeR2()
-    const backup = () => call("/sandbox/claxedo-ws_9/backup", env({ BACKUP_BUCKET: bucket }), {
-      method: "POST", body: JSON.stringify({ directories: ["/workspace", "/home/claxedo"] }),
-    })
-    expect(await (await backup()).json()).toEqual({ backupId: `${WORKSPACE},${HOME}` })
-    expect(sandboxStub.createBackup.mock.calls.map(([options]) => options)).toEqual([
-      { dir: "/workspace", ttl: 315_360_000 },
-      { dir: "/home/claxedo", ttl: 315_360_000 },
-    ])
-    bucket.store.set(`backups/${WORKSPACE}/data.sqsh`, {})
-    bucket.store.set(`backups/${WORKSPACE}/meta.json`, {})
-    sandboxStub.createBackup.mockImplementationOnce(async (options) => ({ id: backupIdFor(options.dir), dir: options.dir }))
-    sandboxStub.createBackup.mockRejectedValueOnce(new Error("upload failed"))
-    expect((await backup()).status).toBe(500)
-    expect([...bucket.store.keys()]).toEqual([])
+  test("backup, delete-backup and stop hand the committed checkpoint to the sandbox, which owns every backup it made", async () => {
+    sandboxStub.captureBackups.mockClear()
+    sandboxStub.deleteCheckpointBackups.mockClear()
+    sandboxStub.stopWorkspace.mockClear()
+    const post = (action: string, body: unknown) => call(`/sandbox/claxedo-ws_9/${action}`, env(), { method: "POST", body: JSON.stringify(body) })
+    expect(await (await post("backup", { directories: ["/workspace", "/home/claxedo"], committed: WORKSPACE })).json()).toEqual({ backupId: `${WORKSPACE},${HOME}` })
+    expect(sandboxStub.captureBackups).toHaveBeenCalledWith(["/workspace", "/home/claxedo"], WORKSPACE)
+    expect((await post("delete-backup", { backupId: WORKSPACE })).status).toBe(200)
+    expect((await post("delete-backup", { backupId: "../sandbox-registry/claxedo-ws_9" })).status).toBe(400)
+    expect(sandboxStub.deleteCheckpointBackups.mock.calls).toEqual([[[WORKSPACE]]])
+    expect((await post("stop", { epoch: 1, committed: HOME })).status).toBe(200)
+    expect(sandboxStub.stopWorkspace).toHaveBeenCalledWith(1, HOME)
+    expect((await post("stop", { epoch: 0 })).status).toBe(409)
+    expect((await post("stop", {})).status).toBe(400)
   })
 
-  test("delete-backup removes a superseded checkpoint's objects and refuses anything that is not a backup id", async () => {
-    const bucket = fakeR2([[`backups/${WORKSPACE}/data.sqsh`, {}], [`backups/${WORKSPACE}/meta.json`, {}], ["sandbox-registry/claxedo-ws_9", {}]])
-    const remove = (backupId: string) => call("/sandbox/claxedo-ws_9/delete-backup", env({ BACKUP_BUCKET: bucket }), { method: "POST", body: JSON.stringify({ backupId }) })
-    expect((await remove(WORKSPACE)).status).toBe(200)
-    expect((await remove("../sandbox-registry/claxedo-ws_9")).status).toBe(400)
-    expect([...bucket.store.keys()]).toEqual(["sandbox-registry/claxedo-ws_9"])
-  })
-
-  test("stop is fenced to the lease generation that asked for it", async () => {
-    const stop = (body: unknown) => call("/sandbox/claxedo-ws_9/stop", env(), { method: "POST", body: JSON.stringify(body) })
-    expect((await stop({ epoch: 1 })).status).toBe(200)
-    expect((await stop({ epoch: 0 })).status).toBe(409)
-    expect((await stop({})).status).toBe(400)
-  })
-
-  function idleObject(running: boolean, idleSince: number | undefined) {
+  function idleObject(running: boolean, health: Record<string, number>, bucket = fakeR2()) {
     const stored = new Map<string, unknown>()
     const calls: string[] = []
     const ctx = {
       container: { running, interceptOutboundHttps: async () => {} },
-      storage: { get: async (key: string) => stored.get(key), put: async (key: string, value: unknown) => { stored.set(key, value) } },
+      storage: {
+        get: async (key: string) => stored.get(key),
+        put: async (key: string, value: unknown) => { stored.set(key, value) },
+        delete: async (key: string) => { stored.delete(key) },
+      },
       exports: { CredentialEgress: (options: unknown) => options },
       blockConcurrencyWhile: async (callback: () => Promise<unknown>) => callback(),
     }
-    const sandbox = Object.assign(new Sandbox(ctx as never, { API_TOKEN: "worker-token", CONTROL_PLANE_URL: "https://control.test" } as never), {
+    const workerEnv = { IDLE_STOP_TOKEN: "idle-token", CONTROL_PLANE_URL: "https://control.test", BACKUP_BUCKET: bucket }
+    const sandbox = Object.assign(new Sandbox(ctx as never, workerEnv as never), {
       setKeepAlive: vi.fn(async (value: boolean) => { calls.push(`keepAlive:${value}`) }),
       schedule: vi.fn(async (seconds: number, callback: string) => { calls.push(`schedule:${seconds}:${callback}`) }),
       deleteSchedules: vi.fn((callback: string) => { calls.push(`unschedule:${callback}`) }),
       stop: vi.fn(async () => { calls.push("stop") }),
+      createBackup: vi.fn(async (options: { dir: string; excludes?: string[] }) => {
+        calls.push(`backup:${options.dir}:${options.excludes?.join("|") ?? ""}`)
+        if (options.dir === "/fails") throw new Error("upload failed")
+        return { id: backupIdFor(options.dir), dir: options.dir }
+      }),
       containerFetch: vi.fn(async (request: Request) => {
         calls.push(`probe:${request.headers.get("authorization")}`)
-        return Response.json({ workspaceId: "ws_9", ...(idleSince === undefined ? {} : { idleSince }) })
+        return Response.json({ workspaceId: "ws_9", ...health })
       }),
     })
-    return { sandbox, calls }
+    return { sandbox, calls, bucket }
   }
+  const placement = { workspaceId: "ws_9", epoch: 4, port: 2593, idleMs: 600_000 }
+  const backupObjects = (id: string): Array<[string, Record<string, string>]> => [[`backups/${id}/data.sqsh`, {}], [`backups/${id}/meta.json`, {}]]
 
   test("an idle check probes the runtime with its own token, and a busy runtime is checked again", async () => {
-    const { sandbox, calls } = idleObject(true, undefined)
-    const token = await sandbox.configureWorkspaceIdle({ workspaceId: "ws_9", epoch: 4, port: 2593, idleMs: 600_000 })
+    const { sandbox, calls } = idleObject(true, {})
+    const token = await sandbox.configureWorkspaceIdle(placement)
     await sandbox.watchWorkspaceIdle()
     await sandbox.checkWorkspaceIdle()
     expect(calls).toEqual(["keepAlive:true", "unschedule:checkWorkspaceIdle", "schedule:30:checkWorkspaceIdle", `probe:Bearer ${token}`, "schedule:30:checkWorkspaceIdle"])
-    expect(await sandbox.configureWorkspaceIdle({ workspaceId: "ws_9", epoch: 5, port: 2593, idleMs: 600_000 })).toBe(token)
+    expect(await sandbox.configureWorkspaceIdle({ ...placement, epoch: 5 })).toBe(token)
   })
 
-  test("an idle runtime is handed to the control plane once, and a stopped container is never probed", async () => {
-    const upstream = vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ ok: true, status: "stopped" }))
+  test("once the control plane stops the lease, the sandbox stops its own container, and a stopped container is never probed", async () => {
+    const upstream = vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ ok: true, status: "stopped", checkpoint: WORKSPACE }))
     try {
-      const { sandbox, calls } = idleObject(true, 0)
-      await sandbox.configureWorkspaceIdle({ workspaceId: "ws_9", epoch: 4, port: 2593, idleMs: 600_000 })
+      const { sandbox, calls } = idleObject(true, { idleSince: 0 })
+      await sandbox.configureWorkspaceIdle(placement)
       await sandbox.checkWorkspaceIdle()
       expect(upstream).toHaveBeenCalledOnce()
-      expect(calls.filter((call) => call.startsWith("schedule"))).toEqual([])
-      const asleep = idleObject(false, 0)
-      await asleep.sandbox.configureWorkspaceIdle({ workspaceId: "ws_9", epoch: 4, port: 2593, idleMs: 600_000 })
+      expect(calls.slice(1)).toEqual(["unschedule:checkWorkspaceIdle", "keepAlive:false", "stop"])
+      const asleep = idleObject(false, { idleSince: 0 })
+      await asleep.sandbox.configureWorkspaceIdle(placement)
       await asleep.sandbox.checkWorkspaceIdle()
       expect(asleep.calls).toEqual([])
     } finally {
@@ -767,9 +762,53 @@ describe("workspace idle lifecycle and checkpoints", () => {
     }
   })
 
+  test("a runtime frozen past every checkpoint's deadline is settled, so a lease stopped before a failed host stop still stops its container", async () => {
+    const upstream = vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ ok: true, status: "stopped", checkpoint: WORKSPACE }))
+    try {
+      const { sandbox, calls } = idleObject(true, { frozenSince: 0 })
+      await sandbox.configureWorkspaceIdle(placement)
+      await sandbox.checkWorkspaceIdle()
+      expect(calls.slice(-1)).toEqual(["stop"])
+    } finally {
+      upstream.mockRestore()
+    }
+  })
+
+  test("idle checks that keep failing stop keeping the container alive, so the SDK's own sleep bounds the cost", async () => {
+    const upstream = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response("runtime_lease_changed", { status: 409 }))
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const { sandbox, calls } = idleObject(true, { idleSince: 0 })
+      await sandbox.configureWorkspaceIdle(placement)
+      for (let check = 0; check < 20; check++) await sandbox.checkWorkspaceIdle()
+      expect(calls.filter((call) => call.startsWith("schedule"))).toHaveLength(19)
+      expect(calls.at(-1)).toBe("keepAlive:false")
+    } finally {
+      upstream.mockRestore()
+      error.mockRestore()
+    }
+  })
+
+  test("a capture records its backups as it makes them; the next capture or stop deletes those the lease did not commit", async () => {
+    const { sandbox, calls, bucket } = idleObject(true, {}, fakeR2([...backupObjects(WORKSPACE), ...backupObjects(HOME)]))
+    expect(await sandbox.captureBackups(["/workspace", "/home/claxedo"], undefined)).toBe(`${WORKSPACE},${HOME}`)
+    expect(calls).toEqual(["backup:/workspace:", "backup:/home/claxedo:.cache|.npm/_cacache|.bun/install/cache"])
+    await sandbox.captureBackups(["/workspace", "/home/claxedo"], `${WORKSPACE},${HOME}`)
+    expect(bucket.store.size).toBe(4)
+    await sandbox.configureWorkspaceIdle(placement)
+    expect(await sandbox.stopWorkspace(4, undefined)).toBe(true)
+    expect(bucket.store.size).toBe(0)
+  })
+
+  test("a capture that fails partway deletes what it made", async () => {
+    const { sandbox, bucket } = idleObject(true, {}, fakeR2(backupObjects(WORKSPACE)))
+    await expect(sandbox.captureBackups(["/workspace", "/fails"], undefined)).rejects.toThrow("upload failed")
+    expect(bucket.store.size).toBe(0)
+  })
+
   test("a stop for an older lease generation leaves the container running", async () => {
-    const { sandbox, calls } = idleObject(true, undefined)
-    await sandbox.configureWorkspaceIdle({ workspaceId: "ws_9", epoch: 5, port: 2593, idleMs: 600_000 })
+    const { sandbox, calls } = idleObject(true, {})
+    await sandbox.configureWorkspaceIdle({ ...placement, epoch: 5 })
     expect(await sandbox.stopWorkspace(4)).toBe(false)
     expect(calls).toEqual([])
     expect(await sandbox.stopWorkspace(5)).toBe(true)

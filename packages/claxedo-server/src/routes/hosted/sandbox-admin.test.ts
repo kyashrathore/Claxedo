@@ -199,17 +199,17 @@ describe("hosted sandbox admin routes", () => {
     expect(destroy).toHaveBeenCalled()
   })
 
-  test("idle stop is authorized by the sandbox Worker's token alone and answers a refused stop as a conflict", async () => {
+  test("idle stop is authorized by its own token alone and answers a refused stop as a conflict", async () => {
     const idleStop = vi.fn(async (_workspaceId: string, epoch: number, _idleBefore: number) =>
       epoch === 7 ? { ok: true as const, status: "stopped" as const } : { ok: false as const, reason: "runtime_lease_changed" })
-    const app = HostedSandboxAdminRoutes({ adminToken: "admin_secret", sandboxWorkerToken: "worker_secret", idleStop })
+    const app = HostedSandboxAdminRoutes({ adminToken: "admin_secret", idleStopToken: "idle_secret", idleStop })
     const body = (epoch: number) => JSON.stringify({ workspaceId: "ws_1", epoch, idleBefore: 1_000 })
     expect((await app.fetch(request("/internal/sandbox/idle-stop", { token: "admin_secret", body: body(7) }))).status).toBe(401)
     expect((await app.fetch(request("/internal/sandbox/idle-stop", { body: body(7) }))).status).toBe(401)
     expect(idleStop).not.toHaveBeenCalled()
-    expect((await app.fetch(request("/internal/sandbox/idle-stop", { token: "worker_secret", body: "{}" }))).status).toBe(400)
-    expect((await app.fetch(request("/internal/sandbox/idle-stop", { token: "worker_secret", body: body(7) }))).status).toBe(200)
+    expect((await app.fetch(request("/internal/sandbox/idle-stop", { token: "idle_secret", body: "{}" }))).status).toBe(400)
+    expect((await app.fetch(request("/internal/sandbox/idle-stop", { token: "idle_secret", body: body(7) }))).status).toBe(200)
     expect(idleStop).toHaveBeenCalledWith("ws_1", 7, 1_000)
-    expect((await app.fetch(request("/internal/sandbox/idle-stop", { token: "worker_secret", body: body(6) }))).status).toBe(409)
+    expect((await app.fetch(request("/internal/sandbox/idle-stop", { token: "idle_secret", body: body(6) }))).status).toBe(409)
   })
 })
