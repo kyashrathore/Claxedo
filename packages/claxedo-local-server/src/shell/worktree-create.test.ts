@@ -86,6 +86,18 @@ test("an omitted base uses the current commit for callers that request a worktre
   expect(git(created.directory, "rev-parse", "HEAD")).toBe(git(directory, "rev-parse", "HEAD"))
 })
 
+test("a tag sharing the current branch's name changes neither an omitted base nor a listed branch choice", async () => {
+  git(directory, "tag", "dev", "main")
+  git(directory, "switch", "dev")
+  const listed = git(directory, "for-each-ref", "--format=%(refname:short)", "refs/heads/dev")
+  expect(listed).toBe("heads/dev")
+  const omitted = await create({ name: "omitted" })
+  expect(git(omitted.directory, "rev-parse", "HEAD")).toBe(git(directory, "rev-parse", "refs/heads/dev"))
+  const chosen = await create({ name: "chosen", baseRef: listed })
+  expect(git(chosen.directory, "rev-parse", "HEAD")).toBe(git(directory, "rev-parse", "refs/heads/dev"))
+  expect(git(directory, "rev-parse", "refs/tags/dev")).not.toBe(git(directory, "rev-parse", "refs/heads/dev"))
+})
+
 test("the create response exposes a populated worktree before a session can start there", async () => {
   const response = await request({ name: "ready", baseRef: "dev" })
   expect(response.status).toBe(200)

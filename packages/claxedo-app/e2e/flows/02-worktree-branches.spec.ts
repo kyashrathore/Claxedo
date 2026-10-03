@@ -140,3 +140,31 @@ test("02 a new worktree starts from the selected branch on first send and leaves
   expect(await fs.readFile(path.join(workspace.directory, "README.md"), "utf8")).toBe("keep dirty main\n")
   await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
 })
+
+test("02 a tag named like the root's branch moves neither the default base nor the listed branch choice", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("tag-clash")
+  await git(workspace.directory, "tag", "dev")
+  await git(workspace.directory, "switch", "-c", "dev")
+  await fs.writeFile(path.join(workspace.directory, "README.md"), "dev branch\n")
+  await git(workspace.directory, "commit", "-am", "dev")
+  const branchCommit = (await git(workspace.directory, "rev-parse", "refs/heads/dev")).trim()
+  const createFromDraft = async (prompt: string, base?: string) => {
+    await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+    await app.getByRole("button", { name: "Workspace", exact: true }).click()
+    await app.getByRole("button", { name: "New local worktree", exact: true }).click()
+    await expect(app.getByRole("button", { name: "Base branch", exact: true })).toHaveText("From dev")
+    if (base) await chooseBase(app, base)
+    await chooseScriptedHarness(app)
+    const creation = app.waitForResponse((response) => response.url().includes("/experimental/worktree") && response.request().method() === "POST")
+    await sendPrompt(app, prompt)
+    const response = await creation
+    expect(response.status()).toBe(200)
+    await expect(app).toHaveURL(/\/w\/[^/]+\/session\/[^/?]+$/)
+    return (await response.json() as { directory: string }).directory
+  }
+  const defaulted = await createFromDraft("Start from the current branch")
+  expect((await git(defaulted, "rev-parse", "HEAD")).trim()).toBe(branchCommit)
+  const chosen = await createFromDraft("Start from the listed branch", "heads/dev")
+  expect((await git(chosen, "rev-parse", "HEAD")).trim()).toBe(branchCommit)
+  expect(await api.sessions(chosen)).toHaveLength(1)
+})

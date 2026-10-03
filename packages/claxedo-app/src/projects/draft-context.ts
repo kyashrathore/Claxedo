@@ -86,8 +86,7 @@ export function createDraftContext(draft: Accessor<DraftTarget>) {
   const root = createMemo(() => rootPlacement(server.placements.list(), draft().projectId))
   const location = createTargetLocation(draft, choice, root)
   const branchChoice = createDraftBranches(server, () => location.creating() ? root()?.id ?? draft().placementId : location.placement(), location.creating)
-  const base = () => branchChoice.base() ?? (choice.hostKind() === "self" ? branchChoice.branch() : undefined)
-  const resolve = createResolver(server, draft, choice, location, base)
+  const resolve = createResolver(server, draft, choice, location, branchChoice.base)
   const environments = createMemo(() =>
     environmentOptions({ localExecution: server.capabilities()?.thisMachine !== undefined, cloud: server.capabilities()?.features.cloud === true }),
   )
