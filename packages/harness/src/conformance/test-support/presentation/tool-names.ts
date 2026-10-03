@@ -7,7 +7,7 @@ import type { CreatePresentationProjection } from "./projection"
 import { claudeSdkAdapter } from "../../../transports/claude-sdk/translate/adapter"
 import { codexAppServerAdapter } from "../../../transports/codex-app-server/translate/adapter"
 import { cursorSdkAdapter } from "../../../transports/cursor-sdk/translate/adapter"
-import { piRpcAdapter } from "../../../transports/pi-rpc/translate/adapter"
+import { piDurableAdapter } from "../../../transports/pi-durable/translate/adapter"
 import { createAcpEventTranslator } from "../../../transports/acp/translate/event-translator"
 
 export function registerToolNameCases(createClientPresentationProjection: CreatePresentationProjection) {
@@ -83,11 +83,11 @@ export function registerToolNameCases(createClientPresentationProjection: Create
     },
     {
       harness: "pi",
-      runtime: () => harnessRuntime("pi", piRpcAdapter()),
+      runtime: () => harnessRuntime("pi", piDurableAdapter()),
       expected: ["bash", "read"],
       events: [
-        { source: "pi.rpc", payload: { type: "tool_execution_start", toolCallId: "p1", toolName: "Bash", args: { command: "bun test" } } },
-        { source: "pi.rpc", payload: { type: "tool_execution_start", toolCallId: "p2", toolName: "Read", args: { path: "/repo/a.ts" } } },
+        { source: "pi.durable", payload: { type: "tool_execution_start", toolCallId: "p1", toolName: "bash", args: { command: "bun test" } } },
+        { source: "pi.durable", payload: { type: "tool_execution_start", toolCallId: "p2", toolName: "read", args: { path: "/repo/a.ts" } } },
       ],
     },
     {

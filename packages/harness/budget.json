@@ -1,5 +1,5 @@
 {
-  "contract": 1257,
+  "contract": 1258,
   "rpc": 300,
   "translate": 550,
   "broker": 2300,
@@ -10,7 +10,7 @@
   "transports/codex-app-server": 2793,
   "transports/cursor-sdk": 1652,
   "transports/acp": 3014,
-  "transports/pi-rpc": 864,
+  "transports/pi-durable": 1436,
   "transports/opencode-sdk": 3000,
   "compose.ts": 62
 }

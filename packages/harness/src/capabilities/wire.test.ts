@@ -26,8 +26,8 @@ const declared: readonly [string, TransportKind, TransportCapabilities, readonly
     { harness: "cursor", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: false, questions: false, todos: true, commands: false, fork: false, revert: false, unrevert: false, configOptions: true, subagents: true }],
   ["acp-agent", "acp", capabilities({ permissions: true, questions: false, todos: false, subagents: false }), ["config", "commands", "fork"],
     { harness: "acp-agent", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: true, questions: false, todos: false, commands: true, fork: true, revert: false, unrevert: false, configOptions: true, subagents: false }],
-  ["pi", "pi-rpc", capabilities({ permissions: false, questions: true, todos: false, subagents: false }), ["commands"],
-    { harness: "pi", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: false, questions: true, todos: false, commands: true, fork: false, revert: false, unrevert: false, configOptions: false, subagents: false }],
+  ["pi", "pi-durable", capabilities({ permissions: true, questions: true, todos: false, subagents: false }), ["config"],
+    { harness: "pi", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: true, questions: true, todos: false, commands: false, fork: false, revert: false, unrevert: false, configOptions: true, subagents: false }],
   ["opencode", "opencode-sdk", capabilities({ permissions: true, questions: true, todos: false, subagents: false }), ["config", "commands", "fork"],
     { harness: "opencode", modelSelection: { status: "optional" }, abort: true, reconnect: false, replay: true, permissions: true, questions: true, todos: false, commands: true, fork: true, revert: false, unrevert: false, configOptions: true, subagents: false }],
 ]

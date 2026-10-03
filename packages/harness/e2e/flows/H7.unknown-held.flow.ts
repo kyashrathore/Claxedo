@@ -10,11 +10,9 @@ import { waitForTitle } from "../harness/turn-observations"
 /**
  * `held`: the harness gives no evidence of the steer, so it stays uncertain.
  * `incorporated`: when only the steer's reply is withheld, Codex still opens
- * the steer's userMessage item and Pi still starts the steer's user message,
- * and that evidence settles the steer.
+ * the steer's userMessage item, and that evidence settles the steer.
  */
 const CASES = [
-  { name: "pi", outcome: "incorporated", model: { providerId: "pi", modelId: "openai/gpt-4.1" } },
   { name: "codex", outcome: "incorporated", model: { providerId: "codex", modelId: "gpt-5.5" } },
   { name: "claude", outcome: "held", model: { providerId: "claude", modelId: "sonnet" } },
 ] as const

@@ -7,7 +7,7 @@ import { createAcpEventTranslator } from "../../transports/acp/translate/event-t
 import { claudeSdkAdapter } from "../../transports/claude-sdk/translate"
 import { codexAppServerAdapter } from "../../transports/codex-app-server/translate"
 import { cursorSdkAdapter } from "../../transports/cursor-sdk/translate"
-import { piRpcAdapter } from "../../transports/pi-rpc/translate"
+import { piDurableAdapter } from "../../transports/pi-durable/translate/adapter"
 
 type Callback = { name: "now" | "createId"; value: unknown }
 type Call = {
@@ -25,7 +25,7 @@ const files = readdirSync(root, { withFileTypes: true }).filter((entry) => entry
     .map((name) => path.join(root, folder.name, name)))
 
 function adapterFor(name: string): HarnessEventAdapter {
-  if (name === "pi-rpc") return piRpcAdapter() as HarnessEventAdapter
+  if (name === "pi-durable") return piDurableAdapter() as HarnessEventAdapter
   if (name === "claude-sdk") return claudeSdkAdapter() as HarnessEventAdapter
   if (name === "codex-app-server") return codexAppServerAdapter() as HarnessEventAdapter
   if (name === "cursor-sdk") return cursorSdkAdapter() as HarnessEventAdapter

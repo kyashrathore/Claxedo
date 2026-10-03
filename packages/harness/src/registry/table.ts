@@ -15,7 +15,7 @@ const BUILT_IN_TRANSPORTS = {
   claude: "claude-sdk",
   codex: "codex-app-server",
   cursor: "cursor-sdk",
-  pi: "pi-rpc",
+  pi: "pi-durable",
   opencode: "opencode-sdk",
 } as const satisfies Readonly<Record<NativeHarnessId, TransportKind>>
 
@@ -23,7 +23,7 @@ const BUILT_IN_MCP = {
   claude: true,
   codex: true,
   cursor: true,
-  pi: false,
+  pi: true,
   opencode: true,
 } as const satisfies Readonly<Record<NativeHarnessId, boolean>>
 

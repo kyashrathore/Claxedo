@@ -7,7 +7,6 @@ import { staleCodexInventory } from "./codex-inventory-fault"
 import { startDaemon, type Daemon } from "./daemon"
 import { startEgressGuard, type EgressGuard } from "./egress-guard"
 import { claimPort, fixedDaemonPort, portFreed, portIsLeased, releasePort, reservePort } from "./ports"
-import { injectPiRpcFault } from "./pi-rpc-fault"
 import { startScriptedModelServer, type ScriptedModelServer } from "./scripted-model-server"
 import { withholdSteerReply } from "./steer-reply-fault"
 import { interruptClaudeSteer } from "./claude-steer-fault"
@@ -32,7 +31,7 @@ export type Stack = {
   close(): Promise<void>
 }
 
-export type StackInput = { label: string; red?: boolean; codexInventoryFault?: boolean; steerReplyFault?: "pi" | "codex"; claudeSteerFault?: boolean; piRpcFault?: boolean; cursorBackends?: number; resistantChild?: boolean; retirementFault?: boolean }
+export type StackInput = { label: string; red?: boolean; codexInventoryFault?: boolean; steerReplyFault?: "codex"; claudeSteerFault?: boolean; cursorBackends?: number; resistantChild?: boolean; retirementFault?: boolean }
 
 export function safeLabel(label: string) {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "flow"
@@ -43,7 +42,6 @@ export async function startStack(input: StackInput): Promise<Stack> {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-e2e-${safeLabel(input.label)}-`))
   const inventoryFault = input.codexInventoryFault ? await staleCodexInventory(dataDir) : undefined
   const steerFault = input.steerReplyFault ? await withholdSteerReply(dataDir, input.steerReplyFault) : undefined
-  const rpcFault = input.piRpcFault ? await injectPiRpcFault(dataDir) : undefined
   const claudeFault = input.claudeSteerFault ? await interruptClaudeSteer(dataDir) : undefined
   const fixed = fixedDaemonPort()
   const daemonPort = fixed !== undefined && !portIsLeased(fixed) ? await claimPort(fixed) : await reservePort()
@@ -83,10 +81,8 @@ export async function startStack(input: StackInput): Promise<Stack> {
     daemon = await startDaemon({ dataDir, scripted, guardUrl: egress.url, port: daemonPort, red,
       resistantChild: input.resistantChild,
       retirementFault: input.retirementFault,
-      ...(input.steerReplyFault === "pi" ? { piExecutable: steerFault!.executable } : {}),
       ...(input.steerReplyFault === "codex" ? { pathPrefix: steerFault!.bin } : {}),
       ...(inventoryFault ? { pathPrefix: inventoryFault.bin } : {}),
-      ...(rpcFault ? { piExecutable: rpcFault.executable } : {}),
       ...(claudeFault ? { claudeExecutable: claudeFault.executable } : {}),
     })
   } catch (error) {

@@ -2,7 +2,6 @@ import { readdir, readFile } from "node:fs/promises"
 import path from "node:path"
 import { isRecord } from "@claxedo/helpers/guards"
 import { daemonRuntime } from "../harness/daemon"
-import { ensurePinnedPi } from "../harness/pinned-pi"
 import { ensurePinnedCodex } from "../harness/pinned-codex"
 import { ensurePinnedClaude } from "../harness/pinned-claude"
 import { CONTRACT_DIST, ensureWorkspaceDist, HELPERS_DIST, LAUNCH_GATE_CHILD_DIST } from "../harness/workspace-dists"
@@ -50,11 +49,9 @@ function firstLine(error: unknown) {
 }
 
 for (const dist of [HELPERS_DIST, CONTRACT_DIST, LAUNCH_GATE_CHILD_DIST]) await ensureWorkspaceDist(dist)
-const pi = await ensurePinnedPi()
 const codex = await ensurePinnedCodex()
 const claude = await ensurePinnedClaude()
 console.log(`Pinned Codex ${codex.version}: ${codex.installed ? "installed" : "already installed"}; pinned Claude Code ${claude.version}: ${claude.installed ? "installed" : "already installed"}`)
-console.log(`Pinned Pi ${pi.version}: ${pi.installed ? "installed" : "already installed"}`)
 const runtime = await daemonRuntime()
 console.log(`Daemon runtime: Node ${runtime.version} (${runtime.node})`)
 

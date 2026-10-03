@@ -97,3 +97,17 @@ export const CODEX_PERMISSION_MODES = {
   appliesFrom: "next-turn",
   defaultModeId: "workspace-write",
 } satisfies HarnessPermissionModes
+
+/**
+ * Pi asks before nothing on its own. `ask` routes each write, edit, bash and
+ * MCP call through Claxedo's broker from a `beforeTool` hook; `full` runs them
+ * unasked, as Pi itself does.
+ */
+export const PI_PERMISSION_MODES = {
+  modes: [
+    mode("ask", "Ask", "Ask before each write, edit, command and MCP tool call", "ask"),
+    mode("full", "Full access", "Run every tool call without asking", "full"),
+  ],
+  appliesFrom: "next-turn",
+  defaultModeId: "full",
+} satisfies HarnessPermissionModes
