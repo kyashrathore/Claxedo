@@ -72,6 +72,14 @@ async function inWorkspace(id: string, command: string) {
   return result.stdout.trim()
 }
 
+async function vmFacts(id: string) {
+  const result = await client.command(id, {
+    command: "cat /proc/sys/kernel/random/boot_id; docker inspect --format '{{.State.StartedAt}}' claxedo-runtime",
+  })
+  const [bootId, startedAt] = result.stdout.trim().split("\n")
+  return { bootId, startedAt, state: (await client.get(id)).state }
+}
+
 async function containerFacts(id: string) {
   const command = [
     "systemctl is-active docker",
@@ -116,6 +124,17 @@ try {
   await timed("runtime state files after resume", () => inWorkspace(second.sandboxId, STATE_FILES), (count) => ({ count, before: stateBefore }))
   await timed("image pulls this boot", () => client.command(second.sandboxId, { command: "sudo -n journalctl -u docker -b --no-pager | grep -c 'image pulled'" }), (result) => ({ count: result.stdout.trim() }))
   if (markers.some((line) => line !== workspaceId)) throw new Error("runtime or workspace state did not survive stop and resume")
+  const running = sandboxLease({ ...lease, url: second.url, status: "ready" })
+  const before = await timed("before resuming a running sandbox", () => vmFacts(second.sandboxId), (facts) => facts)
+  const resumedRunning = await timed("resume of a running sandbox", async () => {
+    const outcome = await driver.resumeHost?.({ lease: running, ensure }).then(
+      (target) => ({ answered: "provisioning" in target ? "provisioning" : "ready" }),
+      (error: unknown) => ({ answered: "error", error: error instanceof Error ? error.message : String(error) }),
+    )
+    return { ...outcome, ...(await vmFacts(second.sandboxId)) }
+  }, (facts) => facts)
+  report("running resume", { vmRebooted: resumedRunning.bootId !== before.bootId, containerRestarted: resumedRunning.startedAt !== before.startedAt })
+  await timed("public health after running resume", () => publicHealth(second.url), (status) => ({ status }))
   report("passed")
 } catch (error) {
   const errors = error instanceof AggregateError ? error.errors : [error]
