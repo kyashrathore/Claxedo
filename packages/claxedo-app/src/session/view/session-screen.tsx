@@ -103,7 +103,7 @@ function SessionBody(props: {
   const turns = createMemo(() => navTurns(props.view.outline(), users()))
   const scroll = createTimelineScroll({ view: () => props.view, active: () => props.active, working })
   const todo = createTodoDock(() => props.view)
-  const blocked = () => props.view.requests().length > 0
+  const blocked = () => props.view.requests().length > 0 || props.view.runtimeMissing()
   const peek = createFloatingPeek({
     floating: () => props.floating,
     sessionId: () => props.view.ref.sessionId,

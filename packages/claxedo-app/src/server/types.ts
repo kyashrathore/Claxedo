@@ -185,6 +185,7 @@ export type SessionFirstRead = {
 
 export type SessionReads = {
   readonly first: Promise<SessionFirstRead>
+  readonly runtime: Promise<Pick<SessionFirstRead, "row" | "diff"> | undefined>
   readonly status: Promise<SessionStatus>
   readonly backgroundWork: Promise<BackgroundWork>
   readonly requests: Promise<readonly AgentRequest[]>

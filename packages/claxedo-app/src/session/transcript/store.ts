@@ -64,9 +64,8 @@ function sessionView(context: TranscriptContext): SessionView {
     turnSettlePending: (userMessageId) => isReading(phase.state()) && lastUserId() === userMessageId,
     queue,
     replaceQueued: (seq, input) => context.queue.replace(seq, input),
-    requests: () => deps.requests.openFor(ref.sessionId),
-    requestsError: () => deps.requests.readErrorFor(ref.sessionId),
-    requestState: deps.requests.stateOf,
+    ...sessionRequests(context),
+    runtimeMissing: context.runtimeMissing,
     todos: context.todos.list,
     diff: () => data.diff,
     subagents: context.subagents.list,
@@ -83,6 +82,14 @@ function sessionView(context: TranscriptContext): SessionView {
     send: (input) => sendPrompt(context, input),
     showSent: (prompt) => showSent(context, prompt),
     stop: () => stopTurn(context),
+  }
+}
+
+function sessionRequests({ ref, deps }: TranscriptContext): Pick<SessionView, "requests" | "requestsError" | "requestState" | "reply"> {
+  return {
+    requests: () => deps.requests.openFor(ref.sessionId),
+    requestsError: () => deps.requests.readErrorFor(ref.sessionId),
+    requestState: deps.requests.stateOf,
     reply: (requestId, reply) => deps.requests.reply(ref, requestId, reply),
   }
 }

@@ -11,6 +11,8 @@ export type SessionScreenTextKey =
   | "sessionScreen.action.retry"
   | "sessionScreen.failed"
   | "sessionScreen.requests.loadFailed"
+  | "sessionScreen.runtime.missing"
+  | "sessionScreen.runtime.newSession"
   | "sessionScreen.action.dismiss"
   | "sessionScreen.action.back"
   | "sessionScreen.action.next"
@@ -92,6 +94,8 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.action.retry": "Retry",
   "sessionScreen.failed": "Could not load this session.",
   "sessionScreen.requests.loadFailed": "Could not load pending permissions or questions. Retry to continue.",
+  "sessionScreen.runtime.missing": "This session is no longer on the running environment. Your saved history is still available.",
+  "sessionScreen.runtime.newSession": "Start new session",
   "sessionScreen.action.dismiss": "Dismiss",
   "sessionScreen.action.back": "Back",
   "sessionScreen.action.next": "Next",

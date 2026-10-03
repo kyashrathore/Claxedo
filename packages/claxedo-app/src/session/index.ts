@@ -106,6 +106,7 @@ export type SessionView = {
   readonly replaceQueued: (seq: number, input: PromptInput) => Promise<boolean>
   readonly requests: Accessor<readonly AgentRequest[]>
   readonly requestsError: Accessor<AppError | undefined>
+  readonly runtimeMissing: Accessor<boolean>
   readonly requestState: (requestId: RequestId) => RequestState
   readonly todos: Accessor<readonly Todo[]>
   readonly diff: Accessor<readonly FileDiff[]>

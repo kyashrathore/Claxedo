@@ -43,6 +43,8 @@ export type TranscriptContext = {
   readonly setOutline: Setter<OutlineState>
   readonly olderCursor: Accessor<string | undefined>
   readonly setOlderCursor: Setter<string | undefined>
+  readonly runtimeMissing: Accessor<boolean>
+  readonly setRuntimeMissing: Setter<boolean>
   readonly queue: QueueInternal
   readonly goal: SessionGoalStore
   readonly todos: SessionTodosStore
@@ -59,6 +61,7 @@ export function createTranscriptContext(server: Server, ref: SessionLocation, de
   const setData = committingFirst(setStoreData, deltas)
   const [olderCursor, setOlderCursor] = createSignal<string>()
   const [outline, setOutline] = createSignal(OUTLINE_LOADING)
+  const [runtimeMissing, setRuntimeMissing] = createSignal(false)
   return {
     server,
     ref,
@@ -72,6 +75,8 @@ export function createTranscriptContext(server: Server, ref: SessionLocation, de
     setOutline,
     olderCursor,
     setOlderCursor,
+    runtimeMissing,
+    setRuntimeMissing,
     queue: createQueue(server, ref, (items) => dropQueuedStubs(setData, data, items)),
     goal: createSessionGoal(server, ref),
     todos: createSessionTodos(),
