@@ -54,9 +54,18 @@ function applyListEvent<S extends ListData>(state: S, event: ServerListEvent): S
       return backgroundWorkChanged(state, event.ref, event.work, event.at)
     case "readerChanged":
       return readerChanged(state, event.ref, event.reader, event.at)
+    case "turnEndRowRead":
+      return turnEndRowRead(state, event)
     default:
       return unreachable(event)
   }
+}
+
+function turnEndRowRead<S extends ListData>(state: S, event: Extract<ServerListEvent, { type: "turnEndRowRead" }>): S {
+  const admitted = rowsRead(state, event.window)
+  const entry = admitted.entries.get(event.ref.sessionId)
+  if (entry?.kind !== "confirmed" || entry.row.parentSessionId !== undefined) return state
+  return turnEnded(pageReadersRead(pageStatusesRead(admitted, event.window), event.window), event.ref, event.lastTurn)
 }
 
 function withPhase(more: More, windowKey: WindowKey, phase: MorePhase | undefined): More {
@@ -119,12 +128,10 @@ function fetchEvent(state: ListState, event: ListEvent): ListState | undefined {
   }
 }
 
-function sessionRead(state: ListState, event: Extract<ListEvent, { type: "rowRead" | "turnEndRowRead" | "statusRead" | "backgroundWorkRead" }>): ListData {
+function sessionRead(state: ListState, event: Extract<ListEvent, { type: "rowRead" | "statusRead" | "backgroundWorkRead" }>): ListData {
   switch (event.type) {
     case "rowRead":
       return upsertRow(state, event.row)
-    case "turnEndRowRead":
-      return turnEnded(pageReadersRead(pageStatusesRead(rowsRead(state, event.window), event.window), event.window), event.ref, event.lastTurn)
     case "statusRead":
       return statusRead(state, event.ref, event.status, event.sentAt)
     case "backgroundWorkRead":
@@ -162,6 +169,7 @@ export function listTransition(state: ListState, event: ListEvent): ListState {
     case "statusChanged":
     case "backgroundWorkChanged":
     case "readerChanged":
+    case "turnEndRowRead":
       return serverEvent(state, event)
     case "fetchStarted":
     case "fetched":
@@ -174,7 +182,6 @@ export function listTransition(state: ListState, event: ListEvent): ListState {
     case "rereadFailed":
       return fetchEvent(state, event) ?? state
     case "rowRead":
-    case "turnEndRowRead":
     case "statusRead":
     case "backgroundWorkRead":
       return withData(state, sessionRead(state, event))

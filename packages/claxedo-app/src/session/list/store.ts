@@ -23,6 +23,7 @@ import type { RequestsInternal } from "../requests"
 import { ACTIVITY_WINDOW, hasMorePages, initialListState, type ListEvent, type ListState, type MorePhase, type WindowKey } from "./model"
 import { createKeyedReads } from "./keyed-reads"
 import { createListReads, type ListReads } from "./reads"
+import { createTurnEndReads, type TurnEndNotice } from "./turn-end-reads"
 import { listTransition } from "./transition"
 import { createRowViewCache, rowViews, UNKNOWN_STATUS, visibleOrder } from "./visible-rows"
 import { shownReader } from "./readers"
@@ -98,12 +99,7 @@ async function createPendingSession(server: Server, list: Machine<ListState, Lis
 
 export type SessionListOptions = { readonly showSettled: Accessor<boolean>; readonly activityShown: Accessor<boolean> }
 
-function mayUnsettle(state: ListState, ref: SessionLocation, showSettled: boolean): boolean {
-  if (showSettled || state.entries.has(ref.sessionId)) return false
-  return state.windows.has(ref.projectId) || state.windows.has(ACTIVITY_WINDOW)
-}
-
-function routeServerEvent(list: Machine<ListState, ListEvent>, reads: ListReads, options: SessionListOptions, event: ServerEvent): void {
+function routeServerEvent(list: Machine<ListState, ListEvent>, reads: ListReads, turnEnded: (notice: TurnEndNotice) => void, event: ServerEvent): void {
   switch (event.type) {
     case "sessionUpserted":
       return list.send(event)
@@ -114,7 +110,7 @@ function routeServerEvent(list: Machine<ListState, ListEvent>, reads: ListReads,
       const { ref, status, lastTurn, waitingOnUser, backgroundWork } = event
       list.send({ type: "statusChanged", ref, status, ...(lastTurn ? { lastTurn } : {}), ...(waitingOnUser !== undefined ? { waitingOnUser } : {}), at })
       if (backgroundWork) list.send({ type: "backgroundWorkChanged", ref, work: backgroundWork, at })
-      if (lastTurn && mayUnsettle(list.state(), ref, options.showSettled())) void reads.readTurnEndRow(ref, lastTurn)
+      turnEnded(event)
       return
     }
     case "backgroundWorkChanged":
@@ -165,9 +161,10 @@ export function createSessionList(server: Server, requests: RequestsInternal, op
   const reads = createListReads(server, list, { settled: () => (showSettled() ? "all" : "active"), activityShown: options.activityShown })
   createEffect(on(showSettled, () => reads.requestReread("replace"), { defer: true }))
   createEffect(on(options.activityShown, (shown) => {
-    if (shown) void reads.loadMore(ACTIVITY_WINDOW)
+    if (shown) void reads.openActivity()
   }, { defer: true }))
   const { state, send } = list
+  const turnEnded = createTurnEndReads({ state, showSettled, read: (ref, lastTurn) => void reads.readTurnEndRow(ref, lastTurn) })
   const windows = createMemo(() => state().windows)
   const more = createMemo(() => {
     const current = state()
@@ -188,7 +185,7 @@ export function createSessionList(server: Server, requests: RequestsInternal, op
     markSeen: (ref, completedAt) => writeReader(server, list, ref, { kind: "seen", completedAt }),
     settle: (ref, settled) => writeReader(server, list, ref, { kind: "settle", settled }),
     start: () => void reads.fetchFirst(),
-    apply: (event) => routeServerEvent(list, reads, options, event),
+    apply: (event) => routeServerEvent(list, reads, turnEnded, event),
     readRow: (row) => send({ type: "rowRead", row }),
     readStatus: (ref, status, sentAt) => send({ type: "statusRead", ref, status, sentAt }),
     readBackgroundWork: (ref, work, sentAt) => send({ type: "backgroundWorkRead", ref, work, sentAt }),

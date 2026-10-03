@@ -23,6 +23,7 @@ const ACTIVITY_PAGE_SIZE = 20
 export type ListReads = {
   readonly fetchFirst: () => Promise<void>
   readonly loadMore: (windowKey: WindowKey) => Promise<void>
+  readonly openActivity: () => Promise<void>
   readonly reread: (mode: RereadMode) => Promise<void>
   readonly requestReread: (mode: RereadMode) => void
   readonly readTurnEndRow: (ref: SessionLocation, lastTurn: SessionLastTurn) => Promise<void>
@@ -78,7 +79,11 @@ function afterRead(context: ReadContext): void {
     context.followUp.send({ type: "taken" })
     return void rereadList(context, waiting.mode)
   }
-  if (context.activityShown() && !state.windows.has(ACTIVITY_WINDOW)) void loadMore(context, ACTIVITY_WINDOW)
+  if (context.activityShown()) void openActivity(context)
+}
+
+function openActivity(context: ReadContext): Promise<void> {
+  return context.list.state().windows.has(ACTIVITY_WINDOW) ? Promise.resolve() : loadMore(context, ACTIVITY_WINDOW)
 }
 
 async function fetchFirst(context: ReadContext): Promise<void> {
@@ -139,6 +144,7 @@ export function createListReads(server: Server, list: Machine<ListState, ListEve
   return {
     fetchFirst: () => fetchFirst(context),
     loadMore: (windowKey) => loadMore(context, windowKey),
+    openActivity: () => openActivity(context),
     reread: (mode) => rereadList(context, mode),
     requestReread: (mode) => requestReread(context, mode),
     readTurnEndRow: (ref, lastTurn) => readTurnEndRow(context, ref, lastTurn),

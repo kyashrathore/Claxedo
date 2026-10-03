@@ -93,6 +93,7 @@ export type ServerListEvent =
     }
   | { readonly type: "backgroundWorkChanged"; readonly ref: SessionLocation; readonly work: BackgroundWork; readonly at: number }
   | { readonly type: "readerChanged"; readonly ref: SessionLocation; readonly reader: SessionReader; readonly at: number }
+  | { readonly type: "turnEndRowRead"; readonly window: FetchedWindow; readonly ref: SessionLocation; readonly lastTurn: SessionLastTurn }
 
 export type MorePhase =
   | { readonly kind: "idle" }
@@ -139,7 +140,6 @@ export type ListEvent =
   | { readonly type: "rereadFetched"; readonly window: FetchedWindow; readonly mode: RereadMode }
   | { readonly type: "rereadFailed"; readonly error: AppError }
   | { readonly type: "rowRead"; readonly row: SessionRow }
-  | { readonly type: "turnEndRowRead"; readonly window: FetchedWindow; readonly ref: SessionLocation; readonly lastTurn: SessionLastTurn }
   | { readonly type: "statusRead"; readonly ref: SessionLocation; readonly status: SessionStatus; readonly sentAt: number }
   | { readonly type: "backgroundWorkRead"; readonly ref: SessionLocation; readonly work: BackgroundWork; readonly sentAt: number }
   | { readonly type: "sessionOpened"; readonly sessionId: SessionId }
