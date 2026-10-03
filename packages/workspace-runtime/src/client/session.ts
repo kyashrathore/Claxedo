@@ -90,6 +90,7 @@ export type WorkspaceSessionClient = {
   list(input?: SessionListInput, options?: Options): Reply<AgentPresentationSession[]>
   summaries(input?: SessionSummaryListInput, options?: Options): Reply<Record<string, unknown>[]>
   create(input?: SessionCreateInput, options?: Options): Reply<AgentPresentationSession>
+  createReserved(input: SessionInput & SessionCreateInput, options?: Options): Reply<AgentPresentationSession>
   get(input: SessionInput, options?: Options): Reply<AgentPresentationSession>
   start(input: SessionInput, options?: Options): Reply<AgentSessionStart>
   configOptions(input: SessionInput, options?: Options): Reply<ConfigOptionsPreview>
@@ -238,6 +239,8 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
     list: (input = {}, options) => caller.call({ operation: "session.list", path: "/session", scope: input, query: namedMembers(input, SESSION_LIST_QUERY), options }),
     summaries: (input = {}, options) => caller.call({ operation: "session.summaries", path: "/experimental/session", scope: input, query: namedMembers(input, SESSION_SUMMARY_QUERY), options }),
     create: (input = {}, options) => caller.call({ operation: "session.create", method: "POST", path: "/session", scope: input, body: without(input), options }),
+    createReserved: (input, options) => caller.call({ operation: "session.createReserved", method: "POST",
+      path: `/session/${encodeURIComponent(input.sessionID)}`, scope: input, body: without(input, ["sessionID"]), options }),
     get: (input, options) => read("session.get", input, "", options),
     start: (input, options) => caller.call({ operation: "session.start", path: `/session-start/${encodeURIComponent(input.sessionID)}`, scope: input, options }),
     configOptions: (input, options) => read("session.configOptions", input, "/config-options", options),
