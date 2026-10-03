@@ -17,6 +17,7 @@ const fakeProcesses = new Map<number, {
   exitHandlers: ExitHandler[]
 }>()
 let nextSpawnPid: number | undefined
+let nextSpawnScript: string | undefined
 let nextSpawnDelay = 0
 let nextSpawnExit = false
 const nativeKills: number[] = []
@@ -28,8 +29,8 @@ const disposableChildren: ChildProcess[] = []
  * up pid would make every one of these removals unresolved for the wrong
  * reason. `detached` reproduces the session leadership `forkpty` gives a shell.
  */
-function disposablePid() {
-  const child = spawnChild("/bin/sh", ["-c", "sleep 30"], { detached: true, stdio: "ignore" })
+function disposablePid(script = "sleep 30") {
+  const child = spawnChild("/bin/sh", ["-c", script], { detached: true, stdio: "ignore" })
   disposableChildren.push(child)
   return child.pid!
 }
@@ -49,8 +50,9 @@ const alive = (pid: number) => {
 
 await mock.module("@lydell/node-pty", () => ({
   spawn(command: string, args: string[], options: { cwd?: string; env?: Record<string, string> }) {
-    const pid = nextSpawnPid ?? disposablePid()
+    const pid = nextSpawnPid ?? disposablePid(nextSpawnScript)
     nextSpawnPid = undefined
+    nextSpawnScript = undefined
     let ready = nextSpawnDelay === 0
     if (!ready) setTimeout(() => { ready = true }, nextSpawnDelay)
     nextSpawnDelay = 0
@@ -92,6 +94,7 @@ beforeEach(async () => {
   process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR = path.join(tmpDir, "history")
   fakeProcesses.clear()
   nextSpawnPid = undefined
+  nextSpawnScript = undefined
   nativeKills.length = 0
 })
 
@@ -395,23 +398,19 @@ async function waitFor(predicate: () => boolean) {
 describe("Pty unresolved retirement", () => {
   test("a terminal that ignores TERM is escalated to KILL and only then reported stopped", () => withSessionCore(testSessionCore(tmpDir, "ws_test"), async () => {
     const { Pty } = await import("./index")
-    const stubborn = spawnChild("/bin/sh", ["-c", "trap '' TERM; while true; do sleep 0.05; done"], {
-      detached: true,
-      stdio: "ignore",
-    })
-    disposableChildren.push(stubborn)
-    nextSpawnPid = stubborn.pid!
-    // Let the trap take effect, or the first TERM kills it for the wrong reason.
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    nextSpawnScript = "trap '' TERM; while true; do sleep 0.05; done"
 
     const info = await Pty.create({ cwd: tmpDir, title: "stubborn" }, ownership)
-    expect(info.pid).toBe(stubborn.pid!)
+    // Claimed, so the 5 ms provisional reaper leaves the retirement to `remove`.
+    Pty.commit(info.id)
+    // Let the trap take effect, or the first TERM kills it for the wrong reason.
+    await new Promise((resolve) => setTimeout(resolve, 300))
 
     const result = await Pty.remove(info.id)
 
     expect(result?.leader).toBe("exited")
     expect(result?.signals.map((item) => item.signal)).toEqual(["SIGTERM", "SIGKILL"])
-    expect(alive(stubborn.pid!)).toBe(false)
+    expect(alive(info.pid)).toBe(false)
     expect(Pty.get(info.id)).toBeUndefined()
   }), 20_000)
 
@@ -467,13 +466,13 @@ describe("Pty unresolved retirement", () => {
     // A leader with a member of its own. Killing only the leader leaves the
     // group populated, which is the one outcome that is honestly reportable
     // here: macOS cannot make a process survive SIGKILL.
-    const leader = spawnChild("/bin/sh", ["-c", "sleep 30 & sleep 30"], { detached: true, stdio: "ignore" })
-    disposableChildren.push(leader)
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    nextSpawnPid = leader.pid!
+    nextSpawnScript = "sleep 30 & sleep 30"
 
     const info = await Pty.create({ cwd: tmpDir, title: "orphaned-group" }, ownership)
-    process.kill(leader.pid!, "SIGKILL")
+    // Claimed, so the 5 ms provisional reaper does not retire the group before the leader is killed.
+    Pty.commit(info.id)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    process.kill(info.pid, "SIGKILL")
     await new Promise((resolve) => setTimeout(resolve, 300))
 
     const result = await Pty.remove(info.id)
