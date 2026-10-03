@@ -63,7 +63,7 @@ async function addAttachment(input: ReaderInput, file: File): Promise<boolean> {
   const lifecycle = machine<AttachmentState, AttachmentEvent>({ kind: "reading", id, filename: file.name }, attachmentTransition)
   input.store.setAttachment(key, lifecycle.state())
   const editor = input.editor()
-  const target = input.store.draftTarget(key)
+  const target = input.store.draftRef(key)
   const cursor = input.store.draft(key).cursor ?? (editor ? getCursorPosition(editor) : undefined)
   lifecycle.send(await readAttachment(input, file, id))
   const state = lifecycle.state()
