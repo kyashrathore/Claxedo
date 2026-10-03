@@ -66,8 +66,8 @@ test("session list: a paired project whose account page fails lists the daemon's
   expect(page.rows).toEqual([])
 })
 
-test("session list: a listed session served by its own host is routed there from then on", async () => {
-  const hosted: Array<[unknown, string]> = []
+test("session list: every listed session's host, its own or its workspace, is recorded from its row", async () => {
+  const hosted: Array<[unknown, string | undefined]> = []
   const item = (sessionId: string, extra: Record<string, unknown> = {}) => ({
     sessionId, sessionRef: `workspace:ws_cloud:session:${sessionId}`, directory: "workspace:ws_cloud", workspaceId: "ws_cloud", createdAt: 1, updatedAt: 2, ...extra,
   })
@@ -77,13 +77,16 @@ test("session list: a listed session served by its own host is routed there from
       address: { placementFor: () => ({ placementId: "ws_cloud", projectId: "prj_1" }) },
       learn: async () => undefined,
       accountProjectIds: () => [],
-      hostSession: (ref: unknown, root: string) => hosted.push([ref, root]),
+      hostSession: (ref: unknown, root: string | undefined) => hosted.push([ref, root]),
     },
     status: { listed: (_ref: unknown, status: unknown) => status },
   } as unknown as SessionContext
   const page = await listSessions(value, { projectId: projectId("prj_1"), limit: 5, settled: "all" })
   expect(page.rows.map((row) => String(row.ref.sessionId)).toSorted()).toEqual(["ses_codex", "ses_pi"])
-  expect(hosted).toEqual([[{ projectId: "prj_1", placementId: "ws_cloud", sessionId: "ses_pi" }, "ses_pi"]])
+  expect(hosted.toSorted((a, b) => String(a[1]).localeCompare(String(b[1])))).toEqual([
+    [{ projectId: "prj_1", placementId: "ws_cloud", sessionId: "ses_pi" }, "ses_pi"],
+    [{ projectId: "prj_1", placementId: "ws_cloud", sessionId: "ses_codex" }, undefined],
+  ])
 })
 
 test("session list: every readable session is one all-scoped read of the server, and a signed desktop adds its account's under the reader's own settled filter", async () => {

@@ -52,6 +52,7 @@ function signedDesktop(sources: { daemon: readonly Item[]; account: readonly Ite
     workspaces: {
       address: { placementFor: (_directory: string, workspaceId?: string) => ({ placementId: placementId(workspaceId ?? "none"), projectId: projectId("local_1") }) },
       learn: async () => undefined,
+      hostSession: () => undefined,
       accountProjectIds: (id: ProjectId) => (id === "local_1" ? [projectId("prj_cp")] : []),
       accountKnows: (workspaceId: string) => workspaceId === "ws_published",
       home: async (ref: { placementId: string }) => ({ route: { workspaceId: ref.placementId, directory: "/work", remote: false } }),

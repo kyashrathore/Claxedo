@@ -30,7 +30,7 @@ export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
   readonly locate: (id: PlacementId) => Promise<RuntimeRoute>
   readonly home: (ref: SessionLocation) => Promise<SessionHome>
   readonly learn: (directory: string) => Promise<void>
-  readonly hostSession: (ref: Pick<SessionLocation, "placementId" | "sessionId">, root: string) => void
+  readonly hostSession: (ref: Pick<SessionLocation, "placementId" | "sessionId">, root: string | undefined) => void
   readonly catalog: () => BootstrapCatalog | undefined
   readonly load: () => Promise<BootstrapCatalog>
   readonly refresh: () => Promise<void>
@@ -73,17 +73,19 @@ function observeQuery(queryClient: QueryClient, key: readonly unknown[]): { read
 
 function placementReads(records: () => readonly PlacementRecord[]) {
   const recordOf = (id: PlacementId) => records().find((record) => record.placement.id === id)
-  const hosts: SessionHosts = new Map()
+  const hosts: SessionHosts = { roots: new Map(), answered: new Map() }
+  const answer = (key: string, root: string | undefined) => {
+    if (root) hosts.roots.set(key, root)
+    hosts.answered.set(key, Promise.resolve())
+  }
   const learnSessionHost = (workspaceId: string, sessionId: string, root: string) => {
     const placement = records().find((record) => record.route.workspaceId === workspaceId)?.placement.id ?? placementId(workspaceId)
-    hosts.set(sessionHostKey({ placementId: placement, sessionId: asSessionId(sessionId) }), root)
+    answer(sessionHostKey({ placementId: placement, sessionId: asSessionId(sessionId) }), root)
   }
   const published: Pick<Workspaces, "byId" | "list" | "hostSession"> = {
     byId: (id: PlacementId) => recordOf(id)?.placement,
     list: () => records().map((record) => record.placement),
-    hostSession: (ref, root) => {
-      hosts.set(sessionHostKey(ref), root)
-    },
+    hostSession: (ref, root) => answer(sessionHostKey(ref), root),
   }
   return {
     recordOf,
@@ -99,20 +101,42 @@ function placementReads(records: () => readonly PlacementRecord[]) {
   }
 }
 
-type SessionHosts = Map<string, string>
+/** A session in `answered` with no entry in `roots` is served by its workspace. */
+type SessionHosts = { readonly roots: Map<string, string>; readonly answered: Map<string, Promise<unknown>> }
 
 const sessionHostKey = (ref: Pick<SessionLocation, "placementId" | "sessionId">) => JSON.stringify([ref.placementId, ref.sessionId])
 
 function hostedRoute(record: PlacementRecord, hosts: SessionHosts, ref: Pick<SessionLocation, "placementId" | "sessionId">): RuntimeRoute | undefined {
-  const root = hosts.get(sessionHostKey(ref))
+  const root = hosts.roots.get(sessionHostKey(ref))
   return root ? { ...record.route, sessionHost: { sessionId: root } } : undefined
 }
 
-function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | undefined>, shared: Workspaces["shared"], hosts: SessionHosts): Pick<Workspaces, "route" | "locate" | "home"> {
+type HostFinder = Transport["findSessionHost"]
+
+/** A cold open can route a cloud session before any list page has named its host, so its first route asks the control plane. */
+function cloudSessionHosts(find: HostFinder, hosts: SessionHosts) {
+  return async (record: PlacementRecord, ref: Pick<SessionLocation, "placementId" | "sessionId">) => {
+    if (record.placement.kind !== "cloud") return hostedRoute(record, hosts, ref)
+    const key = sessionHostKey(ref)
+    const pending = hosts.answered.get(key) ?? find(record.route.workspaceId, ref.sessionId).then((root) => {
+      if (root) hosts.roots.set(key, root)
+    }, (error: unknown) => {
+      hosts.answered.delete(key)
+      throw error
+    })
+    hosts.answered.set(key, pending)
+    await pending
+    return hostedRoute(record, hosts, ref)
+  }
+}
+
+function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | undefined>, shared: Workspaces["shared"], hosts: SessionHosts,
+  findHost: HostFinder): Pick<Workspaces, "route" | "locate" | "home"> {
+  const hostOf = cloudSessionHosts(findHost, hosts)
   const resolve = async (ref: Pick<SessionLocation, "placementId" | "sessionId"> | PlacementId) => {
     const id = typeof ref === "string" ? ref : ref.placementId
     const record = await find(id)
-    const hosted = record && typeof ref !== "string" ? hostedRoute(record, hosts, ref) : undefined
+    const hosted = record && typeof ref !== "string" ? await hostOf(record, ref) : undefined
     if (hosted) return { route: hosted, central: false, live: true, stopped: false }
     if (!record && typeof ref !== "string") {
       await shared.load()
@@ -220,7 +244,7 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
     ...placementRoutes(async (id) => {
       await load()
       return recordOf(id)
-    }, shared, hosts),
+    }, shared, hosts, transport.findSessionHost),
     learn: async (directory) => {
       if (relearned.has(directory)) return
       await reread()

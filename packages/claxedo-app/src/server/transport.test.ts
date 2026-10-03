@@ -106,3 +106,22 @@ test("a reservation's host that answers no connection fails the create loudly", 
   const { transport } = signed(new Error("operation \"session.connection.mint\" failed: 409 (session_host_unavailable)"))
   await expect(transport.connectSession("ws_cloud", "ses_codex")).rejects.toThrow(/session_host_unavailable/)
 })
+
+test("a signed desktop finds a cold session's host in the session's own control-plane row, read once through the account", async () => {
+  const { transport, calls } = signed({ items: [{ sessionId: "ses_pi", workspaceId: "ws_cloud", sessionHostRoot: "ses_pi" }] }, { items: [{ sessionId: "ses_codex", workspaceId: "ws_cloud" }] })
+  expect(await transport.findSessionHost("ws_cloud", "ses_pi")).toBe("ses_pi")
+  expect(await transport.findSessionHost("ws_cloud", "ses_codex")).toBeUndefined()
+  expect(calls).toEqual([
+    { operation: "session.activity.page", input: { sessionId: "ses_pi", limit: 1, settled: "all", sort: "human_turn_desc" } },
+    { operation: "session.activity.page", input: { sessionId: "ses_codex", limit: 1, settled: "all", sort: "human_turn_desc" } },
+  ])
+  expect(fetcher).not.toHaveBeenCalled()
+})
+
+test("a browser finds a cold session's host in its control-plane row and mints nothing for it", async () => {
+  const transport = createTransport({ serverUrl: "https://cp.test", cookies: true })
+  fetcher.mockImplementation(Object.assign(async () => Response.json({ items: [{ sessionId: "ses_pi", workspaceId: "ws_cloud", sessionHostRoot: "ses_pi" }] }), { preconnect: fetch.preconnect }))
+  expect(await transport.findSessionHost("ws_cloud", "ses_pi")).toBe("ses_pi")
+  expect(await transport.findSessionHost("ws_other", "ses_pi"), "a row of another workspace names no host here").toBeUndefined()
+  expect(fetcher.mock.calls.map(([url]) => href(url))).toEqual(Array(2).fill("https://cp.test/api/control/session-list?scope=all&sessionId=ses_pi&limit=1&settled=all&sort=human_turn_desc"))
+})
