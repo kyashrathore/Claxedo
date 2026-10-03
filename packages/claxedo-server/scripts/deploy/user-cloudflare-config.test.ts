@@ -68,6 +68,7 @@ describe("user-deployed Cloudflare configuration", () => {
       ...env,
       CLAXEDO_WORKER_NAME: "claxedo-user-deployed-locked-staging",
       CLAXEDO_APP_WORKER_NAME: "claxedo-user-deployed-app-staging",
+      CLAXEDO_SESSION_HOST_WORKER_NAME: "claxedo-user-deployed-session-host-staging",
       CLAXEDO_DEPLOYMENT_ID: "deployment-staging",
       CLAXEDO_AUTH_D1_DATABASE_NAME: "claxedo-auth-staging",
       CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME: "claxedo-control-plane-staging",
@@ -75,6 +76,7 @@ describe("user-deployed Cloudflare configuration", () => {
     expect(target).toEqual({
       workerName: "claxedo-user-deployed-locked-staging",
       appWorkerName: "claxedo-user-deployed-app-staging",
+      sessionHostWorkerName: "claxedo-user-deployed-session-host-staging",
       deploymentId: "deployment-staging",
       apiOrigin: "https://api.example.com",
       appOrigin: "https://app.example.com",

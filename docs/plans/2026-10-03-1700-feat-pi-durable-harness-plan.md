@@ -575,7 +575,7 @@ Package export (A): `@claxedo/harness/pi-durable` → `src/transports/pi-durable
   - DO binding `SESSION_HOST` / `SessionDO` with `[[migrations]] tag = "v1" new_sqlite_classes = ["SessionDO"]`;
   - vars: relay host public key, kid, relay URL, CP authority path.
   
-  Wire it into the existing deploy script so the session-host Worker deploys before the relay.
+  Wire it into the existing deploy script so the session-host Worker deploys after the control-plane Worker (it binds it as a service) and before the relay (which binds it by script name).
 - `harness/e2e/harness/hosted-cloud.ts` and `BOOT_TARGETS.md`: boot the session-host Worker in Miniflare next to the CP Worker, bind it into the relay process.
 - Flows `H19.pi-cloud-turn` and `H19.hostedpi-cloud-turn` assert DO placement: the session row has `session_host_root`, a tool writes a file visible through the VM `routes/file.ts`, and the transcript is read through the DO.
 
@@ -767,7 +767,7 @@ Package READMEs are updated by their lanes:
 
 Needs a deployed environment:
 1. **Staging D1 reset.** The baseline changed; a deploy refuses an existing database (`claxedo-server/README.md` "Control-plane D1 schema"), so `wrangler d1 delete` is required. Needs owner approval.
-2. **Deploy order:** session-host Worker → CP Worker → relay Worker, with its `SESSION_HOST` `script_name` binding. Then confirm the cross-Worker DO binding and the DO→CP service binding.
+2. **Deploy order:** CP Worker → session-host Worker → relay Worker, with its `SESSION_HOST` `script_name` binding. Then confirm the cross-Worker DO binding and the DO→CP service binding.
 3. Pi cloud turn end to end through the deployed relay: tool on a Cloudflare-sandbox VM, then Docker/Modal/Vercel if configured.
 4. **Real eviction mid model stream:** a deploy during a turn and a forced eviction resume within the 60 s lease. A stream longer than 15 minutes is a known platform limit; record the observed behavior.
 5. Real `openai-codex` subscription with direct token: local daemon and DO; refresh near expiry.

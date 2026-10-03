@@ -131,6 +131,8 @@ jobs:
       # domains already live on.
       CLAXEDO_WORKER_NAME: claxedo-user-deployed-locked-staging
       CLAXEDO_APP_WORKER_NAME: claxedo-user-deployed-app-staging
+      # The relay's staging environment binds SESSION_HOST to this script name.
+      CLAXEDO_SESSION_HOST_WORKER_NAME: claxedo-session-host-staging
       CLAXEDO_AGENT_PLUGINS_BUCKET: claxedo-agent-plugins-staging
       CLAXEDO_SANDBOX_POSTURE: full-hosted
       CLAXEDO_SANDBOX_DRIVER: cloudflare

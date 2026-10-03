@@ -10,7 +10,7 @@ Merging to `staging` deploys Claxedo Cloud staging. One workflow owns the run:
 | 1 | `plan` | nothing — selects components | `.github/actions/detect-ci-changes` |
 | 2 | `gate` | nothing | `bun run lint`, `bun typecheck`, `bun run test:ci-policy`, `bun run test:architecture-ratchets` |
 | 2 | `unit` | nothing | `.github/workflows/test.yml` with `linux-unit-only` (full unit suite, Linux) |
-| 3 | `control-plane` | Better Auth + D1 Worker **and the browser app** | `packages/claxedo-server/scripts/deploy/deploy-user-cloudflare.ts` |
+| 3 | `control-plane` | Better Auth + D1 Worker, **the browser app and the session-host Worker** | `packages/claxedo-server/scripts/deploy/deploy-user-cloudflare.ts` |
 | 4 | `relay` | workspace relay Worker (Durable Object) | `packages/workspace-relay/scripts/deploy-cloudflare.ts` |
 | 5 | `sandbox-image` | Cloudflare sandbox Worker container image | `.github/workflows/deploy-cloudflare-sandbox-worker.yml` |
 | 6 | `result` | nothing — fails the run if a selected component did not succeed | inline |
@@ -45,6 +45,17 @@ web app. The Cloudflare Pages project `claxedo-app-staging` is the retired
 Clerk/Convex-era app; `deploy-claxedo-app-staging.yml` still deploys it on
 dispatch, and pointing it at this control plane means repointing the `staging`
 environment's `CLAXEDO_CONTROL_PLANE_URL` and `CLAXEDO_APP_URL` first.
+
+### The session-host Worker is not a separate job
+
+After the control-plane Worker serves its new version, `deploy-user-cloudflare.ts`
+publishes `packages/session-host` (one `SessionDO` per top-level Pi session) as
+`CLAXEDO_SESSION_HOST_WORKER_NAME`, `claxedo-session-host-staging` on staging. It
+binds the control-plane Worker as its `CONTROL_PLANE` service, so it is published
+after it, and the relay binds its `SessionDO` as `SESSION_HOST` by that script
+name, so the relay job comes after both. The dry run bundles it too. Its
+variables are the control plane's `/api/runtime-authority/session-authorize` and
+the relay's `/.well-known/jwks.json`; it has no secret.
 
 ### The relay
 
