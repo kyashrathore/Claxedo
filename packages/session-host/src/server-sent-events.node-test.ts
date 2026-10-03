@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import { serverSentEvents } from "./server-sent-events"
 
-function stream(...chunks: string[]) {
+function chunkedBody(...chunks: string[]) {
   const encoder = new TextEncoder()
   return new ReadableStream<Uint8Array>({
     start(controller) {
@@ -14,7 +14,7 @@ function stream(...chunks: string[]) {
 
 async function read(...chunks: string[]) {
   const events = []
-  for await (const event of serverSentEvents(stream(...chunks))) events.push(event)
+  for await (const event of serverSentEvents(chunkedBody(...chunks))) events.push(event)
   return events
 }
 

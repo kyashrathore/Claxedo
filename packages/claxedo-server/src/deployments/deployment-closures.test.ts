@@ -59,8 +59,9 @@ const ENTRIES = [
   // Every entry serves a Pi session on a cloud
   // workspace from its own Durable Object: the session host port
   // (`authority/session-hosts.ts`), its connection mint
-  // (`connections/session-host-connection.ts`) and its per-turn routes
-  // (`routes/session-host-delivery.ts`), with the session authority's request
+  // (`connections/session-host-connection.ts`), its per-turn and delete routes
+  // (`routes/session-host-delivery.ts`) and the D1 delete of its row
+  // (`d1/hosted-session-delete.ts`), with the session authority's request
   // parsing (`session/runtime-authority-request.ts`) and the D1 session
   // row shapes (`d1/session-rows.ts`) as modules of their own. A reservation
   // places its session by the creator's default harness when it names none
@@ -68,20 +69,20 @@ const ENTRIES = [
   // enrolled owner's machine are both handed the owner's Pi accounts by one
   // owner (`credentials/pi-direct-rows.ts`). The session authority's signed
   // proofs are minted and read in `session/runtime-session-proofs.ts`.
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 136, packages: 19 },
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 137, packages: 19 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
   // plus `agent-plugins/signed-scope.ts`, the caller and write guard the
   // activation and source stores share, and the Pi launch a session served by
   // its own Durable Object is delivered (`agent-plugins/runtime/session-host-launch.ts`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 188, packages: 23 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 189, packages: 23 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
   // ready cloud runtime and admits it at the session-rows ingest, and only
   // this entry has cloud runtimes to publish rows.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 195, packages: 23 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 196, packages: 23 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
