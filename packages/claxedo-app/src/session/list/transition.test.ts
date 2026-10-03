@@ -78,7 +78,12 @@ test("a session's last turn comes from its listed row and its turn-end frame, an
   const read = run(ended, { type: "rowRead", row: { ...a1, lastTurn: outcome } })
   const relisted = run(read, { type: "sessionUpserted", row: { ...a1, lastTurn: { status: "cancelled", completedAt: 60 } } })
   const late = run(relisted, { type: "statusChanged", ref: a1.ref, status: { kind: "idle" }, lastTurn: { status: "completed", completedAt: 50 }, at: 1_200 })
-  expect([lastTurn(read), lastTurn(relisted), lastTurn(late)]).toEqual([outcome, outcome, outcome])
+  const tied = run(late, { type: "sessionUpserted", row: { ...a1, lastTurn: { status: "failed", completedAt: 60 } } })
+  expect([lastTurn(read), lastTurn(relisted), lastTurn(late), lastTurn(tied)]).toEqual([outcome, outcome, outcome, outcome])
+
+  const narrowFirst = run(listed, { type: "statusChanged", ref: a1.ref, status: { kind: "idle" }, lastTurn: { status: "cancelled", completedAt: 60 }, at: 1_100 })
+  const otherTurnRead = run(narrowFirst, { type: "rowRead", row: { ...a1, lastTurn: { ...outcome, status: "completed" as const } } })
+  expect(lastTurn(otherTurnRead), "a read ending at the same time with another status is not the held turn's detail").toEqual({ status: "cancelled", completedAt: 60 })
 })
 
 test("a session read older than the row it meets never rolls back the row's selections", () => {

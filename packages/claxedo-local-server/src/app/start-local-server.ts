@@ -258,12 +258,10 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     }).catch((error) => log.warn("local runtime event projection degraded", { error: String(error) }))
   }
   settleTurnOutcome = ({ workspaceId, sessionId, assistantMessageId, outcome }) => {
-    // Runs inside the runtime store's finishTurn: a throw here would report a committed turn as unrecorded.
-    try {
-      recordSessionLastTurn(workspaceId, sessionId, { status: outcome.status, completedAt: outcome.completedAt })
-    } catch (error) {
-      log.warn("a session's last turn was not recorded in the session list", { sessionId, error: String(error) })
-    }
+    // Behind the session.updated projection on the same tail: a child's row is created there, and its turn can end first.
+    usageEventTail = usageEventTail
+      .then(() => recordSessionLastTurn(workspaceId, sessionId, { status: outcome.status, completedAt: outcome.completedAt }))
+      .catch((error) => log.warn("a session's last turn was not recorded in the session list", { sessionId, error: String(error) }))
     if (outcome.status !== "cancelled" || !assistantMessageId) return
     usageEventTail = usageEventTail
       .then(() => turnMeter.settle({

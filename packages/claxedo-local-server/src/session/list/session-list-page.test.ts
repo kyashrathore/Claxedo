@@ -13,8 +13,7 @@ const prev = { CLAXEDO_DATA_DIR: process.env.CLAXEDO_DATA_DIR, CLAXEDO_STATE_DIR
 process.env.CLAXEDO_DATA_DIR = root
 process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 
-const { ClaxedoDB, and, eq, inArray } = await import("@claxedo/server-core/platform/db/index")
-const { ClaxedoSessionMetaTable } = await import("@claxedo/server-core/session/meta.sql")
+const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
 const { putSessionMeta, recordSessionLastTurn } = await import("@claxedo/server-core/session/meta/index")
 const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
 const { parseSessionListQuery } = await import("@claxedo/server-core/session/navigation-list")
@@ -112,18 +111,38 @@ describe("localSessionListPage", () => {
     })
   })
 
-  test("a page reads its rows' last turn with the row, by primary key", () => {
+  test("a page reads its rows' last turn with the row by primary key, and a turn's record finds its row by index", async () => {
+    const ws = await workspace("plans")
+    await putSessionMeta("ses_planned", { ws, title: "Planned", createdAt: 1, updatedAt: 1 })
     const db = ClaxedoDB.raw()
-    const plan = (sql: string) => (db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all() as Array<{ detail: string }>).map((step) => step.detail)
-    const hydrate = ClaxedoDB.use((client) =>
-      client.select().from(ClaxedoSessionMetaTable).where(inArray(ClaxedoSessionMetaTable.session_ref, ["a", "b"])).toSQL().sql)
+    const statements: Array<{ sql: string; params: unknown[] }> = []
+    const prepare = db.prepare
+    db.prepare = ((sql: string) => {
+      const statement = prepare.call(db, sql)
+      const recorded = (method: "all" | "get" | "run") => {
+        const run = statement[method].bind(statement)
+        return (...params: unknown[]) => (statements.push({ sql, params }), run(...params))
+      }
+      return Object.assign(statement, { all: recorded("all"), get: recorded("get"), run: recorded("run") })
+    }) as typeof db.prepare
+    try {
+      recordSessionLastTurn(ws.id, "ses_planned", { status: "completed", completedAt: 10 })
+      await localSessionListPage({
+        query: parseSessionListQuery(new URL(`http://daemon.test/api/claxedo/session-list?scope=workspace&workspaceId=${ws.id}&limit=10`)),
+        workspace: ws,
+        projectWorkspaces: async () => [],
+        readRuntimeStatus: runtime({}).read,
+      })
+    } finally {
+      db.prepare = prepare
+    }
+    const plan = ({ sql, params }: { sql: string; params: unknown[] }) =>
+      (db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...params) as Array<{ detail: string }>).map((step) => step.detail)
+    const write = statements.find((statement) => /^update "claxedo_session_meta" set "last_turn_status"/.test(statement.sql))
+    const read = statements.find((statement) => /^select .*"last_turn_status".* from "claxedo_session_meta" where "claxedo_session_meta"."session_ref" in/.test(statement.sql))
+    if (!write || !read) throw new Error(`the record or the row read was not observed: ${statements.map((statement) => statement.sql).join("\n")}`)
 
-    const record = ClaxedoDB.use((client) =>
-      client.update(ClaxedoSessionMetaTable).set({ last_turn_status: "completed", last_turn_completed_at: 1 })
-        .where(and(eq(ClaxedoSessionMetaTable.session_id, "s"), eq(ClaxedoSessionMetaTable.workspace_id, "w"))).toSQL().sql)
-
-    expect(plan(record.replace(/\?/g, "'x'"))).toEqual([expect.stringMatching(/^SEARCH claxedo_session_meta USING INDEX claxedo_session_meta_session_idx \(session_id=\?\)$/)])
-    expect(hydrate).toContain("\"last_turn_status\"")
-    expect(plan(hydrate.replace(/\?/g, "'x'"))).toEqual([expect.stringMatching(/^SEARCH claxedo_session_meta USING INDEX sqlite_autoindex_claxedo_session_meta_1 \(session_ref=\?\)$/)])
+    expect(plan(write)).toEqual([expect.stringMatching(/^SEARCH claxedo_session_meta USING INDEX claxedo_session_meta_session_idx \(session_id=\?\)$/)])
+    expect(plan(read)).toEqual([expect.stringMatching(/^SEARCH claxedo_session_meta USING INDEX sqlite_autoindex_claxedo_session_meta_1 \(session_ref=\?\)$/)])
   })
 })

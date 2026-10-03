@@ -1,5 +1,5 @@
 import { isJsonRecord } from "../../platform/runtime/lib/json"
-import { ClaxedoDB, and, eq, inArray, isNull, lte, or, textColumns } from "../../platform/db"
+import { ClaxedoDB, and, eq, inArray, isNull, lt, or, textColumns } from "../../platform/db"
 import {
   ClaxedoSessionAttachmentTable,
   ClaxedoSessionMetaTable,
@@ -95,7 +95,7 @@ export async function syncSessionMeta(ws: SessionProjectionWorkspace | undefined
   if (row?.workspace_id) reportSessionMetaChanges([{ kind: "changed", workspaceId: row.workspace_id, sessionId: row.session_id }])
 }
 
-/** A turn's outcome as its runtime recorded it; one that ended before the held outcome writes nothing. */
+/** A turn's outcome as its runtime recorded it; one that ended no later than the held outcome writes nothing. */
 export function recordSessionLastTurn(workspaceID: string, sessionID: string, lastTurn: SessionLastTurn) {
   const table = ClaxedoSessionMetaTable
   const written = ClaxedoDB.use((db) =>
@@ -104,7 +104,7 @@ export function recordSessionLastTurn(workspaceID: string, sessionID: string, la
       .where(and(
         eq(table.session_id, sessionID),
         eq(table.workspace_id, workspaceID),
-        or(isNull(table.last_turn_completed_at), lte(table.last_turn_completed_at, lastTurn.completedAt)),
+        or(isNull(table.last_turn_completed_at), lt(table.last_turn_completed_at, lastTurn.completedAt)),
       ))
       .returning({ sessionRef: table.session_ref })
       .all(),

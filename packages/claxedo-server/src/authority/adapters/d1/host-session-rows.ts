@@ -21,8 +21,9 @@ type ServedWorkspace = { workspace_id: string; owner_actor_id: string; org_id: s
  * never seen is adopted for the enrollment owner, as `adoptRuntimeSession`
  * adopts one: the machine held it before anyone reached it through the plane.
  *
- * Republishing is idempotent: turn and update times only move forward, and a
- * status replaces the held one only when it was reported at or after it.
+ * Republishing is idempotent: turn and update times only move forward, a
+ * status replaces the held one only when it was reported at or after it, and
+ * a last turn replaces the held one only when it ended later.
  */
 export async function publishD1HostSessionRows(
   database: D1Database,
@@ -134,8 +135,8 @@ function listFieldsStatement(database: D1Database, row: HostSessionRow) {
         status = case when status_at is null or status_at <= ? then ? else status end,
         awaiting_input = case when status_at is null or status_at <= ? then ? else awaiting_input end,
         status_at = case when status_at is null or status_at <= ? then ? else status_at end,
-        last_turn_status = case when ? is not null and coalesce(last_turn_completed_at, 0) <= ? then ? else last_turn_status end,
-        last_turn_completed_at = case when ? is not null and coalesce(last_turn_completed_at, 0) <= ? then ? else last_turn_completed_at end
+        last_turn_status = case when ? is not null and (last_turn_completed_at is null or last_turn_completed_at < ?) then ? else last_turn_status end,
+        last_turn_completed_at = case when ? is not null and (last_turn_completed_at is null or last_turn_completed_at < ?) then ? else last_turn_completed_at end
       where session_id = ? and workspace_id = ? and deleted_at is null
     `)
     .bind(

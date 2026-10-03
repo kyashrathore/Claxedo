@@ -2374,7 +2374,7 @@ describe("machine session rows", () => {
     ])
   })
 
-  test("carries each session's last turn to the list, and an older turn never replaces a newer one", async () => {
+  test("carries each session's last turn to the list; an older one, or one ending at the same time, never replaces it", async () => {
     const { publish, page, alice, local } = await served()
 
     await publish({
@@ -2385,7 +2385,13 @@ describe("machine session rows", () => {
         row("ses_fresh"),
       ],
     })
-    await publish({ rows: [row("ses_done", { lastTurn: { status: "failed", completedAt: 305 } }), row("ses_fresh")] })
+    await publish({
+      rows: [
+        row("ses_done", { lastTurn: { status: "failed", completedAt: 305 } }),
+        row("ses_broke", { lastTurn: { status: "completed", completedAt: 320 } }),
+        row("ses_fresh"),
+      ],
+    })
 
     const query = parseSessionListQuery(new URL(`http://plane.test/api/control/session-list?scope=project&projectId=${local.project_id}&sort=human_turn_desc`))
     const items = buildSessionListResponse({ query, sessions: await page(alice), cursorApplied: true }).items

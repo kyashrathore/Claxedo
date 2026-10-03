@@ -4,13 +4,13 @@ import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
-import { onSessionMetaChange, putSessionMeta, sessionMeta, type SessionMetaChange } from "@claxedo/server-core/session/meta/index"
+import { onSessionMetaChange, putSessionMeta, sessionMeta, syncSessionMeta, type SessionMetaChange } from "@claxedo/server-core/session/meta/index"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
 import type * as EmbeddedRuntime from "../deployments/local/embedded-workspace-runtime"
 import { startLocalServer, type LocalServer } from "./start-local-server"
 import type { LocalAppOptions } from "./local-app"
 import { testDaemon } from "./test-support/daemon"
-import { buildAssistantMessage, messageUpdated, sessionUsage } from "@claxedo/session-core"
+import { buildAssistantMessage, messageUpdated, sessionUpdated, sessionUsage } from "@claxedo/session-core"
 
 type RuntimeHooks = Parameters<typeof EmbeddedRuntime.configureEmbeddedWorkspaceRuntime>[0]
 
@@ -166,12 +166,31 @@ test("each turn the runtime records lands on its session's list row; a late olde
     { status: "cancelled", completedAt: 30, reason: "abort" },
   ] as const) {
     finish(outcome)
-    expect((await sessionMeta("ses_listed"))?.lastTurn).toEqual({ status: outcome.status, completedAt: outcome.completedAt })
+    await vi.waitFor(async () => expect((await sessionMeta("ses_listed"))?.lastTurn).toEqual({ status: outcome.status, completedAt: outcome.completedAt }))
   }
   finish({ status: "completed", completedAt: 25 })
+  finish({ status: "failed", completedAt: 30, error: "a second report of the same turn" })
+  finish({ status: "completed", completedAt: 31 })
+  await vi.waitFor(async () => expect((await sessionMeta("ses_listed"))?.lastTurn).toEqual({ status: "completed", completedAt: 31 }))
   stopWatching()
-  expect((await sessionMeta("ses_listed"))?.lastTurn).toEqual({ status: "cancelled", completedAt: 30 })
-  expect(changes, "each recorded turn nudges the machine's row publisher; the late one does not").toEqual(
-    Array(3).fill({ kind: "changed", workspaceId: "ws_local", sessionId: "ses_listed" }),
+  expect(changes, "each recorded turn nudges the machine's row publisher; an older one and one tied with the held turn do not").toEqual(
+    Array(4).fill({ kind: "changed", workspaceId: "ws_local", sessionId: "ses_listed" }),
   )
+}, 30_000)
+
+test("a child whose turn ends before its row is projected still lists that turn", async () => {
+  server = startLocalServer({
+    port: await freePort(),
+    daemon: testDaemon().daemon,
+    services: { ...services(), projectionStore: { ...services().projectionStore, sync_session_meta: syncSessionMeta } } as LocalAppOptions["services"],
+    corsOrigin: (origin) => origin,
+  })
+  const hooks = runtime.hooks
+  if (!hooks?.onSessionMetaEvent || !hooks.onTurnOutcome) throw new Error("the desktop composes no runtime hooks")
+  const info = { id: "ses_child", directory: "/workspace", workspaceID: "ws_local", parentID: "ses_parent", title: "Child", time: { created: 1, updated: 2 } }
+
+  hooks.onSessionMetaEvent({ directory: "/workspace", payload: sessionUpdated(info as unknown as Parameters<typeof sessionUpdated>[0]) })
+  hooks.onTurnOutcome({ workspaceId: "ws_local", sessionId: "ses_child", outcome: { status: "failed", completedAt: 40, error: "boom" } })
+
+  await vi.waitFor(async () => expect((await sessionMeta("ses_child"))?.lastTurn).toEqual({ status: "failed", completedAt: 40 }))
 }, 30_000)

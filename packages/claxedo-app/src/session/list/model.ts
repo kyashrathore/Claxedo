@@ -192,7 +192,8 @@ function withSelections(row: SessionRow, from: SessionSelections): SessionRow {
 export function laterTurn(held: SessionRow["lastTurn"], incoming: SessionRow["lastTurn"]): SessionRow["lastTurn"] {
   if (!incoming) return held
   if (!held || incoming.completedAt > held.completedAt) return incoming
-  return incoming.completedAt === held.completedAt && turnDetailed(incoming) && !turnDetailed(held) ? incoming : held
+  const sameTurn = incoming.completedAt === held.completedAt && incoming.status === held.status
+  return sameTurn && turnDetailed(incoming) && !turnDetailed(held) ? incoming : held
 }
 
 export function newerRow(current: SessionRow, incoming: SessionRow): SessionRow | undefined {
