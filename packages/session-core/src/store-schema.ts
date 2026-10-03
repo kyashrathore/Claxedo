@@ -332,6 +332,11 @@ const SCHEMA: readonly string[] = [
   ...LAUNCH_OWNERSHIP_SCHEMA,
 ]
 
+const STORE_TABLES = new Set([
+  "runtime_store_schema",
+  ...SCHEMA.flatMap((statement) => /^CREATE TABLE (\w+)/.exec(statement.trim())?.[1] ?? []),
+])
+
 /**
  * The schema's identity is its own text, whitespace aside, so no edit to a
  * table can ship without changing it.
@@ -357,13 +362,13 @@ export class RuntimeStoreSchemaMismatchError extends Error {
  */
 export function openRuntimeStoreSchema(db: SqliteDatabase, location: string) {
   db.transaction(() => {
-    // A Durable Object keeps its own `_cf_` tables in the same database.
+    // A Durable Object's database also holds the platform's `_cf_` tables and
+    // those of whatever else the object hosts, so only the store's own count.
     const tables = db
-      .prepare<{ name: string }>(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\'",
-      )
+      .prepare<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'")
       .all()
       .map((row) => row.name)
+      .filter((name) => STORE_TABLES.has(name))
     if (tables.length === 0) {
       for (const statement of SCHEMA) db.exec(statement)
       db.exec("CREATE TABLE runtime_store_schema (identity TEXT NOT NULL)")
