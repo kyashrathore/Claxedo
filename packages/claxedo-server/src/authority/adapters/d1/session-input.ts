@@ -10,6 +10,7 @@ export type CanonicalMessage = {
   ordinal: number
   dataJson: string
   authorActorId: string | null
+  turnId: string | null
 }
 
 const MAX_SNAPSHOT_MESSAGES = 500
@@ -90,6 +91,7 @@ export function canonicalMessages(input: unknown[]): CanonicalMessage[] {
       ordinal,
       dataJson,
       authorActorId: null,
+      turnId: optionalText(row?.turnId, "message.turnId") ?? null,
     }
   })
 }

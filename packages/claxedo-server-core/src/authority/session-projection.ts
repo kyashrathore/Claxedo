@@ -1,11 +1,10 @@
-import type { AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
 import type { SessionProjectionWorkspace, Workspace } from "../workspace/store/index"
 import type {
   SessionAttachment,
   SessionMeta,
   SessionMetaNavigationListInput,
 } from "../session/meta/index"
-import type { ReplayMessage, SessionMessagePage } from "../session/message-replay"
+import type { ReplayMessage } from "../session/message-replay"
 
 /**
  * The session half of the control-plane projection store.
@@ -59,6 +58,5 @@ export type SessionProjectionStore = {
     includeHidden?: boolean
   }) => Promise<Array<{ channel: string; week: string; count: number }>>
   read_session_messages: (sessionID: string) => ReplayMessage[]
-  read_session_message_page?: (sessionID: string, input: AgentMessagePageInput) => SessionMessagePage
   read_session_max_event_ordinal: (sessionID: string) => number
 }

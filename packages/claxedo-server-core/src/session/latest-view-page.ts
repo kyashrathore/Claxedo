@@ -11,13 +11,17 @@ function isSurfaceMessage(value: unknown): value is LatestSurfaceMessage {
   return !!info && typeof info === "object" && Array.isArray(parts)
 }
 
+function isPrompt(value: unknown) {
+  return isSurfaceMessage(value) && value.info.role === "user"
+}
+
 /**
  * A stored transcript's answer to a semantic view, from the latest turn's
- * messages (its user message first, in ordinal order): `latest-turn` is the
- * whole turn; `latest-surface` its user message and its final message, text
- * parts only. The cursor pages back from the turn's start, or for a surface
- * from its final message, so ordinary `before` paging restores what the
- * surface left out.
+ * messages (its own prompt first, in ordinal order): `latest-turn` is the
+ * whole turn; `latest-surface` its prompts, including any steered into it,
+ * and its final message, text parts only. The cursor pages back from the
+ * turn's start, or for a surface from its final message, so ordinary `before`
+ * paging restores what the surface left out.
  */
 export function latestViewPage(
   view: LatestView,
@@ -31,7 +35,7 @@ export function latestViewPage(
   if (view === "latest-turn") {
     return { messages: turn.map((item) => item.message), ...(olderExists ? { nextCursor: cursorAt(first.ordinal) } : {}) }
   }
-  const selected = (first === last ? [first] : [first, last]).map((item) => item.message).filter(isSurfaceMessage)
+  const selected = turn.filter((item) => item === last || isPrompt(item.message)).map((item) => item.message).filter(isSurfaceMessage)
   return {
     messages: projectLatestSurfaceMessages(selected),
     ...(olderExists || turn.length > 2 ? { nextCursor: cursorAt(last.ordinal) } : {}),

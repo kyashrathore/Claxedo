@@ -489,6 +489,7 @@ CREATE TABLE session_messages (
   author_actor_id text references actors (actor_id) deferrable initially deferred,
   role text not null,
   ordinal integer not null check (ordinal >= 0),
+  turn_id text,
   data_json text not null check (json_valid(data_json)),
   snapshot_generation integer not null check (snapshot_generation >= 1),
   created_at integer not null,
@@ -936,6 +937,9 @@ CREATE INDEX sandbox_passes_workspace_idx on sandbox_passes (workspace_id, audie
 
 CREATE INDEX session_messages_by_session_ordinal
   on session_messages (session_id, ordinal);
+
+CREATE INDEX session_messages_by_session_turn
+  on session_messages (session_id, turn_id, ordinal);
 
 CREATE INDEX session_registration_operations_by_state
   on session_registration_operations (state, updated_at, operation_id);

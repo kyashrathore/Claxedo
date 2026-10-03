@@ -1354,6 +1354,47 @@ describe("D1 latest views", () => {
       creator: { auth: alice, runtime: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" } },
     })).resolves.toBe("a1-p0")
   })
+  test("a turn with a prompt steered into it reads whole from its own prompt, by the turn ids the runtime published", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+    const sessionId = "ses_steered"
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_steered", sessionId })
+    const runtime = { principalKind: "user" as const, actorId: alice.principal!.actorId, actorKind: "human" as const, sessionId, workspaceId: "ws_main" }
+    let fencingToken = 0
+    for (const turnId of ["u1", "u2", "s2"]) {
+      const lease = await input.sessions.acquireSessionTurn({ ...runtime, turnId })
+      await input.sessions.releaseSessionTurn({ ...runtime, turnId, leaseId: lease.leaseId, fencingToken: lease.fencingToken })
+      fencingToken = lease.fencingToken
+    }
+    const entry = (id: string, role: "user" | "assistant", turnId: string, text: string) =>
+      ({ info: { id, role, sessionID: sessionId }, parts: [{ type: "text", text }], turnId })
+    await input.sessions.syncSessionMessages(alice, {
+      updatedAt: Date.now(), sessionId, workspaceId: "ws_main", maxEventOrdinal: 7, fencingToken,
+      messages: [
+        entry("u1", "user", "u1_r", "first"),
+        entry("u1_r", "assistant", "u1_r", "first answer"),
+        entry("u2", "user", "u2_r", "second"),
+        entry("u2_r", "assistant", "u2_r", "before the steer"),
+        entry("s2", "user", "u2_r", "steer"),
+        entry("s2_r", "assistant", "u2_r", "after the steer"),
+      ],
+    })
+    const read = async (page: { view: "latest-turn" | "latest-surface"; before?: string }) =>
+      await input.sessions.readSessionMessages(alice, { sessionId, workspaceId: "ws_main", ...page }) as {
+        messages: Array<{ info: { id: string }; turnId?: string }>
+        nextCursor?: string
+      }
+
+    const turn = await read({ view: "latest-turn" })
+    expect(turn.messages.map((message) => [message.info.id, message.turnId])).toEqual([
+      ["u2", "u2_r"], ["u2_r", "u2_r"], ["s2", "u2_r"], ["s2_r", "u2_r"],
+    ])
+    const earlier = await read({ view: "latest-turn", before: turn.nextCursor })
+    expect(earlier.messages.map((message) => message.info.id)).toEqual(["u1", "u1_r"])
+    expect(earlier.nextCursor).toBeUndefined()
+    const surface = await read({ view: "latest-surface" })
+    expect(surface.messages.map((message) => message.info.id)).toEqual(["u2", "s2", "s2_r"])
+  })
 })
 
 describe("D1 session authority, shares of a session this plane never registered", () => {

@@ -46,6 +46,7 @@ import {
   type SessionTurnLease,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
+import { sha256Hex } from "@claxedo/helpers/crypto"
 import { may, maySql, type AuthorizationPrincipal, type SessionAction, type WorkspaceAction } from "./authorization"
 import { requireHuman } from "./access-context"
 import {
@@ -1375,7 +1376,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     if (byteLength(snapshotJson) > MAX_SNAPSHOT_BYTES) {
       throw new D1SessionAuthorityError("invalid_input", `Session snapshot exceeds ${MAX_SNAPSHOT_BYTES} bytes`)
     }
-    const snapshotHash = await sha256(snapshotJson)
+    const snapshotHash = await sha256Hex(snapshotJson)
     const current = await this.session(sessionId)
     if (!current || current.workspace_id !== workspaceId || current.deleted_at !== null) throw denied()
     if (fencingToken !== undefined) {
@@ -1449,7 +1450,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
               `
           insert into session_messages (
             session_id, workspace_id, org_id, project_id, message_id, author_actor_id,
-            role, ordinal, data_json, snapshot_generation, created_at, updated_at
+            role, ordinal, turn_id, data_json, snapshot_generation, created_at, updated_at
           )
           select s.session_id, s.workspace_id, s.org_id, s.project_id,
             json_extract(j.value, '$.id'),
@@ -1461,6 +1462,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
             ) else null end,
             json_extract(j.value, '$.role'),
             json_extract(j.value, '$.ordinal'),
+            json_extract(j.value, '$.turnId'),
             json_extract(j.value, '$.dataJson'),
             s.snapshot_generation,
             ?, ?
@@ -1472,6 +1474,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
               else null end,
             role = excluded.role,
             ordinal = excluded.ordinal,
+            turn_id = excluded.turn_id,
             data_json = excluded.data_json,
             snapshot_generation = excluded.snapshot_generation,
             updated_at = excluded.updated_at
@@ -2203,9 +2206,4 @@ function denied(message = "Session authorization was denied") {
 
 function isDenied(error: unknown) {
   return error instanceof ControlPlaneAuthError && error.status === 403
-}
-
-async function sha256(value: string) {
-  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
-  return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("")
 }

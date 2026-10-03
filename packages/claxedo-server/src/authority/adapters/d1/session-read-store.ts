@@ -137,11 +137,28 @@ export async function readD1MessagePage(database: D1Database, args: MessageReadI
   }
 }
 
+/**
+ * The newest turn whose prompts were stored before `end` starts at the first
+ * prompt of the latest prompt's turn, so a prompt steered into a running turn
+ * reads with the turn it joined. A prompt the runtime published with no turn
+ * stands as a turn of its own.
+ */
 export async function readD1LatestView(database: D1Database, sessionId: string, workspaceId: string, view: LatestView, end?: number) {
   const endBound = end === undefined ? [] : [end]
   const boundary = await database
-    .prepare(`select max(ordinal) as ordinal from session_messages where session_id = ? and workspace_id = ? and role = 'user'${end === undefined ? "" : " and ordinal < ?"}`)
-    .bind(sessionId, workspaceId, ...endBound)
+    .prepare(`
+      with latest as (
+        select ordinal, turn_id from session_messages
+        where session_id = ? and workspace_id = ? and role = 'user'${end === undefined ? "" : " and ordinal < ?"}
+        order by ordinal desc limit 1
+      )
+      select coalesce(
+        (select min(m.ordinal) from session_messages m, latest
+          where m.session_id = ? and m.workspace_id = ? and m.role = 'user' and m.turn_id = latest.turn_id),
+        (select ordinal from latest)
+      ) as ordinal
+    `)
+    .bind(sessionId, workspaceId, ...endBound, sessionId, workspaceId)
     .first<{ ordinal: number | null }>()
   if (boundary?.ordinal === null || boundary?.ordinal === undefined) return { messages: [] }
   const [turn, older] = await Promise.all([
