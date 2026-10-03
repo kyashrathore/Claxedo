@@ -14,6 +14,13 @@ the bundle. Through the object's `fetch` it proves five things:
 - it evicts the object while a turn is streaming, and while a prompt is queued
   behind that turn, and reopens it (see [Eviction and boot](#eviction-and-boot)).
 
+The production object is `SessionDO` in
+[`packages/session-host`](../../session-host/README.md): one top-level Pi
+session per object, Pi in process on Cloudflare's `PiHarness`, its tools on the
+workspace machine. It composes the same pieces as the fixture below, with the
+relay host token in front and the control plane as its access policy, and its
+own test boots the bundled Worker under workerd with `nodejs_compat`.
+
 The ports themselves are defined in the
 [`@claxedo/session-core` README](../README.md). This note
 records what a Durable Object supplies for each one, and what is still unproven.
@@ -43,7 +50,7 @@ Its workspace is the object's name, and placement comes from its own port.
 
 ## What each port is, per host
 
-| Port | Machine (`workspace-runtime`) | Durable Object | DO |
+| Port | Machine (`workspace-runtime`) | Durable Object | Required |
 |---|---|---|---|
 | `SqliteDatabase` | `openNativeSqliteDatabase` (better-sqlite3 under Node) through `workspace-runtime/src/store-file.ts`, with file root, backups and PRAGMAs | `durableObjectSqliteDatabase(ctx.storage)` | required |
 | Bus | the core's own; PTY and agent hooks publish on the bus of the core that created them | the core's own | required, by construction |
@@ -51,10 +58,10 @@ Its workspace is the object's name, and placement comes from its own port.
 | Placement: `normalizeDirectory`, `canonicalDirectory`, `containsDirectory` | `path.resolve`, `realpath`, path containment | trim, identity, `/`-prefix containment | required |
 | Placement: `sessionIdWorkspace` | the control plane's session index, or the runtime's own store for a self-placed runtime (`storeBackedSessionPlacement`) | none: the object owns every session in its store | required |
 | `childSessions.deriveSessionId` | HMAC with `node:crypto` (`host/child-identity.ts`) | HMAC with Web Crypto, asynchronously | required |
-| `transports`, `launch` | the composed CLI and SDK transports, machine credentials | scripted here; Pi in process for production | required |
+| `transports`, `launch` | the composed CLI and SDK transports, machine credentials | scripted in the fixture; in `SessionDO`, Pi in process with credentials, plugins and provider definitions held only for the turn they were delivered for (`launch.credentials()` answers none between turns) | required |
 | `readAttachment` | bounded filesystem reads that never follow a link (`host/attachment-files.ts` through `workspace-files/open-without-following.ts`) | not supplied: tool images answer unavailable | optional |
 | `flushSessionDocuments`, `disposeSessionDocuments` | Pages hydration (`routes/document-hydration.ts`) | not supplied | optional |
-| Boot | `recoverBusySessions` when the store opens, then `recoverQueuedPrompts` once admitted | both, inside one `blockConcurrencyWhile` | required |
+| Boot | `recoverBusySessions` when the store opens, then `recoverQueuedPrompts` once admitted | both, inside one `blockConcurrencyWhile` in the fixture; in `SessionDO`, inside `PiHarness`'s factory with lease adoption and `resumeDurableRuns` between them (see below) | required |
 
 Each core owns its bus. Durable Objects of one class share an isolate, so a
 process-wide bus would offer every workspace's stream every other workspace's
@@ -109,13 +116,24 @@ object can subscribe to its stream. The SSE replay ring lives in memory and
 dies with the object. A client that reconnects after an eviction therefore
 learns about that turn from the transcript, not from the stream.
 
+### A run that survives eviction
+
+`SessionDO`'s Pi run is durable: Pi committed each tool call before running
+it, and `PiHarness` keeps a wake job whose alarm restarts an evicted object
+while Pi has work. `PiHarness` resumes Pi as soon as its factory returns, so
+the object boots inside the factory: `recoverBusySessions` ends the interrupted
+turn as above, the control plane's turn lease the object stored is adopted
+(`adoptSessionTurnLease`) and the turn's delivery fetched with it, and
+`runtime.resumeDurableRuns` attaches the session, which installs Pi's
+extensions and admits the live run as a continuation turn. The continuation
+runs under the adopted lease, which is released when Pi goes idle; a refused
+renewal aborts the run. Queued prompts are re-issued after that, from the
+object's `onStart`.
+
 ## Not yet proven
 
 These would block a production Durable Object host:
 
-- **A production entry:** the object above is a test fixture. A production
-  object needs a real harness transport (Pi in process), hosted credentials
-  and its own route surface.
 - **A delivery in flight at eviction:** a queued row that a delivery attempt
   had already claimed is not re-issued. Its outcome is unknown, so it stays
   ineligible until someone reconciles it. The tests don't cover this.
