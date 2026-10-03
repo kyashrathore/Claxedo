@@ -91,7 +91,7 @@ async function codexLogin(codexHome: string, home: string, apiKey: string): Prom
   if (code !== 0) throw new Error(`codex login exited ${code}: ${stderr}`)
 }
 
-test("only the own-login home links the owner's auth, and a login in a brokered home stays in that home", async () => {
+test("only the own-login home links the owner's auth, and a login in a brokered home is never written to a file", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-auth-boundary-"))
   try {
     const owner = await ownerHome(root)
@@ -104,11 +104,9 @@ test("only the own-login home links the owner's auth, and a login in a brokered 
     expect(home).not.toBe(own.home)
     expect(await fs.readdir(home)).not.toContain("auth.json")
     await codexLogin(home, root, "sk-brokered-login")
-    const brokeredAuth = await fs.lstat(path.join(home, "auth.json"))
-    expect(brokeredAuth.isSymbolicLink()).toBe(false)
-    expect(await fs.readFile(path.join(home, "auth.json"), "utf8")).toContain("sk-brokered-login")
+    expect(await fs.readdir(home)).not.toContain("auth.json")
     await prepareCodexProfile({ homeRoot, credentials: brokered, projection: noPlugins, ownerHome: owner })
-    expect((await fs.lstat(path.join(home, "auth.json"))).isSymbolicLink()).toBe(false)
+    expect(await fs.readdir(home)).not.toContain("auth.json")
     expect(await snapshot(owner)).toEqual(before)
   } finally { await fs.rm(root, { recursive: true, force: true }) }
 }, 60_000)
