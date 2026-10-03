@@ -1,11 +1,5 @@
-import path from "path"
-
 export function shell(input: string) {
   return `'${input.replace(/'/g, `'"'"'`)}'`
-}
-
-export function file(...parts: string[]) {
-  return shell(path.posix.join(...parts))
 }
 
 /**

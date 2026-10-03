@@ -28,6 +28,13 @@ describe("hosted sandbox driver selection", () => {
     expect(driver?.id).toBe("cloudflare")
   })
 
+  test("the boat driver needs its API key and the runtime image it boots", () => {
+    const boat = { ...plane, CLAXEDO_SANDBOX_DRIVER: "boat" }
+    expect(hostedSandboxDriver({ ...boat, BOAT_API_KEY: "boat-key" })).toBeUndefined()
+    expect(hostedSandboxDriver({ ...boat, CLAXEDO_SANDBOX_IMAGE: "ghcr.io/example/sandbox:1" })).toBeUndefined()
+    expect(hostedSandboxDriver({ ...boat, BOAT_API_KEY: "boat-key", CLAXEDO_SANDBOX_IMAGE: "ghcr.io/example/sandbox:1" })?.id).toBe("boat")
+  })
+
   test("the control env derives every verification endpoint from what the plane already carries", () => {
     expect(sandboxRuntimeControlEnv(plane)).toEqual({
       relayJwksUrl: "https://relay.example.test/.well-known/jwks.json",
@@ -45,6 +52,6 @@ describe("hosted sandbox driver selection", () => {
   test("the fetch bridge needs its URL, and a driver it does not compose is refused", () => {
     expect(hostedSandboxDriver({ ...plane, CLAXEDO_SANDBOX_DRIVER: "fetch" })).toBeUndefined()
     expect(hostedSandboxDriver({ ...plane, CLAXEDO_SANDBOX_DRIVER: "fetch", CLAXEDO_SANDBOX_DRIVER_URL: "https://driver.example.test" })?.id).toBe("fetch")
-    expect(() => hostedSandboxDriver({ ...plane, CLAXEDO_SANDBOX_DRIVER: "modal" })).toThrow(/must be cloudflare or fetch/)
+    expect(() => hostedSandboxDriver({ ...plane, CLAXEDO_SANDBOX_DRIVER: "modal" })).toThrow(/must be cloudflare, boat or fetch/)
   })
 })

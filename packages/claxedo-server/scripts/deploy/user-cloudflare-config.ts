@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto"
 
-import { resolveDeploymentProfileFromEnv } from "../../src/deployments/hosted-shared/deployment-profile"
+import { assertSandboxImageReference } from "@claxedo/sandbox-manager/image-name"
+
+import { resolveDeploymentProfileFromEnv, type SandboxDriver } from "../../src/deployments/hosted-shared/deployment-profile"
 import {
   requireNonLegacyWorkerName,
   selectHostedWorkerArtifact,
@@ -12,11 +14,10 @@ import {
   type BetterAuthMethod,
 } from "../../src/platform/auth/better-auth-configuration"
 
-export type SandboxDriver = "cloudflare" | "fetch"
-
 /** The Worker secret each full-hosted driver needs. */
 const SANDBOX_DRIVER_SECRETS: Readonly<Record<SandboxDriver, readonly string[]>> = Object.freeze({
   cloudflare: ["CLOUDFLARE_SANDBOX_API_TOKEN", "CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN"],
+  boat: ["BOAT_API_KEY"],
   fetch: [],
 })
 
@@ -152,10 +153,7 @@ export function userCloudflareDeployment(
   const githubAppClientId = env.CLAXEDO_INTEGRATION_GITHUB_CLIENT_ID?.trim()
   const integrationClientIds: Record<string, string> = githubAppClientId ? { CLAXEDO_INTEGRATION_GITHUB_CLIENT_ID: githubAppClientId } : {}
 
-  const driver = fullHosted ? (profile.sandboxDriver as SandboxDriver) : undefined
-  if (driver && !(driver in SANDBOX_DRIVER_SECRETS)) {
-    throw new Error(`full-hosted supports drivers ${Object.keys(SANDBOX_DRIVER_SECRETS).join(", ")}; got ${driver}`)
-  }
+  const driver = profile.sandboxPosture === "full-hosted" ? profile.sandboxDriver : undefined
   const sandbox = driver
     ? {
         driver,
@@ -164,6 +162,7 @@ export function userCloudflareDeployment(
           ...(driver === "cloudflare"
             ? { CLOUDFLARE_SANDBOX_WORKER_URL: exactHttpsOrigin(env, "CLAXEDO_SANDBOX_WORKER_URL") }
             : {}),
+          ...(driver === "boat" ? { CLAXEDO_SANDBOX_IMAGE: assertSandboxImageReference(setting(env, "CLAXEDO_SANDBOX_IMAGE")) } : {}),
           ...(driver === "fetch" ? { CLAXEDO_SANDBOX_DRIVER_URL: exactHttpsOrigin(env, "CLAXEDO_SANDBOX_DRIVER_URL") } : {}),
         },
       }

@@ -143,7 +143,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
     runtimeEnv: "callback",
     preparedImage: true,
     metadata: {
-      driverRunsIn: ["node"],
+      driverRunsIn: ["worker", "node"],
       hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
       targetAccess: "relay",
       secretBrokering: "none",

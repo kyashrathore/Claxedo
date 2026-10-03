@@ -1,4 +1,5 @@
 import type { SandboxDriver } from "@claxedo/sandbox-manager"
+import { createBoatSandboxDriver } from "@claxedo/sandbox-manager/drivers/boat"
 import { createCloudflareSandboxDriver } from "@claxedo/sandbox-manager/drivers/cloudflare"
 import { createFetchBridgeSandboxDriver } from "@claxedo/sandbox-manager/drivers/fetch-bridge"
 
@@ -54,6 +55,17 @@ export function sandboxRuntimeManagementEnv(): Record<string, string> {
   }
 }
 
+function sandboxRuntimeOptions(env: HostedWorkerEnv) {
+  return {
+    runtimePort: workspaceRuntimePort(env),
+    ...(trimToUndefined(env.CLAXEDO_RUNTIME_COMMAND) ? { runtimeCommand: trimToUndefined(env.CLAXEDO_RUNTIME_COMMAND) } : {}),
+    ...(trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) ? { workspaceDir: trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) } : {}),
+    ...provisionedRunnerOption(env),
+    controlEnv: sandboxRuntimeControlEnv(env),
+    env: sandboxRuntimeManagementEnv,
+  }
+}
+
 /**
  * Full-hosted sandbox driver selection for a Better Auth + D1 Worker.
  *
@@ -64,29 +76,25 @@ export function sandboxRuntimeManagementEnv(): Record<string, string> {
  * that promised cloud workspaces must not quietly serve without them.
  */
 export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undefined {
-
   const name = trimToUndefined(env.CLAXEDO_SANDBOX_DRIVER)?.toLowerCase()
   if (!name) return undefined
   if (name === "cloudflare") {
     const workerUrl = trimToUndefined(env.CLOUDFLARE_SANDBOX_WORKER_URL)
     const apiToken = trimToUndefined(env.CLOUDFLARE_SANDBOX_API_TOKEN)
     if (!workerUrl || !apiToken) return undefined
-    return createCloudflareSandboxDriver({
-      workerUrl,
-      apiToken,
-      runtimePort: workspaceRuntimePort(env),
-      ...(trimToUndefined(env.CLAXEDO_RUNTIME_COMMAND) ? { runtimeCommand: trimToUndefined(env.CLAXEDO_RUNTIME_COMMAND) } : {}),
-      ...(trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) ? { workspaceDir: trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) } : {}),
-      ...provisionedRunnerOption(env),
-      controlEnv: sandboxRuntimeControlEnv(env),
-      env: sandboxRuntimeManagementEnv,
-    })
+    return createCloudflareSandboxDriver({ workerUrl, apiToken, ...sandboxRuntimeOptions(env) })
+  }
+  if (name === "boat") {
+    const apiKey = trimToUndefined(env.BOAT_API_KEY)
+    const image = trimToUndefined(env.CLAXEDO_SANDBOX_IMAGE)
+    if (!apiKey || !image) return undefined
+    return createBoatSandboxDriver({ apiKey, image, ...sandboxRuntimeOptions(env) })
   }
 
   if (name !== "fetch") {
     throw new HostedWorkerCompositionError(
       "hosted_sandbox_driver_unsupported",
-      `Hosted Worker sandbox driver must be cloudflare or fetch; got ${name}`,
+      `Hosted Worker sandbox driver must be cloudflare, boat or fetch; got ${name}`,
     )
   }
   const driverUrl = trimToUndefined(env.CLAXEDO_SANDBOX_DRIVER_URL)

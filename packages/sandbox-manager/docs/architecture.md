@@ -82,7 +82,7 @@ credential fields for each provider).
 
 | Driver | Runs in | `hostStopBehavior` | `hostResumeBehavior` | `targetAccess` | `secretBrokering` |
 | --- | --- | --- | --- | --- | --- |
-| [Boat](../src/drivers/boat.ts) | `node` | `suspends-host` | `same-host` | `relay` | `none` |
+| [Boat](../src/drivers/boat.ts) | `worker`, `node` | `suspends-host` | `same-host` | `relay` | `none` |
 | [Cloudflare](../src/drivers/cloudflare.ts) | `worker` | `terminates-host` | `same-host` | `relay` | `native` |
 | [Docker](../src/drivers/docker.ts) | `local` | `terminates-host` | `same-host` | `loopback` | `none` |
 | [Fetch-bridge](../src/drivers/fetch-bridge.ts) | `worker`, `node` | `suspends-host` | `same-host` | `relay` | `none` |

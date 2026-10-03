@@ -110,6 +110,36 @@ A deploy also drops the `CLAXEDO_CREDENTIALS` KV binding that was added to the
 Worker out of band. That is correct: hosted credentials moved to
 `CONTROL_PLANE_DB` (dev `1ed25c7c4f`) and no source reads the KV namespace.
 
+### The sandbox driver is a staging setting
+
+The `control-plane` job deploys the full-hosted Worker, and the `staging`
+environment variable `CLAXEDO_STAGING_SANDBOX_DRIVER` picks the driver it boots
+cloud workspaces with. There is no default: unset or unknown, the job fails at
+"Verify the deploy inputs are configured" before anything is built. Only the
+selected driver's settings reach the deploy:
+
+| Driver | `staging` environment variables | `staging` environment secrets |
+| - | - | - |
+| `cloudflare` | `CLAXEDO_STAGING_SANDBOX_WORKER_URL` | `CLOUDFLARE_SANDBOX_API_TOKEN` (optional once it is on the Worker) |
+| `boat` | `CLAXEDO_STAGING_SANDBOX_IMAGE` | `BOAT_API_KEY` |
+
+`CLAXEDO_STAGING_SANDBOX_IMAGE` is the exact workspace-runtime image every Boat
+sandbox `docker run`s, for example
+`ghcr.io/kyashrathore/claxedo-sandbox:workspace-runtime-0-10-0-149c6f9a9d-v8`.
+`claxedo-sandbox-image.yml` builds and pushes it (`linux/amd64`, public on
+ghcr.io) on pushes to `dev` that touch the runtime, and prints the tag in its
+job summary. The `sandbox-image` component of this workflow deploys the
+Cloudflare sandbox Worker, which only the `cloudflare` driver uses, so `plan`
+(bound to the `staging` environment to read the driver) selects it for that
+driver alone. Switching drivers
+leaves the other driver's secret on the Worker, where nothing reads it.
+
+`bun run --cwd packages/sandbox-manager live:boat -- --yes-live --image=<tag>`
+with `BOAT_API_KEY` in the environment checks a key and an image against the
+real Boat API: it creates one sandbox, boots the image, reaches
+`/global/health` through the published URL, stops, resumes, checks again, and
+deletes the sandbox.
+
 ## Rerunning one component
 
 Dispatch `deploy-staging` from the Actions tab and pick `components`:
