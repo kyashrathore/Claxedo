@@ -1,8 +1,11 @@
+import fs from "node:fs/promises"
+import path from "node:path"
 import {
   APP_SCRIPTED_PROVIDER_IDS,
   assistantText,
   expect,
   installedCli,
+  SCRIPTED_SECRET,
   sendPrompt,
   sessionRoute,
   test,
@@ -26,7 +29,12 @@ const CLIS: { name: CliName; marker: string }[] = [
 
 test.skip(({ isMobile }) => isMobile, "isolation belongs to the stack, so it runs once at desktop width")
 
-test("00 isolation: Pi's default model and every chosen provider answer only from the scripted model server", async ({ stack, api, app }) => {
+const MACHINE_PI_KEY = "machine-pi-login-key"
+
+test("00 isolation: Pi's default model and every chosen provider answer only from the scripted model server, on the stored keys", async ({ stack, api, app }) => {
+  const piLogin = path.join(stack.dataDir, ".pi", "agent", "auth.json")
+  await fs.mkdir(path.dirname(piLogin), { recursive: true })
+  await fs.writeFile(piLogin, JSON.stringify(Object.fromEntries(APP_SCRIPTED_PROVIDER_IDS.map((id) => [id, { type: "api_key", key: MACHINE_PI_KEY }]))))
   const workspace = await stack.daemon.makeWorkspace("isolation")
   for (const { marker, model } of CHOSEN) {
     const session = await api.createSession(workspace.directory, { title: marker, harness: PI, model })
@@ -43,6 +51,7 @@ test("00 isolation: Pi's default model and every chosen provider answer only fro
   const catalog = await api.providerCatalog("pi")
   expect([...catalog.connected].sort()).toEqual([...APP_SCRIPTED_PROVIDER_IDS].sort())
   expect(stack.scripted.requests.map((request) => request.model)).toEqual(expect.arrayContaining(CHOSEN.map(({ vendorModel }) => vendorModel)))
+  expect(new Set(stack.scripted.requests.map((request) => request.authorization?.replace(/^Bearer /, "")))).toEqual(new Set([SCRIPTED_SECRET]))
   expect(unexpectedEgress(stack.egress.attempts)).toEqual([])
 })
 

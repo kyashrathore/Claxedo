@@ -7,7 +7,7 @@ export type ScriptedProviderId = (typeof SCRIPTED_PROVIDER_IDS)[number]
 
 const OPENAI_DIALECT: ReadonlySet<ScriptedProviderId> = new Set(["openai", "codex-app-server"])
 
-const SCRIPTED_SECRET = "test-key"
+export const SCRIPTED_SECRET = "test-key"
 
 function scriptedBaseUrl(providerId: ScriptedProviderId, scripted: ScriptedModelServer) {
   return OPENAI_DIALECT.has(providerId) ? scripted.v1Url : scripted.url

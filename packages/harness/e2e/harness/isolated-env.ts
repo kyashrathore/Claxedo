@@ -9,7 +9,7 @@ const INHERITED = ["TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "USER", "LOGNAME", "S
 
 const GIT_IDENTITY = "[user]\n\tname = Claxedo e2e\n\temail = e2e@claxedo.test\n"
 
-const AGENTS_STAY_OFFLINE = { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", PI_OFFLINE: "1" }
+const AGENTS_STAY_OFFLINE = { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" }
 
 /** Where the stack finds the agent CLIs it runs: directories that lead PATH, and the variables that name or steer them. */
 export type AgentCliEnv = { readonly path: readonly string[]; readonly env: Readonly<Record<string, string>> }
@@ -18,7 +18,7 @@ function inherited(): NodeJS.ProcessEnv {
   return Object.fromEntries(INHERITED.flatMap((name) => (process.env[name] === undefined ? [] : [[name, process.env[name]]])))
 }
 
-export async function isolatedEnv(home: string, guardUrl: string, agents: AgentCliEnv): Promise<NodeJS.ProcessEnv> {
+export async function isolatedEnv(home: string, guardUrl: string, agents: AgentCliEnv = { path: [], env: {} }): Promise<NodeJS.ProcessEnv> {
   const xdg = {
     XDG_CONFIG_HOME: path.join(home, ".config"),
     XDG_DATA_HOME: path.join(home, ".local", "share"),
