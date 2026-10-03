@@ -613,7 +613,8 @@ describe("Codex transport configuration", () => {
       expect(config).not.toContain("operator-sentinel")
       expect(entries).not.toContain("auth.json")
       expect(f.frames.find((row) => row.method === "thread/start")?.params?.modelProvider).toBe("broker")
-      expect(f.frames.some((row) => row.method === "account/login/start")).toBe(false)
+      expect(f.frames.filter((row) => row.method === "account/login/start" || row.method === "thread/start").map((row) => [row.method, row.params?.apiKey]))
+        .toEqual([["account/login/start", "signed-placeholder"], ["thread/start", undefined]])
     } finally { await f.close() }
   })
 
