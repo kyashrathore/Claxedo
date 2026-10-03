@@ -55,7 +55,8 @@ function sandbox(body: Record<string, unknown>): BoatSandbox {
 
 async function readBoundedResponseJson(response: Response): Promise<Record<string, unknown> | undefined> {
   const reader = response.body?.getReader() ?? invalid()
-  const chunks: Uint8Array[] = []
+  const decoder = new TextDecoder()
+  let text = ""
   let size = 0
   for (let next = await reader.read(); !next.done; next = await reader.read()) {
     size += next.value.byteLength
@@ -63,9 +64,9 @@ async function readBoundedResponseJson(response: Response): Promise<Record<strin
       await reader.cancel()
       invalid()
     }
-    chunks.push(next.value)
+    text += decoder.decode(next.value, { stream: true })
   }
-  return record(JSON.parse(new TextDecoder().decode(Buffer.concat(chunks))))
+  return record(JSON.parse(text + decoder.decode()))
 }
 
 export function createBoatClient(options: { apiKey: string; baseUrl?: string; timeoutMs?: number; fetchImpl?: BoatFetch }) {

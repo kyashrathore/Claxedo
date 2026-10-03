@@ -7,6 +7,7 @@ type Call = { path: string; method: string; headers: Record<string, string>; bod
 
 const ID = "bx_23456789"
 const API = "https://boat.dev/api/v1"
+const IMAGE = "ghcr.io/test/sandbox:1"
 
 function ensureInput(overrides?: Partial<SandboxDriverEnsureInput>): SandboxDriverEnsureInput {
   return {
@@ -101,6 +102,7 @@ describe("boat sandbox driver", () => {
     const boat = fakeBoat()
     const driver = createBoatSandboxDriver({
       apiKey: "k",
+      image: IMAGE,
       healthIntervalMs: 0,
       registryAuth: { server: "registry.example.com", username: "builder", password: "synthetic-registry-pw" },
       fetchImpl: async (url, init) => {
@@ -122,7 +124,7 @@ describe("boat sandbox driver", () => {
     const boat = fakeBoat({ states: ["provisioning", "ready"] })
     let observedId: string | undefined
     let observedStatus: string | undefined
-    const driver = createBoatSandboxDriver({ apiKey: "k", provisionTimeoutMs: 0, provisionIntervalMs: 0,
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, provisionTimeoutMs: 0, provisionIntervalMs: 0,
       fetchImpl: async (url, init) => {
         if (url.endsWith(`/sandboxes/${ID}`) && (!init?.method || init.method === "GET")) {
           const lease = await store.get("ws1")
@@ -146,7 +148,7 @@ describe("boat sandbox driver", () => {
     const store = createMemoryLeaseStore()
     const boat = fakeBoat()
     let fail = true
-    const driver = createBoatSandboxDriver({ apiKey: "k", fetchImpl: async (url, init) => {
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async (url, init) => {
       if (fail && url.endsWith(`/sandboxes/${ID}`)) {
         fail = false
         return Response.json({ ok: false, code: "internal_error", message: "provider down" }, { status: 500 })
@@ -163,7 +165,7 @@ describe("boat sandbox driver", () => {
   test("a lost create acknowledgement is retried under the same idempotency key", async () => {
     const boat = fakeBoat()
     let lost = true
-    const driver = createBoatSandboxDriver({ apiKey: "k", healthIntervalMs: 0, fetchImpl: async (url, init) => {
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, healthIntervalMs: 0, fetchImpl: async (url, init) => {
       if (lost && url.endsWith("/sandboxes")) {
         lost = false
         throw new Error("socket hang up")
@@ -178,7 +180,7 @@ describe("boat sandbox driver", () => {
   test("a rejected resource write deletes the created sandbox, confirming its id, before propagating the handoff error", async () => {
     const boat = fakeBoat()
     const handoffError = new Error("epoch lost")
-    const driver = createBoatSandboxDriver({ apiKey: "k", fetchImpl: boat.fetchImpl })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl })
     await expect(driver.ensureHost(ensureInput({ onResource: async () => { throw handoffError } }))).rejects.toBe(handoffError)
     expect(boat.calls.map(({ path, method, body }) => ({ path, method, body }))).toEqual([
       { path: "/sandboxes", method: "POST", body: { noEnv: true, ttlSeconds: null } },
@@ -190,7 +192,7 @@ describe("boat sandbox driver", () => {
   test.each(["transport", "http"])("a rejected resource write surfaces both handoff and deletion %s errors", async (failure) => {
     const boat = fakeBoat()
     const handoffError = new Error("epoch lost")
-    const driver = createBoatSandboxDriver({ apiKey: "k", fetchImpl: async (url, init) => {
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async (url, init) => {
       const response = await boat.fetchImpl(url, init)
       if (init?.method !== "DELETE") return response
       if (failure === "transport") throw new Error("delete connection refused")
@@ -212,7 +214,7 @@ describe("boat sandbox driver", () => {
   test.each(["persistence failure", "lost epoch"])("manager resource handoff cleans up the sandbox after %s", async (failure) => {
     const store = createMemoryLeaseStore()
     const boat = fakeBoat()
-    const driver = createBoatSandboxDriver({ apiKey: "k", fetchImpl: boat.fetchImpl })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl })
     const manager = createSandboxManager({
       driver,
       onEgressUnenforced: () => {},
@@ -238,7 +240,7 @@ describe("boat sandbox driver", () => {
 
   test.each(["auth", "malformed", "wrong type", "boot", "missing"])("resume propagates %s failure without creating a replacement", async (failure) => {
     const boat = fakeBoat()
-    const driver = createBoatSandboxDriver({ apiKey: "k", fetchImpl: async (url, init) => {
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async (url, init) => {
       if (failure === "auth" && url.endsWith("/resume")) return Response.json({ ok: false, code: "unauthorized", message: "Unauthorized" }, { status: 401 })
       if (failure === "missing" && url.endsWith("/resume")) return Response.json({ ok: false, code: "not_found", message: "gone" }, { status: 404 })
       if (failure === "malformed" && url.endsWith(`/sandboxes/${ID}`)) return Response.json({ ok: true, type: "sandbox.info" })
@@ -254,10 +256,10 @@ describe("boat sandbox driver", () => {
   })
 
   test("exposes relay metadata and boat identity", () => {
-    const driver = createBoatSandboxDriver({ apiKey: "k", fetchImpl: async () => new Response("{}") })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async () => new Response("{}") })
     expect(driver.id).toBe("boat")
     expect(driver.metadata).toMatchObject({
-      driverRunsIn: ["node"],
+      driverRunsIn: ["worker", "node"],
       hostStopBehavior: "suspends-host",
       hostResumeBehavior: "same-host",
       targetAccess: "relay",
@@ -269,10 +271,11 @@ describe("boat sandbox driver", () => {
     const boat = fakeBoat({ states: ["provisioning", "ready"] })
     const driver = createBoatSandboxDriver({
       apiKey: "k",
-      image: "ghcr.io/test/sandbox:1",
+      image: IMAGE,
       fetchImpl: boat.fetchImpl,
       provisionIntervalMs: 0,
       healthIntervalMs: 0,
+      controlEnv: { managementJwksUrl: "https://api.example.test/.well-known/jwks.json" },
     })
 
     const target = await driver.ensureHost(ensureInput())
@@ -293,6 +296,7 @@ describe("boat sandbox driver", () => {
     const envWrite = boat.calls.find((c) => c.path.endsWith("/files") && c.body?.path === ".claxedo-runtime-env")
     expect(envWrite?.body).toMatchObject({ encoding: "utf8" })
     expect(envWrite?.body?.content).toContain("export WORKSPACE_RUNTIME_WORKSPACE_ID='ws1'")
+    expect(envWrite?.body?.content).toContain("export WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL='https://api.example.test/.well-known/jwks.json'")
     expect(commandsOf(boat.calls)).toContain("host 2593 --public")
     expect(commandsOf(boat.calls)).toContain("host url 2593")
   })
@@ -301,6 +305,7 @@ describe("boat sandbox driver", () => {
     const boat = fakeBoat()
     const driver = createBoatSandboxDriver({
       apiKey: "k",
+      image: IMAGE,
       fetchImpl: boat.fetchImpl,
       healthIntervalMs: 0,
       registryAuth: { server: "registry.example.com", username: "builder", password: "synthetic-registry-pw" },
@@ -336,6 +341,7 @@ describe("boat sandbox driver", () => {
     const boat = fakeBoat({ failCommandsEchoing: true })
     const driver = createBoatSandboxDriver({
       apiKey: "k",
+      image: IMAGE,
       fetchImpl: boat.fetchImpl,
       registryAuth: { server: "registry.example.com", username: "builder", password: "synthetic-registry-pw" },
       env: () => ({ RUNTIME_SECRET: "synthetic-runtime-secret" }),
@@ -366,10 +372,10 @@ describe("boat sandbox driver", () => {
       }
       return boat.fetchImpl(url, init)
     }
-    const slowRun = createBoatSandboxDriver({ apiKey: "k", healthIntervalMs: 0, operationTimeoutMs: 20,
+    const slowRun = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, healthIntervalMs: 0, operationTimeoutMs: 20,
       fetchImpl: delayed((_url, body) => body?.command?.includes("docker run")) })
     expect(await slowRun.ensureHost(ensureInput())).toMatchObject({ sandboxId: ID })
-    const slowRead = createBoatSandboxDriver({ apiKey: "k", healthIntervalMs: 0, operationTimeoutMs: 20,
+    const slowRead = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, healthIntervalMs: 0, operationTimeoutMs: 20,
       fetchImpl: delayed((url) => url.endsWith(`/sandboxes/${ID}`)) })
     await expect(slowRead.ensureHost(ensureInput())).rejects.toMatchObject({ code: "transport_failed" })
   })
@@ -378,7 +384,7 @@ describe("boat sandbox driver", () => {
     const store = createMemoryLeaseStore()
     const boat = fakeBoat()
     let fail = true
-    const driver = createBoatSandboxDriver({ apiKey: "k", healthIntervalMs: 0, fetchImpl: boat.fetchImpl })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, healthIntervalMs: 0, fetchImpl: boat.fetchImpl })
     const manager = createSandboxManager({ driver, onEgressUnenforced: () => {}, retryDelayMs: () => 0, leaseStore: { ...store,
       async recordTarget(workspaceId, epoch, target) {
         if (fail) {
@@ -395,7 +401,7 @@ describe("boat sandbox driver", () => {
 
   test("a timed-out docker run fails the boot", async () => {
     const boat = fakeBoat()
-    const driver = createBoatSandboxDriver({ apiKey: "k", fetchImpl: async (url, init) => {
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async (url, init) => {
       const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
       if (body?.command?.includes("docker run")) return Response.json({ ok: true, ...commandFinished({ exitCode: null, timedOut: true }) })
       return boat.fetchImpl(url, init)
@@ -406,17 +412,17 @@ describe("boat sandbox driver", () => {
 
   test("retries the health probe until the runtime answers 200", async () => {
     const boat = fakeBoat({ failHealthOnce: true })
-    const driver = createBoatSandboxDriver({ apiKey: "k", fetchImpl: boat.fetchImpl, healthIntervalMs: 0 })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0 })
     const target = await driver.ensureHost(ensureInput())
     if ("provisioning" in target) throw new Error("unexpected provisioning")
     expect(boat.healthChecks).toBeGreaterThanOrEqual(2)
   })
 
   test("refuses an oversized acknowledgement, a redirect-capable or non-HTTPS endpoint, and never copies provider text", async () => {
-    const huge = createBoatSandboxDriver({ apiKey: "k", fetchImpl: async () => new Response("x".repeat(5 * 1024 * 1024)) })
+    const huge = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async () => new Response("x".repeat(5 * 1024 * 1024)) })
     await expect(huge.ensureHost(ensureInput())).rejects.toMatchObject({ code: "invalid_response" })
     let redirect: RequestRedirect | undefined
-    const driver = createBoatSandboxDriver({ apiKey: "k", fetchImpl: async (_url, init) => {
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async (_url, init) => {
       redirect = init?.redirect
       return Response.json({ ok: false, code: "unauthorized", message: "Unauthorized key boat_secret" }, { status: 401 })
     } })
@@ -428,14 +434,14 @@ describe("boat sandbox driver", () => {
     expect(error).toMatchObject({ code: "unauthorized", status: 401 })
     expect(error.message).not.toContain("boat_secret")
     for (const baseUrl of ["http://boat.dev/api/v1", "https://user:secret@boat.dev/api/v1", "https://boat.dev/api/v1?secret=x"]) {
-      expect(() => createBoatSandboxDriver({ apiKey: "k", baseUrl })).toThrow(/HTTPS/)
+      expect(() => createBoatSandboxDriver({ apiKey: "k", image: IMAGE, baseUrl })).toThrow(/HTTPS/)
     }
   })
 
   test("option-like image identifiers are rejected before the docker run", async () => {
     for (const bad of ["--privileged", "-v/host:/host", "img:test --network=host"]) {
       const boat = fakeBoat()
-      const driver = createBoatSandboxDriver({ apiKey: "k", fetchImpl: boat.fetchImpl, healthIntervalMs: 0 })
+      const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0 })
       await expect(
         driver.ensureHost(ensureInput({ bootSource: { kind: "image", image: bad } })),
       ).rejects.toThrow(/image reference/)
@@ -449,7 +455,7 @@ describe("boat sandbox driver", () => {
 
   test("rejects restricted network policy", async () => {
     const boat = fakeBoat()
-    const driver = createBoatSandboxDriver({ apiKey: "k", fetchImpl: boat.fetchImpl })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl })
     await expect(
       driver.ensureHost(ensureInput({ net: { mode: "restricted", hosts: ["example.com"] } })),
     ).rejects.toThrow(/network policy/)
@@ -457,7 +463,7 @@ describe("boat sandbox driver", () => {
 
   test("stop archives and destroy deletes the sandbox", async () => {
     const boat = fakeBoat()
-    const driver = createBoatSandboxDriver({ apiKey: "k", fetchImpl: boat.fetchImpl })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl })
     const target = { workspaceId: "ws1", sandboxId: ID, url: "https://x", hostId: "boat-ws1" }
     await driver.stop?.(target)
     await driver.destroy?.(target)
@@ -469,7 +475,7 @@ describe("boat sandbox driver", () => {
 
   test("resume brings the same sandbox back and re-establishes the runtime", async () => {
     const boat = fakeBoat({ states: ["provisioning", "ready"] })
-    const driver = createBoatSandboxDriver({ apiKey: "k", fetchImpl: boat.fetchImpl, healthIntervalMs: 0, provisionIntervalMs: 0 })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0, provisionIntervalMs: 0 })
     const target = await driver.resumeHost?.({
       lease: sandboxLease({ workspaceId: "ws1", sandboxId: ID, hostId: "boat-ws1", url: "https://runtime.test", status: "stopped" }),
       ensure: ensureInput(),

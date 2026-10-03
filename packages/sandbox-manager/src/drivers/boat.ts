@@ -6,10 +6,10 @@ import type {
   SandboxTarget,
   SandboxResource,
 } from "../contract"
-import { workspaceRuntimeBootEnv } from "../runtime-env"
+import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"
 import { envFile, shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
-import { SANDBOX_IMAGE, assertSandboxImageReference } from "../image"
+import { assertSandboxImageReference } from "../image-name"
 import { sandboxDriverCatalog } from "../driver-catalog"
 import { createBoatClient, type BoatFetch } from "./boat-client"
 import { isTransientDriverError } from "./transient-error"
@@ -25,11 +25,12 @@ export type { BoatFetch }
 export type BoatSandboxDriverOptions = {
   apiKey: string
   baseUrl?: string
-  image?: string
+  image: string
   runtimePort?: number
   runtimeCommand?: string
   workspaceDir?: string
   nativeHarness?: string
+  controlEnv?: WorkspaceRuntimeControlEnv
   /** Container name used for the runtime container inside the sandbox. */
   containerName?: string
   /**
@@ -38,8 +39,8 @@ export type BoatSandboxDriverOptions = {
    */
   ttlSeconds?: number | null
   /**
-   * Optional `docker login` before the pull, for a private runtime registry
-   * (the default image lives on ghcr.io). Omit for public images.
+   * Optional `docker login` before the pull, for a private runtime registry.
+   * Omit for public images.
    */
   registryAuth?: { server: string; username: string; password: string }
   env?: (input: SandboxDriverEnsureInput, host: { id: string }) => Record<string, string> | Promise<Record<string, string>>
@@ -93,7 +94,6 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     ...(options.operationTimeoutMs ? { timeoutMs: options.operationTimeoutMs } : {}),
     ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
   })
-  const image = options.image ?? SANDBOX_IMAGE
   const runtimeCommand = options.runtimeCommand ?? DEFAULT_RUNTIME_COMMAND
   const workspaceDir = options.workspaceDir ?? DEFAULT_WORKSPACE_DIR
   const containerName = options.containerName ?? DEFAULT_CONTAINER_NAME
@@ -113,7 +113,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
 
   function resolveImage(input: SandboxDriverEnsureInput) {
     return assertSandboxImageReference(
-      input.bootSource?.kind === "image" ? input.bootSource.image : input.snapshot ?? image,
+      input.bootSource?.kind === "image" ? input.bootSource.image : input.snapshot ?? options.image,
     )
   }
 
@@ -127,6 +127,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
       source: input.source,
       env: input.env,
       nativeHarness: options.nativeHarness,
+      controlEnv: options.controlEnv,
     })
   }
 
