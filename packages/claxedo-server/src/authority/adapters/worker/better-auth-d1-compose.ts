@@ -1,4 +1,3 @@
-import { d1ProviderAuthPending } from "../../../credentials/worker/provider-auth-pending"
 import { oauthProviderAuthServerMetadata } from "@better-auth/oauth-provider"
 import type { D1Database } from "@cloudflare/workers-types"
 import { Hono } from "hono"
@@ -267,7 +266,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       agentConfigRepository: settings,
       ...(delivery ? {
         settingsChanged: delivery.settingsChanged,
-        accountSetup: { pending: d1ProviderAuthPending(input.controlPlaneDatabase, input.env), changed: delivery.reconcileCredentialDelivery },
+        accountSetup: { changed: delivery.reconcileCredentialDelivery },
         productWorkspace: {
           prepareRuntime: delivery.prepareRuntime,
           provisionRuntime: delivery.provisionRuntime,

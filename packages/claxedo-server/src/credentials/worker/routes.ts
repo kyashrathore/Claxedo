@@ -1,7 +1,5 @@
 import { Hono } from "hono"
 import { CredentialRoutes } from "@claxedo/server-core/credentials/routes/credential"
-import { ProviderAuthRoutes } from "@claxedo/server-core/credentials/routes/provider-auth"
-import { createProviderAuthService, type ProviderAuthPendingStore } from "@claxedo/server-core/credentials/provider-auth/service"
 import { ControlPlaneAuthError, controlPlaneAuthContext, type ControlPlaneAuthConfig, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import type { ControlPlaneCredentials } from "../../authority/services"
@@ -13,15 +11,14 @@ export type HostedCredentialRoutesInput = {
   resolveOrgId(auth: SignedControlPlaneAuth): Promise<string>
   credentials: (orgId: string) => ControlPlaneCredentials
   changed: (orgId: string) => Promise<void>
-  pending: ProviderAuthPendingStore
-  fetch?: typeof fetch
 }
 
 /**
- * The shared account-setup routes, `/api/claxedo/credentials` and the
- * provider device login, served by the hosted plane: the person is the one
- * the session proves, and their organization is the authority's, never a
- * claim the request carries.
+ * The shared account-setup routes, `/api/claxedo/credentials`, served by the
+ * hosted plane: the person is the one the session proves, and their
+ * organization is the authority's, never a claim the request carries. No
+ * provider device login is served: every sign-in it completes is a ChatGPT
+ * plan, which a cloud sandbox cannot be delivered.
  */
 export function hostedCredentialRoutes(input: HostedCredentialRoutesInput) {
   const credentials = orgRoutedCredentials(input.credentials, input.changed)
@@ -30,9 +27,6 @@ export function hostedCredentialRoutes(input: HostedCredentialRoutesInput) {
     if (auth.mode !== "signed") throw new ControlPlaneAuthError(401, "missing_bearer_token", "Signed authentication is required")
     return await input.resolveOrgId(auth)
   }
-  const auth = { authentication: input.authentication, authConfig: input.authConfig, resolveOrg }
-  const service = createProviderAuthService(credentials, { reach: "cloud", pending: input.pending, ...(input.fetch ? { fetch: input.fetch } : {}) })
   return new Hono()
-    .route("/api/claxedo/credentials", CredentialRoutes(credentials, auth))
-    .route("/", ProviderAuthRoutes({ service, ...auth }))
+    .route("/api/claxedo/credentials", CredentialRoutes(credentials, { authentication: input.authentication, authConfig: input.authConfig, resolveOrg }))
 }

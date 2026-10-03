@@ -3,7 +3,6 @@ import { AuthenticationError, type RequestAuthenticationAdapter } from "@claxedo
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } from "./index"
-import { d1ProviderAuthPending } from "./provider-auth-pending"
 import { hostedCredentialRoutes } from "./routes"
 
 const env = { [HOSTED_CREDENTIALS_FLAG]: "1", [CREDENTIALS_KEK_ENV]: Buffer.alloc(32, 7).toString("base64") }
@@ -29,12 +28,6 @@ const authentication: RequestAuthenticationAdapter = {
   },
 }
 
-const upstream: string[] = []
-const deviceLogin: typeof fetch = Object.assign(async (input: Parameters<typeof fetch>[0]) => {
-  upstream.push(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
-  return Response.json({})
-}, { preconnect() {} })
-
 let sequence = 0
 function rig() {
   const org = `setup-${++sequence}`
@@ -47,8 +40,6 @@ function rig() {
     resolveOrgId: async () => org,
     credentials: store,
     changed: async (orgId) => void changes.push(orgId),
-    pending: d1ProviderAuthPending(database.database, env),
-    fetch: deviceLogin,
   })
   return { org, changes, store: () => store(org), app }
 }
@@ -102,14 +93,10 @@ describe("hosted account setup through the shared credential routes", () => {
     expect(JSON.stringify(await (await call(app(), "/api/claxedo/credentials/account-sources")).json())).toContain(orgAccount.id)
   })
 
-  test("no ChatGPT sign-in is offered or started, because a cloud sandbox cannot spend one", async () => {
+  test("no provider device login is served", async () => {
     const { store, app } = rig()
-    const methods = await (await call(app(), "/provider/auth")).json()
-    expect(methods["codex-app-server"]).toEqual([{ type: "api", label: "API Key" }])
-    expect(methods.openai).toEqual([{ type: "api", label: "API Key" }])
-    const started = await call(app(), "/provider/codex-app-server/oauth/authorize", { method: "POST", body: { method: 0 } })
-    expect([started.status, (await started.json()).error.code]).toEqual([400, "provider_auth_method_not_oauth"])
-    expect(upstream).toEqual([])
+    expect((await call(app(), "/provider/auth")).status).toBe(404)
+    expect((await call(app(), "/provider/codex-app-server/oauth/authorize", { method: "POST", body: { method: 0 } })).status).toBe(404)
     expect(await store().listCredentials()).toEqual([])
   })
 
@@ -124,21 +111,5 @@ describe("hosted account setup through the shared credential routes", () => {
     expect(await marked()).toEqual(["claude-sdk", "anthropic"])
     expect((await call(app(), "/api/claxedo/credentials/activate", { method: "POST", body: { ids: [anthropic.id] } })).status).toBe(200)
     expect(await marked()).toEqual(["anthropic", "claude-sdk"])
-  })
-
-  test("a waiting device login is sealed, expires, and has a single consumer", async () => {
-    const { org } = rig()
-    let at = 1_000_000
-    const first = d1ProviderAuthPending(database.database, env, () => at)
-    const second = d1ProviderAuthPending(database.database, env, () => at)
-    const pending = { org, providerId: "openai" as const, deviceAuthId: "secret-device-code", userCode: "CODE-1234", intervalMs: 1000, startedAt: at }
-    const id = JSON.stringify([org, "openai", "alice"])
-    await first.put(id, pending)
-    const row = await database.database.prepare("select secret_envelope from hosted_provider_auth_attempts where id = ?").bind(id).first<{ secret_envelope: string }>()
-    expect(row?.secret_envelope).not.toContain(pending.deviceAuthId)
-    expect((await Promise.all([first.take(id), second.take(id)])).filter(Boolean)).toEqual([pending])
-    await first.put(id, pending)
-    at += 15 * 60 * 1000
-    expect(await second.take(id)).toBeUndefined()
   })
 })

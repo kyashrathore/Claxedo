@@ -77,11 +77,9 @@ export const serverWorkerd: Policy = {
   // replay-gap frame from `live-sync-replay-gap.ts`. A reader's seen and
   // settled marks are written by `session/routes/session-reader.ts` into the
   // D1 `session_reads` store (`authority/adapters/d1/session-reader-store.ts`).
-  // Hosted account setup mounts the shared credential and provider-login
-  // routes over the per-org stores (`credentials/worker/routes.ts`,
-  // `org-routed.ts`) with the D1 store a device login waits in across instances
-  // (`provider-auth-pending.ts`).
-  ceilings: { modules: 128, packages: 19 },
+  // Hosted account setup mounts the shared credential routes over the per-org
+  // stores (`credentials/worker/routes.ts`, `org-routed.ts`).
+  ceilings: { modules: 127, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

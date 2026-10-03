@@ -58,7 +58,6 @@ import type { IdempotencyCoordinator } from "../../authority/http/idempotency"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { hostedPiCredentials } from "../../credentials/worker/pi"
 import { hostedCredentialRoutes } from "../../credentials/worker/routes"
-import type { ProviderAuthPendingStore } from "@claxedo/server-core/credentials/provider-auth/service"
 import { hostedAgentConfigRoutes } from "../../agent-config/hosted-routes"
 import type { UserAgentConfigRepository } from "@claxedo/server-core/agent-config/repository"
 import {
@@ -109,12 +108,11 @@ export type HostedCoreAppOptions = {
   agentConfigRepository?: UserAgentConfigRepository
   settingsChanged?: (userId: string) => Promise<void>
   /**
-   * The shared account setup routes (`/api/claxedo/credentials`, `/provider/*`)
-   * over the plane's per-org credential stores: where a provider device login
-   * waits for its callback across Worker instances, and how a credential
-   * change reaches running workspaces.
+   * The shared account setup routes (`/api/claxedo/credentials`) over the
+   * plane's per-org credential stores, and how a credential change reaches
+   * running workspaces.
    */
-  accountSetup?: { pending: ProviderAuthPendingStore; changed: (orgId: string) => Promise<void> }
+  accountSetup?: { changed: (orgId: string) => Promise<void> }
   /**
    * Build-composed product route families (Agent Plugins today). An entry
    * passes an explicit array; the base core passes none and imports no

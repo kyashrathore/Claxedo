@@ -12,7 +12,6 @@ import type { ControlPlaneServices } from "../../authority/services"
 import { STATIC_PRODUCT_DESCRIPTORS } from "./deployment-profile"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import { hostedOrgCredentials } from "../../credentials/worker"
-import { d1ProviderAuthPending } from "../../credentials/worker/provider-auth-pending"
 import { miniflareControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { storedD1Session } from "../../test-support/d1-stored-session"
 import { d1UserAgentConfigRepository } from "../../authority/adapters/d1/user-agent-config"
@@ -188,7 +187,7 @@ describe("hosted production Pi and connection discovery", () => {
       return hostedOrgCredentials(orgId, { database: controlPlane.database, env: base.env })
     }
     try {
-      const app = createHostedCoreApp(base, { ...options, accountSetup: { pending: d1ProviderAuthPending(controlPlane.database, base.env), changed: async () => {} } }) as unknown as Hono
+      const app = createHostedCoreApp(base, { ...options, accountSetup: { changed: async () => {} } }) as unknown as Hono
       const connected = async (subject: string) => (await (await app.request(catalogPath, { headers: headers(subject) })).json()).connected
       const key = { provider_id: "openai", kind: "api_key", source: "managed", label: "openai", secret: "alice-key", org_id: "internal-bob" }
       expect((await app.request("/api/claxedo/credentials?orgId=internal-bob", { method: "PUT", headers: headers(), body: JSON.stringify(key) })).status).toBe(200)
@@ -202,6 +201,7 @@ describe("hosted production Pi and connection discovery", () => {
       const claudeCode = await credentials.putCredential({ owner: "alice", provider_id: "claude-sdk", kind: "oauth_token", source: "managed", secret: "sk-ant-oat01-alice" })
       await credentials.putCredential({ owner: "alice", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-alice" })
       expect((await app.request("/auth/anthropic?harness=pi", { method: "DELETE", headers: headers() })).status).toBe(404)
+      expect((await app.request("/provider/codex-app-server/oauth/authorize", { method: "POST", headers: headers(), body: "{}" })).status).toBe(404)
       expect((await app.request("/api/claxedo/credentials/provider/anthropic", { method: "DELETE", headers: headers() })).status).toBe(200)
       expect((await credentials.listCredentials()).map((row) => row.id)).toContain(claudeCode.id)
       await credentials.deleteCredential(claudeCode.id)

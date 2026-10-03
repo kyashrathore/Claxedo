@@ -2,10 +2,10 @@ import type { ControlPlaneCredentials } from "../../authority/services"
 
 /**
  * The plane's per-organization credential stores as the one org-parameterized
- * contract the shared credential and provider-login routes are written
- * against. An operation that names no organization is refused: there is no
- * store for "no organization". Every write that changes what a workspace may
- * spend tells the plane, so running workspaces take it.
+ * contract the shared credential routes are written against. An operation
+ * that names no organization is refused: there is no store for "no
+ * organization". Every write that changes what a workspace may spend tells the
+ * plane, so running workspaces take it.
  */
 export function orgRoutedCredentials(
   storeFor: (orgId: string) => ControlPlaneCredentials,

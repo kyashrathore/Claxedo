@@ -420,16 +420,4 @@ describe("where every session runs in a cloud sandbox", () => {
     expect(providerAuthMethodsForHarness("pi", { reach: "cloud" })).not.toHaveProperty("openai-codex")
     expect(providerAuthMethodsForHarness("pi")?.["openai-codex"]).toEqual([{ type: "oauth", label: "ChatGPT Pro/Plus (headless)" }])
   })
-
-  test("a ChatGPT sign-in cannot be started", async () => {
-    const { registry } = credentials()
-    const requests: string[] = []
-    const service = createProviderAuthService(registry, {
-      reach: "cloud",
-      fetch: (async (input: string | URL) => (requests.push(String(input)), json({}))) as typeof fetch,
-    })
-    await expect(service.authorize({ providerId: "openai", method: 0, owner: "alice" })).rejects.toMatchObject({ code: "provider_auth_method_not_oauth" })
-    await expect(service.authorize({ providerId: "codex-app-server", method: 0, owner: "alice" })).rejects.toMatchObject({ code: "provider_auth_method_not_oauth" })
-    expect(requests).toEqual([])
-  })
 })

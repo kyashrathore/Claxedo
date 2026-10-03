@@ -98,16 +98,6 @@ export type ProviderAuthService = {
 }
 
 /**
- * Where an in-flight device authorization waits for its callback. `take`
- * removes what it returns, so one authorization is completed at most once; a
- * host whose callback can land on another instance keeps it outside memory.
- */
-export type ProviderAuthPendingStore = {
-  put(key: string, pending: CodexPending): Promise<void>
-  take(key: string): Promise<CodexPending | undefined>
-}
-
-/**
  * Where the accounts a method connects are spent. `cloud` serves only the
  * methods whose stored credential a cloud sandbox can be delivered, for a host
  * that runs every session in one.
@@ -115,8 +105,6 @@ export type ProviderAuthPendingStore = {
 export type ProviderAuthReach = "any" | "cloud"
 
 export type ProviderAuthOptions = {
-  reach?: ProviderAuthReach
-  pending?: ProviderAuthPendingStore
   fetch?: typeof fetch
   now?: () => number
   sleep?: (ms: number) => Promise<void>
@@ -132,7 +120,7 @@ export type ProviderAuthOptions = {
  * the ~15 minutes OpenAI gives a device_auth_id before the poll can only ever
  * fail.
  */
-export const DEFAULT_PENDING_TTL_MS = 15 * 60 * 1000
+const DEFAULT_PENDING_TTL_MS = 15 * 60 * 1000
 
 function allProviderAuthMethods(): ProviderAuthMethods {
   return {
@@ -202,20 +190,6 @@ export function providerAuthMethodsForHarness(
   return served ? { [provider]: served } : undefined
 }
 
-export function memoryProviderAuthPendingStore(): ProviderAuthPendingStore {
-  const entries = new Map<string, CodexPending>()
-  return {
-    put: async (key, value) => {
-      entries.set(key, value)
-    },
-    take: async (key) => {
-      const value = entries.get(key)
-      entries.delete(key)
-      return value
-    },
-  }
-}
-
 export function createProviderAuthService(
   credentials: ControlPlaneCredentials,
   options: ProviderAuthOptions = {},
@@ -237,7 +211,7 @@ export function createProviderAuthService(
    * Key is JSON-encoded rather than concatenated so an org id containing the
    * separator cannot forge another tenant's key.
    */
-  const pending = options.pending ?? memoryProviderAuthPendingStore()
+  const pending = new Map<string, CodexPending>()
   const pendingKey = (org: string, providerId: string, owner: string) => JSON.stringify([org, providerId, owner])
   const request = options.fetch ?? globalThis.fetch
   const clock = options.now ?? Date.now
@@ -245,8 +219,7 @@ export function createProviderAuthService(
   const pollingSafetyMs = options.pollingSafetyMs ?? 3_000
   const pendingTtlMs = options.pendingTtlMs ?? DEFAULT_PENDING_TTL_MS
 
-  const reach = options.reach ?? "any"
-  const methods = () => providerAuthMethods(reach)
+  const methods = () => providerAuthMethods()
 
   const authorize = async (input: { providerId: string; method?: number; org?: string; owner: string }) => {
     const method = requireMethod(methods(), input.providerId, input.method ?? 0)
@@ -275,7 +248,7 @@ export function createProviderAuthService(
     }
 
     const org = providerAuthOrg(input.org)
-    await pending.put(pendingKey(org, input.providerId, input.owner), {
+    pending.set(pendingKey(org, input.providerId, input.owner), {
       providerId: input.providerId,
       org,
       deviceAuthId: body.device_auth_id,
@@ -306,7 +279,8 @@ export function createProviderAuthService(
     // approved, refused, expired or disconnected — so it cannot be claimed
     // twice. An authorization started by ANOTHER tenant is not visible here at
     // all — this reads as "never started", which is what it is for this caller.
-    const item = await pending.take(key)
+    const item = pending.get(key)
+    pending.delete(key)
     if (!item) throw new ProviderAuthError("provider_auth_missing_pending", "OAuth authorization has not been started")
     const deadline = item.startedAt + pendingTtlMs
     if (clock() > deadline) {
