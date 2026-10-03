@@ -375,6 +375,7 @@ export const SESSION_CORE_ROUTE_ACCESS = {
   "POST /question/:id/reject": { kind: "authorize", operation: "question_response" },
   "POST /question/:id/reply": { kind: "authorize", operation: "question_response" },
   "POST /session": { kind: "authorize", operation: "session_create" },
+  "POST /session/:id": { kind: "authorize", operation: "session_create" },
   "POST /session/:id/background-task/stop": { kind: "authorize", operation: "background_task_stop" },
   "GET /session/:id/recovery": { kind: "authorize", operation: "recovery_inspect" },
   "GET /session/:id/recovery/operations/:operationId": { kind: "authorize", operation: "recovery_inspect" },
@@ -593,7 +594,7 @@ export function managedWorkspaceSessionAccessPolicy(
       return authorize(input)
     },
     async authorizeSessionStart(input) {
-      const workspace = authorizeManaged({ ...input, sessionId: undefined, operation: "session_create" }, options.requireActor === true)
+      const workspace = authorizeManaged({ ...input, operation: "session_create" }, options.requireActor === true)
       if (!workspace.allowed) return workspace
       if (!input.authority && !authority) return { allowed: true }
       if (!input.actor || !input.authority) return turnActorRequired
@@ -603,7 +604,7 @@ export function managedWorkspaceSessionAccessPolicy(
       return normalizeAuthorityDecision(await authority.authorizeSessionStart({ ...input, actor: input.actor, authority: input.authority }))
     },
     async authorizeSessionStartStatus(input) {
-      const workspace = authorizeManaged({ ...input, sessionId: undefined, operation: "session_meta_read" }, options.requireActor === true)
+      const workspace = authorizeManaged({ ...input, operation: "session_meta_read" }, options.requireActor === true)
       if (!workspace.allowed) return workspace
       if (!input.authority && !authority) return { allowed: true }
       if (!input.actor || !input.authority) return turnActorRequired

@@ -336,3 +336,29 @@ describe("a create that carries the session's first goal", () => {
     expect(host.store.getSession("ses_1")).toBeNull()
   })
 })
+
+describe("a create that names its session in its path", () => {
+  const createAt = (app: { request: Hono["request"] }, sessionId: string, body: unknown) => app.request(`http://localhost/session/${sessionId}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  })
+
+  test("creates that session, the same as a create naming it in its body", async () => {
+    const journal: Journal = []
+    const host = harness(journal)
+    const response = await createAt(routes(journal, host), "ses_path", { title: "Path" })
+    expect(response.status).toBe(201)
+    expect(await response.json()).toMatchObject({ id: "ses_path", title: "Path" })
+    expect(journal).toContain("create:ses_path")
+  })
+
+  test("refuses a body naming another session", async () => {
+    const journal: Journal = []
+    const host = harness(journal)
+    const response = await createAt(routes(journal, host), "ses_path", { id: "ses_other" })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "session_id_mismatch" } })
+    expect(journal).not.toContain("create:ses_other")
+  })
+})
