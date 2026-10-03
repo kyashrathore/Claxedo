@@ -265,6 +265,19 @@ export function registerSessionTools(registry: ToolRegistrar) {
       inputSchema: { ...SESSION_ARG, ...WORKSPACE_TARGET_SCHEMA },
       access: runtimeToolAccess("session_delete", { audiences: ["runtime", "user"], scope: "admin", destructive: true, ownerDriven: true }),
       sessionIdOf: (args) => args.session,
+      confirmation: async (args, ctx) => {
+        const target = toolTarget(ctx, args)
+        assertOwnWorkspace(ctx, "session_delete", target)
+        const server = await ctx.client.server(target)
+        const scope = targetScope(target)
+        const [session, listed] = await Promise.all([
+          server.session.get({ sessionID: args.session, ...scope }),
+          server.session.list(scope),
+        ])
+        const under = descendantCount(args.session, listed.data)
+        const title = typeof session.data.title === "string" && session.data.title.trim() ? session.data.title : "Untitled"
+        return `Delete session "${title}" (${args.session})${under ? ` and the ${under} session${under === 1 ? "" : "s"} under it` : ""}? This cannot be undone.`
+      },
     },
     async (args, ctx) => {
       const target = toolTarget(ctx, args)
@@ -274,6 +287,22 @@ export function registerSessionTools(registry: ToolRegistrar) {
       return toolJson({ session: args.session, deleted: deleted.data })
     },
   )
+}
+
+/** How many sessions sit under `sessionId` in a listing that carries each row's parent. */
+function descendantCount(sessionId: string, rows: ReadonlyArray<{ id?: unknown; parentID?: unknown }>): number {
+  const children = new Map<string, string[]>()
+  for (const row of rows) {
+    if (typeof row.id !== "string" || typeof row.parentID !== "string") continue
+    children.set(row.parentID, [...children.get(row.parentID) ?? [], row.id])
+  }
+  let count = 0
+  const pending = [...children.get(sessionId) ?? []]
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    count += 1
+    pending.push(...children.get(next) ?? [])
+  }
+  return count
 }
 
 /**

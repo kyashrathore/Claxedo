@@ -16,6 +16,8 @@ export type McpToolDefinition<Shape extends McpToolShape> = Readonly<{
    * the session through the `addressed` callback it is given.
    */
   sessionIdFromHandler?: true
+  /** What a destructive tool's confirmation tells the person they approve; `Confirm <name>?` when absent. */
+  confirmation?: (args: ShapeOutput<Shape>, ctx: McpToolContext) => Promise<string>
 }>
 
 export type McpToolHandler<Shape extends McpToolShape> = (
@@ -79,7 +81,7 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
               if (!elicit) return toCallToolResult(mcpToolRefusal(`${name} requires confirmation, but this client does not support elicitation`))
               const answer = await elicit({
                 mode: "form",
-                message: `Confirm ${name}?`,
+                message: definition.confirmation ? await definition.confirmation(args, ctx) : `Confirm ${name}?`,
                 requestedSchema: { type: "object", properties: {} },
               })
               if (answer.action !== "accept") return toCallToolResult(mcpToolRefusal(`${name} was not confirmed`))

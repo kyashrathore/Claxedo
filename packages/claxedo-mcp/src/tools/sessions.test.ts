@@ -505,9 +505,9 @@ async function listen(input: MountInput) {
   return { url: `http://127.0.0.1:${address.port}${CLAXEDO_MCP_PATH}`, audits, control, created }
 }
 
-async function connect(url: string, token: string, confirm?: () => "accept" | "decline" | "cancel") {
+async function connect(url: string, token: string, confirm?: (message: string) => "accept" | "decline" | "cancel") {
   const client = new Client({ name: "fixture-host", version: "0.0.0" }, confirm ? { capabilities: { elicitation: { form: {} } } } : {})
-  if (confirm) client.setRequestHandler(ElicitRequestSchema, async () => ({ action: confirm(), content: {} }))
+  if (confirm) client.setRequestHandler(ElicitRequestSchema, async (request) => ({ action: confirm(request.params.message), content: {} }))
   await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { authorization: `Bearer ${token}` } } }))
   clients.push(client)
   return client
@@ -868,12 +868,14 @@ describe("reading and driving one session", () => {
       expect(await call(refused, "session_delete", { session: "ses_root" })).toMatchObject({ isError: true })
     }
     expect(state.deleted).toEqual([])
-    const client = await connect(person.url, "cli-jwt", () => "accept")
+    const asked: string[] = []
+    const client = await connect(person.url, "cli-jwt", (message) => (asked.push(message), "accept"))
     expect(await json(client, "session_delete", { session: "ses_root" })).toEqual({
       session: "ses_root",
       deleted: { ok: true, deletedSessionIds: ["ses_child", "ses_root"] },
     })
     expect(state.deleted).toEqual(["ses_child", "ses_root"])
+    expect(asked).toEqual([`Delete session "Fix login" (ses_root) and the 1 session under it? This cannot be undone.`])
   })
 
   test("session_delete lets a session delete an idle session of its own workspace and nothing beyond it", async () => {
@@ -898,7 +900,7 @@ describe("reading and driving one session", () => {
 
     expect(state.deleted).toEqual(["ses_done"])
     expect(other.deleted).toEqual([])
-    expect(audits.filter((event) => event.tool === "session_delete").map((event) => event.sessionId)).toEqual(["ses_done", "ses_far", "ses_busy"])
+    expect(audits.filter((event) => event.tool === "session_delete").map((event) => event.sessionId)).toEqual(["ses_done", "ses_busy"])
   })
 
   test("session_delete exists inside a session only while its tool group is consented to", async () => {

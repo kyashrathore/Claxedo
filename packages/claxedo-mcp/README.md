@@ -56,7 +56,8 @@ reads the session's prompt actors, a cloud runtime compares them with its
 owner grant's actor, and a composition with no answer offers no
 `session_delete` at all. It reaches only the sessions of the workspace the
 caller runs in, whatever the account allows on other machines, and runs only
-once the person accepts its confirmation. The runtime removes the session and
+once the person accepts a confirmation that names the session and how many
+sessions sit under it. The runtime removes the session and
 every session under it leaf-first, and refuses the whole tree while any of
 them is working or waiting for input.
 
