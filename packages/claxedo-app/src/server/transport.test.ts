@@ -83,7 +83,8 @@ test("a session a Durable Object will serve is minted through the account, and i
     { operation: "session.connection.mint", input: { id: "ws_cloud", sessionId: "ses_pi", harness } },
     { operation: "workspace.connection.read", input: { id: "ws_cloud" } },
   ])
-  expect(fetcher.mock.calls.map(([url, init]) => [String(url), new Headers(init?.headers).get("authorization")])).toEqual([
+  const href = (url: string | URL | Request) => typeof url === "string" ? url : url instanceof URL ? url.href : url.url
+  expect(fetcher.mock.calls.map(([url, init]) => [href(url), new Headers(init?.headers).get("authorization")])).toEqual([
     ["https://relay.test/workspaces/ws_cloud/session/ses_pi", "Bearer host-rat"],
     ["https://relay.test/workspaces/ws_cloud/api/wr/health", "Bearer session-rat"],
   ])

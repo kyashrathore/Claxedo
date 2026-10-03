@@ -81,7 +81,7 @@ test("sessions: a Pi create on a cloud workspace mints its session host's connec
       if (url.pathname.startsWith("/relay/workspaces/ws_cloud/session")) {
         const body = request.method === "POST" ? (await request.json()) as { id?: unknown } : {}
         hosted.push({ method: request.method, path: url.pathname, authorization: request.headers.get("authorization"), id: body.id, operation: request.headers.get(RESERVATION_HEADER) })
-        const id = String(body.id ?? url.pathname.split("/").pop())
+        const id = typeof body.id === "string" ? body.id : url.pathname.split("/").pop()
         return Response.json({ id, title: "Pi", time: { created: 1, updated: 1 } })
       }
       if (url.pathname.startsWith("/api/control/")) return Response.json({ ok: true })
