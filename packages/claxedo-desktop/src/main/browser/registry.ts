@@ -34,9 +34,17 @@ export class BrowserRegistry {
     this.#guests.add(webContentsId)
   }
 
-  /** Forget a guest once its webContents is destroyed. */
+  /**
+   * Forget a guest once its webContents is destroyed, with the pane handle
+   * bound to it. A renderer reload destroys its guests without running the
+   * pane's cleanup, so this is the only unbind the reloaded pane can rely on
+   * before it registers its new guest under the same paneId.
+   */
   dropGuest(webContentsId: number): void {
     this.#guests.delete(webContentsId)
+    for (const [paneId, handle] of this.#handles) {
+      if (handle.webContentsId === webContentsId) this.unregister(paneId)
+    }
   }
 
   /**

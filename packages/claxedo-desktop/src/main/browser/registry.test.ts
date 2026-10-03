@@ -115,6 +115,16 @@ describe("BrowserRegistry", () => {
     expect(() => registry.register("pane-a", 5)).toThrow(/not an admitted guest/)
   })
 
+  test("a destroyed guest releases its pane, so the reloaded pane can bind its new guest", () => {
+    const registry = admittedRegistry(5, 6)
+    registry.register("browser:placement-1", 5)
+
+    registry.dropGuest(5)
+
+    expect(registry.get("browser:placement-1")).toBeUndefined()
+    expect(registry.register("browser:placement-1", 6).webContentsId).toBe(6)
+  })
+
   test("registering an admitted guest already bound to another pane is rejected", () => {
     const registry = admittedRegistry(1, 2)
 
