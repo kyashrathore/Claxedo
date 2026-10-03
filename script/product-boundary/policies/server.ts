@@ -78,8 +78,10 @@ export const serverWorkerd: Policy = {
   // settled marks are written by `session/routes/session-reader.ts` into the
   // D1 `session_reads` store (`authority/adapters/d1/session-reader-store.ts`).
   // Hosted account setup mounts the shared credential routes over the per-org
-  // stores (`credentials/worker/routes.ts`, `org-routed.ts`).
-  ceilings: { modules: 127, packages: 19 },
+  // stores (`credentials/worker/routes.ts`, `org-routed.ts`). The cloud
+  // workspace create refuses a branch git would refuse through
+  // `workspace/git-branch-name.ts`.
+  ceilings: { modules: 128, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

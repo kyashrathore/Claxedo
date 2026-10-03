@@ -1219,6 +1219,24 @@ describe("hosted cloud workspace create (POST /create)", () => {
     expect(ensured.net).toMatchObject({ mode: "restricted" })
   })
 
+  test("a branch name git refuses is refused at create, before any workspace exists to fail every boot", async () => {
+    const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
+    const authority = fakeAuthority({ createCloudWorkspace })
+    const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+    const { app } = buildApp({ authority: authority, sandboxManager: { ensure } as unknown as SandboxManager })
+
+    for (const gitBranch of ["-x", "feature..main"]) {
+      const res = await app.fetch(post("/create", { workspaceName: "Feature X", repoUrl: "https://github.com/a/b", gitBranch }))
+      expect(res.status, gitBranch).toBe(400)
+      await expect(res.json()).resolves.toMatchObject({ error: { code: "git_branch_invalid" } })
+    }
+    expect(createCloudWorkspace).not.toHaveBeenCalled()
+
+    const res = await app.fetch(post("/create", { workspaceName: "Feature X", repoUrl: "https://github.com/a/b", gitBranch: " feature/payments-v2 " }))
+    expect(res.status).toBe(200)
+    expect((createCloudWorkspace.mock.calls[0] as unknown[])[1]).toMatchObject({ gitBranch: "feature/payments-v2" })
+  })
+
   test("rejects hosted cloud create without a clone source", async () => {
     const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
     const authority = fakeAuthority({ createCloudWorkspace })

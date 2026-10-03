@@ -37,6 +37,7 @@ import { hostAssignmentHandlers } from "../../workspace/host-assignment-handlers
 import { connectionRateLimitError, controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
 import type { ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
 import { createCloudCreateAdmission, type CloudCreateUsage } from "../../workspace/cloud-create-admission"
+import { isGitBranchName } from "../../workspace/git-branch-name"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 
 // `requireCloudWorkspaceEntitlement` (cloud-workspace admission for both
@@ -325,6 +326,10 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             503,
           )
         }
+        const gitBranch = body.gitBranch?.trim()
+        if (gitBranch && !isGitBranchName(gitBranch)) {
+          return c.json({ error: apiError("git_branch_invalid", "That is not a branch name git accepts") }, 400)
+        }
         let repoUrl = body.repoUrl?.trim()
         if (repoUrl && !(await admittedRepoUrl(repoUrl, repoAdmission))) {
           return c.json(
@@ -386,7 +391,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             displayName,
             repoUrl,
             ...(body.repoName?.trim() ? { repoName: body.repoName.trim() } : {}),
-            ...(body.gitBranch?.trim() ? { gitBranch: body.gitBranch.trim() } : {}),
+            ...(gitBranch ? { gitBranch } : {}),
             remoteDirectory: directory,
             homeRegion,
             ...(repoConnectionId ? { repoConnectionId } : {}),
