@@ -69,7 +69,10 @@ export function parseHostProviderConfig(text: string): HostProviderConfig {
 
 /**
  * The `projectAuth` a host composes: this machine's own answer with the
- * enrolled owner's pushed rows written over their accounts.
+ * enrolled owner's pushed rows written over their accounts. A pushed account
+ * row leaves this machine's direct credential for that provider in place: a
+ * placeholder-backed account cannot serve a harness that needs the secret
+ * itself, so only a pushed direct row replaces a direct row.
  *
  * The enrolled owner is the one source of who owns this machine; a pushed
  * snapshot that names anyone else is an earlier enrollment's and is ignored.
@@ -89,7 +92,12 @@ export function hostProviderConfigProjectAuth<Input>(
     const remote = pushed()
     if (!owner || !remote || remote.machineOwnerUserId !== owner) return local
     const sources = ownerSources(owner, input)
-    const own = Object.fromEntries(Object.entries(remote.accounts[owner] ?? {}).filter(([providerId]) => sources[providerId] !== "org"))
-    return { ...local, machineOwnerUserId: owner, accounts: { ...local.accounts, [owner]: { ...local.accounts[owner], ...own } } }
+    const chosen = <Row>(rows: Record<string, Row> | undefined) =>
+      Object.fromEntries(Object.entries(rows ?? {}).filter(([providerId]) => sources[providerId] !== "org"))
+    const own = chosen(remote.accounts[owner])
+    const direct = chosen(remote.direct?.[owner])
+    const merged = { ...local, machineOwnerUserId: owner, accounts: { ...local.accounts, [owner]: { ...local.accounts[owner], ...own } } }
+    if (!local.direct && Object.keys(direct).length === 0) return merged
+    return { ...merged, direct: { ...local.direct, [owner]: { ...local.direct?.[owner], ...direct } } }
   }
 }

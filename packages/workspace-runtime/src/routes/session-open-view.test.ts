@@ -10,7 +10,7 @@ afterEach(async () => {
   for (const app of apps.splice(0)) await app.dispose()
 })
 
-const PI_SHAPED: FakeTransportOptions = { kind: "pi-rpc", capabilities: { todos: false } }
+const PI_SHAPED: FakeTransportOptions = { kind: "pi-durable", capabilities: { todos: false } }
 const CODEX_SHAPED: FakeTransportOptions = {
   kind: "codex-app-server",
   capabilities: { todos: true, goals: { implemented: true, available: true, actions: ["pause", "resume", "delete"], recovery: "reconcile", optionalFields: [] } },

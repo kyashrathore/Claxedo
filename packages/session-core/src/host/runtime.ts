@@ -320,6 +320,17 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
       fork: (sessionId: string, messageId: string, childId?: string, directory?: RuntimeDirectory, secretAuthority?: ConnectionSecretAuthority) =>
         sessions.fork(sessionId, messageId, childId, directory, secretAuthority),
     }),
+    async resumeDurableRuns(sessionIds: readonly string[]): Promise<void> {
+      await Promise.all(sessionIds.map(async (sessionId) => {
+        try {
+          const read = await attachments.withoutAttaching(sessionId)
+          const capabilities = await read.handle.transport.capabilities({ directory: read.directory, sessionId })
+          if (capabilities.durableRuns) await attachments.for(sessionId)
+        } catch (error) {
+          wiring.reportOwnerFailure(sessionId, error)
+        }
+      }))
+    },
     turns: {
       whenIdle(sessionId: string) {
         return admissions.whenIdle(sessionId)

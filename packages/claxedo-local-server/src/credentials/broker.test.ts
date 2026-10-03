@@ -17,6 +17,7 @@ const {
   credentialById,
   listCredentials,
   putCredential,
+  readSecretById,
   setActiveCredentials,
   updateCredentialHealth,
   updateCredentialSecret,
@@ -24,6 +25,7 @@ const {
 } = await import("@claxedo/server-core/credentials/registry")
 const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
 const { createLocalCredentialBroker } = await import("./broker")
+const { checkCredential } = await import("@claxedo/server-core/credentials/operations/check")
 const { providerProjection } = await import("@claxedo/agent-runtime-contract")
 
 type Projection = Awaited<ReturnType<ReturnType<typeof createLocalCredentialBroker>["projectAuth"]>>["accounts"][string][string]
@@ -176,6 +178,80 @@ describe("local binding authority", () => {
     expect(rows.accounts.local.anthropic).toMatchObject({ authMode: "bearer" })
     const resolved = await local.authority.resolve(bindingIdOf(bound(rows.accounts.local.anthropic).baseUrl))
     expect(resolved?.binding.injection).toEqual({ header: "Authorization", scheme: "Bearer" })
+  })
+
+  test("the machine owner's Pi and Codex accounts also project as the credential itself, other providers never", async () => {
+    const openai = await activeRow("sk-openai-direct", "openai")
+    await activeRow("sk-ant-oat01-direct-plan", "anthropic", "oauth_token")
+    await activeRow("sk-ant-api03-claude-sdk", "claude-sdk")
+    await activeRow("pplx-not-direct", "perplexity")
+    const rows = await broker().projectAuth({ workspaceId })
+
+    expect(Object.keys(rows.direct?.local ?? {}).sort()).toEqual(["anthropic", "claude-sdk", "openai"])
+    expect(rows.direct?.local?.openai).toEqual({ delivery: "direct", baseUrl: "https://api.openai.com", apiPath: "/v1", secret: "sk-openai-direct",
+      authKind: "api-key", account: { credentialId: openai.id, providerId: "openai" } })
+    expect(rows.direct?.local?.anthropic).toMatchObject({ baseUrl: "https://api.anthropic.com", secret: "sk-ant-oat01-direct-plan", authKind: "subscription" })
+    expect(bound(rows.accounts.local.openai).placeholder).not.toContain("sk-openai-direct")
+  })
+
+  test("an OAuth login close to expiring is refreshed once, stored, and projected with the new token", async () => {
+    const credential = await activeRow(JSON.stringify({ tokens: { access_token: "access-old", refresh_token: "refresh-1" } }), "openai", "oauth_token")
+    await updateCredentialSecret(credential.id, JSON.stringify({ tokens: { access_token: "access-old", refresh_token: "refresh-1" } }), Date.now() + 10 * 60_000)
+    const exchanged: string[] = []
+    const tokenEndpoint = (async (_url: string | URL | Request, init?: RequestInit) => {
+      exchanged.push(new URLSearchParams(String(init?.body)).get("refresh_token") ?? "")
+      return Response.json({ access_token: "access-new", refresh_token: "refresh-2" })
+    }) as typeof fetch
+    const local = createLocalCredentialBroker({ machineOwnerUserId: () => "local", dataDir: root, brokerOrigin, fetch: tokenEndpoint })
+
+    const [first, second] = await Promise.all([local.projectAuth({ workspaceId }), local.projectAuth({ workspaceId })])
+
+    expect(exchanged).toEqual(["refresh-1"])
+    for (const rows of [first, second]) {
+      expect(rows.direct?.local?.openai?.secret).toBe("access-new")
+      expect(rows.direct?.local?.openai?.expiresAt).toBeGreaterThan(Date.now() + 30 * 60_000)
+    }
+    expect(JSON.parse((await readSecretById(credential.id)) ?? "{}")).toEqual({ tokens: { access_token: "access-new", refresh_token: "refresh-2" } })
+    await local.projectAuth({ workspaceId })
+    expect(exchanged).toEqual(["refresh-1"])
+  })
+
+  test("a Check and a projection renewing the same login share one token exchange", async () => {
+    const credential = await activeRow(JSON.stringify({ tokens: { access_token: "access-old", refresh_token: "refresh-1" } }), "openai", "oauth_token")
+    await updateCredentialSecret(credential.id, JSON.stringify({ tokens: { access_token: "access-old", refresh_token: "refresh-1" } }), Date.now() + 10 * 60_000)
+    const exchanged: string[] = []
+    const provider = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (!String(url).endsWith("/oauth/token")) return new Response("{}")
+      exchanged.push(new URLSearchParams(String(init?.body)).get("refresh_token") ?? "")
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      return Response.json({ access_token: "access-new", refresh_token: "refresh-2" })
+    }) as typeof fetch
+    const local = createLocalCredentialBroker({ machineOwnerUserId: () => "local", dataDir: root, brokerOrigin, fetch: provider })
+    const registry = { updateCredentialHealth: async (id: string, health: Parameters<typeof updateCredentialHealth>[1], at: number, org?: string) =>
+      updateCredentialHealth(id, health, at, org), resolveCredentialSecretById: readSecretById, updateCredentialSecret,
+      updateCredentialUsage: async () => {}, updateCredentialLabel: async () => true }
+    const row = credentialById(credential.id, { onOutage: "throw" })!
+
+    const [checked, rows] = await Promise.all([
+      checkCredential(registry, row, { org: "__local__", fetch: provider, now: () => Date.now() + 20 * 60_000 }),
+      local.projectAuth({ workspaceId }),
+    ])
+
+    expect(exchanged).toEqual(["refresh-1"])
+    expect(checked).toMatchObject({ status: "checked" })
+    expect(rows.direct?.local?.openai?.secret).toBe("access-new")
+    expect(JSON.parse((await readSecretById(credential.id)) ?? "{}")).toEqual({ tokens: { access_token: "access-new", refresh_token: "refresh-2" } })
+  })
+
+  test("an OAuth login whose refresh is refused is projected as failed auth, not as its stale token", async () => {
+    const credential = await activeRow(JSON.stringify({ tokens: { access_token: "access-old", refresh_token: "refresh-revoked" } }), "openai", "oauth_token")
+    await updateCredentialSecret(credential.id, JSON.stringify({ tokens: { access_token: "access-old", refresh_token: "refresh-revoked" } }), Date.now() + 10 * 60_000)
+    const tokenEndpoint = (async () => Response.json({ error: "invalid_grant" }, { status: 400 })) as unknown as typeof fetch
+    const rows = await createLocalCredentialBroker({ machineOwnerUserId: () => "local", dataDir: root, brokerOrigin, fetch: tokenEndpoint })
+      .projectAuth({ workspaceId })
+
+    expect(rows.accounts.local.openai).toEqual({ unavailable: true, reason: "auth_failed" })
+    expect(rows.direct?.local?.openai).toBeUndefined()
   })
 
   test("a rotated secret is served on the next resolve with no other call", async () => {

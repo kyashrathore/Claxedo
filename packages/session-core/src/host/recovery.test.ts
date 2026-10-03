@@ -74,7 +74,7 @@ function fixture(options: { store?: RuntimeStore; cancels?: Cancellation[]; canc
   const turns: TurnControl[] = []
   const cancels = options.cancels ?? []
   const transport = new FakeTransport({
-    kind: "pi-rpc",
+    kind: "pi-durable",
     turn: (input) => {
       const control = controlledTurn(input.session.binding.sessionId)
       turns.push(control)
@@ -775,7 +775,7 @@ describe("a Goal mutation that outlives the turn it stops", () => {
       stop: async () => { await stop(); return { ok: true as const, goal: null } },
     }
     const transport = new FakeTransport({
-      kind: "pi-rpc",
+      kind: "pi-durable",
       capabilities: { goals: { implemented: true, available: true, actions: [], recovery: "blocked", optionalFields: [] } },
       goals,
     })

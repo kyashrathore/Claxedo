@@ -10,7 +10,6 @@ import type { SandboxBrokeredSecret, SandboxTarget } from "@claxedo/sandbox-mana
 import { parseRegistrations, type EgressRegistration } from "../../../claxedo-server/scripts/sandbox/cloudflare-worker/src/outbound-credentials"
 import { claxedoAgentPluginsWorkspaceRuntimeEntry } from "../../../claxedo-server/src/hosts/workspace-runtime/startup"
 import { REPO_ROOT, TSX_LOADER } from "./node-loader"
-import { PINNED_PI } from "./pinned-pi"
 import { scriptedGithub } from "./hosted-scripted-github"
 import { scriptedHostedMcp } from "./hosted-scripted-mcp"
 import { hostedFaultSecrets } from "./cloud-faults"
@@ -196,7 +195,6 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
     upstreams: { "https://api.openai.com": input.modelUrl, "https://api.anthropic.com": input.modelUrl, [HOSTED_MCP_GATEWAY_ORIGIN]: gateway.url },
     inheritedEnv: {
       PATH: process.env.PATH ?? "",
-      PI_EXECUTABLE: PINNED_PI,
       ...(process.env.LANG ? { LANG: process.env.LANG } : {}),
       ...(process.env.CI ? { CI: process.env.CI } : {}),
       NODE_EXTRA_CA_CERTS: input.certificate,

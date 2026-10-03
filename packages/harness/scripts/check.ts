@@ -26,7 +26,7 @@ const transportVendors: Record<string, string[]> = {
   "cursor-sdk": ["@cursor/sdk"],
   acp: ["@agentclientprotocol/sdk"],
   "codex-app-server": [],
-  "pi-rpc": [],
+  "pi-durable": ["@earendil-works/pi-durable", "@earendil-works/pi-ai", "@earendil-works/pi-mcp", "@earendil-works/chord", "bun:sqlite"],
   "opencode-sdk": ["@opencode-ai/sdk", "@opencode-ai/plugin", "@opencode-ai/schema"],
 }
 const transportSharedPackages = ["@claxedo/helpers", "@claxedo/agent-runtime-contract"]

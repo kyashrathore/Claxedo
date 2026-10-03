@@ -18,6 +18,7 @@ export type TransportCapabilities = {
   goals: GoalCapabilities
   todos: boolean
   history: "store" | "harness"
+  durableRuns?: true
 }
 
 export type CapabilityContext = {

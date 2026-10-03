@@ -153,7 +153,7 @@ async function fixture(options: { worktreeRoot?: (source: string) => string } = 
     workspaceId: WORKSPACE_ID,
     sourceDirectory: source,
     root: options.worktreeRoot?.(source) ?? path.join(root, "hidden"),
-    store: () => store,
+    store: () => store.worktrees,
   })
   cleanups.push(() => {
     manager.close()

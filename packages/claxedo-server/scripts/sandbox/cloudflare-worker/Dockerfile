@@ -7,11 +7,11 @@ ENV AMP_SKIP_UPDATE_CHECK=1 FACTORY_DROID_AUTO_UPDATE_ENABLED=false
 
 # Direct terminal-agent CLIs baked into the image. These are the single biggest
 # contributor to image size (claude ~228MB, codex ~218MB,
-# gemini ~156MB, pi ~147MB) and the push bottleneck, so they are build-arg
+# gemini ~156MB) and the push bottleneck, so they are build-arg
 # driven: pass a different CLAXEDO_NPM_AGENTS to a local `docker build`.
 # NOTE: `wrangler deploy` cannot inject --build-arg, so the DEFAULT below is what
 # ships via wrangler.
-ARG CLAXEDO_NPM_AGENTS="@anthropic-ai/claude-code@2.1.285 @openai/codex@0.159.2 @google/gemini-cli@0.62.0 @earendil-works/pi-coding-agent@1.0.0"
+ARG CLAXEDO_NPM_AGENTS="@anthropic-ai/claude-code@2.1.285 @openai/codex@0.159.2 @google/gemini-cli@0.62.0"
 ARG CLAXEDO_CURL_AGENTS="1"
 
 # Install build tools for native deps (better-sqlite3, node-pty). `git` is named
@@ -65,7 +65,7 @@ RUN if [ "${CLAXEDO_CURL_AGENTS}" = "1" ]; then \
       ln -sf /root/.local/bin/droid /usr/local/bin/droid && \
       command -v cursor-agent && command -v amp && command -v droid; \
     fi && \
-    command -v claude && command -v codex && command -v gemini && command -v pi
+    command -v claude && command -v codex && command -v gemini
 
 # Claxedo workspace-runtime host: an in-repo esbuild bundle (built by
 # scripts/sandbox/build-sandbox-image.ts into .build/) plus a generated

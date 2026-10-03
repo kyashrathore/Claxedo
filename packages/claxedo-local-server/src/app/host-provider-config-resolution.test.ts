@@ -82,11 +82,12 @@ async function machineHolds(providerId: string) {
   expect(setActiveCredentials([credential.id], undefined, "local")).toMatchObject({ ok: true })
 }
 
-async function push(revision: number, providers: Record<string, unknown>) {
+async function push(revision: number, providers: Record<string, unknown>, direct?: Record<string, unknown>) {
   return call(`${origin}/api/claxedo/host-provider-config`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ revision, providers: JSON.stringify({ version: 1, credentials: { machineOwnerUserId: OWNER, accounts: { [OWNER]: providers } } }) }),
+    body: JSON.stringify({ revision, providers: JSON.stringify({ version: 1, credentials: { machineOwnerUserId: OWNER, accounts: { [OWNER]: providers },
+      ...(direct ? { direct: { [OWNER]: direct } } : {}) } }) }),
   })
 }
 
@@ -105,7 +106,19 @@ describe("a workspace on this machine resolves the owner's pushed provider", () 
     const snapshot = await getRuntimeConfigSnapshot({ workspaceId: "ws_1" })
     expect(snapshot.auth.accounts[OWNER]["claude-sdk"]).toEqual(PUSHED)
     expect(providerProjection(snapshot.auth.accounts[OWNER].openai, {})).toEqual(providerProjection(before.accounts[OWNER].openai, {}))
-    expect(JSON.stringify(snapshot.auth)).not.toContain("sk-machine-claude-sdk")
+    expect(JSON.stringify(snapshot.auth.accounts)).not.toContain("sk-machine-claude-sdk")
+    expect(snapshot.auth.direct?.[OWNER]?.["claude-sdk"]?.secret).toBe("sk-machine-claude-sdk")
+  })
+
+  test("only a pushed direct row replaces the machine's direct row", async () => {
+    await machineHolds("claude-sdk")
+    await machineHolds("openai")
+    const pushedDirect = { delivery: "direct", baseUrl: "https://api.anthropic.com", secret: "sk-pushed-direct", authKind: "api-key" }
+    expect((await push(1, { "claude-sdk": PUSHED }, { "claude-sdk": pushedDirect })).status).toBe(200)
+
+    const direct = (await projectRuntimeAuth({ scope: "local", workspaceId: "ws_1" })).direct?.[OWNER]
+    expect(direct?.["claude-sdk"]).toEqual(pushedDirect)
+    expect(direct?.openai?.secret).toBe("sk-machine-openai")
   })
 
   test("a withdrawal hands the provider back to the machine's own answer", async () => {

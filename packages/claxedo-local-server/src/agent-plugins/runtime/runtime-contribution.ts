@@ -19,6 +19,7 @@ import { acpAgentPluginAdapter } from "./adapters/acp"
 import { claudeAgentPluginAdapter } from "./adapters/claude"
 import { codexAgentPluginAdapter } from "./adapters/codex"
 import { cursorAgentPluginAdapter } from "./adapters/cursor"
+import { piAgentPluginAdapter } from "./adapters/pi"
 import { openCodeAgentPluginAdapter } from "./adapters/opencode"
 import { runtimeMcpServers } from "@claxedo/server-core/agent-plugins/runtime/mcp-projection"
 import { clearActiveGeneration } from "./generation"
@@ -245,6 +246,7 @@ export function agentPluginWorkspaceRuntimeContribution(input: {
               claudeAgentPluginAdapter(),
               codexAgentPluginAdapter(),
               cursorAgentPluginAdapter(),
+              piAgentPluginAdapter(),
               acpAgentPluginAdapter(),
             ],
           })

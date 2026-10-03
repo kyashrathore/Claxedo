@@ -29,7 +29,16 @@ import {
   type BindingAuthority,
   type RuntimeIdentity,
 } from "@claxedo/egress-broker"
-import type { CredentialSnapshot, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
+import {
+  HARNESS_TABLE,
+  isProviderUnavailable,
+  PI_LAUNCH_PROVIDERS,
+  piCredentialProviderIDs,
+  type CredentialSnapshot,
+  type ProviderDirect,
+  type ProviderProjectionSource,
+} from "@claxedo/agent-runtime-contract"
+import { isSubscriptionKind } from "@claxedo/server-core/credentials/secret-material"
 import { ORG_ACCOUNT_UNAVAILABLE, selectedAccounts, type AccountSelections } from "@claxedo/server-core/credentials/account-holder"
 import { accountSelections } from "@claxedo/server-core/credentials/account-source"
 import { projectionRenewalDue, projectionRenewalDueAt } from "@claxedo/agent-runtime-contract"
@@ -39,8 +48,10 @@ import {
   activeCredentialsForScope,
   credentialById,
   updateCredentialHealth,
+  updateCredentialSecret,
   SINGLE_TENANT_ORG,
 } from "@claxedo/server-core/credentials/registry"
+import { isRefreshableCredential, refreshStoredCredential } from "@claxedo/server-core/credentials/operations/refresh"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import {
   destinationAuthMode,
@@ -57,7 +68,38 @@ import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
 const log = Log.create({ service: "credentials-broker" })
 
+/**
+ * The stored providers whose harnesses call the vendor in process: Pi, which
+ * has no egress broker in front of it, and Codex, whose subscription login
+ * reads the account from the token itself.
+ */
+const DIRECT_PROVIDER_IDS = new Set([...PI_LAUNCH_PROVIDERS.flatMap(piCredentialProviderIDs), ...HARNESS_TABLE.codex.providerIds])
+
+type BoundRow = { credential: CredentialMetadata; destination: ProviderDestination }
+
+/** The machine owner's selected Pi and Codex accounts, as the credential itself. */
+function machineOwnerDirectRows(selected: Record<string, ProviderProjectionSource> | undefined, bound: readonly BoundRow[]): Record<string, ProviderDirect> {
+  return Object.fromEntries(Object.entries(selected ?? {}).flatMap(([providerId, projection]): [string, ProviderDirect][] => {
+    if (!DIRECT_PROVIDER_IDS.has(providerId) || isProviderUnavailable(projection) || !projection.account) return []
+    const account = projection.account
+    const row = bound.find((entry) => entry.credential.id === account.credentialId)
+    if (!row) return []
+    const { destination, credential } = row
+    return [[providerId, {
+      delivery: "direct", baseUrl: destination.origin, ...(destination.apiPath ? { apiPath: destination.apiPath } : {}),
+      secret: destination.value, authKind: isSubscriptionKind(credential.kind) ? "subscription" : "api-key",
+      ...(credential.expires_at ? { expiresAt: credential.expires_at } : {}), account,
+    }]]
+  }))
+}
+
 const BROKER_TOKEN_TTL_MS = 60 * 60 * 1000
+/**
+ * A direct row is re-pushed at half its remaining life, so a one-hour token is
+ * projected again with thirty minutes left; refreshing inside this window is
+ * what makes that re-push carry a token the harness can still use.
+ */
+const REFRESH_WITHIN_MS = 30 * 60 * 1000
 
 /**
  * How long one vendor refusal counts towards the next.
@@ -196,6 +238,7 @@ export function createLocalCredentialBroker(input: {
   /** The org a caller that names none is answered in. */
   org?: string
   now?: () => number
+  fetch?: typeof fetch
 }): LocalCredentialBroker {
   const defaultOrg = input.org ?? SINGLE_TENANT_ORG
   const now = input.now ?? Date.now
@@ -272,6 +315,16 @@ export function createLocalCredentialBroker(input: {
       .map((row) => hasProviderDestination(row.credential.provider_id, org)
         ? row
         : { credential: row.credential, unavailable: row.unavailable ?? "no_destination" })
+  }
+
+  /** The row to bind, renewed first when it is an OAuth login close to expiring. */
+  async function current(credential: CredentialMetadata, org: string): Promise<CredentialMetadata> {
+    if (!isRefreshableCredential(credential) || !credential.expires_at || credential.expires_at - now() > REFRESH_WITHIN_MS) return credential
+    await refreshStoredCredential(credential, {
+      read: () => readSecretById(credential.id, org),
+      write: (next) => updateCredentialSecret(credential.id, next.secret, next.expiresAt, org),
+    }, { ...(input.fetch ? { fetch: input.fetch } : {}), now })
+    return credentialById(credential.id, { onOutage: "throw" }, org) ?? credential
   }
 
   /**
@@ -438,15 +491,16 @@ export function createLocalCredentialBroker(input: {
       const resolved: { owner: string | null; providerId: string; projection: ProviderProjectionSource }[] = []
       const project = (credential: CredentialMetadata, projection: ProviderProjectionSource) =>
         resolved.push({ owner: credential.owner ?? null, providerId: credential.provider_id, projection })
-      const snapshot = (): CredentialSnapshot => ({
-        machineOwnerUserId,
-        accounts: selectedAccounts({
+      const snapshot = (bound: readonly BoundRow[] = []): CredentialSnapshot => {
+        const accounts = selectedAccounts({
           machineOwnerUserId,
           rows: resolved,
           selections,
-          missingOrgAccount: () => ({ unavailable: true, reason: ORG_ACCOUNT_UNAVAILABLE }),
-        }),
-      })
+          missingOrgAccount: () => ({ unavailable: true as const, reason: ORG_ACCOUNT_UNAVAILABLE }),
+        })
+        const direct = machineOwnerDirectRows(accounts[machineOwnerUserId], bound)
+        return { machineOwnerUserId, accounts, ...(Object.keys(direct).length ? { direct: { [machineOwnerUserId]: direct } } : {}) }
+      }
       let state: BrokerState
       try {
         state = await brokerState()
@@ -462,11 +516,19 @@ export function createLocalCredentialBroker(input: {
         credential: CredentialMetadata
         destination: ProviderDestination
       }[] = []
-      for (const { credential, unavailable } of selection) {
+      for (const { credential: selected, unavailable } of selection) {
         // A marked account that cannot be bound is reported, never dropped: the
         // harness has to refuse the turn rather than run on the machine's login.
         if (unavailable) {
-          project(credential, { unavailable: true, reason: unavailable })
+          project(selected, { unavailable: true, reason: unavailable })
+          continue
+        }
+        let credential: CredentialMetadata
+        try {
+          credential = await current(selected, org)
+        } catch (error) {
+          log.warn("credential refresh failed", { id: selected.id, error: String(error) })
+          project(selected, { unavailable: true, reason: "auth_failed" })
           continue
         }
         const destination = await destinationFor(credential, org)
@@ -519,7 +581,7 @@ export function createLocalCredentialBroker(input: {
         const account = { credentialId: credential.id, providerId: credential.provider_id, ...(credential.label ? { label: credential.label } : {}) }
         project(credential, { ...route, placeholder: lease.placeholder, expiresAt: lease.expiresAt, account })
       }
-      return snapshot()
+      return snapshot(bindable)
     },
   }
 }

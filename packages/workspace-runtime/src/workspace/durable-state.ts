@@ -22,6 +22,7 @@ export function workspaceDurableState(input: {
   let opened: { store: RuntimeStore; launches: LaunchOwnershipStore } | undefined
   let reconciliation: Promise<LaunchOwnershipReconciliation> | undefined
   let summary: LaunchOwnershipReconciliation | undefined
+  let interrupted: readonly string[] = []
   const openers: Array<(store: RuntimeStore) => void> = []
 
   function open() {
@@ -47,7 +48,7 @@ export function workspaceDurableState(input: {
       summary = settled
       return settled
     })
-    store.recoverBusySessions()
+    interrupted = store.recoverBusySessions()
     for (const opener of openers) opener(store)
     return opened
   }
@@ -92,6 +93,11 @@ export function workspaceDurableState(input: {
     sessionStarts,
     launchReconciliation: () => reconciliation,
     launchSummary: () => summary,
+    takeInterruptedSessions() {
+      const taken = interrupted
+      interrupted = []
+      return taken
+    },
     admit,
     /**
      * Opens the store now and runs `work` once it is open. A store this build

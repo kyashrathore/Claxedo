@@ -320,7 +320,7 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
       await runSetup(builder, "sudo dnf install -y git make gcc-c++ python3 > /dev/null 2>&1")
       await runSetup(builder, [
         HARNESS_RELEASE_AGE_EXCLUSIONS,
-        "npm i -g --min-release-age=2 tsx@4.22.3 opencode-ai@1.15.10 @anthropic-ai/claude-code@2.1.285 @openai/codex@0.159.2 @google/gemini-cli@0.62.0 @earendil-works/pi-coding-agent@1.0.0",
+        "npm i -g --min-release-age=2 tsx@4.22.3 opencode-ai@1.15.10 @anthropic-ai/claude-code@2.1.285 @openai/codex@0.159.2 @google/gemini-cli@0.62.0",
         "curl https://cursor.com/install -fsS | bash",
         "curl -fsSL https://ampcode.com/install.sh | bash",
         "curl -fsSL https://app.factory.ai/cli | sh",
@@ -336,7 +336,6 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
         "command -v cursor-agent",
         "command -v amp",
         "command -v droid",
-        "command -v pi",
       ].join(" && "))
       await runSetup(builder, [
         `sudo mkdir -p ${shell(RUNTIME_DIR)}`,

@@ -8,11 +8,11 @@ test("the table routes every built-in and custom provider", () => {
   expect(harnessRecord("claude")?.transport).toBe("claude-sdk")
   expect(harnessRecord("codex")?.transport).toBe("codex-app-server")
   expect(harnessRecord("cursor")?.transport).toBe("cursor-sdk")
-  expect(harnessRecord("pi")?.transport).toBe("pi-rpc")
+  expect(harnessRecord("pi")?.transport).toBe("pi-durable")
   expect(harnessRecord("opencode")).toMatchObject({ id: "opencode", access: "native", transport: "opencode-sdk", label: "OpenCode" })
   expect(harnessRecord("acp")?.transport).toBe("acp")
   expect(harnessRecord("opencode-server")).toBeUndefined()
-  expect(harnessRecord("pi-rpc")).toBeUndefined()
+  expect(harnessRecord("pi-durable")).toBeUndefined()
   expect(harnessRecord("unknown")).toBeUndefined()
 })
 
@@ -23,6 +23,6 @@ test("MCP capability matches the harnesses that accept MCP servers today", () =>
     ["cursor", true],
     ["opencode", true],
     ["acp", true],
-    ["pi", false],
+    ["pi", true],
   ])
 })

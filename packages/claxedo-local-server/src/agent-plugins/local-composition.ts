@@ -24,6 +24,7 @@ import { acpAgentPluginAdapter } from "./runtime/adapters/acp"
 import { claudeAgentPluginAdapter } from "./runtime/adapters/claude"
 import { codexAgentPluginAdapter } from "./runtime/adapters/codex"
 import { cursorAgentPluginAdapter } from "./runtime/adapters/cursor"
+import { piAgentPluginAdapter } from "./runtime/adapters/pi"
 import { openCodeAgentPluginAdapter } from "./runtime/adapters/opencode"
 import { clearActiveGeneration, readActiveGeneration } from "./runtime/generation"
 import {
@@ -110,6 +111,7 @@ export function createLocalAgentPluginsComposition(
     claudeAgentPluginAdapter(),
     codexAgentPluginAdapter(),
     cursorAgentPluginAdapter(),
+    piAgentPluginAdapter(),
     acpAgentPluginAdapter(),
   ]
 

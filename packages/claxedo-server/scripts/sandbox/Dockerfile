@@ -35,8 +35,7 @@ RUN npm i -g --min-release-age=2 \
       tsx@4.22.3 \
       @anthropic-ai/claude-code@2.1.285 \
       @openai/codex@0.159.2 \
-      @google/gemini-cli@0.62.0 \
-      @earendil-works/pi-coding-agent@1.0.0
+      @google/gemini-cli@0.62.0
 
 COPY .build/install-agent-artifacts.sh /tmp/install-agent-artifacts.sh
 RUN sh /tmp/install-agent-artifacts.sh && \
@@ -50,8 +49,7 @@ RUN sh /tmp/install-agent-artifacts.sh && \
     command -v agent && \
     command -v cursor-agent && \
     command -v amp && \
-    command -v droid && \
-    command -v pi
+    command -v droid
 
 # Claxedo workspace-runtime host: an in-repo esbuild bundle (built by
 # scripts/sandbox/build-sandbox-image.ts into .build/) plus a generated

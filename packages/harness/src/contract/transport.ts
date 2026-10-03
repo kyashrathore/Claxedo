@@ -21,7 +21,7 @@ import type { PluginProjection, ResolvedCredentials } from "./projection"
 import type { CustomProviderDefinition, ProviderCatalogEntry } from "./provider-definitions"
 import type { AttachInput, Deadline, HarnessSession, RoutedEvent, StartInput, TurnInput, TurnRef } from "./session"
 
-export type TransportKind = "claude-sdk" | "codex-app-server" | "cursor-sdk" | "acp" | "pi-rpc" | "opencode-sdk"
+export type TransportKind = "claude-sdk" | "codex-app-server" | "cursor-sdk" | "acp" | "pi-durable" | "opencode-sdk"
 
 export type TransportConfigUpdate = {
   providerDefinitions?: readonly CustomProviderDefinition[]

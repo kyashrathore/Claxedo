@@ -4,7 +4,6 @@ import os from "node:os"
 import path from "node:path"
 import { createTestServices } from "./test-support/services"
 import { processAlive } from "../../e2e/harness/process-alive"
-import { PiRpc } from "../transports/pi-rpc/rpc"
 import { CodexRpc } from "../transports/codex-app-server/rpc"
 
 const deadline = () => ({ at: Date.now() + 5_000, signal: new AbortController().signal })
@@ -20,35 +19,31 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', li
 
 const NODE = process.env.CLAXEDO_E2E_NODE ?? Bun.which("node") ?? process.execPath
 
-for (const kind of ["pi", "codex"] as const) {
-  test.skipIf(process.platform === "win32")(`${kind} RPC retirement stops a TERM-resistant descendant after its parent exits`, async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), `${kind}-retirement-`))
-    const services = createTestServices()
-    const script = path.join(root, "peer.cjs")
-    await fs.writeFile(script, source)
-    const owned = await services.spawn({ file: NODE, args: [script], cwd: root, env: { PATH: process.env.PATH ?? "/usr/bin:/bin" } },
-      { role: "harness", label: `${kind} retirement peer`, signal: new AbortController().signal })
-    const rpc = kind === "pi" ? new PiRpc(owned, services.clock, () => {}) : new CodexRpc(owned, services.clock)
-    let descendant: number | undefined
-    try {
-      descendant = await new Promise<number>((resolve) => {
-        if (rpc instanceof PiRpc) rpc.onEvent((message) => { if (message.type === "descendant") resolve(Number(message.pid)) })
-        else rpc.onMessage((message) => { if (message.method === "descendant") resolve((message.params as { pid: number }).pid) })
-      })
-      expect(processAlive(descendant)).toBe(true)
-      if (rpc instanceof PiRpc) rpc.send({ type: "exit-parent" })
-      else rpc.notify("exit-parent")
-      expect(await owned.exited).toEqual({ code: 0, signal: null })
-      expect(processAlive(descendant)).toBe(true)
-      await rpc.retire(deadline())
-      expect(processAlive(descendant)).toBe(false)
-    } finally {
-      if (descendant !== undefined && processAlive(descendant)) process.kill(descendant, "SIGKILL")
-      try { await owned.retire(deadline()) }
-      finally { await fs.rm(root, { recursive: true, force: true }) }
-    }
-  }, 15_000)
-}
+test.skipIf(process.platform === "win32")("codex RPC retirement stops a TERM-resistant descendant after its parent exits", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-retirement-"))
+  const services = createTestServices()
+  const script = path.join(root, "peer.cjs")
+  await fs.writeFile(script, source)
+  const owned = await services.spawn({ file: NODE, args: [script], cwd: root, env: { PATH: process.env.PATH ?? "/usr/bin:/bin" } },
+    { role: "harness", label: "codex retirement peer", signal: new AbortController().signal })
+  const rpc = new CodexRpc(owned, services.clock)
+  let descendant: number | undefined
+  try {
+    descendant = await new Promise<number>((resolve) => {
+      rpc.onMessage((message) => { if (message.method === "descendant") resolve((message.params as { pid: number }).pid) })
+    })
+    expect(processAlive(descendant)).toBe(true)
+    rpc.notify("exit-parent")
+    expect(await owned.exited).toEqual({ code: 0, signal: null })
+    expect(processAlive(descendant)).toBe(true)
+    await rpc.retire(deadline())
+    expect(processAlive(descendant)).toBe(false)
+  } finally {
+    if (descendant !== undefined && processAlive(descendant)) process.kill(descendant, "SIGKILL")
+    try { await owned.retire(deadline()) }
+    finally { await fs.rm(root, { recursive: true, force: true }) }
+  }
+}, 15_000)
 
 test.skipIf(process.platform === "win32")("a signalled Codex process still answers until the OS reports exit", async () => {
   const services = createTestServices()

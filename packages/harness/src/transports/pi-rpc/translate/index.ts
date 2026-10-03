@@ -1,1 +1,0 @@
-export { piRpcAdapter } from "./adapter"

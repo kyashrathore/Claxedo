@@ -1,6 +1,7 @@
 import { SessionAuthoringOwnership } from "./session/authoring-ownership"
 import type { TurnOutline, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { readTurnOutline } from "./session/turn-outline"
+import { WorktreeRecords } from "./session/worktree-records"
 import { readLatestTurnView, type MessageProjectionRow } from "./session/latest-turn-view"
 import { isContiguousTurn, readJournaledTurn, readMessageCompleted, readTurnEvidence, readTurnFinished, readTurnId, readTurnPrompts, readTurnReply, readTurnEndOrd, readTurnReplyId, readUpstreamHasTurns } from "./session/turn-evidence"
 import type { SessionConfig, SessionConfigUpdate, SessionHandoff, SessionHandoffSource, SubagentObservation } from "@claxedo/agent-runtime-contract"
@@ -237,18 +238,6 @@ function storedTurnOrigin(row: {
   }
 }
 
-export type WorkspaceWorktreeRecord = {
-  workspaceId: string
-  sessionId: string
-  branch: string
-  baseCommit: string
-  path: string
-  state: "creating" | "active" | "repairing" | "failed"
-  createdAt: number
-  updatedAt: number
-  lastActivityAt: number
-}
-
 const SETTLE_DELTAS_MS = 200
 
 type PendingDelta = {
@@ -482,6 +471,7 @@ export class RuntimeStore {
   readonly sessionStarts: AgentSessionStarts
   readonly deliveryQueue: DeliveryQueue
   readonly turnLeases: TurnLeases
+  readonly worktrees: WorktreeRecords
   private opened: RuntimeStoreDatabase
   private db: SqliteDatabase
   private subagentAdmission = createMemorySubagentAdmissionStore()
@@ -509,6 +499,7 @@ export class RuntimeStore {
     this.authoringOwnership = new SessionAuthoringOwnership(this.db)
     this.sessionStarts = sqliteSessionStarts(this.db)
     this.turnLeases = new TurnLeases(this.db)
+    this.worktrees = new WorktreeRecords(this.db)
     this.deliveryQueue = new DeliveryQueue(this.db, (sessionId, actorId) => this.authoringOwnership.record(sessionId, actorId))
     this.hydrateSubagentAdmission()
     this.replay()
@@ -1139,7 +1130,7 @@ export class RuntimeStore {
     }
   }
 
-  private interruptPreviousSessions() {
+  private interruptPreviousSessions(): string[] {
     const rows = this.db.prepare<{
       id: string
       agent_session_id: string | null
@@ -1147,98 +1138,18 @@ export class RuntimeStore {
     for (const row of rows) {
       this.markSessionInterrupted(row.id, SESSION_INTERRUPTED, row.agent_session_id)
     }
+    return rows.map((row) => row.id)
   }
 
-  recoverBusySessions() {
+  recoverBusySessions(): readonly string[] {
     // Valid only when no turn, delivery or host-child run of the previous
     // runtime can still be active: a crash settles none of their durable rows,
     // so this boot boundary is the one place they are settled.
     this.turnLeases.clear()
     this.deliveryQueue.settleOrphanedDispatches()
-    this.interruptPreviousSessions()
+    const interrupted = this.interruptPreviousSessions()
     this.interruptHostChildRuns()
-  }
-
-  putWorktree(record: WorkspaceWorktreeRecord) {
-    this.db
-      .prepare(
-        `
-      INSERT OR REPLACE INTO workspace_worktree (
-        session_id,
-        workspace_id,
-        branch,
-        base_commit,
-        path,
-        state,
-        created_at,
-        updated_at,
-        last_activity_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-      )
-      .run(
-        record.sessionId,
-        record.workspaceId,
-        record.branch,
-        record.baseCommit,
-        record.path,
-        record.state,
-        record.createdAt,
-        record.updatedAt,
-        record.lastActivityAt,
-      )
-  }
-
-  getWorktree(workspaceId: string, sessionId: string): WorkspaceWorktreeRecord | undefined {
-    const row = this.db.prepare<{
-      workspace_id: string
-      session_id: string
-      branch: string
-      base_commit: string
-      path: string
-      state: WorkspaceWorktreeRecord["state"]
-      created_at: number
-      updated_at: number
-      last_activity_at: number
-    }>(`
-      SELECT
-        workspace_id,
-        session_id,
-        branch,
-        base_commit,
-        path,
-        state,
-        created_at,
-        updated_at,
-        last_activity_at
-      FROM workspace_worktree
-      WHERE workspace_id = ? AND session_id = ?
-    `).get(workspaceId, sessionId)
-    if (!row) return undefined
-    return {
-      workspaceId: row.workspace_id,
-      sessionId: row.session_id,
-      branch: row.branch,
-      baseCommit: row.base_commit,
-      path: row.path,
-      state: row.state,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      lastActivityAt: row.last_activity_at,
-    }
-  }
-
-  listWorktrees(workspaceId: string): WorkspaceWorktreeRecord[] {
-    return (
-      this.db
-        .prepare<{ session_id: string }>(
-          `
-      SELECT session_id
-      FROM workspace_worktree
-      WHERE workspace_id = ?
-      ORDER BY last_activity_at DESC, session_id ASC
-    `).all(workspaceId))
-      .map((row) => this.getWorktree(workspaceId, row.session_id)!)
+    return interrupted
   }
 
   private parseJournalRow(row: RuntimeJournalRow): Row | null {

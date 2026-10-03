@@ -42,7 +42,7 @@ function harness(options: {
   beforeCapabilities?: () => Promise<void>
 }) {
   return new FakeTransport({
-    kind: "pi-rpc",
+    kind: "pi-durable",
     turn: (input) => {
       options.turns.push(promptText(input))
       return (options.open ?? (() => controlledTurn(input.session.binding.sessionId)))().events

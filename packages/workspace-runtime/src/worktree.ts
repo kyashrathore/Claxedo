@@ -3,11 +3,9 @@ import path from "node:path"
 import { inside } from "@claxedo/helpers/path"
 import { runGit } from "./git"
 import { workspaceRuntimeWorkspacesDir } from "./env"
-import { type RuntimeStore, type WorkspaceWorktreeRecord, WorkspaceTargetError, type SessionPlacement } from "@claxedo/session-core"
+import { type WorkspaceWorktreeRecord, type WorktreeRecords, WorkspaceTargetError, type SessionPlacement } from "@claxedo/session-core"
 
 const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
-
-type WorktreeStore = Pick<RuntimeStore, "getWorktree" | "listWorktrees" | "putWorktree">
 
 export function workspaceStorageRoot(workspaceId: string, env: NodeJS.ProcessEnv = process.env) {
   if (!SEGMENT.test(workspaceId)) throw new WorkspaceTargetError("workspace id is not path-safe")
@@ -32,7 +30,7 @@ export class WorkspaceWorktreeManager {
     placement: SessionPlacement
     sourceDirectory: string
     root?: string
-    store: () => WorktreeStore
+    store: () => WorktreeRecords
   }) {
     this.root = path.resolve(options.root ?? workspaceStorageRoot(options.workspaceId))
     this.repo = path.join(this.root, "repo.git")
@@ -54,11 +52,11 @@ export class WorkspaceWorktreeManager {
   }
 
   list() {
-    return this.store.listWorktrees(this.options.workspaceId)
+    return this.store.list(this.options.workspaceId)
   }
 
   get(sessionId: string) {
-    return this.store.getWorktree(this.options.workspaceId, requireSessionId(sessionId))
+    return this.store.get(this.options.workspaceId, requireSessionId(sessionId))
   }
 
   private serve(record: WorkspaceWorktreeRecord) {
@@ -92,7 +90,7 @@ export class WorkspaceWorktreeManager {
   private async ensureSerialized(input: { sessionId: string; baseCommit?: string }) {
     await fs.mkdir(this.worktrees, { recursive: true, mode: 0o755 })
     await this.ensureBareRepository()
-    const existing = this.store.getWorktree(this.options.workspaceId, input.sessionId)
+    const existing = this.store.get(this.options.workspaceId, input.sessionId)
     if (existing) {
       if (existing.workspaceId !== this.options.workspaceId) {
         throw new Error(`Session ${input.sessionId} is registered to another workspace`)
@@ -122,12 +120,12 @@ export class WorkspaceWorktreeManager {
       updatedAt: now,
       lastActivityAt: now,
     }
-    this.store.putWorktree(record)
+    this.store.put(record)
     try {
       await runGit(["worktree", "add", "-b", branch, target, baseCommit], this.repo)
       return this.activate(record)
     } catch (error) {
-      this.store.putWorktree({ ...record, state: "failed", updatedAt: Date.now() })
+      this.store.put({ ...record, state: "failed", updatedAt: Date.now() })
       throw error
     }
   }
@@ -158,7 +156,7 @@ export class WorkspaceWorktreeManager {
       updatedAt: Date.now(),
       lastActivityAt: Date.now(),
     }
-    this.store.putWorktree(active)
+    this.store.put(active)
     this.serve(active)
     return active
   }
@@ -169,7 +167,7 @@ export class WorkspaceWorktreeManager {
       throw new WorkspaceTargetError("stored worktree path escapes workspace root")
     }
     const repairing = { ...record, state: "repairing" as const, updatedAt: Date.now() }
-    this.store.putWorktree(repairing)
+    this.store.put(repairing)
     this.options.placement.unregister(repairing.sessionId)
     this.served.delete(repairing.sessionId)
     await runGit(["worktree", "prune"], this.repo)
@@ -178,7 +176,7 @@ export class WorkspaceWorktreeManager {
       await runGit(["worktree", "add", record.path, record.branch], this.repo)
       return this.activate(repairing)
     } catch (error) {
-      this.store.putWorktree({ ...repairing, state: "failed", updatedAt: Date.now() })
+      this.store.put({ ...repairing, state: "failed", updatedAt: Date.now() })
       throw error
     }
   }

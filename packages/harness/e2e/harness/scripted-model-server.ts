@@ -36,7 +36,7 @@ export type ScriptedModelRequest = {
 export type ScriptedToolCall = { name: string; input: unknown; namespace?: string; format?: ScriptedToolFormat; whenPromptIncludes?: string; autoModeSeverity?: 0
   /** Only a conversation's opening request, one with no tool result yet: a subagent's first request, not its parent's that carries its spawn. */
   opening?: true }
-export type ScriptedError = { marker: string; status: number; message: string; model?: string }
+export type ScriptedError = { marker: string; status: number; message: string; model?: string; once?: true }
 
 export type ScriptedModelServer = {
   url: string
@@ -142,6 +142,7 @@ function decideReply(state: ServerState, request: ScriptedModelBody, prompt: str
   const marker = lastMarker(prompt)
   const error = state.pendingError
   if (error && (!error.model || request.body.model === error.model) && prompt.includes(error.marker) && !title) {
+    if (error.once) state.pendingError = undefined
     return { kind: "error", status: error.status, message: error.message }
   }
   if (isAutoModeClassifier(request, state.autoModeCommand)) return { kind: "text", text: "<severity>0</severity>" }

@@ -259,9 +259,9 @@ export function projectionRenewalDue(input: { at: number; all?: boolean }, renew
 }
 
 /**
- * When the earliest placeholder in this map has to be replaced: half of its own
- * lifetime before it expires, so a turn that starts just before renewal still
- * finishes on a valid one.
+ * When the earliest placeholder or direct credential in this map has to be
+ * replaced: half of its own lifetime before it expires, so a turn that starts
+ * just before renewal still finishes on a valid one.
  *
  * Read from `expiresAt` rather than from a fixed interval, because the lifetime
  * belongs to the authority that minted the placeholder and can be shorter than
@@ -269,11 +269,17 @@ export function projectionRenewalDue(input: { at: number; all?: boolean }, renew
  * renewing.
  */
 export function projectionRenewalDueAt(
-  auth: Record<string, ProviderProjection>,
+  auth: Record<string, ProviderProjection | ProviderDirect>,
   appliedAt: number,
 ): number | undefined {
   const due = Object.values(auth)
     .flatMap((row) => isProviderUnavailable(row) || row.expiresAt === undefined ? [] : [row.expiresAt])
     .map((expiresAt) => expiresAt - Math.max(expiresAt - appliedAt, 0) / 2)
+  return due.length ? Math.min(...due) : undefined
+}
+
+/** The earliest renewal any row of a snapshot needs, across every person's accounts and direct credentials. */
+export function credentialSnapshotRenewalDueAt(auth: CredentialSnapshot<ProviderProjection>, appliedAt: number): number | undefined {
+  const due = [...Object.values(auth.accounts), ...Object.values(auth.direct ?? {})].flatMap((rows) => projectionRenewalDueAt(rows, appliedAt) ?? [])
   return due.length ? Math.min(...due) : undefined
 }

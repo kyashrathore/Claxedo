@@ -1,11 +1,9 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { writeLineProxyFault } from "./line-proxy-fault"
-import { PINNED_PI } from "./pinned-pi"
 import { PINNED_CODEX } from "./pinned-codex"
 
-export async function withholdSteerReply(dataDir: string, harness: "pi" | "codex") {
-  const actual = harness === "pi" ? PINNED_PI : PINNED_CODEX
+export async function withholdSteerReply(dataDir: string, harness: "codex") {
   const bin = path.join(dataDir, `${harness}-steer-fault-bin`)
   await fs.mkdir(bin)
   const gate = path.join(bin, "withhold")
@@ -13,10 +11,10 @@ export async function withholdSteerReply(dataDir: string, harness: "pi" | "codex
   return writeLineProxyFault({
     dataDir,
     binName: `${harness}-steer-fault-bin`,
-    executableName: harness === "pi" ? "pi.mjs" : "codex",
-    actual,
+    executableName: "codex",
+    actual: PINNED_CODEX,
     setup: `import fs from "node:fs"\nconst withheld = new Set()`,
-    onRequest: `if ((request.method === "turn/steer" || request.type === "steer") && fs.existsSync(${JSON.stringify(gate)})) {
+    onRequest: `if (request.method === "turn/steer" && fs.existsSync(${JSON.stringify(gate)})) {
       withheld.add(request.id)
       fs.appendFileSync(${JSON.stringify(path.join(bin, "seen.log"))}, "steer " + line + "\\n")
     }`,

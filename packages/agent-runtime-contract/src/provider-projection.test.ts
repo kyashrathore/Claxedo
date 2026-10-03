@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   credentialSnapshot,
+  credentialSnapshotRenewalDueAt,
   isProviderDirect,
   projectionRenewalDueAt,
   providerDirect,
@@ -124,6 +125,14 @@ describe("provider projection", () => {
     }, appliedAt)).toBe(appliedAt + 5 * 60 * 1000)
     expect(projectionRenewalDueAt({ anthropic: { unavailable: true, reason: "auth_failed" } }, appliedAt))
       .toBeUndefined()
+  })
+
+  test("a snapshot renews for its earliest row, a direct credential included", () => {
+    const appliedAt = 1_000_000
+    const direct = { delivery: "direct" as const, baseUrl: "https://api.openai.com", secret: "sk", authKind: "subscription" as const, expiresAt: appliedAt + 20 * 60 * 1000 }
+    expect(credentialSnapshotRenewalDueAt({ machineOwnerUserId: "local", accounts: { local: { anthropic: { ...minted, expiresAt: appliedAt + 60 * 60 * 1000 } } },
+      direct: { local: { openai: direct } } }, appliedAt)).toBe(appliedAt + 10 * 60 * 1000)
+    expect(credentialSnapshotRenewalDueAt({ machineOwnerUserId: "local", accounts: {} }, appliedAt)).toBeUndefined()
   })
 })
 

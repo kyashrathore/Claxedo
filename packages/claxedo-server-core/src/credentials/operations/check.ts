@@ -10,6 +10,7 @@
  */
 
 import { CredentialVerificationError, verifyCredential } from "./verify"
+import { refreshStoredCredential, type StoredCredentialSecret } from "./refresh"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import type { CredentialHealth, CredentialMetadata, CredentialUsageWindow } from "../types"
@@ -71,17 +72,20 @@ export async function checkCredential(
     // makes the verifier read a freshly pasted secret as stale, which for an
     // API key — nothing to refresh with — answers "expired".
     const subject = options.replace ? { ...credential, expires_at: null } : credential
-    const { health, refreshed, usage, accountEmail } = await verifyCredential(subject, secret, verifyOptions)
+    const stored: StoredCredentialSecret = {
+      read: async () => options.secret ?? await resolveCredentialSecretById?.(credential.id, options.org),
+      write: (next) => updateCredentialSecret?.(credential.id, next.secret, next.expiresAt, options.org) ?? Promise.resolve(),
+    }
+    const { health, refreshed, usage, accountEmail } = await verifyCredential(subject, secret, options.replace ? verifyOptions
+      : { ...verifyOptions, refresh: (row) => refreshStoredCredential(row, stored, verifyOptions) })
     const at = (options.now ?? Date.now)()
     if (options.replace && !ACCEPTED.has(health)) return { status: "checked", health, at, stored: false }
-    // Persist first: a renewed access token that is verified but not stored
-    // would make every later read fall back to the stale one.
+    // A stored row's renewed token was written inside the shared refresh. A
+    // replacement is written here, once the provider has taken it.
     if (options.replace) {
       // `null` rather than nothing: the replacement's own expiry is whatever the
       // provider just said, and keeping the old one would expire a live secret.
       await updateCredentialSecret?.(credential.id, refreshed?.secret ?? secret, refreshed?.expiresAt ?? null, options.org)
-    } else if (refreshed) {
-      await updateCredentialSecret?.(credential.id, refreshed.secret, refreshed.expiresAt, options.org)
     }
     await updateCredentialHealth(credential.id, health, at, options.org)
     if (usage?.length) await credentials.updateCredentialUsage?.(credential.id, usage, at, options.org)

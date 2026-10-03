@@ -53,6 +53,12 @@
       "types": "./dist/contract/index.d.ts",
       "import": "./dist/contract/index.js"
     },
+    "./pi-durable": {
+      "development": "./src/transports/pi-durable/index.ts",
+      "bun": "./src/transports/pi-durable/index.ts",
+      "types": "./dist/transports/pi-durable/index.d.ts",
+      "import": "./dist/transports/pi-durable/index.js"
+    },
     "./opencode-sdk": {
       "development": "./src/transports/opencode-sdk/index.ts",
       "bun": "./src/transports/opencode-sdk/index.ts",

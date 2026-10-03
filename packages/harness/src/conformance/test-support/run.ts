@@ -82,9 +82,11 @@ async function setup(input: ConformanceInput) {
     authority: { ...authority, directory: backend.directory, upstreamSessionId: binding().upstreamSessionId }, origin: turnOrigin, signal,
   })
   const close = async () => { await transport.dispose(); await backend.close() }
+  let turns = 0
   return { backend, services, ports, owner, transport, start, started, sessionBroker, turnBroker,
     get session(): HarnessSession { return { ...started, binding: binding() } },
-    turn: (message: string, userMessageId?: string) => turn(backend.model, backend.agent ?? "build", message, turnOrigin, userMessageId), close }
+    turn: (message: string, userMessageId?: string) => ({ ...turn(backend.model, backend.agent ?? "build", message, turnOrigin, userMessageId),
+      turnId: `t${++turns}` }), close }
 }
 
 export { setup as setupConformance }

@@ -2,80 +2,37 @@ import assert from "node:assert/strict"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { ClaxedoApi, assistantText } from "../harness/api"
-import { armPiRpcFault, piRpcFaultEvidence } from "../harness/pi-rpc-fault"
-import { forgetStoredAccounts, ownerPiAgentDir, writeOwnerPiModels } from "../harness/pi-owner"
+import { unexpectedEgress } from "../harness/egress-guard"
+import { ownerPiAgentDir } from "../harness/pi-owner"
 import { startStack } from "../harness/stack"
 import { frameSessionId, frameType } from "../harness/stream"
 import { waitForTitle } from "../harness/turn-observations"
 
-const extension = `export default function (pi) {
-  pi.registerCommand("h18-ui", {
-    description: "H18 extension UI",
-    handler: async (_args, ctx) => {
-      ctx.ui.setStatus("h18", "H18 status")
-      ctx.ui.setWidget("h18", ["H18 widget"])
-      pi.sendUserMessage("Reply with exactly this one token: H18EXTENSION")
-    },
-  })
-}
-`
-
-async function installProfile(agentDir: string, modelUrl: string, auth: Buffer) {
-  await writeOwnerPiModels(agentDir, modelUrl, "h18-scripted")
-  await fs.mkdir(path.join(agentDir, "extensions"), { recursive: true })
-  await fs.writeFile(path.join(agentDir, "extensions", "h18.ts"), extension)
-  await fs.writeFile(path.join(agentDir, "auth.json"), auth)
-}
-
 export async function run() {
-  const stack = await startStack({ label: "h18-pi-owner", piRpcFault: true })
+  const stack = await startStack({ label: "h18-pi-owner" })
   try {
     const workspace = await stack.daemon.makeWorkspace("h18")
     const own = ownerPiAgentDir(stack)
-    const legacy = path.join(stack.dataDir, "agent-core", workspace.id, "pi", "agent")
     const auth = Buffer.from('{"h18":"owner-login-sentinel"}\n')
-    await installProfile(own, stack.scripted.v1Url, auth)
-    await installProfile(legacy, stack.scripted.v1Url, auth)
-    await forgetStoredAccounts(stack)
+    await fs.mkdir(own, { recursive: true })
+    await fs.writeFile(path.join(own, "auth.json"), auth)
     const api = new ClaxedoApi(stack.url)
     const stream = await stack.events(workspace.directory)
     const model = { providerId: "pi", modelId: "openai/gpt-4.1" }
     const session = await api.createSession(workspace.directory, { harness: { id: "pi", access: "native" }, model })
-    await armPiRpcFault(stack.dataDir)
-    let rpcError: unknown
-    try {
-      await api.prompt(workspace.directory, session.id, "Reply with exactly this one token: H18START", { model, title: true })
-      await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id, { label: "H18 start idle" })
-      await waitForTitle(stream, session.id)
-    } catch (error) { rpcError = error }
-    const faultEvidence = await piRpcFaultEvidence(stack.dataDir)
-    assert.match(faultEvidence, /^injected ([^\n]+)\nreal \1\n$/, "H18 injected both malformed replies before Pi's real reply")
-    const lastTurn = (await api.session(workspace.directory, session.id)).lastTurn
-    if (rpcError !== undefined || lastTurn?.status !== "completed") {
-      const accepted = /H18 (mismatched command|unknown id)/.exec(`${lastTurn?.error ?? ""}\n${stack.daemon.log()}`)
-      if (!accepted) throw rpcError ?? new Error(`H18 start turn ended ${JSON.stringify(lastTurn)}`)
-      assert.fail(`H-18: Pi settled a request from the malformed reply "${accepted[0]}" before its real reply`)
-    }
-    const commandReply = await fetch(`${stack.url}/command?directory=${encodeURIComponent(workspace.directory)}`)
-    if (!commandReply.ok) throw new Error(`H18 command readback failed: ${await commandReply.text()}`)
-    const commands = await commandReply.json() as { name?: string }[]
-    const frameCount = stream.frames.length
-    await api.prompt(workspace.directory, session.id, "/h18-ui", { model })
-    await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id &&
-      stream.frames.indexOf(frame) >= frameCount, { label: "H18 extension idle" })
-    const messages = await api.messages(workspace.directory, session.id)
-    assert.match(assistantText(messages), /H18EXTENSION/, "H18 stored extension reply")
-    assert.ok(stream.frames.some((frame) => frameType(frame) === "message.part.updated" && frameSessionId(frame) === session.id), "H18 live text frame")
-    assert.equal((await api.session(workspace.directory, session.id)).id, session.id, "H18 session readback")
-    assert.ok(stack.scripted.requests.some((request) => request.prompt.includes("H18EXTENSION")), "H18 scripted model readback")
-    const defects: string[] = []
-    if (!commands.some((command) => command.name === "h18-ui")) defects.push("H-5: Pi get_commands omitted the owner's extension command")
-    const live = JSON.stringify(stream.frames)
-    if (!/pi\.extension_ui\.setStatus/.test(live)) defects.push("H-5: Pi dropped setStatus")
-    if (!/pi\.extension_ui\.setWidget/.test(live)) defects.push("H-5: Pi dropped setWidget")
-    if (!(await fs.readFile(path.join(own, "auth.json"))).equals(auth)) defects.push("H-6: owner auth.json changed")
-    if (!(await fs.readFile(path.join(legacy, "auth.json"))).equals(auth)) defects.push("H-6: Claxedo changed the pre-existing Pi profile auth.json")
-    assert.deepEqual(stack.egress.attempts, [])
-    assert.deepEqual(defects, [], defects.join("\n"))
+    stack.scripted.scriptTool({ name: "write", input: { path: "h18.txt", content: "written by embedded pi\n" }, whenPromptIncludes: "H18WRITE" })
+    await api.prompt(workspace.directory, session.id, "Write the file, then reply with exactly this one token: H18WRITE", { model, title: true })
+    await stream.waitFor((frame) => frameType(frame) === "session.idle" && frameSessionId(frame) === session.id, { label: "H18 tool turn idle" })
+    await waitForTitle(stream, session.id)
+    assert.equal(await fs.readFile(path.join(workspace.directory, "h18.txt"), "utf8"), "written by embedded pi\n", "H18 Pi's own write tool wrote the workspace file")
+    assert.match(assistantText(await api.messages(workspace.directory, session.id)), /H18WRITE/, "H18 stored answer")
+    assert.ok(stream.frames.some((frame) => frameType(frame) === "message.part.updated" && frameSessionId(frame) === session.id
+      && JSON.stringify(frame.data.payload).includes('"type":"tool"')), "H18 live tool card")
+    assert.equal((await api.session(workspace.directory, session.id)).lastTurn?.status, "completed")
+    const modelRequests = stack.scripted.requests.filter((request) => request.prompt.includes("H18WRITE"))
+    assert.ok(modelRequests.length >= 2, "H18 the tool result went back to the model")
+    assert.deepEqual([...new Set(modelRequests.map((request) => request.authorization))], ["Bearer test-key"], "H18 Pi spent only the owner's stored account")
+    assert.ok((await fs.readFile(path.join(own, "auth.json"))).equals(auth), "H-6: the owner's own Pi login changed")
+    assert.deepEqual(unexpectedEgress(stack.egress.attempts), [])
   } finally { await stack.close() }
 }

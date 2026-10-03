@@ -14,7 +14,7 @@ const budgets: Record<string, number> = {
   contract: 1200, translate: 550, rpc: 300, broker: 2300, registry: 900, capabilities: 450, profiles: 600,
   "transports/claude-sdk": 2100, "transports/codex-app-server": 2150,
   "transports/cursor-sdk": 1600, "transports/acp": 2950,
-  "transports/pi-rpc": 650, "transports/opencode-sdk": 3000,
+  "transports/pi-durable": 1200, "transports/opencode-sdk": 3000,
 }
 
 function inspect(path: string, text: string, options: { agents?: string; budgets?: Record<string, number> } = {}) {
@@ -70,13 +70,13 @@ test("transport-boundary accepts only its own SDK and shared boundaries", () => 
   }
   passes("transport-boundary", "src/transports/acp/good.ts", 'import "node:fs"\nimport "@agentclientprotocol/sdk"\nimport "../../contract/x"\nimport "../../translate/x"\nimport "../../profiles/claude/x"\n')
   fails("transport-boundary", "src/transports/acp/bad.ts", 'import "@cursor/sdk"\n', /Import only this transport/)
-  fails("transport-boundary", "src/transports/pi-rpc/bad.ts", 'import "../../broker/x"\n', /Import only this transport/)
+  fails("transport-boundary", "src/transports/pi-durable/bad.ts", 'import "../../broker/x"\n', /Import only this transport/)
   fails("transport-boundary", "src/transports/acp/bad.ts", 'import "@claxedo/workspace-runtime"\n', /Import only this transport/)
 })
 
 test("rpc is a shared transport mechanism without reverse dependencies", () => {
-  passes("transport-boundary", "src/transports/pi-rpc/good.ts", 'import "../../rpc/channel"\n')
-  fails("core-boundary", "src/rpc/bad.ts", 'import "../transports/pi-rpc/rpc"\n', /Move this dependency/)
+  passes("transport-boundary", "src/transports/pi-durable/good.ts", 'import "../../rpc/channel"\n')
+  fails("core-boundary", "src/rpc/bad.ts", 'import "../transports/pi-durable/run"\n', /Move this dependency/)
 })
 
 test("no-policy-in-transports preserves types and protocol maps but rejects decisions", () => {

@@ -1,4 +1,3 @@
-import { installFakePiRpc } from "./test-support/home/fake-pi-rpc.mjs"
 import { createWorkspaceRuntimeClient } from "./client"
 import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import fs from "fs"
@@ -1067,9 +1066,6 @@ describe("createWorkspaceRuntimeApp assembly (characterization)", () => {
     // The session store is durable under `storeRoot`; the kit default is the
     // machine-wide runtime store, where a fixed session id from an earlier run
     // would already be bound to another throwaway directory.
-    const peer = await installFakePiRpc()
-    const originalPi = process.env.PI_EXECUTABLE
-    process.env.PI_EXECUTABLE = peer.binary
     const dir = await pinTempWorkspaceDirectory()
     const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
     placement,
@@ -1089,9 +1085,6 @@ describe("createWorkspaceRuntimeApp assembly (characterization)", () => {
       expect(await config.json()).toMatchObject({ harness: { id: "pi", access: "native" } })
     } finally {
       await runtime.host.dispose()
-      if (originalPi === undefined) delete process.env.PI_EXECUTABLE
-      else process.env.PI_EXECUTABLE = originalPi
-      await peer.dispose()
     }
   })
 

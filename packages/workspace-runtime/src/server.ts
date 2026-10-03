@@ -462,7 +462,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
         workspaceId: options.target.workspaceId,
         placement: host.sessionCore.placement,
         sourceDirectory: options.target.directory,
-        store: host.store,
+        store: () => host.store().worktrees,
       })
     : undefined
   if (worktrees) host.whenStoreOpens(() => worktrees.serveActive())

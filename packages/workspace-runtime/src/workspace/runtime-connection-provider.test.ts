@@ -5,7 +5,6 @@ import { join } from "node:path"
 import type { HarnessConnectionCapabilities } from "@claxedo/agent-runtime-contract"
 import { Hono } from "hono"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
-import { installFakePiRpc } from "../test-support/home/fake-pi-rpc.mjs"
 import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
 import { withWorkspaceTarget } from "../target"
 import { loopbackMachineLoginPolicy } from "../testing"
@@ -208,12 +207,9 @@ describe("WorkspaceRuntime generic connection selection", () => {
 
   test("a connection default handed at creation applies its first snapshot and still serves a native session", async () => {
     const root = await workspaceRoot("workspace-runtime-creation-default-")
-    const peer = await installFakePiRpc()
-    cleanups.push(() => peer.dispose())
     const provider = fakeConnectionProvider({ providerKey: "fixture", capabilities, transport: () => new FakeTransport() })
     const { host, create } = mountedHost(root, "ws-creation-default", {
       connectionProviders: [provider],
-      env: { ...process.env, PI_EXECUTABLE: peer.binary },
       harness: { kind: "connection", connectionId: "fixture-primary" },
     })
     try {
