@@ -26,7 +26,7 @@ export function sessionScopeReaches(sessionScope: string | undefined, path: stri
   if (sessionScope === undefined) return true
   if (path === "/api/wr/events") return new URLSearchParams(search).get("sessionID") === sessionScope
   if (path === `/session/${sessionScope}` || path.startsWith(`/session/${sessionScope}/`)) return true
-  if (path.startsWith("/api/wr/execution-env/")) return true
+  if (/^\/api\/wr\/execution-env\/(fs|exec|mcp\/[^/]+)$/.test(path)) return true
   return /^\/question\/[^/]+\/(reply|reject)$/.test(path)
 }
 

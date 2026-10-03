@@ -134,5 +134,8 @@ describe("execution-env on the composed relay runtime", () => {
     expect(events.filter((event) => event.event === "output").map((event) => event.data.text).join("")).toBe("from the DO")
     expect(events.at(-1)).toEqual({ event: "result", data: { ok: true, value: { exitCode: 0 } } })
     expect((await runtime.app.request("http://localhost/api/wr/execution-env/fs", { method: "POST" })).status).toBe(401)
+    const outside = await request("other", {})
+    expect(outside.status).toBe(403)
+    expect(await outside.json()).toMatchObject({ error: { code: "relay_scope_denied" } })
   })
 })

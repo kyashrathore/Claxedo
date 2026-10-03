@@ -650,6 +650,9 @@ describe("workspace relay server", () => {
       ["/session/ses_1/permissions/perm_1", "POST"],
       ["/api/wr/events?sessionID=ses_1", "GET"],
       ["/question/question_1/reply", "POST"],
+      ["/api/wr/execution-env/fs", "POST"],
+      ["/api/wr/execution-env/exec", "POST"],
+      ["/api/wr/execution-env/mcp/tools", "GET"],
     ] as const) {
       expect((await call(path, method)).status, `${method} ${path}`).toBe(200)
     }
@@ -663,6 +666,11 @@ describe("workspace relay server", () => {
       "/api/wr/pty",
       "/session/ses_1/..%2F..%2Fapi%2Fwr%2Fpty",
       "/question",
+      "/api/wr/execution-env",
+      "/api/wr/execution-env/fs/x",
+      "/api/wr/execution-env/mcp",
+      "/api/wr/execution-env/mcp/tools/x",
+      "/api/wr/execution-env/pty",
     ]) {
       expect((await call(path)).status, path).toBe(403)
     }
@@ -673,7 +681,7 @@ describe("workspace relay server", () => {
         message: "Runtime Access Token scope does not reach this relay request",
       },
     })
-    expect(relay.forwarded).toHaveLength(5)
+    expect(relay.forwarded).toHaveLength(8)
     expect(relay.auditEvents).toContainEqual(expect.objectContaining({
       action: "relay.request.denied",
       reason: "relay_scope_denied",
