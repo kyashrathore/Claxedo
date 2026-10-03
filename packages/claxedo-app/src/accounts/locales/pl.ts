@@ -16,7 +16,6 @@ export default {
   "provider.connect.token.copyCommand": "Skopiuj polecenie",
   "provider.connect.oauth.start": "Zaloguj się",
   "provider.connect.oauth.hint": "Otwiera kod do wpisania w przeglądarce.",
-  "provider.connect.hosted.signsElsewhere": "Do {{vendor}} logujesz się z Codex CLI na maszynie, którą sam uruchamiasz. To wdrożenie przechowuje tylko wklejone klucze, więc nie ma tu nic do wpisania.",
   "provider.connect.oauth.code.visit.prefix": "Odwiedź ",
   "provider.connect.oauth.code.visit.link": "ten link",
   "provider.connect.oauth.code.visit.suffix.harness": ", aby pobrać kod autoryzacji i uruchomić {{harness}} na tym koncie.",

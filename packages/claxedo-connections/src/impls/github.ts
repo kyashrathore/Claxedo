@@ -83,7 +83,8 @@ export function githubIntegration(options: GitHubIntegrationOptions = {}): {
 
   const device: DeviceAuth = {
     async start(): Promise<DeviceGrant> {
-      const res = await form(DEVICE_CODE_URL, { client_id: clientId! })
+      // An OAuth app has no narrower scope that can read a private repository.
+      const res = await form(DEVICE_CODE_URL, { client_id: clientId!, scope: "repo read:user" })
       const body = record(await res.json().catch(() => ({}))) ?? {}
       if (!res.ok || typeof body.device_code !== "string" || typeof body.user_code !== "string") {
         throw new Error("github_device_start_failed")

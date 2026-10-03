@@ -56,6 +56,7 @@ function StepPanels(props: { readonly wizard: Wizard; readonly facts: ExecutionF
         <ProjectCreateForm
           size="comfortable"
           localExecution={props.facts.localExecution}
+          connectedRepositoryOnly={!props.facts.localExecution}
           pickFolder={props.pickFolder}
           submitLabel={t("onboarding.continue")}
           onSubmit={(source, name) => wizard().chooseSource({ source, ...(name ? { name } : {}) })}
@@ -63,7 +64,7 @@ function StepPanels(props: { readonly wizard: Wizard; readonly facts: ExecutionF
       </div>
       <Show when={wizard().visited().has("ai")}>
         <div hidden={wizard().step() !== "ai"} data-step-panel="ai">
-          <AiStep localExecution={props.facts.localExecution} onReady={wizard().setAiReady} />
+          <AiStep onReady={wizard().setAiReady} />
         </div>
       </Show>
       <Show when={wizard().visited().has("execution")}>

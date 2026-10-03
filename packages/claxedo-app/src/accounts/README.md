@@ -4,8 +4,8 @@ Owns: the logins each agent harness runs on, and today's app's surfaces for them
 
 ## Data
 
-- `useAccounts()` (`store.ts`) reads four adapter queries: stored accounts (`server.queries.accounts.list`), the ones in use (`effective`), this machine's CLI logins (`machineLogins`) and whose account the person spends per provider with the organization's own rows (`sources`, `/api/claxedo/credentials/account-sources`). Nothing reads them at app start: the machine-login read starts the harness CLIs, so it runs only when Settings → Models or the AI step mounts.
-- Rescan asks every CLI again (`server.accounts.rescan`, `fresh=1`) and rereads the stored rows. Select, remove and check go through `server.accounts`; a failed write is a "Request failed" toast.
+- `useAccounts()` (`store.ts`) reads stored accounts (`server.queries.accounts.list`), the ones in use (`effective`) and whose account the person spends per provider with the organization's own rows (`sources`, `/api/claxedo/credentials/account-sources`). `onMachine()` says whether this server is the machine the harnesses run on (it reports `thisMachine`); only then does it read this machine's CLI logins (`machineLogins`), and on the web the snapshot holds none. Nothing reads them at app start: the machine-login read starts the harness CLIs, so it runs only when Settings → Models or the AI step mounts.
+- Rescan asks every CLI again (`server.accounts.rescan`, `fresh=1`) and rereads the stored rows; on the web it only rereads them (`server.accounts.refresh`). Select, remove and check go through `server.accounts`; a failed write is a "Request failed" toast.
 - A live check of a stored account is kept on the page (`liveChecks`) and outranks the verdict the server stored; a check that never reached the provider is kept as `unknown` with its reason.
 - `model.ts` holds the harness list (Claude Code, Codex, Cursor) and the rules: which row is selected (the org account when the person chose it for every provider of the harness; otherwise, among their own, the server's effective read when it names one of their rows, then the stored mark, then this computer's login), whether a login is refused or unavailable, whether this computer's login would strand a binding, and whether a harness can run a turn (`harnessRunnable`).
 - `account-words.ts` turns a row into what the row says: label, second line (verdict, plan windows), hint, alert, reach and cloud consent.
@@ -14,7 +14,7 @@ Owns: the logins each agent harness runs on, and today's app's surfaces for them
 
 - A CLI harness lists an "Organization account" entry after the person's own accounts and this computer's login only when the organization has an account for that harness, or the person has already selected the org source. An absent unselected org account renders no row; a selected org source with no account stays visible with its unavailable explanation until the person chooses their own account or machine login. Choosing it writes `org` for all of the harness's providers (`server.accounts.setSource`); choosing any own entry writes `own` first. Only the chosen side is ever spent, so an org choice where the organization holds no row of its own is shown as unable to run, never as a fallback to the person's own key. The org entry is not the person's to check. The server's `can_remove_org_accounts` fact permits the unsigned local operator to remove stored org provider credentials on the single-user installation; signed users remain limited to their own accounts. `useAccess().can("accounts.removeOrg", sources)` supplies this fact to the shared removal action, which deletes every stored binding in the account and refreshes the listings. The CLI's machine login never carries removable credential ids. Actions remain visible beside the last-check age; confirmation wraps below the account on narrow screens.
 - On a hosted plane, each Pi provider row offers the same own/org choice where the organization holds an account or the person chose one (`HostedAccountSourceChoice`, `/auth/sources` and `/auth/:provider/source`).
-- A stored account that its provider can deliver to a cloud sandbox carries an "Allow in cloud sandboxes" switch, which writes `local` or `shared` to every row of the account (`server.accounts.setScope`); an account whose rows disagree says cloud use is allowed for some bindings, and a failed write stays on the row.
+- On a machine (`onMachine()`), a stored account that its provider can deliver to a cloud sandbox carries an "Allow in cloud sandboxes" switch, which writes `local` or `shared` to every row of the account (`server.accounts.setScope`); an account whose rows disagree says cloud use is allowed for some bindings, and a failed write stays on the row.
 
 ## Catalog harnesses
 
@@ -36,12 +36,12 @@ Provider model groups render one `SettingsList` card: the header owns provider i
 
 ## Connect
 
-"Add an account" and "Reconnect" open `DialogProviderConnect`. `createProviderConnect` (`connect-form.ts`) lists the provider's methods from `server.queries.providerConnect.authMethods(harness)`, joined by type to the vendor copy in `connect-methods.ts` (with a pasted-key fallback when the server lists none), and then:
+"Add an account" and "Reconnect" open `DialogProviderConnect`. `createProviderConnect` (`connect-form.ts`) lists only the methods the server returns for the provider (`server.queries.providerConnect.authMethods(harness)`), joined by type to the vendor copy in `connect-methods.ts`; while they load, when the read fails, and when the server offers none, the dialog says so instead of offering setup. Then:
 
-- a key or subscription token is saved as a managed credential with the user's label (`saveKey`), replaces the token of the account being reconnected (`reconnect`), or on a hosted plane is stored under `/auth/:provider` (`saveHostedKey`);
+- a key or subscription token is saved as a managed credential with the user's label (`saveKey`, the same route on the desktop and the web) or replaces the token of the account being reconnected (`reconnect`);
 - a sign-in runs `authorize`, then `callback` (at once for an `auto` grant, after the pasted code for a `code` grant).
 
-Success shows "{vendor} connected", rescans and closes the dialog.
+Success shows "{vendor} connected", rescans (on the web, rereads the accounts) and closes the dialog.
 
 ## Flows
 

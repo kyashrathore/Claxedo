@@ -16,7 +16,6 @@ export default {
   "provider.connect.token.copyCommand": "Kopiraj naredbu",
   "provider.connect.oauth.start": "Prijavi se",
   "provider.connect.oauth.hint": "Otvara kod koji unosite u pregledniku.",
-  "provider.connect.hosted.signsElsewhere": "Na {{vendor}} se prijavljuje putem Codex CLI-ja na mašini koju vi pokrećete. Ova instalacija čuva samo zalijepljene ključeve, pa ovdje nema šta unijeti.",
   "provider.connect.oauth.code.visit.prefix": "Posjeti ",
   "provider.connect.oauth.code.visit.link": "ovaj link",
   "provider.connect.oauth.code.visit.suffix.harness": " da biste preuzeli autorizacijski kod i pokrenuli {{harness}} na ovom računu.",

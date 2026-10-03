@@ -16,7 +16,6 @@ export default {
   "provider.connect.token.copyCommand": "Kopier kommandoen",
   "provider.connect.oauth.start": "Logg inn",
   "provider.connect.oauth.hint": "Åpner en kode du skriver inn i nettleseren.",
-  "provider.connect.hosted.signsElsewhere": "Du logger inn på {{vendor}} fra Codex CLI på en maskin du kjører. Denne installasjonen lagrer bare innlimte nøkler, så det er ingenting å skrive inn her.",
   "provider.connect.oauth.code.visit.prefix": "Besøk ",
   "provider.connect.oauth.code.visit.link": "denne lenken",
   "provider.connect.oauth.code.visit.suffix.harness": " for å hente autorisasjonskoden og kjøre {{harness}} på denne kontoen.",

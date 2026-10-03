@@ -37,7 +37,9 @@ function ModelsSection() {
   return (
     <div class="settings-body">
       <SettingsIntro description={t("settings.models.description")} />
-      <MachineScanStatus accounts={accounts} />
+      <Show when={accounts.onMachine()}>
+        <MachineScanStatus accounts={accounts} />
+      </Show>
       <Show
         when={scope().placement}
         fallback={<p class="text-12-regular text-text-weak">{scope().loading ? t("settings.scope.workspace.loading") : t("settings.scope.workspace.empty")}</p>}

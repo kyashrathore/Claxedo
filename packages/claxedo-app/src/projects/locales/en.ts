@@ -38,6 +38,8 @@ export default {
   "projects.create.clone": "Clone a repository instead",
   "projects.create.folderInstead": "Select a folder instead",
   "projects.create.checking": "Checking connected accounts…",
+  "projects.create.retry": "Retry",
+  "projects.create.hostUnavailable": "GitHub repository access is not configured on this deployment.",
   "projects.create.url.placeholder": "https://github.com/owner/repo",
   "projects.create.url.hint.host": "Cloned on this server. A private {{host}} repository clones with the connected account.",
   "projects.create.url.hint.none": "This server offers no code host to choose from, so the repository is cloned by URL.",

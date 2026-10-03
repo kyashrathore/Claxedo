@@ -118,6 +118,7 @@ export type RouteEntry = {
   readonly id: string
   readonly path: string
   readonly view: Component<PageProps>
+  readonly requiresSignIn?: true
 }
 
 export type Registry<Entry> = {

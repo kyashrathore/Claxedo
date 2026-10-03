@@ -40,7 +40,6 @@ export type ProviderConnectApi = {
   readonly callback: (providerId: string, method: number, code?: string) => Promise<void>
   readonly saveKey: (input: ProviderKeyInput) => Promise<void>
   readonly reconnect: (credentialId: string, secret: string) => Promise<void>
-  readonly saveHostedKey: (input: { readonly providerId: string; readonly harness: string; readonly key: string }) => Promise<void>
   readonly disconnect: (harness: string, provider: { readonly id: string; readonly source?: ProviderSource }) => Promise<void>
   readonly saveCustomProvider: (draft: CustomProviderDraft) => Promise<void>
 }
@@ -92,10 +91,6 @@ export function createProviderConnectApi(transport: Transport, queryClient: Quer
     },
     reconnect: async (credentialId, secret) => {
       await transport.json<unknown>(`${CREDENTIALS_PATH}/${encodeURIComponent(credentialId)}/reconnect`, jsonInit("POST", { secret }))
-      await changed()
-    },
-    saveHostedKey: async (input) => {
-      await transport.json<unknown>(withQuery(`/auth/${encodeURIComponent(input.providerId)}`, { harness: input.harness }), jsonInit("PUT", { auth: { key: input.key } }))
       await changed()
     },
     saveCustomProvider: async (draft) => {

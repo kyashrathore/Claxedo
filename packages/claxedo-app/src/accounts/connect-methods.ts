@@ -78,9 +78,3 @@ export function connectMethodOptions(providerId: string, methods: readonly Provi
   const rest = methods.flatMap((method, index) => (taken.includes(index) ? [] : [option(index, genericSpec(method.type))]))
   return [...named, ...rest]
 }
-
-export function fallbackConnectMethods(providerId: string): ProviderAuthMethod[] {
-  const pasted = vendorMethods(providerId).filter((spec) => spec.type !== "oauth")
-  const specs = pasted.length > 0 ? pasted : [genericSpec("api")]
-  return specs.map((spec) => ({ type: spec.type, label: "", ...(spec.command ? { command: spec.command } : {}) }))
-}

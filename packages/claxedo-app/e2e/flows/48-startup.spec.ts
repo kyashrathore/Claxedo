@@ -1,6 +1,24 @@
 import { expect, test } from "../harness"
 import { hostedFetch, inviteHostedPerson } from "../../../harness/e2e/harness/hosted-auth"
 
+test("48 startup: web onboarding asks for sign-in before it reads repository connections or accounts", async ({ signed, page }) => {
+  const reads: string[] = []
+  page.on("request", (request) => reads.push(new URL(request.url()).pathname))
+  await page.goto(`${signed.url}/welcome`)
+  await expect(page).toHaveURL(`${signed.url}/login`)
+  await expect(page.getByRole("textbox", { name: "Email", exact: true })).toBeVisible()
+  expect(reads.filter((path) => path.startsWith("/api/claxedo/integrations") || path.startsWith("/api/claxedo/credentials"))).toEqual([])
+})
+
+test("48 startup: web onboarding starts from a connected GitHub repository, never a pasted URL", async ({ signed, page }) => {
+  await signed.signIn(page, signed.owner)
+  await expect(page.getByRole("heading", { name: "Start with a project" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Connect GitHub", exact: true })).toBeVisible()
+  await expect(page.getByRole("textbox", { name: "Repository URL" })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "Paste a URL instead" })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeDisabled()
+})
+
 test("48 startup: a signed account without admission sees the failure and retries after the owner invites it", async ({ signed, page }) => {
   const account = await signed.signUp("Grace Invited")
   await signed.signIn(page, account)

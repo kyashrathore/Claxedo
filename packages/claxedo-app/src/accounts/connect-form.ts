@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/solid-query"
 import { connectSubject, connectVars, type ConnectContext } from "@/lib/harness-catalog"
 import { toAppError, useServer, type ProviderAuthMethod, type ProviderAuthorization } from "@/server"
 import { showToast } from "@/ui"
-import { connectMethodOptions, fallbackConnectMethods, type ConnectMethodOption } from "./connect-methods"
+import { connectMethodOptions, type ConnectMethodOption } from "./connect-methods"
 import { useAccountsText, type AccountsKey } from "./i18n"
 
 export type ConnectFormInput = {
@@ -26,18 +26,12 @@ export const CONTEXT_COPY = {
 
 function useConnectMethods(input: ConnectFormInput) {
   const server = useServer()
-  const t = useAccountsText()
-  const hosted = () => server.capabilities()?.thisMachine === undefined
   const codexBundle = () => input.harness === "pi" && input.provider === "openai-codex"
   const auth = useQuery(() => ({ ...server.queries.providerConnect.authMethods(input.harness), staleTime: 0 }))
-  const methods = createMemo((): readonly ProviderAuthMethod[] => {
-    const served = auth.data?.[input.provider]
-    if (!codexBundle() && served?.length) return served
-    if (!codexBundle()) return fallbackConnectMethods(input.provider)
-    return hosted() ? [] : [{ type: "oauth", label: t("provider.connect.method.openai.plan.title") }]
-  })
+  const methods = createMemo((): readonly ProviderAuthMethod[] => auth.data?.[input.provider] ?? [])
   return {
-    hosted,
+    loading: () => auth.isPending,
+    error: () => (auth.error ? toAppError(auth.error).message : undefined),
     authProviderId: () => (codexBundle() ? "codex-app-server" : input.provider),
     options: createMemo(() => connectMethodOptions(input.provider, methods())),
   }
@@ -97,14 +91,13 @@ function useOAuth(input: ConnectFormInput, methods: ReturnType<typeof useConnect
   return { start, finish }
 }
 
-function useSaveKey(input: ConnectFormInput, hosted: () => boolean, state: ReturnType<typeof createConnectState>) {
+function useSaveKey(input: ConnectFormInput, state: ReturnType<typeof createConnectState>) {
   const server = useServer()
   const t = useAccountsText()
   const complete = useComplete(input)
   const { store, setStore } = state
   const write = (secret: string, label: string) => {
     if (input.credentialId) return server.providerConnect.reconnect(input.credentialId, secret)
-    if (hosted()) return server.providerConnect.saveHostedKey({ providerId: input.provider, harness: input.harness, key: secret })
     return server.providerConnect.saveKey({ providerId: input.provider, label, secret })
   }
   return async (event: SubmitEvent) => {
@@ -112,7 +105,7 @@ function useSaveKey(input: ConnectFormInput, hosted: () => boolean, state: Retur
     const secret = store.value.trim()
     const label = store.label.trim()
     if (!secret) return void setStore("error", t("provider.connect.apiKey.required"))
-    if (!input.credentialId && !hosted() && !label) return void setStore("error", t("provider.connect.label.required"))
+    if (!input.credentialId && !label) return void setStore("error", t("provider.connect.label.required"))
     setStore({ saving: true, error: undefined })
     try {
       await write(secret, label)
@@ -139,7 +132,8 @@ export function createProviderConnect(input: ConnectFormInput) {
   return {
     ...state,
     options: methods.options,
-    hosted: methods.hosted,
+    loadingMethods: methods.loading,
+    methodsError: methods.error,
     selected,
     vars,
     subject: () => connectSubject(input.context),
@@ -147,7 +141,7 @@ export function createProviderConnect(input: ConnectFormInput) {
     pastes: () => selected()?.type === "api" || selected()?.type === "token",
     startOAuth: oauth.start,
     finishOAuth: oauth.finish,
-    saveApiKey: useSaveKey(input, methods.hosted, state),
+    saveApiKey: useSaveKey(input, state),
   }
 }
 

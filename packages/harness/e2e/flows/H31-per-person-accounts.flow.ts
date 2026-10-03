@@ -20,10 +20,10 @@ export async function run() {
     }, member)
     assert.equal(accepted.status, 200, `hosted invitation acceptance: ${await accepted.text()}`)
     for (const [person, key] of [[owner, "hosted-owner-key"], [member, "hosted-member-key"]] as const) {
-      const stored = await hostedFetch(stack, "/auth/openai?harness=pi", {
-        method: "PUT", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ auth: { key } }),
-      }, person)
+      const stored = await hostedFetch(stack, "/api/claxedo/credentials", {
+      method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider_id: "openai", kind: "api_key", source: "managed", label: "OpenAI", secret: key }),
+    }, person)
       assert.equal(stored.status, 200, `hosted account storage for ${person.id}: ${await stored.text()}`)
     }
     const workspace = await hostedWorkspace(stack, owner, "H31 owner session")

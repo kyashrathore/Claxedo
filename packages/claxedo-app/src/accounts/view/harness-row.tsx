@@ -116,7 +116,7 @@ function AccountItem(props: { readonly account: AccountWords; readonly row: Harn
           />
         </span>
       </div>
-      <Show when={account().cloudConsent}>{(consent) => <CloudConsentSwitch account={account()} consent={consent()} accounts={accounts()} />}</Show>
+      <Show when={accounts().onMachine() && account().cloudConsent}>{(consent) => <CloudConsentSwitch account={account()} consent={consent()} accounts={accounts()} />}</Show>
     </div>
   )
 }

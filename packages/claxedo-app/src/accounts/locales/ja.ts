@@ -16,7 +16,6 @@ export default {
   "provider.connect.token.copyCommand": "コマンドをコピー",
   "provider.connect.oauth.start": "サインイン",
   "provider.connect.oauth.hint": "ブラウザーで入力するコードを表示します。",
-  "provider.connect.hosted.signsElsewhere": "{{vendor}} へのサインインは、あなたが動かすマシン上の Codex CLI から行います。このデプロイは貼り付けたキーのみを保持するため、ここで入力するものはありません。",
   "provider.connect.oauth.code.visit.prefix": " ",
   "provider.connect.oauth.code.visit.link": "このリンク",
   "provider.connect.oauth.code.visit.suffix.harness": " で認証コードを取得すると、このアカウントで {{harness}} が動作します。",

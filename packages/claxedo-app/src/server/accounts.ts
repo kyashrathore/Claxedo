@@ -73,6 +73,7 @@ export function createAccountsApi(transport: Transport, queryClient: QueryClient
       ])
       return logins
     },
+    refresh: changed,
     rescan: async () => {
       const logins = await fetchMachineLogins(transport, { fresh: true })
       queryClient.setQueryData<readonly MachineLogin[]>(queryKeys.machineLogins(server), logins)

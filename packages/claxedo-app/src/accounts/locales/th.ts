@@ -16,7 +16,6 @@ export default {
   "provider.connect.token.copyCommand": "คัดลอกคำสั่ง",
   "provider.connect.oauth.start": "ลงชื่อเข้าใช้",
   "provider.connect.oauth.hint": "เปิดรหัสสำหรับป้อนในเบราว์เซอร์ของคุณ",
-  "provider.connect.hosted.signsElsewhere": "การลงชื่อเข้าใช้ {{vendor}} ทำจาก Codex CLI บนเครื่องที่คุณรันเอง การติดตั้งนี้เก็บเฉพาะคีย์ที่วางไว้ จึงไม่มีอะไรต้องกรอกที่นี่",
   "provider.connect.oauth.code.visit.prefix": "เยี่ยมชม ",
   "provider.connect.oauth.code.visit.link": "ลิงก์นี้",
   "provider.connect.oauth.code.visit.suffix.harness": " เพื่อรับรหัสอนุญาตและรัน {{harness}} ด้วยบัญชีนี้",

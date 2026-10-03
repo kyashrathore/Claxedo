@@ -14,6 +14,7 @@ export type AccountsLoad =
 
 export type Accounts = {
   readonly load: Accessor<AccountsLoad>
+  readonly onMachine: Accessor<boolean>
   readonly opened: Accessor<boolean>
   readonly scanning: Accessor<boolean>
   readonly activity: Accessor<AccountActivity | undefined>
@@ -33,20 +34,23 @@ function effectiveByProvider(effective: EffectiveAccounts): ReadonlyMap<string, 
 }
 
 function useAccountReads(server: Server) {
+  const onMachine = () => server.capabilities()?.thisMachine !== undefined
   const list = useQuery(() => server.queries.accounts.list())
   const effective = useQuery(() => server.queries.accounts.effective())
-  const logins = useQuery(() => server.queries.accounts.machineLogins())
+  const logins = useQuery(() => ({ ...server.queries.accounts.machineLogins(), enabled: onMachine() }))
   const sources = useQuery(() => server.queries.accounts.sources())
   const queries = [list, effective, logins, sources] as const
+  const machineLogins = (): readonly MachineLogin[] | undefined => (onMachine() ? logins.data : [])
   const load = createMemo((): AccountsLoad => {
-    if (list.data && effective.data && logins.data && sources.data) {
-      const snapshot = { stored: list.data, effective: effectiveByProvider(effective.data), machineLogins: logins.data as readonly MachineLogin[], sources: sources.data, scannedAt: Math.max(...queries.map((query) => query.dataUpdatedAt)) }
+    const scanned = machineLogins()
+    if (list.data && effective.data && scanned && sources.data) {
+      const snapshot = { stored: list.data, effective: effectiveByProvider(effective.data), machineLogins: scanned, sources: sources.data, scannedAt: Math.max(...queries.map((query) => query.dataUpdatedAt)) }
       return { kind: "ready", snapshot }
     }
     const error = queries.map((query) => query.error).find((candidate) => candidate)
     return error ? { kind: "failed", error: toAppError(error) } : { kind: "loading" }
   })
-  return { load, opened: () => load().kind !== "loading", fetching: () => queries.some((query) => query.isFetching) }
+  return { load, onMachine, opened: () => load().kind !== "loading", fetching: () => queries.some((query) => query.isFetching) }
 }
 
 function useActivity() {
@@ -102,6 +106,7 @@ export function useAccounts(): Accounts {
   }
   return {
     load: reads.load,
+    onMachine: reads.onMachine,
     opened: reads.opened,
     scanning: () => rescanning() || reads.fetching(),
     activity,
@@ -114,7 +119,7 @@ export function useAccounts(): Accounts {
     rescan: () => run("checking", "", async () => {
       setRescanning(true)
       setLiveChecks({})
-      await server.accounts.rescan().finally(() => setRescanning(false))
+      await (reads.onMachine() ? server.accounts.rescan() : server.accounts.refresh()).finally(() => setRescanning(false))
     }),
     select: (harness, key, ids) => void run("selecting", key, () => selectAccount(server, harness, key, ids)),
     remove: (ids) => run("removing", ids[0] ?? "", () => server.accounts.remove(ids)),

@@ -16,7 +16,6 @@ export default {
   "provider.connect.token.copyCommand": "Befehl kopieren",
   "provider.connect.oauth.start": "Anmelden",
   "provider.connect.oauth.hint": "Öffnet einen Code, den Sie im Browser eingeben.",
-  "provider.connect.hosted.signsElsewhere": "Bei {{vendor}} wird über die Codex-CLI auf einem von Ihnen betriebenen Rechner angemeldet. Diese Installation speichert nur eingefügte Schlüssel, hier gibt es also nichts einzugeben.",
   "provider.connect.oauth.code.visit.prefix": "Besuchen Sie ",
   "provider.connect.oauth.code.visit.link": "diesen Link",
   "provider.connect.oauth.code.visit.suffix.harness": ", um Ihren Autorisierungscode zu erhalten und {{harness}} mit diesem Konto auszuführen.",

@@ -16,7 +16,6 @@ export default {
   "provider.connect.token.copyCommand": "명령 복사",
   "provider.connect.oauth.start": "로그인",
   "provider.connect.oauth.hint": "브라우저에 입력할 코드를 엽니다.",
-  "provider.connect.hosted.signsElsewhere": "{{vendor}}에는 직접 실행하는 머신의 Codex CLI에서 로그인합니다. 이 배포는 붙여넣은 키만 보관하므로 여기에서 입력할 것이 없습니다.",
   "provider.connect.oauth.code.visit.prefix": "다음 ",
   "provider.connect.oauth.code.visit.link": "이 링크",
   "provider.connect.oauth.code.visit.suffix.harness": "에서 인증 코드를 받아 이 계정으로 {{harness}}를 실행하세요.",

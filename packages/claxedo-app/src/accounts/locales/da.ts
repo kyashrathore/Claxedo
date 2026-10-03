@@ -16,7 +16,6 @@ export default {
   "provider.connect.token.copyCommand": "Kopiér kommandoen",
   "provider.connect.oauth.start": "Log ind",
   "provider.connect.oauth.hint": "Åbner en kode, du indtaster i din browser.",
-  "provider.connect.hosted.signsElsewhere": "{{vendor}} logges ind fra Codex CLI på en maskine, du kører. Denne installation opbevarer kun indsatte nøgler, så der er intet at indtaste her.",
   "provider.connect.oauth.code.visit.prefix": "Besøg ",
   "provider.connect.oauth.code.visit.link": "dette link",
   "provider.connect.oauth.code.visit.suffix.harness": " for at hente din autorisationskode og køre {{harness}} på denne konto.",

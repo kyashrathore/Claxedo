@@ -16,7 +16,6 @@ export default {
   "provider.connect.token.copyCommand": "复制命令",
   "provider.connect.oauth.start": "登录",
   "provider.connect.oauth.hint": "打开一个在浏览器中输入的代码。",
-  "provider.connect.hosted.signsElsewhere": "{{vendor}} 通过你自己运行的机器上的 Codex CLI 登录。此部署只保存粘贴的密钥，因此这里无需输入任何内容。",
   "provider.connect.oauth.code.visit.prefix": "访问 ",
   "provider.connect.oauth.code.visit.link": "此链接",
   "provider.connect.oauth.code.visit.suffix.harness": "，获取授权码后即可用该账户运行 {{harness}}。",

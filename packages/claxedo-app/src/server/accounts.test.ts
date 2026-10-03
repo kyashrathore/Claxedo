@@ -89,3 +89,14 @@ test("accounts: cloud consent writes every binding's scope and stops at the firs
   ])
   expect(refusal).toMatchObject({ status: 501, code: "credential_scope_unavailable", message: "This host keeps credentials local" })
 })
+
+test("accounts: a refresh rereads the stored accounts and scans no machine", async () => {
+  const { seen, transport } = serve(() => Response.json({ credentials: [] }))
+  const client = new QueryClient()
+  const read = accountQueries(transport).list()
+  await client.fetchQuery(read)
+  await createAccountsApi(transport, client).refresh()
+  expect(client.getQueryState(read.queryKey)?.isInvalidated).toBe(true)
+  await client.fetchQuery(read)
+  expect(seen.map((request) => request.path)).toEqual(["/api/claxedo/credentials", "/api/claxedo/credentials"])
+})

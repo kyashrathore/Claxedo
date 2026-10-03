@@ -158,6 +158,7 @@ export type AccountsApi = {
   readonly check: (id: string) => Promise<AccountCheck>
   readonly checkMachineLogin: (harness: string) => Promise<readonly MachineLogin[]>
   readonly rescan: () => Promise<void>
+  readonly refresh: () => Promise<void>
 }
 
 export type MarketplaceApi = {

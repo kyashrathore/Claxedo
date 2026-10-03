@@ -51,8 +51,9 @@ export async function run() {
   try {
     const owner = await hostedOwner(stack)
     const key = `h30-secret-${crypto.randomUUID()}`
-    const stored = await hostedFetch(stack, "/auth/openai?harness=pi", {
-      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ auth: { key } }),
+    const stored = await hostedFetch(stack, "/api/claxedo/credentials", {
+      method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider_id: "openai", kind: "api_key", source: "managed", label: "OpenAI", secret: key }),
     }, owner)
     assert.equal(stored.status, 200, `Storing a cloud account: ${await stored.text()}`)
     assert.ok((await connectedPiProviders(stack, owner)).includes("openai"), "stored account was not connected in the server readback")
