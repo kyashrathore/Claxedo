@@ -36,9 +36,9 @@ export class PiDurableTransport implements HarnessTransport {
 
   async attach(input: AttachInput, broker: SessionBroker): Promise<HarnessSession> {
     const session = await this.open(input, broker)
-    if (String(session.runtime.conversation.id) === input.binding.upstreamSessionId) return this.remember(session, broker)
+    if (session.upstreamSessionId === input.binding.upstreamSessionId) return this.remember(session, broker)
     await session.close()
-    throw piSession(`Pi reopened conversation ${session.runtime.conversation.id}, not ${input.binding.upstreamSessionId}`)
+    throw piSession(`Pi reopened ${session.upstreamSessionId}, not ${input.binding.upstreamSessionId}`)
   }
 
   private async open(input: StartInput, broker: SessionBroker): Promise<PiSession> {
@@ -50,7 +50,7 @@ export class PiDurableTransport implements HarnessTransport {
 
   private async remember(session: PiSession, broker: SessionBroker): Promise<HarnessSession> {
     try {
-      const binding = await broker.rebind(String(session.runtime.conversation.id))
+      const binding = await broker.rebind(session.upstreamSessionId)
       const harnessSession = { binding, directory: session.start.directory, locality: session.start.locality }
       this.entries.set(session.sessionId, { session: harnessSession, entry: session })
       return harnessSession

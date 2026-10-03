@@ -46,6 +46,8 @@ export class PiSession {
 
   get sessionId(): string { return this.start.sessionId }
 
+  get upstreamSessionId(): string { return `${this.start.sessionId}:${this.runtime.conversation.id}` }
+
   asker(): PiAsker { return this.stream.active?.broker ?? this.input.broker }
 
   async configure(update: TransportConfigUpdate): Promise<void> {

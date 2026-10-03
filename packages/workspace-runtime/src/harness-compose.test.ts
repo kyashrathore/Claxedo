@@ -56,7 +56,7 @@ test("harness package composition starts ACP, Pi, Codex, Claude and OpenCode and
     try { expect((await acp.start(startInput(root, "acp", "connection"), brokerFor("acp-1"))).binding.upstreamSessionId).toBe("acp-peer") }
     finally { await acp.dispose() }
     const pi = composer.builtIn("pi")
-    try { expect((await pi.start(startInput(root, "pi", "native"), brokerFor("pi-durable"))).binding.upstreamSessionId).toBe("1") }
+    try { expect((await pi.start(startInput(root, "pi", "native"), brokerFor("pi-durable"))).binding.upstreamSessionId).toBe("s1:1") }
     finally { await pi.dispose() }
     const codex = composer.builtIn("codex")
     expect(codex.commands).toBeUndefined()

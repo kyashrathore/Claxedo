@@ -126,6 +126,7 @@ test("two Pi sessions in one process see only their own MCP tools and spend only
     const start: StartInput = { ...context.start, sessionId: "s2", credentials: proofCredentials(beta, "beta-secret"),
       projection: { generation: "beta", pluginRoots: [], notApplied: [], mcpServers: [{ kind: "http", name: "beta", url: `${beta.baseURL}/mcp`, origin: "plugin" }] } }
     const second = await context.transport.start(start, createSessionBroker(context.owner, { sessionId: "s2", workspaceId: "w1", directory: root, origin }))
+    expect(second.binding.upstreamSessionId).not.toBe(context.session.binding.upstreamSessionId)
     const secondTurn = createTurnBroker(context.owner, { authority: context.ports.current.get("s2")!, origin, signal: new AbortController().signal })
     await Promise.all([collect(context.transport.send(context.session, context.turn("Read the app plugin guide"), context.turnBroker())),
       collect(context.transport.send(second, context.turn("Read the app plugin guide"), secondTurn))])
