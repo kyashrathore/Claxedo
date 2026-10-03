@@ -41,21 +41,23 @@ export type McpToolAccess = Readonly<{
   write: boolean
   /** The scope a user credential must hold. */
   scope: McpScope
-  /** Human-only, annotated `destructiveHint`, and requires accepted host elicitation. */
+  /** Annotated `destructiveHint` and requires accepted host elicitation. */
   destructive?: boolean
   /** The Tasks operation this tool performs; a tool that names one exists only while the caller's grant carries it. */
   operation?: TasksOperation
   /** App plugin authoring; a tool that needs it exists only while the client carries the grant. */
   appPlugins?: true
+  sessionCleanup?: true
 }>
 
 /** What the client was granted beyond the credential, read from the client rather than the credential. */
-export type McpToolGrants = Readonly<{ tasks?: readonly TasksOperation[]; appPlugins?: boolean }>
+export type McpToolGrants = Readonly<{ tasks?: readonly TasksOperation[]; appPlugins?: boolean; sessionCleanup?: boolean }>
 
 export function toolGrants(client: ClaxedoMcpClient): McpToolGrants {
   return {
     ...(client.tasks ? { tasks: client.tasks.operations } : {}),
     appPlugins: client.appPlugins?.allowed() === true,
+    sessionCleanup: client.sessionCleanup?.allowed() === true,
   }
 }
 
@@ -65,6 +67,7 @@ export type McpAuditEvent = Readonly<{
   args: Record<string, unknown>
   /** Session the write addressed, when the tool names one. */
   sessionId?: string
+  targets?: readonly Readonly<{ sessionId: string; workspaceId: string }>[]
 }>
 
 export type McpToolContext = Readonly<{
@@ -77,7 +80,7 @@ export type McpToolContext = Readonly<{
 
 export class McpAccessDenied extends Error {
   constructor(
-    readonly code: "audience" | "read-only" | "scope" | "cross-machine" | "own-children-only" | "recursion" | "tasks" | "app-plugins",
+    readonly code: "audience" | "read-only" | "scope" | "cross-machine" | "own-children-only" | "recursion" | "tasks" | "app-plugins" | "session-cleanup",
     message: string,
   ) {
     super(message)
@@ -117,6 +120,9 @@ export function assertToolAccess(
     }
   }
   if (access.appPlugins && !grants.appPlugins) throw appPluginsDenied(name)
+  if (access.sessionCleanup && !grants.sessionCleanup) {
+    throw new McpAccessDenied("session-cleanup", `${name} needs a server-issued cleanup capability for the user driving this session`)
+  }
 }
 
 export function appPluginsDenied(tool: string): McpAccessDenied {

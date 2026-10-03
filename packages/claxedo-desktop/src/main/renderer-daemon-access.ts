@@ -101,6 +101,27 @@ function isDaemonDestination(url: string, daemonOrigin: string): boolean {
   }
 }
 
+/** Cleanup installation is a main-owned credential write, never a renderer request. */
+function mainOnlyDaemonRequest(url: string, daemonOrigin: string): boolean {
+  if (!isDaemonDestination(url, daemonOrigin)) return false
+  try {
+    let path = new URL(url).pathname
+    // Refuse encoded aliases too: routers can decode separators and paths in
+    // more than one layer. Each changing pass consumes encoding from the URL.
+    while (path.includes("%")) {
+      const decoded = decodeURIComponent(path)
+      if (decoded === path) break
+      path = decoded
+    }
+    path = new URL(path.replace(/\\/g, "/").replace(/\/+/g, "/"), daemonOrigin).pathname.replace(/\/+$/, "")
+    const route = "/api/claxedo/daemon/session-cleanup"
+    return path === route || path.startsWith(`${route}/`)
+  } catch {
+    // An undecodable path cannot be established as renderer-accessible.
+    return true
+  }
+}
+
 export function daemonRequestHeaders(
   details: BeforeSendHeadersDetails,
   policy: RendererDaemonPolicy,
@@ -111,6 +132,7 @@ export function daemonRequestHeaders(
     if (name.toLowerCase() !== CLAXEDO_DAEMON_CAPABILITY_HEADER) headers[name] = value
   }
   if (!isDaemonDestination(details.url, policy.daemonOrigin)) return headers
+  if (mainOnlyDaemonRequest(details.url, policy.daemonOrigin)) return headers
   if (!trustedRendererDocument(details, policy)) return headers
 
   const daemonOrigin = new URL(policy.daemonOrigin).origin
@@ -127,6 +149,7 @@ export function daemonRequestHeaders(
  */
 export function daemonReaderOrigin(details: BeforeSendHeadersDetails, policy: RendererDaemonPolicy): string | undefined {
   if (!isDaemonDestination(details.url, policy.daemonOrigin)) return undefined
+  if (mainOnlyDaemonRequest(details.url, policy.daemonOrigin)) return undefined
   const document = trustedRendererDocument(details, policy)
   if (!document) return undefined
   const documentOrigin = new URL(document).origin
@@ -159,12 +182,17 @@ export function grantMainRendererDaemonAccess(input: {
     filter: { urls: string[] },
     listener: (
       details: BeforeSendHeadersDetails,
-      callback: (response: { requestHeaders: Record<string, string> }) => void,
+      callback: (response: { requestHeaders: Record<string, string>; cancel?: boolean }) => void,
     ) => void,
   ) => void
 }): DaemonResponseHeaders {
   const readers = new Map<number, string>()
   input.onBeforeSendHeaders({ urls: DEFAULT_SESSION_REQUEST_URLS }, (details, callback) => {
+    if (mainOnlyDaemonRequest(details.url, input.policy.daemonOrigin)) {
+      readers.delete(details.id)
+      callback({ cancel: true, requestHeaders: daemonRequestHeaders(details, input.policy) })
+      return
+    }
     const reader = daemonReaderOrigin(details, input.policy)
     if (reader) readers.set(details.id, reader)
     else readers.delete(details.id)

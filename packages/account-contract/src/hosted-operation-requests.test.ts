@@ -74,6 +74,41 @@ describe("HOSTED_OPERATIONS", () => {
 })
 
 describe("resolveHostedOperation", () => {
+  test("inventory forwards the active filter without allowing caller-selected scope", () => {
+    expect(resolveHostedOperation("session.inventory", {
+      limit: 25,
+      sort: "human_turn_desc",
+      after: "next page",
+      activity: "working",
+      settled: "active",
+      seen: "all",
+      ownership: "shared",
+      scope: "project",
+      projectId: "unreviewed",
+    })).toEqual({
+      method: "GET",
+      path: "/api/control/session-list?scope=all&limit=25&sort=human_turn_desc&after=next+page&activity=working&settled=active&seen=all&ownership=shared",
+    })
+    expect(() => resolveHostedOperation("session.inventory", { activity: "working" })).toThrow(MissingOperationParameter)
+  })
+
+  test("reader commands retain their canonical generation and revision", () => {
+    expect(resolveHostedOperation("session.reader", {
+      sessionId: "ses/1",
+      workspaceId: "ws 1",
+      kind: "settle",
+      generation: 1,
+      activitySequence: 7,
+      outcomeSequence: 9,
+      revision: 3,
+      activity: "working",
+    })).toEqual({
+      method: "POST",
+      path: "/api/control/sessions/ses%2F1/reader?workspaceId=ws+1",
+      body: { kind: "settle", generation: 1, activitySequence: 7, outcomeSequence: 9, revision: 3 },
+    })
+  })
+
   test("org invitations create, list, revoke and accept; members are never added directly", () => {
     expect(resolveHostedOperation("org.invitations.create", { orgId: "org_1", email: "a@example.com", role: "member" }))
       .toEqual({ method: "POST", path: "/api/control/orgs/org_1/invitations", body: { email: "a@example.com", role: "member" } })
@@ -190,6 +225,7 @@ describe("resolveHostedOperation", () => {
     })
     expect(resolved.path).toBe("/api/control/sessions/ses_1/shares?workspaceId=ws+a%26b%3Dc")
   })
+
 
   test("carries the share level and both recipient spellings into the grant body", () => {
     expect(resolveHostedOperation("session.shares.grant", {

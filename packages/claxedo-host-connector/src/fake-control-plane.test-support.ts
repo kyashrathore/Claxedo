@@ -217,6 +217,7 @@ export function createFakeControlPlane(
       jti: nextId("jti"),
       hostId: enrollment.host_id,
       enrollmentId: enrollment.enrollment_id,
+      generation: claim.generation,
       ownerUserId: enrollment.owner,
       workspaceIds,
       relayUrl,

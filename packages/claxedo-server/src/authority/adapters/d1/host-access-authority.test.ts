@@ -2397,6 +2397,46 @@ describe("machine session rows", () => {
     expect((await page(alice)).map((item) => item.session_id).sort()).toEqual(["ses_after", "ses_before"])
   })
 
+  test("revocation after admission rolls back status, history, adoption and removals", async () => {
+    const { input, publish, page, alice } = await served()
+    const attention = { sequence: 1, generation: 1, activitySequence: 1, activityAt: 100, working: false, awaitingInput: false }
+    await publish({ rows: [row("ses_update", { attention }), row("ses_remove", { attention })] })
+    const persisted = () => input.database.prepare("SELECT session_id, title, attention_json, deleted_at FROM sessions ORDER BY session_id")
+      .all().then((result) => result.results)
+    const before = await persisted()
+    input.beforeNextBatch(() => input.hostAccess.revokeHostEnrollment(alice, { hostId: "machine-r" }).then(() => {}))
+    const raised = { sequence: 2, kind: "question" as const, requestId: "question_transient", openedAt: 400 }
+    await expect(publish({
+      rows: [row("ses_update", { title: "Stale title", attention: { ...attention, sequence: 2, awaitingInput: true } }),
+        row("ses_adopt", { attention })],
+      removed: [{ workspaceId: "ws_local", sessionId: "ses_remove" }],
+      attention: [{ workspaceId: "ws_local", sessionId: "ses_update", generation: 1, through: 2, events: [raised] }],
+    })).rejects.toMatchObject({ status: 403, code: "workspace_authorization_denied" })
+    expect(await persisted()).toEqual(before)
+    expect(await page(alice)).toEqual([])
+    expect(await input.database.prepare("SELECT COUNT(*) AS n FROM session_attention_events").first()).toEqual({ n: 0 })
+    expect(await input.database.prepare("SELECT COUNT(*) AS n FROM session_registration_operations WHERE session_id = ?")
+      .bind("ses_adopt").first()).toEqual({ n: 0 })
+  })
+
+  test("a committed deletion remains admitted for notice retry without moving its tombstone", async () => {
+    const { input, publish, sessions, alice } = await served()
+    const ref = { workspaceId: "ws_local", sessionId: "ses_delete_retry" }
+    const attention = { sequence: 1, generation: 1, activitySequence: 1, activityAt: 100, working: false, awaitingInput: false }
+    await publish({ rows: [row(ref.sessionId, { attention })] })
+    await publish({ removed: [ref] })
+    const deletedAt = input.now()
+    input.advance(100)
+    expect(await publish({ removed: [ref] })).toEqual({ accepted: 1, refused: [] })
+    expect(await input.database.prepare("SELECT deleted_at FROM sessions WHERE session_id = ?").bind(ref.sessionId)
+      .first()).toEqual({ deleted_at: deletedAt })
+    const notices = await sessions.sessionPublicationNotices([ref], [])
+    expect(notices).toEqual([{ ...ref, orgId: "org_acme", projectId: expect.any(String), ownerUserId: alice.principal!.userId,
+      type: "session.removed", ts: deletedAt }])
+    expect(await publish({ rows: [row(ref.sessionId, { attention })] })).toMatchObject({ accepted: 0,
+      refused: [{ ...ref, reason: "session_deleted" }] })
+  })
+
   test("a workspace reassigned to another host takes no rows from the first host's token", async () => {
     const { input, publish, alice } = await served()
     const other = await enrollAccountMachine(input, alice, "machine-other")

@@ -9,10 +9,13 @@ export function hostSessionRowFromMeta(meta: SessionMeta, status: SessionRowStat
     workspaceId: meta.workspaceID,
     sessionId: meta.sessionID,
     ...(meta.title ? { title: meta.title } : {}),
+    ...(meta.parentID ? { parentSessionId: meta.parentID } : {}),
     createdAt: meta.createdAt,
     updatedAt: meta.updatedAt,
     ...(meta.lastHumanTurnAt !== undefined ? { lastHumanTurnAt: meta.lastHumanTurnAt } : {}),
     ...(meta.archived !== undefined ? { archivedAt: meta.archived } : {}),
     status,
+    ...(meta.attention ? { attention: meta.attention } : {}),
+    ...(meta.lastTurn ? { lastTurn: meta.lastTurn } : {}),
   }
 }

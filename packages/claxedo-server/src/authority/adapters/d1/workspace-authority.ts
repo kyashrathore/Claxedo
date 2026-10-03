@@ -21,6 +21,7 @@ import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-
 import { d1BatchAssertionFailed } from "../../../platform/db/d1-constraint"
 import { D1WorkspaceAuthorityError } from "./workspace-authority-error"
 import { requireBootstrapClaim, sameIdentity, userDeployedOwnerBootstrapClaimHash, userDeployedOwnerIdentityHash, validateIdentity } from "./owner-identity"
+import { workspaceJson, type WorkspaceAccessRow } from "./workspace-record"
 
 const KNOWN_HOME_REGIONS = new Set(["apac-south", "apac-east", "eu-west", "us-east", "us-west"])
 
@@ -34,6 +35,7 @@ export const D1_WORKSPACE_AUTHORITY_METHODS = [
   "authorizeWorkspaceOpen",
   "authorizeWorkspaceCreate",
   "openWorkspace",
+  "openRuntimeWorkspace",
   "listWorkspaces",
   "createCloudWorkspace",
   "createRuntimeCloudWorkspace",
@@ -112,22 +114,6 @@ type OrgRow = {
   name: string
   kind: "personal" | "shared" | "deployment"
   role: "member" | "admin" | "owner"
-}
-
-type WorkspaceAccessRow = {
-  workspace_id: string
-  org_id: string
-  project_id: string
-  owner_user_id: string
-  backing: "local-worktree" | "cloud-vm"
-  display_name: string
-  home_region: string | null
-  repo_url: string | null
-  repo_name: string | null
-  git_branch: string | null
-  remote_directory: string | null
-  host_enrollment_id: string | null
-  deleted_at: number | null
 }
 
 /**
@@ -628,7 +614,14 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   }
 
   async openWorkspace(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
-    const who = await this.requirePrincipal(auth)
+    return this.openWorkspaceAs(await this.requirePrincipal(auth), args)
+  }
+
+  async openRuntimeWorkspace(principal: PrivateSessionRuntimePrincipal, args: { workspaceId: string }) {
+    return this.openWorkspaceAs(await this.requireRuntimeActor(principal), args)
+  }
+
+  private async openWorkspaceAs(who: Principal, args: { workspaceId: string }) {
     const row = await this.openableWorkspace(who, args.workspaceId)
     if (!row) throw denied()
     return { allowed: true, role: "owner" as const, workspace: workspaceJson(row) }
@@ -1109,25 +1102,6 @@ function openableWorkspacesSql(who: AuthorizationPrincipal, predicate: string) {
       order by w.created_at, w.workspace_id
     `,
     bind: opens.bind,
-  }
-}
-
-function workspaceJson(row: WorkspaceAccessRow) {
-  return {
-    workspace_id: row.workspace_id,
-    org_id: row.org_id,
-    project_id: row.project_id,
-    backing: row.backing,
-    placement: {
-      ...(row.host_enrollment_id ? { host_enrollment_id: row.host_enrollment_id } : {}),
-      ...(row.remote_directory ? { directory: row.remote_directory } : {}),
-    },
-    display_name: row.display_name,
-    ...(row.home_region ? { home_region: row.home_region } : {}),
-    ...(row.repo_url ? { repo_url: row.repo_url } : {}),
-    ...(row.repo_name ? { repo_name: row.repo_name } : {}),
-    ...(row.git_branch ? { git_branch: row.git_branch } : {}),
-    ...(row.remote_directory ? { remote_directory: row.remote_directory } : {}),
   }
 }
 

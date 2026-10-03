@@ -1,7 +1,6 @@
 import { createSignal, getOwner, onCleanup, untrack } from "solid-js"
-import { createStore } from "solid-js/store"
-import type { ReaderSettings, Server, ServerEvent, SessionId } from "@/server"
-import type { SessionStores, UnseenOutcome } from "@/session"
+import type { ReaderSettings, Server, ServerEvent } from "@/server"
+import type { SessionStores } from "@/session"
 import { createSessionList, type SessionListInternal } from "../list"
 import { createRequests, type RequestsInternal } from "../requests"
 import { createSessionTranscript } from "../transcript"
@@ -21,7 +20,6 @@ function dispatchServerEvent(event: ServerEvent, list: SessionListInternal, requ
 }
 
 export function createSessionStores(server: Server, settings: () => ReaderSettings): SessionStores {
-  const [unseen, setUnseen] = createStore<Record<SessionId, UnseenOutcome | undefined>>({})
   const requests = createRequests(server)
   const list = createSessionList(server, requests)
   const [viewport, recordViewport] = createSignal(transcriptViewport({ width: window.innerWidth, height: window.innerHeight }))
@@ -42,11 +40,6 @@ export function createSessionStores(server: Server, settings: () => ReaderSettin
   list.start()
   return {
     list,
-    unseenOutcomes: {
-      of: (sessionId) => unseen[sessionId],
-      raised: (sessionId, outcome) => setUnseen(sessionId, outcome),
-      seen: (sessionId) => setUnseen(sessionId, undefined),
-    },
     recordViewport,
     open: (ref) => {
       list.opened(ref.sessionId)

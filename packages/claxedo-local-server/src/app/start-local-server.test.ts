@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs"
+import { execFileSync } from "node:child_process"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -14,6 +15,10 @@ import { DAEMON_PROTOCOL_HEADER } from "@claxedo/helpers/claxedo-daemon"
 import { openDaemonSocket, testDaemon } from "./test-support/daemon"
 import { createTestBackend, setBackendOverride } from "@claxedo/server-core/credentials/backend-registry"
 import { credentialById, putCredential, readSecretById } from "@claxedo/server-core/credentials/registry"
+import { installFakePiRpc } from "../../../workspace-runtime/src/test-support/home/fake-pi-rpc.mjs"
+import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
+import { builtinPluginInstanceId } from "@claxedo/server-core/agent-plugins/builtin/plugin"
+import { SqliteUnsignedAgentPluginActivationStore } from "../agent-plugins/activation/sqlite-store"
 
 /**
  * Boots the real server on a real socket and talks to it over HTTP.
@@ -107,6 +112,44 @@ async function boot() {
 }
 
 describe("startLocalServer", () => {
+  test("keeps native session files under the explicitly declared harness owner", async () => {
+    const peer = await installFakePiRpc()
+    const previousPi = process.env.PI_EXECUTABLE
+    const previousHome = process.env.HOME
+    process.env.PI_EXECUTABLE = peer.binary
+    const harnessStateRoot = path.join(dataDir, "private-harnesses")
+    try {
+      const activations = new SqliteUnsignedAgentPluginActivationStore(ClaxedoDB.raw())
+      for (const group of claxedoMcpToolGroupInventory()) activations.mutate({ pluginInstanceId: builtinPluginInstanceId(group.id), harnessIds: ["opencode"], choice: false, expectedRevision: activations.revision() })
+      identity = testDaemon()
+      server = startLocalServer({ port: await freePort(), daemon: identity.daemon, harnessStateRoot })
+      await server.ready
+      const origin = `http://127.0.0.1:${server.port}`
+      const directory = path.join(dataDir, "project")
+      mkdirSync(directory)
+      execFileSync("git", ["init", "--quiet", directory])
+      const resolved = await identity.call(`${origin}/api/workspace/resolve?directory=${encodeURIComponent(directory)}`, { method: "POST" })
+      expect(resolved.status, await resolved.clone().text()).toBe(200)
+      const { workspaceId } = await resolved.json() as { workspaceId: string }
+      const created = await identity.call(`${origin}/session?directory=${encodeURIComponent(directory)}&workspaceId=${workspaceId}&nativeHarness=pi`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: "isolated-native", title: "Isolated native state" }),
+      })
+      expect(created.status, await created.clone().text()).toBe(201)
+      expect(readdirSync(harnessStateRoot, { recursive: true }).filter((name) => String(name).endsWith(".jsonl"))).toHaveLength(1)
+      expect(process.env.HOME).toBe(previousHome)
+    } finally {
+      await server?.stop()
+      server = undefined
+      if (previousPi === undefined) delete process.env.PI_EXECUTABLE
+      else process.env.PI_EXECUTABLE = previousPi
+      await peer.dispose()
+    }
+  })
+
+  test.each(["", "relative/harnesses"])("refuses an invalid explicit native state owner %j", async (harnessStateRoot) => {
+    expect(() => startLocalServer({ port: 0, harnessStateRoot })).toThrow("harnessStateRoot must be an absolute path")
+  })
+
   test("startup preserves stored harness credentials", async () => {
     setBackendOverride(createTestBackend())
     const secret = JSON.stringify({ type: "claude_code_oauth", claudeAiOauth: { accessToken: "test-login" } })

@@ -4,6 +4,7 @@ import { registerDocumentTools } from "./documents"
 import type { ToolRegistrar } from "./registry"
 import { registerReviewTools } from "./review"
 import { registerSessionTools } from "./sessions"
+import { registerSessionCleanupTools } from "./session-cleanup"
 import { registerSubagentTools } from "./subagents"
 import { registerTaskTools } from "./tasks"
 import { registerWorkspaceTools } from "./workspaces"
@@ -44,6 +45,7 @@ export const CLAXEDO_MCP_TOOL_GROUPS = [
   { id: "attention", reach: "runtime", register: registerAttentionTools },
   { id: "documents", reach: { service: "documents" }, register: registerDocumentTools },
   { id: "review", reach: "runtime", register: registerReviewTools },
+  { id: "session-cleanup", reach: "account", register: registerSessionCleanupTools },
   { id: "sessions", reach: "runtime", register: registerSessionTools },
   { id: "subagents", reach: "runtime", register: registerSubagentTools },
   { id: "tasks", reach: "account", register: registerTaskTools },

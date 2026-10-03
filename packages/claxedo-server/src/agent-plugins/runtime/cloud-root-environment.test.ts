@@ -5,6 +5,7 @@ import type { SignedActivationSnapshot } from "@claxedo/server-core/agent-plugin
 import {
   WORKSPACE_RUNTIME_MCP_TOOL_GROUPS,
   WORKSPACE_RUNTIME_OWNER_GRANT,
+  WORKSPACE_RUNTIME_SESSION_CLEANUP_GRANT,
   workspaceRuntimeMcpToolGroups,
 } from "@claxedo/server-core/hosts/workspace-runtime/env"
 import { createBuiltinGroupReader, createCloudRootEnvironment } from "./cloud-root-environment"
@@ -77,6 +78,17 @@ describe("whether a cloud root's project has a group on", () => {
 })
 
 describe("the first-party environment a cloud root boots with", () => {
+  test("mints account cleanup only while its own opt-in group is enabled", async () => {
+    const sessionCleanupGrant = vi.fn(async () => ({ [WORKSPACE_RUNTIME_SESSION_CLEANUP_GRANT]: "cleanup-token" }))
+    const launch = (enabled?: boolean) => createCloudRootEnvironment({ activations: activations(enabled === undefined ? {} : { "session-cleanup": enabled }), builtIn, ...grants, sessionCleanupGrant })(root)
+    expect(await launch()).not.toHaveProperty(WORKSPACE_RUNTIME_SESSION_CLEANUP_GRANT)
+    expect(await launch(false)).not.toHaveProperty(WORKSPACE_RUNTIME_SESSION_CLEANUP_GRANT)
+    const enabled = await launch(true)
+    expect(enabled[WORKSPACE_RUNTIME_SESSION_CLEANUP_GRANT]).toBe("cleanup-token")
+    expect(workspaceRuntimeMcpToolGroups(enabled)).toContain("session-cleanup")
+    expect(sessionCleanupGrant).toHaveBeenCalledTimes(1)
+    expect(sessionCleanupGrant).toHaveBeenCalledWith(root)
+  })
   test("declares the groups the project has on, readable by the runtime's own parser, and no Tasks grant while Tasks is off", async () => {
     const store = activations({ attention: false, subagents: false })
     const tasksGrant = vi.fn(async () => ({ WORKSPACE_RUNTIME_TASKS_CAPABILITY: "grant-token" }))

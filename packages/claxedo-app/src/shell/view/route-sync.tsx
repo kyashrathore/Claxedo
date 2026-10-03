@@ -3,9 +3,10 @@ import { useServer, type ProjectId } from "@/server"
 import { useSessionStores } from "@/session"
 import { useWorkbench } from "@/workbench"
 import { useShellLayout } from "../layout"
-import { useShellRoute } from "../router"
+import { useShellRoute, type ShellRouting } from "../router"
 import { draftPath, homePath, sessionPath, terminalPath, type ShellRoute } from "../routes"
 import type { PaneRoute } from "../types"
+import { createLocalSessionRoute } from "../local-session-route"
 
 function panePath(route: PaneRoute): string {
   if (route.kind === "pageTab") return route.path
@@ -44,13 +45,23 @@ function paneRouteOf(
     : { kind: "session", projectId, placementId: route.placementId, sessionId: route.sessionId }
 }
 
+function registerLocalSessionRoute(routing: ShellRouting) {
+  const server = useServer()
+  const stores = useSessionStores()
+  const resolution = createLocalSessionRoute(
+    routing.localSessionId,
+    (id) => server.queryClient.fetchQuery(server.queries.localSessionLocation(id)),
+    (id) => stores.list.rowOf(id)?.ref,
+  )
+  onCleanup(routing.resolveSessions(resolution))
+}
+
 export function RouteSync(): JSX.Element {
   const routing = useShellRoute()
   const server = useServer()
   const workbench = useWorkbench()
   const layout = useShellLayout()
-  const stores = useSessionStores()
-  onCleanup(routing.resolveSessions((id) => stores.list.rowOf(id)?.ref.placementId))
+  registerLocalSessionRoute(routing)
 
   createEffect(on(routing.route, () => layout.send({ type: "navigated" }), { defer: true }))
   createEffect(on(workbench.selectors.focusedContent, () => layout.send({ type: "navigated" }), { defer: true }))

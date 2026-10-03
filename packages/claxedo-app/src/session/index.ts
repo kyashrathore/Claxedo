@@ -48,6 +48,10 @@ export type LoadMoreState =
   | { readonly kind: "failed"; readonly error: AppError }
 
 export type SessionList = {
+  readonly inventory: import("./list/inventory").SessionInventory
+  readonly settle: (row: SessionRow) => Promise<void>
+  readonly returnToActive: (row: SessionRow) => Promise<void>
+  readonly markSeen: (row: SessionRow) => Promise<void>
   readonly state: Accessor<SessionListState>
   readonly order: Accessor<readonly SessionLocation[]>
   readonly view: (sessionId: SessionId) => SessionRowView | undefined
@@ -122,15 +126,8 @@ export type SessionView = {
 
 export type { SessionSubagent }
 
-export type UnseenOutcome = "finished" | "failed"
-
 export type SessionStores = {
   readonly list: SessionList
-  readonly unseenOutcomes: {
-    readonly of: (sessionId: SessionId) => UnseenOutcome | undefined
-    readonly raised: (sessionId: SessionId, outcome: UnseenOutcome) => void
-    readonly seen: (sessionId: SessionId) => void
-  }
   readonly open: (ref: SessionLocation) => SessionView
   readonly recordViewport: (viewport: TranscriptViewport) => void
 }

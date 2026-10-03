@@ -9,6 +9,8 @@ import { PageView } from "./page-view"
 import { Region } from "./region"
 import { Sidebar, type SidebarProps } from "./sidebar"
 import { SettingsHeader, WorkbenchHeader } from "./workbench-header"
+import { useShellRoute } from "../router"
+import { LocalSessionRouteNotice } from "./local-session-route-notice"
 
 export type CenterContent = { readonly kind: "page"; readonly page: PageEntry; readonly params: RouteParams } | { readonly kind: "panes" }
 
@@ -36,6 +38,11 @@ function CenterHeader(props: { readonly center: CenterContent; readonly tabs: JS
 function PanesRegion(): JSX.Element {
   const layout = useShellLayout()
   const workbench = useWorkbench()
+  const routing = useShellRoute()
+  const unresolved = () => {
+    const state = routing.sessionResolution()
+    return state.kind === "loading" || state.kind === "failed" ? state : undefined
+  }
   const railHidden = () => (layout.phone() ? !layout.sidebarShown() : !layout.sidebarPinned())
   const closeFocused = (paneId: string, contentId: string | null) => {
     if (railHidden() && contentId) return workbench.closeContent(contentId)
@@ -43,7 +50,9 @@ function PanesRegion(): JSX.Element {
   }
   return (
     <Region name="center">
-      <Workbench onCloseFocusedPane={closeFocused} />
+      <Show when={unresolved()} fallback={<Workbench onCloseFocusedPane={closeFocused} />}>
+        {(state) => <LocalSessionRouteNotice state={state()} onRetry={routing.retrySessionResolution} />}
+      </Show>
     </Region>
   )
 }

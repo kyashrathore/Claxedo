@@ -28,6 +28,10 @@ import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { asRecord } from "@claxedo/helpers/guards"
 import { localSessionListPage, signedSessionListPage } from "../list/session-list-page"
 import { readMountedEmbeddedWorkspaceRuntime } from "../../deployments/local/embedded-workspace-runtime"
+import { sessionReaderCommandSchema } from "@claxedo/server-core/session/reader-contract"
+import { writeLocalSessionReader } from "./reader"
+import { createLocalSessionAttentionRoutes } from "./attention"
+import { createLocalSessionLocationRoutes } from "./location"
 
 type Options = {
   services?: ControlPlaneServicesContract
@@ -176,6 +180,24 @@ function authoritySessionMeta(input: unknown, workspaceId: string): SessionMeta 
 
 export function SessionMetaRoutes(options: Options = {}) {
   return new Hono()
+    .route("/", createLocalSessionLocationRoutes({
+      authenticate: async (request) => {
+        const result = await signedOrError(request, options)
+        return result.error ? Response.json(result.error, { status: result.status }) : result.auth
+      },
+      authorize: (auth, ref) => authorizeRead(auth, options, ref),
+    }))
+    .route("/", createLocalSessionAttentionRoutes({
+      authenticate: async (request) => {
+        const result = await signedOrError(request, options)
+        return result.error ? Response.json(result.error, { status: result.status }) : result.auth
+      },
+      listSigned: async (auth, input) => {
+        const authority = requireAuthority(options.services)
+        if (!authority.listSessionAttention) throw new HTTPException(503, { message: "Session attention is unavailable" })
+        return authority.listSessionAttention(auth, input)
+      },
+    }))
     .onError((err, c) => {
       if (err instanceof ControlPlaneAuthError) {
         return c.json(controlPlaneAuthErrorBody(err), err.status)
@@ -222,7 +244,7 @@ export function SessionMetaRoutes(options: Options = {}) {
       if (authResult.error) return c.json(authResult.error, authResult.status)
       try {
         const query = parseSessionListQuery(new URL(c.req.url))
-        const named = query.scope === "project" && query.projectId && !c.req.query("workspaceId") && !c.req.query("directory")
+        const named = query.scope === "all" || query.scope === "project" && query.projectId && !c.req.query("workspaceId") && !c.req.query("directory")
           ? undefined
           : await workspace(c)
         if (authResult.auth) {
@@ -232,11 +254,12 @@ export function SessionMetaRoutes(options: Options = {}) {
           query,
           workspace: named,
           projectWorkspaces: async () => (await listWorkspaces()).filter((item) =>
-            item.project_id === query.projectId && item.kind !== "cloud"),
+            (query.scope === "all" || item.project_id === query.projectId) && item.kind !== "cloud"),
           ...(options.refreshSessionProjection ? { refreshSessionProjection: options.refreshSessionProjection } : {}),
           readRuntimeStatus: readMountedEmbeddedWorkspaceRuntime,
         }))
       } catch (err) {
+        if (err instanceof ClaxedoError && err.code === "invalid_session_list_query") return c.json({ error: { code: err.code, message: err.message } }, 400)
         if (err instanceof ClaxedoError && err.code === "invalid_session_list_cursor") {
           return c.json({
             error: {
@@ -247,6 +270,22 @@ export function SessionMetaRoutes(options: Options = {}) {
         }
         throw err
       }
+    })
+    .post("/api/claxedo/session/:id/reader", async (c) => {
+      const authResult = await signedOrError(c.req.raw, options)
+      if (authResult.error) return c.json(authResult.error, authResult.status)
+      const command = sessionReaderCommandSchema.safeParse(await c.req.json().catch(() => undefined))
+      if (!command.success) throw new HTTPException(400, { message: "Invalid reader command" })
+      const workspaceId = c.req.query("workspaceId")
+      if (!workspaceId) throw new HTTPException(400, { message: "workspaceId is required" })
+      if (!authResult.auth) {
+        const result = await writeLocalSessionReader(c.req.param("id"), workspaceId, command.data)
+        return c.json(result, result.ok ? 200 : 409)
+      }
+      const authority = requireAuthority(options.services)
+      if (!authority.writeSessionReader) throw new HTTPException(503, { message: "Reader state is unavailable" })
+      const result = await authority.writeSessionReader(authResult.auth, { sessionId: c.req.param("id"), workspaceId, command: command.data })
+      return c.json(result, result.ok ? 200 : 409)
     })
     .get("/api/claxedo/session/:id/meta", async (c) => {
       const authResult = await signedOrError(c.req.raw, options)

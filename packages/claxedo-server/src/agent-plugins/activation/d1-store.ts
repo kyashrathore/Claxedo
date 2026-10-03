@@ -1,4 +1,5 @@
 import { isBuiltinPluginInstanceId } from "@claxedo/server-core/agent-plugins/builtin/plugin"
+import { AGENT_PLUGIN_ALL_PROJECTS_SCOPE, AGENT_PLUGIN_DESKTOP_WORKSPACE } from "@claxedo/server-core/agent-plugins/activation/runtime-scope"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import {
   AgentPluginActivationStoreError,
@@ -25,11 +26,7 @@ import { assertionId, batchUnder, may, maySql, type BoundSql } from "../../autho
 import { d1BatchAssertionFailed } from "../../platform/db/d1-constraint"
 import { agentPluginWriteGuard, resolveAgentPluginScope, type AgentPluginScope } from "../signed-scope"
 
-/** The project scope a user default addresses; never a real project ID. */
-export const AGENT_PLUGIN_ALL_PROJECTS_SCOPE = "all-projects"
-
-/** The workspace a signed desktop pull materializes into; never a real workspace ID. */
-export const AGENT_PLUGIN_DESKTOP_WORKSPACE = "desktop"
+export { AGENT_PLUGIN_ALL_PROJECTS_SCOPE, AGENT_PLUGIN_DESKTOP_WORKSPACE } from "@claxedo/server-core/agent-plugins/activation/runtime-scope"
 
 const CLAXEDO_SCOPE_KEY = "claxedo"
 

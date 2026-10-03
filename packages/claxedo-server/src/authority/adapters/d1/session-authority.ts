@@ -1,9 +1,12 @@
-import { PublicApiError } from "@claxedo/server-core/platform/errors/public-api-error"
-import type { PublicApiErrorCode } from "@claxedo/helpers/api-error"
+import type { SessionStateEvent } from "@claxedo/server-core/platform/runtime/lib/session-state-events"
+import { resolveD1SessionShareTarget, shareSelectorCount, sessionShareError, type SessionShareTarget } from "./session-share-selector"
+import type { SessionReaderCommand, SessionRef } from "@claxedo/agent-runtime-contract"
+import { admitD1SessionCleanup, writeD1SessionReader } from "./session-reader"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type {
   SessionShareGrantResult,
+  SessionShareFanoutTarget,
   SessionShareLevel,
   WorkspaceAuthority,
   WorkspaceVisibility,
@@ -59,20 +62,35 @@ import {
   requireText,
   visibilityRows,
 } from "./session-input"
-import { readD1SessionPage, readD1MessagePage, readD1LatestView, validateD1MessageRead, decodeMessagePageCursor } from "./session-read-store"
-import { storedTurn, type LatestView } from "@claxedo/server-core/session/latest-view-page"
+import { countD1Sessions, readD1SessionPage } from "./session-read-store"
+import type { LatestView } from "@claxedo/server-core/session/latest-view-page"
 import { d1ConstraintFailure } from "../../../platform/db/d1-constraint"
-import { readStoredTurnOutline } from "@claxedo/server-core/session/turn-outline"
-import { readStoredPart } from "@claxedo/server-core/session/stored-part"
-import type { StoredMessageQuery } from "@claxedo/server-core/session/stored-messages"
-import { readFirstRead, readTurnPage, type TurnPageQuery, type TurnPageRequest, type TurnRead } from "@claxedo/agent-runtime-contract"
+import type { TurnPageQuery, TurnPageRequest } from "@claxedo/agent-runtime-contract"
+import { D1SessionTranscriptRead } from "./session-transcript-read"
+import { requireD1RuntimeSessionActor } from "./session-principal"
+import { readD1SessionAttention } from "./session-attention-history"
+import { readD1SessionStateNotices } from "./session-state-notices"
+import { readD1SessionPublicationNotices } from "./session-publication-notices"
+import { normalizeReservation, registrationResult, requireSameRegistration, type RegistrationRow } from "./session-registration-intent"
+import type { SessionAttentionBatch } from "@claxedo/server-core/platform/auth/session-attention-authority"
+import { readD1SessionShareRecipients } from "./session-share-recipients"
 
 export const D1_SESSION_AUTHORITY_METHODS = [
   "authorizeSessionRead",
   "grantSessionShare",
+  "resolveSessionShareRecipients",
   "revokeSessionShare",
   "listSessionShares",
   "listSessions",
+  "writeSessionReader",
+  "admitSessionCleanup",
+  "listSessionCleanupPage",
+  "admitRuntimeSessionCleanup",
+  "countSessions",
+  "listSessionAttention",
+  "listSessionStateNotices",
+  "sessionNoticeVisible",
+  "sessionPublicationNotices",
   "resolveSession",
   "resolveCloudTurnUsageOwner",
   "readSessionMessages",
@@ -103,14 +121,6 @@ type Principal = PrivateSessionActor & AuthorizationPrincipal & { userId: string
 
 type ReadableSession = SessionRow & { role: "owner" | "viewer" }
 
-type ActorRow = {
-  actor_id: string
-  actor_kind: "human" | "agent"
-  actor_state: "active" | "suspended" | "revoked"
-  user_id: string | null
-  user_state: "active" | "suspended" | "deleted" | null
-}
-
 type WorkspaceAccessRow = {
   workspace_id: string
   org_id: string
@@ -135,22 +145,6 @@ type SessionRow = {
   snapshot_hash: string | null
 }
 
-type RegistrationRow = {
-  operation_id: string
-  session_id: string
-  workspace_id: string
-  org_id: string
-  project_id: string
-  creator_actor_id: string
-  operation_kind: "create" | "fork"
-  parent_session_id: string | null
-  requested_title: string | null
-  state: SessionRegistrationState
-  state_reason: string | null
-  created_at: number
-  updated_at: number
-}
-
 type SessionShareRow = {
   grant_id: string
   session_id: string
@@ -165,11 +159,6 @@ type SessionShareRow = {
   revoked_at: number | null
   level: string
 }
-
-type SessionShareTarget =
-  | { kind: "user"; id: string }
-  | { kind: "org"; id: string }
-  | { kind: "team"; id: string }
 
 type TurnLeaseRow = {
   session_id: string
@@ -213,6 +202,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
   private readonly now: () => number
   private readonly randomId: NonNullable<D1SessionAuthorityOptions["randomId"]>
   private readonly turnLeaseTtlMs: number
+  private readonly transcript: D1SessionTranscriptRead
 
   constructor(
     private readonly database: D1Database,
@@ -222,6 +212,10 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     this.now = options.now ?? Date.now
     this.randomId = options.randomId ?? ((prefix) => `${prefix}_${crypto.randomUUID()}`)
     this.turnLeaseTtlMs = boundedTurnLeaseTtl(options.turnLeaseTtlMs)
+    this.transcript = new D1SessionTranscriptRead(database, async (auth, sessionId, workspaceId) => {
+      const session = await this.readableSession(auth, sessionId, workspaceId)
+      return session ? { session: sessionJson(session), role: session.role, maxEventOrdinal: session.max_event_ordinal } : undefined
+    })
   }
 
   async reserveSession(auth: SignedControlPlaneAuth, input: ReserveSessionInput) {
@@ -1074,6 +1068,12 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     )
   }
 
+  async resolveSessionShareRecipients(auth: SignedControlPlaneAuth, input: { sessionId: string; workspaceId: string; target: SessionShareFanoutTarget }) {
+    const who = await this.requirePrincipal(auth)
+    const target = await this.resolveShareTarget(input.target, true)
+    return target ? readD1SessionShareRecipients(this.database, who, input, target) : []
+  }
+
   async revokeSessionShare(
     auth: SignedControlPlaneAuth,
     args: {
@@ -1248,7 +1248,56 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
 
   async listSessionPage(auth: SignedControlPlaneAuth, query: SessionPageQuery) {
     const who = await this.requirePrincipal(auth)
-    return await readD1SessionPage(this.database, query, maySql(who, "read", { kind: "session", alias: "s" }))
+    return await readD1SessionPage(this.database, query, who, this.now())
+  }
+
+  async writeSessionReader(auth: SignedControlPlaneAuth, input: { sessionId: string; workspaceId: string; command: SessionReaderCommand }) {
+    const who = await this.requirePrincipal(auth)
+    return writeD1SessionReader(this.database, who, input, this.now())
+  }
+
+  async admitSessionCleanup(auth: SignedControlPlaneAuth, input: { sessionId: string; workspaceId: string; generation: number; readerRevision: number }) {
+    const who = await this.requirePrincipal(auth)
+    await admitD1SessionCleanup(this.database, who, input)
+  }
+
+  async listSessionCleanupPage(principal: { actorId: string; userId: string; orgId: string }, query: SessionPageQuery) {
+    const who = await this.requireCleanupPrincipal(principal)
+    return readD1SessionPage(this.database, query, who, this.now(), principal.orgId)
+  }
+
+  async admitRuntimeSessionCleanup(principal: { actorId: string; userId: string; orgId: string }, input: { sessionId: string; workspaceId: string; generation: number; readerRevision: number }) {
+    const who = await this.requireCleanupPrincipal(principal)
+    await admitD1SessionCleanup(this.database, who, input, principal.orgId)
+  }
+
+  private async requireCleanupPrincipal(principal: { actorId: string; userId: string; orgId: string }) {
+    const who = await this.requireRuntimeActor({ principalKind: "user", actorKind: "human", actorId: principal.actorId })
+    if (who.userId !== principal.userId) throw denied()
+    requireText(principal.orgId, "orgId")
+    return who
+  }
+
+  async listSessionAttention(auth: SignedControlPlaneAuth, input: { after?: number; limit: number }) {
+    return readD1SessionAttention(this.database, await this.requirePrincipal(auth), input)
+  }
+
+  async listSessionStateNotices(refs: readonly SessionRef[]) {
+    return readD1SessionStateNotices(this.database, refs)
+  }
+
+  async sessionNoticeVisible(auth: SignedControlPlaneAuth, ref: SessionRef, kind?: SessionStateEvent["type"]) {
+    return may(this.database, await this.requirePrincipal(auth), kind === "session.removed" ? "read_removed" : "read", { kind: "session", ...ref })
+  }
+
+  async sessionPublicationNotices(refs: readonly SessionRef[], batches: readonly SessionAttentionBatch[]) {
+    return readD1SessionPublicationNotices(this.database, refs, batches)
+  }
+
+
+  async countSessions(auth: SignedControlPlaneAuth, query: SessionPageQuery) {
+    const who = await this.requirePrincipal(auth)
+    return countD1Sessions(this.database, query, maySql(who, "read", { kind: "session", alias: "s" }), who.userId)
   }
 
   async resolveSession(auth: SignedControlPlaneAuth, args: { sessionId: string }) {
@@ -1284,51 +1333,19 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     auth: SignedControlPlaneAuth,
     args: { sessionId: string; workspaceId: string; limit?: number; before?: string; view?: LatestView },
   ) {
-    const who = await this.requirePrincipal(auth)
-    const sessionId = requireText(args.sessionId, "sessionId")
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const before = validateD1MessageRead({ ...args, sessionId, workspaceId })
-    let access: ReadableSession
-    try {
-      access = await this.requireSessionAccess(who, sessionId, workspaceId, "read")
-    } catch (error) {
-      if (isDenied(error)) return { allowed: false, messages: [] }
-      throw error
-    }
-    return {
-      allowed: true,
-      role: access.role,
-      maxEventOrdinal: access.max_event_ordinal,
-      ...await readD1MessagePage(this.database, { ...args, sessionId, workspaceId }, before),
-    }
+    return this.transcript.messages(auth, args)
   }
 
   async readSessionFirstRead(auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string; firstPage?: TurnPageRequest }) {
-    const sessionId = requireText(args.sessionId, "sessionId")
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const access = await this.readableSession(auth, sessionId, workspaceId)
-    if (!access) return undefined
-    const outline = await readStoredTurnOutline(this.storedQuery, "data_json", sessionId, workspaceId)
-    return await readFirstRead(sessionJson(access), outline, this.turnRead(sessionId, workspaceId), args.firstPage)
+    return this.transcript.firstRead(auth, args)
   }
 
   async readSessionPage(auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string; page: TurnPageQuery & { before: string } }) {
-    const sessionId = requireText(args.sessionId, "sessionId")
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    if (!(await this.readableSession(auth, sessionId, workspaceId))) return undefined
-    return await readTurnPage(this.turnRead(sessionId, workspaceId), args.page)
+    return this.transcript.page(auth, args)
   }
 
   async readSessionPart(auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string; messageId: string; partId: string }) {
-    const at = {
-      sessionId: requireText(args.sessionId, "sessionId"),
-      workspaceId: requireText(args.workspaceId, "workspaceId"),
-      messageId: requireText(args.messageId, "messageId"),
-      partId: requireText(args.partId, "partId"),
-    }
-    if (!(await this.readableSession(auth, at.sessionId, at.workspaceId))) return undefined
-    const part = await readStoredPart(this.storedQuery, "data_json", at)
-    return part ? { part } : {}
+    return this.transcript.part(auth, args)
   }
 
   private async readableSession(auth: SignedControlPlaneAuth, sessionId: string, workspaceId: string) {
@@ -1339,13 +1356,6 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       if (isDenied(error)) return undefined
       throw error
     }
-  }
-
-  private readonly storedQuery: StoredMessageQuery = async (sql, params) => (await this.database.prepare(sql).bind(...params).all()).results
-
-  private turnRead(sessionId: string, workspaceId: string): TurnRead {
-    return async (before) =>
-      storedTurn(await readD1LatestView(this.database, sessionId, workspaceId, "latest-turn", before === undefined ? undefined : decodeMessagePageCursor(sessionId, before)))
   }
 
   async syncSessionMessages(
@@ -1786,77 +1796,8 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     await this.guardedBatch(statements, "Session visibility raced with an authority change")
   }
 
-  private async resolveShareTarget(
-    args: {
-      grantedToTokenIdentifier?: string
-      grantedToSubject?: string
-      grantedToUserId?: string
-      grantedToOrgId?: string
-      grantedToTeamId?: string
-      grantedToTeamPublicId?: string
-    },
-    allowMissing = false,
-  ): Promise<SessionShareTarget | undefined> {
-    if (shareSelectorCount(args) !== 1) throw sessionShareError("session_share_target_required")
-    const userSelector = args.grantedToTokenIdentifier ?? args.grantedToSubject ?? args.grantedToUserId
-    if (userSelector) {
-      const value = requireText(userSelector, "share user target")
-      const user = args.grantedToUserId
-        ? await this.database
-            .prepare(`select user_id from users where user_id = ? and state = 'active'`)
-            .bind(value)
-            .first<{ user_id: string }>()
-        : args.grantedToTokenIdentifier
-          ? await this.database
-              .prepare(
-                `
-              select ai.user_id from auth_identities ai
-              join users u on u.user_id = ai.user_id and u.state = 'active'
-              where ai.issuer || '|' || ai.subject = ? and ai.unlinked_at is null
-            `,
-              )
-              .bind(value)
-              .first<{ user_id: string }>()
-          : await this.database
-              .prepare(
-                `
-              select ai.user_id from auth_identities ai
-              join users u on u.user_id = ai.user_id and u.state = 'active'
-              where ai.subject = ? and ai.unlinked_at is null
-              order by ai.linked_at, ai.adapter, ai.issuer limit 1
-            `,
-              )
-              .bind(value)
-              .first<{ user_id: string }>()
-      if (!user) {
-        if (allowMissing) return undefined
-        throw sessionShareError("session_share_target_not_found")
-      }
-      return { kind: "user", id: user.user_id }
-    }
-    const orgSelector = args.grantedToOrgId
-    if (orgSelector) {
-      const orgId = requireText(orgSelector, "share organization target")
-      const org = await this.database
-        .prepare(`select org_id from orgs where org_id = ? and deleted_at is null`)
-        .bind(orgId)
-        .first<{ org_id: string }>()
-      if (!org) {
-        if (allowMissing) return undefined
-        throw sessionShareError("session_share_target_not_found")
-      }
-      return { kind: "org", id: org.org_id }
-    }
-    const teamId = requireText(args.grantedToTeamId ?? args.grantedToTeamPublicId!, "share team target")
-    const team = await this.database
-      .prepare(`select team_id from teams where team_id = ? and deleted_at is null`)
-      .bind(teamId)
-      .first<{ team_id: string }>()
-    if (!team) {
-      if (allowMissing) return undefined
-      throw sessionShareError("session_share_target_not_found")
-    }
-    return { kind: "team", id: team.team_id }
+  private resolveShareTarget(args: SessionShareFanoutTarget, allowMissing = false) {
+    return resolveD1SessionShareTarget(this.database, args, allowMissing)
   }
 
   private async activeHumanActorForUser(userId: string): Promise<Principal | undefined> {
@@ -1939,37 +1880,8 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     return requireHuman(this.database, this.options.deploymentId, auth)
   }
 
-  private async requireRuntimeActor(input: RuntimeSessionActor): Promise<Principal> {
-    const actorId = requireText(input.actorId, "actorId")
-    if (
-      (input.principalKind !== "user" && input.principalKind !== "service") ||
-      (input.actorKind !== "human" && input.actorKind !== "agent") ||
-      (input.principalKind === "user" && input.actorKind !== "human") ||
-      (input.principalKind === "service" && input.actorKind !== "agent")
-    ) {
-      throw new D1SessionAuthorityError("invalid_input", "Canonical runtime principal kind is required")
-    }
-    const row = await this.database
-      .prepare(
-        `
-      select a.actor_id, a.kind as actor_kind, a.state as actor_state,
-        a.user_id, u.state as user_state
-      from actors a left join users u on u.user_id = a.user_id
-      where a.actor_id = ?
-    `,
-      )
-      .bind(actorId)
-      .first<ActorRow>()
-    if (
-      !row ||
-      row.actor_kind !== input.actorKind ||
-      row.actor_state !== "active" ||
-      !row.user_id ||
-      row.user_state !== "active"
-    ) {
-      throw new D1SessionAuthorityError("actor_authorization_denied", "Canonical active session actor is required")
-    }
-    return { actorId, actorKind: row.actor_kind, userId: row.user_id }
+  private requireRuntimeActor(input: RuntimeSessionActor): Promise<Principal> {
+    return requireD1RuntimeSessionActor(this.database, input)
   }
 
   private async registration(operationId: string) {
@@ -2060,79 +1972,10 @@ const SESSION_ACTION: Record<SessionAccessQuestion, SessionAction> = {
   session_control: "control",
 }
 
-function shareSelectorCount(args: {
-  grantedToTokenIdentifier?: string
-  grantedToSubject?: string
-  grantedToUserId?: string
-  grantedToOrgId?: string
-  grantedToTeamId?: string
-  grantedToTeamPublicId?: string
-}) {
-  return [
-    args.grantedToTokenIdentifier,
-    args.grantedToSubject,
-    args.grantedToUserId,
-    args.grantedToOrgId,
-    args.grantedToTeamId,
-    args.grantedToTeamPublicId,
-  ].filter((value) => typeof value === "string" && !!value.trim()).length
-}
-
 function shareFanoutTarget(grant: SessionShareRow) {
   if (grant.target_user_id) return { grantedToUserId: grant.target_user_id }
   if (grant.target_team_id) return { grantedToTeamId: grant.target_team_id }
   return { grantedToOrgId: grant.target_org_id! }
-}
-
-function sessionShareError(code: PublicApiErrorCode) {
-  return new PublicApiError(code)
-}
-
-function normalizeReservation(input: ReserveSessionInput) {
-  const kind = input.kind
-  if (kind !== "create" && kind !== "fork")
-    throw new D1SessionAuthorityError("invalid_input", "Unknown reservation kind")
-  const parentSessionId = optionalText(input.parentSessionId, "parentSessionId")
-  if ((kind === "fork") !== !!parentSessionId) {
-    throw new D1SessionAuthorityError("invalid_input", "Fork reservations require exactly one parent session")
-  }
-  return {
-    operationId: requireText(input.operationId, "operationId"),
-    sessionId: requireText(input.sessionId, "sessionId"),
-    workspaceId: requireText(input.workspaceId, "workspaceId"),
-    kind,
-    parentSessionId,
-    title: optionalText(input.title, "title", 2_000),
-  }
-}
-
-function requireSameRegistration(
-  row: RegistrationRow,
-  intent: ReturnType<typeof normalizeReservation>,
-  workspace: WorkspaceAccessRow,
-  actorId: string,
-) {
-  if (
-    row.session_id !== intent.sessionId ||
-    row.workspace_id !== workspace.workspace_id ||
-    row.org_id !== workspace.org_id ||
-    row.project_id !== workspace.project_id ||
-    row.creator_actor_id !== actorId ||
-    row.operation_kind !== intent.kind ||
-    row.parent_session_id !== (intent.parentSessionId ?? null) ||
-    row.requested_title !== (intent.title ?? null)
-  )
-    throw new D1SessionAuthorityError("resource_conflict", "Reservation retry changed immutable intent")
-}
-
-function registrationResult(row: RegistrationRow, changed: boolean) {
-  return {
-    changed,
-    operationId: row.operation_id,
-    sessionId: row.session_id,
-    workspaceId: row.workspace_id,
-    state: row.state,
-  }
 }
 
 function sessionJson(row: SessionRow) {

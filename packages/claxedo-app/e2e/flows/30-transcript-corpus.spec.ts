@@ -8,6 +8,8 @@ import { playChildMessageEvent } from "../harness/child-message-event"
 import { playAgentAuthoredMessage } from "../harness/agent-authored-message"
 import { playHostChildFollowup } from "../harness/host-child-followup"
 import { expectWritesAtMost, watchWrites } from "../corpus/writes"
+import { readerRow } from "../harness/session-reader"
+import { registerTranscriptOutcomeTests } from "./30-transcript-outcomes"
 import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, type AcpStep, type ClaxedoApi, type MessageRow, type Stack } from "../harness"
 
 const CASES_DIR = path.join(import.meta.dirname, "..", "corpus", "cases")
@@ -189,12 +191,28 @@ async function interact(live: { stack: Stack; api: ClaxedoApi; target: Target; a
     case "writesAtMost":
       await expectWritesAtMost(app, interaction.max)
       return
+    case "outcomeSeen":
+      if (interaction.seen) await expect(app.getByText(interaction.result, { exact: true })).toBeInViewport()
+      else await expect(app.getByText(interaction.result, { exact: true })).not.toBeInViewport()
+      await expect.poll(async () => {
+        const row = await readerRow(stack, live.target.sessionId)
+        if (!row.attention.outcome) return "no outcome"
+        return interaction.seen
+          ? row.reader?.generation === row.attention.generation && row.reader.seenThrough === row.attention.outcome.sequence
+          : (row.reader?.seenThrough ?? 0) < row.attention.outcome.sequence
+      }, { message: "seen state acknowledges only the exact final outcome actually displayed in the transcript" }).toBe(true)
+      return
     case "switchSessions":
       await switchSessions(live, { title: corpusCase.title, ready: corpusCase.ready, times: interaction.times })
       return
     case "scroll":
       if (typeof interaction.to !== "string") throw new Error("scrolling to a turn is not replayed yet")
       await scroller(app).evaluate((element, to) => element.scrollTo({ top: to === "top" ? 0 : element.scrollHeight }), interaction.to)
+      return
+    case "readerScroll":
+      await scroller(app).hover()
+      await app.mouse.wheel(0, interaction.to === "top" ? -100000 : 100000)
+      await expect.poll(async () => scroller(app).evaluate((element, to) => to === "top" ? element.scrollTop : Math.abs(element.scrollHeight - element.clientHeight - element.scrollTop), interaction.to)).toBeLessThanOrEqual(1)
       return
     case "toggleFold":
       await app.getByRole("button", { name: /^Worked/ }).nth(interaction.turn).click()
@@ -240,26 +258,4 @@ for (const corpusCase of loadCases()) {
   })
 }
 
-test("30 an opened session shows its last turn's work folded under Worked", async ({ stack, api, app }) => {
-  const workspace = await stack.daemon.makeWorkspace("reopen")
-  await stack.acp.write("work", {
-    steps: [
-      { kind: "reasoning", text: "Looking around the project" },
-      { kind: "tool", tool: "read", title: "Read README.md", locations: [{ path: `${workspace.directory}/README.md` }], text: "reopen\n" },
-      { kind: "tool", tool: "execute", title: "git status", input: { command: "git status" }, text: "nothing to commit" },
-      { kind: "text", text: "All checked here." },
-    ],
-  })
-  const session = await api.createSession(workspace.directory, { title: "Reopened work", harness: SCRIPTED_ACP_HARNESS })
-  await api.prompt(workspace.directory, session.id, `Check the project. ${acpScriptToken("work")}`)
-
-  await app.goto(sessionUrl(stack, workspace.id, session.id))
-  await expect(app.getByText("All checked here.")).toBeVisible()
-  const worked = app.getByRole("button", { name: /^Worked/ })
-  await expect(worked).toBeVisible()
-  await worked.click()
-  await expect(app.getByText("git status").first()).toBeVisible()
-
-  const messages = await api.messages(workspace.directory, session.id)
-  expect(messages.flatMap((message) => message.parts).filter((part) => part.type === "tool")).toHaveLength(2)
-})
+registerTranscriptOutcomeTests()

@@ -33,6 +33,35 @@ const registers: Record<string, (clock: Clock) => Promise<SandboxPassRegister>> 
 }
 
 describe.each(Object.entries(registers))("the %s sandbox pass register", (_name, open) => {
+  test("a withdrawal between verification and registration cannot mint a renewed proof", async () => {
+    const register = await open({ now: START })
+    const original = pass({ jti: "original", renewable: true })
+    await register.record(original)
+    expect(await register.renewable(original.jti)).toBe(true)
+    await register.revoke({ workspaceId: original.scope.workspaceId, reason: "producer_ended" })
+    await expect(register.record(pass({ jti: "raced", renewable: true }), { renewalOf: original.jti })).rejects.toThrow("ended before registration")
+    expect(await register.renewable("raced")).toBe(false)
+  })
+  test("retains the expired renewable ticket across lost renewal responses and refuses retired or revoked tickets", async () => {
+    const clock = { now: START }
+    const register = await open(clock)
+    await register.record(pass({ jti: "received", renewable: true, expiresAt: START + 1_000 }))
+    await register.record(pass({ jti: "another-reader", renewable: true, expiresAt: START + 1_000,
+      scope: { userId: "another-user", orgId: "org-1", workspaceId: "ws_root", projectId: "project-a", sessionId: "ses_1" } }))
+    clock.now = START + 2_000
+    await register.record(pass({ jti: "replacement", renewable: true, expiresAt: START + 3_000 }))
+    await register.acknowledge("received")
+    expect(await register.renewable("received")).toBe(true)
+    expect(await register.renewable("unknown-signed-ticket")).toBe(false)
+    clock.now = START + 4_000
+    await register.acknowledge("replacement")
+    expect(await register.renewable("received")).toBe(false)
+    expect(await register.renewable("replacement")).toBe(true)
+    expect(await register.renewable("another-reader")).toBe(true)
+    expect(await register.revoke({ workspaceId: "ws_root", reason: "producer_ended" })).toBe(2)
+    await register.record(pass({ jti: "ordinary", expiresAt: START + 60_000 }))
+    expect(await register.renewable("replacement")).toBe(false)
+  })
   test("a recorded pass is not revoked until its workspace's passes are", async () => {
     const register = await open({ now: START })
     await register.record(pass({ jti: "one" }))
@@ -57,6 +86,27 @@ describe.each(Object.entries(registers))("the %s sandbox pass register", (_name,
 
     expect(await register.revoke({ workspaceId: "ws_root", reason: "workspace_deleted" })).toBe(1)
     expect(await register.revoked("gateway")).toBe(true)
+  })
+
+  test("a shared workspace revocation is limited to the selected user and organization", async () => {
+    const register = await open({ now: START })
+    const desktop = { workspaceId: "desktop", projectId: "all-projects" }
+    await register.record(pass({ jti: "alice", scope: { ...desktop, userId: "alice", orgId: "org-1" } }))
+    await register.record(pass({ jti: "bob", scope: { ...desktop, userId: "bob", orgId: "org-1" } }))
+    await register.record(pass({ jti: "alice-other-org", scope: { ...desktop, userId: "alice", orgId: "org-2" } }))
+    await register.record(pass({ jti: "alice-other-audience", scope: { ...desktop, userId: "alice", orgId: "org-1" }, audience: "agent-plugins-mcp-gateway" }))
+
+    expect(await register.revoke({
+      workspaceId: "desktop", userId: "alice", orgId: "org-1", audience: "claxedo-tasks-capability", reason: "consent_disabled",
+    })).toBe(1)
+    expect(await register.revoked("alice")).toBe(true)
+    expect(await register.revoked("bob")).toBe(false)
+    expect(await register.revoked("alice-other-org")).toBe(false)
+    expect(await register.revoked("alice-other-audience")).toBe(false)
+
+    // Workspace deletion deliberately supplies no reader filters and still
+    // revokes every remaining audience and principal in the workspace.
+    expect(await register.revoke({ workspaceId: "desktop", reason: "workspace_deleted" })).toBe(3)
   })
 
   test("lists the outstanding passes of one organization and audience, expired and revoked ones excluded", async () => {

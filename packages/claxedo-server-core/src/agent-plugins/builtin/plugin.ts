@@ -56,6 +56,7 @@ export function isBuiltinFamilyName(pluginInstanceId: string): boolean {
  * the local daemon both grant on it, and the two sit in different deployments.
  */
 export const BUILTIN_TASKS_TOOL_GROUP = "tasks"
+export const BUILTIN_SESSION_CLEANUP_TOOL_GROUP = "session-cleanup"
 
 /**
  * The group whose consent the owner grant is: a root that may start

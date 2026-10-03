@@ -316,4 +316,26 @@ describe("withdrawing the Tasks grants of a project that turned Tasks off", () =
     expect(await withdrawal.reconcile("org-1")).toEqual(["ws_root"])
     expect(await passes.revoked("j1")).toBe(true)
   })
+
+  test("withdrawing one user's desktop consent preserves other users and organizations sharing that scope", async () => {
+    const passes = memorySandboxPassRegister()
+    const desktop = { workspaceId: "desktop", projectId: "all-projects" }
+    const alice = { ...desktop, userId: "alice", orgId: "org-1" }
+    const bob = { ...desktop, userId: "bob", orgId: "org-1" }
+    const otherOrg = { ...alice, orgId: "org-2" }
+    for (const [jti, scope] of [["alice", alice], ["alice-child", { ...alice, sessionId: "ses_child" }], ["bob", bob], ["alice-other-org", otherOrg]] as const) {
+      await passes.record({ jti, audience: TASKS_CAPABILITY_AUDIENCE, scope, issuedAt: 1, expiresAt: Date.now() + 60_000 })
+    }
+    const groupEnabled = vi.fn(async (root: TasksRootIdentity) => root.userId !== "alice" || root.orgId !== "org-1")
+    const withdrawal = createGrantWithdrawal({ passes, audience: TASKS_CAPABILITY_AUDIENCE, reason: "consent_disabled", groupEnabled })
+
+    expect(await withdrawal.reconcile("org-1")).toEqual(["desktop"])
+    expect(groupEnabled).toHaveBeenCalledTimes(2)
+    expect(groupEnabled.mock.calls.map(([root]) => root.userId)).toEqual(["alice", "bob"])
+    expect(await passes.revoked("alice")).toBe(true)
+    expect(await passes.revoked("alice-child")).toBe(true)
+    expect(await passes.revoked("bob")).toBe(false)
+    expect(await passes.revoked("alice-other-org")).toBe(false)
+    expect(await withdrawal.reconcile("org-2")).toEqual([])
+  })
 })

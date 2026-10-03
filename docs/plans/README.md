@@ -27,9 +27,12 @@ doc or package README that owns it.
   — deferred runtime option. Worker-hosted Pi, retained files and sandbox delegation consume the same
   work-system contracts; they are not prerequisites for the Task foundation.
 - [Session seen state](./2026-10-02-001-feat-session-seen-state-plan.md)
-  — planned, not started; the server contract changes await owner sign-off. The rail's finished and failed
-  dots become a per-reader server fact (`lastTurn` + `seenAt` on list items, a `session.seen` notice), and
-  every readable session's status and attention reach the app as a per-reader `cp/events` notice, never missed.
+  — incorporated into the combined implementation below. Latest-state snapshots restore markers;
+  durable attention history also preserves requests that open and close between publications.
+- [Session Activity, seen/settle state and MCP cleanup](./2026-10-03-0229-feat-session-sidebar-activity-view-plan.md)
+  — implemented and reviewed for dev with persistent private reader state and guarded MCP cleanup.
+  The latest sidebar revision replaces grouped Activity with one active-only list in Projects' last-human-turn order.
+  Settle excludes rows before pagination. Hide working statuses is a persisted filter-menu checkbox that hides Working marks until hover/focus and pauses hidden animations. A conditional button cycles Activity, Working and Needs you, showing the next destination as a dotted circle, bell or activity pulse.
 - [Reducing server, runtime and machine code](./2026-09-29-002-refactor-loc-reduction-plan.md)
   — planned, not started. 254.8k → ~114k in the server, runtime, machine agent, desktop main process and relay
   (app, UI kit and harness out of scope). Keeps Pages, Teams, the browser pane and channels; adds plugin backends,

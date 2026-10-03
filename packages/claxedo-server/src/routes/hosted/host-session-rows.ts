@@ -2,33 +2,15 @@ import { Hono } from "hono"
 import { bodyLimit } from "hono/body-limit"
 import { z } from "zod"
 import { bearerToken } from "@claxedo/helpers/string"
-import { MAX_HOST_SESSION_ROWS } from "@claxedo/server-core/platform/auth/host-session-rows"
 import type { ControlPlaneServices } from "../../authority/services"
+import { sessionPublicationSchema } from "@claxedo/server-core/session/session-publication"
+import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 
 const MAX_BODY_BYTES = 512 * 1024
 
 const id = z.string().trim().min(1).max(512)
-const time = z.number().int().nonnegative()
-
-const rowRef = z.object({ workspaceId: id, sessionId: id }).strict()
-
-const row = rowRef.extend({
-  title: z.string().max(2_000).optional(),
-  createdAt: time,
-  updatedAt: time,
-  lastHumanTurnAt: time.optional(),
-  archivedAt: time.optional(),
-  status: z.object({
-    kind: z.enum(["idle", "busy", "retry", "interrupted"]),
-    awaitingInput: z.boolean(),
-    at: time,
-  }).strict(),
-}).strict()
-
-const publication = z.object({
+const publication = sessionPublicationSchema.extend({
   hostId: id,
-  rows: z.array(row).max(MAX_HOST_SESSION_ROWS),
-  removed: z.array(rowRef).max(MAX_HOST_SESSION_ROWS),
 }).strict()
 
 /**
@@ -37,7 +19,9 @@ const publication = z.object({
  * names the host, its owner and the workspaces it may serve; the authority
  * admits each row against what that enrollment serves right now.
  */
-export function HostSessionRowsRoutes(services: ControlPlaneServices) {
+export function HostSessionRowsRoutes(services: ControlPlaneServices, options: {
+  notice?: (event: ControlPlaneEvent) => Promise<unknown>
+} = {}) {
   const app = new Hono()
   app.post(
     "/",
@@ -48,7 +32,7 @@ export function HostSessionRowsRoutes(services: ControlPlaneServices) {
     async (c) => {
       const verify = services.relay.hostTunnelTokenVerifier
       const publish = services.authority?.publishHostSessionRows
-      if (!verify || !publish) {
+      if (!verify || !publish || options.notice && (!services.authority?.sessionPublicationNotices)) {
         return c.json({ error: { code: "host_session_rows_unavailable", message: "This control plane takes no machine session rows" } }, 501)
       }
       const token = bearerToken(c.req.header("authorization"))
@@ -68,8 +52,14 @@ export function HostSessionRowsRoutes(services: ControlPlaneServices) {
             ? { enrollmentId: claims.enrollment_id, generation: claims.generation }
             : {}),
         },
-        { rows: parsed.data.rows, removed: parsed.data.removed },
+        { rows: parsed.data.rows, removed: parsed.data.removed, ...(parsed.data.attention ? { attention: parsed.data.attention } : {}) },
       )
+      if (options.notice && services.authority?.sessionPublicationNotices) {
+        const refused = new Set(result.refused.map((ref) => `${ref.workspaceId}/${ref.sessionId}`))
+        const refs = [...parsed.data.rows, ...parsed.data.removed, ...(parsed.data.attention ?? [])].filter((ref) => !refused.has(`${ref.workspaceId}/${ref.sessionId}`))
+        const events = await services.authority.sessionPublicationNotices(refs, parsed.data.attention ?? [])
+        for (const event of events) await options.notice(event)
+      }
       return c.json(result)
     },
   )

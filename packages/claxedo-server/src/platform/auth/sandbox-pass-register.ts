@@ -7,10 +7,15 @@ export type SandboxPassRecord = Readonly<{
   scope: SandboxPassScope
   issuedAt: number
   expiresAt: number
+  renewable?: boolean
 }>
 
 export type SandboxPassRevocation = Readonly<{
   workspaceId: string
+  /** Limit a shared workspace scope to one user's passes when present. */
+  userId?: string
+  /** Limit a shared workspace scope to one organization's passes when present. */
+  orgId?: string
   /** One audience's passes, or every audience's when absent. */
   audience?: string
   reason: string
@@ -28,9 +33,13 @@ export type SandboxPassRevocation = Readonly<{
  * the register existed has no row and is refused only by its own expiry.
  */
 export type SandboxPassRegister = Readonly<{
-  record(pass: SandboxPassRecord): Promise<void>
+  record(pass: SandboxPassRecord, options?: { renewalOf: string }): Promise<void>
   revoked(jti: string): Promise<boolean>
-  /** Revokes the outstanding passes of one workspace; answers how many it found. */
+  /** Expired renewal is admitted only for a retained, known and unrevoked proof. */
+  renewable(jti: string): Promise<boolean>
+  /** A presented proof was received by its client; retire expired siblings while preserving this retry ticket. */
+  acknowledge(jti: string): Promise<void>
+  /** Revokes the matching outstanding passes of one workspace; answers how many it found. */
   revoke(input: SandboxPassRevocation): Promise<number>
   /** The unexpired, unrevoked passes under one organization, one audience. */
   outstanding(input: { orgId: string; audience: string }): Promise<readonly SandboxPassRecord[]>
@@ -42,21 +51,48 @@ export function memorySandboxPassRegister(options: { now?: () => number } = {}):
   const passes = new Map<string, SandboxPassRecord & { revokedAt?: number; reason?: string }>()
   const live = (pass: SandboxPassRecord & { revokedAt?: number }) => pass.revokedAt === undefined && pass.expiresAt > now()
   return {
-    async record(pass) {
+    async record(pass, options) {
+      if (options) {
+        const previous = passes.get(options.renewalOf)
+        if (!previous?.renewable || previous.revokedAt !== undefined || !pass.renewable
+          || previous.audience !== pass.audience || previous.scope.userId !== pass.scope.userId
+          || previous.scope.orgId !== pass.scope.orgId || previous.scope.workspaceId !== pass.scope.workspaceId
+          || previous.scope.projectId !== pass.scope.projectId || previous.scope.sessionId !== pass.scope.sessionId) {
+          throw new Error("Sandbox proof renewal ended before registration")
+        }
+      }
       for (const [jti, held] of passes) {
-        if (held.expiresAt <= now()) passes.delete(jti)
+        if (held.expiresAt <= now() && (!held.renewable || held.revokedAt !== undefined)) passes.delete(jti)
       }
       passes.set(pass.jti, { ...pass })
     },
     async revoked(jti) {
       return passes.get(jti)?.revokedAt !== undefined
     },
+    async renewable(jti) {
+      const pass = passes.get(jti)
+      return pass?.renewable === true && pass.revokedAt === undefined
+    },
+    async acknowledge(jti) {
+      const acknowledged = passes.get(jti)
+      if (!acknowledged?.renewable || acknowledged.revokedAt !== undefined) return
+      for (const [otherId, held] of passes) {
+        if (otherId !== jti && held.renewable && held.expiresAt <= now()
+          && held.audience === acknowledged.audience && held.scope.workspaceId === acknowledged.scope.workspaceId
+          && held.scope.userId === acknowledged.scope.userId && held.scope.orgId === acknowledged.scope.orgId
+          && held.scope.projectId === acknowledged.scope.projectId && held.scope.sessionId === acknowledged.scope.sessionId) {
+          passes.delete(otherId)
+        }
+      }
+    },
     async revoke(input) {
       let count = 0
       for (const pass of passes.values()) {
         if (pass.scope.workspaceId !== input.workspaceId) continue
+        if (input.userId !== undefined && pass.scope.userId !== input.userId) continue
+        if (input.orgId !== undefined && pass.scope.orgId !== input.orgId) continue
         if (input.audience !== undefined && pass.audience !== input.audience) continue
-        if (!live(pass)) continue
+        if (pass.revokedAt !== undefined || (!pass.renewable && pass.expiresAt <= now())) continue
         pass.revokedAt = now()
         pass.reason = input.reason
         count += 1

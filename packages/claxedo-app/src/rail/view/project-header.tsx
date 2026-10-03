@@ -106,7 +106,7 @@ export function ProjectHeader(props: ProjectHeaderProps): JSX.Element {
         <Disclosure open={props.open} active={props.active} onToggle={props.onToggle} />
         <span
           title={props.section.caption}
-          class="font-medium truncate min-w-0"
+          class="text-[12px] font-normal truncate min-w-0"
           classList={{ "text-text-strong": props.active, "text-text-base/85": !props.active }}
         >
           {props.section.label}

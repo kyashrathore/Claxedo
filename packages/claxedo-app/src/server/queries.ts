@@ -24,6 +24,7 @@ import type { FetchQuery, Placement } from "./types"
 import { usageQueries } from "./usage"
 import type { Workspaces } from "./workspaces"
 import type { BootstrapCatalog } from "./wire/placements"
+import { localSessionLocationQuery } from "./session-location"
 
 function placementsOf(catalog: BootstrapCatalog) {
   return catalog.placements.map((record) => record.placement)
@@ -40,6 +41,7 @@ function placementQueries(transport: Transport, workspaces: Workspaces) {
 export function createQueries(transport: Transport, workspaces: Workspaces, thisMachineReport?: () => Promise<unknown>): ServerQueries {
   const cloud = cloudQueries(transport)
   return {
+    localSessionLocation: (sessionId) => localSessionLocationQuery(transport, workspaces, sessionId),
     livePlugins: livePluginQueries(transport),
     projects: projectQueries(transport, workspaces),
     placements: placementQueries(transport, workspaces),

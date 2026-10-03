@@ -477,6 +477,7 @@ describe("POST /heartbeat, machine caller (v3)", () => {
         jti: "jti_htt",
         hostId: "host_1",
         enrollmentId: "enr_1",
+        generation: 2,
         ownerActorId: "act_owner",
         ownerUserId: "usr_owner",
         workspaceIds: ["ws_1"],
@@ -500,6 +501,7 @@ describe("POST /heartbeat, machine caller (v3)", () => {
     }
 
     expect(body.hostTunnel?.enrollmentId).toBe("enr_1")
+    expect(body.hostTunnel?.generation).toBe(2)
     expect(body.hostTunnel?.ownerActorId).toBe("act_owner")
   })
 

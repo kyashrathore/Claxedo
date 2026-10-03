@@ -1,5 +1,5 @@
 import { asRecord } from "@claxedo/helpers/guards"
-import { isSubagentSpawnToolName, type AgentAssistantMessage, type AgentContentPart, type AgentToolPart } from "./content"
+import { isSubagentSpawnToolName, type AgentAssistantMessage, type AgentContentPart, type AgentMessageInfo, type AgentToolPart } from "./content"
 import { canonicalToolName, claxedoToolName } from "./tool-names"
 
 export type PartRef = {
@@ -242,8 +242,8 @@ const FOLD_MINIMUM = 2
 
 const NO_KEYS: ReadonlySet<string> = new Set()
 
-export function assistantMessageSettled(message: AgentAssistantMessage) {
-  return typeof message.time.completed === "number" || !!message.error
+export function assistantMessageSettled(message: Pick<AgentMessageInfo, "time" | "error">) {
+  return typeof message.time?.completed === "number" || !!message.error
 }
 
 function answerGroupKey(groups: readonly PartGroup[], part: FoldablePartLookup): string | undefined {

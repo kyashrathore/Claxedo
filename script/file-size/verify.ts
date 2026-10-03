@@ -12,6 +12,7 @@
  *   bun script/file-size/verify.ts --lower    # record files that shrank
  */
 import { execFileSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { readJsonFile } from "../../packages/claxedo-helpers/src/fs.ts"
@@ -27,12 +28,21 @@ const NOT_COUNTED = [
   /(^|\/)(test|tests|__tests__|e2e|test-support|test-utils|fixtures?|locales)\//,
   /^packages\/ui\//,
 ]
+// Historical output of the relay's bench/dialin-agent.ts, named by its dial-in
+// reports. Only these reviewed bytes are generated output; a replacement is
+// maintained source until its generation and ownership are reviewed again.
+const GENERATED_DIALIN_REPORT = {
+  file: "packages/workspace-relay/bench/reports/dialin-agent.bundle.cjs",
+  sha256: "b804e0325f1ebc081a3fd93dfeaac9d988bcf2f29c9ac939d941c570944c6f1e",
+}
 
 export type Ceilings = Record<string, number>
 export type Finding = { readonly file: string; readonly message: string }
 
-export function counted(file: string): boolean {
-  return CODE.test(file) && !NOT_COUNTED.some((pattern) => pattern.test(file))
+export function counted(file: string, source?: string): boolean {
+  if (!CODE.test(file) || NOT_COUNTED.some((pattern) => pattern.test(file))) return false
+  if (file !== GENERATED_DIALIN_REPORT.file || source === undefined) return true
+  return createHash("sha256").update(source).digest("hex") !== GENERATED_DIALIN_REPORT.sha256
 }
 
 export function lineCount(text: string): number {
@@ -76,7 +86,9 @@ function measure(): Map<string, number> {
   const sizes = new Map<string, number>()
   for (const file of files) {
     const full = path.join(REPO_ROOT, file)
-    if (fs.existsSync(full)) sizes.set(file, lineCount(fs.readFileSync(full, "utf8")))
+    if (!fs.existsSync(full)) continue
+    const source = fs.readFileSync(full, "utf8")
+    if (counted(file, source)) sizes.set(file, lineCount(source))
   }
   return sizes
 }

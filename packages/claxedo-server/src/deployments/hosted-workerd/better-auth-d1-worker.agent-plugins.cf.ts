@@ -12,6 +12,10 @@ import { hostedTasksRouteContributions } from "./tasks-contributions"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createTasksRootCapability, createTasksRootGrant } from "../../tasks/root-capability"
 import { createOwnerGrantMinter, createOwnerRootCapability } from "../../session/owner-grant"
+import { createSessionCleanupRootEnvironment, type SessionCleanupCapabilityInput } from "../../session/cleanup-capability"
+import { sessionCleanupGrantContribution } from "../../session/routes/cleanup-grant"
+import { cleanupOrigin, cleanupOriginParentMatches, hostSessionCleanupOrigin } from "../../authority/adapters/d1/session-cleanup-origin"
+import { resolveDesktopCleanupOwner, resolveMachineCleanupOwner } from "../../authority/adapters/d1/session-cleanup-machine"
 import { createD1SandboxPassRegister } from "../../platform/auth/d1-sandbox-pass-register"
 import { hostedControlPlaneOrigin } from "../../authority/adapters/worker/control-plane-origin"
 import type { WorkspaceRuntimeContext } from "../../workspace/route-support"
@@ -67,6 +71,18 @@ export function composeBetterAuthD1AgentPlugins(
     supervisors: env.PLUGIN_SUPERVISOR,
     services: base.plane.services,
   })
+  const cleanup: SessionCleanupCapabilityInput = {
+    signingEnv,
+    passes,
+    workspaceOwner: authority.resolveWorkspaceOwner.bind(authority),
+    enabled: (root): Promise<boolean> => feature.sessionCleanupGroupEnabled(root),
+    originAllowed: async (scope) => scope.sessionId !== undefined && (scope.host
+      ? Boolean(await hostSessionCleanupOrigin(env.CONTROL_PLANE_DB, { ...scope.host, ownerUserId: scope.userId, workspaceIds: [scope.workspaceId] }, scope.workspaceId, scope.sessionId))
+      : cleanupOrigin(env.CONTROL_PLANE_DB, scope.userId, scope.actorId, scope.workspaceId, scope.sessionId)),
+    originParentMatches: (scope, parentSessionId) => scope.sessionId !== undefined ? cleanupOriginParentMatches(env.CONTROL_PLANE_DB, scope.workspaceId, scope.sessionId, parentSessionId) : Promise.resolve(false),
+    machineOwner: (scope) => scope.host ? resolveMachineCleanupOwner(env.CONTROL_PLANE_DB, scope.host, scope.userId, scope.orgId) : Promise.resolve(undefined),
+    desktopOwner: (scope) => resolveDesktopCleanupOwner(env.CONTROL_PLANE_DB, scope),
+  }
   const feature = createHostedAgentPluginsComposition({
     env,
     plane: base.plane,
@@ -74,6 +90,7 @@ export function composeBetterAuthD1AgentPlugins(
     authentication: base.options.authentication,
     tasksGrant: createTasksRootCapability(tasksRoot),
     ownerGrant: createOwnerRootCapability({ signingEnv, passes, workspaceOwner: authority.resolveWorkspaceOwner.bind(authority) }),
+    sessionCleanupGrant: createSessionCleanupRootEnvironment(cleanup),
     passes,
     ...(base.runtimeDelivery ? { pluginsChanged: base.runtimeDelivery.pluginsChanged, pushRuntime: base.runtimeDelivery.provisionRuntime } : {}),
   })
@@ -129,7 +146,8 @@ export function composeBetterAuthD1AgentPlugins(
     options: {
       ...base.options,
       sandboxPasses: passes,
-      routeContributions: [...feature.routeContributions, ...tasks, pluginBackends],
+      sessionCleanupCapability: cleanup,
+      routeContributions: [...feature.routeContributions, ...tasks, pluginBackends, sessionCleanupGrantContribution({ ...cleanup, services: base.plane.services, database: env.CONTROL_PLANE_DB })],
       integrationRoutes: feature.integrationRoutes,
       productWorkspace: {
         ...base.options.productWorkspace,

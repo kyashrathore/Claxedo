@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs"
+import { isClaxedoToolName } from "@claxedo/agent-runtime-contract"
 import { describe, expect, test } from "vitest"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { SessionAccessOperation } from "@claxedo/session-core"
@@ -40,7 +41,7 @@ const userCredential = (readOnly = false): McpCredential => ({
 })
 
 /** Registers every group against one credential and reports what it declared and what it listed. */
-function surface(credential: McpCredential, grants: Pick<ClaxedoMcpClient, "tasks" | "appPlugins"> = {}) {
+function surface(credential: McpCredential, grants: Pick<ClaxedoMcpClient, "tasks" | "appPlugins" | "sessionCleanup"> = {}) {
   const ctx: McpToolContext = { credential, client: { ...client, ...grants }, audit: () => undefined }
   const registry = createToolRegistry(new McpServer({ name: "claxedo", version: "0.0.0" }), ctx)
   for (const group of CLAXEDO_MCP_TOOL_GROUPS) group.register(registry)
@@ -217,14 +218,25 @@ describe("the registered surface", () => {
     ])
   })
 
-  test("the destructive set is human-only, admin-scoped and annotated", () => {
+  test("destructive tools are admin-scoped and cleanup additionally requires its user-bound grant", () => {
     const destructive = [...surface(userCredential()).declared]
       .flatMap(([name, access]) => (access.destructive ? [[name, access] as const] : []))
       .toSorted(([left], [right]) => left.localeCompare(right))
-    expect(destructive.map(([name]) => name)).toEqual(["session_delete", "workspace_lifecycle", "workspace_restore"])
+    expect(destructive.map(([name]) => name)).toEqual(["session_delete", "sessions_delete", "workspace_lifecycle", "workspace_restore"])
     for (const [name, access] of destructive) {
+      if (name === "sessions_delete") {
+        expect(access).toEqual({ audiences: ["runtime", "user"], write: true, scope: "admin", destructive: true, sessionCleanup: true })
+        continue
+      }
       expect({ name, ...(access as McpToolAccess) }).toEqual({ name, audiences: ["user"], write: true, scope: "admin", destructive: true })
     }
+  })
+
+  test("cleanup exists only under a granted principal and still respects read-only mode", () => {
+    const sessionCleanup = { allowed: () => true, fetch: async () => new Response(null, { status: 204 }) }
+    expect(surface(runtimeCredential).listed).not.toContain("sessions_delete")
+    expect(surface(runtimeCredential, { sessionCleanup }).listed).toContain("sessions_delete")
+    expect(surface({ ...runtimeCredential, readOnly: true }, { sessionCleanup }).listed).not.toContain("sessions_delete")
   })
 })
 
@@ -248,15 +260,16 @@ describe("the tool names the catalog publishes", () => {
     expect(published.flatMap((group) => group.tools).toSorted()).toEqual([...declared.keys()].toSorted())
     expect(published.find((group) => group.id === "attention")?.tools).toContain("permission_reply")
     expect(new Set(published.flatMap((group) => group.tools)).size).toBe(declared.size)
+    expect(published.flatMap((group) => group.tools).filter((name) => !isClaxedoToolName(name))).toEqual([])
   })
 
-  test("declare a reach, and only the three that leave the runtime say so", () => {
+  test("declare runtime, service, or opt-in account reach", () => {
     const published = claxedoMcpToolGroupInventory()
     // What a project inherits is computed from these, so a group that reaches
     // past the session and says "runtime" is granted to every project that has
     // decided nothing. The list is short on purpose: adding to it is the
     // decision, and this is where it gets read.
-    expect(published.filter((group) => group.reach === "account").map((group) => group.id)).toEqual(["tasks"])
+    expect(published.filter((group) => group.reach === "account").map((group) => group.id)).toEqual(["session-cleanup", "tasks"])
     expect(published.filter((group) => typeof group.reach === "object").map((group) => group.id)).toEqual(["app-plugins", "documents"])
     expect(published.filter((group) => group.reach === "runtime").map((group) => group.id)).toEqual([
       "attention",

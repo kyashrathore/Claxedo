@@ -99,3 +99,22 @@ export function statusResult(raw: unknown): DecodeResult<{ status: number; body?
   }
   return { ok: true, value: { status, ...(Object.hasOwn(shape.value, "body") ? { body: shape.value.body } : {}) } }
 }
+
+/** The issuer supplies the actor and organization; main supplies its configured origin. */
+export function desktopSessionCleanupGrant(raw: unknown): DecodeResult<{
+  token: string
+  expiresAt: number
+  actorId: string
+  orgId: string
+}> {
+  const shape = object(raw)
+  if (!shape.ok) return shape
+  const { token, expiresAt, actorId, orgId } = shape.value
+  if (typeof token !== "string" || !token || typeof actorId !== "string" || !actorId || typeof orgId !== "string" || !orgId) {
+    return { ok: false, reason: "expected non-empty token, actorId and orgId strings" }
+  }
+  if (typeof expiresAt !== "number" || !Number.isSafeInteger(expiresAt) || expiresAt <= 0) {
+    return { ok: false, reason: 'expected an epoch millisecond "expiresAt"' }
+  }
+  return { ok: true, value: { token, expiresAt, actorId, orgId } }
+}

@@ -6,7 +6,8 @@ import { controlGoal, startGoal } from "./session-goal"
 import { createSessionQueue } from "./session-queue"
 import { readTurn } from "./turn"
 import { listSessions } from "./session-list"
-import { onRuntime, sessionEndpoint, type SessionContext } from "./session-context"
+import { readSessionInventory, writeReader } from "./session-inventory"
+import { sessionEndpoint, type SessionContext } from "./session-context"
 import { startSessionReads } from "./session-reads"
 import { readPart, readTurnPageBefore } from "./transcript-reads"
 import type { HostedAccount } from "./account"
@@ -88,6 +89,8 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
   const newMessageId = createMessageIds()
   return {
     list: (options) => listSessions(context, options),
+    inventory: (input) => readSessionInventory(context, input),
+    reader: (ref, command) => writeReader(context, ref, command),
     read: (ref, shape, held) => startSessionReads(context, ref, shape, held),
     page: (ref, shape, before) => readTurnPageBefore(context, ref, shape, before),
     part: (ref, messageId, partId) => readPart(context, ref, messageId, partId),

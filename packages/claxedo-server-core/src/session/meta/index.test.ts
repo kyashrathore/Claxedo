@@ -4,6 +4,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
+import type { SessionAttentionFacts } from "@claxedo/agent-runtime-contract"
 
 const root = path.join(realpathSync(os.tmpdir()), `session-meta-order-${randomUUID().slice(0, 8)}`)
 const prev = {
@@ -14,11 +15,13 @@ const prev = {
 process.env.CLAXEDO_DATA_DIR = root
 process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 
-const [{ deleteSessionMeta, listSessionNavigationMetas, putSessionMeta, sessionMeta, syncSessionMeta, syncSessionMetas }, { ClaxedoDB }, { controlBus }] = await Promise.all([
+const [{ deleteSessionMeta, listSessionNavigationMetas, countSessionNavigation, onSessionMetaChange, putSessionMeta, sessionMeta, syncSessionMeta, syncSessionMetas }, { ClaxedoDB }, { controlBus }] = await Promise.all([
   import("./index"),
   import("../../platform/db"),
   import("../../platform/runtime/lib/bus"),
 ])
+const { readSessionReader, writeSessionReader } = await import("../reader")
+const { appendLocalSessionAttention, listLocalSessionAttention } = await import("../attention-ledger")
 
 const ws = {
   id: "ws_order",
@@ -60,6 +63,146 @@ function engineSession(input: { id: string; created: number; updated: number; la
 function order(rows: Array<{ sessionID: string }>) {
   return rows.map((row) => row.sessionID)
 }
+
+describe("persistent session reader inventory", () => {
+  const facts: SessionAttentionFacts = { sequence: 10, generation: 1, activitySequence: 10, activityAt: 500, working: false, awaitingInput: false, outcome: { sequence: 10, completedAt: 500, status: "completed" } }
+  const page = (readerId: string, extra: object = {}) => listSessionNavigationMetas({ workspaceID: ws.id, readerId, sort: "human_turn_desc", limit: 1, ...extra })
+  const seed = (id: string, created: number, attention = facts) => syncSessionMeta(ws, { ...engineSession({ id, created, updated: 500 }), attention })
+
+  test("inventory persists the canonical terminal identity and clears it with a newer empty generation", async () => {
+    const lastTurn = { status: "failed", completedAt: 500, assistantMessageId: "msg_terminal", error: "Provider failed", detail: { provider: "test" } } as const
+    const attention = { ...facts, outcome: { ...facts.outcome!, status: "failed" as const } }
+    await syncSessionMeta(ws, { ...engineSession({ id: "terminal", created: 100, updated: 500 }), attention, lastTurn })
+    ClaxedoDB.close()
+    expect((await page("alice"))[0]?.lastTurn).toEqual(lastTurn)
+    await syncSessionMeta(ws, { ...engineSession({ id: "terminal", created: 100, updated: 400 }), attention: { ...attention, sequence: 9, activitySequence: 9, outcome: { sequence: 9, status: "completed", completedAt: 400 } }, lastTurn: { status: "completed", completedAt: 400, assistantMessageId: "msg_stale" } })
+    expect((await page("alice"))[0]?.lastTurn).toEqual(lastTurn)
+    await syncSessionMeta(ws, { ...engineSession({ id: "terminal", created: 100, updated: 600 }), attention: { ...facts, sequence: 11, generation: 2, outcome: undefined } })
+    expect((await page("alice"))[0]?.lastTurn).toBeUndefined()
+  })
+
+  test("settlement persists, stays private, and is filtered before the page limit", async () => {
+    await seed("older", 100)
+    await seed("newer", 200)
+    const sessionRef = (await sessionMeta("newer"))!.sessionRef!
+    const result = writeSessionReader({ sessionRef, readerId: "alice", command: { kind: "settle", generation: 1, activitySequence: 10, outcomeSequence: 10, revision: 0 }, now: 600 })
+    expect(result.ok).toBe(true)
+    ClaxedoDB.close()
+    expect(readSessionReader(sessionRef, "alice")?.settledAt).toBe(600)
+    expect(readSessionReader(sessionRef, "bob")).toBeUndefined()
+    expect(order(await page("alice"))).toEqual(["older"])
+    expect(order(await page("bob"))).toEqual(["newer"])
+    expect(order(await page("alice", { settled: "settled" }))).toEqual(["newer"])
+  })
+
+  test("Seen and date predicates select old attention before paging with exclusive upper bounds", async () => {
+    await seed("waiting", 100, { ...facts, awaitingInput: true, working: true })
+    await seed("working", 200, { ...facts, working: true })
+    await seed("idle", 300, { ...facts, outcome: undefined })
+    await seed("settled", 400)
+    writeSessionReader({ sessionRef: (await sessionMeta("settled"))!.sessionRef!, readerId: "alice",
+      command: { kind: "settle", generation: 1, activitySequence: 10, outcomeSequence: 10, revision: 0 }, now: 600 })
+    expect(order(await page("alice", { settled: "settled" }))).toEqual(["settled"])
+    expect(order(await page("alice", { seen: "seen" }))).toEqual(["idle"])
+    expect(order(await page("alice", { seen: "unseen", limit: 10 }))).toEqual(["working", "waiting"])
+    expect(order(await page("alice", { dateField: "created", from: 100, until: 200 }))).toEqual(["waiting"])
+    expect(order(await page("alice", { dateField: "activity", from: 501 }))).toEqual([])
+    expect(order(await page("alice", { settled: "all", dateField: "settled", from: 600, until: 601 }))).toEqual(["settled"])
+    expect(order(await page("alice", { settled: "all", dateField: "settled", until: 600 }))).toEqual([])
+    expect(countSessionNavigation({ workspaceID: ws.id, readerId: "alice", limit: 1 }))
+      .toEqual(3)
+    expect(countSessionNavigation({ workspaceID: ws.id, readerId: "alice", settled: "all", limit: 1 }))
+      .toEqual(4)
+    expect(order(await page("alice", { activity: "working" }))).toEqual(["working"])
+    expect(order(await page("alice", { activity: "needs-you" }))).toEqual(["idle"])
+    expect(order(await page("alice", { activity: "needs-you", seen: "unseen" }))).toEqual(["waiting"])
+    expect(countSessionNavigation({ workspaceID: ws.id, readerId: "alice", activity: "working", limit: 1 })).toBe(1)
+    expect(countSessionNavigation({ workspaceID: ws.id, readerId: "alice", activity: "needs-you", limit: 1 })).toBe(2)
+  })
+
+  test("Seen preserves active membership while Settle and Return change only that reader's lifecycle", async () => {
+    await seed("s", 100)
+    const sessionRef = (await sessionMeta("s"))!.sessionRef!
+    const total = (readerId: string) => countSessionNavigation({ workspaceID: ws.id, readerId, settled: "all", limit: 1 })
+    expect(writeSessionReader({ sessionRef, readerId: "alice", command: { kind: "seen", generation: 1, outcomeSequence: 10 }, now: 600 }))
+      .toMatchObject({ ok: true, state: { revision: 1, seenThrough: 10 } })
+    expect(order(await page("alice", { seen: "seen" }))).toEqual(["s"])
+    expect(total("alice")).toEqual(1)
+    expect(order(await page("bob", { seen: "unseen" }))).toEqual(["s"])
+    expect(writeSessionReader({ sessionRef, readerId: "alice",
+      command: { kind: "settle", generation: 1, activitySequence: 10, outcomeSequence: 10, revision: 1 }, now: 700 }))
+      .toMatchObject({ ok: true, state: { revision: 2, seenThrough: 10, settledThrough: 10 } })
+    ClaxedoDB.close()
+    expect(order(await page("alice"))).toEqual([])
+    expect(order(await page("alice", { settled: "settled", seen: "seen" }))).toEqual(["s"])
+    expect(total("alice")).toEqual(1)
+    expect(total("bob")).toEqual(1)
+    expect(writeSessionReader({ sessionRef, readerId: "alice", command: { kind: "return", generation: 1, revision: 2 }, now: 800 }))
+      .toMatchObject({ ok: true, state: { revision: 3, seenThrough: 10 } })
+    expect(order(await page("alice", { seen: "seen" }))).toEqual(["s"])
+    expect(order(await page("alice", { settled: "settled" }))).toEqual([])
+    expect(total("alice")).toEqual(1)
+  })
+
+
+
+
+  test("a mutation compares canonical facts inside the transaction and cannot create orphan state", async () => {
+    await seed("s", 100, { ...facts, sequence: 11, activitySequence: 11 })
+    const sessionRef = (await sessionMeta("s"))!.sessionRef!
+    expect(writeSessionReader({ sessionRef, readerId: "alice", command: { kind: "settle", generation: 1, activitySequence: 10, outcomeSequence: 10, revision: 0 }, now: 600 }))
+      .toEqual({ ok: false, reason: "activity_changed" })
+    await deleteSessionMeta("s")
+    expect(() => writeSessionReader({ sessionRef, readerId: "alice", command: { kind: "seen", generation: 1, outcomeSequence: 10 }, now: 600 }))
+      .toThrow("Session not found")
+    expect(readSessionReader(sessionRef, "alice")).toBeUndefined()
+  })
+
+  test("a canonical snapshot that drops activity facts is rejected without erasing them", async () => {
+    await seed("s", 100)
+    await expect(syncSessionMeta(ws, engineSession({ id: "s", created: 100, updated: 600 })))
+      .rejects.toThrow("snapshot omitted canonical activity facts")
+    expect((await sessionMeta("s"))?.attention).toEqual(facts)
+  })
+
+  test("reader state follows a workspace ref change and its latest persisted revision wins", async () => {
+    const workspaceRef = `workspace:${ws.id}:session:s`
+    const localRef = `local:${ws.directory}:session:s`
+    await syncSessionMeta({ ...ws, kind: "cloud" }, { ...engineSession({ id: "s", created: 100, updated: 500 }), attention: facts })
+    writeSessionReader({ sessionRef: workspaceRef, readerId: "alice", command: { kind: "seen", generation: 1, outcomeSequence: 10 }, now: 600 })
+    appendLocalSessionAttention(workspaceRef, { sessionId: "s", workspaceId: ws.id, generation: 1, through: 10,
+      events: [{ kind: "outcome", sequence: 10, openedAt: 500, outcome: "completed" }] })
+    await seed("s", 100)
+    expect(readSessionReader(workspaceRef, "alice")).toBeUndefined()
+    expect(readSessionReader(localRef, "alice")).toMatchObject({ revision: 1, seenThrough: 10 })
+    expect(listLocalSessionAttention({ after: 0, limit: 10 }).events).toMatchObject([{ sessionId: "s", generation: 1 }])
+  })
+
+  test("newer activity restores settlement even when runtime updated time did not move", async () => {
+    await seed("s", 100)
+    const sessionRef = (await sessionMeta("s"))!.sessionRef!
+    writeSessionReader({ sessionRef, readerId: "alice", command: { kind: "settle", generation: 1, activitySequence: 10, outcomeSequence: 10, revision: 0 }, now: 600 })
+    await seed("s", 100, { ...facts, sequence: 12, activitySequence: 11, activityAt: 700 })
+    await seed("s", 100, facts)
+    expect((await sessionMeta("s"))?.attention?.sequence).toBe(12)
+    expect(order(await page("alice"))).toEqual(["s"])
+    expect(order(await page("alice", { settled: "settled" }))).toEqual([])
+    expect(order(await page("alice", { seen: "seen" }))).toEqual(["s"])
+  })
+
+  test("deletion removes private state so reusing a session id cannot inherit acknowledgement", async () => {
+    await seed("s", 100)
+    const sessionRef = (await sessionMeta("s"))!.sessionRef!
+    writeSessionReader({ sessionRef, readerId: "alice", command: { kind: "seen", generation: 1, outcomeSequence: 10 }, now: 600 })
+    appendLocalSessionAttention(sessionRef, { sessionId: "s", workspaceId: ws.id, generation: 1, through: 10,
+      events: [{ kind: "outcome", sequence: 10, openedAt: 500, outcome: "completed" }] })
+    expect(listLocalSessionAttention({ after: 0, limit: 10 }).events).toHaveLength(1)
+    await deleteSessionMeta("s")
+    await seed("s", 200)
+    expect(readSessionReader(sessionRef, "alice")).toBeUndefined()
+    expect(listLocalSessionAttention({ after: 0, limit: 10 }).events).toEqual([])
+  })
+})
 
 describe("session navigation order", () => {
   test("the engine snapshot's last human turn survives the sync and orders the list", async () => {
@@ -150,6 +293,22 @@ describe("session navigation order", () => {
 })
 
 describe("session inventory notices on cp/events", () => {
+  test("an identical or stale canonical refresh publishes no change and cannot feedback into its publisher", async () => {
+    const changes: string[] = []
+    const remove = onSessionMetaChange((change) => { changes.push(change.kind) })
+    try {
+      const snapshot = engineSession({ id: "ses_same", created: 1, updated: 2 })
+      await syncSessionMeta(ws, snapshot)
+      expect(changes).toEqual(["changed"])
+      changes.length = 0
+      await syncSessionMeta(ws, snapshot)
+      await syncSessionMetas(ws, [snapshot])
+      await syncSessionMeta(ws, engineSession({ id: "ses_same", created: 1, updated: 1 }))
+      expect(changes).toEqual([])
+      await syncSessionMeta(ws, { ...snapshot, title: "Changed" })
+      expect(changes).toEqual(["changed"])
+    } finally { remove() }
+  })
   test("a row's creation and deletion ring the workspace once each; an update rings nothing", async () => {
     const notices: string[] = []
     const unsubscribe = controlBus.subscribe((event) => {

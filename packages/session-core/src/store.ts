@@ -1,6 +1,8 @@
 import { SessionAuthoringOwnership } from "./session/authoring-ownership"
 import type { TurnOutline, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { readTurnOutline } from "./session/turn-outline"
+import { readSessionAttentionHistory } from "./session/attention-history"
+import { readSessionAttention } from "./session/attention"
 import { readTurnEvidence, readUpstreamHasTurns } from "./session/turn-evidence"
 import type { SessionConfig, SessionConfigUpdate, SessionHandoff, SessionHandoffSource, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { recoveryScopeKey, recoveryTargetSessionId, decodeMessagePageCursor, encodeMessagePageCursor, AgentMessagePageError, type AgentMessagePage, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
@@ -2041,6 +2043,7 @@ export class RuntimeStore {
         parentSessionId: control.parentSessionId,
         createdAt: control.createdAt ?? existing.created ?? row.ts,
         updatedAt: control.updatedAt ?? existing.updated ?? row.ts,
+        status: previous?.status ?? "idle",
       })
       this.db.prepare("UPDATE session SET title_source = ? WHERE id = ?").run(titleSource ?? null, row.sessionId)
       if (control.workspaceId && control.connectionId && control.upstreamSessionId) {
@@ -2410,6 +2413,10 @@ export class RuntimeStore {
   }) {
     const owner = input.owner ?? this.sessionOwner(input.sessionId)
     if (!owner) throw new Error(`Session ${input.sessionId} cannot be bound without an owner`)
+    const parentSessionId = input.parentSessionId ?? this.db
+      .prepare<{ parent_id: string | null }>("SELECT parent_id FROM session WHERE id = ?")
+      .get(input.sessionId)?.parent_id ?? undefined
+    const workspaceId = input.workspaceId ?? this.getExecutionBinding(input.sessionId)?.workspaceId
     const ts = input.createdAt ?? Date.now()
     const row: Row = {
       seq: this.next(input.sessionId),
@@ -2419,7 +2426,7 @@ export class RuntimeStore {
       kind: "control",
       control: {
         type: "session.bind",
-        ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+        ...(workspaceId ? { workspaceId } : {}),
         directory: input.directory,
         ...(input.connectionId ? { connectionId: input.connectionId } : {}),
         ...(input.upstreamSessionId ? { upstreamSessionId: input.upstreamSessionId } : {}),
@@ -2427,7 +2434,7 @@ export class RuntimeStore {
         agentSessionId: input.agentSessionId,
         owner,
         ...(input.ownerKey !== undefined ? { ownerKey: input.ownerKey } : {}),
-        ...(input.parentSessionId ? { parentSessionId: input.parentSessionId } : {}),
+        ...(parentSessionId ? { parentSessionId } : {}),
         createdAt: ts,
         ...(input.updatedAt !== undefined ? { updatedAt: input.updatedAt } : {}),
       },
@@ -2770,8 +2777,8 @@ export class RuntimeStore {
         )
         events.push(sessionError(input.outcome.error ?? "turn failed", input.sessionId, input.outcome))
       } else if (!this.hasMessageCompleted(input.sessionId, segment?.id ?? active.assistant_message_id)) {
-        terminal(messageCompleted(input.sessionId, segment?.id ?? active.assistant_message_id))
-        terminal(sessionIdle(input.sessionId))
+        events.push(messageCompleted(input.sessionId, segment?.id ?? active.assistant_message_id, input.outcome.status === "cancelled" ? true : undefined))
+        events.push(sessionIdle(input.sessionId))
       }
       for (const payload of events) terminal(payload)
 
@@ -2784,7 +2791,7 @@ export class RuntimeStore {
         control: {
           type: "turn.finish",
           assistantMessageId: active.assistant_message_id,
-          outcome: { ...input.outcome, assistantMessageId: active.assistant_message_id },
+          outcome: { ...input.outcome, assistantMessageId: segment?.id ?? active.assistant_message_id },
         },
       }, input.fencingToken)
       return { events }
@@ -2870,7 +2877,7 @@ export class RuntimeStore {
     agent_session_id?: string | null
   }) {
     const harness = sessionHarness(row)
-    const lastTurn = this.lastTurn(row.id)
+    const attention = readSessionAttention(this.db, row.id, row.status)
     return {
       id: row.id,
       ...(row.workspace_id ? { workspaceId: row.workspace_id } : {}),
@@ -2898,63 +2905,8 @@ export class RuntimeStore {
       ...(row.agent_session_id ? { agent_session_id: row.agent_session_id } : {}),
       ...(row.parent_id ? { parentID: row.parent_id } : {}),
       ...(row.process_key ? { process_key: row.process_key } : {}),
-      ...(lastTurn ? { lastTurn } : {}),
+      ...attention,
     }
-  }
-
-  private lastTurn(sessionId: string): AgentTurnOutcome | undefined {
-    const row = this.db
-      .prepare<{ seq: number; type: string; created_at: number; payload_json: string }>(
-        `
-        SELECT seq, type, created_at, payload_json
-        FROM runtime_journal
-        WHERE session_id = ?
-          AND (
-            (kind = 'control' AND type = 'turn.finish')
-            OR (kind = 'event' AND type IN ('message.completed', 'session.error'))
-          )
-        ORDER BY seq DESC
-        LIMIT 1
-      `,
-      )
-      .get(sessionId)
-    if (!row) return undefined
-    if (row.type === "turn.finish") return readColumn.turnFinish(row.payload_json).outcome
-    const properties = readColumn.eventPayload(row.payload_json).properties
-    if (row.type === "message.completed") {
-      const assistantMessageId = asString(properties?.messageID)
-      if (!assistantMessageId) return undefined
-      return {
-        status: properties?.cancelled === true ? "cancelled" : "completed",
-        assistantMessageId,
-        completedAt: row.created_at,
-      }
-    }
-    const message = asString(asRecord(asRecord(properties?.error)?.data)?.message)
-    return {
-      status: "failed",
-      assistantMessageId: this.lastStartedAssistant(sessionId, row.seq),
-      completedAt: row.created_at,
-      error: message ?? "session error",
-    }
-  }
-
-  private lastStartedAssistant(sessionId: string, beforeSeq: number) {
-    const row = this.db
-      .prepare<{ assistant_message_id: string | null }>(
-        `
-        SELECT assistant_message_id
-        FROM runtime_journal
-        WHERE session_id = ?
-          AND kind = 'control'
-          AND type = 'turn.start'
-          AND seq < ?
-        ORDER BY seq DESC
-        LIMIT 1
-      `,
-      )
-      .get(sessionId, beforeSeq)
-    return row?.assistant_message_id ?? undefined
   }
 
   listSessions(directory: string) {
@@ -3875,6 +3827,41 @@ export class RuntimeStore {
     const value = base64UrlEncode(crypto.getRandomValues(new Uint8Array(32)))
     this.db.prepare("INSERT INTO runtime_secret(name, value, created_at) VALUES (?, ?, ?)").run(name, value, Date.now())
     return value
+  }
+
+  listWorkspaceSessionIds(workspaceId: string): string[] {
+    return this.db.prepare<{ id: string }>(`
+      SELECT session.id FROM session
+      JOIN session_execution_binding binding ON binding.session_id = session.id
+      WHERE binding.workspace_id = ? ORDER BY session.created_at, session.id
+    `).all(workspaceId).map((row) => row.id)
+  }
+
+  listWorkspaceDeletedRootSessionIds(workspaceId: string): string[] {
+    return this.db.prepare<{ session_id: string }>(`
+      SELECT deleted.session_id FROM deleted_session deleted
+      JOIN runtime_journal binding ON binding.session_id = deleted.session_id
+        AND binding.kind = 'control' AND binding.type = 'session.bind'
+        AND binding.seq = (SELECT MAX(previous.seq) FROM runtime_journal previous
+          WHERE previous.session_id = deleted.session_id AND previous.kind = 'control' AND previous.type = 'session.bind')
+      WHERE json_extract(binding.payload_json, '$.workspaceId') = ?
+        AND json_extract(binding.payload_json, '$.parentSessionId') IS NULL
+      ORDER BY deleted.session_id
+    `).all(workspaceId).map((row) => row.session_id)
+  }
+
+  sessionDescendants(id: string): string[] {
+    return this.db.prepare<{ id: string }>(`
+      WITH RECURSIVE descendants(id) AS (
+        SELECT id FROM session WHERE parent_id = ?
+        UNION SELECT child.id FROM session child JOIN descendants parent ON child.parent_id = parent.id
+      ) SELECT id FROM descendants ORDER BY id
+    `).all(id).map((row) => row.id)
+  }
+
+  sessionAttentionHistory(id: string, after: number, limit: number) {
+    this.assertProjectionCurrent(id)
+    return readSessionAttentionHistory(this.db, id, after, limit)
   }
 
   deleteSession(id: string) {

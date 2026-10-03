@@ -31,6 +31,10 @@ const binding = requireAgentExecutionBinding({
 The package ships plain ESM plus type declarations and has no runtime
 dependencies, so it loads under Node without a TypeScript loader.
 
+## Session attention and reader lifecycle
+
+Session attention and reader lifecycle live in src/session-attention.ts. Runtime working and awaitingInput facts describe progress; reader-specific unseen and effective settlement are independent. Seen acknowledges only the displayed outcome. Settle records the exact meaningful activity position and reader revision; new activity invalidates it, and Return explicitly clears it. Availability is separate and cannot manufacture progress. Local and hosted SQL apply effective settlement before pagination. The sidebar requests active sessions only; authorized MCP queries can explicitly retrieve settled sessions.
+
 ## The turn fold (`@claxedo/agent-runtime-contract/turn-fold`)
 
 How a turn's parts group, and which groups a finished turn folds behind its

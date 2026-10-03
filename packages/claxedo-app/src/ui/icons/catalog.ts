@@ -1,4 +1,6 @@
 export const APP_ICONS = {
+  activity: true,
+  bell: true,
   "align-right": true,
   "arrow-down-to-line": true,
   "arrow-left": true,

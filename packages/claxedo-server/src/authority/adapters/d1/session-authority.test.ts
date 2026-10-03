@@ -21,11 +21,14 @@ import { exerciseFirstReadConformance } from "@claxedo/server-core/platform/auth
 import { exerciseTurnPageConformance } from "@claxedo/server-core/platform/auth/turn-page.conformance"
 import { exerciseSessionPartConformance } from "@claxedo/server-core/platform/auth/session-part.conformance"
 
-import { buildSessionListResponse, parseSessionListQuery } from "../../../session/list"
+import { buildSessionListResponse, parseSessionListQuery, sessionListKeysetPage } from "../../../session/list"
+import { SessionCleanupRoutes } from "@claxedo/server-core/session/cleanup-routes"
 import { D1WorkspaceAuthority } from "./workspace-authority"
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { D1SessionAuthority } from "./session-authority"
 import { applyControlPlaneBaseline } from "../../../test-support/control-plane-migrations"
+import { parseSessionAttention, type SessionCleanupTarget, type SessionReaderCommand } from "@claxedo/agent-runtime-contract"
+import { publishD1CloudSessionRows } from "./cloud-session-rows"
 
 
 const active: Miniflare[] = []
@@ -169,7 +172,7 @@ async function sharedWorkspace(input: Awaited<ReturnType<typeof setup>>) {
 async function reserveAndRegister(
   sessions: D1SessionAuthority,
   auth: SignedControlPlaneAuth,
-  input: { operationId: string; sessionId: string; workspaceId?: string; title?: string },
+  input: { operationId: string; sessionId: string; workspaceId?: string; title?: string; createdAt?: number },
 ) {
   await sessions.reserveSession(auth, {
     operationId: input.operationId,
@@ -179,8 +182,8 @@ async function reserveAndRegister(
     title: input.title,
   })
   return await sessions.registerRuntimeSession({
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    createdAt: input.createdAt ?? Date.now(),
+    updatedAt: input.createdAt ?? Date.now(),
     principalKind: "user",
     actorId: auth.principal!.actorId,
     actorKind: "human",
@@ -1281,6 +1284,317 @@ function sessionListQuery(search: string) {
 }
 
 describe("D1 session list pages", () => {
+  async function publishCanonicalFacts(input: Awaited<ReturnType<typeof setup>>, auth: SignedControlPlaneAuth,
+    at: { sessionId: string; workspaceId: string }, value: unknown, epoch = 7) {
+    const attention = parseSessionAttention(value)
+    if (!attention) throw new Error("Missing fixture facts")
+    const workspace = await input.database.prepare("SELECT org_id, project_id FROM workspaces WHERE workspace_id = ?")
+      .bind(at.workspaceId).first<{ org_id: string; project_id: string }>()
+    if (!workspace) throw new Error("Missing fixture workspace")
+    await input.database.prepare(`INSERT INTO sandbox_leases (workspace_id, lease_id, epoch, status, driver, created_at, updated_at)
+      VALUES (?, 'cloud-runtime', ?, 'ready', 'cloudflare', 1, 1)
+      ON CONFLICT(workspace_id) DO UPDATE SET epoch = excluded.epoch, status = 'ready'`).bind(at.workspaceId, epoch).run()
+    const result = await publishD1CloudSessionRows(input.database, input.now(), {
+      ...at, hostId: "cloud-runtime", epoch, userId: auth.principal!.userId, actorId: auth.principal!.actorId,
+      orgId: workspace.org_id, projectId: workspace.project_id,
+    }, { rows: [{ ...at, createdAt: 1, updatedAt: attention.activityAt, attention,
+      status: { kind: attention.working ? "busy" : "idle", awaitingInput: attention.awaitingInput, at: attention.activityAt } }], removed: [] })
+    expect(result.refused).toEqual([])
+  }
+
+  test("shared inventory uses private reader state and revocation removes every read and notice", async () => {
+    const input = await setup()
+    const { alice, bob, admin } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "shared-reader-create", sessionId: "shared-reader" })
+    const at = { sessionId: "shared-reader", workspaceId: "ws_main" }
+    const facts = { sequence: 10, generation: 1, activitySequence: 10, activityAt: 500, working: false, awaitingInput: false,
+      outcome: { sequence: 10, status: "completed", completedAt: 500 } }
+    await publishCanonicalFacts(input, alice, at, facts)
+    const share = await input.sessions.grantSessionShare(alice, { ...at, grantedToUserId: bob.principal!.userId })
+    const page = { all: true as const, sort: "human_turn_desc" as const, archived: "active" as const, limit: 1, ownership: "shared" as const }
+    const rows = await input.sessions.listSessionPage(bob, page)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ ownership: "shared", projectName: expect.any(String) })
+    expect(rows[0]).not.toHaveProperty("placement")
+    expect(await input.sessions.listSessionPage(admin, page)).toEqual([])
+    expect(await input.sessions.countSessions(bob, page)).toEqual(1)
+    expect(await input.sessions.writeSessionReader(bob, { ...at, command: { kind: "seen", generation: 1, outcomeSequence: 10 } }))
+      .toMatchObject({ ok: true, state: { seenThrough: 10 } })
+    expect(await input.sessions.listSessionPage(alice, { ...page, ownership: "all", seen: "unseen" })).toHaveLength(1)
+    const recipients = await input.sessions.resolveSessionShareRecipients(alice, { ...at, target: { grantedToUserId: bob.principal!.userId } })
+    expect(recipients).toEqual([bob.principal!.userId])
+    expect((await input.sessions.listSessionStateNotices([at]))[0].recipients.map((reader) => reader.userId)).toContain(bob.principal!.userId)
+    await input.sessions.revokeSessionShare(alice, { ...at, grantId: share.grant_id })
+    expect(await input.sessions.listSessionPage(bob, page)).toEqual([])
+    expect(await input.sessions.countSessions(bob, page)).toEqual(0)
+    expect((await input.sessions.listSessionStateNotices([at]))[0].recipients.map((reader) => reader.userId)).not.toContain(bob.principal!.userId)
+    await expect(input.sessions.writeSessionReader(bob, { ...at, command: { kind: "seen", generation: 1, outcomeSequence: 10 } })).rejects.toThrow("Session not found")
+  })
+
+  test("Seen preserves active membership while Settle and Return change only the reader's lifecycle and preserve cleanup rows", async () => {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+    const at = { sessionId: "reader-lifecycle", workspaceId: "ws_main" }
+    await reserveAndRegister(input.sessions, alice, { operationId: "reader-lifecycle-create", ...at })
+    const facts = { sequence: 10, generation: 1, activitySequence: 10, activityAt: 500, working: false, awaitingInput: false,
+      outcome: { sequence: 10, status: "completed", completedAt: 500 } }
+    await publishCanonicalFacts(input, alice, at, facts)
+    await input.sessions.grantSessionShare(alice, { ...at, grantedToUserId: bob.principal!.userId, level: "follow" })
+    const query = { all: true as const, sort: "human_turn_desc" as const, archived: "active" as const, settled: "all" as const, limit: 1 }
+    const principal = { actorId: alice.principal!.actorId, userId: alice.principal!.userId, orgId: "org_acme" }
+    expect((await input.sessions.listSessionCleanupPage(principal, query))[0]?.reader).toBeUndefined()
+    expect(await input.sessions.writeSessionReader(alice, { ...at, command: { kind: "seen", generation: 1, outcomeSequence: 10 } }))
+      .toMatchObject({ ok: true, state: { revision: 1, seenThrough: 10 } })
+    expect(await input.sessions.listSessionPage(alice, { ...query, seen: "seen" })).toHaveLength(1)
+    expect(await input.sessions.countSessions(alice, query)).toEqual(1)
+    expect(await input.sessions.listSessionPage(bob, { ...query, seen: "unseen" })).toHaveLength(1)
+    expect(await input.sessions.writeSessionReader(alice, { ...at,
+      command: { kind: "settle", generation: 1, activitySequence: 10, outcomeSequence: 10, revision: 1 } }))
+      .toMatchObject({ ok: true, state: { revision: 2, seenThrough: 10, settledThrough: 10 } })
+    expect(await input.sessions.listSessionPage(alice, { ...query, settled: "active" })).toEqual([])
+    expect(await input.sessions.listSessionPage(alice, { ...query, seen: "seen" })).toHaveLength(1)
+    expect(await input.sessions.countSessions(alice, query)).toEqual(1)
+    expect(await input.sessions.countSessions(bob, query)).toEqual(1)
+    expect((await input.sessions.listSessionCleanupPage(principal, query))[0]).toMatchObject({ session_id: at.sessionId,
+      attention: facts, reader: { revision: 2, seenThrough: 10, settledThrough: 10 }, executionAvailability: { status: "available" } })
+    expect(await input.sessions.writeSessionReader(alice, { ...at, command: { kind: "return", generation: 1, revision: 2 } }))
+      .toMatchObject({ ok: true, state: { revision: 3, seenThrough: 10 } })
+    expect(await input.sessions.listSessionPage(alice, { ...query, settled: "active", seen: "seen" })).toHaveLength(1)
+    expect(await input.sessions.listSessionPage(alice, { ...query, settled: "settled" })).toEqual([])
+    expect(await input.sessions.countSessions(alice, query)).toEqual(1)
+    expect((await input.sessions.listSessionCleanupPage(principal, query))[0]).toMatchObject({ session_id: at.sessionId,
+      attention: facts, reader: { revision: 3, seenThrough: 10 } })
+  })
+
+  test("lifecycle, Seen and date predicates select older rows before the page limit with independent counts", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+    const facts = { sequence: 10, generation: 1, activitySequence: 10, activityAt: 500, working: false, awaitingInput: false,
+      outcome: { sequence: 10, status: "completed", completedAt: 500 } }
+    const targets = [["waiting", 100], ["working", 200], ["seen", 300], ["settled", 400]] as const
+    for (const [sessionId, createdAt] of targets) {
+      const at = { sessionId, workspaceId: "ws_main" }
+      await reserveAndRegister(input.sessions, alice, { operationId: `predicate-${sessionId}`, ...at, createdAt })
+      await publishCanonicalFacts(input, alice, at, { ...facts, working: sessionId === "waiting" || sessionId === "working", awaitingInput: sessionId === "waiting" })
+    }
+    expect(await input.sessions.writeSessionReader(alice, { sessionId: "seen", workspaceId: "ws_main",
+      command: { kind: "seen", generation: 1, outcomeSequence: 10 } })).toMatchObject({ ok: true })
+    const settlement = await input.sessions.writeSessionReader(alice, { sessionId: "settled", workspaceId: "ws_main",
+      command: { kind: "settle", generation: 1, activitySequence: 10, outcomeSequence: 10, revision: 0 } })
+    if (!settlement.ok) throw new Error("Fixture settlement was refused")
+    const query = { all: true as const, sort: "created_desc" as const, archived: "active" as const, settled: "all" as const, limit: 1 }
+    const ids = async (extra: Partial<typeof query> & { seen?: "seen" | "unseen"; dateField?: "created" | "activity" | "settled"; from?: number; until?: number }) =>
+      (await input.sessions.listSessionPage(alice, { ...query, ...extra })).map((row) => row.session_id)
+    expect(await ids({ seen: "seen", limit: 10 })).toEqual(["settled", "seen"])
+    expect(await ids({ seen: "unseen", limit: 10 })).toEqual(["working", "waiting"])
+    expect(await ids({ dateField: "created", from: 100, until: 200 })).toEqual(["waiting"])
+    expect(await ids({ dateField: "activity", from: 501 })).toEqual([])
+    expect(await ids({ dateField: "settled", from: settlement.state.settledAt!, until: settlement.state.settledAt! + 1 })).toEqual(["settled"])
+    expect(await ids({ dateField: "settled", until: settlement.state.settledAt })).toEqual([])
+    expect(await input.sessions.countSessions(alice, { ...query, settled: "active" })).toEqual(3)
+    expect(await input.sessions.countSessions(alice, { ...query, seen: "seen" })).toEqual(2)
+    expect((await input.sessions.listSessionPage(alice, { ...query, settled: "active", activity: "working" })).map((row) => row.session_id)).toEqual(["working"])
+    expect((await input.sessions.listSessionPage(alice, { ...query, settled: "active", activity: "needs-you" })).map((row) => row.session_id)).toEqual(["seen"])
+    expect(await input.sessions.countSessions(alice, { ...query, settled: "active", activity: "needs-you" })).toBe(2)
+  })
+
+
+  test("quiet, cancelled and unknown unsettled roots remain active independently of Seen", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+    const facts = { sequence: 10, generation: 1, activitySequence: 10, activityAt: 500, working: false, awaitingInput: false }
+    for (const sessionId of ["quiet", "cancelled", "unknown"]) {
+      const at = { sessionId, workspaceId: "ws_main" }
+      await reserveAndRegister(input.sessions, alice, { operationId: `remaining-${sessionId}`, ...at })
+      if (sessionId !== "unknown") await publishCanonicalFacts(input, alice, at, { ...facts,
+        ...(sessionId === "cancelled" ? { outcome: { sequence: 10, status: "cancelled", completedAt: 500 } } : {}) })
+    }
+    const query = { all: true as const, sort: "human_turn_desc" as const, archived: "active" as const, settled: "all" as const, limit: 10 }
+    expect((await input.sessions.listSessionPage(alice, { ...query, })).map((row) => row.session_id).sort())
+      .toEqual(["cancelled", "quiet", "unknown"])
+    expect((await input.sessions.listSessionPage(alice, { ...query, seen: "seen" })).map((row) => row.session_id).sort())
+      .toEqual(["cancelled", "quiet"])
+    expect(await input.sessions.listSessionPage(alice, { ...query, seen: "unseen" })).toEqual([])
+    expect(await input.sessions.countSessions(alice, query)).toEqual(3)
+  })
+
+  test("cleanup admission checks canonical ownership and the exact reader revision and generation", async () => {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "cleanup-create", sessionId: "cleanup" })
+    const at = { sessionId: "cleanup", workspaceId: "ws_main" }
+    const facts = { sequence: 10, generation: 1, activitySequence: 10, activityAt: 500, working: false, awaitingInput: false }
+    await publishCanonicalFacts(input, alice, at, facts)
+    await expect(input.sessions.admitSessionCleanup(alice, { ...at, generation: 1, readerRevision: 0 })).resolves.toBeUndefined()
+    await input.sessions.writeSessionReader(alice, { ...at, command: { kind: "settle", generation: 1, activitySequence: 10, revision: 0 } })
+    await expect(input.sessions.admitSessionCleanup(alice, { ...at, generation: 1, readerRevision: 0 })).rejects.toThrow("reader state changed")
+    await expect(input.sessions.admitSessionCleanup(alice, { ...at, generation: 2, readerRevision: 1 })).rejects.toThrow("reader state changed")
+    await input.sessions.grantSessionShare(alice, { ...at, grantedToUserId: bob.principal!.userId, level: "send" })
+    await expect(input.sessions.admitSessionCleanup(bob, { ...at, generation: 1, readerRevision: 0 })).rejects.toThrow("deletion is not authorized")
+    const principal = { actorId: alice.principal!.actorId, userId: alice.principal!.userId, orgId: "org_acme" }
+    await expect(input.sessions.admitRuntimeSessionCleanup(principal, { ...at, generation: 1, readerRevision: 1 })).resolves.toBeUndefined()
+    await expect(input.sessions.admitRuntimeSessionCleanup({ ...principal, userId: bob.principal!.userId }, { ...at, generation: 1, readerRevision: 1 })).rejects.toThrow()
+    expect(await input.sessions.listSessionCleanupPage({ ...principal, orgId: "org_other" }, { all: true, sort: "human_turn_desc", archived: "active", settled: "all", limit: 10 })).toEqual([])
+  })
+
+  async function cleanupReaderFixture(kind: "seen" | "return", held?: { promise: Promise<void>; dispatched(): void }) {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+    const at = { sessionId: "cleanup-reader", workspaceId: "ws_main" }
+    await reserveAndRegister(input.sessions, alice, { operationId: "cleanup-reader-create", ...at })
+    await publishCanonicalFacts(input, alice, at, {
+      sequence: 10, generation: 1, activitySequence: 10, activityAt: 500, working: false, awaitingInput: false,
+      outcome: { sequence: 10, status: "completed", completedAt: 500 },
+    })
+    if (kind === "return") {
+      expect(await input.sessions.writeSessionReader(alice, { ...at,
+        command: { kind: "settle", generation: 1, activitySequence: 10, outcomeSequence: 10, revision: 0 } }))
+        .toMatchObject({ ok: true, state: { revision: 1, settledThrough: 10 } })
+    }
+    const principal = { actorId: alice.principal!.actorId, userId: alice.principal!.userId, orgId: "org_acme" }
+    const dispatched: SessionCleanupTarget[] = []
+    const app = SessionCleanupRoutes({ authenticate: async () => ({
+      list: async (query) => buildSessionListResponse({
+        query,
+        sessions: await input.sessions.listSessionCleanupPage(principal, {
+          ...sessionListKeysetPage(query), workspaceId: "ws_main",
+        }),
+        cursorApplied: true,
+      }),
+      prepare: async () => ({ descendants: [] }),
+      admit: (target) => input.sessions.admitRuntimeSessionCleanup(principal, target),
+      delete: async (target) => {
+        dispatched.push(target)
+        held?.dispatched()
+        await held?.promise
+        return { deletedSessionIds: [target.sessionId] }
+      },
+    }) })
+    const response = await app.request("http://fixture/api/claxedo/session-cleanup?workspaceId=ws_main&settled=all&seen=all")
+    expect(response.status).toBe(200)
+    const page = await response.json()
+    expect(page.incompleteSources).toEqual([])
+    expect(page.candidates).toHaveLength(1)
+    const { sessionId, workspaceId, generation, activitySequence, readerRevision, descendants } = page.candidates[0]
+    const candidate: SessionCleanupTarget = { sessionId, workspaceId, generation, activitySequence, readerRevision, descendants }
+    const command: SessionReaderCommand = kind === "seen"
+      ? { kind: "seen", generation: 1, outcomeSequence: 10 }
+      : { kind: "return", generation: 1, revision: 1 }
+    return { input, alice, bob, at, principal, app, candidate, command, dispatched }
+  }
+
+  function requestCleanupDeletion(app: ReturnType<typeof SessionCleanupRoutes>, target: SessionCleanupTarget) {
+    return app.request("http://fixture/api/claxedo/session-cleanup/delete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ targets: [target], cascade: false }),
+    })
+  }
+
+  test.each(["seen", "return"] as const)("D1 owner's %s before cleanup route admission conflicts without dispatch", async (kind) => {
+    const { input, alice, at, app, candidate, command, dispatched } = await cleanupReaderFixture(kind)
+    expect(await input.sessions.writeSessionReader(alice, { ...at, command }))
+      .toMatchObject({ ok: true, state: { revision: candidate.readerRevision + 1 } })
+
+    const response = await requestCleanupDeletion(app, candidate)
+    expect(await response.json()).toMatchObject({ results: [{ sessionId: at.sessionId, status: "failed", code: "session_cleanup_changed" }] })
+    expect(dispatched).toEqual([])
+    expect(await input.sessions.listSessions(alice, { workspaceId: at.workspaceId })).toHaveLength(1)
+  })
+
+  test("D1 protected reader changes by a share recipient preserve the owner's selected cleanup revision", async () => {
+    const { input, alice, bob, at, principal, app, candidate, dispatched } = await cleanupReaderFixture("seen")
+    await input.sessions.grantSessionShare(alice, { ...at, grantedToUserId: bob.principal!.userId })
+    expect(await input.sessions.writeSessionReader(bob, { ...at,
+      command: { kind: "seen", generation: 1, outcomeSequence: 10 } }))
+      .toMatchObject({ ok: true, state: { revision: 1 } })
+    const rows = await input.sessions.listSessionCleanupPage(principal, {
+      all: true, sort: "human_turn_desc", archived: "active", settled: "all", limit: 10,
+    })
+    expect(rows[0]?.reader).toBeUndefined()
+
+    const response = await requestCleanupDeletion(app, candidate)
+    expect(await response.json()).toMatchObject({ results: [{ sessionId: at.sessionId, status: "deleted", deletedSessionIds: [at.sessionId] }] })
+    expect(dispatched).toEqual([candidate])
+  })
+
+  test.each(["seen", "return"] as const)("D1 owner's %s after cleanup admission preserves the admitted command and conflicts on later stale admission", async (kind) => {
+    const dispatch = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    const { input, alice, at, principal, app, candidate, command, dispatched } = await cleanupReaderFixture(kind, {
+      promise: release.promise, dispatched: dispatch.resolve,
+    })
+    const admittedRequest = requestCleanupDeletion(app, candidate)
+    await dispatch.promise
+    try {
+      expect(await input.sessions.writeSessionReader(alice, { ...at, command }))
+        .toMatchObject({ ok: true, state: { revision: candidate.readerRevision + 1 } })
+      const rows = await input.sessions.listSessionCleanupPage(principal, {
+        all: true, sort: "human_turn_desc", archived: "active", settled: "all", limit: 10,
+      })
+      expect(rows[0]?.reader).toMatchObject({ revision: candidate.readerRevision + 1 })
+      const laterRequest = await requestCleanupDeletion(app, candidate)
+      expect(await laterRequest.json()).toMatchObject({ results: [{ status: "failed", code: "session_cleanup_changed" }] })
+      expect(dispatched).toEqual([candidate])
+    } finally {
+      release.resolve()
+    }
+    expect(await (await admittedRequest).json()).toMatchObject({ results: [{ status: "deleted", deletedSessionIds: [at.sessionId] }] })
+    expect(dispatched).toEqual([candidate])
+  })
+
+  test("root and archive exclusions run before pagination while a user fork remains visible", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "root-create", sessionId: "root" })
+    const actorId = alice.principal!.actorId
+    await input.sessions.reserveRuntimeSession({ principalKind: "user", actorKind: "human", actorId }, {
+      operationId: "fork-create", sessionId: "fork", workspaceId: "ws_main", kind: "fork", parentSessionId: "root" })
+    await input.sessions.registerRuntimeSession({ principalKind: "user", actorKind: "human", actorId,
+      operationId: "fork-create", sessionId: "fork", workspaceId: "ws_main", createdAt: 2, updatedAt: 2 })
+    await reserveAndRegister(input.sessions, alice, { operationId: "child-create", sessionId: "child" })
+    await reserveAndRegister(input.sessions, alice, { operationId: "archived-create", sessionId: "archived" })
+    await input.database.prepare("UPDATE sessions SET parent_session_id = 'root', last_human_turn_at = 100 WHERE session_id = 'child'").run()
+    await input.database.prepare("UPDATE sessions SET archived_at = 500, last_human_turn_at = 101 WHERE session_id = 'archived'").run()
+    const query = { all: true as const, sort: "created_desc" as const, archived: "active" as const, limit: 10 }
+    const rows = await input.sessions.listSessionPage(alice, query)
+    expect(rows.map((row) => row.session_id).sort()).toEqual(["fork", "root"])
+    expect(await input.sessions.countSessions(alice, { ...query, limit: 1 })).toEqual(2)
+  })
+
+  test("reader settlement is private, ordered, and admitted only for a readable session", async () => {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "reader-create", sessionId: "reader-session" })
+    const facts = { sequence: 10, generation: 1, activitySequence: 10, activityAt: 500, working: false, awaitingInput: false, outcome: { sequence: 10, status: "completed", completedAt: 500 } }
+    const at = { sessionId: "reader-session", workspaceId: "ws_main" }
+    await publishCanonicalFacts(input, alice, at, facts)
+    const command = { kind: "settle" as const, generation: 1, activitySequence: 10, outcomeSequence: 10, revision: 0 }
+    await expect(input.sessions.writeSessionReader(bob, { ...at, command })).rejects.toThrow("Session not found")
+    expect(await input.sessions.writeSessionReader(alice, { ...at, command })).toMatchObject({ ok: true, state: { revision: 1, seenThrough: 10, settledThrough: 10 } })
+    const query = { all: true as const, sort: "human_turn_desc" as const, archived: "active" as const, limit: 10 }
+    expect(await input.sessions.listSessionPage(alice, query)).toEqual([])
+    expect(await input.sessions.listSessionPage(alice, { ...query, settled: "settled" })).toHaveLength(1)
+    expect(await input.sessions.writeSessionReader(alice, { ...at, command })).toEqual({ ok: false, reason: "reader_changed" })
+    await publishCanonicalFacts(input, alice, at, { ...facts, sequence: 11, activitySequence: 11, working: true })
+    expect(await input.sessions.listSessionPage(bob, { ...query, settled: "all" })).toEqual([])
+  })
+  test("an inactive or replaced producer needs the reader until its exact runtime publishes, and cannot be settled", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "availability-create", sessionId: "availability" })
+    const at = { sessionId: "availability", workspaceId: "ws_main" }
+    const facts = { sequence: 10, generation: 1, activitySequence: 10, activityAt: 500, working: true, awaitingInput: false }
+    await publishCanonicalFacts(input, alice, at, facts)
+    const query = { all: true as const, sort: "human_turn_desc" as const, archived: "active" as const, limit: 10 }
+    await input.database.prepare("UPDATE sandbox_leases SET epoch = 8 WHERE workspace_id = ?").bind(at.workspaceId).run()
+    const unavailable = await input.sessions.listSessionPage(alice, { ...query, })
+    expect(unavailable[0]).toMatchObject({ attention: facts, executionAvailability: { status: "unavailable" } })
+    expect(await input.sessions.countSessions(alice, query)).toEqual(1)
+    expect(await input.sessions.listSessionPage(alice, { ...query, settled: "settled" })).toEqual([])
+    await expect(input.sessions.writeSessionReader(alice, { ...at, command: { kind: "settle", generation: 1, activitySequence: 10, revision: 0 } })).rejects.toThrow("runtime is unavailable")
+    await publishCanonicalFacts(input, alice, at, facts, 8)
+  })
   test("satisfies the provider-neutral session-page conformance surface", async () => {
     const input = await setup()
     const { alice, admin } = await sharedWorkspace(input)

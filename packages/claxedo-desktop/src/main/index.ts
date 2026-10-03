@@ -55,7 +55,7 @@ import { restartBehavior, runRestart } from "../shared/restart-policy"
 import { CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME } from "../shared/compile-cache"
 import { readString } from "@claxedo/helpers/readers"
 import { claxedoServerForkOptions } from "./server-child-process"
-import { setupAgentPluginsSignedSync, type AgentPluginsSignedSync } from "./agent-plugins-signed-sync"
+import { setupAccountDaemonSync } from "./account-daemon-sync"
 import { CLAXEDO_DAEMON_PROTOCOL } from "@claxedo/helpers/claxedo-daemon"
 import {
   claxedoDaemonDiscoveryPath,
@@ -641,7 +641,7 @@ installIpcCallerGuard({
 // leave open.
 const bakedAccountConfig = import.meta.env as Record<string, string | undefined>
 let hostConnector: ReturnType<typeof setupElectronHostConnector> | undefined
-let agentPluginsSync: AgentPluginsSignedSync | undefined
+let accountDaemonSync: ReturnType<typeof setupAccountDaemonSync> | undefined
 const account = setupLazyAccount({
   ipcMain,
   userDataDir: app.getPath("userData"),
@@ -649,14 +649,10 @@ const account = setupLazyAccount({
   env: accountConfigEnvironment(process.env, bakedAccountConfig),
   cliSignInMode: () => readCliSignInMode(store),
   onError: (stage, error) => logger.warn(`[account] ${stage}: ${String(error)}`),
-  // An activation made from this machine is applied here at once rather than
-  // at the next timed pull; the pull itself stays the only path to the daemon.
-  onOperation: (name) => {
-    if (name.startsWith("agentPlugins.") && name !== "agentPlugins.runtimeSelf") void agentPluginsSync?.refresh()
-  },
+  onOperation: (name) => accountDaemonSync?.operation(name),
   onStateChange: (next, previous) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ACCOUNT_STATE_CHANGED_CHANNEL, next)
-    agentPluginsSync?.follow(next)
+    accountDaemonSync?.follow(next)
     // Remote access follows the account, in BOTH directions.
     //
     // Stopping on auth loss is the fail-closed half: the moment the account is
@@ -763,19 +759,13 @@ const providerConfigPush = setupHostProviderConfigPush({
   log: { info: (message) => logger.info(message), warn: (message) => logger.warn(message) },
 })
 
-// The signed Agent Plugins world follows the account the same way remote
-// access does: main pulls it with the credential only main holds and the daemon
-// materializes it. A daemon built without Agent Plugins answers 404 and the
-// sync goes quiet; nothing here decides whether the feature exists.
-agentPluginsSync = setupAgentPluginsSignedSync({
-  enabled: true,
-  runAccountOperation: (name, params) => account.run(name, params),
+const accountConfig = readAccountConfig(accountConfigEnvironment(process.env, bakedAccountConfig))
+accountDaemonSync = setupAccountDaemonSync({
+  account,
   daemon,
+  coreOrigin: accountConfig.configured ? accountConfig.coreOrigin : undefined,
   log: { info: (message) => logger.log(message), warn: (message) => logger.warn(message) },
 })
-void account.ready.then(() => agentPluginsSync?.follow(account.state()))
-
-const accountConfig = readAccountConfig(accountConfigEnvironment(process.env, bakedAccountConfig))
 
 /**
  * Machine remote access, constructed but NOT started.
@@ -911,6 +901,7 @@ if (browserTabSetup) {
 }
 
 async function shutdown() {
+  await accountDaemonSync?.stop()
   const lease = daemonLease
   daemonLease = undefined
   await daemonExitLifecycle.release(lease)

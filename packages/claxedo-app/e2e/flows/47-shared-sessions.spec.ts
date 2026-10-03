@@ -9,33 +9,9 @@ import {
   startCloudWorkspace,
   test,
   UI,
-  type SignedStack,
 } from "../harness"
-import { hostedFetch, inviteHostedPerson } from "../../../harness/e2e/harness/hosted-auth"
-
-async function ownersColleague(signed: SignedStack, name: string) {
-  const colleague = await signed.signUp(name)
-  const orgs = await hostedFetch(signed.hosted, "/api/control/orgs", {}, signed.owner.person)
-  expect(orgs.status).toBe(200)
-  const [{ org_id: orgId }] = await orgs.json() as Array<{ org_id: string }>
-  const token = await inviteHostedPerson(signed.hosted, signed.owner.person, colleague.person, orgId!)
-  const accepted = await hostedFetch(signed.hosted, "/api/control/invitations/accept", {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }),
-  }, colleague.person)
-  expect(accepted.status).toBe(200)
-  const { user_id: userId } = await accepted.json() as { user_id: string }
-  return { ...colleague, userId }
-}
-
-function sharing(signed: SignedStack, input: { workspaceId: string; sessionId: string; userId: string }) {
-  return async (method: "POST" | "DELETE", level?: "follow" | "send") => {
-    const response = await hostedFetch(signed.hosted, `/api/control/sessions/${input.sessionId}/shares`, {
-      method, headers: { "content-type": "application/json" },
-      body: JSON.stringify({ workspaceId: input.workspaceId, grantedToUserId: input.userId, level }),
-    }, signed.owner.person)
-    expect(response.status, await response.text()).toBe(200)
-  }
-}
+import { hostedFetch } from "../../../harness/e2e/harness/hosted-auth"
+import { ownersColleague, sharing } from "./47-sharing.controls"
 
 test("47 shared sessions: follow sees live turns, send reaches the owner, revoke makes the open session unavailable", async ({ signed, page, isMobile }) => {
   const recipient = await ownersColleague(signed, "Grace Recipient")
@@ -73,9 +49,8 @@ test("47 shared sessions: follow sees live turns, send reaches the owner, revoke
 
   await share("DELETE")
   if (isMobile) await page.getByRole("button", { name: UI.openRail }).click()
-  await section.getByRole("button", { name: "Refresh shared sessions" }).click()
   await expect(row).toHaveCount(0)
-  if (isMobile) await page.getByRole("button", { name: UI.hideSidebar }).click()
+  if (isMobile) await page.getByRole("button", { name: "Close navigation sidebar", exact: true }).click()
   await expect(page.getByTestId("session-unavailable")).toBeVisible()
 })
 

@@ -7,7 +7,7 @@ import { draftPath, panePlacementOf, sessionLinkPath, useShellRoute } from "@/sh
 import { terminalPaneKind, useTerminals } from "@/terminal"
 import { useWorkbench } from "@/workbench"
 import { railDictionary } from "../i18n"
-import { sessionIdsByProject, sessionMarker, siblingAfterArchive, type RailRow } from "../model"
+import { sessionIdsByProject, sessionMarker, type RailRow } from "../model"
 import { projectSection, type ProjectSection } from "../project-sections"
 import { ProjectBlock } from "./project-block"
 import { createSessionActions } from "./session-actions"
@@ -51,22 +51,9 @@ export function ProjectTree(): JSX.Element {
   const select = (section: ProjectSection) => {
     if (section.placementId) routing.navigate(draftPath(section.placementId))
   }
-  const archive = async (section: ProjectSection, row: SessionRowView) => {
-    const route = routing.route()
-    if (route.kind === "session" && route.sessionId === row.ref.sessionId) {
-      const nextId = siblingAfterArchive(sessionIdsOf(section), row.ref.sessionId)
-      const next = nextId ? stores.list.view(nextId) : undefined
-      if (next) openSession(next)
-      else select(section)
-    }
-    await actions.onArchive(row)
-  }
   return (
     <div class="flex-1 flex flex-col py-1.5 gap-0.5">
       <Show when={sections().length > 0} fallback={<div class="flex px-4 py-8 text-compact text-text-weak">{t("rail.noMatches")}</div>}>
-        <div class="sidebar-section-label px-4 pt-1 pb-1">
-          {t("rail.projects")}
-        </div>
         <For each={sections().map((section) => section.key)}>
           {(key) => {
             const section = () => sectionByKey().get(key)
@@ -86,8 +73,7 @@ export function ProjectTree(): JSX.Element {
                     markerOf={markerOf}
                     prepareDrag={prepareDrag}
                     onRename={actions.onRename}
-                    onArchive={(row) => archive(current(), row)}
-                    onDelete={actions.onDelete}
+                    onToggleSettled={actions.onToggleSettled}
                   />
                 )}
               </Show>

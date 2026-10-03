@@ -26,6 +26,7 @@ function context(options: { links?: Record<string, string[]>; account?: "up" | "
     workspaces: {
       address: { placementFor: () => undefined },
       learn: async () => undefined,
+      accountWorkspaceIds: () => [],
       accountProjectIds: (id: ProjectId) => (options.links?.[id] ?? []).map(projectId),
     },
     status: { listed: (_ref: unknown, status: unknown) => status },

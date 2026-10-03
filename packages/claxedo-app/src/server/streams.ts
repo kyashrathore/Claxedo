@@ -3,6 +3,8 @@ import type { ConnectionState } from "./events"
 import { openEventStream, type Stream } from "./stream"
 import type { Transport } from "./transport"
 import type { BootstrapDeclaration } from "./wire/placements"
+import { accountEventResponse } from "./account-event-stream"
+import { contractMismatch } from "./errors"
 
 const WORKSPACE_EVENTS_PATH = "/api/wr/events"
 const CONTROL_PLANE_EVENTS_PATH = "/api/cp/events"
@@ -93,7 +95,14 @@ export function createEventStreams(input: StreamsInput): EventStreams {
   const socket = config.eventSocket === true && transport.loopback
   return {
     open: (declaration) => {
+      if (config.account && !config.accountStreams) throw contractMismatch("The signed account stream bridge is missing")
       streams.push(openEventsAt(input, CONTROL_PLANE_EVENTS_PATH, socket, report))
+      if (config.accountStreams) streams.push(openEventStream({
+        open: async ({ headers, signal }) => accountEventResponse(config.accountStreams!, headers, signal),
+        onFrame: input.onFrame,
+        onGap: input.onGap,
+        onState: report,
+      }))
       if (declaration.hostAggregate) streams.push(openEventsAt(input, WORKSPACE_EVENTS_PATH, false, report))
       report()
     },

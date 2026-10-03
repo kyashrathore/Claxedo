@@ -62,6 +62,8 @@ export type WorkspaceHostOptions = {
    * them. It must not start a turn, a checkpoint write, or a disposal.
    */
   onActivityChange?: () => void
+  /** Flush a host's derived publication after teardown commits its final outcomes, while the store is still open. */
+  beforeStoreClose?: () => Promise<void> | void
   eventHub?: RuntimeEventHub
   /**
    * Host-supplied shared store factory. Defaults to the SQLite-backed
@@ -76,4 +78,3 @@ export type WorkspaceHostOptions = {
    */
   firstPartyMcpLaunch?: WorkspaceFirstPartyMcpLaunchOptions
 }
-

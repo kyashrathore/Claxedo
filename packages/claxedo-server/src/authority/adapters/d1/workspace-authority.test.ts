@@ -229,6 +229,11 @@ describe("D1 hosted workspace authority", () => {
       role: "owner",
       workspace: { org_id: "org_acme", project_id: created.project_id },
     })
+    expect(await authority.openRuntimeWorkspace({ principalKind: "user", actorKind: "human", actorId: alice.principal!.actorId }, { workspaceId: "ws_acme_main" })).toMatchObject({
+      role: "owner", workspace: { org_id: "org_acme", project_id: created.project_id },
+    })
+    await expect(authority.openRuntimeWorkspace({ principalKind: "user", actorKind: "human", actorId: bob.principal!.actorId }, { workspaceId: "ws_acme_main" })).rejects.toMatchObject({ status: 403 })
+    await expect(authority.openRuntimeWorkspace({ principalKind: "service", actorKind: "agent", actorId: alice.principal!.actorId }, { workspaceId: "ws_acme_main" })).rejects.toMatchObject({ status: 403 })
     await expect(authority.openWorkspace(bob, { workspaceId: "ws_acme_main" })).rejects.toMatchObject({ status: 403 })
     expect(
       await authority.authorizeProject(bob, {

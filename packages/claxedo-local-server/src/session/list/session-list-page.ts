@@ -1,7 +1,9 @@
 import { HTTPException } from "hono/http-exception"
+import { machineDisplayName } from "@claxedo/helpers/machine-name"
+import type { ExecutionAvailability } from "@claxedo/agent-runtime-contract"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { listSessionNavigationMetas } from "@claxedo/server-core/session/meta/index"
+import { listSessionNavigationMetas, countSessionNavigation } from "@claxedo/server-core/session/meta/index"
 import {
   buildSessionListResponse,
   sessionListKeysetPage,
@@ -11,6 +13,7 @@ import {
 } from "@claxedo/server-core/session/navigation-list"
 import type { SessionMeta } from "@claxedo/server-core/session/meta/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import { getProjectRecord } from "@claxedo/server-core/workspace/store/index"
 import { readRuntimeSessionActivity, type RuntimeSessionActivity, type RuntimeStatusRead } from "../runtime-activity"
 
 export type SessionListPageInput = {
@@ -35,18 +38,21 @@ export async function signedSessionListPage(
   input: Pick<SessionListPageInput, "query" | "workspace">,
 ): Promise<SessionListResponse> {
   const { query } = input
-  const scope = query.scope === "project" && query.projectId
+  if (!authority.countSessions) throw new HTTPException(503, { message: "Session inventory counts are unavailable" })
+  const scope = query.scope === "all" ? { all: true as const } : query.scope === "project" && query.projectId
     ? { projectId: query.projectId }
     : input.workspace
       ? { workspaceId: input.workspace.id }
       : undefined
   if (!scope) throw new HTTPException(400, { message: "Name a project or a workspace" })
   const sessions = await authority.listSessionPage(auth, { ...sessionListKeysetPage(query), ...scope })
-  return buildSessionListResponse({
+  const response = buildSessionListResponse({
     query: "workspaceId" in scope ? { ...query, workspaceId: scope.workspaceId } : query,
     sessions,
     cursorApplied: true,
   })
+  const totalKnown = await authority.countSessions(auth, { ...sessionListKeysetPage(query), ...scope })
+  return { ...response, totalKnown }
 }
 
 /**
@@ -58,26 +64,59 @@ export async function signedSessionListPage(
  */
 export async function localSessionListPage(input: SessionListPageInput): Promise<SessionListResponse> {
   const { query } = input
-  const covered = query.scope === "project" && query.projectId && !input.workspace
+  const population = query.scope === "all" || query.scope === "project" && query.projectId && !input.workspace
     ? await input.projectWorkspaces()
     : input.workspace ? [input.workspace] : []
+  const covered = query.scope === "all" ? population.filter((workspace) => workspace.kind !== "cloud") : population
   await Promise.all(covered.map((workspace) => input.refreshSessionProjection?.(workspace)))
-  const metas = await listSessionNavigationMetas(sessionListStorePageFilter(query))
-  return buildSessionListResponse({
+  const runtime = await readNavigationRuntimes(covered, input.readRuntimeStatus)
+  const filter = { ...sessionListStorePageFilter(query),
+    ...(query.scope === "all" ? { workspaceIDs: covered.map((workspace) => workspace.id) } : {}) }
+  const metas = await listSessionNavigationMetas(filter)
+  const response = buildSessionListResponse({
     query,
-    sessions: await withRuntimeStatus(metas, input.readRuntimeStatus, (input.now ?? Date.now)()),
+    sessions: await withNavigationContext(withRuntimeStatus(metas, runtime, (input.now ?? Date.now)()), covered),
     cursorApplied: true,
+  })
+  const totalKnown = countSessionNavigation(filter)
+  return { ...response, totalKnown }
+}
+
+type NavigationRuntime = { activity?: Map<string, RuntimeSessionActivity>; executionAvailability: ExecutionAvailability }
+
+async function readNavigationRuntimes(workspaces: readonly Workspace[], read: RuntimeStatusRead) {
+  return new Map(await Promise.all(workspaces.map(async (workspace): Promise<readonly [string, NavigationRuntime]> => {
+    try {
+      const activity = await readRuntimeSessionActivity(read, workspace.id)
+      return [workspace.id, { activity, executionAvailability: activity ? { status: "available" } : { status: "offline", message: "Session runtime is offline" } }]
+    } catch (error) {
+      return [workspace.id, { executionAvailability: { status: "unavailable", message: error instanceof Error ? error.message : "Session runtime is unavailable" } }]
+    }
+  })))
+}
+
+function withRuntimeStatus(metas: readonly SessionMeta[], runtime: ReadonlyMap<string, NavigationRuntime>, at: number) {
+  return metas.map((meta) => {
+    const entry = meta.workspaceID ? runtime.get(meta.workspaceID) : undefined
+    const read = entry?.activity
+    const session: RuntimeSessionActivity | undefined = read?.get(meta.sessionID)
+    const executionAvailability = entry?.executionAvailability ?? { status: "unavailable" as const, message: "Session workspace is unavailable" }
+    if (!read) return { ...meta, executionAvailability }
+    const background = session?.backgroundWork ? { backgroundWork: session.backgroundWork } : {}
+    return { ...meta, executionAvailability, status: { kind: session?.kind ?? "idle", awaitingInput: (session?.pending.size ?? 0) > 0, ...background, at } }
   })
 }
 
-async function withRuntimeStatus(metas: readonly SessionMeta[], read: RuntimeStatusRead, at: number) {
-  const workspaceIds = [...new Set(metas.flatMap((meta) => (meta.workspaceID ? [meta.workspaceID] : [])))]
-  const activity = new Map(await Promise.all(workspaceIds.map(async (workspaceId) =>
-    [workspaceId, await readRuntimeSessionActivity(read, workspaceId).catch(() => undefined)] as const)))
+async function withNavigationContext(metas: readonly SessionMeta[], workspaces: readonly Workspace[]) {
+  const localMachineName = machineDisplayName(process.platform)
+  const workspaceById = new Map(workspaces.map((workspace) => [workspace.id, workspace]))
+  const projects = new Map(await Promise.all([...new Set(metas.flatMap((meta) => meta.projectID ? [meta.projectID] : []))]
+    .map(async (id) => [id, await getProjectRecord(id)] as const)))
   return metas.map((meta) => {
-    const read = meta.workspaceID ? activity.get(meta.workspaceID) : undefined
-    const session: RuntimeSessionActivity | undefined = read?.get(meta.sessionID)
-    const background = session?.backgroundWork ? { backgroundWork: session.backgroundWork } : {}
-    return { ...meta, status: { kind: session?.kind ?? "idle", awaitingInput: (session?.pending.size ?? 0) > 0, ...background, at } }
+    const workspace = meta.workspaceID ? workspaceById.get(meta.workspaceID) : undefined
+    const name = meta.projectID ? projects.get(meta.projectID)?.name : undefined
+    return { ...meta, ownership: "owned", ...(name ? { projectName: name } : {}), ...(workspace ? { placement: workspace.kind === "cloud"
+      ? { kind: "cloud", ...(workspace.workspace_name ? { cloudName: workspace.workspace_name } : {}) }
+      : { kind: "local", machineName: localMachineName } } : {}) }
   })
 }

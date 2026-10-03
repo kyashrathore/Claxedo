@@ -19,6 +19,10 @@ export function isRetainedControlPlaneEvent(event: ControlPlaneEvent): boolean {
     case "document.changed":
     case "session.share.changed":
     case "session.inventory.changed":
+    case "session.status.changed":
+    case "session.removed":
+    case "session.attention.raised":
+    case "session.reader.changed":
     case "plugins.changed":
       return true
     case "usage.quota.changed":

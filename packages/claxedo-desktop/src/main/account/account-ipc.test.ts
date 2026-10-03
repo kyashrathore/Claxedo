@@ -81,6 +81,16 @@ test("renderer can request a read-only scoped connection through its named chann
   expect(h.calls).toEqual([{ name: "workspace.connection.read", input: { id: "ws_1" } }])
 })
 
+test("renderer cannot mint a desktop cleanup grant or supply its actor/org through account IPC", async () => {
+  const h = harness({ run: async () => ({ token: "cleanup-secret", expiresAt: 1, actorId: "actor", orgId: "org" }) })
+  const operation = "session.cleanup.grant.desktop"
+  expect(RENDERER_WITHHELD_OPERATIONS).toContain(operation)
+  expect(h.has(hostedOperationChannel(operation))).toBe(true)
+  await expect(h.invoke(hostedOperationChannel(operation), { orgId: "attacker_org", actorId: "attacker_actor" })).rejects.toThrow("not available to the renderer")
+  await expect(h.invoke(ACCOUNT_STREAM_OPEN_CHANNEL, { operation })).rejects.toThrow("not allowed")
+  expect(h.calls).toEqual([])
+})
+
 test("renderer reads shares and session connections through the account service", async () => {
   const h = harness()
   for (const [name, input] of [
@@ -583,8 +593,10 @@ test("the renderer-visible operation set stays pinned", async () => {
     "project.access",
     "project.members.grant",
     "project.members.revoke",
+    "session.attention.history",
     "session.connection.read",
     "session.gateway",
+    "session.inventory",
     "session.list",
     "session.messages",
     "session.outline",
@@ -593,6 +605,7 @@ test("the renderer-visible operation set stays pinned", async () => {
     "session.projection.checkpoint",
     "session.projection.register",
     "session.projection.repair",
+    "session.reader",
     "session.reserve",
     "session.shared.list",
     "session.shares.grant",

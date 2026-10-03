@@ -2,6 +2,8 @@ import { isOneOf } from "../../platform/runtime/lib/json"
 import { SESSION_ATTACHMENT_KINDS, type SessionAttachment } from "./types"
 import type { SessionProjectionWorkspace, Workspace } from "../../workspace/store"
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
+import { sessionAttentionSchema } from "../reader-contract"
+import { sessionTurnOutcomeSchema } from "../turn-outcome-contract"
 
 
 
@@ -120,6 +122,8 @@ export function sessionMetaSyncRow(input: unknown, ws?: SessionProjectionWorkspa
     created_at: time.created,
     updated_at: time.updated,
     last_human_turn_at: time.lastHumanTurn ?? null,
+    attention_json: item.attention === undefined ? null : JSON.stringify(sessionAttentionSchema.parse(item.attention)),
+    last_turn_json: item.lastTurn === undefined ? null : JSON.stringify(sessionTurnOutcomeSchema.parse(item.lastTurn)),
   }
 }
 

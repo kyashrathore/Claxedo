@@ -42,6 +42,8 @@ import { createWorkspaceRuntimeProxy } from "../workspace/runtime-dispatch/middl
 import { sessionMetaProjectionTap } from "../session/session-meta-tap"
 import { AgentConfigRoutes } from "../agent-config/routes/index"
 import { SessionMetaRoutes } from "../session/routes/meta-routes"
+import { sessionCleanupGrant } from "../session/session-cleanup-grant"
+import { createDesktopSessionCleanupAccess } from "../session/desktop-cleanup-grant"
 import { LocalWorkspaceRoutes } from "../workspace/routes/resolve-route"
 import { ShellRoutes } from "../shell/routes"
 import { createHostAggregateEventsHandler } from "../shell/host-events"
@@ -228,6 +230,11 @@ export function localSecurityHeaders(): MiddlewareHandler {
 
 export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   const { services } = options
+  const desktopCleanup = options.daemon ? createDesktopSessionCleanupAccess({
+    daemonToken: options.daemon.identity.token,
+    protocol: options.daemon.identity.protocol,
+    hostOwnerActorId: localHostOwnerActorId,
+  }) : undefined
   const env = options.env ?? process.env
   if (!services.localExecution.enabled) {
     throw new Error("createLocalApp is the desktop-local composition; it requires localExecution")
@@ -326,6 +333,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     c.json({ healthy: true, version: env.npm_package_version || "1.0.0" }))
   if (options.daemon) {
     const { identity, lifecycle } = options.daemon
+    app.route("/api/claxedo/daemon/session-cleanup", desktopCleanup!.routes)
     const authorized = (provided: string | undefined) => {
       const token = provided?.replace(/^Bearer\s+/i, "") ?? ""
       const expectedBytes = Buffer.from(identity.token)
@@ -537,6 +545,9 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
         const ownerDriven = sessionId
           ? () => embeddedSessionDrivenOnlyByMachineUser(credential.workspaceId, sessionId, localHostOwnerActorId())
           : undefined
+        const cleanupOwnerDriven = sessionId
+          ? () => embeddedSessionDrivenOnlyByMachineUser(credential.workspaceId, sessionId, desktopCleanup?.ownerActorId() ?? localHostOwnerActorId())
+          : undefined
         const localFetch = inProcessFetch(inProcess, { "x-workspace-id": credential.workspaceId })
         // A session reaches the Tasks routes as itself: the registry issues a
         // handle for its workspace and session, and the capability branch of
@@ -559,6 +570,14 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
           ...(ownerDriven
             ? { appPlugins: appPluginAuthoring({ roots: [workspace.directory], ownerDriven }) }
             : {}),
+          ...(cleanupOwnerDriven && sessionId ? { sessionCleanup: sessionCleanupGrant({
+            workspaceId: credential.workspaceId,
+            sessionId,
+            ownerDriven: cleanupOwnerDriven,
+            fetch: inProcess,
+            ...(desktopCleanup ? { account: desktopCleanup.grant, accountConfigured: desktopCleanup.configured } : {}),
+            ...(options.refreshSessionProjection ? { refreshSessionProjection: options.refreshSessionProjection } : {}),
+          }) } : {}),
           documents: { fetch: localFetch },
           tasks: {
             fetch: grant ? inProcessFetch(inProcess, { authorization: `Bearer ${grant}` }) : localFetch,

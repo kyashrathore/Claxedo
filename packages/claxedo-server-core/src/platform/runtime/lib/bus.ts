@@ -1,5 +1,7 @@
 import { jsonRecord } from "./json"
 import type { SessionShareLevel } from "../../auth/session-share-level"
+import type { SessionStateEvent } from "./session-state-events"
+export type { SessionStatusChangedEvent, SessionAttentionRaisedEvent, SessionReaderChangedEvent, SessionRemovedEvent } from "./session-state-events"
 
 type Subscriber<T> = (event: T) => unknown
 
@@ -174,5 +176,6 @@ export type ControlPlaneEvent =
   | SessionInventoryChangedEvent
   | UsageQuotaChangedEvent
   | PluginsChangedEvent
+  | SessionStateEvent
 
 export const controlBus = createBus<ControlPlaneEvent>()

@@ -689,6 +689,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         ])
         if (runtimeResult && !runtimeResult.ok) throw runtimeResult.error
         checkpoint.clear()
+        await options.beforeStoreClose?.()
         cleanupPresentationObserver()
         cleanupRuntimeObserver()
         closeEvents()

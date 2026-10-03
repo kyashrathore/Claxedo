@@ -8,13 +8,11 @@ import type {
   AgentSnapshotFileDiff,
   AgentSubagentUpdate,
   AgentTodo,
-  AgentTurnOutcome,
   PromptDeliveryRequest,
   RuntimeGoalSnapshot,
 } from "@claxedo/agent-runtime-contract"
 import type { BackgroundWork, ListedStatus, SessionStatus } from "./status-types"
 import type { SolidQueryOptions } from "@tanstack/solid-query"
-import type { HarnessSelection } from "../lib/harness-selection"
 import type { MachineId, OrgId, PlacementId, ProjectId, RequestId, SessionId, UserId } from "./ids"
 
 export type ErrorClass = "auth" | "rate_limit" | "network" | "not_found" | "conflict" | "invalid" | "internal"
@@ -96,23 +94,8 @@ export type ProjectUpdate = {
   readonly commands?: ProjectCommands
 }
 
-export type SessionSelections = {
-  readonly harness?: HarnessSelection
-  readonly model?: ModelChoice
-  readonly permissionMode?: string
-  readonly permissionModeLabel?: string
-}
-
-export type SessionRow = SessionSelections & {
-  readonly ref: SessionLocation
-  readonly title: string
-  readonly createdAt: number
-  readonly updatedAt: number
-  readonly lastHumanTurnAt?: number
-  readonly archivedAt?: number
-  readonly parentSessionId?: SessionId
-  readonly lastTurn?: AgentTurnOutcome
-}
+import type { SessionRow } from "./session-row-types"
+export type { SessionSelections, SessionRow, SessionPlacementDisplay } from "./session-row-types"
 
 export type TranscriptMessage = AgentMessageInfo
 export type TranscriptPart = AgentContentPart
@@ -132,6 +115,9 @@ export type FileDiff = AgentSnapshotFileDiff
 export type Subagent = AgentSubagentUpdate
 
 export type SessionListInput = { readonly projectId: ProjectId; readonly after?: string; readonly limit: number }
+
+export type { SessionInventoryInput, SessionInventoryPage } from "./session-inventory-types"
+
 
 export type SessionPage = {
   readonly rows: readonly SessionRow[]
@@ -287,4 +273,4 @@ export type FeatureAvailability =
   | { readonly kind: "available" }
   | { readonly kind: "unavailable"; readonly reason: string }
 
-export type FetchQuery<T> = SolidQueryOptions<T, AppError, T, readonly unknown[]> & { readonly initialData?: undefined }
+export type FetchQuery<T> = SolidQueryOptions<T, AppError, T> & { readonly initialData?: undefined }

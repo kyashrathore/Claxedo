@@ -4,7 +4,6 @@ import {
   WINDOW_ALL,
   compareOrder,
   insideProjectWindow,
-  newerRow,
   windowTail,
   orderKey,
   type FetchedPage,
@@ -15,6 +14,7 @@ import {
   type PendingSend,
   type ProjectWindow,
 } from "./model"
+import { newerRow } from "./row-version"
 import { withoutSessionFacts } from "./statuses"
 
 function withEntries<S extends ListData>(data: S, entries: ReadonlyMap<SessionId, ListEntry>): S {
@@ -53,14 +53,17 @@ function keptSend(send: PendingSend | undefined, held: SessionRow, row: SessionR
   return onlySelectionsMoved(held, row) ? send : undefined
 }
 
-export function mergeRow<S extends ListData>(data: S, row: SessionRow): S {
+export function mergeRow<S extends ListData>(data: S, row: SessionRow, availabilityReadAt?: number): S {
   const id = row.ref.sessionId
   const current = data.entries.get(id)
   if (current?.kind === "tombstone") return data
-  if (current?.kind !== "confirmed") return setEntry(data, id, { kind: "confirmed", row })
-  const next = newerRow(current.row, row)
-  if (!next) return data
-  return setEntry(data, id, { kind: "confirmed", row: next, pendingSend: keptSend(current.pendingSend, current.row, next) })
+  if (current?.kind !== "confirmed") return setEntry(data, id, { kind: "confirmed", row, availabilityReadAt })
+  const incoming = { ...row, executionAvailability: current.row.executionAvailability }
+  const versioned = newerRow(current.row, incoming)
+  const freshAvailability = availabilityReadAt !== undefined && availabilityReadAt >= (current.availabilityReadAt ?? 0)
+  if (!versioned && !freshAvailability) return data
+  const next = freshAvailability ? { ...(versioned ?? current.row), executionAvailability: row.executionAvailability } : versioned!
+  return setEntry(data, id, { kind: "confirmed", row: next, pendingSend: keptSend(current.pendingSend, current.row, next), availabilityReadAt: freshAvailability ? availabilityReadAt : current.availabilityReadAt })
 }
 
 export function upsertRow<S extends ListData>(data: S, row: SessionRow): S {
@@ -114,15 +117,25 @@ function withWindows<S extends ListData>(data: S, window: FetchedWindow, change:
 
 function mergePages<S extends ListData>(data: S, window: FetchedWindow): S {
   let next = data
-  for (const page of window.pages) for (const row of page.rows) next = mergeRow(next, row)
+  for (const page of window.pages) for (const row of page.rows) next = mergeRow(next, row, window.sentAt)
   return pruneTombstones(next, window.sentAt)
+}
+
+function exclusions(data: ListData, page: FetchedPage, replacing: boolean): ReadonlySet<SessionId> {
+  const excluded = new Set(data.windows.get(page.projectId)?.excluded)
+  const fetched = new Set(page.rows.map((row) => row.ref.sessionId))
+  if (replacing) for (const [id, entry] of data.entries) {
+    if (entry.kind === "confirmed" && entry.row.ref.projectId === page.projectId && !fetched.has(id) && insideProjectWindow(data, entry.row)) excluded.add(id)
+  }
+  for (const id of fetched) excluded.delete(id)
+  return excluded
 }
 
 export function extendWindow<S extends ListData>(data: S, window: FetchedWindow): S {
   const next = withWindows(data, window, (windows) => {
     for (const page of window.pages) {
       const current = windowTail(data, page.projectId)
-      windows.set(page.projectId, { tail: laterKey(current, pageTail(page, current)), nextAfter: page.nextAfter })
+      windows.set(page.projectId, { tail: laterKey(current, pageTail(page, current)), nextAfter: page.nextAfter, excluded: exclusions(data, page, false) })
     }
   })
   return mergePages(next, window)
@@ -133,8 +146,8 @@ export function refreshWindow<S extends ListData>(data: S, window: FetchedWindow
     for (const page of window.pages) {
       const current = windowTail(data, page.projectId)
       const tail = pageTail(page, current)
-      if (data.windows.has(page.projectId) && compareOrder(current, tail) >= 0) continue
-      windows.set(page.projectId, { tail, nextAfter: page.nextAfter })
+      const retained = data.windows.has(page.projectId) && compareOrder(current, tail) >= 0
+      windows.set(page.projectId, { tail: retained ? current : tail, nextAfter: retained ? data.windows.get(page.projectId)?.nextAfter : page.nextAfter, excluded: exclusions(data, page, false) })
     }
   })
   return mergePages(next, window)
@@ -146,7 +159,7 @@ function dropMissingFromPages<S extends ListData>(data: S, window: FetchedWindow
   const entries = new Map(data.entries)
   const dropped: SessionId[] = []
   for (const [id, entry] of data.entries) {
-    if (entry.kind !== "confirmed" || fetched.has(id) || data.open.has(id)) continue
+    if (entry.kind !== "confirmed" || fetched.has(id) || data.open.has(id) || data.inventoryIds.has(id)) continue
     if (!read.has(entry.row.ref.projectId) || !insideProjectWindow(data, entry.row)) continue
     entries.delete(id)
     dropped.push(id)
@@ -156,9 +169,23 @@ function dropMissingFromPages<S extends ListData>(data: S, window: FetchedWindow
 
 export function replaceWindow<S extends ListData>(data: S, window: FetchedWindow): S {
   const next = withWindows(dropMissingFromPages(data, window), window, (windows) => {
-    for (const page of window.pages) windows.set(page.projectId, { tail: pageTail(page, WINDOW_ALL), nextAfter: page.nextAfter })
+    for (const page of window.pages) windows.set(page.projectId, { tail: pageTail(page, WINDOW_ALL), nextAfter: page.nextAfter, excluded: exclusions(data, page, true) })
   })
   return mergePages(next, window)
+}
+
+export function replaceInventoryMembership<S extends ListData>(data: S, inventoryIds: ReadonlySet<SessionId>): S {
+  const entries = new Map(data.entries)
+  const dropped: SessionId[] = []
+  for (const id of data.inventoryIds) {
+    const entry = entries.get(id)
+    if (!inventoryIds.has(id) && !data.open.has(id) && entry?.kind === "confirmed" && !insideProjectWindow(data, entry.row)) {
+      entries.delete(id)
+      dropped.push(id)
+    }
+  }
+  const windows = new Map([...data.windows].map(([id, window]) => [id, { ...window, excluded: new Set([...window.excluded].filter((id) => entries.has(id))) }]))
+  return { ...data, entries, windows, inventoryIds, ...withoutSessionFacts(data, dropped) }
 }
 
 function pendingEntryId(data: ListData, clientRequestId: string): SessionId | undefined {
@@ -191,7 +218,7 @@ export function startSend<S extends ListData>(data: S, sessionId: SessionId, cli
 export function failSend<S extends ListData>(data: S, sessionId: SessionId, clientRequestId: string): S {
   const entry = data.entries.get(sessionId)
   if (entry?.kind !== "confirmed" || entry.pendingSend?.clientRequestId !== clientRequestId) return data
-  return setEntry(data, sessionId, { kind: "confirmed", row: entry.row })
+  return setEntry(data, sessionId, { kind: "confirmed", row: entry.row, availabilityReadAt: entry.availabilityReadAt })
 }
 
 export function openSession<S extends ListData>(data: S, sessionId: SessionId): S {
@@ -206,7 +233,7 @@ export function closeSession<S extends ListData>(data: S, sessionId: SessionId):
   const open = new Set(data.open)
   open.delete(sessionId)
   const entry = data.entries.get(sessionId)
-  const keep = entry?.kind !== "confirmed" || insideProjectWindow(data, entry.row)
+  const keep = entry?.kind !== "confirmed" || data.inventoryIds.has(sessionId) || insideProjectWindow(data, entry.row)
   if (keep) return { ...data, open }
   const entries = new Map(data.entries)
   entries.delete(sessionId)

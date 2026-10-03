@@ -15,3 +15,6 @@
 # Treating that syntax as source-code trailing whitespace makes `diff --check`
 # reject valid dependency patches whenever their context changes.
 patches/*.patch whitespace=-trailing-space,-space-before-tab
+
+# Transcript accessibility snapshots preserve empty final rows verbatim.
+packages/claxedo-app/e2e/flows/30-transcript-corpus.spec.ts-snapshots/**/*.txt whitespace=-blank-at-eof

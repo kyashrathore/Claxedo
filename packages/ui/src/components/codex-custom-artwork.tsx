@@ -1,5 +1,7 @@
 /** Shared Codex control geometry; distinct from OpenCode’s source artwork. */
 export const CODEX_CUSTOM_ARTWORK = {
+  activity: `<path d="M2.5 10H6L8.5 17L12.5 3L15 10H17.5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>`,
+  bell: `<path d="M10 2V3M5 8A5 5 0 0 1 15 8C15 11.5 16 12.25 16.75 13.25H3.25C4 12.25 5 11.5 5 8ZM7.75 16.25A2.25 2.25 0 0 0 12.25 16.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`,
   hook: `<circle cx="10" cy="4" r="2.25" stroke="currentColor" stroke-width="1.25"/><path d="M10 6.25V14.5M10 14.5C10 18.5 3 18.5 3 14.5V11.5L5.25 13.5M10 14.5C10 18.5 17 18.5 17 14.5V11.5L14.75 13.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>`,
   "diff-split": `<rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.25"/><path d="M10 4.75V15.25" stroke="currentColor" stroke-width="1"/><rect x="4.75" y="6" width="3.5" height="8" rx="0.75" fill="var(--text-diff-delete-base)"/><rect x="11.75" y="6" width="3.5" height="8" rx="0.75" fill="var(--text-diff-add-base)"/>`,
   "diff-unified": `<rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.25"/><path d="M3.75 10H16.25" stroke="currentColor" stroke-width="1"/><rect x="5" y="5.75" width="10" height="2.5" rx="0.75" fill="var(--text-diff-delete-base)"/><rect x="5" y="11.75" width="10" height="2.5" rx="0.75" fill="var(--text-diff-add-base)"/>`,

@@ -1,22 +1,24 @@
 import type { Locator, Page } from "@playwright/test"
-import { acpScriptToken, ApiError, assistantText, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, watchPageWork, type ClaxedoApi, type SessionRow, type Stack, type Workspace } from "../harness"
+import { activitySidebar, virtualActivitySidebar } from "../harness/activity-sidebar"
+import { sidebarFilter } from "../harness/sidebar-filter"
+import { sessionRowPresentation } from "../harness/sidebar-row-presentation"
+import { sessionRowSurfaceRefinement } from "../harness/sidebar-row-surface"
+import { coarseFilterChoices, coarseFooterTargets, shortActivityViewport, sidebarSectionFilter } from "../harness/activity-layout"
+import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, watchPageWork, type ClaxedoApi, type SessionRow, type Stack } from "../harness"
 
-type ListItem = { readonly sessionId: string; readonly title: string; readonly archivedAt?: number | null; readonly parentSessionId?: string | null }
+type ListItem = { readonly sessionId: string; readonly title: string; readonly archivedAt?: number | null; readonly parentSessionId?: string | null; readonly attention?: { readonly activitySequence: number }; readonly reader?: { readonly settledThrough?: number } }
 
-async function serverOrder(url: string): Promise<string[]> {
+async function serverRows(url: string, settled: "active" | "settled" = "active"): Promise<ListItem[]> {
   const target = new URL("/api/claxedo/session-list", url)
-  for (const [key, value] of Object.entries({ scope: "workspace", sort: "human_turn_desc", limit: "50" })) target.searchParams.set(key, value)
+  for (const [key, value] of Object.entries({ scope: "all", sort: "human_turn_desc", limit: "50", settled })) target.searchParams.set(key, value)
   const response = await fetch(target)
   expect(response.status).toBe(200)
   const items = ((await response.json()) as { items: ListItem[] }).items
-  return items.filter((item) => !item.archivedAt && !item.parentSessionId).map((item) => item.title)
+  return items.filter((item) => !item.archivedAt && !item.parentSessionId)
 }
 
-async function sessionStatusCode(api: ClaxedoApi, directory: string, id: string): Promise<number> {
-  return api.session(directory, id).then(
-    () => 200,
-    (error: unknown) => (error instanceof ApiError ? error.status : 0),
-  )
+async function serverOrder(url: string): Promise<string[]> {
+  return (await serverRows(url)).map((row) => row.title)
 }
 
 function rows(app: Page): Locator {
@@ -31,15 +33,11 @@ function rowTitles(app: Page): Promise<string[]> {
   return rows(app).locator('[data-slot="navigation-row-activate"]').evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label") ?? ""))
 }
 
-async function sessionAction(stack: Stack, app: Page, workspace: Workspace, session: SessionRow, action: string): Promise<void> {
+async function sessionAction(app: Page, session: SessionRow, action: string): Promise<void> {
   await test.step(`${action} from the rail row's menu, no title bar (DECISIONS Owner, 17:15)`, async () => {
     await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: session.title, exact: true }).click({ button: "right" })
     await app.getByRole("menuitem", { name: action }).click()
   })
-  return
-  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
-  await app.getByRole("main").getByRole("button", { name: "More options" }).click()
-  await app.getByRole("menuitem", { name: action }).click()
 }
 
 async function liveStatus(stack: Stack, api: ClaxedoApi, app: Page, directory: string, session: SessionRow): Promise<void> {
@@ -64,7 +62,71 @@ async function liveStatus(stack: Stack, api: ClaxedoApi, app: Page, directory: s
 
 test.skip(({ isMobile }) => isMobile, "flow 10 runs at desktop width; flow 33 owns the phone rail")
 
-test("10 session list: the project's rows, live status, rename, archive and delete, read back from the server", async ({ stack, api, app }) => {
+test("10 session rows keep original Projects spacing and flat matching action surfaces", async ({ stack, api, app }, info) => {
+  await sessionRowSurfaceRefinement(stack, api, app, false, info)
+})
+
+test("10 session rows keep quiet context, bounded tooltips and one finite overflow motion", async ({ stack, api, app }, testInfo) => {
+  await sessionRowPresentation(stack, api, app, false, testInfo)
+})
+
+test("10 Activity lists active sessions in last-turn order with rich two-line rows", async ({ stack, api, app }, testInfo) => {
+  await activitySidebar(stack, api, app, false, testInfo)
+})
+
+test("10 Activity virtualizes more than 100 loaded rows and keyboard navigation reveals both ends", async ({ stack, api, app }) => {
+  await virtualActivitySidebar(stack, api, app)
+})
+
+test("10 a wide coarse pointer keeps settlement and placement controls at 44 pixels without overlapping rows", async ({ browser, stack, api }) => {
+  const workspace = await stack.daemon.makeWorkspace("coarse", "Coarse pointer")
+  await api.createSession(workspace.directory, { title: "First coarse session", harness: SCRIPTED_ACP_HARNESS })
+  await api.createSession(workspace.directory, { title: "Second coarse session", harness: SCRIPTED_ACP_HARNESS })
+  const context = await browser.newContext({ viewport: { width: 1512, height: 982 }, hasTouch: true, isMobile: false })
+  const app = await context.newPage()
+  try {
+    await app.goto(`${stack.url}/`)
+    expect(await app.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true)
+    await sidebarSectionFilter(app, true)
+    await coarseFilterChoices(app)
+    await coarseFooterTargets(app)
+    await app.setViewportSize({ width: 1024, height: 982 })
+    await coarseFilterChoices(app)
+    await expect(rows(app)).toHaveCount(2)
+    const boxes = await rows(app).evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().toJSON()))
+    expect(boxes[0]!.height).toBeGreaterThanOrEqual(44)
+    expect(boxes[1]!.y).toBeGreaterThanOrEqual(boxes[0]!.y + boxes[0]!.height)
+    await coarseControls(app, row(app, "First coarse session"))
+    await sidebarFilter(app, "Activity")
+    await coarseControls(app, app.getByTestId("activity-session-row").filter({ has: app.getByRole("button", { name: "First coarse session", exact: true }) }))
+    await shortActivityViewport(app)
+    await app.goto(`${stack.url}/settings/appearance`)
+    await expect(app.getByRole("navigation", { name: UI.rail })).toHaveAttribute("data-mode", "settings")
+    await expect(app.getByRole("button", { name: "Session options", exact: true })).toHaveCount(0)
+  } finally { await context.close() }
+})
+
+async function coarseControls(app: Page, session: Locator): Promise<void> {
+  const target = session.getByRole("button", { name: "Settle First coarse session", exact: true })
+  await expect(target).toBeVisible()
+  const box = await target.boundingBox()
+  const frame = await session.boundingBox()
+  const title = await session.getByText("First coarse session", { exact: true }).boundingBox()
+  expect(box!.width).toBeGreaterThanOrEqual(44)
+  expect(box!.height).toBeGreaterThanOrEqual(44)
+  expect(box!.y).toBeGreaterThanOrEqual(frame!.y)
+  expect(box!.y + box!.height).toBeLessThanOrEqual(frame!.y + frame!.height)
+  expect(title!.x + title!.width).toBeLessThanOrEqual(box!.x)
+  const placement = session.locator('[data-slot="activity-placement"]')
+  if (await placement.count()) {
+    const marker = await placement.boundingBox()
+    expect(marker!.width).toBeGreaterThanOrEqual(44)
+    expect(marker!.height).toBeGreaterThanOrEqual(44)
+  }
+  expect(await app.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0)
+}
+
+test("10 session list: rename and settle filter the reader's rows while retaining the open session", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("list", "List")
   const create = (title: string) => api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
   const alpha = await create("Alpha")
@@ -73,10 +135,27 @@ test("10 session list: the project's rows, live status, rename, archive and dele
 
   await app.goto(`${stack.url}/`)
   await expect.poll(() => rowTitles(app)).toEqual(await serverOrder(stack.url))
+  await sidebarSectionFilter(app, false)
+  await expect(app.getByRole("button", { name: "Activity", exact: true })).toHaveCount(0)
+  await expect(app.getByRole("combobox", { name: "Session options" })).toHaveCount(0)
+  const alphaRow = row(app, "Alpha")
+  const checkmark = alphaRow.getByRole("button", { name: "Settle Alpha", exact: true })
+  const bounds = await alphaRow.boundingBox()
+  expect(bounds?.height).toBeLessThan(44)
+  await app.mouse.move(900, 100)
+  expect(await checkmark.evaluate((button) => button.checkVisibility({ checkOpacity: true }))).toBe(false)
+  const titleWidth = await alphaRow.getByText("Alpha", { exact: true }).evaluate((title) => title.getBoundingClientRect().width)
+  await alphaRow.getByRole("button", { name: "Alpha", exact: true }).focus()
+  await expect.poll(() => checkmark.evaluate((button) => button.checkVisibility({ checkOpacity: true }))).toBe(true)
+  expect(await alphaRow.getByText("Alpha", { exact: true }).evaluate((title) => title.getBoundingClientRect().width)).toBe(titleWidth)
+  await checkmark.hover()
+  const buttonSurface = await checkmark.evaluate((button) => ({ background: getComputedStyle(button).backgroundColor, outline: getComputedStyle(button).boxShadow }))
+  expect(buttonSurface.background).not.toBe("rgba(0, 0, 0, 0)")
+  expect(buttonSurface.outline).not.toBe("none")
 
   await liveStatus(stack, api, app, workspace.directory, bravo)
 
-  await sessionAction(stack, app, workspace, charlie, "Rename")
+  await sessionAction(app, charlie, "Rename")
   const editor = app.locator("input:focus, [role=textbox]:focus").and(app.locator(":not([contenteditable])"))
   await expect(editor).toHaveValue("Charlie")
   await editor.fill("Charlie renamed")
@@ -84,18 +163,22 @@ test("10 session list: the project's rows, live status, rename, archive and dele
   await expect(row(app, "Charlie renamed")).toBeVisible()
   await expect.poll(async () => (await api.session(workspace.directory, charlie.id)).title).toBe("Charlie renamed")
 
-  await row(app, "Alpha").hover()
-  await app.getByRole("button", { name: "Archive Alpha" }).click()
+  await row(app, "Alpha").getByRole("button", { name: "Alpha", exact: true }).click()
+  await expect(app).toHaveURL(new RegExp(alpha.id))
+  const opened = app.url()
+  await app.getByRole("button", { name: "Settle Alpha" }).click()
   await expect(row(app, "Alpha")).toHaveCount(0)
-  await expect.poll(async () => (await api.session(workspace.directory, alpha.id)).time.archived ?? 0).toBeGreaterThan(0)
+  await expect(app).toHaveURL(opened)
+  await expect.poll(async () => (await serverRows(stack.url, "settled")).map((row) => row.title)).toEqual(["Alpha"])
+  const settled = (await serverRows(stack.url, "settled"))[0]
+  expect(settled.reader?.settledThrough).toBe(settled.attention?.activitySequence)
+  expect((await api.session(workspace.directory, alpha.id)).time.archived).toBeUndefined()
+  expect((await api.sessions(workspace.directory)).map((row) => row.id)).toContain(alpha.id)
+  expect(await serverOrder(stack.url)).not.toContain("Alpha")
 
-  await sessionAction(stack, app, workspace, bravo, "Delete")
-  await app.getByRole("dialog").getByRole("button", { name: "Delete session" }).click()
-  await expect(row(app, "Bravo")).toHaveCount(0)
-  await expect.poll(() => sessionStatusCode(api, workspace.directory, bravo.id)).toBe(404)
-
-  expect(await serverOrder(stack.url)).toEqual(["Charlie renamed"])
-  await expect.poll(() => rowTitles(app)).toEqual(["Charlie renamed"])
+  await sidebarFilter(app, "Activity")
+  await expect(app.getByTestId("activity-session-row").filter({ has: app.getByRole("button", { name: "Alpha", exact: true }) })).toHaveCount(0)
+  await expect(app).toHaveURL(opened)
 })
 
 test("10 a background turn, in a session visited before, changes only its own rail row, wakes no animation frame, and leaves a finished dot until the reader opens it", async ({ stack, api, app }) => {

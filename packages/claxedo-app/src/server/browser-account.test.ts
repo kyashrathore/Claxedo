@@ -32,6 +32,7 @@ function worker(options: { unauthorized?: boolean; malformed?: boolean } = {}) {
     }
     if (url.pathname === "/api/control/sessions/ses_1/outline") return Response.json({ session: { session_id: "ses_1", title: "Stored turn", created_at: 1, updated_at: 2 }, outline: { turns: [], complete: true }, page: { turns: [{ messages: stored }] } })
     if (url.pathname === "/api/control/session-list") return Response.json({ items: [{ sessionId: "ses_1", workspaceId: "ws_cloud", directory: "workspace:ws_cloud", title: "Stored turn", sessionRef: "ws_cloud:ses_1", createdAt: 1, updatedAt: 2 }] })
+    if (url.pathname === "/api/control/session-attention") return Response.json({ events: [], through: 0 })
     throw new Error(`Unexpected Worker request: ${url.pathname}`)
   }, { preconnect: originalFetch.preconnect })
   return calls
@@ -54,6 +55,8 @@ test("signed browser build lists account projects, placements and sessions with 
       await expect(server.queryClient.fetchQuery(server.queries.projects.byId(projectId("missing")))).rejects.toMatchObject({ class: "not_found" })
       expect(calls.some((call) => call.path.startsWith("/api/claxedo/projects"))).toBe(false)
       expect(calls.filter((call) => call.path.startsWith("/api/control/session-list"))).toHaveLength(1)
+      expect(calls.filter((call) => call.path.startsWith("/api/control/session-attention"))).toHaveLength(1)
+      expect(calls.some((call) => call.path.startsWith("/api/claxedo/session-attention"))).toBe(false)
       expect(calls.every((call) => call.init?.credentials === "include" && !new Headers(call.init?.headers).has("Authorization"))).toBe(true)
     } finally { server.dispose(); dispose() }
   })

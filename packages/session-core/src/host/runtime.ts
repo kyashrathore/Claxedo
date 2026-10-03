@@ -27,6 +27,8 @@ import { recoveryWiring } from "./recovery-wiring"
 import { createRequestSurface } from "./requests"
 import { createPermissionModeWrite, createSessionRowWrites } from "./session-row"
 import { createSessionLifecycle } from "./sessions"
+import { withDeleteAdmission } from "./delete-admission"
+import type { SessionDeleteRequest } from "@claxedo/agent-runtime-contract"
 import { createSessionTitleOwner } from "./session-titles"
 import { createRuntimeSubscription, type RuntimeSubscriber } from "./subscription"
 import { admitTurnMessageIds, createTurnAdmissions, deliverToBusySession } from "./turn-admission"
@@ -309,6 +311,10 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
       async get(sessionId: string, _directory?: RuntimeDirectory): Promise<AgentSession | null> {
         return store.getSession(sessionId) ?? null
       },
+      async attention(sessionId: string, after: number, limit: number, directory?: RuntimeDirectory) {
+        requireExecutionBinding(store, sessionId, directory)
+        return store.sessionAttentionHistory(sessionId, after, limit)
+      },
       async list(inputDirectory: RuntimeDirectory): Promise<AgentSession[]> {
         return store.listSessions(runtimeDirectory(inputDirectory))
       },
@@ -318,6 +324,15 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
         sessions.updateSessionConfig(sessionId, update, directory, secretAuthority),
       delete: (sessionId: string, directory?: RuntimeDirectory, secretAuthority?: ConnectionSecretAuthority) =>
         sessions.delete(sessionId, directory, secretAuthority),
+      withDeleteAdmission: <T>(sessionId: string, request: SessionDeleteRequest, operation: (deletedSessionIds: string[]) => Promise<T>) =>
+        withDeleteAdmission(store, admissions, sessionId, request, operation),
+      async children(sessionId: string): Promise<AgentSession[]> {
+        return store.sessionDescendants(sessionId).map(id => {
+          const row = store.getSession(id)
+          if (!row) throw new Error(`Session descendant ${id} is missing`)
+          return row
+        })
+      },
       fork: (sessionId: string, messageId: string, childId?: string, directory?: RuntimeDirectory, secretAuthority?: ConnectionSecretAuthority) =>
         sessions.fork(sessionId, messageId, childId, directory, secretAuthority),
     }),

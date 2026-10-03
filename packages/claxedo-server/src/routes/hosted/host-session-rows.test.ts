@@ -83,4 +83,23 @@ describe("POST /api/claxedo/host/session-rows", () => {
     expect((await post(routes({ verify: undefined }).app, body)).status).toBe(501)
     expect((await post(routes({ publish: undefined }).app, body)).status).toBe(501)
   })
+
+  test("committed removals reach private fanout and report a failed fanout", async () => {
+    const removed = { workspaceId: "ws_local", sessionId: "ses_1" }
+    const notice = { ...removed, type: "session.removed" as const, ownerUserId: "user_owner", projectId: "prj_1", ts: 10 }
+    const publish = vi.fn(async () => ({ accepted: 1, refused: [] }))
+    const sessionPublicationNotices = vi.fn(async () => [notice])
+    const sink = vi.fn(async () => { throw new Error("Room unavailable") })
+    const app = HostSessionRowsRoutes({
+      relay: { hostTunnelTokenVerifier: async () => claims },
+      authority: { publishHostSessionRows: publish, sessionPublicationNotices },
+    } as unknown as ControlPlaneServices, { notice: sink })
+    const response = await post(app, { hostId: "machine-r", rows: [], removed: [removed] })
+    expect(response.status).toBe(500)
+    expect(publish).toHaveBeenCalledOnce()
+    expect(sessionPublicationNotices).toHaveBeenCalledWith([removed], [])
+    expect(sink).toHaveBeenCalledWith(notice)
+  })
+
+
 })

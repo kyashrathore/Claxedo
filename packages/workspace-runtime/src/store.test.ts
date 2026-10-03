@@ -2300,7 +2300,7 @@ void describe("RuntimeStore", () => {
       ["p2"],
     )
     assert.equal((next.getSession("s1") as { status?: string } | null)?.status, "interrupted")
-    assert.equal((next.getSession("s2") as { status?: string } | null)?.status, undefined)
+    assert.equal((next.getSession("s2") as { status?: string } | null)?.status, "idle")
   })
 
   void it("terminalizes running tool parts after interruption", () => {

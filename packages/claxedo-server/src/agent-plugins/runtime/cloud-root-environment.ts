@@ -2,6 +2,7 @@ import type { SignedActivationSnapshot } from "@claxedo/server-core/agent-plugin
 import {
   BUILTIN_SUBAGENTS_TOOL_GROUP,
   BUILTIN_TASKS_TOOL_GROUP,
+  BUILTIN_SESSION_CLEANUP_TOOL_GROUP,
   builtinPluginInstanceId,
   resolveBuiltinGroupActivation,
   type BuiltinDeployment,
@@ -34,6 +35,7 @@ export type CloudRootEnvironmentInput = Readonly<{
   tasksGrant: (root: CloudRootIdentity) => Promise<Record<string, string>>
   /** The grant the root's runtime acts on its own sessions with, as the workspace's owner, minted for one root. */
   ownerGrant: (root: CloudRootIdentity) => Promise<Record<string, string>>
+  sessionCleanupGrant?: (root: CloudRootIdentity) => Promise<Record<string, string>>
 }>
 
 /**
@@ -56,11 +58,12 @@ export type CloudRootEnvironmentInput = Readonly<{
 export function createCloudRootEnvironment(input: CloudRootEnvironmentInput) {
   return async (root: CloudRootIdentity): Promise<Record<string, string>> => {
     const groups = await enabledBuiltinGroups(input, root)
-    const [tasks, owner] = await Promise.all([
+    const [tasks, owner, cleanup] = await Promise.all([
       groups.includes(BUILTIN_TASKS_TOOL_GROUP) ? input.tasksGrant(root) : {},
       groups.includes(BUILTIN_SUBAGENTS_TOOL_GROUP) ? input.ownerGrant(root) : {},
+      groups.includes(BUILTIN_SESSION_CLEANUP_TOOL_GROUP) ? input.sessionCleanupGrant?.(root) ?? {} : {},
     ])
-    return { ...workspaceRuntimeMcpToolGroupsEnv(groups), ...tasks, ...owner }
+    return { ...workspaceRuntimeMcpToolGroupsEnv(groups), ...tasks, ...owner, ...cleanup }
   }
 }
 

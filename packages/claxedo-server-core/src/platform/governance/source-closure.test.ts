@@ -54,6 +54,23 @@ describe("runtimeImportSpecifiers", () => {
   it("keeps an inline type specifier's module, because the statement still imports a value", () => {
     expect(runtimeImportSpecifiers(`import { type Shape, build } from "./m"`)).toEqual(["./m"])
   })
+
+  it("keeps the value re-export after a local type declaration without a semicolon", () => {
+    expect(runtimeImportSpecifiers([
+      `export type Shape = { ok: boolean }`,
+      `export { build } from "./runtime"`,
+    ].join("\n"))).toEqual(["./runtime"])
+  })
+
+  it("erases named and namespace type re-exports without consuming a later runtime export", () => {
+    expect(runtimeImportSpecifiers([
+      `export type { Shape, Result as Outcome } from "./named"`,
+      `export type * from "./all"`,
+      `export type * as Contracts from "./namespace"`,
+      `export type Local = { readonly ok: boolean }`,
+      `export * from "./runtime"`,
+    ].join("\n"))).toEqual(["./runtime"])
+  })
 })
 
 describe("opaqueDynamicImports", () => {
@@ -145,6 +162,21 @@ describe("sourceClosure opacity", () => {
 })
 
 describe("sourceClosure with runtimeOnly", () => {
+  it("walks a real value re-export following a local type declaration", () => {
+    const root = fixture({
+      "entry.ts": `export type Shape = { ok: boolean }\nexport { build } from "./runtime"`,
+      "runtime.ts": `import "./owner"\nexport const build = () => 1`,
+      "owner.ts": `import "hono"`,
+    })
+    try {
+      const closure = sourceClosure({ entry: path.join(root, "entry.ts"), root, runtimeOnly: true })
+      expect(closure.modules.map((module) => module.relative)).toEqual(["entry.ts", "owner.ts", "runtime.ts"])
+      expect(closure.packages).toEqual(["hono"])
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("stops at a type-only edge, so an erased import cannot report reachable surface", () => {
     const root = fixture({
       "entry.ts": `import type { Shape } from "./hosted"\nimport "./local"`,

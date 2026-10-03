@@ -9,6 +9,8 @@ import { createIdentityResolver } from "./identity"
 import { createAccountService } from "./account-service"
 import { CredentialStoreConflict, type CredentialStore, type StoredDesktopCredential } from "./credential-store"
 import type { DesktopNativeAuth } from "./desktop-native-auth"
+import { setupSessionCleanupGrantSync } from "../session-cleanup-grant-sync"
+import { recordingDaemon } from "../test-support/daemon-fetch"
 
 const BINDING: DesktopCredentialBinding = {
   kind: "desktop",
@@ -128,6 +130,42 @@ function harness(
 }
 
 describe("bound desktop account lifecycle", () => {
+  test("main mints and withdraws the cleanup grant through the real signed account entrypoints", async () => {
+    const { daemon, requests } = recordingDaemon()
+    let sync: ReturnType<typeof setupSessionCleanupGrantSync> | undefined
+    const hosted: Array<{ url: string; headers: Record<string, string>; body?: string }> = []
+    const grant = { token: "only-scoped-cleanup", expiresAt: 1_000_000 + 300_000, actorId: "actor_canonical", orgId: "org_canonical" }
+    const h = harness({
+      onStateChange: (state) => sync?.follow(state),
+      fetch: async (url, init) => {
+        hosted.push({ url, headers: init.headers, body: init.body })
+        return Response.json(grant)
+      },
+    })
+    sync = setupSessionCleanupGrantSync({
+      coreOrigin: BINDING.controlPlaneOrigin,
+      runAccountOperation: h.service.run.bind(h.service),
+      daemon,
+      now: () => 1_000_000,
+      log: { info: () => {}, warn: () => {} },
+    })
+    await h.service.signIn()
+    await sync.refresh()
+    expect(hosted).toEqual([{
+      url: "https://core.example/api/claxedo/session-cleanup/grant/desktop",
+      headers: { authorization: "Bearer at_1", "content-type": "application/json" }, body: "{}",
+    }])
+    expect(requests.at(-1)?.body).toEqual({ capability: { ...grant, origin: BINDING.controlPlaneOrigin } })
+    expect(JSON.stringify(requests)).not.toContain("at_1")
+    expect(JSON.stringify(requests)).not.toContain("rt_1")
+    expect(JSON.stringify(h.service.state())).not.toContain(grant.token)
+    await h.service.signOut()
+    await sync.refresh()
+    expect(requests.at(-1)?.body).toEqual({ capability: null })
+    expect(h.service.state().status).toBe("unsigned")
+    await sync.stop()
+  })
+
   test("validates on restore and again before every API use, then uses only the bound core", async () => {
     const h = harness({ store: memoryStore(CREDENTIAL) })
     await h.service.restore()
@@ -676,7 +714,7 @@ describe("bound desktop account lifecycle", () => {
     const h = harness({
       store: memoryStore(CREDENTIAL),
       fetch: async (url, init) => {
-        calls.push({ url: String(url), init })
+        calls.push({ url, init })
         return Response.json({ status: "stopped", workspaceId: "ws_1" })
       },
     })

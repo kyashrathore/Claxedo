@@ -4,6 +4,7 @@ import type { AccountCatalog } from "./wire/account-catalog"
 import type { PlacementRecord } from "./wire/placements"
 
 export type LinkedCatalog = {
+  readonly accountWorkspaceIds: readonly string[]
   readonly placements: readonly PlacementRecord[]
   readonly projects: readonly Project[]
   readonly accountProjectIds: (projectId: ProjectId) => readonly ProjectId[]
@@ -50,6 +51,7 @@ export function linkAccountCatalog(local: readonly PlacementRecord[], account: A
     })
   const ids = accountIdsOf(account, pairs)
   return {
+    accountWorkspaceIds: account.placements.flatMap((record) => record.route.workspaceId ? [record.route.workspaceId] : []),
     placements,
     projects: account.projects.filter((project) => !pairs.has(project.id)),
     accountProjectIds: (projectId) => ids.get(projectId) ?? [],

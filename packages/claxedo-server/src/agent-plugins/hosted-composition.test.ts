@@ -1,6 +1,7 @@
 import { expect, test, vi } from "vitest"
 import { createHostedAgentPluginsComposition } from "./hosted-composition"
 import type { AgentPluginMcpRuntimeState } from "./mcp/runtime-preparation"
+import { memorySandboxPassRegister } from "../platform/auth/sandbox-pass-register"
 
 type Input = Parameters<typeof createHostedAgentPluginsComposition>[0]
 const preparation = { state: { kind: "agent-plugins-mcp-runtime", plan: { revision: 1, mcpServers: [], execution: { selectionHash: "a".repeat(64), selections: [] } } } satisfies AgentPluginMcpRuntimeState }
@@ -16,7 +17,7 @@ function composition(pushRuntime?: Input["pushRuntime"]) {
     authentication: {} as Input["authentication"],
     tasksGrant: async () => { throw new Error("Unexpected Tasks grant") },
     ownerGrant: async () => { throw new Error("Unexpected owner grant") },
-    passes: { record: async () => {}, revoked: async () => false, revoke: async () => 0, outstanding: async () => [] },
+    passes: memorySandboxPassRegister(),
     pushRuntime,
   })
 }

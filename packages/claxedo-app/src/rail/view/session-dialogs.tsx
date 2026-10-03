@@ -32,7 +32,7 @@ export function RenameSessionDialog(props: { readonly title: string; readonly on
         <DialogTitle>{t("rail.rename")}</DialogTitle>
       </DialogHeader>
       <DialogBody class="px-4 pb-4">
-      <form class="flex min-w-[340px] flex-col gap-4" onSubmit={(event) => void form.submit(event)}>
+      <form class="flex w-[340px] min-w-0 max-w-full flex-col gap-4" onSubmit={(event) => void form.submit(event)}>
         <TextField label={t("rail.renameLabel")} hideLabel value={title()} onChange={setTitle} autofocus />
         <div class="flex justify-end gap-2">
           <Button type="button" variant="ghost" size="large" onClick={form.cancel}>
@@ -40,33 +40,6 @@ export function RenameSessionDialog(props: { readonly title: string; readonly on
           </Button>
           <Button type="submit" variant="contrast" size="large" disabled={form.busy() || title().trim().length === 0}>
             {t("rail.save")}
-          </Button>
-        </div>
-      </form>
-      </DialogBody>
-    </Dialog>
-  )
-}
-
-export function DeleteSessionDialog(props: { readonly title: string; readonly onConfirm: () => Promise<void> }): JSX.Element {
-  const t = useTranslator(railDictionary)
-  const form = useSubmit(props.onConfirm, () => t("rail.deleteFailed"))
-  return (
-    <Dialog fit>
-      <DialogHeader>
-        <DialogTitle>{t("rail.deleteTitle")}</DialogTitle>
-      </DialogHeader>
-      <DialogBody class="px-4 pb-4">
-      <form class="flex flex-col gap-4" onSubmit={(event) => void form.submit(event)}>
-        <div class="flex flex-col gap-1">
-          <span class="text-14-regular text-text-strong">{t("rail.deleteConfirm", { name: props.title })}</span>
-        </div>
-        <div class="flex justify-end gap-2">
-          <Button type="button" variant="ghost" size="large" onClick={form.cancel}>
-            {t("rail.cancel")}
-          </Button>
-          <Button type="submit" variant="contrast" size="large" disabled={form.busy()}>
-            {t("rail.deleteButton")}
           </Button>
         </div>
       </form>

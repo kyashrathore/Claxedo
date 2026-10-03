@@ -67,7 +67,6 @@ import type {
   PageShape,
   PromptInput,
   QueuedPrompt,
-  ReaderSettings,
   QueuedPromptAction,
   QueuedPromptControl,
   SessionCreateInput,
@@ -77,7 +76,6 @@ import type {
   SessionReads,
   SessionLocation,
   SessionRow,
-  Subagent,
   TranscriptPage,
   TranscriptPart,
 } from "./types"
@@ -86,6 +84,8 @@ import type { UsageRequest, UsageSummary } from "./usage-types"
 import type { LivePlugin } from "./live-plugin-types"
 
 export type SessionsApi = {
+  readonly inventory: (input: import("./types").SessionInventoryInput) => Promise<import("./types").SessionInventoryPage>
+  readonly reader: (ref: SessionLocation, command: import("@claxedo/agent-runtime-contract").SessionReaderCommand) => Promise<import("@claxedo/agent-runtime-contract").SessionReaderState>
   readonly list: (input: SessionListInput) => Promise<SessionPage>
   readonly read: (ref: SessionLocation, shape: PageShape, held?: HeldSessionReads) => SessionReads
   readonly page: (ref: SessionLocation, shape: PageShape, before: string) => Promise<TranscriptPage>
@@ -194,6 +194,7 @@ export type LivePluginsApi = {
 }
 
 export type ServerQueries = {
+  readonly localSessionLocation: (sessionId: import("./ids").SessionId) => FetchQuery<SessionLocation>
   readonly livePlugins: {
     readonly list: () => FetchQuery<readonly LivePlugin[]>
   }

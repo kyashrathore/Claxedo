@@ -11,6 +11,8 @@ export const CLAXEDO_TOOL_TITLE_KEYS = {
   task_edit: "transcript.claxedoTool.task_edit",
   task_start: "transcript.claxedoTool.task_start",
   session_create: "transcript.claxedoTool.session_create",
+  sessions_cleanup_list: "transcript.claxedoTool.sessions_cleanup_list",
+  sessions_delete: "transcript.claxedoTool.sessions_delete",
   sessions_list: "transcript.claxedoTool.sessions_list",
   session_get: "transcript.claxedoTool.session_get",
   session_transcript: "transcript.claxedoTool.session_transcript",

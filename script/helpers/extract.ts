@@ -30,11 +30,10 @@ import * as path from "node:path"
 import { createHash } from "node:crypto"
 
 export const REPO_ROOT = path.resolve(import.meta.dirname, "..", "..")
-const PACKAGES = path.join(REPO_ROOT, "packages")
 
 /** Directories that never contain reviewed source. */
 const SKIP_DIR = new Set(["node_modules", "dist", "out", "build", "coverage", ".git", ".artifacts", ".turbo"])
-const SKIP_FILE = /\.(test|vitest|spec|bench)\.(ts|tsx)$|\.d\.ts$/
+const SKIP_FILE = /\.(test|node-test|vitest|spec|bench)\.(ts|tsx)$|\.d\.ts$/
 
 /**
  * Source that ships versus source that supports it. Both are scanned — a
@@ -42,7 +41,7 @@ const SKIP_FILE = /\.(test|vitest|spec|bench)\.(ts|tsx)$|\.d\.ts$/
  * two are reported separately so a clone in a script or e2e helper never outranks a
  * divergent narrowing helper in shipped code.
  */
-const SUPPORT_PATH = /(^|\/)(scripts?|bench|e2e|test-support)(\/|$)/
+const SUPPORT_PATH = /(^|\/)(scripts?|bench|e2e|test-support)(\/|$)|\.test-support\.(ts|tsx)$/
 
 export type Helper = {
   pkg: string
@@ -72,9 +71,10 @@ export type Helper = {
  * files are excluded: a helper declared inside one is fixture scaffolding, not
  * a candidate for sharing.
  */
-function* sourceFiles(): Generator<{ pkg: string; abs: string }> {
-  for (const pkg of fs.readdirSync(PACKAGES).sort()) {
-    const base = path.join(PACKAGES, pkg)
+function* sourceFiles(root: string): Generator<{ pkg: string; abs: string }> {
+  const packages = path.join(root, "packages")
+  for (const pkg of fs.readdirSync(packages).sort()) {
+    const base = path.join(packages, pkg)
     if (!fs.statSync(base).isDirectory()) continue
     const stack = [base]
     while (stack.length) {
@@ -474,9 +474,10 @@ function alphaNormalize(body: string): string {
  * floor with it. They matter only to the RESERVED rule, which asks whether a
  * canonical name was redefined — a question depth does not change.
  */
-export function inventory(options: { nested?: boolean } = {}): Helper[] {
+export function inventory(options: { nested?: boolean; root?: string } = {}): Helper[] {
+  const root = options.root ?? REPO_ROOT
   const helpers: Helper[] = []
-  for (const { pkg, abs } of sourceFiles()) {
+  for (const { pkg, abs } of sourceFiles(root)) {
     let text: string
     try {
       text = fs.readFileSync(abs, "utf8")
@@ -484,7 +485,7 @@ export function inventory(options: { nested?: boolean } = {}): Helper[] {
       continue
     }
     const s = scan(text)
-    const rel = path.relative(REPO_ROOT, abs)
+    const rel = path.relative(root, abs)
     const shipped = !SUPPORT_PATH.test(rel.replace(/^packages\/[^/]+\//, ""))
     const starts = options.nested
       ? [...s.topLevelStarts.map((v) => [v, false] as const), ...s.nestedStarts.map((v) => [v, true] as const)]

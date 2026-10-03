@@ -10,12 +10,14 @@ import {
   openSession,
   refreshWindow,
   replaceWindow,
+  replaceInventoryMembership,
   startCreate,
   startSend,
   tombstoneRow,
+  mergeRow,
   upsertRow,
 } from "./rows"
-import { backgroundWorkChanged, backgroundWorkRead, pageStatusesRead, statusChanged, statusRead } from "./statuses"
+import { backgroundWorkChanged, backgroundWorkRead, pageStatusesRead, rowsStatusesRead, statusChanged, statusRead } from "./statuses"
 
 type More = ReadonlyMap<ProjectId, MorePhase>
 
@@ -23,6 +25,7 @@ const NO_MORE: More = new Map()
 
 function data(state: ListState): ListData {
   return {
+    inventoryIds: state.inventoryIds,
     entries: state.entries,
     statuses: state.statuses,
     backgroundWork: state.backgroundWork,
@@ -45,6 +48,13 @@ function applyListEvent<S extends ListData>(state: S, event: ServerListEvent): S
       return tombstoneRow(state, event.ref, event.at)
     case "statusChanged":
       return statusChanged(state, event.ref, event.status, event.at)
+    case "attentionChanged":
+    case "readerChanged": {
+      const entry = state.entries.get(event.ref.sessionId)
+      if (!entry || entry.kind === "tombstone") return state
+      const title = event.type === "attentionChanged" && event.title !== undefined && event.attention.sequence >= (entry.row.attention?.sequence ?? 0) ? event.title : entry.row.title
+      return mergeRow(state, { ...entry.row, title, ...(event.type === "attentionChanged" ? { attention: event.attention, lastTurn: event.lastTurn } : { reader: event.reader }) })
+    }
     case "backgroundWorkChanged":
       return backgroundWorkChanged(state, event.ref, event.work, event.at)
     default:
@@ -60,6 +70,7 @@ function withPhase(more: More, projectId: ProjectId, phase: MorePhase | undefine
 }
 
 function serverEvent(state: ListState, event: ServerListEvent): ListState {
+  if (event.type === "attentionChanged" || event.type === "readerChanged") state = withData(state, applyListEvent(state, event))
   if (state.kind === "fetching" || state.kind === "rereading") return { ...state, held: [...state.held, event] }
   if (state.kind === "live") {
     const projectId = event.type === "sessionUpserted" ? event.row.ref.projectId : event.ref.projectId
@@ -111,19 +122,40 @@ function fetchEvent(state: ListState, event: ListEvent): ListState | undefined {
   }
 }
 
-function sessionRead(state: ListState, event: Extract<ListEvent, { type: "rowRead" | "statusRead" | "backgroundWorkRead" }>): ListData {
+function sessionRead(state: ListState, event: Extract<ListEvent, { type: "inventoryRead" | "rowRead" | "statusRead" | "backgroundWorkRead" }>): ListData {
   switch (event.type) {
+    case "inventoryRead":
+      return replaceInventoryMembership(rowsStatusesRead(event.rows.reduce((current, row) => mergeRow(current, row, event.sentAt), state), event.rows, event.statuses, event.sentAt), event.ids)
     case "rowRead":
       return upsertRow(state, event.row)
     case "statusRead":
       return statusRead(state, event.ref, event.status, event.sentAt)
     case "backgroundWorkRead":
       return backgroundWorkRead(state, event.ref, event.work, event.sentAt)
+    default: return unreachable(event)
+  }
+}
+
+function optimisticEvent(state: ListState, event: Extract<ListEvent, { type: "createStarted" | "createConfirmed" | "createFailed" | "sendStarted" | "sendFailed" }>): ListData {
+  switch (event.type) {
+    case "createStarted":
+      return startCreate(state, event.clientRequestId, event.row)
+    case "createConfirmed":
+      return confirmCreate(state, event.clientRequestId, event.row)
+    case "createFailed":
+      return failCreate(state, event.clientRequestId)
+    case "sendStarted":
+      return startSend(state, event.sessionId, event.clientRequestId, event.at)
+    case "sendFailed":
+      return failSend(state, event.sessionId, event.clientRequestId)
+    default: return unreachable(event)
   }
 }
 
 export function listTransition(state: ListState, event: ListEvent): ListState {
   switch (event.type) {
+    case "attentionChanged":
+    case "readerChanged":
     case "sessionUpserted":
     case "sessionRemoved":
     case "statusChanged":
@@ -139,6 +171,7 @@ export function listTransition(state: ListState, event: ListEvent): ListState {
     case "rereadFetched":
     case "rereadFailed":
       return fetchEvent(state, event) ?? state
+    case "inventoryRead":
     case "rowRead":
     case "statusRead":
     case "backgroundWorkRead":
@@ -148,15 +181,11 @@ export function listTransition(state: ListState, event: ListEvent): ListState {
     case "sessionClosed":
       return withData(state, closeSession(state, event.sessionId))
     case "createStarted":
-      return withData(state, startCreate(state, event.clientRequestId, event.row))
     case "createConfirmed":
-      return withData(state, confirmCreate(state, event.clientRequestId, event.row))
     case "createFailed":
-      return withData(state, failCreate(state, event.clientRequestId))
     case "sendStarted":
-      return withData(state, startSend(state, event.sessionId, event.clientRequestId, event.at))
     case "sendFailed":
-      return withData(state, failSend(state, event.sessionId, event.clientRequestId))
+      return withData(state, optimisticEvent(state, event))
     default:
       return unreachable(event)
   }

@@ -69,7 +69,21 @@ export const serverWorkerd: Policy = {
   // The D1 workspace authority's refusal type and its owner identity and
   // bootstrap-claim helpers are modules of their own
   // (`authority/adapters/d1/workspace-authority-error.ts`, `owner-identity.ts`).
-  ceilings: { modules: 120, packages: 19 },
+  // Session inventory now composes its reader, attention-history, availability
+  // and authorized notice owners beside the D1 authority. Cloud publication
+  // owns its fence and grant; session cleanup owns capability admission and its
+  // runtime client. Workspace records, session principals, share selection and
+  // transcript reads are canonical D1 modules. All three Worker builds, built
+  // entry smokes and the emitted manifest were verified at this exact graph.
+  // session/cleanup-authorization.ts owns the original delegated capability
+  // and revalidates expiry, revocation and origin authority for each target,
+  // including after asynchronous runtime dispatch admission. All Worker builds,
+  // built-entry smokes and emitted boundaries reviewed the 147/19 graph.
+  // session-registration-intent.ts owns reservation validation and immutable
+  // retry identity, extracted from the same D1 session authority. The abandoned
+  // Working-entry delivery receipt is removed; canonical attention publication
+  // owns notices. Exact current source closure: 148/19, with no headroom.
+  ceilings: { modules: 148, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

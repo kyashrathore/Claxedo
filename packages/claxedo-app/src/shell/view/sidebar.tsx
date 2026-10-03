@@ -19,13 +19,13 @@ function SidebarHeader(): JSX.Element {
   const layout = useShellLayout()
   const label = () => (layout.sidebarPinned() ? t("shell.hideSidebar") : t("shell.pinSidebar"))
   return (
-    <div data-sidebar-header data-window-drag-region data-clear-window-controls class="flex h-9 shrink-0 items-center gap-1 border-b border-border-weaker-base bg-background-base px-1">
+    <div data-sidebar-header data-window-drag-region data-clear-window-controls class="flex shrink-0 items-center gap-1 border-b border-border-weaker-base bg-background-base px-1">
       <Tooltip placement="bottom" value={label()}>
         <div class="max-md:hidden shrink-0">
           <IconButton
             icon={layout.sidebarPinned() ? "layout-left-full" : "layout-left-partial"}
             variant="ghost"
-            class="size-6 rounded-sm text-icon-weak-base hover:text-icon-base"
+            class="ui-sidebar-header-button rounded-sm text-icon-weak-base hover:text-icon-base"
             onClick={() => layout.send({ type: "toggleSidebar" })}
             aria-label={label()}
             aria-pressed={layout.sidebarPinned() ? "true" : "false"}
@@ -84,7 +84,7 @@ function PhoneOpener(): JSX.Element {
       aria-expanded={open()}
       aria-pressed={open()}
       data-icon-interaction="binary"
-      class="md:hidden fixed left-1 top-[3px] z-[110] flex h-8 w-8 items-center justify-center rounded bg-transparent text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
+      class="md:hidden fixed left-0 top-0 z-[110] flex size-11 items-center justify-center rounded bg-transparent text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
       onClick={() => layout.send({ type: open() ? "hideSidebar" : "showSidebar" })}
     >
       <Icon name={open() ? "layout-left-full" : "layout-left-partial"} size="small" />

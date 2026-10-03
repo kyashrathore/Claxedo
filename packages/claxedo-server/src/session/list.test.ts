@@ -9,7 +9,7 @@ const signed = {
 }
 
 function services(authority: Record<string, unknown>) {
-  return { authority } as unknown as ControlPlaneServices
+  return { authority: { countSessions: vi.fn(async () => (3)), ...authority } } as unknown as ControlPlaneServices
 }
 
 function query(search: string) {
@@ -28,6 +28,20 @@ function row(sessionId: string, workspaceId: string, lastHumanTurnAt?: number) {
 }
 
 describe("signedSessionList", () => {
+  test("passes an exact navigation identity to both the authoritative page and count query", async () => {
+    const rich = { ...row("ses_off_page", "ws_1"), ownership: "owned", projectName: "Acme",
+      placement: { kind: "machine", machineId: "host_1", machineName: "Desktop" } }
+    const listSessionPage = vi.fn(async () => [rich])
+    const countSessions = vi.fn(async () => (1))
+    const response = await signedSessionList(services({ listSessionPage, countSessions }), signed,
+      query("scope=workspace&workspaceId=ws_1&sessionId=ses_off_page&limit=2&settled=all&seen=all"))
+    const exact = { sessionId: "ses_off_page", workspaceId: "ws_1", limit: 3, settled: "all", seen: "all" }
+    expect(listSessionPage).toHaveBeenCalledWith(signed, expect.objectContaining(exact))
+    expect(countSessions).toHaveBeenCalledWith(signed, expect.objectContaining(exact))
+    expect(response).toMatchObject({ items: [{ sessionId: "ses_off_page", projectName: "Acme", placement: rich.placement }], totalKnown: 1 })
+    expect(response.nextCursor).toBeUndefined()
+  })
+
   test("reads one keyset page of the project across its cloud and machine workspaces", async () => {
     const listSessionPage = vi.fn(async () => [row("ses_cloud", "ws_cloud", 9), row("ses_host", "ws_host", 5), row("ses_more", "ws_host")])
     const response = await signedSessionList(
@@ -40,6 +54,9 @@ describe("signedSessionList", () => {
       projectId: "prj_1",
       sort: "human_turn_desc",
       archived: "active",
+      settled: "active",
+      ownership: "all",
+      seen: "all",
       limit: 3,
     })
     expect(response.items?.map((item) => item.sessionRef)).toEqual([
@@ -47,6 +64,15 @@ describe("signedSessionList", () => {
       "workspace:ws_host:session:ses_host",
     ])
     expect(response.nextCursor).toBeTypeOf("string")
+    expect(response.totalKnown).toBe(3)
+  })
+
+  test("refuses unavailable counts instead of reporting the page window as a total", async () => {
+    const listSessionPage = vi.fn()
+    const error = await signedSessionList(services({ listSessionPage, countSessions: undefined }), signed, query("scope=all"))
+      .then(() => undefined, (err: unknown) => err)
+    expect(sessionListErrorResponse(error)?.status).toBe(503)
+    expect(listSessionPage).not.toHaveBeenCalled()
   })
 
   test("resumes the keyset from the cursor's row", async () => {
@@ -64,6 +90,9 @@ describe("signedSessionList", () => {
       workspaceId: "ws_1",
       sort: "human_turn_desc",
       archived: "active",
+      settled: "active",
+      ownership: "all",
+      seen: "all",
       limit: 2,
       after: { updatedAt: 2, createdAt: 1, lastHumanTurnAt: 9, sessionRef: "workspace:ws_1:session:ses_a" },
     })

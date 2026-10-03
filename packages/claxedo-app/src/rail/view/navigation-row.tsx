@@ -1,10 +1,12 @@
 import { Match, onCleanup, Show, Switch, type JSX } from "solid-js"
 import { useDragSource, useWorkbench } from "@/workbench"
+import { useShellLayout } from "@/shell"
 import type { HoverEngagement } from "../hover-engagement"
 import type { NavigationStatus } from "../model"
+import "../navigation-row.css"
 
 const ROW_SHELL_CLASS =
-  "sidebar-row relative flex items-center gap-2 py-0.5 mx-1 text-left outline-none hover:bg-surface-base-hover/40"
+  "sidebar-row relative flex items-center gap-2 py-0.5 mx-1 text-left outline-none"
 
 export type NavigationRowProps = {
   readonly class?: string
@@ -14,6 +16,7 @@ export type NavigationRowProps = {
   readonly active: boolean
   readonly onActivate: () => void
   readonly onContextMenu?: (event: MouseEvent) => void
+  readonly onKeyboardMenu?: (at: { x: number; y: number }) => void
   readonly engagement: HoverEngagement
   readonly prepareDrag?: () => string | undefined
   readonly children: JSX.Element
@@ -21,6 +24,11 @@ export type NavigationRowProps = {
 
 export function NavigationRow(props: NavigationRowProps): JSX.Element {
   const workbench = useWorkbench()
+  const layout = useShellLayout()
+  const activate = () => {
+    props.onActivate()
+    if (layout.phone()) layout.send({ type: "hideSidebar" })
+  }
   const drag = (element: HTMLElement) => {
     const prepare = props.prepareDrag
     if (!prepare) return
@@ -28,7 +36,7 @@ export function NavigationRow(props: NavigationRowProps): JSX.Element {
       contentId: prepare,
       sourceKind: "navigation-row",
       label: () => props.label,
-      onDropMissed: () => props.onActivate(),
+      onDropMissed: activate,
     })
     onCleanup(dispose)
   }
@@ -36,6 +44,7 @@ export function NavigationRow(props: NavigationRowProps): JSX.Element {
     <div
       ref={drag}
       {...props.data}
+      data-component="navigation-row"
       data-active={props.active ? "true" : "false"}
       class={props.class ? `${ROW_SHELL_CLASS} ${props.class}` : ROW_SHELL_CLASS}
       classList={props.classList}
@@ -52,7 +61,14 @@ export function NavigationRow(props: NavigationRowProps): JSX.Element {
         aria-current={props.active ? "page" : undefined}
         data-slot="navigation-row-activate"
         class="ui-navigation-row-activate absolute inset-0 rounded-[inherit] outline-none touch-pan-y focus-visible:ring-2 focus-visible:ring-border-interactive-base"
-        onClick={() => props.onActivate()}
+        onClick={activate}
+        onKeyDown={(event) => {
+          if (event.key !== "ContextMenu" && !(event.key === "F10" && event.shiftKey)) return
+          if (!props.onKeyboardMenu) return
+          event.preventDefault()
+          const bounds = event.currentTarget.getBoundingClientRect()
+          props.onKeyboardMenu({ x: bounds.left + 8, y: bounds.bottom })
+        }}
       />
       {props.children}
     </div>
@@ -62,7 +78,7 @@ export function NavigationRow(props: NavigationRowProps): JSX.Element {
 export function NavigationRowGlyph(props: { readonly children: JSX.Element }): JSX.Element {
   return (
     <span
-      class="absolute left-4 top-1/2 -translate-y-1/2 z-[1] pointer-events-none flex size-4 items-center justify-center"
+      class="absolute left-2 top-1/2 -translate-y-1/2 z-[1] pointer-events-none flex size-4 items-center justify-center"
     >
       {props.children}
     </span>

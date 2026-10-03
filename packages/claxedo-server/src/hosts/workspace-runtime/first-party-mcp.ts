@@ -5,11 +5,15 @@ import {
   inProcessFetch,
   mcpAuditRecord,
   type TasksGrant,
+  type SessionCleanupGrant,
   type VerifyRuntimeCredential,
 } from "@claxedo/mcp"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { Hono } from "hono"
+import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
+import { bearerToken } from "@claxedo/helpers/string"
 
 export const FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID = "claxedo-mcp"
 
@@ -25,12 +29,12 @@ export const FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID = "claxedo-mcp"
  * reach exactly the routes this workspace serves and nothing outside it. Each
  * call carries the owner grant, read at the call because the grant is renewed
  * while the root runs: the runtime verifies it and acts as the workspace's
- * owner, and a call after a lapse carries none and acts as nobody. The Tasks
- * grant is the exception and the reason it is passed in rather than built
- * here: those tools leave the workspace for the control plane, carrying the
- * capability this root was launched with. It is read per MCP session because
- * it too is renewed: a session opened after a renewal lists what the renewed
- * scope carries, and one opened after a lapse lists no Tasks tools at all.
+ * owner, and a call after a lapse carries none and acts as nobody. Tasks and
+ * Session cleanup leave the workspace for the control plane. The Tasks grant
+ * is read per MCP session as it renews. Cleanup receives the verified session
+ * and its original runtime credential so the control plane can independently
+ * verify origin before issuing a user-bound cleanup capability. The root's
+ * cleanup issuer proof cannot read inventory or delete sessions directly.
  */
 export function firstPartyMcpRuntimeContribution(input: {
   verifyRuntimeCredential: VerifyRuntimeCredential
@@ -38,8 +42,9 @@ export function firstPartyMcpRuntimeContribution(input: {
   enabledToolGroups: readonly string[]
   tasks?: () => TasksGrant | undefined
   ownerGrant?: () => string | undefined
+  sessionCleanup?: (sessionId: string, credential: string) => SessionCleanupGrant | undefined
 }): WorkspaceRuntimeRouteContribution {
-  const { verifyRuntimeCredential, tasks, ownerGrant } = input
+  const { verifyRuntimeCredential, tasks, ownerGrant, sessionCleanup } = input
   return {
     id: FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID,
     mount(context) {
@@ -48,8 +53,11 @@ export function firstPartyMcpRuntimeContribution(input: {
       const mount = createClaxedoMcpRoutes({
         mount: "loopback",
         verifyRuntimeCredential,
-        createClient: () => {
+        createClient: (credential, request) => {
           const grant = tasks?.()
+          const proof = bearerToken(request.headers.get("authorization"))
+          const cleanup = credential.kind === "runtime" && credential.sessionId && proof
+            ? sessionCleanup?.(credential.sessionId, proof) : undefined
           return createClaxedoMcpClient({
             deployment: "loopback",
             local: {
@@ -61,13 +69,25 @@ export function firstPartyMcpRuntimeContribution(input: {
               workspace,
             },
             ...(grant ? { tasks: grant } : {}),
+            ...(cleanup ? { sessionCleanup: cleanup } : {}),
           })
         },
         registerTools: CLAXEDO_MCP_TOOL_GROUPS,
         enabledToolGroups: () => input.enabledToolGroups,
         audit: (event) => log.info("mcp.audit", mcpAuditRecord(event)),
       })
-      return { path: CLAXEDO_MCP_PATH, routes: mount.routes, dispose: mount.dispose }
+      const routes = new Hono().route(CLAXEDO_MCP_PATH, mount.routes)
+      routes.post("/api/claxedo/session-cleanup/credential", async (c) => {
+        const actor = asRecord(asRecord(c.var)?.relayHostAuth)
+        if (actor?.role !== "owner" || actor.workspace_id !== context.workspaceId || actor.principal_kind !== "user" || actor.actor_kind !== "human" || actor.session_id !== undefined) {
+          return c.json({ error: { code: "session_cleanup_proof_access_denied" } }, 403)
+        }
+        const token = stringField(asRecord(await c.req.json().catch(() => undefined)), "credential")
+        const claims = token ? await verifyRuntimeCredential(token) : undefined
+        if (!claims?.sessionId || claims.workspaceId !== context.workspaceId) return c.json({ error: { code: "session_cleanup_origin_invalid" } }, 401)
+        return c.json({ runtimeId: claims.runtimeId, workspaceId: claims.workspaceId, sessionId: claims.sessionId })
+      })
+      return { path: "/", routes, dispose: mount.dispose }
     },
   }
 }

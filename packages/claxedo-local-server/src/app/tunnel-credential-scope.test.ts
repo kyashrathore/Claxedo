@@ -244,6 +244,7 @@ async function serveWorkspace(workspaceId: string) {
       credential: {
         hostId: "host_machine-1",
         enrollmentId: "enr_this_machine",
+        generation: 0,
         ownerActorId: "actor_owner",
         relayUrl: relay!.url,
         hostTunnelToken: "host-tunnel-token",

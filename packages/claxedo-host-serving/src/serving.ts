@@ -55,6 +55,7 @@ export type HostServingCredential = {
    * it on the ack beside the token whose claim already asserts it.
    */
   enrollmentId: string
+  generation: number
   relayUrl: string
   token: string
   workspaceIds: readonly string[]
@@ -101,6 +102,7 @@ type ActiveTunnel = {
 type ActiveServing = {
   hostId: string
   enrollmentId: string
+  generation: number
   relayUrl: string
   localBaseUrl: string
   token: { current: string }
@@ -117,19 +119,20 @@ let active: ActiveServing | undefined
  * host the token names, the token itself, and the workspaces it may speak
  * for. The relay address and the lease are the tunnel's concern.
  */
-export type HostServingPublisherCredential = Pick<HostServingCredential, "hostId" | "token" | "workspaceIds">
+export type HostServingPublisherCredential = Pick<HostServingCredential, "hostId" | "enrollmentId" | "generation" | "token" | "workspaceIds">
 
 type HostServingCredentialListener = (credential: HostServingPublisherCredential | undefined) => void
 
 const credentialListeners = new Set<HostServingCredentialListener>()
 
-function publisherCredential(): HostServingPublisherCredential | undefined {
+export function hostServingPublisherCredential(): HostServingPublisherCredential | undefined {
   if (!active) return undefined
-  return { hostId: active.hostId, token: active.token.current, workspaceIds: [...active.tunnels.keys()].sort() }
+  return { hostId: active.hostId, enrollmentId: active.enrollmentId, generation: active.generation,
+    token: active.token.current, workspaceIds: [...active.tunnels.keys()].sort() }
 }
 
 function announceCredential() {
-  const credential = publisherCredential()
+  const credential = hostServingPublisherCredential()
   for (const listener of Array.from(credentialListeners)) {
     try {
       listener(credential)
@@ -148,7 +151,7 @@ function announceCredential() {
  */
 export function onHostServingCredential(listener: HostServingCredentialListener): () => void {
   credentialListeners.add(listener)
-  listener(publisherCredential())
+  listener(hostServingPublisherCredential())
   return () => {
     credentialListeners.delete(listener)
   }
@@ -336,6 +339,7 @@ export async function setHostServing(
     active = {
       hostId: credential.hostId,
       enrollmentId: credential.enrollmentId,
+      generation: credential.generation,
       relayUrl,
       localBaseUrl,
       token: { current: credential.token },
@@ -350,6 +354,7 @@ export async function setHostServing(
   // each tunnel reads `token.current` when it dials or redials.
   serving.token.current = credential.token
   serving.enrollmentId = credential.enrollmentId
+  serving.generation = credential.generation
   // Each ack renews the lease; without this the first credential's expiry
   // would stop a machine that is still beating perfectly well.
   clearTimeout(serving.lapse)

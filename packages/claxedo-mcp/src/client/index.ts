@@ -1,6 +1,6 @@
 import { createWorkspaceRuntimeClient, workspaceRuntimeClientError, type WorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
 import { asRecord } from "@claxedo/helpers/guards"
-import type { AppPluginsGrant, ClaxedoFetch, ClaxedoMcpClient, ResolvedTarget, TasksGrant, WorkspaceSummary, WorkspaceTarget } from "./contract"
+import type { AppPluginsGrant, ClaxedoFetch, ClaxedoMcpClient, ResolvedTarget, SessionCleanupGrant, TasksGrant, WorkspaceSummary, WorkspaceTarget } from "./contract"
 import { ClaxedoMcpClientError } from "./errors"
 import {
   createWorkspaceConnectionCache,
@@ -18,6 +18,7 @@ export type {
   ClaxedoFetch,
   ClaxedoMcpClient,
   ResolvedTarget,
+  SessionCleanupGrant,
   TasksGrant,
   TasksOperation,
   WorkspaceSummary,
@@ -35,6 +36,7 @@ export type ClaxedoMcpClientOptions = Readonly<{
   documents?: Readonly<{ fetch: ClaxedoFetch }>
   tasks?: TasksGrant
   appPlugins?: AppPluginsGrant
+  sessionCleanup?: SessionCleanupGrant
   /** Dials the relay; defaults to the global fetch. */
   fetch?: (input: string, init?: RequestInit) => Promise<Response>
 }> &
@@ -176,6 +178,7 @@ export function createClaxedoMcpClient(options: ClaxedoMcpClientOptions): Claxed
     ...(options.documents ? { documents: options.documents.fetch } : {}),
     ...(options.tasks ? { tasks: options.tasks } : {}),
     ...(options.appPlugins ? { appPlugins: options.appPlugins } : {}),
+    ...(options.sessionCleanup ? { sessionCleanup: options.sessionCleanup } : {}),
     ...(local ? { ownWorkspace: local.workspace } : {}),
     ...(controlPlane ? { controlPlane: controlPlane.fetch } : {}),
     runtime,

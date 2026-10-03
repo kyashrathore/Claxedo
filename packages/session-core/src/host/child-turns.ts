@@ -10,9 +10,6 @@ import type { LeasedTurnFailure } from "../broker-ports/index"
 
 type ChildLifecycleEvent =
   | { type: "session-status"; status: "busy" }
-  | { type: "finish"; sessionId: string }
-  | { type: "cancelled"; sessionId: string }
-  | { type: "error"; error: string }
 
 /** What a parent's running turn, prompted or provider-initiated, lends its children: the prompt they inherit and where their lifecycle projects. */
 export type ParentTurnContext = {
@@ -47,11 +44,6 @@ function childOutcome(event: Pick<SubagentUpdatedEvent, "status" | "label">) {
   if (event.status === "failed") return { status: "failed" as const, completedAt, error: event.label ?? "Subagent failed" }
   if (event.status === "completed") return { status: "completed" as const, completedAt }
   return { status: "cancelled" as const, completedAt, reason: event.status ?? "interrupted" }
-}
-
-function childTerminal(outcome: ReturnType<typeof childOutcome>, sessionId: string): ChildLifecycleEvent {
-  if (outcome.status === "failed") return { type: "error", error: outcome.error }
-  return outcome.status === "cancelled" ? { type: "cancelled", sessionId } : { type: "finish", sessionId }
 }
 
 /**
@@ -114,12 +106,7 @@ export function createChildTurns(input: {
     return seeded
   }
 
-  const idleTerminal = (parentSessionId: string, child: SeededChild) => {
-    const reply = input.store.getMessages(child.target.sessionId).find((message) => message.info.id === child.target.assistantMessageId)
-    return reply?.info.time?.completed === undefined ? input.idleParent(parentSessionId) : undefined
-  }
-
-  const settle = (child: SeededChild, event: Pick<SubagentUpdatedEvent, "status" | "label">, parent: ParentTurnContext | undefined) => {
+  const settle = (child: SeededChild, event: Pick<SubagentUpdatedEvent, "status" | "label">) => {
     if (child.settled) return
     child.settled = true
     const outcome = childOutcome(event)
@@ -137,7 +124,6 @@ export function createChildTurns(input: {
     }
     input.childTurnSettled(child.target.sessionId, child.target.assistantMessageId)
     try {
-      parent?.projectChild(child.target, childTerminal(outcome, child.target.sessionId), SOURCE)
       for (const payload of finished.events) input.publish(child.target.sessionId, payload)
     } finally {
       input.store.releaseTurnLease(child.target.sessionId, child.leaseId)
@@ -158,7 +144,7 @@ export function createChildTurns(input: {
         const failures: unknown[] = []
         for (const child of children.values()) {
           if (child.parent !== context || child.mode === "background" || child.settled) continue
-          try { settle(child, { status: "interrupted" }, context) } catch (error) { failures.push(error) }
+          try { settle(child, { status: "interrupted" }) } catch (error) { failures.push(error) }
         }
         if (failures.length) throw new AggregateError(failures, "Foreground child settlement failed")
       }
@@ -180,7 +166,7 @@ export function createChildTurns(input: {
         publishSubagent: async (parentSessionId, event) => {
           await base.publishSubagent(parentSessionId, event)
           const child = event.childSessionId ? children.get(event.childSessionId) : undefined
-          if (child && isTerminalSubagentStatus(event.status)) settle(child, event, parents.get(parentSessionId) ?? idleTerminal(parentSessionId, child))
+          if (child && isTerminalSubagentStatus(event.status)) settle(child, event)
         },
       }
     },

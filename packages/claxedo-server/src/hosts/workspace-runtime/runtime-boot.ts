@@ -24,6 +24,8 @@ import { configureRuntimeGitAuth } from "./git-auth"
 import { workspaceRuntimeOwnerGrant } from "./owner-grant"
 import { workspaceRuntimeTasksGrant } from "./tasks-grant"
 import { cloudWorkspaceUsage, createSandboxUsageLedger } from "./cloud-usage"
+import { cloudSessionRowsFromEnv } from "./cloud-session-rows-from-env"
+import { workspaceRuntimeSessionCleanupGrant } from "./session-cleanup-grant"
 import {
   sandboxLeaseEnv,
   workspaceRuntimeMcpToolGroups,
@@ -154,6 +156,9 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   // later moment to start this at, and the timer holds nothing open.
   const tasks = workspaceRuntimeTasksGrant(env, ownerGrant ? { ownerGrant } : {})
   tasks?.start()
+  const sessionCleanup = workspaceRuntimeSessionCleanupGrant(env)
+  sessionCleanup?.start()
+  const sessionRows = cloudSessionRowsFromEnv(env)
   // A relay-exposed runtime answers to the control plane's session authority,
   // which is also where its turns' usage is reported.
   const authorityUrl = text(env, WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL)
@@ -190,16 +195,26 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
     ...(usage
       ? {
           sessionAccessPolicy: usage.sessionAccessPolicy,
-          onPresentationEvent: usage.onPresentationEvent,
-          onTurnOutcome: usage.onTurnOutcome,
           bindSessionConfig: usage.bindSessionConfig,
           bindSessionParents: usage.bindSessionParents,
-          onDrain: async () => {
-            await usage.drain()
-            usageLedger?.close()
-          },
         }
       : {}),
+    ...(usage || sessionRows ? {
+      onPresentationEvent: (event) => { usage?.onPresentationEvent(event); sessionRows?.onPresentationEvent(event) },
+      onTurnOutcome: (event) => { usage?.onTurnOutcome(event); sessionRows?.onTurnOutcome(event) },
+    } : {}),
+    ...(sessionRows ? { bindSessionInventory: sessionRows.bindSessionInventory.bind(sessionRows) } : {}),
+    ...(sessionRows || tasks || sessionCleanup ? { beforeStoreClose: async () => {
+      tasks?.stop()
+      sessionCleanup?.stop()
+      await sessionRows?.drain()
+    } } : {}),
+    ...(usage || tasks || sessionCleanup ? { onDrain: async () => {
+      tasks?.stop()
+      sessionCleanup?.stop()
+      await usage?.drain()
+      usageLedger?.close()
+    } } : {}),
     // A sandbox is nobody's desktop: the owner's logins never reach it, and
     // every session runs on brokered credentials.
     placement: { placement: "cloud", machineOwnerUserId: ownerGrant?.userId ?? "", canUseOwnLogin: false },
@@ -214,6 +229,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
         verifyRuntimeCredential: firstPartyMcp.verify,
         enabledToolGroups,
         tasks: () => tasks?.current(),
+        sessionCleanup: (sessionId, credential) => sessionCleanup?.forSession(sessionId, credential),
         ...(ownerGrant ? { ownerGrant: () => ownerGrant.current() } : {}),
       }),
     ],

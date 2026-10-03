@@ -38,6 +38,11 @@ export type SessionPeopleContext = {
 }
 
 export type SessionShareAuthority = {
+  resolveSessionShareRecipients?: (auth: SignedControlPlaneAuth, input: {
+    sessionId: string
+    workspaceId: string
+    target: SessionShareFanoutTarget
+  }) => Promise<string[]>
   /**
    * Creates the grant, or moves an existing one to `level`. One active grant
    * per (session, target) is the store's unique index, so a second grant at a

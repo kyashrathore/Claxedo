@@ -1,6 +1,6 @@
 import { clearOpaqueTimer } from "./async"
 export type SseFanoutCleanup = () => void
-export type SseFanoutMeta = { id?: string }
+export type SseFanoutMeta = { id?: string; replayed?: boolean }
 
 export type SseReplayBuffer<T> = {
   push(payload: T): { id: string; payload: T }
@@ -129,7 +129,7 @@ export function attachSseFanout<T>(input: {
   type Payload = T | { type: "heartbeat" } | { payload: { type: "server.heartbeat"; properties: {} } }
   // Terminality is decided where the value is still known to be a `T`; a
   // heartbeat or a replay-gap frame is never terminal.
-  type Pending = { payload: Payload; id?: string; terminal?: boolean }
+  type Pending = { payload: Payload; id?: string; terminal?: boolean; replayed?: boolean }
   const maxPending = Math.max(1, Math.floor(input.maxPending ?? 256))
   const pending: Pending[] = []
   let writing = false
@@ -198,7 +198,7 @@ export function attachSseFanout<T>(input: {
       while (!isClosed() && pending.length > 0) {
         const event = pending.shift()!
         if (event === gapNotice) gapNotice = undefined
-        await input.write(event.payload, { id: event.id })
+        await input.write(event.payload, { id: event.id, ...(event.replayed ? { replayed: true } : {}) })
       }
     } catch {
       cleanup()
@@ -227,7 +227,7 @@ export function attachSseFanout<T>(input: {
     enqueue({ payload: input.replayGap({ lastEventId: input.lastEventId, throughId }) })
   } else {
     for (const event of input.replay?.replayAfter(input.lastEventId, throughId) ?? []) {
-      enqueue({ payload: event.payload, id: event.id, terminal: isTerminal(event.payload) })
+      enqueue({ payload: event.payload, id: event.id, terminal: isTerminal(event.payload), replayed: true })
     }
   }
   replaying = false

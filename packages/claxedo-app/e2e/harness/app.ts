@@ -15,7 +15,7 @@ export function appDistDir() {
 }
 
 export function signedDistDir() {
-  return path.join(APP_ROOT, `${DIST_DIR}-signed`)
+  return path.resolve(APP_ROOT, process.env.CLAXEDO_E2E_SIGNED_DIST_DIR ?? `${DIST_DIR}-signed`)
 }
 
 export function newestMtime(entry: string): number {

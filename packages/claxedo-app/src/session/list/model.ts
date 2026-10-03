@@ -1,5 +1,5 @@
 import { unreachable } from "@/lib/machine"
-import type { AppError, BackgroundWork, ListedStatus, ProjectId, SessionId, SessionLocation, SessionRow, SessionSelections, SessionStatus } from "@/server"
+import type { ServerEvent, AppError, BackgroundWork, ListedStatus, ProjectId, SessionId, SessionLocation, SessionRow, SessionStatus } from "@/server"
 
 export type PendingSend = {
   readonly clientRequestId: string
@@ -13,6 +13,7 @@ export type ConfirmedEntry = {
   readonly kind: "confirmed"
   readonly row: SessionRow
   readonly pendingSend?: PendingSend
+  readonly availabilityReadAt?: number
 }
 
 export type PendingEntry = {
@@ -54,9 +55,10 @@ export type FetchedWindow = {
   readonly sentAt: number
 }
 
-export type ProjectWindow = { readonly tail: OrderKey; readonly nextAfter: string | undefined }
+export type ProjectWindow = { readonly tail: OrderKey; readonly nextAfter: string | undefined; readonly excluded: ReadonlySet<SessionId> }
 
 export type ListData = {
+  readonly inventoryIds: ReadonlySet<SessionId>
   readonly entries: ReadonlyMap<SessionId, ListEntry>
   readonly statuses: ReadonlyMap<SessionId, StatusEntry>
   readonly backgroundWork: ReadonlyMap<SessionId, BackgroundWorkEntry>
@@ -67,6 +69,7 @@ export type ListData = {
 }
 
 export type ServerListEvent =
+  | Extract<ServerEvent, { type: "attentionChanged" | "readerChanged" }>
   | { readonly type: "sessionUpserted"; readonly row: SessionRow }
   | { readonly type: "sessionRemoved"; readonly ref: SessionLocation; readonly at: number }
   | { readonly type: "statusChanged"; readonly ref: SessionLocation; readonly status: SessionStatus; readonly at: number }
@@ -107,6 +110,7 @@ export function followUpTransition(state: FollowUp, event: FollowUpEvent): Follo
 
 export type ListEvent =
   | ServerListEvent
+  | { readonly type: "inventoryRead"; readonly rows: readonly SessionRow[]; readonly statuses: ReadonlyMap<SessionId, ListedStatus>; readonly sentAt: number; readonly ids: ReadonlySet<SessionId> }
   | { readonly type: "fetchStarted" }
   | { readonly type: "fetched"; readonly window: FetchedWindow }
   | { readonly type: "fetchFailed"; readonly error: AppError }
@@ -133,6 +137,7 @@ export const WINDOW_ALL: OrderKey = { activity: Number.NEGATIVE_INFINITY, create
 
 export const initialListState: ListState = {
   kind: "subscribing",
+  inventoryIds: new Set(),
   entries: new Map(),
   statuses: new Map(),
   backgroundWork: new Map(),
@@ -166,41 +171,7 @@ export const insideWindow = (key: OrderKey, tail: OrderKey): boolean => compareO
 export const windowTail = (data: Pick<ListData, "windows">, projectId: ProjectId): OrderKey => data.windows.get(projectId)?.tail ?? WINDOW_EMPTY
 
 export const insideProjectWindow = (data: Pick<ListData, "windows">, row: SessionRow, key: OrderKey = orderKey(row)): boolean =>
-  insideWindow(key, windowTail(data, row.ref.projectId))
+  !data.windows.get(row.ref.projectId)?.excluded.has(row.ref.sessionId) && insideWindow(key, windowTail(data, row.ref.projectId))
 
 
 export const hasMorePages = (windows: ListData["windows"], projectId: ProjectId): boolean => windows.get(projectId)?.nextAfter !== undefined
-
-function laterHumanTurn(current: SessionRow, incoming: SessionRow): number | undefined {
-  if (current.lastHumanTurnAt === undefined) return incoming.lastHumanTurnAt
-  if (incoming.lastHumanTurnAt === undefined) return current.lastHumanTurnAt
-  return Math.max(current.lastHumanTurnAt, incoming.lastHumanTurnAt)
-}
-
-function withSelections(row: SessionRow, from: SessionSelections): SessionRow {
-  const { harness: _harness, model: _model, permissionMode: _permissionMode, permissionModeLabel: _permissionModeLabel, ...rest } = row
-  return {
-    ...rest,
-    ...(from.harness ? { harness: from.harness } : {}),
-    ...(from.model ? { model: from.model } : {}),
-    ...(from.permissionMode ? { permissionMode: from.permissionMode } : {}),
-    ...(from.permissionModeLabel ? { permissionModeLabel: from.permissionModeLabel } : {}),
-  }
-}
-
-export function newerRow(current: SessionRow, incoming: SessionRow): SessionRow | undefined {
-  if (incoming.updatedAt < current.updatedAt) return undefined
-  const lastHumanTurnAt = laterHumanTurn(current, incoming)
-  const lastTurn = incoming.lastTurn ?? current.lastTurn
-  const configured = incoming.harness || !current.harness ? incoming : current
-  if (incoming.createdAt === current.createdAt && incoming.lastHumanTurnAt === lastHumanTurnAt && incoming.lastTurn === lastTurn && configured === incoming) return incoming
-  return withSelections(
-    {
-      ...incoming,
-      createdAt: current.createdAt,
-      ...(lastHumanTurnAt === undefined ? {} : { lastHumanTurnAt }),
-      ...(lastTurn === undefined ? {} : { lastTurn }),
-    },
-    configured,
-  )
-}

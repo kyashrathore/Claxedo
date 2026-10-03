@@ -114,6 +114,8 @@ const en = {
   "transcript.claxedoTool.task_edit": "Edit task",
   "transcript.claxedoTool.task_start": "Start task",
   "transcript.claxedoTool.session_create": "Create session",
+  "transcript.claxedoTool.sessions_cleanup_list": "Find sessions for cleanup",
+  "transcript.claxedoTool.sessions_delete": "Delete selected sessions",
   "transcript.claxedoTool.sessions_list": "List sessions",
   "transcript.claxedoTool.session_get": "Read session",
   "transcript.claxedoTool.session_transcript": "Read transcript",

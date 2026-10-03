@@ -48,6 +48,8 @@ only what it alone supplies. A host boots in two steps once its store is open:
 then `recoverQueuedPrompts()` on the session routes re-issues the prompts still
 queued.
 
+Session attention comes from the applied runtime journal. The projection holds the generation, through position, last meaningful activity, current background counts and eligible terminal outcome. Foreground status and pending input come from their canonical owners. Background work advances activity only when its counts change. Metadata and same-status changes do not invent activity. Durable attention history preserves requests and outcomes for replay independently of the sidebar.
+
 IDs use Web Crypto. Harness child admission derives its deterministic key with
 Web Crypto before lending the key to its synchronous admission store. The
 harness contract does not export machine probe-cache storage.

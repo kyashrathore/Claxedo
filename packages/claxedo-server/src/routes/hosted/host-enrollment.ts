@@ -480,6 +480,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
         // holding the credential, and the credential is all of the enrollment
         // it ever receives.
         enrollmentId: caller.enrollmentId,
+        generation: caller.generation,
         ownerActorId: caller.ownerActorId,
         // The person the enrollment belongs to, whom the relay authenticates
         // as this machine's own owner.

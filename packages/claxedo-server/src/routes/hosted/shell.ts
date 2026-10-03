@@ -48,6 +48,7 @@ import { readJsonRecord, stringField } from "@claxedo/server-core/platform/json/
 import { isAccountSource, type AccountSource } from "@claxedo/account-contract/vocabulary"
 import { asRecord, asString } from "@claxedo/helpers/guards"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
+import { authorizedSessionNotices } from "../../platform/http/authorized-session-notices"
 
 export type HostedShellRouteOptions = {
   authentication?: RequestAuthenticationAdapter
@@ -65,6 +66,7 @@ export type HostedShellRouteOptions = {
    * by the caller's LiveSyncRoom. Absent → heartbeat fallback.
    */
   liveSyncRoom?: LiveSyncRoomNamespace
+  sessionNoticeVisible?: Parameters<typeof authorizedSessionNotices>[1]["visible"]
   /**
    * Resolves the caller's AUTHORITY-INTERNAL org id (`authority.resolveOrgId`)
    * at connect time. Room names and the per-connection event visibility filter
@@ -444,7 +446,7 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
       // loopback bypass on a hosted central. Keep the resolved context so the
       // room routes by owner and applies the same per-event `eventVisibleTo`
       // scoping the local Node bus does — to REPLAYED frames as much as live
-      // ones, since a room's retention ring is shared by every member of an org.
+      // ones. Each canonical account has its own private room.
       const authorize = async () => {
         const auth = await controlPlaneAuthContext(c.req.raw, {
           authentication: options.authentication,
@@ -462,13 +464,15 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
       // connection into a resume point.
       const lastEventId = c.req.header("last-event-id")
       if (options.liveSyncRoom) {
-        return await connectLiveSyncRoom(
+        const response = await connectLiveSyncRoom(
           options.liveSyncRoom,
           subscriber,
           heartbeatMs,
           { intervalMs: REAUTHORIZE_MS, current: authorize },
           lastEventId,
         )
+        if (subscriber.auth.mode !== "signed") return response
+        return authorizedSessionNotices(response, { auth: subscriber.auth, visible: options.sessionNoticeVisible })
       }
       return eventsStream(c, heartbeatMs, lastEventId)
     } catch (err) {

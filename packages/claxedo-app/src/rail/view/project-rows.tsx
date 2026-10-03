@@ -3,9 +3,11 @@ import type { SessionId } from "@/server"
 import type { SessionList, SessionRowView } from "@/session"
 import type { TerminalItem } from "@/terminal"
 import { sessionRowKey, terminalRowKey, type RailRow, type SessionMarker } from "../model"
+import { useNavigationViewport } from "../navigation-viewport"
 import { RailSessionRow } from "./session-row"
 import type { SessionRowMenuActions } from "./session-row-menu"
 import { RailTerminalRow } from "./terminal-row"
+import { SessionNavigationRows } from "./session-navigation-rows"
 
 export type ProjectRowsProps = SessionRowMenuActions & {
   readonly terminals: readonly TerminalItem[]
@@ -39,26 +41,25 @@ function TerminalRows(props: ProjectRowsProps): JSX.Element {
 }
 
 function SessionRows(props: ProjectRowsProps): JSX.Element {
+  const viewport = useNavigationViewport()
   return (
-    <For each={props.sessionIds}>
-      {(sessionId) => (
-        <Show when={props.list.view(sessionId)}>
-          {(session) => (
-            <RailSessionRow
-              row={session()}
-              marker={props.markerOf(session())}
-              projectLabel={props.projectLabel}
-              active={props.activeSessionId === sessionId}
-              onActivate={props.onActivate}
-              onRename={props.onRename}
-              onArchive={props.onArchive}
-              onDelete={props.onDelete}
-              prepareDrag={() => props.prepareDrag({ kind: "session", key: sessionRowKey(sessionId), session: session() })}
-            />
-          )}
-        </Show>
+    <SessionNavigationRows
+      {...viewport}
+      sessionIds={props.sessionIds}
+      rowSize={30}
+      row={(session) => (
+        <RailSessionRow
+          row={session()}
+          marker={props.markerOf(session())}
+          projectLabel={props.projectLabel}
+          active={props.activeSessionId === session().ref.sessionId}
+          onActivate={props.onActivate}
+          onRename={props.onRename}
+          onToggleSettled={props.onToggleSettled}
+          prepareDrag={() => props.prepareDrag({ kind: "session", key: sessionRowKey(session().ref.sessionId), session: session() })}
+        />
       )}
-    </For>
+    />
   )
 }
 

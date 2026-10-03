@@ -1069,17 +1069,20 @@ describe("exit-code mapping and bootstrap retry", () => {
   })
 
   test("the serving credential is the ack's hostTunnel verbatim, with the persisted relay as fallback", () => {
-    const tunnel = { hostId: "host_1", enrollmentId: "enr_1", hostTunnelToken: "t", tokenExpiresAt: 5, jti: "j", workspaceIds: ["ws"] }
-    expect(servingCredential(tunnel, "https://relay")).toEqual({ hostId: "host_1", enrollmentId: "enr_1", relayUrl: "https://relay", token: "t", workspaceIds: ["ws"], expiresAt: 5 })
+    const tunnel = { hostId: "host_1", enrollmentId: "enr_1", generation: 7, hostTunnelToken: "t", tokenExpiresAt: 5, jti: "j", workspaceIds: ["ws"] }
+    expect(servingCredential(tunnel, "https://relay")).toEqual({ hostId: "host_1", enrollmentId: "enr_1", generation: 7, relayUrl: "https://relay", token: "t", workspaceIds: ["ws"], expiresAt: 5 })
     expect(servingCredential({ ...tunnel, relayUrl: "https://other" }, "https://relay")?.relayUrl).toBe("https://other")
     expect(servingCredential({ ...tunnel, workspaceIds: [] }, "https://relay")).toBeNull()
     expect(servingCredential({ ...tunnel, enrollmentId: undefined }, "https://relay")).toBeNull()
+    for (const generation of [undefined, 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "7"]) {
+      expect(servingCredential({ ...tunnel, generation }, "https://relay")).toBeNull()
+    }
     expect(servingCredential(undefined, "https://relay")).toBeNull()
     expect(servingCredential(tunnel, undefined)).toBeNull()
   })
 
   test("a serving credential is refused rather than dialed against a relay this machine may not reach", () => {
-    const tunnel = { hostId: "host_1", enrollmentId: "enr_1", hostTunnelToken: "t", tokenExpiresAt: 5, jti: "j", workspaceIds: ["ws"] }
+    const tunnel = { hostId: "host_1", enrollmentId: "enr_1", generation: 7, hostTunnelToken: "t", tokenExpiresAt: 5, jti: "j", workspaceIds: ["ws"] }
     // The ack's relayUrl and the persisted fallback both pass through the
     // transport's scheme check: the socket carries the Host Tunnel Token in
     // an authorization header, so cleartext beyond loopback or an arbitrary

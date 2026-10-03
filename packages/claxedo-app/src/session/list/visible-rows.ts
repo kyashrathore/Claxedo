@@ -1,4 +1,4 @@
-import { NO_BACKGROUND_WORK, sessionStatusWithBackgroundWork, type AgentRequest, type SessionId, type SessionLocation } from "@/server"
+import { NO_BACKGROUND_WORK, sessionAttention, sessionStatusWithBackgroundWork, type AgentRequest, type SessionId, type SessionLocation } from "@/server"
 import type { SessionRowView, SessionStatusView } from "@/session"
 import {
   compareOrder,
@@ -33,6 +33,7 @@ export function visibleOrder(data: OrderData): readonly SessionLocation[] {
   for (const entry of data.entries.values()) {
     if (entry.kind === "tombstone") continue
     if (entry.row.archivedAt !== undefined || entry.row.parentSessionId !== undefined) continue
+    if (entry.row.attention && sessionAttention(entry.row.attention, entry.row.reader).settled) continue
     const key = orderKey(entry.row, entryActivityAt(entry))
     if (entry.kind === "confirmed" && !insideProjectWindow(data, entry.row, key)) continue
     shown.push({ entry, key })

@@ -1,4 +1,4 @@
-import { ClaxedoDB, inArray } from "../../platform/db"
+import { ClaxedoDB, and, eq, inArray } from "../../platform/db"
 import {
   ClaxedoSessionAttachmentTable,
   ClaxedoSessionMetaTable,
@@ -7,6 +7,8 @@ import {
 import { isOneOf } from "../../platform/runtime/lib/json"
 import { SESSION_ATTACHMENT_KINDS, type SessionMeta } from "./types"
 import { host, ids, root } from "./shape"
+import { storedSessionAttention } from "../reader-contract"
+import { storedSessionTurnOutcome } from "../turn-outcome-contract"
 
 type StoredSessionMeta = typeof ClaxedoSessionMetaTable.$inferSelect
 
@@ -31,6 +33,20 @@ export async function sessionMetaMapByRef(input: string[]) {
   return hydrateSessionRows(readSessionRowsByRef(hit), (item) => item.session_ref)
 }
 
+/** Mutation callers name the runtime workspace as well as the session id. */
+export async function sessionMetaInWorkspace(sessionId: string, workspaceId: string) {
+  const row = ClaxedoDB.use((db) => db.select({ session_ref: ClaxedoSessionMetaTable.session_ref })
+    .from(ClaxedoSessionMetaTable).where(and(eq(ClaxedoSessionMetaTable.session_id, sessionId), eq(ClaxedoSessionMetaTable.workspace_id, workspaceId))).get())
+  return row ? (await sessionMetaMapByRef([row.session_ref])).get(row.session_ref) : undefined
+}
+
+export function sessionMetaLocations(sessionId: string) {
+  return ClaxedoDB.use((db) => db.select({
+    sessionId: ClaxedoSessionMetaTable.session_id,
+    workspaceId: ClaxedoSessionMetaTable.workspace_id,
+  }).from(ClaxedoSessionMetaTable).where(eq(ClaxedoSessionMetaTable.session_id, sessionId)).all())
+}
+
 function readSessionRowsBySessionId(hit: string[]) {
   return safeMetaRead("session metadata", [], () =>
     ClaxedoDB.use((db) =>
@@ -44,15 +60,10 @@ function readSessionRowsBySessionId(hit: string[]) {
 }
 
 function readSessionRowsByRef(hit: string[]) {
-  return safeMetaRead("session metadata", [], () =>
-    ClaxedoDB.use((db) =>
-      includeParentRows(
-        db.select().from(ClaxedoSessionMetaTable).where(inArray(ClaxedoSessionMetaTable.session_ref, hit)).all(),
-        (queue) =>
-          db.select().from(ClaxedoSessionMetaTable).where(inArray(ClaxedoSessionMetaTable.session_id, queue)).all(),
-      )
-    ),
-  )
+  return ClaxedoDB.use((db) => includeParentRows(
+    db.select().from(ClaxedoSessionMetaTable).where(inArray(ClaxedoSessionMetaTable.session_ref, hit)).all(),
+    (queue) => db.select().from(ClaxedoSessionMetaTable).where(inArray(ClaxedoSessionMetaTable.session_id, queue)).all(),
+  ))
 }
 
 function includeParentRows(
@@ -85,17 +96,13 @@ function hydrateSessionRows(
   const corrupt = meta.find((item) => Boolean(item.model_provider_id) !== Boolean(item.model_id))
   if (corrupt) throw new Error(`Session ${corrupt.session_id} has incomplete model configuration`)
   const refs = ids(meta.map((item) => item.session_ref))
-  const tags = safeMetaRead("session tags", [], () =>
-    ClaxedoDB.use((db) =>
+  const tags = ClaxedoDB.use((db) =>
       refs.length ? db.select().from(ClaxedoSessionTagTable).where(inArray(ClaxedoSessionTagTable.session_ref, refs)).all() : [],
-    ),
   )
-  const attachments = safeMetaRead("session attachments", [], () =>
-    ClaxedoDB.use((db) =>
+  const attachments = ClaxedoDB.use((db) =>
       refs.length
         ? db.select().from(ClaxedoSessionAttachmentTable).where(inArray(ClaxedoSessionAttachmentTable.session_ref, refs)).all()
         : [],
-    ),
   )
   const by = new Map<string, SessionMeta>(
     meta.map((item) => [
@@ -115,6 +122,8 @@ function hydrateSessionRows(
         ...(item.archived_at ? { archived: item.archived_at } : {}),
         createdAt: item.created_at,
         updatedAt: item.updated_at,
+        attention: storedSessionAttention(item.attention_json),
+        lastTurn: storedSessionTurnOutcome(item.last_turn_json),
         ...(item.last_human_turn_at !== null && item.last_human_turn_at !== undefined
           ? { lastHumanTurnAt: item.last_human_turn_at }
           : {}),

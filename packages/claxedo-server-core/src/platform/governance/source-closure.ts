@@ -79,7 +79,9 @@ export function runtimeImportSpecifiers(source: string): string[] {
   // and another imports as a value — that module IS loaded at runtime.
   const withoutTypeOnly = source
     .replace(/\bimport\s+type\s+[^"';]*?\bfrom\s*["'][^"']+["']/g, "")
-    .replace(/\bexport\s+type\s+[^"';]*?\bfrom\s*["'][^"']+["']/g, "")
+    // A local `export type Shape = ...` has no module edge. Match only the
+    // re-export binding forms so it cannot consume the next value re-export.
+    .replace(/\bexport\s+type\s+(?:\{[^}]*\}|\*\s*(?:as\s+[A-Za-z_$][\w$]*)?)\s*from\s*["'][^"']+["']/g, "")
   return importSpecifiers(withoutTypeOnly)
 }
 

@@ -1,19 +1,26 @@
 import { PublicApiError } from "../platform/errors/public-api-error"
-import { parseBackgroundWork, type BackgroundWork } from "@claxedo/agent-runtime-contract"
+import { ClaxedoError } from "../platform/errors/base"
+import { parseExecutionAvailability, type AgentTurnOutcome, type ExecutionAvailability } from "@claxedo/agent-runtime-contract"
+import { parseBackgroundWork, type BackgroundWork, type SessionAttentionFacts, type SessionReaderState } from "@claxedo/agent-runtime-contract"
+import { matchesSessionReader, parseSessionReaderFilter, type SessionReaderFilter } from "./navigation-reader"
+import { sessionAttentionSchema, sessionReaderSchema } from "./reader-contract"
+import { sessionTurnOutcomeSchema } from "./turn-outcome-contract"
 import { jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import type { SessionListSort, SessionOrderKey } from "./navigation-order"
 
 export type { SessionListSort, SessionOrderKey } from "./navigation-order"
-export type SessionListScope = "global" | "project" | "workspace"
+export type SessionListScope = "global" | "project" | "workspace" | "all"
 export type SessionListArchiveMode = "active" | "all" | "archived"
 
-export type SessionListQuery = {
+export type SessionListQuery = SessionReaderFilter & {
+  sessionId?: string
   scope: SessionListScope
   projectId?: string
   workspaceId?: string
   directory?: string
+  excludeWorkspaces?: string[]
   archived: SessionListArchiveMode
   status: string[]
   search?: string
@@ -37,6 +44,9 @@ export type SessionNavigationRow = {
   directory: string
   workspaceId?: string
   projectId?: string
+  projectName?: string
+  placement?: SessionNavigationPlacement
+  ownership?: "owned" | "shared"
   createdAt: number
   updatedAt: number
   /**
@@ -55,6 +65,17 @@ export type SessionNavigationRow = {
     publicId?: string
   }
   status?: SessionRowStatus
+  attention?: SessionAttentionFacts
+  lastTurn?: AgentTurnOutcome
+  executionAvailability?: ExecutionAvailability
+  reader?: SessionReaderState
+}
+
+export type SessionNavigationPlacement = {
+  kind: "local" | "machine" | "cloud"
+  machineId?: string
+  machineName?: string
+  cloudName?: string
 }
 
 /**
@@ -93,7 +114,8 @@ type CursorShape = SessionOrderKey & { query: string }
  * `limit` of them. `limit` is one more than the page so the reader learns
  * whether another page follows without a count.
  */
-export type SessionListKeysetPage = {
+export type SessionListKeysetPage = SessionReaderFilter & {
+  sessionId?: string
   sort: SessionListSort
   archived: SessionListArchiveMode
   search?: string
@@ -105,6 +127,9 @@ export function parseSessionListQuery(url: URL): SessionListQuery {
   const scope = scopeValue(url.searchParams.get("scope"))
   return {
     scope,
+    ...(url.searchParams.has("sessionId") ? { sessionId: sessionIdValue(url.searchParams.get("sessionId")) } : {}),
+    ...(url.searchParams.has("excludeWorkspaces") ? { excludeWorkspaces: list(url.searchParams.get("excludeWorkspaces")) } : {}),
+    ...parseSessionReaderFilter(url.searchParams),
     ...(trimToUndefined(url.searchParams.get("projectId")) ? { projectId: trimToUndefined(url.searchParams.get("projectId")) } : {}),
     ...(trimToUndefined(url.searchParams.get("workspaceId")) ? { workspaceId: trimToUndefined(url.searchParams.get("workspaceId")) } : {}),
     ...(trimToUndefined(url.searchParams.get("directory")) ? { directory: trimToUndefined(url.searchParams.get("directory")) } : {}),
@@ -127,8 +152,10 @@ export function buildSessionListResponse(input: {
     .filter((session) => !parentSessionId(session))
     .map(sessionNavigationRow)
     .filter((row): row is SessionNavigationRow => !!row)
+    .filter((row) => querySessionMatches(row.sessionId, input.query.sessionId))
     .filter((row) => rowInScope(row, input.query))
     .filter((row) => rowMatchesArchive(row, input.query.archived))
+    .filter((row) => matchesSessionReader(row, input.query))
     .filter((row) => valuesMatch(input.query.status, rowStatusValues(row)))
     .filter((row) => !input.query.search || row.title.toLowerCase().includes(input.query.search.toLowerCase()))
     .sort((a, b) => compareRows(a, b, input.query.sort))
@@ -146,6 +173,8 @@ export function buildSessionListResponse(input: {
 export function sessionListKeysetPage(query: SessionListQuery): SessionListKeysetPage {
   const cursor = cursorOfQuery(query)
   return {
+    ...readerFilter(query),
+    ...(query.sessionId ? { sessionId: query.sessionId } : {}),
     sort: query.sort,
     archived: query.archived,
     ...(query.search ? { search: query.search } : {}),
@@ -157,7 +186,10 @@ export function sessionListKeysetPage(query: SessionListQuery): SessionListKeyse
 export function sessionListStorePageFilter(query: SessionListQuery) {
   const page = sessionListKeysetPage(query)
   return {
+    ...readerFilter(query),
+    ...(query.sessionId ? { sessionID: query.sessionId } : {}),
     ...(query.scope === "project" && query.projectId ? { projectID: query.projectId } : {}),
+    excludeWorkspaces: query.excludeWorkspaces,
     ...(query.scope === "workspace" && query.workspaceId ? { workspaceID: query.workspaceId } : {}),
     ...(query.scope === "workspace" && query.directory ? { directory: query.directory } : {}),
     global: query.scope === "global",
@@ -213,6 +245,9 @@ function sessionNavigationRow(session: unknown): SessionNavigationRow | undefine
     directory,
     ...(workspaceId ? { workspaceId } : {}),
     ...(projectId ? { projectId } : {}),
+    ...(item.ownership === "owned" || item.ownership === "shared" ? { ownership: item.ownership } : {}),
+    ...(stringValue(item.projectName) ? { projectName: stringValue(item.projectName) } : {}),
+    ...(navigationPlacement(item.placement) ? { placement: navigationPlacement(item.placement) } : {}),
     createdAt,
     updatedAt,
     ...(lastHumanTurnAt !== undefined ? { lastHumanTurnAt } : {}),
@@ -229,6 +264,21 @@ function sessionNavigationRow(session: unknown): SessionNavigationRow | undefine
     }),
     ...ownerFromSession(item),
     ...statusFromSession(item),
+    ...(item.attention === undefined ? {} : { attention: sessionAttentionSchema.parse(item.attention) }),
+    ...(item.lastTurn === undefined ? {} : { lastTurn: sessionTurnOutcomeSchema.parse(item.lastTurn) }),
+    ...(item.executionAvailability === undefined ? {} : { executionAvailability: parseExecutionAvailability(item.executionAvailability) }),
+    ...(item.reader === undefined ? {} : { reader: sessionReaderSchema.parse(item.reader) }),
+  }
+}
+
+function navigationPlacement(value: unknown): SessionNavigationPlacement | undefined {
+  const row = record(value)
+  if (row.kind !== "local" && row.kind !== "machine" && row.kind !== "cloud") return undefined
+  return {
+    kind: row.kind,
+    ...(stringValue(row.machineId) ? { machineId: stringValue(row.machineId) } : {}),
+    ...(stringValue(row.machineName) ? { machineName: stringValue(row.machineName) } : {}),
+    ...(stringValue(row.cloudName) ? { cloudName: stringValue(row.cloudName) } : {}),
   }
 }
 
@@ -313,6 +363,8 @@ function stringArray(input: unknown) {
 }
 
 function rowInScope(row: SessionNavigationRow, query: SessionListQuery) {
+  if (row.workspaceId && query.excludeWorkspaces?.includes(row.workspaceId)) return false
+  if (query.scope === "all") return true
   if (query.scope === "global") return row.tags.includes("global:default") || row.tags.includes("global") || row.directory === "global"
   if (query.scope === "project") return !query.projectId || row.projectId === query.projectId
   if (query.workspaceId && row.workspaceId === query.workspaceId) return true
@@ -451,7 +503,10 @@ function parseCursorJson(value: string) {
 
 function querySignature(query: SessionListQuery) {
   return JSON.stringify({
+    ...readerFilter(query),
+    sessionId: query.sessionId,
     scope: query.scope,
+    excludeWorkspaces: query.excludeWorkspaces,
     projectId: query.projectId,
     workspaceId: query.workspaceId,
     directory: query.directory,
@@ -463,8 +518,18 @@ function querySignature(query: SessionListQuery) {
   })
 }
 
+function sessionIdValue(value: string | null) {
+  const id = trimToUndefined(value)
+  if (!id) throw new ClaxedoError({ code: "invalid_session_list_query", message: "Session id is empty", status: 400 })
+  return id
+}
+
+function querySessionMatches(sessionId: string, expected: string | undefined) {
+  return expected === undefined || sessionId === expected
+}
+
 function scopeValue(input: string | null): SessionListScope {
-  if (input === "project" || input === "workspace") return input
+  if (input === "project" || input === "workspace" || input === "all") return input
   return "global"
 }
 
@@ -486,4 +551,16 @@ function limitValue(input: string | null) {
 
 function list(input: string | null) {
   return input?.split(",").map((item) => item.trim()).filter(Boolean) ?? []
+}
+
+function readerFilter(query: SessionReaderFilter): SessionReaderFilter {
+  return {
+    ...(query.activity === undefined ? {} : { activity: query.activity }),
+    ...(query.ownership === undefined ? {} : { ownership: query.ownership }),
+    ...(query.settled === undefined ? {} : { settled: query.settled }),
+    ...(query.seen === undefined ? {} : { seen: query.seen }),
+    ...(query.dateField === undefined ? {} : { dateField: query.dateField }),
+    ...(query.from === undefined ? {} : { from: query.from }),
+    ...(query.until === undefined ? {} : { until: query.until }),
+  }
 }

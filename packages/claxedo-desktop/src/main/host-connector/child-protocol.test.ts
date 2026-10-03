@@ -88,6 +88,7 @@ describe("the serving message", () => {
       jti: "jti-1",
       hostId: "host_1",
       enrollmentId: "enr_this_machine",
+      generation: 3,
       workspaceIds: ["ws_1"],
       relayUrl: "https://relay.test",
     }

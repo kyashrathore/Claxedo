@@ -6,7 +6,7 @@ import {
   type DecodeResult, type OperationDefinition, type ResolvedRequest,
   MissingOperationParameter, UnknownHostedOperation,
 } from "./operation-definition"
-import { object, withStrings, array, withArrays, sessionPeople, withRecord, nullable, connection, statusResult } from "./hosted-output"
+import { object, withStrings, array, withArrays, sessionPeople, withRecord, nullable, connection, statusResult, desktopSessionCleanupGrant } from "./hosted-output"
 
 export const HOSTED_OPERATIONS = {
   "session.shared.list": defineOperation({
@@ -40,6 +40,15 @@ export const HOSTED_OPERATIONS = {
     output: object, retry: "never",
     exposure: { renderer: false, app: false },
     body: selectBody("code"),
+  }),
+  // Main installs this short-lived cleanup grant into its authenticated daemon.
+  // Neither the grant nor a renderer-selected actor/origin may cross account IPC.
+  "session.cleanup.grant.desktop": defineOperation({
+    method: "POST", path: operationPath("/api/claxedo/session-cleanup/grant/desktop"),
+    input: operationInput({ orgId: optionalParameter }),
+    output: desktopSessionCleanupGrant, retry: "never",
+    exposure: { renderer: false, app: false },
+    body: selectBody("orgId"),
   }),
   "agentPlugins.catalog": defineOperation({
     method: "GET", path: operationPath("/api/claxedo/plugins"),
@@ -230,6 +239,19 @@ export const HOSTED_OPERATIONS = {
     output: withArrays("items"), retry: "safe",
     exposure: { renderer: true, app: false },
   }),
+  "session.inventory": defineOperation({
+    method: "GET", path: operationPath("/api/control/session-list?scope=all", { query: ["limit"], optionalQuery: ["sort", "after", "activity", "settled", "seen", "ownership", "dateField", "from", "until"] }),
+    input: operationInput({ limit: requiredParameter, sort: optionalParameter, after: optionalParameter, activity: optionalParameter, settled: optionalParameter, seen: optionalParameter, ownership: optionalParameter, dateField: optionalParameter, from: optionalParameter, until: optionalParameter }),
+    output: withArrays("items"), retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "session.reader": defineOperation({
+    method: "POST", path: operationPath("/api/control/sessions/:sessionId/reader", { query: ["workspaceId"] }),
+    input: operationInput({ sessionId: requiredParameter, workspaceId: requiredParameter, kind: bodyField, generation: bodyField, activitySequence: bodyField, outcomeSequence: bodyField, revision: bodyField }),
+    body: selectBody("kind", "generation", "activitySequence", "outcomeSequence", "revision"),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+  }),
   "session.projection.register": defineOperation({
     method: "POST", path: operationPath("/api/control/workspaces/:workspaceId/sessions/:sessionId/register"),
     input: operationInput({ workspaceId: requiredParameter, sessionId: requiredParameter, idempotencyKey: bodyField, reason: bodyField, expectedEventOrdinal: bodyField }),
@@ -257,6 +279,12 @@ export const HOSTED_OPERATIONS = {
     output: object, retry: "safe",
     exposure: { renderer: true, app: false, stream: true },
     headers: operationHeaders({ lastEventId: "Last-Event-ID" }),
+  }),
+  "session.attention.history": defineOperation({
+    method: "GET", path: operationPath("/api/control/session-attention", { optionalQuery: ["after", "limit"] }),
+    input: operationInput({ after: optionalParameter, limit: optionalParameter }),
+    output: object, retry: "safe",
+    exposure: { renderer: true, app: true },
   }),
   // Withheld from the renderer: the route stores whatever public key and
   // signature it is handed and upserts on (owner, host_id), so a renderer could

@@ -12,6 +12,7 @@ export {
   type DecodedHostedResult,
 } from "./hosted-operations"
 export type { SharedSession } from "./shared-sessions"
+export type { HostedStreamBridge } from "./stream-bridge"
 export {
   defineOperation,
   MissingOperationParameter,

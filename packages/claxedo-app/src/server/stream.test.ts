@@ -2,6 +2,7 @@
 import { afterEach, expect, jest, test } from "bun:test"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
 import { openEventStream } from "./stream"
+import { ServerError } from "./errors"
 
 afterEach(() => {
   jest.useRealTimers()
@@ -105,5 +106,21 @@ test.each([401, 403, 404])("a %i ends the stream: it reports the refusal once, g
   expect(opens).toBe(1)
   expect(refusals).toEqual(["workspace_event_stream_denied"])
   expect(stream.state().kind).toBe("offline")
+  stream.close()
+})
+
+test("an account port's auth refusal ends the stream even without an HTTP status", async () => {
+  jest.useFakeTimers()
+  let opens = 0
+  const stream = openEventStream({
+    open: async () => { opens++; throw new ServerError({ class: "auth", message: "The account is not signed in" }) },
+    onFrame: () => undefined,
+    onGap: () => undefined,
+  })
+  await settle()
+  jest.advanceTimersByTime(60_000)
+  await settle()
+  expect(opens).toBe(1)
+  expect(stream.state()).toEqual({ kind: "offline", reason: "The account is not signed in" })
   stream.close()
 })

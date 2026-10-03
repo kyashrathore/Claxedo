@@ -40,10 +40,11 @@ vi.mock("@claxedo/workspace-runtime/relay", () => ({
 const WS_A = "11111111-1111-4111-8111-111111111111"
 const WS_B = "22222222-2222-4222-8222-222222222222"
 
-function credential(workspaceIds: string[], overrides: { token?: string; expiresAt?: number } = {}) {
+function credential(workspaceIds: string[], overrides: { token?: string; expiresAt?: number; generation?: number } = {}) {
   return {
     hostId: "host_machine-1",
     enrollmentId: "enr_this_machine",
+    generation: overrides.generation ?? 0,
     relayUrl: "https://relay.claxedo.test",
     token: overrides.token ?? "host-tunnel-token",
     workspaceIds,
@@ -53,7 +54,7 @@ function credential(workspaceIds: string[], overrides: { token?: string; expires
 
 const composition = { localBaseUrl: "http://127.0.0.1:2593", sessionAuthority: () => "local" as const }
 
-const serve = (workspaceIds: string[], overrides?: { token?: string; expiresAt?: number }) =>
+const serve = (workspaceIds: string[], overrides?: { token?: string; expiresAt?: number; generation?: number }) =>
   setHostServing(credential(workspaceIds, overrides), composition)
 
 const state = () => hostServingState(composition)
@@ -236,10 +237,12 @@ describe("relay connection grain", () => {
       expect(heard).toEqual([undefined])
 
       await serve([WS_B, WS_A], { token: "t1", expiresAt: Date.now() + 60_000 })
-      expect(heard.at(-1)).toEqual({ hostId: "host_machine-1", token: "t1", workspaceIds: [WS_A, WS_B] })
+      expect(heard.at(-1)).toEqual({ hostId: "host_machine-1", enrollmentId: "enr_this_machine", generation: 0,
+        token: "t1", workspaceIds: [WS_A, WS_B] })
 
       await serve([WS_A], { token: "t2", expiresAt: Date.now() + 60_000 })
-      expect(heard.at(-1)).toEqual({ hostId: "host_machine-1", token: "t2", workspaceIds: [WS_A] })
+      expect(heard.at(-1)).toEqual({ hostId: "host_machine-1", enrollmentId: "enr_this_machine", generation: 0,
+        token: "t2", workspaceIds: [WS_A] })
 
       vi.advanceTimersByTime(61_000)
       expect(heard.at(-1)).toBeUndefined()

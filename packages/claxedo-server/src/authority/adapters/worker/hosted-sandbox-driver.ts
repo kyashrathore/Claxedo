@@ -1,4 +1,4 @@
-import type { SandboxDriver } from "@claxedo/sandbox-manager"
+import type { SandboxDriver, SandboxDriverEnsureInput } from "@claxedo/sandbox-manager"
 import { createCloudflareSandboxDriver } from "@claxedo/sandbox-manager/drivers/cloudflare"
 import { createFetchBridgeSandboxDriver } from "@claxedo/sandbox-manager/drivers/fetch-bridge"
 
@@ -63,7 +63,9 @@ export function sandboxRuntimeManagementEnv(): Record<string, string> {
  * the composition turns that into a fail-closed error, because a deployment
  * that promised cloud workspaces must not quietly serve without them.
  */
-export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undefined {
+export function hostedSandboxDriver(env: HostedWorkerEnv, hooks: {
+  runtimeEnv?: (input: SandboxDriverEnsureInput, host: { id: string }) => Promise<Record<string, string>>
+} = {}): SandboxDriver | undefined {
 
   const name = trimToUndefined(env.CLAXEDO_SANDBOX_DRIVER)?.toLowerCase()
   if (!name) return undefined
@@ -79,7 +81,7 @@ export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undef
       ...(trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) ? { workspaceDir: trimToUndefined(env.CLAXEDO_RUNTIME_WORKSPACE_DIR) } : {}),
       ...provisionedRunnerOption(env),
       controlEnv: sandboxRuntimeControlEnv(env),
-      env: sandboxRuntimeManagementEnv,
+      env: async (input, host) => ({ ...sandboxRuntimeManagementEnv(), ...await hooks.runtimeEnv?.(input, host) }),
     })
   }
 
@@ -97,5 +99,6 @@ export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undef
     token: trimToUndefined(env.CLAXEDO_SANDBOX_DRIVER_TOKEN),
     autoStopMs: positiveInteger(env, "CLAXEDO_SANDBOX_AUTO_STOP_MS", 30 * 60_000),
     autoDeleteMs: positiveInteger(env, "CLAXEDO_SANDBOX_AUTO_DELETE_MS", 24 * 60 * 60_000),
+    ...(hooks.runtimeEnv ? { env: hooks.runtimeEnv } : {}),
   })
 }

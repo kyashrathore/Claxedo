@@ -9,21 +9,26 @@ export class BrokerBackgroundWork {
   constructor(private readonly store: RuntimeStore, private readonly delivery: BrokerEventDelivery) {}
 
   read(sessionId: string): BackgroundWork | undefined {
-    return this.sessions.get(sessionId)
+    const current = this.sessions.get(sessionId)
+    if (current) return current
+    const restored = this.store.getSession(sessionId)?.backgroundWork
+    if (!restored || !backgroundWorkActive(restored)) return undefined
+    this.sessions.set(sessionId, restored)
+    return restored
   }
 
   record(sessionId: string, work: BackgroundWork): void {
-    if (sameBackgroundWork(this.sessions.get(sessionId) ?? NO_BACKGROUND_WORK, work)) return
+    if (sameBackgroundWork(this.read(sessionId) ?? NO_BACKGROUND_WORK, work)) return
+    this.delivery.append(sessionId, sessionBackgroundWork(sessionId, work))
     if (backgroundWorkActive(work)) this.sessions.set(sessionId, work)
     else this.sessions.delete(sessionId)
-    this.delivery.broadcast(sessionId, sessionBackgroundWork(sessionId, work))
   }
 
   retireAll(): void {
     const settled = [...this.sessions.keys()]
-    this.sessions.clear()
     for (const sessionId of settled) {
-      if (this.store.getSession(sessionId)) this.delivery.broadcast(sessionId, sessionBackgroundWork(sessionId, NO_BACKGROUND_WORK))
+      if (this.store.getSession(sessionId)) this.delivery.append(sessionId, sessionBackgroundWork(sessionId, NO_BACKGROUND_WORK))
+      this.sessions.delete(sessionId)
     }
   }
 }

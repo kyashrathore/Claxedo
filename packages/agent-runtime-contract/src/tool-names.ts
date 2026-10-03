@@ -51,6 +51,8 @@ const CLAXEDO_TOOL_NAMES = [
   "task_start",
   "session_create",
   "sessions_list",
+  "sessions_cleanup_list",
+  "sessions_delete",
   "session_get",
   "session_transcript",
   "session_send",

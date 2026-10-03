@@ -7,6 +7,8 @@ import { defineIconLibrary } from "@/ui/icons/registry"
 type OpenCodeGlyphName = OpenCodeIconProps["name"]
 
 const OPEN_CODE_GLYPHS = [
+  "activity",
+  "bell",
   "folders",
   "pi",
   "opencode",

@@ -426,21 +426,11 @@ html[data-theme="codex"] .ui-session-navigation-title {
   letter-spacing: var(--letter-spacing-navigation);
 }
 
-html[data-theme="codex"] [data-testid="rail-sidebar-session-row"][data-active="true"] .ui-session-navigation-title {
-  font-weight: var(--font-weight-body);
-}
-
 html[data-theme="codex"] .ui-session-navigation-time {
   font-size: var(--font-size-small);
 }
 
-html[data-theme="codex"] [data-testid="rail-sidebar-session-row"][data-active="true"],
-html[data-theme="codex"] [data-testid="rail-sidebar-terminal-row"][data-active="true"] {
-  background-color: var(--row-surface-selected);
-}
-
 html[data-theme="codex"] [data-testid="global-navigation"] button:hover,
-html[data-theme="codex"] .ui-navigation-row-activate:hover,
 html[data-theme="codex"] [data-testid="project-header"]:hover {
   background-color: var(--row-surface-hover);
 }

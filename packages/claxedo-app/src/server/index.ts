@@ -15,6 +15,8 @@ export { isLocalPlacement, isOfflineMachine, isStoppedCloud } from "./placement-
 export { isTerminalSessionRequired } from "./terminals"
 export { RUNNING_IN_BACKGROUND, sessionStatusWithBackgroundWork } from "./status"
 export { backgroundWorkActive, NO_BACKGROUND_WORK } from "@claxedo/agent-runtime-contract"
+export { matchesSessionActivity, sessionAttention, type SessionActivityFilter } from "@claxedo/agent-runtime-contract"
+export type { SessionAttentionEvent, SessionAttentionFacts, SessionReaderState, SessionReaderCommand } from "@claxedo/agent-runtime-contract"
 export { sameModelKey } from "./model-choice"
 export { harnessIdentityOf } from "./wire/harness-selection"
 export type * from "./account-types"

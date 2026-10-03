@@ -478,6 +478,20 @@ CREATE TABLE sandbox_passes (
   expires_at integer not null,
   revoked_at integer,
   revoked_reason text
+, renewable integer NOT NULL DEFAULT 0 CHECK (renewable IN (0, 1)));
+
+CREATE TABLE session_attention_events (
+  ordinal INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
+  org_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  generation INTEGER NOT NULL CHECK (generation >= 0),
+  sequence INTEGER NOT NULL CHECK (sequence > generation),
+  event_json TEXT NOT NULL CHECK (json_valid(event_json)),
+  UNIQUE (session_id, generation, sequence),
+  FOREIGN KEY (session_id, workspace_id, org_id, project_id)
+    REFERENCES sessions (session_id, workspace_id, org_id, project_id) DEFERRABLE INITIALLY DEFERRED
 );
 
 CREATE TABLE session_messages (
@@ -496,6 +510,13 @@ CREATE TABLE session_messages (
   primary key (session_id, message_id),
   foreign key (session_id, workspace_id, org_id, project_id)
     references sessions (session_id, workspace_id, org_id, project_id) deferrable initially deferred
+);
+
+CREATE TABLE session_readers (
+  session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  state_json TEXT NOT NULL,
+  PRIMARY KEY (session_id, user_id)
 );
 
 CREATE TABLE session_registration_operations (
@@ -612,7 +633,7 @@ CREATE TABLE sessions (
   max_event_ordinal integer not null default 0 check (max_event_ordinal >= 0),
   snapshot_generation integer not null default 0 check (snapshot_generation >= 0),
   snapshot_hash text,
-  snapshot_token text, last_human_turn_at integer, archived_at integer, status text check (status is null or status in ('idle', 'busy', 'retry', 'recovering')), status_at integer, awaiting_input integer not null default 0 check (awaiting_input in (0, 1)), runtime_updated_at integer,
+  snapshot_token text, last_human_turn_at integer, archived_at integer, status text check (status is null or status in ('idle', 'busy', 'retry', 'interrupted')), status_at integer, awaiting_input integer not null default 0 check (awaiting_input in (0, 1)), runtime_updated_at integer, attention_json TEXT, parent_session_id TEXT, last_turn_json text CHECK (last_turn_json IS NULL OR json_valid(last_turn_json)), runtime_host_id text, runtime_generation integer CHECK (runtime_generation IS NULL OR runtime_generation >= 0), runtime_enrollment_id text,
   unique (session_id, workspace_id, org_id, project_id),
   foreign key (workspace_id, org_id, project_id)
     references workspaces (workspace_id, org_id, project_id) deferrable initially deferred
@@ -933,6 +954,8 @@ CREATE INDEX sandbox_leases_by_updated on sandbox_leases (updated_at);
 CREATE INDEX sandbox_passes_org_idx on sandbox_passes (org_id, audience, expires_at);
 
 CREATE INDEX sandbox_passes_workspace_idx on sandbox_passes (workspace_id, audience);
+
+CREATE INDEX session_attention_events_by_session ON session_attention_events (session_id, generation, sequence);
 
 CREATE INDEX session_messages_by_session_ordinal
   on session_messages (session_id, ordinal);

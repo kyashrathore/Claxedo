@@ -3,6 +3,7 @@ import type { AgentGoalMutationResult, AgentPermissionModeState, GoalCapabilitie
 import type {
   AgentContentPart,
   AgentSessionStart,
+  AgentSession,
   AgentMessage,
   AgentPermission,
   AgentPresentationEvent,
@@ -13,6 +14,9 @@ import type {
   AgentRuntimeStatus,
   RecoveryOutcome,
   RecoveryRequest,
+  SessionDeleteRequest,
+  SessionDeleteResult,
+  SessionAttentionPage,
 } from "@claxedo/agent-runtime-contract"
 import { isRecoveryOutcome, parseRecoveryOutcome } from "@claxedo/agent-runtime-contract"
 import type { HarnessCapabilities, AgentRuntimeRecoveryInspection } from "@claxedo/session-core"
@@ -29,6 +33,7 @@ type Reply<T> = Promise<WorkspaceRuntimeResponse<T>>
 type Ok = { ok: true }
 
 export type SessionInput = WorkspaceScope & { sessionID: string }
+export type SessionDeleteInput = SessionInput & (SessionDeleteRequest | { expected?: never; descendants?: never })
 export type SessionCreateInput = WorkspaceScope & {
   parentID?: string
   title?: string
@@ -94,12 +99,14 @@ export type WorkspaceSessionClient = {
   start(input: SessionInput, options?: Options): Reply<AgentSessionStart>
   configOptions(input: SessionInput, options?: Options): Reply<ConfigOptionsPreview>
   attachment(input: SessionInput & { messageID: string; attachmentID: string }, options?: Options): Promise<Response>
-  delete(input: SessionInput, options?: Options): Reply<Ok>
+  delete(input: SessionDeleteInput, options?: Options): Reply<SessionDeleteResult>
   update(input: SessionUpdateInput, options?: Options): Reply<AgentPresentationSession>
   status(input?: WorkspaceScope, options?: Options): Reply<Record<string, AgentRuntimeStatus>>
   harnessCapabilities(input?: WorkspaceScope, options?: Options): Reply<HarnessCapabilities>
   capabilities(input: SessionInput, options?: Options): Reply<HarnessCapabilities>
   subagents(input: SessionInput, options?: Options): Reply<unknown[]>
+  children(input: SessionInput, options?: Options): Reply<AgentSession[]>
+  attention(input: SessionInput & { after?: number; limit?: number }, options?: Options): Reply<SessionAttentionPage>
   /** One turn's coverage envelope, answered against `input.turn` and no other turn. */
   messages(input: SessionTurnCoverageInput, options?: Options): Reply<AgentTurnCoveragePage>
   /** The page's messages alone; its cursor rides the `X-Next-Cursor` response header. */
@@ -242,12 +249,15 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
     start: (input, options) => caller.call({ operation: "session.start", path: `/session-start/${encodeURIComponent(input.sessionID)}`, scope: input, options }),
     configOptions: (input, options) => read("session.configOptions", input, "/config-options", options),
     attachment: async (input, options) => (await caller.send({ operation: "session.attachment", path: sessionApiPath(input, `/message/${encodeURIComponent(input.messageID)}/attachment/${encodeURIComponent(input.attachmentID)}`), scope: input, options })).response,
-    delete: (input, options) => write("session.delete", "DELETE", input, "", options),
+    delete: (input, options) => write("session.delete", "DELETE", input, "", options,
+      input.expected === undefined && input.descendants === undefined ? undefined : { expected: input.expected, descendants: input.descendants }),
     update: (input, options) => write("session.update", "PATCH", input, "", options, without(input, ["sessionID"])),
     status: (input = {}, options) => caller.call({ operation: "session.status", path: "/session/status", scope: input, options }),
     harnessCapabilities: (input = {}, options) => caller.call({ operation: "session.harnessCapabilities", path: "/session/capabilities", scope: input, options }),
     capabilities: (input, options) => read("session.capabilities", input, "/capabilities", options),
     subagents: (input, options) => read("session.subagents", input, "/subagents", options),
+    children: (input, options) => read("session.children", input, "/children", options),
+    attention: (input, options) => read("session.attention", input, "/attention", options, namedMembers(input, ["after", "limit"])),
     messages,
     outline: (input, options) => read("session.outline", input, "/outline", options, without(input, ["sessionID"])),
     turnPage: (input, options) => read("session.turnPage", input, "/page", options, without(input, ["sessionID"])),

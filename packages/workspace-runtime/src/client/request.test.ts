@@ -5,6 +5,21 @@ import { createWorkspaceRuntimeClient } from "./index"
 import { workspaceRuntimeClientErrorFrom, WorkspaceRuntimeClientError, WorkspaceRuntimeClientPayloadError, WorkspaceRuntimeClientTransportError } from "./request"
 
 describe("workspace runtime request path", () => {
+  test("sends a cleanup selection with every descendant while preserving bare delete calls", async () => {
+    const calls: Request[] = []
+    const client = createWorkspaceRuntimeClient({ baseUrl: "https://runtime.example", fetch: async (input, init) => {
+      const request = new Request(input, init)
+      calls.push(request)
+      return Response.json({ ok: true, deletedSessionIds: ["child", "root"] })
+    } })
+    const selected = { expected: { generation: 1, activitySequence: 9 }, descendants: [{ sessionId: "child", generation: 2, activitySequence: 7 }] }
+    const reply = await client.session.delete({ sessionID: "root", ...selected })
+    await client.session.delete({ sessionID: "bare" })
+    expect(calls[0].method).toBe("DELETE")
+    expect(await calls[0].json()).toEqual(selected)
+    expect(await calls[1].text()).toBe("")
+    expect(reply.data.deletedSessionIds).toEqual(["child", "root"])
+  })
   test("preserves server retryability through the canonical envelope", () => {
     const error = workspaceRuntimeClientErrorFrom("list", 503, JSON.stringify({ error: { code: "busy", message: "Busy", retryable: true } }))
     expect(error).toMatchObject({ code: "busy", status: 503, retryable: true })
