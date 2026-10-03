@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
 import os from "node:os"
+import path from "node:path"
 import { createBoundedGit, GitCredentialError, GitEnvironmentError, GitTimeoutError } from "./git"
 
 describe("bounded git runner", () => {
@@ -119,6 +121,36 @@ describe("bounded git runner", () => {
   })
 })
 
+/** Runs a git alias whose shell starts a background `sleep`, the way a transport helper outlives git, and returns once its pid is known. */
+async function startedChild(start: (alias: string) => Promise<string>) {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "git-child-"))
+  const pidFile = path.join(directory, "pid")
+  const run = start(`alias.wait=!sleep 30 & echo $! > '${pidFile}'; wait`)
+  run.catch(() => {})
+  const deadline = Date.now() + 5_000
+  let started = NaN
+  while (!Number.isInteger(started) && Date.now() < deadline) {
+    started = Number.parseInt(await readFile(pidFile, "utf8").catch(() => ""), 10)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  await rm(directory, { recursive: true, force: true })
+  return { run, started }
+}
+
+/** An orphan is reaped by init, not by this process, so its exit is observed by polling. */
+async function exits(pid: number) {
+  const deadline = Date.now() + 5_000
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0)
+    } catch {
+      return true
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  return false
+}
+
 describe("default git exec", () => {
   test("spawns git with terminal prompts disabled so a credential prompt fails instead of hanging", async () => {
     const git = createBoundedGit()
@@ -135,16 +167,22 @@ describe("default git exec", () => {
     expect(stdout.trim()).toBe("/scratch/claxedo-index")
   })
 
-  test("an aborted run ends the git process and is not reported as a timeout", async () => {
+  test("an aborted run ends what git started and is not reported as a timeout", async () => {
     const git = createBoundedGit()
     const abort = new AbortController()
-    const started = Date.now()
-    const run = git(["-c", "alias.wait=!sleep 30", "wait"], process.cwd(), { signal: abort.signal })
-    setTimeout(() => abort.abort(), 100)
+    const { run, started } = await startedChild((alias) => git(["-c", alias, "wait"], process.cwd(), { signal: abort.signal }))
+    abort.abort()
     const failure = await run.catch((error: unknown) => error)
     expect(failure).toBeInstanceOf(Error)
     expect(failure).not.toBeInstanceOf(GitTimeoutError)
-    expect(Date.now() - started).toBeLessThan(10_000)
+    expect(await exits(started)).toBe(true)
+  })
+
+  test("a run past its deadline ends what git started and is reported as a timeout", async () => {
+    const git = createBoundedGit({ timeoutMs: 300 })
+    const { run, started } = await startedChild((alias) => git(["-c", alias, "wait"], process.cwd()))
+    await expect(run).rejects.toBeInstanceOf(GitTimeoutError)
+    expect(await exits(started)).toBe(true)
   })
 
   test("git applies a credential to https on the host it names and to nothing else", async () => {

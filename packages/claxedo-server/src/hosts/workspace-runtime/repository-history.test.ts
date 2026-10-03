@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, test } from "vitest"
 import { execFile } from "node:child_process"
+import { once } from "node:events"
 import { rmSync, writeFileSync } from "node:fs"
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises"
+import type { Socket } from "node:net"
 import path from "node:path"
 import { promisify } from "node:util"
 import { serveGitOrigin, type GitOrigin } from "../../test-support/git-origin"
@@ -98,14 +100,15 @@ describe("repository history after the runtime serves", () => {
   test("stop ends the running fetch, so no git outlives the runtime holding the lock", async () => {
     const f = await prepared()
     f.served.stalled = true
-    let closed!: () => void
-    const connectionClosed = new Promise<void>((resolve) => { closed = resolve })
+    let fetching!: (connection: Socket) => void
+    const fetchConnection = new Promise<Socket>((resolve) => { fetching = resolve })
     f.served.onRequest = (request) => {
-      if (request.url?.endsWith("/git-upload-pack")) request.socket.once("close", () => closed())
+      if (request.url?.endsWith("/git-upload-pack")) fetching(request.socket)
     }
     const history = f.history()
     void history.start()
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    const connection = await fetchConnection
+    const connectionClosed = once(connection, "close")
     const started = Date.now()
     await history.stop()
     await connectionClosed

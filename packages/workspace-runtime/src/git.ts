@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process"
+import { spawn, type ChildProcess } from "node:child_process"
 import { realpath } from "node:fs/promises"
 import { runtimeEnvText } from "./env"
 import { buildSafeEnv } from "./pty/env"
@@ -43,7 +43,7 @@ export type GitRunOptions = {
   credential?: GitHttpCredential
   timeoutMs?: number
   maxBuffer?: number
-  /** Ends the git process, which removes the lock files it holds on its way out. */
+  /** Ends git and what it started; git removes the lock files it holds on its way out. */
   signal?: AbortSignal
 }
 
@@ -129,19 +129,62 @@ function credentialEnv(credential: GitHttpCredential) {
  */
 const GIT_ENV = { ...buildSafeEnv(process.env, { customPrefix: "CLAXEDO" }), GIT_TERMINAL_PROMPT: "0" }
 
+/**
+ * Git runs its transport (`git-remote-https`), hooks and aliases as children
+ * that hold the network connection and inherit its output pipes, and Linux git
+ * leaves them running when it is terminated. Started in its own process group
+ * (which `execFile` cannot do), git is ended with all of them, and a run settles
+ * once every process holding its output has exited. Windows has no process
+ * groups: there git alone is ended and its output stops being read.
+ */
+const GIT_OWN_GROUP = process.platform !== "win32"
+
+/** Only a git this runner has not reaped: until then its pid cannot name another group. */
+function endGit(child: ChildProcess) {
+  if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return false
+  if (!GIT_OWN_GROUP) {
+    child.stdout?.destroy()
+    child.stderr?.destroy()
+    return child.kill()
+  }
+  try {
+    process.kill(-child.pid, "SIGTERM")
+    return true
+  } catch {
+    return false
+  }
+}
+
 function defaultGit(args: string[], cwd: string, options: GitOptions) {
   const env = options.env ? { ...GIT_ENV, ...options.env } : GIT_ENV
   return new Promise<{ stdout: string; stderr?: string }>((resolve, reject) => {
-    execFile("git", args, { cwd, env, maxBuffer: options.maxBuffer, timeout: options.timeoutMs, signal: options.signal }, (err, stdout, stderr) => {
-      if (err) {
-        const hit = err as Error & { killed?: boolean; signal?: NodeJS.Signals; stdout?: string; stderr?: string }
-        hit.stdout = stdout
-        hit.stderr = stderr
-        reject(hit)
-        return
-      }
-      resolve({ stdout, stderr })
+    const child = spawn("git", args, { cwd, env, detached: GIT_OWN_GROUP })
+    const output = { stdout: "", stderr: "" }
+    let failure: Error | undefined
+    let ended = false
+    const end = () => { ended = endGit(child) || ended }
+    const collect = (stream: "stdout" | "stderr") => (chunk: string) => {
+      output[stream] += chunk
+      if (output[stream].length <= options.maxBuffer || failure) return
+      failure = new RangeError(`git ${stream} maxBuffer length exceeded`)
+      end()
+    }
+    child.stdout.setEncoding("utf8").on("data", collect("stdout"))
+    child.stderr.setEncoding("utf8").on("data", collect("stderr"))
+    const timer = setTimeout(end, options.timeoutMs)
+    const settle = (error: Error | undefined) => {
+      clearTimeout(timer)
+      options.signal?.removeEventListener("abort", end)
+      if (error) reject(Object.assign(error, { killed: ended, ...output }))
+      else resolve(output)
+    }
+    child.once("error", (error) => settle(error))
+    child.once("close", (code, signal) => {
+      if (failure || code !== 0) settle(failure ?? Object.assign(new Error(`Command failed: git ${args.join(" ")}\n${output.stderr}`), { code, signal }))
+      else settle(undefined)
     })
+    if (options.signal?.aborted) end()
+    else options.signal?.addEventListener("abort", end, { once: true })
   })
 }
 
