@@ -1,4 +1,6 @@
 import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
+import { createSessionHostPlugins } from "./runtime/session-host-launch"
+import type { RuntimeConfigSnapshotPlugins } from "@claxedo/harness/contract"
 import type { D1Database } from "@cloudflare/workers-types"
 import { cloudRootBacking, isCloudRoot } from "../workspace/cloud-root-backing"
 import type { Hono } from "hono"
@@ -106,6 +108,8 @@ export type HostedAgentPluginsComposition = {
   integrationRoutes: Hono
   prepareRuntime: (context: WorkspaceRuntimeContext) => Promise<WorkspaceRuntimePreparation>
   pluginRuntime: (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined) => Promise<AgentPluginRuntimeContribution>
+  /** The owner's Pi plugins for a session served by its own Durable Object in this workspace. */
+  sessionHostPlugins: (workspaceId: string) => Promise<RuntimeConfigSnapshotPlugins>
   /** Revokes every pass `prepareRuntime` minted for a root whose workspace is now deleted. */
   releaseRuntime: (context: WorkspaceRuntimeContext) => Promise<void>
   /**
@@ -506,6 +510,7 @@ export function createHostedAgentPluginsComposition(input: {
     integrationRoutes,
     prepareRuntime,
     pluginRuntime,
+    sessionHostPlugins: createSessionHostPlugins({ cloudWorkspace, activations, preparer, provisioner }),
     // A workspace that is gone takes every pass minted for it, whatever the audience.
     releaseRuntime: async ({ workspaceId }) => { await input.passes.revoke({ workspaceId, reason: "workspace_deleted" }) },
     rootEnvironment,

@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono"
 import { bodyLimit } from "hono/body-limit"
 import { z } from "zod"
 import { sessionHostId } from "@claxedo/workspace-relay-protocol"
-import type { TurnDelivery, TurnExecutionAccess } from "@claxedo/harness/contract"
+import type { RuntimeConfigSnapshotPlugins, TurnDelivery, TurnExecutionAccess } from "@claxedo/harness/contract"
 import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import type { RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
@@ -21,6 +21,7 @@ export type SessionHostDeliveryOptions = {
   resolveWorkspaceOwner(workspaceId: string): Promise<WorkspaceOwnerIdentity | undefined>
   credentials(orgId: string): ControlPlaneCredentials
   services: ControlPlaneServices
+  plugins?(workspaceId: string): Promise<RuntimeConfigSnapshotPlugins>
   relayEndpoint(workspaceId: string, homeRegion: ClaxedoRegion): string | Promise<string>
   signRuntimeAccessToken: RuntimeAccessTokenSigner
 }
@@ -84,7 +85,7 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
       const delivery: TurnDelivery = {
         expiresAt: Math.min(claims.expiresAt, ...Object.values(direct).flatMap((row) => row.expiresAt === undefined ? [] : [row.expiresAt])),
         auth: { machineOwnerUserId: owner.userId, accounts: {}, direct: { [owner.userId]: direct } },
-        plugins: { harnessLaunch: {}, mcp: {} },
+        plugins: input.plugins ? await input.plugins(claims.workspaceId) : { harnessLaunch: {}, mcp: {} },
         providerDefinitions: [],
       }
       return c.json(delivery)
@@ -112,6 +113,7 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
         ...(target.routingId ? { routingId: target.routingId } : {}),
         role: "editor",
         sessionId: claims.sessionId,
+        purpose: "turn-execution",
         ttlSeconds: EXECUTION_TTL_SECONDS,
       })
       await input.sessionHosts.recordTurnRuntimeAccessToken(claims.actorId, {

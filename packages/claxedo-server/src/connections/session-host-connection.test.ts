@@ -47,6 +47,7 @@ describe("connecting to a session served by its own host", () => {
     const token = claims(minted)
     expect(token).toMatchObject({ host_id: sessionHostId(RESERVED), role: "editor", scope: "session", session_id: RESERVED, workspace_id: WORKSPACE_ID })
     expect(token.routing_id).toBeUndefined()
+    expect(token.purpose).toBeUndefined()
     expect(await plane.store.runtimeAccessTokenActive({ jti: String(token.jti), workspaceId: WORKSPACE_ID, hostId: sessionHostId(RESERVED) })).toEqual({ active: true })
   })
 
@@ -63,6 +64,7 @@ describe("connecting to a session served by its own host", () => {
     const owner = await hostedSessionConnection(services, options(), plane.owner, { workspaceId: WORKSPACE_ID, sessionId: ROOT })
     expect(owner).toMatchObject({ connection: { backing: "durable-object", hostId: sessionHostId(ROOT), sessionId: ROOT, role: "editor" } })
     expect(claims(owner)).toMatchObject({ scope: "session", session_id: ROOT, role: "editor", host_id: sessionHostId(ROOT) })
+    expect(claims(owner).purpose).toBeUndefined()
 
     await expect(hostedSessionConnection(services, options(), plane.member, { workspaceId: WORKSPACE_ID, sessionId: ROOT })).rejects.toThrow()
     const memberId = plane.member.principal!.userId

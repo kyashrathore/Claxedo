@@ -131,6 +131,7 @@ export function composeBetterAuthD1AgentPlugins(
       sandboxPasses: passes,
       routeContributions: [...feature.routeContributions, ...tasks, pluginBackends],
       integrationRoutes: feature.integrationRoutes,
+      sessionHostPlugins: feature.sessionHostPlugins,
       productWorkspace: {
         ...base.options.productWorkspace,
         prepareRuntime,

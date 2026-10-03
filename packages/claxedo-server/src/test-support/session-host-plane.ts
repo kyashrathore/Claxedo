@@ -9,6 +9,7 @@ import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } from "../credentials/worker/index"
 import { RuntimeSessionAuthorityRoutes } from "../routes/runtime-session-authority"
 import type { ControlPlaneServices } from "../authority/services"
+import type { RuntimeConfigSnapshotPlugins } from "@claxedo/harness/contract"
 import { d1Authority } from "./d1-authority"
 
 export const SESSION_AUTHORIZE_URL = "https://plane.test/api/runtime-authority/session-authorize"
@@ -20,7 +21,7 @@ export const DIRECTORY = "/workspace/repo"
  * of the owner's organization and an outsider, with the session authority and
  * the session-host turn routes mounted as the hosted Worker mounts them.
  */
-export async function sessionHostPlane() {
+export async function sessionHostPlane(input: { plugins?: (workspaceId: string) => Promise<RuntimeConfigSnapshotPlugins> } = {}) {
   const key = await generateKeyPair("EdDSA", { extractable: true })
   const env = {
     CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(key.privateKey),
@@ -54,6 +55,7 @@ export async function sessionHostPlane() {
       resolveWorkspaceOwner: (workspaceId) => store.resolveWorkspaceOwner!(workspaceId),
       credentials,
       services,
+      ...(input.plugins ? { plugins: input.plugins } : {}),
       relayEndpoint: () => "https://relay.test/",
       signRuntimeAccessToken,
     },

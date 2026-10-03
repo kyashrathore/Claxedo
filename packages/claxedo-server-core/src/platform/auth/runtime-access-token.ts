@@ -15,6 +15,7 @@ import {
   toChannelIdentityClaim,
   type ChannelIdentityInput,
   type RelayRole,
+  type TokenPurpose,
 } from "@claxedo/workspace-relay"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { trimToUndefined } from "@claxedo/helpers/string"
@@ -80,6 +81,8 @@ type RuntimeAccessTokenSignerBaseInput = {
   routingId?: string
   /** Requested TTL; always clamped to `RUNTIME_ACCESS_TOKEN_TTL_BOUNDS_SECONDS`. */
   ttlSeconds?: number
+  /** The one job the token is minted for; only the routes serving that job accept it. */
+  purpose?: TokenPurpose
 }
 
 export type RuntimeAccessTokenSignerInput = RuntimeAccessTokenSignerBaseInput
@@ -240,6 +243,7 @@ export function runtimeAccessTokenSigner(env: NodeJS.ProcessEnv = process.env): 
       host_id: input.hostId,
       ...(input.routingId !== undefined ? { routing_id: input.routingId } : {}),
       role: input.role,
+      ...(input.purpose ? { purpose: input.purpose } : {}),
       ...(input.sessionId === undefined ? { scope: "workspace" } : { scope: "session", session_id: input.sessionId }),
     })
       .setProtectedHeader({ alg, kid })

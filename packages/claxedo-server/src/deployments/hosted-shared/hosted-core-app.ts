@@ -1,4 +1,5 @@
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { RuntimeConfigSnapshotPlugins } from "@claxedo/harness/contract"
 import { piDirectRows } from "../../credentials/pi-direct-rows"
 import { defaultSessionHarnessId } from "../../session/default-session-harness"
 import { Hono } from "hono"
@@ -119,6 +120,8 @@ export type HostedCoreAppOptions = {
    * serves no integration routes at all.
    */
   integrationRoutes?: Hono
+  /** The owner's Pi plugins a session served by its own Durable Object runs with; absent, it runs with none. */
+  sessionHostPlugins?: (workspaceId: string) => Promise<RuntimeConfigSnapshotPlugins>
   /**
    * The first-party MCP endpoint (`/api/claxedo/mcp`). Admits the CLI JWT as
    * the whole account; a runtime credential too when the entry supplies the
@@ -474,6 +477,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         resolveWorkspaceOwner: (workspaceId: string) => services.authority?.resolveWorkspaceOwner?.(workspaceId) ?? Promise.resolve(undefined),
         credentials: plane.orgCredentials,
         services,
+        ...(options.sessionHostPlugins ? { plugins: options.sessionHostPlugins } : {}),
         relayEndpoint: relayProvider.getRelayEndpoint,
         signRuntimeAccessToken,
       }
