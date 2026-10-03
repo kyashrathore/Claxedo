@@ -6,14 +6,16 @@ import { createSessionProjection } from "./session-projection"
 import type { Placement } from "./types"
 import type { Workspaces } from "./workspaces"
 
-function fixture(kind: Placement["kind"], signed: boolean) {
+function fixture(kind: Placement["kind"], signed: boolean, sessionHost?: { sessionId: string }) {
   const runs: { operation: string; input: unknown }[] = []
   const account = createHostedAccount(async (operation, input) => (runs.push({ operation, input }), {}))
   const placement = { id: placementId("ws_1"), projectId: projectId("proj"), kind, label: "main", reachable: true }
+  const route = { directory: "workspace:ws_1", workspaceId: "ws_1", remote: true, ...(sessionHost ? { sessionHost } : {}) }
   const workspaces = {
     byId: () => placement,
-    locate: async () => ({ directory: "workspace:ws_1", workspaceId: "ws_1", remote: true }),
-  } as Pick<Workspaces, "byId" | "locate"> as Workspaces
+    locate: async () => route,
+    home: async () => ({ route, central: !sessionHost, live: true }),
+  } as Pick<Workspaces, "byId" | "locate" | "home"> as Workspaces
   return { runs, projection: createSessionProjection(workspaces, signed ? account : undefined) }
 }
 
@@ -42,4 +44,14 @@ test("session projection: a folder's session, or one with no account, is never p
     await settle()
     expect(runs).toEqual([])
   }
+})
+
+test("session projection: a session served by its own host is registered, and never asked for a checkpoint it does not keep", async () => {
+  const { runs, projection } = fixture("cloud", true, { sessionId: "ses_1" })
+
+  await projection.created(ref)
+  projection.observe({ type: "statusChanged", ref, status: { kind: "idle" } })
+  await settle()
+
+  expect(runs.map((run) => run.operation)).toEqual(["session.projection.register"])
 })

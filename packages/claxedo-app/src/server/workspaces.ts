@@ -29,6 +29,8 @@ export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
   readonly locate: (id: PlacementId) => Promise<RuntimeRoute>
   readonly home: (ref: SessionLocation) => Promise<SessionHome>
   readonly learn: (directory: string) => Promise<void>
+  /** Records that a session is served by its own Durable Object, so its reads and writes go there and not to the workspace's runtime. */
+  readonly hostSession: (ref: Pick<SessionLocation, "placementId" | "sessionId">, root: string) => void
   readonly catalog: () => BootstrapCatalog | undefined
   readonly load: () => Promise<BootstrapCatalog>
   readonly refresh: () => Promise<void>
@@ -83,10 +85,21 @@ function placementReads(records: () => readonly PlacementRecord[]) {
   }
 }
 
-function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | undefined>, shared: Workspaces["shared"]): Pick<Workspaces, "route" | "locate" | "home"> {
+type SessionHosts = Map<string, string>
+
+const sessionHostKey = (ref: Pick<SessionLocation, "placementId" | "sessionId">) => JSON.stringify([ref.placementId, ref.sessionId])
+
+function hostedRoute(record: PlacementRecord, hosts: SessionHosts, ref: Pick<SessionLocation, "placementId" | "sessionId">): RuntimeRoute | undefined {
+  const root = hosts.get(sessionHostKey(ref))
+  return root ? { ...record.route, sessionHost: { sessionId: root } } : undefined
+}
+
+function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | undefined>, shared: Workspaces["shared"], hosts: SessionHosts): Pick<Workspaces, "route" | "locate" | "home"> {
   const resolve = async (ref: Pick<SessionLocation, "placementId" | "sessionId"> | PlacementId) => {
     const id = typeof ref === "string" ? ref : ref.placementId
     const record = await find(id)
+    const hosted = record && typeof ref !== "string" ? hostedRoute(record, hosts, ref) : undefined
+    if (hosted) return { route: hosted, central: false, live: true, stopped: false }
     if (!record && typeof ref !== "string") {
       await shared.load()
       const route = shared.route(ref)
@@ -108,7 +121,7 @@ function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | un
   }
 }
 
-function sharedAware(reads: ReturnType<typeof placementReads>, shared: SharedSessions): Pick<Workspaces, "address" | "streamRoute"> {
+function sharedAware(reads: ReturnType<typeof placementReads>, shared: SharedSessions, hosts: SessionHosts): Pick<Workspaces, "address" | "streamRoute"> {
   return {
     address: {
       placementFor: (directory, workspaceId, sessionId) => {
@@ -120,7 +133,7 @@ function sharedAware(reads: ReturnType<typeof placementReads>, shared: SharedSes
     streamRoute: (ref) => {
       const record = reads.recordOf(ref.placementId)
       if (!record) return shared.route(ref)
-      return record.route.remote && record.placement.reachable ? record.route : undefined
+      return hostedRoute(record, hosts, ref) ?? (record.route.remote && record.placement.reachable ? record.route : undefined)
     },
   }
 }
@@ -183,15 +196,19 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
   }
   const reads = placementReads(() => merged.catalog()?.placements ?? [])
   const { recordOf, byId, list } = reads
+  const hosts: SessionHosts = new Map()
   return {
     shared,
     byId,
     list,
-    ...sharedAware(reads, shared),
+    ...sharedAware(reads, shared, hosts),
     ...placementRoutes(async (id) => {
       await load()
       return recordOf(id)
-    }, shared),
+    }, shared, hosts),
+    hostSession: (ref, root) => {
+      hosts.set(sessionHostKey(ref), root)
+    },
     learn: async (directory) => {
       if (relearned.has(directory)) return
       await reread()

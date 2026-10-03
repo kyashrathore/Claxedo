@@ -65,3 +65,23 @@ test("session list: a paired project whose account page fails lists the daemon's
   expect(page.degraded).toBe(true)
   expect(page.rows).toEqual([])
 })
+
+test("session list: a listed session served by its own host is routed there from then on", async () => {
+  const hosted: Array<[unknown, string]> = []
+  const item = (sessionId: string, extra: Record<string, unknown> = {}) => ({
+    sessionId, sessionRef: `workspace:ws_cloud:session:${sessionId}`, directory: "workspace:ws_cloud", workspaceId: "ws_cloud", createdAt: 1, updatedAt: 2, ...extra,
+  })
+  const value = {
+    transport: { loopback: true, json: async () => ({ items: [item("ses_pi", { sessionHostRoot: "ses_pi" }), item("ses_codex")] }) },
+    workspaces: {
+      address: { placementFor: () => ({ placementId: "ws_cloud", projectId: "prj_1" }) },
+      learn: async () => undefined,
+      accountProjectIds: () => [],
+      hostSession: (ref: unknown, root: string) => hosted.push([ref, root]),
+    },
+    status: { listed: (_ref: unknown, status: unknown) => status },
+  } as unknown as SessionContext
+  const page = await listSessions(value, { projectId: projectId("prj_1"), limit: 5 })
+  expect(page.rows.map((row) => String(row.ref.sessionId)).toSorted()).toEqual(["ses_codex", "ses_pi"])
+  expect(hosted).toEqual([[{ projectId: "prj_1", placementId: "ws_cloud", sessionId: "ses_pi" }, "ses_pi"]])
+})

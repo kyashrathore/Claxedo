@@ -46,9 +46,14 @@ async function createSession(context: SessionContext, wakes: WorkspaceWakes, inp
   const reservation = where.remote && context.account
     ? await reserveSession(context.account, { workspaceId: where.workspaceId, ...(input.title ? { title: input.title } : {}) })
     : undefined
+  const hostRoot = reservation && input.harness && placement.kind === "cloud"
+    ? await context.transport.connectSession(where.workspaceId, reservation.sessionId, harnessIdentity(input.harness))
+    : undefined
+  if (reservation && hostRoot) context.workspaces.hostSession({ placementId: input.placementId, sessionId: sessionId(reservation.sessionId) }, hostRoot)
+  const route = hostRoot ? { ...where, sessionHost: { sessionId: hostRoot } } : where
   const body = { ...createBody(input), ...(reservation ? { id: reservation.sessionId } : {}) }
   const init = jsonInit("POST", body, reservation ? { headers: { [RESERVATION_HEADER]: reservation.operationId } } : undefined)
-  const created = await context.transport.runtimeJson<AgentPresentationSession>(where, path, init)
+  const created = await context.transport.runtimeJson<AgentPresentationSession>(route, path, init)
   return sessionRowFromSession(created, { projectId: placement.projectId, placementId: input.placementId, sessionId: sessionId(created.id) })
 }
 

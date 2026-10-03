@@ -70,3 +70,26 @@ test("signed desktop local placements keep using the daemon with no account call
   expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get("authorization")).toBeNull()
   expect(calls).toEqual([])
 })
+
+test("a session a Durable Object will serve is minted through the account, and its routes use that session's link alone", async () => {
+  const hostLink = { backing: "durable-object", sessionId: "ses_pi", relayUrl: "https://relay.test", runtimeAccessToken: "host-rat", tokenExpiresAt: Date.now() + 3_600_000 }
+  const { transport, calls } = signed(hostLink, link)
+  fetcher.mockResolvedValue(Response.json({}))
+  const harness = { id: "pi", access: "native" } as const
+  expect(await transport.connectSession("ws_cloud", "ses_pi", harness)).toBe("ses_pi")
+  await transport.runtime({ ...cloud, sessionHost: { sessionId: "ses_pi" } }, "/session/ses_pi?directory=workspace%3Aws_cloud")
+  await transport.runtime(cloud, "/api/wr/health")
+  expect(calls).toEqual([
+    { operation: "session.connection.mint", input: { id: "ws_cloud", sessionId: "ses_pi", harness } },
+    { operation: "workspace.connection.read", input: { id: "ws_cloud" } },
+  ])
+  expect(fetcher.mock.calls.map(([url, init]) => [String(url), new Headers(init?.headers).get("authorization")])).toEqual([
+    ["https://relay.test/workspaces/ws_cloud/session/ses_pi", "Bearer host-rat"],
+    ["https://relay.test/workspaces/ws_cloud/api/wr/health", "Bearer session-rat"],
+  ])
+})
+
+test("a session the workspace's runtime will serve is answered with no session host", async () => {
+  const { transport } = signed(link)
+  expect(await transport.connectSession("ws_cloud", "ses_codex", { id: "codex", access: "native" })).toBeUndefined()
+})

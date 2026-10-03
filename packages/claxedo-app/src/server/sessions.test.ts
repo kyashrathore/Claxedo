@@ -58,3 +58,49 @@ test.each([["cloud", false], ["remote machine", true]] as const)("sessions: a %s
   })
   workspaces.dispose()
 })
+
+test("sessions: a Pi create on a cloud workspace mints its session host's connection first, is created through it, and is then read there", async () => {
+  const minted: unknown[] = []
+  const hosted: Array<{ method: string; path: string; authorization: string | null; id?: unknown; operation: string | null }> = []
+  let origin = ""
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: async (request): Promise<Response> => {
+      const url = new URL(request.url)
+      if (url.pathname === "/api/claxedo/bootstrap") return Response.json(bootstrap(() => true, false))
+      if (url.pathname === "/api/control/session-registrations/reserve") return Response.json({ ...(await request.json()), state: "reserved" })
+      if (url.pathname === "/api/workspace/ws_cloud/connection" && request.method === "POST") {
+        const body = (await request.json()) as { session: { sessionId: string } }
+        minted.push(body)
+        return Response.json({
+          backing: "durable-object", workspaceId: "ws_cloud", hostId: `session-do:${body.session.sessionId}`, sessionId: body.session.sessionId,
+          relayUrl: `${origin}/relay`, runtimeAccessToken: "session-host-rat", tokenExpiresAt: Date.now() + 3_600_000, role: "editor",
+        })
+      }
+      if (url.pathname.startsWith("/relay/workspaces/ws_cloud/session")) {
+        const body = request.method === "POST" ? (await request.json()) as { id?: unknown } : {}
+        hosted.push({ method: request.method, path: url.pathname, authorization: request.headers.get("authorization"), id: body.id, operation: request.headers.get(RESERVATION_HEADER) })
+        const id = String(body.id ?? url.pathname.split("/").pop())
+        return Response.json({ id, title: "Pi", time: { created: 1, updated: 1 } })
+      }
+      if (url.pathname.startsWith("/api/control/")) return Response.json({ ok: true })
+      return Response.json({ error: { code: "unexpected", message: url.pathname } }, { status: 500 })
+    },
+  })
+  running.push(server)
+  origin = `http://127.0.0.1:${server.port}`
+  const transport = createTransport({ serverUrl: origin, cookies: true })
+  const account = createBrowserHostedAccount(transport)
+  const workspaces = createWorkspaces(transport, new QueryClient())
+  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createWorkspaceWakes(transport, workspaces), createSessionProjection(workspaces, account), account)
+
+  const row = await sessions.create({ placementId: placementId("ws_cloud"), harness: "pi" })
+  const id = String(row.ref.sessionId)
+  expect(minted).toEqual([{ session: { sessionId: id, harness: { id: "pi", access: "native" } } }])
+  expect(hosted).toEqual([{ method: "POST", path: "/relay/workspaces/ws_cloud/session", authorization: "Bearer session-host-rat", id, operation: expect.stringMatching(/^session_registration/) }])
+  expect((await workspaces.route(row.ref)).sessionHost).toEqual({ sessionId: id })
+  await transport.runtime(await workspaces.route(row.ref), `/session/${id}`)
+  expect(hosted.at(-1)).toMatchObject({ method: "GET", path: `/relay/workspaces/ws_cloud/session/${id}`, authorization: "Bearer session-host-rat" })
+  workspaces.dispose()
+})

@@ -4,9 +4,12 @@ import { responseError, toAppError } from "./errors"
 import { createRelay } from "./relay"
 import { startWorkspace, type StartOptions } from "./workspace-start"
 import { CLOUD_RUNTIME_UNAVAILABLE, connectionAnswerFromWire, unavailableRetryAfter, type ConnectionAnswer, type WorkspaceConnections } from "./wire/connection"
+import { isRecord } from "@claxedo/helpers/guards"
+import type { SessionHarness } from "@claxedo/agent-runtime-contract"
 
 export type RuntimeRoute = {
   readonly sharedSession?: { readonly sessionId: string; readonly level: "follow" | "send" }
+  readonly sessionHost?: { readonly sessionId: string }
   readonly directory: string
   readonly workspaceId: string
   readonly remote: boolean
@@ -21,6 +24,8 @@ export type Transport = {
   readonly json: <T>(path: string, init?: RequestInit) => Promise<T>
   readonly runtimeJson: <T>(route: RuntimeRoute, path: string, init?: RequestInit) => Promise<T>
   readonly startRuntime: (workspaceId: string, options?: StartOptions) => Promise<void>
+  /** Mints a session's connection before it is created; answers the root of the Durable Object that will serve it, if one will. */
+  readonly connectSession: (workspaceId: string, sessionId: string, harness: SessionHarness) => Promise<string | undefined>
 }
 
 function socketUrl(serverUrl: string, path: string) {
@@ -70,6 +75,11 @@ async function readJsonResponse<T>(response: Response, label: string): Promise<T
   return (await response.json()) as T
 }
 
+/** The one session a route's relay connection is scoped to: a share's, or the session a Durable Object serves. */
+function sessionScope(route: RuntimeRoute) {
+  return route.sharedSession?.sessionId ?? route.sessionHost?.sessionId
+}
+
 function workspaceProxyPath(route: RuntimeRoute, path: string) {
   return `/workspaces/${encodeURIComponent(route.workspaceId)}${withoutRouteQuery(path)}`
 }
@@ -102,6 +112,13 @@ export function createWorkspaceConnections(request: Request, account?: HostedAcc
     start: async (workspaceId) => account
       ? connectionAnswerFromWire(await account.run("workspace.connection.mint", { id: workspaceId }), workspaceId)
       : requestConnection(request, workspaceId, true),
+    mintSession: async (workspaceId, sessionId, harness) => {
+      const body = account
+        ? await account.run("session.connection.mint", { id: workspaceId, sessionId, harness })
+        : await readJsonResponse(await request(`/api/workspace/${encodeURIComponent(workspaceId)}/connection`, jsonInit("POST", { session: { sessionId, harness } })), "Session connection")
+      const answer = connectionAnswerFromWire(body, workspaceId)
+      return answer.kind === "ready" && isRecord(body) && body.backing === "durable-object" ? connectionAnswerFromWire(body, workspaceId, sessionId) : answer
+    },
   }
 }
 
@@ -114,13 +131,15 @@ export function createTransport(config: ServerConfig): Transport {
   const daemonProxy = loopback && config.account === undefined
   const runtime = (route: RuntimeRoute, path: string, init?: RequestInit) => {
     if (!route.remote) return request(withQuery(path, { directory: route.directory }), init)
-    if (daemonProxy && !route.sharedSession) return request(workspaceProxyPath(route, path), init)
-    return relay.fetch(route.workspaceId, withoutRouteQuery(path), init, route.sharedSession?.sessionId)
+    const session = sessionScope(route)
+    if (daemonProxy && !session) return request(workspaceProxyPath(route, path), init)
+    return relay.fetch(route.workspaceId, withoutRouteQuery(path), init, session)
   }
   const runtimeSocket = async (route: RuntimeRoute, path: string): Promise<WebSocket> => {
     if (!route.remote) return new WebSocket(socketUrl(serverUrl, withQuery(path, { directory: route.directory })))
-    if (daemonProxy && !route.sharedSession) return new WebSocket(socketUrl(serverUrl, workspaceProxyPath(route, path)))
-    return relay.webSocket(route.workspaceId, withoutRouteQuery(path), route.sharedSession?.sessionId)
+    const session = sessionScope(route)
+    if (daemonProxy && !session) return new WebSocket(socketUrl(serverUrl, workspaceProxyPath(route, path)))
+    return relay.webSocket(route.workspaceId, withoutRouteQuery(path), session)
   }
   const label = (path: string, init?: RequestInit) => `${init?.method ?? "GET"} ${path}`
   return {
@@ -134,6 +153,12 @@ export function createTransport(config: ServerConfig): Transport {
     startRuntime: async (workspaceId, options) => {
       const link = await startWorkspace(connections.start, workspaceId, options)
       if (!daemonProxy) relay.adopt(link)
+    },
+    connectSession: async (workspaceId, sessionId, harness) => {
+      const answer = await connections.mintSession(workspaceId, sessionId, harness)
+      if (answer.kind !== "ready" || !answer.sessionHostRoot) return undefined
+      relay.adopt(answer.link)
+      return answer.sessionHostRoot
     },
   }
 }
