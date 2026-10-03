@@ -3,6 +3,7 @@ import { isLoopbackHostname } from "@claxedo/helpers"
 import { FIRST_PARTY_MCP_PATH, type WorkspaceFirstPartyMcpLaunchOptions } from "./first-party-mcp/index"
 import { Hono, type MiddlewareHandler } from "hono"
 import { cors } from "hono/cors"
+import { createMiddleware } from "hono/factory"
 import { serve } from "@hono/node-server"
 import { createNodeWebSocket } from "@hono/node-ws"
 import type { UpgradeWebSocket } from "hono/ws"
@@ -506,6 +507,10 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     inProcessRequests.add(request)
     return Promise.resolve(app.fetch(request))
   }
+  app.use("*", createMiddleware<{ Variables: { inProcessRequest?: true } }>(async (c, next) => {
+    if (inProcessRequests.has(c.req.raw)) c.set("inProcessRequest", true)
+    await next()
+  }) as MiddlewareHandler)
 
   if (!enabled(runtimeEnvText(process.env, "WORKSPACE_RUNTIME_DISABLE_CORS"))) {
     const corsOrigin = options.corsOrigin

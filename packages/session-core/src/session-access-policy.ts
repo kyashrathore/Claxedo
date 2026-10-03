@@ -728,7 +728,7 @@ export function sessionAccessContext(input: SessionAccessContextReader):
 }
 
 type SessionHumanTurnReader = SessionAccessContextReader & {
-  get(name: "machineUserRequest"): true | undefined
+  get(name: "machineUserRequest" | "inProcessRequest"): true | undefined
 }
 
 /**
@@ -741,8 +741,13 @@ type SessionHumanTurnReader = SessionAccessContextReader & {
  * Only the boundary that admitted it from outside the process as this
  * machine's own user can mark it, and it does so by object identity
  * (`markEmbeddedMachineUserRequest`), never by anything the caller sent.
+ *
+ * A request the runtime's own contribution seam built is an agent's tool call
+ * even when it carries the owner grant, which names the workspace's owner as
+ * a human actor so the tool may act with the owner's authority.
  */
 export function sessionRequestIsHumanTurn(input: SessionHumanTurnReader): boolean {
+  if (input.get("inProcessRequest")) return false
   return input.get("machineUserRequest") === true || sessionAccessContext(input).actor?.actorKind === "human"
 }
 

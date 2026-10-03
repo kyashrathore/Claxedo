@@ -342,6 +342,26 @@ describe("create_subagent on a hosted cloud root", () => {
     expect((JSON.parse(listed.text) as Binding[]).map((row) => row.sessionId)).toEqual([child.sessionId])
   }, 60_000)
 
+  test("records no human turn for the turns an agent's tools start, though they run under the owner's grant", async () => {
+    const parent = await createRoot("ses_parent_turns", ALICE)
+    const call = await connect(parent)
+    const child = (JSON.parse((await spawn(call)).text) as Binding).sessionId
+    const read = async (sessionId: string) => {
+      const response = await runtime.app.request(`http://runtime.test/session/${sessionId}`, {
+        headers: { authorization: `Bearer ${await relayToken(ALICE, `rht_read_${sessionId}`)}`, "x-workspace-id": WORKSPACE, "x-forwarded-by": "workspace-relay" },
+      })
+      expect(response.status, await response.clone().text()).toBe(200)
+      return await response.json() as { status?: string; time?: { lastHumanTurn?: number } }
+    }
+    await expect.poll(async () => (await read(child)).status, { timeout: 10_000 }).not.toBe("busy")
+
+    const sent = await call("session_send", { session: child, text: "keep going" })
+    expect(sent.isError, sent.text).toBe(false)
+    await expect.poll(() => harness.prompts.filter((prompt) => prompt.sessionId === child).length, { timeout: 10_000 }).toBe(2)
+
+    expect((await read(child)).time?.lastHumanTurn).toBeUndefined()
+  }, 60_000)
+
   test("a grant signed with another key, or minted for another workspace, leaves the runtime's own routes actor-less", async () => {
     const parent = await createRoot("ses_parent_forged", ALICE)
     const call = await connect(parent)
