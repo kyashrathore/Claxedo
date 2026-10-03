@@ -29,7 +29,16 @@ import {
   type BindingAuthority,
   type RuntimeIdentity,
 } from "@claxedo/egress-broker"
-import type { CredentialSnapshot, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
+import {
+  HARNESS_TABLE,
+  isProviderUnavailable,
+  PI_LAUNCH_PROVIDERS,
+  piCredentialProviderIDs,
+  type CredentialSnapshot,
+  type ProviderDirect,
+  type ProviderProjectionSource,
+} from "@claxedo/agent-runtime-contract"
+import { isSubscriptionKind } from "@claxedo/server-core/credentials/secret-material"
 import { ORG_ACCOUNT_UNAVAILABLE, selectedAccounts, type AccountSelections } from "@claxedo/server-core/credentials/account-holder"
 import { accountSelections } from "@claxedo/server-core/credentials/account-source"
 import { projectionRenewalDue, projectionRenewalDueAt } from "@claxedo/agent-runtime-contract"
@@ -54,9 +63,33 @@ import {
 } from "@claxedo/server-core/credentials/native-delivery"
 
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { machineOwnerDirectRows, type BoundRow } from "./direct-rows"
 
 const log = Log.create({ service: "credentials-broker" })
+
+/**
+ * The stored providers whose harnesses call the vendor in process: Pi, which
+ * has no egress broker in front of it, and Codex, whose subscription login
+ * reads the account from the token itself.
+ */
+const DIRECT_PROVIDER_IDS = new Set([...PI_LAUNCH_PROVIDERS.flatMap(piCredentialProviderIDs), ...HARNESS_TABLE.codex.providerIds])
+
+type BoundRow = { credential: CredentialMetadata; destination: ProviderDestination }
+
+/** The machine owner's selected Pi and Codex accounts, as the credential itself. */
+function machineOwnerDirectRows(selected: Record<string, ProviderProjectionSource> | undefined, bound: readonly BoundRow[]): Record<string, ProviderDirect> {
+  return Object.fromEntries(Object.entries(selected ?? {}).flatMap(([providerId, projection]): [string, ProviderDirect][] => {
+    if (!DIRECT_PROVIDER_IDS.has(providerId) || isProviderUnavailable(projection) || !projection.account) return []
+    const account = projection.account
+    const row = bound.find((entry) => entry.credential.id === account.credentialId)
+    if (!row) return []
+    const { destination, credential } = row
+    return [[providerId, {
+      delivery: "direct", baseUrl: destination.origin, ...(destination.apiPath ? { apiPath: destination.apiPath } : {}),
+      secret: destination.value, authKind: isSubscriptionKind(credential.kind) ? "subscription" : "api-key",
+      ...(credential.expires_at ? { expiresAt: credential.expires_at } : {}), account,
+    }]]
+  }))
+}
 
 const BROKER_TOKEN_TTL_MS = 60 * 60 * 1000
 

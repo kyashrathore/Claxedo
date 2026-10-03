@@ -69,7 +69,8 @@ export function parseHostProviderConfig(text: string): HostProviderConfig {
 
 /**
  * The `projectAuth` a host composes: this machine's own answer with the
- * enrolled owner's pushed rows written over their accounts.
+ * enrolled owner's pushed rows written over their accounts, and this machine's
+ * direct credential withdrawn for every provider a pushed row now serves.
  *
  * The enrolled owner is the one source of who owns this machine; a pushed
  * snapshot that names anyone else is an earlier enrollment's and is ignored.
@@ -90,6 +91,8 @@ export function hostProviderConfigProjectAuth<Input>(
     if (!owner || !remote || remote.machineOwnerUserId !== owner) return local
     const sources = ownerSources(owner, input)
     const own = Object.fromEntries(Object.entries(remote.accounts[owner] ?? {}).filter(([providerId]) => sources[providerId] !== "org"))
-    return { ...local, machineOwnerUserId: owner, accounts: { ...local.accounts, [owner]: { ...local.accounts[owner], ...own } } }
+    const direct = Object.fromEntries(Object.entries(local.direct?.[owner] ?? {}).filter(([providerId]) => !Object.hasOwn(own, providerId)))
+    return { ...local, machineOwnerUserId: owner, accounts: { ...local.accounts, [owner]: { ...local.accounts[owner], ...own } },
+      ...(local.direct ? { direct: { ...local.direct, [owner]: direct } } : {}) }
   }
 }

@@ -282,8 +282,12 @@ describe("@claxedo/local-server closure", () => {
     //    for a session of this machine's owner: a new plugin folder in the
     //    session's workspace, its check and its registration with the live
     //    plugins above.
+    //  - `agent-plugins/runtime/adapters/pi.ts` — Pi's Agent Plugins
+    //    projection: the retained skill roots and the projected MCP servers
+    //    the embedded `transports/pi-durable` connects itself, beside the
+    //    other harnesses' adapters.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(109)
+    expect(modules.size).toBeLessThanOrEqual(110)
     expect(packages.size).toBeLessThanOrEqual(30)
   })
 })
