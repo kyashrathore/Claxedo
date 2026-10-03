@@ -6,6 +6,7 @@ import {
   isRelayBacking,
   relayHostTokenAudience,
   relayHostTokenIssuer,
+  tokenPurposeClaims,
   tokenScopeClaims,
   verifyRelayHostToken,
   type RelayHostTokenClaims,
@@ -123,6 +124,7 @@ function validateRelayHostVerifierClaims(
   const jti = stringClaim(payload, "jti")
   const parent_jti = stringClaim(payload, "parent_jti")
   const reach = tokenScopeClaims(payload)
+  const purpose = tokenPurposeClaims(payload)
 
   if (
     !actor_id
@@ -136,6 +138,7 @@ function validateRelayHostVerifierClaims(
     || !host_id
     || !role
     || !reach
+    || !purpose
     || payload.access !== undefined
     || !isRelayBacking(backing)
     || !exp
@@ -170,6 +173,7 @@ function validateRelayHostVerifierClaims(
     host_id,
     role,
     ...reach,
+    ...purpose,
     backing,
     exp,
     iat,

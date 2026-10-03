@@ -77,6 +77,26 @@ describe("workspace relay auth", () => {
     await expect(verifyRuntimeAccessToken(empty, key.publicKey, target)).rejects.toMatchObject({ code: "relay_token_claims_invalid" })
   })
 
+  test("carries the turn-execution purpose through both tokens, none when the mint named none, and refuses a purpose it does not know", async () => {
+    const key = await keys()
+    const target = { workspaceId: "ws_1", hostId: "host_1" }
+    const minted = await verifyRuntimeAccessToken(await mintRuntimeAccessToken({ ...base, sessionId: "ses_1", purpose: "turn-execution" }, key.privateKey, "EdDSA"), key.publicKey, target)
+    const plain = await verifyRuntimeAccessToken(await mintRuntimeAccessToken({ ...base, sessionId: "ses_1" }, key.privateKey, "EdDSA"), key.publicKey, target)
+    const host = await verifyRelayHostToken(await mintRelayHostToken({
+      ...base, sessionId: "ses_1", purpose: "turn-execution", backing: "cloud-vm", parentJti: "jti_1",
+    }, key.privateKey, "EdDSA"), key.publicKey, target)
+    const unknown = await new SignJWT({
+      principal_kind: "user", actor_id: "actor_1", actor_kind: "human", org_id: "org_1",
+      workspace_id: "ws_1", host_id: "host_1", role: "editor", scope: "session", session_id: "ses_1", purpose: "anything",
+    }).setProtectedHeader({ alg: "EdDSA" }).setIssuer(runtimeAccessTokenIssuer).setAudience(runtimeAccessTokenAudience)
+      .setIssuedAt().setExpirationTime("10m").setJti("jti_unknown").sign(key.privateKey)
+
+    expect(minted.purpose).toBe("turn-execution")
+    expect(plain.purpose).toBeUndefined()
+    expect(host.purpose).toBe("turn-execution")
+    await expect(verifyRuntimeAccessToken(unknown, key.publicKey, target)).rejects.toMatchObject({ code: "relay_token_claims_invalid" })
+  })
+
   test("a session's Durable Object host verifies the Relay Host Token minted for its backing", async () => {
     const key = await keys()
     const target = { workspaceId: "ws_1", hostId: "session-do:ses_root" }

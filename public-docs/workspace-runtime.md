@@ -205,6 +205,7 @@ mountWorkspaceCore(app, upgradeWebSocket, {
 | `/api/wr/process/*` | Managed process config, lifecycle, diagnostics, port map, logs. |
 | `/api/wr/hook/*` | Agent hook routes. |
 | `/api/wr/worktrees/*` | Registered per-session Git worktree creation, inspection, and repair. |
+| `/api/wr/execution-env/*` | Relay-exposed runtimes only: a session host's file, shell and plugin stdio MCP access to this machine (`fs`, `exec` as SSE, `mcp/:serverName` as WebSocket). |
 | `/session/*` | Session create/list/read/update/delete/message/abort/revert/fork/command routes. |
 | `/agent`, `/permission`, `/question`, `/command` | Compatibility and session support routes. |
 | `/vcs` | Client-presentation compatibility surface backed by workspace services. |

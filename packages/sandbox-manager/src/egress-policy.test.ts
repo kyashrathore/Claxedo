@@ -66,7 +66,7 @@ function fakeDriver(
 }
 
 /**
- * A driver that behaves like the real docker/modal/box drivers: it raises
+ * A driver that behaves like the real docker/modal/boat drivers: it raises
  * when handed a restricted policy. Used to prove the manager withholds rather
  * than passes — an assertion on `seen.net` alone would still pass if the
  * withholding happened one layer too late.
@@ -199,7 +199,7 @@ describe("manager: document where we can't", () => {
   })
 
   test("a driver that THROWS on a restricted policy never gets the chance", async () => {
-    // docker, modal and box all raise "cannot enforce host-based network
+    // docker, modal and boat all raise "cannot enforce host-based network
     // policy". Their throws stay in place as their own last line of defence;
     // this proves the manager never trips them, so removing the caller-side
     // refusal did not turn a refusal into a provisioning failure.
@@ -346,11 +346,11 @@ describe("driver egress capability declarations", () => {
   })
 
   test("the drivers that throw on a restricted policy are declared uncontained", () => {
-    // docker.ts, modal.ts and box.ts all raise "cannot enforce
+    // docker.ts, modal.ts and boat.ts all raise "cannot enforce
     // host-based network policy". Declaring them "none" is what makes the
     // manager withhold the policy, so those throws are never reached — and it
     // keeps them intact as the driver's own last line of defence.
-    for (const id of ["docker", "modal", "box"] as const) {
+    for (const id of ["docker", "modal", "boat"] as const) {
       expect(sandboxDriverCatalog[id].metadata.egressControl, id).toBe("none")
     }
   })

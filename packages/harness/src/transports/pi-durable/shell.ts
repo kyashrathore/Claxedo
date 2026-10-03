@@ -14,7 +14,11 @@ wait`
 const EXIT_STDIO_GRACE_MS = 100
 const RETIRE_MS = 5_000
 
-export type PiShellHost = { sessionId: string; services: HarnessServices; env: Readonly<Record<string, string>>; live: Set<OwnedProcess> }
+export type PiShellServices = Pick<HarnessServices, "spawn" | "clock" | "log">
+
+export type LiveProcesses = { add(owned: OwnedProcess): unknown; delete(owned: OwnedProcess): unknown }
+
+export type PiShellHost = { sessionId: string; services: PiShellServices; env: Readonly<Record<string, string>>; live: LiveProcesses }
 
 type Exec = { owned: OwnedProcess; options: ShellExecOptions | undefined; context: Context; marker: ExitMarker; settled: boolean }
 
@@ -85,6 +89,24 @@ async function ownedExec(host: PiShellHost, cwd: string, command: string, option
   const exec = { owned, options, context, marker, settled: false }
   forward(exec)
   return settleExec(host, exec)
+}
+
+export function sessionCommands(services: PiShellServices) {
+  const live = new Map<string, Set<OwnedProcess>>()
+  const of = (sessionId: string): LiveProcesses => ({
+    add: (owned) => live.get(sessionId)?.add(owned) ?? live.set(sessionId, new Set([owned])),
+    delete: (owned) => {
+      const running = live.get(sessionId)
+      running?.delete(owned)
+      if (running?.size === 0) live.delete(sessionId)
+    },
+  })
+  const retire = async (sessionId: string): Promise<void> => {
+    const running = [...live.get(sessionId) ?? []]
+    live.delete(sessionId)
+    await Promise.all(running.map((owned) => owned.retire(deadlineAfter(services.clock, RETIRE_MS))))
+  }
+  return { of, retire, sessions: () => [...live.keys()], retireAll: async () => { await Promise.all([...live.keys()].map(retire)) } }
 }
 
 export function ownedExecutionEnv(host: PiShellHost, cwd: string): ExecutionEnv {

@@ -13,7 +13,7 @@ import {
   type IpAddress,
 } from "@claxedo/helpers"
 
-export const sandboxDriverIds = ["modal", "vercel", "cloudflare", "box", "docker"] as const
+export const sandboxDriverIds = ["modal", "vercel", "cloudflare", "boat", "docker"] as const
 
 export type SandboxDriverID = (typeof sandboxDriverIds)[number]
 
@@ -47,7 +47,7 @@ export type SandboxDriverAuth = {
   modal?: { token_id?: string; token_secret?: string }
   vercel?: { access_token?: string; team_id?: string; project_id?: string }
   cloudflare?: { api_token?: string; worker_url?: string }
-  box?: { api_key?: string }
+  boat?: { api_key?: string }
   docker?: { image?: string }
 }
 
@@ -76,7 +76,7 @@ export const sandboxDriverCredentialFields = {
     { key: "api_token", label: "API Token", secret: true },
     { key: "worker_url", label: "Worker URL" },
   ],
-  box: [{ key: "api_key", label: "API Key", secret: true }],
+  boat: [{ key: "api_key", label: "API Key", secret: true }],
   docker: [{ key: "image", label: "Image" }],
 } as const satisfies Record<SandboxDriverID, readonly SandboxDriverCredentialField[]>
 
@@ -84,7 +84,7 @@ export const sandboxDriverLabels = {
   modal: "Modal",
   vercel: "Vercel",
   cloudflare: "Cloudflare",
-  box: "Box",
+  boat: "Boat",
   docker: "Docker",
 } as const satisfies Record<SandboxDriverID, string>
 
@@ -133,8 +133,8 @@ export function sandboxDriverAuthValues<T extends SandboxDriverID>(
     const worker_url = configuredUrl ? cloudflareWorkerBaseUrl(configuredUrl) : undefined
     return (api_token && worker_url ? { api_token, worker_url } : undefined) as SandboxDriverAuth[T] | undefined
   }
-  if (id === "box") {
-    const api_key = trimToUndefined(cfg?.auth?.box?.api_key) ?? trimToUndefined(env.BOX_API_KEY)
+  if (id === "boat") {
+    const api_key = trimToUndefined(cfg?.auth?.boat?.api_key) ?? trimToUndefined(env.BOAT_API_KEY)
     return (api_key ? { api_key } : undefined) as SandboxDriverAuth[T] | undefined
   }
   if (!dockerSandboxDriverEnabled(env)) return undefined

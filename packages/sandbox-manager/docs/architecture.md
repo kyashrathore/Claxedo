@@ -99,7 +99,7 @@ credential fields for each provider).
 
 | Driver | Runs in | `hostStopBehavior` | `hostResumeBehavior` | `targetAccess` | `secretBrokering` |
 | --- | --- | --- | --- | --- | --- |
-| [Box](../src/drivers/box.ts) | `node` | `suspends-host` | `same-host` | `relay` | `none` |
+| [Boat](../src/drivers/boat.ts) | `node` | `suspends-host` | `same-host` | `relay` | `none` |
 | [Cloudflare](../src/drivers/cloudflare.ts) | `worker` | `not-supported` | `same-host` | `relay` | `native` |
 | [Docker](../src/drivers/docker.ts) | `local` | `terminates-host` | `same-host` | `loopback` | `none` |
 | [Fetch-bridge](../src/drivers/fetch-bridge.ts) | `worker`, `node` | `suspends-host` | `same-host` | `relay` | `none` |
@@ -137,7 +137,7 @@ ever handing the value to a driver that can't keep it out of the sandbox.
 | --- | --- | --- |
 | `native` | Vercel | The provider brokers the value on egress to the allowlisted `hosts` with no extra infrastructure: Vercel firewall header-transform on `updateNetworkPolicy`. The driver injects it during `ensureHost`, transparently — no sandbox-side code changes needed. |
 | `native` | Cloudflare | API-token-gated named registrations live in Worker KV. Native HTTPS outbound handlers select a credential by host and placeholder, read its current value per request, and inject its header. The container retains the original URL and a stable placeholder. KV propagation delays apply; unrelated destinations remain unrestricted. |
-| `none` | Modal, Docker, fetch-bridge, Box | No way to keep the value out of sandbox processes. Modal has an encrypted secret *store*, but Modal exposes secrets as readable env vars inside the sandbox, so it can't satisfy the never-readable contract either — hence `"none"` even though it has more secret-hygiene machinery than Docker/Box/fetch-bridge, which have no secret story at all beyond plaintext `env`. |
+| `none` | Modal, Docker, fetch-bridge, Boat | No way to keep the value out of sandbox processes. Modal has an encrypted secret *store*, but Modal exposes secrets as readable env vars inside the sandbox, so it can't satisfy the never-readable contract either — hence `"none"` even though it has more secret-hygiene machinery than Docker/Boat/fetch-bridge, which have no secret story at all beyond plaintext `env`. |
 
 See the [README](../README.md#credentials--secrets) for the `env` vs.
 `secrets` distinction and a worked `secrets` example.

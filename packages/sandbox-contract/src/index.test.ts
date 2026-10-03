@@ -22,7 +22,7 @@ describe("sandbox contract", () => {
     expect(cloudflareWorkerBaseUrl(" https://worker.test/prefix/// ")).toBe("https://worker.test/prefix")
   })
   test("owns one credential schema for every driver identity", () => {
-    expect(sandboxDriverIds).toEqual(["modal", "vercel", "cloudflare", "box", "docker"])
+    expect(sandboxDriverIds).toEqual(["modal", "vercel", "cloudflare", "boat", "docker"])
     expect(Object.keys(sandboxDriverCredentialFields).sort()).toEqual([...sandboxDriverIds].sort())
     expect(sandboxDriverCredentialFields.modal.map((field) => field.key)).toEqual(["token_id", "token_secret"])
   })

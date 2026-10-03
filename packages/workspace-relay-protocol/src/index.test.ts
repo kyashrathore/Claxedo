@@ -4,6 +4,7 @@ import {
   TUNNEL_PROTOCOL_VERSION,
   sessionHostId,
   sessionHostRootOf,
+  sessionScopeReaches,
   isTunnelMessage,
   makeTunnelPing,
   makeTunnelPong,
@@ -277,5 +278,19 @@ describe("session host ids", () => {
   test("a workspace host id or a bare prefix names no session", () => {
     expect(sessionHostRootOf("host_machine-1")).toBeUndefined()
     expect(sessionHostRootOf(SESSION_HOST_PREFIX)).toBeUndefined()
+  })
+})
+
+describe("session scope", () => {
+  test("a session-scoped token reaches exactly the execution-env fs, exec and one named MCP server", () => {
+    for (const path of ["/api/wr/execution-env/fs", "/api/wr/execution-env/exec", "/api/wr/execution-env/mcp/tools"]) {
+      expect(sessionScopeReaches("ses_1", path, ""), path).toBe(true)
+    }
+    for (const path of [
+      "/api/wr/execution-env", "/api/wr/execution-env/", "/api/wr/execution-env/fs/x", "/api/wr/execution-env/mcp",
+      "/api/wr/execution-env/mcp/", "/api/wr/execution-env/mcp/tools/x", "/api/wr/execution-env/pty", "/api/wr/execution-envx/fs",
+    ]) {
+      expect(sessionScopeReaches("ses_1", path, ""), path).toBe(false)
+    }
   })
 })

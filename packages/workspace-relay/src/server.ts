@@ -4,6 +4,7 @@ import {
   WorkspaceRelayAuthError,
   isHostGeneration,
   mintRelayHostToken,
+  relayHostInputFromRuntimeClaims,
   validateRuntimeAccessTokenClaims,
   verifyRuntimeAccessToken,
   type HostTunnelTokenClaims,
@@ -750,30 +751,7 @@ function relayHostMintInput(
   target: WorkspaceRelayTarget,
 ) {
   return {
-    principalKind: claims.principal_kind,
-    actorId: claims.actor_id,
-    userId: claims.user_id,
-    actorKind: claims.actor_kind,
-    parentJti: claims.jti,
-    ...(claims.actor_public_id && claims.actor_name
-      ? {
-          actorPublicId: claims.actor_public_id,
-          actorName: claims.actor_name,
-          ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
-        }
-      : {}),
-    ...(claims.channel_identity
-      ? {
-          channelIdentity: {
-            channel: claims.channel_identity.channel,
-            externalUserId: claims.channel_identity.external_user_id,
-            identityVersion: claims.channel_identity.identity_version,
-          },
-        }
-      : {}),
-    orgId: claims.org_id,
-    role: claims.role,
-    ...(claims.session_id ? { sessionId: claims.session_id } : {}),
+    ...relayHostInputFromRuntimeClaims(claims),
     ...target,
     ...(options.relayHostMintKid ? { kid: options.relayHostMintKid } : {}),
   }
