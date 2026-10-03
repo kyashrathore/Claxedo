@@ -872,13 +872,30 @@
           {
             "type": "tool-start",
             "toolCallId": "call_15|fc_15",
-            "toolName": "bash"
+            "toolName": "bash",
+            "kind": "command_execution",
+            "display": {
+              "kind": "command_execution",
+              "intent": "shell",
+              "command": "sleep 30",
+              "input": {
+                "command": "sleep 30"
+              }
+            }
           },
           {
             "type": "tool-input",
             "toolCallId": "call_15|fc_15",
             "input": {
               "command": "sleep 30"
+            },
+            "display": {
+              "kind": "command_execution",
+              "intent": "shell",
+              "command": "sleep 30",
+              "input": {
+                "command": "sleep 30"
+              }
             }
           }
         ]

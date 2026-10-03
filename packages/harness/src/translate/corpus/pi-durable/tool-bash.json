@@ -872,13 +872,30 @@
           {
             "type": "tool-start",
             "toolCallId": "call_2|fc_2",
-            "toolName": "bash"
+            "toolName": "bash",
+            "kind": "command_execution",
+            "display": {
+              "kind": "command_execution",
+              "intent": "shell",
+              "command": "printf 'one\\ntwo\\n'",
+              "input": {
+                "command": "printf 'one\\ntwo\\n'"
+              }
+            }
           },
           {
             "type": "tool-input",
             "toolCallId": "call_2|fc_2",
             "input": {
               "command": "printf 'one\\ntwo\\n'"
+            },
+            "display": {
+              "kind": "command_execution",
+              "intent": "shell",
+              "command": "printf 'one\\ntwo\\n'",
+              "input": {
+                "command": "printf 'one\\ntwo\\n'"
+              }
             }
           }
         ]

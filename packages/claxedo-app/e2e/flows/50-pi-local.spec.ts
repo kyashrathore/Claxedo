@@ -23,7 +23,7 @@ test("50 Pi local: a turn writes a file through Pi's write tool and shows its to
   stack.scripted.scriptTool({ name: "write", input: { path: "pi-note.txt", content: "written by pi\n" }, whenPromptIncludes: "PIWROTE" })
   await sendPrompt(app, "Write the note. Reply with exactly this one token: PIWROTE")
   await expect(app.getByText("PIWROTE", { exact: true })).toBeVisible()
-  await expect(app.getByRole("button", { name: /^Write/ })).toBeVisible()
+  await expect(app.getByRole("button", { name: /^Write.*pi-note\.txt/ })).toBeVisible()
   expect(await fs.readFile(path.join(workspace.directory, "pi-note.txt"), "utf8")).toBe("written by pi\n")
   const tools = (await api.messages(workspace.directory, session.id)).flatMap((message) => message.parts).filter((part) => part.type === "tool")
   expect(tools).toMatchObject([{ tool: "write", state: { status: "completed", input: { path: "pi-note.txt" } } }])

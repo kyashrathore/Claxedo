@@ -33,3 +33,20 @@ test("final content that contradicts the streamed deltas is refused rather than 
   expect(() => send({ type: "message_end", entry: { model: [{ role: "assistant", stopReason: "stop", content: [{ type: "text", text: "actual" }] }] } }))
     .toThrow("disagrees")
 })
+
+test("Pi's file tools name their file in the display's filePath, as every harness's file tools do", () => {
+  const send = translate()
+  for (const [toolName, args, kind] of [
+    ["write", { path: "notes.txt", content: "hi\n" }, "file_change"],
+    ["edit", { path: "src/a.ts", oldText: "a", newText: "b" }, "file_change"],
+    ["read", { path: "README.md" }, "file_read"],
+  ] as const) {
+    const events = send({ type: "tool_execution_start", toolCallId: `call-${toolName}`, toolName, args })
+    expect(events).toMatchObject([
+      { type: "tool-start", toolName, kind, display: { filePath: args.path } },
+      { type: "tool-input", input: args, display: { filePath: args.path } },
+    ])
+  }
+  expect(send({ type: "tool_execution_start", toolCallId: "call-bash", toolName: "bash", args: { command: "ls" } })[0])
+    .toMatchObject({ kind: "command_execution", display: { intent: "shell", command: "ls" } })
+})
