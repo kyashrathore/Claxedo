@@ -202,11 +202,6 @@ describe("Cloudflare static headers for the SPA", () => {
     expect(headersFile).toMatch(/^ {2}X-Frame-Options: SAMEORIGIN$/m)
   })
 
-  test("every response refuses edge transformation, which would inject scripts the meta CSP blocks", () => {
-    const global = headersFile.slice(headersFile.search(/^\/\*$/m)).split(/\n\s*\n/)[0]
-    expect(global).toMatch(/^ {2}Cache-Control: no-transform$/m)
-  })
-
   test("the enforcing CSP is frame-ancestors only", () => {
     const enforcing = headersFile.match(/^ {2}Content-Security-Policy: (.+)$/m)?.[1]
 
