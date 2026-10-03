@@ -37,4 +37,13 @@ describe("starting a reserved session through a token scoped to one session", ()
     expect(decision).toMatchObject({ allowed: false, code: "session_scope_denied" })
     expect(starts).toEqual([])
   })
+
+  test("asks the authority nothing about a session its path names before the create claims its reservation", async () => {
+    const starts: string[] = []
+    const access = policy(starts)
+    expect(await access.authorize({ actor, authority: scoped, operation: "session_create", sessionId: "ses_scoped" })).toEqual({ allowed: true })
+    expect(await access.authorize({ actor, authority: scoped, operation: "session_create", sessionId: "ses_other" }))
+      .toMatchObject({ allowed: false, code: "session_scope_denied" })
+    expect(starts).toEqual([])
+  })
 })
