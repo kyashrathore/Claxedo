@@ -15,7 +15,7 @@ function held(input: { completedAt?: number; waiting?: boolean; work?: Backgroun
     ...(input.completedAt !== undefined ? { lastTurn: { status: "completed", completedAt: input.completedAt } } : {}),
   }
   const status = input.status ?? { kind: "idle" }
-  const view: SessionRowView = { ...row, status, waitingOnUser: input.waiting ?? false, pending: false }
+  const view: SessionRowView = { ...row, status, waitingOnUser: input.waiting ?? false, pending: false, settled: false }
   return { rowOf: () => row, view: () => view, statusOf: () => status, backgroundWorkOf: () => input.work ?? NO_BACKGROUND_WORK }
 }
 

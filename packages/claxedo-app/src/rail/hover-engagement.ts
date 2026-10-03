@@ -2,6 +2,7 @@ import { createSignal, onCleanup, type Accessor } from "solid-js"
 
 export type HoverEngagement = {
   readonly engaged: Accessor<boolean>
+  readonly hovered: Accessor<boolean>
   readonly hold: () => void
   readonly release: () => void
   readonly handlers: {
@@ -16,6 +17,7 @@ type Reason = "hovered" | "focused" | "held"
 
 function createEngagedState(releaseDelayMs: number) {
   const [engaged, setEngaged] = createSignal(false)
+  const [hovered, setHovered] = createSignal(false)
   const reasons: Record<Reason, boolean> = { hovered: false, focused: false, held: false }
   let pending: ReturnType<typeof setTimeout> | undefined
   const wanted = () => reasons.hovered || reasons.focused || reasons.held
@@ -39,9 +41,10 @@ function createEngagedState(releaseDelayMs: number) {
   onCleanup(cancel)
   const set = (reason: Reason, value: boolean) => {
     reasons[reason] = value
+    if (reason === "hovered") setHovered(value)
     settle()
   }
-  return { engaged, set }
+  return { engaged, hovered, set }
 }
 
 function engagementHandlers(set: (reason: Reason, value: boolean) => void): HoverEngagement["handlers"] {
@@ -62,6 +65,7 @@ export function createHoverEngagement(input?: { readonly releaseDelayMs?: number
   const state = createEngagedState(input?.releaseDelayMs ?? 0)
   return {
     engaged: state.engaged,
+    hovered: state.hovered,
     hold: () => state.set("held", true),
     release: () => state.set("held", false),
     handlers: engagementHandlers(state.set),

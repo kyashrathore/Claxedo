@@ -13,6 +13,7 @@ function row(status: SessionStatusView, waitingOnUser = false): SessionRowView {
     status,
     waitingOnUser,
     pending: false,
+    settled: false,
   }
 }
 

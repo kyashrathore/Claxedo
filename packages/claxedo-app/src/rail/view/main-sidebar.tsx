@@ -1,10 +1,15 @@
-import type { JSX } from "solid-js"
+import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
+import { usePreferences } from "@/settings"
 import { settingsPath, useShellRoute } from "@/shell"
+import { createActivityFilter } from "../activity-filter"
 import { railDictionary } from "../i18n"
 import { AccountCard, USAGE_SECTION } from "./account-card"
+import { ActivityView } from "./activity-view"
 import { GlobalNavigation } from "./global-navigation"
 import { ProjectTree } from "./project-tree"
+import { moveRowFocus } from "./row-navigation"
+import { SessionsHeading } from "./sessions-heading"
 import { SharedSessionsSection } from "./shared-sessions"
 import { ClaxedoIcon as Icon, Tooltip } from "@/ui"
 
@@ -27,16 +32,24 @@ function UsageButton(): JSX.Element {
 }
 
 export function MainSidebar(): JSX.Element {
+  const preferences = usePreferences()
+  const filter = createActivityFilter()
+  const shownFilter = () => (preferences.sidebar.hideWorkingStatus ? filter.state().kind : "all")
   let foot: HTMLDivElement | undefined
   return (
     <>
       <div
         class="flex-1 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden rail-sidebar-scroll"
+        data-hide-working-status={preferences.sidebar.hideWorkingStatus ? "true" : "false"}
         style={{ "scrollbar-width": "thin", "scrollbar-color": "var(--scrollbar-thumb) transparent" }}
       >
         <GlobalNavigation />
-        <ProjectTree />
-        <SharedSessionsSection />
+        <SessionsHeading filter={shownFilter()} onCycle={() => filter.send({ type: "cycled" })} />
+        <div class="flex-1 flex flex-col" onKeyDown={moveRowFocus}>
+          <Show when={preferences.sidebar.view === "activity"} fallback={<><ProjectTree /><SharedSessionsSection /></>}>
+            <ActivityView filter={shownFilter()} />
+          </Show>
+        </div>
       </div>
       <div class="px-2.5 py-2">
         <div ref={foot} class="flex items-center gap-1 border-t border-border-weak-base/15 pt-2">

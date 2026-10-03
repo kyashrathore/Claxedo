@@ -1,12 +1,14 @@
 import { createSignal, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { useAgeClock } from "@/lib/clock"
-import type { SessionRowView } from "@/session"
+import { canSettle, type SessionRowView } from "@/session"
+import { useShellLayout } from "@/shell"
 import { createHoverEngagement } from "../hover-engagement"
 import { railDictionary } from "../i18n"
 import { navigationStatus, sessionAge, sessionAgeSince, type SessionMarker } from "../model"
 import { NavigationRow, NavigationRowStatusGutter } from "./navigation-row"
 import { SessionRowMenu, type SessionRowMenuActions } from "./session-row-menu"
+import { SessionTitle } from "./session-title"
 import "../session-navigation.css"
 import { ClaxedoIcon as Icon } from "@/ui"
 
@@ -14,6 +16,7 @@ export type SessionRowProps = SessionRowMenuActions & {
   readonly row: SessionRowView
   readonly marker: SessionMarker | undefined
   readonly projectLabel: string
+  readonly caption?: string
   readonly active: boolean
   readonly onActivate: (row: SessionRowView) => void
   readonly prepareDrag?: () => string | undefined
@@ -37,36 +40,35 @@ function MarkerIcon(props: { readonly marker: SessionMarker; readonly projectLab
   )
 }
 
-function ArchiveButton(props: { readonly row: SessionRowView; readonly engaged: boolean; readonly onArchive: (row: SessionRowView) => Promise<void> }): JSX.Element {
+function SettleButton(props: { readonly row: SessionRowView; readonly onToggleSettled: (row: SessionRowView) => Promise<void> }): JSX.Element {
   const t = useTranslator(railDictionary)
-  const [archiving, setArchiving] = createSignal(false)
+  const [busy, setBusy] = createSignal(false)
   return (
-    <Show when={props.engaged || archiving()}>
-      <button
-        type="button"
-        data-icon-interaction="row-action"
-        aria-label={t("rail.archiveSession", { title: props.row.title })}
-        disabled={archiving()}
-        class="ui-session-navigation-archive absolute inset-0 pointer-events-auto flex items-center justify-end border-none bg-transparent p-0 cursor-pointer disabled:cursor-default"
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={(event) => {
-          event.stopPropagation()
-          if (archiving()) return
-          setArchiving(true)
-          void props.onArchive(props.row).finally(() => setArchiving(false))
-        }}
-      >
-        <span class="flex items-center leading-none text-icon-weak-base hover:text-icon-base transition-colors cursor-pointer">
-          <Icon name="archive" size="small" />
-        </span>
-      </button>
-    </Show>
+    <button
+      type="button"
+      data-icon-interaction="row-action"
+      aria-label={t(props.row.settled ? "rail.returnSession" : "rail.settleSession", { title: props.row.title })}
+      title={t(props.row.settled ? "rail.returnToActive" : "rail.settle")}
+      disabled={busy() || !canSettle(props.row)}
+      class="ui-session-navigation-settle absolute inset-0 pointer-events-auto flex items-center justify-end border-none bg-transparent p-0 cursor-pointer disabled:cursor-default disabled:opacity-40"
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation()
+        setBusy(true)
+        void props.onToggleSettled(props.row).finally(() => setBusy(false))
+      }}
+    >
+      <span class="flex items-center leading-none text-icon-weak-base hover:text-icon-base transition-colors">
+        <Icon name={props.row.settled ? "reset" : "check"} size="small" />
+      </span>
+    </button>
   )
 }
 
 export function RailSessionRow(props: SessionRowProps): JSX.Element {
   const [menu, setMenu] = createSignal<{ x: number; y: number }>()
   const engagement = createHoverEngagement()
+  const layout = useShellLayout()
   const status = () => navigationStatus(props.row)
   const now = useAgeClock(() => sessionAgeSince(props.row))
   const openMenu = (event: MouseEvent) => {
@@ -86,19 +88,20 @@ export function RailSessionRow(props: SessionRowProps): JSX.Element {
     >
       <NavigationRowStatusGutter status={status()} />
       <div class="relative z-[1] pointer-events-none flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
-        <span class="ui-session-navigation-title leading-tight truncate flex-1 min-w-0">
-          {props.row.title}
-        </span>
+        <SessionTitle title={props.row.title} hovered={engagement.hovered()} />
+        <Show when={props.caption}>{(caption) => <span class="ui-session-navigation-caption shrink-0 max-w-[40%] truncate text-xs">{caption()}</span>}</Show>
         <Show when={props.marker}>{(marker) => <MarkerIcon marker={marker()} projectLabel={props.projectLabel} />}</Show>
       </div>
       <div class="size-6 shrink-0 relative z-10 flex items-center justify-end self-stretch">
         <span class="ui-session-navigation-time flex items-center justify-end text-xs tabular-nums">
           {sessionAge(props.row, now())}
         </span>
-        <ArchiveButton row={props.row} engaged={engagement.engaged()} onArchive={props.onArchive} />
+        <Show when={engagement.engaged() || layout.phone()}>
+          <SettleButton row={props.row} onToggleSettled={props.onToggleSettled} />
+        </Show>
       </div>
       <Show when={menu()}>
-        {(at) => <SessionRowMenu at={at()} row={props.row} onRename={props.onRename} onArchive={props.onArchive} onDelete={props.onDelete} onDismiss={() => setMenu(undefined)} />}
+        {(at) => <SessionRowMenu at={at()} row={props.row} onRename={props.onRename} onToggleSettled={props.onToggleSettled} onDismiss={() => setMenu(undefined)} />}
       </Show>
     </NavigationRow>
   )

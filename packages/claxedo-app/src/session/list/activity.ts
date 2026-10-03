@@ -35,3 +35,23 @@ export function unseenOutcome(row: SessionRowView): UnseenOutcome | undefined {
   if (activity === "waiting" || activity === "working" || activity === "background") return undefined
   return OUTCOME[turn.status]
 }
+
+export type ActivityFilter = "all" | "working" | "needsYou"
+
+export function canSettle(row: SessionRowView): boolean {
+  if (row.pending) return false
+  const activity = sessionActivity(row)
+  return row.settled || (activity !== "waiting" && activity !== "working")
+}
+
+export function matchesActivityFilter(row: SessionRowView, filter: ActivityFilter): boolean {
+  const activity = sessionActivity(row)
+  switch (filter) {
+    case "all":
+      return true
+    case "working":
+      return row.pending || activity === "working" || activity === "background"
+    case "needsYou":
+      return activity === "waiting" || unseenOutcome(row) !== undefined
+  }
+}

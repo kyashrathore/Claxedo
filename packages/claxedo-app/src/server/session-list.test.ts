@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import type { HostedAccount } from "./account"
-import { projectId, type ProjectId } from "./ids"
+import { projectId, sessionId, type ProjectId } from "./ids"
 import type { SessionContext } from "./session-context"
 import { listSessions } from "./session-list"
 
@@ -64,4 +64,15 @@ test("session list: a paired project whose account page fails lists the daemon's
   const page = await listSessions(value, { projectId: projectId("local_1"), limit: 5, settled: "active" })
   expect(page.degraded).toBe(true)
   expect(page.rows).toEqual([])
+})
+
+test("session list: every readable session is one all-scoped read of the server, and a signed desktop adds its account's, read whole and filtered after", async () => {
+  const unsigned = context({})
+  await listSessions(unsigned.value, { every: true, limit: 20, settled: "active" })
+  expect(unsigned.daemon).toEqual(["/api/claxedo/session-list?scope=all&sort=human_turn_desc&limit=20&settled=active"])
+
+  const signed = context({ account: "up" })
+  await listSessions(signed.value, { every: true, sessionId: sessionId("ses_1"), limit: 1, settled: "active" })
+  expect(signed.daemon).toEqual(["/api/claxedo/session-list?scope=all&sessionId=ses_1&sort=human_turn_desc&limit=1&settled=all"])
+  expect(signed.account).toEqual([{ limit: 1, settled: "all", sessionId: "ses_1", sort: "human_turn_desc" }])
 })

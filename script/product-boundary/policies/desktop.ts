@@ -502,8 +502,14 @@ export const desktopRenderer: Policy = {
   // `session/list/readers.ts` and sends its pending writes from
   // `session/list/reader-writes.ts`; the session view's seen write while a
   // session is shown is `session/view/seen-while-shown.ts`.
-  // 1307/36, no headroom.
-  ceilings: { modules: 1307, packages: 36 },
+  // The rail's Activity view (`rail/view/activity-view.tsx`), its heading and
+  // session options menu (`rail/view/sessions-heading.tsx`), the Activity
+  // filter cycle (`rail/activity-filter.ts`), the title marquee
+  // (`rail/view/session-title.tsx`) and the row navigation both views share
+  // (`rail/view/row-navigation.ts`) are renderer views over the session list;
+  // they add no package edge.
+  // 1312/36, no headroom.
+  ceilings: { modules: 1312, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

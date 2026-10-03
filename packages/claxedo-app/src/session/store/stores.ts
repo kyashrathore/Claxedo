@@ -1,7 +1,7 @@
 import { createSignal, getOwner, onCleanup, untrack } from "solid-js"
 import type { ReaderSettings, Server, ServerEvent } from "@/server"
 import type { SessionAttention, SessionStores } from "@/session"
-import { createSessionList, type SessionListInternal } from "../list"
+import { createSessionList, type SessionListInternal, type SessionListOptions } from "../list"
 import { createRequests, type RequestsInternal } from "../requests"
 import { attentionRaised, createAttentionChannel } from "./attention"
 import { createSessionTranscript } from "../transcript"
@@ -23,9 +23,9 @@ function dispatchServerEvent(event: ServerEvent, list: SessionListInternal, requ
   return attention
 }
 
-export function createSessionStores(server: Server, settings: () => ReaderSettings, showSettled: () => boolean): SessionStores {
+export function createSessionStores(server: Server, settings: () => ReaderSettings, listOptions: SessionListOptions): SessionStores {
   const requests = createRequests(server)
-  const list = createSessionList(server, requests, showSettled)
+  const list = createSessionList(server, requests, listOptions)
   const [viewport, recordViewport] = createSignal(transcriptViewport({ width: window.innerWidth, height: window.innerHeight }))
   const pageShape = () => untrack(() => ({ ...viewport(), ...settings() }))
   const open = createOpenSessions({

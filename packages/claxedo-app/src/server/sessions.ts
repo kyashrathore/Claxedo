@@ -105,11 +105,6 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
     stopBackgroundTask: async (ref, toolCallId) => stopBackgroundTask(transport, await workspaces.route(ref), ref, toolCallId),
     reply: (ref, id, answer) => replyToRequest(context, ref, id, answer),
     rename: (ref, title) => patchSession(context, ref, { title }),
-    archive: (ref, archived) => patchSession(context, ref, { time: { archived: archived ? Date.now() : 0 } }),
-    remove: async (ref) => {
-      await transport.runtimeJson<unknown>(await workspaces.route(ref), sessionEndpoint(ref), { method: "DELETE" })
-      status.forget(ref)
-    },
     newMessageId,
     ...createSessionQueue(context),
     controlGoal: async (ref, action) => controlGoal(transport, await workspaces.route(ref), ref, action),

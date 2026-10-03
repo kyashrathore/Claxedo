@@ -10,6 +10,10 @@ export type PendingSend = {
 
 export type OrderKey = { readonly activity: number; readonly createdAt: number; readonly sessionId: string }
 
+export const ACTIVITY_WINDOW: "activity" = "activity"
+
+export type WindowKey = ProjectId | typeof ACTIVITY_WINDOW
+
 export type ConfirmedEntry = {
   readonly kind: "confirmed"
   readonly row: SessionRow
@@ -47,7 +51,7 @@ export type ReaderEntry = {
 }
 
 export type FetchedPage = {
-  readonly projectId: ProjectId
+  readonly windowKey: WindowKey
   readonly rows: readonly SessionRow[]
   readonly statuses: ReadonlyMap<SessionId, ListedStatus>
   readonly readers: ReadonlyMap<SessionId, SessionReader>
@@ -55,7 +59,7 @@ export type FetchedPage = {
   readonly degraded: boolean
 }
 
-export type FailedPage = { readonly projectId: ProjectId; readonly error: AppError }
+export type FailedPage = { readonly windowKey: WindowKey; readonly error: AppError }
 
 export type FetchedWindow = {
   readonly pages: readonly FetchedPage[]
@@ -63,7 +67,7 @@ export type FetchedWindow = {
   readonly sentAt: number
 }
 
-export type ProjectWindow = { readonly tail: OrderKey; readonly nextAfter: string | undefined }
+export type ListWindow = { readonly tail: OrderKey; readonly nextAfter: string | undefined }
 
 export type ListData = {
   readonly entries: ReadonlyMap<SessionId, ListEntry>
@@ -71,9 +75,9 @@ export type ListData = {
   readonly backgroundWork: ReadonlyMap<SessionId, BackgroundWorkEntry>
   readonly readers: ReadonlyMap<SessionId, ReaderEntry>
   readonly open: ReadonlySet<SessionId>
-  readonly windows: ReadonlyMap<ProjectId, ProjectWindow>
-  readonly failures: ReadonlyMap<ProjectId, AppError>
-  readonly degraded: ReadonlySet<ProjectId>
+  readonly windows: ReadonlyMap<WindowKey, ListWindow>
+  readonly failures: ReadonlyMap<WindowKey, AppError>
+  readonly degraded: ReadonlySet<WindowKey>
 }
 
 export type ServerListEvent =
@@ -99,7 +103,7 @@ export type ListState = ListData &
   (
     | { readonly kind: "subscribing" }
     | { readonly kind: "fetching"; readonly held: readonly ServerListEvent[] }
-    | { readonly kind: "live"; readonly more: ReadonlyMap<ProjectId, MorePhase> }
+    | { readonly kind: "live"; readonly more: ReadonlyMap<WindowKey, MorePhase> }
     | { readonly kind: "rereading"; readonly held: readonly ServerListEvent[] }
     | { readonly kind: "failed"; readonly error: AppError }
   )
@@ -128,13 +132,14 @@ export type ListEvent =
   | { readonly type: "fetchStarted" }
   | { readonly type: "fetched"; readonly window: FetchedWindow }
   | { readonly type: "fetchFailed"; readonly error: AppError }
-  | { readonly type: "moreStarted"; readonly projectId: ProjectId }
-  | { readonly type: "moreFetched"; readonly projectId: ProjectId; readonly window: FetchedWindow }
-  | { readonly type: "moreFailed"; readonly projectId: ProjectId; readonly error: AppError }
+  | { readonly type: "moreStarted"; readonly windowKey: WindowKey }
+  | { readonly type: "moreFetched"; readonly windowKey: WindowKey; readonly window: FetchedWindow }
+  | { readonly type: "moreFailed"; readonly windowKey: WindowKey; readonly error: AppError }
   | { readonly type: "rereadStarted" }
   | { readonly type: "rereadFetched"; readonly window: FetchedWindow; readonly mode: RereadMode }
   | { readonly type: "rereadFailed"; readonly error: AppError }
   | { readonly type: "rowRead"; readonly row: SessionRow }
+  | { readonly type: "rowsFetched"; readonly window: FetchedWindow }
   | { readonly type: "statusRead"; readonly ref: SessionLocation; readonly status: SessionStatus; readonly sentAt: number }
   | { readonly type: "backgroundWorkRead"; readonly ref: SessionLocation; readonly work: BackgroundWork; readonly sentAt: number }
   | { readonly type: "sessionOpened"; readonly sessionId: SessionId }
@@ -185,13 +190,16 @@ export function compareOrder(a: OrderKey, b: OrderKey): number {
 
 export const insideWindow = (key: OrderKey, tail: OrderKey): boolean => compareOrder(key, tail) <= 0
 
-export const windowTail = (data: Pick<ListData, "windows">, projectId: ProjectId): OrderKey => data.windows.get(projectId)?.tail ?? WINDOW_EMPTY
+export const windowTail = (data: Pick<ListData, "windows">, windowKey: WindowKey): OrderKey => data.windows.get(windowKey)?.tail ?? WINDOW_EMPTY
 
-export const insideProjectWindow = (data: Pick<ListData, "windows">, row: SessionRow, key: OrderKey = orderKey(row)): boolean =>
-  insideWindow(key, windowTail(data, row.ref.projectId))
+export const insideListWindow = (data: Pick<ListData, "windows">, windowKey: WindowKey, key: OrderKey): boolean => insideWindow(key, windowTail(data, windowKey))
 
+export const windowsHolding = (data: Pick<ListData, "windows">, row: SessionRow, key: OrderKey = orderKey(row)): readonly WindowKey[] =>
+  [row.ref.projectId, ACTIVITY_WINDOW].filter((windowKey) => insideListWindow(data, windowKey, key))
 
-export const hasMorePages = (windows: ListData["windows"], projectId: ProjectId): boolean => windows.get(projectId)?.nextAfter !== undefined
+export const hasMorePages = (windows: ListData["windows"], windowKey: WindowKey): boolean => windows.get(windowKey)?.nextAfter !== undefined
+
+export const canReadPage = (windows: ListData["windows"], windowKey: WindowKey): boolean => !windows.has(windowKey) || hasMorePages(windows, windowKey)
 
 function laterHumanTurn(current: SessionRow, incoming: SessionRow): number | undefined {
   if (current.lastHumanTurnAt === undefined) return incoming.lastHumanTurnAt

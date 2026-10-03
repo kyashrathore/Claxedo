@@ -51,8 +51,7 @@ function SessionRows(props: ProjectRowsProps): JSX.Element {
               active={props.activeSessionId === sessionId}
               onActivate={props.onActivate}
               onRename={props.onRename}
-              onArchive={props.onArchive}
-              onDelete={props.onDelete}
+              onToggleSettled={props.onToggleSettled}
               prepareDrag={() => props.prepareDrag({ kind: "session", key: sessionRowKey(sessionId), session: session() })}
             />
           )}

@@ -181,26 +181,6 @@ async function streamChecks(probe: Probe, sessionId: string) {
   })
 }
 
-async function cleanupChecks(probe: Probe, ref: Parameters<ServerHandle["sessions"]["remove"]>[0]) {
-  const { server, log } = probe
-  await check("archive and unarchive", async () => {
-    await server.sessions.archive(ref, true)
-    const archived = (await surfaceOf(server, ref)).row.archivedAt
-    await server.sessions.archive(ref, false)
-    const restored = (await surfaceOf(server, ref)).row.archivedAt
-    if (!archived || restored) throw new Error(`archivedAt after archive=${archived} after unarchive=${restored}`)
-    return `archivedAt=${archived}, then unset`
-  })
-  await check("remove", async () => {
-    const from = log.mark()
-    await server.sessions.remove(ref)
-    await log.next("sessionRemoved", from, (event): event is ServerEvent => event.type === "sessionRemoved" && event.ref.sessionId === ref.sessionId)
-    const page = await server.sessions.list({ projectId: ref.projectId, limit: 20, settled: "active" })
-    if (page.rows.some((item) => item.ref.sessionId === ref.sessionId)) throw new Error("the list still holds the removed session")
-    return "removed, and gone from the list"
-  })
-}
-
 async function main() {
   await ensureAppBuilt({ serverUrl: "http://127.0.0.1:46800" })
   const stack = await startStack({ label: "adapter-smoke" })
@@ -212,7 +192,6 @@ async function main() {
     const placement = await connectAndPlace(probe)
     const ref = await turnChecks(probe, placement)
     await streamChecks(probe, ref.sessionId)
-    await cleanupChecks(probe, ref)
   } finally {
     server.dispose()
     await proxy.close()

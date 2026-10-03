@@ -60,12 +60,6 @@ export function sessionIdsByProject(refs: readonly SessionLocation[]): ReadonlyM
   return grouped
 }
 
-export function siblingAfterArchive(sessionIds: readonly SessionId[], archived: SessionId): SessionId | undefined {
-  const index = sessionIds.indexOf(archived)
-  if (index === -1) return undefined
-  return sessionIds[index + 1] ?? sessionIds[index - 1]
-}
-
 export type RailRow =
   | { readonly kind: "terminal"; readonly key: string; readonly terminal: TerminalItem }
   | { readonly kind: "session"; readonly key: string; readonly session: SessionRowView }

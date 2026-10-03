@@ -1,9 +1,10 @@
 import { NO_BACKGROUND_WORK, sessionSettled, sessionStatusWithBackgroundWork, type AgentRequest, type SessionId, type SessionLocation, type SessionReader } from "@/server"
 import type { SessionRowView, SessionStatusView } from "@/session"
 import {
+  ACTIVITY_WINDOW,
   compareOrder,
   entryActivityAt,
-  insideProjectWindow,
+  insideListWindow,
   orderKey,
   type ConfirmedEntry,
   type ListData,
@@ -30,19 +31,20 @@ export const createRowViewCache = (): RowViewCache => ({ current: new Map() })
 
 type OrderData = Pick<ListData, "entries" | "windows" | "readers">
 
-function hiddenAsSettled(data: OrderData, entry: ConfirmedEntry | PendingEntry, showSettled: boolean): boolean {
-  if (showSettled || entry.kind !== "confirmed" || entry.pendingSend) return false
-  return sessionSettled(entry.row, readerOf(data, entry.row.ref.sessionId))
+function entrySettled(entry: ConfirmedEntry | PendingEntry, reader: SessionReader): boolean {
+  return entry.kind === "confirmed" && !entry.pendingSend && sessionSettled(entry.row, reader)
 }
 
-export function visibleOrder(data: OrderData, showSettled: boolean): readonly SessionLocation[] {
+export type ListView = "projects" | typeof ACTIVITY_WINDOW
+
+export function visibleOrder(data: OrderData, showSettled: boolean, view: ListView): readonly SessionLocation[] {
   const shown: Shown[] = []
   for (const entry of data.entries.values()) {
     if (entry.kind === "tombstone") continue
     if (entry.row.archivedAt !== undefined || entry.row.parentSessionId !== undefined) continue
-    if (hiddenAsSettled(data, entry, showSettled)) continue
+    if (!showSettled && entrySettled(entry, readerOf(data, entry.row.ref.sessionId))) continue
     const key = orderKey(entry.row, entryActivityAt(entry))
-    if (entry.kind === "confirmed" && !insideProjectWindow(data, entry.row, key)) continue
+    if (entry.kind === "confirmed" && !insideListWindow(data, view === "projects" ? entry.row.ref.projectId : ACTIVITY_WINDOW, key)) continue
     shown.push({ entry, key })
   }
   return shown.sort((a, b) => compareOrder(a.key, b.key)).map(({ entry }) => entry.row.ref)
@@ -56,7 +58,7 @@ function cachedView(
   waitingOnUser: boolean,
 ): CachedView {
   if (hit && hit.entry === entry && hit.reader === reader && hit.status === status && hit.waitingOnUser === waitingOnUser) return hit
-  const view: SessionRowView = { ...entry.row, ...reader, status, waitingOnUser, pending: entry.kind === "pending" }
+  const view: SessionRowView = { ...entry.row, ...reader, status, waitingOnUser, pending: entry.kind === "pending", settled: entrySettled(entry, reader) }
   return { entry, reader, status, waitingOnUser, view }
 }
 

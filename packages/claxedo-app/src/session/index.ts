@@ -6,7 +6,6 @@ import type {
   BackgroundWork,
   FileDiff,
   GoalAction,
-  ProjectId,
   PromptInput,
   RequestId,
   SessionCreateInput,
@@ -25,6 +24,7 @@ import type { TranscriptConversation } from "@/transcript"
 import type { TranscriptViewport } from "./transcript-viewport"
 import type { SessionSubagent } from "./transcript/subagent-merge"
 import type { SessionQueue } from "./transcript/queue"
+import type { WindowKey } from "./list/model"
 
 export type SessionStatusView = SessionStatus | { readonly kind: "unknown" }
 
@@ -34,6 +34,7 @@ export type SessionRowView = SessionRow & SessionReader & {
   readonly status: SessionStatusView
   readonly waitingOnUser: boolean
   readonly pending: boolean
+  readonly settled: boolean
 }
 
 export type SessionListState =
@@ -51,13 +52,14 @@ export type LoadMoreState =
 export type SessionList = {
   readonly state: Accessor<SessionListState>
   readonly order: Accessor<readonly SessionLocation[]>
+  readonly activityOrder: Accessor<readonly SessionLocation[]>
   readonly view: (sessionId: SessionId) => SessionRowView | undefined
   readonly rowOf: (sessionId: SessionId) => SessionRow | undefined
-  readonly hasMore: (projectId: ProjectId) => boolean
-  readonly moreState: (projectId: ProjectId) => LoadMoreState
-  readonly pageFailure: (projectId: ProjectId) => AppError | undefined
-  readonly pageDegraded: (projectId: ProjectId) => boolean
-  readonly loadMore: (projectId: ProjectId) => Promise<void>
+  readonly hasMore: (windowKey: WindowKey) => boolean
+  readonly moreState: (windowKey: WindowKey) => LoadMoreState
+  readonly pageFailure: (windowKey: WindowKey) => AppError | undefined
+  readonly pageDegraded: (windowKey: WindowKey) => boolean
+  readonly loadMore: (windowKey: WindowKey) => Promise<void>
   readonly reload: () => Promise<void>
   readonly create: (input: SessionCreateInput) => Promise<SessionLocation>
   readonly readerOf: (sessionId: SessionId) => SessionReader
@@ -136,5 +138,6 @@ export type SessionStores = {
 }
 
 export { SessionStoresProvider, useSessionStores } from "./store/provider"
-export { sessionActivity, unseenOutcome, type SessionActivity, type UnseenOutcome } from "./list/activity"
+export { canSettle, matchesActivityFilter, sessionActivity, unseenOutcome, type ActivityFilter, type SessionActivity, type UnseenOutcome } from "./list/activity"
+export { ACTIVITY_WINDOW, type WindowKey } from "./list/model"
 export { draftSessionPaneKind, sessionPaneKind, subagentPanelView } from "./view"

@@ -18,7 +18,7 @@ function row(id: string, createdAt: number, lastHumanTurnAt?: number): SessionRo
 }
 
 function window(rows: SessionRow[], readers: Array<[string, SessionReader]> = [], sentAt = 1_000): FetchedWindow {
-  const page = { projectId: ALPHA, rows, nextAfter: undefined, degraded: false, statuses: new Map(), readers: new Map(readers.map(([id, reader]) => [sessionId(id), reader])) }
+  const page = { windowKey: ALPHA, rows, nextAfter: undefined, degraded: false, statuses: new Map(), readers: new Map(readers.map(([id, reader]) => [sessionId(id), reader])) }
   return { pages: [page], failures: [], sentAt }
 }
 
@@ -26,10 +26,10 @@ function run(state: ListState, ...events: Parameters<typeof listTransition>[1][]
   return events.reduce(listTransition, state)
 }
 
-const shown = (state: ListState, showSettled = false) => visibleOrder(state, showSettled).map((ref) => ref.sessionId as string)
+const shown = (state: ListState, showSettled = false) => visibleOrder(state, showSettled, "projects").map((ref) => ref.sessionId as string)
 
 const rowView = (state: ListState, id: string) =>
-  rowViews({ order: visibleOrder(state, true), data: state, openRequests: new Map(), cache: createRowViewCache() }).get(sessionId(id))
+  rowViews({ order: visibleOrder(state, true, "projects"), data: state, openRequests: new Map(), cache: createRowViewCache() }).get(sessionId(id))
 
 test("a listed row carries the reader's marks; a page sent before a notice loses to it, and a seen mark never falls", () => {
   const a1 = { ...row("a1", 50), lastTurn: { status: "completed" as const, completedAt: 70 } }

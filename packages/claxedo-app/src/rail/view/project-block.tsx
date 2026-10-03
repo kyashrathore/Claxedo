@@ -88,8 +88,7 @@ function ProjectSessions(
         projectLabel={props.section.label}
         onActivate={props.onActivate}
         onRename={props.onRename}
-        onArchive={props.onArchive}
-        onDelete={props.onDelete}
+        onToggleSettled={props.onToggleSettled}
       />
       <Show when={props.paging.loadingInitial()}>
         <SessionListNotice variant="loading">{t("rail.loadingSessions")}</SessionListNotice>

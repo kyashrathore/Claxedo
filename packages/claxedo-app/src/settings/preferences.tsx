@@ -31,8 +31,14 @@ export type AppearancePreferences = {
   readonly terminalScreenReader: boolean
 }
 
+export const SIDEBAR_VIEWS = ["projects", "activity"] as const
+
+export type SidebarView = (typeof SIDEBAR_VIEWS)[number]
+
 export type SidebarPreferences = {
+  readonly view: SidebarView
   readonly showSettled: boolean
+  readonly hideWorkingStatus: boolean
 }
 
 export type Preferences = {
@@ -100,11 +106,12 @@ function readAppearance(value: unknown): AppearancePreferences | undefined {
   }
 }
 
-export const SIDEBAR_DEFAULTS: SidebarPreferences = { showSettled: false }
+export const SIDEBAR_DEFAULTS: SidebarPreferences = { view: "projects", showSettled: false, hideWorkingStatus: false }
 
 function readSidebar(value: unknown): SidebarPreferences | undefined {
   if (!isRecord(value)) return undefined
-  return { showSettled: value.showSettled === true }
+  const view = SIDEBAR_VIEWS.find((candidate) => candidate === value.view) ?? SIDEBAR_DEFAULTS.view
+  return { view, showSettled: value.showSettled === true, hideWorkingStatus: value.hideWorkingStatus === true }
 }
 
 export const ALERT_DEFAULTS: AlertPreferences = {

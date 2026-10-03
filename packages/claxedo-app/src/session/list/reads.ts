@@ -1,7 +1,9 @@
 import { machine, type Machine } from "@/lib/machine"
-import { toAppError, type ProjectId, type Server, type SettledFilter } from "@/server"
+import { toAppError, type Server, type SessionListScope, type SessionLocation, type SettledFilter } from "@/server"
 import {
+  ACTIVITY_WINDOW,
   NO_FOLLOW_UP,
+  canReadPage,
   followUpTransition,
   type FailedPage,
   type FetchedPage,
@@ -11,34 +13,43 @@ import {
   type ListEvent,
   type ListState,
   type RereadMode,
+  type WindowKey,
 } from "./model"
 
-const PAGE_SIZE = 5
+const PROJECT_PAGE_SIZE = 5
+const ACTIVITY_PAGE_SIZE = 20
 
 export type ListReads = {
   readonly fetchFirst: () => Promise<void>
-  readonly loadMore: (projectId: ProjectId) => Promise<void>
+  readonly loadMore: (windowKey: WindowKey) => Promise<void>
   readonly reread: (mode: RereadMode) => Promise<void>
   readonly requestReread: (mode: RereadMode) => void
+  readonly readExact: (ref: SessionLocation) => Promise<void>
 }
 
-type ReadContext = {
+export type ListReadOptions = { readonly settled: () => SettledFilter; readonly activityShown: () => boolean }
+
+type ReadContext = ListReadOptions & {
   readonly server: Server
-  readonly settled: () => SettledFilter
   readonly list: Machine<ListState, ListEvent>
   readonly followUp: Machine<FollowUp, FollowUpEvent>
 }
 
-type PageTarget = { readonly projectId: ProjectId; readonly after?: string }
+type PageTarget = { readonly windowKey: WindowKey; readonly after?: string }
+
+const listScopeOf = (windowKey: WindowKey): SessionListScope => (windowKey === ACTIVITY_WINDOW ? { every: true } : { projectId: windowKey })
 
 async function readSessionListPage(context: ReadContext, target: PageTarget): Promise<FetchedPage> {
-  const page = await context.server.sessions.list({ projectId: target.projectId, after: target.after, limit: PAGE_SIZE, settled: context.settled() })
-  return { projectId: target.projectId, rows: page.rows, statuses: page.statuses, readers: page.readers, nextAfter: page.nextAfter, degraded: page.degraded === true }
+  const limit = target.windowKey === ACTIVITY_WINDOW ? ACTIVITY_PAGE_SIZE : PROJECT_PAGE_SIZE
+  const page = await context.server.sessions.list({ ...listScopeOf(target.windowKey), after: target.after, limit, settled: context.settled() })
+  return { windowKey: target.windowKey, rows: page.rows, statuses: page.statuses, readers: page.readers, nextAfter: page.nextAfter, degraded: page.degraded === true }
 }
 
 async function firstPageTargets(context: ReadContext): Promise<PageTarget[]> {
   const projectIds = new Set((await context.server.placements.load()).map((placement) => placement.projectId))
-  return [...projectIds].map((projectId) => ({ projectId }))
+  const activity = context.activityShown() || context.list.state().windows.has(ACTIVITY_WINDOW)
+  const windowKeys: WindowKey[] = [...projectIds, ...(activity ? [ACTIVITY_WINDOW] : [])]
+  return windowKeys.map((windowKey) => ({ windowKey }))
 }
 
 async function readWindow(context: ReadContext, targets: readonly PageTarget[]): Promise<FetchedWindow> {
@@ -46,7 +57,7 @@ async function readWindow(context: ReadContext, targets: readonly PageTarget[]):
   const read = await Promise.all(targets.map((target) =>
     readSessionListPage(context, target).then(
       (page): FetchedPage | FailedPage => page,
-      (cause): FetchedPage | FailedPage => ({ projectId: target.projectId, error: toAppError(cause) }),
+      (cause): FetchedPage | FailedPage => ({ windowKey: target.windowKey, error: toAppError(cause) }),
     )))
   const pages = read.filter((item): item is FetchedPage => "rows" in item)
   const failures = read.filter((item): item is FailedPage => "error" in item)
@@ -59,11 +70,14 @@ function isListReading(state: ListState): boolean {
 }
 
 function afterRead(context: ReadContext): void {
-  if (isListReading(context.list.state())) return
+  const state = context.list.state()
+  if (isListReading(state)) return
   const waiting = context.followUp.state()
-  if (waiting.kind === "none") return
-  context.followUp.send({ type: "taken" })
-  void rereadList(context, waiting.mode)
+  if (waiting.kind !== "none") {
+    context.followUp.send({ type: "taken" })
+    return void rereadList(context, waiting.mode)
+  }
+  if (context.activityShown() && !state.windows.has(ACTIVITY_WINDOW)) void loadMore(context, ACTIVITY_WINDOW)
 }
 
 async function fetchFirst(context: ReadContext): Promise<void> {
@@ -77,18 +91,28 @@ async function fetchFirst(context: ReadContext): Promise<void> {
   afterRead(context)
 }
 
-async function loadMore(context: ReadContext, projectId: ProjectId): Promise<void> {
+async function loadMore(context: ReadContext, windowKey: WindowKey): Promise<void> {
   const { state, send } = context.list
   const current = state()
-  const after = current.windows.get(projectId)?.nextAfter
-  if (current.kind !== "live" || current.more.get(projectId)?.kind === "loading" || after === undefined) return
-  send({ type: "moreStarted", projectId })
+  if (current.kind !== "live" || current.more.get(windowKey)?.kind === "loading" || !canReadPage(current.windows, windowKey)) return
+  send({ type: "moreStarted", windowKey })
   try {
-    send({ type: "moreFetched", projectId, window: await readWindow(context, [{ projectId, after }]) })
+    send({ type: "moreFetched", windowKey, window: await readWindow(context, [{ windowKey, after: current.windows.get(windowKey)?.nextAfter }]) })
   } catch (cause) {
-    send({ type: "moreFailed", projectId, error: toAppError(cause) })
+    send({ type: "moreFailed", windowKey, error: toAppError(cause) })
   }
   afterRead(context)
+}
+
+async function readExact(context: ReadContext, ref: SessionLocation): Promise<void> {
+  const sentAt = Date.now()
+  try {
+    const page = await context.server.sessions.list({ every: true, sessionId: ref.sessionId, limit: 1, settled: context.settled() })
+    const read: FetchedPage = { windowKey: ref.projectId, rows: page.rows, statuses: page.statuses, readers: page.readers, nextAfter: undefined, degraded: false }
+    context.list.send({ type: "rowsFetched", window: { pages: [read], failures: [], sentAt } })
+  } catch (cause) {
+    console.warn("A session's row could not be read for the list", { sessionId: ref.sessionId, error: toAppError(cause) })
+  }
 }
 
 async function rereadList(context: ReadContext, mode: RereadMode): Promise<void> {
@@ -109,12 +133,13 @@ function requestReread(context: ReadContext, mode: RereadMode): void {
   context.followUp.send({ type: "requested", mode })
 }
 
-export function createListReads(server: Server, list: Machine<ListState, ListEvent>, settled: () => SettledFilter): ListReads {
-  const context: ReadContext = { server, settled, list, followUp: machine(NO_FOLLOW_UP, followUpTransition) }
+export function createListReads(server: Server, list: Machine<ListState, ListEvent>, options: ListReadOptions): ListReads {
+  const context: ReadContext = { ...options, server, list, followUp: machine(NO_FOLLOW_UP, followUpTransition) }
   return {
     fetchFirst: () => fetchFirst(context),
-    loadMore: (projectId) => loadMore(context, projectId),
+    loadMore: (windowKey) => loadMore(context, windowKey),
     reread: (mode) => rereadList(context, mode),
     requestReread: (mode) => requestReread(context, mode),
+    readExact: (ref) => readExact(context, ref),
   }
 }

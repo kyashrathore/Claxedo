@@ -15,7 +15,7 @@ export function SessionStoresProvider(props: ParentProps) {
       shell: preferences.transcript.shellToolPartsExpanded,
       edit: preferences.transcript.editToolPartsExpanded,
     }),
-    () => preferences.sidebar.showSettled,
+    { showSettled: () => preferences.sidebar.showSettled, activityShown: () => preferences.sidebar.view === "activity" },
   )
   return <SessionStoresContext.Provider value={stores}>{props.children}</SessionStoresContext.Provider>
 }

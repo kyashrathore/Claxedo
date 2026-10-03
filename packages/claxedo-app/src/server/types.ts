@@ -136,7 +136,9 @@ export type SessionReader = { readonly seenAt?: number; readonly settledAt?: num
 
 export type SettledFilter = "active" | "all"
 
-export type SessionListInput = { readonly projectId: ProjectId; readonly after?: string; readonly limit: number; readonly settled: SettledFilter }
+export type SessionListScope = { readonly projectId: ProjectId } | { readonly every: true; readonly sessionId?: SessionId }
+
+export type SessionListInput = SessionListScope & { readonly after?: string; readonly limit: number; readonly settled: SettledFilter }
 
 export type SessionPage = {
   readonly rows: readonly SessionRow[]

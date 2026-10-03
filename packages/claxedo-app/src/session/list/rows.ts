@@ -1,10 +1,9 @@
 import { sameHarnessSelection } from "@/lib/harness-selection"
 import type { SessionLastTurn } from "@claxedo/agent-runtime-contract"
-import { sameModelKey, type ProjectId, type SessionId, type SessionLocation, type SessionRow, type SessionSelections } from "@/server"
+import { sameModelKey, type SessionId, type SessionLocation, type SessionRow, type SessionSelections } from "@/server"
 import {
   WINDOW_ALL,
   compareOrder,
-  insideProjectWindow,
   laterTurn,
   newerRow,
   windowTail,
@@ -13,9 +12,11 @@ import {
   type FetchedWindow,
   type ListData,
   type ListEntry,
+  type ListWindow,
   type OrderKey,
   type PendingSend,
-  type ProjectWindow,
+  type WindowKey,
+  windowsHolding,
 } from "./model"
 import { withoutSessionFacts } from "./statuses"
 
@@ -74,9 +75,14 @@ export function turnEnded<S extends ListData>(data: S, ref: SessionLocation, las
 
 export function upsertRow<S extends ListData>(data: S, row: SessionRow): S {
   const id = row.ref.sessionId
-  const outsideWindow = !insideProjectWindow(data, row)
-  if (!data.entries.has(id) && !data.open.has(id) && outsideWindow) return data
+  if (!data.entries.has(id) && !data.open.has(id) && windowsHolding(data, row).length === 0) return data
   return mergeRow(data, row)
+}
+
+export function rowsRead<S extends ListData>(data: S, window: FetchedWindow): S {
+  let next = data
+  for (const page of window.pages) for (const row of page.rows) next = upsertRow(next, row)
+  return next
 }
 
 export function tombstoneRow<S extends ListData>(data: S, ref: SessionLocation, at: number): S {
@@ -104,19 +110,19 @@ function pageTail(page: FetchedPage, fallback: OrderKey): OrderKey {
   return tail ?? fallback
 }
 
-function withWindows<S extends ListData>(data: S, window: FetchedWindow, change: (windows: Map<ProjectId, ProjectWindow>) => void): S {
+function withWindows<S extends ListData>(data: S, window: FetchedWindow, change: (windows: Map<WindowKey, ListWindow>) => void): S {
   const windows = new Map(data.windows)
   change(windows)
   const failures = new Map(data.failures)
   const degraded = new Set(data.degraded)
   for (const page of window.pages) {
-    failures.delete(page.projectId)
-    if (page.degraded) degraded.add(page.projectId)
-    else degraded.delete(page.projectId)
+    failures.delete(page.windowKey)
+    if (page.degraded) degraded.add(page.windowKey)
+    else degraded.delete(page.windowKey)
   }
   for (const failed of window.failures) {
-    failures.set(failed.projectId, failed.error)
-    degraded.delete(failed.projectId)
+    failures.set(failed.windowKey, failed.error)
+    degraded.delete(failed.windowKey)
   }
   return { ...data, windows, failures, degraded }
 }
@@ -130,8 +136,8 @@ function mergePages<S extends ListData>(data: S, window: FetchedWindow): S {
 export function extendWindow<S extends ListData>(data: S, window: FetchedWindow): S {
   const next = withWindows(data, window, (windows) => {
     for (const page of window.pages) {
-      const current = windowTail(data, page.projectId)
-      windows.set(page.projectId, { tail: laterKey(current, pageTail(page, current)), nextAfter: page.nextAfter })
+      const current = windowTail(data, page.windowKey)
+      windows.set(page.windowKey, { tail: laterKey(current, pageTail(page, current)), nextAfter: page.nextAfter })
     }
   })
   return mergePages(next, window)
@@ -140,10 +146,10 @@ export function extendWindow<S extends ListData>(data: S, window: FetchedWindow)
 export function refreshWindow<S extends ListData>(data: S, window: FetchedWindow): S {
   const next = withWindows(data, window, (windows) => {
     for (const page of window.pages) {
-      const current = windowTail(data, page.projectId)
+      const current = windowTail(data, page.windowKey)
       const tail = pageTail(page, current)
-      if (data.windows.has(page.projectId) && compareOrder(current, tail) >= 0) continue
-      windows.set(page.projectId, { tail, nextAfter: page.nextAfter })
+      if (data.windows.has(page.windowKey) && compareOrder(current, tail) >= 0) continue
+      windows.set(page.windowKey, { tail, nextAfter: page.nextAfter })
     }
   })
   return mergePages(next, window)
@@ -151,12 +157,13 @@ export function refreshWindow<S extends ListData>(data: S, window: FetchedWindow
 
 function dropMissingFromPages<S extends ListData>(data: S, window: FetchedWindow): S {
   const fetched = new Set(window.pages.flatMap((page) => page.rows.map((row) => row.ref.sessionId)))
-  const read = new Set(window.pages.map((page) => page.projectId))
+  const read = new Set(window.pages.map((page) => page.windowKey))
   const entries = new Map(data.entries)
   const dropped: SessionId[] = []
   for (const [id, entry] of data.entries) {
     if (entry.kind !== "confirmed" || fetched.has(id) || data.open.has(id)) continue
-    if (!read.has(entry.row.ref.projectId) || !insideProjectWindow(data, entry.row)) continue
+    const holding = windowsHolding(data, entry.row)
+    if (holding.length === 0 || holding.some((windowKey) => !read.has(windowKey))) continue
     entries.delete(id)
     dropped.push(id)
   }
@@ -165,7 +172,7 @@ function dropMissingFromPages<S extends ListData>(data: S, window: FetchedWindow
 
 export function replaceWindow<S extends ListData>(data: S, window: FetchedWindow): S {
   const next = withWindows(dropMissingFromPages(data, window), window, (windows) => {
-    for (const page of window.pages) windows.set(page.projectId, { tail: pageTail(page, WINDOW_ALL), nextAfter: page.nextAfter })
+    for (const page of window.pages) windows.set(page.windowKey, { tail: pageTail(page, WINDOW_ALL), nextAfter: page.nextAfter })
   })
   return mergePages(next, window)
 }
@@ -215,7 +222,7 @@ export function closeSession<S extends ListData>(data: S, sessionId: SessionId):
   const open = new Set(data.open)
   open.delete(sessionId)
   const entry = data.entries.get(sessionId)
-  const keep = entry?.kind !== "confirmed" || insideProjectWindow(data, entry.row)
+  const keep = entry?.kind !== "confirmed" || windowsHolding(data, entry.row).length > 0
   if (keep) return { ...data, open }
   const entries = new Map(data.entries)
   entries.delete(sessionId)

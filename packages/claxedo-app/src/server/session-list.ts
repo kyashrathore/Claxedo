@@ -1,4 +1,3 @@
-import type { HostedAccount } from "./account"
 import type { ProjectId, SessionId } from "./ids"
 import type { SessionContext } from "./session-context"
 import { accountHoldsReader, sessionSettled } from "./session-reader"
@@ -43,6 +42,10 @@ async function listedOf(context: SessionContext, items: readonly unknown[], acco
       await context.workspaces.learn(directory)
       row = sessionRowFromListItem(item, address)
     }
+    if (!row && itemField(item, "workspaceId")) {
+      await context.workspaces.shared.load()
+      row = sessionRowFromListItem(item, address)
+    }
     if (!row) continue
     rows.push(row)
     const reader = listedReader(context, item, account)
@@ -57,42 +60,53 @@ function sourcePage(body: { items?: unknown; nextAfter?: unknown }): SourcePage 
   return { items: Array.isArray(body.items) ? body.items : [], ...(typeof body.nextAfter === "string" ? { nextAfter: body.nextAfter } : {}) }
 }
 
-function serverSource(context: SessionContext, projectId: ProjectId, query: PageQuery): SessionSource {
+type ScopeParams = Readonly<Record<string, string>>
+
+function serverSource(context: SessionContext, scope: ScopeParams, query: PageQuery): SessionSource {
   const { transport } = context
   const listPath = transport.loopback ? "/api/claxedo/session-list" : "/api/control/session-list"
   return {
     required: true,
-    read: async (after) => sourcePage(await transport.json(withQuery(listPath, { scope: "project", projectId, sort: SORT, ...query, after }))),
+    read: async (after) => sourcePage(await transport.json(withQuery(listPath, { ...scope, sort: SORT, ...query, after }))),
   }
 }
 
-function accountSource(account: HostedAccount, projectId: ProjectId, query: PageQuery, readers: AccountReaders): SessionSource {
+function accountSource(read: (after: string | undefined) => Promise<unknown>, readers: AccountReaders): SessionSource {
   return {
     required: false,
     read: async (after) => {
-      const page = sourcePage(await account.run("session.page", { projectId, ...query, sort: SORT, ...(after ? { after } : {}) }))
+      const page = sourcePage((await read(after)) as { items?: unknown; nextAfter?: unknown })
       for (const item of page.items) readers.set(itemField(item, "sessionId") ?? "", readerFromWire(item))
       return page
     },
   }
 }
 
-function sourcesOf(context: SessionContext, projectId: ProjectId, accountIds: readonly ProjectId[], query: PageQuery, readers: AccountReaders): SessionSource[] {
+function projectSources(context: SessionContext, projectId: ProjectId, accountIds: readonly ProjectId[], query: PageQuery, readers: AccountReaders): SessionSource[] {
   const accountOnly = accountIds.includes(projectId)
   const account = context.account
-  return [
-    ...(accountOnly ? [] : [serverSource(context, projectId, query)]),
-    ...(account ? accountIds.map((id) => ({ ...accountSource(account, id, query, readers), required: accountOnly })) : []),
-  ]
+  const linked = account
+    ? accountIds.map((id) => ({ ...accountSource((after) => account.run("session.page", { projectId: id, ...query, sort: SORT, ...(after ? { after } : {}) }), readers), required: accountOnly }))
+    : []
+  return [...(accountOnly ? [] : [serverSource(context, { scope: "project", projectId }, query)]), ...linked]
+}
+
+function everySources(context: SessionContext, sessionId: SessionId | undefined, query: PageQuery, readers: AccountReaders): SessionSource[] {
+  const account = context.transport.loopback ? context.account : undefined
+  const one: ScopeParams = sessionId ? { sessionId } : {}
+  const linked = account ? [accountSource((after) => account.run("session.activity.page", { ...query, ...one, sort: SORT, ...(after ? { after } : {}) }), readers)] : []
+  return [serverSource(context, { scope: "all", ...one }, query), ...linked]
 }
 
 export async function listSessions(context: SessionContext, options: SessionListInput): Promise<SessionPage> {
-  const accountIds = context.account ? context.workspaces.accountProjectIds(options.projectId) : []
-  const paired = accountIds.length > 0 && !accountIds.includes(options.projectId)
+  const project = "projectId" in options ? options.projectId : undefined
+  const accountIds = project && context.account ? context.workspaces.accountProjectIds(project) : []
+  const paired = project ? accountIds.length > 0 && !accountIds.includes(project) : context.transport.loopback && context.account !== undefined
   const account: AccountReaders = new Map()
   const query: PageQuery = { limit: options.limit, settled: paired ? "all" : options.settled }
   const hidden = paired && options.settled === "active" ? (item: unknown) => settledItem(context, item, account) : undefined
-  const merged = await readSessionSources(sourcesOf(context, options.projectId, accountIds, query, account), options.limit, options.after, hidden)
+  const sources = project ? projectSources(context, project, accountIds, query, account) : everySources(context, "sessionId" in options ? options.sessionId : undefined, query, account)
+  const merged = await readSessionSources(sources, options.limit, options.after, hidden)
   return {
     ...(await listedOf(context, merged.items, account)),
     ...(merged.nextAfter ? { nextAfter: merged.nextAfter } : {}),
