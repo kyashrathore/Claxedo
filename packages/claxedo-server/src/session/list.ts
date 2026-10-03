@@ -10,6 +10,7 @@ import {
 import { controlPlaneAuthErrorBody, ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { sessionPageScope } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { ControlPlaneServices } from "../authority/services"
 
 type SessionListRequestErrorCode = "session_list_scope_required"
@@ -28,8 +29,10 @@ export function sessionInventoryResponse(sessions: unknown) {
 /**
  * The signed session-list read, as one implementation.
  *
- * `GET /api/control/session-list` pages a project's sessions, or one
- * workspace's, across every workspace the registry holds rows for: cloud
+ * `GET /api/control/session-list` pages a project's sessions, one
+ * workspace's, or every session the caller may read (`scope=all`: the
+ * workspaces it owns and the sessions shared to it), across every workspace
+ * the registry holds rows for: cloud
  * workspaces, whose sessions it registers, and workspaces placed on machines,
  * whose sessions those machines publish. The hosted roots need this read
  * without the Node router (the workerd root cannot mount
@@ -43,17 +46,10 @@ export async function signedSessionList(
   auth: SignedControlPlaneAuth,
   query: SessionListQuery,
 ): Promise<SessionListResponse> {
-  const sessions = await requireAuthority(services).listSessionPage(auth, {
-    ...sessionListKeysetPage(query),
-    ...sessionPageScope(query),
-  })
+  const scope = sessionPageScope(query)
+  if (!scope) throw new SessionListRequestError("session_list_scope_required", "Name a project, a workspace or every session")
+  const sessions = await requireAuthority(services).listSessionPage(auth, { ...sessionListKeysetPage(query), ...scope })
   return buildSessionListResponse({ query, sessions, cursorApplied: true })
-}
-
-function sessionPageScope(query: SessionListQuery): { workspaceId: string } | { projectId: string } {
-  if (query.scope === "workspace" && query.workspaceId) return { workspaceId: query.workspaceId }
-  if (query.scope === "project" && query.projectId) return { projectId: query.projectId }
-  throw new SessionListRequestError("session_list_scope_required", "Name a project or a workspace")
 }
 
 /**

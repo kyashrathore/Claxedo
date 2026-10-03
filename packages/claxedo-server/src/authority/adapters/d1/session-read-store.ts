@@ -5,7 +5,7 @@ import { asRecord, numberField, parseJson } from "@claxedo/server-core/platform/
 import { latestViewPage, type LatestView } from "@claxedo/server-core/session/latest-view-page"
 import type { D1Database } from "@cloudflare/workers-types"
 import type { SessionPageQuery } from "@claxedo/server-core/platform/auth/private-session-authority"
-import { sessionOrderSql } from "@claxedo/server-core/session/navigation-order"
+import { sessionOrderSql, unsettledSql } from "@claxedo/server-core/session/navigation-order"
 import { requireHuman } from "./access-context"
 import { maySql, type BoundSql } from "./authorization"
 import type { D1ActorProfile } from "./workspace-authority"
@@ -23,47 +23,94 @@ type SessionPageRow = {
   status: string | null
   status_at: number | null
   awaiting_input: number
+  background_agents: number
+  background_shells: number
+  background_other: number
   last_turn_status: string | null
   last_turn_completed_at: number | null
   session_host_root: string | null
+  seen_at: number | null
+  settled_at: number | null
 }
 
-const COLUMNS = {
-  lastHumanTurnAt: "s.last_human_turn_at",
-  createdAt: "s.created_at",
-  updatedAt: "s.updated_at",
-  sessionRef: "('workspace:' || s.workspace_id || ':session:' || s.session_id)",
+type Clauses = { readonly where: string[]; readonly params: unknown[] }
+
+const orderColumns = (s: string) => ({
+  lastHumanTurnAt: `${s}.last_human_turn_at`,
+  createdAt: `${s}.created_at`,
+  updatedAt: `${s}.updated_at`,
+  sessionRef: `('workspace:' || ${s}.workspace_id || ':session:' || ${s}.session_id)`,
+})
+
+function pageFilters(query: SessionPageQuery, s: string, r: string): Clauses {
+  const where = [`${s}.deleted_at is null`]
+  const params: unknown[] = []
+  if (query.archived === "archived") where.push(`${s}.archived_at is not null`)
+  if (query.archived === "active") where.push(`${s}.archived_at is null`)
+  if (query.settled !== "all") where.push(unsettledSql({ settledAt: `${r}.settled_at`, lastHumanTurnAt: `${s}.last_human_turn_at`, lastTurnCompletedAt: `${s}.last_turn_completed_at` }))
+  if (query.search) {
+    where.push(`lower(coalesce(${s}.title, '')) like ?`)
+    params.push(`%${query.search.toLowerCase()}%`)
+  }
+  const keyset = sessionOrderSql(orderColumns(s), query.sort, query.after).keyset
+  if (keyset) {
+    where.push(keyset.sql)
+    params.push(...keyset.params)
+  }
+  return { where, params }
+}
+
+/**
+ * The candidates of a page of every session the reader may read: the first
+ * `limit` rows of each workspace the reader owns, each read in order from
+ * `sessions_by_workspace_human_turn`, and the first `limit` of the sessions
+ * shared to the reader. The page is the first `limit` of their union, so its
+ * sort holds at most (owned workspaces + 1) × `limit` rows. The shared arm
+ * orders every active share of the reader that passes the filters, since no
+ * index orders shares by their session's activity.
+ */
+function everyReadableCandidates(query: SessionPageQuery, readerUserId: string): Clauses {
+  const owned = pageFilters(query, "o", "o_r")
+  const shared = pageFilters(query, "h", "h_r")
+  const ordered = (s: string) => sessionOrderSql(orderColumns(s), query.sort, undefined).orderBy
+  return {
+    where: [`s.session_id in (
+      select c.session_id from workspaces w
+        join sessions c on c.session_id in (
+          select o.session_id from sessions o
+            left join session_reads o_r on o_r.user_id = ? and o_r.session_id = o.session_id
+          where o.workspace_id = w.workspace_id and ${owned.where.join(" and ")}
+          order by ${ordered("o")} limit ?)
+      where w.owner_user_id = ? and w.deleted_at is null
+      union all
+      select session_id from (
+        select h.session_id from session_share_grants g
+          join sessions h on h.session_id = g.session_id
+          left join session_reads h_r on h_r.user_id = ? and h_r.session_id = h.session_id
+        where g.target_user_id = ? and g.revoked_at is null and ${shared.where.join(" and ")}
+        order by ${ordered("h")} limit ?))`],
+    params: [readerUserId, ...owned.params, query.limit, readerUserId, readerUserId, readerUserId, ...shared.params, query.limit],
+  }
+}
+
+function pageScope(query: SessionPageQuery, readerUserId: string): Clauses {
+  if (query.sessionId) return { where: ["s.session_id = ?"], params: [query.sessionId] }
+  if ("projectId" in query) return { where: ["s.project_id = ?"], params: [query.projectId] }
+  if ("workspaceId" in query) return { where: ["s.workspace_id = ?"], params: [query.workspaceId] }
+  return everyReadableCandidates(query, readerUserId)
 }
 
 /**
  * `access` is the caller's read predicate over `s`, with the values its
- * placeholders bind. A `busy` stamped by a turn lease that then lapsed
- * unreleased reads as `interrupted`: the runtime holding it is gone, and the
- * lease's own expiry is the one record that says so.
+ * placeholders bind; `readerUserId` is whose seen and settled marks the rows
+ * carry and the settled filter reads. A `sessionId` reads that one session,
+ * whatever the scope, by its key. A `busy` stamped by a turn lease that then
+ * lapsed unreleased reads as `interrupted`: the runtime holding it is gone, and
+ * the lease's own expiry is the one record that says so.
  */
-export async function readD1SessionPage(database: D1Database, query: SessionPageQuery, access: BoundSql, now: number) {
-  const where = ["s.deleted_at is null"]
-  const params: unknown[] = []
-  if ("projectId" in query) {
-    where.push("s.project_id = ?")
-    params.push(query.projectId)
-  } else {
-    where.push("s.workspace_id = ?")
-    params.push(query.workspaceId)
-  }
-  if (query.archived === "archived") where.push("s.archived_at is not null")
-  if (query.archived === "active") where.push("s.archived_at is null")
-  if (query.search) {
-    where.push("lower(coalesce(s.title, '')) like ?")
-    params.push(`%${query.search.toLowerCase()}%`)
-  }
-  where.push(access.sql)
-  params.push(...access.bind)
-  const order = sessionOrderSql(COLUMNS, query.sort, query.after)
-  if (order.keyset) {
-    where.push(order.keyset.sql)
-    params.push(...order.keyset.params)
-  }
+export async function readD1SessionPage(database: D1Database, query: SessionPageQuery, access: BoundSql, readerUserId: string, now: number) {
+  const scope = pageScope(query, readerUserId)
+  const filters = pageFilters(query, "s", "r")
   const result = await database
     .prepare(`
       select s.session_id, s.workspace_id, s.project_id, s.title, s.created_at, s.updated_at,
@@ -74,15 +121,22 @@ export async function readD1SessionPage(database: D1Database, query: SessionPage
             and lapsed.released_at is null and lapsed.expires_at <= ?
         ) then 'interrupted' else s.status end as status,
         s.status_at, s.awaiting_input,
-        s.last_turn_status, s.last_turn_completed_at, s.session_host_root
+        s.background_agents, s.background_shells, s.background_other,
+        s.last_turn_status, s.last_turn_completed_at, s.session_host_root, r.seen_at, r.settled_at
       from sessions s
-      where ${where.join(" and ")}
-      order by ${order.orderBy}
+      left join session_reads r on r.user_id = ? and r.session_id = s.session_id
+      where ${[...scope.where, ...filters.where, access.sql].join(" and ")}
+      ${query.sessionId ? "" : `order by ${sessionOrderSql(orderColumns("s"), query.sort, undefined).orderBy}`}
       limit ?
     `)
-    .bind(now, ...params, query.limit)
+    .bind(now, readerUserId, ...scope.params, ...filters.params, ...access.bind, query.limit)
     .all<SessionPageRow>()
   return result.results.map(pageRowJson)
+}
+
+function backgroundWorkJson(row: SessionPageRow) {
+  const work = { agents: row.background_agents, shells: row.background_shells, other: row.background_other }
+  return work.agents + work.shells + work.other > 0 ? { background_work: work } : {}
 }
 
 function pageRowJson(row: SessionPageRow) {
@@ -97,57 +151,13 @@ function pageRowJson(row: SessionPageRow) {
     ...(row.archived_at === null ? {} : { archived_at: row.archived_at }),
     ...(row.status === null || row.status_at === null
       ? {}
-      : { status: row.status, status_at: row.status_at, awaiting_input: row.awaiting_input === 1 }),
+      : { status: row.status, status_at: row.status_at, awaiting_input: row.awaiting_input === 1, ...backgroundWorkJson(row) }),
     ...(row.last_turn_status === null || row.last_turn_completed_at === null
       ? {}
       : { last_turn_status: row.last_turn_status, last_turn_completed_at: row.last_turn_completed_at }),
     ...(row.session_host_root === null ? {} : { session_host_root: row.session_host_root }),
-  }
-}
-
-export async function readD1TurnLeaseLive(
-  database: D1Database,
-  input: { sessionId: string; turnId: string; leaseId: string; fencingToken: number },
-  now: number,
-) {
-  return !!await database.prepare(`
-    select 1 from session_turn_leases
-    where session_id = ? and turn_id = ? and lease_id = ? and fencing_token = ? and released_at is null and expires_at > ?
-  `).bind(input.sessionId, input.turnId, input.leaseId, input.fencingToken, now).first()
-}
-
-/**
- * A workspace, and the session id's row and live reservation wherever they
- * are. The id is read alone and a deleted row is still read: an id held under
- * another workspace, or one a deleted session used, is never hosted here.
- */
-export async function readD1SessionHostPlacement(database: D1Database, input: { workspaceId: string; sessionId: string }): Promise<SessionHostPlacement | undefined> {
-  const row = await database.prepare(`
-    select w.backing, w.remote_directory,
-      s.workspace_id as session_workspace_id, s.session_host_root, s.deleted_at as session_deleted_at,
-      r.workspace_id as reservation_workspace_id, r.session_host_root as reservation_host_root
-    from workspaces w
-    left join sessions s on s.session_id = ?
-    left join session_registration_operations r on r.session_id = ? and r.state <> 'compensated'
-    where w.workspace_id = ? and w.deleted_at is null
-  `).bind(input.sessionId, input.sessionId, input.workspaceId).first<{
-    backing: "cloud-vm" | "local-worktree"
-    remote_directory: string | null
-    session_workspace_id: string | null
-    session_host_root: string | null
-    session_deleted_at: number | null
-    reservation_workspace_id: string | null
-    reservation_host_root: string | null
-  }>()
-  if (!row) return undefined
-  return {
-    workspace: { backing: row.backing, directory: row.remote_directory },
-    ...(row.session_workspace_id === null ? {} : {
-      session: { workspaceId: row.session_workspace_id, sessionHostRoot: row.session_host_root, deleted: row.session_deleted_at !== null },
-    }),
-    ...(row.reservation_workspace_id === null ? {} : {
-      reservation: { workspaceId: row.reservation_workspace_id, sessionHostRoot: row.reservation_host_root },
-    }),
+    ...(row.seen_at === null ? {} : { seen_at: row.seen_at }),
+    ...(row.settled_at === null ? {} : { settled_at: row.settled_at }),
   }
 }
 
@@ -320,4 +330,50 @@ export async function listD1SharedSessions(
     ...row,
     owner_name: owner_subject ? await nameOf(owner_subject) : null,
   })))
+}
+
+export async function readD1TurnLeaseLive(
+  database: D1Database,
+  input: { sessionId: string; turnId: string; leaseId: string; fencingToken: number },
+  now: number,
+) {
+  return !!await database.prepare(`
+    select 1 from session_turn_leases
+    where session_id = ? and turn_id = ? and lease_id = ? and fencing_token = ? and released_at is null and expires_at > ?
+  `).bind(input.sessionId, input.turnId, input.leaseId, input.fencingToken, now).first()
+}
+
+/**
+ * A workspace, and the session id's row and live reservation wherever they
+ * are. The id is read alone and a deleted row is still read: an id held under
+ * another workspace, or one a deleted session used, is never hosted here.
+ */
+export async function readD1SessionHostPlacement(database: D1Database, input: { workspaceId: string; sessionId: string }): Promise<SessionHostPlacement | undefined> {
+  const row = await database.prepare(`
+    select w.backing, w.remote_directory,
+      s.workspace_id as session_workspace_id, s.session_host_root, s.deleted_at as session_deleted_at,
+      r.workspace_id as reservation_workspace_id, r.session_host_root as reservation_host_root
+    from workspaces w
+    left join sessions s on s.session_id = ?
+    left join session_registration_operations r on r.session_id = ? and r.state <> 'compensated'
+    where w.workspace_id = ? and w.deleted_at is null
+  `).bind(input.sessionId, input.sessionId, input.workspaceId).first<{
+    backing: "cloud-vm" | "local-worktree"
+    remote_directory: string | null
+    session_workspace_id: string | null
+    session_host_root: string | null
+    session_deleted_at: number | null
+    reservation_workspace_id: string | null
+    reservation_host_root: string | null
+  }>()
+  if (!row) return undefined
+  return {
+    workspace: { backing: row.backing, directory: row.remote_directory },
+    ...(row.session_workspace_id === null ? {} : {
+      session: { workspaceId: row.session_workspace_id, sessionHostRoot: row.session_host_root, deleted: row.session_deleted_at !== null },
+    }),
+    ...(row.reservation_workspace_id === null ? {} : {
+      reservation: { workspaceId: row.reservation_workspace_id, sessionHostRoot: row.reservation_host_root },
+    }),
+  }
 }

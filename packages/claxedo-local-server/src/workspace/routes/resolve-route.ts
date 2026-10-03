@@ -7,7 +7,7 @@ import {
   controlPlaneRouteAuth,
   signedRouteAuth,
   type ControlPlaneRouteAuthOptions,
-} from "../../platform/http/control-plane-route-auth"
+} from "@claxedo/server-core/platform/http/control-plane-route-auth"
 
 export function LocalWorkspaceRoutes(options: ControlPlaneRouteAuthOptions = {}) {
   return new Hono()

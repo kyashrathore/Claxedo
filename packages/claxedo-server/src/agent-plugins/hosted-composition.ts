@@ -30,11 +30,12 @@ import {
   createHostedCapabilityConnectionResolver,
   createHostedCapabilityTokenResolver,
   createHostedD1ConnectionsSetup,
+  createHostedRepositoryAccess,
+  createHostedRepositoryCloneSecrets,
   hostedConnectionsAuthenticate,
 } from "../connections/hosted-d1/setup"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "../workspace/route-support"
-import { createRelayRuntimeClient } from "../workspace/relay-runtime-client"
-import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/runtime-actor"
+import { createHostedRuntimeFetch } from "../workspace/relay-runtime-client"
 import type { ControlPlaneServices } from "../authority/services"
 import { D1SignedAgentPluginActivationStore } from "./activation/d1-store"
 import { hostedAgentPluginArtifactStore, type AgentPluginR2Bucket } from "./artifacts/r2-artifact-adapter"
@@ -69,24 +70,8 @@ import { createGrantWithdrawal } from "../tasks/grant-withdrawal"
 const log = Log.create({ service: "hosted-agent-plugins" })
 
 export function createHostedPluginRuntimeFetch(services: ControlPlaneServices): Parameters<typeof createHostedAgentPluginRuntimeProvisioner>[0]["runtimeFetch"] {
-  return async (workspaceId, identity, requestPath, init) => {
-    const manager = services.sandbox.sandboxManager
-    if (!manager) throw new Error("hosted sandbox manager is unavailable")
-    const target = await manager.target(workspaceId)
-    if (target.status !== "ready") throw new Error(`hosted sandbox ${workspaceId} is unavailable`)
-    const provider = services.relay.provider
-    if (!provider) throw new Error("hosted runtime token issuer is unavailable")
-    return await createRelayRuntimeClient({ provider, error: (_status, _code, message) => new Error(message) }).fetch({
-      workspaceId,
-      hostId: target.hostId,
-      routingId: target.routingId,
-      orgId: identity.organizationId,
-      ...CONTROL_PLANE_RUNTIME_ACTOR,
-      role: "owner",
-      ttlMs: 10 * 60_000,
-      homeRegion: target.homeRegion,
-    }, requestPath, init)
-  }
+  const runtimeFetch = createHostedRuntimeFetch(services)
+  return async (workspaceId, identity, requestPath, init) => await runtimeFetch(workspaceId, identity.organizationId, requestPath, init)
 }
 
 /**
@@ -106,6 +91,7 @@ export type HostedAgentPluginsWorkerEnv = Record<string, unknown> & {
 export type HostedAgentPluginsComposition = {
   routeContributions: readonly ControlPlaneRouteContribution[]
   integrationRoutes: Hono
+  repositoryForAuth: ReturnType<typeof createHostedRepositoryAccess>
   prepareRuntime: (context: WorkspaceRuntimeContext) => Promise<WorkspaceRuntimePreparation>
   pluginRuntime: (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined) => Promise<AgentPluginRuntimeContribution>
   /** The owner's Pi plugins for a session served by its own Durable Object in this workspace. */
@@ -341,6 +327,7 @@ export function createHostedAgentPluginsComposition(input: {
     credentials: orgCredentials,
   }
   const integrationRoutes = createHostedD1ConnectionsSetup(connectionsInput)
+  const cloneSecrets = createHostedRepositoryCloneSecrets(connectionsInput)
   const resolveConnection = createHostedCapabilityConnectionResolver(connectionsInput)
   const resolveToken = createHostedCapabilityTokenResolver(connectionsInput)
   const reportAuthFailure = createHostedCapabilityAuthFailureReporter(connectionsInput)
@@ -389,7 +376,7 @@ export function createHostedAgentPluginsComposition(input: {
   const prepareRuntime = async ({ workspaceId }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
     if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return {}
     const snapshot = await activations.runtimeSnapshot(workspaceId)
-    const [preparation, env] = await Promise.all([
+    const [preparation, env, clone] = await Promise.all([
       preparer.forSnapshot(snapshot),
       rootEnvironment({
         userId: snapshot.identity.userId,
@@ -397,8 +384,9 @@ export function createHostedAgentPluginsComposition(input: {
         projectId: snapshot.identity.projectId,
         workspaceId: snapshot.identity.workspaceId,
       }),
+      cloneSecrets({ workspaceId, ownerUserId: snapshot.identity.userId, orgId: snapshot.identity.organizationId }),
     ])
-    return { ...preparation, env }
+    return { ...preparation, secrets: [...preparation.secrets ?? [], ...clone], env }
   }
   // The header placeholder is the one a header-injecting driver installs
   // (`brokeredPlaceholderEnv`); the sandbox presents it and the driver's edge
@@ -508,6 +496,7 @@ export function createHostedAgentPluginsComposition(input: {
       },
     ],
     integrationRoutes,
+    repositoryForAuth: createHostedRepositoryAccess(connectionsInput),
     prepareRuntime,
     pluginRuntime,
     sessionHostPlugins: createSessionHostPlugins({ cloudWorkspace, activations, preparer, provisioner }),

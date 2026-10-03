@@ -162,6 +162,7 @@ export type RuntimePromptTurnInput = {
   /** Current durable lease generation, checked before every producer publish. */
   turnAdmission?: { valid(): boolean; fencingToken(): number; proof(): string }
   actor?: { actorId: string; actorKind: "human" | "agent" }
+  humanTurn: boolean
   author?: {
     id: string
     name: string
@@ -300,6 +301,7 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
       ...(input.body.delivery ? { delivery: input.body.delivery } : {}),
       ...(input.author ? { author: input.author } : {}),
       ...(input.turnAdmission ? { admission: input.turnAdmission } : {}),
+      ...(input.humanTurn ? { humanTurn: true as const } : {}),
     } satisfies Omit<AgentRuntimeTurnStartInput, "actorId" | "actorKind">
     const parts = input.body.parts ?? []
     const start = (delivery = input.body.delivery) => input.actor

@@ -164,6 +164,8 @@ export type AgentRuntimeTurnStartInput = {
    * secrets are leased under.
    */
   admission?: { valid(): boolean; fencingToken(): number; proof(): string }
+  /** A person's own send, which `sessionRequestIsHumanTurn` decides; the only turn that records `lastHumanTurnAt`. */
+  humanTurn?: true
 } & AgentRuntimeTurnActor
 
 export type AgentRuntimeTurnStartResult = {

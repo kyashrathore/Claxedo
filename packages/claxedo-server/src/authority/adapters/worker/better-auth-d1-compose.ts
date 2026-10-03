@@ -1,4 +1,3 @@
-import type { SandboxDriver, SandboxLeaseStore } from "@claxedo/sandbox-manager"
 import { oauthProviderAuthServerMetadata } from "@better-auth/oauth-provider"
 import type { D1Database } from "@cloudflare/workers-types"
 import { Hono } from "hono"
@@ -21,6 +20,7 @@ import { HostedWorkerCompositionError } from "../../composition-error"
 import {
   composeProviderNeutralHostedControlPlane,
   type HostedControlPlane,
+  type HostedSandboxBinding,
   type HostedWorkerEnv,
 } from "../../provider-neutral-hosted-services"
 import { createD1UsageLedger } from "../../../usage/adapters/d1-usage-ledger"
@@ -107,7 +107,7 @@ export type BetterAuthD1UserDeployedCompositionInput = {
    * exactly when `CLAXEDO_SANDBOX_POSTURE=full-hosted`; the composition refuses
    * every other combination so a deployment never half-promises cloud VMs.
    */
-  sandbox?: { driver: SandboxDriver; leaseStore: SandboxLeaseStore }
+  sandbox?: HostedSandboxBinding
 }
 
 export type BetterAuthD1UserDeployedComposition = {
@@ -250,6 +250,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         credentials: plane.orgCredentials,
         signingEnv: input.env,
         provisionedRunner: provisionedRunner(input.env),
+        ...(input.sandbox.deliverSessionRowsPass ? { deliverSessionRowsPass: input.sandbox.deliverSessionRowsPass } : {}),
       })
     : undefined
 
@@ -266,7 +267,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       agentConfigRepository: settings,
       ...(delivery ? {
         settingsChanged: delivery.settingsChanged,
-        credentialsChanged: delivery.reconcileCredentialDelivery,
+        accountSetup: { changed: delivery.reconcileCredentialDelivery },
         productWorkspace: {
           prepareRuntime: delivery.prepareRuntime,
           provisionRuntime: delivery.provisionRuntime,

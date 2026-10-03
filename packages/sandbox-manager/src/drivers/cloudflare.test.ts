@@ -241,6 +241,13 @@ describe("CloudflareSandboxDriver", () => {
     expect(result).toEqual({ provisioning: true, retryAfterMs: 2_000 })
   })
 
+  test("a runtime whose boot exited is a failed ensure carrying the boot's reason, not one still provisioning", async () => {
+    const reason = "fatal: could not read Username for 'https://github.com': terminal prompts disabled"
+    const { fetch } = harness(() => ({ status: 502, json: { ready: false, exited: true, error: reason } }))
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
+    await expect(driver.ensureHost(createInput)).rejects.toMatchObject({ runtimeBootFailed: true, message: reason })
+  })
+
   test("permanent Worker configuration failures are not hidden as provisioning", async () => {
     const { fetch } = harness(() => ({
       status: 503,

@@ -3,6 +3,8 @@ import {
   brokeredPlaceholderEnv,
   brokeredSecretPlaceholder,
   createSandboxManager,
+  SandboxRuntimeBootError,
+  sandboxRuntimeBootFailure,
   type SandboxCheckpointRuntime,
   type SandboxDriver,
   type SandboxTarget,
@@ -648,6 +650,32 @@ describe("sandbox manager", () => {
       epoch: 3,
     })
     expect((await store.get("ws_1"))?.lastError).toBeUndefined()
+  })
+
+  test("a runtime whose boot exited demotes a ready lease and keeps the boot's reason, since nothing is left serving", async () => {
+    const now = 10_000
+    const store = createMemoryLeaseStore([
+      sandboxLease({
+        routingId: "routing_test",
+        workspaceId: "ws_1",
+        status: "ready",
+        epoch: 3,
+        retryCount: 0,
+        sandboxId: "sandbox_1",
+        url: "https://runtime.test/ws_1",
+        hostId: "host_1",
+      }),
+    ])
+    const reason = "fatal: couldn't find remote ref refs/heads/missing"
+    const driver = fakeDriver({ ensureHost: vi.fn(async () => { throw new SandboxRuntimeBootError(reason) }) })
+    const manager = createSandboxManager({ leaseStore: store, driver, now: () => now, retryDelayMs: () => 5_000 })
+
+    const ensured = await manager.ensure("ws_1", { homeRegion: "us-east" })
+    expect(ensured).toMatchObject({ status: "unavailable", retryAfterMs: 5_000 })
+    expect(sandboxRuntimeBootFailure(ensured.status === "unavailable" ? ensured.error : undefined)).toBe(reason)
+    await expect(store.get("ws_1")).resolves.toMatchObject({ status: "unavailable", retryCount: 1 })
+    await expect(manager.ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "unavailable", error: ensured.status === "unavailable" ? ensured.error : "" })
+    expect(driver.ensureHost).toHaveBeenCalledTimes(1)
   })
 
   test("a driver failure during an in-flight acquiring provision still demotes the lease", async () => {

@@ -10,7 +10,8 @@ import { hostedSandboxInput } from "./hosted-sandbox-input"
 import type { ControlPlaneDatabase } from "../test-support/control-plane-migrations"
 import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
 
-vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: () => ({ applyConfig: async () => {} }) }))
+const pushed = vi.hoisted(() => [] as string[])
+vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: () => ({ applyConfig: async () => { pushed.push("config") } }) }))
 vi.mock("@claxedo/server-core/platform/auth/runtime-access-token", () => ({ mintSupervisorBackplaneToken: async () => ({ supervisorBackplaneToken: "supervisor-token" }) }))
 
 const CONTROL_PLANE_ORIGIN = "https://cp.claxedo.test"
@@ -115,6 +116,7 @@ async function composition() {
     credentials: () => ({ listCredentials: async () => [], accountSelections: async () => ({}) }) as never,
     signingEnv: {},
     provisionedRunner: undefined,
+    deliverSessionRowsPass: async (workspaceId) => { pushed.push(`session rows pass ${workspaceId}`) },
   })
   const env = { WORKSPACE_RUNTIME_MCP_TOOL_GROUPS: "sessions,subagents" }
   const secrets = [{ name: "ANTHROPIC_API_KEY", value: "sk-ant", hosts: ["api.anthropic.com"] }]
@@ -170,5 +172,7 @@ describe("refreshing a running hosted sandbox", () => {
       secrets: [expect.objectContaining({ name: "ANTHROPIC_API_KEY" })],
     })
     expect(provisioned(fromRefresh)).toEqual(provisioned(fromCreate))
+    const workspaceId = fromRefresh?.workspaceId
+    expect(pushed.slice(-2), "a ready runtime gets its settings, then its session rows pass").toEqual(["config", `session rows pass ${workspaceId}`])
   })
 })

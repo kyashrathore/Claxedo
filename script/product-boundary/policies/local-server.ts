@@ -198,7 +198,7 @@ export const localServer: Policy = {
   //    It provides dependency-free data and OS reads, with no server, runtime
   //    or store closure behind them.
   //  - `@claxedo/account-contract/vocabulary` through
-  //    `credentials/routes/credential.ts` and `credentials/broker.ts` (owner:
+  //    `credentials/broker.ts` (owner:
   //    the account vocabulary the app, this daemon and the hosted server
   //    share): whose account a person spends and where a stored account may
   //    be delivered. The subpath is import-free.

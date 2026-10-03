@@ -19,7 +19,7 @@ import {
   workspaceOpenAuthorizationError,
 } from "../workspace/runtime-token-guards"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
-import type { SandboxManager } from "@claxedo/sandbox-manager"
+import { sandboxRuntimeBootFailure, type SandboxManager } from "@claxedo/sandbox-manager"
 import { sessionHostAdmits } from "../authority/session-hosts"
 import { workspaceRoleAllowsWrite } from "../authority/pulled-session"
 import { mintSessionHostConnection } from "./session-host-connection"
@@ -291,6 +291,12 @@ export async function hostedConnectionInfo(
         retryAfterMs: ensured.retryAfterMs,
       },
     })
+    // A boot that failed fails the same way until the person changes what it
+    // boots from, so its reason is the answer rather than a wait.
+    const bootFailure = sandboxRuntimeBootFailure(ensured.error)
+    if (bootFailure) {
+      return { error: apiError("cloud_runtime_boot_failed", `The cloud workspace could not start: ${bootFailure}`), status: 409 } as const
+    }
     return {
       error: apiError("cloud_runtime_unavailable", "Cloud runtime is unavailable", {
         retryAfterMs: ensured.retryAfterMs,

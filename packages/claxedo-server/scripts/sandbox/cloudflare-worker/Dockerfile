@@ -16,12 +16,14 @@ ARG CLAXEDO_CURL_AGENTS="1"
 
 # Install build tools for native deps (better-sqlite3, node-pty). `git` is named
 # explicitly because the runtime configures a github.com clone header at boot
-# and agents clone from inside the sandbox; whether the base image happens to
-# carry it is not something this image should depend on.
+# and agents clone from inside the sandbox, and `procps` because the runtime
+# asks `ps` whether any git still runs before it removes a stale shallow.lock;
+# whether the base image happens to carry either is not something this image
+# should depend on.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl ca-certificates git gzip make g++ python3 xz-utils && \
+    apt-get install -y --no-install-recommends curl ca-certificates git gzip make g++ procps python3 xz-utils && \
     rm -rf /var/lib/apt/lists/* && \
-    command -v git
+    command -v git && command -v ps
 
 # The cloudflare/sandbox base ships Node 20, under which better-sqlite3 13.x
 # SEGFAULTS on load (verified in-image: node20 `new Database(':memory:')`

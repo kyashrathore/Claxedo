@@ -16,7 +16,6 @@ export default {
   "provider.connect.token.copyCommand": "Скопировать команду",
   "provider.connect.oauth.start": "Войти",
   "provider.connect.oauth.hint": "Откроет код, который нужно ввести в браузере.",
-  "provider.connect.hosted.signsElsewhere": "Вход в {{vendor}} выполняется из Codex CLI на машине, которую запускаете вы. Это развёртывание хранит только вставленные ключи, поэтому здесь нечего вводить.",
   "provider.connect.oauth.code.visit.prefix": "Посетите ",
   "provider.connect.oauth.code.visit.link": "эту ссылку",
   "provider.connect.oauth.code.visit.suffix.harness": ", чтобы получить код авторизации и запускать {{harness}} с этой учётной записью.",

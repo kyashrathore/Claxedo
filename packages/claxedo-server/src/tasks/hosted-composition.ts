@@ -1,5 +1,6 @@
 import type { D1Database } from "@cloudflare/workers-types"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
 import type { WorkspaceRuntimeClientOptions } from "@claxedo/server-core/workspace/http/workspace-runtime-client"
@@ -67,7 +68,7 @@ export function hostedTasksRuntimeClient(services: ControlPlaneServices): Worksp
     ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
     ...(services.relay.provider ? { relayProvider: services.relay.provider } : {}),
     ...(services.defaultHomeRegion ? { defaultHomeRegion: services.defaultHomeRegion } : {}),
-    runtimeActor: { principalKind: "service", actorId: "control-plane", actorKind: "agent" },
+    runtimeActor: CONTROL_PLANE_RUNTIME_ACTOR,
     role: "owner",
   }
 }

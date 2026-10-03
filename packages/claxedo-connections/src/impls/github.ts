@@ -83,6 +83,8 @@ export function githubIntegration(options: GitHubIntegrationOptions = {}): {
 
   const device: DeviceAuth = {
     async start(): Promise<DeviceGrant> {
+      // A GitHub App's user token carries the permissions the app was granted
+      // where it is installed; GitHub ignores a scope sent with its device grant.
       const res = await form(DEVICE_CODE_URL, { client_id: clientId! })
       const body = record(await res.json().catch(() => ({}))) ?? {}
       if (!res.ok || typeof body.device_code !== "string" || typeof body.user_code !== "string") {

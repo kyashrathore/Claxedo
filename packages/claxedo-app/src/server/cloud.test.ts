@@ -30,7 +30,7 @@ function transport(posted: Posted[]): Transport {
   return { serverUrl: "http://127.0.0.1:1", loopback: true, json, onSessionHost: () => () => undefined } as Pick<Transport, "serverUrl" | "loopback" | "json" | "onSessionHost"> as Transport
 }
 
-function world(signed: boolean) {
+function world(signed: boolean, catalog: () => void = () => {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const posted: Posted[] = []
   const operations: Array<{ readonly operation: string; readonly input: unknown }> = []
@@ -41,6 +41,7 @@ function world(signed: boolean) {
       made = true
       return { workspaceId: "ws_new", directory: "/workspace/widgets" }
     }
+    if (operation === "workspace.list.provisioner") catalog()
     return { workspaces: operation === "workspace.list.provisioner" && made ? [created] : [] }
   })
   const wire = transport(posted)
@@ -81,6 +82,22 @@ test("without an account the project's cloud workspace is created on this server
     expect(workspace).toMatchObject({ id: placementId("ws_new"), projectId: projectId("prj_widgets") })
     expect(posted).toEqual([{ path: "/api/workspace/create", body: { projectId: "prj_widgets", gitBranch: "main", repoUrl: "https://github.com/acme/widgets" } }])
     expect(operations()).toEqual([])
+    workspaces.dispose()
+    dispose()
+  })
+})
+
+test("signed: a workspace the account created is reported before the catalog read that fails after it", async () => {
+  await createRoot(async (dispose) => {
+    let failing = false
+    const { cloud, workspaces, operations } = world(true, () => {
+      if (failing) throw new Error("catalog unavailable")
+    })
+    const reported: string[] = []
+    failing = true
+    await expect(cloud.create({ source: { kind: "repository", url: "https://github.com/acme/widgets" }, onCreated: (id) => reported.push(id) })).rejects.toThrow()
+    expect(reported).toEqual([placementId("ws_new")])
+    expect(operations()).toHaveLength(1)
     workspaces.dispose()
     dispose()
   })

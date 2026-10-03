@@ -68,6 +68,12 @@ export function workspaceRuntimeOwnerGrantToken(env: Record<string, string | und
   return env[WORKSPACE_RUNTIME_OWNER_GRANT]?.trim() || undefined
 }
 
+/** Where a cloud runtime takes, and answers about, the pass it publishes its sessions' list rows with. */
+export const SESSION_ROWS_PASS_PATH = "/api/claxedo/session-rows/pass"
+
+/** The pass a runtime holds, as its claims read without verifying; null before the control plane delivered one. */
+export type SessionRowsPassHeld = { epoch: number; issuedAt: number; expiresAt: number } | null
+
 export function workspaceRuntimeTargetEnv(input: {
   workspaceId: string
   hostId?: string

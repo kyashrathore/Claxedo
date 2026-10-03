@@ -125,11 +125,11 @@ is the authoritative source for this column.
 | `account.mode` | `features/settings/ui/account-section.tsx` | `GET /api/claxedo/mode` | unary | safe | Deployment posture; drives which hosted surfaces render. |
 | `account.compatibility` | `app/boot/data/bootstrap-orchestrator.ts` | `GET /api/claxedo/compatibility` | unary | safe | Client/server version gate. |
 | `account.cliExchange` | none | `POST /api/auth/cli/exchange` | unary | unsafe | Mints a CLI session token. A replayed exchange must not mint twice, and nothing stops it: the route mints from the bearer and never reads the request body, so each call is a fresh separately-revocable pair. Refused to the renderer entirely (`RENDERER_WITHHELD_OPERATIONS`), because the result is itself a credential. |
-| `org.list` | `features/settings/data/org-team-api.ts` | `GET /api/control/orgs` | unary | safe | Orgs the signed caller belongs to; Settings + rail switcher. |
-| `org.create` | `features/settings/data/org-team-api.ts` | `POST /api/control/orgs` | unary | unsafe | Creates an org (and usually a default team). A retried create is a duplicate org. |
-| `org.teams.list` | `features/settings/data/org-team-api.ts` | `GET /api/control/orgs/:orgId/teams` | unary | safe | Teams for an org; Settings, rail switcher, and People "share with team" picker (also called from `session-share-api`). |
-| `org.teams.create` | `features/settings/data/org-team-api.ts` | `POST /api/control/orgs/:orgId/teams` | unary | unsafe | Creates a team in an org. |
-| `org.ensureDefaultTeam` | `features/settings/data/org-team-api.ts` | `POST /api/control/orgs/:orgId/ensure-default-team` | unary | unsafe | Ensures the org has a default team; may create one. |
+| `org.list` | none yet | `GET /api/control/orgs` | unary | safe | Orgs the signed caller belongs to; Settings + rail switcher. |
+| `org.create` | none yet | `POST /api/control/orgs` | unary | unsafe | Creates an org (and usually a default team). A retried create is a duplicate org. |
+| `org.teams.list` | none yet | `GET /api/control/orgs/:orgId/teams` | unary | safe | Teams for an org; Settings and rail switcher. |
+| `org.teams.create` | none yet | `POST /api/control/orgs/:orgId/teams` | unary | unsafe | Creates a team in an org. |
+| `org.ensureDefaultTeam` | none yet | `POST /api/control/orgs/:orgId/ensure-default-team` | unary | unsafe | Ensures the org has a default team; may create one. |
 | `org.members.list` | none yet | `GET /api/control/orgs/:orgId/members` | unary | safe | Members with role and `joined_at`; empty to a caller outside the org. |
 | `org.invitations.create` | none yet | `POST /api/control/orgs/:orgId/invitations` | unary | unsafe | Sends an invitation to the normalized email with no account lookup; generic 202 receipt. |
 | `org.invitations.list` | none yet | `GET /api/control/orgs/:orgId/invitations` | unary | safe | Admin-only metadata without token or hash. |
@@ -137,11 +137,11 @@ is the authoritative source for this column.
 | `org.invitations.accept` | invitation link | `POST /api/control/invitations/accept` | unary | unsafe | Submits `{ token }` in the POST body using the signed caller's matching verified email; single-use, seven-day expiry. |
 | `org.members.update` | none yet | `PATCH /api/control/orgs/:orgId/members/:userPublicId` | unary | unsafe | Changes a member's role; the founding owner cannot be demoted. |
 | `org.members.remove` | none yet | `DELETE /api/control/orgs/:orgId/members/:userPublicId` | unary | unsafe | Also revokes the person's team memberships and project member grants in the org. |
-| `team.members.list` | `features/settings/data/org-team-api.ts` | `GET /api/control/teams/:teamId/members` | unary | safe | |
-| `team.members.add` | `features/settings/data/org-team-api.ts` | `POST /api/control/teams/:teamId/members` | unary | unsafe | |
-| `team.members.remove` | `features/settings/data/org-team-api.ts` | `DELETE /api/control/teams/:teamId/members` | unary | unsafe | |
+| `team.members.list` | none yet | `GET /api/control/teams/:teamId/members` | unary | safe | |
+| `team.members.add` | none yet | `POST /api/control/teams/:teamId/members` | unary | unsafe | |
+| `team.members.remove` | none yet | `DELETE /api/control/teams/:teamId/members` | unary | unsafe | |
 | `team.projects.list` | none yet | `GET /api/control/teams/:teamId/projects` | unary | safe | The team's project grants with role. |
-| `team.projects.grant` | `features/settings/data/org-team-api.ts` | `POST /api/control/teams/:teamId/projects` | unary | unsafe | Grants a project role to a team. |
+| `team.projects.grant` | none yet | `POST /api/control/teams/:teamId/projects` | unary | unsafe | Grants a project role to a team. |
 | `team.projects.revoke` | none yet | `DELETE /api/control/teams/:teamId/projects` | unary | unsafe | Revokes a team's project grant. |
 | `project.members.grant` | none yet | `POST /api/control/projects/:projectId/members` | unary | unsafe | Grants or changes one person's project role; project and org admins only, never the owner. |
 | `project.members.revoke` | none yet | `DELETE /api/control/projects/:projectId/members/:userPublicId` | unary | unsafe | Revokes one person's project grant. |
@@ -208,9 +208,9 @@ are withheld from the renderer (see "Withheld from the renderer" below).
 | `session.projection.checkpoint` | `platform/runtime/agent/session-projection.ts` | `POST /api/control/workspaces/:workspaceId/sessions/:sessionId/checkpoint` | unary | unsafe | |
 | `session.projection.repair` | `platform/runtime/agent/session-projection.ts` | `POST /api/control/workspaces/:workspaceId/sessions/:sessionId/repair` | unary | unsafe | |
 | `controlPlane.events` | `app/integrations/claxedo-event-targets.ts` | `GET /api/cp/events` | stream | safe | The control plane's notice stream (provision steps, worktree readiness, document doorbells, share grants, inventory changes) — never a session's frames, which are the workspace runtime's `/api/wr/events` on the RAT data plane. Resumes via declared `Last-Event-ID` header param. |
-| `session.shares.list` | `features/session/data/session-share-api.ts` | `GET /api/control/sessions/:sessionId/shares` | unary | safe | `workspaceId` is a declared query parameter (not a free-form `:name` in the path). |
-| `session.shares.grant` | `features/session/data/session-share-api.ts` | `POST /api/control/sessions/:sessionId/shares` | unary | unsafe | Grants a session share to a person, team, or org at a declared `level`: `follow` (read and stream) or `send` (also prompt the agent and answer its permission and question prompts). The share is the only cross-person grant; no workspace or organization rank admits anyone to a session. |
-| `session.shares.revoke` | `features/session/data/session-share-api.ts` | `DELETE /api/control/sessions/:sessionId/shares` | unary | unsafe | |
+| `session.shares.list` | none yet | `GET /api/control/sessions/:sessionId/shares` | unary | safe | `workspaceId` is a declared query parameter (not a free-form `:name` in the path). |
+| `session.shares.grant` | none yet | `POST /api/control/sessions/:sessionId/shares` | unary | unsafe | Grants a session share to one person at a declared `level`: `follow` (read and stream) or `send` (also prompt the agent and answer its permission and question prompts). The share is the only cross-person grant; no workspace or organization rank admits anyone to a session. |
+| `session.shares.revoke` | none yet | `DELETE /api/control/sessions/:sessionId/shares` | unary | unsafe | |
 
 ### Documents
 

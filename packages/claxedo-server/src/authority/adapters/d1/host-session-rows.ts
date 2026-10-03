@@ -2,58 +2,80 @@ import type { D1Database } from "@cloudflare/workers-types"
 import {
   planHostSessionRows,
   type HostSessionRow,
+  type HostSessionRowsOutcome,
   type HostSessionRowsPublication,
   type HostSessionRowsPublisher,
-  type HostSessionRowsResult,
 } from "@claxedo/server-core/platform/auth/host-session-rows"
 import { sessionAdoptionOperationId } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
+import { SESSION_STATUS_COLUMNS, sessionStatusNotices, type SessionStatusColumns } from "./session-status-notices"
 
 type ServedWorkspace = { workspace_id: string; owner_actor_id: string; org_id: string; project_id: string }
 
 /**
- * Lands a machine's published list rows in the session registry.
+ * Lands a host's published list rows in the session registry.
  *
- * A row is admitted only for a workspace this enrollment serves right now, by
- * the same predicate that routes the relay and mints the tunnel credential,
- * so a machine that lost the assignment or was superseded by a newer serving
- * generation stops publishing on its next call. A session the registry has
- * never seen is adopted for the enrollment owner, as `adoptRuntimeSession`
- * adopts one: the machine held it before anyone reached it through the plane.
+ * A machine's row is admitted only for a workspace its enrollment serves
+ * right now, by the same predicate that routes the relay and mints the tunnel
+ * credential, so a machine that lost the assignment or was superseded by a
+ * newer serving generation stops publishing on its next call. A cloud
+ * runtime's row is admitted only for the one live cloud workspace its pass
+ * names, still owned by the pass's user. A session the registry has never
+ * seen is adopted for the workspace owner, as `adoptRuntimeSession` adopts
+ * one: the host held it before anyone reached it through the plane.
  *
  * Republishing is idempotent: turn and update times only move forward, a
- * status replaces the held one only when it was reported at or after it, and
- * a last turn replaces the held one only when it ended later.
+ * status (with its wait and background work) replaces the held one only when
+ * it was reported at or after it, and a last turn replaces the held one only
+ * when it ended later. The batch first reads the rows it updates and each
+ * update returns what it left, so the status notices compare two reads of
+ * one transaction: a concurrent publish can neither hide a change nor report
+ * one twice.
  */
 export async function publishD1HostSessionRows(
   database: D1Database,
   now: number,
   publisher: HostSessionRowsPublisher,
   publication: HostSessionRowsPublication,
-): Promise<HostSessionRowsResult> {
+): Promise<HostSessionRowsOutcome> {
   const touched = [...publication.rows, ...publication.removed]
-  const served = await servedD1Workspaces(database, now, publisher, [...new Set(touched.map((row) => row.workspaceId))])
+  const claimed = [...new Set(touched.map((row) => row.workspaceId))].filter((id) => publisher.workspaceIds.includes(id))
+  const served = publisher.servedBy === "sandbox"
+    ? await sandboxD1Workspaces(database, publisher, claimed)
+    : await servedD1Workspaces(database, now, publisher, claimed)
   const existing = await registeredD1Sessions(database, [...new Set(touched.map((row) => row.sessionId))])
   const plan = planHostSessionRows(publication, served, existing)
+  const adoptions = plan.adopt.flatMap(({ row, workspace }) => adoptionStatements(database, now, workspace, row))
+  const updated = plan.update.map((row) => row.sessionId)
   const statements = [
-    ...plan.adopt.flatMap(({ row, workspace }) => adoptionStatements(database, now, workspace, row)),
+    ...(updated.length ? [statusColumnsRead(database, updated)] : []),
+    ...adoptions,
     ...plan.update.map((row) => listFieldsStatement(database, row)),
     ...plan.remove.map((ref) =>
       database
         .prepare(`update sessions set deleted_at = ? where session_id = ? and workspace_id = ? and deleted_at is null`)
         .bind(now, ref.sessionId, ref.workspaceId)),
   ]
-  if (statements.length) await database.batch(statements)
-  return plan.result
+  if (!statements.length) return { ...plan.result, statusNotices: [] }
+  const results = await database.batch<SessionStatusColumns>(statements)
+  if (!updated.length) return { ...plan.result, statusNotices: [] }
+  const before = new Map(results[0]!.results.map((row) => [row.session_id, row]))
+  const written = results.slice(1 + adoptions.length, 1 + adoptions.length + updated.length).flatMap((result) => result.results)
+  return { ...plan.result, statusNotices: await sessionStatusNotices(database, before, written) }
+}
+
+function statusColumnsRead(database: D1Database, sessionIds: readonly string[]) {
+  return database
+    .prepare(`select ${SESSION_STATUS_COLUMNS} from sessions where session_id in (${sessionIds.map(() => "?").join(", ")})`)
+    .bind(...sessionIds)
 }
 
 async function servedD1Workspaces(
   database: D1Database,
   now: number,
   publisher: HostSessionRowsPublisher,
-  workspaceIds: string[],
+  claimed: string[],
 ) {
-  const claimed = workspaceIds.filter((id) => publisher.workspaceIds.includes(id))
   if (!claimed.length) return new Map<string, ServedWorkspace>()
   const fence = publisher.enrollmentId !== undefined && publisher.generation !== undefined
   const result = await database
@@ -75,6 +97,21 @@ async function servedD1Workspaces(
       ...(fence ? [publisher.enrollmentId, publisher.generation] : []),
       now,
     )
+    .all<ServedWorkspace>()
+  return new Map(result.results.map((row) => [row.workspace_id, row]))
+}
+
+async function sandboxD1Workspaces(database: D1Database, publisher: HostSessionRowsPublisher, claimed: string[]) {
+  if (!claimed.length) return new Map<string, ServedWorkspace>()
+  const result = await database
+    .prepare(`
+      select w.workspace_id, owner.actor_id as owner_actor_id, w.org_id, w.project_id
+      from workspaces w
+      join actors owner on owner.user_id = w.owner_user_id and owner.kind = 'human'
+      where w.workspace_id in (${claimed.map(() => "?").join(", ")})
+        and w.owner_user_id = ? and w.backing = 'cloud-vm' and w.deleted_at is null
+    `)
+    .bind(...claimed, publisher.ownerUserId)
     .all<ServedWorkspace>()
   return new Map(result.results.map((row) => [row.workspace_id, row]))
 }
@@ -123,7 +160,9 @@ function adoptionStatements(database: D1Database, now: number, workspace: Served
 
 function listFieldsStatement(database: D1Database, row: HostSessionRow) {
   const status = row.status
+  const work = status.backgroundWork
   const at = row.lastTurn?.completedAt ?? null
+  const current = "status_at is null or status_at <= ?"
   return database
     .prepare(`
       update sessions set
@@ -132,12 +171,16 @@ function listFieldsStatement(database: D1Database, row: HostSessionRow) {
         last_human_turn_at = case when ? is null then last_human_turn_at
           else max(coalesce(last_human_turn_at, 0), ?) end,
         archived_at = ?,
-        status = case when status_at is null or status_at <= ? then ? else status end,
-        awaiting_input = case when status_at is null or status_at <= ? then ? else awaiting_input end,
-        status_at = case when status_at is null or status_at <= ? then ? else status_at end,
+        status = case when ${current} then ? else status end,
+        awaiting_input = case when ${current} then ? else awaiting_input end,
+        background_agents = case when ${current} then ? else background_agents end,
+        background_shells = case when ${current} then ? else background_shells end,
+        background_other = case when ${current} then ? else background_other end,
+        status_at = case when ${current} then ? else status_at end,
         last_turn_status = case when ? is not null and (last_turn_completed_at is null or last_turn_completed_at < ?) then ? else last_turn_status end,
         last_turn_completed_at = case when ? is not null and (last_turn_completed_at is null or last_turn_completed_at < ?) then ? else last_turn_completed_at end
       where session_id = ? and workspace_id = ? and deleted_at is null
+      returning ${SESSION_STATUS_COLUMNS}
     `)
     .bind(
       row.title ?? null,
@@ -147,6 +190,9 @@ function listFieldsStatement(database: D1Database, row: HostSessionRow) {
       row.archivedAt ?? null,
       status.at, status.kind,
       status.at, status.awaitingInput ? 1 : 0,
+      status.at, work?.agents ?? 0,
+      status.at, work?.shells ?? 0,
+      status.at, work?.other ?? 0,
       status.at, status.at,
       at, at, row.lastTurn?.status ?? null,
       at, at, at,

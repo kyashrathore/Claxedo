@@ -38,6 +38,8 @@ export function firstPartyMcpRuntimeContribution(input: {
   enabledToolGroups: readonly string[]
   tasks?: () => TasksGrant | undefined
   ownerGrant?: () => string | undefined
+  /** The owner grant's actor; a session is owner-driven only while every turn in its lineage is this actor's. */
+  ownerActorId?: () => string | undefined
 }): WorkspaceRuntimeRouteContribution {
   const { verifyRuntimeCredential, tasks, ownerGrant } = input
   return {
@@ -48,8 +50,9 @@ export function firstPartyMcpRuntimeContribution(input: {
       const mount = createClaxedoMcpRoutes({
         mount: "loopback",
         verifyRuntimeCredential,
-        createClient: () => {
+        createClient: (credential) => {
           const grant = tasks?.()
+          const sessionId = credential.kind === "runtime" ? credential.sessionId : undefined
           return createClaxedoMcpClient({
             deployment: "loopback",
             local: {
@@ -61,6 +64,10 @@ export function firstPartyMcpRuntimeContribution(input: {
               workspace,
             },
             ...(grant ? { tasks: grant } : {}),
+            ownerDriven: () => {
+              const ownerActorId = input.ownerActorId?.()
+              return !!sessionId && !!ownerActorId && context.sessionDrivenOnlyBy(sessionId, ownerActorId)
+            },
           })
         },
         registerTools: CLAXEDO_MCP_TOOL_GROUPS,

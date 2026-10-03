@@ -15,7 +15,10 @@ import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "./route-support"
 import { mintSupervisorBackplaneToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { createWorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { cloudRootBacking } from "./cloud-root-backing"
+
+const log = Log.create({ service: "hosted-runtime-delivery" })
 
 async function supervisorClient(
   services: ControlPlaneServices,
@@ -55,6 +58,8 @@ export function createHostedRuntimeDelivery(input: {
   credentials(orgId: string): ControlPlaneCredentials
   signingEnv: Record<string, string | undefined>
   provisionedRunner: RuntimeNativeHarnessId | undefined
+  /** Hands a ready runtime its session rows pass after its settings land; a failure costs its rows until the next push. */
+  deliverSessionRowsPass?: (workspaceId: string) => Promise<void>
 }) {
   const owner = async (workspaceId: string) => {
     const person = await input.authority.resolveWorkspaceOwner?.(workspaceId)
@@ -100,6 +105,9 @@ export function createHostedRuntimeDelivery(input: {
     })
     const { client, options } = await supervisorClient(input.services, workspaceId, input.signingEnv)
     await client.applyConfig(snapshot, options)
+    await input.deliverSessionRowsPass?.(workspaceId).catch((error: unknown) => {
+      log.warn("session rows pass delivery failed", { workspaceId, error: String(error) })
+    })
   }
   const provisionRuntime = (context: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => push(context.workspaceId, preparation)
   const hooks: HostedRuntimeHooks = { prepareRuntime: prepare }

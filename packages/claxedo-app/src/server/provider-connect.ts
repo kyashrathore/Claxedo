@@ -1,7 +1,6 @@
 import type { QueryClient } from "@tanstack/solid-query"
-import { readString } from "@claxedo/helpers/readers"
-import { ask } from "./answer"
-import { contractMismatch } from "./errors"
+import { readFiniteNumber, readString } from "@claxedo/helpers/readers"
+import { contractMismatch, ServerError } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
 import { jsonInit, withQuery, type Transport } from "./transport"
@@ -40,7 +39,6 @@ export type ProviderConnectApi = {
   readonly callback: (providerId: string, method: number, code?: string) => Promise<void>
   readonly saveKey: (input: ProviderKeyInput) => Promise<void>
   readonly reconnect: (credentialId: string, secret: string) => Promise<void>
-  readonly saveHostedKey: (input: { readonly providerId: string; readonly harness: string; readonly key: string }) => Promise<void>
   readonly disconnect: (harness: string, provider: { readonly id: string; readonly source?: ProviderSource }) => Promise<void>
   readonly saveCustomProvider: (draft: CustomProviderDraft) => Promise<void>
 }
@@ -94,10 +92,6 @@ export function createProviderConnectApi(transport: Transport, queryClient: Quer
       await transport.json<unknown>(`${CREDENTIALS_PATH}/${encodeURIComponent(credentialId)}/reconnect`, jsonInit("POST", { secret }))
       await changed()
     },
-    saveHostedKey: async (input) => {
-      await transport.json<unknown>(withQuery(`/auth/${encodeURIComponent(input.providerId)}`, { harness: input.harness }), jsonInit("PUT", { auth: { key: input.key } }))
-      await changed()
-    },
     saveCustomProvider: async (draft) => {
       const config = draft.config
       if (draft.key) await transport.json<unknown>(CREDENTIALS_PATH, jsonInit("PUT", { provider_id: config.providerId, kind: "api_key", source: "managed", label: config.name, secret: draft.key }))
@@ -105,9 +99,11 @@ export function createProviderConnectApi(transport: Transport, queryClient: Quer
       await changed()
     },
     disconnect: async (harness, provider) => {
-      await ask(transport, `${CREDENTIALS_PATH}/provider/${encodeURIComponent(provider.id)}`, { method: "DELETE" })
+      const removed = await transport.json<unknown>(`${CREDENTIALS_PATH}/provider/${encodeURIComponent(provider.id)}`, { method: "DELETE" })
+      if (provider.source !== "custom" && !((readFiniteNumber(removed, "deleted") ?? 0) > 0)) {
+        throw new ServerError({ class: "not_found", message: `No ${provider.id} account of yours was stored to disconnect` })
+      }
       if (provider.source === "custom") await transport.json<unknown>(withQuery(`${CUSTOM_PATH}/${encodeURIComponent(provider.id)}`, { nativeHarness: harness }), { method: "DELETE" })
-      else await transport.json<unknown>(withQuery(`/auth/${encodeURIComponent(provider.id)}`, { harness }), { method: "DELETE" })
       await changed()
     },
   }

@@ -149,10 +149,20 @@ export function sandboxEgressUnenforcedSink(telemetry: ControlPlaneTelemetry) {
   }
 }
 
+/**
+ * A full-hosted deployment's sandbox driver and durable lease store, and how a
+ * ready sandbox's runtime is handed the pass it publishes session rows with.
+ */
+export type HostedSandboxBinding = {
+  driver: SandboxDriver
+  leaseStore: SandboxLeaseStore
+  deliverSessionRowsPass?: (workspaceId: string) => Promise<void>
+}
+
 function sandboxManager(
   env: HostedWorkerEnv,
   telemetry: ControlPlaneTelemetry,
-  sandbox: { driver: SandboxDriver; leaseStore: SandboxLeaseStore } | undefined,
+  sandbox: HostedSandboxBinding | undefined,
 ) {
   const selectedDriver = trimToUndefined(env.CLAXEDO_SANDBOX_DRIVER)
   if (!sandbox) {
@@ -250,7 +260,7 @@ export type HostedControlPlaneAdapterBindings = {
   /** Admits sessions served by their own Durable Object; absent, the relay resolves no session host. */
   sessionHosts?: SessionHostAuthority
   /** Required only when the static sandbox posture selects a driver. */
-  sandbox?: { driver: SandboxDriver; leaseStore: SandboxLeaseStore }
+  sandbox?: HostedSandboxBinding
   /**
    * Opt-in adapter-native device login: an issuer whose device-code exchange the
    * Worker brokers. Build it with `hostedDeviceAuthProvider(env)`.

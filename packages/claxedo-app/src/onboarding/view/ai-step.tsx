@@ -7,7 +7,7 @@ import { useOnboardingText } from "../i18n"
 
 const CATALOG_HARNESSES: readonly string[] = NATIVE_HARNESS_IDS.filter(hasManagedProviderCredentials)
 
-const HOSTED_HARNESSES: readonly string[] = ["pi"]
+const HOSTED_CATALOG_HARNESSES: readonly string[] = ["pi"]
 
 function useCatalogs(ids: readonly string[]) {
   const catalogs = ids.map((id) => createHarnessProviders(() => id))
@@ -23,12 +23,12 @@ function CatalogSection(props: { readonly providers: HarnessProviders; readonly 
   )
 }
 
-function Scanning() {
+function Loading(props: { readonly onMachine: boolean }) {
   const t = useOnboardingText()
   return (
     <p class="flex items-center gap-2 py-2 text-12-regular text-text-weak">
       <Spinner class="size-4" />
-      <span>{t("onboarding.ai.scanning")}</span>
+      <span>{t(props.onMachine ? "onboarding.ai.scanning" : "onboarding.ai.loading")}</span>
     </p>
   )
 }
@@ -60,20 +60,20 @@ function CatalogChoice(props: { readonly catalogs: readonly HarnessProviders[]; 
   )
 }
 
-function MachineLogins(props: { readonly onReady: (ready: boolean) => void }) {
+function AccountSetup(props: { readonly onReady: (ready: boolean) => void }) {
   const t = useOnboardingText()
   const accounts = useAccounts()
-  const { catalogs, connected } = useCatalogs(CATALOG_HARNESSES)
+  const { catalogs, connected } = useCatalogs(accounts.onMachine() ? CATALOG_HARNESSES : HOSTED_CATALOG_HARNESSES)
   const [chosen, setChosen] = createSignal<string>()
   createEffect(() => props.onReady(accounts.runnable() || connected()))
   const chosenCatalog = () => catalogs.find((entry) => entry.harness() === chosen())
   return (
     <div class="flex flex-col gap-4">
       <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <span class="text-12-medium text-text-weak">{t("onboarding.ai.logins")}</span>
+        <span class="text-12-medium text-text-weak">{t(accounts.onMachine() ? "onboarding.ai.logins" : "onboarding.ai.accounts")}</span>
         <CatalogChoice catalogs={catalogs} chosen={chosen()} onChoose={(id) => setChosen(chosen() === id ? undefined : id)} />
       </div>
-      <Show when={accounts.opened()} fallback={<Scanning />}>
+      <Show when={accounts.opened()} fallback={<Loading onMachine={accounts.onMachine()} />}>
         <div class="flex flex-col gap-6">
           <For each={harnesses}>{(harness) => <AgentHarnessAccounts harness={harness} accounts={accounts} />}</For>
         </div>
@@ -83,20 +83,6 @@ function MachineLogins(props: { readonly onReady: (ready: boolean) => void }) {
   )
 }
 
-function HostedLogins(props: { readonly onReady: (ready: boolean) => void }) {
-  const { catalogs, connected } = useCatalogs(HOSTED_HARNESSES)
-  createEffect(() => props.onReady(connected()))
-  return (
-    <div class="flex flex-col gap-6">
-      <For each={catalogs}>{(providers) => <CatalogSection providers={providers} />}</For>
-    </div>
-  )
-}
-
-export function AiStep(props: { readonly localExecution: boolean; readonly onReady: (ready: boolean) => void }) {
-  return (
-    <Show when={props.localExecution} fallback={<HostedLogins onReady={props.onReady} />}>
-      <MachineLogins onReady={props.onReady} />
-    </Show>
-  )
+export function AiStep(props: { readonly onReady: (ready: boolean) => void }) {
+  return <AccountSetup onReady={props.onReady} />
 }

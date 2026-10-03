@@ -102,6 +102,15 @@ export function mayGuard<K extends ResourceKind>(
   return { sql: `exists (${query.sql})`, bind: query.bind }
 }
 
+/**
+ * `read` on session `s` for the person a column of the caller's query names
+ * (`user`, an SQL expression), not a bound principal: the same rule `maySql`
+ * applies, for a query that asks who may read rather than whether one may.
+ */
+export function sessionReaderSql(s: string, user: string): string {
+  return `(${activePrincipalSql(false)} and ${sessionRuleSql("read", s, false)})`.replaceAll(USER, user)
+}
+
 /** That the principal is still an active person with an active actor, for a write that names no resource. */
 export function activeGuard(principal: AuthorizationPrincipal): BoundSql {
   return bindPrincipal(activePrincipalSql(principal.actorId !== undefined), principal)
@@ -254,9 +263,8 @@ function sessionRuleSql(action: SessionAction, s: string, withActor: boolean) {
 }
 
 /**
- * A live share on this session naming the person, their organization, or a
- * team of it they are on. `send` narrows it to a share at that level; an actor
- * that is not human never holds one.
+ * A live share on this session naming the person. `send` narrows it to a share
+ * at that level; an actor that is not human never holds one.
  */
 function sessionShareSql(s: string, send: boolean, withActor: boolean) {
   return `exists (select 1 from session_share_grants share where ${sharePredicateSql(s, send, withActor)})`
@@ -264,16 +272,13 @@ function sessionShareSql(s: string, send: boolean, withActor: boolean) {
 
 /**
  * The share a runtime token is recorded under, for a principal `session` reads
- * through a share: the one naming them directly, else through a team, else
- * through their organization. Null for the workspace's owner, whose access no
- * share admits.
+ * through a share. Null for the workspace's owner, whose access no share admits.
  */
 export function admittingShareSql(principal: AuthorizationPrincipal, session: string): BoundSql {
   return bindPrincipal(`(
     select case when rule_workspace.owner_user_id = ${USER} then null else (
       select share.grant_id from session_share_grants share
       where ${sharePredicateSql(session, false, principal.actorId !== undefined)}
-      order by share.target_user_id is null, share.target_team_id is null, share.grant_id
       limit 1
     ) end
     from workspaces rule_workspace where rule_workspace.workspace_id = ${session}.workspace_id
@@ -284,29 +289,7 @@ function sharePredicateSql(s: string, send: boolean, withActor: boolean) {
   return `share.session_id = ${s}.session_id and share.revoked_at is null
       ${send ? "and share.level = 'send'" : ""}
       ${withActor ? `and exists (select 1 from actors share_actor where share_actor.actor_id = ${ACTOR} and share_actor.kind = 'human')` : ""}
-      and (
-        share.target_user_id = ${USER}
-        or (
-          share.target_org_id = ${s}.org_id
-          and exists (
-            select 1 from org_memberships share_org_member
-            where share_org_member.org_id = share.target_org_id and share_org_member.user_id = ${USER}
-              and share_org_member.revoked_at is null
-          )
-        )
-        or exists (
-          select 1 from team_memberships share_team_member
-          join teams share_team on share_team.team_id = share_team_member.team_id
-            and share_team.org_id = ${s}.org_id and share_team.deleted_at is null
-          join org_memberships share_team_org_member
-            on share_team_org_member.org_id = share_team.org_id
-            and share_team_org_member.user_id = share_team_member.user_id
-            and share_team_org_member.revoked_at is null
-          where share_team_member.team_id = share.target_team_id
-            and share_team_member.user_id = ${USER}
-            and share_team_member.revoked_at is null
-        )
-      )`
+      and share.target_user_id = ${USER}`
 }
 
 function projectRuleSql(action: ProjectAction, p: string) {

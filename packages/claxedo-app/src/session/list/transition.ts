@@ -1,6 +1,5 @@
 import { unreachable } from "@/lib/machine"
-import type { ProjectId } from "@/server"
-import { hasMorePages, type FetchedWindow, type ListData, type ListEvent, type ListState, type MorePhase, type RereadMode, type ServerListEvent } from "./model"
+import { ACTIVITY_WINDOW, canReadPage, type FetchedWindow, type ListData, type ListEvent, type ListState, type MorePhase, type RereadMode, type ServerListEvent, type WindowKey } from "./model"
 import {
   closeSession,
   confirmCreate,
@@ -10,6 +9,7 @@ import {
   openSession,
   refreshWindow,
   replaceWindow,
+  rowsRead,
   startCreate,
   startSend,
   tombstoneRow,
@@ -17,8 +17,9 @@ import {
   upsertRow,
 } from "./rows"
 import { backgroundWorkChanged, backgroundWorkRead, pageStatusesRead, statusChanged, statusRead } from "./statuses"
+import { confirmReaderWrite, failReaderWrite, pageReadersRead, readerChanged, startReaderWrite } from "./readers"
 
-type More = ReadonlyMap<ProjectId, MorePhase>
+type More = ReadonlyMap<WindowKey, MorePhase>
 
 const NO_MORE: More = new Map()
 
@@ -27,6 +28,7 @@ function data(state: ListState): ListData {
     entries: state.entries,
     statuses: state.statuses,
     backgroundWork: state.backgroundWork,
+    readers: state.readers,
     open: state.open,
     windows: state.windows,
     failures: state.failures,
@@ -45,20 +47,31 @@ function applyListEvent<S extends ListData>(state: S, event: ServerListEvent): S
     case "sessionRemoved":
       return tombstoneRow(state, event.ref, event.at)
     case "statusChanged": {
-      const next = statusChanged(state, event.ref, event.status, event.at)
+      const next = statusChanged(state, event.ref, event.status, event.at, event.waitingOnUser)
       return event.lastTurn ? turnEnded(next, event.ref, event.lastTurn) : next
     }
     case "backgroundWorkChanged":
       return backgroundWorkChanged(state, event.ref, event.work, event.at)
+    case "readerChanged":
+      return readerChanged(state, event.ref, event.reader, event.at)
+    case "turnEndRowRead":
+      return turnEndRowRead(state, event)
     default:
       return unreachable(event)
   }
 }
 
-function withPhase(more: More, projectId: ProjectId, phase: MorePhase | undefined): More {
+function turnEndRowRead<S extends ListData>(state: S, event: Extract<ServerListEvent, { type: "turnEndRowRead" }>): S {
+  const admitted = rowsRead(state, event.window)
+  const entry = admitted.entries.get(event.ref.sessionId)
+  if (entry?.kind !== "confirmed" || entry.row.parentSessionId !== undefined) return state
+  return turnEnded(pageReadersRead(pageStatusesRead(admitted, event.window), event.window), event.ref, event.lastTurn)
+}
+
+function withPhase(more: More, windowKey: WindowKey, phase: MorePhase | undefined): More {
   const next = new Map(more)
-  if (phase) next.set(projectId, phase)
-  else next.delete(projectId)
+  if (phase) next.set(windowKey, phase)
+  else next.delete(windowKey)
   return next
 }
 
@@ -66,8 +79,9 @@ function serverEvent(state: ListState, event: ServerListEvent): ListState {
   if (state.kind === "fetching" || state.kind === "rereading") return { ...state, held: [...state.held, event] }
   if (state.kind === "live") {
     const projectId = event.type === "sessionUpserted" ? event.row.ref.projectId : event.ref.projectId
-    const phase = state.more.get(projectId)
-    if (phase?.kind === "loading") return { ...state, more: withPhase(state.more, projectId, { kind: "loading", held: [...phase.held, event] }) }
+    const holder = [ACTIVITY_WINDOW, projectId].find((windowKey) => state.more.get(windowKey)?.kind === "loading")
+    const phase = holder === undefined ? undefined : state.more.get(holder)
+    if (holder !== undefined && phase?.kind === "loading") return { ...state, more: withPhase(state.more, holder, { kind: "loading", held: [...phase.held, event] }) }
   }
   return withData(state, applyListEvent(state, event))
 }
@@ -79,7 +93,7 @@ const WINDOWING: Record<"extend" | RereadMode, (data: ListData, window: FetchedW
 }
 
 function live(base: ListData, window: FetchedWindow, held: readonly ServerListEvent[], mode: "extend" | RereadMode, more: More): ListState {
-  const windowed = pageStatusesRead(WINDOWING[mode](base, window), window)
+  const windowed = pageReadersRead(pageStatusesRead(WINDOWING[mode](base, window), window), window)
   const replayed = held.reduce(applyListEvent, windowed)
   return { ...replayed, kind: "live", more }
 }
@@ -93,16 +107,16 @@ function fetchEvent(state: ListState, event: ListEvent): ListState | undefined {
     case "fetchFailed":
       return state.kind === "fetching" ? { ...data(state), kind: "failed", error: event.error } : state
     case "moreStarted":
-      if (state.kind !== "live" || state.more.get(event.projectId)?.kind === "loading" || !hasMorePages(state.windows, event.projectId)) return state
-      return { ...state, more: withPhase(state.more, event.projectId, { kind: "loading", held: [] }) }
+      if (state.kind !== "live" || state.more.get(event.windowKey)?.kind === "loading" || !canReadPage(state.windows, event.windowKey)) return state
+      return { ...state, more: withPhase(state.more, event.windowKey, { kind: "loading", held: [] }) }
     case "moreFetched": {
-      const phase = state.kind === "live" ? state.more.get(event.projectId) : undefined
+      const phase = state.kind === "live" ? state.more.get(event.windowKey) : undefined
       if (state.kind !== "live" || phase?.kind !== "loading") return state
-      return live(data(state), event.window, phase.held, "extend", withPhase(state.more, event.projectId, undefined))
+      return live(data(state), event.window, phase.held, "extend", withPhase(state.more, event.windowKey, undefined))
     }
     case "moreFailed":
-      if (state.kind !== "live" || state.more.get(event.projectId)?.kind !== "loading") return state
-      return { ...state, more: withPhase(state.more, event.projectId, { kind: "failed", error: event.error }) }
+      if (state.kind !== "live" || state.more.get(event.windowKey)?.kind !== "loading") return state
+      return { ...state, more: withPhase(state.more, event.windowKey, { kind: "failed", error: event.error }) }
     case "rereadStarted":
       return state.kind === "live" || state.kind === "failed" ? { ...data(state), kind: "rereading", held: [] } : state
     case "rereadFetched":
@@ -125,12 +139,37 @@ function sessionRead(state: ListState, event: Extract<ListEvent, { type: "rowRea
   }
 }
 
+type OwnWrite = Extract<ListEvent, { type: "createStarted" | "createConfirmed" | "createFailed" | "sendStarted" | "sendFailed" | "readerWriteStarted" | "readerWritten" | "readerWriteFailed" }>
+
+function ownWrite(state: ListState, event: OwnWrite): ListData {
+  switch (event.type) {
+    case "createStarted":
+      return startCreate(state, event.clientRequestId, event.row)
+    case "createConfirmed":
+      return confirmCreate(state, event.clientRequestId, event.row)
+    case "createFailed":
+      return failCreate(state, event.clientRequestId)
+    case "sendStarted":
+      return startSend(state, event.sessionId, event.clientRequestId, event.at)
+    case "sendFailed":
+      return failSend(state, event.sessionId, event.clientRequestId)
+    case "readerWriteStarted":
+      return startReaderWrite(state, event.sessionId, event.writeId, event.reader)
+    case "readerWritten":
+      return confirmReaderWrite(state, event.sessionId, event.writeId, event.reader, event.at)
+    case "readerWriteFailed":
+      return failReaderWrite(state, event.sessionId, event.writeId)
+  }
+}
+
 export function listTransition(state: ListState, event: ListEvent): ListState {
   switch (event.type) {
     case "sessionUpserted":
     case "sessionRemoved":
     case "statusChanged":
     case "backgroundWorkChanged":
+    case "readerChanged":
+    case "turnEndRowRead":
       return serverEvent(state, event)
     case "fetchStarted":
     case "fetched":
@@ -151,15 +190,14 @@ export function listTransition(state: ListState, event: ListEvent): ListState {
     case "sessionClosed":
       return withData(state, closeSession(state, event.sessionId))
     case "createStarted":
-      return withData(state, startCreate(state, event.clientRequestId, event.row))
     case "createConfirmed":
-      return withData(state, confirmCreate(state, event.clientRequestId, event.row))
     case "createFailed":
-      return withData(state, failCreate(state, event.clientRequestId))
     case "sendStarted":
-      return withData(state, startSend(state, event.sessionId, event.clientRequestId, event.at))
     case "sendFailed":
-      return withData(state, failSend(state, event.sessionId, event.clientRequestId))
+    case "readerWriteStarted":
+    case "readerWritten":
+    case "readerWriteFailed":
+      return withData(state, ownWrite(state, event))
     default:
       return unreachable(event)
   }

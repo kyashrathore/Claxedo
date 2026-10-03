@@ -25,6 +25,7 @@ function worker(options: { unauthorized?: boolean; malformed?: boolean; identity
     if (url.pathname === "/api/cp/events") {
       return new Response(new ReadableStream({ start(controller) { init?.signal?.addEventListener("abort", () => controller.close(), { once: true }) } }))
     }
+    if (url.pathname === "/api/workspace/create") return Response.json({ workspaceId: "ws_cloud", directory: "workspace:ws_cloud" })
     if (url.pathname === "/api/workspace") {
       if (options.identityUnavailable) return Response.json({ error: { code: "auth_verifier_unavailable", message: "Application identity mapping is unavailable", retryable: false } }, { status: 503 })
       if (options.unauthorized) return Response.json({ error: { code: "session_expired", message: "Sign in again" } }, { status: 401 })
@@ -48,7 +49,7 @@ test("signed browser build lists account projects, placements and sessions with 
       const projects = await server.queryClient.fetchQuery(server.queries.projects.list())
       expect(projects.map((project) => [project.id, project.name])).toEqual([["prj_app", "App"]])
       expect(server.placements.list().map((placement) => [String(placement.id), placement.kind, placement.reachable])).toEqual([["ws_cloud", "cloud", false], ["ws_machine", "worktree", false]])
-      const page = await server.sessions.list({ projectId: projectId("prj_app"), limit: 5 })
+      const page = await server.sessions.list({ projectId: projectId("prj_app"), limit: 5, settled: "active" })
       expect(page.rows.map((row) => [row.ref.sessionId, row.ref.placementId, row.title])).toEqual([["ses_1", "ws_cloud", "Stored turn"]])
       const reads = server.sessions.read(page.rows[0]!.ref, shape)
       expect((await reads.first).transcript.entries.map((entry) => entry.info.id)).toEqual(["msg_1", "msg_2"])
@@ -101,3 +102,20 @@ for (const action of ["create", "update", "remove", "reclone"] as const) {
     } finally { server.dispose() }
   })
 }
+
+test("a signed browser creates a cloud workspace from a connected repository through its own session, with no project created first", async () => {
+  const calls = worker()
+  await createRoot(async (dispose) => {
+    const server = createServer({ serverUrl: "https://worker.test", cookies: true })
+    try {
+      await server.ready
+      const workspace = await server.cloud.create({ source: { kind: "connectedRepository", connectionId: "github_1", fullName: "owner/app" } })
+      expect([String(workspace.id), String(workspace.projectId)]).toEqual(["ws_cloud", "prj_app"])
+      const request = calls.find((call) => call.path === "/api/workspace/create")
+      expect(request?.init?.credentials).toBe("include")
+      const body = request?.init?.body
+      expect(typeof body === "string" ? JSON.parse(body) : body).toEqual({ connectionId: "github_1", repo: { fullName: "owner/app" } })
+      expect(calls.some((call) => call.path.startsWith("/api/claxedo/projects"))).toBe(false)
+    } finally { server.dispose(); dispose() }
+  })
+})

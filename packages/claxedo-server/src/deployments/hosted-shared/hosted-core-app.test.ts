@@ -155,7 +155,7 @@ describe("hosted production Pi and connection discovery", () => {
   const catalogPath = "/api/claxedo/agent-config/providers?nativeHarness=pi"
   const headers = (subject = "alice") => ({ authorization: `Bearer ${subject}`, "content-type": "application/json" })
 
-  test("credentials disabled still exposes canonical disconnected providers, defers models to the runtime, and refuses writes", async () => {
+  test("credentials disabled still exposes canonical disconnected providers, defers models to the runtime, and serves no account setup", async () => {
     const app = createHostedCoreApp(plane(), options) as unknown as Hono
     expect((await app.request(catalogPath)).status).toBe(401)
     const response = await app.request(catalogPath, { headers: headers() })
@@ -169,7 +169,7 @@ describe("hosted production Pi and connection discovery", () => {
     expect(catalog.all.every((provider: { models: object }) => Object.keys(provider.models).length === 0)).toBe(true)
     expect(catalog.modelAvailability).toBe("runtime_required")
     expect(catalog.connected).toEqual([])
-    expect((await app.request("/auth/openai?harness=pi", { method: "PUT", headers: headers(), body: JSON.stringify({ auth: { key: "secret" } }) })).status).toBe(503)
+    expect((await app.request("/api/claxedo/credentials", { method: "PUT", headers: headers(), body: JSON.stringify({ provider_id: "openai", kind: "api_key", source: "managed", label: "openai", secret: "secret" }) })).status).toBe(404)
     const connections = "/api/claxedo/agent-config/connections"
     expect((await app.request(connections)).status).toBe(404)
     expect((await app.request(connections, { headers: headers() })).status).toBe(404)
@@ -187,20 +187,27 @@ describe("hosted production Pi and connection discovery", () => {
       return hostedOrgCredentials(orgId, { database: controlPlane.database, env: base.env })
     }
     try {
-      const app = createHostedCoreApp(base, options) as unknown as Hono
+      const app = createHostedCoreApp(base, { ...options, accountSetup: { changed: async () => {} } }) as unknown as Hono
       const connected = async (subject: string) => (await (await app.request(catalogPath, { headers: headers(subject) })).json()).connected
-      expect((await app.request("/auth/openai?harness=pi&orgId=internal-bob", { method: "PUT", headers: headers(), body: JSON.stringify({ auth: { key: "alice-key" } }) })).status).toBe(200)
+      const key = { provider_id: "openai", kind: "api_key", source: "managed", label: "openai", secret: "alice-key", org_id: "internal-bob" }
+      expect((await app.request("/api/claxedo/credentials?orgId=internal-bob", { method: "PUT", headers: headers(), body: JSON.stringify(key) })).status).toBe(200)
       expect(await connected("alice")).toEqual(["openai"])
       expect(await connected("bob")).toEqual([])
       const credentials = hostedOrgCredentials("internal-alice", { database: controlPlane.database, env: base.env })
       const oauth = await credentials.putCredential({ owner: "alice", provider_id: "codex-app-server", kind: "oauth_token", source: "managed", secret: "oauth-secret" })
       expect((await connected("alice")).sort()).toEqual(["openai", "openai-codex"])
-      expect((await app.request("/auth/openai-codex?harness=pi", { method: "PUT", headers: headers(), body: JSON.stringify({ auth: { key: "not-oauth" } }) })).status).toBe(400)
       await credentials.updateCredentialStatus(oauth.id, "revoked")
       expect(await connected("alice")).toEqual(["openai"])
-      expect((await app.request("/auth/openai?harness=pi", { method: "DELETE", headers: headers("bob") })).status).toBe(200)
+      const claudeCode = await credentials.putCredential({ owner: "alice", provider_id: "claude-sdk", kind: "oauth_token", source: "managed", secret: "sk-ant-oat01-alice" })
+      await credentials.putCredential({ owner: "alice", provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-alice" })
+      expect((await app.request("/auth/anthropic?harness=pi", { method: "DELETE", headers: headers() })).status).toBe(404)
+      expect((await app.request("/provider/codex-app-server/oauth/authorize", { method: "POST", headers: headers(), body: "{}" })).status).toBe(404)
+      expect((await app.request("/api/claxedo/credentials/provider/anthropic", { method: "DELETE", headers: headers() })).status).toBe(200)
+      expect((await credentials.listCredentials()).map((row) => row.id)).toContain(claudeCode.id)
+      await credentials.deleteCredential(claudeCode.id)
+      expect((await app.request("/api/claxedo/credentials/provider/openai", { method: "DELETE", headers: headers("bob") })).status).toBe(200)
       expect(await connected("alice")).toEqual(["openai"])
-      expect((await app.request("/auth/openai?harness=pi", { method: "DELETE", headers: headers() })).status).toBe(200)
+      expect((await app.request("/api/claxedo/credentials/provider/openai", { method: "DELETE", headers: headers() })).status).toBe(200)
       expect(await connected("alice")).toEqual([])
       const stored = await controlPlane.database
         .prepare("select org_id, secret_envelope from hosted_provider_credentials")
@@ -841,6 +848,49 @@ describe("coreAppHomeOrigin", () => {
   test("is absent when nothing is configured", () => {
     expect(coreAppHomeOrigin(undefined)).toBeUndefined()
     expect(coreAppHomeOrigin("")).toBeUndefined()
+  })
+})
+
+describe("hosted-core session reader marks", () => {
+  function core(recordSessionReader: unknown, nudge: (room: string, body: unknown) => Response = () => Response.json({ delivered: 1, held: 1 })) {
+    const base = plane()
+    const services = base.services as unknown as { authority: Record<string, unknown> }
+    services.authority = { ...services.authority, recordSessionReader }
+    const nudges: Array<{ room: string; body: unknown }> = []
+    const liveSyncRoom = {
+      idFromName: (name: string) => name,
+      get: (room: string) => ({
+        fetch: async (request: Request) => {
+          const body = await request.json()
+          nudges.push({ room, body })
+          return nudge(room, body)
+        },
+      }),
+    }
+    return { app: createHostedCoreApp(base, { ...options, liveSyncRoom }) as unknown as Hono, nudges }
+  }
+  const post = (app: Hono, path: string, body: unknown) =>
+    app.request(path, { method: "POST", headers: { authorization: "Bearer user-1", "content-type": "application/json" }, body: JSON.stringify(body) })
+
+  test("a seen write answers the caller's marks and rings the caller's own room with them", async () => {
+    const record = vi.fn(async () => ({ workspaceId: "ws_1", seenAt: 30 }))
+    const { app, nudges } = core(record)
+    const response = await post(app, "/api/control/sessions/ses_1/seen", { completedAt: 30 })
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ seenAt: 30 })
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ subject: "user-1" }) }), { sessionId: "ses_1", write: { seenThrough: 30 } })
+    expect(nudges).toEqual([{ room: "org:org-1", body: { type: "session.reader.changed", ownerUserId: "user-1", sessionId: "ses_1", workspaceId: "ws_1", seenAt: 30, ts: expect.any(Number) } }])
+  })
+
+  test("a settle that lands answers even when its ring fails, and an unreadable session or a malformed body writes nothing", async () => {
+    const record = vi.fn(async (_auth: unknown, input: { sessionId: string }) => (input.sessionId === "ses_1" ? { workspaceId: "ws_1", settledAt: 9 } : undefined))
+    const { app } = core(record, () => new Response("down", { status: 503 }))
+    const settled = await post(app, "/api/control/sessions/ses_1/settle", { settled: true, through: 9 })
+    expect(settled.status).toBe(200)
+    await expect(settled.json()).resolves.toEqual({ settledAt: 9 })
+    expect((await post(app, "/api/control/sessions/ses_hidden/settle", { settled: true, through: 9 })).status).toBe(404)
+    expect((await post(app, "/api/control/sessions/ses_1/settle", { settled: "yes" })).status).toBe(400)
+    expect(record).toHaveBeenCalledTimes(2)
   })
 })
 

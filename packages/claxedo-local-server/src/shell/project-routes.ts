@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import { listProjects, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { ControlPlaneAuthError, controlPlaneAuthContext, controlPlaneAuthConfig, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
-import type { ControlPlaneRouteAuthOptions } from "../platform/http/control-plane-route-auth"
+import type { ControlPlaneRouteAuthOptions } from "@claxedo/server-core/platform/http/control-plane-route-auth"
 import { projectAccess } from "@claxedo/server-core/projects/access"
 import { workspaceInput } from "./request-context"
 

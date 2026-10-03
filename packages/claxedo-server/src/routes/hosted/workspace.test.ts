@@ -7,7 +7,7 @@ import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/s
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./workspace"
 import { D1WorkspaceAuthorityError } from "../../authority/adapters/d1/workspace-authority-error"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
-import type { SandboxManager } from "@claxedo/sandbox-manager"
+import { sandboxRuntimeBootFailedError, type SandboxManager } from "@claxedo/sandbox-manager"
 
 /**
  * Hosted workspace routes under machine-wide enrollment. These prove the
@@ -727,6 +727,34 @@ describe("hosted connection", () => {
     })
   })
 
+  test("a runtime whose boot failed answers the connect with the boot's reason instead of a wait", async () => {
+    const authority = fakeAuthority({
+      openWorkspace: vi.fn(async () => ({
+        allowed: true,
+        role: "owner",
+        workspace: { workspace_id: "ws_1", project_id: "proj_1", backing: "cloud-vm", home_region: "eu-west" },
+      })),
+    })
+    const sandboxManager = {
+      ensure: vi.fn(async () => ({
+        status: "unavailable",
+        retryAfterMs: 5_000,
+        error: sandboxRuntimeBootFailedError("fatal: couldn't find remote ref refs/heads/missing"),
+        epoch: 9,
+        homeRegion: "eu-west",
+      })),
+    } as unknown as SandboxManager
+    const { app } = buildApp({ authority: authority, sandboxManager })
+    const res = await app.fetch(post("/ws_1/connection", {}))
+    expect(res.status).toBe(409)
+    const body = await res.json() as { error: Record<string, unknown> }
+    expect(body.error).toMatchObject({
+      code: "cloud_runtime_boot_failed",
+      message: "The cloud workspace could not start: fatal: couldn't find remote ref refs/heads/missing",
+    })
+    expect(body.error).not.toHaveProperty("retryAfterMs")
+  })
+
   test("fails closed when a cloud workspace has no sandbox", async () => {
     const authority = fakeAuthority({
       openWorkspace: vi.fn(async () => ({
@@ -1191,6 +1219,24 @@ describe("hosted cloud workspace create (POST /create)", () => {
     expect(ensured.net).toMatchObject({ mode: "restricted" })
   })
 
+  test("a branch name git refuses is refused at create, before any workspace exists to fail every boot", async () => {
+    const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
+    const authority = fakeAuthority({ createCloudWorkspace })
+    const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+    const { app } = buildApp({ authority: authority, sandboxManager: { ensure } as unknown as SandboxManager })
+
+    for (const gitBranch of ["-x", "feature..main"]) {
+      const res = await app.fetch(post("/create", { workspaceName: "Feature X", repoUrl: "https://github.com/a/b", gitBranch }))
+      expect(res.status, gitBranch).toBe(400)
+      await expect(res.json()).resolves.toMatchObject({ error: { code: "git_branch_invalid" } })
+    }
+    expect(createCloudWorkspace).not.toHaveBeenCalled()
+
+    const res = await app.fetch(post("/create", { workspaceName: "Feature X", repoUrl: "https://github.com/a/b", gitBranch: " feature/payments-v2 " }))
+    expect(res.status).toBe(200)
+    expect((createCloudWorkspace.mock.calls[0] as unknown[])[1]).toMatchObject({ gitBranch: "feature/payments-v2" })
+  })
+
   test("rejects hosted cloud create without a clone source", async () => {
     const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
     const authority = fakeAuthority({ createCloudWorkspace })
@@ -1344,6 +1390,27 @@ describe("hosted cloud workspace create (POST /create)", () => {
       orgId: "org_acme",
       projectId: "proj_1",
     })
+  })
+
+  test("a connected private repository is bound to the connection the person picked; a public one is bound to none", async () => {
+    for (const visibility of [{ private: true, bound: "conn_org" }, { private: false, bound: undefined }]) {
+      const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
+      const repository = { id: "1", name: "widgets", fullName: "acme/widgets", cloneUrl: "https://github.com/acme/widgets.git", private: visibility.private, permissions: { read: true, write: false } }
+      const repositoryForAuth = vi.fn(async () => ({ ok: true as const, repository }))
+      const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+      const { app } = buildApp({
+        authority: fakeAuthority({ createCloudWorkspace }),
+        sandboxManager: { ensure } as unknown as SandboxManager,
+        options: { connections: { repositoryForAuth } },
+      })
+      const waitUntil = vi.fn()
+      const res = await app.fetch(post("/create", { connectionId: "conn_org", repo: { fullName: "acme/widgets" } }), undefined, { waitUntil, passThroughOnException() {}, props: {} } as never)
+      expect(res.status).toBe(200)
+      await (waitUntil.mock.calls[0] as unknown as [Promise<unknown>])[0]
+      expect(repositoryForAuth).toHaveBeenCalledWith(expect.anything(), "conn_org", "acme/widgets")
+      const created = (createCloudWorkspace.mock.calls[0] as unknown[])[1] as { repoUrl?: string; repoConnectionId?: string }
+      expect([created.repoUrl, created.repoConnectionId]).toEqual([repository.cloneUrl, visibility.bound])
+    }
   })
 
   test("a refused admission creates nothing and provisions nothing", async () => {

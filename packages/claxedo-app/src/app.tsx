@@ -20,12 +20,12 @@ function principalOf(state: AuthState): string | undefined {
   return state.kind === "signedIn" ? state.user.id : undefined
 }
 
-type ServerAccess = Pick<ServerConfig, "account" | "cookies">
+type ServerAccess = Pick<ServerConfig, "account" | "accountEvents" | "cookies">
 
 function serverAccess(auth: Auth, principal: string | undefined): ServerAccess {
   if (principal === undefined) return {}
   const access = auth.controlPlane
-  return access.kind === "port" ? { account: access.run } : { cookies: true }
+  return access.kind === "port" ? { account: access.run, accountEvents: access.events } : { cookies: true }
 }
 
 function ServerScope(props: ParentProps<{ readonly access: ServerAccess; readonly serverUrl?: string }>): JSX.Element {

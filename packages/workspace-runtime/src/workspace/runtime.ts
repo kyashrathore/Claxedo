@@ -23,6 +23,7 @@ import {
   runtimeSessionTime,
   harnessHealthChanged,
   composeSessionRoutes,
+  sessionStatusSnapshot,
 } from "@claxedo/session-core"
 import { deriveChildSessionId } from "../host/child-identity"
 import { readSessionAttachment } from "../host/attachment-files"
@@ -549,6 +550,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         })))
       if (runner) reissueQueuedPrompts()
     },
+    sessionStatus: () => sessionStatusSnapshot(store().listEverySession(), (sessionId) => engine?.ports.backgroundWork.read(sessionId)),
     sessionTime(sessionId: string) {
       const session = store().getSession(sessionId)
       return session ? runtimeSessionTime(session) : undefined
@@ -708,6 +710,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
           deliveriesDone,
         ])
         if (runtimeResult && !runtimeResult.ok) throw runtimeResult.error
+        await options.beforeStoreClose?.()
         checkpoint.clear()
         cleanupPresentationObserver()
         cleanupRuntimeObserver()

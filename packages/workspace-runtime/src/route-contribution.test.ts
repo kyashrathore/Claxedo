@@ -13,6 +13,7 @@ function context(): WorkspaceRuntimeRouteContext {
     directory: "/workspace",
     stateDirectory: "/runtime-state",
     fetch: async () => new Response(null, { status: 204 }),
+    sessionDrivenOnlyBy: () => false,
     registerSessionTools: () => async () => {},
     unregisterSessionTools: () => async () => {},
   }

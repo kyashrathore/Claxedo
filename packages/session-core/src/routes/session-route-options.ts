@@ -6,12 +6,14 @@ import type { AgentMessagePage, AgentMessagePageInput, AgentTurnCoveragePage } f
 import type { TurnActor, TurnOrigin } from "@claxedo/harness/contract"
 import { CredentialSelectionError } from "@claxedo/harness/registry"
 import type { AgentRuntime, AgentRuntimeRecovery, HarnessTarget } from "../host/runtime"
-import type { ActiveTurnScope, SessionPromptBody } from "../session/service"
+import type { ActiveTurnScope, RuntimePromptTurnInput, SessionPromptBody } from "../session/service"
 import type { SessionDeliveryOwner } from "../session/delivery-owner"
 import type { TurnOutline } from "@claxedo/agent-runtime-contract"
 import {
   sessionAccessContext,
+  sessionRequestIsHumanTurn,
   sessionRequestProvenance,
+  sessionTurnOrigin,
   type SessionAccessContextReader,
   type SessionAccessPolicy,
   type SessionTurnOrigin,
@@ -119,7 +121,6 @@ export type SessionRouteOptions = {
     updates: { title?: string; time?: { archived?: number } },
   ) => Promise<void> | void
   beforeDeleteSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<void> | void
-  afterDeleteSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<void> | void
   afterMessageCheckpoint?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, messages: AgentMessage[]) => Promise<void> | void
   disposeSessionDocuments?: (sessionId: string) => Promise<void>
   readAttachment?: AttachmentReader
@@ -181,6 +182,22 @@ function turnSender(actor: { actorId: string; userId?: string } | undefined): Tu
 export function turnOriginOf(origin: SessionTurnOrigin | undefined, c: Ctx): TurnOrigin {
   if (origin?.provenance === "relay-replayed") return { actor: turnSender(origin.actor), via: "relay", reissued: false }
   return { actor: turnSender(sessionAccessContext(c).actor), via: "loopback", reissued: false }
+}
+
+/** Who sent the turn a prompt route starts, read once off the request it arrived on. */
+export function requestTurnSender(c: Ctx): Pick<RuntimePromptTurnInput, "origin" | "actor" | "author" | "humanTurn"> {
+  const { actor, author } = sessionAccessContext(c)
+  return {
+    origin: turnOriginOf(sessionTurnOrigin(c), c),
+    ...(actor ? { actor } : {}),
+    ...(author ? { author } : {}),
+    humanTurn: sessionRequestIsHumanTurn(c),
+  }
+}
+
+/** A person's send moves their row when it is admitted, whatever turn later delivers it. */
+export async function recordReaderSend(runtime: AgentRuntime, c: Ctx, sessionId: string) {
+  if (sessionRequestIsHumanTurn(c)) await runtime.sessions.recordHumanTurn(sessionId)
 }
 
 export async function sessionConfigOf(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string): Promise<SessionConfig> {

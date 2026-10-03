@@ -56,3 +56,36 @@ test("a workspace's sandbox is delivered its owner's account alone, and another 
     expect(injectsInto(b.secrets, bName)).toBe(true)
   } finally { await database.dispose() }
 })
+
+test("a key saved for Pi never moves Claude Code off its Anthropic login; only choosing the key does", async () => {
+  const database = await workspaceBackingDatabase([{ id: "ws-a", backing: "cloud-vm" }])
+  try {
+    let at = 1_000
+    const credentials = hostedOrgCredentials("org", { database: database.database, env: {
+      [HOSTED_CREDENTIALS_FLAG]: "1", [CREDENTIALS_KEK_ENV]: Buffer.alloc(32, 7).toString("base64"),
+    } }, { now: () => ++at })
+    const owner = OWNERS["ws-a"]
+    const token = await credentials.putCredential({ owner, provider_id: "claude-sdk", kind: "oauth_token", source: "managed", secret: "sk-ant-oat01-token" })
+    type Input = Parameters<typeof createHostedRuntimeDelivery>[0]
+    const delivery = createHostedRuntimeDelivery({
+      authority: { resolveWorkspaceOwner: async () => ({ userId: owner, orgId: "org" }) } as unknown as Input["authority"],
+      database: database.database,
+      services: {} as Input["services"], sandboxManager: {} as Input["sandboxManager"],
+      driver: { metadata: { secretBrokering: "native" } } as Input["driver"],
+      sandboxInput: async () => { throw new Error("this test provisions no sandbox") },
+      settings: { read: async () => ({ version: 3, connections: {}, sandbox_driver: {} }), write: async () => {} },
+      credentials: () => credentials, signingEnv: {}, provisionedRunner: undefined,
+    })
+    const delivered = async () => ((await delivery.prepareRuntime({ workspaceId: "ws-a" })).secrets ?? []).map((secret) => secret.value)
+
+    expect(await delivered()).toEqual(["sk-ant-oat01-token"])
+    const key = await credentials.putCredential({ owner, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-key" })
+    expect(await delivered()).toEqual(["sk-ant-oat01-token"])
+    await credentials.putCredential({ owner, provider_id: "anthropic", kind: "api_key", source: "managed", secret: "sk-ant-api03-key-2" })
+    expect(await delivered()).toEqual(["sk-ant-oat01-token"])
+    expect(await credentials.setActiveCredentials?.([key.id], "org", owner)).toMatchObject({ ok: true })
+    expect(await delivered()).toEqual(["sk-ant-api03-key-2"])
+    expect(await credentials.setActiveCredentials?.([token.id], "org", owner)).toMatchObject({ ok: true })
+    expect(await delivered()).toEqual(["sk-ant-oat01-token"])
+  } finally { await database.dispose() }
+})

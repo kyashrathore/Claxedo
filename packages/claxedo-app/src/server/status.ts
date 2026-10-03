@@ -17,7 +17,6 @@ export type StatusOwner = {
   readonly listed: (ref: SessionLocation, status: SessionStatus) => SessionStatus
   readonly settle: (route: RuntimeRoute, ref: SessionLocation) => Promise<SessionStatus>
   readonly apply: (event: ServerEvent) => StatusAdmission
-  readonly forget: (ref: SessionLocation) => void
 }
 
 type FailedStatus = Extract<SessionStatus, { kind: "failed" }>
@@ -81,6 +80,5 @@ export function createStatusOwner(transport: Transport): StatusOwner {
       failures.record(event.ref, event.status)
       return { kind: "admitted", event }
     },
-    forget: failures.forget,
   }
 }

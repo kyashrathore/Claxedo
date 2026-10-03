@@ -37,7 +37,7 @@ import { hostAssignmentHandlers } from "../../workspace/host-assignment-handlers
 import { connectionRateLimitError, controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
 import type { ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
 import { createCloudCreateAdmission, type CloudCreateUsage } from "../../workspace/cloud-create-admission"
-import { authenticatedGitHubCloneSource } from "../../workspace/repository-clone"
+import { isGitBranchName } from "../../workspace/git-branch-name"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 
 // `requireCloudWorkspaceEntitlement` (cloud-workspace admission for both
@@ -336,6 +336,10 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             503,
           )
         }
+        const gitBranch = body.gitBranch?.trim()
+        if (gitBranch && !isGitBranchName(gitBranch)) {
+          return c.json({ error: apiError("git_branch_invalid", "That is not a branch name git accepts") }, 400)
+        }
         let repoUrl = body.repoUrl?.trim()
         if (repoUrl && !(await admittedRepoUrl(repoUrl, repoAdmission))) {
           return c.json(
@@ -343,12 +347,12 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             400,
           )
         }
-        let provisionSecrets: Array<{ name: string; value: string; hosts: string[]; header?: string }> | undefined
+        let repoConnectionId: string | undefined
         if (body.connectionId && body.repo) {
-          // Same resolution the local create route performs: the connection
-          // proves the caller can read the repository and mints the clone
-          // token, which rides to the sandbox as a brokered secret — never in
-          // the workspace row or the clone URL the authority stores.
+          // The connection proves the caller can read the repository. A
+          // private one is bound to it: every boot's runtime preparation reads
+          // a fresh clone token through that connection, which rides to the
+          // sandbox as a brokered secret, never in the row or the clone URL.
           if (!options.connections) {
             return c.json(
               { error: apiError("repository_connections_unavailable", "Repository connections are unavailable") },
@@ -364,7 +368,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
               400,
             )
           }
-          provisionSecrets = [authenticatedGitHubCloneSource(repoUrl, access.token).secret]
+          if (access.repository.private) repoConnectionId = body.connectionId
         }
         if (!repoUrl) {
           return c.json(
@@ -397,9 +401,10 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             displayName,
             repoUrl,
             ...(body.repoName?.trim() ? { repoName: body.repoName.trim() } : {}),
-            ...(body.gitBranch?.trim() ? { gitBranch: body.gitBranch.trim() } : {}),
+            ...(gitBranch ? { gitBranch } : {}),
             remoteDirectory: directory,
             homeRegion,
+            ...(repoConnectionId ? { repoConnectionId } : {}),
           })
         } catch (err) {
           if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
@@ -439,10 +444,6 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         keepAlivePastResponse(c, Promise.resolve()
           .then(async () => {
             const runtimePreparation = await options.prepareRuntime?.(runtimeContext)
-            // The clone token for a connected private repo rides the brokered
-            // secret channel (fail-closed in the manager for drivers that
-            // cannot broker), never labels, env or the stored row.
-            //
             // This is the hosted, multi-tenant create path: the sandbox runs
             // agent-authored code over someone's private checkout, and an
             // omitted `net` means allow-all, so the policy is always supplied.
@@ -472,7 +473,6 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             const result = await sandboxManager.ensure(workspaceId, hostedSandboxInput(row, {
               egress: options,
               preparation: runtimePreparation,
-              ...(provisionSecrets ? { secrets: provisionSecrets } : {}),
             }))
             return { result, runtimePreparation }
           })

@@ -70,6 +70,7 @@ export function turnStartRecord(
     ...(turn.system ? { system: turn.system } : {}),
     ...(prompt.variant ? { variant: prompt.variant } : {}),
     ...(turn.actorId && turn.actorKind ? { actorId: turn.actorId, actorKind: turn.actorKind } : {}),
+    ...(turn.humanTurn ? { humanTurn: true as const } : {}),
     ...(turn.author ? { author: turn.author } : {}),
     ...(turn.admission ? { fencingToken: turn.admission.fencingToken() } : {}),
   }

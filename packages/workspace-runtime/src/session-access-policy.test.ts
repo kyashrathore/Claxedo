@@ -4,11 +4,13 @@ import {
   createWorkspaceRuntimeExposureMiddleware,
   embeddedWorkspaceRuntimeExposure,
   EMBEDDED_RELAY_HOST_AUTH_HEADER,
+  markEmbeddedMachineUserRequest,
 } from "./exposure"
 import {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessContext,
   sessionAccessWriteClass,
+  sessionRequestIsHumanTurn,
   sessionRequestProvenance,
   type ManagedSessionAuthority,
   type SessionAccessPolicyInput,
@@ -354,6 +356,34 @@ describe("SessionAccessPolicy", () => {
 
     await expect(stamped.text()).resolves.toBe("relay-replayed")
     await expect(bearerOnly.text()).resolves.toBe("loopback-direct")
+  })
+
+  test("a human turn is a relayed person's, or a request the embedding host marked as its machine's user", async () => {
+    const app = new Hono()
+    app.use("*", createWorkspaceRuntimeExposureMiddleware(embeddedWorkspaceRuntimeExposure({
+      owner: "session-access-test",
+      guard: () => true,
+    })))
+    app.get("/human-turn", (c) => c.text(String(sessionRequestIsHumanTurn(c as never))))
+    const relayed = (actor_kind: "human" | "agent") => app.request("http://runtime.test/human-turn", {
+      headers: {
+        [EMBEDDED_RELAY_HOST_AUTH_HEADER]: JSON.stringify({
+          principal_kind: actor_kind === "human" ? "user" : "service",
+          actor_id: "actor_alice",
+          actor_kind,
+          actor_public_id: "usr_alice",
+          actor_name: "Alice",
+          workspace_id: "ws_1",
+          org_id: "org_1",
+          role: "editor",
+        }),
+      },
+    })
+
+    await expect((await relayed("human")).text()).resolves.toBe("true")
+    await expect((await relayed("agent")).text()).resolves.toBe("false")
+    await expect((await app.request("http://runtime.test/human-turn", { headers: { machineUserRequest: "true" } })).text()).resolves.toBe("false")
+    await expect((await app.fetch(markEmbeddedMachineUserRequest(new Request("http://runtime.test/human-turn")))).text()).resolves.toBe("true")
   })
 
   test("the control plane's own injected token is a remote caller, not the machine's user", async () => {
