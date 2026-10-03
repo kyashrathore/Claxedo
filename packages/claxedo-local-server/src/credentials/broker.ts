@@ -30,7 +30,6 @@ import {
   type RuntimeIdentity,
 } from "@claxedo/egress-broker"
 import {
-  HARNESS_TABLE,
   isProviderUnavailable,
   PI_LAUNCH_PROVIDERS,
   piCredentialProviderIDs,
@@ -68,16 +67,12 @@ import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
 const log = Log.create({ service: "credentials-broker" })
 
-/**
- * The stored providers whose harnesses call the vendor in process: Pi, which
- * has no egress broker in front of it, and Codex, whose subscription login
- * reads the account from the token itself.
- */
-const DIRECT_PROVIDER_IDS = new Set([...PI_LAUNCH_PROVIDERS.flatMap(piCredentialProviderIDs), ...HARNESS_TABLE.codex.providerIds])
+/** The stored providers Pi launches on: Pi calls the vendor in process, with no egress broker in front of it. */
+const DIRECT_PROVIDER_IDS = new Set(PI_LAUNCH_PROVIDERS.flatMap(piCredentialProviderIDs))
 
 type BoundRow = { credential: CredentialMetadata; destination: ProviderDestination }
 
-/** The machine owner's selected Pi and Codex accounts, as the credential itself. */
+/** The machine owner's selected Pi accounts, as the credential itself. */
 function machineOwnerDirectRows(selected: Record<string, ProviderProjectionSource> | undefined, bound: readonly BoundRow[]): Record<string, ProviderDirect> {
   return Object.fromEntries(Object.entries(selected ?? {}).flatMap(([providerId, projection]): [string, ProviderDirect][] => {
     if (!DIRECT_PROVIDER_IDS.has(providerId) || isProviderUnavailable(projection) || !projection.account) return []

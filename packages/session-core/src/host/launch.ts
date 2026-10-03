@@ -81,6 +81,8 @@ function accountProviderIds(harness: SessionHarness, model: PromptModel | undefi
 }
 
 export function sessionCredentials(launch: LaunchComposer, session: Pick<SessionLaunch, "owner" | "config">): ResolvedCredentials {
-  const providerIds = accountProviderIds(session.config.harness, session.config.model)
-  return selectSessionCredentials({ ...launch.credentials(), ...(providerIds ? { providerIds } : {}) }, session.owner)
+  const { harness, model } = session.config
+  const providerIds = accountProviderIds(harness, model)
+  const directDelivery = harness.access === "native" && harness.id === "pi"
+  return selectSessionCredentials({ ...launch.credentials(), ...(providerIds ? { providerIds } : {}), directDelivery }, session.owner)
 }

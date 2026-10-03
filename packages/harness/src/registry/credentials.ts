@@ -8,6 +8,7 @@ export type CredentialProfile = "owner-login" | "brokered"
 export type CredentialSelectionInput = CredentialSnapshot<ProviderProjection> & MachineLoginPolicy & {
   leaseGeneration: string
   providerIds?: readonly string[]
+  directDelivery?: boolean
 }
 
 export class CredentialSelectionError extends Error {
@@ -30,7 +31,7 @@ export function sessionAccountOwner(policy: MachineLoginPolicy, owner: TurnActor
 export function selectSessionCredentials(snapshot: CredentialSelectionInput, owner: TurnActor): ResolvedCredentials {
   const { userId, machineLoginAllowed } = sessionAccountOwner(snapshot, owner)
   const providers = Object.hasOwn(snapshot.accounts, userId) ? snapshot.accounts[userId]! : {}
-  const direct = snapshot.direct && Object.hasOwn(snapshot.direct, userId) ? snapshot.direct[userId] : undefined
+  const direct = snapshot.directDelivery && snapshot.direct && Object.hasOwn(snapshot.direct, userId) ? snapshot.direct[userId] : undefined
   const result = { accountOwner: userId, providers, ...(direct ? { direct } : {}), secrets: {}, leaseGeneration: snapshot.leaseGeneration, machineLoginAllowed }
   if (!snapshot.providerIds) return result
   const selected = selectedProviderProjection(result, snapshot.providerIds)

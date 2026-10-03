@@ -50,9 +50,16 @@ test("a harness that spends no provider account is never refused for lacking one
 
 test("an owner holding only direct credentials is selected with exactly their own direct rows", () => {
   const key = { delivery: "direct" as const, baseUrl: "https://api.openai.com", secret: "sk-B", authKind: "api-key" as const }
-  const direct = { ...snapshot, accounts: {}, direct: { B: { openai: key }, C: { anthropic: { ...key, secret: "sk-C" } } } }
+  const direct = { ...snapshot, accounts: {}, direct: { B: { openai: key }, C: { anthropic: { ...key, secret: "sk-C" } } }, directDelivery: true }
   expect(selectSessionCredentials(direct, { kind: "person", userId: "B" })).toEqual({
     accountOwner: "B", providers: {}, direct: { openai: key }, secrets: {}, leaseGeneration: "lease", machineLoginAllowed: false,
   })
   expect(() => selectSessionCredentials(direct, { kind: "person", userId: "C" })).toThrow(CredentialSelectionError)
+})
+
+test("a harness that does not take direct delivery never receives the owner's direct rows", () => {
+  const key = { delivery: "direct" as const, baseUrl: "https://api.openai.com", secret: "sk-A", authKind: "api-key" as const }
+  const selected = selectSessionCredentials({ ...snapshot, direct: { A: { openai: key } } }, { kind: "person", userId: "A" })
+  expect(selected.direct).toBeUndefined()
+  expect(() => selectSessionCredentials({ ...snapshot, accounts: {}, direct: { B: { openai: key } } }, { kind: "person", userId: "B" })).toThrow(CredentialSelectionError)
 })
