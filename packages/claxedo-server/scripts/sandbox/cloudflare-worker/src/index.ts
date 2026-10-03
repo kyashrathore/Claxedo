@@ -12,6 +12,7 @@ import {
   type SandboxOperations,
   type SandboxProcess,
 } from "@cloudflare/sandbox"
+import { RUNTIME_PREPARATION_DEADLINE_MS, WORKSPACE_RUNTIME_BOOT_FAILED } from "../../../../src/hosts/workspace-runtime/boot-contract"
 import { credentialPlaceholder, forwardCredential, parseRegistrations, type EgressRegistration } from "./outbound-credentials"
 import { asWorkerRecord, stringMap } from "./worker-json"
 
@@ -28,6 +29,7 @@ export class CredentialEgress extends WorkerEntrypoint<Env, { sandboxId: string 
 }
 
 const CREDENTIAL_HOSTS_KEY = "claxedo.credential-hosts"
+const RUNTIME_READY_KEY = "claxedo.runtime-ready"
 // The platform mints the CA the container trusts with its first HTTPS
 // interception, and `interceptHttps` makes the container refuse to start
 // without that CA. A reserved name no request resolves mints it for a sandbox
@@ -44,7 +46,7 @@ type CredentialHosts = { sandboxId: string; hosts: string[] }
 export class Sandbox extends CloudflareSandbox {
   interceptHttps = true
 
-  private workspaceRuntimeEnsure?: Promise<boolean>
+  private workspaceRuntimeEnsure?: Promise<RuntimeEnsure>
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
@@ -97,6 +99,14 @@ export class Sandbox extends CloudflareSandbox {
   async workspaceRuntimeReady(port: number) {
     const process = await runtimeProcess(this)
     return Boolean(process && await runtimeReady(process, port, 2_000))
+  }
+
+  async runtimeWasReady(process: SandboxProcess) {
+    return await this.ctx.storage.get<number>(RUNTIME_READY_KEY) === process.startTime.getTime()
+  }
+
+  async recordRuntimeReady(process: SandboxProcess) {
+    await this.ctx.storage.put(RUNTIME_READY_KEY, process.startTime.getTime())
   }
 }
 
@@ -220,11 +230,9 @@ const SANDBOX_PORT_TIMEOUT_MS = 180_000
 // caller-side bound must cover both SDK startup phases plus a small RPC margin.
 const SANDBOX_PROCESS_LOOKUP_TIMEOUT_MS = SANDBOX_INSTANCE_TIMEOUT_MS + SANDBOX_PORT_TIMEOUT_MS + 10_000
 const RUNTIME_READY_TIMEOUT_MS = 30_000
-// The runtime's own clone bound (workspace-runtime's GIT_CLONE_TIMEOUT_MS,
-// 30 minutes) plus a margin: a runtime still not ready after it is wedged
-// rather than cloning, and is replaced.
-const RUNTIME_PREPARATION_LIMIT_MS = 35 * 60_000
+const RUNTIME_WEDGED_AFTER_MS = RUNTIME_PREPARATION_DEADLINE_MS + 5 * 60_000
 const RUNTIME_PROCESS_ID = "claxedo-workspace-runtime"
+const LIVE_PROCESS: readonly SandboxProcess["status"][] = ["starting", "running"]
 
 const SANDBOX_OPTIONS = {
   containerTimeouts: {
@@ -282,53 +290,104 @@ async function runtimeProcess(sandbox: SandboxOperations) {
     .then((processes) => processes.find((process) => process.id === RUNTIME_PROCESS_ID) ?? null)
 }
 
-async function stopRuntimeProcess(sandbox: SandboxOperations) {
-  const existing = await runtimeProcess(sandbox)
+async function stopRuntimeProcess(sandbox: SandboxOperations, existing: SandboxProcess | null) {
   if (!existing) return
   const status = await bounded(existing.getStatus(), "workspace-runtime process status")
-  if (["starting", "running"].includes(status)) {
+  if (LIVE_PROCESS.includes(status)) {
     await bounded(existing.kill(), "workspace-runtime process kill")
   }
   await bounded(sandbox.cleanupCompletedProcesses(), "workspace-runtime process cleanup")
 }
 
+/** Remembers the one process that has answered ready, by its start time. */
+export type RuntimeReadiness = {
+  runtimeWasReady(process: SandboxProcess): Promise<boolean>
+  recordRuntimeReady(process: SandboxProcess): Promise<void>
+}
+
+export type RuntimeEnsure =
+  | { state: "ready" }
+  | { state: "preparing" }
+  | { state: "exited"; reason: string }
+
 export async function ensureRuntimeProcess(
-  sandbox: SandboxOperations,
+  sandbox: SandboxOperations & RuntimeReadiness,
   command: string,
   env: Record<string, string>,
   port: number,
   options: { reuseRunning: boolean },
-) {
+): Promise<RuntimeEnsure> {
   const existing = await runtimeProcess(sandbox)
-  // A live runtime that is not ready yet is still preparing its repository.
-  // Replacing it here would restart a large clone on every poll, so only an
-  // exited process, a changed env, or one past the preparation limit is.
-  if (options.reuseRunning && existing && ["starting", "running"].includes(existing.status)) {
-    if (await runtimeReady(existing, port)) return true
-    if (Date.now() - existing.startTime.getTime() < RUNTIME_PREPARATION_LIMIT_MS) return false
-  }
   if (existing) {
-    const status = await bounded(existing.getStatus(), "workspace-runtime process status")
-    if (["starting", "running"].includes(status)) {
-      await bounded(existing.kill(), "stale workspace-runtime process kill")
-    }
-    await bounded(sandbox.cleanupCompletedProcesses(), "workspace-runtime process cleanup")
+    const kept = options.reuseRunning ? await keptRuntime(sandbox, existing, port) : undefined
+    if (kept) return kept
+    await stopRuntimeProcess(sandbox, existing)
   }
-
   const process = await bounded<SandboxProcess>(
     sandbox.startProcess(command, { env, processId: RUNTIME_PROCESS_ID }),
     "workspace-runtime process start",
   )
-  if (await runtimeReady(process, port)) return true
+  return await settledRuntime(sandbox, process, port)
+}
 
-  const status = await bounded(process.getStatus(), "workspace-runtime failed process status").catch(() => process.status)
-  const logs = await bounded(process.getLogs(), "workspace-runtime failed process logs").catch(() => ({ stdout: "", stderr: "" }))
-  console.error("workspace-runtime failed to become ready", {
+/**
+ * What an existing runtime is, when it is to be kept: a live runtime that has
+ * answered ready is never replaced for one slow health check, and one that
+ * never has is still preparing its repository until it is wedged. A runtime
+ * that exited before it was ever ready failed its boot; its reason is the
+ * answer, because starting it again would rerun the same boot on every poll.
+ */
+async function keptRuntime(
+  sandbox: SandboxOperations & RuntimeReadiness,
+  existing: SandboxProcess,
+  port: number,
+): Promise<RuntimeEnsure | undefined> {
+  if (!LIVE_PROCESS.includes(existing.status)) {
+    if (await sandbox.runtimeWasReady(existing)) return undefined
+    return { state: "exited", reason: await exitReason(sandbox, existing, existing.status) }
+  }
+  const settled = await settledRuntime(sandbox, existing, port)
+  if (settled.state !== "preparing") return settled
+  if (await sandbox.runtimeWasReady(existing)) return settled
+  return Date.now() - existing.startTime.getTime() < RUNTIME_WEDGED_AFTER_MS ? settled : undefined
+}
+
+async function settledRuntime(
+  sandbox: SandboxOperations & RuntimeReadiness,
+  process: SandboxProcess,
+  port: number,
+): Promise<RuntimeEnsure> {
+  if (await runtimeReady(process, port)) {
+    await sandbox.recordRuntimeReady(process)
+    return { state: "ready" }
+  }
+  const status = await bounded(process.getStatus(), "workspace-runtime process status")
+  if (LIVE_PROCESS.includes(status)) return { state: "preparing" }
+  return { state: "exited", reason: await exitReason(sandbox, process, status) }
+}
+
+/**
+ * The exited runtime's own account of its failed boot, cleared away so the
+ * next ensure starts a fresh one.
+ */
+async function exitReason(sandbox: SandboxOperations, process: SandboxProcess, status: SandboxProcess["status"]) {
+  const logs = await bounded(process.getLogs(), "workspace-runtime exited process logs").catch(() => ({ stdout: "", stderr: "" }))
+  console.error("workspace-runtime exited before it was ready", {
     status,
     stdout: safeRuntimeLog(logs.stdout),
     stderr: safeRuntimeLog(logs.stderr),
   })
-  return false
+  await bounded(sandbox.cleanupCompletedProcesses(), "workspace-runtime process cleanup")
+  return bootFailure(logs.stderr) ?? `The workspace runtime process ended (${status}) before it was ready`
+}
+
+const BOOT_FAILURE_LINE = `${WORKSPACE_RUNTIME_BOOT_FAILED}: `
+
+function bootFailure(stderr: string) {
+  const at = stderr.lastIndexOf(BOOT_FAILURE_LINE)
+  if (at < 0) return undefined
+  const [failure = ""] = stderr.slice(at + BOOT_FAILURE_LINE.length).split(/\n\s+at /)
+  return safeRuntimeLog(failure.trim().replace(/^Error: /, "")).slice(0, 1_000) || undefined
 }
 
 function safeRuntimeLog(value: string) {
@@ -509,16 +568,16 @@ export default {
             // Cloudflare backup mounts are ephemeral and restoring over an
             // active writer is unsafe. Stop the old runtime before mounting
             // the requested backup, then boot against the restored directory.
-            await stopRuntimeProcess(sandbox)
+            await stopRuntimeProcess(sandbox, await runtimeProcess(sandbox))
             await sandbox.restoreBackup({ id: restore.backupId, dir: restore.directory })
           }
           // Runtime bring-up is a Durable Object RPC with a per-sandbox
           // single-flight promise. Catalog refreshes and execution retries can
           // overlap, but they must join one process launch rather than cancel
           // each other's container operations.
-          if (!await sandbox.ensureWorkspaceRuntime(command, containerEnv, port, { reuseRunning: !placeholdersChanged })) {
-            return json({ ready: false, error: "workspace-runtime did not become ready" }, 503)
-          }
+          const runtime: RuntimeEnsure = await sandbox.ensureWorkspaceRuntime(command, containerEnv, port, { reuseRunning: !placeholdersChanged })
+          if (runtime.state === "exited") return json({ ready: false, exited: true, error: runtime.reason }, 502)
+          if (runtime.state === "preparing") return json({ ready: false, error: "workspace-runtime did not become ready" }, 503)
           // Register only once the sandbox is really up, and carry the labels
           // the control plane sent so GC can apply its own ownership and
           // identity checks against real provider state.

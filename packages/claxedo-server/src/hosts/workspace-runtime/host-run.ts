@@ -1,4 +1,5 @@
 import { startServer, waitForWorkspaceRuntimeServerPort } from "@claxedo/workspace-runtime"
+import { WORKSPACE_RUNTIME_BOOT_FAILED } from "./boot-contract"
 import type { ClaxedoWorkspaceRuntimeBoot } from "./runtime-boot"
 
 /**
@@ -10,9 +11,6 @@ export type WorkspaceRuntimeHostIo = {
   error: (line: string) => void
   exit: (code: number) => never
 }
-
-/** Named in the stderr line so a log search finds boot failures by one string. */
-const WORKSPACE_RUNTIME_BOOT_FAILED = "workspace_runtime_boot_failed"
 
 const BOOT_FAILURE_EXIT_CODE = 78
 

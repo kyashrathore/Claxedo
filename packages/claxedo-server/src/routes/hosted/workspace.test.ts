@@ -7,7 +7,7 @@ import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/s
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./workspace"
 import { D1WorkspaceAuthorityError } from "../../authority/adapters/d1/workspace-authority-error"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
-import type { SandboxManager } from "@claxedo/sandbox-manager"
+import { sandboxRuntimeBootFailedError, type SandboxManager } from "@claxedo/sandbox-manager"
 
 /**
  * Hosted workspace routes under machine-wide enrollment. These prove the
@@ -725,6 +725,34 @@ describe("hosted connection", () => {
       relayRoom: "ws_1",
       retryAfterMs: 5_000,
     })
+  })
+
+  test("a runtime whose boot failed answers the connect with the boot's reason instead of a wait", async () => {
+    const authority = fakeAuthority({
+      openWorkspace: vi.fn(async () => ({
+        allowed: true,
+        role: "owner",
+        workspace: { workspace_id: "ws_1", project_id: "proj_1", backing: "cloud-vm", home_region: "eu-west" },
+      })),
+    })
+    const sandboxManager = {
+      ensure: vi.fn(async () => ({
+        status: "unavailable",
+        retryAfterMs: 5_000,
+        error: sandboxRuntimeBootFailedError("fatal: couldn't find remote ref refs/heads/missing"),
+        epoch: 9,
+        homeRegion: "eu-west",
+      })),
+    } as unknown as SandboxManager
+    const { app } = buildApp({ authority: authority, sandboxManager })
+    const res = await app.fetch(post("/ws_1/connection", {}))
+    expect(res.status).toBe(409)
+    const body = await res.json() as { error: Record<string, unknown> }
+    expect(body.error).toMatchObject({
+      code: "cloud_runtime_boot_failed",
+      message: "The cloud workspace could not start: fatal: couldn't find remote ref refs/heads/missing",
+    })
+    expect(body.error).not.toHaveProperty("retryAfterMs")
   })
 
   test("fails closed when a cloud workspace has no sandbox", async () => {

@@ -13,7 +13,7 @@ const sandboxStub = {
     _env: Record<string, string>,
     _port: number,
     _options: { reuseRunning: boolean },
-  ) => true),
+  ): Promise<{ state: "ready" } | { state: "preparing" } | { state: "exited"; reason: string }> => ({ state: "ready" })),
   workspaceRuntimeReady: vi.fn(async () => true),
   destroy: vi.fn(async () => {}),
   createBackup: vi.fn(async () => ({ id: "bk_1", dir: "/workspace" })),
@@ -148,6 +148,20 @@ describe("cloudflare sandbox Worker registry (W1.2)", () => {
       supported: true,
       sandboxes: [{ sandboxId: "claxedo-ws_1", app: "claxedo", workspaceId: "ws_1", epoch: "7" }],
     })
+  })
+
+  test("a runtime whose boot failed answers ensure-runtime with that reason as an exit, not as one still starting", async () => {
+    const workerEnv = env()
+    sandboxStub.ensureWorkspaceRuntime.mockResolvedValueOnce({ state: "exited", reason: "fatal: couldn't find remote ref refs/heads/missing" })
+
+    const ensure = await call("/sandbox/claxedo-ws_9/ensure-runtime", workerEnv, {
+      method: "POST",
+      body: ensureBody({ app: "claxedo", workspaceId: "ws_9", epoch: "1" }),
+    })
+
+    expect(ensure.status).toBe(502)
+    await expect(ensure.json()).resolves.toEqual({ ready: false, exited: true, error: "fatal: couldn't find remote ref refs/heads/missing" })
+    await expect(call("/sandboxes", workerEnv).then((res) => res.json())).resolves.toEqual({ supported: true, sandboxes: [] })
   })
 
   test("labels are capped, so one oversized label cannot make a sandbox unregisterable", async () => {
@@ -314,15 +328,28 @@ describe("workspace-runtime process env", () => {
     }
   }
 
-  function operations(existing: ReturnType<typeof process> | null) {
-    const started = process()
+  function operations(existing: ReturnType<typeof process> | null, started = process()) {
+    const ready = new Set<number>()
+    let listed = existing
     return {
       started,
-      listProcesses: vi.fn(async () => (existing ? [existing] : [])),
+      ready,
+      listProcesses: vi.fn(async () => (listed ? [listed] : [])),
       startProcess: vi.fn(async () => started),
-      cleanupCompletedProcesses: vi.fn(async () => {}),
+      cleanupCompletedProcesses: vi.fn(async () => {
+        if (listed && !["starting", "running"].includes(await listed.getStatus())) listed = null
+      }),
+      runtimeWasReady: vi.fn(async (entry: { startTime: Date }) => ready.has(entry.startTime.getTime())),
+      recordRuntimeReady: vi.fn(async (entry: { startTime: Date }) => { ready.add(entry.startTime.getTime()) }),
     }
   }
+
+  const bootFailure = [
+    "[claxedo-workspace-runtime] workspace_runtime_boot_failed: Error: Command failed: git fetch --quiet --depth=1 origin",
+    "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+    "    at ChildProcess.exithandler (node:child_process:422:12)",
+    "",
+  ].join("\n")
 
   test("a running runtime is left alone when the caller says its env is unchanged", async () => {
     const existing = process()
@@ -332,7 +359,7 @@ describe("workspace-runtime process env", () => {
       ensureRuntimeProcess(sandbox as never, "runtime", { MODEL_KEY: "claxedo-broker:MODEL_KEY" }, 2593, {
         reuseRunning: true,
       }),
-    ).resolves.toBe(true)
+    ).resolves.toEqual({ state: "ready" })
 
     expect(sandbox.startProcess).not.toHaveBeenCalled()
     expect(existing.kill).not.toHaveBeenCalled()
@@ -344,10 +371,10 @@ describe("workspace-runtime process env", () => {
     const sandbox = operations(existing)
     const poll = () => ensureRuntimeProcess(sandbox as never, "runtime", {}, 2593, { reuseRunning: true })
 
-    await expect(poll()).resolves.toBe(false)
-    await expect(poll()).resolves.toBe(false)
+    await expect(poll()).resolves.toEqual({ state: "preparing" })
+    await expect(poll()).resolves.toEqual({ state: "preparing" })
     ready = true
-    await expect(poll()).resolves.toBe(true)
+    await expect(poll()).resolves.toEqual({ state: "ready" })
 
     expect(existing.kill).not.toHaveBeenCalled()
     expect(sandbox.startProcess).not.toHaveBeenCalled()
@@ -360,17 +387,62 @@ describe("workspace-runtime process env", () => {
     })
     const sandbox = operations(existing)
 
-    await expect(ensureRuntimeProcess(sandbox as never, "runtime", {}, 2593, { reuseRunning: true })).resolves.toBe(true)
+    await expect(ensureRuntimeProcess(sandbox as never, "runtime", {}, 2593, { reuseRunning: true })).resolves.toEqual({ state: "ready" })
 
     expect(existing.kill).toHaveBeenCalled()
     expect(sandbox.startProcess).toHaveBeenCalledTimes(1)
   })
 
-  test("an exited runtime is replaced even when the env is unchanged", async () => {
-    const existing = process({ status: "failed", getStatus: vi.fn(async () => "failed") })
+  test("a runtime that has answered ready is never replaced for a slow health check, however long it has run", async () => {
+    let healthy = true
+    const existing = process({
+      startTime: new Date(Date.now() - 3 * 24 * 60 * 60_000),
+      waitForPort: vi.fn(async () => { if (!healthy) throw new Error("health check timed out") }),
+    })
+    const sandbox = operations(existing)
+    const poll = () => ensureRuntimeProcess(sandbox as never, "runtime", {}, 2593, { reuseRunning: true })
+
+    await expect(poll()).resolves.toEqual({ state: "ready" })
+    healthy = false
+    await expect(poll()).resolves.toEqual({ state: "preparing" })
+
+    expect(existing.kill).not.toHaveBeenCalled()
+    expect(sandbox.startProcess).not.toHaveBeenCalled()
+  })
+
+  test("a runtime whose boot exits answers with the boot's own reason instead of starting the same boot again", async () => {
+    const exited = process({
+      waitForPort: vi.fn(async () => { throw new Error("process exited before ready") }),
+      getStatus: vi.fn(async () => "failed"),
+      getLogs: vi.fn(async () => ({ stdout: "", stderr: bootFailure })),
+    })
+    const sandbox = operations(null, exited)
+
+    await expect(ensureRuntimeProcess(sandbox as never, "runtime", {}, 2593, { reuseRunning: true })).resolves.toEqual({
+      state: "exited",
+      reason: "Command failed: git fetch --quiet --depth=1 origin\nfatal: could not read Username for 'https://github.com': terminal prompts disabled",
+    })
+    expect(sandbox.cleanupCompletedProcesses).toHaveBeenCalled()
+  })
+
+  test("a runtime found exited before it was ever ready is reported once and cleared, so the next ensure boots afresh", async () => {
+    const existing = process({ status: "failed", getStatus: vi.fn(async () => "failed"), getLogs: vi.fn(async () => ({ stdout: "", stderr: bootFailure })) })
     const sandbox = operations(existing)
 
-    await expect(ensureRuntimeProcess(sandbox as never, "runtime", {}, 2593, { reuseRunning: true })).resolves.toBe(true)
+    const ensure = () => ensureRuntimeProcess(sandbox as never, "runtime", {}, 2593, { reuseRunning: true })
+
+    await expect(ensure()).resolves.toMatchObject({ state: "exited", reason: expect.stringContaining("could not read Username") })
+    expect(sandbox.startProcess).not.toHaveBeenCalled()
+    await expect(ensure()).resolves.toEqual({ state: "ready" })
+    expect(sandbox.startProcess).toHaveBeenCalledTimes(1)
+  })
+
+  test("a runtime that exited after serving is replaced even when the env is unchanged", async () => {
+    const existing = process({ status: "failed", getStatus: vi.fn(async () => "failed") })
+    const sandbox = operations(existing)
+    sandbox.ready.add(existing.startTime.getTime())
+
+    await expect(ensureRuntimeProcess(sandbox as never, "runtime", {}, 2593, { reuseRunning: true })).resolves.toEqual({ state: "ready" })
 
     expect(existing.kill).not.toHaveBeenCalled()
     expect(sandbox.startProcess).toHaveBeenCalledTimes(1)
@@ -386,7 +458,7 @@ describe("workspace-runtime process env", () => {
 
     await expect(
       ensureRuntimeProcess(sandbox as never, "runtime", env, 2593, { reuseRunning: false }),
-    ).resolves.toBe(true)
+    ).resolves.toEqual({ state: "ready" })
 
     expect(existing.kill).toHaveBeenCalled()
     expect(sandbox.startProcess).toHaveBeenCalledWith("runtime", {

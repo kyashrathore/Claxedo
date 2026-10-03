@@ -666,6 +666,38 @@ export function isSandboxListingUnsupported(err: unknown): err is SandboxListing
   return !!err && typeof err === "object" && (err as { listingUnsupported?: unknown }).listingUnsupported === true
 }
 
+/**
+ * A driver's ensure throws this shape when the runtime process exited before it
+ * was ever ready. The cause is in the boot itself (a repository credential that
+ * is gone, a branch that does not exist), so polling the driver again cannot
+ * heal it. Structural for the reason `SandboxListingUnsupported` is.
+ */
+export type SandboxRuntimeBootFailure = { runtimeBootFailed: true; message: string }
+
+export function isSandboxRuntimeBootFailure(err: unknown): err is SandboxRuntimeBootFailure {
+  return !!err && typeof err === "object" && (err as { runtimeBootFailed?: unknown }).runtimeBootFailed === true
+}
+
+export class SandboxRuntimeBootError extends Error implements SandboxRuntimeBootFailure {
+  readonly runtimeBootFailed = true as const
+  constructor(reason: string) {
+    super(reason)
+    this.name = "SandboxRuntimeBootError"
+  }
+}
+
+/** Leads the error an ensure reports, and a lease keeps, for a runtime whose boot failed. */
+const RUNTIME_BOOT_FAILED = "runtime_boot_failed: "
+
+export function sandboxRuntimeBootFailedError(reason: string) {
+  return `${RUNTIME_BOOT_FAILED}${reason}`
+}
+
+/** The boot's own reason when an ensure error says a runtime's boot failed. */
+export function sandboxRuntimeBootFailure(error: string | undefined) {
+  return error?.startsWith(RUNTIME_BOOT_FAILED) ? error.slice(RUNTIME_BOOT_FAILED.length) : undefined
+}
+
 export type SandboxManagerOptions = {
   leaseStore: SandboxLeaseStore
   driver: SandboxDriver

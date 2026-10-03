@@ -1,53 +1,22 @@
-import { afterEach, describe, expect, test } from "vitest"
-import { execFileSync } from "node:child_process"
-import { createServer, type Server } from "node:http"
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
-import os from "node:os"
+import { afterEach, describe, expect, test, vi } from "vitest"
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises"
 import path from "node:path"
-import { prepareRuntimeRepository } from "./repository-source"
+import { serveGitOrigin, type GitOrigin } from "../../test-support/git-origin"
+import { completeRuntimeRepositoryHistory, prepareRuntimeRepository } from "./repository-source"
 
-const active: { directory: string; server: Server }[] = []
+const active: GitOrigin[] = []
 afterEach(async () => {
-  for (const { directory, server } of active.splice(0)) {
-    await new Promise<void>((resolve) => server.close(() => resolve()))
-    await rm(directory, { recursive: true, force: true })
-  }
+  vi.restoreAllMocks()
+  for (const origin of active.splice(0)) await origin.close()
 })
 
-async function origin() {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "runtime-source-"))
-  const repository = path.join(directory, "origin")
-  await mkdir(repository)
-  const env = { ...process.env, HOME: directory, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: path.join(directory, "gitconfig") }
-  const git = (args: string[], cwd = repository) => execFileSync("git", args, { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim()
-  git(["init", "--initial-branch=trunk"])
-  await writeFile(path.join(repository, "hello.txt"), "selected repository\n")
-  git(["add", "."])
-  git(["-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "-m", "initial"])
-  git(["branch", "feature"])
-  git(["update-server-info"])
-  const served = { reachable: true, objects: true }
-  const server = createServer(async (req, res) => {
-    const pathname = new URL(req.url!, "http://localhost").pathname
-    const file = path.resolve(repository, ".git", pathname.slice(1))
-    if (!served.reachable || !file.startsWith(path.join(repository, ".git") + path.sep) || (!served.objects && pathname.startsWith("/objects/"))) {
-      res.writeHead(404).end()
-      return
-    }
-    try {
-      res.end(await readFile(file))
-    } catch {
-      res.writeHead(404).end()
-    }
-  })
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
-  active.push({ directory, server })
-  const { port } = server.address() as { port: number }
+async function origin(commits?: number) {
+  const served = await serveGitOrigin(commits)
+  active.push(served)
   return {
-    checkout: path.join(directory, "workspace"),
-    served,
-    git,
-    env: { WORKSPACE_RUNTIME_SOURCE_KIND: "git", WORKSPACE_RUNTIME_GIT_REPO_URL: `http://127.0.0.1:${port}/` },
+    ...served,
+    checkout: path.join(served.directory, "workspace"),
+    env: { WORKSPACE_RUNTIME_SOURCE_KIND: "git", WORKSPACE_RUNTIME_GIT_REPO_URL: served.repoUrl },
   }
 }
 
@@ -56,7 +25,7 @@ describe("sandbox repository preparation", () => {
     const f = await origin()
     await prepareRuntimeRepository(f.checkout, { ...f.env, WORKSPACE_RUNTIME_GIT_BRANCH: "feature" })
     expect(f.git(["branch", "--show-current"], f.checkout)).toBe("feature")
-    expect(await readFile(path.join(f.checkout, "hello.txt"), "utf8")).toBe("selected repository\n")
+    expect(await readFile(path.join(f.checkout, "hello.txt"), "utf8")).toBe("selected repository 2\n")
     await writeFile(path.join(f.checkout, "hello.txt"), "work in progress")
     await prepareRuntimeRepository(f.checkout, f.env)
     expect(await readFile(path.join(f.checkout, "hello.txt"), "utf8")).toBe("work in progress")
@@ -68,16 +37,56 @@ describe("sandbox repository preparation", () => {
     await prepareRuntimeRepository(f.checkout, f.env)
     expect(f.git(["branch", "--show-current"], f.checkout)).toBe("trunk")
     expect(f.git(["rev-parse", "--abbrev-ref", "trunk@{upstream}"], f.checkout)).toBe("origin/trunk")
+    expect(f.git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], f.checkout)).toBe("origin/trunk")
+  })
+
+  test("a branch the origin does not have fails the preparation with git's reason", async () => {
+    const f = await origin()
+    await expect(prepareRuntimeRepository(f.checkout, { ...f.env, WORKSPACE_RUNTIME_GIT_BRANCH: "missing" }))
+      .rejects.toThrow("couldn't find remote ref refs/heads/missing")
+  })
+
+  test("the runtime is ready on the tip alone, and the rest of the history arrives after it", async () => {
+    const f = await origin(12)
+    await prepareRuntimeRepository(f.checkout, f.env)
+    expect(f.git(["rev-list", "--count", "HEAD"], f.checkout)).toBe("1")
+    await completeRuntimeRepositoryHistory(f.checkout)
+    expect(f.git(["rev-parse", "--is-shallow-repository"], f.checkout)).toBe("false")
+    expect(f.git(["rev-list", "--count", "HEAD"], f.checkout)).toBe("12")
+    expect(f.git(["rev-list", "--count", "origin/feature"], f.checkout)).toBe("9")
+  })
+
+  test("a history fetch that fails leaves the checkout as it was, and a later boot completes it", async () => {
+    const f = await origin()
+    await prepareRuntimeRepository(f.checkout, f.env)
+    await writeFile(path.join(f.checkout, "hello.txt"), "work in progress")
+    f.served.uploads = false
+    await expect(completeRuntimeRepositoryHistory(f.checkout)).resolves.toBeUndefined()
+    expect(f.git(["rev-parse", "--is-shallow-repository"], f.checkout)).toBe("true")
+    f.served.uploads = true
+    await prepareRuntimeRepository(f.checkout, f.env)
+    await completeRuntimeRepositoryHistory(f.checkout)
+    expect(f.git(["rev-list", "--count", "HEAD"], f.checkout)).toBe("5")
+    expect(await readFile(path.join(f.checkout, "hello.txt"), "utf8")).toBe("work in progress")
   })
 
   test("a boot whose fetch failed leaves nothing that refuses the next boot, which finishes the checkout", async () => {
     const f = await origin()
-    f.served.objects = false
+    f.served.uploads = false
     await expect(prepareRuntimeRepository(f.checkout, f.env)).rejects.toThrow()
     expect(await readdir(f.checkout)).toEqual([".git"])
-    f.served.objects = true
+    f.served.uploads = true
     await prepareRuntimeRepository(f.checkout, f.env)
-    expect(await readFile(path.join(f.checkout, "hello.txt"), "utf8")).toBe("selected repository\n")
+    expect(await readFile(path.join(f.checkout, "hello.txt"), "utf8")).toBe("selected repository 5\n")
+  })
+
+  test("the whole preparation shares one deadline, so time spent in one step is gone for the next", async () => {
+    const f = await origin()
+    let clock = Date.now()
+    vi.spyOn(Date, "now").mockImplementation(() => clock)
+    f.served.onRequest = () => { clock += 31 * 60_000 }
+    await expect(prepareRuntimeRepository(f.checkout, f.env)).rejects.toThrow("was not checked out within 30 minutes")
+    expect(await readdir(f.checkout)).toEqual([".git"])
   })
 
   test("an already prepared checkout boots without reaching the repository, so a withdrawn credential cannot strand it", async () => {
@@ -88,9 +97,18 @@ describe("sandbox repository preparation", () => {
     expect(f.git(["branch", "--show-current"], f.checkout)).toBe("trunk")
   })
 
-  test("a checkout of another origin, or files that are not a checkout, are refused and left as they are", async () => {
+  test("a checkout whose person pointed origin elsewhere is their work and boots as it is", async () => {
     const f = await origin()
     await prepareRuntimeRepository(f.checkout, f.env)
+    f.git(["remote", "set-url", "origin", "https://github.com/acme/fork.git"], f.checkout)
+    await expect(prepareRuntimeRepository(f.checkout, f.env)).resolves.toBe(true)
+    expect(f.git(["remote", "get-url", "origin"], f.checkout)).toBe("https://github.com/acme/fork.git")
+  })
+
+  test("an unfinished checkout of another origin, or files that are not a checkout, are refused and left as they are", async () => {
+    const f = await origin()
+    f.served.uploads = false
+    await expect(prepareRuntimeRepository(f.checkout, f.env)).rejects.toThrow()
     await expect(prepareRuntimeRepository(f.checkout, { ...f.env, WORKSPACE_RUNTIME_GIT_REPO_URL: "https://github.com/other/repo.git" })).rejects.toThrow("origin is not the selected repository")
     expect(f.git(["remote", "get-url", "origin"], f.checkout)).toBe(f.env.WORKSPACE_RUNTIME_GIT_REPO_URL)
     const unrelated = path.join(path.dirname(f.checkout), "unrelated")

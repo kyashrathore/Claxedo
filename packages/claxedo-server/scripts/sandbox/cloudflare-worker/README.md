@@ -156,18 +156,35 @@ Worker and matching driver together, after destroying existing sandboxes (see
 
 ## Repository preparation
 
-The runtime checks out the workspace's repository before it reports ready
-(`src/hosts/workspace-runtime/repository-source.ts` in claxedo-server), in
-place and bounded by the same 30-minute clone limit as a local clone. A boot
-killed mid-fetch leaves a repository with no commit yet, which the next boot
-finishes; an existing checkout is only checked against its origin, so it boots
-without reaching the repository. A private repository's clone credential is
-the brokered `CLAXEDO_GITHUB_CLONE_AUTH`, scoped to that repository's path and
-minted on every boot from the connection the workspace was created through.
+The runtime checks out the tip of the workspace's repository before it reports
+ready (`src/hosts/workspace-runtime/repository-source.ts` in claxedo-server):
+one depth-1 fetch of the selected branch, in place, within a 30-minute deadline
+for the whole preparation (`RUNTIME_PREPARATION_DEADLINE_MS` in
+`boot-contract.ts`). A boot stopped mid-fetch leaves a repository with no
+commit yet, which the next boot finishes. A checkout with a commit is the
+person's work and boots as it is, without reaching the repository. Once the tip
+is checked out, the runtime fetches the rest of the history in the background,
+1,000 commits per fetch; each finished fetch is kept, so a runtime stopped
+partway resumes from there on its next boot. A private repository's clone
+credential is the brokered `CLAXEDO_GITHUB_CLONE_AUTH`, scoped to that
+repository's path and minted on every boot from the connection the workspace
+was created through.
 
-`ensure-runtime` keeps a live runtime that is not ready yet instead of
-replacing it, so a large clone finishes across polls; an exited runtime, or a
-changed set of credential names, is replaced.
+`ensure-runtime` decides about an existing runtime as follows:
+
+- A live runtime that has answered ready once is kept, however long it has run;
+  a slow health check answers 503 (still starting) and never replaces it.
+- A live runtime that has never answered ready is still preparing its
+  repository and is kept, until it is 35 minutes old (the preparation deadline
+  plus 5 minutes), when it is wedged and replaced.
+- A runtime that exited before it was ever ready failed its boot. The answer is
+  502 `{ ready: false, exited: true, error }` with the reason the runtime
+  printed (a revoked token, a branch that does not exist), and the exited
+  process is cleared so the next ensure boots afresh. The driver reports it as a
+  failed ensure, never as provisioning, and the connect answers
+  `cloud_runtime_boot_failed` with the reason.
+- A runtime that exited after it had served, or any runtime when the set of
+  credential names changed, is replaced.
 
 ## Workspace checkpoint storage
 

@@ -1,14 +1,16 @@
 import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { describe, expect, test, vi } from "vitest"
-import { execFileSync } from "node:child_process"
+import { execFile, execFileSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { mkdtemp, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { promisify } from "node:util"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { loopbackWorkspaceRuntimeExposure, relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import { workspaceRuntimeBootEnv } from "@claxedo/sandbox-manager/runtime-env"
 import { mintOwnerGrant } from "../../session/owner-grant"
+import { serveGitOrigin } from "../../test-support/git-origin"
 import { usageReportPlane, USAGE_REPORT_URL } from "../../test-support/usage-report-plane"
 import { FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID } from "./first-party-mcp"
 import {
@@ -72,6 +74,35 @@ describe("claxedo workspace-runtime boot policy", () => {
       await rm(directory, { recursive: true, force: true })
     }
   })
+  test("the boot's own git presents the clone header to a repository that refuses a clone without it", async () => {
+    const origin = await serveGitOrigin()
+    origin.served.authorization = "Bearer clone-token"
+    // A child process: the runtime's git environment is read from the
+    // process's own HOME, and only a HOME set at spawn reaches it.
+    const env = {
+      PATH: process.env.PATH,
+      HOME: origin.directory,
+      GIT_CONFIG_NOSYSTEM: "1",
+      CLAXEDO_DATA_DIR: path.join(origin.directory, "claxedo"),
+      WORKSPACE_RUNTIME_DATA_DIR: path.join(origin.directory, "workspace-runtime"),
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-clone",
+      WORKSPACE_RUNTIME_DIRECTORY: path.join(origin.directory, "workspace"),
+      WORKSPACE_RUNTIME_SOURCE_KIND: "git",
+      WORKSPACE_RUNTIME_GIT_REPO_URL: origin.repoUrl,
+    }
+    const script = `import { claxedoWorkspaceRuntimeBootFromEnv } from ${JSON.stringify(path.join(import.meta.dirname, "runtime-boot.ts"))}\n`
+      + "await claxedoWorkspaceRuntimeBootFromEnv()\nprocess.exit(0)\n"
+    const boot = (extra: Record<string, string> = {}) =>
+      promisify(execFile)("bun", ["--eval", script], { cwd: import.meta.dirname, env: { ...env, ...extra }, timeout: 60_000 })
+    try {
+      await expect(boot()).rejects.toThrow("could not read Username")
+      await boot({ CLAXEDO_GITHUB_CLONE_AUTH: "Bearer clone-token" })
+      expect(origin.git(["log", "-1", "--format=%s"], env.WORKSPACE_RUNTIME_DIRECTORY)).toBe("commit 5")
+    } finally {
+      await origin.close()
+    }
+  }, 90_000)
+
   test("launches the package bin with workspace-and-epoch scoped short-lived credentials", () => {
     const launch = claxedoWorkspaceRuntimeLaunch({
       workspaceId: "ws_1",
