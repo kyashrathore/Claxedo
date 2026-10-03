@@ -1,7 +1,6 @@
-import { asFiniteNumber, asRecord, nonEmptyString } from "@claxedo/helpers/guards"
+import { asFiniteNumber, nonEmptyString } from "@claxedo/helpers/guards"
 import type { AgentSession } from "@claxedo/agent-runtime-contract"
-import { parseAgentTurnOutcome, parseExecutionAvailability, parseSessionAttention, parseSessionReader } from "@claxedo/agent-runtime-contract"
-import { machineId, sessionId, type PlacementId, type ProjectId, type SessionId } from "../ids"
+import { sessionId, type PlacementId, type ProjectId, type SessionId } from "../ids"
 import type { ListedStatus } from "../status-types"
 import type { ModelChoice, SessionLocation, SessionRow, SessionSelections } from "../types"
 import { sessionConfigFromWire } from "./harness-state"
@@ -33,12 +32,6 @@ export function sessionRowFromListItem(item: unknown, address: Address): Session
   return {
     ref,
     title: nonEmptyString(row.title) ?? id,
-    ...(row.ownership === "owned" || row.ownership === "shared" ? { ownership: row.ownership } : {}),
-    ...sessionDisplayFromListItem(row),
-    attention: parseSessionAttention(row.attention),
-    reader: parseSessionReader(row.reader),
-    lastTurn: parseAgentTurnOutcome(row.lastTurn),
-    executionAvailability: parseExecutionAvailability(row.executionAvailability),
     createdAt,
     updatedAt,
     ...(lastHumanTurnAt !== undefined ? { lastHumanTurnAt } : {}),
@@ -66,8 +59,6 @@ export function sessionRowFromSession(info: AgentSession, ref: SessionLocation):
   return {
     ref,
     title: nonEmptyString(info.title) ?? ref.sessionId,
-    attention: info.attention,
-    ...(info.executionAvailability ? { executionAvailability: info.executionAvailability } : {}),
     createdAt: created,
     updatedAt: updated,
     ...(lastHumanTurnAt !== undefined ? { lastHumanTurnAt } : {}),
@@ -103,15 +94,4 @@ export function listedStatusFromListItem(item: unknown): ListedStatus | undefine
   const { kind, awaitingInput } = status as { kind?: unknown; awaitingInput?: unknown }
   if (kind !== "idle" && kind !== "busy" && kind !== "retry" && kind !== "interrupted") return undefined
   return { status: kind === "interrupted" ? { kind: "interrupted" } : kind === "idle" ? IDLE : WORKING, waitingOnUser: awaitingInput === true, backgroundWork: backgroundWorkFromWire(status) }
-}
-
-function sessionDisplayFromListItem(row: Record<string, unknown>): Pick<SessionRow, "projectName" | "placement"> {
-  const projectName = nonEmptyString(row.projectName)
-  const placement = asRecord(row.placement)
-  if (!placement) return { projectName, placement: undefined }
-  if (placement.kind !== "local" && placement.kind !== "machine" && placement.kind !== "cloud") throw new Error("Invalid session placement display")
-  const machine = nonEmptyString(placement.machineId)
-  const machineName = nonEmptyString(placement.machineName)
-  const cloudName = nonEmptyString(placement.cloudName)
-  return { projectName, placement: { kind: placement.kind, ...(machine ? { machineId: machineId(machine) } : {}), ...(machineName ? { machineName } : {}), ...(cloudName ? { cloudName } : {}) } }
 }

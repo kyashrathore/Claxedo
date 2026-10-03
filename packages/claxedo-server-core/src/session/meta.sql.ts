@@ -29,8 +29,6 @@ export const ClaxedoSessionMetaTable = sqliteTable(
      * is also stamped by this server's clock when a tag or attachment changes.
      */
     runtime_updated_at: integer(),
-    attention_json: text(),
-    last_turn_json: text(),
   },
   (table) => [
     index("claxedo_session_meta_workspace_idx").on(table.workspace_id),

@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
-import { scriptedAcpConnection, scriptedAcpWebSocketConnection, unsetAcpConnection } from "../../../harness/e2e/harness/acp/connection"
+import { scriptedAcpConnection, unsetAcpConnection } from "../../../harness/e2e/harness/acp/connection"
 import type { ScriptedModelServer } from "../../../harness/e2e/harness/scripted-model-server"
 import { connectScriptedProviders, storeScriptedKeys, type ScriptedProviderId } from "../../../harness/e2e/harness/scripted-providers"
 import { sendJson, type HttpTransport } from "../../../harness/e2e/harness/transport"
@@ -23,10 +23,6 @@ async function installAcpConnection(transport: HttpTransport, url: string, conne
 
 export async function installUnsetAcp(transport: HttpTransport, url: string, scriptDir: string) {
   await installAcpConnection(transport, url, unsetAcpConnection({ bunPath: await bunPath(), scriptDir }))
-}
-
-export async function installScriptedAcpWebSocket(transport: HttpTransport, url: string, agentUrl: string) {
-  await installAcpConnection(transport, url, scriptedAcpWebSocketConnection(agentUrl))
 }
 
 export async function prepareScriptedServer(transport: HttpTransport, url: string, world: ScriptedWorld) {

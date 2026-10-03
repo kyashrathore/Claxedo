@@ -216,26 +216,7 @@ export const localServer: Policy = {
   // re-exports them. The terminal attachment the embedded runtime admits is
   // its own module (`deployments/local/embedded-pty-attachment.ts`, owner: the
   // embedded runtime's PTY admission). 79/30, no headroom.
-  // +13 modules: session/routes/{reader,attention,location}.ts, journal attention
-  // projection and local/hosted publication, plus the session cleanup grant,
-  // reader admission and machine/desktop credential handoffs. These are the
-  // daemon's canonical status and reader owners and its capability boundary;
-  // they reach only runtime, server-core and daemon authorities already here.
-  // deployments/local/embedded-runtime-reader.ts owns reads on mounted
-  // runtimes, including durable root tombstones recovered at publisher startup.
-  // It extracts the registry's read ports. embedded-connection-secrets.ts owns
-  // the existing scope admission and credential lease resolution beside the
-  // configured harness state root. The exact local location route reads the
-  // canonical metadata/workspace owners and authorizes before returning an
-  // unloaded session's project. They reach no new package. Production build,
-  // built-entry smoke and isolated frozen build reviewed: 92/30, no headroom.
-  // +2 modules: embedded-runtime-ownership.ts owns descriptions of serving
-  // and retiring owners and their unresolved launches; session-row-origins.ts
-  // owns machine admission/mount recovery policy over exact root attention.
-  // Its provenance mechanism is the same server-core owner cloud publication
-  // uses. These belong in the daemon and add no package: exact 94/30. The
-  // public verifier requires production and isolated builds and their smokes.
-  ceilings: { modules: 94, packages: 30 },
+  ceilings: { modules: 79, packages: 30 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

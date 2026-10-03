@@ -46,10 +46,6 @@ export type SandboxPassInput = Readonly<{
   now?: () => number
   /** Where the minted `jti` is written down, so the pass can be taken back before it expires. */
   register?: SandboxPassRegister
-  /** Retain this proof after expiry for an audience with a separately fenced renewal rule. */
-  renewable?: boolean
-  /** Registration must still hold this received proof, so withdrawal cannot race a renewal into a new pass. */
-  renewalOf?: string
 }>
 
 export type SandboxPass = Readonly<{
@@ -127,12 +123,7 @@ export async function mintSandboxPass(input: SandboxPassInput, env: Record<strin
     .setJti(jti)
     .sign(key)
   const expiresAt = (now + ttl) * 1_000
-  if (input.register) {
-    const record = { jti, audience: input.audience, scope, issuedAt: now * 1_000, expiresAt,
-      ...(input.renewable ? { renewable: true } : {}) }
-    if (input.renewalOf) await input.register.record(record, { renewalOf: input.renewalOf })
-    else await input.register.record(record)
-  }
+  await input.register?.record({ jti, audience: input.audience, scope, issuedAt: now * 1_000, expiresAt })
   return { token, jti, expiresAt }
 }
 

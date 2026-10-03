@@ -38,7 +38,7 @@ async function attachLogOnFailure(testInfo: TestInfo, attempts: EgressAttempt[],
 }
 
 async function useSignedFixture(build: SignedBuild, testInfo: TestInfo, use: (signed: SignedStack) => Promise<void>) {
-  const signed = await startSignedStack({ label: testInfo.titlePath.join(" "), frontPort: build.frontPort, relayPort: build.relayPort, distDir: build.distDir, red: redRun() })
+  const signed = await startSignedStack({ label: testInfo.titlePath.join(" "), frontPort: build.frontPort, relayPort: build.relayPort, distDir: build.distDir })
   try {
     await use(signed)
   } finally {

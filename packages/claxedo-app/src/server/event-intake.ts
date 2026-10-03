@@ -8,8 +8,6 @@ import { createTurnWrites, type TurnWrites } from "./turn-writes"
 import type { SessionLocation } from "./types"
 import type { Workspaces } from "./workspaces"
 import { frameFromWire, frameSessionId, placementDirectory, serverEventFromFrame, type Frame } from "./wire/frames"
-import { sessionShareChanged } from "./wire/attention-history"
-import { createAttentionReceipts } from "./attention-receipts"
 
 export type EventIntake = {
   readonly frame: (raw: unknown) => void
@@ -23,7 +21,6 @@ type IntakeInput = {
   readonly queryClient: QueryClient
   readonly workspaces: Workspaces
   readonly status: StatusOwner
-  readonly onShareChanged?: () => void
 }
 
 type Listeners = Set<(event: ServerEvent) => void>
@@ -40,9 +37,7 @@ async function settleHeld(input: IntakeInput, ref: SessionLocation, publish: Pub
 }
 
 function publisher(input: IntakeInput, listeners: Listeners, writes: TurnWrites): Publish {
-  const acceptAttention = createAttentionReceipts()
-  const publish: Publish = (event): void => {
-    if (!acceptAttention(event)) return
+  const publish: Publish = (event) => {
     const admission = input.status.apply(event)
     if (admission.kind === "held") return void settleHeld(input, admission.ref, publish)
     batch(() => {
@@ -59,13 +54,7 @@ function unplacedDirectory(workspaces: Workspaces, frame: Frame): string | undef
 }
 
 function mapFrame(workspaces: Workspaces, publish: Publish, frame: Frame): void {
-  let event: ServerEvent | undefined
-  try {
-    event = serverEventFromFrame(frame, workspaces.address)
-  } catch (error) {
-    console.error("An event frame violated its session contract", { type: frame.type, error: toAppError(error) })
-    return publish({ type: "streamGap" })
-  }
+  const event = serverEventFromFrame(frame, workspaces.address)
   if (event) publish(event)
 }
 
@@ -99,7 +88,6 @@ export function createEventIntake(input: IntakeInput): EventIntake {
     frame: (raw) => {
       const frame = frameFromWire(raw)
       if (!frame) return console.error("The event stream sent a frame without a type", raw)
-      if (sessionShareChanged(frame)) input.onShareChanged?.()
       intake(frame)
     },
     gap: () => publish({ type: "streamGap" }),

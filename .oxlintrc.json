@@ -52,7 +52,7 @@
       // it is required at runtime. Everything else stays enforced in tests.
       "files": [
         "**/*.test.ts", "**/*.test.tsx", "**/*.test.mjs",
-        "**/*.vitest.ts", "**/*.vitest.tsx", "**/*.spec.ts", "**/*.node-test.ts",
+        "**/*.vitest.ts", "**/*.vitest.tsx", "**/*.spec.ts",
         "**/e2e/**", "**/test-support/**", "**/__tests__/**", "**/tests/**"
       ],
       "rules": {

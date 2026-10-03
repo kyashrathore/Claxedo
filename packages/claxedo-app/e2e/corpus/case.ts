@@ -29,7 +29,6 @@ export type CaseReplay =
 
 export type CaseInteraction =
   | { readonly kind: "scroll"; readonly to: "top" | "bottom" | { readonly turn: number } }
-  | { readonly kind: "readerScroll"; readonly to: "top" | "bottom" }
   | { readonly kind: "prepend" }
   | { readonly kind: "find"; readonly text: string }
   | { readonly kind: "reload" }
@@ -47,7 +46,6 @@ export type CaseInteraction =
   | { readonly kind: "switchSessions"; readonly times: number }
   | { readonly kind: "watchWrites"; readonly scope: "thumb" | "timeline" }
   | { readonly kind: "writesAtMost"; readonly max: number }
-  | { readonly kind: "outcomeSeen"; readonly seen: boolean; readonly result: string }
 
 export type CorpusCase = {
   readonly id: string

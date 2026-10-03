@@ -64,7 +64,7 @@ test("the enrolled owner's first relayed session spends the machine owner's acco
       method: "PUT", headers: { "content-type": "application/json" },
       body: JSON.stringify({ credential: {
         hostTunnelToken: "host-tunnel-token", tokenExpiresAt: Date.now() + 300_000, jti: "jti-1", hostId: "host_machine-1",
-        enrollmentId: "enr_this_machine", generation: 0, ownerActorId: "actor_owner", ownerUserId: OWNER, workspaceIds: [WS], relayUrl: "https://relay.claxedo.test",
+        enrollmentId: "enr_this_machine", ownerActorId: "actor_owner", ownerUserId: OWNER, workspaceIds: [WS], relayUrl: "https://relay.claxedo.test",
       } }),
     })
     expect(served.status).toBe(200)

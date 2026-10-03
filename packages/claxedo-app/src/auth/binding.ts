@@ -1,11 +1,11 @@
-import type { HostedStreamBridge, RunHostedOperation } from "@claxedo/account-contract"
+import type { RunHostedOperation } from "@claxedo/account-contract"
 import type { Accessor } from "solid-js"
 import type { BrowserAuthMethod, BrowserAuthSignInOptions, BrowserAuthSignUpOptions } from "./browser-auth"
 import type { AuthUser } from "./display-user"
 
 export type ControlPlaneAccess =
   | { readonly kind: "cookie" }
-  | { readonly kind: "port"; readonly run: RunHostedOperation; readonly streams: HostedStreamBridge }
+  | { readonly kind: "port"; readonly run: RunHostedOperation }
 
 export type AccountSession = {
   readonly methods: Accessor<readonly BrowserAuthMethod[]>

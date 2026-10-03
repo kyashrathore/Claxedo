@@ -33,8 +33,6 @@ import {
 } from "./channel-runtime-authority"
 import { D1OrgInvitationAuthority, D1_ORG_INVITATION_AUTHORITY_METHODS, type D1OrgInvitationAuthorityPort } from "./org-invitation-authority"
 import { publishD1HostSessionRows } from "./host-session-rows"
-import { publishD1CloudSessionRows } from "./cloud-session-rows"
-import { cloudSessionRowsPublisherActive } from "./cloud-session-rows-fence"
 import { D1TeamAuthority, D1_TEAM_AUTHORITY_METHODS, type D1TeamAuthorityPort } from "./team-authority"
 import {
   D1OrgMemberAuthority,
@@ -153,9 +151,6 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     machineAuth: hosts.machineAuth,
     publishHostSessionRows: (publisher, publication) =>
       publishD1HostSessionRows(database, (options.now ?? Date.now)(), publisher, publication),
-    publishCloudSessionRows: (publisher, publication) =>
-      publishD1CloudSessionRows(database, (options.now ?? Date.now)(), publisher, publication),
-    cloudSessionRowsPublisherActive: (publisher) => cloudSessionRowsPublisherActive(database, publisher),
   }
 }
 

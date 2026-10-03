@@ -16,8 +16,6 @@ export type McpToolDefinition<Shape extends McpToolShape> = Readonly<{
    * the session through the `addressed` callback it is given.
    */
   sessionIdFromHandler?: true
-  confirmation?: (args: ShapeOutput<Shape>) => string
-  targetsOf?: (args: ShapeOutput<Shape>) => readonly Readonly<{ sessionId: string; workspaceId: string }>[]
 }>
 
 export type McpToolHandler<Shape extends McpToolShape> = (
@@ -77,7 +75,7 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
               if (!elicit) return toCallToolResult(mcpToolRefusal(`${name} requires confirmation, but this client does not support elicitation`))
               const answer = await elicit({
                 mode: "form",
-                message: definition.confirmation?.(args) ?? `Confirm ${name}?`,
+                message: `Confirm ${name}?`,
                 requestedSchema: { type: "object", properties: {} },
               })
               if (answer.action !== "accept") return toCallToolResult(mcpToolRefusal(`${name} was not confirmed`))
@@ -87,7 +85,6 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
               credential: ctx.credential,
               args: args as Record<string, unknown>,
               ...(sessionId ? { sessionId } : {}),
-              ...(definition.targetsOf ? { targets: definition.targetsOf(args) } : {}),
             })
             if (!definition.access.write) return toCallToolResult(await handler(args, ctx))
             if (!definition.sessionIdFromHandler) {
@@ -117,7 +114,7 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
         },
         callback,
       )
-      if (definition.access.appPlugins || definition.access.sessionCleanup) {
+      if (definition.access.appPlugins) {
         const refresh = () => {
           const allowed = toolListed(ctx.credential, definition.access, toolGrants(ctx.client))
           if (registered.enabled !== allowed) registered.update({ enabled: allowed })

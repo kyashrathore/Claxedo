@@ -7,12 +7,8 @@ import type { D1Database } from "@cloudflare/workers-types"
 import type { SessionPageQuery } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { sessionOrderSql } from "@claxedo/server-core/session/navigation-order"
 import { requireHuman } from "./access-context"
-import { maySql, type AuthorizationPrincipal, type BoundSql } from "./authorization"
+import { maySql, type BoundSql } from "./authorization"
 import type { D1ActorProfile } from "./workspace-authority"
-import { sessionReaderSql } from "@claxedo/server-core/session/navigation-reader"
-import { storedSessionAttention, storedSessionReader } from "@claxedo/server-core/session/reader-contract"
-import { storedSessionTurnOutcome } from "@claxedo/server-core/session/turn-outcome-contract"
-import { sessionRuntimeAvailableSql } from "./session-runtime-availability"
 
 type SessionPageRow = {
   session_id: string
@@ -26,16 +22,6 @@ type SessionPageRow = {
   status: string | null
   status_at: number | null
   awaiting_input: number
-  attention_json: string | null
-  last_turn_json: string | null
-  reader_json: string | null
-  project_name: string | null
-  backing: "local-worktree" | "cloud-vm" | null
-  workspace_name: string | null
-  host_id: string | null
-  machine_name: string | null
-  owner_user_id: string
-  runtime_available: number
 }
 
 const COLUMNS = {
@@ -46,24 +32,13 @@ const COLUMNS = {
 }
 
 /** `access` is the caller's read predicate over `s`, with the values its placeholders bind. */
-function sessionPageQuery(query: SessionPageQuery, access: BoundSql, readerId: string) {
-  const where = ["s.deleted_at is null", "s.parent_session_id IS NULL"]
-  const params: unknown[] = [readerId]
-  if (query.sessionId !== undefined) {
-    where.push("s.session_id = ?")
-    params.push(query.sessionId)
-  }
-  const reader = sessionReaderSql({ facts: "s.attention_json", reader: "r.state_json", created: "s.created_at" }, query)
-  where.push(...reader.where)
-  params.push(...reader.params)
-  if (query.ownership === "shared") {
-    where.push("EXISTS (SELECT 1 FROM workspaces owner_workspace WHERE owner_workspace.workspace_id = s.workspace_id AND owner_workspace.owner_user_id <> ?)")
-    params.push(readerId)
-  }
+export async function readD1SessionPage(database: D1Database, query: SessionPageQuery, access: BoundSql) {
+  const where = ["s.deleted_at is null"]
+  const params: unknown[] = []
   if ("projectId" in query) {
     where.push("s.project_id = ?")
     params.push(query.projectId)
-  } else if ("workspaceId" in query) {
+  } else {
     where.push("s.workspace_id = ?")
     params.push(query.workspaceId)
   }
@@ -80,59 +55,22 @@ function sessionPageQuery(query: SessionPageQuery, access: BoundSql, readerId: s
     where.push(order.keyset.sql)
     params.push(...order.keyset.params)
   }
-  return { where, params, order }
-}
-
-const SESSION_PAGE_FROM = `FROM sessions s LEFT JOIN session_readers r ON r.session_id = s.session_id AND r.user_id = ?`
-
-export async function readD1SessionPage(database: D1Database, query: SessionPageQuery, who: AuthorizationPrincipal, now: number, orgId?: string) {
-  const access = maySql(who, "read", { kind: "session", alias: "s" })
-  const project = maySql(who, "read", { kind: "project", alias: "p" })
-  const workspace = maySql(who, "open", { kind: "workspace", alias: "w" })
-  const { where, params, order } = sessionPageQuery(query, access, who.userId)
-  if (orgId) { where.push("s.org_id = ?"); params.push(orgId) }
   const result = await database
     .prepare(`
       select s.session_id, s.workspace_id, s.project_id, s.title, s.created_at, s.updated_at,
-        s.last_human_turn_at, s.archived_at, s.status, s.status_at, s.awaiting_input, s.attention_json, s.last_turn_json, r.state_json AS reader_json,
-        p.repo_key AS project_name, w.backing, w.display_name AS workspace_name, assignment.host_id,
-        ${sessionRuntimeAvailableSql(now)} AS runtime_available,
-        (SELECT owner_user_id FROM workspaces owner_workspace WHERE owner_workspace.workspace_id = s.workspace_id) AS owner_user_id,
-        (SELECT enrollment.display_name FROM host_enrollments enrollment
-          WHERE enrollment.host_id = assignment.host_id AND enrollment.owner_user_id = w.owner_user_id
-            AND enrollment.revoked_at IS NULL
-          ORDER BY enrollment.created_at DESC LIMIT 1) AS machine_name
-      ${SESSION_PAGE_FROM}
-      LEFT JOIN projects p ON p.project_id = s.project_id AND ${project.sql}
-      LEFT JOIN workspaces w ON w.workspace_id = s.workspace_id AND ${workspace.sql}
-      LEFT JOIN host_workspace_assignments assignment ON assignment.workspace_id = w.workspace_id
+        s.last_human_turn_at, s.archived_at, s.status, s.status_at, s.awaiting_input
+      from sessions s
       where ${where.join(" and ")}
       order by ${order.orderBy}
       limit ?
     `)
-    .bind(params[0], ...project.bind, ...workspace.bind, ...params.slice(1), query.limit)
+    .bind(...params, query.limit)
     .all<SessionPageRow>()
-  return result.results.map((row) => pageRowJson(row, who.userId))
+  return result.results.map(pageRowJson)
 }
 
-export async function countD1Sessions(database: D1Database, query: SessionPageQuery, access: BoundSql, readerId: string): Promise<number> {
-  const { where, params } = sessionPageQuery({ ...query, after: undefined }, access, readerId)
-  const row = await database.prepare(`SELECT COUNT(*) AS total ${SESSION_PAGE_FROM} WHERE ${where.join(" AND ")}`).bind(...params).first<{ total: number }>()
-  if (!row) throw new Error("Session inventory total is unavailable")
-  return row.total
-}
-
-function pageRowJson(row: SessionPageRow, readerId: string) {
+function pageRowJson(row: SessionPageRow) {
   return {
-    ownership: row.owner_user_id === readerId ? "owned" : "shared",
-    ...(row.project_name === null ? {} : { projectName: row.project_name }),
-    ...(row.backing === null ? {} : { placement: row.backing === "cloud-vm"
-      ? { kind: "cloud", ...(row.workspace_name === null ? {} : { cloudName: row.workspace_name }) }
-      : { kind: "machine", ...(row.host_id === null ? {} : { machineId: row.host_id }), ...(row.machine_name === null ? {} : { machineName: row.machine_name }) } }),
-    attention: storedSessionAttention(row.attention_json),
-    lastTurn: storedSessionTurnOutcome(row.last_turn_json),
-    executionAvailability: row.runtime_available === 1 ? { status: "available" } : { status: "unavailable", message: "Session runtime is unavailable" },
-    reader: storedSessionReader(row.reader_json),
     session_id: row.session_id,
     workspace_id: row.workspace_id,
     project_id: row.project_id,

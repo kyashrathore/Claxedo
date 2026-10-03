@@ -53,8 +53,6 @@ export function createTurnAdmissions(
   const waiting = new Map<string, Array<(wake: Wake) => void>>()
   const handed = new Map<string, object>()
   const gates = new Map<string, object>()
-  const retained = new Map<object, { count: number; ending: boolean }>()
-  const retainedSessions = new Map<string, object>()
 
   /**
    * Wake the waiter that has been waiting longest, and only that one: the turn
@@ -65,7 +63,7 @@ export function createTurnAdmissions(
    * holds the gate.
    */
   const handOff = (sessionId: string) => {
-    if (active.has(sessionId) || gates.has(sessionId) || retainedSessions.has(sessionId) || handed.has(sessionId)) return
+    if (active.has(sessionId) || gates.has(sessionId) || handed.has(sessionId)) return
     const queue = waiting.get(sessionId)
     const next = queue?.shift()
     if (queue?.length === 0) waiting.delete(sessionId)
@@ -81,14 +79,7 @@ export function createTurnAdmissions(
     // delayed one of them may arrive after a replacement has taken the session.
     // Only the generation that still owns it may end it or hand it on.
     if (current?.generation !== generation) return false
-    const retention = retained.get(generation)
     active.delete(sessionId)
-    if (retention?.count) {
-      retention.ending = true
-      retainedSessions.set(sessionId, generation)
-      onActiveChange()
-      return true
-    }
     store.releaseTurnLease(sessionId, current.leaseId)
     onActiveChange()
     handOff(sessionId)
@@ -104,7 +95,7 @@ export function createTurnAdmissions(
      */
     whenIdle(sessionId: string): Promise<TurnHandoff> {
       const queue = waiting.get(sessionId)
-      if (!active.has(sessionId) && !handed.has(sessionId) && !gates.has(sessionId) && !retainedSessions.has(sessionId) && !queue?.length) {
+      if (!active.has(sessionId) && !handed.has(sessionId) && !gates.has(sessionId) && !queue?.length) {
         return Promise.resolve({ abandon: () => {} })
       }
       return new Promise<Wake>((resolve) => {
@@ -123,28 +114,6 @@ export function createTurnAdmissions(
     active(sessionId: string) {
       return active.get(sessionId)
     },
-    /** A child creation cannot outlive the parent admission it borrowed. */
-    retainActive(sessionId: string): { release: () => void } | undefined {
-      const current = active.get(sessionId)
-      if (!current || gates.has(sessionId)) return undefined
-      const retention = retained.get(current.generation) ?? { count: 0, ending: false }
-      retention.count++
-      retained.set(current.generation, retention)
-      let released = false
-      return {
-        release: () => {
-          if (released) return
-          released = true
-          retention.count--
-          if (retention.count > 0) return
-          retained.delete(current.generation)
-          if (!retention.ending) return
-          if (retainedSessions.get(sessionId) === current.generation) retainedSessions.delete(sessionId)
-          store.releaseTurnLease(sessionId, current.leaseId)
-          handOff(sessionId)
-        },
-      }
-    },
     queued(sessionId: string) {
       return waiting.get(sessionId)?.length ?? 0
     },
@@ -159,7 +128,7 @@ export function createTurnAdmissions(
      * same generation.
      */
     gate(sessionId: string): { release: () => void } | undefined {
-      if (gates.has(sessionId) || retainedSessions.has(sessionId)) return undefined
+      if (gates.has(sessionId)) return undefined
       const holder = {}
       gates.set(sessionId, holder)
       return {
@@ -171,26 +140,7 @@ export function createTurnAdmissions(
       }
     },
     gated(sessionId: string) {
-      return gates.has(sessionId) || retainedSessions.has(sessionId)
-    },
-    /** Hold both admission owners while a guarded lifecycle operation runs. */
-    holdIdle(sessionId: string): { release: () => void } | undefined {
-      if (active.has(sessionId) || handed.has(sessionId) || gates.has(sessionId) || retainedSessions.has(sessionId) || waiting.get(sessionId)?.length) return undefined
-      const leaseId = store.acquireTurnLease(sessionId)
-      if (!leaseId) return undefined
-      const holder = {}
-      gates.set(sessionId, holder)
-      let released = false
-      return {
-        release: () => {
-          if (released) return
-          released = true
-          store.releaseTurnLease(sessionId, leaseId)
-          if (gates.get(sessionId) !== holder) return
-          gates.delete(sessionId)
-          handOff(sessionId)
-        },
-      }
+      return gates.has(sessionId)
     },
     claim(
       sessionId: string,
@@ -201,7 +151,7 @@ export function createTurnAdmissions(
       // so the gate is rechecked rather than assumed from the handoff. Its
       // place in the queue is spent either way: a promise resolves once, so a
       // refused waiter re-queues through `whenIdle` instead of being re-woken.
-      if (gates.has(sessionId) || retainedSessions.has(sessionId)) {
+      if (gates.has(sessionId)) {
         handed.delete(sessionId)
         return undefined
       }
@@ -223,7 +173,6 @@ export function createTurnAdmissions(
       if (hadActive) onActiveChange()
       handed.clear()
       gates.clear()
-      retainedSessions.clear()
       for (const waiters of waiting.values()) for (const resolve of waiters) resolve({ unavailable: true })
       waiting.clear()
     },

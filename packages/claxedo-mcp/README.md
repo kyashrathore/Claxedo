@@ -58,29 +58,6 @@ A model can be talked into making a plugin by text it reads: a file, a page, a t
 
 ## Sessions, elicitation, limits
 
-The opt-in `session-cleanup` group has account reach. `sessions_cleanup_list`
-reads every inventory page with independent seen and settled filters and an
-inclusive `from` / exclusive `until` timestamp, each with an explicit timezone.
-It returns exact session, reader, activity, and descendant positions, plus
-incomplete sources for offline runtimes or unavailable account authority.
-`sessions_delete` takes those positions, asks for destructive confirmation,
-and refuses stale selections or unapproved child cascades. Its ordered receipt
-includes every success, failure, partial child removal, or unknown outcome when
-the mutation receipt was lost. Deletion removes readable session projections;
-runtime journals remain retained.
-
-A runtime bearer alone never grants cleanup access. Composition supplies a
-separate cleanup capability after checking the session's verified owner and
-human producer history, including ancestors. Cloud and served machine sessions
-also require current project group consent. Signed desktop folders use a
-dedicated capability issued with the person's explicit account-wide group
-consent; Electron main holds the account bearer and passes only the cleanup
-capability to the daemon. A headless machine's unserved folder uses the enrolled
-owner's equivalent account-wide consent. Every use checks
-the current consent and enrollment; a shared recipient cannot inherit the
-owner's account cleanup capability. The unsigned local inventory remains
-independent of account access.
-
 Sessions are stateful (`Mcp-Session-Id`) because a host's elicitation answer
 arrives on a later request and must reach the server that asked. Each
 process holds at most 256 sessions, drops one idle for 30 minutes, binds each

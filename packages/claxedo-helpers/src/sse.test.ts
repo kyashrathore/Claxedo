@@ -325,29 +325,6 @@ describe("attachSseFanout", () => {
     expect(written).toEqual([{ type: "delta", value: "gap:1:3" }])
     cleanup()
   })
-
-  test("marks retained recovery separately from subsequent live delivery", async () => {
-    const clock = fakeHeartbeatClock()
-    const replay = createSseReplayBuffer<TestEvent>()
-    replay.push({ type: "idle", value: "finished offline" })
-    const written: Array<{ event: unknown; meta: unknown }> = []
-    let subscriber: ((event: TestEvent) => void) | undefined
-    const cleanup = attachSseFanout<TestEvent>({
-      subscribe(fn) { subscriber = fn; return () => { subscriber = undefined } },
-      write(event, meta) { written.push({ event, meta }) },
-      heartbeat: { type: "heartbeat" }, heartbeatMs: 1000,
-      setInterval: clock.setInterval, clearInterval: clock.clearInterval,
-      lastEventId: "0", replay, replayLive: true,
-    })
-    await Promise.resolve()
-    subscriber?.({ type: "idle", value: "finished live" })
-    await Promise.resolve()
-    expect(written).toEqual([
-      { event: { type: "idle", value: "finished offline" }, meta: { id: "1", replayed: true } },
-      { event: { type: "idle", value: "finished live" }, meta: { id: "2" } },
-    ])
-    cleanup()
-  })
 })
 
 describe("createSseReplayBuffer", () => {

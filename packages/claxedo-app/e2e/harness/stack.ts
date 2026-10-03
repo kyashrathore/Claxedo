@@ -11,9 +11,7 @@ import { serveLocalPages, type LocalPages, type LocalPagesOptions } from "./loca
 import { serveConnectionSink, type ConnectionSink } from "./connection-sink"
 import { claimPort, fixedDaemonPort, portFreed, portIsLeased, releasePort, reservePort } from "../../../harness/e2e/harness/ports"
 import { startScriptedModelServer, type ScriptedModelServer } from "../../../harness/e2e/harness/scripted-model-server"
-import { bunPath, installScriptedAcpWebSocket, installUnsetAcp } from "./scripted-world"
-import { startScriptedAcpWebSocketProcess, type ScriptedAcpWebSocket } from "../../../harness/e2e/harness/acp/websocket-process"
-import { SCRIPTED_ACP_WEBSOCKET_HARNESS } from "../../../harness/e2e/harness/acp/connection"
+import { installUnsetAcp } from "./scripted-world"
 import { directTransport } from "../../../harness/e2e/harness/transport"
 import { openEventStream, type EventStream, type EventStreamOptions } from "../../../harness/e2e/harness/stream"
 
@@ -28,7 +26,6 @@ export type Stack = {
     write(name: string, script: AcpScript): Promise<void>
     release(name: string): Promise<void>
     installUnset(): Promise<void>
-    installWebSocket(): Promise<typeof SCRIPTED_ACP_WEBSOCKET_HARNESS>
   }
   events(directory: string, options?: EventStreamOptions): Promise<EventStream>
   gitRemote(name: string): Promise<GitRemote>
@@ -84,7 +81,6 @@ export async function startStack(input: StackInput): Promise<Stack> {
     throw error
   }
   const streams: EventStream[] = []
-  const acpServers: ScriptedAcpWebSocket[] = []
   const sideServers: { server: { close(): Promise<void> }; port: number }[] = []
   const startSideServer = async <T extends { close(): Promise<void> }>(start: (port: number) => Promise<T>) => {
     const port = await reservePort()
@@ -108,13 +104,6 @@ export async function startStack(input: StackInput): Promise<Stack> {
       write: (name, script) => writeAcpScript(daemon.acpScriptDir, name, script),
       release: (name) => releaseAcpHold(daemon.acpScriptDir, name),
       installUnset: () => installUnsetAcp(directTransport, daemon.url, daemon.acpScriptDir),
-      installWebSocket: async () => {
-        const server = await startScriptedAcpWebSocketProcess({ bunPath: await bunPath(), scriptDir: daemon.acpScriptDir, red: input.red ?? redRun() })
-        try { await installScriptedAcpWebSocket(directTransport, daemon.url, server.url) }
-        catch (error) { await server.close(); throw error }
-        acpServers.push(server)
-        return SCRIPTED_ACP_WEBSOCKET_HARNESS
-      },
     },
     events: async (directory, options) => {
       const stream = await openEventStream(daemon.url, directory, options)
@@ -132,7 +121,6 @@ export async function startStack(input: StackInput): Promise<Stack> {
         releasePort(port)
       }
       await daemon.close()
-      for (const server of acpServers) await server.close()
       await scripted.close()
       await egress.close()
       await cleanup()

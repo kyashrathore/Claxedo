@@ -282,20 +282,8 @@ describe("@claxedo/local-server closure", () => {
     //    for a session of this machine's owner: a new plugin folder in the
     //    session's workspace, its check and its registration with the live
     //    plugins above.
-    // +13 modules for the daemon's attention projection/history publishers,
-    // per-reader routes and exact cleanup admission, including machine and
-    // desktop grant handoffs. They compose existing local/runtime authorities
-    // without a hosted package edge. Production and isolated frozen builds
-    // with their built-entry smokes passed. The mounted reader and connection
-    // secret resolver are the registry's extracted canonical read and credential
-    // owners; the exact location route resolves a canonical workspace/project
-    // after session authorization. They add no package. Measured 122/30, no headroom.
-    // +2 canonical owners: embedded-runtime-ownership.ts describes serving and
-    // retiring owners with durable launch reads; session-row-origins.ts owns
-    // machine recovery policy over mounted root attention and the shared core
-    // publication-origin mechanism. No package growth: exact 124/30.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(124)
+    expect(modules.size).toBeLessThanOrEqual(109)
     expect(packages.size).toBeLessThanOrEqual(30)
   })
 })

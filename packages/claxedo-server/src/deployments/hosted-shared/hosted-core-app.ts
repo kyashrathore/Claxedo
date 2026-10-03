@@ -23,7 +23,6 @@ import { HostedDeviceAuthRoutes } from "../../routes/hosted/device-auth"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
 import { HostEnrollmentRoutes, HostInvitationRoutes } from "../../routes/hosted/host-enrollment"
 import { HostSessionRowsRoutes } from "../../routes/hosted/host-session-rows"
-import { CloudSessionRowsRoutes, type CloudSessionRowsRouteOptions } from "../../routes/hosted/cloud-session-rows"
 import { RemoteAccessOwnerRoutes } from "../../routes/remote-access"
 import { hostedRemoteAccessService } from "./hosted-remote-access-service"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
@@ -51,16 +50,17 @@ import {
 } from "../../platform/auth/request-guard"
 import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
 import { createSessionReadRoutes, authoritySessionReads } from "../../session/routes/session-read"
-import { createSessionNoticeSink } from "../../platform/http/session-notice-sink"
-import { mountHostedSessionStateRoutes } from "./session-state-routes"
-import type { SessionCleanupCapabilityInput } from "../../session/cleanup-capability"
 import type { HostedControlPlane } from "../../authority/hosted-services"
 import type { IdempotencyCoordinator } from "../../authority/http/idempotency"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { hostedPiCredentials } from "../../credentials/worker/pi"
 import { hostedAgentConfigRoutes } from "../../agent-config/hosted-routes"
 import type { UserAgentConfigRepository } from "@claxedo/server-core/agent-config/repository"
-import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
+import {
+  liveSyncRoomNameForPrincipal,
+  nudgeLiveSyncRoom,
+  type LiveSyncRoomNamespace,
+} from "../../platform/http/live-sync-publish"
 import type { StaticProductDescriptor } from "./deployment-profile"
 import {
   mountControlPlaneRouteContributions,
@@ -135,8 +135,6 @@ export type HostedCoreAppOptions = {
    * served and a runtime's usage report answers 503.
    */
   usageLedger?: UsageReportWriter & UsageProjectionLedger
-  cloudSessionRows?: CloudSessionRowsRouteOptions
-  sessionCleanupCapability?: SessionCleanupCapabilityInput
 }
 
 /**
@@ -310,7 +308,6 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       connections: options.integrationRoutes !== undefined,
       ...(plane.env.npm_package_version ? { version: plane.env.npm_package_version } : {}),
       liveSyncRoom: options.liveSyncRoom,
-      sessionNoticeVisible: (auth, ref, kind) => requireAuthority(services).sessionNoticeVisible?.(auth, ref, kind) ?? Promise.resolve(false),
       ...(services.authority ? { resolveOrgId: (auth) => services.authority!.resolveOrgId(auth) } : {}),
       harnessStatus: hostedHarnessRuntimeStatus(services),
       ...hostedPiCredentials({
@@ -362,10 +359,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     }))
   }
   app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, workspaceOptions))
-  app.route("/api/claxedo/host/session-rows", HostSessionRowsRoutes(services, { notice: createSessionNoticeSink(options.liveSyncRoom) }))
-  if (options.cloudSessionRows) {
-    app.route("/api/claxedo/cloud/session-rows", CloudSessionRowsRoutes(services, { ...options.cloudSessionRows, notice: createSessionNoticeSink(options.liveSyncRoom) }))
-  }
+  app.route("/api/claxedo/host/session-rows", HostSessionRowsRoutes(services))
   app.route("/api/claxedo/host/invitations", HostInvitationRoutes(services, workspaceOptions))
   app.route("/api/claxedo/remote-access", RemoteAccessOwnerRoutes({
     deviceLoginConfigured: true,
@@ -405,10 +399,6 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     )
   }
   mountSessionReadRoutes(app, plane, options.authentication)
-  mountHostedSessionStateRoutes(app, {
-    services, authentication: options.authentication, notice: createSessionNoticeSink(options.liveSyncRoom),
-    cleanupCapability: options.sessionCleanupCapability,
-  })
 
   app.route(
     "/api/control",
@@ -441,7 +431,16 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       authentication: options.authentication,
       authConfig,
       cliTokenEnv: plane.env,
-      sessionShareChangedSink: createSessionNoticeSink(options.liveSyncRoom),
+      sessionShareChangedSink: (event) =>
+        nudgeLiveSyncRoom(
+          options.liveSyncRoom,
+          liveSyncRoomNameForPrincipal(
+            event.orgId
+              ? { orgId: event.orgId }
+              : { ownerUserId: event.ownerUserId },
+          ),
+          event,
+        ),
     }),
   )
   if (options.usageLedger) {

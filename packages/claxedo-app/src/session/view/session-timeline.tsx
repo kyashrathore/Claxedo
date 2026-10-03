@@ -2,14 +2,13 @@ import { createMemo, Show } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { usePhone } from "@/lib/viewport"
 import { sessionId, useServer } from "@/server"
-import { useSessionStores, type SessionView } from "@/session"
+import type { SessionView } from "@/session"
 import { sessionLinkPath } from "@/shell"
 import { DataProvider, TranscriptKitProviders, type SubagentStopAnswer, type TranscriptUserMessage } from "@/transcript"
 import { MessageTimeline, type SessionErrorClass, type TimelineHost, type TimelineNavTurn } from "./timeline"
 import type { TimelineScroll } from "./timeline-scroll"
 import { subagentViews } from "./subagent-views"
 import { useSessionScreenText } from "./text"
-import { acknowledgeVisibleOutcome } from "./visible-outcome"
 import "./transcript-kit.css"
 
 
@@ -28,7 +27,6 @@ export function SessionTimeline(props: {
   readonly onRecover?: (kind: SessionErrorClass, userMessageId: string) => unknown
   readonly follow?: boolean
 }) {
-  acknowledgeVisibleOutcome({ view: () => props.view, active: () => props.active && props.onScreen, scroller: props.scroll.scroller, acknowledge: useSessionStores().list.markSeen })
   const phone = usePhone()
   const server = useServer()
   const users = createMemo(() => userMessages(props.view))

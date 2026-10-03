@@ -5,7 +5,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
-import { ControlPlaneAuthError, localOnlyAuthAdapter, type ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
+import { localOnlyAuthAdapter, type ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 
 const root = path.join(realpathSync(os.tmpdir()), `session-meta-routes-${randomUUID().slice(0, 8)}`)
@@ -20,9 +20,8 @@ process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 // These modules share the storage and workspace dependency graph. Loading
 // them concurrently deadlocks Vitest's SSR module evaluator before collection.
 const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
-const { putSessionMeta, deleteSessionMeta, sessionMeta, listSessionMetas, syncSessionMeta } = await import("@claxedo/server-core/session/meta/index")
-const { ClaxedoSessionMetaTable } = await import("@claxedo/server-core/session/meta.sql")
-const { ensureWorkspace, deleteWorkspace, upsertProjectRecord } = await import("@claxedo/server-core/workspace/store/index")
+const { putSessionMeta, sessionMeta, listSessionMetas } = await import("@claxedo/server-core/session/meta/index")
+const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
 const { SessionMetaRoutes } = await import("./meta-routes")
 ClaxedoDB.Drizzle()
 
@@ -132,164 +131,6 @@ describe("session metadata routes", () => {
     else process.env.CLAXEDO_DATA_DIR = prev.CLAXEDO_DATA_DIR
     if (prev.CLAXEDO_STATE_DIR === undefined) delete process.env.CLAXEDO_STATE_DIR
     else process.env.CLAXEDO_STATE_DIR = prev.CLAXEDO_STATE_DIR
-  })
-
-  test("exact local location uses canonical workspace project and resolves hidden sessions without listing rows", async () => {
-    const ws = await ensureWorkspace({ workspaceId: `ws_location_${randomUUID()}`, directory: await worktree(path.join(root, `location-${randomUUID()}`)) })
-    if (!ws) throw new Error("test workspace was not created")
-    const id = `ses_location_${randomUUID()}`
-    await syncSessionMeta(ws, { id, title: "Private title", time: { created: 100, updated: 500 },
-      attention: { sequence: 10, generation: 1, activitySequence: 10, activityAt: 500, working: false, awaitingInput: false,
-        outcome: { sequence: 10, status: "completed", completedAt: 500 } } })
-    const { writeSessionReader, LOCAL_SESSION_READER } = await import("@claxedo/server-core/session/reader")
-    expect(writeSessionReader({ sessionRef: (await sessionMeta(id))!.sessionRef!, readerId: LOCAL_SESSION_READER,
-      command: { kind: "settle", generation: 1, activitySequence: 10, outcomeSequence: 10, revision: 0 }, now: 600 }).ok).toBe(true)
-    const app = SessionMetaRoutes({ authConfig: { enabled: false, mode: "local-only", reason: "test" } })
-    const hidden = await app.request(`http://localhost/api/claxedo/session-list?scope=workspace&workspaceId=${ws.id}&limit=5`)
-    expect(hidden.status).toBe(200)
-    expect(await hidden.json()).toMatchObject({ items: [], totalKnown: 0 })
-    const all = await app.request(`http://localhost/api/claxedo/session-list?scope=workspace&workspaceId=${ws.id}&limit=5&settled=all`)
-    expect(await all.json()).toMatchObject({ items: [{ sessionId: id, reader: { settledThrough: 10 } }], totalKnown: 1 })
-    const exact = await app.request(`http://localhost/api/claxedo/session-list?scope=workspace&workspaceId=${ws.id}&sessionId=${id}&limit=2&settled=all&seen=all`)
-    expect(exact.status).toBe(200)
-    expect(await exact.json()).toMatchObject({ items: [{ sessionId: id, reader: { settledThrough: 10 } }], totalKnown: 1 })
-    const response = await app.request(`http://localhost/api/claxedo/session/${id}/location`)
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ sessionId: id, workspaceId: ws.id, projectId: ws.project_id })
-    await putSessionMeta(id, { archived: Date.now() })
-    expect((await app.request(`http://localhost/api/claxedo/session/${id}/location`)).status).toBe(200)
-    expect((await app.request(`http://localhost/api/claxedo/session/${id}/location?workspaceId=wrong`)).status).toBe(404)
-    expect((await app.request(`http://localhost/api/claxedo/session/${id}/location?workspaceId=`)).status).toBe(400)
-    await deleteSessionMeta(id)
-    expect((await app.request(`http://localhost/api/claxedo/session/${id}/location`)).status).toBe(404)
-  })
-
-  test("exact local location refuses ambiguous ids and cached cloud identity", async () => {
-    const ws = await ensureWorkspace({ workspaceId: `ws_location_ambiguous_${randomUUID()}`, directory: await worktree(path.join(root, `location-ambiguous-${randomUUID()}`)) })
-    const cloudId = `ws_location_cloud_${randomUUID()}`
-    const cloud = await ensureWorkspace({ workspaceId: cloudId, directory: `workspace:${cloudId}`, remote_directory: "/workspace", kind: "cloud", driver: "modal" })
-    if (!ws || !cloud) throw new Error("test workspaces were not created")
-    const id = `ses_location_ambiguous_${randomUUID()}`
-    await putSessionMeta(id, { ws, ...runtimeTimes() })
-    const stored = ClaxedoDB.use((db) => db.select().from(ClaxedoSessionMetaTable).all().find((row) => row.session_id === id))!
-    ClaxedoDB.use((db) => db.insert(ClaxedoSessionMetaTable).values({ ...stored, session_ref: `duplicate:${id}`, workspace_id: cloud.id }).run())
-    const app = SessionMetaRoutes({ authConfig: { enabled: false, mode: "local-only", reason: "test" } })
-    expect((await app.request(`http://localhost/api/claxedo/session/${id}/location`)).status).toBe(404)
-    const cloudSession = `ses_cloud_location_${randomUUID()}`
-    await putSessionMeta(cloudSession, { ws: cloud, ...runtimeTimes() })
-    expect((await app.request(`http://localhost/api/claxedo/session/${cloudSession}/location`)).status).toBe(404)
-  })
-
-  test("exact navigation reads an off-page root with canonical project, machine and working facts", async () => {
-    const ws = await ensureWorkspace({ workspaceId: `ws_exact_navigation_${randomUUID()}`, directory: await worktree(path.join(root, `exact-navigation-${randomUUID()}`)) })
-    if (!ws) throw new Error("test workspace was not created")
-    if (!ws.project_id) throw new Error("test workspace has no canonical project")
-    await upsertProjectRecord({ id: ws.project_id, name: "Exact navigation project" })
-    const id = `ses_exact_navigation_${randomUUID()}`
-    const attention = { generation: 1, sequence: 13, activitySequence: 10, activityAt: 10, working: true, awaitingInput: false }
-    const lastTurn = { status: "completed" as const, completedAt: 9, assistantMessageId: "msg_previous" }
-    await syncSessionMeta(ws, { id, title: "Older working session", time: { created: 1, updated: 13 }, attention, lastTurn })
-    for (let index = 0; index < 30; index += 1) {
-      await putSessionMeta(`${id}_new_${index}`, { ws, title: `New session ${index}`, createdAt: 20 + index, updatedAt: 20 + index })
-    }
-    const refreshSessionProjection = vi.fn(async () => {})
-    const app = SessionMetaRoutes({ authConfig: { enabled: false, mode: "local-only", reason: "test" }, refreshSessionProjection })
-    const base = `http://localhost/api/claxedo/session-list?scope=workspace&workspaceId=${ws.id}&sort=human_turn_desc`
-    const first = await app.request(`${base}&limit=5`)
-    const firstBody = await first.json() as { items: Array<{ sessionId: string }>; totalKnown: number }
-    expect(firstBody.items).toHaveLength(5)
-    expect(firstBody.items.some((item) => item.sessionId === id)).toBe(false)
-    expect(firstBody.totalKnown).toBe(31)
-    const exact = await app.request(`${base}&sessionId=${id}&limit=2&settled=all&seen=all`)
-    expect(exact.status).toBe(200)
-    expect(await exact.json()).toMatchObject({ items: [{ sessionId: id, workspaceId: ws.id, projectId: ws.project_id,
-      title: "Older working session", ownership: "owned", projectName: "Exact navigation project",
-      placement: { kind: "local", machineName: expect.any(String) }, attention, lastTurn }], totalKnown: 1 })
-    expect(refreshSessionProjection).toHaveBeenCalledTimes(2)
-    expect(refreshSessionProjection).toHaveBeenLastCalledWith(expect.objectContaining({ id: ws.id }))
-  })
-
-  test("exact navigation returns no row or metadata for missing, deleted, ambiguous or wrong-workspace ids", async () => {
-    const workspaces = await Promise.all(["one", "two"].map(async (name) => ensureWorkspace({
-      workspaceId: `ws_exact_absent_${name}_${randomUUID()}`, directory: await worktree(path.join(root, `exact-absent-${name}-${randomUUID()}`)),
-    })))
-    const [one, two] = workspaces
-    if (!one || !two) throw new Error("test workspaces were not created")
-    const id = `ses_exact_absent_${randomUUID()}`
-    await putSessionMeta(id, { ws: one, title: "Must not leak", ...runtimeTimes() })
-    const app = SessionMetaRoutes({ authConfig: { enabled: false, mode: "local-only", reason: "test" } })
-    const read = async (sessionId: string, workspaceId = one.id) => {
-      const response = await app.request(`http://localhost/api/claxedo/session-list?scope=workspace&workspaceId=${workspaceId}&sessionId=${sessionId}&limit=2&settled=all`)
-      expect(response.status).toBe(200)
-      expect(await response.json()).toMatchObject({ items: [], totalKnown: 0 })
-    }
-    const invalid = await app.request(`http://localhost/api/claxedo/session-list?scope=workspace&workspaceId=${one.id}&sessionId=`)
-    expect(invalid.status).toBe(400)
-    expect(await invalid.json()).toEqual({ error: { code: "invalid_session_list_query", message: "Session id is empty" } })
-    await read(`${id}_missing`)
-    await read(id, two.id)
-    const deletedId = `${id}_deleted`
-    await putSessionMeta(deletedId, { ws: one, title: "Deleted private row", ...runtimeTimes() })
-    await deleteSessionMeta(deletedId)
-    await read(deletedId)
-    const stored = ClaxedoDB.use((db) => db.select().from(ClaxedoSessionMetaTable).all().find((row) => row.session_id === id))!
-    ClaxedoDB.use((db) => db.insert(ClaxedoSessionMetaTable).values({ ...stored, session_ref: `duplicate:${id}`, workspace_id: two.id }).run())
-    await read(id)
-  })
-
-  test("exact local location authorizes the canonical session before returning project metadata", async () => {
-    const ws = await ensureWorkspace({ workspaceId: `ws_location_auth_${randomUUID()}`, directory: await worktree(path.join(root, `location-auth-${randomUUID()}`)) })
-    if (!ws) throw new Error("test workspace was not created")
-    const id = `ses_location_auth_${randomUUID()}`
-    await putSessionMeta(id, { ws, ...runtimeTimes() })
-    const { app, svc } = buildApp()
-    vi.mocked(svc.authority!.authorizeSessionRead).mockRejectedValueOnce(new ControlPlaneAuthError(403, "workspace_authorization_denied", "Session is private"))
-    const denied = await app.request(`http://localhost/api/claxedo/session/${id}/location`, { headers: { Authorization: "Bearer other_user" } })
-    expect(denied.status).toBe(403)
-    expect(await denied.json()).not.toHaveProperty("projectId")
-    expect(svc.authority!.authorizeSessionRead).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ subject: "other_user" }) }), { sessionId: id, workspaceId: ws.id })
-  })
-
-  test.each(["missing", "cloud"] as const)("exact local location authorizes before inspecting an unauthorized %s workspace", async (kind) => {
-    const workspaceId = `ws_location_guard_${kind}_${randomUUID()}`
-    const ws = kind === "cloud"
-      ? await ensureWorkspace({ workspaceId, directory: `workspace:${workspaceId}`, remote_directory: "/workspace", kind: "cloud", driver: "modal" })
-      : await ensureWorkspace({ workspaceId, directory: await worktree(path.join(root, `location-guard-${randomUUID()}`)) })
-    if (!ws) throw new Error("test workspace was not created")
-    const id = `ses_location_guard_${randomUUID()}`
-    await putSessionMeta(id, { ws, ...runtimeTimes() })
-    if (kind === "missing") await deleteWorkspace(ws.id)
-    const { app, svc } = buildApp()
-    vi.mocked(svc.authority!.authorizeSessionRead).mockRejectedValueOnce(new ControlPlaneAuthError(403, "workspace_authorization_denied", "Session is private"))
-    const response = await app.request(`http://localhost/api/claxedo/session/${id}/location`, { headers: { Authorization: "Bearer denied_user" } })
-    expect(response.status).toBe(403)
-    expect(await response.json()).toEqual({ error: { code: "workspace_authorization_denied", message: "Session is private", retryable: false } })
-    expect(svc.authority!.authorizeSessionRead).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ subject: "denied_user" }) }), { sessionId: id, workspaceId: ws.id })
-  })
-
-  test("reader mutation requires the exact workspace and refuses an unavailable runtime without changing reader state", async () => {
-    const directory = await worktree(path.join(root, `reader-boundary-${randomUUID()}`))
-    const ws = await ensureWorkspace({ workspaceId: `ws_reader_${randomUUID()}`, directory })
-    if (!ws) throw new Error("test workspace was not created")
-    await putSessionMeta("ses_reader_boundary", { ws, ...runtimeTimes() })
-    const app = SessionMetaRoutes()
-    const request = (query: string) => app.request(`http://localhost/api/claxedo/session/ses_reader_boundary/reader${query}`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "settle", generation: 1, activitySequence: 1, revision: 0 }),
-    })
-    expect((await request("")).status).toBe(400)
-    expect((await request("?workspaceId=ws_other")).status).toBe(404)
-    expect((await request(`?workspaceId=${ws.id}`)).status).toBe(503)
-    const { readSessionReader, LOCAL_SESSION_READER } = await import("@claxedo/server-core/session/reader")
-    expect(readSessionReader((await sessionMeta("ses_reader_boundary"))!.sessionRef!, LOCAL_SESSION_READER)).toBeUndefined()
-    await syncSessionMeta(ws, { id: "ses_reader_boundary", title: "Reader", time: { created: 100, updated: 500 },
-      attention: { sequence: 10, generation: 1, activitySequence: 10, activityAt: 500, working: false, awaitingInput: false,
-        outcome: { sequence: 10, status: "completed", completedAt: 500 } } })
-    const seen = await app.request(`http://localhost/api/claxedo/session/ses_reader_boundary/reader?workspaceId=${ws.id}`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "seen", generation: 1, outcomeSequence: 10 }),
-    })
-    expect(seen.status).toBe(200)
-    expect(await seen.json()).toMatchObject({ ok: true, state: { revision: 1, seenThrough: 10 } })
-    expect(readSessionReader((await sessionMeta("ses_reader_boundary"))!.sessionRef!, LOCAL_SESSION_READER)?.settledThrough).toBeUndefined()
   })
 
   test("local unsigned mode remains available when signed auth is disabled", async () => {
@@ -555,7 +396,7 @@ describe("session metadata routes", () => {
       { session_id: "ses_b", workspace_id: "ws_two", project_id: "proj_pages", created_at: 2, updated_at: 2, last_human_turn_at: 9 },
       { session_id: "ses_a", workspace_id: "ws_one", project_id: "proj_pages", created_at: 1, updated_at: 1 },
     ])
-    Object.assign(svc.authority!, { listSessionPage, countSessions: vi.fn(async () => (2)) })
+    Object.assign(svc.authority!, { listSessionPage })
 
     const res = await buildApp(svc).app.request(
       "http://localhost/api/claxedo/session-list?scope=project&projectId=proj_pages&sort=human_turn_desc&limit=1",
@@ -568,9 +409,6 @@ describe("session metadata routes", () => {
     expect(body.nextCursor).toBeTypeOf("string")
     expect(listSessionPage).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }), {
       projectId: "proj_pages",
-      ownership: "all",
-      seen: "all",
-      settled: "active",
       sort: "human_turn_desc",
       archived: "active",
       limit: 2,
@@ -583,7 +421,7 @@ describe("session metadata routes", () => {
     await ensureWorkspace({ workspaceId: "ws_signed_page", project_id: "proj_signed_page", directory })
     const svc = services()
     const listSessionPage = vi.fn(async () => [])
-    Object.assign(svc.authority!, { listSessionPage, countSessions: vi.fn(async () => (0)) })
+    Object.assign(svc.authority!, { listSessionPage })
 
     const res = await buildApp(svc).app.request(
       `http://localhost/api/claxedo/session-list?scope=workspace&directory=${encodeURIComponent(directory)}&limit=5`,

@@ -24,12 +24,6 @@ function fakeBridge() {
     return next.promise
   }
   const bridge: DesktopAccountBridge = {
-    streamOpen: async () => ({ streamId: "stream-1" }),
-    streamStart: async () => undefined,
-    streamClose: async () => undefined,
-    onStreamChunk: () => () => undefined,
-    onStreamEnd: () => () => undefined,
-    onStreamError: () => () => undefined,
     state: answer,
     onState: (listener) => (listeners.add(listener), () => listeners.delete(listener)),
     signIn: answer,

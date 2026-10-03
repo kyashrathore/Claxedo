@@ -46,26 +46,6 @@ const capabilityIn = (details: Partial<BeforeSendHeadersDetails>) =>
   headersFor(details)[CLAXEDO_DAEMON_CAPABILITY_HEADER]
 
 describe("the trusted main renderer", () => {
-  test.each([
-    "/api/claxedo/daemon/session-cleanup",
-    "/api/claxedo/daemon/session-cleanup?ignored=1",
-    "/api/claxedo/daemon/session-cleanup/",
-    "/api/claxedo/daemon/%73ession-cleanup",
-    "/api/claxedo/daemon/%2573ession-cleanup",
-    "/api%2fclaxedo%2fdaemon%2fsession-cleanup",
-    "/api//claxedo/daemon/session-cleanup",
-    "/api/claxedo/daemon/elsewhere/%2e%2e/session-cleanup",
-    "/api/claxedo/daemon/elsewhere%2f..%2fsession-cleanup",
-  ])("cannot install cleanup grants through renderer daemon access: %s", (path) => {
-    let listener: Parameters<Parameters<typeof grantMainRendererDaemonAccess>[0]["onBeforeSendHeaders"]>[1] | undefined
-    const respond = grantMainRendererDaemonAccess({ policy, onBeforeSendHeaders: (_filter, next) => { listener = next } })
-    let answer: { cancel?: boolean; requestHeaders: Record<string, string> } | undefined
-    listener?.({ ...mainFrame, url: `${DAEMON}${path}`, requestHeaders: { [CLAXEDO_DAEMON_CAPABILITY_HEADER]: "page-supplied" } }, (value) => { answer = value })
-    expect(answer).toEqual({ cancel: true, requestHeaders: {} })
-    expect(capabilityIn({ url: `${DAEMON}${path}` })).toBeUndefined()
-    expect(respond({ id: mainFrame.id, url: `${DAEMON}${path}` })).toBeUndefined()
-  })
-
   test("is given the capability on HTTP and on a WebSocket handshake alike", () => {
     expect(capabilityIn({})).toBe("installation-secret")
     // A socket upgrade reaches this hook under ws:, on the same listener.

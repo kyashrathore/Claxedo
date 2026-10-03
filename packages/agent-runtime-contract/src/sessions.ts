@@ -1,4 +1,3 @@
-import type { BackgroundWork } from "./background-work"
 import type { SessionHarness } from "./harnesses"
 import type { SessionModelGroup } from "./session-group"
 import type { AutoLevel } from "./permissions"
@@ -8,20 +7,8 @@ import type { ExecutionAvailability } from "./availability"
 import type { AgentAgentPartInput, AgentFilePartInput, AgentTextPartInput } from "./content"
 import type { FirstTurnErrorClass } from "./turn-error-classes"
 import type { TurnAccount } from "./turn-account"
-import type { SessionAttentionFacts } from "./session-attention"
 
 export type SessionRef = Readonly<{ sessionId: string; workspaceId: string }>
-
-/** The authoritative activity boundary a cleanup preview selected. */
-export type SessionDeleteExpectation = Readonly<{ generation: number; activitySequence: number }>
-
-/** Descendants are selected explicitly because deleting their parent cascades. */
-export type SessionDeleteRequest = {
-  expected: SessionDeleteExpectation
-  descendants: Array<SessionDeleteExpectation & { sessionId: string }>
-}
-
-export type SessionDeleteResult = { ok: true; deletedSessionIds?: string[] }
 
 export type AgentWorkspaceIdentity = {
   workspaceId: string
@@ -109,11 +96,9 @@ export type AgentSession = {
   tags?: unknown[]
   attachments?: unknown[]
   metadata?: Record<string, unknown>
-  time?: { created: number; updated?: number; archived?: number; lastHumanTurn?: number }
-  backgroundWork?: BackgroundWork
+  time?: { created: number; updated?: number; archived?: number }
   status?: string | null
   lastTurn?: AgentTurnOutcome
-  attention?: SessionAttentionFacts
   executionAvailability?: ExecutionAvailability
   harnessPayload?: unknown
   commands?: AgentSessionCommand[]
@@ -147,8 +132,7 @@ export type AgentPresentationSession = AgentSession & {
   version: string
   permission?: Array<{ permission: string; pattern: string; action: "allow" | "deny" | "ask" }>
   revert?: { messageID: string; partID?: string; snapshot?: string; diff?: string }
-  time: { created: number; updated: number; archived?: number; lastHumanTurn?: number }
-  backgroundWork?: BackgroundWork
+  time: { created: number; updated: number; archived?: number }
 }
 
 export type AgentTurnOutcome = (

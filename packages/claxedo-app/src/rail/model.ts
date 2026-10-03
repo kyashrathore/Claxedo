@@ -1,21 +1,13 @@
 import { formatCompactAge } from "@/lib/relative-time"
-import { sessionAttention, type MachineId, type Placement, type ProjectId, type SessionId, type SessionLocation } from "@/server"
-import { sessionActivity, type SessionRowView } from "@/session"
+import type { MachineId, Placement, ProjectId, SessionId, SessionLocation } from "@/server"
+import { sessionActivity, type SessionRowView, type UnseenOutcome } from "@/session"
 import type { TerminalItem } from "@/terminal"
 
 export type NavigationStatus = "idle" | "working" | "background" | "permission" | "error" | "interrupted" | "done"
 
 export const SESSION_GROUP_PAGE_SIZE = 5
 
-export function navigationStatus(row: SessionRowView): NavigationStatus {
-  if (row.attention && row.executionAvailability?.status !== "available") return "idle"
-  if (row.attention) {
-    const attention = sessionAttention(row.attention, row.reader)
-    if (row.attention.awaitingInput) return "permission"
-    if (row.attention.working) return "working"
-    if (attention.unseen) return row.attention.outcome?.status === "failed" ? "error" : "done"
-    return "idle"
-  }
+export function navigationStatus(row: SessionRowView, unseen: UnseenOutcome | undefined): NavigationStatus {
   const activity = sessionActivity(row)
   if (activity === "waiting") return "permission"
   if (row.pending) return "working"
@@ -25,11 +17,11 @@ export function navigationStatus(row: SessionRowView): NavigationStatus {
     case "working":
       return "working"
     case "failed":
-      return "idle"
+      return unseen === "failed" ? "error" : "idle"
     case "background":
       return "background"
     case "idle":
-      return "idle"
+      return unseen === "finished" ? "done" : "idle"
   }
 }
 
@@ -63,6 +55,12 @@ export function sessionIdsByProject(refs: readonly SessionLocation[]): ReadonlyM
     else grouped.set(ref.projectId, [ref.sessionId])
   }
   return grouped
+}
+
+export function siblingAfterArchive(sessionIds: readonly SessionId[], archived: SessionId): SessionId | undefined {
+  const index = sessionIds.indexOf(archived)
+  if (index === -1) return undefined
+  return sessionIds[index + 1] ?? sessionIds[index - 1]
 }
 
 export type RailRow =

@@ -11,7 +11,6 @@ import { sessionLocationFor, sessionRowFromSession, type Address } from "./sessi
 import { sessionStatusFromTurnError, sessionStatusFromWire } from "./status"
 import { terminalEvent } from "./terminals"
 import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
-import { sessionNoticeEvent } from "./session-notices"
 
 export type Frame = {
   readonly directory?: string
@@ -19,7 +18,6 @@ export type Frame = {
   readonly type: string
   readonly properties?: Record<string, unknown>
   readonly raw: Record<string, unknown>
-  readonly replayed?: boolean
 }
 
 function isSessionInfo(value: unknown): value is AgentSession {
@@ -37,7 +35,6 @@ export function frameFromWire(input: unknown): Frame | undefined {
     ...(directory ? { directory } : {}),
     ...(workspaceId ? { workspaceId } : {}),
     type,
-    ...((payload.replayed === true || input.replayed === true) ? { replayed: true } : {}),
     ...(isRecord(payload.properties) ? { properties: payload.properties } : {}),
     raw: payload,
   }
@@ -234,7 +231,6 @@ function controlEvent(frame: Frame, address: Address): ServerEvent | undefined {
 const SESSION_FRAME = /^(message\.|session\.(status|idle|error|updated|deleted|diff|background-work)$|todo\.updated$|goal\.(updated|cleared)$|subagent\.updated$|harness\.health$|permission\.|question\.)/
 
 export function serverEventFromFrame(frame: Frame, address: Address): ServerEvent | undefined {
-  if (frame.type === "session.status.changed" || frame.type === "session.reader.changed" || frame.type === "session.attention.raised" || frame.type === "session.removed") return sessionNoticeEvent(frame, address)
   if (!SESSION_FRAME.test(frame.type)) return controlEvent(frame, address)
   const ref = refOf(frame, address)
   if (!ref) return undefined

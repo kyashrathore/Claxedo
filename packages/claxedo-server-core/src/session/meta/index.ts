@@ -1,4 +1,5 @@
-import { ClaxedoDB, and, eq, inArray } from "../../platform/db"
+import { isJsonRecord } from "../../platform/runtime/lib/json"
+import { ClaxedoDB, and, eq, inArray, textColumns } from "../../platform/db"
 import {
   ClaxedoSessionAttachmentTable,
   ClaxedoSessionMetaTable,
@@ -28,10 +29,8 @@ import {
 import { resolveWorkspace, type SessionProjectionWorkspace, type Workspace } from "../../workspace/store"
 import { controlBus } from "../../platform/runtime/lib/bus"
 import { asRecord } from "@claxedo/helpers/guards"
+import { sessionOrderSql, type SessionOrderColumns } from "../navigation-order"
 import { reportSessionMetaChanges, type SessionMetaChange } from "./changes"
-import { storedSessionAttention, storedSessionReader } from "../reader-contract"
-import { ClaxedoSessionReaderTable } from "../reader.sql"
-import { deleteLocalSessionAttention, rekeyLocalSessionAttention } from "../attention-ledger"
 
 export { GLOBAL_TAG, GLOBAL_SHOW_TAG } from "./types"
 export { onSessionMetaChange, type SessionMetaChange } from "./changes"
@@ -41,7 +40,6 @@ export type {
   SessionMetaNavigationListInput,
 } from "./types"
 export { parseSessionMeta } from "./shape"
-export { sessionMetaInWorkspace, sessionMetaLocations } from "./read"
 
 /**
  * Reconcile one workspace's session metadata against a snapshot of that
@@ -55,10 +53,10 @@ export { sessionMetaInWorkspace, sessionMetaLocations } from "./read"
  */
 export async function syncSessionMetas(ws: SessionProjectionWorkspace | undefined, input: unknown[]) {
   const rows = input.map((item) => sessionMetaSyncRow(item, ws))
-  const writes = await upsertRows(rows)
-  await announceInventoryChange(writes.inserted, ws)
+  const inserted = await upsertRows(rows)
+  await announceInventoryChange(inserted, ws)
   if (!ws?.id) {
-    reportSessionMetaChanges(writes.changed)
+    reportSessionMetaChanges(rows.flatMap((row) => (row?.workspace_id ? [{ kind: "changed", workspaceId: row.workspace_id, sessionId: row.session_id }] : [])))
     return
   }
   const incoming = ids(rows.flatMap((item) => item?.session_ref ? [item.session_ref] : []))
@@ -86,28 +84,24 @@ export async function syncSessionMetas(ws: SessionProjectionWorkspace | undefine
   const stale = owned.filter((session_ref) => !incoming.includes(session_ref))
   deleteSessionMetaRefs(stale)
   if (stale.length) await announceInventoryChange([ws.id], ws)
-  if (writes.changed.length || stale.length) reportSessionMetaChanges([{ kind: "workspace", workspaceId: ws.id }])
+  reportSessionMetaChanges([{ kind: "workspace", workspaceId: ws.id }])
 }
 
 export async function syncSessionMeta(ws: SessionProjectionWorkspace | undefined, input: unknown) {
   const row = sessionMetaSyncRow(input, ws)
-  const writes = await upsertRows([row])
-  await announceInventoryChange(writes.inserted, ws)
-  reportSessionMetaChanges(writes.changed)
+  const inserted = await upsertRows([row])
+  await announceInventoryChange(inserted, ws)
+  if (row?.workspace_id) reportSessionMetaChanges([{ kind: "changed", workspaceId: row.workspace_id, sessionId: row.session_id }])
 }
 
 export async function deleteSessionMeta(sessionID: string) {
   const removed = ClaxedoDB.transaction((db) => {
     const rows = db.select({
-      session_ref: ClaxedoSessionMetaTable.session_ref,
       session_id: ClaxedoSessionMetaTable.session_id,
       parent_session_id: ClaxedoSessionMetaTable.parent_session_id,
       workspace_id: ClaxedoSessionMetaTable.workspace_id,
     }).from(ClaxedoSessionMetaTable).all()
     const sessionIDs = sessionTreeIDs(rows, sessionID)
-    const refs = rows.filter((row) => sessionIDs.includes(row.session_id)).map((row) => row.session_ref)
-    for (const sessionRef of refs) deleteLocalSessionAttention(db, sessionRef)
-    if (refs.length) db.delete(ClaxedoSessionReaderTable).where(inArray(ClaxedoSessionReaderTable.session_ref, refs)).run()
     db.delete(ClaxedoSessionAttachmentTable).where(inArray(ClaxedoSessionAttachmentTable.session_id, sessionIDs)).run()
     db.delete(ClaxedoSessionTagTable).where(inArray(ClaxedoSessionTagTable.session_id, sessionIDs)).run()
     db.delete(ClaxedoSessionMetaTable).where(inArray(ClaxedoSessionMetaTable.session_id, sessionIDs)).run()
@@ -359,7 +353,84 @@ export async function listSessionMetas(input?: {
     .sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
-export { listSessionNavigationMetas, countSessionNavigation } from "./navigation"
+/**
+ * One bounded page of a workspace's root sessions, ordered as the rail reads
+ * them.
+ *
+ * Children are excluded in SQL rather than by the caller: this query hands back
+ * `limit + 1` rows for the page window, so a child dropped afterwards would take
+ * a root's slot, shorten the page and — because the window would then be no
+ * longer than the limit — retire the cursor with roots still unread.
+ */
+const NAVIGATION_COLUMNS: SessionOrderColumns = {
+  lastHumanTurnAt: "m.last_human_turn_at",
+  createdAt: "m.created_at",
+  updatedAt: "m.updated_at",
+  sessionRef: "m.session_ref",
+}
+
+export async function listSessionNavigationMetas(input: SessionMetaNavigationListInput) {
+  const where: string[] = ["m.parent_session_id IS NULL"]
+  const params: Array<string | number | null> = []
+  if (input.workspaceID) {
+    where.push("m.workspace_id = ?")
+    params.push(input.workspaceID)
+  }
+  if (input.directory) {
+    where.push("m.directory = ?")
+    params.push(input.directory)
+  }
+  if (input.projectID) {
+    where.push("m.project_id = ?")
+    params.push(input.projectID)
+  }
+  if (input.global) {
+    where.push(`(
+      m.directory = 'global'
+      OR EXISTS (
+        SELECT 1 FROM claxedo_session_tag gt
+        WHERE gt.session_ref = m.session_ref
+        AND gt.tag IN ('global', 'global:default')
+      )
+    )`)
+  }
+  if (input.archived === "archived") where.push("m.archived_at IS NOT NULL")
+  if (input.archived !== "all" && input.archived !== "archived") where.push("m.archived_at IS NULL")
+  if (input.search) {
+    where.push("LOWER(COALESCE(m.title, '')) LIKE ?")
+    params.push(`%${input.search.toLowerCase()}%`)
+  }
+  const status = ids(input.status ?? [])
+  if (status.length) {
+    where.push(`(${status.map(() => statusPredicate()).join(" OR ")})`)
+    for (const item of status) {
+      params.push(item, item, item, item)
+    }
+  }
+  const order = sessionOrderSql(NAVIGATION_COLUMNS, input.sort ?? "updated_desc", input.cursor)
+  if (order.keyset) {
+    where.push(order.keyset.sql)
+    params.push(...order.keyset.params)
+  }
+
+  const rows = safeMetaRead("session navigation list", [], () =>
+    ClaxedoDB.raw()
+      .prepare(`
+        SELECT m.session_ref
+        FROM claxedo_session_meta m
+        WHERE ${where.join(" AND ")}
+        ORDER BY ${order.orderBy}
+        LIMIT ?
+      `)
+      .all(...params, Math.max(0, input.limit))
+      .filter(isJsonRecord),
+  )
+  const hit = textColumns(rows, "session_ref")
+  const meta = await sessionMetaMapByRef(hit)
+  return hit
+    .map((item) => meta.get(item))
+    .filter((item): item is SessionMeta => !!item)
+}
 
 export function applySessionMeta(input: Array<Record<string, unknown>>) {
   const sessionIDs = input.map((item) => txt(item.id)).filter((item): item is string => !!item)
@@ -398,13 +469,11 @@ export function applySessionMeta(input: Array<Record<string, unknown>>) {
 }
 
 /** Writes the rows; returns the workspace of every row that did not exist before. */
-async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>): Promise<{ inserted: Array<string | null>; changed: SessionMetaChange[] }> {
+async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>): Promise<Array<string | null>> {
   const all = rows.filter((item): item is Exclude<typeof item, undefined> => !!item)
-  if (!all.length) return { inserted: [], changed: [] }
+  if (!all.length) return []
   const hit = ids(all.map((item) => item.session_ref))
   return ClaxedoDB.transaction((db) => {
-    const changed: SessionMetaChange[] = []
-    const inserted: Array<string | null> = []
     // Before anything is written, so the row read as `prev` below is the
     // re-keyed row and keeps its `created_at`.
     for (const item of all) rekeySessionRef(db, item)
@@ -418,11 +487,7 @@ async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>): P
       const prev = old.get(item.session_ref)
       // Two pulls of one session can finish in either order; the runtime's
       // `time.updated` orders their snapshots, and the older one writes nothing.
-      const incomingAttention = storedSessionAttention(item.attention_json)
-      const previousAttention = storedSessionAttention(prev?.attention_json)
-      if (previousAttention && !incomingAttention) throw new Error(`Session ${item.session_id} snapshot omitted canonical activity facts`)
-      if (incomingAttention && previousAttention && incomingAttention.sequence < previousAttention.sequence) continue
-      if (!incomingAttention && prev?.runtime_updated_at != null && item.updated_at < prev.runtime_updated_at) continue
+      if (prev?.runtime_updated_at != null && item.updated_at < prev.runtime_updated_at) continue
       const update = {
         session_id: item.session_id,
         workspace_id: item.workspace_id ?? prev?.workspace_id ?? null,
@@ -437,10 +502,7 @@ async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>): P
         updated_at: Math.max(item.updated_at, prev?.updated_at ?? 0),
         last_human_turn_at: laterHumanTurnAt(item.last_human_turn_at, prev?.last_human_turn_at),
         runtime_updated_at: item.updated_at,
-        attention_json: item.attention_json,
-        last_turn_json: item.last_turn_json,
       }
-      if (prev && Object.entries(update).every(([key, value]) => value === Reflect.get(prev, key))) continue
       db.insert(ClaxedoSessionMetaTable).values({
         ...update,
         session_ref: item.session_ref,
@@ -449,10 +511,8 @@ async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>): P
         target: ClaxedoSessionMetaTable.session_ref,
         set: update,
       }).run()
-      if (!prev) inserted.push(item.workspace_id ?? null)
-      if (update.workspace_id) changed.push({ kind: "changed", workspaceId: update.workspace_id, sessionId: item.session_id })
     }
-    return { inserted, changed }
+    return all.filter((item) => !old.has(item.session_ref)).map((item) => item.workspace_id ?? null)
   })
 }
 
@@ -518,24 +578,6 @@ function rekeySessionRef(
  * information the destination does not already hold.
  */
 function moveSessionMetaChildren(db: ClaxedoDB.Client, from: string, to: string) {
-  rekeyLocalSessionAttention(db, from, to)
-  for (const reader of db.select().from(ClaxedoSessionReaderTable).where(eq(ClaxedoSessionReaderTable.session_ref, from)).all()) {
-    const existing = db.select().from(ClaxedoSessionReaderTable).where(and(
-      eq(ClaxedoSessionReaderTable.session_ref, to),
-      eq(ClaxedoSessionReaderTable.reader_id, reader.reader_id),
-    )).get()
-    const incomingState = storedSessionReader(reader.state_json)!
-    const existingState = storedSessionReader(existing?.state_json)
-    if (existingState && (existingState.generation > incomingState.generation
-      || existingState.generation === incomingState.generation && existingState.revision > incomingState.revision)) continue
-    if (existingState && existingState.generation === incomingState.generation && existingState.revision === incomingState.revision
-      && existing!.state_json !== reader.state_json) throw new Error("Conflicting session reader state at the same revision")
-    db.insert(ClaxedoSessionReaderTable).values({ ...reader, session_ref: to }).onConflictDoUpdate({
-      target: [ClaxedoSessionReaderTable.session_ref, ClaxedoSessionReaderTable.reader_id],
-      set: { state_json: reader.state_json },
-    }).run()
-  }
-  db.delete(ClaxedoSessionReaderTable).where(eq(ClaxedoSessionReaderTable.session_ref, from)).run()
   const heldTags = new Set(
     db.select({ tag: ClaxedoSessionTagTable.tag })
       .from(ClaxedoSessionTagTable)
@@ -591,8 +633,6 @@ function moveSessionMetaChildren(db: ClaxedoDB.Client, from: string, to: string)
 function deleteSessionMetaRefs(sessionRefs: string[]) {
   if (sessionRefs.length === 0) return
   ClaxedoDB.transaction((db) => {
-    for (const sessionRef of sessionRefs) deleteLocalSessionAttention(db, sessionRef)
-    db.delete(ClaxedoSessionReaderTable).where(inArray(ClaxedoSessionReaderTable.session_ref, sessionRefs)).run()
     db.delete(ClaxedoSessionAttachmentTable).where(inArray(ClaxedoSessionAttachmentTable.session_ref, sessionRefs)).run()
     db.delete(ClaxedoSessionTagTable).where(inArray(ClaxedoSessionTagTable.session_ref, sessionRefs)).run()
     db.delete(ClaxedoSessionMetaTable).where(inArray(ClaxedoSessionMetaTable.session_ref, sessionRefs)).run()
@@ -605,4 +645,21 @@ function weekKey(input: number) {
   date.setUTCDate(date.getUTCDate() - day + 1)
   date.setUTCHours(0, 0, 0, 0)
   return date.toISOString().slice(0, 10)
+}
+
+function statusPredicate() {
+  return `(
+    (? = 'active' AND m.archived_at IS NULL)
+    OR (? = 'archived' AND m.archived_at IS NOT NULL)
+    OR EXISTS (
+      SELECT 1 FROM claxedo_session_tag st
+      WHERE st.session_ref = m.session_ref
+      AND st.tag = ?
+    )
+    OR EXISTS (
+      SELECT 1 FROM claxedo_session_attachment sa
+      WHERE sa.session_ref = m.session_ref
+      AND sa.kind = ?
+    )
+  )`
 }

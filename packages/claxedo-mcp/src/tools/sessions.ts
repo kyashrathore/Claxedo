@@ -259,7 +259,7 @@ export function registerSessionTools(registry: ToolRegistrar) {
   registry.tool(
     "session_delete",
     {
-      description: "Logically delete one session and its child sessions after confirmation. Removes them from Claxedo; runtime journals remain retained. Use sessions_cleanup_list and sessions_delete for date/reader-state filtered cleanup with stale-selection guards.",
+      description: "Delete a session and its transcript. This cannot be undone.",
       inputSchema: { ...SESSION_ARG, ...WORKSPACE_TARGET_SCHEMA },
       access: runtimeToolAccess("session_delete", { audiences: ["user"], scope: "admin", destructive: true }),
       sessionIdOf: (args) => args.session,

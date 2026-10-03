@@ -1,8 +1,5 @@
 import { fileURLToPath } from "node:url"
 import type { Page } from "@playwright/test"
-import { activitySidebar, virtualActivitySidebar } from "../harness/activity-sidebar"
-import { sessionRowPresentation } from "../harness/sidebar-row-presentation"
-import { sessionRowSurfaceRefinement } from "../harness/sidebar-row-surface"
 import { marketplacePanel } from "../harness/marketplace-panel"
 import {
   acpScriptToken,
@@ -44,12 +41,7 @@ async function drawer(stack: Stack, api: ClaxedoApi, app: Page, arranged: Arrang
   await open.tap()
   await expect(app.getByRole("button", { name: "Close navigation sidebar" })).toBeVisible()
   const nav = app.getByRole("navigation", { name: UI.rail })
-  const settle = nav.getByRole("button", { name: "Settle First", exact: true })
-  expect(await settle.evaluate((button) => button.checkVisibility({ checkOpacity: true }))).toBe(true)
-  const target = await settle.boundingBox()
-  expect(target?.width).toBeGreaterThanOrEqual(44)
-  expect(target?.height).toBeGreaterThanOrEqual(44)
-  await nav.getByRole("button", { name: "First", exact: true }).tap()
+  await nav.getByRole("button", { name: "First" }).tap()
   await expect(app).toHaveURL(new RegExp(`/s/${arranged.first.id}$`))
   await test.step("no session title bar (DECISIONS Owner, 17:15)", async () => {
     await expect(app.getByText("The first session's reply")).toBeVisible()
@@ -58,11 +50,7 @@ async function drawer(stack: Stack, api: ClaxedoApi, app: Page, arranged: Arrang
   await expectNoHorizontalScroll(app)
   await expectWithinBaseline(app, "session-page")
   await open.tap()
-  await nav.getByRole("button", { name: "First", exact: true }).tap()
-  await expect(app.getByRole("button", { name: "Close navigation sidebar", exact: true })).toHaveCount(0)
-  await expect(app).toHaveURL(new RegExp(`/s/${arranged.first.id}$`))
-  await open.tap()
-  await nav.getByRole("button", { name: "Second", exact: true }).tap()
+  await nav.getByRole("button", { name: "Second" }).tap()
   await expect(app).toHaveURL(new RegExp(`/s/${arranged.second.id}$`))
   expect((await api.session(arranged.workspace.directory, arranged.second.id)).title).toBe("Second")
 }
@@ -77,22 +65,6 @@ async function panel(app: Page): Promise<void> {
 }
 
 test.skip(({ isMobile }) => !isMobile, "flow 33 runs in the phone project")
-
-test("33 phone: session rows keep original Projects spacing and flat matching action surfaces", async ({ stack, api, app }, info) => {
-  await sessionRowSurfaceRefinement(stack, api, app, true, info)
-})
-
-test("33 phone: session rows keep quiet context, bounded tooltips and touch actions", async ({ stack, api, app }, testInfo) => {
-  await sessionRowPresentation(stack, api, app, true, testInfo)
-})
-
-test("33 phone: Activity has rich touch rows, retained view choice and one active list", async ({ stack, api, app }, testInfo) => {
-  await activitySidebar(stack, api, app, true, testInfo)
-})
-
-test("33 phone: Activity virtualizes more than 100 rows in the drawer and reveals keyboard destinations", async ({ stack, api, app }) => {
-  await virtualActivitySidebar(stack, api, app, true)
-})
 
 test("33 phone: Marketplace details use the full-width shared panel with touch close and no workspace controls", async ({
   stack,
@@ -114,14 +86,14 @@ test("33 phone: the drawer stays open on a session while another project gains s
   const open = app.getByRole("button", { name: UI.openRail })
   await open.tap()
   const nav = app.getByRole("navigation", { name: UI.rail })
-  await nav.getByRole("button", { name: "First", exact: true }).tap()
+  await nav.getByRole("button", { name: "First" }).tap()
   await expect(app).toHaveURL(new RegExp(`/s/${arranged.first.id}$`))
   await open.tap()
   const close = app.getByRole("button", { name: "Close navigation sidebar" })
   await expect(close).toBeVisible()
   for (const title of ["Arrived 1", "Arrived 2"]) {
     await api.createSession(other.directory, { title, harness: SCRIPTED_ACP_HARNESS })
-    await expect(nav.getByRole("button", { name: title, exact: true })).toBeVisible()
+    await expect(nav.getByRole("button", { name: title })).toBeVisible()
   }
   await expect(close).toBeVisible()
   await expect(app).toHaveURL(new RegExp(`/s/${arranged.first.id}$`))

@@ -38,8 +38,8 @@ export type AuthorizationPrincipal = {
  */
 export type WorkspaceAction = "open" | "operate" | "create_session" | "assign_host" | "administer"
 
-/** `read` includes the live stream; `read_removed` admits only a tombstone notice; `send` is the agent's turn; `control` is every other session write. */
-export type SessionAction = "read" | "read_removed" | "send" | "control" | "manage_shares"
+/** `read` includes the live stream; `send` is the agent's turn; `control` is every other session write. */
+export type SessionAction = "read" | "send" | "control" | "manage_shares"
 
 export type OrgAction = "member" | "administer" | "own"
 
@@ -81,20 +81,6 @@ export function maySql<K extends ResourceKind>(
   row: ResourceRow<K>,
 ): BoundSql {
   const withActor = principal.actorId !== undefined
-  return bindPrincipal(ruleSql(action, row, withActor), principal)
-}
-
-/** The same rule for a principal represented by trusted SQL columns in the caller's query. */
-export function maySqlForPrincipalRow<K extends ResourceKind>(
-  principal: { userId: string; actorId?: string },
-  action: ActionOn<K>,
-  row: ResourceRow<K>,
-): string {
-  return ruleSql(action, row, principal.actorId !== undefined).replace(/\u0000(user|actor)\u0000/g,
-    (_, which: string) => which === "user" ? principal.userId : principal.actorId!)
-}
-
-function ruleSql<K extends ResourceKind>(action: ActionOn<K>, row: ResourceRow<K>, withActor: boolean) {
   const resource = row as ResourceRow
   const rule = resource.kind === "workspace"
     ? workspaceRuleSql(action as WorkspaceAction, resource.alias)
@@ -103,7 +89,7 @@ function ruleSql<K extends ResourceKind>(action: ActionOn<K>, row: ResourceRow<K
       : resource.kind === "project"
         ? projectRuleSql(action as ProjectAction, resource.alias)
         : orgRuleSql(action as OrgAction, resource.orgId)
-  return `(${activePrincipalSql(withActor)} and ${rule})`
+  return bindPrincipal(`(${activePrincipalSql(withActor)} and ${rule})`, principal)
 }
 
 /** `may` as a condition a write's batch re-reads, for a resource named by its id. */
@@ -246,8 +232,8 @@ function workspaceRuleSql(action: WorkspaceAction, w: string) {
 }
 
 function sessionRuleSql(action: SessionAction, s: string, withActor: boolean) {
-  const share = action === "read" || action === "read_removed" || action === "send" ? ` or ${sessionShareSql(s, action === "send", withActor)}` : ""
-  return `(${s}.deleted_at is ${action === "read_removed" ? "not " : ""}null
+  const share = action === "read" || action === "send" ? ` or ${sessionShareSql(s, action === "send", withActor)}` : ""
+  return `(${s}.deleted_at is null
     and ${orgMemberSql(`${s}.org_id`, USER)}
     and exists (
       select 1 from workspaces rule_workspace

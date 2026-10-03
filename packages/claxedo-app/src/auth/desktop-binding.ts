@@ -29,7 +29,6 @@ function followBridge(bridge: DesktopAccountBridge) {
 function portAccess(bridge: DesktopAccountBridge, refresh: () => Promise<void>): ControlPlaneAccess {
   return {
     kind: "port",
-    streams: bridge,
     run: async (operation, input) => {
       try {
         return await bridge.run(operation, input)

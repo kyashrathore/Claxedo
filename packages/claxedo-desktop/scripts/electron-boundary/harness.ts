@@ -85,7 +85,6 @@ type ListenerInput = {
 const seen = new Map<string, Seen>()
 const listenerInputs: ListenerInput[] = []
 const externalHits: Array<{ capability: string | null }> = []
-const cancelledRequests: string[] = []
 
 function headerOf(request: IncomingMessage, name: string): string | null {
   const value = request.headers[name]
@@ -136,12 +135,6 @@ function startDaemon(externalOrigin: () => string): Promise<{ server: Server; or
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1")
     const cors = { "access-control-allow-origin": "*" }
-    if (url.pathname.startsWith("/api/claxedo/daemon/")) {
-      record(`cleanup:${label(request.url)}`, request)
-      response.writeHead(200, { ...cors, "access-control-allow-methods": "PUT", "access-control-allow-headers": "content-type" })
-      response.end("{}")
-      return
-    }
     if (url.pathname === "/redirect-external") {
       record(`redirect:${label(request.url)}`, request)
       response.writeHead(302, { ...cors, location: `${externalOrigin()}/collect` })
@@ -312,10 +305,7 @@ async function main() {
           webContentsId: details.webContentsId ?? null,
           incomingOrigin: origin ?? null,
         })
-        listener(details, (response) => {
-          if (response.cancel) cancelledRequests.push(details.url)
-          callback(response)
-        })
+        listener(details, callback)
       })
     },
   })
@@ -353,12 +343,6 @@ async function main() {
   const socket = readRecord(probed, "socket")
   const socketOpened = readField(socket, "opened") === true
   const socketFirstMessage = readString(socket, "first") ?? null
-  const cleanupBlocked: unknown = await trusted.webContents.executeJavaScript(`(async () => {
-    const paths = ["/api/claxedo/daemon/session-cleanup", "/api/claxedo/daemon/%73ession-cleanup", "/api/claxedo/daemon/%2573ession-cleanup"]
-    return await Promise.all(paths.map((path, index) => fetch(${JSON.stringify(daemon.origin)} + path + "?w=" + index, {
-      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ capability: { token: "renderer-supplied" } })
-    }).then(() => false, () => true)))
-  })()`)
   const surfaces = readString({ text: await trusted.webContents.executeJavaScript(PAGE_SURFACES) }, "text") ?? ""
 
   // The subframe and the guest share this window; both are their own callers.
@@ -404,8 +388,6 @@ async function main() {
     externalHits,
     socketOpened,
     socketFirstMessage,
-    cleanupBlocked,
-    cancelledRequests,
     capabilityInPageSurfaces: surfaces.includes(CAPABILITY),
     pageSurfaceBytes: surfaces.length,
   }

@@ -79,26 +79,24 @@ export function GlobalNavigation(): JSX.Element {
   const routing = useShellRoute()
   const at = (path: string) => routing.pathname().startsWith(path)
   return (
-    <div data-testid="global-navigation" class="ui-rail-global-navigation flex flex-col gap-0.5 px-2.5 py-1.5 border-b border-border-weak-base/15">
-      <div class="ui-rail-utility-navigation flex flex-col gap-0.5">
-        <NavigationRow
-          icon="checklist"
-          label={t("rail.tasks")}
-          ariaLabel={t("rail.openTasks")}
-          testId="sidebar-tasks-entry"
-          active={at(TASKS_PATH)}
-          onClick={() => routing.navigate(TASKS_PATH)}
-        />
-        <NavigationRow
-          icon="marketplace"
-          label={t("rail.marketplace")}
-          ariaLabel={t("rail.openMarketplace")}
-          testId="sidebar-marketplace-entry"
-          active={at(MARKETPLACE_PATH)}
-          onClick={() => routing.navigate(MARKETPLACE_PATH)}
-        />
-      </div>
-      <div class="ui-rail-plugin-navigation flex flex-col gap-0.5"><PluginRows /></div>
+    <div data-testid="global-navigation" class="flex flex-col gap-0.5 px-2.5 py-1.5 border-b border-border-weak-base/15">
+      <NavigationRow
+        icon="checklist"
+        label={t("rail.tasks")}
+        ariaLabel={t("rail.openTasks")}
+        testId="sidebar-tasks-entry"
+        active={at(TASKS_PATH)}
+        onClick={() => routing.navigate(TASKS_PATH)}
+      />
+      <NavigationRow
+        icon="marketplace"
+        label={t("rail.marketplace")}
+        ariaLabel={t("rail.openMarketplace")}
+        testId="sidebar-marketplace-entry"
+        active={at(MARKETPLACE_PATH)}
+        onClick={() => routing.navigate(MARKETPLACE_PATH)}
+      />
+      <PluginRows />
     </div>
   )
 }

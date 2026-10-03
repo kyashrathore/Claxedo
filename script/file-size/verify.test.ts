@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test"
-import { readFileSync } from "node:fs"
 import { BUDGET, check, counted, lineCount, lower } from "./verify.ts"
 
 const over = BUDGET + 200
@@ -25,18 +24,6 @@ describe("file-size ratchet", () => {
     expect(lineCount("")).toBe(0)
     expect(lineCount("a\nb\n")).toBe(2)
     expect(lineCount("a\nb")).toBe(2)
-  })
-
-  test("skips only the reviewed historical benchmark output and counts replacements", () => {
-    const report = "packages/workspace-relay/bench/reports/dialin-agent.bundle.cjs"
-    const source = readFileSync(new URL(`../../${report}`, import.meta.url), "utf8")
-    expect(source).toContain("// bench/dialin-agent.ts")
-    expect(source).toContain("var __commonJS =")
-    expect(counted(report, source)).toBe(false)
-    expect(counted(report, `${source}\nexport const changed = true\n`)).toBe(true)
-    expect(counted(report, "export const maintained = true\n")).toBe(true)
-    expect(counted("packages/workspace-relay/bench/reports/other.bundle.cjs", source)).toBe(true)
-    expect(counted("packages/workspace-relay/bench/dialin-agent.ts", source)).toBe(true)
   })
 
   test("a new file over budget fails and one at the budget passes", () => {

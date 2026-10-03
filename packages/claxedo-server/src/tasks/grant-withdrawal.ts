@@ -31,24 +31,18 @@ export function createGrantWithdrawal(input: GrantWithdrawalInput) {
       const roots = new Map<string, TasksRootIdentity>()
       for (const pass of outstanding) {
         const { projectId, ...scope } = pass.scope
-        if (projectId) roots.set(JSON.stringify([scope.userId, scope.orgId, scope.workspaceId]), { ...scope, projectId })
+        if (projectId) roots.set(scope.workspaceId, { ...scope, projectId })
       }
-      const revoked = new Set<string>()
-      for (const root of roots.values()) {
+      const revoked: string[] = []
+      for (const [workspaceId, root] of roots) {
         // A root whose activation cannot be read any more — the workspace is
         // gone, or its owner lost the project — has no consent left to stand on.
         const enabled = await input.groupEnabled(root).catch(() => false)
         if (enabled) continue
-        await input.passes.revoke({
-          userId: root.userId,
-          orgId: root.orgId,
-          workspaceId: root.workspaceId,
-          audience: input.audience,
-          reason: input.reason,
-        })
-        revoked.add(root.workspaceId)
+        await input.passes.revoke({ workspaceId, audience: input.audience, reason: input.reason })
+        revoked.push(workspaceId)
       }
-      return [...revoked]
+      return revoked
     },
   }
 }

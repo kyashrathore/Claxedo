@@ -8,13 +8,12 @@ import {
   test as harnessTest,
   type AcpStep,
   type ClaxedoApi,
-  type SessionHarness,
   type Stack,
   type Workspace,
 } from "../harness"
 import type { Checked } from "./31-session-list-races.oracle"
 
-type SetupOptions = { readonly open?: boolean; readonly workspaces?: number; readonly webSocket?: boolean }
+type SetupOptions = { readonly open?: boolean; readonly workspaces?: number }
 
 const LIST_ROUTE = /\/api\/claxedo\/session-list/
 export const STREAM_PATH = "/api/wr/events"
@@ -73,33 +72,26 @@ export async function holdEventStreams(app: Page) {
   return { release: () => released.resolve() }
 }
 
-export async function watchBrowserStream(app: Page, paths: readonly string[] = [STREAM_PATH, CONTROL_STREAM_PATH]) {
+export async function watchBrowserStream(app: Page) {
   const cdp = await app.context().newCDPSession(app)
   const streams = new Set<string>()
   let text = ""
-  const observed: Array<{ receivedAt: number; content: string }> = []
   const decode = (base64: string) => Buffer.from(base64, "base64").toString("utf8")
-  const receive = (base64: string) => {
-    const content = decode(base64)
-    text += content
-    observed.push({ receivedAt: Date.now(), content })
-    if (observed.length > 1000) observed.shift()
-  }
   cdp.on("Network.responseReceived", (event) => {
-    if (!paths.some((path) => event.response.url.includes(path))) return
+    if (!event.response.url.includes(STREAM_PATH)) return
     streams.add(event.requestId)
     void cdp.send("Network.streamResourceContent", { requestId: event.requestId }).then((result) => {
-      receive(result.bufferedData)
+      text += decode(result.bufferedData)
     })
   })
   cdp.on("Network.dataReceived", (event) => {
-    if (streams.has(event.requestId) && event.data) receive(event.data)
+    if (streams.has(event.requestId) && event.data) text += decode(event.data)
   })
   await cdp.send("Network.enable")
   const received = async (marker: string) => {
     await expect.poll(() => text.includes(marker), { message: `the app's own stream carried "${marker}"` }).toBe(true)
   }
-  return { received, observed: () => [...observed] }
+  return { received }
 }
 
 export async function patchSession(checked: Checked, id: string, body: Record<string, unknown>) {
@@ -114,22 +106,21 @@ export async function startHeldTurn(checked: Checked, sessionId: string, hold: s
   await checked.api.promptAsync(checked.directory, sessionId, `Run ${acpScriptToken(hold)}`)
 }
 
-async function createInWorkspace(stack: Stack, api: ClaxedoApi, titles: readonly string[], harness: SessionHarness) {
+async function createInWorkspace(stack: Stack, api: ClaxedoApi, titles: readonly string[]) {
   const workspace: Workspace = await stack.daemon.makeWorkspace("races")
-  const create = (title: string) => api.createSession(workspace.directory, { title, harness })
+  const create = (title: string) => api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
   const sessions = [await create(titles[0])]
   for (let start = 1; start < titles.length; start += 50) {
     sessions.push(...(await Promise.all(titles.slice(start, start + 50).map(create))))
   }
-  return { directory: workspace.directory, projectId: workspace.projectId, sessions: sessions.map(({ id, title }) => ({ id, title, directory: workspace.directory })) }
+  return { directory: workspace.directory, sessions: sessions.map(({ id, title }) => ({ id, title, directory: workspace.directory })) }
 }
 
 export async function setup(stack: Stack, api: ClaxedoApi, app: Page, titles: readonly string[], options: SetupOptions = {}) {
   const share = Math.ceil(titles.length / (options.workspaces ?? 1))
   const chunks = Array.from({ length: Math.ceil(titles.length / share) }, (_, index) => titles.slice(index * share, (index + 1) * share))
   const created: Awaited<ReturnType<typeof createInWorkspace>>[] = []
-  const harness = options.webSocket ? await stack.acp.installWebSocket() : SCRIPTED_ACP_HARNESS
-  for (const chunk of chunks) created.push(await createInWorkspace(stack, api, chunk, harness))
+  for (const chunk of chunks) created.push(await createInWorkspace(stack, api, chunk))
   if (options.open ?? true) await app.goto(`${stack.url}/`)
   const sessions = created.flatMap((workspace) => workspace.sessions)
   const directories = created.map((workspace) => workspace.directory)
@@ -140,7 +131,6 @@ export async function setup(stack: Stack, api: ClaxedoApi, app: Page, titles: re
     directories,
     known: new Set(sessions.map((session) => session.id)),
     directoryOf: new Map(sessions.map((session) => [session.id, session.directory])),
-    projectOfDirectory: new Map(created.map((workspace) => [workspace.directory, workspace.projectId])),
   }
   return { sessions, checked }
 }

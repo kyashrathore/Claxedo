@@ -52,28 +52,28 @@ function harness(answers: Partial<Record<RuntimeStatusPath, unknown>> = {}) {
 }
 
 describe("runtime session status", () => {
-  test("a session never seen has no authoritative status", () => {
+  test("a session never seen is idle as of now", () => {
     const h = harness()
-    expect(h.status.current(WS, "s1")).toBeUndefined()
+    expect(h.status.current(WS, "s1")).toEqual({ kind: "idle", awaitingInput: false, at: 1_000 })
   })
 
-  test("observes every status and attention frame for canonical publication", () => {
+  test("follows status, idle and error frames, reporting each change once", () => {
     const h = harness()
     h.mount()
 
     h.emit("session.status", { sessionID: "s1", status: { type: "busy" } })
     h.tick(10)
     h.emit("session.status", { sessionID: "s1", status: { type: "busy" } })
-    expect(h.status.current(WS, "s1")).toEqual({ kind: "busy", awaitingInput: false, at: 1_010 })
+    expect(h.status.current(WS, "s1")).toEqual({ kind: "busy", awaitingInput: false, at: 1_000 })
 
     h.emit("session.status", { sessionID: "s1", status: { type: "retry", attempt: 1 } })
-    expect(h.status.current(WS, "s1")!.kind).toBe("retry")
+    expect(h.status.current(WS, "s1").kind).toBe("retry")
     h.emit("session.idle", { sessionID: "s1" })
     expect(h.status.current(WS, "s1")).toEqual({ kind: "idle", awaitingInput: false, at: 1_010 })
     h.emit("session.status", { sessionID: "s2", status: { type: "interrupted" } })
     h.emit("session.error", { sessionID: "s2", error: { message: "gone" } })
 
-    expect(h.changes).toEqual([[WS, "s1"], [WS, "s1"], [WS, "s1"], [WS, "s1"], [WS, "s2"], [WS, "s2"]])
+    expect(h.changes).toEqual([[WS, "s1"], [WS, "s1"], [WS, "s1"], [WS, "s2"], [WS, "s2"]])
   })
 
   test("an open permission or question is awaiting input until its reply", () => {
@@ -82,14 +82,14 @@ describe("runtime session status", () => {
 
     h.emit("permission.asked", { id: "p1", sessionID: "s1", permission: "bash" })
     h.emit("question.asked", { id: "q1", sessionID: "s1", questions: [] })
-    expect(h.status.current(WS, "s1")!.awaitingInput).toBe(true)
+    expect(h.status.current(WS, "s1").awaitingInput).toBe(true)
 
     h.emit("permission.replied", { sessionID: "s1", requestID: "p1", reply: "once" })
-    expect(h.status.current(WS, "s1")!.awaitingInput, "the question is still open").toBe(true)
+    expect(h.status.current(WS, "s1").awaitingInput, "the question is still open").toBe(true)
     h.emit("question.rejected", { sessionID: "s1", requestID: "q1" })
-    expect(h.status.current(WS, "s1")!.awaitingInput).toBe(false)
+    expect(h.status.current(WS, "s1").awaitingInput).toBe(false)
 
-    expect(h.changes).toEqual([[WS, "s1"], [WS, "s1"], [WS, "s1"], [WS, "s1"]])
+    expect(h.changes).toEqual([[WS, "s1"], [WS, "s1"]])
   })
 
   test("a stopped turn's expired permission and question no longer await input", () => {
@@ -99,11 +99,11 @@ describe("runtime session status", () => {
     h.emit("question.asked", { id: "q1", sessionID: "s1", questions: [] })
 
     h.emit("permission.expired", { sessionID: "s1", requestID: "p1" })
-    expect(h.status.current(WS, "s1")!.awaitingInput, "the question is still open").toBe(true)
+    expect(h.status.current(WS, "s1").awaitingInput, "the question is still open").toBe(true)
     h.emit("question.expired", { sessionID: "s1", requestID: "q1" })
-    expect(h.status.current(WS, "s1")!.awaitingInput).toBe(false)
+    expect(h.status.current(WS, "s1").awaitingInput).toBe(false)
 
-    expect(h.changes).toEqual([[WS, "s1"], [WS, "s1"], [WS, "s1"], [WS, "s1"]])
+    expect(h.changes).toEqual([[WS, "s1"], [WS, "s1"]])
   })
 
   test("frames without a session, and frames of other kinds, change nothing", () => {
@@ -128,7 +128,7 @@ describe("runtime session status", () => {
     h.dispose()
 
     expect(h.changes).toEqual([[WS, "busy"]])
-    expect(h.status.current(WS, "busy")).toBeUndefined()
+    expect(h.status.current(WS, "busy").kind).toBe("idle")
     expect(h.subscribed()).toBe(0)
   })
 
@@ -153,7 +153,7 @@ describe("runtime session status", () => {
     expect(h.status.current(WS, "s9"), "a session the runtime no longer reports is idle").toMatchObject({ kind: "idle" })
 
     h.emit("question.replied", { sessionID: "s1", requestID: "q1", answers: [] })
-    expect(h.status.current(WS, "s1")!.awaitingInput, "later frames build on the snapshot").toBe(false)
+    expect(h.status.current(WS, "s1").awaitingInput, "later frames build on the snapshot").toBe(false)
   })
 
   test("a workspace with no runtime up has nothing live", async () => {
@@ -161,8 +161,8 @@ describe("runtime session status", () => {
     h.mount()
     h.emit("session.status", { sessionID: "s1", status: { type: "busy" } })
 
-    expect(await h.status.snapshot(WS)).toBeUndefined()
-    expect(h.status.current(WS, "s1")).toBeUndefined()
+    expect(await h.status.snapshot(WS)).toEqual(new Map())
+    expect(h.status.current(WS, "s1").kind).toBe("idle")
   })
 
   test("a runtime that refuses the read fails the snapshot rather than answering idle", async () => {

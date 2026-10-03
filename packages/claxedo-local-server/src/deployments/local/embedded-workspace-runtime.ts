@@ -1,11 +1,7 @@
 import { attachEmbeddedPty, type EmbeddedPtyAttachInput } from "./embedded-pty-attachment"
-import { createEmbeddedRuntimeReader, type EmbeddedSessionInventory } from "./embedded-runtime-reader"
-import { createEmbeddedRuntimeOwnership } from "./embedded-runtime-ownership"
-export type { EmbeddedWorkspaceRuntimeOwner, EmbeddedWorkspaceRuntimeOwnership } from "./embedded-runtime-ownership"
 import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { embeddedConfigModeForPath } from "../../workspace/runtime-dispatch/internals"
 import path from "path"
-import { absoluteConfiguredDir } from "@claxedo/helpers/path"
 import {
   createRuntimeCredentialIssuer,
   createWorkspaceRuntimeApp,
@@ -22,13 +18,16 @@ import { isSessionConfigRefusal } from "@claxedo/workspace-runtime/config"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { configureLocalWorkspaceRuntime } from "@claxedo/server-core/workspace/local-runtime-port"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import type { LaunchOwnershipRecord } from "@claxedo/process-ownership/launch"
 import { createClaxedoRuntimeExposure } from "../../hosts/workspace-runtime/exposure"
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 import { resolveClaxedoWorkspaceRuntimeTarget } from "../../hosts/workspace-runtime/target"
 import { projectionRenewalDue, projectionRenewalDueAt, type AgentTurnOutcome, type ConnectionSecretResolver } from "@claxedo/agent-runtime-contract"
-import { resolveEmbeddedConnectionSecrets } from "./embedded-connection-secrets"
+import { ConnectionUnavailableError, createLocalConnectionSecretResolver } from "@claxedo/server-core/agent-config/connection-secrets"
+import { localConnectionSecretScope } from "./connection-secret-scope"
 import { defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-config/index"
+import { credentialById, resolveSecretById } from "@claxedo/server-core/credentials/registry"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import type { HostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
 
@@ -56,7 +55,6 @@ type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
    * launches away.
    */
   generation: string
-  inventory: EmbeddedSessionInventory
   observed: MountedEmbeddedWorkspaceRuntime
   applying?: Promise<void>
   /** A configure asked for after the running apply read its snapshot, which that apply therefore cannot answer. */
@@ -93,6 +91,32 @@ export type EmbeddedRetirementResult = {
   state: "retired" | "retire_failed"
   attempt: number
   error?: string
+}
+
+export type EmbeddedWorkspaceRuntimeOwner = {
+  workspaceId: string
+  /** The mount this owner is; never repeated by a later mount of the same id. */
+  generation: string
+  state: "serving" | "retiring" | "retire_failed"
+  attempt: number
+  error?: string
+  /** The admitted turns a drain would interrupt, named individually. */
+  turns: Array<{ sessionId: string; turnId: string; ownerGeneration: string }>
+}
+
+/**
+ * An owner plus what only its durable store can say. Separate from the owner
+ * itself because that read is asynchronous and the residency snapshot which
+ * consumes owners cannot wait for it.
+ */
+export type EmbeddedWorkspaceRuntimeOwnership = EmbeddedWorkspaceRuntimeOwner & {
+  /**
+   * Launches this owner's store has no settled retirement for. Absent when the
+   * store could not be read — an empty list would say there is nothing left to
+   * reconcile, which is a different claim.
+   */
+  launches?: LaunchOwnershipRecord[]
+  launchesUnreadable?: string
 }
 
 export class EmbeddedWorkspaceRuntimeRetirementUnresolvedError extends Error {
@@ -180,19 +204,68 @@ export function onEmbeddedWorkspaceRuntime(listener: EmbeddedWorkspaceRuntimeLis
   }
 }
 
-export const {
-  generation: embeddedWorkspaceRuntimeGeneration,
-  removed: readMountedEmbeddedWorkspaceRuntimeRemoved,
-  attentionSnapshot: readMountedEmbeddedWorkspaceRuntimeAttention,
-  sessionTime: embeddedWorkspaceRuntimeSessionTime,
-  drivenOnlyByMachineUser: embeddedSessionDrivenOnlyByMachineUser,
-  read: readMountedEmbeddedWorkspaceRuntime,
-  sessionConfig: readEmbeddedWorkspaceSessionConfig,
-} = createEmbeddedRuntimeReader((workspaceId) => hosts.get(workspaceId))
+/**
+ * The session's times on a runtime mounted in THIS process, present only when
+ * that runtime holds a transcript for it. Undefined for a workspace with no
+ * runtime up, so a caller that needs them must be on a request the dispatcher
+ * already mounted a runtime for.
+ */
+export function embeddedWorkspaceRuntimeSessionTime(workspaceId: string, sessionId: string) {
+  return hosts.get(workspaceId)?.host.sessionTime(sessionId)
+}
+
+/**
+ * Whether a session on a runtime mounted in THIS process is the machine
+ * owner's alone: it exists here, and no turn relayed from another person
+ * reached it or a session above it. False for a workspace with no runtime up.
+ */
+export function embeddedSessionDrivenOnlyByMachineUser(workspaceId: string, sessionId: string, ownerActorId?: string) {
+  return hosts.get(workspaceId)?.host.drivenOnlyByMachineUser(sessionId, ownerActorId) ?? false
+}
+
+/**
+ * A GET on a runtime mounted in THIS process, as the machine's own user, or
+ * nothing for a workspace with no runtime up. Mounts nothing and reconciles
+ * nothing: `ensureEmbeddedWorkspaceRuntime` re-syncs the session snapshot on
+ * every hit, and a reader that runs on projection writes would feed itself.
+ */
+export async function readMountedEmbeddedWorkspaceRuntime(workspaceId: string, path: string): Promise<Response | undefined> {
+  const runtime = hosts.get(workspaceId)
+  if (!runtime) return undefined
+  const url = new URL(path, "http://127.0.0.1")
+  url.searchParams.set("directory", runtime.workspace.directory)
+  return runtime.app.fetch(new Request(url, {
+    headers: { "x-workspace-id": workspaceId, "x-claxedo-directory": runtime.workspace.directory },
+  }))
+}
+
+/** Read the active workspace's committed session config without consulting operator defaults. */
+export function readEmbeddedWorkspaceSessionConfig(workspaceId: string, sessionId: string) {
+  const config = hosts.get(workspaceId)?.host.getSessionConfig(sessionId)
+  if (!config) throw new Error(`Workspace ${workspaceId} has no committed configuration for session ${sessionId}`)
+  return config
+}
 
 let configuredConnectionProviders: readonly CustomHarnessProvider<unknown>[] = []
-let configuredConnectionSecretResolver: ConnectionSecretResolver = resolveEmbeddedConnectionSecrets
-let configuredHarnessStateRoot: WorkspaceRuntimeServerOptions["harnessStateRoot"]
+let configuredConnectionSecretResolver: ConnectionSecretResolver = (request) => {
+  const scope = localConnectionSecretScope(request.owner)
+  if (Object.keys(request.descriptor.secretRefs ?? {}).length === 0 && !scope.machineLoginAllowed) {
+    throw new ConnectionUnavailableError(request.descriptor.connectionId, "missing_secret")
+  }
+  return createLocalConnectionSecretResolver({ resolveReference: async ({ reference }) => {
+    const credential = credentialById(reference, { onOutage: "empty" })
+    if (!credential || !scope.admits(credential)) return { leaseGeneration: "missing" }
+    const value = await resolveSecretById(reference)
+    return {
+      ...(value ? { value } : {}),
+      leaseGeneration: String(credential.updated_at),
+      ...(credential.expires_at === null || credential.expires_at === undefined
+        ? credential.status === "expired" ? { expiresAt: 0 } : {}
+        : { expiresAt: credential.expires_at }),
+      ...(credential.status === "revoked" ? { revoked: true } : {}),
+    }
+  } })(request)
+}
 /**
  * Host-supplied route groups for every embedded runtime this process creates.
  *
@@ -271,7 +344,6 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   /** Connection providers beside the built-in ones; a call that names none keeps the built-ins only. */
   connectionProviders?: readonly CustomHarnessProvider<unknown>[]
   resolveConnectionSecrets?: ConnectionSecretResolver
-  harnessStateRoot?: WorkspaceRuntimeServerOptions["harnessStateRoot"]
   routeContributions?: readonly WorkspaceRuntimeRouteContribution[]
   /** The policy every runtime is mounted with; absent, the unbound `managedWorkspaceSessionAccessPolicy()`, whose marker is `local`. */
   sessionAccessPolicy?: WorkspaceRuntimeServerOptions["sessionAccessPolicy"]
@@ -286,7 +358,6 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   firstPartyMcpLaunch?: EmbeddedFirstPartyMcpLaunch
 }) {
   configuredConnectionProviders = input.connectionProviders ?? []
-  configuredHarnessStateRoot = input.harnessStateRoot === undefined ? undefined : absoluteConfiguredDir("harnessStateRoot", input.harnessStateRoot)
   configuredFirstPartyMcpLaunch = input.firstPartyMcpLaunch
   configuredConnectionSecretResolver = input.resolveConnectionSecrets ?? configuredConnectionSecretResolver
   configuredRouteContributions = input.routeContributions ?? []
@@ -317,7 +388,6 @@ function options(
   if (!configuredSessionIdWorkspace) throw new Error("Embedded runtimes require the session placement authority")
   return {
     ...(harness ? { harness } : {}),
-    ...(configuredHarnessStateRoot === undefined ? {} : { harnessStateRoot: configuredHarnessStateRoot }),
     placement: DESKTOP_PLACEMENT,
     connectionProviders: configuredConnectionProviders,
     resolveConnectionSecrets: configuredConnectionSecretResolver,
@@ -531,12 +601,10 @@ export async function ensureEmbeddedWorkspaceRuntime(
   // runtime meanwhile, and one workspace id owns exactly one runtime.
   if (hosts.get(ws.id)) return ensureEmbeddedWorkspaceRuntime(ws, input)
   let activeHost: EmbeddedRuntime["host"] | undefined
-  let inventory!: EmbeddedSessionInventory
   const created = createWorkspaceRuntimeApp({
     ...options(ws, {
       parentSessionIdFor: (sessionId) => activeHost?.parentSessionIdFor(sessionId),
     }, harness),
-    bindSessionInventory: (read) => { inventory = read },
     beforeHarnessAcquire: async () => {
       // Fan-out and mutation admission refresh accepted snapshots. Read-side
       // acquisition only supplies the missing initial snapshot (or retries a
@@ -548,7 +616,6 @@ export async function ensureEmbeddedWorkspaceRuntime(
     ...created,
     workspace: ws,
     generation: created.host.ownerGeneration,
-    inventory,
     observed: { workspace: ws, frames: created.host.frames },
   }
   activeHost = runtime.host
@@ -676,10 +743,66 @@ export function embeddedWorkspaceRuntimeActivity() {
   return { hosts: hosts.size, activeTurns, activeWrites, checkpointing, owners: embeddedWorkspaceRuntimeOwners() }
 }
 
-export const {
-  owners: embeddedWorkspaceRuntimeOwners,
-  ownership: embeddedWorkspaceRuntimeOwnership,
-} = createEmbeddedRuntimeOwnership(() => hosts.values(), () => retiring.values())
+/**
+ * Every workspace this process still owns, serving or not, with what a
+ * replacement would have to reconcile: the turns it admitted and the launches
+ * its store has no retirement for.
+ */
+export async function embeddedWorkspaceRuntimeOwnership(): Promise<EmbeddedWorkspaceRuntimeOwnership[]> {
+  const owned = await Promise.all(ownedRuntimes().map(async ({ runtime, owner }) => ({
+    ...owner,
+    ...(await unresolvedLaunchesOf(runtime)),
+  })))
+  return owned.sort((a, b) => a.workspaceId.localeCompare(b.workspaceId))
+}
+
+/** Every workspace this process still owns, serving or not. */
+export function embeddedWorkspaceRuntimeOwners(): EmbeddedWorkspaceRuntimeOwner[] {
+  return ownedRuntimes()
+    .map(({ owner }) => owner)
+    .sort((a, b) => a.workspaceId.localeCompare(b.workspaceId))
+}
+
+function ownedRuntimes(): Array<{ runtime: EmbeddedRuntime; owner: EmbeddedWorkspaceRuntimeOwner }> {
+  const turnsOf = (runtime: EmbeddedRuntime) => runtime.host.activeTurns().map((target) => ({
+    sessionId: target.sessionId,
+    turnId: target.turnId,
+    ownerGeneration: target.ownerGeneration,
+  }))
+  return [
+    ...[...hosts.values()].map((runtime) => ({
+      runtime,
+      owner: {
+        workspaceId: runtime.workspace.id,
+        generation: runtime.generation,
+        state: "serving" as const,
+        attempt: 0,
+        turns: turnsOf(runtime),
+      },
+    })),
+    ...[...retiring.values()].map((record) => ({
+      runtime: record.runtime,
+      owner: {
+        workspaceId: record.workspaceId,
+        generation: record.generation,
+        state: record.state,
+        attempt: record.attempt,
+        ...(record.error ? { error: record.error } : {}),
+        turns: turnsOf(record.runtime),
+      },
+    })),
+  ]
+}
+
+async function unresolvedLaunchesOf(runtime: EmbeddedRuntime) {
+  try {
+    return { launches: await runtime.host.unresolvedLaunches() }
+  } catch (error) {
+    // A retired owner's store is closed; its records are still on disk for the
+    // replacement to read, and this process saying "none" would hide them.
+    return { launchesUnreadable: String(error) }
+  }
+}
 
 /**
  * Verifies a first-party MCP bearer against the embedded runtime that minted

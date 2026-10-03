@@ -16,7 +16,6 @@ import { CredentialSelectionError, sessionAccountOwner } from "@claxedo/harness/
 import { applySessionConfigUpdate, type HarnessSession, type SessionBroker, type TurnActor } from "@claxedo/harness/contract"
 import { SessionAttachments, type AttachedSession } from "./attachments"
 import type { AgentRuntimeEventEnvelope, AgentRuntimeSessionCreateInput, AgentRuntimeStore } from "./contracts"
-import { AgentRuntimeTurnAdmissionError } from "./contracts"
 import { assertSessionCreateBindingScope, normalizeDirectory, requireExecutionBinding } from "./execution-binding"
 import { executeHandoffTransaction, releaseKeptHandoffSource, type OpenedTarget } from "./handoff"
 import { attachInput, startInput, type LaunchComposer } from "./launch"
@@ -66,16 +65,6 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
   const { store, transports, launch, attachments, admissions } = input
   const keptSources = new Map<string, AttachedSession>()
   const starts = new AbortController()
-
-  const withParentAdmission = async <T>(parentId: string | undefined, operation: () => Promise<T>): Promise<T> => {
-    if (!parentId) return operation()
-    const hold = admissions.retainActive(parentId) ?? admissions.holdIdle(parentId)
-    if (!hold) throw new AgentRuntimeTurnAdmissionError(parentId, "Parent session has another lifecycle operation in progress")
-    try {
-      if (!store.getSession(parentId)) throw new CredentialSelectionError("account_unavailable", `Parent session ${parentId} is missing`)
-      return await operation()
-    } finally { hold.release() }
-  }
 
   const diagnose = (sessionId: string, directory: RuntimeDirectory) => (payload: AgentRuntimeEvent) =>
     input.publish({ sessionId, directory, payload })
@@ -210,78 +199,76 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
     updateSessionConfig,
     closeSource,
     async create(create: AgentRuntimeSessionCreateInput): Promise<AgentSession> {
-      return withParentAdmission(create.parentID, async () => {
-        if (typeof create.workspaceId !== "string" || create.workspaceId.trim() === "") {
-          throw new AgentRuntimeContractError({ code: "invalid_execution_binding", field: "workspaceId", message: "execution binding workspaceId is required" })
-        }
-        if (typeof create.directory !== "string" || !create.directory.trim()) {
-          throw new AgentRuntimeContractError({ code: "invalid_execution_binding", field: "directory", message: "execution binding directory is required" })
-        }
-        if (create.id) assertSessionCreateBindingScope(store, create.id, create)
-        const directory = normalizeDirectory(create.directory)
-        const owner = create.parentID ? attachments.owner(create.parentID) : create.owner
-        const handle = await transports.forHarness(create.harness, directory, {
-          owner, ...(create.secretAuthority ? { authority: create.secretAuthority } : {}),
-        })
-        const declared = await handle.transport.capabilities({ directory })
-        starts.signal.throwIfAborted()
-        const refusal = admitSessionInstructions({ harness: create.harness.id, channel: declared.instructionChannel, instructions: create.instructions })
-        if (refusal?.reason === "no_instruction_channel") {
-          throw new AgentRuntimeContractError({ code: "unsupported_operation", operation: "session_instructions", message: refusal.message })
-        }
-        if (refusal) throw new Error(refusal.message)
-        const sessionId = create.id ?? `ses_${crypto.randomUUID()}`
-        const existed = !!store.getSession(sessionId)
-        const recorded = store.sessionOwner(sessionId)
-        const holder = (actor: TurnActor) => sessionAccountOwner(launch.credentials(), actor).userId
-        if (recorded && holder(recorded) !== holder(owner)) {
-          throw new CredentialSelectionError("account_unavailable", `Session ${sessionId} belongs to another owner`)
-        }
-        const config: SessionConfig = {
-          harness: create.harness,
-          ...(create.model ? { model: create.model } : {}),
-          variant: create.variant ?? null,
-          agent: create.agent ?? null,
-          ...(create.permissionCeiling ? { permissionCeiling: create.permissionCeiling } : {}),
-          ...retainedFields(create),
-        }
-        store.bindSession({
-          sessionId, workspaceId: create.workspaceId, directory, owner,
-          connectionId: connectionIdForHarness(create.harness), upstreamSessionId: sessionId, agentSessionId: sessionId,
-          ...(create.title ? { title: create.title } : {}),
-          ...(create.parentID ? { parentSessionId: create.parentID } : {}),
-        })
-        const context = brokerContext(create, sessionId)
-        const broker = createSessionBroker(input.broker, context)
-        const startupBroker: SessionBroker = {
-          ...broker,
-          ask: (request, options) => broker.ask(request, {
-            signal: options?.signal ? AbortSignal.any([starts.signal, options.signal]) : starts.signal,
-          }),
-        }
-        let session: HarnessSession
-        try {
-          if (!store.updateSessionConfig(sessionId, config)) throw new Error(`Session ${sessionId} has no runtime config`)
-          session = await handle.transport.start(startInput(launch, {
-            sessionId, directory, locality: handle.locality, config, owner,
-            permissionModeKept: (mode) => input.writeMode(sessionId, mode),
-            ...(create.title !== undefined ? { title: create.title } : {}),
-            ...(create.instructions ? { instructions: create.instructions } : {}),
-          }), startupBroker)
-        } catch (error) {
-          await endStart(context)
-          if (!existed) {
-            input.broker.broker.closeSession(sessionId)
-            store.deleteSession(sessionId)
-          }
-          throw error
-        }
-        await endStart(context)
-        attachments.register(sessionId, { handle, session, broker, context, owner })
-        const persisted = store.getSession(sessionId)
-        if (!persisted) throw new Error(`Session ${sessionId} was not persisted`)
-        return persisted
+      if (typeof create.workspaceId !== "string" || create.workspaceId.trim() === "") {
+        throw new AgentRuntimeContractError({ code: "invalid_execution_binding", field: "workspaceId", message: "execution binding workspaceId is required" })
+      }
+      if (typeof create.directory !== "string" || !create.directory.trim()) {
+        throw new AgentRuntimeContractError({ code: "invalid_execution_binding", field: "directory", message: "execution binding directory is required" })
+      }
+      if (create.id) assertSessionCreateBindingScope(store, create.id, create)
+      const directory = normalizeDirectory(create.directory)
+      const owner = create.parentID ? attachments.owner(create.parentID) : create.owner
+      const handle = await transports.forHarness(create.harness, directory, {
+        owner, ...(create.secretAuthority ? { authority: create.secretAuthority } : {}),
       })
+      const declared = await handle.transport.capabilities({ directory })
+      starts.signal.throwIfAborted()
+      const refusal = admitSessionInstructions({ harness: create.harness.id, channel: declared.instructionChannel, instructions: create.instructions })
+      if (refusal?.reason === "no_instruction_channel") {
+        throw new AgentRuntimeContractError({ code: "unsupported_operation", operation: "session_instructions", message: refusal.message })
+      }
+      if (refusal) throw new Error(refusal.message)
+      const sessionId = create.id ?? `ses_${crypto.randomUUID()}`
+      const existed = !!store.getSession(sessionId)
+      const recorded = store.sessionOwner(sessionId)
+      const holder = (actor: TurnActor) => sessionAccountOwner(launch.credentials(), actor).userId
+      if (recorded && holder(recorded) !== holder(owner)) {
+        throw new CredentialSelectionError("account_unavailable", `Session ${sessionId} belongs to another owner`)
+      }
+      const config: SessionConfig = {
+        harness: create.harness,
+        ...(create.model ? { model: create.model } : {}),
+        variant: create.variant ?? null,
+        agent: create.agent ?? null,
+        ...(create.permissionCeiling ? { permissionCeiling: create.permissionCeiling } : {}),
+        ...retainedFields(create),
+      }
+      store.bindSession({
+        sessionId, workspaceId: create.workspaceId, directory, owner,
+        connectionId: connectionIdForHarness(create.harness), upstreamSessionId: sessionId, agentSessionId: sessionId,
+        ...(create.title ? { title: create.title } : {}),
+        ...(create.parentID ? { parentSessionId: create.parentID } : {}),
+      })
+      const context = brokerContext(create, sessionId)
+      const broker = createSessionBroker(input.broker, context)
+      const startupBroker: SessionBroker = {
+        ...broker,
+        ask: (request, options) => broker.ask(request, {
+          signal: options?.signal ? AbortSignal.any([starts.signal, options.signal]) : starts.signal,
+        }),
+      }
+      let session: HarnessSession
+      try {
+        if (!store.updateSessionConfig(sessionId, config)) throw new Error(`Session ${sessionId} has no runtime config`)
+        session = await handle.transport.start(startInput(launch, {
+          sessionId, directory, locality: handle.locality, config, owner,
+          permissionModeKept: (mode) => input.writeMode(sessionId, mode),
+          ...(create.title !== undefined ? { title: create.title } : {}),
+          ...(create.instructions ? { instructions: create.instructions } : {}),
+        }), startupBroker)
+      } catch (error) {
+        await endStart(context)
+        if (!existed) {
+          input.broker.broker.closeSession(sessionId)
+          store.deleteSession(sessionId)
+        }
+        throw error
+      }
+      await endStart(context)
+      attachments.register(sessionId, { handle, session, broker, context, owner })
+      const persisted = store.getSession(sessionId)
+      if (!persisted) throw new Error(`Session ${sessionId} was not persisted`)
+      return persisted
     },
     async update(sessionId: string, updates: { title?: string; time?: { archived?: number } }, directory?: RuntimeDirectory,
       authority?: ConnectionSecretAuthority) {

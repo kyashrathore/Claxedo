@@ -9,8 +9,6 @@ export const SIDEBAR_MAX_WIDTH = 520
 export const SIDEBAR_DEFAULT_WIDTH = 260
 
 export type ShellPreferences = {
-  hideWorkingStatus: boolean
-  sidebarView: "projects" | "activity"
   sidebar: SideRegion
   panel: SideRegion
   sidebarWidth: number
@@ -28,8 +26,6 @@ function readPreferences(value: unknown): ShellPreferences | undefined {
   if (!isRecord(value)) return undefined
   const sidebarWidth = readFiniteNumber(value, "sidebarWidth") ?? SIDEBAR_DEFAULT_WIDTH
   return {
-    hideWorkingStatus: value.hideWorkingStatus === true,
-    sidebarView: value.sidebarView === "activity" ? "activity" : "projects",
     sidebar: readRegion(value.sidebar, "open"),
     panel: readRegion(value.panel, "collapsed"),
     sidebarWidth: clampWidth(sidebarWidth, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH),
@@ -39,7 +35,7 @@ function readPreferences(value: unknown): ShellPreferences | undefined {
 export function createShellPreferences(scope: string): [Store<ShellPreferences>, SetStoreFunction<ShellPreferences>] {
   return persistedStore<ShellPreferences>(
     preferenceKey("shell", scope),
-    { sidebar: "open", panel: "collapsed", sidebarWidth: SIDEBAR_DEFAULT_WIDTH, sidebarView: "projects", hideWorkingStatus: false },
+    { sidebar: "open", panel: "collapsed", sidebarWidth: SIDEBAR_DEFAULT_WIDTH },
     readPreferences,
   )
 }

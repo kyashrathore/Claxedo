@@ -11,7 +11,7 @@ import { createProviderCatalogsApi } from "./provider-catalogs"
 import { createFoldersApi } from "./folders"
 import type { ServerConfig } from "./config"
 import { isRetryableServerError, toAppError } from "./errors"
-import { createEventDelivery } from "./event-delivery"
+import { createEventIntake } from "./event-intake"
 import type { ConnectionState } from "./events"
 import { createGitApi } from "./git"
 import { createMarketplaceApi } from "./marketplace"
@@ -28,7 +28,7 @@ import { createPlacementStreams } from "./placement-streams"
 import { createSessionProjection, type SessionProjection } from "./session-projection"
 import { createSessionsApi } from "./sessions"
 import { createStatusOwner, type StatusOwner } from "./status"
-import type { EventStreams } from "./streams"
+import { createEventStreams, type EventStreams } from "./streams"
 import { createTerminalsApi } from "./terminals"
 import { createTransport, type Transport } from "./transport"
 import { createWorkspaces, type Workspaces } from "./workspaces"
@@ -38,7 +38,7 @@ import { createWorktreeCreator } from "./worktrees"
 const QUERY_GC_TIME_MS = 10 * 60_000
 const QUERY_RETRY_LIMIT = 2
 
-function createQueryClient(serverUrl: string) {
+function createQueryClient() {
   const client = new QueryClient({
     defaultOptions: {
       queries: {
@@ -52,7 +52,6 @@ function createQueryClient(serverUrl: string) {
     },
   })
   client.setQueryDefaults(queryKeys.localFilesAll(), { gcTime: 0 })
-  client.setQueryDefaults(queryKeys.localSessionLocations(serverUrl), { gcTime: 0 })
   return client
 }
 
@@ -129,15 +128,15 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
 }
 
 export function createServer(config: ServerConfig): ServerHandle {
+  const queryClient = createQueryClient()
   const transport = createTransport(config)
-  const queryClient = createQueryClient(transport.serverUrl)
   const port = config.account ? createHostedAccount(config.account) : undefined
   const account = port ?? (config.cookies ? createBrowserHostedAccount(transport) : undefined)
   const workspaces = createWorkspaces(transport, queryClient, account)
   const status = createStatusOwner(transport)
+  const intake = createEventIntake({ serverUrl: transport.serverUrl, queryClient, workspaces, status })
   const [connection, setConnection] = createSignal<ConnectionState>({ kind: "connecting" })
-  const delivery = createEventDelivery({ config, transport, queryClient, workspaces, status, account, onState: setConnection })
-  const { intake, streams } = delivery
+  const streams = createEventStreams({ config, transport, onFrame: intake.frame, onGap: intake.gap, onState: setConnection })
   const capabilities = createCapabilities(transport, workspaces)
   const queries = createQueries(transport, workspaces, config.thisMachineReport)
   const startup = createStartup({ workspaces, streams, capabilities, setConnection })
@@ -159,7 +158,7 @@ export function createServer(config: ServerConfig): ServerHandle {
       stopProjecting()
       placementStreams.close()
       streams.close()
-      delivery.dispose()
+      intake.dispose()
       workspaces.dispose()
       queryClient.clear()
     },

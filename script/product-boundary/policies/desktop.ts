@@ -214,13 +214,7 @@ export const desktopMainComposition: Policy = {
   // `electron-updater`, already a package edge. 87/24, no headroom.
   // Local artifact tabs add main/local-file-content.ts and the published
   // workspace-runtime/file-content reader: 88 modules / 25 packages, no headroom.
-  // Account daemon synchronization now composes the signed plugin handoff and
-  // session cleanup grant lifecycle through main/account-daemon-sync.ts and
-  // main/session-cleanup-grant-sync.ts. Main is the owner of the account
-  // capability and daemon credential; both modules use existing packages.
-  // The signed production build, resource tests and emitted graphs reviewed
-  // this exact composition, while the lazy account graph remains 16/8.
-  ceilings: { modules: 90, packages: 25 },
+  ceilings: { modules: 88, packages: 25 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -467,21 +461,8 @@ export const desktopRenderer: Policy = {
   // These renderer interactions add no package edge.
   // The draft context reaches `projects/draft-branches.ts`, which owns the
   // selected placement's live Git status and new-workspace base choice.
-  // The initial 1265/36 measurement incorrectly erased the value re-export
-  // following session/index.ts's local type declaration. The corrected shared
-  // reader retains SessionStoresProvider and its list/request/transcript
-  // owners: the unchanged base measures 1296/36 with that same reader.
-  // +40 modules: Activity rows, placement, focus, shared navigation geometry
-  // and virtualization, settle controls and the session filter menu; account
-  // events, durable attention history and their wire owners; paged
-  // inventory, reader mutations and canonical row-version reconciliation.
-  // The exact location adapter resolves cold URLs through canonical metadata.
-  // The rail owns one active list and its status-visibility/filter controls;
-  // the shell owns principal-isolated view and status-visibility preferences.
-  // These extend renderer owners without a package or authority edge.
-  // Exact current source closure: 1336/36, with no headroom; the public
-  // verifier also requires the signed build, resources and emitted boundaries.
-  ceilings: { modules: 1336, packages: 36 },
+  // 1265/36, no headroom.
+  ceilings: { modules: 1265, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

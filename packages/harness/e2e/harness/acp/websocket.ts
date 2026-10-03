@@ -4,11 +4,11 @@ import { ScriptedAgent } from "./agent"
 import { recordAcpRequest } from "./requests"
 import { holdReleaseFile } from "./script"
 import { existsSync } from "node:fs"
-import type { ScriptedAcpWebSocket } from "./websocket-contract"
-export type { ScriptedAcpWebSocket } from "./websocket-contract"
 
 type SocketState = { input: ReadableStreamDefaultController<StreamMessage>; headers: Record<string, string> }
 type StreamMessage = Stream["readable"] extends ReadableStream<infer Message> ? Message : never
+
+export type ScriptedAcpWebSocket = { url: string; close(): Promise<void> }
 
 async function released(file: string) {
   while (!existsSync(file)) await new Promise((resolve) => setTimeout(resolve, 20))

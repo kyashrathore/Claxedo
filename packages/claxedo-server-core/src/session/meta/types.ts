@@ -1,6 +1,4 @@
 import type { SessionListSort, SessionOrderKey } from "../navigation-order"
-import type { AgentTurnOutcome, SessionAttentionFacts, SessionReaderState } from "@claxedo/agent-runtime-contract"
-import type { SessionReaderFilter } from "../navigation-reader"
 
 export const GLOBAL_TAG = "global"
 export const GLOBAL_SHOW_TAG = "global:default"
@@ -27,22 +25,13 @@ export type SessionMeta = {
   archived?: number
   createdAt: number
   updatedAt: number
-  attention?: SessionAttentionFacts
-  lastTurn?: AgentTurnOutcome
-  reader?: SessionReaderState
   /** When a human last started a turn here; absent when only agents ever have. */
   lastHumanTurnAt?: number
   tags: string[]
   attachments: SessionAttachment[]
 }
 
-export type SessionMetaNavigationListInput = SessionReaderFilter & {
-  sessionID?: string
-  readerId?: string
-  /** Live runtimes this local navigation read admitted, determined before paging. */
-  /** Canonical local workspace population for an all-workspace inventory source. */
-  workspaceIDs?: readonly string[]
-  excludeWorkspaces?: string[]
+export type SessionMetaNavigationListInput = {
   workspaceID?: string
   directory?: string
   projectID?: string

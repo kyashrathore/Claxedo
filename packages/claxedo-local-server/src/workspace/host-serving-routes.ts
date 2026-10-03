@@ -59,7 +59,6 @@ const servingBody = z
         // enrollment would serve while this daemon told every local client it
         // was some other machine.
         enrollmentId: z.string().min(1).max(200),
-        generation: z.number().int().nonnegative().safe(),
         ownerActorId: z.string().min(1).max(200),
         // Optional in the ack (a deployment without a configured relay mints
         // no URL) but required to SERVE: a credential without a relay to dial
@@ -109,7 +108,6 @@ async function applyServing(body: z.infer<typeof servingBody>, localBaseUrl: str
       ? {
           hostId: credential.hostId,
           enrollmentId: credential.enrollmentId,
-          generation: credential.generation,
           relayUrl: credential.relayUrl,
           token: credential.hostTunnelToken,
           workspaceIds: credential.workspaceIds,
@@ -129,3 +127,4 @@ async function applyServing(body: z.infer<typeof servingBody>, localBaseUrl: str
     },
   )
 }
+

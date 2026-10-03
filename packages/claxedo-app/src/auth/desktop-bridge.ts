@@ -1,7 +1,6 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import { readField, readString } from "@claxedo/helpers/readers"
 import type { AuthUser } from "./display-user"
-import type { HostedStreamBridge } from "@claxedo/account-contract"
 
 export type DesktopAccountState =
   | { readonly kind: "unsigned" }
@@ -9,7 +8,7 @@ export type DesktopAccountState =
   | { readonly kind: "signed"; readonly user: AuthUser; readonly identity: "resolving" | "known" | "failed" }
   | { readonly kind: "unavailable"; readonly reason: string }
 
-export type DesktopAccountBridge = HostedStreamBridge & {
+export type DesktopAccountBridge = {
   readonly state: () => Promise<unknown>
   readonly onState: (listener: (state: unknown) => void) => () => void
   readonly signIn: () => Promise<unknown>
@@ -17,7 +16,7 @@ export type DesktopAccountBridge = HostedStreamBridge & {
   readonly run: (operation: string, input?: Readonly<Record<string, unknown>>) => Promise<unknown>
 }
 
-const MEMBERS = ["state", "onState", "signIn", "signOut", "run", "streamOpen", "streamStart", "streamClose", "onStreamChunk", "onStreamEnd", "onStreamError"] as const
+const MEMBERS = ["state", "onState", "signIn", "signOut", "run"] as const
 
 function isBridge(value: Record<string, unknown> | undefined): value is Record<string, unknown> & DesktopAccountBridge {
   return value !== undefined && MEMBERS.every((member) => typeof value[member] === "function")

@@ -2,26 +2,23 @@ import { createSignal, onCleanup, type Accessor } from "solid-js"
 
 export type HoverEngagement = {
   readonly engaged: Accessor<boolean>
-  readonly hovered: Accessor<boolean>
-  readonly focusedTarget: Accessor<HTMLElement | undefined>
   readonly hold: () => void
   readonly release: () => void
   readonly handlers: {
     readonly onPointerEnter: () => void
     readonly onPointerLeave: () => void
-    readonly onFocusIn: (event: FocusEvent) => void
+    readonly onFocusIn: () => void
     readonly onFocusOut: (event: FocusEvent) => void
   }
 }
 
 type Reason = "hovered" | "focused" | "held"
-type EngagementReasons = { readonly hovered: boolean; readonly focused: HTMLElement | undefined; readonly held: boolean }
 
 function createEngagedState(releaseDelayMs: number) {
   const [engaged, setEngaged] = createSignal(false)
-  const [reasons, setReasons] = createSignal<EngagementReasons>({ hovered: false, focused: undefined, held: false })
+  const reasons: Record<Reason, boolean> = { hovered: false, focused: false, held: false }
   let pending: ReturnType<typeof setTimeout> | undefined
-  const wanted = () => reasons().hovered || !!reasons().focused || reasons().held
+  const wanted = () => reasons.hovered || reasons.focused || reasons.held
   const cancel = () => {
     if (pending !== undefined) clearTimeout(pending)
     pending = undefined
@@ -40,23 +37,23 @@ function createEngagedState(releaseDelayMs: number) {
     }, releaseDelayMs)
   }
   onCleanup(cancel)
-  const set = <Key extends Reason>(reason: Key, value: EngagementReasons[Key]) => {
-    setReasons((current) => current[reason] === value ? current : { ...current, [reason]: value })
+  const set = (reason: Reason, value: boolean) => {
+    reasons[reason] = value
     settle()
   }
-  return { engaged, set, hovered: () => reasons().hovered, focusedTarget: () => reasons().focused }
+  return { engaged, set }
 }
 
-function engagementHandlers(set: ReturnType<typeof createEngagedState>["set"]): HoverEngagement["handlers"] {
+function engagementHandlers(set: (reason: Reason, value: boolean) => void): HoverEngagement["handlers"] {
   return {
     onPointerEnter: () => set("hovered", true),
     onPointerLeave: () => set("hovered", false),
-    onFocusIn: (event) => set("focused", event.target instanceof HTMLElement ? event.target : undefined),
+    onFocusIn: () => set("focused", true),
     onFocusOut: (event) => {
       const next = event.relatedTarget
       const host = event.currentTarget
       if (next instanceof Node && host instanceof Node && host.contains(next)) return
-      set("focused", undefined)
+      set("focused", false)
     },
   }
 }
@@ -65,8 +62,6 @@ export function createHoverEngagement(input?: { readonly releaseDelayMs?: number
   const state = createEngagedState(input?.releaseDelayMs ?? 0)
   return {
     engaged: state.engaged,
-    hovered: state.hovered,
-    focusedTarget: state.focusedTarget,
     hold: () => state.set("held", true),
     release: () => state.set("held", false),
     handlers: engagementHandlers(state.set),

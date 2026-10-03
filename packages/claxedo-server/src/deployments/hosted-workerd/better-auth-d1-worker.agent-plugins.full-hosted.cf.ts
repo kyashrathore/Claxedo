@@ -1,9 +1,6 @@
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { hostedSandboxDriver } from "../../authority/adapters/worker/hosted-sandbox-driver"
 import { createD1SandboxLeaseStore } from "../../sandbox/stores/d1"
-import { createD1SandboxPassRegister } from "../../platform/auth/d1-sandbox-pass-register"
-import { createCloudSessionRowsLaunchEnvironment } from "../../session/cloud-session-rows-launch"
-import { hostedControlPlaneOrigin } from "../../authority/adapters/worker/control-plane-origin"
 import {
   composeBetterAuthD1AgentPlugins,
   PluginOutbound,
@@ -31,30 +28,19 @@ export { LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor }
  */
 const composition = settledCompositionCache(
   (env: BetterAuthD1AgentPluginsWorkerEnv) => {
-    const signingEnv = stringEnvironment(env)
-    const passes = createD1SandboxPassRegister({ database: env.CONTROL_PLANE_DB })
-    const controlPlaneOrigin = hostedControlPlaneOrigin(signingEnv)
-    if (!controlPlaneOrigin || !signingEnv.CLAXEDO_DEPLOYMENT_ID) throw new Error("Cloud session publication requires the control-plane origin and deployment id")
-    const driver = hostedSandboxDriver(signingEnv, {
-      runtimeEnv: createCloudSessionRowsLaunchEnvironment({
-        database: env.CONTROL_PLANE_DB, deploymentId: signingEnv.CLAXEDO_DEPLOYMENT_ID,
-        signingEnv, passes, controlPlaneOrigin,
-      }),
-    })
+    const driver = hostedSandboxDriver(stringEnvironment(env))
     if (!driver) {
       throw new HostedWorkerCompositionError(
         "sandbox_posture_unsupported",
         "full-hosted entry requires a completely configured CLAXEDO_SANDBOX_DRIVER",
       )
     }
-    const selected = composeBetterAuthD1AgentPlugins(env, {
+    return composeBetterAuthD1AgentPlugins(env, {
       sandbox: {
         driver,
         leaseStore: createD1SandboxLeaseStore({ database: env.CONTROL_PLANE_DB }),
       },
     })
-    selected.options.cloudSessionRows = { signingEnv, passes }
-    return selected
   },
   (created) => created.authReady,
 )

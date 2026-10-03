@@ -75,7 +75,7 @@ export type RegisterRuntimePrivateSessionInput = PrivateSessionRuntimePrincipal 
  * project. Authorization is the list query's own predicate, so a page is never
  * short because rows were dropped after the read.
  */
-export type SessionPageQuery = SessionListKeysetPage & ({ projectId: string } | { workspaceId: string } | { all: true })
+export type SessionPageQuery = SessionListKeysetPage & ({ projectId: string } | { workspaceId: string })
 
 export type AdoptRuntimePrivateSessionInput = PrivateSessionRuntimePrincipal & RuntimeSessionTimes & {
   sessionId: string

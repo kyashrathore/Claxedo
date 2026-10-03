@@ -58,7 +58,7 @@ function SessionLoadMore(props: { readonly loading: boolean; readonly onLoad: ()
     <button
       data-testid="rail-sidebar-session-load-more"
       type="button"
-      class="max-md:min-h-11 text-sm text-text-weaker hover:text-text-weak pl-7 pr-2.5 py-1 text-left transition-colors duration-100"
+      class="text-sm text-text-weaker hover:text-text-weak pl-9 pr-2.5 py-1 text-left transition-colors duration-100"
       disabled={props.loading}
       classList={{ "opacity-60": props.loading }}
       onClick={(event) => {
@@ -88,7 +88,8 @@ function ProjectSessions(
         projectLabel={props.section.label}
         onActivate={props.onActivate}
         onRename={props.onRename}
-        onToggleSettled={props.onToggleSettled}
+        onArchive={props.onArchive}
+        onDelete={props.onDelete}
       />
       <Show when={props.paging.loadingInitial()}>
         <SessionListNotice variant="loading">{t("rail.loadingSessions")}</SessionListNotice>

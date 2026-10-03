@@ -9,7 +9,7 @@ import { listedStatusFromListItem, sessionRowFromListItem } from "./wire/session
 
 const SORT = "human_turn_desc"
 
-export async function listedOf(context: SessionContext, items: readonly unknown[]) {
+async function listedOf(context: SessionContext, items: readonly unknown[]) {
   const { address } = context.workspaces
   const rows: SessionRow[] = []
   const statuses = new Map<SessionId, ListedStatus>()
@@ -37,7 +37,7 @@ function serverSource(context: SessionContext, projectId: ProjectId, limit: numb
   const listPath = transport.loopback ? "/api/claxedo/session-list" : "/api/control/session-list"
   return {
     required: true,
-    read: async (after) => sourcePage(await transport.json(withQuery(listPath, { scope: "project", projectId, sort: SORT, limit, after, excludeWorkspaces: context.account ? (context.workspaces.accountWorkspaceIds().join(",") || undefined) : undefined }))),
+    read: async (after) => sourcePage(await transport.json(withQuery(listPath, { scope: "project", projectId, sort: SORT, limit, after }))),
   }
 }
 

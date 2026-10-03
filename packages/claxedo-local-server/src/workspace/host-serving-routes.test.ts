@@ -20,7 +20,7 @@ const state = () => hostServingState({ sessionAuthority: embeddedWorkspaceRuntim
  * The PUT body's `credential` is the heartbeat ack's `hostTunnel` object
  * VERBATIM. The control plane builds it in
  * `claxedo-server/src/routes/hosted/host-enrollment.ts` as the signer result
- * spread plus `hostId`, `enrollmentId`, `generation`, `ownerActorId`, `ownerUserId`, `workspaceIds` and `relayUrl` — this
+ * spread plus `hostId`, `enrollmentId`, `ownerActorId`, `ownerUserId`, `workspaceIds` and `relayUrl` — this
  * type restates that composition so a drift in `HostTunnelTokenSignerResult`
  * fails HERE at compile time. A locally invented shape would reject every
  * real ack with a 400 while every unit in the chain stayed green.
@@ -28,7 +28,6 @@ const state = () => hostServingState({ sessionAuthority: embeddedWorkspaceRuntim
 type AckHostTunnel = HostTunnelTokenSignerResult & {
   hostId: string
   enrollmentId: string
-  generation: number
   ownerActorId: string
   ownerUserId: string
   workspaceIds: string[]
@@ -42,7 +41,6 @@ function ackCredential(): AckHostTunnel {
     jti: "jti-1",
     hostId: "host_machine-1",
     enrollmentId: "enr_this_machine",
-    generation: 0,
     ownerActorId: "actor_owner",
     ownerUserId: "usr_machine_owner",
     workspaceIds: ["11111111-1111-4111-8111-111111111111"],
@@ -183,14 +181,6 @@ describe("host serving routes", () => {
   test("a credential naming no enrollment is refused rather than served anonymously", async () => {
     const { enrollmentId: _omitted, ...withoutEnrollment } = ackCredential()
     const response = await put(withoutEnrollment)
-    expect(response.status).toBe(400)
-    expect(state()).toEqual({ serving: false, sessionAuthority: "local" })
-    expect(hostServingEnrollmentId()).toBeUndefined()
-  })
-
-  test("a credential omitting its canonical enrollment generation is refused", async () => {
-    const { generation: _omitted, ...withoutGeneration } = ackCredential()
-    const response = await put(withoutGeneration)
     expect(response.status).toBe(400)
     expect(state()).toEqual({ serving: false, sessionAuthority: "local" })
     expect(hostServingEnrollmentId()).toBeUndefined()

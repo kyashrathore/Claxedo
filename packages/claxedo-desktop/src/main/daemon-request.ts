@@ -49,7 +49,7 @@ export function createDaemonFetch(input: {
 }): DaemonFetch {
   const request = input.fetch ?? fetch
   return async (path, init) => {
-    const { origin, capability } = await endpointForRequest(input.endpoint, init?.signal)
+    const { origin, capability } = await input.endpoint()
     const base = new URL(origin)
     const url = new URL(path, base)
     if (url.origin !== base.origin) {
@@ -62,24 +62,5 @@ export function createDaemonFetch(input: {
       if (!headers.has("authorization")) headers.set("authorization", `Bearer ${capability}`)
     }
     return await request(url, { ...init, headers, redirect: "error" })
-  }
-}
-
-/** A startup endpoint wait must obey the same deadline/cancellation as its fetch. */
-async function endpointForRequest(
-  endpoint: () => DaemonEndpoint | Promise<DaemonEndpoint>,
-  signal: AbortSignal | null | undefined,
-) {
-  signal?.throwIfAborted()
-  if (!signal) return await endpoint()
-  let abort: () => void = () => {}
-  try {
-    return await new Promise<DaemonEndpoint>((resolve, reject) => {
-      abort = () => reject(signal.reason)
-      signal.addEventListener("abort", abort, { once: true })
-      Promise.resolve(endpoint()).then(resolve, reject)
-    })
-  } finally {
-    signal.removeEventListener("abort", abort)
   }
 }

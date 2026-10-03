@@ -9,10 +9,6 @@ import { trackMacWindowControls } from "./window-controls"
 import { useShellRoute } from "./router"
 
 export type ShellLayout = {
-  readonly hideWorkingStatus: Accessor<boolean>
-  readonly setHideWorkingStatus: (hide: boolean) => void
-  readonly sidebarView: Accessor<"projects" | "activity">
-  readonly setSidebarView: (view: "projects" | "activity") => void
   readonly state: Accessor<ShellLayoutState>
   readonly send: (event: ShellLayoutEvent) => void
   readonly phone: Accessor<boolean>
@@ -53,10 +49,6 @@ export function ShellLayoutProvider(props: { readonly scope: string; readonly ch
   }))
 
   const layout: ShellLayout = {
-    hideWorkingStatus: () => prefs.hideWorkingStatus,
-    setHideWorkingStatus: (hide) => setPrefs("hideWorkingStatus", hide),
-    sidebarView: () => prefs.sidebarView,
-    setSidebarView: (view) => setPrefs("sidebarView", view),
     state: machine.state,
     send,
     phone,

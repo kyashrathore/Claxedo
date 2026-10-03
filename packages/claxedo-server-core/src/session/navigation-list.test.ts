@@ -1,46 +1,7 @@
 import { describe, expect, test } from "vitest"
-import { buildSessionListResponse, encodeSessionListAfter, parseSessionListQuery, sessionListKeysetPage, sessionListStorePageFilter } from "./navigation-list"
-
-describe("exact session navigation", () => {
-  test("filters the exact id before applying a page limit and preserves rich canonical facts", () => {
-    const attention = { generation: 1, sequence: 12, activitySequence: 10, activityAt: 10, working: true, awaitingInput: false }
-    const lastTurn = { status: "completed", completedAt: 9, assistantMessageId: "msg_old" }
-    const target = { session_id: "ses_old", workspace_id: "ws_1", project_id: "prj_1", title: "Old entry", created_at: 1, updated_at: 1,
-      ownership: "owned", projectName: "Canonical project", placement: { kind: "machine", machineId: "host_1", machineName: "Desktop" }, attention, lastTurn }
-    const sessions = [...Array.from({ length: 30 }, (_, index) => ({ ...target, session_id: `ses_${index}`, created_at: index + 2, updated_at: index + 2 })), target]
-    const query = parseSessionListQuery(new URL("http://test.local/session-list?scope=workspace&workspaceId=ws_1&sessionId=ses_old&limit=2&settled=all"))
-    const response = buildSessionListResponse({ query, sessions })
-    expect(response).toMatchObject({ items: [{ sessionId: "ses_old", title: "Old entry", projectName: "Canonical project",
-      placement: target.placement, ownership: "owned", attention, lastTurn }], totalKnown: 1 })
-    expect(response.nextCursor).toBeUndefined()
-    expect(sessionListKeysetPage(query)).toMatchObject({ sessionId: "ses_old", limit: 3 })
-    expect(sessionListStorePageFilter(query)).toMatchObject({ sessionID: "ses_old", workspaceID: "ws_1", limit: 3 })
-  })
-
-  test("rejects an empty exact id and a cursor from a broader query", () => {
-    for (const sessionId of ["", "%20%20"]) {
-      try {
-        parseSessionListQuery(new URL(`http://test.local/session-list?sessionId=${sessionId}`))
-        throw new Error("expected empty session id to be refused")
-      } catch (error) {
-        expect(error).toMatchObject({ code: "invalid_session_list_query", status: 400, message: "Session id is empty" })
-      }
-    }
-    const first = buildSessionListResponse({ query: parseSessionListQuery(new URL("http://test.local/session-list?scope=all&limit=1")),
-      sessions: [{ id: "ses_a", createdAt: 2 }, { id: "ses_b", createdAt: 1 }] })
-    const exact = parseSessionListQuery(new URL(`http://test.local/session-list?scope=all&limit=1&sessionId=ses_b&cursor=${first.nextCursor}`))
-    expect(() => sessionListKeysetPage(exact)).toThrow("invalid_session_list_cursor")
-  })
-})
+import { buildSessionListResponse, encodeSessionListAfter, parseSessionListQuery } from "./navigation-list"
 
 describe("session list owner mapping", () => {
-  test("keeps the authoritative full turn outcome and refuses malformed identities", () => {
-    const query = parseSessionListQuery(new URL("http://test.local/session-list?scope=all"))
-    const row = { id: "ses_terminal", createdAt: 1, updatedAt: 2 }
-    const lastTurn = { status: "completed", completedAt: 2, assistantMessageId: "msg_terminal", reason: "done" }
-    expect(buildSessionListResponse({ query, sessions: [{ ...row, lastTurn }] }).items[0]?.lastTurn).toEqual(lastTurn)
-    expect(() => buildSessionListResponse({ query, sessions: [{ ...row, lastTurn: { ...lastTurn, assistantMessageId: 3 } }] })).toThrow()
-  })
   test("invalid cursors expose a typed client refusal", () => {
     try {
       parseSessionListQuery(new URL("http://test.local/session-list?scope=workspace&workspaceId=ws_1&after=invalid"))

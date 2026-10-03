@@ -22,7 +22,6 @@ export type SessionHome = {
 }
 
 export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
-  readonly accountWorkspaceIds: () => readonly string[]
   readonly shared: SharedSessions
   readonly streamRoute: (ref: Pick<SessionLocation, "placementId" | "sessionId">) => RuntimeRoute | undefined
   readonly address: Address
@@ -160,9 +159,8 @@ async function readCatalogs(local: Promise<BootstrapCatalog>, account: Promise<v
   return read.value
 }
 
-function accountReads(linked: () => LinkedCatalog | undefined, signed: boolean, load: () => Promise<unknown>): Pick<Workspaces, "accountProjects" | "accountProjectIds" | "accountWorkspaceIds"> {
+function accountReads(linked: () => LinkedCatalog | undefined, signed: boolean, load: () => Promise<unknown>): Pick<Workspaces, "accountProjects" | "accountProjectIds"> {
   return {
-    accountWorkspaceIds: () => linked()?.accountWorkspaceIds ?? [],
     accountProjects: async () => {
       if (!signed) return []
       await load()

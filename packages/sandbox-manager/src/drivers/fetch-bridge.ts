@@ -1,6 +1,5 @@
 import { record } from "../json"
 import type { SandboxDriver, SandboxDriverEnsureInput, SandboxTarget } from "../contract"
-import { assertWorkspaceRuntimeIdentityEnv } from "../runtime-env"
 
 export type FetchBridgeSandboxDriverOptions = {
   id: string
@@ -9,8 +8,6 @@ export type FetchBridgeSandboxDriverOptions = {
   fetch?: typeof fetch
   autoStopMs: number
   autoDeleteMs: number
-  /** Launch environment minted from the acquired lease and the host the bridge must serve. */
-  env?: (input: SandboxDriverEnsureInput, host: { id: string }) => Promise<Record<string, string>>
 }
 
 function cleanUrl(input: string) {
@@ -93,25 +90,16 @@ async function post(
 export function createFetchBridgeSandboxDriver(options: FetchBridgeSandboxDriverOptions): SandboxDriver {
   assertLifecycleSettings(options)
   async function ensureHost(input: SandboxDriverEnsureInput) {
-    if (options.env && !input.hostId) throw new Error("Fetch bridge runtime environment requires the acquired host identity")
-    const generated = options.env ? await options.env(input, { id: input.hostId! }) : undefined
-    const env = input.env || generated ? { ...input.env, ...generated } : undefined
-    assertWorkspaceRuntimeIdentityEnv(env)
-    const result = target(await post(options, "/runtime/ensure", {
+    return target(await post(options, "/runtime/ensure", {
       workspaceId: input.workspaceId,
       homeRegion: input.homeRegion,
       epoch: input.epoch,
       labels: input.labels,
-      ...(env ? { ...(input.hostId ? { hostId: input.hostId } : {}), env } : {}),
       hostControl: {
         autoStopMs: options.autoStopMs,
         autoDeleteMs: options.autoDeleteMs,
       },
     }))
-    if (options.env && !("provisioning" in result) && result.hostId !== input.hostId) {
-      throw new Error("Fetch bridge returned a host different from its authorized runtime environment")
-    }
-    return result
   }
   return {
     id: options.id,

@@ -34,7 +34,7 @@ function source(live: Map<string, SessionRowStatus> = new Map()) {
   return localSessionRowSource(localSessionProjectionStore(), {
     current: () => idle(5_000),
     snapshot: async () => live,
-  }, async () => true, async () => {})
+  })
 }
 
 describe("rows from the local projection", () => {

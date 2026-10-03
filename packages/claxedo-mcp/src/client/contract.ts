@@ -80,12 +80,6 @@ export type AppPluginsGrant = Readonly<{
   add(directory: string): Promise<AppPluginRegistration>
 }>
 
-/** A composition-issued cleanup capability bound to the user who drives this session. */
-export type SessionCleanupGrant = Readonly<{
-  allowed(): boolean
-  fetch: ClaxedoFetch
-}>
-
 export type WorkspaceSummary = Readonly<{
   id: string
   name?: string
@@ -113,7 +107,6 @@ export interface ClaxedoMcpClient {
   readonly tasks?: TasksGrant
   /** App plugin authoring; undefined unless this caller is a session of the machine's owner. */
   readonly appPlugins?: AppPluginsGrant
-  readonly sessionCleanup?: SessionCleanupGrant
   /** Runtime routes (`/session*`, `/permission`, `/api/wr/*`) on the workspace that owns the target. */
   runtime(target: WorkspaceTarget): Promise<ClaxedoFetch>
   resolveTarget(target: WorkspaceTarget): Promise<ResolvedTarget>

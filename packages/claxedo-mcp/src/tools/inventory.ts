@@ -150,7 +150,7 @@ export function runtimeToolAccess(tool: McpRuntimeToolName, gating: McpToolGatin
  * client rather than the credential.
  */
 export function declaredToolAccess(
-  gating: McpToolGating & Readonly<{ write: boolean; operation?: TasksOperation; appPlugins?: true; sessionCleanup?: true }>,
+  gating: McpToolGating & Readonly<{ write: boolean; operation?: TasksOperation; appPlugins?: true }>,
 ): McpToolAccess {
   return {
     audiences: gating.audiences,
@@ -159,6 +159,5 @@ export function declaredToolAccess(
     ...(gating.destructive ? { destructive: true } : {}),
     ...(gating.operation ? { operation: gating.operation } : {}),
     ...(gating.appPlugins ? { appPlugins: true } : {}),
-    ...(gating.sessionCleanup ? { sessionCleanup: true } : {}),
   }
 }

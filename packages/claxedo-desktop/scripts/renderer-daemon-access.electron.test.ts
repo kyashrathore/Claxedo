@@ -49,8 +49,6 @@ type BoundaryResult = {
   socketFirstMessage: string | null
   capabilityInPageSurfaces: boolean
   pageSurfaceBytes: number
-  cleanupBlocked: boolean[]
-  cancelledRequests: string[]
 }
 
 function electronBinary(): string {
@@ -142,12 +140,6 @@ afterAll(() => {
 })
 
 describe("the trusted main renderer, in Electron", () => {
-  test("cannot send cleanup installation writes, including encoded aliases", () => {
-    expect(result.cleanupBlocked).toEqual([true, true, true])
-    expect(result.cancelledRequests).toHaveLength(3)
-    expect(Object.keys(result.seen).filter((label) => label.startsWith("cleanup:"))).toEqual([])
-  })
-
   // Only a real Electron main process reports these, so the recorded run cannot
   // be mistaken for a fixture someone wrote.
   test("was produced by the installed Electron, not a fixture", () => {

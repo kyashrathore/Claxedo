@@ -4,14 +4,10 @@ import type { HarnessConnectionState, HarnessHealth } from "./harness-types"
 import type { Terminal, TerminalAgentStatus } from "./terminal-types"
 import type { BackgroundWork, SessionStatus } from "./status-types"
 import type { AgentRequest, FileDiff, SessionGoal, SessionLocation, SessionRow, Subagent, Todo, TranscriptMessage, TranscriptPart } from "./types"
-import type { AgentTurnOutcome, SessionAttentionEvent, SessionAttentionFacts, SessionReaderState } from "@claxedo/agent-runtime-contract"
 
 export type PartAddress = { readonly messageId: string; readonly partId: string }
 
 export type ServerEvent =
-  | { readonly type: "attentionChanged"; readonly ref: SessionLocation; readonly attention: SessionAttentionFacts; readonly lastTurn?: AgentTurnOutcome; readonly title?: string; readonly delivery: "live" | "replay" }
-  | { readonly type: "readerChanged"; readonly ref: SessionLocation; readonly reader: SessionReaderState }
-  | { readonly type: "attentionRaised"; readonly ref: SessionLocation; readonly generation: number; readonly event: SessionAttentionEvent; readonly title?: string; readonly parentSessionId?: string; readonly delivery: "live" | "replay" }
   | { readonly type: "sessionUpserted"; readonly row: SessionRow }
   | { readonly type: "sessionRemoved"; readonly ref: SessionLocation }
   | { readonly type: "statusChanged"; readonly ref: SessionLocation; readonly status: SessionStatus }

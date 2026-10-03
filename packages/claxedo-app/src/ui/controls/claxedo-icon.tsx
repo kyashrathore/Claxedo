@@ -68,8 +68,6 @@ function ensureSprite() {
 }
 
 const customGlyphs = {
-  "codex-custom-activity": "activity",
-  "codex-custom-bell": "bell",
   "codex-custom-check": "check",
   "codex-custom-claude": "claude",
   "codex-custom-close": "close",

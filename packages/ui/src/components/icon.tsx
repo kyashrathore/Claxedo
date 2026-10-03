@@ -21,8 +21,6 @@ export { ensureSvgSpriteHost }
 const terminalPrompt = `<path d="M3.75 5.4165L8.33333 9.99984L3.75 14.5832M10.4167 14.5832H16.25" stroke="currentColor" stroke-linecap="square"/>`
 
 const icons = {
-  activity: CODEX_CUSTOM_ARTWORK.activity,
-  bell: CODEX_CUSTOM_ARTWORK.bell,
   hook: CODEX_CUSTOM_ARTWORK.hook,
   "codex-collapse-all": CODEX_CUSTOM_ARTWORK["collapse-all"],
   "codex-expand-all": CODEX_CUSTOM_ARTWORK["expand-all"],
@@ -354,8 +352,6 @@ export function Icon(props: IconProps) {
  * render an invisible icon silently.
  */
 const CODEX_CUSTOM_GLYPHS = {
-  "codex-custom-activity": "activity",
-  "codex-custom-bell": "bell",
   "codex-custom-hook": "hook",
   "codex-custom-pi": "pi",
   "codex-custom-opencode": "opencode",

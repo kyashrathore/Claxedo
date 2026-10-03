@@ -335,7 +335,7 @@ export function createControlPlaneEventsHandler(
         write: (frame, meta) => {
           return stream.writeSSE({
             ...(meta?.id ? { id: meta.id } : {}),
-            data: JSON.stringify(meta?.replayed ? { ...frame, replayed: true } : frame),
+            data: JSON.stringify(frame),
           })
         },
         heartbeat,

@@ -6,8 +6,6 @@ import { PROCESS_ICON_GLYPHS } from "./process-icon-map"
  * not from the Apache-2.0 `openai/codex` repository. Known, accepted for now.
  */
 export const UI_CODEX_ICON_ALIASES = {
-  activity: "codex-custom-activity",
-  bell: "codex-custom-bell",
   hook: "codex-custom-hook",
   "pi": "codex-custom-pi",
   "opencode": "codex-custom-opencode",

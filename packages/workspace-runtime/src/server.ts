@@ -10,7 +10,6 @@ import { Pty } from "./pty/index"
 import { withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "./target"
 import { WorkspaceWorktreeManager } from "./worktree"
 import { createWorkspaceHost, type WorkspaceHostOptions } from "./workspace"
-import type { WorkspaceSessionInventory } from "./session-inventory"
 import { setupAgentHooks } from "./agent-hooks"
 import { createRelayHostAuthMiddleware, type RelayHostAuthOptions } from "./workspace-host-service-auth"
 import { startWorkspaceRelayHostTunnel, type WorkspaceRelayHostTunnelOptions } from "./workspace-relay-host-tunnel"
@@ -67,7 +66,6 @@ export type WorkspaceRuntimeServerOptions = {
   onTurnOutcome?: WorkspaceHostOptions["onTurnOutcome"]
   onPresentationEvent?: WorkspaceHostOptions["onPresentationEvent"]
   onRuntimeEvent?: WorkspaceHostOptions["onRuntimeEvent"]
-  beforeStoreClose?: WorkspaceHostOptions["beforeStoreClose"]
   sessionParents?: WorkspaceEventParents
   relayHostAuth?: RelayHostAuthOptions
   hostTunnel?: WorkspaceRelayHostTunnelOptions
@@ -139,8 +137,6 @@ export type WorkspaceRuntimeServerOptions = {
    * is written only when the session is bound, never on an event.
    */
   bindSessionParents?: (read: Host["parentSessionIdFor"]) => void
-  /** Host observer reads canonical rows and attention history without opening a content stream. */
-  bindSessionInventory?: (read: WorkspaceSessionInventory) => void
   /**
    * Host-owned work the process drain awaits last, once the runtime's
    * sessions, processes and PTYs are disposed: whatever a disposed turn left
@@ -456,19 +452,11 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.onTurnOutcome ? { onTurnOutcome: options.onTurnOutcome } : {}),
     ...(options.onPresentationEvent ? { onPresentationEvent: options.onPresentationEvent } : {}),
     ...(options.onRuntimeEvent ? { onRuntimeEvent: options.onRuntimeEvent } : {}),
-    ...(options.beforeStoreClose ? { beforeStoreClose: options.beforeStoreClose } : {}),
     ...(options.sessionParents ? { sessionParents: options.sessionParents } : {}),
     ...(options.firstPartyMcpLaunch ? { firstPartyMcpLaunch: options.firstPartyMcpLaunch } : {}),
   })
   options.bindSessionConfig?.((sessionId) => host.getSessionConfig(sessionId))
   options.bindSessionParents?.((sessionId) => host.parentSessionIdFor(sessionId))
-  options.bindSessionInventory?.({
-    sessions: () => host.store().listWorkspaceSessionIds(options.target?.workspaceId ?? workspaceId())
-      .map((sessionId) => host.store().getSession(sessionId)!),
-    removed: () => host.store().listWorkspaceDeletedRootSessionIds(options.target?.workspaceId ?? workspaceId()),
-    session: (sessionId) => host.store().getSession(sessionId) ?? undefined,
-    attention: (sessionId, after, limit) => host.store().sessionAttentionHistory(sessionId, after, limit),
-  })
   const worktrees = options.target
       ? new WorkspaceWorktreeManager({
         workspaceId: options.target.workspaceId,

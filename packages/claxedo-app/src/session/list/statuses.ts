@@ -1,4 +1,4 @@
-import type { SessionRow, ListedStatus, BackgroundWork, SessionId, SessionLocation, SessionStatus } from "@/server"
+import type { BackgroundWork, SessionId, SessionLocation, SessionStatus } from "@/server"
 import type { FetchedWindow, ListData } from "./model"
 
 type Timed = { readonly at: number; readonly source: "event" | "read" }
@@ -34,19 +34,17 @@ export function backgroundWorkRead<S extends ListData>(data: S, ref: SessionLoca
   return { ...data, backgroundWork }
 }
 
-export function rowsStatusesRead<S extends ListData>(data: S, rows: readonly SessionRow[], statuses: ReadonlyMap<SessionId, ListedStatus>, sentAt: number): S {
+export function pageStatusesRead<S extends ListData>(data: S, window: FetchedWindow): S {
   let next = data
-  for (const row of rows) {
-    const listed = statuses.get(row.ref.sessionId)
-    if (!listed) continue
-    next = statusRead(next, row.ref, listed.status, sentAt, listed.waitingOnUser)
-    next = backgroundWorkRead(next, row.ref, listed.backgroundWork, sentAt)
+  for (const page of window.pages) {
+    for (const row of page.rows) {
+      const listed = page.statuses.get(row.ref.sessionId)
+      if (!listed) continue
+      next = statusRead(next, row.ref, listed.status, window.sentAt, listed.waitingOnUser)
+      next = backgroundWorkRead(next, row.ref, listed.backgroundWork, window.sentAt)
+    }
   }
   return next
-}
-
-export function pageStatusesRead<S extends ListData>(data: S, window: FetchedWindow): S {
-  return window.pages.reduce((next, page) => rowsStatusesRead(next, page.rows, page.statuses, window.sentAt), data)
 }
 
 export function withoutSessionFacts<S extends ListData>(data: S, sessionIds: Iterable<SessionId>): Pick<ListData, "statuses" | "backgroundWork"> {

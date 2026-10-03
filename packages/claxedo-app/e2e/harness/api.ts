@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto"
-import { parseSessionAttention } from "@claxedo/agent-runtime-contract"
 import type { MessageRow } from "../../../harness/e2e/harness/api"
 import { ascendingMessageIds } from "../../../harness/e2e/harness/message-ids"
 import { directTransport, type HttpTransport } from "../../../harness/e2e/harness/transport"
@@ -140,15 +139,8 @@ export class ClaxedoApi {
     return this.call<SessionRow[]>("GET", "/session", { directory })
   }
 
-  async deleteSession(directory: string, id: string) {
-    const route = `/session/${encodeURIComponent(id)}`
-    const [row, children] = await Promise.all([this.session(directory, id), this.call<SessionRow[]>("GET", `${route}/children`, { directory })])
-    const selected = (row: SessionRow) => {
-      const facts = parseSessionAttention(row.attention)
-      if (!facts) throw new Error(`Session ${row.id} has no authoritative activity selection`)
-      return { generation: facts.generation, activitySequence: facts.activitySequence }
-    }
-    return this.call<unknown>("DELETE", route, { directory, body: { expected: selected(row), descendants: children.map((child) => ({ sessionId: child.id, ...selected(child) })) } })
+  deleteSession(directory: string, id: string) {
+    return this.call<unknown>("DELETE", `/session/${encodeURIComponent(id)}`, { directory })
   }
 
   private turnId(messageId?: string) {

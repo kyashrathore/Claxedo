@@ -68,12 +68,6 @@ export function workspaceRuntimeOwnerGrantToken(env: Record<string, string | und
   return env[WORKSPACE_RUNTIME_OWNER_GRANT]?.trim() || undefined
 }
 
-export const WORKSPACE_RUNTIME_SESSION_CLEANUP_GRANT = "WORKSPACE_RUNTIME_SESSION_CLEANUP_GRANT"
-
-export function workspaceRuntimeSessionCleanupGrantEnv(input: { token: string }): Record<string, string> {
-  return { [WORKSPACE_RUNTIME_SESSION_CLEANUP_GRANT]: input.token }
-}
-
 export function workspaceRuntimeTargetEnv(input: {
   workspaceId: string
   hostId?: string

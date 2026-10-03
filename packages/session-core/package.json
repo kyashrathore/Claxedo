@@ -45,7 +45,7 @@
   "scripts": {
     "build": "bun build src/index.ts --target=browser --format=esm --packages=external --outfile=dist/index.mjs && bun build src/session-access-policy.ts --target=browser --format=esm --packages=external --outfile=dist/access-policy.mjs && bun build src/testing.ts --target=node --format=esm --packages=external --outfile=dist/testing.mjs && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test src && node --conditions=development --import tsx --import ./src/test-support/home/isolated-home.mjs --test src/store-durable-object.node-test.ts src/durable-object.node-test.ts src/routes/session-delete.node-test.ts src/routes/session-attention.node-test.ts src/session/attention.node-test.ts src/session/attention-host.node-test.ts"
+    "test": "bun test src && node --import tsx --import ./src/test-support/home/isolated-home.mjs --test src/store-durable-object.node-test.ts src/durable-object.node-test.ts"
   },
   "dependencies": {
     "@claxedo/agent-runtime-contract": "workspace:*",

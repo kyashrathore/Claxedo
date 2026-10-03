@@ -17,8 +17,6 @@ import {
   PAGE_SIZE,
   railRow,
 } from "./31-session-list-races.oracle"
-import { activityRow, expectInventoryMatchesServer, readerRow, writeReader } from "./31-session-list-races.reader"
-import { sidebarFilter } from "../harness/sidebar-filter"
 
 test.skip(({ isMobile }) => isMobile, "Flow 31 runs at desktop width; flow 33 owns the phone rail")
 
@@ -140,18 +138,14 @@ test("31 statuses follow the turn: working, waiting on you, working, idle, and f
   await expectRailEqualsServer(app, checked)
 })
 
-test("31 settling and deleting running work are refused while rename remains available", async ({ stack, api, app }) => {
-  const { sessions, checked } = await setup(stack, api, app, ["Race settle me", "Race rename me", "Race delete me", "Race bystander"])
-  const [settled, renamed, deleted] = sessions
-  const holds = ["settle-turn", "rename-turn", "delete-turn"]
+test("31 a session is archived, renamed or deleted while a turn runs", async ({ stack, api, app }) => {
+  const { sessions, checked } = await setup(stack, api, app, ["Race archive me", "Race rename me", "Race delete me", "Race bystander"])
+  const [archived, renamed, deleted] = sessions
+  const holds = ["archive-turn", "rename-turn", "delete-turn"]
   for (const [index, hold] of holds.entries()) await startHeldTurn(checked, sessions[index].id, hold)
-  for (const session of [settled, renamed, deleted]) await expectServerStatus(checked, session.id, "Working")
+  for (const session of [archived, renamed, deleted]) await expectServerStatus(checked, session.id, "Working")
   await expectRailEqualsServer(app, checked)
-  await expect(railRow(app, settled.title).getByRole("button", { name: `Settle ${settled.title}` })).toBeDisabled()
-  const selected = await readerRow(stack, settled.id)
-  const refused = await writeReader(stack, selected, { kind: "settle", revision: selected.reader?.revision ?? 0, activitySequence: selected.attention.activitySequence })
-  expect(refused.status).toBe(409)
-  expect(refused.body).toMatchObject({ ok: false, reason: "working" })
+  await patchSession(checked, archived.id, { time: { archived: Date.now() } })
   await patchSession(checked, renamed.id, { title: "Race renamed mid-turn" })
   await expect(api.deleteSession(checked.directory, deleted.id), "the server refuses to delete running work").rejects.toMatchObject({ status: 409 })
   await expectRailEqualsServer(app, checked)
@@ -162,83 +156,15 @@ test("31 settling and deleting running work are refused while rename remains ava
   await expectRailEqualsServer(app, checked)
 })
 
-test("31 an Activity read preserves live work and canonical order", async ({ stack, api, app }) => {
-  const { sessions, checked } = await setup(stack, api, app, ["Race moving activity", "Race activity bystander"])
-  await sidebarFilter(app, "Activity")
-  await expect(activityRow(app, sessions[0].title)).toBeVisible()
-  const read = await holdListRead(app, (url) => url.searchParams.get("scope") === "all" && url.searchParams.get("settled") === "active")
-  await api.createSession(checked.directory, { title: "Race Activity refresh", harness: SCRIPTED_ACP_HARNESS })
-  await read.computed
-  await startHeldTurn(checked, sessions[0].id, "activity-moved-during-read")
-  await expectServerStatus(checked, sessions[0].id, "Working")
-  await expect(app.getByRole("button", { name: sessions[0].title, exact: true })).toBeVisible()
-  await read.release()
-  await expectInventoryMatchesServer(app, stack, sessions.map((session) => session.id))
-  await expect(activityRow(app, sessions[0].title)).toHaveCount(1)
-  await stack.acp.release("activity-moved-during-read")
-  await expectServerStatus(checked, sessions[0].id, "Idle")
-  await expectInventoryMatchesServer(app, stack, sessions.map((session) => session.id))
-})
-
-test("31 a stale settle command cannot acknowledge a newer result", async ({ stack, api, app }) => {
-  const { sessions, checked } = await setup(stack, api, app, ["Race newer result", "Race reader bystander"])
-  await stack.acp.write("reader-first", { steps: [{ kind: "text", text: "First off-screen result" }] })
-  await api.prompt(checked.directory, sessions[0].id, `First ${acpScriptToken("reader-first")}`)
-  const selected = await readerRow(stack, sessions[0].id)
-  expect(selected.attention.outcome?.status).toBe("completed")
-  await stack.acp.write("reader-second", { steps: [{ kind: "text", text: "Newer off-screen result" }] })
-  await api.prompt(checked.directory, sessions[0].id, `Second ${acpScriptToken("reader-second")}`)
-  await expect.poll(async () => (await readerRow(stack, sessions[0].id)).attention.outcome?.sequence).toBeGreaterThan(selected.attention.outcome!.sequence)
-  const refused = await writeReader(stack, selected, { kind: "settle", revision: selected.reader?.revision ?? 0, activitySequence: selected.attention.activitySequence, outcomeSequence: selected.attention.outcome!.sequence })
-  expect(refused.status).toBe(409)
-  expect(refused.body).toMatchObject({ ok: false, reason: "activity_changed" })
-  const current = await readerRow(stack, sessions[0].id)
-  expect(current.reader?.seenThrough ?? 0).toBeLessThan(current.attention.outcome!.sequence)
-  await sidebarFilter(app, "Activity")
-  await expect(app.getByRole("button", { name: sessions[0].title, exact: true })).toBeVisible()
-  await expectInventoryMatchesServer(app, stack, sessions.map((session) => session.id))
-})
-
-test("31 settling during an inventory read hides the active row, and new activity brings it back", async ({ stack, api, app }) => {
-  const { sessions, checked } = await setup(stack, api, app, ["Race settled during read", "Race settlement bystander"])
-  const [settled] = sessions
-  await stack.acp.write("settle-displayed-row", { steps: [{ kind: "text", text: "The result represented by the settled row." }] })
-  await api.prompt(checked.directory, settled.id, `Settle later ${acpScriptToken("settle-displayed-row")}`)
-  await expect.poll(async () => (await readerRow(stack, settled.id)).attention.outcome?.status).toBe("completed")
-  const selected = await readerRow(stack, settled.id)
-  await expect(railRow(app, settled.title)).toBeVisible()
-  await sidebarFilter(app, "Activity")
-  await expect(activityRow(app, sessions[0].title)).toBeVisible()
-  const read = await holdListRead(app, (url) => url.searchParams.get("scope") === "all" && url.searchParams.get("settled") === "active")
-  await api.createSession(checked.directory, { title: "Race Activity refresh", harness: SCRIPTED_ACP_HARNESS })
-  await read.computed
-  await sidebarFilter(app, "Projects")
-  await railRow(app, settled.title).getByRole("button", { name: settled.title, exact: true }).focus()
-  await railRow(app, settled.title).getByRole("button", { name: `Settle ${settled.title}` }).click()
-  await expect(railRow(app, settled.title)).toHaveCount(0)
-  const confirmed = await readerRow(stack, settled.id)
-  expect(confirmed.reader).toMatchObject({ seenThrough: selected.attention.outcome!.sequence, settledThrough: selected.attention.activitySequence })
-  expect((await api.session(checked.directory, settled.id)).time.archived).toBeUndefined()
-  await read.release()
-  await sidebarFilter(app, "Activity")
-  await expectInventoryMatchesServer(app, stack, sessions.map((session) => session.id))
-  await expect(app.getByRole("button", { name: settled.title, exact: true })).toHaveCount(0)
-  await startHeldTurn(checked, settled.id, "settled-session-woke")
-  await expectServerStatus(checked, settled.id, "Working")
-  await expect(app.getByRole("button", { name: settled.title, exact: true })).toBeVisible()
-  await expectInventoryMatchesServer(app, stack, sessions.map((session) => session.id))
-  await stack.acp.release("settled-session-woke")
-})
-
 test("31 a thousand sessions, including the status of rows off screen", async ({ stack, api, app }) => {
   test.setTimeout(300_000)
   const titles = Array.from({ length: 1000 }, (_, index) => `Bulk ${String(index).padStart(4, "0")}`)
-  const { sessions, checked } = await setup(stack, api, app, titles, { workspaces: 5, webSocket: true })
+  const { sessions, checked } = await setup(stack, api, app, titles, { workspaces: 5 })
   const oldest = sessions[0]
   await startHeldTurn({ ...checked, directory: oldest.directory }, oldest.id, "off-screen")
   await expectServerStatus(checked, oldest.id, "Working")
   await expectRailEqualsServer(app, checked)
-  await loadPagesUntil(app, checked, oldest.id)
+  await loadPagesUntil(app, oldest.id)
   const rows = await expectRailEqualsServer(app, checked)
   expect(rows.find((row) => row.sessionId === oldest.id), "the oldest row, loaded last, shows the server's status").toEqual({ sessionId: oldest.id, title: oldest.title, status: "Working" })
   await stack.acp.release("off-screen")

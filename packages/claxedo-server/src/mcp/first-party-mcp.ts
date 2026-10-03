@@ -53,10 +53,6 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
           ? {
               controlPlane: { fetch: inProcessFetch((call) => input.app.request(call), authorization ? { authorization } : {}) },
               documents: { fetch: inProcessFetch((call) => input.app.request(call), authorization ? { authorization } : {}) },
-              sessionCleanup: {
-                allowed: () => credential.scopes.has("read") || credential.scopes.has("admin"),
-                fetch: inProcessFetch((call) => input.app.request(call), authorization ? { authorization } : {}),
-              },
             }
           : {}),
       })

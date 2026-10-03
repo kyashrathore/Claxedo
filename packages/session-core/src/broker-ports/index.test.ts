@@ -637,7 +637,7 @@ describe("store broker ports", () => {
     const journaled = store.database().prepare<{ type: string }>(
       "SELECT type FROM runtime_journal WHERE session_id = ? AND type = 'session.background-work'",
     ).all("s1")
-    expect(journaled).toEqual([{ type: "session.background-work" }, { type: "session.background-work" }, { type: "session.background-work" }])
+    expect(journaled).toEqual([])
   })
 
   test("child provider events project into the admitted child session", async () => {

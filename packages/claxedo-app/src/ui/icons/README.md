@@ -33,7 +33,3 @@ has only its glyph, a readable description, and an optional active-state icon.
 Exact glyphs that are not in the numbered sprite—open folder, outline/filled
 pin, menus, and provider marks—live in the small local Codex sprite owned by
 `claxedo-icon.tsx`.
-
-Activity pulse and bell control geometry lives in the shared UI package's
-codex-custom-artwork.tsx. Both app icon libraries and the shared UI consume
-that same artwork, with semantic activity/bell names in the catalog.

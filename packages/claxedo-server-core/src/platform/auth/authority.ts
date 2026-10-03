@@ -6,18 +6,14 @@ import type {
   PrivateSessionRuntimePrincipal,
   PrivateSessionAuthority,
   RegisterRuntimePrivateSessionInput,
+  SessionPageQuery,
 } from "./private-session-authority"
 import type { LatestView } from "../../session/latest-view-page"
 import type { TurnPageQuery, TurnPageRequest, TurnPage, FirstRead } from "@claxedo/agent-runtime-contract"
 import type { AgentContentPart } from "@claxedo/agent-runtime-contract"
 import type { HostSessionRowsAuthority } from "./host-session-rows"
-import type { CloudSessionRowsAuthority } from "./cloud-session-rows"
 import type { OrgAccessAuthority } from "./org-access-authority"
 import type { SessionShareAuthority } from "./session-share-authority"
-import type { SessionAttentionAuthority } from "./session-attention-authority"
-import type { SessionReaderAuthority } from "./session-reader-authority"
-import type { AuthoritySessionInventoryRow, SessionInventoryAuthority } from "./session-inventory-authority"
-export type { AuthoritySessionInventoryRow } from "./session-inventory-authority"
 
 export {
   DEFAULT_SESSION_SHARE_LEVEL,
@@ -70,6 +66,13 @@ export type WorkspaceVisibility = {
   title?: string
   createdAt?: number
   updatedAt?: number
+}
+
+/** Canonical identity contract returned by authority-backed session inventory. */
+export type AuthoritySessionInventoryRow = {
+  session_id: string
+  workspace_id?: string
+  [field: string]: unknown
 }
 
 export type RuntimeActorIdentity = {
@@ -127,7 +130,7 @@ export type ChannelMachineIdentity = { channel: string; externalUserId: string; 
 /** The same identity carrying the binding generation the authority admitted it under. */
 export type AuthorizedChannelIdentity = ChannelMachineIdentity & { identityVersion: number }
 
-export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & SessionAttentionAuthority & SessionReaderAuthority & SessionInventoryAuthority & {
+export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & {
   /** Internal host delegation, answered only for the workspace's owner, whose actor the authority rechecks. */
   resolveRuntimeMachineAccess: (actorId: string, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole }>
   resolveChannelMachineAccess: (identity: ChannelMachineIdentity, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole; identityVersion: number }>
@@ -197,7 +200,6 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Se
     args: { orgId?: string; projectId?: string },
   ) => Promise<void>
   openWorkspace: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<WorkspaceOpenResult>
-  openRuntimeWorkspace?: (principal: PrivateSessionRuntimePrincipal, args: { workspaceId: string }) => Promise<WorkspaceOpenResult>
   listWorkspaces: (auth: SignedControlPlaneAuth) => Promise<unknown>
   // --- machine-wide enrollment ---------------------------------------------
   //
@@ -439,9 +441,12 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Se
   authorizeRuntimeSession?: (args: AuthorizeRuntimePrivateSessionInput) => Promise<void>
   registerRuntimeSession?: (args: RegisterRuntimePrivateSessionInput) => Promise<unknown>
   createOrg?: (auth: SignedControlPlaneAuth, args: { name: string }) => Promise<unknown>
+  listSessions: (
+    auth: SignedControlPlaneAuth,
+    args: { workspaceId: string },
+  ) => Promise<AuthoritySessionInventoryRow[]>
+  listSessionPage: (auth: SignedControlPlaneAuth, args: SessionPageQuery) => Promise<AuthoritySessionInventoryRow[]>
   publishHostSessionRows?: HostSessionRowsAuthority["publishHostSessionRows"]
-  publishCloudSessionRows?: CloudSessionRowsAuthority["publishCloudSessionRows"]
-  cloudSessionRowsPublisherActive?: CloudSessionRowsAuthority["cloudSessionRowsPublisherActive"]
   resolveSession?: (auth: SignedControlPlaneAuth, args: { sessionId: string }) => Promise<unknown>
   readSessionMessages: (
     auth: SignedControlPlaneAuth,

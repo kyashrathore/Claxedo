@@ -48,9 +48,9 @@ import { createSseReplayBuffer } from "@claxedo/helpers/sse"
 import { eventVisibleTo, type EventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
 import { isRetainedControlPlaneEvent } from "@claxedo/server-core/platform/http/event-retention"
 import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
+import { storedSessionShareLevel } from "@claxedo/server-core/platform/auth/session-share-level"
 import { liveSyncRoomNameForPrincipal, type LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
-import { liveSyncEvent } from "./live-sync-event"
 
 /**
  * Held connections one room admits, across both hold mechanisms.
@@ -257,6 +257,7 @@ export function liveSyncRoomName(subscriber: LiveSyncSubscriber): string {
   if (subscriber.auth.mode !== "signed") return "owner:local"
   return liveSyncRoomNameForPrincipal({
     ownerUserId: subscriber.auth.user.subject,
+    orgId: subscriber.orgId,
   })
 }
 
@@ -314,6 +315,31 @@ const SSE_HEADERS = {
   "Cache-Control": "no-store",
   Connection: "keep-alive",
 } as const
+
+/**
+ * The one event this room admits onto a client stream, a session share's
+ * doorbell, rebuilt field by field so the room forwards exactly the fields it
+ * verified and nothing else the sender put in the object.
+ */
+function liveSyncEvent(input: unknown): ControlPlaneEvent | undefined {
+  const row = asRecord(input)
+  const ts = row?.ts
+  if (!row || typeof ts !== "number" || !Number.isFinite(ts)) return undefined
+  const { ownerUserId, sessionId, workspaceId, phase } = row
+  if (
+    row.type === "session.share.changed"
+    && typeof ownerUserId === "string" && ownerUserId
+    && typeof sessionId === "string"
+    && typeof workspaceId === "string"
+    && (phase === "granted" || phase === "revoked")
+  ) {
+    const base = { type: "session.share.changed", ts, ownerUserId, sessionId, workspaceId } as const
+    return phase === "granted"
+      ? { ...base, phase, level: storedSessionShareLevel(row.level) }
+      : { ...base, phase }
+  }
+  return undefined
+}
 
 function isConstructor(value: unknown): value is new () => unknown {
   return typeof value === "function"
@@ -489,9 +515,8 @@ export class LiveSyncRoom {
     return replay
       .replayAfter(cursor, throughId)
       .filter((event) => eventVisibleTo(principal, event.payload))
-      .map((event) => ({ id: event.id, frame: { ...event.payload, replayed: true } }))
+      .map((event) => ({ id: event.id, frame: event.payload }))
   }
-
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)

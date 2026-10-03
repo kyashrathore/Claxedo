@@ -174,20 +174,17 @@ export function servingCredential(tunnel: unknown, fallbackRelayUrl: string | un
   const enrollmentId = trimToUndefined(row.enrollmentId)
   const token = trimToUndefined(row.hostTunnelToken)
   const expiresAt = asFiniteNumber(row.tokenExpiresAt)
-  const generation = asFiniteNumber(row.generation)
   const relayUrl = trimToUndefined(row.relayUrl) ?? fallbackRelayUrl
   const workspaceIds = Array.isArray(row.workspaceIds)
     ? row.workspaceIds.filter((id): id is string => typeof id === "string" && id.length > 0)
     : []
   if (!hostId || !enrollmentId || !token || !expiresAt || !relayUrl || workspaceIds.length === 0) return null
-  if (generation === undefined || !Number.isSafeInteger(generation) || generation < 1) return null
   // The ack's relayUrl overrides the persisted endpoint, and neither is
   // proof: refuse the credential rather than dial an address this machine
   // may not carry the Host Tunnel Token to.
   return {
     hostId,
     enrollmentId,
-    generation,
     relayUrl: canonicalRelayUrl(relayUrl, "hostTunnel.relayUrl"),
     token,
     workspaceIds,

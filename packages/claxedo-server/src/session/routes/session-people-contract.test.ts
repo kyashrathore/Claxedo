@@ -17,7 +17,7 @@ const signedOptions = {
     mode: "signed" as const,
     token,
     user: {
-      subject: "usr_alice",
+      subject: "user_alice",
       tokenIdentifier: "https://auth.example.test|user_alice",
       issuer: "https://auth.example.test",
     },
@@ -132,7 +132,6 @@ describe("grantId-only revoke fanout", () => {
         const sink = vi.fn()
         const authority: Partial<WorkspaceAuthority> = {
           resolveOrgId: vi.fn(async () => "org_internal" as OrgId),
-          resolveSessionShareRecipients: vi.fn(async () => ["usr_bob"]),
           ...fanout.authority,
           revokeSessionShare: vi.fn(async () => ({
             revoked: true,
@@ -153,7 +152,7 @@ describe("grantId-only revoke fanout", () => {
         expect(sink).toHaveBeenCalledWith(expect.objectContaining({
           type: "session.share.changed",
           phase: "revoked",
-          ownerUserId: "usr_bob",
+          ownerUserId: "user_bob",
           sessionId: "ses_1",
           workspaceId: "ws_1",
         }))
@@ -171,7 +170,6 @@ describe("share level on the grant route", () => {
         services({
           grantSessionShare,
           resolveOrgId: vi.fn(async () => "org_internal" as OrgId),
-          resolveSessionShareRecipients: vi.fn(async () => ["usr_bob"]),
         }),
         { ...signedOptions, sessionShareChangedSink: sink },
       ).request("https://control.example.test/sessions/ses_1/shares", {

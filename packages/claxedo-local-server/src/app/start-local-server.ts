@@ -29,7 +29,6 @@ import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
-import { absoluteConfiguredDir } from "@claxedo/helpers/path"
 import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/data-dir-owner"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { configureAgentConfig, disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
@@ -73,8 +72,6 @@ export type StartLocalServerOptions = Omit<LocalAppOptions, "onError" | "service
   onError?: LocalAppOptions["onError"]
   /** The Agent Plugins module's contribution to every runtime snapshot. */
   pluginRuntime?: NonNullable<Parameters<typeof configureAgentConfig>[0]>["pluginRuntime"]
-  /** An explicit owner for native harness state, independent of the application database directory. */
-  harnessStateRoot?: Parameters<typeof configureEmbeddedWorkspaceRuntime>[0]["harnessStateRoot"]
 }
 
 export type LocalServer = {
@@ -129,7 +126,6 @@ function developmentRendererOrigins(env: NodeJS.ProcessEnv): readonly string[] {
 }
 
 export function startLocalServer(options: StartLocalServerOptions): LocalServer {
-  if (options.harnessStateRoot !== undefined) absoluteConfiguredDir("harnessStateRoot", options.harnessStateRoot)
   return withDataDirOwnership(dataDir(), (owner) => {
     const release = () => {
       try {
@@ -170,7 +166,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   // same machine-wide activation rows.
   const builtinToolGroups = localBuiltinToolGroupsReader()
   configureEmbeddedWorkspaceRuntime({
-    harnessStateRoot: options.harnessStateRoot,
     // One policy for both kinds of caller: the machine's own user reaches
     // these runtimes over loopback and owns every session on them, while a
     // relayed org member is admitted only by the control plane's session

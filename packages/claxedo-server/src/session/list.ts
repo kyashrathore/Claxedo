@@ -43,20 +43,14 @@ export async function signedSessionList(
   auth: SignedControlPlaneAuth,
   query: SessionListQuery,
 ): Promise<SessionListResponse> {
-  const authority = requireAuthority(services)
-  const count = authority.countSessions
-  if (!count) throw new ClaxedoError({ code: "session_inventory_unavailable", message: "Session inventory counts are unavailable", status: 503 })
-  const sessions = await authority.listSessionPage(auth, {
+  const sessions = await requireAuthority(services).listSessionPage(auth, {
     ...sessionListKeysetPage(query),
     ...sessionPageScope(query),
   })
-  const response = buildSessionListResponse({ query, sessions, cursorApplied: true })
-  const totalKnown = await count(auth, { ...sessionListKeysetPage(query), ...sessionPageScope(query) })
-  return { ...response, totalKnown }
+  return buildSessionListResponse({ query, sessions, cursorApplied: true })
 }
 
-function sessionPageScope(query: SessionListQuery): { workspaceId: string } | { projectId: string } | { all: true } {
-  if (query.scope === "all") return { all: true }
+function sessionPageScope(query: SessionListQuery): { workspaceId: string } | { projectId: string } {
   if (query.scope === "workspace" && query.workspaceId) return { workspaceId: query.workspaceId }
   if (query.scope === "project" && query.projectId) return { projectId: query.projectId }
   throw new SessionListRequestError("session_list_scope_required", "Name a project or a workspace")
@@ -70,8 +64,6 @@ function sessionPageScope(query: SessionListQuery): { workspaceId: string } | { 
  * route that cannot map the error re-throws it.
  */
 export function sessionListErrorResponse(error: unknown): Response | undefined {
-  if (error instanceof ClaxedoError && error.code === "session_inventory_unavailable") return Response.json({ error: { code: error.code, message: error.message } }, { status: 503 })
-  if (error instanceof ClaxedoError && error.code === "invalid_session_list_query") return Response.json({ error: { code: error.code, message: error.message } }, { status: 400 })
   if (error instanceof ControlPlaneAuthError) {
     return Response.json(controlPlaneAuthErrorBody(error), { status: error.status })
   }
@@ -86,3 +78,4 @@ export function sessionListErrorResponse(error: unknown): Response | undefined {
   }
   return undefined
 }
+

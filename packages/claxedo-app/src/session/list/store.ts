@@ -23,8 +23,6 @@ import type { LoadMoreState, SessionList, SessionListState, SessionStatusView } 
 import type { RequestsInternal } from "../requests"
 import { hasMorePages, initialListState, type ListEvent, type ListState, type MorePhase } from "./model"
 import { createKeyedReads } from "./keyed-reads"
-import { createSessionInventory } from "./inventory"
-import { createReaderActions } from "./reader-actions"
 import { createListReads, type ListReads } from "./reads"
 import { listTransition } from "./transition"
 import { createRowViewCache, rowViews, UNKNOWN_STATUS, visibleOrder } from "./visible-rows"
@@ -99,8 +97,6 @@ async function createPendingSession(server: Server, list: Machine<ListState, Lis
 
 function routeServerEvent(list: Machine<ListState, ListEvent>, reads: ListReads, event: ServerEvent): void {
   switch (event.type) {
-    case "attentionChanged":
-    case "readerChanged":
     case "sessionUpserted":
       return list.send(event)
     case "sessionRemoved":
@@ -124,8 +120,7 @@ function createRowReads(state: Accessor<ListState>, requests: RequestsInternal, 
   const statuses = createMemo(() => state().statuses)
   const backgroundWork = createMemo(() => state().backgroundWork)
   const order = createMemo(() => visibleOrder({ entries: entries(), windows: windows() }))
-  const viewOrder = createMemo(() => [...entries().values()].flatMap((entry) => entry.kind === "tombstone" ? [] : [entry.row.ref]))
-  const views = createMemo(() => rowViews({ order: viewOrder(), data: { entries: entries(), statuses: statuses(), backgroundWork: backgroundWork() }, openRequests: requests.openBySession(), cache }))
+  const views = createMemo(() => rowViews({ order: order(), data: { entries: entries(), statuses: statuses(), backgroundWork: backgroundWork() }, openRequests: requests.openBySession(), cache }))
   const entryOf = createKeyedReads(entries)
   const statusOf = createKeyedReads(statuses)
   const backgroundWorkOf = createKeyedReads(backgroundWork)
@@ -141,7 +136,10 @@ function createRowReads(state: Accessor<ListState>, requests: RequestsInternal, 
   }
 }
 
-function createWindowReads(state: Accessor<ListState>) {
+export function createSessionList(server: Server, requests: RequestsInternal): SessionListInternal {
+  const list = machine(initialListState, listTransition)
+  const reads = createListReads(server, list)
+  const { state, send } = list
   const windows = createMemo(() => state().windows)
   const more = createMemo(() => {
     const current = state()
@@ -150,29 +148,17 @@ function createWindowReads(state: Accessor<ListState>) {
   const failures = createMemo(() => state().failures)
   const degraded = createMemo(() => state().degraded)
   return {
+    ...createRowReads(state, requests, windows),
     state: createMemo(() => publicState(state())),
     hasMore: (projectId: ProjectId) => hasMorePages(windows(), projectId),
     moreState: (projectId: ProjectId) => moreState(more()?.get(projectId)),
     pageFailure: (projectId: ProjectId) => failures().get(projectId),
     pageDegraded: (projectId: ProjectId) => degraded().has(projectId),
-  }
-}
-
-export function createSessionList(server: Server, requests: RequestsInternal): SessionListInternal {
-  const list = machine(initialListState, listTransition)
-  const reads = createListReads(server, list)
-  const inventory = createSessionInventory(server, list)
-  const { state, send } = list
-  return {
-    inventory,
-    ...createReaderActions(server, list, async () => { await Promise.all([reads.reread("refresh"), inventory.reload()]) }),
-    ...createRowReads(state, requests, createMemo(() => state().windows)),
-    ...createWindowReads(state),
     loadMore: reads.loadMore,
     reload: () => reads.reread("replace"),
     create: (input) => createPendingSession(server, list, input),
     start: () => void reads.fetchFirst(),
-    apply: (event) => { routeServerEvent(list, reads, event); inventory.apply(event) },
+    apply: (event) => routeServerEvent(list, reads, event),
     readRow: (row) => send({ type: "rowRead", row }),
     readStatus: (ref, status, sentAt) => send({ type: "statusRead", ref, status, sentAt }),
     readBackgroundWork: (ref, work, sentAt) => send({ type: "backgroundWorkRead", ref, work, sentAt }),

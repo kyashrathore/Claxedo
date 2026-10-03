@@ -28,7 +28,7 @@ export function RailTerminalRow(props: { readonly row: TerminalItem; readonly ac
     <NavigationRow
       class="group/terminal"
       data={{ "data-testid": "rail-sidebar-terminal-row", "data-terminal-id": props.row.terminalId }}
-      classList={{ "pl-9": true }}
+      classList={{ "bg-surface-base-hover": props.active, "pl-9": true }}
       label={title()}
       active={props.active}
       onActivate={() => terminals.open(props.row.placementId, props.row.terminalId)}
@@ -49,7 +49,7 @@ export function RailTerminalRow(props: { readonly row: TerminalItem; readonly ac
       </NavigationRowGlyph>
       <span
         class="relative z-[1] pointer-events-none font-mono text-sm leading-tight truncate flex-1 min-w-0"
-        classList={{ "text-text-strong": props.active, "text-text-weak": !props.active }}
+        classList={{ "text-text-strong font-semibold": props.active, "text-text-weak": !props.active }}
       >
         {title()}
       </span>

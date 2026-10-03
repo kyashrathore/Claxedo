@@ -19,8 +19,6 @@ const placementOwned: Freshness = { kind: "event-owned", events: placementEvents
 const fileOwned: Freshness = { kind: "event-owned", events: placementFileEvents }
 
 export const freshness = {
-  localSessionLocations: { kind: "once", reason: "the local route identity prefix configures gcTime 0; each cold navigation reads its exact identity afresh" },
-  localSessionLocation: { kind: "once", reason: "exact local route identity is re-read on every navigation with staleTime 0 and gcTime 0" },
   bootstrap: catalog,
   accountCatalog: placementOwned,
   sharedSessions: { kind: "event-owned", events: ["sessionsChanged", "streamGap"] },

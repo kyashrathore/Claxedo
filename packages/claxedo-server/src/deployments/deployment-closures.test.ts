@@ -45,28 +45,14 @@ const ENTRIES = [
   // Every entry carries the D1 workspace authority's refusal type and owner
   // identity helpers as modules of their own (`d1/workspace-authority-error.ts`,
   // `d1/owner-identity.ts`).
-  // Reader state, durable attention, runtime availability and authorized
-  // notices are composed beside inventory. Cloud row publication owns its
-  // fence and grant, cleanup owns capability admission and runtime dispatch,
-  // and the D1 workspace record, principal, sharing and transcript concepts
-  // have narrow owners. Production builds, entry smokes and emitted checks
-  // reviewed these exact closures without adding packages.
-  // Cleanup authorization retains the delegated capability and revalidates
-  // it at each target and after asynchronous runtime dispatch admission.
-  // Its canonical owner adds one module to each reviewed Worker graph.
-  // Working-entry delivery acknowledgment and immutable registration intent
-  // are two further canonical D1 session owners, with no package growth.
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 149, packages: 19 },
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 120, packages: 19 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
   // plus `agent-plugins/signed-scope.ts`, the caller and write guard the
   // activation and source stores share.
-  // Signed Agent Plugins also compose the cleanup grant route and its machine
-  // and origin authorities. Full hosted additionally binds the canonical
-  // cloud row publication grant during runtime launch.
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 202, packages: 23 },
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 208, packages: 23 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 170, packages: 23 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 175, packages: 23 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

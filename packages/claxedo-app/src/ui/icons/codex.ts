@@ -5,8 +5,6 @@ import { defineIconLibrary } from "@/ui/icons/registry"
 
 type CodexSpriteGlyph = `codex-20-${string}`
 export type CodexCustomGlyph =
-  | "codex-custom-activity"
-  | "codex-custom-bell"
   | "codex-custom-check"
   | "codex-custom-claude"
   | "codex-custom-close"
@@ -40,8 +38,6 @@ export type CodexCustomGlyph =
 export type CodexGlyphName = CodexSpriteGlyph | CodexCustomGlyph | `codex-native-${string}`
 
 export const CODEX_ICON_ALIASES = {
-  activity: "codex-custom-activity",
-  bell: "codex-custom-bell",
   ...PROCESS_ICON_GLYPHS.codex,
   "align-right": "codex-native-arrow-forward-line-vertical-light-16",
   "arrow-down-to-line": "codex-20-012",

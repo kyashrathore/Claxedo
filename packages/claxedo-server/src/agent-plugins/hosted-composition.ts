@@ -57,12 +57,11 @@ import { hostedMcpCatalogAuthentication } from "./mcp/catalog-auth"
 import { hostedMcpClientMetadata } from "./mcp/client-metadata"
 import { createD1McpOAuthClientRegistry } from "./mcp/d1-client-registry"
 import { asRecord, isRecord, parseJson, stringField } from "@claxedo/server-core/platform/json/index"
-import { BUILTIN_SUBAGENTS_TOOL_GROUP, BUILTIN_TASKS_TOOL_GROUP, BUILTIN_SESSION_CLEANUP_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
+import { BUILTIN_SUBAGENTS_TOOL_GROUP, BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
 import type { AgentPluginRuntimeContribution } from "@claxedo/server-core/agent-config/runtime-snapshot"
 import { OWNER_GRANT_AUDIENCE } from "../session/owner-grant"
 import { TASKS_CAPABILITY_AUDIENCE } from "../tasks/capability"
-import { SESSION_CLEANUP_AUDIENCE } from "../session/cleanup-capability"
 import { createGrantWithdrawal } from "../tasks/grant-withdrawal"
 
 const log = Log.create({ service: "hosted-agent-plugins" })
@@ -118,7 +117,6 @@ export type HostedAgentPluginsComposition = {
   tasksGroupEnabled: (root: CloudRootIdentity) => Promise<boolean>
   /** Whether the root's project has subagents on now, read the same way; what the owner grant's renewal asks. */
   subagentsGroupEnabled: (root: CloudRootIdentity) => Promise<boolean>
-  sessionCleanupGroupEnabled: (root: CloudRootIdentity) => Promise<boolean>
   /**
    * One root's own capability set, for a caller that allocates its own
    * workspace: the same preparation and apply the workspace routes run, over
@@ -232,7 +230,6 @@ export function createHostedAgentPluginsComposition(input: {
   tasksGrant: (root: CloudRootIdentity) => Promise<Record<string, string>>
   /** The grant a root whose project turned subagents on is launched with: its runtime acts as the workspace's owner. */
   ownerGrant: (root: CloudRootIdentity) => Promise<Record<string, string>>
-  sessionCleanupGrant?: (root: CloudRootIdentity) => Promise<Record<string, string>>
   /**
    * The register every pass a root is launched with is written to, and the
    * one its gateway checks. The Tasks and owner grants are minted by
@@ -368,17 +365,10 @@ export function createHostedAgentPluginsComposition(input: {
   // that machine itself (`GET /runtime/self`), so the
   // connection mint for it must not fail closed on a rail that does not apply.
   const cloudWorkspace = (workspaceId: string) => isCloudRoot(input.database, workspaceId)
-  const rootEnvironment = createCloudRootEnvironment({ activations, builtIn, tasksGrant: input.tasksGrant, ownerGrant: input.ownerGrant, sessionCleanupGrant: input.sessionCleanupGrant })
+  const rootEnvironment = createCloudRootEnvironment({ activations, builtIn, tasksGrant: input.tasksGrant, ownerGrant: input.ownerGrant })
   const tasksGroupEnabled = createBuiltinGroupReader({ activations, builtIn }, BUILTIN_TASKS_TOOL_GROUP)
   const subagentsGroupEnabled = createBuiltinGroupReader({ activations, builtIn }, BUILTIN_SUBAGENTS_TOOL_GROUP)
-  const sessionCleanupGroupEnabled = createBuiltinGroupReader({ activations, builtIn }, BUILTIN_SESSION_CLEANUP_TOOL_GROUP)
   const withdrawals = {
-    [BUILTIN_SESSION_CLEANUP_TOOL_GROUP]: createGrantWithdrawal({
-      passes: input.passes,
-      audience: SESSION_CLEANUP_AUDIENCE,
-      reason: "session_cleanup_group_disabled",
-      groupEnabled: sessionCleanupGroupEnabled,
-    }),
     [BUILTIN_TASKS_TOOL_GROUP]: createGrantWithdrawal({
       passes: input.passes,
       audience: TASKS_CAPABILITY_AUDIENCE,
@@ -493,7 +483,7 @@ export function createHostedAgentPluginsComposition(input: {
     mcpGatewayRoutes: gateway,
     selfRuntime: createHostedAgentPluginSelfRuntime({ activations, artifacts, preparer }),
     builtInConsentChanged: async (auth, groupId) => {
-      const withdrawal = groupId === BUILTIN_TASKS_TOOL_GROUP || groupId === BUILTIN_SUBAGENTS_TOOL_GROUP || groupId === BUILTIN_SESSION_CLEANUP_TOOL_GROUP
+      const withdrawal = groupId === BUILTIN_TASKS_TOOL_GROUP || groupId === BUILTIN_SUBAGENTS_TOOL_GROUP
         ? withdrawals[groupId]
         : undefined
       if (withdrawal) await withdrawal.reconcile(await authority.resolveOrgId(auth))
@@ -521,7 +511,6 @@ export function createHostedAgentPluginsComposition(input: {
     rootEnvironment,
     tasksGroupEnabled,
     subagentsGroupEnabled,
-    sessionCleanupGroupEnabled,
     selectedCapabilities,
   }
 }

@@ -12,7 +12,6 @@ export type Checked = {
   readonly directories: readonly string[]
   readonly known: Set<string>
   readonly directoryOf: Map<string, string>
-  readonly projectOfDirectory: Map<string, string>
 }
 
 export const PAGE_SIZE = 5
@@ -35,49 +34,36 @@ export async function railRows(app: Page): Promise<RailRow[]> {
   return rows.map(({ sessionId, title, mark }) => ({ sessionId, title, status: RAIL_STATUS[mark] ?? "" }))
 }
 
-export async function loadPagesUntil(app: Page, checked: Checked, sessionId: string) {
-  const directory = checked.directoryOf.get(sessionId)!
-  const projectId = checked.projectOfDirectory.get(directory)!
-  const project = app.locator(`[data-testid="project-group"][data-project-id="${projectId}"]`)
-  const ordered = (await serverList(checked.stack)).filter((item) => checked.directoryOf.get(item.sessionId) === directory)
+export async function loadPagesUntil(app: Page, sessionId: string) {
+  const rows = app.getByTestId("rail-sidebar-session-row")
   const target = app.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${sessionId}"]`)
-  const more = project.getByTestId("rail-sidebar-session-load-more")
-  let loaded = PAGE_SIZE
+  const more = app.locator('[data-testid="rail-sidebar-session-load-more"]:enabled')
   while ((await target.count()) === 0) {
-    await expect(more, `Load more remains while ${sessionId} is not loaded`).toBeVisible()
-    await more.click()
-    loaded = Math.min(loaded + PAGE_SIZE, ordered.length)
-    if (loaded < ordered.length) {
-      await expect(more).toBeEnabled()
-      await more.scrollIntoViewIfNeeded()
-    }
-    const expected = ordered[loaded - 1]
-    await expect(project.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${expected.sessionId}"]`), "the next canonical page's last session is mounted").toBeAttached()
+    const before = await rows.count()
+    await expect(more.first(), `a Load more button remains while ${sessionId} is not loaded`).toBeVisible()
+    await more.first().click()
+    await expect.poll(() => rows.count(), { message: "a page of rows landed" }).toBeGreaterThan(before)
   }
-  await target.scrollIntoViewIfNeeded()
-  await expect(target).toBeInViewport()
 }
 
-async function listPage(stack: Stack, after: string | undefined): Promise<{ items: ListItem[]; nextAfter?: string }> {
+async function listPage(stack: Stack, cursor: string | undefined): Promise<{ items: ListItem[]; nextCursor?: string }> {
   const url = new URL("/api/claxedo/session-list", stack.url)
-  url.searchParams.set("scope", "all")
-  url.searchParams.set("settled", "active")
+  url.searchParams.set("scope", "workspace")
   url.searchParams.set("sort", "human_turn_desc")
   url.searchParams.set("limit", String(SERVER_PAGE))
-  if (after) url.searchParams.set("after", after)
-  const response = await fetch(url)
-  expect(response.status, "the complete authorized inventory page succeeds").toBe(200)
-  return await response.json() as { items: ListItem[]; nextAfter?: string }
+  if (cursor) url.searchParams.set("cursor", cursor)
+  const body = (await (await fetch(url)).json()) as { items?: ListItem[]; nextCursor?: string }
+  return { items: body.items ?? [], nextCursor: body.nextCursor }
 }
 
 async function serverList(stack: Stack): Promise<ListItem[]> {
   const items: ListItem[] = []
-  let after: string | undefined
+  let cursor: string | undefined
   do {
-    const page = await listPage(stack, after)
+    const page = await listPage(stack, cursor)
     items.push(...page.items)
-    after = page.nextAfter
-  } while (after)
+    cursor = page.nextCursor
+  } while (cursor)
   return items
 }
 
@@ -124,16 +110,14 @@ function loadedPages(rows: number) {
   return Math.max(PAGE_SIZE, Math.ceil(rows / PAGE_SIZE) * PAGE_SIZE)
 }
 
-async function expectedRail(checked: Checked, visible: readonly RailRow[], indices: ReadonlyMap<string, number>) {
+async function expectedRail(checked: Checked, visible: readonly RailRow[]) {
   const [items, facts] = await Promise.all([serverList(checked.stack), caseFacts(checked)])
   const known = items.filter((item) => facts.ids.has(item.sessionId))
   return checked.directories.map((directory) => {
     const shown = visible.filter((row) => facts.ids.has(row.sessionId) && projectOf(checked, row.sessionId) === directory)
-    const ordered = known.filter((item) => projectOf(checked, item.sessionId) === directory)
-    const window = shown.some((row) => indices.has(row.sessionId))
-      ? shown.map((row) => ordered[indices.get(row.sessionId)!]).filter((item) => item !== undefined)
-      : ordered.slice(0, loadedPages(shown.length))
-    const expected = window
+    const expected = known
+      .filter((item) => projectOf(checked, item.sessionId) === directory)
+      .slice(0, loadedPages(shown.length))
       .map((item) => ({ sessionId: item.sessionId, title: item.title, status: SERVER_RAIL_STATUS[facts.statusOf(item.sessionId)] ?? "" }))
     const bySession = (left: RailRow, right: RailRow) => left.sessionId.localeCompare(right.sessionId)
     return { shown: shown.toSorted(bySession), expected: expected.toSorted(bySession) }
@@ -144,13 +128,9 @@ export async function expectRailEqualsServer(app: Page, checked: Checked, bounds
   let matched: readonly RailRow[] = []
   const compare = async () => {
     const visible = await railRows(app)
-    const positions = await app.getByTestId("rail-sidebar-session-row").evaluateAll((elements) => elements.flatMap((row) => {
-      const index = row.closest("[data-index]")?.getAttribute("data-index")
-      return index === undefined || index === null ? [] : [[row.getAttribute("data-session-id") ?? "", Number(index)] as const]
-    }))
-    const projects = await expectedRail(checked, visible, new Map(positions))
+    const projects = await expectedRail(checked, visible)
     matched = visible.filter((row) => checked.directories.includes(projectOf(checked, row.sessionId)))
-    const equal = new Set(visible.map((row) => row.sessionId)).size === visible.length && projects.every((project) => JSON.stringify(project.shown) === JSON.stringify(project.expected))
+    const equal = projects.every((project) => JSON.stringify(project.shown) === JSON.stringify(project.expected))
     return equal ? "equal" : JSON.stringify(projects, null, 1)
   }
   const message = "each project's rail rows equal the server's list and statuses for the pages it loaded"

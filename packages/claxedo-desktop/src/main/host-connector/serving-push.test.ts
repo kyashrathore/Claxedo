@@ -10,7 +10,6 @@ const TUNNEL = {
   hostTunnelToken: "htt.1",
   hostId: "host_1",
   enrollmentId: "enr_this_machine",
-  generation: 3,
   relayUrl: "https://relay.test",
 }
 
@@ -58,7 +57,6 @@ describe("the serving push", () => {
     await host.push({ tunnel: TUNNEL })
 
     expect((host.body() as { credential?: Record<string, unknown> }).credential?.enrollmentId).toBe("enr_this_machine")
-    expect((host.body() as { credential?: Record<string, unknown> }).credential?.generation).toBe(3)
   })
 
   test("omits the field entirely when the ack named no address", async () => {

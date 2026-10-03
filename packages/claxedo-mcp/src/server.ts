@@ -17,7 +17,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js"
 import { bearerToken } from "@claxedo/helpers/string"
 import { stampRequestPeerAddress } from "@claxedo/helpers"
-import type { AppPluginsGrant, ClaxedoFetch, ClaxedoMcpClient, SessionCleanupGrant, TasksGrant, WorkspaceTarget } from "./client/contract"
+import type { AppPluginsGrant, ClaxedoFetch, ClaxedoMcpClient, TasksGrant, WorkspaceTarget } from "./client/contract"
 import { MCP_SCOPES, type McpAuditEvent, type McpCredential, type McpToolContext } from "./context"
 import { createToolRegistry } from "./tools/registry"
 import { isLoopbackRequest } from "./endpoint/loopback"
@@ -32,7 +32,7 @@ export {
   claxedoMcpToolGroupsFor,
 } from "./tools/index"
 export type { ClaxedoMcpToolGroupDescription, ClaxedoMcpToolGroupId, McpToolGroup }
-export type { AppPluginsGrant, SessionCleanupGrant, TasksGrant, TasksOperation } from "./client/contract"
+export type { AppPluginsGrant, TasksGrant, TasksOperation } from "./client/contract"
 
 export const CLAXEDO_MCP_PATH = "/api/claxedo/mcp"
 export const OAUTH_PROTECTED_RESOURCE_PATH = "/.well-known/oauth-protected-resource"
@@ -74,7 +74,6 @@ export type McpClientInputs = Readonly<{
   documents?: Readonly<{ fetch: ClaxedoFetch }>
   tasks?: TasksGrant
   appPlugins?: AppPluginsGrant
-  sessionCleanup?: SessionCleanupGrant
 }>
 
 /** The option every mount takes from its composition root. */
@@ -155,7 +154,6 @@ export function mcpAuditRecord(event: McpAuditEvent) {
       ? { workspaceId: credential.workspaceId, ...(credential.sessionId ? { callerSessionId: credential.sessionId } : {}) }
       : {}),
     ...(event.sessionId ? { sessionId: event.sessionId } : {}),
-    ...(event.targets ? { targets: event.targets } : {}),
   }
 }
 

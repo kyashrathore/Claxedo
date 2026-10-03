@@ -16,8 +16,9 @@ import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth
  *
  * `orgId` is the caller's active org as the AUTHORITY-INTERNAL org id
  * (`authority.resolveOrgId(auth)` at subscribe time, never the identity
- * provider's `org_...` claim). `subject` is the canonical application user id
- * (`usr_...`), which private notices name as their recipient and room owner.
+ * provider's `org_...` claim); the hosted room is named by it, and a share
+ * publisher nudges the room of the same id. `subject` is the issuer subject
+ * (`user_...`), which a share notice names its recipient by.
  */
 export type EventScopePrincipal =
   | { mode: "unsigned-local" }
@@ -55,11 +56,8 @@ export function eventVisibleTo(principal: EventScopePrincipal, event: ControlPla
 
   switch (event.type) {
     case "session.share.changed":
-    case "session.status.changed":
-    case "session.removed":
-    case "session.attention.raised":
-    case "session.reader.changed":
-      // ownerUserId names the canonical recipient, including shared-session readers.
+      // ownerUserId is the *recipient* the identity provider subject stamped at grant/revoke
+      // publish (session share fanout), not the granter.
       return event.ownerUserId === principal.subject
     case "usage.quota.changed":
       // Carries no figures and names no account: the quota read it provokes

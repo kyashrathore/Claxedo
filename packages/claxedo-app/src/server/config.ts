@@ -1,11 +1,10 @@
 /// <reference types="vite/client" />
-import type { HostedStreamBridge, RunHostedOperation } from "@claxedo/account-contract"
+import type { RunHostedOperation } from "@claxedo/account-contract"
 import { ServerError } from "./errors"
 
 export type ServerConfig = {
   readonly serverUrl?: string
   readonly account?: RunHostedOperation
-  readonly accountStreams?: HostedStreamBridge
   readonly thisMachineReport?: () => Promise<unknown>
   readonly cookies?: boolean
   readonly eventSocket?: boolean

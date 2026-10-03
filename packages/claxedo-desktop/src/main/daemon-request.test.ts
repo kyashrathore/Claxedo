@@ -16,25 +16,6 @@ function harness(options: { capability?: string; respond?: () => Response } = {}
 }
 
 describe("main's daemon fetch", () => {
-  test("cancels an unresolved startup endpoint without sending a late request", async () => {
-    let publish: (value: { origin: string; capability: string }) => void = () => {}
-    const endpoint = new Promise<{ origin: string; capability: string }>((resolve) => { publish = resolve })
-    let requests = 0
-    const daemon = createDaemonFetch({
-      endpoint: () => endpoint,
-      fetch: async () => { requests++; return Response.json({}) },
-    })
-    const controller = new AbortController()
-    const request = daemon("/api/claxedo/daemon/session-cleanup", { signal: controller.signal })
-    controller.abort(new Error("startup deadline elapsed"))
-    await expect(request).rejects.toThrow("startup deadline elapsed")
-    publish({ origin: DAEMON, capability: "installation-secret" })
-    await Promise.resolve()
-    expect(requests).toBe(0)
-    await expect(daemon("/api/claxedo/daemon/session-cleanup", { signal: controller.signal })).rejects.toThrow("startup deadline elapsed")
-    expect(requests).toBe(0)
-  })
-
   test("resolves a path against the daemon and presents the capability", async () => {
     const { daemon, sent } = harness()
 
