@@ -34,7 +34,7 @@ function requiredFlag(value: unknown): boolean {
   return typeof value === "boolean" ? value : invalid()
 }
 
-function exitCode(value: unknown): number | null {
+function commandExitCode(value: unknown): number | null {
   return value === null ? null : typeof value === "number" && Number.isSafeInteger(value) ? value : invalid()
 }
 
@@ -127,7 +127,7 @@ export function createBoatClient(options: { apiKey: string; baseUrl?: string; ti
       const body = await api(`${path(id)}/commands`, ["command.finished"], { method: "POST", body: input })
       return {
         success: requiredFlag(body.success), stdout: requiredText(body.stdout), stderr: requiredText(body.stderr),
-        exitCode: exitCode(body.exitCode), timedOut: requiredFlag(body.timedOut),
+        exitCode: commandExitCode(body.exitCode), timedOut: requiredFlag(body.timedOut),
       }
     },
   }

@@ -668,18 +668,20 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     exposure: options.exposure!,
     ...(options.renewalIntervalMs !== undefined ? { renewalIntervalMs: options.renewalIntervalMs } : {}),
   })
-  if (options.exposure?.kind === "relay") {
-    app.route(WorkspaceRuntimeRoutes.executionEnv, ExecutionEnvRoutes({ directory: options.target?.directory ?? workspaceDir(),
-      env: options.env ?? process.env, spawn: host.spawn, piProjection: host.piProjection, upgradeWebSocket: nodeWebSocket.upgradeWebSocket }))
-  }
+  const executionEnv = options.exposure?.kind === "relay"
+    ? ExecutionEnvRoutes({ directory: options.target?.directory ?? workspaceDir(), env: options.env ?? process.env,
+      services: host.shellServices, piProjection: host.piProjection, upgradeWebSocket: nodeWebSocket.upgradeWebSocket })
+    : undefined
+  if (executionEnv) app.route(WorkspaceRuntimeRoutes.executionEnv, executionEnv.routes)
 
   let cleaned = false
-  const dispose = () => {
+  const dispose = async () => {
     if (!cleaned) {
       cleaned = true
       routeContributions.dispose()
       worktrees?.close()
     }
+    await executionEnv?.dispose()
     return host.dispose()
   }
   return {

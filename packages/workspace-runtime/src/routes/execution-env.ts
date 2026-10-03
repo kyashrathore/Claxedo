@@ -3,18 +3,17 @@ import { streamSSE } from "hono/streaming"
 import type { UpgradeWebSocket } from "hono/ws"
 import { z } from "zod"
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context"
-import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node"
 import { boundedJsonBody, errorBody } from "@claxedo/session-core"
 import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
-import type { HarnessServices, PluginProjection } from "@claxedo/harness/contract"
-import { ownedShellExec } from "./owned-shell"
+import type { PluginProjection } from "@claxedo/harness/contract"
+import { ownedExecutionEnv, sessionCommands, type PiShellServices } from "@claxedo/harness/pi-durable/shell"
 import { runFileSystemOperation } from "./execution-env-fs"
 import { McpStdioRelayRoutes } from "./mcp-stdio-relay"
 
 export type ExecutionEnvRouteOptions = {
   directory: string
   env: NodeJS.ProcessEnv
-  spawn: HarnessServices["spawn"]
+  services: PiShellServices
   piProjection: () => PluginProjection
   upgradeWebSocket: UpgradeWebSocket
 }
@@ -47,24 +46,32 @@ async function parsedRequest<T extends z.ZodType>(c: HonoContext, schema: T): Pr
   return body.success ? body.data : c.json(errorBody("execution_env_request_invalid", z.prettifyError(body.error)), 400)
 }
 
+function stringEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  return Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined))
+}
+
 export function ExecutionEnvRoutes(options: ExecutionEnvRouteOptions) {
+  const env = stringEnv(options.env)
+  const commands = sessionCommands(options.services)
+  const executionEnv = (sessionId: string) =>
+    ownedExecutionEnv({ sessionId, services: options.services, env, live: commands.of(sessionId) }, options.directory)
   const app = new Hono<Env>()
   app.use("*", executionEnvAccess)
   app.post("/fs", async (c) => {
     const request = await parsedRequest(c, fsRequest)
     if (request instanceof Response) return request
-    const result = await runFileSystemOperation(new NodeExecutionEnv({ cwd: options.directory }), request,
+    const result = await runFileSystemOperation(executionEnv(c.get("executionSessionId")), request,
       withAbortSignal(c.req.raw.signal, BACKGROUND_CONTEXT))
     return "invalid" in result ? c.json(errorBody("execution_env_request_invalid", result.invalid), 400) : c.json(result)
   })
   app.post("/exec", async (c) => {
     const request = await parsedRequest(c, execRequest)
     if (request instanceof Response) return request
-    const host = { spawn: options.spawn, sessionId: c.get("executionSessionId"), env: options.env }
+    const shell = executionEnv(c.get("executionSessionId"))
     const context = withAbortSignal(c.req.raw.signal, BACKGROUND_CONTEXT)
     return streamSSE(c, async (stream) => {
       const { command, ...execOptions } = request
-      const result = await ownedShellExec(host, options.directory, command, {
+      const result = await shell.exec(command, {
         ...execOptions, onOutput: (text) => { void stream.writeSSE({ event: "output", data: JSON.stringify({ text }) }) },
       }, context)
       await stream.writeSSE({ event: "result", data: JSON.stringify(result.ok
@@ -72,6 +79,6 @@ export function ExecutionEnvRoutes(options: ExecutionEnvRouteOptions) {
         : { ok: false, error: { code: result.error.code, message: result.error.message } }) })
     })
   })
-  app.route("/mcp", McpStdioRelayRoutes(options))
-  return app
+  app.route("/mcp", McpStdioRelayRoutes({ ...options, env }))
+  return { routes: app, dispose: commands.retireAll }
 }

@@ -4,7 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { generateKeyPair } from "jose"
 import { mintRelayHostToken } from "@claxedo/workspace-relay"
-import { executionEnvApp, type ExecutionEnvClaims } from "../test-support/execution-env-server"
+import { executionEnvApp, pidRunning, waitForPidExit, type ExecutionEnvClaims } from "../test-support/execution-env-server"
 import { createWorkspaceRuntimeApp } from "../server"
 import { relayWorkspaceRuntimeExposure } from "../exposure"
 import { loopbackMachineLoginPolicy } from "../testing"
@@ -20,14 +20,15 @@ async function tempDir() {
 
 async function served(env?: NodeJS.ProcessEnv) {
   const directory = await tempDir()
-  const { app, headers } = await executionEnvApp({ directory, ...(env ? { env } : {}) })
+  const { app, headers, dispose } = await executionEnvApp({ directory, ...(env ? { env } : {}) })
+  cleanups.push(dispose)
   const post = async (route: string, body: unknown, claims: ExecutionEnvClaims = { sessionId: "ses_1" }) =>
     app.request(`http://localhost/api/wr/execution-env/${route}`, {
       method: "POST", headers: { ...await headers(claims), "content-type": "application/json" }, body: JSON.stringify(body),
     })
   const fsOp = async (op: string, ...args: unknown[]) => (await post("fs", { op, args })).json()
   const status = async (...input: Parameters<typeof post>) => (await post(...input)).status
-  return { directory, post, fsOp, status }
+  return { directory, post, fsOp, status, dispose }
 }
 
 type SseEvent = { event: string; data: any }
@@ -78,6 +79,16 @@ describe("execution-env exec", () => {
     expect(events.filter((event) => event.event === "output").map((event) => event.data.text).join("")).toContain("one")
     expect(events.filter((event) => event.event === "output").map((event) => event.data.text).join("")).toContain("two")
     expect(events.at(-1)).toEqual({ event: "result", data: { ok: true, value: { exitCode: 3 } } })
+  })
+
+  test("a background job outlives its command and is retired when the runtime stops", async () => {
+    const { post, dispose } = await served()
+    const events = parseSse(await (await post("exec", { command: "sleep 60 & echo $!" })).text())
+    expect(events.at(-1)).toEqual({ event: "result", data: { ok: true, value: { exitCode: 0 } } })
+    const pid = Number(events.filter((event) => event.event === "output").map((event) => event.data.text).join("").trim())
+    expect(pidRunning(pid)).toBe(true)
+    await dispose()
+    expect(await waitForPidExit(pid, 10_000)).toBe(true)
   })
 
   test("a timeout ends the command with a timeout error", async () => {

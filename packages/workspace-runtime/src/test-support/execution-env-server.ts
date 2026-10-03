@@ -26,13 +26,14 @@ export async function executionEnvApp(input: { directory: string; env?: NodeJS.P
   const app = new Hono()
   const sockets = createNodeWebSocket({ app })
   app.use("*", createRelayHostAuthMiddleware({ key: key.publicKey, workspaceId: "ws_1", hostId: "host_1" }))
-  app.route(WorkspaceRuntimeRoutes.executionEnv, ExecutionEnvRoutes({
+  const executionEnv = ExecutionEnvRoutes({
     directory: input.directory,
     env: input.env ?? process.env,
-    spawn: createSpawnService(volatileLaunchOwnership()),
+    services: { spawn: createSpawnService(volatileLaunchOwnership()), clock: { now: Date.now, setTimeout, clearTimeout }, log: console },
     piProjection: () => input.projection ?? EMPTY_PROJECTION,
     upgradeWebSocket: sockets.upgradeWebSocket,
-  }))
+  })
+  app.route(WorkspaceRuntimeRoutes.executionEnv, executionEnv.routes)
   const headers = async (claims: ExecutionEnvClaims = {}) => ({
     authorization: `Bearer ${await mintRelayHostToken({
       principalKind: "user", actorId: "actor_1", actorKind: "human", orgId: "org_1", workspaceId: "ws_1", hostId: "host_1",
@@ -42,19 +43,22 @@ export async function executionEnvApp(input: { directory: string; env?: NodeJS.P
     "x-workspace-id": "ws_1",
     "x-forwarded-by": "workspace-relay",
   })
-  return { app, sockets, headers }
+  return { app, sockets, headers, dispose: executionEnv.dispose }
 }
 
 /** {@link executionEnvApp} served over HTTP and WebSocket, for what only a real connection shows: disconnects and upgrades. */
 export async function serveExecutionEnv(input: Parameters<typeof executionEnvApp>[0]) {
-  const { app, sockets, headers } = await executionEnvApp(input)
+  const { app, sockets, headers, dispose } = await executionEnvApp(input)
   const server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" })
   sockets.injectWebSocket(server)
   const port = await waitForWorkspaceRuntimeServerPort(server, 0)
   return {
     origin: `http://127.0.0.1:${port}`,
     headers,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    close: async () => {
+      await dispose()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    },
   }
 }
 

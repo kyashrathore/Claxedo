@@ -2,14 +2,13 @@ import { Hono } from "hono"
 import type { UpgradeWebSocket, WSContext } from "hono/ws"
 import { errorBody } from "@claxedo/session-core"
 import type { HarnessServices, OwnedProcess, PluginProjection, ProjectedMcpServer } from "@claxedo/harness/contract"
-import { spawnEnv } from "./owned-shell"
 
 type StdioServer = Extract<ProjectedMcpServer, { kind: "stdio" }>
 
 export type McpStdioRelayOptions = {
   directory: string
-  env: NodeJS.ProcessEnv
-  spawn: HarnessServices["spawn"]
+  env: Readonly<Record<string, string>>
+  services: Pick<HarnessServices, "spawn">
   piProjection: () => PluginProjection
   upgradeWebSocket: UpgradeWebSocket
 }
@@ -61,8 +60,8 @@ export function McpStdioRelayRoutes(options: McpStdioRelayOptions) {
     return {
       async onOpen(_event, ws) {
         try {
-          owned = await options.spawn({ file: server.command, args: [...server.args ?? []], cwd: server.cwd ?? options.directory,
-            env: spawnEnv(options.env, server.env) },
+          owned = await options.services.spawn({ file: server.command, args: [...server.args ?? []], cwd: server.cwd ?? options.directory,
+            env: { ...options.env, ...server.env } },
           { role: "harness", label: `Pi MCP ${server.name}`, sessionId: c.get("executionSessionId"), signal: closed.signal })
         } catch {
           ws.close(1011, "mcp_server_spawn_failed")

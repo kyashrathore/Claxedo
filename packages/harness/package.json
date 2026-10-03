@@ -59,6 +59,12 @@
       "types": "./dist/transports/pi-durable/index.d.ts",
       "import": "./dist/transports/pi-durable/index.js"
     },
+    "./pi-durable/shell": {
+      "development": "./src/transports/pi-durable/shell.ts",
+      "bun": "./src/transports/pi-durable/shell.ts",
+      "types": "./dist/transports/pi-durable/shell.d.ts",
+      "import": "./dist/transports/pi-durable/shell.js"
+    },
     "./opencode-sdk": {
       "development": "./src/transports/opencode-sdk/index.ts",
       "bun": "./src/transports/opencode-sdk/index.ts",

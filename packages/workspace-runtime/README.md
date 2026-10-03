@@ -199,10 +199,13 @@ any other backing answers 404, and nothing calls the control plane per request.
   and answers `{ ok: true, value } | { ok: false, error: { code, message, path? } }`
   with status 200. Bytes travel as `{ base64 }`.
 - `POST /api/wr/execution-env/exec` takes `{ command, cwd?, env?, inheritEnv?, timeout? }`
-  and streams `output` events (`{ text }`) then one `result` event. The shell is
-  spawned through the workspace's launch ownership with the harness env
-  allowlist, and a client disconnect retires it. Output is never spilled to a
-  file, so a result never carries `spillPath`.
+  and streams `output` events (`{ text }`) then one `result` event. Commands run
+  through Pi's owned shell (`@claxedo/harness/pi-durable/shell`) under the
+  workspace's launch ownership with the harness env allowlist: a timeout or a
+  client disconnect mid-command retires the command's process group, and a
+  background job it started outlives it in that session's live set until the
+  runtime stops. Output is never spilled to a file, so a result never carries
+  `spillPath`.
 - `GET /api/wr/execution-env/mcp/:serverName` upgrades to a WebSocket bridged
   to the stdin and stdout of the plugin stdio MCP server of that name in the
   runtime's Pi projection, one JSON-RPC message per frame. The server is spawned
