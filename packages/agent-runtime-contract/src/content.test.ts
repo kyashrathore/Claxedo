@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { isAgentContentPart, parseAgentContentPart, parseAgentMessage } from "./content"
+import { isAgentContentPart, isAgentSnapshotFileDiff, isAgentTodo, parseAgentContentPart, parseAgentMessage } from "./content"
 
 const identity = { id: "prt_1", sessionID: "ses_1", messageID: "msg_1" }
 
@@ -103,4 +103,22 @@ test("optional header fields are checked only when present", () => {
   expect(parseAgentMessage({ info: { ...info, tokens: { input: 1 } }, parts: [] })).toBeUndefined()
   expect(parseAgentMessage({ info: { ...info, error: { name: "Boom", data: {} } }, parts: [] })).toBeDefined()
   expect(parseAgentMessage({ info: { ...info, error: "Boom" }, parts: [] })).toBeUndefined()
+})
+
+test("a todo needs its content, status and priority, and an id only when present", () => {
+  const todo = { content: "write the parser", status: "pending", priority: "medium" }
+  expect(isAgentTodo(todo)).toBe(true)
+  expect(isAgentTodo({ ...todo, id: "task_1" })).toBe(true)
+  expect(isAgentTodo({ ...todo, id: 1 })).toBe(false)
+  expect(isAgentTodo({ content: "write the parser", status: "pending" })).toBe(false)
+  expect(isAgentTodo(null)).toBe(false)
+})
+
+test("a diff summary entry needs its counts and a known status when it names one", () => {
+  const diff = { file: "main.ts", additions: 1, deletions: 0 }
+  expect(isAgentSnapshotFileDiff(diff)).toBe(true)
+  expect(isAgentSnapshotFileDiff({ additions: 1, deletions: 0 })).toBe(true)
+  expect(isAgentSnapshotFileDiff({ ...diff, status: "renamed" })).toBe(false)
+  expect(isAgentSnapshotFileDiff({ ...diff, patch: {} })).toBe(false)
+  expect(isAgentSnapshotFileDiff({ file: "main.ts", additions: "1", deletions: 0 })).toBe(false)
 })

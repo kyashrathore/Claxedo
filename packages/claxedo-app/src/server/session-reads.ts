@@ -1,4 +1,4 @@
-import { NO_BACKGROUND_WORK, type AgentPresentationSession } from "@claxedo/agent-runtime-contract"
+import { isAgentSnapshotFileDiff, NO_BACKGROUND_WORK, type AgentPresentationSession } from "@claxedo/agent-runtime-contract"
 import { readCentralFirst, readCentralRow } from "./central-session"
 import { responseError } from "./errors"
 import { onRuntime, sessionEndpoint, type SessionContext } from "./session-context"
@@ -15,7 +15,7 @@ import { viewportQuery } from "./wire/turn-page"
 const STOPPED_STATUS: SessionStatus = { kind: "idle" }
 
 function runtimeRow(session: AgentPresentationSession, ref: SessionLocation): Pick<SessionFirstRead, "row" | "diff"> {
-  return { row: sessionRowFromSession(session, ref), diff: session.summary?.diffs ?? [] }
+  return { row: sessionRowFromSession(session, ref), diff: (session.summary?.diffs ?? []).filter(isAgentSnapshotFileDiff) }
 }
 
 async function readRuntimeFirst(context: SessionContext, route: RuntimeRoute, ref: SessionLocation, shape: PageShape): Promise<SessionFirstRead> {

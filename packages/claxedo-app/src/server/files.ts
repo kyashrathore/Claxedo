@@ -1,6 +1,8 @@
+import { parseAgentFileContent } from "@claxedo/agent-runtime-contract"
 import { desktopBridge } from "../lib/desktop-bridge"
 import { isLocalPlacement } from "./placement-runtime"
 import type { Server } from "./api"
+import { contractMismatch } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import type { PlacementId } from "./ids"
 import { queryKeys } from "./query-keys"
@@ -20,6 +22,12 @@ function fileNode(value: unknown): FileNode | undefined {
   return { name: row.name, path: row.path, kind: row.type, ignored: row.ignored === true }
 }
 
+function fileContent(value: unknown): FileContent {
+  const content = parseAgentFileContent(value)
+  if (!content) throw contractMismatch("file content")
+  return content
+}
+
 export function fileQueries(transport: Transport, workspaces: Workspaces) {
   const server = transport.serverUrl
   const tree = (placementId: PlacementId, path: string): FetchQuery<readonly FileNode[]> => fetchQuery(queryKeys.fileTree(server, placementId, path), async () => {
@@ -29,7 +37,8 @@ export function fileQueries(transport: Transport, workspaces: Workspaces) {
         return node ? [node] : []
       })
     })
-  const content = (placementId: PlacementId, path: string): FetchQuery<FileContent> => fetchQuery(queryKeys.fileContent(server, placementId, path), async () => transport.runtimeJson<FileContent>(await workspaces.route(placementId), withQuery(`${FILE_PATH}/content`, { path })))
+  const content = (placementId: PlacementId, path: string): FetchQuery<FileContent> => fetchQuery(queryKeys.fileContent(server, placementId, path), async () =>
+    fileContent(await transport.runtimeJson(await workspaces.route(placementId), withQuery(`${FILE_PATH}/content`, { path }))))
   const search = (placementId: PlacementId, query: string, entries: FileSearchEntries): FetchQuery<readonly string[]> => fetchQuery(queryKeys.fileSearch(server, placementId, query, entries), async () => {
       const rows = await transport.runtimeJson<unknown[]>(await workspaces.route(placementId), withQuery(SEARCH_PATH, { query, limit: SEARCH_LIMIT, dirs: entries === "all" }))
       return rows.filter((row): row is string => typeof row === "string")
@@ -43,7 +52,7 @@ export function localFileContentQuery(server: Pick<Server, "placements" | "capab
     if (!bridge || !isLocalPlacement(server.placements.byId(placementId), server.capabilities()?.thisMachine?.id)) {
       throw new Error("This file cannot be opened on this computer.")
     }
-    return bridge.readFileContent(path)
+    return fileContent(await bridge.readFileContent(path))
   })
   return { ...query, staleTime: 0 }
 }
