@@ -5,15 +5,15 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 import { isAccountSource } from "@claxedo/account-contract/vocabulary"
-import { CredentialRoutes } from "./credential"
+import { CredentialRoutes } from "@claxedo/server-core/credentials/routes/credential"
 import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/default-credentials"
 import { localControlPlaneCredentials } from "../machine-credentials"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import type { CredentialHealth, CredentialMetadata } from "@claxedo/server-core/credentials/types"
-import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery"
+import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery-error"
 import { CredentialDeliveryError } from "@claxedo/server-core/credentials/delivery"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
-import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
+import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/partition"
 
 /** A fetch body this suite always sends as JSON text; anything else is a bug in the test. */
 function jsonBody(body: BodyInit | null | undefined): unknown {

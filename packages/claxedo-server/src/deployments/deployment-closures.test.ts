@@ -44,15 +44,20 @@ const ENTRIES = [
   // provisions a sandbox, which the Agent Plugins entries already carried.
   // Every entry carries the D1 workspace authority's refusal type and owner
   // identity helpers as modules of their own (`d1/workspace-authority-error.ts`,
-  // `d1/owner-identity.ts`).
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 120, packages: 19 },
+  // `d1/owner-identity.ts`), and the statements that create a workspace
+  // (`d1/workspace-creation.ts`). Hosted account setup carries the shared
+  // credential and provider-login routes over the per-org stores
+  // (`credentials/worker/routes.ts`, `org-routed.ts`, `provider-auth-pending.ts`).
+  // The clone credential is minted by the Agent Plugins Connections setup
+  // (`workspace/repository-clone.ts`), not by the base create route.
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 123, packages: 19 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
   // plus `agent-plugins/signed-scope.ts`, the caller and write guard the
   // activation and source stores share.
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 170, packages: 23 },
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 175, packages: 23 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 174, packages: 23 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 179, packages: 23 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

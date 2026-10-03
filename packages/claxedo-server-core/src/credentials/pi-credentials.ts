@@ -1,4 +1,5 @@
-import { credentialByProvider, PROVIDER_AUTH_KINDS } from "@claxedo/server-core/credentials/registry"
+import { credentialByProvider } from "@claxedo/server-core/credentials/registry"
+import { PROVIDER_AUTH_KINDS } from "@claxedo/server-core/credentials/account-kinds"
 import { spentRowOwner } from "./account-holder"
 import { accountSelections } from "./account-source"
 import { piCredentialConnected, piCredentialProviderIDs } from "./pi-provider-projection"

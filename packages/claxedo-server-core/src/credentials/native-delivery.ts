@@ -3,16 +3,14 @@ import type { CredentialSnapshot } from "@claxedo/agent-runtime-contract"
 import { Log } from "../platform/runtime/lib/log"
 import {
   providerDestination,
-  providerDestinationShape,
 } from "./destinations"
 import {
   readSecretById,
   activeCredentialsForScope,
-  SINGLE_TENANT_ORG,
   type CredentialOrgScope,
 } from "./registry"
+import { SINGLE_TENANT_ORG } from "./partition"
 import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
-import type { CredentialKind } from "./types"
 import type { AccountSelections } from "./account-holder"
 import { accountSelections } from "./account-source"
 
@@ -30,26 +28,6 @@ export type {
   NativeProviderSecret,
   SandboxSecretBrokering,
 } from "./native-delivery-plan"
-
-/**
- * Where an account can actually be spent.
- *
- * `local` is always true: the loopback broker holds the value in this process
- * and every stored account reaches it. `cloud` is the narrower question, and it
- * is answered here rather than inferred from "we have it stored", because a
- * provider edge attaches one header per secret and a destination that also
- * needs a fixed companion header cannot be delivered through one at all.
- */
-export type CredentialReach = { local: true; cloud: boolean; reason?: string }
-
-export function credentialReach(row: { provider_id: string; kind: CredentialKind }): CredentialReach {
-  const destination = providerDestinationShape({ providerId: row.provider_id, kind: row.kind })
-  if (!destination) return { local: true, cloud: false, reason: "no_destination" }
-  if (destination.injection.headers) {
-    return { local: true, cloud: false, reason: "native_delivery_needs_companion_header" }
-  }
-  return { local: true, cloud: true }
-}
 
 const log = Log.create({ service: "native-delivery" })
 

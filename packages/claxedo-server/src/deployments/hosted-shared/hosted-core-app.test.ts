@@ -12,6 +12,7 @@ import type { ControlPlaneServices } from "../../authority/services"
 import { STATIC_PRODUCT_DESCRIPTORS } from "./deployment-profile"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import { hostedOrgCredentials } from "../../credentials/worker"
+import { d1ProviderAuthPending } from "../../credentials/worker/provider-auth-pending"
 import { miniflareControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { storedD1Session } from "../../test-support/d1-stored-session"
 import { d1UserAgentConfigRepository } from "../../authority/adapters/d1/user-agent-config"
@@ -155,7 +156,7 @@ describe("hosted production Pi and connection discovery", () => {
   const catalogPath = "/api/claxedo/agent-config/providers?nativeHarness=pi"
   const headers = (subject = "alice") => ({ authorization: `Bearer ${subject}`, "content-type": "application/json" })
 
-  test("credentials disabled still exposes canonical disconnected providers, defers models to the runtime, and refuses writes", async () => {
+  test("credentials disabled still exposes canonical disconnected providers, defers models to the runtime, and serves no account setup", async () => {
     const app = createHostedCoreApp(plane(), options) as unknown as Hono
     expect((await app.request(catalogPath)).status).toBe(401)
     const response = await app.request(catalogPath, { headers: headers() })
@@ -169,7 +170,7 @@ describe("hosted production Pi and connection discovery", () => {
     expect(catalog.all.every((provider: { models: object }) => Object.keys(provider.models).length === 0)).toBe(true)
     expect(catalog.modelAvailability).toBe("runtime_required")
     expect(catalog.connected).toEqual([])
-    expect((await app.request("/auth/openai?harness=pi", { method: "PUT", headers: headers(), body: JSON.stringify({ auth: { key: "secret" } }) })).status).toBe(503)
+    expect((await app.request("/api/claxedo/credentials", { method: "PUT", headers: headers(), body: JSON.stringify({ provider_id: "openai", kind: "api_key", source: "managed", label: "openai", secret: "secret" }) })).status).toBe(404)
     const connections = "/api/claxedo/agent-config/connections"
     expect((await app.request(connections)).status).toBe(404)
     expect((await app.request(connections, { headers: headers() })).status).toBe(404)
@@ -187,15 +188,15 @@ describe("hosted production Pi and connection discovery", () => {
       return hostedOrgCredentials(orgId, { database: controlPlane.database, env: base.env })
     }
     try {
-      const app = createHostedCoreApp(base, options) as unknown as Hono
+      const app = createHostedCoreApp(base, { ...options, providerAuthPending: d1ProviderAuthPending(controlPlane.database, base.env) }) as unknown as Hono
       const connected = async (subject: string) => (await (await app.request(catalogPath, { headers: headers(subject) })).json()).connected
-      expect((await app.request("/auth/openai?harness=pi&orgId=internal-bob", { method: "PUT", headers: headers(), body: JSON.stringify({ auth: { key: "alice-key" } }) })).status).toBe(200)
+      const key = { provider_id: "openai", kind: "api_key", source: "managed", label: "openai", secret: "alice-key", org_id: "internal-bob" }
+      expect((await app.request("/api/claxedo/credentials?orgId=internal-bob", { method: "PUT", headers: headers(), body: JSON.stringify(key) })).status).toBe(200)
       expect(await connected("alice")).toEqual(["openai"])
       expect(await connected("bob")).toEqual([])
       const credentials = hostedOrgCredentials("internal-alice", { database: controlPlane.database, env: base.env })
       const oauth = await credentials.putCredential({ owner: "alice", provider_id: "codex-app-server", kind: "oauth_token", source: "managed", secret: "oauth-secret" })
       expect((await connected("alice")).sort()).toEqual(["openai", "openai-codex"])
-      expect((await app.request("/auth/openai-codex?harness=pi", { method: "PUT", headers: headers(), body: JSON.stringify({ auth: { key: "not-oauth" } }) })).status).toBe(400)
       await credentials.updateCredentialStatus(oauth.id, "revoked")
       expect(await connected("alice")).toEqual(["openai"])
       expect((await app.request("/auth/openai?harness=pi", { method: "DELETE", headers: headers("bob") })).status).toBe(200)

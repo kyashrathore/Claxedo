@@ -1,24 +1,17 @@
 /**
- * `PUT`/`DELETE /auth/:providerID` on the hosted shell surface
- * (routes/hosted-shell.ts) — provider **credential storage**.
- *
- * The only pre-existing test file for this router (hosted-shell.catalog.test.ts)
- * covers the extension catalog and machine-scan, both unauthenticated reads.
- * These two routes are the write surface: they hand a caller-supplied API key
- * to `putPiCredential`, and `deletePiCredential` revokes one. What has to hold:
+ * `DELETE /auth/:providerID` on the hosted shell surface (routes/hosted/shell.ts)
+ * revokes a Pi credential. What has to hold:
  *
  *   1. no verified signed identity  → 401, and the credential sink is never
- *      reached (a 400 body-validation error would already mean the handler ran
- *      past the gate);
+ *      reached;
  *   2. the identity handed to the sink is the one the *token* proved, never
  *      one the request asked for — a caller holding owner A's token cannot get
- *      a write or delete attributed to owner B, whatever `?workspaceId=`,
- *      `x-workspace-id:` or body fields it sends;
- *   3. a malformed payload is refused before any write.
+ *      a delete attributed to owner B, whatever `?workspaceId=`,
+ *      `x-workspace-id:` or body fields it sends.
  *
- * Tripwire for (1)/(2): `signedAuth()` in hosted-shell.ts returns the context
- * only when `mode === "signed"`. Returning it unconditionally, or sourcing the
- * identity from the request instead of the verified token, fails these cases.
+ * Tripwire: `signedAuth()` in shell.ts returns the context only when
+ * `mode === "signed"`. Returning it unconditionally, or sourcing the identity
+ * from the request instead of the verified token, fails these cases.
  */
 import { afterAll, beforeEach, describe, expect, test } from "vitest"
 import { HostedShellRoutes } from "./shell"
@@ -68,34 +61,17 @@ const verifier = async (token: string) => {
   }
 }
 
-type Put = { auth: SignedControlPlaneAuth; providerID: string; key: string }
 type Del = { auth: SignedControlPlaneAuth; providerID: string }
 
-let puts: Put[] = []
 let deletes: Del[] = []
 
 function app() {
   return HostedShellRoutes({
     authConfig: signedConfig,
     verifier,
-    putPiCredential: async (auth, providerID, key) => {
-      puts.push({ auth, providerID, key })
-    },
     deletePiCredential: async (auth, providerID) => {
       deletes.push({ auth, providerID })
     },
-  })
-}
-
-function put(init: { token?: string; body?: string; query?: string; headers?: Record<string, string> } = {}) {
-  return app().request(`http://cp.test/auth/anthropic?harness=pi${init.query ?? ""}`, {
-    method: "PUT",
-    headers: {
-      "content-type": "application/json",
-      ...(init.token ? { authorization: `Bearer ${init.token}` } : {}),
-      ...init.headers,
-    },
-    body: init.body ?? JSON.stringify({ auth: { key: "sk-secret" } }),
   })
 }
 
@@ -110,11 +86,27 @@ function del(init: { token?: string; query?: string; headers?: Record<string, st
 }
 
 beforeEach(() => {
-  puts = []
   deletes = []
 })
 
-describe("credential writes require a verified signed identity", () => {
+describe("sign-in methods", () => {
+  test("every native harness is answered with the methods its accounts connect with, Pi's ChatGPT plan by login alone", async () => {
+    const methods = async (harness: string) => {
+      const response = await app().request(`/api/claxedo/agent-config/providers/auth?nativeHarness=${harness}`, { headers: { authorization: "Bearer token-a" } })
+      return [response.status, await response.json()] as const
+    }
+    expect((await app().request("/api/claxedo/agent-config/providers/auth?nativeHarness=claude")).status).toBe(401)
+    expect(Object.keys((await methods("claude"))[1])).toEqual(["claude-sdk"])
+    expect(Object.keys((await methods("codex"))[1])).toEqual(["codex-app-server"])
+    const [, pi] = await methods("pi")
+    expect(pi["openai-codex"]).toEqual([{ type: "oauth", label: "ChatGPT Pro/Plus (headless)" }])
+    expect(pi.openai).toEqual([{ type: "api", label: "API Key" }])
+    expect(pi.openrouter).toEqual([{ type: "api", label: "API Key" }])
+    expect((await methods("not-a-harness"))[0]).toBe(400)
+  })
+})
+
+describe("credential revocation requires a verified signed identity", () => {
   test("provider catalog uses the verified owner and explicit unavailable states", async () => {
     const calls: string[] = []
     const catalog = HostedShellRoutes({
@@ -134,13 +126,6 @@ describe("credential writes require a verified signed identity", () => {
     expect((await app().request(route, { headers: { authorization: "Bearer token-a" } })).status).toBe(503)
     expect((await catalog.request("/api/claxedo/agent-config/providers?nativeHarness=claude", { headers: { authorization: "Bearer token-a" } })).status).toBe(400)
   })
-  test("PUT with no Authorization header is 401 and never reaches the credential store", async () => {
-    const res = await put()
-    expect(res.status).toBe(401)
-    expect(await res.json()).toMatchObject({ error: { code: "missing_bearer_token" } })
-    expect(puts).toEqual([])
-  })
-
   test("DELETE with no Authorization header is 401 and never revokes anything", async () => {
     const res = await del()
     expect(res.status).toBe(401)
@@ -148,30 +133,14 @@ describe("credential writes require a verified signed identity", () => {
     expect(deletes).toEqual([])
   })
 
-  test("PUT with an unverifiable bearer is 401, not a fall-through to the store", async () => {
-    const res = await put({ token: "forged-token" })
-    expect(res.status).toBe(401)
-    expect(await res.json()).toMatchObject({ error: { code: "invalid_bearer_token" } })
-    expect(puts).toEqual([])
-  })
-
   test("DELETE with an unverifiable bearer is 401", async () => {
     const res = await del({ token: "forged-token" })
     expect(res.status).toBe(401)
     expect(deletes).toEqual([])
   })
-
-  test("the auth gate runs BEFORE payload validation", async () => {
-    // A malformed body from an unauthenticated caller must still be 401. A 400
-    // here would prove the handler validated the body first, i.e. that
-    // unauthenticated requests reach handler logic at all.
-    const res = await put({ body: JSON.stringify({}) })
-    expect(res.status).toBe(401)
-    expect(puts).toEqual([])
-  })
 })
 
-describe("credential writes are bound to the token's owner, not the request's claims", () => {
+describe("credential revocation is bound to the token's owner, not the request's claims", () => {
   // The cross-tenant case. Owner A's token, with every caller-controllable
   // channel pointing at owner B.
   const IMPERSONATION_ATTEMPTS: Array<[string, { query?: string; headers?: Record<string, string>; body?: string }]> = [
@@ -181,22 +150,9 @@ describe("credential writes are bound to the token's owner, not the request's cl
     ["x-claxedo-directory header", { headers: { "x-claxedo-directory": "/workspaces/org_b" } }],
     [
       "identity fields in the body",
-      { body: JSON.stringify({ auth: { key: "sk-secret" }, subject: "user_b", orgId: "org_b", workspaceId: "org_b" }) },
+      { body: JSON.stringify({ subject: "user_b", orgId: "org_b", workspaceId: "org_b" }) },
     ],
   ]
-
-  test.each(IMPERSONATION_ATTEMPTS)(
-    "PUT as owner A cannot be attributed to owner B via %s",
-    async (_label, init) => {
-      const res = await put({ token: "token-a", ...init })
-      expect(res.status).toBe(200)
-      expect(puts).toHaveLength(1)
-      // The credential is stored against the identity the TOKEN proved.
-      expect(puts[0].auth.user.subject).toBe("user_a")
-      expect(puts[0].auth.user.orgId).toBe("org_a")
-      expect(puts[0].auth.token).toBe("token-a")
-    },
-  )
 
   test.each(IMPERSONATION_ATTEMPTS)(
     "DELETE as owner A cannot revoke on behalf of owner B via %s",
@@ -212,52 +168,23 @@ describe("credential writes are bound to the token's owner, not the request's cl
   test("owner B's token is attributed to owner B — the binding tracks the token, not a constant", async () => {
     // Without this, a handler that hardcoded/ignored the identity would still
     // pass every case above.
-    await put({ token: "token-b" })
-    expect(puts[0].auth.user.subject).toBe("user_b")
-    expect(puts[0].auth.user.orgId).toBe("org_b")
-  })
-})
-
-describe("malformed credential payloads are refused before any write", () => {
-  const MALFORMED: Array<[string, string]> = [
-    ["empty object", JSON.stringify({})],
-    ["missing auth.key", JSON.stringify({ auth: {} })],
-    ["empty auth.key", JSON.stringify({ auth: { key: "" } })],
-    ["null auth", JSON.stringify({ auth: null })],
-    ["auth.key is not a string", JSON.stringify({ auth: { key: 0 } })],
-    ["key at the top level instead of under auth", JSON.stringify({ key: "sk-secret" })],
-    ["not JSON at all", "<<<not json>>>"],
-    ["empty body", ""],
-  ]
-
-  test.each(MALFORMED)("PUT with %s is 400 and stores nothing", async (_label, body) => {
-    const res = await put({ token: "token-a", body })
-    expect(res.status).toBe(400)
-    expect(await res.json()).toMatchObject({ error: { code: "pi_auth_key_required" } })
-    expect(puts).toEqual([])
+    await del({ token: "token-b" })
+    expect(deletes[0].auth.user.subject).toBe("user_b")
+    expect(deletes[0].auth.user.orgId).toBe("org_b")
   })
 })
 
 describe("the credential surface is inert unless the pi harness is explicitly selected", () => {
-  // Fail-closed default: no `?harness=pi` means no credential storage at all.
-  test("PUT without ?harness=pi is 503 and stores nothing", async () => {
-    const res = await app().request("http://cp.test/auth/anthropic", {
-      method: "PUT",
-      headers: { "content-type": "application/json", authorization: "Bearer token-a" },
-      body: JSON.stringify({ auth: { key: "sk-secret" } }),
-    })
+  test("DELETE without ?harness=pi is 503 and revokes nothing", async () => {
+    const res = await app().request("http://cp.test/auth/anthropic", { method: "DELETE", headers: { authorization: "Bearer token-a" } })
     expect(res.status).toBe(503)
     expect(await res.json()).toMatchObject({ error: { code: "pi_credentials_unavailable" } })
-    expect(puts).toEqual([])
+    expect(deletes).toEqual([])
   })
 
   test("a composition that wires no credential sink answers 503 rather than silently succeeding", async () => {
     const bare = HostedShellRoutes({ authConfig: signedConfig, verifier })
-    const res = await bare.request("http://cp.test/auth/anthropic?harness=pi", {
-      method: "PUT",
-      headers: { "content-type": "application/json", authorization: "Bearer token-a" },
-      body: JSON.stringify({ auth: { key: "sk-secret" } }),
-    })
+    const res = await bare.request("http://cp.test/auth/anthropic?harness=pi", { method: "DELETE", headers: { authorization: "Bearer token-a" } })
     expect(res.status).toBe(503)
   })
 })

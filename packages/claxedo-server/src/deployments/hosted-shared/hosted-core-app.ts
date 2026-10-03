@@ -54,6 +54,8 @@ import type { HostedControlPlane } from "../../authority/hosted-services"
 import type { IdempotencyCoordinator } from "../../authority/http/idempotency"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { hostedPiCredentials } from "../../credentials/worker/pi"
+import { hostedCredentialRoutes } from "../../credentials/worker/routes"
+import type { ProviderAuthPendingStore } from "@claxedo/server-core/credentials/provider-auth/service"
 import { hostedAgentConfigRoutes } from "../../agent-config/hosted-routes"
 import type { UserAgentConfigRepository } from "@claxedo/server-core/agent-config/repository"
 import {
@@ -104,6 +106,12 @@ export type HostedCoreAppOptions = {
   agentConfigRepository?: UserAgentConfigRepository
   settingsChanged?: (userId: string) => Promise<void>
   credentialsChanged?: (orgId: string) => Promise<void>
+  /**
+   * Where a provider device login waits for its callback across Worker
+   * instances. With the plane's per-org credential stores it serves the shared
+   * account setup routes (`/api/claxedo/credentials`, `/provider/*`).
+   */
+  providerAuthPending?: ProviderAuthPendingStore
   /**
    * Build-composed product route families (Agent Plugins today). An entry
    * passes an explicit array; the base core passes none and imports no
@@ -317,6 +325,16 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       }),
     }),
   )
+  if (plane.orgCredentials && options.providerAuthPending) {
+    app.route("/", hostedCredentialRoutes({
+      authentication: options.authentication,
+      authConfig,
+      resolveOrgId: (auth) => requireAuthority(services).resolveOrgId(auth),
+      credentials: plane.orgCredentials,
+      changed: options.credentialsChanged ?? (async () => {}),
+      pending: options.providerAuthPending,
+    }))
+  }
   app.route(
     "/",
     HostedAuthProfileRoutes({

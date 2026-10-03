@@ -1,34 +1,10 @@
-import { afterAll, describe, expect, test } from "vitest"
+import { describe, expect, test } from "vitest"
 import { Hono } from "hono"
-import { mkdirSync, realpathSync } from "fs"
-import fs from "fs/promises"
-import os from "os"
-import path from "path"
-import { randomUUID } from "crypto"
+import type { ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
+import { createProviderAuthService } from "../../credentials/provider-auth/service"
+import { ProviderAuthRoutes } from "../../credentials/routes/provider-auth"
 
-// Point the data dir at a temp root before importing the route module: it pulls
-// in ClaxedoDB, which opens (and migrates) the database on first use. Without
-// this the cases below run migrations against the developer's real
-// ~/.claxedo/claxedo.db. Same idiom as session-meta.test.ts.
-const root = path.join(realpathSync(os.tmpdir()), `control-plane-route-auth-${randomUUID().slice(0, 8)}`)
-const prev = {
-  CLAXEDO_DATA_DIR: process.env.CLAXEDO_DATA_DIR,
-  CLAXEDO_STATE_DIR: process.env.CLAXEDO_STATE_DIR,
-}
-mkdirSync(root, { recursive: true })
-process.env.CLAXEDO_DATA_DIR = root
-process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
-
-const { ProviderAuthRoutes } = await import("../../credentials/routes/provider-auth")
-type ControlPlaneAuthConfig = import("@claxedo/server-core/platform/auth/auth").ControlPlaneAuthConfig
-
-afterAll(async () => {
-  if (prev.CLAXEDO_DATA_DIR === undefined) delete process.env.CLAXEDO_DATA_DIR
-  else process.env.CLAXEDO_DATA_DIR = prev.CLAXEDO_DATA_DIR
-  if (prev.CLAXEDO_STATE_DIR === undefined) delete process.env.CLAXEDO_STATE_DIR
-  else process.env.CLAXEDO_STATE_DIR = prev.CLAXEDO_STATE_DIR
-  await fs.rm(root, { recursive: true, force: true })
-})
+const service = createProviderAuthService({} as never)
 
 // A ClaxedoControlPlane route (route-ownership.ts) mounted with no auth options
 // is invisible under unsigned-local — the global `unsignedLocalRequestGuard` is
@@ -67,8 +43,6 @@ describe("provider-auth gate (signed mode)", () => {
   // Higher stakes than a plain read route: the OAuth callback calls
   // deleteCredentialsByProvider + putCredential, so an unauthenticated caller
   // could replace a box's provider credentials with their own.
-  const credentialsStub = { credentials: {} } as never
-
   // Signed mode always composes a verifier; these tests use one that refuses
   // every token, which is what a malformed bearer meets in production.
   const refusingVerifier = async () => {
@@ -77,7 +51,7 @@ describe("provider-auth gate (signed mode)", () => {
 
   function mountProvider(config: ControlPlaneAuthConfig, verifier: typeof refusingVerifier | null = refusingVerifier) {
     const app = new Hono()
-    app.route("/", ProviderAuthRoutes(credentialsStub, { authConfig: config, ...(verifier ? { verifier: verifier as never } : {}) }))
+    app.route("/", ProviderAuthRoutes({ service, authConfig: config, ...(verifier ? { verifier: verifier as never } : {}) }))
     return app
   }
 
@@ -148,11 +122,9 @@ describe("provider-auth gate (signed mode)", () => {
 // change: `misconfigured` still fails closed with 503, and signed mode still
 // requires a verified identity (above).
 describe("provider-auth gate (unsigned local)", () => {
-  const credentialsStub = { credentials: {} } as never
-
   function mountProvider(config: ControlPlaneAuthConfig) {
     const app = new Hono()
-    app.route("/", ProviderAuthRoutes(credentialsStub, { authConfig: config }))
+    app.route("/", ProviderAuthRoutes({ service, authConfig: config }))
     return app
   }
 

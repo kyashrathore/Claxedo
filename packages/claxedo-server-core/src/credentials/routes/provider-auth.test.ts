@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import type { ControlPlaneCredentials, ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
+import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import { createProviderAuthService } from "../provider-auth/service"
 import { ProviderAuthRoutes } from "./provider-auth"
 
@@ -65,14 +65,11 @@ function credentials() {
   }
 }
 
-function services(input: ControlPlaneCredentials) {
-  return { credentials: input } as unknown as ControlPlaneServicesContract
-}
 
 describe("control-plane provider auth", () => {
   test("exposes native harness auth methods without an upstream proxy", async () => {
     const c = credentials()
-    const app = ProviderAuthRoutes(services(c.registry))
+    const app = ProviderAuthRoutes({ service: createProviderAuthService(c.registry) })
     const res = await app.request("/provider/auth")
 
     expect(res.status).toBe(200)
@@ -112,7 +109,7 @@ describe("control-plane provider auth", () => {
         return json({ error: "unexpected" }, 404)
       }) as typeof fetch,
     })
-    const app = ProviderAuthRoutes(services(c.registry), { service })
+    const app = ProviderAuthRoutes({ service })
 
     const authorize = await app.request("/provider/codex-app-server/oauth/authorize", {
       method: "POST",
@@ -165,7 +162,7 @@ describe("control-plane provider auth", () => {
 
   test("rejects oauth callback when authorization has not started", async () => {
     const c = credentials()
-    const app = ProviderAuthRoutes(services(c.registry))
+    const app = ProviderAuthRoutes({ service: createProviderAuthService(c.registry) })
     const res = await app.request("/provider/codex-app-server/oauth/callback", {
       method: "POST",
       body: JSON.stringify({ method: 0 }),

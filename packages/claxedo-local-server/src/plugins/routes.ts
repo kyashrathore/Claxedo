@@ -4,7 +4,7 @@ import { routeParam } from "@claxedo/helpers/route-param"
 import { PLUGIN_ID_PATTERN } from "@claxedo/plugin-api"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
-import { controlPlaneRouteAuth, signedRouteAuth, type ControlPlaneRouteAuthOptions } from "../platform/http/control-plane-route-auth"
+import { controlPlaneRouteAuth, signedRouteAuth, type ControlPlaneRouteAuthOptions } from "@claxedo/server-core/platform/http/control-plane-route-auth"
 import { BUNDLE_HASH_PATTERN } from "./bundles"
 import { LivePluginAddError, livePluginService, type LivePluginService } from "./service"
 

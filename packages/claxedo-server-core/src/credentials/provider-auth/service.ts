@@ -1,9 +1,12 @@
-import { setTimeout as sleep } from "node:timers/promises"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
-import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
+import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/partition"
 import { OPENAI_CLIENT_ID, OPENAI_ISSUER } from "@claxedo/server-core/credentials/provider-auth/openai-oauth"
-import { accountIdFromClaims, emailFromClaims } from "@claxedo/agent-runtime-contract"
-import { num, record, text } from "../../platform/json"
+import { accountIdFromClaims, emailFromClaims, HARNESS_TABLE, isHarnessId, PI_LAUNCH_PROVIDERS } from "@claxedo/agent-runtime-contract"
+import { isNonEmptyString, jsonNumber as num, jsonRecord as record } from "../../platform/runtime/lib/json"
+import { VENDOR_PROVIDER_NAMES } from "../vendor-providers"
+
+const text = (value: unknown) => (isNonEmptyString(value) ? value : undefined)
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 const OPENAI_DEVICE_URL = `${OPENAI_ISSUER}/codex/device`
 const OPENAI_DEVICE_REDIRECT_URI = `${OPENAI_ISSUER}/deviceauth/callback`
@@ -40,7 +43,7 @@ export type ProviderAuthorization = {
   instructions: string
 }
 
-type CodexPending = {
+export type CodexPending = {
   providerId: "codex-app-server" | "openai"
   org: string
   deviceAuthId: string
@@ -93,7 +96,18 @@ export type ProviderAuthService = {
   callback: (input: { providerId: string; method?: number; code?: string; org?: string; owner: string; signal?: AbortSignal }) => Promise<boolean>
 }
 
-type ProviderAuthOptions = {
+/**
+ * Where an in-flight device authorization waits for its callback. `take`
+ * removes what it returns, so one authorization is completed at most once; a
+ * host whose callback can land on another instance keeps it outside memory.
+ */
+export type ProviderAuthPendingStore = {
+  put(key: string, pending: CodexPending): Promise<void>
+  take(key: string): Promise<CodexPending | undefined>
+}
+
+export type ProviderAuthOptions = {
+  pending?: ProviderAuthPendingStore
   fetch?: typeof fetch
   now?: () => number
   sleep?: (ms: number) => Promise<void>
@@ -109,10 +123,11 @@ type ProviderAuthOptions = {
  * the ~15 minutes OpenAI gives a device_auth_id before the poll can only ever
  * fail.
  */
-const DEFAULT_PENDING_TTL_MS = 15 * 60 * 1000
+export const DEFAULT_PENDING_TTL_MS = 15 * 60 * 1000
 
 export function providerAuthMethods(): ProviderAuthMethods {
   return {
+    ...Object.fromEntries(Object.keys(VENDOR_PROVIDER_NAMES).map((id) => [id, [{ type: "api" as const, label: "API Key" }]])),
     anthropic: [
       { type: "token", label: "Claude subscription token", command: "claude setup-token" },
       { type: "api", label: "API Key" },
@@ -130,6 +145,43 @@ export function providerAuthMethods(): ProviderAuthMethods {
       { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
       { type: "api", label: "API Key" },
     ],
+  }
+}
+
+/**
+ * The sign-in methods a harness's accounts are connected with. A catalog
+ * harness lists every provider it can launch on; Pi's ChatGPT plan is the
+ * Codex login alone, and its OpenAI provider a key alone, because each is a
+ * different endpoint. A native harness has the one provider its login is
+ * stored against. Undefined for a harness with no methods.
+ */
+export function providerAuthMethodsForHarness(harness: string): ProviderAuthMethods | undefined {
+  const methods = providerAuthMethods()
+  if (harness === "opencode") return methods
+  if (harness === "pi") {
+    return Object.fromEntries(PI_LAUNCH_PROVIDERS.map((id) => [id,
+      id === "openai-codex" ? methods["codex-app-server"]!.filter((method) => method.type === "oauth")
+        : id === "openai" ? methods.openai!.filter((method) => method.type === "api")
+          : methods[id]!,
+    ]))
+  }
+  if (!isHarnessId(harness)) return undefined
+  const provider = HARNESS_TABLE[harness].connectProvider
+  const served = methods[provider]
+  return served ? { [provider]: served } : undefined
+}
+
+export function memoryProviderAuthPendingStore(): ProviderAuthPendingStore {
+  const entries = new Map<string, CodexPending>()
+  return {
+    put: async (key, value) => {
+      entries.set(key, value)
+    },
+    take: async (key) => {
+      const value = entries.get(key)
+      entries.delete(key)
+      return value
+    },
   }
 }
 
@@ -154,7 +206,7 @@ export function createProviderAuthService(
    * Key is JSON-encoded rather than concatenated so an org id containing the
    * separator cannot forge another tenant's key.
    */
-  const pending = new Map<string, CodexPending>()
+  const pending = options.pending ?? memoryProviderAuthPendingStore()
   const pendingKey = (org: string, providerId: string, owner: string) => JSON.stringify([org, providerId, owner])
   const request = options.fetch ?? globalThis.fetch
   const clock = options.now ?? Date.now
@@ -191,7 +243,7 @@ export function createProviderAuthService(
     }
 
     const org = providerAuthOrg(input.org)
-    pending.set(pendingKey(org, input.providerId, input.owner), {
+    await pending.put(pendingKey(org, input.providerId, input.owner), {
       providerId: input.providerId,
       org,
       deviceAuthId: body.device_auth_id,
@@ -218,28 +270,21 @@ export function createProviderAuthService(
 
     const org = providerAuthOrg(input.org)
     const key = pendingKey(org, input.providerId, input.owner)
-    const item = pending.get(key)
-    // An authorization started by ANOTHER tenant is not visible here at all —
-    // this reads as "never started", which is what it is for this caller.
+    // Taken before the poll: the attempt is over once its bounded poll ends —
+    // approved, refused, expired or disconnected — so it cannot be claimed
+    // twice. An authorization started by ANOTHER tenant is not visible here at
+    // all — this reads as "never started", which is what it is for this caller.
+    const item = await pending.take(key)
     if (!item) throw new ProviderAuthError("provider_auth_missing_pending", "OAuth authorization has not been started")
     const deadline = item.startedAt + pendingTtlMs
     if (clock() > deadline) {
-      pending.delete(key)
       throw new ProviderAuthError("provider_auth_missing_pending", "OAuth authorization has expired — start it again")
     }
-    let tokens: TokenResponse
-    try {
-      tokens = await exchangeDeviceTokens(request, item, wait, pollingSafetyMs, {
-        clock,
-        deadline,
-        signal: input.signal,
-      })
-    } finally {
-      // The attempt is over once its bounded poll ends — approved, refused,
-      // expired or disconnected — so the entry cannot be claimed twice or sit
-      // in the map until some later caller trips the TTL check.
-      pending.delete(key)
-    }
+    const tokens = await exchangeDeviceTokens(request, item, wait, pollingSafetyMs, {
+      clock,
+      deadline,
+      signal: input.signal,
+    })
 
     const expires = clock() + (tokens.expires_in ?? 3600) * 1000
     const accountId = extractAccountId(tokens)

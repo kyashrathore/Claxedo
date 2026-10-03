@@ -312,12 +312,12 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "registry",
-    module: "../../claxedo-local-server/src/credentials/provider-auth/service.ts",
+    module: "../../claxedo-server-core/src/credentials/provider-auth/service.ts",
     status: OwnershipStatus.Canonical,
-    owner: "provider auth method service (Claxedo local adapter)",
+    owner: "provider auth method service (local and hosted account setup)",
     reason:
-      "A service, not a route, with three local importers; it stays with the local credentials adapter rather than behind a shared barrel.",
-    tests: ["../../claxedo-local-server/src/credentials/routes/provider-auth.test.ts"],
+      "The local daemon and the hosted Worker serve the same sign-in methods and device login; only where an in-flight login waits differs.",
+    tests: ["../../claxedo-server-core/src/credentials/routes/provider-auth.test.ts"],
   },
   {
     area: "registry",

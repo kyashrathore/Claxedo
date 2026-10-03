@@ -1,7 +1,7 @@
 import type { AccountSource } from "@claxedo/account-contract/vocabulary"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { HTTPException } from "hono/http-exception"
-import { PI_LAUNCH_PROVIDERS, piCredentialConnected, piCredentialProviderIDs, piProviderTakesApiKey, projectPiProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-projection"
+import { PI_LAUNCH_PROVIDERS, piCredentialConnected, piCredentialProviderIDs, projectPiProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-projection"
 import type { ControlPlaneCredentials } from "../../authority/services"
 import { holderAccountSources, spendsAccount, type AccountSources } from "@claxedo/server-core/credentials/account-holder"
 
@@ -50,17 +50,6 @@ export function hostedPiCredentials(input: {
       if (!ids.length) throw credentialError(400, "pi_provider_unsupported", "Unknown Pi provider")
       const orgId = await input.resolveOrgId(auth)
       await (await credentials(auth)).setAccountSources(ids, source, undefined, auth.user.subject)
-      await input.changed?.(orgId)
-    },
-    putPiCredential: async (auth: SignedControlPlaneAuth, providerID: string, key: string) => {
-      // A plan is signed in to, not pasted: `openai-codex` reaches the Codex
-      // backend on an OAuth token and has no key to accept.
-      if (!piProviderTakesApiKey(providerID)) {
-        throw credentialError(400, "pi_provider_unsupported", "This Pi provider does not accept API keys")
-      }
-      const orgId = await input.resolveOrgId(auth)
-      const store = await credentials(auth)
-      await store.putCredential({ owner: auth.user.subject, provider_id: providerID, kind: "api_key", source: "managed", secret: key })
       await input.changed?.(orgId)
     },
     deletePiCredential: async (auth: SignedControlPlaneAuth, providerID: string) => {

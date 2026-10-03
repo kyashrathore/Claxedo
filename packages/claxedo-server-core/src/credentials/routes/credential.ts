@@ -9,7 +9,6 @@ import { ACCOUNT_SCOPES, ACCOUNT_SOURCES } from "@claxedo/account-contract/vocab
 import { LOCAL_USER_ID } from "@claxedo/server-core/platform/auth/local-identity"
 import { Hono } from "hono"
 import { z } from "zod"
-import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/default-credentials"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
@@ -18,12 +17,12 @@ import {
   credentialFailureDetail,
   type CredentialCheckOutcome,
 } from "@claxedo/server-core/credentials/operations/check"
-import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery"
+import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery-error"
 import { CredentialDeliveryError } from "@claxedo/server-core/credentials/delivery"
 import { HARNESS_IDS } from "@claxedo/agent-runtime-contract"
 import { machineLoginsWithUsage } from "@claxedo/server-core/credentials/machine-login-report"
-import { credentialReach } from "@claxedo/server-core/credentials/native-delivery"
-import { fanoutEligible } from "@claxedo/server-core/credentials/registry"
+import { credentialReach } from "@claxedo/server-core/credentials/reach"
+import { fanoutEligible } from "@claxedo/server-core/credentials/account-kinds"
 import { spendsAccount } from "@claxedo/server-core/credentials/account-holder"
 import type { MachineAgentUsageReader } from "@claxedo/server-core/credentials/machine-agent-usage"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
@@ -35,7 +34,8 @@ import {
   type ControlPlaneAuthConfig,
   type ControlPlaneAuthContext,
 } from "@claxedo/server-core/platform/auth/auth"
-import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
+import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/partition"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
 const log = Log.create({ service: "credential-routes" })
@@ -159,8 +159,20 @@ export type CredentialRoutesOptions = {
    */
   authConfig?: ControlPlaneAuthConfig
   verifier?: ControlPlaneTokenVerifier
-  /** Test/composition override for org resolution. */
+  /** A host whose callers sign in through an adapter (the hosted session cookie) rather than a bearer. */
+  authentication?: RequestAuthenticationAdapter
+  /** A host whose organization is the authority's, not a token claim (hosted), resolves it here. */
   resolveOrg?: (request: Request) => Promise<string> | string
+}
+
+type RequestAuthOptions = Pick<CredentialRoutesOptions, "authConfig" | "verifier" | "authentication">
+
+function requestAuthContext(request: Request, options: RequestAuthOptions): Promise<ControlPlaneAuthContext> {
+  return controlPlaneAuthContext(request, {
+    ...(options.authConfig ? { config: options.authConfig } : {}),
+    ...(options.verifier ? { verifier: options.verifier } : {}),
+    ...(options.authentication ? { authentication: options.authentication } : {}),
+  })
 }
 
 /**
@@ -189,33 +201,24 @@ export async function requestOrg(request: Request, options: CredentialRoutesOpti
     const resolved = await options.resolveOrg(request)
     return resolved?.trim() ? resolved.trim() : SINGLE_TENANT_ORG
   }
-  const context: ControlPlaneAuthContext = await controlPlaneAuthContext(request, {
-    ...(options.authConfig ? { config: options.authConfig } : {}),
-    ...(options.verifier ? { verifier: options.verifier } : {}),
-  })
+  const context = await requestAuthContext(request, options)
   if (context.mode !== "signed") return SINGLE_TENANT_ORG
   return context.user.orgId?.trim() || context.user.subject.trim() || SINGLE_TENANT_ORG
 }
 
-async function requestAccountActor(request: Request, options: Pick<CredentialRoutesOptions, "authConfig" | "verifier">) {
-  const context = await controlPlaneAuthContext(request, {
-    ...(options.authConfig ? { config: options.authConfig } : {}),
-    ...(options.verifier ? { verifier: options.verifier } : {}),
-  })
+async function requestAccountActor(request: Request, options: RequestAuthOptions) {
+  const context = await requestAuthContext(request, options)
   return {
     person: context.mode === "signed" ? context.user.subject : LOCAL_USER_ID,
     localOperator: context.mode === "unsigned-local" && isLoopbackLocalRequest(request),
   }
 }
 
-export async function requestActor(request: Request, options: Pick<CredentialRoutesOptions, "authConfig" | "verifier">): Promise<string> {
+export async function requestActor(request: Request, options: RequestAuthOptions): Promise<string> {
   return (await requestAccountActor(request, options)).person
 }
 
-export function CredentialRoutes(
-  credentials: ControlPlaneCredentials = defaultControlPlaneCredentials(),
-  options: CredentialRoutesOptions = {},
-) {
+export function CredentialRoutes(credentials: ControlPlaneCredentials, options: CredentialRoutesOptions = {}) {
   const app = new Hono()
   // Resolved once per request; every handler reads it instead of re-deriving,
   // so no handler can accidentally run unscoped.

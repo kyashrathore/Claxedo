@@ -12,8 +12,7 @@
  *                                               catalog for a signed caller
  *   GET    /path                                synthetic path derived from ?directory
  *   GET    /api/claxedo/agent-config/providers  Pi provider catalog
- *   GET    /api/claxedo/agent-config/providers/auth
- *   PUT    /auth/:providerID?harness=pi         store an org Pi credential
+ *   GET    /api/claxedo/agent-config/providers/auth  a harness's sign-in methods
  *   DELETE /auth/:providerID?harness=pi         remove an org Pi credential
  *   GET    /api/claxedo/agent-config/connections  always unsupported on a central
  *   GET    /api/claxedo/agent-config/harness    a placement's harness health, read over
@@ -44,10 +43,11 @@ import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { workspaceIdFromWorkspaceRef } from "@claxedo/server-core/workspace/refs"
 import type { RelayRole } from "@claxedo/workspace-relay"
 import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
-import { readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
+import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 import { isAccountSource, type AccountSource } from "@claxedo/account-contract/vocabulary"
 import { asRecord, asString } from "@claxedo/helpers/guards"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
+import { providerAuthMethodsForHarness } from "@claxedo/server-core/credentials/provider-auth/service"
 
 export type HostedShellRouteOptions = {
   authentication?: RequestAuthenticationAdapter
@@ -80,7 +80,6 @@ export type HostedShellRouteOptions = {
    * that does.
    */
   piProviderCatalog?: (auth: SignedControlPlaneAuth) => Promise<Record<string, unknown>>
-  putPiCredential?: (auth: SignedControlPlaneAuth, providerID: string, key: string) => Promise<void>
   deletePiCredential?: (auth: SignedControlPlaneAuth, providerID: string) => Promise<void>
   piAccountSources?: (auth: SignedControlPlaneAuth) => Promise<{ sources: Record<string, AccountSource>; org: string[] }>
   putPiAccountSource?: (auth: SignedControlPlaneAuth, providerID: string, source: AccountSource) => Promise<void>
@@ -140,13 +139,6 @@ function hostedPath(directory?: string) {
     config: "",
     worktree: dir,
     directory: dir,
-  }
-}
-
-function piProviderAuth() {
-  return {
-    anthropic: [{ type: "api", label: "API Key" }],
-    openai: [{ type: "api", label: "API Key" }],
   }
 }
 
@@ -529,8 +521,9 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
       try {
         const auth = await signedAuth(c, options)
         if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
-        if (c.req.query("nativeHarness") !== "pi" || c.req.query("connectionId")) return c.json({ error: { code: "provider_catalog_unsupported", message: "Provider catalog requires nativeHarness=pi" } }, 400)
-        return c.json(piProviderAuth())
+        const methods = providerAuthMethodsForHarness(c.req.query("nativeHarness") ?? "")
+        if (!methods || c.req.query("connectionId")) return c.json({ error: { code: "provider_catalog_unsupported", message: "Provider authentication requires a native harness" } }, 400)
+        return c.json(methods)
       } catch (err) {
         return authErrorResponse(c, err)
       }
@@ -553,19 +546,6 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         const source = (await readJsonRecord(c.req.raw))?.source
         if (!isAccountSource(source)) return c.json({ error: { code: "account_source_invalid", message: "source must be \"own\" or \"org\"" } }, 400)
         await options.putPiAccountSource(auth, c.req.param("providerID"), source)
-        return c.json({})
-      } catch (err) {
-        return authErrorResponse(c, err)
-      }
-    })
-    .put("/auth/:providerID", async (c) => {
-      if (c.req.query("harness") !== "pi" || !options.putPiCredential) return c.json({ error: { code: "pi_credentials_unavailable", message: "Pi credential storage is unavailable" } }, 503)
-      try {
-        const auth = await signedAuth(c, options)
-        if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
-        const key = stringField(asRecord((await readJsonRecord(c.req.raw))?.auth), "key")
-        if (!key) return c.json({ error: { code: "pi_auth_key_required", message: "auth.key is required" } }, 400)
-        await options.putPiCredential(auth, c.req.param("providerID"), key)
         return c.json({})
       } catch (err) {
         return authErrorResponse(c, err)

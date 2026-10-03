@@ -14,8 +14,8 @@ const { createTestBackend, setBackendOverride } = await import("./backend-regist
 const registryModule = await import("./registry")
 const { putCredential, setActiveCredentials, updateCredentialHealth, deleteCredential, listCredentials } =
   await import("./registry")
+const { credentialReach } = await import("./reach")
 const {
-  credentialReach,
   nativeDeliveryDigest,
   nativeDeliveryDigestEntries,
   nativeProviderAuth,

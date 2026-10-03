@@ -1,7 +1,8 @@
 import { vendorCredentialProviderIds } from "@claxedo/agent-runtime-contract"
 import type { ProviderCatalogEntry, ProviderModel } from "@claxedo/harness/contract"
 import { listCustomProviders, type CustomProviderConfig } from "./custom-provider"
-import { listCredentials, PROVIDER_AUTH_KINDS, type CredentialOrgScope } from "./registry"
+import { listCredentials, type CredentialOrgScope } from "./registry"
+import { PROVIDER_AUTH_KINDS } from "./account-kinds"
 import type { CredentialMetadata } from "./types"
 import { VENDOR_PROVIDER_NAMES } from "./vendor-providers"
 

@@ -39,8 +39,8 @@ import {
   activeCredentialsForScope,
   credentialById,
   updateCredentialHealth,
-  SINGLE_TENANT_ORG,
 } from "@claxedo/server-core/credentials/registry"
+import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/partition"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import {
   destinationAuthMode,

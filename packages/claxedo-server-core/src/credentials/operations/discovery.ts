@@ -5,6 +5,7 @@ import { probeDiscoveredCredential } from "./probe"
 import type { CredentialUsageWindow } from "./verify"
 import { listCredentials, putCredential, updateCredentialHealth } from "@claxedo/server-core/credentials/registry"
 import type { CredentialHealth, CredentialWrite } from "@claxedo/server-core/credentials/types"
+import { CredentialDiscoveryError } from "./discovery-error"
 
 const ttl = 5 * 60 * 1000
 
@@ -39,20 +40,6 @@ export type CredentialDiscoverySelection = {
   provider_id: string
   kind: LocalCredentialItem["kind"]
   scope: AccountScope
-}
-
-export type CredentialDiscoveryErrorCode =
-  | "discovery_not_found"
-  | "discovery_expired"
-  | "discovery_item_not_found"
-  | "discovery_duplicate_item"
-  | "discovery_org_mismatch"
-
-export class CredentialDiscoveryError extends Error {
-  constructor(public readonly code: CredentialDiscoveryErrorCode) {
-    super(`credential discovery failed: ${code}`)
-    this.name = "CredentialDiscoveryError"
-  }
 }
 
 function preview(

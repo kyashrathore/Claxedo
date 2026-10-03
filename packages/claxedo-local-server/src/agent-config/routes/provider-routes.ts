@@ -1,5 +1,4 @@
 import { Hono, type Context, type MiddlewareHandler } from "hono"
-import { HARNESS_TABLE, isHarnessId } from "@claxedo/agent-runtime-contract"
 import {
   CustomProviderInvalidError,
   deleteCustomProvider,
@@ -20,11 +19,11 @@ import { workspaceProviderCatalog } from "../workspace-provider-catalog"
 import { fanOutConfig } from "../fanout"
 import type { AgentConfigRouteOptions } from "../route-options"
 import { piProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-catalog"
-import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
+import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/partition"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody, controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
-import { requestActor, requestOrg } from "../../credentials/routes/credential"
-import { providerAuthMethods } from "../../credentials/provider-auth/service"
-import { controlPlaneRouteAuth } from "../../platform/http/control-plane-route-auth"
+import { requestActor, requestOrg } from "@claxedo/server-core/credentials/routes/credential"
+import { providerAuthMethodsForHarness } from "@claxedo/server-core/credentials/provider-auth/service"
+import { controlPlaneRouteAuth } from "@claxedo/server-core/platform/http/control-plane-route-auth"
 
 const log = Log.create({ service: "agent-config-providers" })
 
@@ -67,18 +66,9 @@ export function agentConfigProviderRoutes(options: AgentConfigRouteOptions = {})
       if (!harness || c.req.query("connectionId")) {
         return c.json(unsupportedHarness("Provider authentication requires a nativeHarness"), 400)
       }
-      const methods = providerAuthMethods()
-      if (CATALOG_HARNESSES.has(harness)) return c.json(methods)
-      // A native harness runs on one vendor's account and has no catalog to
-      // pick from, so `/providers` refuses it while this answers with the
-      // sign-in methods of the provider its login is stored against — the only
-      // way a caller learns the method index `provider.oauth.authorize` takes.
-      const providerId = isHarnessId(harness) ? HARNESS_TABLE[harness].connectProvider : undefined
-      const served = providerId === undefined ? undefined : methods[providerId]
-      if (providerId === undefined || served === undefined) {
-        return c.json(unsupportedHarness(`No sign-in methods are served for nativeHarness=${harness}`), 400)
-      }
-      return c.json({ [providerId]: served })
+      const methods = providerAuthMethodsForHarness(harness)
+      if (!methods) return c.json(unsupportedHarness(`No sign-in methods are served for nativeHarness=${harness}`), 400)
+      return c.json(methods)
     })
     .delete("/providers/custom/:providerId", requireCatalogHarness, async (c) => {
       if (c.req.query("nativeHarness") !== "opencode") return c.json(unsupportedHarness("Custom providers require OpenCode"), 400)

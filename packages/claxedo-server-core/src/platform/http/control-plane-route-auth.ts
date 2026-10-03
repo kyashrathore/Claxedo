@@ -8,6 +8,7 @@ import {
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
 import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 
 /**
  * The per-route bearer gate for control-plane routers that have no finer-grained
@@ -46,6 +47,8 @@ import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 export type ControlPlaneRouteAuthOptions = {
   authConfig?: ControlPlaneAuthConfig
   verifier?: ControlPlaneTokenVerifier
+  /** A host whose callers sign in through an adapter (the hosted session cookie) rather than a bearer. */
+  authentication?: RequestAuthenticationAdapter
 }
 
 export async function requireSignedControlPlaneRoute(
@@ -57,6 +60,7 @@ export async function requireSignedControlPlaneRoute(
   const context = await controlPlaneAuthContext(request, {
     config,
     ...(options.verifier ? { verifier: options.verifier } : {}),
+    ...(options.authentication ? { authentication: options.authentication } : {}),
   })
   // Belt and braces, not the live refusal path: past the early return the config
   // is either `misconfigured` (503 from the call above) or enabled, and enabled

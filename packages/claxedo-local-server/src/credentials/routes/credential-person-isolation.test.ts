@@ -10,7 +10,7 @@ test("another person in the same org can neither change nor delete someone else'
   const { putCredential, credentialById } = await import("@claxedo/server-core/credentials/registry")
   const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
   const { defaultControlPlaneCredentials } = await import("@claxedo/server-core/authority/default-credentials")
-  const { CredentialRoutes } = await import("./credential")
+  const { CredentialRoutes } = await import("@claxedo/server-core/credentials/routes/credential")
   setBackendOverride(createTestBackend())
   try {
     const owned = await putCredential({ owner: "A", provider_id: "openai", kind: "api_key", source: "managed", secret: "key-A" }, "__local__")

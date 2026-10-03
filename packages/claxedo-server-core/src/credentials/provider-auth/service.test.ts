@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest"
-import type { ControlPlaneCredentials, ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
+import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import type { CredentialWrite } from "@claxedo/server-core/credentials/types"
-import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
+import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/partition"
 import { createProviderAuthService, ProviderAuthError } from "./service"
 import { ProviderAuthRoutes } from "../routes/provider-auth"
 
@@ -298,7 +298,7 @@ describe("device polling cannot hold a callback open forever", () => {
 describe("provider-auth routes resolve the tenant the same way credential routes do", () => {
   function app(registry: ControlPlaneCredentials, resolveOrg: (request: Request) => string) {
     const auth = service(registry)
-    return ProviderAuthRoutes({ credentials: registry } as unknown as ControlPlaneServicesContract, {
+    return ProviderAuthRoutes({
       service: auth,
       resolveOrg,
     })
@@ -332,7 +332,7 @@ describe("provider-auth routes resolve the tenant the same way credential routes
   test("POSITIVE CONTROL: unsigned local requests complete and land in the single-tenant partition", async () => {
     const c = credentials()
     // No resolveOrg override: unsigned local auth config resolves to __local__.
-    const routes = ProviderAuthRoutes({ credentials: c.registry } as unknown as ControlPlaneServicesContract, {
+    const routes = ProviderAuthRoutes({
       service: service(c.registry),
       authConfig: { enabled: false, mode: "local-only", reason: "test" },
     })

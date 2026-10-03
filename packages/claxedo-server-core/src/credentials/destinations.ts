@@ -1,4 +1,4 @@
-import { credentialSecretMaterial, isSubscriptionKind } from "./secret-material"
+import { credentialSecretMaterial } from "./secret-material"
 import type { CredentialKind } from "./types"
 import { listCustomProviders } from "./custom-provider"
 import type { CredentialOrgScope } from "./registry"
@@ -44,24 +44,6 @@ function providerRow(providerId: string, org: CredentialOrgScope | undefined): P
 /** Whether this provider can be bound at all, asked without reading its secret. */
 export function hasProviderDestination(providerId: string, org?: CredentialOrgScope): boolean {
   return providerRow(providerId, org) !== undefined
-}
-
-/**
- * The destination a stored row resolves to, asked with the row's shape rather
- * than its value.
- *
- * A surface that lists accounts holds metadata and no secret, and the question
- * it asks — can this account be delivered to a cloud sandbox — is answered by
- * the header shape alone. `accountId` is unknown here, which is the same answer
- * a login that names no account gives: the companion header is declared either
- * way, because the name belongs to the row rather than to the value.
- */
-export function providerDestinationShape(input: {
-  providerId: string
-  kind: CredentialKind
-}): Omit<ProviderDestination, "value"> | undefined {
-  const row = providerRow(input.providerId, undefined)
-  return row?.({ token: "", form: isSubscriptionKind(input.kind) ? "subscription" : "api-key" })
 }
 
 export function providerDestination(input: {

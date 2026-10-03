@@ -48,6 +48,7 @@ import {
   type EnvelopeAdmin,
 } from "@claxedo/server-core/credentials/envelope"
 import { trimToUndefined } from "@claxedo/helpers/string"
+import { storedCredentialKind } from "@claxedo/server-core/credentials/secret-material"
 import { ACCOUNT_SOURCES, type AccountSource } from "@claxedo/account-contract/vocabulary"
 
 type WorkerCredentialEnv = Record<string, string | undefined>
@@ -207,7 +208,7 @@ export function hostedOrgCredentials(
         owner,
         org,
         input.provider_id,
-        input.kind,
+        storedCredentialKind(input),
         input.source,
         input.label ?? null,
         input.account_id ?? null,
@@ -222,14 +223,19 @@ export function hostedOrgCredentials(
 
   const changed = async (statement: HostedCredentialStatement) => ((await statement.run()).meta.changes ?? 0) > 0
 
+  const listCredentials = async () => {
+    const rows = await database
+      .prepare(`select ${METADATA_COLUMNS} from hosted_provider_credentials where org_id = ? order by provider_id`)
+      .bind(org)
+      .all()
+    return rows.results.map(credentialMetadataRow)
+  }
+
   return {
-    listCredentials: async () => {
-      const rows = await database
-        .prepare(`select ${METADATA_COLUMNS} from hosted_provider_credentials where org_id = ? order by provider_id`)
-        .bind(org)
-        .all()
-      return rows.results.map(credentialMetadataRow)
-    },
+    listCredentials,
+    // One row per person and provider, so every stored row is the one its
+    // provider runs on; whose account a person spends is their selection.
+    effectiveCredentials: listCredentials,
     getCredentialByProvider: (providerId, { owner, kind }) => metadataByProvider(providerId, owner, kind),
     getCredential: async (id) => {
       const row = await database.prepare(`select ${METADATA_COLUMNS} from hosted_provider_credentials where org_id = ? and id = ?`).bind(org, id).first()
@@ -419,6 +425,7 @@ function credentialMetadataRow(row: Record<string, unknown>): CredentialMetadata
     id: requiredTextColumn(row, "id"),
     owner: row.owner === null ? null : requiredTextColumn(row, "owner"),
     scope: "shared",
+    is_active: true,
     org_id: requiredTextColumn(row, "org_id"),
     provider_id: providerId,
     kind: enumColumn(row, "kind", CREDENTIAL_KINDS),

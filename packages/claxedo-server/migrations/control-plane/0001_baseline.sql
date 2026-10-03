@@ -302,6 +302,13 @@ CREATE TABLE "hosted_provider_account_sources" (
   primary key (org_id, user_id, provider_id)
 );
 
+CREATE TABLE hosted_provider_auth_attempts (
+  id text primary key not null,
+  org_id text not null,
+  secret_envelope text not null,
+  expires_at integer not null
+);
+
 CREATE TABLE hosted_provider_credentials (
   id text not null,
   owner text,

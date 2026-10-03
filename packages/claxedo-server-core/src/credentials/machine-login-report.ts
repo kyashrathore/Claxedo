@@ -19,7 +19,7 @@ import { agentUsageOrNone } from "./machine-agent-usage"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import type { MachineAgentUsage, MachineAgentUsageReader } from "./machine-agent-usage"
 import type { HarnessId } from "@claxedo/agent-runtime-contract"
-import type { CredentialReach } from "./native-delivery"
+import type { CredentialReach } from "./reach"
 import type { MachineLogin } from "./machine-login"
 
 export type ReportedMachineLogin = MachineLogin & {

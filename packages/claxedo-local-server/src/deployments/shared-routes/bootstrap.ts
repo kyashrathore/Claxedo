@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import os from "os"
-import { providerAuthMethods } from "../../credentials/provider-auth/service"
+import { providerAuthMethods } from "@claxedo/server-core/credentials/provider-auth/service"
 import { getProjectMetadata, listProjects, listWorkspaces } from "@claxedo/server-core/workspace/store/index"
 import { dataDir, stateDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"

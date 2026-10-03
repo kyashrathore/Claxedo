@@ -1,5 +1,5 @@
 import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core"
-import { SINGLE_TENANT_ORG } from "./provider-credential.sql"
+import { SINGLE_TENANT_ORG } from "./partition"
 
 /**
  * OpenAI-compatible providers an operator declared by hand.

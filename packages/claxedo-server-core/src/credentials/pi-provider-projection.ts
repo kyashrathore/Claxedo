@@ -27,11 +27,6 @@ const acceptedKinds: Record<PiLaunchProvider, readonly CredentialKind[]> = {
   xai: ["api_key"],
 }
 
-/** Pi providers whose account is pasted rather than signed in to. */
-export function piProviderTakesApiKey(providerID: string) {
-  return isPiLaunchProvider(providerID) && acceptedKinds[providerID].includes("api_key")
-}
-
 export function piCredentialConnected(providerID: string, credential: CredentialMetadata | undefined) {
   return !!credential && credential.status === "available"
     && credential.health !== "expired"

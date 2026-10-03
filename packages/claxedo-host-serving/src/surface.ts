@@ -73,7 +73,7 @@ const DENY = [
   "/internal",
   // Families `local-config` and `credentials` — the machine's configuration
   // document and its provider accounts. `/provider/:id/oauth/callback`
-  // (`local-server/credentials/routes/provider-auth.ts`) deletes this
+  // (`server-core/credentials/routes/provider-auth.ts`) deletes this
   // machine's stored credentials for a provider and writes the caller's in
   // their place, which would point every harness on the box at an account a
   // workspace grant never mentioned. Its gate is the control-plane bearer,

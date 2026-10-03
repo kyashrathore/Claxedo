@@ -1,15 +1,10 @@
 import { Hono } from "hono"
 import { z } from "zod"
-import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
-import {
-  createProviderAuthService,
-  ProviderAuthError,
-  type ProviderAuthService,
-} from "../provider-auth/service"
+import { ProviderAuthError, type ProviderAuthService } from "../provider-auth/service"
 import { controlPlaneRouteAuth, type ControlPlaneRouteAuthOptions } from "../../platform/http/control-plane-route-auth"
 import { requestActor, requestOrg } from "./credential"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
-import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
+import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/partition"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 
 const authorizeBody = z.object({
@@ -23,7 +18,7 @@ const callbackBody = z.object({
 })
 
 type ProviderAuthRouteOptions = ControlPlaneRouteAuthOptions & {
-  service?: ProviderAuthService
+  service: ProviderAuthService
   /**
    * Test/composition override for tenant resolution, matching
    * `CredentialRoutesOptions.resolveOrg`. Left unset, the OAuth routes resolve
@@ -55,8 +50,8 @@ function authError(error: unknown) {
  * account. See `control-plane-route-auth.ts` for why the global guard does not
  * cover this posture.
  */
-export function ProviderAuthRoutes(services: ControlPlaneServicesContract, options: ProviderAuthRouteOptions = {}) {
-  const service = options.service ?? createProviderAuthService(services.credentials)
+export function ProviderAuthRoutes(options: ProviderAuthRouteOptions) {
+  const service = options.service
 
   /**
    * The tenant each OAuth request runs as, resolved once and read by both

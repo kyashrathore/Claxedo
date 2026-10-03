@@ -68,8 +68,14 @@ export const serverWorkerd: Policy = {
   // (`workspace/cloud-root-backing.ts`), so a machine-placed workspace gets none.
   // The D1 workspace authority's refusal type and its owner identity and
   // bootstrap-claim helpers are modules of their own
-  // (`authority/adapters/d1/workspace-authority-error.ts`, `owner-identity.ts`).
-  ceilings: { modules: 120, packages: 19 },
+  // (`authority/adapters/d1/workspace-authority-error.ts`, `owner-identity.ts`),
+  // and so are the statements that create a workspace
+  // (`authority/adapters/d1/workspace-creation.ts`). Hosted account setup
+  // mounts the shared credential and provider-login routes over the per-org
+  // stores (`credentials/worker/routes.ts`, `org-routed.ts`) with the D1 store
+  // a device login waits in across instances (`provider-auth-pending.ts`); the
+  // create route no longer mints a clone token (`workspace/repository-clone.ts`).
+  ceilings: { modules: 123, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

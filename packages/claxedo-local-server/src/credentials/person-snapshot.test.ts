@@ -27,7 +27,7 @@ test("the credential producer preserves two people's selections and broker ident
       expect((await broker.authority.resolve(id))?.value).toBe(`fixture-${person}`)
     }
     const alternate = await putCredential({ owner: "A", provider_id: "openai", kind: "api_key", source: "managed", account_id: "alternate", secret: "alternate-A" })
-    const { CredentialRoutes } = await import("./routes/credential")
+    const { CredentialRoutes } = await import("@claxedo/server-core/credentials/routes/credential")
     const { defaultControlPlaneCredentials } = await import("@claxedo/server-core/authority/default-credentials")
     const app = CredentialRoutes({ ...defaultControlPlaneCredentials(),
       setActiveCredentials: async (ids, org, actor) => setActiveCredentials(ids, org, actor),
