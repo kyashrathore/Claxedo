@@ -27,7 +27,12 @@ When a user submitted a prompt:
 2. The SDK adapter starts a producer. The harness owns provider requests and, where applicable, local child processes. The producer projects events into the runtime store and publishes them to clients.
 3. On completion, the runtime records the turn outcome and releases admission; producer and workspace scopes drain. These releases remove the activity that keeps the harness and daemon resident.
 4. On Stop, `AgentRuntime.turns.abort` calls the adapter. Codex rejects its completion wait, but its `finally` still awaits provider cancellation. Shared runtime disposal can await admitted operations before exposing an already-known stop failure.
-5. `localDaemonResidencyPins` counts turns, writes, checkpoint transitions, and running PTYs. Daemon shutdown is currently deferred until those owners disappear. Desktop relaunch adopts a responding daemon.
+5. `localDaemonResidencyPins` counts turns, writes, checkpoint transitions, and running PTYs. Daemon idle shutdown is deferred until those owners disappear.
+6. The desktop app's lifetime decides the daemon's (`claxedo-desktop/src/main/app-lifecycle.ts`, `daemon-quit.ts`, `daemon-launch.ts`):
+   - Closing the window keeps the app and its lease running: macOS reopens the window from the Dock, Windows and Linux from the tray. Turns, terminals and remote access continue.
+   - Quit (Cmd+Q, a Quit menu item, the tray, installing an update, or install on quit) reads the daemon's recovery inspection. Running sessions or terminals get a native confirmation; Cancel changes nothing. A confirmed quit, or one with nothing running, releases the lease, submits `drain_daemon` and waits up to 2 s, then submits `stop_daemon`. If the daemon has not exited 10 s later, or its routes do not answer, main retires the verified process. A signal to the app stops the daemon the same way, without asking. Turns it stopped surface as interrupted on the next launch.
+   - Restart (the menu, the renderer's relaunch, recovery's restart) is a same-build handoff: only the lease is released, and the relaunched app adopts the daemon with its work still running.
+   - Launch adopts a responding daemon whose discovery record names the launching app's version. A responding daemon of another version can only be left by a crashed app; launch retires it and starts a replacement. A daemon that does not respond is held as unresolved and never signalled by launch.
 
 The change point is the ownership and recovery boundary: normal completion remains one path to releasing resources, but a failure must also permit bounded inspection, containment, and verified cleanup by the existing parent owner. The UI and transport clients remain consumers of authoritative results.
 

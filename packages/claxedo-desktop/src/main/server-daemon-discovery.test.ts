@@ -32,6 +32,7 @@ function fixture(overrides: Partial<ClaxedoDaemonDiscovery> = {}): ClaxedoDaemon
     pid: 42,
     port: 2593,
     startedAt: "2026-08-27T00:00:00.000Z",
+    build: "1.4.0",
     ...overrides,
   }
 }
@@ -128,6 +129,15 @@ describe("Claxedo daemon discovery", () => {
     const verified = await verifyClaxedoDaemonDiscovery(record, async () => Response.json(record))
 
     expect(verified).toBe(`http://127.0.0.1:${record.port}`)
+  })
+
+  test("a record that names no build is not a discovery a launcher can compare", () => {
+    const root = mkdtempSync(join(tmpdir(), "claxedo-daemon-discovery-"))
+    roots.push(root)
+    const path = join(root, "daemon.json")
+    writeFileSync(path, JSON.stringify({ ...fixture(), build: "" }))
+
+    expect(readClaxedoDaemonDiscovery(path)).toBeUndefined()
   })
 
   test("an identity that is not one is dropped rather than read back as a record", () => {

@@ -384,6 +384,7 @@ export async function buildClaxedoServerCompileCache(input: {
         CLAXEDO_DAEMON_PROTOCOL: undefined,
         CLAXEDO_DAEMON_TOKEN: undefined,
         CLAXEDO_DAEMON_GENERATION: undefined,
+        CLAXEDO_DAEMON_BUILD: undefined,
         CLAXEDO_DAEMON_DISCOVERY_PATH: undefined,
         CLAXEDO_DATA_DIR: dataDir,
       },

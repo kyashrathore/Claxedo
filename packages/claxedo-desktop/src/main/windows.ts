@@ -42,13 +42,13 @@ function iconsDir() {
   return IS_PACKAGED ? join(process.resourcesPath, "icons") : join(root, "../../resources/icons")
 }
 
-function iconPath() {
+export function iconPath() {
   const ext = process.platform === "win32" ? "ico" : "png"
   return join(iconsDir(), `icon.${ext}`)
 }
 
 /** A labeled worktree dev build tints its icon; everything else uses it as-is. */
-function brandedIcon(file: string) {
+export function brandedIcon(file: string) {
   const icon = nativeImage.createFromPath(file)
   const hue = resolveDevIdentity(IS_PACKAGED).hue
   return hue === null ? icon : tintIcon(icon, hue)

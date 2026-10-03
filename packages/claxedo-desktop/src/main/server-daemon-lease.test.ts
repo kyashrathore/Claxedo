@@ -61,6 +61,7 @@ async function fakeDaemon(options: { acquire?: number } = {}) {
     pid: 42,
     port,
     startedAt: "2026-08-27T00:00:00.000Z",
+    build: "1.4.0",
   }
   return {
     discovery,

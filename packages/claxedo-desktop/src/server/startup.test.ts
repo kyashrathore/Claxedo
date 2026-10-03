@@ -7,6 +7,7 @@ const DAEMON_ENV = {
   CLAXEDO_DAEMON_PROTOCOL: String(CLAXEDO_DAEMON_PROTOCOL),
   CLAXEDO_DAEMON_TOKEN: "installation-secret",
   CLAXEDO_DAEMON_GENERATION: "generation-1",
+  CLAXEDO_DAEMON_BUILD: "1.4.0",
   CLAXEDO_DAEMON_DISCOVERY_PATH: "/tmp/claxedo/local-daemon.json",
 }
 
@@ -15,6 +16,7 @@ const expectedDaemon = {
   daemonProtocol: CLAXEDO_DAEMON_PROTOCOL,
   daemonToken: "installation-secret",
   daemonGeneration: "generation-1",
+  daemonBuild: "1.4.0",
   daemonDiscoveryPath: "/tmp/claxedo/local-daemon.json",
 }
 
@@ -26,6 +28,7 @@ describe("Claxedo server daemon startup", () => {
       dataDir: undefined,
     })
     expect(() => claxedoServerStartup({ CLAXEDO_CHILD_PORT: "3210" })).toThrow("missing its daemon identity")
+    expect(() => claxedoServerStartup({ ...DAEMON_ENV, CLAXEDO_DAEMON_BUILD: " " })).toThrow("missing its daemon identity")
   })
 
   test("passes through the server compile cache and data root", () => {

@@ -221,8 +221,14 @@ export const desktopMainComposition: Policy = {
   // -1 module: `main/claude-executable.ts` is gone; the runtime resolves the
   // Claude CLI itself from the PATH main hands the daemon. -1 module:
   // `main/daemon-exit-lifecycle.ts` is gone; shutdown stops the lease directly.
-  // 86/25, no headroom.
-  ceilings: { modules: 86, packages: 25 },
+  // +4 modules: `main/app-lifecycle.ts` (closing keeps the app running, quit
+  // confirms and stops the daemon), `main/lifecycle-ui.ts` (its tray and quit
+  // dialog), `main/daemon-quit.ts` (drain, then the daemon's own stop) and
+  // `main/daemon-launch.ts` (adopt, replace or hold a published daemon by
+  // build). Reviewed owner: Electron main, which alone holds the window, the
+  // lease and the daemon's capability; `electron` and the recovery contract
+  // were already edges. 90/25, no headroom.
+  ceilings: { modules: 90, packages: 25 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,

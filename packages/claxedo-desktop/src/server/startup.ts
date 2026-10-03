@@ -5,6 +5,7 @@ export type ClaxedoServerStartup = {
   daemonProtocol: typeof CLAXEDO_DAEMON_PROTOCOL
   daemonToken: string
   daemonGeneration: string
+  daemonBuild: string
   daemonDiscoveryPath: string
   serverCompileCacheDir: string | undefined
   dataDir: string | undefined
@@ -18,11 +19,13 @@ export function claxedoServerStartup(env: NodeJS.ProcessEnv): ClaxedoServerStart
   const daemonProtocol = Number(env.CLAXEDO_DAEMON_PROTOCOL)
   const daemonToken = env.CLAXEDO_DAEMON_TOKEN?.trim()
   const daemonGeneration = env.CLAXEDO_DAEMON_GENERATION?.trim()
+  const daemonBuild = env.CLAXEDO_DAEMON_BUILD?.trim()
   const daemonDiscoveryPath = env.CLAXEDO_DAEMON_DISCOVERY_PATH?.trim()
   if (
     daemonProtocol !== CLAXEDO_DAEMON_PROTOCOL ||
     !daemonToken ||
     !daemonGeneration ||
+    !daemonBuild ||
     !daemonDiscoveryPath
   ) {
     throw new Error("Claxedo server utility process is missing its daemon identity")
@@ -33,6 +36,7 @@ export function claxedoServerStartup(env: NodeJS.ProcessEnv): ClaxedoServerStart
     daemonProtocol: CLAXEDO_DAEMON_PROTOCOL,
     daemonToken,
     daemonGeneration,
+    daemonBuild,
     daemonDiscoveryPath,
     // The same, for this bundle's OWN static closure. It is a second shipped
     // set rather than more entries in the engine's, because the two are

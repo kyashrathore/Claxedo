@@ -47,6 +47,9 @@ import type { BrowserRegistry } from "./browser/registry"
 import { setupBrowserTab } from "./browser/setup"
 import { CHANNEL, IS_PACKAGED, UPDATER_ENABLED } from "./constants"
 import { createAutoUpdate } from "./auto-update"
+import { createAppLifecycle, type ExitIntent } from "./app-lifecycle"
+import { createAppTray, confirmQuitDialog } from "./lifecycle-ui"
+import { runningWork, stopPublishedDaemon } from "./daemon-quit"
 import { desktopProduct } from "../shared/desktop-product"
 import { resolveDevIdentity } from "./dev-identity"
 import { findFreePort, resolveBaseServerPort } from "./server-port"
@@ -67,9 +70,9 @@ import {
   claxedoDaemonOwnershipPath,
   daemonRecoveryBridge,
   readDaemonOwnershipView,
-  recoverPublishedDaemon,
   type DaemonRecoveryResult,
 } from "./daemon-recovery"
+import { publishedDaemonVerdict } from "./daemon-launch"
 import { holdClaxedoDaemonLease } from "./server-daemon-lease"
 import { createDaemonStatus, DAEMON_STATUS_CHANNELS, type DaemonExit } from "./daemon-status"
 import { embeddedServerReadiness } from "./server-readiness"
@@ -124,7 +127,6 @@ const initEmitter = new EventEmitter()
 let initStep: InitStep = { phase: "server_waiting" }
 
 let mainWindow: BrowserWindow | null = null
-let quitting = false
 let daemonLease: Awaited<ReturnType<typeof holdClaxedoDaemonLease>> | undefined
 /** Held for the recovery IPC while no server connection could be established. */
 let unresolvedDaemon: { discovery: ClaxedoDaemonDiscovery; result: DaemonRecoveryResult } | undefined
@@ -152,7 +154,20 @@ const daemonEndpoint = defer<DaemonEndpoint>()
 const serverOrigin = defer<string>()
 const daemon = createDaemonFetch({ endpoint: () => daemonEndpoint.promise })
 const logger = initLogging()
-const autoUpdate = createAutoUpdate({ logger })
+const autoUpdate = createAutoUpdate({ logger, exitForInstall: (install) => lifecycle.requestExit("quit", install) })
+/** The daemon this app holds a lease on, which a quit stops and a handoff leaves running. */
+let leasedDaemon: ClaxedoDaemonDiscovery | undefined
+const lifecycle = createAppLifecycle({
+  app,
+  platform: process.platform,
+  window: () => mainWindow ?? undefined,
+  ready: app.whenReady(),
+  createTray: createAppTray,
+  runningWork: async () => (leasedDaemon && daemonConnected ? runningWork(await recovery.inspect()) : undefined),
+  confirmQuit: confirmQuitDialog,
+  exit: exitApp,
+  log: (message, fields) => logger.log(message, fields),
+})
 const mermaidRendererPath = resolveMermaidRendererPath({
   packaged: IS_PACKAGED,
   resourcesPath: process.resourcesPath,
@@ -172,8 +187,8 @@ function setupApp() {
   ensureAgentPath()
   app.commandLine.appendSwitch("proxy-bypass-list", "<-loopback>")
   if (!IS_PACKAGED) app.commandLine.appendSwitch("disable-http-cache")
-  process.once("SIGINT", () => app.quit())
-  process.once("SIGTERM", () => app.quit())
+  process.once("SIGINT", () => void lifecycle.requestExit("stop", () => app.quit()))
+  process.once("SIGTERM", () => void lifecycle.requestExit("stop", () => app.quit()))
 
   if (!app.requestSingleInstanceLock()) {
     app.quit()
@@ -194,21 +209,13 @@ function setupApp() {
       logger.log("deep link received via second-instance", { urls })
       emitDeepLinks(urls)
     }
-    focusMainWindow()
+    lifecycle.open()
   })
 
   app.on("open-url", (event: Event, url: string) => {
     event.preventDefault()
     logger.log("deep link received via open-url", { url })
     emitDeepLinks([url])
-  })
-
-  app.on("before-quit", (event: Event) => {
-    if (quitting) return
-    quitting = true
-    logger.log("app quitting")
-    event.preventDefault()
-    void shutdown().finally(() => app.quit())
   })
 
   void app.whenReady().then(async () => {
@@ -234,12 +241,6 @@ function emitDeepLinks(urls: string[]) {
   if (urls.length === 0) return
   pendingDeepLinks.push(...urls)
   if (mainWindow) sendDeepLinks(mainWindow, urls)
-}
-
-function focusMainWindow() {
-  if (!mainWindow) return
-  mainWindow.show()
-  mainWindow.focus()
 }
 
 function setInitStep(step: InitStep) {
@@ -313,6 +314,7 @@ async function startClaxedoServer(
         CLAXEDO_DAEMON_PROTOCOL: String(CLAXEDO_DAEMON_PROTOCOL),
         CLAXEDO_DAEMON_TOKEN: daemonToken,
         CLAXEDO_DAEMON_GENERATION: serverGeneration,
+        CLAXEDO_DAEMON_BUILD: app.getVersion(),
         CLAXEDO_DAEMON_DISCOVERY_PATH: daemonDiscovery,
         ...(existsSync(claxedoServerCompileCachePath)
           ? { CLAXEDO_CHILD_SERVER_COMPILE_CACHE_DIR: claxedoServerCompileCachePath }
@@ -356,7 +358,7 @@ async function startClaxedoServer(
       exited.resolve({ code, signal })
       listening.reject(new Error(claxedoServerExitedBeforeListening(code, serverLog.path)))
       const detail = { pid: child.pid, code, signal }
-      if (quitting || code === 0) logger.log("claxedo-server child process exited", detail)
+      if (lifecycle.quitting() || code === 0) logger.log("claxedo-server child process exited", detail)
       else logger.error("claxedo-server child process exited", detail)
     })
 
@@ -434,35 +436,30 @@ async function setupServerConnection(): Promise<ServerConnection> {
 
   const serverDataDir = desktopServerDataDir()
   const discovery = readClaxedoDaemonDiscovery(claxedoDaemonDiscoveryPath(serverDataDir))
-  const daemonUrl = discovery && await verifyClaxedoDaemonDiscovery(discovery)
-  if (daemonUrl) {
-    logger.log("adopted existing claxedo daemon", {
-      url: daemonUrl,
-      pid: discovery.pid,
-      generation: discovery.generation,
-    })
-    serverOrigin.resolve(new URL(daemonUrl).origin)
-    return { variant: "daemon", url: daemonUrl, discovery }
-  }
-
   if (discovery) {
-    // Launch never authorizes a kill. The published daemon may be busy, wedged
-    // or already replaced by an unrelated process wearing its pid, and none of
-    // those is a decision this process may take on the user's behalf.
-    const recovery = await recoverPublishedDaemon({
+    const verdict = await publishedDaemonVerdict({
       discovery,
-      snapshot: readDaemonOwnershipView(claxedoDaemonOwnershipPath(serverDataDir)),
-      authorize: () => false,
+      build: app.getVersion(),
+      snapshot: () => readDaemonOwnershipView(claxedoDaemonOwnershipPath(serverDataDir)),
     })
-    if (!recovery.replacementAllowed) {
-      unresolvedDaemon = { discovery, result: recovery }
+    if (verdict.kind === "adopt") {
+      logger.log("adopted existing claxedo daemon", { url: verdict.url, pid: discovery.pid, generation: discovery.generation })
+      serverOrigin.resolve(new URL(verdict.url).origin)
+      return { variant: "daemon", url: verdict.url, discovery }
+    }
+    if (verdict.kind === "held") {
+      unresolvedDaemon = { discovery, result: verdict.result }
       logger.warn("the published claxedo daemon is unresolved; no replacement was started", {
         pid: discovery.pid,
         port: discovery.port,
+        build: discovery.build,
       })
-      throw new DaemonUnresolvedError(discovery)
+      throw new DaemonUnresolvedError(verdict.message)
     }
-    logger.log("the published claxedo daemon is gone; starting a replacement", { pid: discovery.pid })
+    logger.log("the published claxedo daemon is gone or was of another build; starting a replacement", {
+      pid: discovery.pid,
+      build: discovery.build,
+    })
   }
 
   logger.log("claxedo daemon not found, starting it")
@@ -478,11 +475,8 @@ async function setupServerConnection(): Promise<ServerConnection> {
 class DaemonUnresolvedError extends Error {
   readonly code = "daemon_unresolved"
 
-  constructor(discovery: ClaxedoDaemonDiscovery) {
-    super(
-      `The Claxedo daemon published as pid ${discovery.pid} on port ${discovery.port} is not answering and stopping it `
-        + "has not been authorized. Use the recovery view, or stop that process yourself.",
-    )
+  constructor(message: string) {
+    super(message)
     this.name = "DaemonUnresolvedError"
   }
 }
@@ -509,15 +503,16 @@ async function initialize(serverConnectionStarted: Promise<ServerConnection>) {
         url: serverConnection.url,
       })
       if (serverConnection.variant === "daemon") {
+        leasedDaemon = serverConnection.discovery
         daemonLease = await holdClaxedoDaemonLease(serverConnection.discovery, {
           onLost: () => {
             logger.warn("the daemon closed this app's lease")
-            if (!quitting) daemonStatus.leaseLost()
+            if (!lifecycle.quitting()) daemonStatus.leaseLost()
           },
           onError: (error) => logger.warn("daemon lease failed", { error: String(error) }),
         })
         void serverConnection.childExit?.then((exit) => {
-          if (!quitting) daemonStatus.exited(exit)
+          if (!lifecycle.quitting()) daemonStatus.exited(exit)
         })
       }
 
@@ -577,6 +572,7 @@ async function initialize(serverConnectionStarted: Promise<ServerConnection>) {
 
   logger.log("loading main window alongside embedded server")
   mainWindow = createMainWindow(globals)
+  lifecycle.keepOnClose(mainWindow)
   wireFullscreenEvents(mainWindow)
   wireMenu()
 
@@ -601,10 +597,8 @@ function wireMenu() {
     restart: () =>
       runRestart({
         packaged: IS_PACKAGED,
-        relaunch: () => {
-          app.relaunch()
-        },
-        quit: () => app.quit(),
+        relaunch: () => app.relaunch(),
+        quit: () => void lifecycle.requestExit("handoff", () => app.quit()),
         reload: () => mainWindow?.webContents.reloadIgnoringCache(),
       }),
   })
@@ -731,10 +725,8 @@ const recovery = daemonRecoveryBridge({
     unresolvedDaemon = undefined
     runRestart({
       packaged: IS_PACKAGED,
-      relaunch: () => {
-        app.relaunch()
-      },
-      quit: () => app.quit(),
+      relaunch: () => app.relaunch(),
+      quit: () => void lifecycle.requestExit("handoff", () => app.quit()),
       reload: () => mainWindow?.webContents.reloadIgnoringCache(),
     })
   },
@@ -899,11 +891,13 @@ if (browserTabSetup) {
   logger.log("browser-tab feature enabled", { partition: browserTabSetup.partition })
 }
 
-async function shutdown() {
+async function exitApp(intent: ExitIntent) {
   const lease = daemonLease
   daemonLease = undefined
   await lease?.stop()
   hostConnector?.dispose()
+  if (intent === "handoff" || !leasedDaemon || !daemonConnected) return
+  await stopPublishedDaemon(leasedDaemon, recovery, (message, fields) => logger.warn(message, fields))
 }
 
 function ensureLoopbackNoProxy() {

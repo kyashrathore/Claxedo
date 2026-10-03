@@ -99,15 +99,16 @@ describe("desktop cold startup wiring", () => {
     expect(verify).toBeGreaterThan(wait)
   })
 
-  test("a published daemon is recovered, and a replacement starts only when the old one is gone", () => {
-    const recover = setupServer.indexOf("await recoverPublishedDaemon({")
-    const refuse = setupServer.indexOf("throw new DaemonUnresolvedError(discovery)")
+  test("a published daemon is judged against this build, and a replacement starts only when the old one is gone", () => {
+    const judge = setupServer.indexOf("await publishedDaemonVerdict({")
+    const refuse = setupServer.indexOf("throw new DaemonUnresolvedError(verdict.message)")
     const start = setupServer.indexOf("await startClaxedoServer(serverDataDir)")
 
-    expect(recover).toBeGreaterThan(-1)
-    expect(refuse).toBeGreaterThan(recover)
+    expect(judge).toBeGreaterThan(-1)
+    expect(refuse).toBeGreaterThan(judge)
     expect(start).toBeGreaterThan(refuse)
-    expect(setupServer).toContain("authorize: () => false")
+    expect(setupServer).toContain("build: app.getVersion()")
+    expect(serverStart).toContain("CLAXEDO_DAEMON_BUILD: app.getVersion()")
   })
 
   test("still closes the child when readiness fails", () => {

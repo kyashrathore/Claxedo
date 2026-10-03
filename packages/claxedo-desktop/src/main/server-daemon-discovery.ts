@@ -17,6 +17,8 @@ export type ClaxedoDaemonDiscovery = Readonly<{
   pid: number
   port: number
   startedAt: string
+  /** The desktop version that started this daemon, which keeps serving that version's code until it exits. */
+  build: string
   /**
    * What the daemon read about its own process. Absent when it could not read
    * one, which leaves a launcher with nothing to verify and therefore nothing
@@ -117,6 +119,7 @@ function isClaxedoDaemonDiscovery(value: unknown): value is ClaxedoDaemonDiscove
     typeof record.port === "number" && Number.isSafeInteger(record.port) &&
     record.port > 0 && record.port <= 65535 &&
     isNonEmptyString(record.startedAt) &&
+    isNonEmptyString(record.build) &&
     (record.identity === undefined || isCreationIdentity(record.identity))
   )
 }

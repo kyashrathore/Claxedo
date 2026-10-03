@@ -7,7 +7,11 @@ const { autoUpdater } = pkg
 
 type CheckResult = { updateAvailable: boolean; version?: string; failed?: boolean }
 
-export function createAutoUpdate(input: { logger: ReturnType<typeof initLogging> }) {
+export function createAutoUpdate(input: {
+  logger: ReturnType<typeof initLogging>
+  /** Runs `install` only after the app's quit is confirmed and its daemon stopped, as any quit does. */
+  exitForInstall: (install: () => void) => Promise<unknown>
+}) {
   const { logger } = input
   let updateReady = false
 
@@ -67,7 +71,7 @@ export function createAutoUpdate(input: { logger: ReturnType<typeof initLogging>
 
   const install = async () => {
     if (!updateReady) return
-    autoUpdater.quitAndInstall()
+    await input.exitForInstall(() => autoUpdater.quitAndInstall())
   }
 
   const run = async (alertOnFail: boolean) => {

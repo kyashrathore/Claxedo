@@ -120,6 +120,7 @@ const discovery: ClaxedoDaemonDiscovery = {
   pid: process.pid,
   port: startup.port,
   startedAt: new Date().toISOString(),
+  build: startup.daemonBuild,
 }
 const clearDiscovery = () => {
   clearClaxedoDaemonDiscovery(startup.daemonDiscoveryPath, discovery)

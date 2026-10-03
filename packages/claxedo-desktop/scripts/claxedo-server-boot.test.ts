@@ -14,6 +14,10 @@ import {
   parseClaxedoServerReadyMessage,
 } from "../src/shared/claxedo-server-lifecycle"
 import { resolveDeferredServerEntry } from "./bundle-claxedo-server"
+import { daemonRecoveryBridge } from "../src/main/daemon-recovery"
+import { quitConfirmMessage, runningWork, stopPublishedDaemon } from "../src/main/daemon-quit"
+import { readClaxedoDaemonDiscovery } from "../src/main/server-daemon-discovery"
+import { holdClaxedoDaemonLease } from "../src/main/server-daemon-lease"
 import { localServerBundleEntry, requireLocalServerBundle } from "./local-server"
 
 // Boot-level coverage for the desktop server composition using the real bundle
@@ -110,6 +114,7 @@ process.exit(0)
     "CLAXEDO_DAEMON_PROTOCOL",
     "CLAXEDO_DAEMON_TOKEN",
     "CLAXEDO_DAEMON_GENERATION",
+    "CLAXEDO_DAEMON_BUILD",
     "CLAXEDO_DAEMON_DISCOVERY_PATH",
   ]) {
     delete env[key]
@@ -167,6 +172,7 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
       CLAXEDO_DAEMON_PROTOCOL: String(CLAXEDO_DAEMON_PROTOCOL),
       CLAXEDO_DAEMON_TOKEN: daemonToken,
       CLAXEDO_DAEMON_GENERATION: generation,
+      CLAXEDO_DAEMON_BUILD: "server-boot-build",
       CLAXEDO_DAEMON_DISCOVERY_PATH: daemonDiscoveryPath,
       // First launch hands the server a profile path that does not exist yet.
       CLAXEDO_DATA_DIR: path.join(root, "data"),
@@ -200,6 +206,7 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
       token: daemonToken,
       pid: child.pid,
       port,
+      build: "server-boot-build",
     })
     // Every privileged call below goes through the canonical presenter Electron
     // main uses, because the daemon admits its application and nothing else —
@@ -329,6 +336,7 @@ test("a quiescent daemon exits after its bounded idle grace", async () => {
       CLAXEDO_DAEMON_PROTOCOL: String(CLAXEDO_DAEMON_PROTOCOL),
       CLAXEDO_DAEMON_TOKEN: "idle-daemon-token",
       CLAXEDO_DAEMON_GENERATION: "idle-daemon-generation",
+      CLAXEDO_DAEMON_BUILD: "server-boot-build",
       CLAXEDO_DAEMON_DISCOVERY_PATH: discoveryPath,
       // Longer than the creation-identity read the daemon does before it
       // announces ready, which takes hundreds of milliseconds on a loaded machine.
@@ -362,6 +370,85 @@ test("a quiescent daemon exits after its bounded idle grace", async () => {
   }
 }, 30_000)
 
+test("a quit with a running terminal confirms it, then stops the daemon through its own stop", async () => {
+  if (!fs.existsSync(SERVER_BUNDLE)) {
+    console.warn("[skip] server bundle missing — run `bun run predev` first")
+    return
+  }
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-quit-daemon-test-"))
+  const workspaceDirectory = path.join(root, "workspace")
+  fs.mkdirSync(workspaceDirectory)
+  execFileSync("git", ["init", workspaceDirectory], { stdio: "ignore" })
+  const directory = encodeURIComponent(workspaceDirectory)
+  const port = await freePort()
+  const daemonToken = "quit-daemon-token"
+  const discoveryPath = path.join(root, "data", "local-daemon.json")
+  const serverLog = fs.openSync(path.join(root, "server.log"), "a")
+  const child = fork(SERVER_BUNDLE, [], {
+    ...claxedoServerForkOptions({
+      ...Object.fromEntries(
+        Object.entries(Bun.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+      ),
+      HOME: root,
+      CLAXEDO_CHILD_PORT: String(port),
+      CLAXEDO_DAEMON_PROTOCOL: String(CLAXEDO_DAEMON_PROTOCOL),
+      CLAXEDO_DAEMON_TOKEN: daemonToken,
+      CLAXEDO_DAEMON_GENERATION: "quit-daemon-generation",
+      CLAXEDO_DAEMON_BUILD: "server-boot-build",
+      CLAXEDO_DAEMON_DISCOVERY_PATH: discoveryPath,
+      CLAXEDO_DATA_DIR: path.join(root, "data"),
+    }, serverLog),
+    execPath: electronExecutable(),
+    stdio: ["ignore", "ignore", "pipe", "ipc"],
+  })
+  fs.closeSync(serverLog)
+  const messages: unknown[] = []
+  child.on("message", (message) => messages.push(message))
+  let stderr = ""
+  child.stderr?.setEncoding("utf8")
+  child.stderr?.on("data", (chunk) => { stderr += String(chunk) })
+  const exited = new Promise<number | null>((resolve) => child.once("exit", resolve))
+  try {
+    const base = `http://127.0.0.1:${port}`
+    await waitForHealth(base, child, () => stderr)
+    await waitForMessage(messages, (message) => parseClaxedoServerReadyMessage(message) !== null)
+    const discovery = readClaxedoDaemonDiscovery(discoveryPath)
+    if (!discovery) throw new Error("the daemon published no discovery record")
+    const daemon = createDaemonFetch({ endpoint: () => ({ origin: base, capability: daemonToken }) })
+    expect((await daemon(`/api/claxedo/workspace/resolve?directory=${directory}`, { method: "POST" })).status).toBe(200)
+    const created = await daemon(`/api/wr/pty?directory=${directory}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "long", initialCommand: "sleep 60" }),
+    })
+    expect(created.status).toBe(200)
+    const lease = await holdClaxedoDaemonLease(discovery)
+    const recovery = daemonRecoveryBridge({
+      daemon: () => daemon,
+      unresolved: () => undefined,
+      ownershipView: () => undefined,
+      onRecovered: () => {},
+    })
+
+    expect(quitConfirmMessage(runningWork(await recovery.inspect()))).toBe("1 terminal is still working. Quitting stops it.")
+    const signalled: unknown[] = []
+    await lease.stop()
+    await stopPublishedDaemon(discovery, recovery, (message, fields) => signalled.push({ message, ...fields }))
+
+    expect(await Promise.race([exited.then(() => true), Bun.sleep(5_000).then(() => false)])).toBe(true)
+    expect(signalled).toEqual([])
+    expect(child.exitCode).toBe(0)
+    expect(fs.existsSync(discoveryPath)).toBe(false)
+    expect(stderr).toMatch(new RegExp(`daemon stopping service=daemon kind=stop_daemon .*pid=${child.pid}`))
+    expect(stderr).toContain(`daemon exited service=daemon code=0 pid=${child.pid}`)
+  } catch (error) {
+    throw new Error(`${String(error)}\n${stderr.slice(-4000)}`, { cause: error })
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+}, 60_000)
+
 test("a terminal whose daemon was killed is reported gone and restored from history by the replacement", async () => {
   if (!fs.existsSync(SERVER_BUNDLE)) {
     console.warn("[skip] server bundle missing — run `bun run predev` first")
@@ -390,6 +477,7 @@ test("a terminal whose daemon was killed is reported gone and restored from hist
         CLAXEDO_DAEMON_PROTOCOL: String(CLAXEDO_DAEMON_PROTOCOL),
         CLAXEDO_DAEMON_TOKEN: daemonToken,
         CLAXEDO_DAEMON_GENERATION: generation,
+        CLAXEDO_DAEMON_BUILD: "server-boot-build",
         CLAXEDO_DAEMON_DISCOVERY_PATH: path.join(root, "data", "local-daemon.json"),
         CLAXEDO_DATA_DIR: path.join(root, "data"),
       }, serverLog),
@@ -530,6 +618,7 @@ async function forkDaemonWithPsShim(ps: Record<string, string>) {
       CLAXEDO_DAEMON_PROTOCOL: String(CLAXEDO_DAEMON_PROTOCOL),
       CLAXEDO_DAEMON_TOKEN: "ps-shim-daemon-token",
       CLAXEDO_DAEMON_GENERATION: "ps-shim-generation",
+      CLAXEDO_DAEMON_BUILD: "server-boot-build",
       CLAXEDO_DAEMON_DISCOVERY_PATH: discoveryPath,
       CLAXEDO_DATA_DIR: path.join(root, "data"),
     }, serverLog),

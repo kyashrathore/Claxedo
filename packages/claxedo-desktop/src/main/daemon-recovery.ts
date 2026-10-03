@@ -136,7 +136,7 @@ export function daemonRecoveryPreview(
   }
 }
 
-async function daemonState(discovery: ClaxedoDaemonDiscovery, verify: typeof verifyCreationIdentity) {
+export async function daemonState(discovery: ClaxedoDaemonDiscovery, verify: typeof verifyCreationIdentity = verifyCreationIdentity) {
   return discovery.identity ? (await verify(discovery.identity)).state : "unknown"
 }
 
@@ -145,7 +145,8 @@ async function daemonState(discovery: ClaxedoDaemonDiscovery, verify: typeof ver
  *
  * `authorize` is the main-process decision: it is asked only once identity is
  * established, and a "no" leaves the daemon running and the app in a state that
- * exposes the recovery view. There is no automatic kill on launch.
+ * exposes the recovery view. Launch says yes only to a live daemon of another
+ * build; a quit says yes to its own daemon once that daemon's own stop is overdue.
  */
 export async function recoverPublishedDaemon(input: {
   discovery: ClaxedoDaemonDiscovery

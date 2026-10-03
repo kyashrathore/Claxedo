@@ -28,6 +28,7 @@ function discovery(): ClaxedoDaemonDiscovery {
     pid: 4242,
     port: 2593,
     startedAt: "2026-09-21T00:00:00.000Z",
+    build: "1.4.0",
     identity: identity(),
   }
 }
