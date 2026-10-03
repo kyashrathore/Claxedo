@@ -61,6 +61,15 @@ describe("execution-env fs", () => {
     expect(await fsOp("readTextFile", "missing.txt")).toMatchObject({ ok: false, error: { code: "not_found" } })
   })
 
+  test("a whole-file read over 8 MiB is refused as invalid, while a bounded line read still answers", async () => {
+    const { directory, fsOp } = await served()
+    await fs.writeFile(path.join(directory, "big.log"), `first\n${"x".repeat(9 * 1024 * 1024)}\n`)
+    for (const op of ["readTextFile", "readBinaryFile", "readTextLines"]) {
+      expect(await fsOp(op, "big.log")).toMatchObject({ ok: false, error: { code: "invalid", path: "big.log" } })
+    }
+    expect(await fsOp("readTextLines", "big.log", { maxLines: 1 })).toEqual({ ok: true, value: ["first"] })
+  })
+
   test("an unknown operation or malformed arguments answer 400", async () => {
     const { status } = await served()
     expect(await status("fs", { op: "openTextLineReader", args: ["a"] })).toBe(400)
@@ -91,6 +100,22 @@ describe("execution-env exec", () => {
     expect(await waitForPidExit(pid, 10_000)).toBe(true)
   })
 
+  test("Pi's spill option is accepted and never spills; a timeout past Pi's own ceiling is refused", async () => {
+    const { post, status } = await served()
+    const events = parseSse(await (await post("exec", { command: "echo ok", spill: { afterBytes: 1, afterLines: 1 } })).text())
+    expect(events.at(-1)).toEqual({ event: "result", data: { ok: true, value: { exitCode: 0 } } })
+    expect(await status("exec", { command: "true", timeout: 2_147_484 })).toBe(400)
+  })
+
+  test("output past 8 MiB is cut with a truncation marker and the command still reports its exit", async () => {
+    const { post } = await served()
+    const events = parseSse(await (await post("exec", { command: "head -c 9437184 /dev/zero | tr '\\0' a" })).text())
+    const output = events.filter((event) => event.event === "output").map((event) => event.data.text).join("")
+    expect(output.length).toBeLessThan(8 * 1024 * 1024 + 200)
+    expect(output.endsWith("[execution-env: output truncated after 8388608 characters]\n")).toBe(true)
+    expect(events.at(-1)).toEqual({ event: "result", data: { ok: true, value: { exitCode: 0 } } })
+  })
+
   test("a timeout ends the command with a timeout error", async () => {
     const { post } = await served()
     const events = parseSse(await (await post("exec", { command: "exec sleep 30", timeout: 0.2 })).text())
@@ -112,10 +137,13 @@ describe("execution-env exec", () => {
 })
 
 describe("execution-env access", () => {
-  test("refuses a token without a session or with viewer role, and hides itself from other backings", async () => {
+  test("serves only the turn-execution token: a share holder's session token, a viewer or a workspace token is refused, other backings see nothing", async () => {
     const { status } = await served()
     expect(await status("fs", { op: "exists", args: ["."] }, {})).toBe(403)
     expect(await status("fs", { op: "exists", args: ["."] }, { sessionId: "ses_1", role: "viewer" })).toBe(403)
+    expect(await status("fs", { op: "exists", args: ["."] }, { sessionId: "ses_1", role: "editor", share: true })).toBe(403)
+    expect(await status("exec", { command: "true" }, { sessionId: "ses_1", role: "owner", share: true })).toBe(403)
+    expect(await status("fs", { op: "exists", args: ["."] }, { sessionId: "ses_1", role: "editor" })).toBe(200)
     expect(await status("fs", { op: "exists", args: ["."] }, { sessionId: "ses_1", backing: "local-worktree" })).toBe(404)
     expect(await status("exec", { command: "true" }, { sessionId: "ses_1", backing: "local-worktree" })).toBe(404)
   })
@@ -135,7 +163,8 @@ describe("execution-env on the composed relay runtime", () => {
     })
     cleanups.push(() => runtime.dispose())
     const token = await mintRelayHostToken({ principalKind: "user", actorId: "actor_1", actorKind: "human", orgId: "org_1",
-      workspaceId: "ws_1", hostId: "host_1", role: "editor", backing: "cloud-vm", parentJti: "rat_1", sessionId: "ses_1" }, key.privateKey, "EdDSA")
+      workspaceId: "ws_1", hostId: "host_1", role: "editor", backing: "cloud-vm", parentJti: "rat_1", sessionId: "ses_1",
+      purpose: "turn-execution" }, key.privateKey, "EdDSA")
     const request = (route: string, body: unknown) => runtime.app.request(`http://localhost/api/wr/execution-env/${route}`, {
       method: "POST", body: JSON.stringify(body),
       headers: { authorization: `Bearer ${token}`, "x-workspace-id": "ws_1", "x-forwarded-by": "workspace-relay", "content-type": "application/json" },

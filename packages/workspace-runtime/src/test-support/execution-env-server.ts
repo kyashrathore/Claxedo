@@ -16,12 +16,14 @@ export type ExecutionEnvClaims = {
   sessionId?: string
   role?: "viewer" | "editor" | "admin" | "owner"
   backing?: "cloud-vm" | "local-worktree"
+  /** A share holder's token: the session claim without the turn-execution purpose. */
+  share?: true
 }
 
 const EMPTY_PROJECTION: PluginProjection = { generation: "empty", mcpServers: [], pluginRoots: [], notApplied: [] }
 
 /** The execution-env routes behind the real relay-host verifier and owned spawn. */
-export async function executionEnvApp(input: { directory: string; env?: NodeJS.ProcessEnv; projection?: PluginProjection }) {
+export async function executionEnvApp(input: { directory: string; env?: NodeJS.ProcessEnv; projection?: PluginProjection; mcpHeartbeatMs?: number }) {
   const key = await generateKeyPair("EdDSA", { extractable: true })
   const app = new Hono()
   const sockets = createNodeWebSocket({ app })
@@ -32,6 +34,7 @@ export async function executionEnvApp(input: { directory: string; env?: NodeJS.P
     services: { spawn: createSpawnService(volatileLaunchOwnership()), clock: { now: Date.now, setTimeout, clearTimeout }, log: console },
     piProjection: () => input.projection ?? EMPTY_PROJECTION,
     upgradeWebSocket: sockets.upgradeWebSocket,
+    ...(input.mcpHeartbeatMs ? { mcpHeartbeatMs: input.mcpHeartbeatMs } : {}),
   })
   app.route(WorkspaceRuntimeRoutes.executionEnv, executionEnv.routes)
   const headers = async (claims: ExecutionEnvClaims = {}) => ({
@@ -39,6 +42,7 @@ export async function executionEnvApp(input: { directory: string; env?: NodeJS.P
       principalKind: "user", actorId: "actor_1", actorKind: "human", orgId: "org_1", workspaceId: "ws_1", hostId: "host_1",
       role: claims.role ?? "editor", backing: claims.backing ?? "cloud-vm", parentJti: "rat_1",
       ...(claims.sessionId === undefined ? {} : { sessionId: claims.sessionId }),
+      ...(claims.share ? {} : { purpose: "turn-execution" as const }),
     }, key.privateKey, "EdDSA")}`,
     "x-workspace-id": "ws_1",
     "x-forwarded-by": "workspace-relay",
@@ -55,10 +59,10 @@ export async function serveExecutionEnv(input: Parameters<typeof executionEnvApp
   return {
     origin: `http://127.0.0.1:${port}`,
     headers,
-    close: async () => {
-      await dispose()
-      await new Promise<void>((resolve) => server.close(() => resolve()))
-    },
+    close: (() => {
+      let closing: Promise<void> | undefined
+      return () => closing ??= dispose().then(() => new Promise<void>((resolve) => server.close(() => resolve())))
+    })(),
   }
 }
 

@@ -191,25 +191,35 @@ The capability response is versioned with `api_version: 2`.
 
 A relay-exposed runtime serves a Durable-Object-hosted Pi session the
 workspace machine as Pi's `ExecutionEnv`. Every request carries a `cloud-vm`
-Relay Host Token with the session's `session_id` and role editor or above;
-any other backing answers 404, and nothing calls the control plane per request.
+Relay Host Token with the session's `session_id`, role editor or above, and
+`purpose: "turn-execution"`, which only the control plane's `/turn-execution`
+mint sets; a share holder's session token is refused with 403, any other
+backing answers 404, and nothing calls the control plane per request.
 
 - `POST /api/wr/execution-env/fs` takes `{ op, args }`, where `op` names a
   pi-durable `FileSystem` method other than `openTextLineReader` and `cleanup`,
   and answers `{ ok: true, value } | { ok: false, error: { code, message, path? } }`
-  with status 200. Bytes travel as `{ base64 }`.
-- `POST /api/wr/execution-env/exec` takes `{ command, cwd?, env?, inheritEnv?, timeout? }`
+  with status 200. Bytes travel as `{ base64 }`. A whole-file read
+  (`readTextFile`, `readBinaryFile`, `readTextLines` without `maxLines`) of a
+  file over 8 MiB answers `invalid`.
+- `POST /api/wr/execution-env/exec` takes `{ command, cwd?, env?, inheritEnv?, timeout?, spill? }`
   and streams `output` events (`{ text }`) then one `result` event. Commands run
   through Pi's owned shell (`@claxedo/harness/pi-durable/shell`) under the
   workspace's launch ownership with the harness env allowlist: a timeout or a
   client disconnect mid-command retires the command's process group, and a
   background job it started outlives it in that session's live set until the
-  runtime stops. Output is never spilled to a file, so a result never carries
-  `spillPath`.
+  runtime stops. `timeout` is bounded by Pi's own ceiling. `spill` is accepted
+  and ignored: output is never spilled to a file, so a result never carries
+  `spillPath`. Output past 8 MiB characters is cut with an
+  `[execution-env: output truncated …]` marker, which bounds what one command
+  can queue on the stream.
 - `GET /api/wr/execution-env/mcp/:serverName` upgrades to a WebSocket bridged
-  to the stdin and stdout of the plugin stdio MCP server of that name in the
-  runtime's Pi projection, one JSON-RPC message per frame. The server is spawned
-  on open and retired on close; the caller never sends a command.
+  through Pi's `OwnedStdioMcpTransport` to the plugin stdio MCP server of that
+  name in the runtime's Pi projection, one JSON-RPC message per frame. The
+  server gets the same minimal inherited env as a local Pi session plus its own
+  `env`, is spawned on open, and is retired on close, on a socket that stops
+  answering pings, or when the runtime stops. At most 64 messages wait for it
+  to start; the caller never sends a command.
 
 ## Event contract
 

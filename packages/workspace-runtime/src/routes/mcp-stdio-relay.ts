@@ -1,89 +1,105 @@
 import { Hono } from "hono"
 import type { UpgradeWebSocket, WSContext } from "hono/ws"
 import { errorBody } from "@claxedo/session-core"
-import type { HarnessServices, OwnedProcess, PluginProjection, ProjectedMcpServer } from "@claxedo/harness/contract"
+import type { HarnessServices, PluginProjection, ProjectedMcpServer } from "@claxedo/harness/contract"
+import { mcpStdioBaseEnv, OwnedStdioMcpTransport, parseMcpMessage } from "@claxedo/harness/pi-durable/mcp-stdio"
+import { Log } from "../log"
 
 type StdioServer = Extract<ProjectedMcpServer, { kind: "stdio" }>
+type McpMessage = ReturnType<typeof parseMcpMessage>
+type HeartbeatSocket = { ping(): void; terminate(): void; on(event: "pong", listener: () => void): unknown }
 
 export type McpStdioRelayOptions = {
   directory: string
-  env: Readonly<Record<string, string>>
-  services: Pick<HarnessServices, "spawn">
+  env: NodeJS.ProcessEnv
+  services: Pick<HarnessServices, "spawn" | "clock">
   piProjection: () => PluginProjection
   upgradeWebSocket: UpgradeWebSocket
+  heartbeatMs?: number
 }
 
 type Env = { Variables: { executionSessionId: string; mcpServer: StdioServer } }
 
-const RETIRE_MS = 5_000
+const MAX_PENDING_MESSAGES = 64
+const HEARTBEAT_MS = 30_000
+const log = Log.create({ service: "mcp-stdio-relay" })
 
 function pluginStdioServer(projection: PluginProjection, name: string): StdioServer | undefined {
   return projection.mcpServers.find((server): server is StdioServer & { origin: "plugin" } =>
     server.name === name && server.kind === "stdio" && server.origin === "plugin")
 }
 
-function singleLine(data: unknown): string | undefined {
-  try {
-    return JSON.stringify(JSON.parse(String(data)))
-  } catch {
-    return undefined
-  }
+function isHeartbeatSocket(raw: unknown): raw is HeartbeatSocket {
+  return typeof raw === "object" && raw !== null && "ping" in raw && typeof raw.ping === "function"
+    && "terminate" in raw && typeof raw.terminate === "function" && "on" in raw && typeof raw.on === "function"
 }
 
-function bridge(owned: OwnedProcess, ws: WSContext) {
-  let buffer = ""
-  owned.stderr.resume()
-  owned.stdout.setEncoding("utf8")
-  owned.stdout.on("data", (chunk: string) => {
-    buffer += chunk
-    for (let newline = buffer.indexOf("\n"); newline >= 0; newline = buffer.indexOf("\n")) {
-      const line = buffer.slice(0, newline).trim()
-      buffer = buffer.slice(newline + 1)
-      if (line) ws.send(line)
-    }
-  })
-  void owned.exited.then(() => ws.close(1011, "mcp_server_exited"))
+function heartbeat(socket: HeartbeatSocket, ms: number) {
+  let answered = true
+  socket.on("pong", () => { answered = true })
+  return setInterval(() => {
+    if (!answered) return socket.terminate()
+    answered = false
+    socket.ping()
+  }, ms)
 }
 
 export function McpStdioRelayRoutes(options: McpStdioRelayOptions) {
-  return new Hono<Env>().get("/:serverName", async (c, next) => {
+  const open = new Set<OwnedStdioMcpTransport>()
+  const baseEnv = mcpStdioBaseEnv(options.env)
+  const close = (transport: OwnedStdioMcpTransport) => {
+    open.delete(transport)
+    return transport.close().catch((error: unknown) => log.warn("MCP server did not stop", { error: String(error) }))
+  }
+  const routes = new Hono<Env>().get("/:serverName", async (c, next) => {
     const server = pluginStdioServer(options.piProjection(), c.req.param("serverName"))
     if (!server) return c.json(errorBody("mcp_server_not_found", "No plugin stdio MCP server has that name"), 404)
     c.set("mcpServer", server)
     return next()
   }, options.upgradeWebSocket((c) => {
-    const server = c.get("mcpServer")
-    const closed = new AbortController()
-    const pending: string[] = []
-    let owned: OwnedProcess | undefined
-    const retire = () => owned?.retire({ at: Date.now() + RETIRE_MS, signal: new AbortController().signal })
+    const transport = new OwnedStdioMcpTransport(c.get("mcpServer"),
+      { cwd: options.directory, sessionId: c.get("executionSessionId"), baseEnv, services: options.services })
+    const pending: McpMessage[] = []
+    let state: "starting" | "running" | "closed" = "starting"
+    let beat: ReturnType<typeof setInterval> | undefined
+    const stop = () => {
+      state = "closed"
+      clearInterval(beat)
+      void close(transport)
+    }
+    const forward = (message: McpMessage, ws: WSContext) =>
+      void transport.send(message).catch(() => ws.close(1011, "mcp_server_unwritable"))
     return {
       async onOpen(_event, ws) {
+        if (!isHeartbeatSocket(ws.raw)) return ws.close(1011, "mcp_socket_unsupported")
+        beat = heartbeat(ws.raw, options.heartbeatMs ?? HEARTBEAT_MS)
+        open.add(transport)
+        transport.onMessage((message) => ws.send(JSON.stringify(message)))
+        transport.onError(() => ws.close(1011, "mcp_server_invalid_output"))
+        transport.onClose(() => ws.close(1011, "mcp_server_exited"))
         try {
-          owned = await options.services.spawn({ file: server.command, args: [...server.args ?? []], cwd: server.cwd ?? options.directory,
-            env: { ...options.env, ...server.env } },
-          { role: "harness", label: `Pi MCP ${server.name}`, sessionId: c.get("executionSessionId"), signal: closed.signal })
+          await transport.start()
         } catch {
-          ws.close(1011, "mcp_server_spawn_failed")
-          return
+          return ws.close(1011, "mcp_server_spawn_failed")
         }
-        if (closed.signal.aborted) {
-          void retire()
-          return
-        }
-        bridge(owned, ws)
-        for (const line of pending.splice(0)) owned.stdin.write(`${line}\n`)
+        if (state === "closed") return void close(transport)
+        state = "running"
+        for (const message of pending.splice(0)) forward(message, ws)
       },
       onMessage(event, ws) {
-        const line = singleLine(event.data)
-        if (line === undefined) return ws.close(1007, "mcp_message_invalid")
-        if (owned) owned.stdin.write(`${line}\n`)
-        else pending.push(line)
+        let message: McpMessage
+        try {
+          message = parseMcpMessage(typeof event.data === "string" ? event.data : "")
+        } catch {
+          return ws.close(1007, "mcp_message_invalid")
+        }
+        if (state === "running") return forward(message, ws)
+        if (pending.length >= MAX_PENDING_MESSAGES) return ws.close(1008, "mcp_pending_overflow")
+        pending.push(message)
       },
-      onClose() {
-        closed.abort()
-        void retire()
-      },
+      onClose: stop,
+      onError: stop,
     }
   }))
+  return { routes, dispose: async () => { await Promise.all([...open].map(close)) } }
 }

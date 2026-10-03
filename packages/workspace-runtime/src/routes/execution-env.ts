@@ -16,11 +16,15 @@ export type ExecutionEnvRouteOptions = {
   services: PiShellServices
   piProjection: () => PluginProjection
   upgradeWebSocket: UpgradeWebSocket
+  mcpHeartbeatMs?: number
 }
 
 type Env = { Variables: RelayHostAuthContext & { executionSessionId: string } }
 
 const BODY_LIMIT_BYTES = 16 * 1024 * 1024
+const MAX_EXEC_OUTPUT_CHARS = 8 * 1024 * 1024
+const MAX_TIMEOUT_SECONDS = 2_147_483_647 / 1000
+const OUTPUT_TRUNCATED = `\n[execution-env: output truncated after ${MAX_EXEC_OUTPUT_CHARS} characters]\n`
 const fsRequest = z.object({ op: z.string(), args: z.array(z.unknown()) }).strict()
 
 const execRequest = z.object({
@@ -28,14 +32,15 @@ const execRequest = z.object({
   cwd: z.string().optional(),
   env: z.record(z.string(), z.string()).optional(),
   inheritEnv: z.boolean().optional(),
-  timeout: z.number().positive().optional(),
+  timeout: z.number().positive().max(MAX_TIMEOUT_SECONDS).optional(),
+  spill: z.object({ afterBytes: z.number().nonnegative(), afterLines: z.number().nonnegative() }).strict().optional(),
 }).strict()
 
 const executionEnvAccess: MiddlewareHandler<Env> = async (c, next) => {
   const claims = c.get("relayHostAuth")
   if (claims?.backing !== "cloud-vm") return c.json(errorBody("not_found", "Not found"), 404)
-  if (!claims.session_id || claims.role === "viewer") {
-    return c.json(errorBody("execution_env_forbidden", "The execution environment serves one session's editors"), 403)
+  if (!claims.session_id || claims.role === "viewer" || !("purpose" in claims) || claims.purpose !== "turn-execution") {
+    return c.json(errorBody("execution_env_forbidden", "The execution environment serves only a session host's turn-execution token"), 403)
   }
   c.set("executionSessionId", claims.session_id)
   return next()
@@ -44,6 +49,21 @@ const executionEnvAccess: MiddlewareHandler<Env> = async (c, next) => {
 async function parsedRequest<T extends z.ZodType>(c: HonoContext, schema: T): Promise<z.output<T> | Response> {
   const body = schema.safeParse(await boundedJsonBody(c, { limit: BODY_LIMIT_BYTES }))
   return body.success ? body.data : c.json(errorBody("execution_env_request_invalid", z.prettifyError(body.error)), 400)
+}
+
+function cappedOutput(write: (text: string) => void) {
+  let sent = 0
+  let truncated = false
+  return (text: string) => {
+    if (truncated) return
+    const room = MAX_EXEC_OUTPUT_CHARS - sent
+    if (text.length <= room) {
+      sent += text.length
+      return write(text)
+    }
+    truncated = true
+    write(`${text.slice(0, room)}${OUTPUT_TRUNCATED}`)
+  }
 }
 
 function stringEnv(env: NodeJS.ProcessEnv): Record<string, string> {
@@ -70,15 +90,19 @@ export function ExecutionEnvRoutes(options: ExecutionEnvRouteOptions) {
     const shell = executionEnv(c.get("executionSessionId"))
     const context = withAbortSignal(c.req.raw.signal, BACKGROUND_CONTEXT)
     return streamSSE(c, async (stream) => {
-      const { command, ...execOptions } = request
-      const result = await shell.exec(command, {
-        ...execOptions, onOutput: (text) => { void stream.writeSSE({ event: "output", data: JSON.stringify({ text }) }) },
-      }, context)
+      const { command, spill: _spill, ...execOptions } = request
+      let writes = Promise.resolve()
+      const output = cappedOutput((text) => {
+        writes = writes.then(() => stream.writeSSE({ event: "output", data: JSON.stringify({ text }) }))
+      })
+      const result = await shell.exec(command, { ...execOptions, onOutput: output }, context)
+      await writes
       await stream.writeSSE({ event: "result", data: JSON.stringify(result.ok
         ? { ok: true, value: result.value }
         : { ok: false, error: { code: result.error.code, message: result.error.message } }) })
     })
   })
-  app.route("/mcp", McpStdioRelayRoutes({ ...options, env }))
-  return { routes: app, dispose: commands.retireAll }
+  const mcp = McpStdioRelayRoutes({ ...options, ...(options.mcpHeartbeatMs ? { heartbeatMs: options.mcpHeartbeatMs } : {}) })
+  app.route("/mcp", mcp.routes)
+  return { routes: app, dispose: async () => { await Promise.all([commands.retireAll(), mcp.dispose()]) } }
 }

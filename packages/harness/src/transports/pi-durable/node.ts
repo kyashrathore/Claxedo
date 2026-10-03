@@ -5,19 +5,15 @@ import { createRegistry, Harness } from "@earendil-works/pi-durable"
 import { StreamableHttpTransport, type McpTransport } from "@earendil-works/pi-mcp"
 import type { HarnessServices, ProjectedMcpServer } from "../../contract/node"
 import { piConfiguration } from "./errors"
-import { OwnedStdioMcpTransport } from "./mcp-stdio"
+import { mcpStdioBaseEnv, OwnedStdioMcpTransport } from "./mcp-stdio"
 import type { PiPlacement, PiSessionRuntime } from "./placement"
 import { ownedExecutionEnv, sessionCommands } from "./shell"
 import { openPiStorage } from "./storage"
 
 export type PiNodeOptions = { stateRoot: string; env: Readonly<Record<string, string | undefined>> }
 
-const MCP_INHERITED_ENV = process.platform === "win32"
-  ? ["APPDATA", "HOMEDRIVE", "HOMEPATH", "LOCALAPPDATA", "PATH", "PROCESSOR_ARCHITECTURE", "SYSTEMDRIVE", "SYSTEMROOT", "TEMP", "USERNAME", "USERPROFILE"]
-  : ["HOME", "LOGNAME", "PATH", "SHELL", "TERM", "USER"]
-
-function definedEnv(env: PiNodeOptions["env"], names?: readonly string[]): Record<string, string> {
-  return Object.fromEntries(Object.entries(env).flatMap(([name, value]) => value === undefined || (names && !names.includes(name)) ? [] : [[name, value]]))
+function definedEnv(env: PiNodeOptions["env"]): Record<string, string> {
+  return Object.fromEntries(Object.entries(env).flatMap(([name, value]) => value === undefined ? [] : [[name, value]]))
 }
 
 async function sessionStorage(stateRoot: string, sessionId: string) {
@@ -29,7 +25,7 @@ async function sessionStorage(stateRoot: string, sessionId: string) {
 
 export function createNodePiPlacement(input: PiNodeOptions & { services: HarnessServices }): PiPlacement {
   const env = definedEnv(input.env)
-  const mcpEnv = definedEnv(input.env, MCP_INHERITED_ENV)
+  const mcpEnv = mcpStdioBaseEnv(input.env)
   const directories = new Map<string, string>()
   const commands = sessionCommands(input.services)
   const placement: PiPlacement = {
