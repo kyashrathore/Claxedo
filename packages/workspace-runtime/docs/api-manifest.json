@@ -5,6 +5,7 @@
     "./client",
     "./config",
     "./exposure",
+    "./file-content",
     "./file-index",
     "./host",
     "./relay",
