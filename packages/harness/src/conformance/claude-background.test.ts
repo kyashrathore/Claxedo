@@ -68,10 +68,6 @@ test.each([false, true])("a Claude background task survives follow-ups and model
     await fs.access(marker).then(() => { throw new Error("the background command finished inside its own turn") }, () => undefined)
 
     if (followups) {
-      await transport.config.setModelSettings({ ...started, binding: ports.bindings.get("s1")! },
-        { model: { providerID: "anthropic", modelID: "sonnet" }, effort: "low" })
-      expect(pids).toHaveLength(1)
-      expect(alive(pids[0]!)).toBe(true)
       for (const [index, effort] of ["high", "low", undefined].entries()) {
         const turnId = `followup-${index}`
         const prompt: TurnInput = { ...turn, turnId, assistantMessageId: turnId, userMessageId: `u-${turnId}`, effort, model: index === 2 ? { ...model, modelID: "sonnet" } : model,
@@ -81,6 +77,9 @@ test.each([false, true])("a Claude background task survives follow-ups and model
         expect(pids).toHaveLength(1)
         expect(alive(pids[0]!)).toBe(true)
       }
+      await transport.config.setModelSettings({ ...started, binding: ports.bindings.get("s1")! }, { model, effort: "low" })
+      expect(pids).toHaveLength(1)
+      expect(alive(pids[0]!)).toBe(true)
     }
 
     const ownTurn = await pollUntil(() => (ports.drained as RoutedEvent[]).find(({ event, route }) => route?.kind !== "child" && event.type === "finish"),
@@ -90,6 +89,13 @@ test.each([false, true])("a Claude background task survives follow-ups and model
     const notified = server.requests.at(-1)?.prompt ?? ""
     expect(notified).toContain("task-notification")
     expect(notified).toContain("completed")
+    if (followups) {
+      const byPrompt = (token: string) => server.requests.find((request) => request.prompt.includes(token))
+      const notification = server.requests.at(-1)
+      expect(notification?.model).toBe(byPrompt("FOLLOWUP0")?.model)
+      expect(notification?.model).not.toBe(byPrompt("FOLLOWUP2")?.model)
+      expect((notification?.body as { output_config?: { effort?: string } }).output_config?.effort).toBe("low")
+    }
     expect(pids).toHaveLength(1)
     expect(await pollUntil(() => alive(pids[0]!) ? undefined : true, Date.now() + 15_000)).toBe(true)
   } finally {
