@@ -21,7 +21,7 @@ export async function run() {
       const workspace = await stack.daemon.makeWorkspace("h33-local")
       const api = new ClaxedoApi(stack.url)
       const configUrl = `${stack.url}/api/claxedo/agent-config`
-      const commandsUrl = `${stack.url}/command?directory=${encodeURIComponent(workspace.directory)}`
+      const commandsUrl = `${stack.url}/command?directory=${encodeURIComponent(workspace.directory)}&connectionId=${SCRIPTED_ACP_HARNESS.id}`
       const stream = await stack.events(workspace.directory)
       const warm = await api.createSession(workspace.directory, { harness: SCRIPTED_ACP_HARNESS })
       await stack.acp.write("h33-installed", { steps: [{ kind: "prompt" }, { kind: "mcp", marker: "H33LOCAL" }] })
