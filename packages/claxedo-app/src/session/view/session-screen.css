@@ -18,6 +18,7 @@
 }
 
 [data-slot="session-screen-timeline"] {
+  --timeline-dock-inset: var(--session-dock-overhang, 0px);
   position: relative;
   min-height: 0;
   flex: 1;

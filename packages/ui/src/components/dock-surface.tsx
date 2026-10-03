@@ -1,14 +1,26 @@
-import { type ComponentProps, type JSX, splitProps } from "solid-js"
+import { type ComponentProps, type JSX, createEffect, on, onCleanup, onMount, splitProps } from "solid-js"
 
 export function DockLayout(props: {
   children: JSX.Element
   overlay: JSX.Element
   replace?: boolean
   class?: string
+  /** Pixels the overlay reaches above the layout's top edge, the band it covers outside its own box. */
+  onOverhang?: (height: number) => void
 }) {
+  let root!: HTMLDivElement
+  let overlay!: HTMLDivElement
+  const measure = () => props.onOverhang?.(Math.max(0, overlay.offsetHeight - (props.replace ? root.offsetHeight : 0)))
+  onMount(() => {
+    const observer = new ResizeObserver(measure)
+    observer.observe(root)
+    observer.observe(overlay)
+    onCleanup(() => observer.disconnect())
+  })
+  createEffect(on(() => props.replace, measure, { defer: true }))
   return (
-    <div data-component="dock-layout" data-replace={props.replace || undefined} class={props.class}>
-      <div data-slot="dock-layout-overlay">{props.overlay}</div>
+    <div ref={root} data-component="dock-layout" data-replace={props.replace || undefined} class={props.class}>
+      <div ref={overlay} data-slot="dock-layout-overlay">{props.overlay}</div>
       <div data-slot="dock-layout-base" inert={props.replace}>{props.children}</div>
     </div>
   )

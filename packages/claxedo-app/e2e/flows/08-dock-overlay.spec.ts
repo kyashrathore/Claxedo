@@ -1,6 +1,6 @@
-import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI } from "../harness"
+import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, uncovered } from "../harness"
 
-test("08 question expansion and permission docks share an overlay without resizing the transcript", async ({ stack, api, app }) => {
+test("08 question and permission docks share an overlay that keeps the transcript end in view without resizing it", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("dock-overlay")
   await stack.acp.write("dock-history", {
     steps: [{ kind: "text", text: Array.from({ length: 70 }, (_, index) => `Earlier paragraph ${index + 1}.`).join("\n\n") }],
@@ -18,22 +18,36 @@ test("08 question expansion and permission docks share an overlay without resizi
   await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
   await api.promptAsync(workspace.directory, session.id, `Update the notes. ${acpScriptToken("dock-requests")}`)
   await expect(app.getByText("Which color should the notes use?")).toBeVisible()
+  const lastLine = app.getByText(`Update the notes. ${acpScriptToken("dock-requests")}`, { exact: true })
   const scroller = app.getByRole("region", { name: "scrollable content" })
   const viewport = await scroller.boundingBox()
-  const scrollTop = await scroller.evaluate((element) => element.scrollTop)
+  await expect.poll(() => uncovered(lastLine)).toBe(true)
   await app.getByRole("button", { name: "Collapse question", exact: true }).click()
   await expect(app.getByRole("button", { name: "Expand question", exact: true })).toBeVisible()
   expect(await scroller.boundingBox()).toEqual(viewport)
-  expect(await scroller.evaluate((element) => element.scrollTop)).toBe(scrollTop)
+  await expect.poll(() => uncovered(lastLine)).toBe(true)
   await app.getByRole("button", { name: "Expand question", exact: true }).click()
   await expect(app.getByRole("radio", { name: /Type your own answer/ })).toBeVisible()
   expect(await scroller.boundingBox()).toEqual(viewport)
-  expect(await scroller.evaluate((element) => element.scrollTop)).toBe(scrollTop)
+  await expect.poll(() => uncovered(lastLine)).toBe(true)
+  await scroller.hover()
+  await app.mouse.wheel(0, -100_000)
+  await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBe(0)
+  await app.getByRole("button", { name: "Collapse question", exact: true }).click()
+  await expect(app.getByRole("button", { name: "Expand question", exact: true })).toBeVisible()
+  expect(await scroller.evaluate((element) => element.scrollTop)).toBe(0)
+  await app.getByRole("button", { name: "Expand question", exact: true }).click()
+  await expect(app.getByRole("radio", { name: /Type your own answer/ })).toBeVisible()
+  expect(await scroller.evaluate((element) => element.scrollTop)).toBe(0)
+  await scroller.hover()
+  await app.mouse.wheel(0, 100_000)
+  await expect.poll(() => scroller.evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop)).toBeLessThan(2)
   await app.getByRole("radio", { name: /Type your own answer/ }).click()
   await app.getByRole("textbox", { name: "Type your answer..." }).fill('{"answer":"Blue"}')
   await app.getByRole("button", { name: "Submit", exact: true }).click()
   await expect(app.getByText("Permission required")).toBeVisible()
   expect(await scroller.boundingBox()).toEqual(viewport)
+  await expect.poll(() => uncovered(lastLine)).toBe(true)
   await expect(app.getByRole("textbox", { name: UI.composer })).toHaveCount(0)
   await app.getByRole("button", { name: "Allow once", exact: true }).click()
   await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()

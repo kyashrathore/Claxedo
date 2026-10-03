@@ -2,6 +2,8 @@ Subject: dock-surface: share overlay placement while preserving base layout
 
 DockLayout anchors auxiliary dock content above a base or replaces it visually
 without changing its layout size. Replacement content makes the base inert.
+onOverhang reports how far the overlay reaches above the layout, so a caller
+can reserve that band in the content the overlay covers.
 
 diff --git a/src/components/dock-surface.css b/src/components/dock-surface.css
 index fba0334960..eaa3a04280 100644
@@ -38,26 +40,38 @@ index fba0334960..eaa3a04280 100644
    background-color: var(--surface-raised-stronger-non-alpha);
    box-shadow: var(--shadow-xs-border);
 diff --git a/src/components/dock-surface.tsx b/src/components/dock-surface.tsx
-index fd1ce1834f..4d7994db86 100644
+index fd1ce1834f..171badd8c5 100644
 --- a/src/components/dock-surface.tsx
 +++ b/src/components/dock-surface.tsx
-@@ -1,4 +1,18 @@
+@@ -1,4 +1,30 @@
 -import { type ComponentProps, splitProps } from "solid-js"
-+import { type ComponentProps, type JSX, splitProps } from "solid-js"
++import { type ComponentProps, type JSX, createEffect, on, onCleanup, onMount, splitProps } from "solid-js"
 +
 +export function DockLayout(props: {
 +  children: JSX.Element
 +  overlay: JSX.Element
 +  replace?: boolean
 +  class?: string
++  /** Pixels the overlay reaches above the layout's top edge, the band it covers outside its own box. */
++  onOverhang?: (height: number) => void
 +}) {
++  let root!: HTMLDivElement
++  let overlay!: HTMLDivElement
++  const measure = () => props.onOverhang?.(Math.max(0, overlay.offsetHeight - (props.replace ? root.offsetHeight : 0)))
++  onMount(() => {
++    const observer = new ResizeObserver(measure)
++    observer.observe(root)
++    observer.observe(overlay)
++    onCleanup(() => observer.disconnect())
++  })
++  createEffect(on(() => props.replace, measure, { defer: true }))
 +  return (
-+    <div data-component="dock-layout" data-replace={props.replace || undefined} class={props.class}>
-+      <div data-slot="dock-layout-overlay">{props.overlay}</div>
++    <div ref={root} data-component="dock-layout" data-replace={props.replace || undefined} class={props.class}>
++      <div ref={overlay} data-slot="dock-layout-overlay">{props.overlay}</div>
 +      <div data-slot="dock-layout-base" inert={props.replace}>{props.children}</div>
 +    </div>
 +  )
 +}
-
+ 
  export interface DockTrayProps extends ComponentProps<"div"> {
    attach?: "none" | "top"

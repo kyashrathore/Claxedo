@@ -126,9 +126,9 @@ function SessionBody(props: {
   const commands = useCommands()
   createMessageLinks({ turns, scroll, active: driving, commands, t })
   const recovery = createScreenTurnRecovery(() => props.view, (path) => routing.navigate(path))
-  const setDock = createDockFollow(scroll)
+  const dock = createDockFollow(scroll)
   return (
-    <div ref={body} data-slot="session-screen-body" classList={{ "session-floating-overlay": props.floating }}>
+    <div ref={body} data-slot="session-screen-body" classList={{ "session-floating-overlay": props.floating }} style={{ "--session-dock-overhang": `${dock.overhang()}px` }}>
       <div data-slot="session-screen-transcript" classList={{ "session-floating-tab": props.floating }}>
         <Show when={props.floating && users().length > 0}>
           <FloatingPeekRow count={users().length} peek={peek} t={host.t} />
@@ -146,7 +146,7 @@ function SessionBody(props: {
         </div>
       </div>
       <div
-        ref={setDock}
+        ref={dock.ref}
         data-component="session-prompt-dock"
         class="ui-session-prompt-dock w-full flex flex-col justify-center items-center pointer-events-none shrink-0 pb-3"
         classList={{ "session-floating-dock": props.floating }}
@@ -155,6 +155,7 @@ function SessionBody(props: {
           class="w-full px-3 pointer-events-auto md:max-w-192 md:mx-auto 2xl:max-w-[880px]"
           replace={props.controls.send && blocked()}
           overlay={<SessionDocks view={props.view} controls={props.controls} todo={todo} />}
+          onOverhang={dock.setOverhang}
         >
           <Show when={!props.readOnly}>
             <SessionConnectionLine />

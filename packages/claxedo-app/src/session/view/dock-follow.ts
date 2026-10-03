@@ -1,4 +1,4 @@
-import { createSignal, onCleanup } from "solid-js"
+import { createEffect, createSignal, onCleanup } from "solid-js"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import type { TimelineScroll } from "./timeline-scroll"
 
@@ -44,13 +44,16 @@ function createDockResizeHandler(input: {
 
 export function createDockFollow(scroll: TimelineScroll) {
   const [dock, setDock] = createSignal<HTMLElement>()
+  const [dockHeight, setDockHeight] = createSignal(0)
+  const [overhang, setOverhang] = createSignal(0)
   const handler = createDockResizeHandler({
     scroller: scroll.scroller,
     userScrolled: scroll.userScrolled,
     scrollToEnd: scroll.scrollToEnd,
     scheduleScrollState: scroll.schedule,
   })
-  createResizeObserver(dock, ({ height }) => handler.resize(height))
+  createResizeObserver(dock, ({ height }) => setDockHeight(height))
+  createEffect(() => handler.resize(dockHeight() + overhang()))
   onCleanup(handler.dispose)
-  return setDock
+  return { ref: setDock, overhang, setOverhang }
 }

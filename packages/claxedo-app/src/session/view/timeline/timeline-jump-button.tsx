@@ -18,7 +18,7 @@ export function TimelineJumpButton(props: { shown: boolean; working: boolean; la
   return (
     <div
       data-session-timeline-jump
-      class="pointer-events-none absolute inset-x-0 bottom-6 z-[60] flex justify-center"
+      class="pointer-events-none absolute inset-x-0 bottom-[calc(1.5rem+var(--timeline-dock-inset,0px))] z-[60] flex justify-center"
     >
       <div
         ref={fade}

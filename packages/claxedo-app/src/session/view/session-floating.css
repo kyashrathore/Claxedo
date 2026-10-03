@@ -30,7 +30,7 @@
   min-height: 0;
   margin-inline: 1.75rem;
   margin-bottom: -0.75rem;
-  padding-bottom: 0.75rem;
+  padding-bottom: calc(0.75rem + var(--session-dock-overhang, 0px));
   background: var(--overlay-surface);
   border: var(--surface-card-border, 1px solid var(--border-weak-base));
   border-bottom: none;
@@ -48,6 +48,7 @@
 }
 
 [data-session-presentation="floating"] .session-floating-timeline {
+  --timeline-dock-inset: 0px;
   display: grid;
   grid-template-rows: minmax(0, 1fr);
   flex: 1 1 auto;
