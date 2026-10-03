@@ -11,11 +11,12 @@ export const relayHostTokenIssuer = "workspace-relay"
 export const relayHostTokenAudience = "workspace-host-service"
 
 /**
- * Where the workspace behind a relayed request runs: the provisioner's machine
- * (`cloud-vm`) or an enrolled one (`local-worktree`). The only placement word
- * on the relay wire; the control plane stores the same two.
+ * Where the host behind a relayed request runs: the provisioner's machine
+ * (`cloud-vm`), an enrolled one (`local-worktree`), or one session's Durable
+ * Object (`durable-object`). The only placement word on the relay wire; the
+ * control plane stores the first two as a workspace's backing.
  */
-export type RelayBacking = "cloud-vm" | "local-worktree"
+export type RelayBacking = "cloud-vm" | "local-worktree" | "durable-object"
 export type RelayJwtAlgorithm = (typeof algorithms)[number]
 export type RelayRole = "viewer" | "editor" | "admin" | "owner"
 export type ActorKind = "human" | "agent"
@@ -297,7 +298,7 @@ function checkIssuedAtFloor(iat: number) {
 }
 
 export function isRelayBacking(input: unknown): input is RelayBacking {
-  return input === "cloud-vm" || input === "local-worktree"
+  return input === "cloud-vm" || input === "local-worktree" || input === "durable-object"
 }
 
 function checkHostTunnelTarget(payload: JWTPayload, expected: ExpectedHostTunnel) {

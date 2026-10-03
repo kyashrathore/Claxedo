@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import {
+  SESSION_HOST_PREFIX,
   TUNNEL_PROTOCOL_VERSION,
+  sessionHostId,
+  sessionHostRootOf,
   isTunnelMessage,
   makeTunnelPing,
   makeTunnelPong,
@@ -262,5 +265,17 @@ describe("workspace relay protocol", () => {
         reason: "invalid",
       })
     }
+  })
+})
+
+describe("session host ids", () => {
+  test("name the root session and read it back", () => {
+    expect(sessionHostId("ses_root")).toBe(`${SESSION_HOST_PREFIX}ses_root`)
+    expect(sessionHostRootOf(sessionHostId("ses_root"))).toBe("ses_root")
+  })
+
+  test("a workspace host id or a bare prefix names no session", () => {
+    expect(sessionHostRootOf("host_machine-1")).toBeUndefined()
+    expect(sessionHostRootOf(SESSION_HOST_PREFIX)).toBeUndefined()
   })
 })

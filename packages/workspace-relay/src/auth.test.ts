@@ -77,6 +77,17 @@ describe("workspace relay auth", () => {
     await expect(verifyRuntimeAccessToken(empty, key.publicKey, target)).rejects.toMatchObject({ code: "relay_token_claims_invalid" })
   })
 
+  test("a session's Durable Object host verifies the Relay Host Token minted for its backing", async () => {
+    const key = await keys()
+    const target = { workspaceId: "ws_1", hostId: "session-do:ses_root" }
+    const host = await verifyRelayHostToken(await mintRelayHostToken({
+      ...base, hostId: target.hostId, sessionId: "ses_root", backing: "durable-object", parentJti: "jti_1",
+    }, key.privateKey, "EdDSA"), key.publicKey, target)
+
+    expect(host.backing).toBe("durable-object")
+    expect(host.host_id).toBe("session-do:ses_root")
+  })
+
   test("names its reach on every token: the workspace scope or one session, never neither and never both", async () => {
     const key = await keys()
     const target = { workspaceId: "ws_1", hostId: "host_1" }

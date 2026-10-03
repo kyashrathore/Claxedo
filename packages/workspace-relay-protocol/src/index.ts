@@ -29,6 +29,18 @@ export function sessionScopeReaches(sessionScope: string | undefined, path: stri
   return /^\/question\/[^/]+\/(reply|reject)$/.test(path)
 }
 
+/** The relay host id of a session hosted in its own Durable Object, named by the session at the root of its tree. */
+export const SESSION_HOST_PREFIX = "session-do:"
+
+export function sessionHostId(rootSessionId: string): string {
+  return `${SESSION_HOST_PREFIX}${rootSessionId}`
+}
+
+export function sessionHostRootOf(hostId: string): string | undefined {
+  if (!hostId.startsWith(SESSION_HOST_PREFIX)) return undefined
+  return hostId.slice(SESSION_HOST_PREFIX.length) || undefined
+}
+
 export {
   type TokenClaims,
   type TokenVerifierBaseClaims,
