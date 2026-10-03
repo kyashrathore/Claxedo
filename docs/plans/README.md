@@ -33,6 +33,10 @@ doc or package README that owns it.
 - [Activity sidebar, seen state and settle: rebuild](./2026-10-03-1500-feat-activity-sidebar-rebuild-plan.md)
   — in progress, lanes B and E first. Extends the session seen state plan with the Activity view, per-reader
   Settle and agent session delete, under the owner's binding rulings; lane B (`lastTurn` on list items) is implemented.
+- [Pi on pi-durable, harness sharing and per-session capabilities](./2026-10-03-1700-feat-pi-durable-harness-plan.md)
+  — in progress on `feat/pi-harness`. Pi runs embedded per session locally and in one SessionDO per cloud session
+  (Cloudflare `PiHarness`), with tools on the workspace machine over any sandbox driver; Codex and Cursor share
+  processes safely; OpenCode gets per-session MCP and skills.
 - [Reducing server, runtime and machine code](./2026-09-29-002-refactor-loc-reduction-plan.md)
   — planned, not started. 254.8k → ~114k in the server, runtime, machine agent, desktop main process and relay
   (app, UI kit and harness out of scope). Keeps Pages, Teams, the browser pane and channels; adds plugin backends,
