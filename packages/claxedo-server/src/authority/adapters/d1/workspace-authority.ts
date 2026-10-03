@@ -11,6 +11,7 @@ import type {
   WorkspaceAuthority,
 } from "@claxedo/server-core/platform/auth/authority"
 import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
+import type { CloudWorkspaceCreateArgs, RuntimeCloudWorkspaceCreateArgs } from "@claxedo/server-core/platform/auth/cloud-workspace-create"
 import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repository-key"
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
@@ -20,6 +21,7 @@ import { prepareInvitationAdmission } from "./org-invitation-authority"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
 import { d1BatchAssertionFailed } from "../../../platform/db/d1-constraint"
 import { D1WorkspaceAuthorityError } from "./workspace-authority-error"
+import { workspaceCreationStatements } from "./workspace-creation"
 import { requireBootstrapClaim, sameIdentity, userDeployedOwnerBootstrapClaimHash, userDeployedOwnerIdentityHash, validateIdentity } from "./owner-identity"
 
 const KNOWN_HOME_REGIONS = new Set(["apac-south", "apac-east", "eu-west", "us-east", "us-west"])
@@ -79,6 +81,7 @@ export type D1WorkspaceCreateArgs = {
   gitBranch?: string
   remoteDirectory?: string
   homeRegion?: string
+  repoConnectionId?: string
   backing: "local-worktree" | "cloud-vm"
 }
 
@@ -692,14 +695,13 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   }
 
   /**
-   * The statements that create a workspace, and its project when the
-   * repository has none, for a caller that composes them into its own batch:
-   * the host assignment lands a cold workspace and the assignment together,
-   * so a batch its guard refuses leaves no workspace behind. The organization
-   * admin check is repeated inside the insert and the batch assertion proves
-   * the row landed as described, so nothing here depends on the reads staying
-   * true until the batch runs. The directory is recorded normalized, which is
-   * the form the scope retirement compares by prefix.
+   * A creation's admission and project, and its statements for a caller that
+   * composes them into its own batch: the host assignment lands a cold
+   * workspace and the assignment together, so a batch its guard refuses leaves
+   * no workspace behind. The organization admin check is repeated inside the
+   * insert, so nothing here depends on the reads staying true until the batch
+   * runs. The directory is recorded normalized, which is the form the scope
+   * retirement compares by prefix.
    */
   private async workspaceCreation(who: Principal, input: D1WorkspaceCreateArgs) {
     const workspaceId = requireText(input.workspaceId, "workspaceId")
@@ -731,116 +733,29 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     const projectId = input.projectId
       ? requireText(input.projectId, "projectId")
       : (existingProject?.project_id ?? this.randomId("prj"))
-    const assertionId = this.randomId("assert")
-    const now = this.now()
-    const administers = mayGuard(who, "administer", { kind: "org", orgId })
-
-    return {
-      who,
+    const statements = workspaceCreationStatements(this.database, {
+      administers: mayGuard(who, "administer", { kind: "org", orgId }),
+      assertionId: this.randomId("assert"),
+      now: this.now(),
+      ownerUserId: who.userId,
       workspaceId,
       orgId,
-      statements: [
-        this.database
-          .prepare(
-            `
-        insert into projects (project_id, org_id, repo_key, owner_user_id, created_at, updated_at, deleted_at)
-        select ?, ?, ?, ?, ?, ?, null where ${administers.sql}
-        on conflict do nothing
-      `,
-          )
-          .bind(projectId, orgId, repoKey, who.userId, now, now, ...administers.bind),
-        this.database
-          .prepare(
-            `
-        insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at)
-        select p.project_id, p.owner_user_id, 'owner', ?, ?, null from projects p
-        where p.org_id = ? and p.repo_key = ? and p.owner_user_id = ? and p.deleted_at is null
-        on conflict (project_id, user_id) do nothing
-      `,
-          )
-          .bind(now, now, orgId, repoKey, who.userId),
-        this.database
-          .prepare(
-            `
-        insert into workspaces (
-          workspace_id, org_id, project_id, owner_user_id, backing, display_name,
-          home_region, repo_url, repo_name, git_branch, remote_directory, created_at, updated_at, deleted_at
-        )
-        select ?, ?, p.project_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null
-        from projects p
-        where p.org_id = ? and p.repo_key = ? and p.deleted_at is null
-          and (? is null or p.project_id = ?)
-          and ${administers.sql}
-        on conflict (workspace_id) do nothing
-      `,
-          )
-          .bind(
-            workspaceId,
-            orgId,
-            who.userId,
-            input.backing,
-            displayName,
-            homeRegion ?? null,
-            input.repoUrl ?? null,
-            input.repoName ?? null,
-            input.gitBranch ?? null,
-            remoteDirectory,
-            now,
-            now,
-            orgId,
-            repoKey,
-            input.projectId ?? null,
-            input.projectId ?? null,
-            ...administers.bind,
-          ),
-        this.database
-          .prepare(
-            `
-        insert into authority_batch_assertions (assertion_id, passed)
-        values (?, case when exists (
-          select 1 from workspaces w join projects p on p.project_id = w.project_id and p.org_id = w.org_id
-          where w.workspace_id = ? and w.org_id = ? and w.owner_user_id = ?
-            and w.backing = ? and w.display_name = ?
-            and w.home_region is ? and w.repo_url is ? and w.repo_name is ?
-            and w.git_branch is ? and w.remote_directory is ? and w.deleted_at is null
-            and p.repo_key = ? and (? is null or p.project_id = ?)
-        ) then 1 else 0 end)
-      `,
-          )
-          .bind(
-            assertionId,
-            workspaceId,
-            orgId,
-            who.userId,
-            input.backing,
-            displayName,
-            homeRegion ?? null,
-            input.repoUrl ?? null,
-            input.repoName ?? null,
-            input.gitBranch ?? null,
-            remoteDirectory,
-            repoKey,
-            input.projectId ?? null,
-            input.projectId ?? null,
-          ),
-        this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(assertionId),
-      ],
-    }
+      projectId,
+      requestedProjectId: input.projectId,
+      repoKey,
+      displayName,
+      homeRegion,
+      remoteDirectory,
+      backing: input.backing,
+      repoUrl: input.repoUrl,
+      repoName: input.repoName,
+      gitBranch: input.gitBranch,
+      repoConnectionId: input.repoConnectionId,
+    })
+    return { who, workspaceId, orgId, statements }
   }
 
-  async createCloudWorkspace(
-    auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      projectId?: string
-      displayName: string
-      repoUrl?: string
-      repoName?: string
-      gitBranch?: string
-      remoteDirectory?: string
-      homeRegion?: string
-    },
-  ) {
+  async createCloudWorkspace(auth: SignedControlPlaneAuth, args: CloudWorkspaceCreateArgs) {
     return await this.createWorkspace(auth, {
       ...args,
       orgId: await this.creationOrgId(auth, args.projectId),
@@ -862,20 +777,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
    * they may admin the project, and that the project is in the organization
    * named — the same admission `createWorkspace` gives a signed creator.
    */
-  async createRuntimeCloudWorkspace(
-    principal: PrivateSessionRuntimePrincipal,
-    args: {
-      workspaceId: string
-      orgId: string
-      projectId: string
-      displayName: string
-      repoUrl?: string
-      repoName?: string
-      gitBranch?: string
-      remoteDirectory?: string
-      homeRegion?: string
-    },
-  ) {
+  async createRuntimeCloudWorkspace(principal: PrivateSessionRuntimePrincipal, args: RuntimeCloudWorkspaceCreateArgs) {
     const who = await this.requireRuntimeActor(principal)
     const projectId = requireText(args.projectId, "projectId")
     const orgId = await this.adminProjectOrgId(who, projectId)

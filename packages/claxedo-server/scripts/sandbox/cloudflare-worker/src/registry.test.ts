@@ -349,6 +349,31 @@ describe("workspace-runtime process env", () => {
     expect(existing.kill).not.toHaveBeenCalled()
   })
 
+  test("a live runtime still preparing its repository keeps running across polls, so a large clone can finish", async () => {
+    let ready = false
+    const existing = process({ waitForPort: vi.fn(async () => { if (!ready) throw new Error("not listening") }) })
+    const sandbox = operations(existing)
+    const poll = () => ensureRuntimeProcess(sandbox as never, "runtime", {}, 2593, { reuseRunning: true })
+
+    await expect(poll()).resolves.toBe(false)
+    await expect(poll()).resolves.toBe(false)
+    ready = true
+    await expect(poll()).resolves.toBe(true)
+
+    expect(existing.kill).not.toHaveBeenCalled()
+    expect(sandbox.startProcess).not.toHaveBeenCalled()
+  })
+
+  test("an exited runtime is replaced even when the env is unchanged", async () => {
+    const existing = process({ status: "failed", getStatus: vi.fn(async () => "failed") })
+    const sandbox = operations(existing)
+
+    await expect(ensureRuntimeProcess(sandbox as never, "runtime", {}, 2593, { reuseRunning: true })).resolves.toBe(true)
+
+    expect(existing.kill).not.toHaveBeenCalled()
+    expect(sandbox.startProcess).toHaveBeenCalledTimes(1)
+  })
+
   test("a running runtime is replaced when the caller says its env changed", async () => {
     // A process keeps the environment it was spawned with, so a credential
     // registered after boot becomes its placeholder env var only once the

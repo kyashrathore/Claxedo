@@ -1346,6 +1346,28 @@ describe("hosted cloud workspace create (POST /create)", () => {
     })
   })
 
+  test("a connected private repository is bound to the connection the person picked; a public one is bound to none", async () => {
+    for (const visibility of [{ private: true, bound: "conn_org" }, { private: false, bound: undefined }]) {
+      const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
+      const repository = { id: "1", name: "widgets", fullName: "acme/widgets", cloneUrl: "https://github.com/acme/widgets.git", private: visibility.private, permissions: { read: true, write: false } }
+      const repositoryForAuth = vi.fn(async () => ({ ok: true as const, repository, token: "minted-at-create" }))
+      const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+      const { app } = buildApp({
+        authority: fakeAuthority({ createCloudWorkspace }),
+        sandboxManager: { ensure } as unknown as SandboxManager,
+        options: { connections: { repositoryForAuth } },
+      })
+      const waitUntil = vi.fn()
+      const res = await app.fetch(post("/create", { connectionId: "conn_org", repo: { fullName: "acme/widgets" } }), undefined, { waitUntil, passThroughOnException() {}, props: {} } as never)
+      expect(res.status).toBe(200)
+      await (waitUntil.mock.calls[0] as unknown as [Promise<unknown>])[0]
+      expect(repositoryForAuth).toHaveBeenCalledWith(expect.anything(), "conn_org", "acme/widgets")
+      const created = (createCloudWorkspace.mock.calls[0] as unknown[])[1] as { repoUrl?: string; repoConnectionId?: string }
+      expect([created.repoUrl, created.repoConnectionId]).toEqual([repository.cloneUrl, visibility.bound])
+      expect(JSON.stringify(ensure.mock.calls)).not.toContain("minted-at-create")
+    }
+  })
+
   test("a refused admission creates nothing and provisions nothing", async () => {
     const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
     const repositoryForAuth = vi.fn()

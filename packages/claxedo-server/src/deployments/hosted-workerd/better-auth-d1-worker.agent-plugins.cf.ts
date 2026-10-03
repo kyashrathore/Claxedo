@@ -133,6 +133,7 @@ export function composeBetterAuthD1AgentPlugins(
       integrationRoutes: feature.integrationRoutes,
       productWorkspace: {
         ...base.options.productWorkspace,
+        connections: { repositoryForAuth: feature.repositoryForAuth },
         prepareRuntime,
         releaseRuntime: feature.releaseRuntime,
       },

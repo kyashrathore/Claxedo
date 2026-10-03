@@ -1,6 +1,7 @@
 import { isRecord } from "@claxedo/helpers/guards"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "./auth"
 import type { OrgId, ProjectId } from "./branded-id"
+import type { CloudWorkspaceCreateArgs, RuntimeCloudWorkspaceCreateArgs } from "./cloud-workspace-create"
 import type {
   AuthorizeRuntimePrivateSessionInput,
   PrivateSessionRuntimePrincipal,
@@ -387,20 +388,7 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & {
   /** What `verifyMachineRequest` reads and consumes; absent, no route can admit a machine caller. */
   machineAuth?: MachineAuthAdapter
   deleteWorkspace: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<unknown>
-  createCloudWorkspace: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      orgId?: string
-      projectId?: string
-      displayName: string
-      repoUrl?: string
-      repoName?: string
-      gitBranch?: string
-      remoteDirectory?: string
-      homeRegion?: string
-    },
-  ) => Promise<unknown>
+  createCloudWorkspace: (auth: SignedControlPlaneAuth, args: CloudWorkspaceCreateArgs) => Promise<unknown>
   /**
    * A cloud workspace created for a person who did not sign the request: the
    * canonical actor a credential this control plane minted resolved to, as
@@ -412,20 +400,7 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & {
    * `projectId` are the resolved owner's, and the adapter holds the principal
    * to that project as strictly as it holds a signed creator.
    */
-  createRuntimeCloudWorkspace?: (
-    principal: PrivateSessionRuntimePrincipal,
-    args: {
-      workspaceId: string
-      orgId: string
-      projectId: string
-      displayName: string
-      repoUrl?: string
-      repoName?: string
-      gitBranch?: string
-      remoteDirectory?: string
-      homeRegion?: string
-    },
-  ) => Promise<unknown>
+  createRuntimeCloudWorkspace?: (principal: PrivateSessionRuntimePrincipal, args: RuntimeCloudWorkspaceCreateArgs) => Promise<unknown>
   /** The undo of `createRuntimeCloudWorkspace`, as the same principal. */
   deleteRuntimeWorkspace?: (principal: PrivateSessionRuntimePrincipal, args: { workspaceId: string }) => Promise<unknown>
 

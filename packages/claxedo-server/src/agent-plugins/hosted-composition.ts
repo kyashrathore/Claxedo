@@ -28,6 +28,8 @@ import {
   createHostedCapabilityConnectionResolver,
   createHostedCapabilityTokenResolver,
   createHostedD1ConnectionsSetup,
+  createHostedRepositoryAccess,
+  createHostedRepositoryCloneSecrets,
   hostedConnectionsAuthenticate,
 } from "../connections/hosted-d1/setup"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "../workspace/route-support"
@@ -104,6 +106,7 @@ export type HostedAgentPluginsWorkerEnv = Record<string, unknown> & {
 export type HostedAgentPluginsComposition = {
   routeContributions: readonly ControlPlaneRouteContribution[]
   integrationRoutes: Hono
+  repositoryForAuth: ReturnType<typeof createHostedRepositoryAccess>
   prepareRuntime: (context: WorkspaceRuntimeContext) => Promise<WorkspaceRuntimePreparation>
   pluginRuntime: (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined) => Promise<AgentPluginRuntimeContribution>
   /** Revokes every pass `prepareRuntime` minted for a root whose workspace is now deleted. */
@@ -337,6 +340,7 @@ export function createHostedAgentPluginsComposition(input: {
     credentials: orgCredentials,
   }
   const integrationRoutes = createHostedD1ConnectionsSetup(connectionsInput)
+  const cloneSecrets = createHostedRepositoryCloneSecrets(connectionsInput)
   const resolveConnection = createHostedCapabilityConnectionResolver(connectionsInput)
   const resolveToken = createHostedCapabilityTokenResolver(connectionsInput)
   const reportAuthFailure = createHostedCapabilityAuthFailureReporter(connectionsInput)
@@ -385,7 +389,7 @@ export function createHostedAgentPluginsComposition(input: {
   const prepareRuntime = async ({ workspaceId }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
     if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return {}
     const snapshot = await activations.runtimeSnapshot(workspaceId)
-    const [preparation, env] = await Promise.all([
+    const [preparation, env, clone] = await Promise.all([
       preparer.forSnapshot(snapshot),
       rootEnvironment({
         userId: snapshot.identity.userId,
@@ -393,8 +397,9 @@ export function createHostedAgentPluginsComposition(input: {
         projectId: snapshot.identity.projectId,
         workspaceId: snapshot.identity.workspaceId,
       }),
+      cloneSecrets({ workspaceId, ownerUserId: snapshot.identity.userId, orgId: snapshot.identity.organizationId }),
     ])
-    return { ...preparation, env }
+    return { ...preparation, secrets: [...preparation.secrets ?? [], ...clone], env }
   }
   // The header placeholder is the one a header-injecting driver installs
   // (`brokeredPlaceholderEnv`); the sandbox presents it and the driver's edge
@@ -504,6 +509,7 @@ export function createHostedAgentPluginsComposition(input: {
       },
     ],
     integrationRoutes,
+    repositoryForAuth: createHostedRepositoryAccess(connectionsInput),
     prepareRuntime,
     pluginRuntime,
     // A workspace that is gone takes every pass minted for it, whatever the audience.

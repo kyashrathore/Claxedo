@@ -41,6 +41,9 @@ import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/auth
 
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../../authority/services"
 import { signedOrError } from "../../workspace/route-support"
+import { cloudRootPrivateRepository } from "../../workspace/cloud-root-backing"
+import { githubCloneSecret } from "../../workspace/repository-clone"
+import type { SandboxBrokeredSecret } from "@claxedo/sandbox-manager"
 import { createCredentialStoreAdapter } from "../credential-store-adapter"
 import { githubIntegrationForEnv } from "../github-oauth"
 import { createD1ConnectionAttempts, HOSTED_ATTEMPT_SWEEP_RATE, type HostedConnectionAttempts } from "./attempts"
@@ -267,6 +270,30 @@ export function createHostedRepositoryAccess(input: HostedD1ConnectionsSetupInpu
       const token = await service.getToken(connectionId, "code-host")
       if (!token.ok) return token
       return { ok: true as const, repository, token: token.response.token }
+    } finally {
+      service.dispose()
+    }
+  }
+}
+
+/**
+ * The clone credential a cloud workspace's boot delivers: none for a
+ * repository anyone can clone, else a fresh token of the connection its
+ * private repository was created through. Nothing is listed, and a connection
+ * that is gone or refused yields none, so a checkout that already exists boots
+ * without it and a clone that needs it fails in git.
+ */
+export function createHostedRepositoryCloneSecrets(input: HostedD1ConnectionsSetupInput) {
+  return async (workspace: { workspaceId: string; ownerUserId: string; orgId: string }): Promise<SandboxBrokeredSecret[]> => {
+    const repository = await cloudRootPrivateRepository(input.database, workspace.workspaceId)
+    if (!repository) return []
+    const service = await hostedConnectionsService(input, { ownerUserId: workspace.ownerUserId, orgId: workspace.orgId })
+    try {
+      const owned = (await service.list({ owner: `user:${workspace.ownerUserId}`, orgOwner: `org:${workspace.orgId}` }))
+        .some((connection) => connection.id === repository.connectionId)
+      if (!owned) return []
+      const token = await service.getToken(repository.connectionId, "code-host")
+      return token.ok ? [githubCloneSecret(repository.repoUrl, token.response.token)] : []
     } finally {
       service.dispose()
     }

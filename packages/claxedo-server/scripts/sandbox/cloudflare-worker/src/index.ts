@@ -255,10 +255,12 @@ export async function ensureRuntimeProcess(
   options: { reuseRunning: boolean },
 ) {
   const existing = await runtimeProcess(sandbox)
-  if (
-    options.reuseRunning && existing && ["starting", "running"].includes(existing.status)
-    && await runtimeReady(existing, port, 5_000)
-  ) return true
+  // A live runtime that is not ready yet is still preparing its repository, a
+  // step its own clone bound ends by exiting. Replacing it here would restart a
+  // large clone on every poll, so only an exited process or a changed env is.
+  if (options.reuseRunning && existing && ["starting", "running"].includes(existing.status)) {
+    return runtimeReady(existing, port)
+  }
   if (existing) {
     const status = await bounded(existing.getStatus(), "workspace-runtime process status")
     if (["starting", "running"].includes(status)) {

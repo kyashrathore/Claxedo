@@ -22,6 +22,7 @@ import {
   createHostedCapabilityTokenResolver,
   createHostedD1ConnectionsSetup,
   createHostedRepositoryAccess,
+  createHostedRepositoryCloneSecrets,
   type HostedD1ConnectionsSetupInput,
 } from "./setup"
 
@@ -415,6 +416,61 @@ describe("hosted D1 Connections setup", () => {
     const callback = await mounted.request(`/api/claxedo/integrations/callback?state=${attempt.attemptId}&code=grant-code`)
     expect(callback.status).toBe(200)
     expect((await listed(test.app)).connections).toMatchObject([{ integrationId: "composio", scope: "org" }])
+  })
+
+  describe("a cloud workspace's clone credential on every boot", () => {
+    const github: { decl: IntegrationDeclaration; impl: IntegrationImpl } = {
+      decl: { id: "github", name: "GitHub", methods: ["key"], keyTokenType: "bearer" },
+      impl: {
+        actions: { "code-host": { capability: "code-host", listRepositories: async () => { throw new Error("a boot must not list repositories") } } },
+        auth: { verify: async () => ({ ok: true }) },
+      },
+    }
+    const repoUrl = "https://github.com/acme/private.git"
+    const connectionIds = async (test: Awaited<ReturnType<typeof rig>>) => {
+      const rows = await test.database.prepare(`select connection_id, owner_user_id from hosted_connections`)
+        .all<{ connection_id: string; owner_user_id: string | null }>()
+      return {
+        personal: rows.results.find((row) => row.owner_user_id !== null)?.connection_id,
+        organization: rows.results.find((row) => row.owner_user_id === null)?.connection_id,
+      }
+    }
+    const workspace = async (test: Awaited<ReturnType<typeof rig>>, workspaceId: string, repoConnectionId?: string) => {
+      await test.authority.createCloudWorkspace(test.owner, { workspaceId, displayName: workspaceId, repoUrl, ...(repoConnectionId ? { repoConnectionId } : {}) })
+      return createHostedRepositoryCloneSecrets(test.input)({ workspaceId, ownerUserId: test.ownerUserId, orgId: "org_deployment" })
+    }
+
+    test("a repository created without a private connection boots with no credential, though its owner holds GitHub connections", async () => {
+      const test = await rig({ integrations: [github] })
+      await connect(test.app, "github", { scope: "org", secret: "org-token" })
+      await connect(test.app, "github", { scope: "personal", secret: "owner-token" })
+      expect(await workspace(test, "ws_public")).toEqual([])
+    })
+
+    test("a private repository clones with the connection picked at create, not the one capability resolution prefers", async () => {
+      const test = await rig({ integrations: [github] })
+      await connect(test.app, "github", { scope: "org", secret: "org-token" })
+      await connect(test.app, "github", { scope: "personal", secret: "owner-token" })
+      const { organization } = await connectionIds(test)
+      expect(await workspace(test, "ws_private", organization)).toEqual([{
+        name: "CLAXEDO_GITHUB_CLONE_AUTH",
+        value: `Basic ${Buffer.from("x-access-token:org-token").toString("base64")}`,
+        hosts: ["github.com"],
+        header: "Authorization",
+        methods: ["GET", "POST"],
+        pathPrefixes: ["/acme/private.git/"],
+      }])
+    })
+
+    test("a picked connection that is gone, or that belongs to someone else, yields no credential rather than refusing the boot", async () => {
+      const test = await rig({ integrations: [github] })
+      test.as(test.member)
+      await connect(test.app, "github", { scope: "personal", secret: "member-token" })
+      const { personal: foreign } = await connectionIds(test)
+      test.as(test.owner)
+      expect(await workspace(test, "ws_foreign", foreign)).toEqual([])
+      expect(await workspace(test, "ws_gone", "conn_deleted")).toEqual([])
+    })
   })
 
   test("repository access refuses a connection id from another partition", async () => {

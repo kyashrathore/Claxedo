@@ -817,6 +817,7 @@ CREATE TABLE workspaces (
   repo_name text,
   git_branch text,
   remote_directory text,
+  repo_connection_id text,
   created_at integer not null,
   updated_at integer not null,
   deleted_at integer, host_assignment_revision integer not null default 0,

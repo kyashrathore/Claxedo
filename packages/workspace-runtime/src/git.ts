@@ -5,6 +5,8 @@ import { buildSafeEnv } from "./pty/env"
 import { asRecord } from "@claxedo/helpers/guards"
 
 export const GIT_TIMEOUT_MS = 10_000
+/** A clone or first fetch takes as long as the repository is large; this bounds a stalled one, not a big one. */
+export const GIT_CLONE_TIMEOUT_MS = 30 * 60_000
 export const GIT_MAX_BUFFER = 50 * 1024 * 1024
 export const GIT_CONCURRENCY = (() => {
   const raw = Number(runtimeEnvText(process.env, "WORKSPACE_RUNTIME_GIT_CONCURRENCY"))

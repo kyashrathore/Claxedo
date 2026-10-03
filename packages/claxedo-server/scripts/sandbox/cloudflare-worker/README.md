@@ -144,6 +144,21 @@ proxy compatibility route is provided.
 Local native HTTPS interception passed; deployed acceptance remains pending
 because the isolated probe image upload failed (see the implementation report).
 
+## Repository preparation
+
+The runtime checks out the workspace's repository before it reports ready
+(`src/hosts/workspace-runtime/repository-source.ts` in claxedo-server), in
+place and bounded by the same 30-minute clone limit as a local clone. A boot
+killed mid-fetch leaves a repository with no commit yet, which the next boot
+finishes; an existing checkout is only checked against its origin, so it boots
+without reaching the repository. A private repository's clone credential is
+the brokered `CLAXEDO_GITHUB_CLONE_AUTH`, scoped to that repository's path and
+minted on every boot from the connection the workspace was created through.
+
+`ensure-runtime` keeps a live runtime that is not ready yet instead of
+replacing it, so a large clone finishes across polls; an exited runtime, or a
+changed set of credential names, is replaced.
+
 ## Workspace checkpoint storage
 
 The `backup` control action and replacement restore use Cloudflare Sandbox

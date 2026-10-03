@@ -21,6 +21,7 @@ import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/
 import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
 import { sandboxConnectionSecrets } from "./connection-secrets"
 import { configureRuntimeGitAuth } from "./git-auth"
+import { prepareRuntimeRepository } from "./repository-source"
 import { workspaceRuntimeOwnerGrant } from "./owner-grant"
 import { workspaceRuntimeTasksGrant } from "./tasks-grant"
 import { cloudWorkspaceUsage, createSandboxUsageLedger } from "./cloud-usage"
@@ -134,6 +135,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   const targetDirectory = workspaceDir(env)
   const harness = claxedoRuntimeHarnessFromEnv(env)
   await configureRuntimeGitAuth(env)
+  await prepareRuntimeRepository(targetDirectory, env)
   // The owner the control plane launched this root for, presented on the
   // runtime's own session calls. Its unverified `user_id` names the actor in
   // the MCP audit trail; nothing here trusts it for more than that.
