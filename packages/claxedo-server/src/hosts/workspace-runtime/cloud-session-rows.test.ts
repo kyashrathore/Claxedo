@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { Hono } from "hono"
 import { decodeJwt, exportPKCS8, exportSPKI, generateKeyPair } from "jose"
+import type { BackgroundWork } from "@claxedo/agent-runtime-contract"
 import { sessionStatusSnapshot } from "@claxedo/session-core"
 import { openTestRuntimeStore } from "@claxedo/session-core/testing"
 import type { SessionStatusChangedEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
@@ -18,6 +19,7 @@ import { cloudSessionRows, type CloudSessionRows } from "./cloud-session-rows"
 
 const ROWS_URL = "https://core.test/api/claxedo/host/session-rows"
 const DIRECTORY = "/workspace"
+const WORKTREE = "/home/claxedo/workspaces/ws_cloud/worktrees/ses_tree"
 const cleanup: Array<() => Promise<void> | void> = []
 
 afterEach(async () => {
@@ -58,9 +60,9 @@ async function plane() {
     body: JSON.stringify({ hostId: "host-cloud", rows: [], removed: [], ...body }),
   })
   const sessionRow = (sessionId: string) => fixture.database
-    .prepare("select workspace_id, status, awaiting_input from sessions where session_id = ?")
+    .prepare("select workspace_id, status, awaiting_input, background_agents from sessions where session_id = ?")
     .bind(sessionId)
-    .first<{ workspace_id: string; status: string | null; awaiting_input: number | null }>()
+    .first<{ workspace_id: string; status: string | null; awaiting_input: number | null; background_agents: number | null }>()
   const launch = async () => {
     const lease = await leases.get("ws_cloud")
     return await passes.launchEnv({ workspaceId: "ws_cloud", epoch: lease!.epoch })
@@ -82,6 +84,7 @@ function bootRuntime(
   fetch: typeof globalThis.fetch,
   store: ReturnType<typeof runtimeStore>,
   now?: () => number,
+  backgroundWork: (sessionId: string) => BackgroundWork | undefined = () => undefined,
 ): CloudSessionRows {
   const rows = cloudSessionRows({
     ...env,
@@ -92,7 +95,7 @@ function bootRuntime(
   }, { fetch, ...(now ? { now } : {}) })
   if (!rows) throw new Error("a launch with a session rows pass composes a publisher")
   cleanup.push(() => rows.stop())
-  rows.bindSessionReads({ store: () => store, sessionStatus: (directory) => sessionStatusSnapshot(store.listSessions(directory)) })
+  rows.bindSessionReads({ store: () => store, sessionStatus: () => sessionStatusSnapshot(store.listSessions(), backgroundWork) })
   return rows
 }
 
@@ -136,6 +139,27 @@ describe("a cloud runtime's session rows", () => {
     await vi.waitFor(async () => expect(await sessionRow("ses_cloud")).toMatchObject({ status: "busy" }), { timeout: 5_000 })
     const renewedPublish = sent.findLast((call) => call.rows > 0)!
     expect(renewedPublish.token).not.toBe(env.WORKSPACE_RUNTIME_SESSION_ROWS_PASS)
+  })
+
+  test("a full republish carries every session of the workspace, one filed under its worktree with its open permission included", async () => {
+    const { fetch, sessionRow, launch } = await plane()
+    const store = runtimeStore()
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "ses_tree", workspaceId: "ws_cloud", directory: WORKTREE, title: "In a worktree", agentSessionId: "agent_tree", createdAt: 1_000, updatedAt: 1_000 })
+    store.appendEvent({ sessionId: "ses_tree", payload: { id: "evt_ask", type: "permission.asked", properties: { id: "per_tree", sessionID: "ses_tree", permission: "bash", patterns: ["ls"], always: [], metadata: {} } } })
+
+    bootRuntime(await launch(), fetch, store)
+
+    await vi.waitFor(async () => expect(await sessionRow("ses_tree")).toMatchObject({ workspace_id: "ws_cloud", awaiting_input: 1 }), { timeout: 5_000 })
+    expect(await sessionRow("ses_cloud")).toMatchObject({ workspace_id: "ws_cloud", awaiting_input: 0 })
+  })
+
+  test("a full republish keeps a session's running background work", async () => {
+    const { fetch, sessionRow, launch } = await plane()
+    const running = { agents: 2, shells: 0, other: 0 }
+
+    bootRuntime(await launch(), fetch, runtimeStore(), undefined, (sessionId) => (sessionId === "ses_cloud" ? running : undefined))
+
+    await vi.waitFor(async () => expect(await sessionRow("ses_cloud")).toMatchObject({ status: "idle", background_agents: 2 }), { timeout: 5_000 })
   })
 
   test("a pass whose lease epoch has ended is refused, for rows and for renewal alike", async () => {

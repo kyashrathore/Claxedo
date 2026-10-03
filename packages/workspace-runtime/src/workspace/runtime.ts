@@ -534,7 +534,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         withSessionCore(core, () => withWorkspaceTarget(options.target, sessions.recoverQueuedPrompts)))
       if (runner) reissueQueuedPrompts()
     },
-    sessionStatus: (directory) => sessionStatusSnapshot(store().listSessions(directory), (sessionId) => engine?.ports.backgroundWork.read(sessionId)),
+    sessionStatus: () => sessionStatusSnapshot(store().listSessions(), (sessionId) => engine?.ports.backgroundWork.read(sessionId)),
     sessionTime(sessionId: string) {
       const session = store().getSession(sessionId)
       return session ? runtimeSessionTime(session) : undefined

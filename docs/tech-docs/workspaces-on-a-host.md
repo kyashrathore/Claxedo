@@ -418,7 +418,10 @@ compose it:
 - A cloud runtime: `cloudSessionRows`
   (`packages/claxedo-server/src/hosts/workspace-runtime/cloud-session-rows.ts`,
   composed by `runtime-boot.ts`) builds rows from the runtime's own store and
-  presentation events, and posts them with the session rows pass
+  presentation events, and posts them. Its full republish reads every session
+  in the store whatever directory it is filed under (a worktree session's is
+  its worktree), with the status, open requests and background work the
+  runtime's `GET /session/status` reports. It posts them with the session rows pass
   (`packages/claxedo-server/src/session/session-rows-pass.ts`) that the sandbox
   manager's `launchEnv` minted for the lease epoch it booted under. The route
   admits the pass only while the workspace's lease row holds that epoch, and

@@ -1,7 +1,7 @@
 import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { RuntimeStore } from "@claxedo/session-core"
 import type { WorkspaceRuntimeServerOptions } from "@claxedo/workspace-runtime"
-import { workspaceDir, workspaceId } from "@claxedo/workspace-runtime/host"
+import { workspaceId } from "@claxedo/workspace-runtime/host"
 import type { HostSessionRow } from "@claxedo/server-core/platform/auth/host-session-rows"
 import type { SessionRowStatus } from "@claxedo/server-core/session/navigation-list"
 import { WORKSPACE_RUNTIME_SESSION_ROWS_PASS } from "@claxedo/server-core/hosts/workspace-runtime/env"
@@ -40,7 +40,8 @@ function hostSessionRow(workspaceId: string, session: RuntimeSession, status: Se
 /**
  * A cloud runtime's publisher of its sessions' list rows: the shared
  * publisher and status tracker, fed from this runtime's own presentation
- * events and store, and sent with the session rows pass the control plane
+ * events and store, every session of the workspace whatever directory it is
+ * filed under (a worktree session's is its worktree), and sent with the session rows pass the control plane
  * launched this lease epoch with. At half the pass's life it trades it for a
  * fresh one through the same endpoint; once the control plane refuses that,
  * the epoch is over and nothing more is published or renewed.
@@ -56,7 +57,6 @@ export function cloudSessionRows(
   const now = options.now ?? Date.now
   const url = new URL("/api/claxedo/host/session-rows", origin).toString()
   const workspace = workspaceId(env)
-  const directory = workspaceDir(env)
   const hostId = env.WORKSPACE_RUNTIME_HOST_ID?.trim() || workspace
   const frames = new Set<FrameListener>()
   let reads: SessionReads | undefined
@@ -75,8 +75,8 @@ export function cloudSessionRows(
     },
     read: async (_workspaceId, path) => {
       if (!reads) return undefined
-      if (path === "/session/status") return Response.json(reads.sessionStatus(directory))
-      return Response.json(path === "/permission" ? reads.store().listPermissions(directory) : reads.store().listQuestions(directory))
+      if (path === "/session/status") return Response.json(reads.sessionStatus())
+      return Response.json(path === "/permission" ? reads.store().listPermissions() : reads.store().listQuestions())
     },
     onChange: (workspaceId, sessionId) => publisher.sessionChanged(workspaceId, sessionId),
   })
@@ -84,7 +84,7 @@ export function cloudSessionRows(
     listRows: async (workspaceId) => {
       const store = mounted().store()
       const live = await status.snapshot(workspaceId)
-      return store.listSessions(directory)
+      return store.listSessions()
         .filter((session) => !session.parentID)
         .map((session) => hostSessionRow(workspaceId, session, live.get(session.id) ?? status.current(workspaceId, session.id)))
     },

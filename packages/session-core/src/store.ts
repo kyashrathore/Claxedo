@@ -2699,7 +2699,7 @@ export class RuntimeStore {
     return row?.assistant_message_id ?? undefined
   }
 
-  listSessions(directory: string) {
+  listSessions(directory?: string) {
     return (
       this.db
         .prepare<{
@@ -2761,7 +2761,7 @@ export class RuntimeStore {
           archived_at
         FROM session
         LEFT JOIN session_execution_binding binding ON binding.session_id = session.id
-        WHERE session.directory = ?
+        WHERE (? IS NULL OR session.directory = ?)
           -- A creation still waiting on its harness, or one that never finished, is nobody's session yet.
           AND NOT EXISTS (
             SELECT 1 FROM session_start start
@@ -2770,7 +2770,7 @@ export class RuntimeStore {
         ORDER BY created_at DESC
       `,
         )
-        .all(directory)
+        .all(directory ?? null, directory ?? null)
     ).map((row) => this.session(row))
   }
 
@@ -2971,7 +2971,7 @@ export class RuntimeStore {
    * `always_json` and `metadata_json` were already written by the
    * `permission.asked` handler and simply never read back.
    */
-  listPermissions(directory: string): AgentPermission[] {
+  listPermissions(directory?: string): AgentPermission[] {
     return this.db
       .prepare<{
       id: string
@@ -2986,11 +2986,11 @@ export class RuntimeStore {
         SELECT p.id, p.session_id, p.tool, p.patterns_json, p.always_json, p.metadata_json, p.options_json
         FROM pending_permission p
         JOIN session s ON s.id = p.session_id
-        WHERE s.directory = ? AND p.status = 'pending'
+        WHERE (? IS NULL OR s.directory = ?) AND p.status = 'pending'
         ORDER BY p.created_at ASC
       `,
       )
-      .all(directory)
+      .all(directory ?? null, directory ?? null)
       .map((row) => ({
         id: row.id,
         sessionID: row.session_id,
@@ -3004,7 +3004,7 @@ export class RuntimeStore {
       }))
   }
 
-  listQuestions(directory: string): AgentQuestion[] {
+  listQuestions(directory?: string): AgentQuestion[] {
     return this.db
       .prepare<{ id: string; session_id: string; questions_json: string }>(
         `
@@ -3012,11 +3012,11 @@ export class RuntimeStore {
         FROM pending_question q
         LEFT JOIN session s ON s.id = q.session_id
         LEFT JOIN session_start p ON p.session_id = q.session_id
-        WHERE COALESCE(s.directory, p.directory) = ? AND q.status = 'pending'
+        WHERE (? IS NULL OR COALESCE(s.directory, p.directory) = ?) AND q.status = 'pending'
         ORDER BY q.created_at ASC
       `,
       )
-      .all(directory)
+      .all(directory ?? null, directory ?? null)
       .map((row) => ({
         id: row.id,
         sessionID: row.session_id,
