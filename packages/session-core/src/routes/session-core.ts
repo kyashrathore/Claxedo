@@ -835,7 +835,7 @@ export function createSessionRoutes(opts: Opts) {
         return c.json(errorBody("session_id_mismatch", "A create names its session in its path or its body, the same id in both"), 400)
       }
       if (named) body.id = named
-      const guarded = await sessionOperationGuard(opts, c, named ?? "", "session_create")
+      const guarded = await sessionOperationGuard(opts, c, named ?? "", "session_create", registrationOperationId(c))
       if (guarded) return guarded
       const group = sessionCreateGroup(wire)
       if (group && "field" in group) {
