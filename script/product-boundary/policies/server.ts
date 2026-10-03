@@ -69,7 +69,11 @@ export const serverWorkerd: Policy = {
   // The D1 workspace authority's refusal type and its owner identity and
   // bootstrap-claim helpers are modules of their own
   // (`authority/adapters/d1/workspace-authority-error.ts`, `owner-identity.ts`).
-  ceilings: { modules: 120, packages: 19 },
+  // The machine session-row ingest finds who hears a changed session's status
+  // through its own module (`authority/adapters/d1/session-status-notices.ts`),
+  // and the live-sync room admits a publisher's nudge through
+  // `deployments/hosted-workerd/live-sync-admission.ts`.
+  ceilings: { modules: 122, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

@@ -69,7 +69,7 @@ async function readSessionReaders(database: D1Database, sessionIds: readonly str
   return readers
 }
 
-function notice(row: SessionStatusColumns & { status: SessionRowStatusKind }, ownerUserId: string): SessionStatusChangedEvent {
+function statusNoticeFor(row: SessionStatusColumns & { status: SessionRowStatusKind }, ownerUserId: string): SessionStatusChangedEvent {
   const backgroundWork = { agents: row.background_agents, shells: row.background_shells, other: row.background_other }
   const active = backgroundWork.agents + backgroundWork.shells + backgroundWork.other > 0
   return {
@@ -98,5 +98,5 @@ export async function sessionStatusNotices(
     changed(before.get(row.session_id), row))
   if (!changes.length) return []
   const readers = await readSessionReaders(database, changes.map((row) => row.session_id))
-  return changes.flatMap((row) => [...(readers.get(row.session_id) ?? [])].map((subject) => notice(row, subject)))
+  return changes.flatMap((row) => [...(readers.get(row.session_id) ?? [])].map((subject) => statusNoticeFor(row, subject)))
 }

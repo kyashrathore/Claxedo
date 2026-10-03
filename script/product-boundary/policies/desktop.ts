@@ -494,8 +494,11 @@ export const desktopRenderer: Policy = {
   // (`session/requests/*`) and each open session's transcript
   // (`session/transcript/*`). The renderer draws all of them; they add no
   // package edge.
-  // 1301/36, no headroom.
-  ceilings: { modules: 1301, packages: 36 },
+  // The session stores derive a row's finished, failed and waiting alerts in
+  // `session/store/attention.ts`, and a signed desktop reads its account's
+  // hosted event stream through `server/account-events.ts`.
+  // 1302/36, no headroom.
+  ceilings: { modules: 1302, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

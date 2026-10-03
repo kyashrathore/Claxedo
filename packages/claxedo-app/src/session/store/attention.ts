@@ -6,7 +6,7 @@ type HeldRows = Pick<SessionListInternal, "rowOf" | "view" | "backgroundWorkOf">
 
 type StatusEvent = Extract<ServerEvent, { type: "statusChanged" }>
 
-function turnEnded(event: StatusEvent, held: HeldRows): SessionAttention | undefined {
+function turnEndAttention(event: StatusEvent, held: HeldRows): SessionAttention | undefined {
   const turn = event.lastTurn
   if (!turn || turn.status === "cancelled") return undefined
   const known = held.rowOf(event.ref.sessionId)?.lastTurn?.completedAt
@@ -19,7 +19,7 @@ export function attentionRaised(event: ServerEvent, held: HeldRows): SessionAtte
   if (event.type === "requestOpened") return event.request.kind === "permission" ? { kind: "waiting", ref: event.ref } : undefined
   if (event.type !== "statusChanged" || event.replayed) return undefined
   if (event.waitingOnUser && !held.view(event.ref.sessionId)?.waitingOnUser) return { kind: "waiting", ref: event.ref }
-  return turnEnded(event, held)
+  return turnEndAttention(event, held)
 }
 
 export function createAttentionChannel() {
