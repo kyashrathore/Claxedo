@@ -8,6 +8,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { createServer, type ServerResponse } from "node:http"
+import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { PI_BROKER_PLACEHOLDER, PI_DIRECT_SECRET, PI_NATIVE_MODEL, piNativeRuntime, piNativeSnapshot, type PiNativeRoots } from "./test-support/pi-native-runtime"
 
 type Reply = { tool?: { name: string; arguments: object }; text?: string; hold?: true }
@@ -105,7 +106,10 @@ void test("a daemon killed mid-turn resumes Pi's run on restart as a continuatio
   const runtime = piNativeRuntime(paths)
   try {
     const history = async () => (await runtime.app.request("http://localhost/session/crash-proof/message")).text()
-    const status = async () => (await (await runtime.app.request("http://localhost/session/status")).json() as Record<string, { type: string }>)["crash-proof"]?.type
+    const status = async () => {
+      const statuses: unknown = await (await runtime.app.request("http://localhost/session/status")).json()
+      return asRecordOrEmpty(asRecordOrEmpty(statuses)["crash-proof"]).type
+    }
     await history()
     assert.equal(await status(), "interrupted")
     assert.equal(model.requests.length, 1)
