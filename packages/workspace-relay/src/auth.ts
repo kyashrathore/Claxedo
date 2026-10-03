@@ -538,6 +538,37 @@ export async function verifyHostTunnelToken(token: string, key: RelayKey, expect
 // the industry. Do not refresh RHTs mid-stream — that would put the relay
 // (and Control Plane via the resolver) in the streaming critical path with
 // no security benefit.
+/** What a Relay Host Token minted from a verified Runtime Access Token carries over from it. */
+export function relayHostInputFromRuntimeClaims(claims: RuntimeAccessTokenClaims): Omit<RelayHostInput, "backing" | "hostId" | "workspaceId"> {
+  return {
+    principalKind: claims.principal_kind,
+    actorId: claims.actor_id,
+    ...(claims.user_id ? { userId: claims.user_id } : {}),
+    actorKind: claims.actor_kind,
+    parentJti: claims.jti,
+    ...(claims.actor_public_id && claims.actor_name
+      ? {
+          actorPublicId: claims.actor_public_id,
+          actorName: claims.actor_name,
+          ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
+        }
+      : {}),
+    ...(claims.channel_identity
+      ? {
+          channelIdentity: {
+            channel: claims.channel_identity.channel,
+            externalUserId: claims.channel_identity.external_user_id,
+            identityVersion: claims.channel_identity.identity_version,
+          },
+        }
+      : {}),
+    orgId: claims.org_id,
+    role: claims.role,
+    ...(claims.session_id ? { sessionId: claims.session_id } : {}),
+    ...(claims.purpose ? { purpose: claims.purpose } : {}),
+  }
+}
+
 export async function mintRelayHostToken(input: RelayHostInput, key: RelaySigningKey, alg: RelayJwtAlgorithm) {
   if (!isRelayBacking(input.backing)) {
     throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Relay Host Token backing claim is not a placement")

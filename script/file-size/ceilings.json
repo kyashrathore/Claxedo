@@ -24,6 +24,6 @@
   "packages/session-core/src/routes/session-core.ts": 1865,
   "packages/session-core/src/store.ts": 3680,
   "packages/workspace-relay/src/cloudflare.ts": 2610,
-  "packages/workspace-relay/src/server.ts": 1198,
+  "packages/workspace-relay/src/server.ts": 1176,
   "packages/workspace-runtime/src/workspace-relay-host-tunnel.ts": 815
 }
