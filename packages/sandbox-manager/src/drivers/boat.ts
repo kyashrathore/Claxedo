@@ -70,7 +70,12 @@ const DOCKER_DAEMON_WAIT_SECONDS = 120
 const RUNTIME_ENV_PATH = ".claxedo-runtime-env"
 const REGISTRY_PASSWORD_PATH = ".claxedo-registry-password"
 const CONTAINER_ENV_PATH = "/run/claxedo-runtime.env"
-const WORKSPACE_MOUNT_PATH = "claxedo-workspace"
+// Everything the runtime keeps lives under one root on the VM's disk: the
+// workspace, and the two home directories the image's runtime writes its
+// stores, harness homes and state to (`~/.claxedo`, `~/.workspace-runtime`;
+// the image runs as root).
+const PERSISTENT_ROOT = "claxedo-persistent"
+const PERSISTENT_HOME_MOUNTS = [["claxedo", "/root/.claxedo"], ["workspace-runtime", "/root/.workspace-runtime"]] as const
 const START_LOCK_PATH = ".claxedo-runtime.lock"
 
 const STDERR_TAIL_CHARS = 600
@@ -186,8 +191,8 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
    * A resume reboots the VM onto a fresh Docker store (the image is pulled
    * again and no container survives), and Docker comes up as a systemd
    * service after Boat reports the sandbox ready; the chain waits for the
-   * daemon. The workspace directory is bind-mounted from the VM's own
-   * filesystem, which the stop snapshot keeps. Boat delivered one resumed
+   * daemon. The workspace and the runtime's own state are bind-mounted from
+   * the VM's filesystem, which the stop snapshot keeps. Boat delivered one resumed
    * boot's command twice, so the chain holds a file lock: the second delivery
    * finds the container the first created and only starts it.
    */
@@ -201,15 +206,16 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
       `cd ${shell(directory)}`,
       `exec ${runtimeCommand}`,
     ].join(" && ")
+    const mounts = [["workspace", directory], ...PERSISTENT_HOME_MOUNTS]
     const run = `docker run -d --name ${containerName} -p ${port}:${port} `
       + `-v "$(pwd)/${RUNTIME_ENV_PATH}:${CONTAINER_ENV_PATH}:ro" `
-      + `-v "$(pwd)/${WORKSPACE_MOUNT_PATH}:${directory}" `
+      + mounts.map(([source, target]) => `-v "$(pwd)/${PERSISTENT_ROOT}/${source}":${shell(target)} `).join("")
       + `--entrypoint sh ${image} -lc ${shell(bootScript)}`
     const steps = [
       `exec 9>${START_LOCK_PATH}`,
       "flock 9",
       `chmod 600 ${RUNTIME_ENV_PATH}`,
-      `mkdir -p ${WORKSPACE_MOUNT_PATH}`,
+      `mkdir -p ${mounts.map(([source]) => `${PERSISTENT_ROOT}/${source}`).join(" ")}`,
       `timeout ${DOCKER_DAEMON_WAIT_SECONDS} sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'`,
       ...(options.registryAuth
         ? [`{ chmod 600 ${REGISTRY_PASSWORD_PATH}; docker login ${shell(options.registryAuth.server)} `

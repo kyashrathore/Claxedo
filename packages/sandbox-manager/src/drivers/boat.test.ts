@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
@@ -126,7 +126,7 @@ function runStartCommand(command: string, vm: { existingImage?: string; daemonUp
   tool("sleep", "exit 0")
   const result = spawnSync("sh", ["-c", command], { cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8" })
   const calls = readFileSync(log, "utf8").split("\n").filter(Boolean).map((line) => line.split(" ").slice(0, 2).join(" "))
-  return { status: result.status, calls }
+  return { status: result.status, calls, dir }
 }
 
 async function startCommand() {
@@ -335,7 +335,10 @@ describe("boat sandbox driver", () => {
     expect(run?.body.command).toContain("ghcr.io/test/sandbox:1")
     expect(run?.body.command).toContain("-p 2593:2593")
     expect(run?.body.command).toContain(".claxedo-runtime-env:/run/claxedo-runtime.env:ro")
-    expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-workspace:/workspace"`)
+    expect(run?.body.command).toContain("mkdir -p claxedo-persistent/workspace claxedo-persistent/claxedo claxedo-persistent/workspace-runtime")
+    expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/workspace":'/workspace'`)
+    expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/claxedo":'/root/.claxedo'`)
+    expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/workspace-runtime":'/root/.workspace-runtime'`)
     expect(run?.body.command).not.toContain("--env ")
     const envWrite = boat.calls.find((c) => c.path.endsWith("/files") && c.body?.path === ".claxedo-runtime-env")
     expect(envWrite?.body).toMatchObject({ encoding: "utf8" })
@@ -357,6 +360,9 @@ describe("boat sandbox driver", () => {
     const run = runStartCommand(await startCommand(), { daemonUpAfter: 2 })
     expect(run.status).toBe(0)
     expect(run.calls).toEqual(["flock 9", "info", "info", "info", "inspect --format", "rm -f", "run -d"])
+    for (const state of ["workspace", "claxedo", "workspace-runtime"]) {
+      expect(existsSync(path.join(run.dir, "claxedo-persistent", state))).toBe(true)
+    }
   })
 
   test("a repeated start finds the container the first one created and only starts it", async () => {

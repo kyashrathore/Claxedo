@@ -63,6 +63,9 @@ async function archived(id: string) {
   return "archived"
 }
 
+const MARKERS = [".live-check", "/root/.claxedo/.live-check", "/root/.workspace-runtime/.live-check"]
+const STATE_FILES = "find /root/.claxedo /root/.workspace-runtime -type f | wc -l"
+
 async function inWorkspace(id: string, command: string) {
   const result = await client.command(id, { command: `docker exec claxedo-runtime sh -c ${JSON.stringify(command)}` })
   if (result.exitCode !== 0) throw new Error(`workspace command exited ${result.exitCode}`)
@@ -98,14 +101,21 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 try {
   const first = await timed("booted", async () => booted(await driver.ensureHost(ensure)), (target) => ({ sandboxId: target.sandboxId, url: target.url }))
   await timed("public health", () => publicHealth(first.url), (status) => ({ status }))
-  await timed("workspace marker written", () => inWorkspace(first.sandboxId, `echo ${workspaceId} > .live-check`))
+  await timed("vm tools", () => client.command(first.sandboxId, { command: "command -v flock || echo missing" }), (result) => ({ flock: result.stdout.trim() }))
+  await timed("markers written", () => inWorkspace(first.sandboxId, MARKERS.map((file) => `echo ${workspaceId} > ${file}`).join(" && ")))
+  const stateBefore = await timed("runtime state files", () => inWorkspace(first.sandboxId, STATE_FILES), (count) => ({ count }))
   await timed("stop requested", () => client.stop(first.sandboxId))
   await timed("stopped", () => archived(first.sandboxId), (state) => ({ state }))
   const lease = sandboxLease({ workspaceId, driver: "boat", sandboxId: first.sandboxId, hostId: first.hostId, url: first.url, status: "stopped" })
   const second = await timed("resumed", async () => booted(await driver.resumeHost?.({ lease, ensure })), (target) => ({ url: target.url, sameUrl: target.url === first.url }))
   await timed("public health after resume", () => publicHealth(second.url), (status) => ({ status }))
-  const marker = await timed("workspace marker read", () => inWorkspace(second.sandboxId, "cat .live-check"), (text) => ({ survived: text === workspaceId }))
-  if (marker !== workspaceId) throw new Error("the workspace did not survive stop and resume")
+  const read = MARKERS.map((file) => `cat ${file} 2>/dev/null || echo missing`).join("; ")
+  const markers = await timed("markers read", async () => (await inWorkspace(second.sandboxId, read)).split("\n"), (lines) => ({
+    survived: Object.fromEntries(MARKERS.map((file, index) => [file, lines[index] === workspaceId])),
+  }))
+  await timed("runtime state files after resume", () => inWorkspace(second.sandboxId, STATE_FILES), (count) => ({ count, before: stateBefore }))
+  await timed("image pulls this boot", () => client.command(second.sandboxId, { command: "sudo -n journalctl -u docker -b --no-pager | grep -c 'image pulled'" }), (result) => ({ count: result.stdout.trim() }))
+  if (markers.some((line) => line !== workspaceId)) throw new Error("runtime or workspace state did not survive stop and resume")
   report("passed")
 } catch (error) {
   const errors = error instanceof AggregateError ? error.errors : [error]
