@@ -29,6 +29,9 @@ export const ClaxedoSessionMetaTable = sqliteTable(
      * is also stamped by this server's clock when a tag or attachment changes.
      */
     runtime_updated_at: integer(),
+    /** The outcome and time of the last turn the runtime recorded; null until one ends. */
+    last_turn_status: text({ enum: ["completed", "failed", "cancelled"] }),
+    last_turn_completed_at: integer(),
   },
   (table) => [
     index("claxedo_session_meta_workspace_idx").on(table.workspace_id),

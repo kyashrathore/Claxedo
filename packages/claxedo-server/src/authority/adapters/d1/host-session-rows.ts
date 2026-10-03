@@ -122,6 +122,7 @@ function adoptionStatements(database: D1Database, now: number, workspace: Served
 
 function listFieldsStatement(database: D1Database, row: HostSessionRow) {
   const status = row.status
+  const at = row.lastTurn?.completedAt ?? null
   return database
     .prepare(`
       update sessions set
@@ -132,7 +133,9 @@ function listFieldsStatement(database: D1Database, row: HostSessionRow) {
         archived_at = ?,
         status = case when status_at is null or status_at <= ? then ? else status end,
         awaiting_input = case when status_at is null or status_at <= ? then ? else awaiting_input end,
-        status_at = case when status_at is null or status_at <= ? then ? else status_at end
+        status_at = case when status_at is null or status_at <= ? then ? else status_at end,
+        last_turn_status = case when ? is not null and coalesce(last_turn_completed_at, 0) <= ? then ? else last_turn_status end,
+        last_turn_completed_at = case when ? is not null and coalesce(last_turn_completed_at, 0) <= ? then ? else last_turn_completed_at end
       where session_id = ? and workspace_id = ? and deleted_at is null
     `)
     .bind(
@@ -144,6 +147,8 @@ function listFieldsStatement(database: D1Database, row: HostSessionRow) {
       status.at, status.kind,
       status.at, status.awaitingInput ? 1 : 0,
       status.at, status.at,
+      at, at, row.lastTurn?.status ?? null,
+      at, at, at,
       row.sessionId,
       row.workspaceId,
     )

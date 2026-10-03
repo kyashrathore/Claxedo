@@ -49,7 +49,6 @@ export type RuntimeRecoveryInput = {
   /** The attached transport and session a cancellation reaches; resolving may attach the session first. */
   cancelTarget: (sessionId: string) => Promise<CancelTarget>
   publish: (event: AgentRuntimeEventEnvelope) => void
-  announceIdle: (sessionId: string, directory?: RuntimeDirectory) => void
   identity?: { workspaceId: string; machineId?: string }
   budgets?: Partial<RecoveryBudgets>
   now?: () => number
@@ -203,18 +202,16 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
       if (error instanceof AgentRuntimeStaleTurnError) return { ok: false, reason: "authority_lost", error }
       return { ok: false, reason: "persistence", error }
     }
-    // What the store now holds, read back from it rather than inferred from a
-    // call that returns the same empty event list whether it recorded the turn
-    // or found nothing to record.
+    // What the store now holds, read back from it: a turn another writer
+    // already finished returns no events from this call, yet is recorded.
     const wrote = capture.turnId !== undefined
       ? store.turnEvidence(capture.sessionId, capture.turnId).finished
       : store.getSession(capture.sessionId)?.status !== "busy"
     if (wrote) {
-      if (options.announceIdle) input.announceIdle(capture.sessionId, capture.directory)
       for (const payload of finished.events) {
         emit({ sessionId: capture.sessionId, directory: capture.directory, payload })
       }
-      if (options.announceIdle) {
+      if (options.announceFinish) {
         emit({
           sessionId: capture.sessionId,
           directory: capture.directory,
@@ -277,7 +274,7 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
   const cancelActiveTurn = (capture: RecoveryTurnCapture, directory?: RuntimeDirectory): TurnFinalization => {
     const routed = directory !== undefined ? { ...capture, directory } : capture
     const outcome: AgentTurnOutcome = { status: "cancelled", completedAt: now(), reason: "abort" }
-    const result = finalizeTurn(routed, outcome, { announceIdle: true })
+    const result = finalizeTurn(routed, outcome, { announceFinish: true })
     retainFailure(routed, outcome, result)
     return result
   }
@@ -321,7 +318,7 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
   const finalizeCancelled = (capture: AdmittedTurnCapture, execution: ExecutionFact): TurnFinalization | undefined => {
     if (execution !== "terminal") return undefined
     const outcome: AgentTurnOutcome = { status: "cancelled", completedAt: now(), reason: "abort" }
-    const result = finalizeTurn(capture, outcome, { announceIdle: true })
+    const result = finalizeTurn(capture, outcome, { announceFinish: true })
     retainFailure(capture, outcome, result)
     // A harness that honours the cancellation by ending its stream lets the
     // turn's own producer finalize before `cancelTurn` resolves, so this write
@@ -540,7 +537,7 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
       }, callerId))
     }
     const result = finalizeTurn(retained.capture, retained.outcome, {
-      announceIdle: retained.outcome.status === "cancelled",
+      announceFinish: retained.outcome.status === "cancelled",
     })
     retainFailure(retained.capture, retained.outcome, result)
     const facts = record.sessionFacts(sessionId)

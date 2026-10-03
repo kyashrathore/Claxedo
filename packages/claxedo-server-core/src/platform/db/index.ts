@@ -26,5 +26,5 @@ export { ClaxedoDB, configureClaxedoMigrations } from "./db"
 // express. They exist so a hand-written SQL result is narrowed once, here,
 // instead of asserted into a row shape at each call site.
 export { numberColumn, queryRow, queryRows, textColumn, textColumns } from "./db"
-export { eq, and, desc, gt, inArray } from "drizzle-orm"
+export { eq, and, desc, gt, inArray, isNull, lte, or } from "drizzle-orm"
 export { CLAXEDO_MIGRATION_JOURNAL } from "./journal"

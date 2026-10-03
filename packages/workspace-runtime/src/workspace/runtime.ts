@@ -92,9 +92,11 @@ function resolveStoreFactory(options: WorkspaceHostOptions): WorkspaceRuntimeSto
     const finish = store.finishTurn.bind(store)
     store.finishTurn = (value) => {
       const finished = finish(value)
+      if (!finished.events.length) return finished
       const session = store.getSession(value.sessionId) as { lastTurn?: AgentTurnOutcome } | null
       options.onTurnOutcome?.({
         ...value,
+        workspaceId: options.target.workspaceId,
         ...(value.assistantMessageId ?? session?.lastTurn?.assistantMessageId
           ? { assistantMessageId: value.assistantMessageId ?? session?.lastTurn?.assistantMessageId }
           : {}),

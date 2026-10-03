@@ -22,6 +22,7 @@ import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { D1SessionAuthority } from "./session-authority"
 import { publishD1HostSessionRows } from "./host-session-rows"
 import type { HostSessionRow, HostSessionRowsPublication } from "@claxedo/server-core/platform/auth/host-session-rows"
+import { buildSessionListResponse, parseSessionListQuery } from "@claxedo/server-core/session/navigation-list"
 import { applyControlPlaneBaseline } from "../../../test-support/control-plane-migrations"
 
 
@@ -2371,6 +2372,54 @@ describe("machine session rows", () => {
         status_at: 500,
       }),
     ])
+  })
+
+  test("carries each session's last turn to the list, and an older turn never replaces a newer one", async () => {
+    const { publish, page, alice, local } = await served()
+
+    await publish({
+      rows: [
+        row("ses_done", { lastTurn: { status: "completed", completedAt: 310 } }),
+        row("ses_broke", { lastTurn: { status: "failed", completedAt: 320 } }),
+        row("ses_stopped", { lastTurn: { status: "cancelled", completedAt: 330 } }),
+        row("ses_fresh"),
+      ],
+    })
+    await publish({ rows: [row("ses_done", { lastTurn: { status: "failed", completedAt: 305 } }), row("ses_fresh")] })
+
+    const query = parseSessionListQuery(new URL(`http://plane.test/api/control/session-list?scope=project&projectId=${local.project_id}&sort=human_turn_desc`))
+    const items = buildSessionListResponse({ query, sessions: await page(alice), cursorApplied: true }).items
+    expect(Object.fromEntries(items.map((item) => [item.sessionId, item.lastTurn ?? null]))).toEqual({
+      ses_done: { status: "completed", completedAt: 310 },
+      ses_broke: { status: "failed", completedAt: 320 },
+      ses_stopped: { status: "cancelled", completedAt: 330 },
+      ses_fresh: null,
+    })
+  })
+
+  test("the list read finds its rows through an index, never a scan of sessions", async () => {
+    const { input, publish, alice, local } = await served()
+    await publish({ rows: [row("ses_planned", { lastTurn: { status: "completed", completedAt: 310 } })] })
+    const reads: Array<{ sql: string; binds: unknown[] }> = []
+    const recording = new Proxy(input.database, {
+      get(target, property) {
+        if (property !== "prepare") return Reflect.get(target, property).bind(target)
+        return (sql: string) => {
+          const statement = target.prepare(sql)
+          return { bind: (...binds: unknown[]) => (reads.push({ sql, binds }), statement.bind(...binds)) }
+        }
+      },
+    })
+    const sessions = new D1SessionAuthority(recording, { deploymentId: "deployment-a", now: input.now })
+
+    await sessions.listSessionPage(alice, { projectId: local.project_id, sort: "human_turn_desc", archived: "active", limit: 50 })
+
+    const listRead = reads.find((read) => /from sessions s\b/.test(read.sql) && read.sql.includes("last_turn_status"))
+    if (!listRead) throw new Error("the list read was not observed")
+    const plan = await input.database.prepare(`explain query plan ${listRead.sql}`).bind(...listRead.binds).all<{ detail: string }>()
+    const details = plan.results.map((step) => step.detail)
+    expect(details).toContainEqual(expect.stringMatching(/^SEARCH s USING INDEX sessions_by_project_human_turn/))
+    expect(details.filter((detail) => /^SCAN s\b/.test(detail))).toEqual([])
   })
 
   test("refuses rows for a workspace the enrollment does not serve at this generation", async () => {

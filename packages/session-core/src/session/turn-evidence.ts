@@ -23,6 +23,13 @@ const TURN_FINISH_SQL = `
   ORDER BY seq DESC LIMIT 1
 `
 
+const MESSAGE_COMPLETED_SQL = `
+  SELECT 1 AS found FROM runtime_journal
+  WHERE session_id = ? AND kind = 'event' AND type = 'message.completed'
+    AND json_extract(payload_json, '$.properties.messageID') = ?
+  LIMIT 1
+`
+
 const JOURNALED_TURN_SQL = `
   SELECT turn_id FROM runtime_journal
   WHERE session_id = ? AND seq <= ? AND kind = 'control' AND type = 'turn.start'
@@ -68,6 +75,14 @@ export function readTurnEvidence(db: TurnEvidenceDatabase, sessionId: string, tu
  * and before the next one, so this is the one rule for which turn a message
  * belongs to.
  */
+export function readTurnFinished(db: TurnEvidenceDatabase, sessionId: string, assistantMessageId: string): boolean {
+  return !!db.prepare<{ payload_json: string }>(TURN_FINISH_SQL).get(sessionId, assistantMessageId)
+}
+
+export function readMessageCompleted(db: TurnEvidenceDatabase, sessionId: string, messageId: string): boolean {
+  return !!db.prepare<{ found: number }>(MESSAGE_COMPLETED_SQL).get(sessionId, messageId)
+}
+
 export function readJournaledTurn(db: TurnEvidenceDatabase, sessionId: string, seq: number): string | null {
   return db.prepare<{ turn_id: string }>(JOURNALED_TURN_SQL).get(sessionId, seq)?.turn_id ?? null
 }

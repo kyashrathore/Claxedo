@@ -142,6 +142,9 @@ export type AgentTurnOutcome = (
   | { status: "cancelled"; completedAt: number; reason?: string }
 ) & { assistantMessageId?: string }
 
+/** A session's last turn as a session list row and a turn-end frame carry it: the two facts every store of it keeps. */
+export type SessionLastTurn = Pick<AgentTurnOutcome, "status" | "completedAt">
+
 export type PromptModel = {
   providerID: string
   modelID: string

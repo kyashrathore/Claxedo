@@ -157,7 +157,7 @@ const tabs = [
 
 function rebuildSessionMeta(
   db: SqliteInstance,
-  existing: { host: boolean; directory: boolean; toolSandbox: boolean; model: boolean; lastHumanTurn: boolean; runtimeUpdatedAt: boolean },
+  existing: { host: boolean; directory: boolean; toolSandbox: boolean; model: boolean; lastHumanTurn: boolean; runtimeUpdatedAt: boolean; lastTurn: boolean },
 ) {
   const host = existing.host ? "COALESCE(NULLIF(`host`, ''), 'workspace')" : "'workspace'"
   const directory = existing.directory ? "NULLIF(`directory`, '')" : "NULL"
@@ -168,6 +168,8 @@ function rebuildSessionMeta(
   // list is silently dropped along with its data. Read it when the old table has it.
   const lastHumanTurnAt = existing.lastHumanTurn ? "`last_human_turn_at`" : "NULL"
   const runtimeUpdatedAt = existing.runtimeUpdatedAt ? "`runtime_updated_at`" : "NULL"
+  const lastTurnStatus = existing.lastTurn ? "`last_turn_status`" : "NULL"
+  const lastTurnCompletedAt = existing.lastTurn ? "`last_turn_completed_at`" : "NULL"
 
   db.exec("SAVEPOINT claxedo_session_meta_repair")
   try {
@@ -189,7 +191,9 @@ function rebuildSessionMeta(
         \`created_at\` integer NOT NULL,
         \`updated_at\` integer NOT NULL,
         \`last_human_turn_at\` integer,
-        \`runtime_updated_at\` integer
+        \`runtime_updated_at\` integer,
+        \`last_turn_status\` text,
+        \`last_turn_completed_at\` integer
       )
     `)
     db.exec(`
@@ -209,7 +213,9 @@ function rebuildSessionMeta(
         \`created_at\`,
         \`updated_at\`,
         \`last_human_turn_at\`,
-        \`runtime_updated_at\`
+        \`runtime_updated_at\`,
+        \`last_turn_status\`,
+        \`last_turn_completed_at\`
       )
       SELECT
         CASE
@@ -231,7 +237,9 @@ function rebuildSessionMeta(
         \`created_at\`,
         \`updated_at\`,
         ${lastHumanTurnAt},
-        ${runtimeUpdatedAt}
+        ${runtimeUpdatedAt},
+        ${lastTurnStatus},
+        ${lastTurnCompletedAt}
       FROM \`claxedo_session_meta_old_repair\`
     `)
     db.exec("DROP TABLE `claxedo_session_meta_old_repair`")
@@ -557,6 +565,7 @@ export function repair(db: SqliteInstance) {
       model: sessionMetaHasModel,
       lastHumanTurn: hasColumn(db, "claxedo_session_meta", "last_human_turn_at"),
       runtimeUpdatedAt: hasColumn(db, "claxedo_session_meta", "runtime_updated_at"),
+      lastTurn: hasColumn(db, "claxedo_session_meta", "last_turn_status"),
     })
     out.push("claxedo_session_meta.placement")
   }

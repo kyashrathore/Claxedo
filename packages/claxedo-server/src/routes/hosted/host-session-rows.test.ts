@@ -24,6 +24,7 @@ const body = {
     createdAt: 1,
     updatedAt: 2,
     status: { kind: "idle", awaitingInput: false, at: 3 },
+    lastTurn: { status: "failed", completedAt: 3 },
   }],
   removed: [],
 }
@@ -74,8 +75,10 @@ describe("POST /api/claxedo/host/session-rows", () => {
   test("refuses a malformed publication", async () => {
     const { app, publish } = routes()
     const response = await post(app, { ...body, rows: [{ ...body.rows[0], status: { kind: "thinking", awaitingInput: false, at: 1 } }] })
+    const unknownOutcome = await post(app, { ...body, rows: [{ ...body.rows[0], lastTurn: { status: "busy", completedAt: 3 } }] })
 
     expect(response.status).toBe(400)
+    expect(unknownOutcome.status).toBe(400)
     expect(publish).not.toHaveBeenCalled()
   })
 

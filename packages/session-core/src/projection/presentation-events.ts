@@ -15,7 +15,7 @@ import type {
   PromptInput,
   TurnAccount,
 } from "@claxedo/agent-runtime-contract"
-import { backgroundWorkActive, firstTurnErrorData, promptPartId, type BackgroundWork } from "@claxedo/agent-runtime-contract"
+import { backgroundWorkActive, firstTurnErrorData, promptPartId, type BackgroundWork, type SessionLastTurn } from "@claxedo/agent-runtime-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import { withClaxedoMessageAuthor } from "./client-presentation/author"
 
@@ -303,11 +303,11 @@ export function sessionDiff(sessionID: string, diff: AgentSnapshotFileDiff[]): E
   }
 }
 
-export function sessionIdle(sessionID: string): Event<"session.idle"> {
+export function sessionIdle(sessionID: string, lastTurn?: SessionLastTurn): Event<"session.idle"> {
   return {
     id: `session.idle:${sessionID}`,
     type: "session.idle",
-    properties: { sessionID },
+    properties: { sessionID, ...(lastTurn ? { lastTurn } : {}) },
   }
 }
 
@@ -315,6 +315,7 @@ export function sessionError(
   message: string,
   sessionID?: string,
   facts: { errorClass?: FirstTurnErrorClass; account?: TurnAccount } = {},
+  lastTurn?: SessionLastTurn,
 ): Event<"session.error"> {
   return {
     id: `session.error:${sessionID ?? "global"}`,
@@ -325,6 +326,7 @@ export function sessionError(
         name: "UnknownError",
         data: firstTurnErrorData(message, facts),
       },
+      ...(lastTurn ? { lastTurn } : {}),
     },
   }
 }

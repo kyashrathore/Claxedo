@@ -14,5 +14,6 @@ export function hostSessionRowFromMeta(meta: SessionMeta, status: SessionRowStat
     ...(meta.lastHumanTurnAt !== undefined ? { lastHumanTurnAt: meta.lastHumanTurnAt } : {}),
     ...(meta.archived !== undefined ? { archivedAt: meta.archived } : {}),
     status,
+    ...(meta.lastTurn ? { lastTurn: meta.lastTurn } : {}),
   }
 }

@@ -13,8 +13,9 @@ const prev = { CLAXEDO_DATA_DIR: process.env.CLAXEDO_DATA_DIR, CLAXEDO_STATE_DIR
 process.env.CLAXEDO_DATA_DIR = root
 process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 
-const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
-const { putSessionMeta } = await import("@claxedo/server-core/session/meta/index")
+const { ClaxedoDB, and, eq, inArray } = await import("@claxedo/server-core/platform/db/index")
+const { ClaxedoSessionMetaTable } = await import("@claxedo/server-core/session/meta.sql")
+const { putSessionMeta, recordSessionLastTurn } = await import("@claxedo/server-core/session/meta/index")
 const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
 const { parseSessionListQuery } = await import("@claxedo/server-core/session/navigation-list")
 const { localSessionListPage } = await import("./session-list-page")
@@ -87,5 +88,42 @@ describe("localSessionListPage", () => {
       `${running.id}/session/status`,
       `${asleep.id}/session/status`,
     ])
+  })
+
+  test("each row carries its session's last turn as the runtime recorded it, and none before one ends", async () => {
+    const ws = await workspace("turns")
+    for (const id of ["ses_done", "ses_broke", "ses_stopped", "ses_fresh"]) await putSessionMeta(id, { ws, title: id, createdAt: 1, updatedAt: 1 })
+    recordSessionLastTurn(ws.id, "ses_done", { status: "completed", completedAt: 10 })
+    recordSessionLastTurn(ws.id, "ses_broke", { status: "failed", completedAt: 20 })
+    recordSessionLastTurn(ws.id, "ses_stopped", { status: "cancelled", completedAt: 30 })
+
+    const page = await localSessionListPage({
+      query: parseSessionListQuery(new URL(`http://daemon.test/api/claxedo/session-list?scope=workspace&workspaceId=${ws.id}&limit=10`)),
+      workspace: ws,
+      projectWorkspaces: async () => [],
+      readRuntimeStatus: runtime({}).read,
+    })
+
+    expect(Object.fromEntries(page.items.map((row) => [row.sessionId, row.lastTurn ?? null]))).toEqual({
+      ses_done: { status: "completed", completedAt: 10 },
+      ses_broke: { status: "failed", completedAt: 20 },
+      ses_stopped: { status: "cancelled", completedAt: 30 },
+      ses_fresh: null,
+    })
+  })
+
+  test("a page reads its rows' last turn with the row, by primary key", () => {
+    const db = ClaxedoDB.raw()
+    const plan = (sql: string) => (db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all() as Array<{ detail: string }>).map((step) => step.detail)
+    const hydrate = ClaxedoDB.use((client) =>
+      client.select().from(ClaxedoSessionMetaTable).where(inArray(ClaxedoSessionMetaTable.session_ref, ["a", "b"])).toSQL().sql)
+
+    const record = ClaxedoDB.use((client) =>
+      client.update(ClaxedoSessionMetaTable).set({ last_turn_status: "completed", last_turn_completed_at: 1 })
+        .where(and(eq(ClaxedoSessionMetaTable.session_id, "s"), eq(ClaxedoSessionMetaTable.workspace_id, "w"))).toSQL().sql)
+
+    expect(plan(record.replace(/\?/g, "'x'"))).toEqual([expect.stringMatching(/^SEARCH claxedo_session_meta USING INDEX claxedo_session_meta_session_idx \(session_id=\?\)$/)])
+    expect(hydrate).toContain("\"last_turn_status\"")
+    expect(plan(hydrate.replace(/\?/g, "'x'"))).toEqual([expect.stringMatching(/^SEARCH claxedo_session_meta USING INDEX sqlite_autoindex_claxedo_session_meta_1 \(session_ref=\?\)$/)])
   })
 })

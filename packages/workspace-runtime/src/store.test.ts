@@ -2613,7 +2613,34 @@ void describe("RuntimeStore", () => {
     })
   })
 
-  void it("finishTurn does not duplicate terminal events already committed by an adapter", () => {
+  void it("finishTurn ends every turn with one frame whose lastTurn is the outcome the session then reads", () => {
+    const store = new RuntimeStore(tmp())
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    const outcomes = [
+      { status: "completed", completedAt: 101 },
+      { status: "failed", completedAt: 102, error: "provider refused" },
+      { status: "cancelled", completedAt: 103, reason: "abort" },
+    ] as const
+    for (const [index, outcome] of outcomes.entries()) {
+      store.startTurn({
+        sessionId: "s1",
+        agentSessionId: "a1",
+        userMessageId: `u${index}`,
+        assistantMessageId: `m${index}`,
+        agent: "general",
+        model: { providerID: "opencode", modelID: "test" },
+        parts: [{ type: "text", text: "hello" }],
+      })
+      const { events } = finishHeldTurn(store, { sessionId: "s1", assistantMessageId: `m${index}`, outcome })
+      const ends = events.filter((event) => event.type === "session.idle" || event.type === "session.error")
+      assert.deepEqual(ends.map((event) => event.type), [outcome.status === "failed" ? "session.error" : "session.idle"])
+      const read = (store.getSession("s1") as { lastTurn?: { status: string; completedAt: number } } | null)?.lastTurn
+      assert.deepEqual((ends[0]?.properties as { lastTurn?: unknown }).lastTurn, { status: read?.status, completedAt: read?.completedAt })
+      assert.deepEqual({ status: read?.status, completedAt: read?.completedAt }, { status: outcome.status, completedAt: outcome.completedAt })
+    }
+  })
+
+  void it("finishTurn does not duplicate a message completion an adapter committed", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
     store.bindSession({
@@ -2636,11 +2663,6 @@ void describe("RuntimeStore", () => {
       sessionId: "s1",
       agentSessionId: "a1",
       payload: messageCompleted("s1", "m1"),
-    })
-    store.appendEvent({
-      sessionId: "s1",
-      agentSessionId: "a1",
-      payload: sessionIdle("s1"),
     })
 
     finishHeldTurn(store, {

@@ -4,6 +4,7 @@ import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
+import { onSessionMetaChange, putSessionMeta, sessionMeta, type SessionMetaChange } from "@claxedo/server-core/session/meta/index"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
 import type * as EmbeddedRuntime from "../deployments/local/embedded-workspace-runtime"
 import { startLocalServer, type LocalServer } from "./start-local-server"
@@ -127,6 +128,7 @@ test("a turn the user cancels on the desktop settles as stopped with its usage, 
     }),
   ]) hooks.onSessionMetaEvent({ directory: "/workspace", payload })
   hooks.onTurnOutcome({
+    workspaceId: "ws_local",
     sessionId: sessionID,
     assistantMessageId: messageID,
     outcome: { status: "cancelled", completedAt: Date.now() },
@@ -141,4 +143,35 @@ test("a turn the user cancels on the desktop settles as stopped with its usage, 
       tokens: { input: 1_200, output: 300 },
     })
   }, { timeout: 10_000 })
+}, 30_000)
+
+test("each turn the runtime records lands on its session's list row; a late older one changes nothing", async () => {
+  server = startLocalServer({
+    port: await freePort(),
+    daemon: testDaemon().daemon,
+    services: services(),
+    corsOrigin: (origin) => origin,
+  })
+  const hooks = runtime.hooks
+  if (!hooks?.onTurnOutcome) throw new Error("the desktop composes no turn outcome hook")
+  await putSessionMeta("ses_listed", { workspaceID: "ws_local", directory: "/workspace", createdAt: 1, updatedAt: 1 })
+  const changes: SessionMetaChange[] = []
+  const stopWatching = onSessionMetaChange((change) => changes.push(change))
+  const finish = (outcome: Parameters<NonNullable<RuntimeHooks["onTurnOutcome"]>>[0]["outcome"]) =>
+    hooks.onTurnOutcome?.({ workspaceId: "ws_local", sessionId: "ses_listed", assistantMessageId: "msg_listed", outcome })
+
+  for (const outcome of [
+    { status: "completed", completedAt: 10 },
+    { status: "failed", completedAt: 20, error: "provider refused" },
+    { status: "cancelled", completedAt: 30, reason: "abort" },
+  ] as const) {
+    finish(outcome)
+    expect((await sessionMeta("ses_listed"))?.lastTurn).toEqual({ status: outcome.status, completedAt: outcome.completedAt })
+  }
+  finish({ status: "completed", completedAt: 25 })
+  stopWatching()
+  expect((await sessionMeta("ses_listed"))?.lastTurn).toEqual({ status: "cancelled", completedAt: 30 })
+  expect(changes, "each recorded turn nudges the machine's row publisher; the late one does not").toEqual(
+    Array(3).fill({ kind: "changed", workspaceId: "ws_local", sessionId: "ses_listed" }),
+  )
 }, 30_000)

@@ -1,3 +1,4 @@
+import type { SessionLastTurn } from "@claxedo/agent-runtime-contract"
 import type { SessionListSort, SessionOrderKey } from "../navigation-order"
 
 export const GLOBAL_TAG = "global"
@@ -27,6 +28,7 @@ export type SessionMeta = {
   updatedAt: number
   /** When a human last started a turn here; absent when only agents ever have. */
   lastHumanTurnAt?: number
+  lastTurn?: SessionLastTurn
   tags: string[]
   attachments: SessionAttachment[]
 }

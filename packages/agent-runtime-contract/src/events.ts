@@ -80,8 +80,9 @@ export type AgentPresentationEvent =
   | { id: string; type: "question.expired"; properties: { sessionID: string; requestID: string } }
   | { id: string; type: "todo.updated"; properties: { sessionID: string; todos: AgentTodo[] } }
   | { id: string; type: "session.status"; properties: { sessionID: string; status: AgentRuntimeStatus } }
-  | { id: string; type: "session.idle"; properties: { sessionID: string } }
-  | { id: string; type: "session.error"; properties: { sessionID?: string; error?: { name: string; data: Record<string, unknown> & { message?: string } } } }
+  /** `lastTurn` is present on the frame that ends a turn, and equals the `lastTurn` the session's list row and read then carry. */
+  | { id: string; type: "session.idle"; properties: { sessionID: string; lastTurn?: import("./sessions").SessionLastTurn } }
+  | { id: string; type: "session.error"; properties: { sessionID?: string; error?: { name: string; data: Record<string, unknown> & { message?: string } }; lastTurn?: import("./sessions").SessionLastTurn } }
   | { id: string; type: "session.updated"; properties: { sessionID: string; info: import("./sessions").AgentSession } }
   | { id: string; type: "session.diff"; properties: { sessionID: string; diff: AgentSnapshotFileDiff[] } }
   | { id: string; type: "session.compacted"; properties: { sessionID: string } }

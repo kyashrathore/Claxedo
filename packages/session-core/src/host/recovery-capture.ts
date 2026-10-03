@@ -44,9 +44,10 @@ export type TurnFinalization =
 export type FinalizeTurnOptions = {
   emit?: (event: AgentRuntimeEventEnvelope) => void
   /**
-   * Publish the canonical idle frame. A cancelled turn needs it because its
-   * producer may never yield again; a turn that reached its own terminal event
-   * has already published one, and a second would be a duplicate.
+   * Publish the runtime `finish` after the turn's events. A cancelled turn
+   * needs it because its producer may never yield again; a turn that reached
+   * its own terminal event has already published one, and a second would be a
+   * duplicate.
    */
-  announceIdle?: boolean
+  announceFinish?: boolean
 }

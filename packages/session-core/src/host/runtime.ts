@@ -35,7 +35,7 @@ import { turnPrompt, turnStartRecord } from "./turn-record"
 import { runTurn, type TurnRunnerHost } from "./turn-runner"
 import { createSteeredInputs } from "./steered-inputs"
 import { createSessionEventWriter } from "../projection/session-event-writer"
-import { eventSessionId, sessionIdle, toPresentationEvent } from "../projection/presentation-events"
+import { eventSessionId, toPresentationEvent } from "../projection/presentation-events"
 
 export {
   AGENT_RUNTIME_MESSAGE_ID_CONFLICT_CODE,
@@ -154,7 +154,6 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
       return { transport: attached.handle.transport, session: attached.session }
     },
     publish,
-    announceIdle: (sessionId, directory) => eventHub.publishGlobal({ directory: runtimeDirectory(directory), payload: sessionIdle(sessionId) }),
     ...(input.identity ? { identity: input.identity } : {}),
     ...(input.recovery?.budgets ? { budgets: input.recovery.budgets } : {}),
     ...(input.recovery?.now ? { now: input.recovery.now } : {}),

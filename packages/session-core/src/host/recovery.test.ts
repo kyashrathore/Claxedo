@@ -114,7 +114,6 @@ function owner(options: { store?: RuntimeStore } = {}) {
     providerTurn: () => undefined,
     cancelTarget: () => Promise.reject(new Error("no harness in this test")),
     publish: (event) => published.push(event.payload.type),
-    announceIdle: () => published.push("global-idle"),
     budgets: BUDGETS,
   })
   const startTurn = (turnId: string, assistantMessageId: string) => store.startTurn({
@@ -306,7 +305,6 @@ describe("finalizing a turn this owner did not admit", () => {
       providerTurn: () => undefined,
       cancelTarget: () => Promise.reject(new Error("no harness in this test")),
       publish: (event) => published.push(event.payload.type),
-      announceIdle: () => published.push("global-idle"),
     })
     // A provider admitted this turn for itself, so the runtime holds no
     // generation or lease that a finalization could be checked against.
@@ -321,7 +319,7 @@ describe("finalizing a turn this owner did not admit", () => {
     const capture = recovery.captureStoreTurn("ses", "/repo")
     admissions.claim("ses", { turnId: "msg_runtime", assistantMessageId: "asst_runtime" })
 
-    const result = recovery.finalizeTurn(capture, { status: "cancelled", completedAt: 1, reason: "abort" }, { announceIdle: true })
+    const result = recovery.finalizeTurn(capture, { status: "cancelled", completedAt: 1, reason: "abort" }, { announceFinish: true })
 
     expect(result).toEqual({ ok: false, reason: "superseded" })
     expect(store.getSession("ses")?.status).toBe("busy")
@@ -563,7 +561,7 @@ describe("the authority a finalization must hold", () => {
     expect(store.getSession("ses")).toMatchObject({ status: "idle", lastTurn: { status: "cancelled", reason: "abort" } })
     expect(store.readTurnAuthority("ses")).toBeUndefined()
     expect(store.acquireTurnLease("ses")).not.toBe(leaseId)
-    expect(published).toContain("global-idle")
+    expect(published).toEqual(["message.completed", "session.idle", "finish"])
     expect(recovery.inspect("ses").failures).toEqual([])
   })
 
@@ -576,7 +574,7 @@ describe("the authority a finalization must hold", () => {
     // no longer the one this capture names, so the write finds nothing to do.
     startTurn("msg_b", "asst_b")
 
-    const result = recovery.finalizeTurn(capture, { status: "cancelled", completedAt: 1, reason: "abort" }, { announceIdle: true })
+    const result = recovery.finalizeTurn(capture, { status: "cancelled", completedAt: 1, reason: "abort" }, { announceFinish: true })
 
     expect(result).toEqual({ ok: true, wrote: false })
     expect(store.getSession("ses")?.status).toBe("busy")

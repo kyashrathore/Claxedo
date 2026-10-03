@@ -1,5 +1,5 @@
 import { isJsonRecord } from "../../platform/runtime/lib/json"
-import { ClaxedoDB, and, eq, inArray, textColumns } from "../../platform/db"
+import { ClaxedoDB, and, eq, inArray, isNull, lte, or, textColumns } from "../../platform/db"
 import {
   ClaxedoSessionAttachmentTable,
   ClaxedoSessionMetaTable,
@@ -31,6 +31,7 @@ import { controlBus } from "../../platform/runtime/lib/bus"
 import { asRecord } from "@claxedo/helpers/guards"
 import { sessionOrderSql, type SessionOrderColumns } from "../navigation-order"
 import { reportSessionMetaChanges, type SessionMetaChange } from "./changes"
+import type { SessionLastTurn } from "@claxedo/agent-runtime-contract"
 
 export { GLOBAL_TAG, GLOBAL_SHOW_TAG } from "./types"
 export { onSessionMetaChange, type SessionMetaChange } from "./changes"
@@ -92,6 +93,23 @@ export async function syncSessionMeta(ws: SessionProjectionWorkspace | undefined
   const inserted = await upsertRows([row])
   await announceInventoryChange(inserted, ws)
   if (row?.workspace_id) reportSessionMetaChanges([{ kind: "changed", workspaceId: row.workspace_id, sessionId: row.session_id }])
+}
+
+/** A turn's outcome as its runtime recorded it; one that ended before the held outcome writes nothing. */
+export function recordSessionLastTurn(workspaceID: string, sessionID: string, lastTurn: SessionLastTurn) {
+  const table = ClaxedoSessionMetaTable
+  const written = ClaxedoDB.use((db) =>
+    db.update(table)
+      .set({ last_turn_status: lastTurn.status, last_turn_completed_at: lastTurn.completedAt })
+      .where(and(
+        eq(table.session_id, sessionID),
+        eq(table.workspace_id, workspaceID),
+        or(isNull(table.last_turn_completed_at), lte(table.last_turn_completed_at, lastTurn.completedAt)),
+      ))
+      .returning({ sessionRef: table.session_ref })
+      .all(),
+  )
+  if (written.length) reportSessionMetaChanges([{ kind: "changed", workspaceId: workspaceID, sessionId: sessionID }])
 }
 
 export async function deleteSessionMeta(sessionID: string) {

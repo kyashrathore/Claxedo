@@ -1,5 +1,5 @@
 import type { AgentEventEnvelope, AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
-import { messageCompleted, permissionAsked, questionAsked, questionReplied, todoUpdated, sessionStatus, sessionDiff, sessionIdle, sessionError, sessionUpdated, sessionAgent, sessionConfig, sessionUsage, buildSession, withDir } from "../presentation-events"
+import { messageCompleted, permissionAsked, questionAsked, questionReplied, todoUpdated, sessionStatus, sessionDiff, sessionError, sessionUpdated, sessionAgent, sessionConfig, sessionUsage, buildSession, withDir } from "../presentation-events"
 import { partEvent, seqId, type CompatContext } from "./context"
 import { lossyCompatDiagnostic } from "./diagnostics"
 import { snapshotFileDiff } from "./file-diff"
@@ -168,16 +168,10 @@ export function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: Com
       return [completed]
 
     case "finish":
-      return [
-        withDir(ctx.directory, messageCompleted(ctx.sessionId, ctx.assistantMsgId)),
-        withDir(ctx.directory, sessionIdle(ctx.sessionId)),
-      ]
+      return [withDir(ctx.directory, messageCompleted(ctx.sessionId, ctx.assistantMsgId))]
 
     case "cancelled":
-      return [
-        withDir(ctx.directory, messageCompleted(ctx.sessionId, ctx.assistantMsgId, true)),
-        withDir(ctx.directory, sessionIdle(ctx.sessionId)),
-      ]
+      return [withDir(ctx.directory, messageCompleted(ctx.sessionId, ctx.assistantMsgId, true))]
 
     case "error":
       return [withDir(ctx.directory, sessionError(chunk.error, ctx.sessionId, { errorClass: chunk.errorClass, account: chunk.account }))]

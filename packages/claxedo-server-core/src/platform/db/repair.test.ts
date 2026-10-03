@@ -666,7 +666,7 @@ describe("claxedo schema", () => {
     expect(repair(sqlite)).toEqual([])
   })
 
-  test("a placement rebuild keeps the last human turn it was given", () => {
+  test("a placement rebuild keeps the last human turn and the last turn's outcome it was given", () => {
     const sqlite = new Database(":memory:")
 
     // The shape that triggers a placement rebuild — NOT NULL directory, no session_ref
@@ -683,23 +683,26 @@ describe("claxedo schema", () => {
         archived_at integer,
         created_at integer NOT NULL,
         updated_at integer NOT NULL,
-        last_human_turn_at integer
+        last_human_turn_at integer,
+        last_turn_status text,
+        last_turn_completed_at integer
       )
     `)
     sqlite
       .prepare(
         `INSERT INTO claxedo_session_meta (
           session_id, workspace_id, project_id, host, directory, title,
-          parent_session_id, archived_at, created_at, updated_at, last_human_turn_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          parent_session_id, archived_at, created_at, updated_at, last_human_turn_at,
+          last_turn_status, last_turn_completed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run("s1", null, null, "workspace", "/tmp/project", "Session", null, null, 3, 4, 777)
+      .run("s1", null, null, "workspace", "/tmp/project", "Session", null, null, 3, 4, 777, "failed", 888)
 
     expect(repair(sqlite)).toContain("claxedo_session_meta.placement")
     expect(hasColumn(sqlite, "claxedo_session_meta", "last_human_turn_at")).toBe(true)
     expect(
-      sqlite.prepare("SELECT last_human_turn_at FROM claxedo_session_meta WHERE session_id = ?").get("s1"),
-    ).toEqual({ last_human_turn_at: 777 })
+      sqlite.prepare("SELECT last_human_turn_at, last_turn_status, last_turn_completed_at FROM claxedo_session_meta WHERE session_id = ?").get("s1"),
+    ).toEqual({ last_human_turn_at: 777, last_turn_status: "failed", last_turn_completed_at: 888 })
   })
 
   test("repair preserves session meta hosts during placement rebuilds", () => {

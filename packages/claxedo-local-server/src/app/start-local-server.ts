@@ -28,6 +28,7 @@ import { controlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
+import { recordSessionLastTurn } from "@claxedo/server-core/session/meta/index"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/data-dir-owner"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
@@ -256,7 +257,13 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
       }
     }).catch((error) => log.warn("local runtime event projection degraded", { error: String(error) }))
   }
-  settleTurnOutcome = ({ sessionId, assistantMessageId, outcome }) => {
+  settleTurnOutcome = ({ workspaceId, sessionId, assistantMessageId, outcome }) => {
+    // Runs inside the runtime store's finishTurn: a throw here would report a committed turn as unrecorded.
+    try {
+      recordSessionLastTurn(workspaceId, sessionId, { status: outcome.status, completedAt: outcome.completedAt })
+    } catch (error) {
+      log.warn("a session's last turn was not recorded in the session list", { sessionId, error: String(error) })
+    }
     if (outcome.status !== "cancelled" || !assistantMessageId) return
     usageEventTail = usageEventTail
       .then(() => turnMeter.settle({

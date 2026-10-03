@@ -2,7 +2,7 @@ import { SessionAuthoringOwnership } from "./session/authoring-ownership"
 import type { TurnOutline, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import { readTurnOutline } from "./session/turn-outline"
 import { readLatestTurnView, type MessageProjectionRow } from "./session/latest-turn-view"
-import { isContiguousTurn, readJournaledTurn, readTurnEvidence, readTurnId, readTurnPrompts, readTurnReply, readTurnEndOrd, readTurnReplyId, readUpstreamHasTurns } from "./session/turn-evidence"
+import { isContiguousTurn, readJournaledTurn, readMessageCompleted, readTurnEvidence, readTurnFinished, readTurnId, readTurnPrompts, readTurnReply, readTurnEndOrd, readTurnReplyId, readUpstreamHasTurns } from "./session/turn-evidence"
 import type { SessionConfig, SessionConfigUpdate, SessionHandoff, SessionHandoffSource, SubagentObservation } from "@claxedo/agent-runtime-contract"
 import { recoveryScopeKey, recoveryTargetSessionId, decodeMessagePageCursor, encodeMessagePageCursor, AgentMessagePageError, type AgentMessagePage, type AgentMessagePageInput } from "@claxedo/agent-runtime-contract"
 import { AGENT_MESSAGE_PAGE_LIMIT, projectLatestSurfaceMessages, type AgentTurnCoverage, type AgentTurnCoveragePage } from "@claxedo/agent-runtime-contract"
@@ -2470,6 +2470,9 @@ export class RuntimeStore {
    * End the session's open turn: its terminal events and its `turn.finish`
    * land together or not at all, so no reader can see an idle session whose
    * turn never closed, and no retry has to work out which half survived.
+   * The events returned end with the turn's one `session.idle` or
+   * `session.error`, whose `lastTurn` is the outcome `turn.finish` records;
+   * none are returned when there was no open turn to end.
    *
    * `leaseId` is the durable turn lease the caller believes it still holds,
    * and it is required: the lease row lives in this database, so the check and
@@ -2514,7 +2517,7 @@ export class RuntimeStore {
         .get(input.sessionId)
       if (!active?.assistant_message_id) return { events: [] }
       if (input.assistantMessageId && input.assistantMessageId !== active.assistant_message_id) return { events: [] }
-      if (this.hasTurnFinished(input.sessionId, active.assistant_message_id)) return { events: [] }
+      if (readTurnFinished(this.db, input.sessionId, active.assistant_message_id)) return { events: [] }
       const segment = this.latestReplySegment(input.sessionId, active.assistant_message_id)
       const agentSession = active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}
       const terminal = (payload: AgentPresentationEvent) =>
@@ -2527,6 +2530,7 @@ export class RuntimeStore {
           payload,
         }, input.fencingToken)
       const events: AgentPresentationEvent[] = []
+      const lastTurn = { status: input.outcome.status, completedAt: input.outcome.completedAt }
 
       if (input.outcome.status === "failed") {
         const control = readColumn.turnStart(active.payload_json)
@@ -2547,10 +2551,12 @@ export class RuntimeStore {
             }),
           ),
         )
-        events.push(sessionError(input.outcome.error ?? "turn failed", input.sessionId, input.outcome))
-      } else if (!this.hasMessageCompleted(input.sessionId, segment?.id ?? active.assistant_message_id)) {
-        terminal(messageCompleted(input.sessionId, segment?.id ?? active.assistant_message_id))
-        terminal(sessionIdle(input.sessionId))
+        events.push(sessionError(input.outcome.error ?? "turn failed", input.sessionId, input.outcome, lastTurn))
+      } else {
+        if (!readMessageCompleted(this.db, input.sessionId, segment?.id ?? active.assistant_message_id)) {
+          events.push(messageCompleted(input.sessionId, segment?.id ?? active.assistant_message_id))
+        }
+        events.push(sessionIdle(input.sessionId, lastTurn))
       }
       for (const payload of events) terminal(payload)
 
@@ -2574,38 +2580,6 @@ export class RuntimeStore {
     const reply = readTurnReply(this.db, sessionId, turnId)
     const message = reply ? readColumn.messageInfo(reply.info_json) : undefined
     return message?.role === "assistant" ? message : undefined
-  }
-
-  private hasMessageCompleted(sessionId: string, messageId: string) {
-    return !!this.db
-      .prepare(
-        `
-        SELECT 1
-        FROM runtime_journal
-        WHERE session_id = ?
-          AND kind = 'event'
-          AND type = 'message.completed'
-          AND json_extract(payload_json, '$.properties.messageID') = ?
-        LIMIT 1
-      `,
-      )
-      .get(sessionId, messageId)
-  }
-
-  private hasTurnFinished(sessionId: string, messageId: string) {
-    return !!this.db
-      .prepare(
-        `
-        SELECT 1
-        FROM runtime_journal
-        WHERE session_id = ?
-          AND kind = 'control'
-          AND type = 'turn.finish'
-          AND assistant_message_id = ?
-        LIMIT 1
-      `,
-      )
-      .get(sessionId, messageId)
   }
 
   private session(row: {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import type { SessionRowStatus } from "@claxedo/server-core/session/navigation-list"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
-import { putSessionMeta } from "@claxedo/server-core/session/meta/index"
+import { putSessionMeta, recordSessionLastTurn } from "@claxedo/server-core/session/meta/index"
 import { localSessionProjectionStore } from "../../app/local-services"
 import { localSessionRowSource } from "./local-session-rows"
 
@@ -43,6 +43,7 @@ describe("rows from the local projection", () => {
     await putSessionMeta("archived", { workspaceID: WS, directory: "/work", archived: 3_000, createdAt: 1_000, updatedAt: 3_000 })
     await putSessionMeta("child", { workspaceID: WS, directory: "/work", parentID: "root", createdAt: 1_000, updatedAt: 2_000 })
     await putSessionMeta("elsewhere", { workspaceID: OTHER, directory: "/other", createdAt: 1_000, updatedAt: 2_000 })
+    recordSessionLastTurn(WS, "root", { status: "failed", completedAt: 1_800 })
 
     const rows = await source(new Map([["root", busy]])).listRows(WS)
 
@@ -55,6 +56,7 @@ describe("rows from the local projection", () => {
       updatedAt: 2_000,
       lastHumanTurnAt: 1_500,
       status: busy,
+      lastTurn: { status: "failed", completedAt: 1_800 },
     })
     expect(rows.find((row) => row.sessionId === "archived")).toEqual({
       workspaceId: WS,

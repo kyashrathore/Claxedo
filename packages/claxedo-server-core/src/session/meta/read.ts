@@ -118,6 +118,9 @@ function hydrateSessionRows(
         ...(item.last_human_turn_at !== null && item.last_human_turn_at !== undefined
           ? { lastHumanTurnAt: item.last_human_turn_at }
           : {}),
+        ...(item.last_turn_status && item.last_turn_completed_at !== null
+          ? { lastTurn: { status: item.last_turn_status, completedAt: item.last_turn_completed_at } }
+          : {}),
         tags: [],
         attachments: [],
       },

@@ -23,7 +23,7 @@ import { createClaxedoRuntimeExposure } from "../../hosts/workspace-runtime/expo
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 import { resolveClaxedoWorkspaceRuntimeTarget } from "../../hosts/workspace-runtime/target"
-import { projectionRenewalDue, projectionRenewalDueAt, type AgentTurnOutcome, type ConnectionSecretResolver } from "@claxedo/agent-runtime-contract"
+import { projectionRenewalDue, projectionRenewalDueAt, type ConnectionSecretResolver } from "@claxedo/agent-runtime-contract"
 import { ConnectionUnavailableError, createLocalConnectionSecretResolver } from "@claxedo/server-core/agent-config/connection-secrets"
 import { localConnectionSecretScope } from "./connection-secret-scope"
 import { defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-config/index"
@@ -281,7 +281,7 @@ let configuredOnSessionMetaEvent: ((event: AgentEventEnvelope) => void) | undefi
 let configuredOnSessionMetaCreated: ((workspace: Workspace, session: unknown) => Promise<void> | void) | undefined
 let configuredOnSessionMetaSnapshot: ((workspace: Workspace, sessions: unknown[]) => void | Promise<void>) | undefined
 let configuredSessionIdWorkspace: WorkspaceRuntimeServerOptions["sessionIdWorkspace"] | undefined
-let configuredOnTurnOutcome: ((input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void) | undefined
+let configuredOnTurnOutcome: WorkspaceRuntimeServerOptions["onTurnOutcome"]
 let configuredFirstPartyMcpLaunch: EmbeddedFirstPartyMcpLaunch | undefined
 
 /**
@@ -353,7 +353,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   onSessionMetaCreated?: (workspace: Workspace, session: unknown) => Promise<void> | void
   onSessionMetaSnapshot?: (workspace: Workspace, sessions: unknown[]) => void | Promise<void>
   sessionIdWorkspace: WorkspaceRuntimeServerOptions["sessionIdWorkspace"]
-  onTurnOutcome?: (input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
+  onTurnOutcome?: WorkspaceRuntimeServerOptions["onTurnOutcome"]
   /** Absent, no embedded runtime injects the first-party MCP entry into its sessions. */
   firstPartyMcpLaunch?: EmbeddedFirstPartyMcpLaunch
 }) {

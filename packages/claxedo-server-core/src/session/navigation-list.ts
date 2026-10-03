@@ -1,5 +1,5 @@
 import { PublicApiError } from "../platform/errors/public-api-error"
-import { parseBackgroundWork, type BackgroundWork } from "@claxedo/agent-runtime-contract"
+import { parseBackgroundWork, type BackgroundWork, type SessionLastTurn } from "@claxedo/agent-runtime-contract"
 import { jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
@@ -45,6 +45,8 @@ export type SessionNavigationRow = {
    * Absent for a session only agents have driven, and for one that predates the field.
    */
   lastHumanTurnAt?: number
+  /** The outcome of the session's last turn the runtime recorded; absent until one ends. */
+  lastTurn?: SessionLastTurn
   archivedAt?: number
   tags: string[]
   attachments: Array<{ kind: string; targetId?: string }>
@@ -216,6 +218,7 @@ function sessionNavigationRow(session: unknown): SessionNavigationRow | undefine
     createdAt,
     updatedAt,
     ...(lastHumanTurnAt !== undefined ? { lastHumanTurnAt } : {}),
+    ...lastTurnFromSession(item),
     ...(archivedAt ? { archivedAt } : {}),
     tags: stringArray(item.tags),
     attachments: arrayValue(item.attachments).flatMap((attachment) => {
@@ -241,6 +244,14 @@ function statusFromSession(item: Record<string, unknown>): { status?: SessionRow
   const backgroundWork = parseBackgroundWork(nested.backgroundWork)
   const background = backgroundWork ? { backgroundWork } : {}
   return { status: { kind, awaitingInput: awaitingInput === true || awaitingInput === 1, ...background, at } }
+}
+
+function lastTurnFromSession(item: Record<string, unknown>): { lastTurn?: SessionLastTurn } {
+  const nested = asRecordOrEmpty(item.lastTurn)
+  const status = nested.status ?? item.last_turn_status
+  const completedAt = numberValue(nested.completedAt) ?? numberValue(item.last_turn_completed_at)
+  if ((status !== "completed" && status !== "failed" && status !== "cancelled") || completedAt === undefined) return {}
+  return { lastTurn: { status, completedAt } }
 }
 
 function statusKind(input: unknown): SessionRowStatusKind | undefined {

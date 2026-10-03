@@ -1,4 +1,4 @@
-import type { SessionRef } from "@claxedo/agent-runtime-contract"
+import type { SessionLastTurn, SessionRef } from "@claxedo/agent-runtime-contract"
 import type { SessionRowStatus } from "../../session/navigation-list"
 
 export const MAX_HOST_SESSION_ROWS = 100
@@ -24,6 +24,7 @@ export type HostSessionRow = SessionRef & {
   lastHumanTurnAt?: number
   archivedAt?: number
   status: SessionRowStatus
+  lastTurn?: SessionLastTurn
 }
 
 export type HostSessionRowsPublication = {

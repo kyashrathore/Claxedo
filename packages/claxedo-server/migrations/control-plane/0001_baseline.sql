@@ -613,7 +613,7 @@ CREATE TABLE sessions (
   max_event_ordinal integer not null default 0 check (max_event_ordinal >= 0),
   snapshot_generation integer not null default 0 check (snapshot_generation >= 0),
   snapshot_hash text,
-  snapshot_token text, last_human_turn_at integer, archived_at integer, status text check (status is null or status in ('idle', 'busy', 'retry', 'interrupted')), status_at integer, awaiting_input integer not null default 0 check (awaiting_input in (0, 1)), runtime_updated_at integer,
+  snapshot_token text, last_human_turn_at integer, archived_at integer, status text check (status is null or status in ('idle', 'busy', 'retry', 'interrupted')), status_at integer, awaiting_input integer not null default 0 check (awaiting_input in (0, 1)), runtime_updated_at integer, last_turn_status text check (last_turn_status is null or last_turn_status in ('completed', 'failed', 'cancelled')), last_turn_completed_at integer,
   unique (session_id, workspace_id, org_id, project_id),
   foreign key (workspace_id, org_id, project_id)
     references workspaces (workspace_id, org_id, project_id) deferrable initially deferred

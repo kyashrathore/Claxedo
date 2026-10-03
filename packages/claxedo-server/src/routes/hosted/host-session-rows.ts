@@ -23,6 +23,10 @@ const row = rowRef.extend({
     awaitingInput: z.boolean(),
     at: time,
   }).strict(),
+  lastTurn: z.object({
+    status: z.enum(["completed", "failed", "cancelled"]),
+    completedAt: time,
+  }).strict().optional(),
 }).strict()
 
 const publication = z.object({

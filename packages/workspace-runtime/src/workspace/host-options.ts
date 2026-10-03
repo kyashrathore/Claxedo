@@ -11,8 +11,8 @@ export type WorkspaceRuntimeStore = RuntimeStore
 export type WorkspaceRuntimeStoreFactory = (input: { storeRoot?: string }) => WorkspaceRuntimeStore
 
 export type WorkspaceHostOptions = {
-  /** Host observer for the durable turn.finish outcome after store commit. */
-  onTurnOutcome?: (input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
+  /** Host observer for the durable `turn.finish` outcome, once per turn the store recorded, after it commits. */
+  onTurnOutcome?: (input: { workspaceId: string; sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
   /** Direct observer for the presentation events produced by this host. */
   onPresentationEvent?: (event: AgentEventEnvelope) => void
   /**
