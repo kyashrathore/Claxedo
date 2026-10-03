@@ -2554,7 +2554,7 @@ export class RuntimeStore {
         events.push(sessionError(input.outcome.error ?? "turn failed", input.sessionId, input.outcome, lastTurn))
       } else {
         if (!readMessageCompleted(this.db, input.sessionId, segment?.id ?? active.assistant_message_id)) {
-          events.push(messageCompleted(input.sessionId, segment?.id ?? active.assistant_message_id))
+          events.push(messageCompleted(input.sessionId, segment?.id ?? active.assistant_message_id, input.outcome.status === "cancelled" || undefined))
         }
         events.push(sessionIdle(input.sessionId, lastTurn))
       }

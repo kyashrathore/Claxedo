@@ -95,3 +95,31 @@ test("a child whose own stream finished its reply while its parent is idle settl
     } finally { unsubscribe() }
   } finally { await f.dispose() }
 })
+
+for (const [status, outcome] of [["completed", "completed"], ["failed", "failed"], ["interrupted", "cancelled"]] as const) {
+  test(`a child that ends ${status} publishes one terminal frame, whose lastTurn is the outcome the child then reads`, async () => {
+    const { f, session } = await idleParent()
+    try {
+      const child = await session.observeSubagent(observation("thread-child"))
+      session.associateChild("thread-child", child!)
+      const terminals: Array<{ type: string; lastTurn?: unknown; cancelled?: unknown }> = []
+      const unsubscribe = f.eventHub.subscribeGlobal(({ payload }) => {
+        const properties = payload.properties as { sessionID?: string; lastTurn?: unknown; cancelled?: unknown } | undefined
+        if (properties?.sessionID !== child!.sessionId) return
+        if (payload.type === "message.completed" || payload.type === "session.idle" || payload.type === "session.error") {
+          terminals.push({ type: payload.type, ...(properties.lastTurn ? { lastTurn: properties.lastTurn } : {}), ...(properties.cancelled ? { cancelled: properties.cancelled } : {}) })
+        }
+      })
+      await session.observeSubagent(observation("thread-child", status))
+      unsubscribe()
+
+      const read = f.store.getSession(child!.sessionId)?.lastTurn
+      const end = outcome === "failed" ? "session.error" : "session.idle"
+      expect(terminals.filter((frame) => frame.type === end)).toEqual([{ type: end, lastTurn: { status: outcome, completedAt: read?.completedAt } }])
+      expect(terminals.filter((frame) => frame.type === "message.completed")).toEqual(
+        outcome === "failed" ? [] : [{ type: "message.completed", ...(outcome === "cancelled" ? { cancelled: true } : {}) }],
+      )
+      expect(read?.status).toBe(outcome)
+    } finally { await f.dispose() }
+  })
+}

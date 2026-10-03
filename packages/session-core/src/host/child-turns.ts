@@ -8,11 +8,7 @@ import type { AgentRuntimeStore } from "./contracts"
 import { AgentRuntimeStaleTurnError } from "../store"
 import type { LeasedTurnFailure } from "../broker-ports/index"
 
-type ChildLifecycleEvent =
-  | { type: "session-status"; status: "busy" }
-  | { type: "finish"; sessionId: string }
-  | { type: "cancelled"; sessionId: string }
-  | { type: "error"; error: string }
+type ChildLifecycleEvent = { type: "session-status"; status: "busy" }
 
 /** What a parent's running turn, prompted or provider-initiated, lends its children: the prompt they inherit and where their lifecycle projects. */
 export type ParentTurnContext = {
@@ -49,17 +45,15 @@ function childOutcome(event: Pick<SubagentUpdatedEvent, "status" | "label">) {
   return { status: "cancelled" as const, completedAt, reason: event.status ?? "interrupted" }
 }
 
-function childTerminal(outcome: ReturnType<typeof childOutcome>, sessionId: string): ChildLifecycleEvent {
-  if (outcome.status === "failed") return { type: "error", error: outcome.error }
-  return outcome.status === "cancelled" ? { type: "cancelled", sessionId } : { type: "finish", sessionId }
-}
 
 /**
  * The child sessions a host turn's subagents own. A child has no prompt
  * response of its own, so its turn exists only because the host seeds it when
  * the broker admits the child and ends it when the terminal observation
- * arrives; both steps project through the same router its routed events use,
- * so a reader watching the child sees it start, work and stop. A child
+ * arrives. The start projects through the same router its routed events use;
+ * the end is the store's `finishTurn`, whose events are the child's only
+ * terminal frames, so a reader watching the child sees it start, work and
+ * stop once. A child
  * `create_subagent` minted is prompted like any session and owns its turns,
  * so its harness's observation only binds it to the call.
  */
@@ -114,12 +108,7 @@ export function createChildTurns(input: {
     return seeded
   }
 
-  const idleTerminal = (parentSessionId: string, child: SeededChild) => {
-    const reply = input.store.getMessages(child.target.sessionId).find((message) => message.info.id === child.target.assistantMessageId)
-    return reply?.info.time?.completed === undefined ? input.idleParent(parentSessionId) : undefined
-  }
-
-  const settle = (child: SeededChild, event: Pick<SubagentUpdatedEvent, "status" | "label">, parent: ParentTurnContext | undefined) => {
+  const settle = (child: SeededChild, event: Pick<SubagentUpdatedEvent, "status" | "label">) => {
     if (child.settled) return
     child.settled = true
     const outcome = childOutcome(event)
@@ -137,7 +126,6 @@ export function createChildTurns(input: {
     }
     input.childTurnSettled(child.target.sessionId, child.target.assistantMessageId)
     try {
-      parent?.projectChild(child.target, childTerminal(outcome, child.target.sessionId), SOURCE)
       for (const payload of finished.events) input.publish(child.target.sessionId, payload)
     } finally {
       input.store.releaseTurnLease(child.target.sessionId, child.leaseId)
@@ -158,7 +146,7 @@ export function createChildTurns(input: {
         const failures: unknown[] = []
         for (const child of children.values()) {
           if (child.parent !== context || child.mode === "background" || child.settled) continue
-          try { settle(child, { status: "interrupted" }, context) } catch (error) { failures.push(error) }
+          try { settle(child, { status: "interrupted" }) } catch (error) { failures.push(error) }
         }
         if (failures.length) throw new AggregateError(failures, "Foreground child settlement failed")
       }
@@ -180,7 +168,7 @@ export function createChildTurns(input: {
         publishSubagent: async (parentSessionId, event) => {
           await base.publishSubagent(parentSessionId, event)
           const child = event.childSessionId ? children.get(event.childSessionId) : undefined
-          if (child && isTerminalSubagentStatus(event.status)) settle(child, event, parents.get(parentSessionId) ?? idleTerminal(parentSessionId, child))
+          if (child && isTerminalSubagentStatus(event.status)) settle(child, event)
         },
       }
     },

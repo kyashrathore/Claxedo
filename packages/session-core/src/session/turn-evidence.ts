@@ -68,13 +68,6 @@ export function readTurnEvidence(db: TurnEvidenceDatabase, sessionId: string, tu
   return { started: true, finished: true, outcome: payload.outcome }
 }
 
-/**
- * The turn a journal row at `seq` falls in: the newest turn started at or
- * before it, named by the assistant message id that start opened. Every prompt
- * steered into a turn and every reply it opened is journaled after its start
- * and before the next one, so this is the one rule for which turn a message
- * belongs to.
- */
 export function readTurnFinished(db: TurnEvidenceDatabase, sessionId: string, assistantMessageId: string): boolean {
   return !!db.prepare<{ payload_json: string }>(TURN_FINISH_SQL).get(sessionId, assistantMessageId)
 }
@@ -83,6 +76,13 @@ export function readMessageCompleted(db: TurnEvidenceDatabase, sessionId: string
   return !!db.prepare<{ found: number }>(MESSAGE_COMPLETED_SQL).get(sessionId, messageId)
 }
 
+/**
+ * The turn a journal row at `seq` falls in: the newest turn started at or
+ * before it, named by the assistant message id that start opened. Every prompt
+ * steered into a turn and every reply it opened is journaled after its start
+ * and before the next one, so this is the one rule for which turn a message
+ * belongs to.
+ */
 export function readJournaledTurn(db: TurnEvidenceDatabase, sessionId: string, seq: number): string | null {
   return db.prepare<{ turn_id: string }>(JOURNALED_TURN_SQL).get(sessionId, seq)?.turn_id ?? null
 }

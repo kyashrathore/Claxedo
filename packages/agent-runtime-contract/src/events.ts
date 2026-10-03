@@ -80,7 +80,12 @@ export type AgentPresentationEvent =
   | { id: string; type: "question.expired"; properties: { sessionID: string; requestID: string } }
   | { id: string; type: "todo.updated"; properties: { sessionID: string; todos: AgentTodo[] } }
   | { id: string; type: "session.status"; properties: { sessionID: string; status: AgentRuntimeStatus } }
-  /** `lastTurn` is present on the frame that ends a turn, and equals the `lastTurn` the session's list row and read then carry. */
+  /**
+   * `lastTurn` is on the one frame that ends a turn, the `session.idle` (completed or cancelled) or
+   * `session.error` (failed) that `RuntimeStore.finishTurn` returns beside the `turn.finish` it journals:
+   * that outcome's status and `completedAt`, which the session's read and its list row then carry.
+   * A `session.error` raised outside a turn's end, such as a refused prompt admission, carries none.
+   */
   | { id: string; type: "session.idle"; properties: { sessionID: string; lastTurn?: import("./sessions").SessionLastTurn } }
   | { id: string; type: "session.error"; properties: { sessionID?: string; error?: { name: string; data: Record<string, unknown> & { message?: string } }; lastTurn?: import("./sessions").SessionLastTurn } }
   | { id: string; type: "session.updated"; properties: { sessionID: string; info: import("./sessions").AgentSession } }
