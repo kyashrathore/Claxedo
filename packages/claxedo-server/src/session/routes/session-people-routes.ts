@@ -14,9 +14,9 @@ import {
   notifySessionShareChanged,
   peopleErrorResponse,
   type SessionShareChangedSink,
-  type SessionShareFanoutTarget,
 } from "../session-people-contract"
 import { requestedSessionShareLevel } from "@claxedo/server-core/platform/auth/session-share-level"
+import type { SessionShareRecipient } from "@claxedo/server-core/platform/auth/session-share-authority"
 
 type Options = {
   authentication?: RequestAuthenticationAdapter
@@ -46,14 +46,11 @@ async function signedAuth(req: Request, options: Options, services: ControlPlane
   throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
 }
 
-function shareTargetFromBody(body: Record<string, unknown>): SessionShareFanoutTarget {
+function shareTargetFromBody(body: Record<string, unknown>): SessionShareRecipient {
   return {
     ...(typeof body.grantedToTokenIdentifier === "string" ? { grantedToTokenIdentifier: body.grantedToTokenIdentifier } : {}),
     ...(typeof body.grantedToSubject === "string" ? { grantedToSubject: body.grantedToSubject } : {}),
     ...(typeof body.grantedToUserId === "string" ? { grantedToUserId: body.grantedToUserId } : {}),
-    ...(typeof body.grantedToOrgId === "string" ? { grantedToOrgId: body.grantedToOrgId } : {}),
-    ...(typeof body.grantedToTeamId === "string" ? { grantedToTeamId: body.grantedToTeamId } : {}),
-    ...(typeof body.grantedToTeamPublicId === "string" ? { grantedToTeamPublicId: body.grantedToTeamPublicId } : {}),
   }
 }
 
@@ -113,24 +110,23 @@ export function SessionPeopleControlRoutes(services: ControlPlaneServices, optio
         const authority = requireAuthority(services)
         const grant = authority.grantSessionShare
         if (!grant) return c.json({ error: { code: "not_implemented", message: "Session shares unavailable" } }, 501)
-        const target = shareTargetFromBody(body)
-        const result = await grant(auth, {
+        const { recipientUserId, ...response } = await grant(auth, {
           sessionId: c.req.param("sessionId"),
           workspaceId,
           level: requestedSessionShareLevel(body.level),
-          ...target,
+          ...shareTargetFromBody(body),
         })
         await notifySessionShareChanged({
           auth,
           authority,
           phase: "granted",
-          level: result.level,
+          level: response.level,
           sessionId: c.req.param("sessionId"),
           workspaceId,
-          target,
+          recipientUserIds: [recipientUserId],
           ...(options.sessionShareChangedSink ? { sink: options.sessionShareChangedSink } : {}),
         })
-        return c.json(result)
+        return c.json(response)
       } catch (err) {
         return peopleErrorResponse(c, err)
       }
@@ -151,25 +147,21 @@ export function SessionPeopleControlRoutes(services: ControlPlaneServices, optio
         const authority = requireAuthority(services)
         const revoke = authority.revokeSessionShare
         if (!revoke) return c.json({ error: { code: "not_implemented", message: "Session shares unavailable" } }, 501)
-        const target = shareTargetFromBody(body)
-        const result = await revoke(auth, {
+        const { recipientUserIds, ...response } = await revoke(auth, {
           sessionId: c.req.param("sessionId"),
           workspaceId,
           ...(typeof body.grantId === "string" ? { grantId: body.grantId } : {}),
-          ...target,
+          ...shareTargetFromBody(body),
         })
-        for (const revokedTarget of result.revokedTargets) {
-          await notifySessionShareChanged({
-            auth,
-            authority,
-            phase: "revoked",
-            sessionId: c.req.param("sessionId"),
-            workspaceId,
-            target: revokedTarget,
-            ...(options.sessionShareChangedSink ? { sink: options.sessionShareChangedSink } : {}),
-          })
-        }
-        const { revokedTargets: _revokedTargets, ...response } = result
+        await notifySessionShareChanged({
+          auth,
+          authority,
+          phase: "revoked",
+          sessionId: c.req.param("sessionId"),
+          workspaceId,
+          recipientUserIds,
+          ...(options.sessionShareChangedSink ? { sink: options.sessionShareChangedSink } : {}),
+        })
         return c.json(response)
       } catch (err) {
         return peopleErrorResponse(c, err)

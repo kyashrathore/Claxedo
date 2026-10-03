@@ -1,13 +1,15 @@
 import { formatCompactAge } from "@/lib/relative-time"
 import type { MachineId, Placement, ProjectId, SessionId, SessionLocation } from "@/server"
-import { sessionActivity, type SessionRowView, type UnseenOutcome } from "@/session"
+import { sessionActivity, unseenOutcome, type SessionRowView, type UnseenOutcome } from "@/session"
 import type { TerminalItem } from "@/terminal"
 
 export type NavigationStatus = "idle" | "working" | "background" | "permission" | "error" | "interrupted" | "done"
 
 export const SESSION_GROUP_PAGE_SIZE = 5
 
-export function navigationStatus(row: SessionRowView, unseen: UnseenOutcome | undefined): NavigationStatus {
+const UNSEEN_MARK: Readonly<Record<UnseenOutcome, NavigationStatus>> = { finished: "done", failed: "error" }
+
+export function navigationStatus(row: SessionRowView): NavigationStatus {
   const activity = sessionActivity(row)
   if (activity === "waiting") return "permission"
   if (row.pending) return "working"
@@ -16,12 +18,13 @@ export function navigationStatus(row: SessionRowView, unseen: UnseenOutcome | un
       return "interrupted"
     case "working":
       return "working"
-    case "failed":
-      return unseen === "failed" ? "error" : "idle"
     case "background":
       return "background"
-    case "idle":
-      return unseen === "finished" ? "done" : "idle"
+    case "failed":
+    case "idle": {
+      const unseen = unseenOutcome(row)
+      return unseen ? UNSEEN_MARK[unseen] : "idle"
+    }
   }
 }
 

@@ -315,6 +315,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
         secretAuthority?: ConnectionSecretAuthority) => sessions.update(sessionId, updates, directory, secretAuthority),
       updateConfig: (sessionId: string, update: SessionConfigUpdate, directory?: RuntimeDirectory, secretAuthority?: ConnectionSecretAuthority) =>
         sessions.updateSessionConfig(sessionId, update, directory, secretAuthority),
+      holdTree: async (sessionId: string) => sessions.holdTree(sessionId),
       delete: (sessionId: string, directory?: RuntimeDirectory, secretAuthority?: ConnectionSecretAuthority) =>
         sessions.delete(sessionId, directory, secretAuthority),
       fork: (sessionId: string, messageId: string, childId?: string, directory?: RuntimeDirectory, secretAuthority?: ConnectionSecretAuthority) =>

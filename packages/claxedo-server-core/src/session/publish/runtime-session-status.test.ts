@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest"
 import type { RuntimeStatusPath } from "../runtime-activity"
 import { createRuntimeSessionStatus } from "./runtime-session-status"
+import { createSessionRowsPublisher } from "./session-rows-publisher"
 
 const WS = "ws_a"
 
@@ -19,6 +20,7 @@ function harness(answers: Partial<Record<RuntimeStatusPath, unknown>> = {}) {
     },
   }
   const changes: Array<[string, string]> = []
+  const changeListeners = new Set<(workspaceId: string, sessionId: string) => void>()
   let clock = 1_000
   const reads: RuntimeStatusPath[] = []
   const status = createRuntimeSessionStatus({
@@ -32,7 +34,10 @@ function harness(answers: Partial<Record<RuntimeStatusPath, unknown>> = {}) {
       return answer === undefined ? undefined : Response.json(answer)
     },
     now: () => clock,
-    onChange: (workspaceId, sessionId) => changes.push([workspaceId, sessionId]),
+    onChange: (workspaceId, sessionId) => {
+      changes.push([workspaceId, sessionId])
+      for (const listener of changeListeners) listener(workspaceId, sessionId)
+    },
   })
   const emit = (type: string, properties: Record<string, unknown>) => {
     for (const listener of frameListeners) listener({ directory: "/work", payload: { type, properties } })
@@ -40,6 +45,7 @@ function harness(answers: Partial<Record<RuntimeStatusPath, unknown>> = {}) {
   return {
     status,
     changes,
+    changeListeners,
     reads,
     emit,
     tick: (ms: number) => {
@@ -49,6 +55,16 @@ function harness(answers: Partial<Record<RuntimeStatusPath, unknown>> = {}) {
     dispose: () => listeners.forEach((listener) => listener(runtime, "disposed")),
     subscribed: () => frameListeners.size,
   }
+}
+
+function onChangeOf(h: ReturnType<typeof harness>, listener: (workspaceId: string, sessionId: string) => void) {
+  h.changeListeners.add(listener)
+  return () => h.changeListeners.delete(listener)
+}
+
+async function until(ready: () => boolean) {
+  for (let attempt = 0; attempt < 200 && !ready(); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 5))
+  expect(ready()).toBe(true)
 }
 
 describe("runtime session status", () => {
@@ -115,6 +131,56 @@ describe("runtime session status", () => {
     h.emit("session.status", {})
 
     expect(h.changes).toEqual([])
+  })
+
+  test("reports background work when its counts change, and carries it on the row while it runs", () => {
+    const h = harness()
+    h.mount()
+
+    h.emit("session.background-work", { sessionID: "s1", agents: 1, shells: 0, other: 0 })
+    h.emit("session.background-work", { sessionID: "s1", agents: 1, shells: 0, other: 0 })
+    expect(h.status.current(WS, "s1")).toEqual({ kind: "idle", awaitingInput: false, backgroundWork: { agents: 1, shells: 0, other: 0 }, at: 1_000 })
+    h.emit("session.background-work", { sessionID: "s1", agents: 0, shells: 0, other: 0 })
+    expect(h.status.current(WS, "s1")).toEqual({ kind: "idle", awaitingInput: false, at: 1_000 })
+
+    expect(h.changes).toEqual([[WS, "s1"], [WS, "s1"]])
+  })
+
+  test("a turn's streamed content publishes nothing; only its status change does", async () => {
+    const h = harness()
+    const posts: unknown[] = []
+    const publisher = createSessionRowsPublisher({
+      source: {
+        listRows: async () => [],
+        readRow: async (workspaceId, sessionId) => ({
+          kind: "row",
+          row: { workspaceId, sessionId, createdAt: 1, updatedAt: 1, status: h.status.current(workspaceId, sessionId) },
+        }),
+      },
+      url: () => "https://plane.test/api/claxedo/host/session-rows",
+      fetch: (async (_url: string | URL | Request, init?: RequestInit) => {
+        posts.push(JSON.parse(String(init?.body)))
+        return Response.json({ accepted: 1, refused: [] })
+      }) as typeof fetch,
+      debounceMs: 1,
+    })
+    publisher.credentialChanged({ token: "htt", hostId: "host_1", workspaceIds: [WS] })
+    const unsubscribe = onChangeOf(h, (workspaceId, sessionId) => publisher.sessionChanged(workspaceId, sessionId))
+    h.mount()
+
+    for (let index = 0; index < 50; index += 1) {
+      h.emit("message.part.updated", { sessionID: "s1", part: { id: `p${index}`, type: "text", text: "x".repeat(index) } })
+      h.emit("message.part.delta", { sessionID: "s1", messageID: "m1", partID: "p1", field: "text", delta: "x" })
+      h.emit("message.updated", { sessionID: "s1", info: { id: "m1", sessionID: "s1", role: "assistant" } })
+    }
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(posts).toEqual([])
+
+    h.emit("session.status", { sessionID: "s1", status: { type: "busy" } })
+    await until(() => posts.length === 1)
+    expect(posts[0]).toMatchObject({ rows: [{ sessionId: "s1", status: { kind: "busy" } }] })
+    unsubscribe()
+    publisher.stop()
   })
 
   test("a disposed runtime leaves every session idle and says so for the ones that were not", () => {

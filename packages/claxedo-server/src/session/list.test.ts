@@ -33,13 +33,14 @@ describe("signedSessionList", () => {
     const response = await signedSessionList(
       services({ listSessionPage }),
       signed,
-      query("scope=project&projectId=prj_1&sort=human_turn_desc&limit=2"),
+      query("scope=project&projectId=prj_1&sort=human_turn_desc&limit=2&settled=all"),
     )
 
     expect(listSessionPage).toHaveBeenCalledWith(signed, {
       projectId: "prj_1",
       sort: "human_turn_desc",
       archived: "active",
+      settled: "all",
       limit: 3,
     })
     expect(response.items?.map((item) => item.sessionRef)).toEqual([
@@ -64,6 +65,7 @@ describe("signedSessionList", () => {
       workspaceId: "ws_1",
       sort: "human_turn_desc",
       archived: "active",
+      settled: "active",
       limit: 2,
       after: { updatedAt: 2, createdAt: 1, lastHumanTurnAt: 9, sessionRef: "workspace:ws_1:session:ses_a" },
     })

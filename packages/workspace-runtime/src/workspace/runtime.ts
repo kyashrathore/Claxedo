@@ -22,6 +22,7 @@ import {
   type SessionAccessPolicy,
   runtimeSessionTime,
   harnessHealthChanged,
+  sessionStatusSnapshot,
 } from "@claxedo/session-core"
 import { realDirectoryPath } from "@claxedo/helpers/real-path"
 import { inside } from "@claxedo/helpers/path"
@@ -533,6 +534,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
         withSessionCore(core, () => withWorkspaceTarget(options.target, sessions.recoverQueuedPrompts)))
       if (runner) reissueQueuedPrompts()
     },
+    sessionStatus: () => sessionStatusSnapshot(store().listEverySession(), (sessionId) => engine?.ports.backgroundWork.read(sessionId)),
     sessionTime(sessionId: string) {
       const session = store().getSession(sessionId)
       return session ? runtimeSessionTime(session) : undefined
@@ -690,6 +692,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions): WorkspaceHos
           deliveriesDone,
         ])
         if (runtimeResult && !runtimeResult.ok) throw runtimeResult.error
+        await options.beforeStoreClose?.()
         checkpoint.clear()
         cleanupPresentationObserver()
         cleanupRuntimeObserver()

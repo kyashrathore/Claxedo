@@ -17,6 +17,7 @@ import {
   upsertRow,
 } from "./rows"
 import { backgroundWorkChanged, backgroundWorkRead, pageStatusesRead, statusChanged, statusRead } from "./statuses"
+import { confirmReaderWrite, failReaderWrite, pageReadersRead, readerChanged, startReaderWrite } from "./readers"
 
 type More = ReadonlyMap<ProjectId, MorePhase>
 
@@ -27,6 +28,7 @@ function data(state: ListState): ListData {
     entries: state.entries,
     statuses: state.statuses,
     backgroundWork: state.backgroundWork,
+    readers: state.readers,
     open: state.open,
     windows: state.windows,
     failures: state.failures,
@@ -45,11 +47,13 @@ function applyListEvent<S extends ListData>(state: S, event: ServerListEvent): S
     case "sessionRemoved":
       return tombstoneRow(state, event.ref, event.at)
     case "statusChanged": {
-      const next = statusChanged(state, event.ref, event.status, event.at)
+      const next = statusChanged(state, event.ref, event.status, event.at, event.waitingOnUser)
       return event.lastTurn ? turnEnded(next, event.ref, event.lastTurn) : next
     }
     case "backgroundWorkChanged":
       return backgroundWorkChanged(state, event.ref, event.work, event.at)
+    case "readerChanged":
+      return readerChanged(state, event.ref, event.reader, event.at)
     default:
       return unreachable(event)
   }
@@ -79,7 +83,7 @@ const WINDOWING: Record<"extend" | RereadMode, (data: ListData, window: FetchedW
 }
 
 function live(base: ListData, window: FetchedWindow, held: readonly ServerListEvent[], mode: "extend" | RereadMode, more: More): ListState {
-  const windowed = pageStatusesRead(WINDOWING[mode](base, window), window)
+  const windowed = pageReadersRead(pageStatusesRead(WINDOWING[mode](base, window), window), window)
   const replayed = held.reduce(applyListEvent, windowed)
   return { ...replayed, kind: "live", more }
 }
@@ -125,12 +129,36 @@ function sessionRead(state: ListState, event: Extract<ListEvent, { type: "rowRea
   }
 }
 
+type OwnWrite = Extract<ListEvent, { type: "createStarted" | "createConfirmed" | "createFailed" | "sendStarted" | "sendFailed" | "readerWriteStarted" | "readerWritten" | "readerWriteFailed" }>
+
+function ownWrite(state: ListState, event: OwnWrite): ListData {
+  switch (event.type) {
+    case "createStarted":
+      return startCreate(state, event.clientRequestId, event.row)
+    case "createConfirmed":
+      return confirmCreate(state, event.clientRequestId, event.row)
+    case "createFailed":
+      return failCreate(state, event.clientRequestId)
+    case "sendStarted":
+      return startSend(state, event.sessionId, event.clientRequestId, event.at)
+    case "sendFailed":
+      return failSend(state, event.sessionId, event.clientRequestId)
+    case "readerWriteStarted":
+      return startReaderWrite(state, event.sessionId, event.writeId, event.reader)
+    case "readerWritten":
+      return confirmReaderWrite(state, event.sessionId, event.writeId, event.reader, event.at)
+    case "readerWriteFailed":
+      return failReaderWrite(state, event.sessionId, event.writeId)
+  }
+}
+
 export function listTransition(state: ListState, event: ListEvent): ListState {
   switch (event.type) {
     case "sessionUpserted":
     case "sessionRemoved":
     case "statusChanged":
     case "backgroundWorkChanged":
+    case "readerChanged":
       return serverEvent(state, event)
     case "fetchStarted":
     case "fetched":
@@ -151,15 +179,14 @@ export function listTransition(state: ListState, event: ListEvent): ListState {
     case "sessionClosed":
       return withData(state, closeSession(state, event.sessionId))
     case "createStarted":
-      return withData(state, startCreate(state, event.clientRequestId, event.row))
     case "createConfirmed":
-      return withData(state, confirmCreate(state, event.clientRequestId, event.row))
     case "createFailed":
-      return withData(state, failCreate(state, event.clientRequestId))
     case "sendStarted":
-      return withData(state, startSend(state, event.sessionId, event.clientRequestId, event.at))
     case "sendFailed":
-      return withData(state, failSend(state, event.sessionId, event.clientRequestId))
+    case "readerWriteStarted":
+    case "readerWritten":
+    case "readerWriteFailed":
+      return withData(state, ownWrite(state, event))
     default:
       return unreachable(event)
   }

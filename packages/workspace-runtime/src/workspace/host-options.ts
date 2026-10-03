@@ -16,6 +16,11 @@ export type WorkspaceHostOptions = {
   /** Direct observer for the presentation events produced by this host. */
   onPresentationEvent?: (event: AgentEventEnvelope) => void
   /**
+   * Awaited during disposal once every turn has ended and before the store
+   * closes: the one moment a host can read the sessions' final state.
+   */
+  beforeStoreClose?: () => Promise<void>
+  /**
    * Direct observer for the canonical runtime events produced by this host.
    *
    * The presentation stream carries session metadata; this one carries what the harness

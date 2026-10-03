@@ -845,6 +845,49 @@ describe("coreAppHomeOrigin", () => {
   })
 })
 
+describe("hosted-core session reader marks", () => {
+  function core(recordSessionReader: unknown, nudge: (room: string, body: unknown) => Response = () => Response.json({ delivered: 1, held: 1 })) {
+    const base = plane()
+    const services = base.services as unknown as { authority: Record<string, unknown> }
+    services.authority = { ...services.authority, recordSessionReader }
+    const nudges: Array<{ room: string; body: unknown }> = []
+    const liveSyncRoom = {
+      idFromName: (name: string) => name,
+      get: (room: string) => ({
+        fetch: async (request: Request) => {
+          const body = await request.json()
+          nudges.push({ room, body })
+          return nudge(room, body)
+        },
+      }),
+    }
+    return { app: createHostedCoreApp(base, { ...options, liveSyncRoom }) as unknown as Hono, nudges }
+  }
+  const post = (app: Hono, path: string, body: unknown) =>
+    app.request(path, { method: "POST", headers: { authorization: "Bearer user-1", "content-type": "application/json" }, body: JSON.stringify(body) })
+
+  test("a seen write answers the caller's marks and rings the caller's own room with them", async () => {
+    const record = vi.fn(async () => ({ workspaceId: "ws_1", seenAt: 30 }))
+    const { app, nudges } = core(record)
+    const response = await post(app, "/api/control/sessions/ses_1/seen", { completedAt: 30 })
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ seenAt: 30 })
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ subject: "user-1" }) }), { sessionId: "ses_1", write: { seenThrough: 30 } })
+    expect(nudges).toEqual([{ room: "org:org-1", body: { type: "session.reader.changed", ownerUserId: "user-1", sessionId: "ses_1", workspaceId: "ws_1", seenAt: 30, ts: expect.any(Number) } }])
+  })
+
+  test("a settle that lands answers even when its ring fails, and an unreadable session or a malformed body writes nothing", async () => {
+    const record = vi.fn(async (_auth: unknown, input: { sessionId: string }) => (input.sessionId === "ses_1" ? { workspaceId: "ws_1", settledAt: 9 } : undefined))
+    const { app } = core(record, () => new Response("down", { status: 503 }))
+    const settled = await post(app, "/api/control/sessions/ses_1/settle", { settled: true, through: 9 })
+    expect(settled.status).toBe(200)
+    await expect(settled.json()).resolves.toEqual({ settledAt: 9 })
+    expect((await post(app, "/api/control/sessions/ses_hidden/settle", { settled: true, through: 9 })).status).toBe(404)
+    expect((await post(app, "/api/control/sessions/ses_1/settle", { settled: "yes" })).status).toBe(400)
+    expect(record).toHaveBeenCalledTimes(2)
+  })
+})
+
 /**
  * The rail's paginated read, on the root the deployed worker actually uses.
  *

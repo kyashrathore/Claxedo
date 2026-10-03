@@ -1,12 +1,16 @@
 import type { SessionLastTurn, SessionRef } from "@claxedo/agent-runtime-contract"
 import type { SessionRowStatus } from "../../session/navigation-list"
+import type { SessionStatusChangedEvent } from "../runtime/lib/bus"
 
 export const MAX_HOST_SESSION_ROWS = 100
 
 /**
- * The machine publishing, as its Host Tunnel Token names it. The token already
- * lets its holder serve `workspaceIds` over the relay, so publishing those
- * workspaces' list rows asks for nothing the token does not grant.
+ * The host publishing. A machine is named by its Host Tunnel Token, which
+ * already lets its holder serve `workspaceIds` over the relay, so publishing
+ * those workspaces' list rows asks for nothing the token does not grant. A
+ * cloud runtime (`servedBy: "sandbox"`) is named by its session rows pass:
+ * one workspace, owned by `ownerUserId`, whose sandbox lease held the pass's
+ * epoch when the pass was admitted.
  */
 export type HostSessionRowsPublisher = {
   hostId: string
@@ -14,6 +18,7 @@ export type HostSessionRowsPublisher = {
   workspaceIds: readonly string[]
   enrollmentId?: string
   generation?: number
+  servedBy?: "sandbox"
 }
 
 /** A session's list entry as its machine holds it. Never a transcript. */
@@ -47,11 +52,20 @@ export type HostSessionRowsResult = {
   refused: HostSessionRowRefusal[]
 }
 
+/**
+ * What a committed publication answers the machine, and the status notices it
+ * owes each reader of a session whose status, wait, background work or last
+ * turn the write changed.
+ */
+export type HostSessionRowsOutcome = HostSessionRowsResult & {
+  statusNotices: SessionStatusChangedEvent[]
+}
+
 export type HostSessionRowsAuthority = {
   publishHostSessionRows: (
     publisher: HostSessionRowsPublisher,
     publication: HostSessionRowsPublication,
-  ) => Promise<HostSessionRowsResult>
+  ) => Promise<HostSessionRowsOutcome>
 }
 
 export type HostSessionRowsPlan<Workspace> = {

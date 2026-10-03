@@ -1,8 +1,9 @@
 import { isJsonRecord } from "../../platform/runtime/lib/json"
-import { ClaxedoDB, and, eq, inArray, isNull, lt, or, textColumns } from "../../platform/db"
+import { ClaxedoDB, and, eq, inArray, isNull, lt, numberColumn, or, textColumn, textColumns } from "../../platform/db"
 import {
   ClaxedoSessionAttachmentTable,
   ClaxedoSessionMetaTable,
+  ClaxedoSessionReadTable,
   ClaxedoSessionTagTable,
 } from "../meta.sql"
 import { GLOBAL_SHOW_TAG } from "./types"
@@ -29,7 +30,8 @@ import {
 import { resolveWorkspace, type SessionProjectionWorkspace, type Workspace } from "../../workspace/store"
 import { controlBus } from "../../platform/runtime/lib/bus"
 import { asRecord } from "@claxedo/helpers/guards"
-import { sessionOrderSql, type SessionOrderColumns } from "../navigation-order"
+import { sessionOrderSql, unsettledSql, type SessionOrderColumns } from "../navigation-order"
+import { sessionReaderState } from "../reader"
 import { reportSessionMetaChanges, type SessionMetaChange } from "./changes"
 import type { SessionLastTurn } from "@claxedo/agent-runtime-contract"
 
@@ -115,11 +117,14 @@ export function recordSessionLastTurn(workspaceID: string, sessionID: string, la
 export async function deleteSessionMeta(sessionID: string) {
   const removed = ClaxedoDB.transaction((db) => {
     const rows = db.select({
+      session_ref: ClaxedoSessionMetaTable.session_ref,
       session_id: ClaxedoSessionMetaTable.session_id,
       parent_session_id: ClaxedoSessionMetaTable.parent_session_id,
       workspace_id: ClaxedoSessionMetaTable.workspace_id,
     }).from(ClaxedoSessionMetaTable).all()
     const sessionIDs = sessionTreeIDs(rows, sessionID)
+    const sessionRefs = rows.filter((row) => sessionIDs.includes(row.session_id)).map((row) => row.session_ref)
+    db.delete(ClaxedoSessionReadTable).where(inArray(ClaxedoSessionReadTable.session_ref, sessionRefs)).run()
     db.delete(ClaxedoSessionAttachmentTable).where(inArray(ClaxedoSessionAttachmentTable.session_id, sessionIDs)).run()
     db.delete(ClaxedoSessionTagTable).where(inArray(ClaxedoSessionTagTable.session_id, sessionIDs)).run()
     db.delete(ClaxedoSessionMetaTable).where(inArray(ClaxedoSessionMetaTable.session_id, sessionIDs)).run()
@@ -387,9 +392,15 @@ const NAVIGATION_COLUMNS: SessionOrderColumns = {
   sessionRef: "m.session_ref",
 }
 
+const READER_COLUMNS = {
+  settledAt: "r.settled_at",
+  lastHumanTurnAt: "m.last_human_turn_at",
+  lastTurnCompletedAt: "m.last_turn_completed_at",
+}
+
 export async function listSessionNavigationMetas(input: SessionMetaNavigationListInput) {
   const where: string[] = ["m.parent_session_id IS NULL"]
-  const params: Array<string | number | null> = []
+  const params: Array<string | number | null> = [input.reader]
   if (input.workspaceID) {
     where.push("m.workspace_id = ?")
     params.push(input.workspaceID)
@@ -414,6 +425,7 @@ export async function listSessionNavigationMetas(input: SessionMetaNavigationLis
   }
   if (input.archived === "archived") where.push("m.archived_at IS NOT NULL")
   if (input.archived !== "all" && input.archived !== "archived") where.push("m.archived_at IS NULL")
+  if (input.settled !== "all") where.push(unsettledSql(READER_COLUMNS))
   if (input.search) {
     where.push("LOWER(COALESCE(m.title, '')) LIKE ?")
     params.push(`%${input.search.toLowerCase()}%`)
@@ -434,8 +446,9 @@ export async function listSessionNavigationMetas(input: SessionMetaNavigationLis
   const rows = safeMetaRead("session navigation list", [], () =>
     ClaxedoDB.raw()
       .prepare(`
-        SELECT m.session_ref
+        SELECT m.session_ref, r.seen_at, r.settled_at
         FROM claxedo_session_meta m
+        LEFT JOIN claxedo_session_reads r ON r.user_id = ? AND r.session_ref = m.session_ref
         WHERE ${where.join(" AND ")}
         ORDER BY ${order.orderBy}
         LIMIT ?
@@ -443,11 +456,12 @@ export async function listSessionNavigationMetas(input: SessionMetaNavigationLis
       .all(...params, Math.max(0, input.limit))
       .filter(isJsonRecord),
   )
-  const hit = textColumns(rows, "session_ref")
-  const meta = await sessionMetaMapByRef(hit)
-  return hit
-    .map((item) => meta.get(item))
-    .filter((item): item is SessionMeta => !!item)
+  const meta = await sessionMetaMapByRef(textColumns(rows, "session_ref"))
+  return rows.flatMap((row) => {
+    const hit = meta.get(textColumn(row, "session_ref") ?? "")
+    if (!hit) return []
+    return [{ ...hit, ...sessionReaderState(numberColumn(row, "seen_at"), numberColumn(row, "settled_at")) }]
+  })
 }
 
 export function applySessionMeta(input: Array<Record<string, unknown>>) {
@@ -539,16 +553,17 @@ async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>): P
  * caller is about to write.
  *
  * `session_ref` is the primary key of `claxedo_session_meta` and the join key of
- * `claxedo_session_tag` and `claxedo_session_attachment`, but it is a *derived*
- * identity: `storedSessionRef` composes it from host, workspace kind, workspace
- * id and directory. When one of those changes shape — a local workspace moving
- * from `workspace:<ws>:session:<id>` to `local:<dir>:session:<id>` once
+ * `claxedo_session_tag`, `claxedo_session_attachment` and
+ * `claxedo_session_reads`, but it is a *derived* identity: `storedSessionRef`
+ * composes it from host, workspace kind, workspace id and directory. When one
+ * of those changes shape — a local workspace moving from
+ * `workspace:<ws>:session:<id>` to `local:<dir>:session:<id>` once
  * `Workspace.kind` reached the ref — a plain insert leaves the previous row
  * behind, orphaning its pins (`global`/`global:default`), `source-channel:*`
- * tags and attachments, and offering the old ref to `syncSessionMetas` as
- * "stale" to delete. Re-key in place instead, inside the caller's transaction
- * and before the write, so no child row is ever orphaned and no ref is ever
- * both live and stale.
+ * tags, attachments and reader marks, and offering the old ref to
+ * `syncSessionMetas` as "stale" to delete. Re-key in place instead, inside the
+ * caller's transaction and before the write, so no child row is ever orphaned
+ * and no ref is ever both live and stale.
  *
  * Scoped to the owning workspace: session ids are unique only within one, so two
  * workspaces genuinely hold distinct sessions under the same id and must never
@@ -590,10 +605,11 @@ function rekeySessionRef(
 }
 
 /**
- * Carry tag and attachment rows across a ref change by updating them in place.
- * A child whose composite key already exists under the destination ref cannot be
- * updated onto it, so drop that exact duplicate first — it carries no
- * information the destination does not already hold.
+ * Carry tag, attachment and reader rows across a ref change by updating them in
+ * place. A child whose key already exists under the destination ref cannot be
+ * updated onto it: a tag or attachment duplicate carries nothing the
+ * destination lacks and is dropped first, and a reader's two rows merge into
+ * the destination, each mark the later of the two.
  */
 function moveSessionMetaChildren(db: ClaxedoDB.Client, from: string, to: string) {
   const heldTags = new Set(
@@ -646,11 +662,31 @@ function moveSessionMetaChildren(db: ClaxedoDB.Client, from: string, to: string)
     .set({ session_ref: to })
     .where(eq(ClaxedoSessionAttachmentTable.session_ref, from))
     .run()
+
+  for (const mark of db.select().from(ClaxedoSessionReadTable).where(eq(ClaxedoSessionReadTable.session_ref, from)).all()) {
+    const reader = (ref: string) => and(eq(ClaxedoSessionReadTable.session_ref, ref), eq(ClaxedoSessionReadTable.user_id, mark.user_id))
+    const held = db.select().from(ClaxedoSessionReadTable).where(reader(to)).get()
+    if (!held) {
+      db.update(ClaxedoSessionReadTable).set({ session_ref: to }).where(reader(from)).run()
+      continue
+    }
+    db.update(ClaxedoSessionReadTable)
+      .set({ seen_at: laterMark(held.seen_at, mark.seen_at), settled_at: laterMark(held.settled_at, mark.settled_at) })
+      .where(reader(to))
+      .run()
+    db.delete(ClaxedoSessionReadTable).where(reader(from)).run()
+  }
+}
+
+function laterMark(held: number | null, moved: number | null): number | null {
+  if (held === null) return moved
+  return moved === null ? held : Math.max(held, moved)
 }
 
 function deleteSessionMetaRefs(sessionRefs: string[]) {
   if (sessionRefs.length === 0) return
   ClaxedoDB.transaction((db) => {
+    db.delete(ClaxedoSessionReadTable).where(inArray(ClaxedoSessionReadTable.session_ref, sessionRefs)).run()
     db.delete(ClaxedoSessionAttachmentTable).where(inArray(ClaxedoSessionAttachmentTable.session_ref, sessionRefs)).run()
     db.delete(ClaxedoSessionTagTable).where(inArray(ClaxedoSessionTagTable.session_ref, sessionRefs)).run()
     db.delete(ClaxedoSessionMetaTable).where(inArray(ClaxedoSessionMetaTable.session_ref, sessionRefs)).run()

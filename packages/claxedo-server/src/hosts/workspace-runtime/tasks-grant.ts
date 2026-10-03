@@ -1,4 +1,3 @@
-import { decodeJwt } from "jose"
 import { WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL } from "@claxedo/workspace-runtime"
 import { TASKS_ROUTE_PATH } from "@claxedo/tasks/http"
 import { isTasksOperation, type TasksOperation } from "@claxedo/server-core/tasks-host/capability"
@@ -10,6 +9,7 @@ import {
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { asRecord, parseJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import type { TasksGrant } from "@claxedo/mcp"
+import { expiryOf, halfLifeRenewal, nodeRenewalTimers, type RenewalOutcome, type RenewalTimers } from "./half-life-renewal"
 
 /**
  * Where this runtime reaches its control plane.
@@ -33,16 +33,6 @@ function grantedOperations(value: string | undefined): readonly TasksOperation[]
   return [...new Set((value ?? "").split(",").map((name) => name.trim()).filter(isTasksOperation))]
 }
 
-/** The `exp` a control-plane-minted capability carries, read without verifying: the control plane verifies. */
-function expiryOf(token: string): number | undefined {
-  try {
-    const exp = decodeJwt(token).exp
-    return typeof exp === "number" ? exp * 1_000 : undefined
-  } catch {
-    return undefined
-  }
-}
-
 export type TasksGrantState =
   | Readonly<{ kind: "active" }>
   /** The control plane refused a renewal; the token in hand serves until its own expiry and no other is asked for. */
@@ -62,41 +52,12 @@ export type WorkspaceRuntimeTasksGrant = TasksGrant & Readonly<{
 export type WorkspaceRuntimeTasksGrantOptions = Readonly<{
   fetch?: typeof fetch
   now?: () => number
-  timers?: {
-    setTimeout(handler: () => void, ms: number): number
-    clearTimeout(handle: number): void
-  }
+  timers?: RenewalTimers
   log?: { info(message: string, extra?: Record<string, unknown>): void; warn(message: string, extra?: Record<string, unknown>): void }
   /** Where a renewed owner grant, sent beside the renewed Tasks grant, is put. */
   ownerGrant?: { swap(token: string): void }
 }>
 
-/** Node timers by number, unref'd so a pending renewal never holds the host process open. */
-function nodeTimers(): NonNullable<WorkspaceRuntimeTasksGrantOptions["timers"]> {
-  const handles = new Map<number, NodeJS.Timeout>()
-  let next = 1
-  return {
-    setTimeout(handler, ms) {
-      const id = next++
-      const handle = setTimeout(() => {
-        handles.delete(id)
-        handler()
-      }, ms)
-      handle.unref()
-      handles.set(id, handle)
-      return id
-    },
-    clearTimeout(id) {
-      const handle = handles.get(id)
-      if (handle === undefined) return
-      clearTimeout(handle)
-      handles.delete(id)
-    },
-  }
-}
-
-const RETRY_INITIAL_MS = 2_000
-const RETRY_CAP_MS = 60_000
 const LAPSED_MESSAGE =
   "This machine's Tasks grant has expired and could not be renewed; it is re-issued the next time the machine is provisioned."
 const WITHDRAWN_MESSAGE = "This machine's Tasks grant was withdrawn by the control plane."
@@ -132,15 +93,13 @@ export function workspaceRuntimeTasksGrant(
   if (!initial || !origin || granted.length === 0) return undefined
   const send = options.fetch ?? fetch
   const now = options.now ?? Date.now
-  const timers = options.timers ?? nodeTimers()
+  const timers = options.timers ?? nodeRenewalTimers()
   const log = options.log ?? Log.create({ service: "claxedo-tasks-grant" })
 
   let token = initial
   let operations = granted
   let expiresAt = expiryOf(initial)
   let state: TasksGrantState = { kind: "active" }
-  let retryMs = RETRY_INITIAL_MS
-  let timer: number | undefined
 
   const expired = () => expiresAt !== undefined && now() >= expiresAt
 
@@ -148,25 +107,6 @@ export function workspaceRuntimeTasksGrant(
     if (state.kind !== "active") return
     state = { kind: "lapsed" }
     log.warn("tasks.grant.lapsed", { expiresAt })
-  }
-
-  function schedule(ms: number) {
-    if (timer !== undefined) timers.clearTimeout(timer)
-    timer = timers.setTimeout(() => {
-      timer = undefined
-      void renew()
-    }, ms)
-  }
-
-  function scheduleRetry() {
-    if (expiresAt === undefined) return
-    const remaining = expiresAt - now()
-    if (remaining <= 0) {
-      lapse()
-      return
-    }
-    schedule(Math.min(retryMs, remaining))
-    retryMs = Math.min(retryMs * 2, RETRY_CAP_MS)
   }
 
   function withdraw(code: string, message: string) {
@@ -184,19 +124,14 @@ export function workspaceRuntimeTasksGrant(
     token = nextToken
     operations = [...new Set(nextOperations)]
     expiresAt = nextExpiry
-    retryMs = RETRY_INITIAL_MS
     const ownerToken = stringField(asRecord(body?.ownerGrant), "token")
     if (ownerToken) options.ownerGrant?.swap(ownerToken)
     log.info("tasks.grant.renewed", { expiresAt, operations, ownerGrant: ownerToken !== undefined })
     return nextExpiry
   }
 
-  async function renew() {
-    if (state.kind !== "active" || expiresAt === undefined) return
-    if (expired()) {
-      lapse()
-      return
-    }
+  async function renew(): Promise<RenewalOutcome> {
+    if (state.kind !== "active") return { kind: "refused" }
     let response: Response
     try {
       response = await send(new Request(new URL(`${TASKS_ROUTE_PATH}/grant/renew`, origin), {
@@ -205,23 +140,21 @@ export function workspaceRuntimeTasksGrant(
       }))
     } catch (cause) {
       log.warn("tasks.grant.renewal_failed", { error: cause instanceof Error ? cause.message : String(cause) })
-      scheduleRetry()
-      return
+      return { kind: "failed" }
     }
     const text = await response.text().catch(() => "")
     if (response.status === 401 || response.status === 403) {
       const refusal = asRecord(parseJsonRecord(text)?.error)
       withdraw(stringField(refusal, "code") ?? `http_${response.status}`, stringField(refusal, "message") ?? WITHDRAWN_MESSAGE)
-      return
+      return { kind: "refused" }
     }
     const nextExpiry = response.ok ? renewed(parseJsonRecord(text)) : undefined
-    if (nextExpiry !== undefined) {
-      schedule((nextExpiry - now()) / 2)
-      return
-    }
+    if (nextExpiry !== undefined) return { kind: "renewed", expiresAt: nextExpiry }
     log.warn("tasks.grant.renewal_failed", { status: response.status })
-    scheduleRetry()
+    return { kind: "failed" }
   }
+
+  const renewal = halfLifeRenewal({ renew, lapsed: lapse, now, timers })
 
   function refusal() {
     if (state.kind === "withdrawn") return { code: "tasks_grant_withdrawn", message: state.message }
@@ -255,12 +188,9 @@ export function workspaceRuntimeTasksGrant(
     },
     start: () => {
       if (expiresAt === undefined || state.kind !== "active") return
-      schedule(Math.max(0, (expiresAt - now()) / 2))
+      renewal.track(expiresAt)
     },
-    stop: () => {
-      if (timer !== undefined) timers.clearTimeout(timer)
-      timer = undefined
-    },
+    stop: renewal.stop,
   }
   return grant
 }

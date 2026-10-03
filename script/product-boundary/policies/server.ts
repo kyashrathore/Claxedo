@@ -68,13 +68,20 @@ export const serverWorkerd: Policy = {
   // (`workspace/cloud-root-backing.ts`), so a machine-placed workspace gets none.
   // The D1 workspace authority's refusal type and its owner identity and
   // bootstrap-claim helpers are modules of their own
-  // (`authority/adapters/d1/workspace-authority-error.ts`, `owner-identity.ts`),
-  // and so are the statements that create a workspace
-  // (`authority/adapters/d1/workspace-creation.ts`). Hosted account setup
-  // mounts the shared credential and provider-login routes over the per-org
-  // stores (`credentials/worker/routes.ts`, `org-routed.ts`) with the D1 store
-  // a device login waits in across instances (`provider-auth-pending.ts`).
-  ceilings: { modules: 123, packages: 19 },
+  // (`authority/adapters/d1/workspace-authority-error.ts`, `owner-identity.ts`).
+  // The machine session-row ingest finds who hears a changed session's status
+  // through its own module (`authority/adapters/d1/session-status-notices.ts`),
+  // and the live-sync room admits a publisher's nudge through
+  // `deployments/hosted-workerd/live-sync-admission.ts` and writes its
+  // replay-gap frame from `live-sync-replay-gap.ts`. A reader's seen and
+  // settled marks are written by `session/routes/session-reader.ts` into the
+  // D1 `session_reads` store (`authority/adapters/d1/session-reader-store.ts`).
+  // The statements that create a workspace live in
+  // `authority/adapters/d1/workspace-creation.ts`. Hosted account setup mounts
+  // the shared credential and provider-login routes over the per-org stores
+  // (`credentials/worker/routes.ts`, `org-routed.ts`) with the D1 store a device
+  // login waits in across instances (`provider-auth-pending.ts`).
+  ceilings: { modules: 128, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

@@ -116,7 +116,6 @@ export type SessionRoutesOptions = {
   transformPromptBody?: (input: { sessionId: string; directory: string; body: SessionPromptBody }) => Promise<SessionPromptBody> | SessionPromptBody
   getSessionConfig?: (input: { directory: string; sessionId: string }) => Promise<SessionConfig>
   beforeDeleteSession?: (input: { directory: string; sessionId: string }) => Promise<void> | void
-  afterDeleteSession?: (input: { directory: string; sessionId: string }) => Promise<void> | void
   /**
    * Observe a session update (title, archive) after the runtime applies it,
    * so a store-owned inventory does not serve stale titles or resurrect
@@ -394,9 +393,6 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
       : undefined,
     beforeDeleteSession: options.beforeDeleteSession
       ? (_c, directory, sessionId) => options.beforeDeleteSession!({ directory: requiredDirectory(directory), sessionId })
-      : undefined,
-    afterDeleteSession: options.afterDeleteSession
-      ? (_c, directory, sessionId) => options.afterDeleteSession!({ directory: requiredDirectory(directory), sessionId })
       : undefined,
   })
   return {

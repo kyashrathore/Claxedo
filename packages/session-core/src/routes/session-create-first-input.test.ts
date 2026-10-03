@@ -87,7 +87,6 @@ function routes(journal: Journal, host: HostFixture, input: {
     getSession: (_c, _directory, sessionId) => host.store.getSession(sessionId) ?? null,
     publishGlobal: (event) => { input.published?.push(event) },
     publishSessionLifecycle: lifecycle,
-    afterDeleteSession: (_c, _directory, sessionId) => { journal.push(`after-delete:${sessionId}`) },
     afterMessageCheckpoint: (_c, _directory, sessionId) => { journal.push(`checkpoint:${sessionId}`) },
     ...(input.policy ? { sessionAccessPolicy: input.policy } : {}),
   })
@@ -227,7 +226,6 @@ describe("a create that carries the session's first prompt", () => {
       "create:ses_1",
       "checkpoint:ses_1",
       "delete:ses_1",
-      "after-delete:ses_1",
       "lifecycle:failed",
     ])
     expect(published).toEqual([])
@@ -246,7 +244,6 @@ describe("a create that carries the session's first prompt", () => {
       "create:ses_1",
       "checkpoint:ses_1",
       "delete:ses_1",
-      "after-delete:ses_1",
       "lifecycle:failed",
     ])
     expect(host.store.getSession("ses_1")).toBeNull()
@@ -263,7 +260,7 @@ describe("a create that carries the session's first prompt", () => {
     const response = await create(routes(journal, host, { policy: refusing }), { id: "ses_1", prompt: FIRST })
 
     expect(response.status).toBe(403)
-    expect(journal).toEqual(["lifecycle:creating", "create:ses_1", "delete:ses_1", "after-delete:ses_1", "lifecycle:failed"])
+    expect(journal).toEqual(["lifecycle:creating", "create:ses_1", "delete:ses_1", "lifecycle:failed"])
     expect(host.store.getSession("ses_1")).toBeNull()
   })
 })
@@ -302,7 +299,6 @@ describe("a managed create that carries the session's first prompt", () => {
       "register:ses_1",
       "compensate:begin",
       "delete:ses_1",
-      "after-delete:ses_1",
       "compensate:complete",
       "lifecycle:failed",
     ])
@@ -330,7 +326,6 @@ describe("a create that carries the session's first goal", () => {
       "create:ses_1",
       "goal:ses_1:ship it",
       "delete:ses_1",
-      "after-delete:ses_1",
       "lifecycle:failed",
     ])
     expect(host.store.getSession("ses_1")).toBeNull()

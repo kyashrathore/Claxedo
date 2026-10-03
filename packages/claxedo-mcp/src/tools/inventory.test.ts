@@ -40,7 +40,7 @@ const userCredential = (readOnly = false): McpCredential => ({
 })
 
 /** Registers every group against one credential and reports what it declared and what it listed. */
-function surface(credential: McpCredential, grants: Pick<ClaxedoMcpClient, "tasks" | "appPlugins"> = {}) {
+function surface(credential: McpCredential, grants: Pick<ClaxedoMcpClient, "tasks" | "appPlugins" | "ownerDriven"> = {}) {
   const ctx: McpToolContext = { credential, client: { ...client, ...grants }, audit: () => undefined }
   const registry = createToolRegistry(new McpServer({ name: "claxedo", version: "0.0.0" }), ctx)
   for (const group of CLAXEDO_MCP_TOOL_GROUPS) group.register(registry)
@@ -153,6 +153,11 @@ describe("the registered surface", () => {
     ])
   })
 
+  test("adds session_delete inside a session only while the composition answers that only its owner drove it", () => {
+    const without = new Set(surface(runtimeCredential).listed)
+    expect(surface(runtimeCredential, { ownerDriven: () => true }).listed.filter((name) => !without.has(name))).toEqual(["session_delete"])
+  })
+
   test("adds the Tasks tools the grant covers, and nothing else", () => {
     const granted = surface(runtimeCredential, { tasks: { fetch: async () => new Response(null, { status: 204 }), operations: ["read", "create", "start"] } })
     const without = new Set(surface(runtimeCredential).listed)
@@ -217,13 +222,14 @@ describe("the registered surface", () => {
     ])
   })
 
-  test("the destructive set is human-only, admin-scoped and annotated", () => {
+  test("the destructive set is admin-scoped and annotated, and only session_delete reaches inside a session", () => {
     const destructive = [...surface(userCredential()).declared]
       .flatMap(([name, access]) => (access.destructive ? [[name, access] as const] : []))
       .toSorted(([left], [right]) => left.localeCompare(right))
     expect(destructive.map(([name]) => name)).toEqual(["session_delete", "workspace_lifecycle", "workspace_restore"])
     for (const [name, access] of destructive) {
-      expect({ name, ...(access as McpToolAccess) }).toEqual({ name, audiences: ["user"], write: true, scope: "admin", destructive: true })
+      const inside = name === "session_delete" ? { audiences: ["runtime", "user"], ownerDriven: true } : { audiences: ["user"] }
+      expect({ name, ...(access as McpToolAccess) }).toEqual({ name, ...inside, write: true, scope: "admin", destructive: true })
     }
   })
 })

@@ -1,6 +1,7 @@
 import { HTTPException } from "hono/http-exception"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { LOCAL_USER_ID } from "@claxedo/server-core/platform/auth/local-identity"
 import { listSessionNavigationMetas } from "@claxedo/server-core/session/meta/index"
 import {
   buildSessionListResponse,
@@ -11,7 +12,7 @@ import {
 } from "@claxedo/server-core/session/navigation-list"
 import type { SessionMeta } from "@claxedo/server-core/session/meta/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import { readRuntimeSessionActivity, type RuntimeSessionActivity, type RuntimeStatusRead } from "../runtime-activity"
+import { readRuntimeSessionActivity, type RuntimeSessionActivity, type RuntimeStatusRead } from "@claxedo/server-core/session/runtime-activity"
 
 export type SessionListPageInput = {
   query: SessionListQuery
@@ -62,7 +63,7 @@ export async function localSessionListPage(input: SessionListPageInput): Promise
     ? await input.projectWorkspaces()
     : input.workspace ? [input.workspace] : []
   await Promise.all(covered.map((workspace) => input.refreshSessionProjection?.(workspace)))
-  const metas = await listSessionNavigationMetas(sessionListStorePageFilter(query))
+  const metas = await listSessionNavigationMetas({ ...sessionListStorePageFilter(query), reader: LOCAL_USER_ID })
   return buildSessionListResponse({
     query,
     sessions: await withRuntimeStatus(metas, input.readRuntimeStatus, (input.now ?? Date.now)()),

@@ -14,6 +14,7 @@ import type {
   SessionId,
   SessionOutline,
   SessionLocation,
+  SessionReader,
   SessionRow,
   SessionStatus,
   Todo,
@@ -29,7 +30,7 @@ export type SessionStatusView = SessionStatus | { readonly kind: "unknown" }
 
 export type SentPrompt = PromptInput & { readonly messageId: string; readonly sentAt: number }
 
-export type SessionRowView = SessionRow & {
+export type SessionRowView = SessionRow & SessionReader & {
   readonly status: SessionStatusView
   readonly waitingOnUser: boolean
   readonly pending: boolean
@@ -59,6 +60,9 @@ export type SessionList = {
   readonly loadMore: (projectId: ProjectId) => Promise<void>
   readonly reload: () => Promise<void>
   readonly create: (input: SessionCreateInput) => Promise<SessionLocation>
+  readonly readerOf: (sessionId: SessionId) => SessionReader
+  readonly markSeen: (ref: SessionLocation, completedAt: number) => Promise<void>
+  readonly settle: (ref: SessionLocation, settled: boolean) => Promise<void>
 }
 
 export type SessionLoadState =
@@ -122,19 +126,15 @@ export type SessionView = {
 
 export type { SessionSubagent }
 
-export type UnseenOutcome = "finished" | "failed"
+export type SessionAttention = { readonly kind: "finished" | "failed" | "waiting"; readonly ref: SessionLocation }
 
 export type SessionStores = {
   readonly list: SessionList
-  readonly unseenOutcomes: {
-    readonly of: (sessionId: SessionId) => UnseenOutcome | undefined
-    readonly raised: (sessionId: SessionId, outcome: UnseenOutcome) => void
-    readonly seen: (sessionId: SessionId) => void
-  }
+  readonly onAttention: (listener: (attention: SessionAttention) => void) => () => void
   readonly open: (ref: SessionLocation) => SessionView
   readonly recordViewport: (viewport: TranscriptViewport) => void
 }
 
 export { SessionStoresProvider, useSessionStores } from "./store/provider"
-export { sessionActivity, type SessionActivity } from "./list/activity"
+export { sessionActivity, unseenOutcome, type SessionActivity, type UnseenOutcome } from "./list/activity"
 export { draftSessionPaneKind, sessionPaneKind, subagentPanelView } from "./view"

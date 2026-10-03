@@ -278,6 +278,34 @@ describe("claxedo workspace-runtime boot policy", () => {
     }
   })
 
+  test("a relay runtime that answers to a session authority publishes its session rows: reads, events, the pass route and a flush before the store closes", async () => {
+    const store = await mkdtemp(path.join(os.tmpdir(), "claxedo-runtime-rows-"))
+    const local = {
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_rows",
+      WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
+      WORKSPACE_RUNTIME_STORE_DIR: store,
+      WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: "https://core.test/api/runtime-authority/session-authorize",
+    }
+    try {
+      const unrelayed = await claxedoWorkspaceRuntimeBootFromEnv(local)
+      expect(unrelayed.options.bindSessionReads).toBeUndefined()
+      expect(unrelayed.options.beforeStoreClose).toBeUndefined()
+
+      const { options } = await claxedoWorkspaceRuntimeBootFromEnv({
+        ...local,
+        WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI((await generateKeyPair("EdDSA", { extractable: true })).publicKey),
+        WORKSPACE_RUNTIME_RELAY_URL: "https://relay.example",
+      })
+      expect(options.bindSessionReads).toBeTypeOf("function")
+      expect(options.onPresentationEvent).toBeTypeOf("function")
+      expect(options.beforeStoreClose).toBeTypeOf("function")
+      expect(options.routeContributions?.map((contribution) => contribution.id)).toContain("session-rows")
+      await options.onDrain!()
+    } finally {
+      await rm(store, { recursive: true, force: true })
+    }
+  })
+
   test("seeds the first-party issuer with the owner the grant names, and verifies that grant with the management key", async () => {
     const key = await generateKeyPair("EdDSA", { extractable: true })
     const signing = {

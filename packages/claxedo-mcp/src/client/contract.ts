@@ -107,6 +107,11 @@ export interface ClaxedoMcpClient {
   readonly tasks?: TasksGrant
   /** App plugin authoring; undefined unless this caller is a session of the machine's owner. */
   readonly appPlugins?: AppPluginsGrant
+  /**
+   * Whether only the workspace's owner has driven the calling session and its
+   * ancestors, read at the call; undefined where the composition cannot say.
+   */
+  readonly ownerDriven?: () => boolean
   /** Runtime routes (`/session*`, `/permission`, `/api/wr/*`) on the workspace that owns the target. */
   runtime(target: WorkspaceTarget): Promise<ClaxedoFetch>
   resolveTarget(target: WorkspaceTarget): Promise<ResolvedTarget>

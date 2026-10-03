@@ -6,6 +6,7 @@ import { controlGoal, startGoal } from "./session-goal"
 import { createSessionQueue } from "./session-queue"
 import { readTurn } from "./turn"
 import { listSessions } from "./session-list"
+import { sendReaderWrite } from "./session-reader"
 import { onRuntime, sessionEndpoint, type SessionContext } from "./session-context"
 import { startSessionReads } from "./session-reads"
 import { readPart, readTurnPageBefore } from "./transcript-reads"
@@ -88,6 +89,8 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
   const newMessageId = createMessageIds()
   return {
     list: (options) => listSessions(context, options),
+    markSeen: (ref, completedAt) => sendReaderWrite(context, ref, { kind: "seen", completedAt }),
+    settle: (ref, write) => sendReaderWrite(context, ref, { kind: "settle", ...write }),
     read: (ref, shape, held) => startSessionReads(context, ref, shape, held),
     page: (ref, shape, before) => readTurnPageBefore(context, ref, shape, before),
     part: (ref, messageId, partId) => readPart(context, ref, messageId, partId),

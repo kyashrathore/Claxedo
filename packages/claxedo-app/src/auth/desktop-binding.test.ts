@@ -33,6 +33,12 @@ function fakeBridge() {
       if (runFails) throw new Error("Error invoking remote method: HOSTED_HTTP 401 {}")
       return { workspaces: [] }
     },
+    streamOpen: answer,
+    streamStart: answer,
+    streamClose: answer,
+    onStreamChunk: () => () => undefined,
+    onStreamEnd: () => () => undefined,
+    onStreamError: () => () => undefined,
   }
   return {
     bridge,

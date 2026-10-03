@@ -2,7 +2,7 @@ import { asFiniteNumber, nonEmptyString } from "@claxedo/helpers/guards"
 import type { AgentSession, AgentTurnOutcome, SessionLastTurn } from "@claxedo/agent-runtime-contract"
 import { sessionId, type PlacementId, type ProjectId, type SessionId } from "../ids"
 import type { ListedStatus } from "../status-types"
-import type { ModelChoice, SessionLocation, SessionRow, SessionSelections } from "../types"
+import type { ModelChoice, SessionLocation, SessionReader, SessionRow, SessionSelections } from "../types"
 import { sessionConfigFromWire } from "./harness-state"
 import { backgroundWorkFromWire } from "./status"
 
@@ -55,6 +55,14 @@ export function lastTurnFromWire(value: unknown): SessionLastTurn | undefined {
   const { status, completedAt } = value as { status?: unknown; completedAt?: unknown }
   const at = asFiniteNumber(completedAt)
   return (status === "completed" || status === "failed" || status === "cancelled") && at !== undefined ? { status, completedAt: at } : undefined
+}
+
+export function readerFromWire(value: unknown): SessionReader {
+  if (!value || typeof value !== "object") return {}
+  const { seenAt, settledAt } = value as { seenAt?: unknown; settledAt?: unknown }
+  const seen = asFiniteNumber(seenAt)
+  const settled = asFiniteNumber(settledAt)
+  return { ...(seen === undefined ? {} : { seenAt: seen }), ...(settled === undefined ? {} : { settledAt: settled }) }
 }
 
 function configuredSelection(info: AgentSession & { readonly config?: unknown }): SessionSelections {

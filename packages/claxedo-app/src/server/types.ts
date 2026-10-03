@@ -132,11 +132,16 @@ export type Todo = AgentTodo
 export type FileDiff = AgentSnapshotFileDiff
 export type Subagent = AgentSubagentUpdate
 
-export type SessionListInput = { readonly projectId: ProjectId; readonly after?: string; readonly limit: number }
+export type SessionReader = { readonly seenAt?: number; readonly settledAt?: number }
+
+export type SettledFilter = "active" | "all"
+
+export type SessionListInput = { readonly projectId: ProjectId; readonly after?: string; readonly limit: number; readonly settled: SettledFilter }
 
 export type SessionPage = {
   readonly rows: readonly SessionRow[]
   readonly statuses: ReadonlyMap<SessionId, ListedStatus>
+  readonly readers: ReadonlyMap<SessionId, SessionReader>
   readonly nextAfter?: string
   readonly degraded?: boolean
 }

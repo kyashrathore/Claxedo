@@ -22,6 +22,7 @@ import { SessionTimelineSkeleton } from "./session-timeline-skeleton"
 import { installSessionScreenKeydown } from "./session-screen-keydown"
 import { SessionConnectionLine } from "./connection-line"
 import { commitDeltasWhileShown } from "./delta-frames"
+import { markSeenWhileShown } from "./seen-while-shown"
 import { createScreenTurnRecovery } from "./turn-recovery-actions"
 import { createFloatingPeek } from "./floating-peek"
 import { PreviousMessagesRow, turnActive, type TimelineHost } from "./timeline"
@@ -200,6 +201,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
   const floating = () => !props.readOnly && controls().send && panel.maximized() && props.active
   const view = createMemo(() => stores.open(props.sessionRef))
   commitDeltasWhileShown(view)
+  markSeenWhileShown(view, () => props.active && !props.readOnly, stores.list)
   holdPaneReveal(() => view().state().kind === "loading")
   const failure = () => {
     const state = view().state()

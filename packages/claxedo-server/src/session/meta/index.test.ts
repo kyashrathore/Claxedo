@@ -450,6 +450,7 @@ describe("session meta", () => {
     ])
 
     const first = await listSessionNavigationMetas({
+      reader: "local",
       directory: "/tmp/repo",
       archived: "active",
       limit: 2,
@@ -457,6 +458,7 @@ describe("session meta", () => {
     expect(first.map((item) => item.sessionID)).toEqual(["ses_c", "ses_b"])
 
     const next = await listSessionNavigationMetas({
+      reader: "local",
       directory: "/tmp/repo",
       archived: "active",
       limit: 2,
@@ -489,6 +491,7 @@ describe("session meta", () => {
     `).run("local:/tmp/repo:session:ses_review", "ses_review", "review", 1, 1)
 
     const rows = await listSessionNavigationMetas({
+      reader: "local",
       directory: "/tmp/repo",
       archived: "active",
       status: ["review"],
@@ -518,6 +521,7 @@ describe("session meta", () => {
     ])
 
     expect((await listSessionNavigationMetas({
+      reader: "local",
       archived: "active",
       limit: 10,
     })).map((item) => ({
@@ -542,6 +546,7 @@ describe("session meta", () => {
     })
 
     expect((await listSessionNavigationMetas({
+      reader: "local",
       archived: "active",
       limit: 10,
     })).map((item) => item.sessionRef)).toEqual(["local:/tmp/repo-b:session:shared"])
@@ -626,6 +631,7 @@ describe("session meta", () => {
       updatedAt: 3_000,
     })
     const rows = await listSessionNavigationMetas({
+      reader: "local",
       directory: "/tmp/repo",
       archived: "active",
       sort: "created_desc",

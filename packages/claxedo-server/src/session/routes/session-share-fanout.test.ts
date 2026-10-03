@@ -1,162 +1,55 @@
 import { describe, expect, test } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { OrgId } from "@claxedo/server-core/platform/auth/branded-id"
-import {
-  subjectFromIdentity,
-  notifySessionShareChanged,
-  resolveSessionShareRecipientSubjects,
-  type SessionShareChangedSink,
-} from "../session-people-contract"
+import { notifySessionShareChanged } from "../session-people-contract"
 
 const aliceAuth = {
   mode: "signed",
   token: "t",
-  user: {
-    subject: "user_alice",
-    tokenIdentifier: "https://issuer.test|user_alice",
-    issuer: "https://issuer.test",
-  },
+  user: { subject: "usr_alice", tokenIdentifier: "https://issuer.test|alice", issuer: "https://issuer.test" },
 } as SignedControlPlaneAuth
 
-describe("subjectFromIdentity", () => {
-  test("extracts the subject from issuer|subject token identifiers", () => {
-    expect(subjectFromIdentity("https://issuer.test|user_bob")).toBe("user_bob")
-  })
+const authority = { resolveOrgId: async () => "org_internal" as OrgId }
 
-  test("accepts bare user_ subjects (SQLite list alias)", () => {
-    expect(subjectFromIdentity("user_bob")).toBe("user_bob")
+async function doorbells(recipientUserIds: readonly string[], sink?: (ownerUserId: string) => void) {
+  const rung: Array<{ ownerUserId: string; phase: string; level?: string; orgId?: string }> = []
+  await notifySessionShareChanged({
+    auth: aliceAuth,
+    authority,
+    phase: "granted",
+    level: "send",
+    sessionId: "ses_1",
+    workspaceId: "ws_1",
+    recipientUserIds,
+    sink: async (event) => {
+      sink?.(event.ownerUserId)
+      rung.push({ ownerUserId: event.ownerUserId, phase: event.phase, ...(event.phase === "granted" ? { level: event.level } : {}), ...(event.orgId ? { orgId: event.orgId } : {}) })
+    },
   })
-
-  test("rejects empty and non-subject values", () => {
-    expect(subjectFromIdentity(undefined)).toBeUndefined()
-    expect(subjectFromIdentity("")).toBeUndefined()
-    expect(subjectFromIdentity("not-a-subject")).toBeUndefined()
-  })
-})
-
-describe("resolveSessionShareRecipientSubjects", () => {
-  test("expands a team target via listTeamMembers and excludes the granter", async () => {
-    const subjects = await resolveSessionShareRecipientSubjects({
-      auth: aliceAuth,
-      authority: {
-        resolveOrgId: async () => "org_internal" as OrgId,
-        listTeamMembers: async () => [
-          { token_identifier: "https://issuer.test|user_alice" },
-          { token_identifier: "https://issuer.test|user_bob" },
-          { provider_subject: "user_casey" },
-        ],
-        listTeams: async () => [],
-      },
-      target: { grantedToTeamPublicId: "team_eng" },
-      excludeSubject: "user_alice",
-    })
-    expect(subjects.sort()).toEqual(["user_bob", "user_casey"])
-  })
-
-  test("uses a direct provider subject for user-targeted grants", async () => {
-    const subjects = await resolveSessionShareRecipientSubjects({
-      auth: aliceAuth,
-      authority: {
-        resolveOrgId: async () => "org_internal" as OrgId,
-        listTeamMembers: async () => [],
-        listTeams: async () => [],
-      },
-      target: { grantedToSubject: "user_bob" },
-      excludeSubject: "user_alice",
-    })
-    expect(subjects).toEqual(["user_bob"])
-  })
-})
+  return rung
+}
 
 describe("notifySessionShareChanged", () => {
-  test("publishes one doorbell per recipient and survives sink failures", async () => {
-    const published: Array<{ ownerUserId: string; phase: string; level?: string }> = []
-    const sink: SessionShareChangedSink = async (event) => {
-      if (event.ownerUserId === "user_fail") throw new Error("nudge failed")
-      published.push({
-        ownerUserId: event.ownerUserId,
-        phase: event.phase,
-        ...(event.phase === "granted" ? { level: event.level } : {}),
-      })
-    }
-    await notifySessionShareChanged({
-      auth: aliceAuth,
-      authority: {
-        resolveOrgId: async () => "org_internal" as OrgId,
-        listTeamMembers: async () => [
-          { token_identifier: "https://issuer.test|user_bob" },
-          { token_identifier: "https://issuer.test|user_fail" },
-          { token_identifier: "https://issuer.test|user_dana" },
-        ],
-        listTeams: async () => [],
-      },
-      phase: "granted",
-      level: "send",
-      sessionId: "ses_1",
-      workspaceId: "ws_1",
-      target: { grantedToTeamPublicId: "team_eng" },
-      sink,
-    })
-    expect(published).toEqual([
-      { ownerUserId: "user_bob", phase: "granted", level: "send" },
-      { ownerUserId: "user_dana", phase: "granted", level: "send" },
+  test("rings each canonical user the share named once, never the granter", async () => {
+    expect(await doorbells(["usr_bob", "usr_alice", "usr_bob", "usr_dana"])).toEqual([
+      { ownerUserId: "usr_bob", phase: "granted", level: "send", orgId: "org_internal" },
+      { ownerUserId: "usr_dana", phase: "granted", level: "send", orgId: "org_internal" },
     ])
   })
 
+  test("keeps ringing the others when one doorbell fails", async () => {
+    const rung = await doorbells(["usr_bob", "usr_dana"], (ownerUserId) => { if (ownerUserId === "usr_bob") throw new Error("nudge failed") })
+    expect(rung.map((row) => row.ownerUserId)).toEqual(["usr_dana"])
+  })
+
   test("no-ops when sink is absent", async () => {
-    await notifySessionShareChanged({
-      auth: aliceAuth,
-      authority: {
-        resolveOrgId: async () => "org_internal" as OrgId,
-        listTeamMembers: async () => [{ token_identifier: "https://issuer.test|user_bob" }],
-        listTeams: async () => [],
-      },
-      phase: "revoked",
-      sessionId: "ses_1",
-      workspaceId: "ws_1",
-      target: { grantedToTeamPublicId: "team_eng" },
-    })
-  })
-
-  test("does not publish a malformed target", async () => {
-    const published: string[] = []
-    await notifySessionShareChanged({
-      auth: aliceAuth,
-      authority: {
-        resolveOrgId: async () => "org_internal" as OrgId,
-        listTeamMembers: async () => [],
-        listTeams: async () => [],
-      },
-      phase: "revoked",
-      sessionId: "ses_1",
-      workspaceId: "ws_1",
-      target: { grantedToTokenIdentifier: "not-a-subject" },
-      sink: async (event) => {
-        published.push(event.ownerUserId)
-      },
-    })
-    expect(published).toEqual([])
-  })
-
-  test("keeps a completed share mutation successful when recipient expansion fails", async () => {
-    const published: string[] = []
     await expect(notifySessionShareChanged({
       auth: aliceAuth,
-      authority: {
-        resolveOrgId: async () => "org_internal" as OrgId,
-        listTeamMembers: async () => {
-          throw new Error("membership resolver unavailable")
-        },
-        listTeams: async () => [],
-      },
+      authority,
       phase: "revoked",
       sessionId: "ses_1",
       workspaceId: "ws_1",
-      target: { grantedToTeamPublicId: "team_eng" },
-      sink: async (event) => {
-        published.push(event.ownerUserId)
-      },
+      recipientUserIds: ["usr_bob"],
     })).resolves.toBeUndefined()
-    expect(published).toEqual([])
   })
 })

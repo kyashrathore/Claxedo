@@ -217,6 +217,7 @@ async function runtimeVm(workspaceId: string, env: NodeJS.ProcessEnv) {
       directory: "/workspace",
       stateDirectory: root,
     fetch: async () => new Response(null, { status: 204 }),
+      sessionDrivenOnlyBy: () => false,
       registerSessionTools: () => async () => {},
       unregisterSessionTools: () => async () => {},
     },

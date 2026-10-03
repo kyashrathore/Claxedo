@@ -120,7 +120,8 @@ import {
 import type { ActiveSessionTurnLease } from "./session-turn-lease"
 import { cancelAdmittedTurn, captureTurnTarget, containLostTurn, recoveryCaller } from "./session-turn-containment"
 import { toolImageResponse } from "./tool-image"
-import { messageUpdated, sessionDeleted, sessionUpdated, withDir } from "../projection/presentation-events"
+import { messageUpdated, sessionUpdated, withDir } from "../projection/presentation-events"
+import { sessionDeleteRoute } from "./session-delete"
 
 type DraftTarget = Extract<HarnessTarget, { harness: SessionHarness }>
 
@@ -131,38 +132,15 @@ function draftTarget(opts: Opts, c: Ctx, directory: RuntimeDirectory): DraftTarg
 
 /**
  * A child session lives under its parent: archiving the parent cancels and
- * archives every host-owned child, deleting it deletes them. Children may run
- * on a different harness than the parent, so each is reached through its own
- * adapter rather than the parent's.
+ * archives every host-owned child. Children may run on a different harness
+ * than the parent, so each is reached through its own adapter rather than the
+ * parent's.
  */
-async function cascadeToChildren(
-  opts: Opts,
-  c: Ctx,
-  directory: RuntimeDirectory,
-  parentSessionId: string,
-  action: "archive" | "delete",
-  updates: { archived?: number } = {},
-  withSessionChange?: <T>(sessionId: string, change: () => Promise<T>) => Promise<T>,
-) {
+async function archiveChildren(opts: Opts, c: Ctx, directory: RuntimeDirectory, parentSessionId: string, archived: number) {
   if (!opts.childSessions) return
   for (const child of await opts.childSessions.children(parentSessionId, directory)) {
-    const childSessionId = child.childSessionId
-    if (action === "delete") {
-      if (!withSessionChange) throw new Error("Deleting a child requires its session lifecycle claim")
-      await withSessionChange(childSessionId, async () => {
-        if (!await readSession(opts, c, directory, childSessionId)) return
-        const start = opts.sessionStarts?.get(childSessionId)?.binding
-        await opts.beforeDeleteSession?.(c, directory, childSessionId)
-        await opts.disposeSessionDocuments?.(childSessionId)
-        await (await opts.runtime(c)).sessions.delete(childSessionId, directory, requestSecretAuthority(c).secretAuthority)
-        await after(opts.afterDeleteSession?.(c, directory, childSessionId))
-        if (start) opts.sessionStarts!.retire(start)
-        opts.publishGlobal(withDir(envelopeDirectory(directory, childSessionId), sessionDeleted(childSessionId, directory ?? "", parentSessionId)))
-      })
-      continue
-    }
-    if (!await readSession(opts, c, directory, childSessionId)) continue
-    await updateSessionMeta(opts, c, directory, childSessionId, { time: { archived: updates.archived ?? Date.now() } })
+    if (!await readSession(opts, c, directory, child.childSessionId)) continue
+    await updateSessionMeta(opts, c, directory, child.childSessionId, { time: { archived } })
   }
 }
 
@@ -492,7 +470,6 @@ async function compensateRegistration(input: {
   if (!begun.allowed) throw new Error(`Session compensation was denied: ${begun.code}`)
   try {
     await (await input.opts.runtime(input.c)).sessions.delete(input.sessionId, input.directory, requestSecretAuthority(input.c).secretAuthority)
-    await input.opts.afterDeleteSession?.(input.c, input.directory, input.sessionId)
   } catch (error) {
     throw new Error("Session compensation could not delete runtime state", { cause: error })
   }
@@ -641,7 +618,6 @@ async function rollbackCreatedSession(
 ) {
   try {
     await (await opts.runtime(c)).sessions.delete(sessionId, directory, requestSecretAuthority(c).secretAuthority)
-    await opts.afterDeleteSession?.(c, directory, sessionId)
   } catch (cleanupError) {
     throw new SessionRollbackError("runtime", cause, cleanupError)
   }
@@ -1372,33 +1348,11 @@ export function createSessionRoutes(opts: Opts) {
       }
       if (!await readSession(opts, c, directory, sessionId)) return c.json(sessionNotFound(), 404)
       const session = await updateSessionMeta(opts, c, directory, sessionId, body)
-      if (archived !== undefined) await cascadeToChildren(opts, c, directory, sessionId, "archive", { archived })
+      if (archived !== undefined) await archiveChildren(opts, c, directory, sessionId, archived)
       return c.json(timedSession(session))
     })
     .patch("/session/:id/config", (c) => sessionConfigWrite(opts, c))
-    .delete("/session/:id", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "delete")
-      if (guarded) return guarded
-      return withSessionChange(sessionId, async () => {
-        const directory = await opts.resolveDirectory(c, { sessionId })
-        // Read before deleting: once the row is gone nothing can say whether it
-        // was a subsession, and the rail's visible count depends on that.
-        const parentID = (await readSession(opts, c, directory, sessionId).catch(() => undefined) as { parentID?: string } | undefined)?.parentID
-        const start = opts.sessionStarts?.get(sessionId)?.binding
-        await cascadeToChildren(opts, c, directory, sessionId, "delete", {}, withSessionChange)
-        await opts.beforeDeleteSession?.(c, directory, sessionId)
-        await opts.disposeSessionDocuments?.(sessionId)
-        await (await opts.runtime(c)).sessions.delete(sessionId, directory, requestSecretAuthority(c).secretAuthority)
-        await after(opts.afterDeleteSession?.(c, directory, sessionId))
-        // A deletion that got this far removed the session the creation owns, so
-        // the id goes back. Anything that throws above keeps the owner, which is
-        // what lets a caller distinguish a freed id from a half-deleted one.
-        if (start) opts.sessionStarts!.retire(start)
-        opts.publishGlobal(withDir(envelopeDirectory(directory, sessionId), sessionDeleted(sessionId, directory ?? "", parentID)))
-        return c.json({ ok: true })
-      })
-    })
+    .delete("/session/:id", (c) => sessionDeleteRoute(opts, c, withSessionChange))
     .post("/session/:id/message", async (c) => {
       const id = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, id, "prompt")

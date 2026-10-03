@@ -73,7 +73,6 @@ test("47 shared sessions: follow sees live turns, send reaches the owner, revoke
 
   await share("DELETE")
   if (isMobile) await page.getByRole("button", { name: UI.openRail }).click()
-  await section.getByRole("button", { name: "Refresh shared sessions" }).click()
   await expect(row).toHaveCount(0)
   if (isMobile) await page.getByRole("button", { name: UI.hideSidebar }).click()
   await expect(page.getByTestId("session-unavailable")).toBeVisible()

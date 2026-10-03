@@ -1,29 +1,31 @@
 import { createSignal, getOwner, onCleanup, untrack } from "solid-js"
-import { createStore } from "solid-js/store"
-import type { ReaderSettings, Server, ServerEvent, SessionId } from "@/server"
-import type { SessionStores, UnseenOutcome } from "@/session"
+import type { ReaderSettings, Server, ServerEvent } from "@/server"
+import type { SessionAttention, SessionStores } from "@/session"
 import { createSessionList, type SessionListInternal } from "../list"
 import { createRequests, type RequestsInternal } from "../requests"
+import { attentionRaised, createAttentionChannel } from "./attention"
 import { createSessionTranscript } from "../transcript"
 import { transcriptViewport } from "../transcript-viewport"
 import { CACHED_TURN_LIMIT, OPEN_SESSION_LIMIT, createOpenSessions, type OpenSessions } from "./open-sessions"
 
-function dispatchServerEvent(event: ServerEvent, list: SessionListInternal, requests: RequestsInternal, open: OpenSessions): void {
+function dispatchServerEvent(event: ServerEvent, list: SessionListInternal, requests: RequestsInternal, open: OpenSessions): readonly SessionAttention[] {
+  const attention = attentionRaised(event, list)
   list.apply(event)
   requests.apply(event)
   if (event.type === "streamGap") {
     open.forgetCached()
-    return open.forEach((session) => session.gap())
+    open.forEach((session) => session.gap())
+    return attention
   }
-  if (!("ref" in event)) return
+  if (!("ref" in event)) return attention
   open.forgetCached(event.ref.sessionId)
   open.byId(event.ref.sessionId)?.apply(event)
+  return attention
 }
 
-export function createSessionStores(server: Server, settings: () => ReaderSettings): SessionStores {
-  const [unseen, setUnseen] = createStore<Record<SessionId, UnseenOutcome | undefined>>({})
+export function createSessionStores(server: Server, settings: () => ReaderSettings, showSettled: () => boolean): SessionStores {
   const requests = createRequests(server)
-  const list = createSessionList(server, requests)
+  const list = createSessionList(server, requests, showSettled)
   const [viewport, recordViewport] = createSignal(transcriptViewport({ width: window.innerWidth, height: window.innerHeight }))
   const pageShape = () => untrack(() => ({ ...viewport(), ...settings() }))
   const open = createOpenSessions({
@@ -34,19 +36,17 @@ export function createSessionStores(server: Server, settings: () => ReaderSettin
     onEvicted: (sessionId) => list.closed(sessionId),
     stamp: (sessionId) => list.rowOf(sessionId)?.updatedAt,
   })
-  const unsubscribe = server.subscribe((event) => dispatchServerEvent(event, list, requests, open))
+  const attention = createAttentionChannel()
+  const unsubscribe = server.subscribe((event) => attention.raise(dispatchServerEvent(event, list, requests, open)))
   onCleanup(() => {
     unsubscribe()
+    attention.clear()
     open.disposeAll()
   })
   list.start()
   return {
     list,
-    unseenOutcomes: {
-      of: (sessionId) => unseen[sessionId],
-      raised: (sessionId, outcome) => setUnseen(sessionId, outcome),
-      seen: (sessionId) => setUnseen(sessionId, undefined),
-    },
+    onAttention: attention.subscribe,
     recordViewport,
     open: (ref) => {
       list.opened(ref.sessionId)

@@ -44,20 +44,31 @@ const ENTRIES = [
   // provisions a sandbox, which the Agent Plugins entries already carried.
   // Every entry carries the D1 workspace authority's refusal type and owner
   // identity helpers as modules of their own (`d1/workspace-authority-error.ts`,
-  // `d1/owner-identity.ts`), and the statements that create a workspace
-  // (`d1/workspace-creation.ts`). Hosted account setup carries the shared
-  // credential and provider-login routes over the per-org stores
-  // (`credentials/worker/routes.ts`, `org-routed.ts`, `provider-auth-pending.ts`).
-  // Only the Agent Plugins entries mint a repository clone credential
+  // `d1/owner-identity.ts`), and the machine session-row ingest's reader lookup
+  // for status notices (`d1/session-status-notices.ts`), and the live-sync
+  // room's nudge admission and replay-gap frame
+  // (`hosted-workerd/live-sync-admission.ts`, `live-sync-replay-gap.ts`).
+  // Every entry writes a reader's seen and settled marks
+  // (`session/routes/session-reader.ts` over `d1/session-reader-store.ts`).
+  // The statements that create a workspace (`d1/workspace-creation.ts`) and
+  // hosted account setup, which carries the shared credential and
+  // provider-login routes over the per-org stores (`credentials/worker/routes.ts`,
+  // `org-routed.ts`, `provider-auth-pending.ts`), belong to every entry. Only
+  // the Agent Plugins entries mint a repository clone credential
   // (`workspace/repository-clone.ts`).
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 123, packages: 19 },
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 128, packages: 19 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
   // plus `agent-plugins/signed-scope.ts`, the caller and write guard the
   // activation and source stores share.
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 174, packages: 23 },
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 179, packages: 23 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 179, packages: 23 },
+  // The full-hosted entry alone carries the session rows pass
+  // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
+  // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
+  // ready cloud runtime and admits it at the session-rows ingest, and only
+  // this entry has cloud runtimes to publish rows.
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 186, packages: 23 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

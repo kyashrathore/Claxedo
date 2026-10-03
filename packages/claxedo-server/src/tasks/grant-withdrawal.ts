@@ -28,21 +28,29 @@ export function createGrantWithdrawal(input: GrantWithdrawalInput) {
     /** Answers the workspaces whose grants were revoked. */
     async reconcile(orgId: string): Promise<readonly string[]> {
       const outstanding = await input.passes.outstanding({ orgId, audience: input.audience })
+      // A consent is one reader's, so a root is a workspace and the reader its
+      // passes name; revoking by workspace alone would also end the passes of
+      // any other reader there.
       const roots = new Map<string, TasksRootIdentity>()
       for (const pass of outstanding) {
         const { projectId, ...scope } = pass.scope
-        if (projectId) roots.set(scope.workspaceId, { ...scope, projectId })
+        if (projectId) roots.set(JSON.stringify([scope.workspaceId, scope.userId]), { ...scope, projectId })
       }
-      const revoked: string[] = []
-      for (const [workspaceId, root] of roots) {
+      const revoked = new Set<string>()
+      for (const root of roots.values()) {
         // A root whose activation cannot be read any more — the workspace is
         // gone, or its owner lost the project — has no consent left to stand on.
         const enabled = await input.groupEnabled(root).catch(() => false)
         if (enabled) continue
-        await input.passes.revoke({ workspaceId, audience: input.audience, reason: input.reason })
-        revoked.push(workspaceId)
+        await input.passes.revoke({
+          workspaceId: root.workspaceId,
+          principal: { userId: root.userId, orgId: root.orgId },
+          audience: input.audience,
+          reason: input.reason,
+        })
+        revoked.add(root.workspaceId)
       }
-      return revoked
+      return [...revoked]
     },
   }
 }

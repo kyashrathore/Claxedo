@@ -28,6 +28,9 @@ type Reply<T> = Promise<WorkspaceRuntimeResponse<T>>
 /** What the routes that only acknowledge a mutation answer with. */
 type Ok = { ok: true }
 
+/** The deleted session and every descendant, in the leaf-first order they were removed. */
+type SessionDeleted = Ok & { deletedSessionIds: string[] }
+
 export type SessionInput = WorkspaceScope & { sessionID: string }
 export type SessionCreateInput = WorkspaceScope & {
   parentID?: string
@@ -94,7 +97,7 @@ export type WorkspaceSessionClient = {
   start(input: SessionInput, options?: Options): Reply<AgentSessionStart>
   configOptions(input: SessionInput, options?: Options): Reply<ConfigOptionsPreview>
   attachment(input: SessionInput & { messageID: string; attachmentID: string }, options?: Options): Promise<Response>
-  delete(input: SessionInput, options?: Options): Reply<Ok>
+  delete(input: SessionInput, options?: Options): Reply<SessionDeleted>
   update(input: SessionUpdateInput, options?: Options): Reply<AgentPresentationSession>
   status(input?: WorkspaceScope, options?: Options): Reply<Record<string, AgentRuntimeStatus>>
   harnessCapabilities(input?: WorkspaceScope, options?: Options): Reply<HarnessCapabilities>

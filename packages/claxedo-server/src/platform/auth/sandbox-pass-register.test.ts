@@ -59,6 +59,19 @@ describe.each(Object.entries(registers))("the %s sandbox pass register", (_name,
     expect(await register.revoked("gateway")).toBe(true)
   })
 
+  test("revokes one reader's passes in a shared workspace and leaves the other readers' alone", async () => {
+    const register = await open({ now: START })
+    const shared = { workspaceId: "ws_root", projectId: "project-a" }
+    await register.record(pass({ jti: "alice", scope: { ...shared, userId: "alice", orgId: "org-1" } }))
+    await register.record(pass({ jti: "bob", scope: { ...shared, userId: "bob", orgId: "org-1" } }))
+    await register.record(pass({ jti: "alice-other-org", scope: { ...shared, userId: "alice", orgId: "org-2" } }))
+
+    expect(await register.revoke({ workspaceId: "ws_root", principal: { userId: "alice", orgId: "org-1" }, reason: "off" })).toBe(1)
+    expect(await register.revoked("alice")).toBe(true)
+    expect(await register.revoked("bob")).toBe(false)
+    expect(await register.revoked("alice-other-org")).toBe(false)
+  })
+
   test("lists the outstanding passes of one organization and audience, expired and revoked ones excluded", async () => {
     const clock = { now: START }
     const register = await open(clock)

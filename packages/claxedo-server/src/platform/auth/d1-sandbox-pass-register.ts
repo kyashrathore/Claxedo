@@ -70,9 +70,14 @@ export function createD1SandboxPassRegister(input: { database: D1Database; now?:
         .prepare(
           `update sandbox_passes set revoked_at = ?, revoked_reason = ?
            where workspace_id = ? and revoked_at is null and expires_at > ?
+             and (? is null or (user_id = ? and org_id = ?))
              and (? is null or audience = ?)`,
         )
-        .bind(now(), revocation.reason, revocation.workspaceId, now(), revocation.audience ?? null, revocation.audience ?? null)
+        .bind(
+          now(), revocation.reason, revocation.workspaceId, now(),
+          revocation.principal ? 1 : null, revocation.principal?.userId ?? null, revocation.principal?.orgId ?? null,
+          revocation.audience ?? null, revocation.audience ?? null,
+        )
         .run()
       return result.meta.changes
     },

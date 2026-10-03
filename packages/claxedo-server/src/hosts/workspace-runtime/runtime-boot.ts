@@ -25,6 +25,7 @@ import { prepareRuntimeRepository } from "./repository-source"
 import { workspaceRuntimeOwnerGrant } from "./owner-grant"
 import { workspaceRuntimeTasksGrant } from "./tasks-grant"
 import { cloudWorkspaceUsage, createSandboxUsageLedger } from "./cloud-usage"
+import { cloudSessionRows } from "./cloud-session-rows"
 import {
   sandboxLeaseEnv,
   workspaceRuntimeMcpToolGroups,
@@ -157,8 +158,9 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   const tasks = workspaceRuntimeTasksGrant(env, ownerGrant ? { ownerGrant } : {})
   tasks?.start()
   // A relay-exposed runtime answers to the control plane's session authority,
-  // which is also where its turns' usage is reported.
+  // which is also where its turns' usage and its sessions' list rows are reported.
   const authorityUrl = text(env, WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL)
+  const sessionRows = relayOptions.relayHostAuth && authorityUrl ? cloudSessionRows(env) : undefined
   const usageLedger = relayOptions.relayHostAuth && authorityUrl
     ? createSandboxUsageLedger({ path: path.join(workspaceRuntimeStoreDir(env), "usage.sqlite"), workspaceId: workspaceId(env) })
     : undefined
@@ -192,16 +194,25 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
     ...(usage
       ? {
           sessionAccessPolicy: usage.sessionAccessPolicy,
-          onPresentationEvent: usage.onPresentationEvent,
           onTurnOutcome: usage.onTurnOutcome,
           bindSessionConfig: usage.bindSessionConfig,
           bindSessionParents: usage.bindSessionParents,
+        }
+      : {}),
+    ...(usage || sessionRows
+      ? {
+          onPresentationEvent: (event) => {
+            usage?.onPresentationEvent(event)
+            sessionRows?.onPresentationEvent(event)
+          },
           onDrain: async () => {
-            await usage.drain()
+            sessionRows?.stop()
+            await usage?.drain()
             usageLedger?.close()
           },
         }
       : {}),
+    ...(sessionRows ? { bindSessionReads: sessionRows.bindSessionReads, beforeStoreClose: sessionRows.beforeStoreClose } : {}),
     // A sandbox is nobody's desktop: the owner's logins never reach it, and
     // every session runs on brokered credentials.
     placement: { placement: "cloud", machineOwnerUserId: ownerGrant?.userId ?? "", canUseOwnLogin: false },
@@ -212,11 +223,12 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
     // the sandbox image answering 404 to the provisioner.
     routeContributions: [
       ...(input.routeContributions ?? []),
+      ...(sessionRows ? [sessionRows.routes] : []),
       firstPartyMcpRuntimeContribution({
         verifyRuntimeCredential: firstPartyMcp.verify,
         enabledToolGroups,
         tasks: () => tasks?.current(),
-        ...(ownerGrant ? { ownerGrant: () => ownerGrant.current() } : {}),
+        ...(ownerGrant ? { ownerGrant: () => ownerGrant.current(), ownerActorId: () => ownerGrant.actorId } : {}),
       }),
     ],
   }

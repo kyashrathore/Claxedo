@@ -86,6 +86,26 @@ export function createTurnAdmissions(
     return true
   }
 
+  /**
+   * Hold the session against new turns while a recovery operation, a harness
+   * switch or an ended turn's held configuration works on it. One holder at a
+   * time: a second concurrent request on the same session joins the operation
+   * that already holds it rather than opening a second controller over the
+   * same generation.
+   */
+  const gate = (sessionId: string): { release: () => void } | undefined => {
+    if (gates.has(sessionId)) return undefined
+    const holder = {}
+    gates.set(sessionId, holder)
+    return {
+      release: () => {
+        if (gates.get(sessionId) !== holder) return
+        gates.delete(sessionId)
+        handOff(sessionId)
+      },
+    }
+  }
+
   return {
     /**
      * Resolves once this waiter owns the session's next turn, for a caller
@@ -120,27 +140,38 @@ export function createTurnAdmissions(
     owns(sessionId: string, generation: object) {
       return active.get(sessionId)?.generation === generation
     },
-    /**
-     * Hold the session against new turns while a recovery operation, a harness
-     * switch or an ended turn's held configuration works on it. One holder at a
-     * time: a second concurrent request on the same session joins the operation
-     * that already holds it rather than opening a second controller over the
-     * same generation.
-     */
-    gate(sessionId: string): { release: () => void } | undefined {
-      if (gates.has(sessionId)) return undefined
-      const holder = {}
-      gates.set(sessionId, holder)
-      return {
-        release: () => {
-          if (gates.get(sessionId) !== holder) return
-          gates.delete(sessionId)
-          handOff(sessionId)
-        },
-      }
-    },
+    gate,
     gated(sessionId: string) {
       return gates.has(sessionId)
+    },
+    /**
+     * The gate, taken only on a session nothing runs on or waits for here, and
+     * the store lease, which is refused while a turn, a provider turn or a
+     * child turn holds the session from any instance sharing the store.
+     * `held` is a gate another operation (a recovery, a harness switch, a
+     * turn's settling, another delete) already holds.
+     */
+    holdIdle(sessionId: string): { release: () => void } | { refused: "working" | "held" } {
+      if (active.has(sessionId) || handed.has(sessionId) || waiting.get(sessionId)?.length) return { refused: "working" }
+      const held = gate(sessionId)
+      if (!held) return { refused: "held" }
+      let leaseId: string | undefined
+      try {
+        leaseId = store.acquireTurnLease(sessionId)
+      } catch (error) {
+        held.release()
+        throw error
+      }
+      if (!leaseId) {
+        held.release()
+        return { refused: "working" }
+      }
+      return {
+        release: () => {
+          store.releaseTurnLease(sessionId, leaseId)
+          held.release()
+        },
+      }
     },
     claim(
       sessionId: string,

@@ -20,7 +20,7 @@ function row(project: ProjectId, id: string, createdAt: number, lastHumanTurnAt?
 }
 
 function page(project: ProjectId, rows: SessionRow[], nextAfter?: string, statuses: Array<[string, ListedStatus]> = []): FetchedPage {
-  return { projectId: project, rows, nextAfter, degraded: false, statuses: new Map(statuses.map(([id, status]) => [sessionId(id), status])) }
+  return { projectId: project, rows, nextAfter, degraded: false, statuses: new Map(statuses.map(([id, status]) => [sessionId(id), status])), readers: new Map() }
 }
 
 function window(pages: FetchedPage[], failures: FetchedWindow["failures"] = [], sentAt = 1_000): FetchedWindow {
@@ -31,7 +31,7 @@ function run(state: ListState, ...events: Parameters<typeof listTransition>[1][]
   return events.reduce(listTransition, state)
 }
 
-const shown = (state: ListState) => visibleOrder(state).map((ref) => ref.sessionId as string)
+const shown = (state: ListState) => visibleOrder(state, false).map((ref) => ref.sessionId as string)
 
 test("a project's rail is its first page, in the server's order, with nothing past the page's last row", () => {
   const state = run(
@@ -195,6 +195,9 @@ test("a listed status is a read at the page's send time: a newer event beats it,
     window: window([page(ALPHA, [row(ALPHA, "a1", 50)], undefined, [["a1", { status: { kind: "working" }, waitingOnUser: true, backgroundWork: { agents: 0, shells: 0, other: 0 } }]])], [], 1_200),
   })
   expect(stale.statuses.get(sessionId("a1"))).toMatchObject({ status: { kind: "idle" }, source: "event" })
+
+  const notified = run(stale, { type: "statusChanged", ref: row(ALPHA, "a1", 50).ref, status: { kind: "working" }, waitingOnUser: true, at: 1_600 })
+  expect(notified.statuses.get(sessionId("a1")), "a status notice states the wait itself").toMatchObject({ status: { kind: "working" }, waitingOnUser: true, source: "event" })
 })
 
 test("a turn's status that lands before its session's row is the row's status once the row arrives", () => {
@@ -221,7 +224,7 @@ test("a turn's status that lands before its session's row is the row's status on
 })
 
 const rowView = (state: ListState, id: string) =>
-  rowViews({ order: visibleOrder(state), data: state, openRequests: new Map(), cache: createRowViewCache() }).get(sessionId(id))
+  rowViews({ order: visibleOrder(state, true), data: state, openRequests: new Map(), cache: createRowViewCache() }).get(sessionId(id))
 
 test("a turn that ends while its background work runs leaves the row running in background, and it is idle once the work settles", () => {
   const a1 = row(ALPHA, "a1", 50).ref

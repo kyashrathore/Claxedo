@@ -2,12 +2,7 @@ import { publicApiFamilyResponse } from "../platform/http/public-api-error-respo
 import type { Context } from "hono"
 import type { SessionShareChangedEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type {
-  SessionShareFanoutTarget,
-  SessionShareLevel,
-  WorkspaceAuthority,
-} from "@claxedo/server-core/platform/auth/authority"
-import { asRecord } from "@claxedo/server-core/platform/json/index"
+import type { SessionShareLevel, WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 
 /**
  * Injected sink for `session.share.changed` doorbells.
@@ -17,131 +12,32 @@ import { asRecord } from "@claxedo/server-core/platform/json/index"
  */
 export type SessionShareChangedSink = (event: SessionShareChangedEvent) => unknown
 
-export type { SessionShareFanoutTarget } from "@claxedo/server-core/platform/auth/authority"
-
 export function peopleErrorResponse(c: Context, error: unknown): Response {
   return publicApiFamilyResponse(c, error, "session_share")
 }
 
 /**
- * A token_identifier is `${issuer}|${subject}`. Some SQLite list APIs also
- * alias `users.subject` as `token_identifier` — accept a bare `user_…` subject.
- */
-export function subjectFromIdentity(value: string | undefined): string | undefined {
-  const raw = value?.trim()
-  if (!raw) return undefined
-  const pipe = raw.lastIndexOf("|")
-  if (pipe >= 0 && pipe < raw.length - 1) return raw.slice(pipe + 1)
-  if (raw.startsWith("user_")) return raw
-  return undefined
-}
-
-function memberSubjects(rows: unknown): string[] {
-  if (!Array.isArray(rows)) return []
-  const subjects: string[] = []
-  for (const row of rows) {
-    const record = asRecord(row)
-    if (!record) continue
-    const subject =
-      subjectFromIdentity(typeof record.provider_subject === "string" ? record.provider_subject : undefined)
-      ?? subjectFromIdentity(typeof record.token_identifier === "string" ? record.token_identifier : undefined)
-      ?? subjectFromIdentity(typeof record.subject === "string" ? record.subject : undefined)
-    if (subject) subjects.push(subject)
-  }
-  return subjects
-}
-
-function teamIds(rows: unknown): string[] {
-  if (!Array.isArray(rows)) return []
-  const ids: string[] = []
-  for (const row of rows) {
-    const record = asRecord(row)
-    if (!record) continue
-    const id = typeof record.team_id === "string"
-      ? record.team_id
-      : typeof record.public_id === "string"
-        ? record.public_id
-        : undefined
-    if (id) ids.push(id)
-  }
-  return ids
-}
-
-/**
- * Expand a grant/revoke target into recipient subjects for doorbell fanout.
- */
-export async function resolveSessionShareRecipientSubjects(input: {
-  auth: SignedControlPlaneAuth
-  authority: Pick<WorkspaceAuthority, "listTeamMembers" | "listTeams" | "resolveOrgId">
-  target: SessionShareFanoutTarget
-  /** Granter subject — omitted from the recipient set. */
-  excludeSubject?: string
-}): Promise<string[]> {
-  const subjects = new Set<string>()
-  const { target, authority, auth } = input
-
-  const direct =
-    subjectFromIdentity(target.grantedToSubject)
-    ?? subjectFromIdentity(target.grantedToTokenIdentifier)
-    ?? subjectFromIdentity(target.grantedToUserId)
-  if (direct) subjects.add(direct)
-
-  const teamId = target.grantedToTeamPublicId ?? target.grantedToTeamId
-  if (teamId && authority.listTeamMembers) {
-    for (const subject of memberSubjects(await authority.listTeamMembers(auth, { teamId }))) {
-      subjects.add(subject)
-    }
-  }
-
-  const orgId = target.grantedToOrgId
-  if (orgId && authority.listTeams && authority.listTeamMembers) {
-    // Best-effort: expand via team memberships in the org (collaborative orgs
-    // place members on the default team). Full org_memberships listing is not
-    // on the authority surface yet.
-    const teams = await authority.listTeams(auth, { orgId })
-    for (const id of teamIds(teams)) {
-      for (const subject of memberSubjects(await authority.listTeamMembers(auth, { teamId: id }))) {
-        subjects.add(subject)
-      }
-    }
-  }
-
-  if (input.excludeSubject) subjects.delete(input.excludeSubject)
-  return [...subjects]
-}
-
-/**
- * After a successful grant/revoke, publish one doorbell per recipient subject.
- * Fail-soft: share mutation must not fail if the sink throws.
+ * After a successful grant/revoke, ring the doorbell of each person it named,
+ * addressed by the canonical user id a signed caller's live room is keyed by.
+ * The granter is never rung. Fail-soft: share mutation must not fail if the
+ * sink throws.
  */
 export async function notifySessionShareChanged(input: {
   auth: SignedControlPlaneAuth
-  authority: Pick<WorkspaceAuthority, "listTeamMembers" | "listTeams" | "resolveOrgId">
+  authority: Pick<WorkspaceAuthority, "resolveOrgId">
   sessionId: string
   workspaceId: string
-  target: SessionShareFanoutTarget
+  recipientUserIds: readonly string[]
   sink?: SessionShareChangedSink
 } & ({ phase: "granted"; level: SessionShareLevel } | { phase: "revoked" })): Promise<void> {
-  if (!input.sink) return undefined
+  const recipients = [...new Set(input.recipientUserIds)].filter((userId) => userId !== input.auth.user.subject)
+  if (!input.sink || recipients.length === 0) return undefined
   let orgId: string | undefined
   try {
     orgId = await input.authority.resolveOrgId(input.auth)
   } catch {
     // Room routing hint only — continue without orgId (owner rooms still work).
   }
-  let recipients: string[]
-  try {
-    recipients = await resolveSessionShareRecipientSubjects({
-      auth: input.auth,
-      authority: input.authority,
-      target: input.target,
-      excludeSubject: input.auth.user.subject,
-    })
-  } catch (error) {
-    console.error("[claxedo-server] WARN  session.share.changed recipient resolve failed:", error)
-    return undefined
-  }
-  if (recipients.length === 0) return undefined
   const ts = Date.now()
   for (const ownerUserId of recipients) {
     try {

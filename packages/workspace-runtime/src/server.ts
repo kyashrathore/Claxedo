@@ -65,6 +65,7 @@ export type WorkspaceRuntimeServiceExposure = {
 export type WorkspaceRuntimeServerOptions = {
   onTurnOutcome?: WorkspaceHostOptions["onTurnOutcome"]
   onPresentationEvent?: WorkspaceHostOptions["onPresentationEvent"]
+  beforeStoreClose?: WorkspaceHostOptions["beforeStoreClose"]
   onRuntimeEvent?: WorkspaceHostOptions["onRuntimeEvent"]
   sessionParents?: WorkspaceEventParents
   relayHostAuth?: RelayHostAuthOptions
@@ -137,6 +138,12 @@ export type WorkspaceRuntimeServerOptions = {
    * is written only when the session is bound, never on an event.
    */
   bindSessionParents?: (read: Host["parentSessionIdFor"]) => void
+  /**
+   * Receives this runtime's own session reads once the host exists, unfiltered
+   * by any caller's access: for a composition that publishes every session's
+   * list row and status from outside the runtime.
+   */
+  bindSessionReads?: (reads: Pick<Host, "store" | "sessionStatus">) => void
   /**
    * Host-owned work the process drain awaits last, once the runtime's
    * sessions, processes and PTYs are disposed: whatever a disposed turn left
@@ -451,12 +458,14 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.configApplyReceiptDir ? { configApplyReceiptDir: options.configApplyReceiptDir } : {}),
     ...(options.onTurnOutcome ? { onTurnOutcome: options.onTurnOutcome } : {}),
     ...(options.onPresentationEvent ? { onPresentationEvent: options.onPresentationEvent } : {}),
+    ...(options.beforeStoreClose ? { beforeStoreClose: options.beforeStoreClose } : {}),
     ...(options.onRuntimeEvent ? { onRuntimeEvent: options.onRuntimeEvent } : {}),
     ...(options.sessionParents ? { sessionParents: options.sessionParents } : {}),
     ...(options.firstPartyMcpLaunch ? { firstPartyMcpLaunch: options.firstPartyMcpLaunch } : {}),
   })
   options.bindSessionConfig?.((sessionId) => host.getSessionConfig(sessionId))
   options.bindSessionParents?.((sessionId) => host.parentSessionIdFor(sessionId))
+  options.bindSessionReads?.({ store: host.store, sessionStatus: host.sessionStatus })
   const worktrees = options.target
       ? new WorkspaceWorktreeManager({
         workspaceId: options.target.workspaceId,
@@ -647,6 +656,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       directory: options.target?.directory ?? workspaceDir(),
       stateDirectory: options.storeRoot ?? workspaceRuntimeStoreDir(),
       fetch: contributionFetch,
+      sessionDrivenOnlyBy: (sessionId, actorId) => host.drivenOnlyByMachineUser(sessionId, actorId),
       registerSessionTools: registerSessionToolGroup,
       unregisterSessionTools: unregisterSessionToolGroup,
     },

@@ -12,6 +12,7 @@ import {
   requestedSessionShareLevel,
   storedSessionShareLevel,
 } from "@claxedo/server-core/platform/auth/session-share-level"
+import type { SessionShareRecipient } from "@claxedo/server-core/platform/auth/session-share-authority"
 import {
   SESSION_ADOPTION_OPERATION_PREFIX,
   sessionAccessQuestion,
@@ -158,19 +159,12 @@ type SessionShareRow = {
   workspace_id: string
   org_id: string
   project_id: string
-  target_user_id: string | null
-  target_org_id: string | null
-  target_team_id: string | null
+  target_user_id: string
   granted_by_actor_id: string
   granted_at: number
   revoked_at: number | null
   level: string
 }
-
-type SessionShareTarget =
-  | { kind: "user"; id: string }
-  | { kind: "org"; id: string }
-  | { kind: "team"; id: string }
 
 type TurnLeaseRow = {
   session_id: string
@@ -898,67 +892,32 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       sessionId: string
       workspaceId: string
       level?: SessionShareLevel
-      grantedToTokenIdentifier?: string
-      grantedToSubject?: string
-      grantedToUserId?: string
-      grantedToOrgId?: string
-      grantedToTeamId?: string
-      grantedToTeamPublicId?: string
-    },
+    } & SessionShareRecipient,
   ): Promise<SessionShareGrantResult> {
     const administrator = await this.requirePrincipal(auth)
     const level = requestedSessionShareLevel(args.level)
     const sessionId = requireText(args.sessionId, "sessionId")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     const session = await this.requireSessionShareAdministrator(administrator, sessionId, workspaceId)
-    const target = await this.resolveShareTarget(args)
+    const target = await this.resolveShareRecipient(args)
     if (!target) throw sessionShareError("session_share_target_not_found")
-    if (target.kind === "user") {
-      const actor = await this.activeHumanActorForUser(target.id)
-      if (!actor) throw sessionShareError("session_share_target_not_found")
-      if (!(await may(this.database, { userId: target.id }, "member", { kind: "org", orgId: session.org_id }))) {
-        throw sessionShareError("session_share_target_outside_organization")
-      }
-    }
-    if (target.kind === "org" && target.id !== session.org_id) {
-      throw sessionShareError("session_share_org_mismatch")
-    }
-    if (target.kind === "team") {
-      const team = await this.database
-        .prepare(`select org_id from teams where team_id = ? and deleted_at is null`)
-        .bind(target.id)
-        .first<{ org_id: string }>()
-      if (!team) throw sessionShareError("session_share_target_not_found")
-      if (team.org_id !== session.org_id) throw sessionShareError("session_share_team_org_mismatch")
+    const actor = await this.activeHumanActorForUser(target)
+    if (!actor) throw sessionShareError("session_share_target_not_found")
+    if (!(await may(this.database, { userId: target }, "member", { kind: "org", orgId: session.org_id }))) {
+      throw sessionShareError("session_share_target_outside_organization")
     }
     const existing = await this.activeShareForTarget(sessionId, target)
     if (existing) {
       if (storedSessionShareLevel(existing.level) !== level) {
         await this.setShareLevel(administrator, existing, sessionId, workspaceId, level)
       }
-      return { grant_id: existing.grant_id, level }
+      return { grant_id: existing.grant_id, level, recipientUserId: target }
     }
     const grantId = this.randomId("share")
     const assertionId = this.randomId("assert")
     const now = this.now()
     const manages = maySql(administrator, "manage_shares", { kind: "session", alias: "s" })
-    const targetMember = maySql({ userId: target.id }, "member", { kind: "org", orgId: "s.org_id" })
-    const targetGuard = target.kind === "user"
-      ? `exists (
-          select 1 from actors target_actor
-          where target_actor.user_id = ? and target_actor.kind = 'human' and target_actor.state = 'active'
-        ) and ${targetMember.sql}`
-      : target.kind === "org"
-        ? `s.org_id = ? and exists (
-            select 1 from orgs target_org where target_org.org_id = ? and target_org.deleted_at is null
-          )`
-        : `exists (
-            select 1 from teams target_team
-            where target_team.team_id = ? and target_team.org_id = s.org_id and target_team.deleted_at is null
-          )`
-    const targetGuardBindings = target.kind === "user"
-      ? [target.id, ...targetMember.bind]
-      : target.kind === "org" ? [target.id, target.id] : [target.id]
+    const targetMember = maySql({ userId: target }, "member", { kind: "org", orgId: "s.org_id" })
     try {
       await this.guardedBatch(
         [
@@ -967,29 +926,30 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
               `
         insert into session_share_grants (
           grant_id, session_id, workspace_id, org_id, project_id,
-          target_user_id, target_org_id, target_team_id,
-          granted_by_actor_id, granted_at, revoked_at, level
+          target_user_id, granted_by_actor_id, granted_at, revoked_at, level
         )
         select ?, s.session_id, s.workspace_id, s.org_id, s.project_id,
-          ?, ?, ?, ?, ?, null, ?
+          ?, ?, ?, null, ?
         from sessions s
         where s.session_id = ? and s.workspace_id = ? and s.deleted_at is null
           and ${manages.sql}
-          and ${targetGuard}
+          and exists (
+            select 1 from actors target_actor
+            where target_actor.user_id = ? and target_actor.kind = 'human' and target_actor.state = 'active'
+          ) and ${targetMember.sql}
       `,
             )
             .bind(
               grantId,
-              target.kind === "user" ? target.id : null,
-              target.kind === "org" ? target.id : null,
-              target.kind === "team" ? target.id : null,
+              target,
               administrator.actorId,
               now,
               level,
               sessionId,
               workspaceId,
               ...manages.bind,
-              ...targetGuardBindings,
+              target,
+              ...targetMember.bind,
             ),
           this.database
             .prepare(
@@ -1016,12 +976,12 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
           if (storedSessionShareLevel(raced.level) !== level) {
             await this.setShareLevel(administrator, raced, sessionId, workspaceId, level)
           }
-          return { grant_id: raced.grant_id, level }
+          return { grant_id: raced.grant_id, level, recipientUserId: target }
         }
       }
       throw error
     }
-    return { grant_id: grantId, level }
+    return { grant_id: grantId, level, recipientUserId: target }
   }
 
   /**
@@ -1081,13 +1041,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       sessionId: string
       workspaceId: string
       grantId?: string
-      grantedToTokenIdentifier?: string
-      grantedToSubject?: string
-      grantedToUserId?: string
-      grantedToOrgId?: string
-      grantedToTeamId?: string
-      grantedToTeamPublicId?: string
-    },
+    } & SessionShareRecipient,
   ) {
     const administrator = await this.requirePrincipal(auth)
     const sessionId = requireText(args.sessionId, "sessionId")
@@ -1110,12 +1064,12 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         .all<SessionShareRow>()
       grants = result.results
     } else {
-      const target = await this.resolveShareTarget(args, true)
-      if (!target) return { revoked: false, runtime_tokens_revoked: 0, revokedTargets: [] }
+      const target = await this.resolveShareRecipient(args, true)
+      if (!target) return { revoked: false, runtime_tokens_revoked: 0, recipientUserIds: [] }
       const existing = await this.activeShareForTarget(sessionId, target)
       grants = existing && existing.workspace_id === workspaceId ? [existing] : []
     }
-    if (grants.length === 0) return { revoked: false, runtime_tokens_revoked: 0, revokedTargets: [] }
+    if (grants.length === 0) return { revoked: false, runtime_tokens_revoked: 0, recipientUserIds: [] }
     const now = this.now()
     const manages = maySql(administrator, "manage_shares", { kind: "session", alias: "s" })
     let runtimeTokensRevoked = 0
@@ -1170,7 +1124,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     return {
       revoked: true,
       runtime_tokens_revoked: runtimeTokensRevoked,
-      revokedTargets: grants.map(shareFanoutTarget),
+      recipientUserIds: grants.map((grant) => grant.target_user_id),
     }
   }
 
@@ -1186,17 +1140,14 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       if (!(await may(this.database, who, "open", { kind: "workspace", workspaceId }))) throw err
       return undefined
     })
-    if (!session) return { can_manage_shares: false, grants: [], teams: [] }
+    if (!session) return { can_manage_shares: false, grants: [] }
     const canManage = await may(this.database, who, "manage_shares", { kind: "session", sessionId, workspaceId })
-    if (!canManage) return { can_manage_shares: false, grants: [], teams: [] }
-    const [grants, teams] = await Promise.all([
-      this.database
-        .prepare(
-          `
+    if (!canManage) return { can_manage_shares: false, grants: [] }
+    const grants = await this.database
+      .prepare(
+        `
         select grant_id, session_id, workspace_id, level,
           target_user_id as granted_to_user_id,
-          target_org_id as granted_to_org_id,
-          target_team_id as granted_to_team_id,
           granted_by_actor_id as created_by_user_id,
           granted_at as created_at,
           revoked_at
@@ -1204,29 +1155,10 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         where session_id = ? and workspace_id = ? and revoked_at is null
         order by granted_at, grant_id
       `,
-        )
-        .bind(sessionId, workspaceId)
-        .all(),
-      this.database
-        .prepare(
-          `
-        select t.team_id, t.name,
-          case when exists (
-            select 1 from session_share_grants g
-            where g.session_id = ? and g.target_team_id = t.team_id and g.revoked_at is null
-          ) then 1 else 0 end as is_shared
-        from teams t where t.org_id = ? and t.deleted_at is null
-        order by t.name, t.team_id
-      `,
-        )
-        .bind(sessionId, session.org_id)
-        .all<{ team_id: string; name: string; is_shared: number }>(),
-    ])
-    return {
-      can_manage_shares: true,
-      grants: grants.results,
-      teams: teams.results.map((team) => ({ ...team, is_shared: team.is_shared === 1 })),
-    }
+      )
+      .bind(sessionId, workspaceId)
+      .all()
+    return { can_manage_shares: true, grants: grants.results }
   }
 
   async listSessions(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
@@ -1249,7 +1181,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
 
   async listSessionPage(auth: SignedControlPlaneAuth, query: SessionPageQuery) {
     const who = await this.requirePrincipal(auth)
-    return await readD1SessionPage(this.database, query, maySql(who, "read", { kind: "session", alias: "s" }))
+    return await readD1SessionPage(this.database, query, maySql(who, "read", { kind: "session", alias: "s" }), who.userId)
   }
 
   async resolveSession(auth: SignedControlPlaneAuth, args: { sessionId: string }) {
@@ -1789,77 +1721,42 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     await this.guardedBatch(statements, "Session visibility raced with an authority change")
   }
 
-  private async resolveShareTarget(
-    args: {
-      grantedToTokenIdentifier?: string
-      grantedToSubject?: string
-      grantedToUserId?: string
-      grantedToOrgId?: string
-      grantedToTeamId?: string
-      grantedToTeamPublicId?: string
-    },
-    allowMissing = false,
-  ): Promise<SessionShareTarget | undefined> {
+  /** The active user a share names, by user id, token identifier or provider subject. */
+  private async resolveShareRecipient(args: SessionShareRecipient, allowMissing = false): Promise<string | undefined> {
     if (shareSelectorCount(args) !== 1) throw sessionShareError("session_share_target_required")
-    const userSelector = args.grantedToTokenIdentifier ?? args.grantedToSubject ?? args.grantedToUserId
-    if (userSelector) {
-      const value = requireText(userSelector, "share user target")
-      const user = args.grantedToUserId
+    const value = requireText((args.grantedToTokenIdentifier ?? args.grantedToSubject ?? args.grantedToUserId)!, "share user target")
+    const user = args.grantedToUserId
+      ? await this.database
+          .prepare(`select user_id from users where user_id = ? and state = 'active'`)
+          .bind(value)
+          .first<{ user_id: string }>()
+      : args.grantedToTokenIdentifier
         ? await this.database
-            .prepare(`select user_id from users where user_id = ? and state = 'active'`)
+            .prepare(
+              `
+            select ai.user_id from auth_identities ai
+            join users u on u.user_id = ai.user_id and u.state = 'active'
+            where ai.issuer || '|' || ai.subject = ? and ai.unlinked_at is null
+          `,
+            )
             .bind(value)
             .first<{ user_id: string }>()
-        : args.grantedToTokenIdentifier
-          ? await this.database
-              .prepare(
-                `
-              select ai.user_id from auth_identities ai
-              join users u on u.user_id = ai.user_id and u.state = 'active'
-              where ai.issuer || '|' || ai.subject = ? and ai.unlinked_at is null
-            `,
-              )
-              .bind(value)
-              .first<{ user_id: string }>()
-          : await this.database
-              .prepare(
-                `
-              select ai.user_id from auth_identities ai
-              join users u on u.user_id = ai.user_id and u.state = 'active'
-              where ai.subject = ? and ai.unlinked_at is null
-              order by ai.linked_at, ai.adapter, ai.issuer limit 1
-            `,
-              )
-              .bind(value)
-              .first<{ user_id: string }>()
-      if (!user) {
-        if (allowMissing) return undefined
-        throw sessionShareError("session_share_target_not_found")
-      }
-      return { kind: "user", id: user.user_id }
-    }
-    const orgSelector = args.grantedToOrgId
-    if (orgSelector) {
-      const orgId = requireText(orgSelector, "share organization target")
-      const org = await this.database
-        .prepare(`select org_id from orgs where org_id = ? and deleted_at is null`)
-        .bind(orgId)
-        .first<{ org_id: string }>()
-      if (!org) {
-        if (allowMissing) return undefined
-        throw sessionShareError("session_share_target_not_found")
-      }
-      return { kind: "org", id: org.org_id }
-    }
-    const teamId = requireText(args.grantedToTeamId ?? args.grantedToTeamPublicId!, "share team target")
-    const team = await this.database
-      .prepare(`select team_id from teams where team_id = ? and deleted_at is null`)
-      .bind(teamId)
-      .first<{ team_id: string }>()
-    if (!team) {
+        : await this.database
+            .prepare(
+              `
+            select ai.user_id from auth_identities ai
+            join users u on u.user_id = ai.user_id and u.state = 'active'
+            where ai.subject = ? and ai.unlinked_at is null
+            order by ai.linked_at, ai.adapter, ai.issuer limit 1
+          `,
+            )
+            .bind(value)
+            .first<{ user_id: string }>()
+    if (!user) {
       if (allowMissing) return undefined
       throw sessionShareError("session_share_target_not_found")
     }
-    return { kind: "team", id: team.team_id }
+    return user.user_id
   }
 
   private async activeHumanActorForUser(userId: string): Promise<Principal | undefined> {
@@ -1875,21 +1772,10 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     return row ? { userId: row.user_id, actorId: row.actor_id, actorKind: "human" } : undefined
   }
 
-  private async activeShareForTarget(sessionId: string, target: SessionShareTarget) {
+  private async activeShareForTarget(sessionId: string, targetUserId: string) {
     return await this.database
-      .prepare(
-        `
-      select * from session_share_grants
-      where session_id = ? and revoked_at is null
-        and target_user_id is ? and target_org_id is ? and target_team_id is ?
-    `,
-      )
-      .bind(
-        sessionId,
-        target.kind === "user" ? target.id : null,
-        target.kind === "org" ? target.id : null,
-        target.kind === "team" ? target.id : null,
-      )
+      .prepare(`select * from session_share_grants where session_id = ? and revoked_at is null and target_user_id = ?`)
+      .bind(sessionId, targetUserId)
       .first<SessionShareRow>()
   }
 
@@ -2063,28 +1949,9 @@ const SESSION_ACTION: Record<SessionAccessQuestion, SessionAction> = {
   session_control: "control",
 }
 
-function shareSelectorCount(args: {
-  grantedToTokenIdentifier?: string
-  grantedToSubject?: string
-  grantedToUserId?: string
-  grantedToOrgId?: string
-  grantedToTeamId?: string
-  grantedToTeamPublicId?: string
-}) {
-  return [
-    args.grantedToTokenIdentifier,
-    args.grantedToSubject,
-    args.grantedToUserId,
-    args.grantedToOrgId,
-    args.grantedToTeamId,
-    args.grantedToTeamPublicId,
-  ].filter((value) => typeof value === "string" && !!value.trim()).length
-}
-
-function shareFanoutTarget(grant: SessionShareRow) {
-  if (grant.target_user_id) return { grantedToUserId: grant.target_user_id }
-  if (grant.target_team_id) return { grantedToTeamId: grant.target_team_id }
-  return { grantedToOrgId: grant.target_org_id! }
+function shareSelectorCount(args: SessionShareRecipient) {
+  return [args.grantedToTokenIdentifier, args.grantedToSubject, args.grantedToUserId]
+    .filter((value) => typeof value === "string" && !!value.trim()).length
 }
 
 function sessionShareError(code: PublicApiErrorCode) {

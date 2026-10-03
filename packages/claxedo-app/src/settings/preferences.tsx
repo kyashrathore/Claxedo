@@ -31,6 +31,10 @@ export type AppearancePreferences = {
   readonly terminalScreenReader: boolean
 }
 
+export type SidebarPreferences = {
+  readonly showSettled: boolean
+}
+
 export type Preferences = {
   readonly contrast: Store<ContrastLevels>
   readonly setContrast: (scheme: ContrastScheme, level: number) => void
@@ -38,6 +42,8 @@ export type Preferences = {
   readonly setTranscript: <K extends keyof TranscriptPreferences>(key: K, value: TranscriptPreferences[K]) => void
   readonly appearance: Store<AppearancePreferences>
   readonly setAppearance: <K extends keyof AppearancePreferences>(key: K, value: AppearancePreferences[K]) => void
+  readonly sidebar: Store<SidebarPreferences>
+  readonly setSidebar: <K extends keyof SidebarPreferences>(key: K, value: SidebarPreferences[K]) => void
   readonly alerts: Store<AlertPreferences>
   readonly setAlertNotify: (kind: AlertKind, value: boolean) => void
   readonly setAlertSound: (kind: AlertKind, value: SoundChoice) => void
@@ -94,6 +100,13 @@ function readAppearance(value: unknown): AppearancePreferences | undefined {
   }
 }
 
+export const SIDEBAR_DEFAULTS: SidebarPreferences = { showSettled: false }
+
+function readSidebar(value: unknown): SidebarPreferences | undefined {
+  if (!isRecord(value)) return undefined
+  return { showSettled: value.showSettled === true }
+}
+
 export const ALERT_DEFAULTS: AlertPreferences = {
   notify: { agent: true, permissions: true, errors: true },
   sound: { agent: DEFAULT_SOUND, permissions: DEFAULT_SOUND, errors: DEFAULT_SOUND },
@@ -127,6 +140,7 @@ export function PreferencesProvider(props: { readonly children: JSX.Element }): 
   const [transcript, setTranscript] = persistedStore(preferenceKey("general", "transcript"), TRANSCRIPT_DEFAULTS, readTranscript)
   const [appearance, setAppearance] = persistedStore(preferenceKey("appearance", "fonts"), APPEARANCE_DEFAULTS, readAppearance)
   const [alerts, setAlerts] = persistedStore(preferenceKey("alerts"), ALERT_DEFAULTS, readAlerts)
+  const [sidebar, setSidebar] = persistedStore(preferenceKey("sidebar"), SIDEBAR_DEFAULTS, readSidebar)
   createEffect(() => writeFont("--font-family-sans", appearance.uiFont, uiFontFamily))
   createEffect(() => writeFont("--font-family-mono", appearance.codeFont, codeFontFamily))
   createRenderEffect(() => {
@@ -141,6 +155,8 @@ export function PreferencesProvider(props: { readonly children: JSX.Element }): 
     setTranscript: (key, value) => setTranscript({ [key]: value }),
     appearance,
     setAppearance: (key, value) => setAppearance({ [key]: value }),
+    sidebar,
+    setSidebar: (key, value) => setSidebar({ [key]: value }),
     alerts,
     setAlertNotify: (kind, value) => setAlerts({ notify: { ...alerts.notify, [kind]: value } }),
     setAlertSound: (kind, value) => setAlerts({ sound: { ...alerts.sound, [kind]: value } }),

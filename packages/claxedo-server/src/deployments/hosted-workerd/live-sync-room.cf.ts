@@ -46,10 +46,11 @@
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
 import { createSseReplayBuffer } from "@claxedo/helpers/sse"
 import { eventVisibleTo, type EventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
-import { isRetainedControlPlaneEvent } from "@claxedo/server-core/platform/http/event-retention"
+import { isRetainedControlPlaneEvent, supersededControlPlaneEventKey } from "@claxedo/server-core/platform/http/event-retention"
 import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
-import { storedSessionShareLevel } from "@claxedo/server-core/platform/auth/session-share-level"
 import { liveSyncRoomNameForPrincipal, type LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
+import { liveSyncEvents } from "./live-sync-admission"
+import { cursorAhead, replayGapEvent, type LiveSyncStreamGapEvent } from "./live-sync-replay-gap"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 
 /**
@@ -113,26 +114,6 @@ const HEADER_LAST_EVENT_ID = "x-livesync-last-event-id"
  */
 const HEADER_CURSOR = "x-livesync-cursor"
 
-/**
- * Synthetic frame written in place of a replay when the requested cursor has
- * already fallen out of the room's retention window (or belongs to a sequence
- * this room no longer has — see `cursorAhead`). Deliberately the same shape and
- * `code` as `ControlPlaneStreamGapEvent` in the local daemon's `shell/events.ts`:
- * hosted and local serve the same route to the same claxedo-app bundle, so a
- * consumer that grows a handler must not have to learn two spellings. Declared
- * here rather than imported because that module pulls the process-local
- * `controlBus` and `hono/streaming`, neither of which may enter the Worker
- * bundle.
- */
-export type LiveSyncStreamGapEvent = {
-  type: "stream.replay-gap"
-  code: "cp.sse_replay_gap"
-  message: string
-  severity: "warn"
-  lastEventId?: string
-  throughId?: string
-}
-
 type LiveSyncFrame = ControlPlaneEvent | LiveSyncStreamGapEvent
 
 /**
@@ -143,44 +124,6 @@ type LiveSyncFrame = ControlPlaneEvent | LiveSyncStreamGapEvent
  * line, exactly like the three already-resumable streams.
  */
 type LiveSyncWireFrame = { id: string; frame: LiveSyncFrame }
-
-function replayGapEvent(lastEventId?: string, throughId?: string): LiveSyncStreamGapEvent {
-  return {
-    type: "stream.replay-gap",
-    code: "cp.sse_replay_gap",
-    message: "Control plane event replay cursor is no longer available; refetch project and workspace state.",
-    severity: "warn",
-    ...(lastEventId ? { lastEventId } : {}),
-    ...(throughId ? { throughId } : {}),
-  }
-}
-
-function numericId(id: string | undefined) {
-  if (!id) return 0
-  const parsed = Number.parseInt(id, 10)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
-}
-
-/**
- * True when the presented cursor is numerically ahead of everything this room
- * has ever assigned — proof that the sequence it came from is gone.
- *
- * Ids only ever increase within one room instance, so strictly-greater is
- * impossible in normal operation. It happens when the Durable Object was
- * evicted (its in-memory ring, and with it the counter, resets to zero) or when
- * the caller's room name changed (an org grant moves a client from
- * `owner:<subject>` to `org:<id>`, whose sequence is unrelated).
- *
- * `SseReplayBuffer` cannot detect this on its own: `hasGap` short-circuits to
- * false whenever `after >= through`, and `replayAfter` filters to the empty
- * set, so a stale-high cursor is served silence — the client keeps a cursor
- * that will never match again and never learns its incremental view is stale.
- * Silence is the one failure mode a replay contract must not have, so the room
- * converts it into the same explicit gap notice a genuine eviction produces.
- */
-function cursorAhead(cursor: string | undefined, throughId: string | undefined) {
-  return numericId(cursor) > numericId(throughId)
-}
 
 /** Structural type of the CF `DurableObjectState` bits the room touches. */
 export type LiveSyncSocket = EventTarget & {
@@ -316,31 +259,6 @@ const SSE_HEADERS = {
   Connection: "keep-alive",
 } as const
 
-/**
- * The one event this room admits onto a client stream, a session share's
- * doorbell, rebuilt field by field so the room forwards exactly the fields it
- * verified and nothing else the sender put in the object.
- */
-function liveSyncEvent(input: unknown): ControlPlaneEvent | undefined {
-  const row = asRecord(input)
-  const ts = row?.ts
-  if (!row || typeof ts !== "number" || !Number.isFinite(ts)) return undefined
-  const { ownerUserId, sessionId, workspaceId, phase } = row
-  if (
-    row.type === "session.share.changed"
-    && typeof ownerUserId === "string" && ownerUserId
-    && typeof sessionId === "string"
-    && typeof workspaceId === "string"
-    && (phase === "granted" || phase === "revoked")
-  ) {
-    const base = { type: "session.share.changed", ts, ownerUserId, sessionId, workspaceId } as const
-    return phase === "granted"
-      ? { ...base, phase, level: storedSessionShareLevel(row.level) }
-      : { ...base, phase }
-  }
-  return undefined
-}
-
 function isConstructor(value: unknown): value is new () => unknown {
   return typeof value === "function"
 }
@@ -405,10 +323,13 @@ export class LiveSyncRoom {
    * per-process anything to hang it on.
    *
    * Retention is the shared 256 + 64 the sibling streams use. `liveSyncEvent`
-   * admits only `session.share.changed`, so this ring holds share doorbells
-   * and nothing chatty — 256 is far more than the worst client gap (the app's
-   * 40 s stall timeout plus a reconnect backoff that starts at 250 ms and caps
-   * at 15 s) can span.
+   * admits share doorbells, held in the terminal reserve, and status and
+   * reader notices, held in the main ring only, so neither can evict a
+   * doorbell; a replay sends only the latest of each kind per session. One
+   * reader's notices fill its own ring at a few per turn plus one seen write
+   * per open or shown turn end, far fewer than 256 across the worst client gap
+   * (the app's 40 s stall timeout plus a reconnect backoff capped at 15 s); a
+   * longer gap becomes a replay-gap notice and a list re-read.
    *
    * ## Why in-memory and not `state.storage`
    *
@@ -439,7 +360,13 @@ export class LiveSyncRoom {
     replay: ReturnType<typeof createSseReplayBuffer<ControlPlaneEvent>>
     principal: EventScopePrincipal
   }>()
-  private readonly replayTombstones = new Map<string, { sequence: number; retainedCursor?: string }>()
+  /** A released principal's cursor, and how many frames visible to it the room retained since. */
+  private readonly replayTombstones = new Map<string, {
+    sequence: number
+    retainedCursor?: string
+    principal: EventScopePrincipal
+    visibleSince: number
+  }>()
 
   constructor(
     private readonly state: LiveSyncRoomState,
@@ -458,13 +385,17 @@ export class LiveSyncRoom {
     if (existing) return existing.replay
     const tombstone = this.replayTombstones.get(key)
     this.replayTombstones.delete(key)
+    const seed = this.retained.replayAfter(tombstone?.retainedCursor).filter((event) => eventVisibleTo(principal, event.payload))
+    // Fewer seeds than the frames counted for this principal since its release
+    // means the room's ring evicted some it never got. Skipping one id turns
+    // that loss into a replay gap at the principal's own cursor.
+    const lost = tombstone !== undefined && seed.length < tombstone.visibleSince
     const replay = createSseReplayBuffer<ControlPlaneEvent>({
       isTerminal: isRetainedControlPlaneEvent,
-      ...(tombstone ? { initialSequence: tombstone.sequence } : {}),
+      supersedes: supersededControlPlaneEventKey,
+      ...(tombstone ? { initialSequence: tombstone.sequence + (lost ? 1 : 0) } : {}),
     })
-    for (const event of this.retained.replayAfter(tombstone?.retainedCursor)) {
-      if (eventVisibleTo(principal, event.payload)) replay.push(event.payload)
-    }
+    for (const event of seed) replay.push(event.payload)
     this.replays.set(key, { replay, principal })
     return replay
   }
@@ -484,6 +415,8 @@ export class LiveSyncRoom {
     this.replayTombstones.set(key, {
       sequence: Number(scope.replay.lastId() ?? "0"),
       ...(retainedCursor ? { retainedCursor } : {}),
+      principal: scope.principal,
+      visibleSince: 0,
     })
     while (this.replayTombstones.size > 256) this.replayTombstones.delete(this.replayTombstones.keys().next().value!)
     this.replays.delete(key)
@@ -515,7 +448,10 @@ export class LiveSyncRoom {
     return replay
       .replayAfter(cursor, throughId)
       .filter((event) => eventVisibleTo(principal, event.payload))
-      .map((event) => ({ id: event.id, frame: event.payload }))
+      .map((event) => ({
+        id: event.id,
+        frame: event.payload.type === "session.status.changed" ? { ...event.payload, replayed: true as const } : event.payload,
+      }))
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -607,8 +543,8 @@ export class LiveSyncRoom {
   }
 
   /**
-   * Fan a nudge (a `ControlPlaneEvent` `liveSyncEvent` admits)
-   * to every held connection the event is visible to. Returns
+   * Fan a nudge (one `ControlPlaneEvent` `liveSyncEvents` admits, or a batch
+   * of them) to every held connection each event is visible to. Returns
    * `{ delivered, held }` for the caller's diagnostics.
    */
   private async handleNudge(request: Request): Promise<Response> {
@@ -618,8 +554,13 @@ export class LiveSyncRoom {
     } catch {
       return Response.json({ error: "invalid nudge body" }, { status: 400 })
     }
-    const event = liveSyncEvent(input)
-    if (!event) return Response.json({ error: "invalid nudge body" }, { status: 400 })
+    const events = liveSyncEvents(input)
+    if (!events) return Response.json({ error: "invalid nudge body" }, { status: 400 })
+    const delivered = events.reduce((count, event) => count + this.fanOut(event), 0)
+    return Response.json({ delivered, held: this.connections.size + (this.state.getWebSockets?.() ?? []).length })
+  }
+
+  private fanOut(event: ControlPlaneEvent): number {
     // Retain before fanning out, and once for the whole room, so a principal
     // first seen after this nudge can seed its filtered ring. Each known
     // principal then mints its own compact id after `eventVisibleTo`; that same
@@ -627,6 +568,9 @@ export class LiveSyncRoom {
     // because the frames worth recovering are precisely those published while
     // no connection was attached.
     this.retained.push(event)
+    for (const tombstone of this.replayTombstones.values()) {
+      if (eventVisibleTo(tombstone.principal, event)) tombstone.visibleSince += 1
+    }
     const deliveries = new Map<string, { visible: boolean; id?: string }>()
     for (const scope of this.replays.values()) {
       const visible = eventVisibleTo(scope.principal, event)
@@ -672,7 +616,7 @@ export class LiveSyncRoom {
       if (this.send(socket, event, delivery.id)) delivered += 1
       else socket.close(1011, "live-sync delivery failed")
     }
-    return Response.json({ delivered, held: this.connections.size + sockets.length })
+    return delivered
   }
 
   /** Push one frame onto the internal socket in the id-carrying envelope. */

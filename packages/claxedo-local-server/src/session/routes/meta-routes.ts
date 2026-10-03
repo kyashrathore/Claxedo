@@ -22,6 +22,9 @@ import {
   type SessionMeta,
 } from "@claxedo/server-core/session/meta/index"
 import { parseSessionListQuery } from "@claxedo/server-core/session/navigation-list"
+import { writeSessionReader } from "@claxedo/server-core/session/meta/reads"
+import { sessionReaderWrite, type SessionReaderAction } from "@claxedo/server-core/session/reader"
+import { LOCAL_USER_ID } from "@claxedo/server-core/platform/auth/local-identity"
 import { getProjectWorkspace, listWorkspaces, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { workspaceIdFromWorkspaceRef } from "@claxedo/server-core/workspace/refs"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
@@ -174,6 +177,22 @@ function authoritySessionMeta(input: unknown, workspaceId: string): SessionMeta 
   }
 }
 
+/**
+ * This machine's single user's marks. A signed reader's marks live on the
+ * account, which its client writes to directly, so a signed caller is refused
+ * rather than given the machine's marks.
+ */
+async function readerWrite(request: Request, options: Options, sessionId: string, action: SessionReaderAction) {
+  const authResult = await signedOrError(request, options)
+  if (authResult.error) return Response.json(authResult.error, { status: authResult.status })
+  if (authResult.auth) throw new HTTPException(403, { message: "A signed reader's marks live on the account" })
+  const write = sessionReaderWrite(action, await request.json().catch(() => undefined))
+  if (!write) throw new HTTPException(400, { message: `invalid ${action} body` })
+  const state = await writeSessionReader(LOCAL_USER_ID, sessionId, write)
+  if (!state) throw new HTTPException(404, { message: "session metadata not found" })
+  return Response.json(state)
+}
+
 export function SessionMetaRoutes(options: Options = {}) {
   return new Hono()
     .onError((err, c) => {
@@ -248,6 +267,8 @@ export function SessionMetaRoutes(options: Options = {}) {
         throw err
       }
     })
+    .post("/api/claxedo/session/:id/seen", (c) => readerWrite(c.req.raw, options, c.req.param("id"), "seen"))
+    .post("/api/claxedo/session/:id/settle", (c) => readerWrite(c.req.raw, options, c.req.param("id"), "settle"))
     .get("/api/claxedo/session/:id/meta", async (c) => {
       const authResult = await signedOrError(c.req.raw, options)
       if (authResult.error) return c.json(authResult.error, authResult.status)

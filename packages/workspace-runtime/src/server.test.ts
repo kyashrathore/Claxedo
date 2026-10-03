@@ -20,6 +20,7 @@ import {
   workspaceRuntimeRouteAuthBoundary,
   workspaceRuntimeListenHostname,
   workspaceRuntimeServiceExposureFromEnv,
+  type WorkspaceRuntimeServerOptions,
 } from "./server"
 import { Pty } from "./pty/index"
 import { withSessionCore } from "./session-context"
@@ -243,6 +244,58 @@ describe("a store this build refuses", () => {
     } finally {
       process.off("unhandledRejection", record)
     }
+  })
+})
+
+describe("a composition's own session reads", () => {
+  test("read every session of the runtime's store, a worktree's included, and its status, without a caller", async () => {
+    const directory = await pinTempWorkspaceDirectory()
+    let reads: Parameters<NonNullable<WorkspaceRuntimeServerOptions["bindSessionReads"]>>[0] | undefined
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+      placement,
+      exposure: loopbackWorkspaceRuntimeExposure(),
+      target: { workspaceId: "ws_reads", directory },
+      storeRoot: path.join(directory, ".state"),
+      bindSessionReads: (bound) => { reads = bound },
+    })
+    try {
+      if (!reads) throw new Error("the runtime bound no session reads")
+      const store = reads.store()
+      store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "ses_reads", workspaceId: "ws_reads", directory, agentSessionId: "agent_reads" })
+      store.markSessionInterrupted("ses_reads")
+      const worktree = path.join(directory, ".worktrees", "ses_tree")
+      store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "ses_tree", workspaceId: "ws_reads", directory: worktree, agentSessionId: "agent_tree" })
+      store.markSessionInterrupted("ses_tree")
+
+      const route = await runtime.app.request(`http://localhost/session/status?directory=${encodeURIComponent(directory)}`)
+      expect(reads.store().listSessions(directory).map((session) => session.id)).toEqual(["ses_reads"])
+      expect(reads.store().listEverySession().map((session) => session.id).sort()).toEqual(["ses_reads", "ses_tree"])
+      expect(await route.json()).toEqual({ ses_reads: expect.objectContaining({ type: "interrupted" }) })
+      expect(reads.sessionStatus()).toMatchObject({ ses_reads: { type: "interrupted" }, ses_tree: { type: "interrupted" } })
+    } finally {
+      await runtime.host.dispose()
+    }
+  })
+})
+
+describe("disposing a runtime", () => {
+  test("hands its host the sessions' final state before the store closes", async () => {
+    const directory = await pinTempWorkspaceDirectory()
+    let reads: Parameters<NonNullable<WorkspaceRuntimeServerOptions["bindSessionReads"]>>[0] | undefined
+    const seen: string[][] = []
+    const runtime = createWorkspaceRuntimeApp({ sessionIdWorkspace: () => undefined,
+      placement,
+      exposure: loopbackWorkspaceRuntimeExposure(),
+      target: { workspaceId: "ws_close", directory },
+      storeRoot: path.join(directory, ".state"),
+      bindSessionReads: (bound) => { reads = bound },
+      beforeStoreClose: async () => { seen.push(reads!.store().listEverySession().map((session) => session.id)) },
+    })
+    reads!.store().bindSession({ owner: { kind: "machine-owner" }, sessionId: "ses_close", workspaceId: "ws_close", directory, agentSessionId: "agent_close" })
+
+    await runtime.host.dispose()
+
+    expect(seen).toEqual([["ses_close"]])
   })
 })
 

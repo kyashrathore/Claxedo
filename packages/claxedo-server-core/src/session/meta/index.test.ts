@@ -74,6 +74,7 @@ describe("session navigation order", () => {
     expect((await sessionMeta("agents-only-new"))?.lastHumanTurnAt).toBeUndefined()
 
     const rows = await listSessionNavigationMetas({
+      reader: "local",
       workspaceID: ws.id,
       archived: "active",
       sort: "human_turn_desc",
@@ -88,7 +89,7 @@ describe("session navigation order", () => {
       engineSession({ id: "b", created: 2_000, updated: 2_000, lastHumanTurn: 2_000 }),
     ])
     const list = () =>
-      listSessionNavigationMetas({ workspaceID: ws.id, archived: "active", sort: "human_turn_desc", limit: 10 })
+      listSessionNavigationMetas({ reader: "local", workspaceID: ws.id, archived: "active", sort: "human_turn_desc", limit: 10 })
         .then(order)
 
     expect(await list()).toEqual(["b", "a"])
@@ -125,6 +126,7 @@ describe("session navigation order", () => {
     ])
     const page = (cursor?: { createdAt: number; lastHumanTurnAt?: number; sessionID: string; sessionRef: string }) =>
       listSessionNavigationMetas({
+        reader: "local",
         workspaceID: ws.id,
         archived: "active",
         sort: "human_turn_desc",

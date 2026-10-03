@@ -12,6 +12,13 @@ async function serverOrder(url: string): Promise<string[]> {
   return items.filter((item) => !item.archivedAt && !item.parentSessionId).map((item) => item.title)
 }
 
+async function serverSeenAt(url: string, workspaceId: string, title: string): Promise<number | undefined> {
+  const target = new URL("/api/claxedo/session-list", url)
+  for (const [key, value] of Object.entries({ scope: "workspace", workspaceId, sort: "human_turn_desc", limit: "50" })) target.searchParams.set(key, value)
+  const items = ((await (await fetch(target)).json()) as { items: Array<ListItem & { seenAt?: number }> }).items
+  return items.find((item) => item.title === title)?.seenAt
+}
+
 async function sessionStatusCode(api: ClaxedoApi, directory: string, id: string): Promise<number> {
   return api.session(directory, id).then(
     () => 200,
@@ -164,4 +171,39 @@ test("10 a failed turn's dot clears once the reader opens the session, stays cle
   await api.promptAsync(workspace.directory, greeting.id, `Say hello again. ${acpScriptToken("failing")}`)
   await expect.poll(async () => (await lastTurn())?.completedAt).not.toBe(seen)
   await expect(mark).toHaveAttribute("data-sidebar-status", "error")
+})
+
+test("10 a finished dot survives a reload and a daemon restart, clears once the reader opens the session, and stays cleared, as the server records", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("seen", "Seen")
+  const create = (title: string) => api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
+  const other = await create("Other")
+  const finished = await create("Finished")
+  await stack.acp.write("finished", { steps: [{ kind: "text", text: "The finished reply." }] })
+  const rail = app.getByRole("navigation", { name: UI.rail })
+  const mark = row(app, "Finished").locator("[data-sidebar-status]")
+  const lastTurn = async () => (await api.session(workspace.directory, finished.id)).lastTurn as { completedAt?: number } | undefined
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, other.id)}`)
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+  await api.promptAsync(workspace.directory, finished.id, `Say it. ${acpScriptToken("finished")}`)
+  await expect.poll(async () => (await lastTurn())?.completedAt).toBeGreaterThan(0)
+  await expect(mark).toHaveAttribute("data-sidebar-status", "done")
+
+  await app.reload()
+  await expect(mark).toHaveAttribute("data-sidebar-status", "done")
+  await stack.daemon.restart()
+  await app.reload()
+  await expect(mark).toHaveAttribute("data-sidebar-status", "done")
+  expect(await serverSeenAt(stack.url, workspace.id, "Finished")).toBeUndefined()
+
+  await rail.getByRole("button", { name: "Finished", exact: true }).click()
+  await expect(app.getByText("The finished reply.")).toBeVisible()
+  await expect(mark).toHaveCount(0)
+  await expect.poll(() => serverSeenAt(stack.url, workspace.id, "Finished")).toBe((await lastTurn())?.completedAt)
+
+  await rail.getByRole("button", { name: "Other", exact: true }).click()
+  await expect(app).toHaveURL(new RegExp(other.id))
+  await app.reload()
+  await expect(row(app, "Finished")).toBeVisible()
+  await expect(mark).toHaveCount(0)
 })

@@ -480,7 +480,7 @@ describe("workspace runtime public lifecycle", () => {
     expect((await f.request("/session/deleted")).status).toBe(404)
   })
 
-  test("deleting an active session retires its host turn before removing its binding", async () => {
+  test("deleting a working session is refused and leaves its turn and its neighbor's running", async () => {
     const f = await fixture({ hold: true })
     await f.host.apply(f.snapshot())
     await f.request("/session", "POST", { id: "local" })
@@ -490,11 +490,12 @@ describe("workspace runtime public lifecycle", () => {
     try {
       expect((await f.request("/session/neighbor/prompt_async", "POST", { parts: [{ type: "text", text: "keep waiting" }] })).status).toBe(204)
       expect(f.host.activity().activeTurns).toBe(2)
-      expect((await f.request("/session/local", "DELETE")).status).toBe(200)
-      expect(f.host.activity().activeTurns).toBe(1)
-      expect((await f.request("/session/local")).status).toBe(404)
-      expect((await f.request("/session/neighbor")).status).toBe(200)
-      expect(f.controls).toHaveLength(1)
+      const refused = await f.request("/session/local", "DELETE")
+      expect(refused.status).toBe(409)
+      expect(await refused.json()).toMatchObject({ error: { code: "session_delete_refused", details: { sessionId: "local", reason: "working" } } })
+      expect(f.host.activity().activeTurns).toBe(2)
+      expect((await f.request("/session/local")).status).toBe(200)
+      expect(f.controls).toHaveLength(0)
     } finally {
       f.release()
       await prompt

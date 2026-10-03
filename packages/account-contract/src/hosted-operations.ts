@@ -225,8 +225,8 @@ export const HOSTED_OPERATIONS = {
     exposure: { renderer: true, app: false },
   }),
   "session.page": defineOperation({
-    method: "GET", path: operationPath("/api/control/session-list?scope=project", { query: ["projectId", "limit"], optionalQuery: ["sort", "after"] }),
-    input: operationInput({ projectId: requiredParameter, limit: requiredParameter, sort: optionalParameter, after: optionalParameter }),
+    method: "GET", path: operationPath("/api/control/session-list?scope=project", { query: ["projectId", "limit"], optionalQuery: ["sort", "after", "settled"] }),
+    input: operationInput({ projectId: requiredParameter, limit: requiredParameter, sort: optionalParameter, after: optionalParameter, settled: optionalParameter }),
     output: withArrays("items"), retry: "safe",
     exposure: { renderer: true, app: false },
   }),
@@ -289,6 +289,20 @@ export const HOSTED_OPERATIONS = {
     exposure: { renderer: false, app: false },
     body: selectBody("displayName"),
   }),
+  "session.seen": defineOperation({
+    method: "POST", path: operationPath("/api/control/sessions/:sessionId/seen"),
+    input: operationInput({ sessionId: requiredParameter, completedAt: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("completedAt"),
+  }),
+  "session.settle": defineOperation({
+    method: "POST", path: operationPath("/api/control/sessions/:sessionId/settle"),
+    input: operationInput({ sessionId: requiredParameter, settled: bodyField, through: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("settled", "through"),
+  }),
   "session.shares.list": defineOperation({
     method: "GET", path: operationPath("/api/control/sessions/:sessionId/shares", { query: ["workspaceId"] }),
     input: operationInput({ sessionId: requiredParameter, workspaceId: requiredParameter }),
@@ -297,17 +311,17 @@ export const HOSTED_OPERATIONS = {
   }),
   "session.shares.grant": defineOperation({
     method: "POST", path: operationPath("/api/control/sessions/:sessionId/shares"),
-    input: operationInput({ sessionId: requiredParameter, workspaceId: bodyField, level: bodyField, grantedToTokenIdentifier: bodyField, grantedToUserId: bodyField, grantedToTeamPublicId: bodyField, grantedToOrgId: bodyField }),
+    input: operationInput({ sessionId: requiredParameter, workspaceId: bodyField, level: bodyField, grantedToTokenIdentifier: bodyField, grantedToUserId: bodyField }),
     output: object, retry: "never",
     exposure: { renderer: true, app: false },
-    body: selectBody("workspaceId", "level", "grantedToTokenIdentifier", "grantedToUserId", "grantedToTeamPublicId", "grantedToOrgId"),
+    body: selectBody("workspaceId", "level", "grantedToTokenIdentifier", "grantedToUserId"),
   }),
   "session.shares.revoke": defineOperation({
     method: "DELETE", path: operationPath("/api/control/sessions/:sessionId/shares"),
-    input: operationInput({ sessionId: requiredParameter, workspaceId: bodyField, grantId: bodyField, grantedToTokenIdentifier: bodyField, grantedToTeamPublicId: bodyField }),
+    input: operationInput({ sessionId: requiredParameter, workspaceId: bodyField, grantId: bodyField, grantedToTokenIdentifier: bodyField, grantedToUserId: bodyField }),
     output: object, retry: "never",
     exposure: { renderer: true, app: false },
-    body: selectBody("workspaceId", "grantId", "grantedToTokenIdentifier", "grantedToTeamPublicId"),
+    body: selectBody("workspaceId", "grantId", "grantedToTokenIdentifier", "grantedToUserId"),
   }),
   "org.list": defineOperation({
     method: "GET", path: operationPath("/api/control/orgs"),

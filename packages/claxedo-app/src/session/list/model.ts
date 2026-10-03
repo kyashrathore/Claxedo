@@ -1,5 +1,5 @@
 import { unreachable } from "@/lib/machine"
-import { turnDetailed, type AppError, type BackgroundWork, type ListedStatus, type ProjectId, type SessionId, type SessionLocation, type SessionRow, type SessionSelections, type SessionStatus } from "@/server"
+import { turnDetailed, type AppError, type BackgroundWork, type ListedStatus, type ProjectId, type SessionId, type SessionLocation, type SessionReader, type SessionRow, type SessionSelections, type SessionStatus } from "@/server"
 import type { SessionLastTurn } from "@claxedo/agent-runtime-contract"
 
 export type PendingSend = {
@@ -39,10 +39,18 @@ export type BackgroundWorkEntry = {
   readonly source: "event" | "read"
 }
 
+export type ReaderEntry = {
+  readonly reader: SessionReader
+  readonly at: number
+  readonly source: "event" | "read"
+  readonly pending?: { readonly writeId: string; readonly reader: SessionReader }
+}
+
 export type FetchedPage = {
   readonly projectId: ProjectId
   readonly rows: readonly SessionRow[]
   readonly statuses: ReadonlyMap<SessionId, ListedStatus>
+  readonly readers: ReadonlyMap<SessionId, SessionReader>
   readonly nextAfter: string | undefined
   readonly degraded: boolean
 }
@@ -61,6 +69,7 @@ export type ListData = {
   readonly entries: ReadonlyMap<SessionId, ListEntry>
   readonly statuses: ReadonlyMap<SessionId, StatusEntry>
   readonly backgroundWork: ReadonlyMap<SessionId, BackgroundWorkEntry>
+  readonly readers: ReadonlyMap<SessionId, ReaderEntry>
   readonly open: ReadonlySet<SessionId>
   readonly windows: ReadonlyMap<ProjectId, ProjectWindow>
   readonly failures: ReadonlyMap<ProjectId, AppError>
@@ -70,8 +79,16 @@ export type ListData = {
 export type ServerListEvent =
   | { readonly type: "sessionUpserted"; readonly row: SessionRow }
   | { readonly type: "sessionRemoved"; readonly ref: SessionLocation; readonly at: number }
-  | { readonly type: "statusChanged"; readonly ref: SessionLocation; readonly status: SessionStatus; readonly lastTurn?: SessionLastTurn; readonly at: number }
+  | {
+      readonly type: "statusChanged"
+      readonly ref: SessionLocation
+      readonly status: SessionStatus
+      readonly lastTurn?: SessionLastTurn
+      readonly waitingOnUser?: boolean
+      readonly at: number
+    }
   | { readonly type: "backgroundWorkChanged"; readonly ref: SessionLocation; readonly work: BackgroundWork; readonly at: number }
+  | { readonly type: "readerChanged"; readonly ref: SessionLocation; readonly reader: SessionReader; readonly at: number }
 
 export type MorePhase =
   | { readonly kind: "idle" }
@@ -127,6 +144,9 @@ export type ListEvent =
   | { readonly type: "createFailed"; readonly clientRequestId: string }
   | { readonly type: "sendStarted"; readonly sessionId: SessionId; readonly clientRequestId: string; readonly at: number }
   | { readonly type: "sendFailed"; readonly sessionId: SessionId; readonly clientRequestId: string }
+  | { readonly type: "readerWriteStarted"; readonly sessionId: SessionId; readonly writeId: string; readonly reader: SessionReader }
+  | { readonly type: "readerWritten"; readonly sessionId: SessionId; readonly writeId: string; readonly reader: SessionReader; readonly at: number }
+  | { readonly type: "readerWriteFailed"; readonly sessionId: SessionId; readonly writeId: string }
 
 export const WINDOW_EMPTY: OrderKey = { activity: Number.POSITIVE_INFINITY, createdAt: Number.POSITIVE_INFINITY, sessionId: "" }
 
@@ -137,6 +157,7 @@ export const initialListState: ListState = {
   entries: new Map(),
   statuses: new Map(),
   backgroundWork: new Map(),
+  readers: new Map(),
   open: new Set(),
   windows: new Map(),
   failures: new Map(),

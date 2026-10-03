@@ -75,6 +75,7 @@ import type {
   SessionGoal,
   SessionListInput,
   SessionPage,
+  SessionReader,
   SessionReads,
   SessionLocation,
   SessionRow,
@@ -88,6 +89,8 @@ import type { LivePlugin } from "./live-plugin-types"
 
 export type SessionsApi = {
   readonly list: (input: SessionListInput) => Promise<SessionPage>
+  readonly markSeen: (ref: SessionLocation, completedAt: number) => Promise<SessionReader>
+  readonly settle: (ref: SessionLocation, write: { readonly settled: true; readonly through: number } | { readonly settled: false }) => Promise<SessionReader>
   readonly read: (ref: SessionLocation, shape: PageShape, held?: HeldSessionReads) => SessionReads
   readonly page: (ref: SessionLocation, shape: PageShape, before: string) => Promise<TranscriptPage>
   readonly part: (ref: SessionLocation, messageId: string, partId: string) => Promise<TranscriptPart>

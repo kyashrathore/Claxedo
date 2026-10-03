@@ -1,5 +1,6 @@
-import { expect, test, vi } from "vitest"
-import { createRelayRuntimeClient, type RelayRuntimeCapability } from "./relay-runtime-client"
+import { afterEach, expect, test, vi } from "vitest"
+import type { ControlPlaneServices } from "../authority/services"
+import { createHostedRuntimeFetch, createRelayRuntimeClient, type RelayRuntimeCapability } from "./relay-runtime-client"
 
 const capability: RelayRuntimeCapability = {
   workspaceId: "workspace/one", hostId: "host", routingId: "routing", homeRegion: "eu-west",
@@ -58,4 +59,23 @@ test("a refused token never reaches the relay endpoint or request", async () => 
   await expect(f.runtime.fetch(capability, "/session/s")).rejects.toThrow("authority denied")
   expect(f.getRelayEndpoint).not.toHaveBeenCalled()
   expect(f.request).not.toHaveBeenCalled()
+})
+
+afterEach(() => vi.unstubAllGlobals())
+
+test("the plane's relay token for a hosted runtime names the routing identity of the sandbox it reaches", async () => {
+  const mintRuntimeAccessToken = vi.fn(async () => ({ token: "rat" }))
+  const fetched = vi.fn(async (_url: string, _init?: RequestInit) => new Response("{}"))
+  vi.stubGlobal("fetch", fetched)
+  const services = {
+    sandbox: { sandboxManager: { target: async () => ({ status: "ready", hostId: "host_cloud", routingId: "routing_1", homeRegion: "iad", url: "http://sandbox", epoch: 3 }) } },
+    relay: { provider: { mintRuntimeAccessToken, getRelayEndpoint: async () => "https://relay.test/" } },
+  } as unknown as ControlPlaneServices
+
+  await createHostedRuntimeFetch(services)("ws_1", "org_1", "/api/wr/agent-plugins/apply", { method: "POST" })
+
+  expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({
+    workspaceId: "ws_1", hostId: "host_cloud", routingId: "routing_1", orgId: "org_1", principalKind: "service", actorId: "control-plane",
+  }))
+  expect(fetched.mock.calls[0]?.[0]).toBe("https://relay.test/workspaces/ws_1/api/wr/agent-plugins/apply")
 })
