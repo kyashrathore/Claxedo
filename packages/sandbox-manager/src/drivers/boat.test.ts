@@ -351,6 +351,46 @@ describe("boat sandbox driver", () => {
     expect((failure as AggregateError).errors[1].message).toContain("registry password cleanup")
     expect(failure.message).not.toContain("synthetic-runtime-secret")
     expect(failure.message).not.toContain("synthetic-registry-pw")
+    for (const error of (failure as AggregateError).errors) expect(error.message).not.toContain("--entrypoint")
+  })
+
+  test("a command request outlasts its command, while other calls keep the client timeout", async () => {
+    const boat = fakeBoat()
+    const delayed = (match: (url: string, body: any) => boolean): BoatFetch => async (url, init) => {
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+      if (match(url, body)) {
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(resolve, 80)
+          init?.signal?.addEventListener("abort", () => { clearTimeout(timer); reject(init.signal?.reason) })
+        })
+      }
+      return boat.fetchImpl(url, init)
+    }
+    const slowRun = createBoatSandboxDriver({ apiKey: "k", healthIntervalMs: 0, operationTimeoutMs: 20,
+      fetchImpl: delayed((_url, body) => body?.command?.includes("docker run")) })
+    expect(await slowRun.ensureHost(ensureInput())).toMatchObject({ sandboxId: ID })
+    const slowRead = createBoatSandboxDriver({ apiKey: "k", healthIntervalMs: 0, operationTimeoutMs: 20,
+      fetchImpl: delayed((url) => url.endsWith(`/sandboxes/${ID}`)) })
+    await expect(slowRead.ensureHost(ensureInput())).rejects.toMatchObject({ code: "transport_failed" })
+  })
+
+  test("a sandbox deleted after a failed hand-off is never re-created under its idempotency key", async () => {
+    const store = createMemoryLeaseStore()
+    const boat = fakeBoat()
+    let fail = true
+    const driver = createBoatSandboxDriver({ apiKey: "k", healthIntervalMs: 0, fetchImpl: boat.fetchImpl })
+    const manager = createSandboxManager({ driver, onEgressUnenforced: () => {}, retryDelayMs: () => 0, leaseStore: { ...store,
+      async recordTarget(workspaceId, epoch, target) {
+        if (fail) {
+          fail = false
+          throw new Error("storage unavailable")
+        }
+        return store.recordTarget(workspaceId, epoch, target)
+      } } })
+    expect((await manager.ensure("ws1", { homeRegion: "eu" })).status).toBe("unavailable")
+    expect((await manager.ensure("ws1", { homeRegion: "eu" })).status).toBe("ready")
+    expect(boat.calls.filter((call) => call.path === "/sandboxes").map((call) => call.headers["Idempotency-Key"])).toEqual(["claxedo:ws1:1", "claxedo:ws1:2"])
+    expect(boat.calls.filter((call) => call.method === "DELETE")).toHaveLength(1)
   })
 
   test("a timed-out docker run fails the boot", async () => {

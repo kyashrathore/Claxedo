@@ -58,8 +58,7 @@ const DEFAULT_PROVISION_TIMEOUT_MS = 120_000
 const DEFAULT_PROVISION_INTERVAL_MS = 2_000
 const DEFAULT_HEALTH_TIMEOUT_MS = 60_000
 const DEFAULT_HEALTH_INTERVAL_MS = 1_000
-// Boat runs a command for 30 s unless told otherwise; an image pull needs the
-// documented maximum.
+// An image pull needs Boat's documented command maximum.
 const DOCKER_RUN_TIMEOUT_SECONDS = 600
 // Written via PUT /sandboxes/{id}/files — the provider's file channel — so env
 // and registry credentials never appear in a /commands body, which Boat
@@ -134,8 +133,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
   async function execOrThrow(sandboxId: string, command: string, label: string, timeoutSeconds?: number) {
     const result = await client.command(sandboxId, { command, ...(timeoutSeconds ? { timeoutSeconds } : {}) })
     if (result.timedOut || result.exitCode !== 0) {
-      const outcome = result.timedOut ? "timed out" : `failed (exit ${result.exitCode ?? "signal"})`
-      throw new BoatDriverError(`Boat ${sandboxId} ${label} ${outcome}: ${trimToUndefined(result.stderr) ?? trimToUndefined(result.stdout) ?? ""}`)
+      throw new BoatDriverError(`Boat ${sandboxId} ${label} ${result.timedOut ? "timed out" : `failed (exit ${result.exitCode ?? "signal"})`}`)
     }
     return result
   }
@@ -227,8 +225,10 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
   async function boot(sandboxId: string, input: SandboxDriverEnsureInput, hostId: string): Promise<SandboxTarget> {
     const port = runtimePort(input)
     await startContainer(sandboxId, input, hostId)
-    // `--public` drops Boat's `_token` query: the relay joins request paths
-    // onto this base URL, and the runtime authenticates every caller itself.
+    // `--public` drops Boat's `_token` query, which the relay would lose when it
+    // joins request paths onto this base URL. The runtime then authenticates
+    // every route itself except the anonymous `/global/health` probe, which
+    // answers liveness, the workspace id and the lease epoch.
     await execOrThrow(sandboxId, `host ${port} --public`, "host publish")
     await waitForHealth(sandboxId, input)
     const urlResult = await execOrThrow(sandboxId, `host url ${port}`, "host url")

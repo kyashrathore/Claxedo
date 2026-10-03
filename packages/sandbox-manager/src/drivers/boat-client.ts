@@ -12,6 +12,10 @@ export type BoatFetch = (input: string, init?: RequestInit) => Promise<Response>
 
 const DEFAULT_BASE_URL = "https://boat.dev/api/v1"
 const DEFAULT_TIMEOUT_MS = 120_000
+// Boat runs a command for 30 s unless told otherwise and answers only when it
+// ends, so the request must outlast the command it carries.
+const DEFAULT_COMMAND_SECONDS = 30
+const COMMAND_RESPONSE_MARGIN_MS = 30_000
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 const SANDBOX_STATES = new Set<string>(["init", "provisioning", "provisioned", "cloning", "ready", "idle", "running", "archiving", "archived", "error", "cancelled"])
 
@@ -72,7 +76,7 @@ export function createBoatClient(options: { apiKey: string; baseUrl?: string; ti
   const baseUrl = base.href.replace(/\/+$/, "")
   const fetchImpl = options.fetchImpl ?? fetch
 
-  async function api(path: string, types: readonly string[], init?: { method?: string; body?: unknown; headers?: Record<string, string> }) {
+  async function api(path: string, types: readonly string[], init?: { method?: string; body?: unknown; headers?: Record<string, string>; timeoutMs?: number }) {
     let response: Response
     try {
       response = await fetchImpl(`${baseUrl}${path}`, {
@@ -84,7 +88,7 @@ export function createBoatClient(options: { apiKey: string; baseUrl?: string; ti
           ...init?.headers,
         },
         ...(init?.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-        signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+        signal: AbortSignal.timeout(init?.timeoutMs ?? options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
       })
     } catch {
       throw new BoatApiError(`Boat ${init?.method ?? "GET"} ${path} failed before acknowledgement`, "transport_failed")
@@ -124,7 +128,8 @@ export function createBoatClient(options: { apiKey: string; baseUrl?: string; ti
       if (body.success !== true) invalid()
     },
     async command(id: string, input: { command: string; timeoutSeconds?: number }): Promise<BoatCommandResult> {
-      const body = await api(`${path(id)}/commands`, ["command.finished"], { method: "POST", body: input })
+      const timeoutMs = (input.timeoutSeconds ?? DEFAULT_COMMAND_SECONDS) * 1000 + COMMAND_RESPONSE_MARGIN_MS
+      const body = await api(`${path(id)}/commands`, ["command.finished"], { method: "POST", body: input, timeoutMs })
       return {
         success: requiredFlag(body.success), stdout: requiredText(body.stdout), stderr: requiredText(body.stderr),
         exitCode: commandExitCode(body.exitCode), timedOut: requiredFlag(body.timedOut),
