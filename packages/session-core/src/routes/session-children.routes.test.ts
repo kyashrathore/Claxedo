@@ -1315,6 +1315,8 @@ describe("a background turn a managed host refuses", () => {
     expect(item.calls.acquired).toEqual([expect.objectContaining({ sessionId: "parent", turnId: "msg_wake_child_child-reply", grant: CHILD_GRANT })])
     expect(item.calls.acquired[0]).not.toHaveProperty("credential")
     expect(item.calls.producers).toMatchObject([{ sessionId: "parent", actorId: "actor_owner" }])
+    // The wake runs as the person who admitted its child, but it is not their send.
+    expect((item.store.getSession("parent") as { time?: { lastHumanTurn?: number } } | null)?.time?.lastHumanTurn).toBeUndefined()
     await item.host.dispose()
   })
 

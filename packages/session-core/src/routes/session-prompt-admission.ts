@@ -21,7 +21,6 @@ import {
   sessionAccessContext,
   sessionAccessDenied,
   sessionRequestProvenance,
-  sessionTurnOrigin,
   type SessionTurnGrantDecision,
 } from "../session-access-policy"
 import { errorBody } from "./error-body"
@@ -31,7 +30,7 @@ import {
   after,
   managedSessionLifecycle,
   readSession,
-  turnOriginOf,
+  requestTurnSender,
   type SessionRouteContext as Ctx,
   type SessionRouteOptions as Opts,
 } from "./session-route-options"
@@ -280,7 +279,6 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
         }
       }
       body.messageID ??= `msg_${crypto.randomUUID()}`
-      const access = sessionAccessContext(c)
       if (body.delivery) {
         if (!opts.queuedPrompts) return c.json({ error: "Queued delivery requires a durable runtime owner" }, 409)
         const requester = await queuedPromptRequester(opts, c, id, body.messageID)
@@ -323,7 +321,7 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
         sessionId: id,
         directory,
         body,
-        origin: turnOriginOf(sessionTurnOrigin(c), c),
+        ...requestTurnSender(c),
         publishGlobal: opts.publishGlobal,
         createActiveTurnScope: opts.createActiveTurnScope
           ? () => turnScope(opts.createActiveTurnScope?.({ c, directory, sessionId: id }), turnAdmission.lease)
@@ -332,8 +330,6 @@ export function createPromptAdmission(opts: Opts, requestErrorResponse: (err: un
         streamErrorMessage: streamTurnErrorMessage,
         onTurnTarget: lostTurn.set,
         onAdmissionSettled: settleAdmission,
-        actor: access.actor,
-        author: access.author,
       })
       // The turn runs detached: the response must not wait for the model.
       admittedForExecution = true

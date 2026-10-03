@@ -110,6 +110,7 @@ import {
   managedSessionLifecycle,
   readSession,
   requestSecretAuthority,
+  requestTurnSender,
   sessionConfigOf,
   sessionOwner,
   sessionTarget,
@@ -1360,7 +1361,6 @@ export function createSessionRoutes(opts: Opts) {
       const directory = await opts.resolveDirectory(c, { sessionId: id })
       if (!await readSession(opts, c, directory, id)) return c.json(sessionNotFound(), 404)
       const runtime = await opts.runtime(c)
-      const access = sessionAccessContext(c)
       const parsedBody = parseSessionPromptBody(await boundedJsonBody(c))
       const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
       const permissionRefusal = await rejectPermissionOverride(opts, c, directory, id, body.permissionMode)
@@ -1399,13 +1399,11 @@ export function createSessionRoutes(opts: Opts) {
                 sessionId: id,
                 directory,
                 body,
-                origin: turnOriginOf(sessionTurnOrigin(c), c),
+                ...requestTurnSender(c),
                 publishGlobal: opts.publishGlobal,
                 activeTurn,
                 onTurnTarget: lostTurn.set,
                 ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
-                actor: access.actor,
-                author: access.author,
               })
         } finally {
           if (!turnAdmission.lease?.lost()) await flushDocumentsAfterTurn(opts, id)

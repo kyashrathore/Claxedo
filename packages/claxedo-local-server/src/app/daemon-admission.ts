@@ -29,6 +29,7 @@
 import { timingSafeEqual } from "node:crypto"
 import type { MiddlewareHandler } from "hono"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
+import { isInProcessDaemonRequest } from "../workspace/runtime-dispatch/ingress-provenance"
 
 export const DAEMON_CAPABILITY_HEADER = "x-claxedo-daemon-capability"
 
@@ -125,21 +126,6 @@ function machineRecoveryMessage(hold: MachineIngressRefusal): string {
     }ms; new work stays refused because nothing here has established what those launches are.${pending}`
   }
   return "This machine is still reconciling the launches its previous owner left unsettled; new work is refused until that finishes"
-}
-
-/**
- * Requests this process built for itself. Object identity is the one property a
- * network peer cannot forge, and entries die with the request.
- */
-const inProcessRequests = new WeakSet<Request>()
-
-export function markInProcessDaemonRequest(request: Request): Request {
-  inProcessRequests.add(request)
-  return request
-}
-
-export function isInProcessDaemonRequest(request: Request): boolean {
-  return inProcessRequests.has(request)
 }
 
 /**

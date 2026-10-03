@@ -93,6 +93,7 @@ describe("session service", () => {
       directory: DIRECTORY,
       body: { parts: [], agent: "build", model: { providerID: "test", modelID: "fixture" }, variant: "fixture" },
       origin: ORIGIN,
+      humanTurn: false,
       publishGlobal: (event) => events.push(event),
     })).rejects.toThrow("Session s1 has no runtime config")
 
@@ -119,6 +120,7 @@ describe("session service", () => {
         directory: DIRECTORY,
         body: { messageID: "msg-user", parts: [{ type: "text", text: "hello" }] },
         origin: ORIGIN,
+        humanTurn: false,
         publishGlobal: (event) => events.push(event),
       })
       const output = sessionPromptReply(turn)
@@ -162,6 +164,7 @@ describe("session service", () => {
       directory: DIRECTORY,
       body: { parts: [{ type: "text", text: "hello" }], permissionMode: "agent-full-access" },
       origin: ORIGIN,
+      humanTurn: false,
       publishGlobal: () => {},
     })
 
@@ -180,6 +183,7 @@ describe("session service", () => {
         directory: DIRECTORY,
         body: parseSessionPromptBody({ parts: [{ type: "text", text: "hello" }], ...wire }),
         origin: ORIGIN,
+        humanTurn: false,
         publishGlobal: () => {},
       })
     }
@@ -199,6 +203,7 @@ describe("session service", () => {
         directory: DIRECTORY,
         body: parseSessionPromptBody({ parts: [{ type: "text", text: "hello" }], ...wire }),
         origin: ORIGIN,
+        humanTurn: false,
         publishGlobal: () => {},
       })
     }
@@ -216,6 +221,7 @@ describe("session service", () => {
       directory: DIRECTORY,
       body: { parts: [{ type: "text" as const, text: "hello" }] },
       origin: ORIGIN,
+      humanTurn: false,
       publishGlobal: () => {},
     })
 
@@ -250,6 +256,7 @@ describe("session service", () => {
       directory: "/work",
       body: { parts: [{ type: "text", text: "hello" }] },
       origin: ORIGIN,
+      humanTurn: false,
       publishGlobal: (event) => events.push(event),
     })
 
@@ -285,6 +292,7 @@ describe("session service", () => {
       directory: "/work",
       body: { parts: [{ type: "text", text: "hello" }], permissionMode: "agent-full-access" },
       origin: ORIGIN,
+      humanTurn: false,
       publishGlobal: () => {},
     })
 
@@ -317,15 +325,17 @@ describe("session service", () => {
       directory: "/work" as const,
       body: { parts: [{ type: "text" as const, text: "hello" }] },
       origin: ORIGIN,
+      humanTurn: false,
       publishGlobal: () => {},
     }
 
-    await runRuntimePromptTurn({ ...common, actor: { actorId: "actor-1", actorKind: "human" } })
+    await runRuntimePromptTurn({ ...common, actor: { actorId: "actor-1", actorKind: "human" }, humanTurn: true })
     await runRuntimePromptTurn(common)
 
-    expect(starts[0]).toEqual(expect.objectContaining({ actorId: "actor-1", actorKind: "human" }))
+    expect(starts[0]).toEqual(expect.objectContaining({ actorId: "actor-1", actorKind: "human", humanTurn: true }))
     expect(starts[1]).not.toHaveProperty("actorId")
     expect(starts[1]).not.toHaveProperty("actorKind")
+    expect(starts[1]).not.toHaveProperty("humanTurn")
   })
 
   it("fails without synthesizing prompt events when the transport yields none", async () => {
@@ -339,6 +349,7 @@ describe("session service", () => {
       directory: DIRECTORY,
       body: { messageID: "msg-user", parts: [{ type: "text", text: "hello" }] },
       origin: ORIGIN,
+      humanTurn: false,
       publishGlobal: (event) => events.push(event),
     })
 
@@ -376,6 +387,7 @@ describe("session service", () => {
       directory: "/work",
       body: { parts: [{ type: "text", text: "hello" }] },
       origin: ORIGIN,
+      humanTurn: false,
       publishGlobal: (event) => events.push(event),
     })).rejects.toThrow("missing session")
 

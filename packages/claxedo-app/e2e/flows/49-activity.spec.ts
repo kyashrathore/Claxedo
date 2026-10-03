@@ -78,6 +78,7 @@ test("49 Activity lists every project's sessions in one order, the reader's send
   await sendPrompt(app, `Hold on. ${acpScriptToken("held")}`)
   await showRail(app, isMobile)
   await expect.poll(() => rowTitles(app, titles)).toEqual(["One", "Three", "Two"])
+  await expect.poll(() => serverTitles(stack, titles)).toEqual(["One", "Three", "Two"])
   await stack.acp.release("held")
   await expect.poll(async () => assistantText(await api.messages(made.One!.directory, made.One!.id))).toContain("Held reply.")
 

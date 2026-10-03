@@ -176,7 +176,7 @@ function durableQueue() {
     }),
     whenIdle: (sessionId) => runtime.turns.whenIdle(sessionId),
     startTurn: ({ origin: _origin, ...turn }) => new Promise<void>((resolve, reject) => {
-      void runRuntimePromptTurn({ ...turn, runtime, origin: LOOPBACK_ORIGIN, publishGlobal: () => {}, onAdmissionSettled: (error) => error ? reject(error) : resolve() }).catch(reject)
+      void runRuntimePromptTurn({ ...turn, runtime, origin: LOOPBACK_ORIGIN, humanTurn: false, publishGlobal: () => {}, onAdmissionSettled: (error) => error ? reject(error) : resolve() }).catch(reject)
     }),
     changed: () => {},
   })

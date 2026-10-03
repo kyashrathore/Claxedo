@@ -37,7 +37,7 @@ import { STORED_SESSION_SELECT, type StoredSessionRow } from "./stored-session-r
 import { listSubagentRows, persistSubagentEvent } from "./subagent-rows"
 import { observationStartsNewRun, recordSubagentRun, subagentRunRevision } from "./subagent-status"
 import { pendingSubagentWakes, recordSubagentWake, runningHostChildren, subagentWakeParents } from "./subagent-wakes"
-import { buildAssistantMessage, buildUserMessage, buildUserPromptParts, messageCompleted, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionStatus } from "./projection/presentation-events"
+import { buildAssistantMessage, buildUserMessage, buildUserPromptParts, messageCompleted, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionStatus, sessionUpdated } from "./projection/presentation-events"
 
 export const SESSION_INTERRUPTED = "The agent runtime restarted. Send a message to continue the interrupted work."
 
@@ -87,6 +87,7 @@ type Turn = {
   variant?: string
   actorId?: string
   actorKind?: "human" | "agent"
+  humanTurn?: true
   fencingToken?: number
   author?: {
     id: string
@@ -1941,10 +1942,9 @@ export class RuntimeStore {
         directory,
         createdAt: row.ts,
         updatedAt: row.ts,
-        // A subagent's completion or a channel message starts a turn the same way
-        // the reader does, so `updated_at` alone cannot tell them apart. `actorKind`
-        // comes from the request's auth claims and a client cannot forge it.
-        ...(control.actorKind === "human" ? { lastHumanTurnAt: row.ts } : {}),
+        // Every turn moves `updated_at`; the list orders on this column so that
+        // only a person's own send moves a session.
+        ...(control.humanTurn ? { lastHumanTurnAt: row.ts } : {}),
         status: "busy",
         recoveryError: null,
       })
@@ -2271,8 +2271,11 @@ export class RuntimeStore {
   private turnStartEvents(row: TurnStartRow): AgentPresentationEvent[] {
     const control = row.control
     const directory = this.sessionTimes(row.sessionId).directory
+    // The list orders on the human turn, and no other event carries the row it moved.
+    const moved = control.humanTurn ? this.getSession(row.sessionId) : null
     return [
       sessionStatus(row.sessionId, { type: "busy" }),
+      ...(moved ? [sessionUpdated(moved)] : []),
       ...(control.userMessageId
         ? [
             messageUpdated(
@@ -2306,24 +2309,7 @@ export class RuntimeStore {
     ]
   }
 
-  startTurn(input: {
-    sessionId: string
-    agentSessionId?: string
-    userMessageId?: string
-    parentMessageId?: string
-    assistantMessageId: string
-    agent: string
-    model?: Model
-    parts: PromptInput["parts"]
-    tools?: Record<string, boolean>
-    format?: PromptFormat
-    system?: string
-    variant?: string
-    actorId?: string
-    actorKind?: "human" | "agent"
-    author?: Turn["author"]
-    fencingToken?: number
-  }) {
+  startTurn(input: Omit<Turn, "type"> & { sessionId: string; agentSessionId?: string }) {
     const active = this.db
       .prepare<{
       seq: number
@@ -2392,6 +2378,7 @@ export class RuntimeStore {
         ...(input.system ? { system: input.system } : {}),
         ...(input.variant ? { variant: input.variant } : {}),
         ...(input.actorId && input.actorKind ? { actorId: input.actorId, actorKind: input.actorKind } : {}),
+        ...(input.humanTurn ? { humanTurn: true as const } : {}),
         ...(input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}),
         ...(input.author ? { author: input.author } : {}),
       },

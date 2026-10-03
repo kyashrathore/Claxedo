@@ -727,6 +727,25 @@ export function sessionAccessContext(input: SessionAccessContextReader):
   }
 }
 
+type SessionHumanTurnReader = SessionAccessContextReader & {
+  get(name: "machineUserRequest"): true | undefined
+}
+
+/**
+ * Whether a turn this request starts is a person's own send, the only turn a
+ * session's `lastHumanTurnAt` records.
+ *
+ * A relayed request names its actor's kind. A loopback request names nobody:
+ * the app's send and every caller inside this process — the first-party tools
+ * an agent drives, a task start, a projection read — reach the runtime alike.
+ * Only the boundary that admitted it from outside the process as this
+ * machine's own user can mark it, and it does so by object identity
+ * (`markEmbeddedMachineUserRequest`), never by anything the caller sent.
+ */
+export function sessionRequestIsHumanTurn(input: SessionHumanTurnReader): boolean {
+  return input.get("machineUserRequest") === true || sessionAccessContext(input).actor?.actorKind === "human"
+}
+
 /**
  * What a request admitting future background work must write down about
  * itself, or nothing when it is a relayed caller the boundary left unnamed —

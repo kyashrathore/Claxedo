@@ -7,6 +7,19 @@ import { sessionScopeReaches } from "@claxedo/workspace-relay-protocol"
 /** Hop-only header stamped by `@claxedo/local-server` `embedded()` after actor verification. */
 export const EMBEDDED_RELAY_HOST_AUTH_HEADER = "x-claxedo-embedded-relay-host-auth"
 
+/**
+ * Requests the embedding host admitted from outside its process as the
+ * machine's own user. Membership, not a header: the host builds the request it
+ * hands the runtime, so no caller of the host can write the mark, and every
+ * request the host's process makes for itself reaches the runtime unmarked.
+ */
+const machineUserRequests = new WeakSet<Request>()
+
+export function markEmbeddedMachineUserRequest(request: Request): Request {
+  machineUserRequests.add(request)
+  return request
+}
+
 export type WorkspaceRuntimeRequestGuard = (input: {
   request: Request
   path: string
@@ -156,6 +169,7 @@ export function createWorkspaceRuntimeExposureMiddleware(exposure: WorkspaceRunt
       if (stamped) {
         c.set("relayHostAuth", stamped)
       }
+      if (machineUserRequests.has(c.req.raw)) c.set("machineUserRequest", true)
     }
     if (exposure.kind === "private-network" && exposure.protection.kind === "host-guard") {
       const runtimeAuth = typeof exposure.runtimeAuth === "function"

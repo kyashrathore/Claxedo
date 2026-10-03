@@ -288,6 +288,7 @@ export function SessionRoutes(runtimeFor: () => Promise<AgentRuntime>, options: 
         ...(lease ? { turnAdmission: lease } : {}),
         ...(input.author ? { author: input.author } : {}),
         ...(relayed ? { actor: relayed.actor } : {}),
+        humanTurn: false,
         onDelivery: (delivery) => { actualDelivery = delivery; input.onDelivery?.(delivery) },
         onSteeringResult: input.onSteeringResult,
         onAdmissionSettled: (error) => {

@@ -10,8 +10,9 @@ import type { RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-ac
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { markEmbeddedMachineUserRequest } from "@claxedo/workspace-runtime/exposure"
 import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "./embedded-relay-host-auth"
-import { resolveIngressProvenance, type IngressProvenance } from "./ingress-provenance"
+import { isInProcessDaemonRequest, resolveIngressProvenance, type IngressProvenance } from "./ingress-provenance"
 
 const log = Log.create({ service: "runtime-dispatch" })
 
@@ -506,13 +507,17 @@ export async function dispatchEmbedded(
   if (provenance.kind === "relay-replayed") {
     headers.set(EMBEDDED_RELAY_HOST_AUTH_HEADER, JSON.stringify(provenance.stamp))
   }
-  const res = await runtime.app.fetch(new Request(target.toString(), {
+  const request = new Request(target.toString(), {
     method: c.req.method,
     headers,
     body: ["GET", "HEAD"].includes(c.req.method) ? undefined : c.req.raw.body,
     // @ts-ignore
     duplex: "half",
-  }))
+  })
+  // The first-party tools an agent drives re-enter through this same hop, as
+  // the machine's user for access but never as the person who sends its turns.
+  if (provenance.kind === "loopback-direct" && !isInProcessDaemonRequest(c.req.raw)) markEmbeddedMachineUserRequest(request)
+  const res = await runtime.app.fetch(request)
   return new Response(res.body, {
     status: res.status,
     statusText: res.statusText,
