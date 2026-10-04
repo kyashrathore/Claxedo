@@ -57,7 +57,7 @@ function createForProject(transport: Transport, workspaces: Workspaces, project:
   return async (options: CloudProjectCreateInput) => {
     const body = {
       projectId: options.projectId,
-      ...(options.name ? { workspaceName: options.name } : {}),
+      workspaceName: options.name,
       ...(options.branch ? { gitBranch: options.branch } : {}),
       ...sourceBody((await project(options.projectId)).source),
     }
@@ -70,7 +70,7 @@ function createForProject(transport: Transport, workspaces: Workspaces, project:
 function createForSource(workspaces: Workspaces, account: HostedAccount | undefined) {
   return async (options: CloudSourceCreateInput) => {
     if (!account) throw new ServerError({ class: "invalid", message: "A repository's cloud workspace is created on a signed control plane, and this app has none" })
-    const created: Created = await account.run("workspace.create", { ...(options.name ? { workspaceName: options.name } : {}), ...accountSourceInput(options.source) })
+    const created: Created = await account.run("workspace.create", { workspaceName: options.name, ...accountSourceInput(options.source) })
     const id = typeof created.workspaceId === "string" ? placementId(created.workspaceId) : undefined
     if (id) options.onCreated?.(id)
     await workspaces.refresh()

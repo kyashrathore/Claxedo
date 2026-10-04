@@ -147,12 +147,11 @@ async function chooseScriptedHarness(app: Page) {
   await app.keyboard.press("Escape")
 }
 
-test("02 a new local worktree picked in the Workspace chip is made on the first send", async ({ stack, api, app }) => {
+test("02 a new local worktree picked in the Where chip is made on the first send", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("worktree")
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
   await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
-  await expect(app.getByRole("button", { name: "Session destination" })).toContainText("This computer")
-  const chip = app.getByRole("button", { name: "Workspace", exact: true })
+  const chip = app.getByRole("button", { name: "Where it runs", exact: true })
   await expect(chip).toContainText("main")
   await expect(app.getByRole("button", { name: "Current branch" })).toContainText("main")
   await chip.click()

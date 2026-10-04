@@ -7,7 +7,7 @@ import { Button } from "@/ui"
 const BLOCK_TEXT: Record<ExecutionBlock, OnboardingKey> = {
   signIn: "onboarding.reason.execution.signIn",
   folder: "onboarding.reason.execution.folder",
-  machine: "onboarding.reason.execution.machine",
+  name: "onboarding.reason.execution.name",
 }
 
 function blockedReason(t: OnboardingText, wizard: OnboardingWizard, localExecution: boolean): string | undefined {

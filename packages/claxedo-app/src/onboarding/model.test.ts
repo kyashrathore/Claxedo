@@ -1,25 +1,36 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
-import { executionBlock, executionChoices } from "./model"
+import { executionBlock, executionChoices, executionPlan, offersConnectComputer } from "./model"
 
 const repository = { kind: "repository", url: "https://github.com/acme/widgets" } as const
 const folder = { kind: "folder", path: "/home/me/widgets" } as const
+const desktop = { localExecution: true, cloudAvailable: false, machineConnected: undefined }
+const signedDesktop = { localExecution: true, cloudAvailable: true, machineConnected: undefined }
+const hosted = { localExecution: false, cloudAvailable: true, machineConnected: false }
 
-test("an unsigned desktop offers no cloud row; a signed one offers it between this machine and another", () => {
-  expect(executionChoices({ localExecution: true, cloudAvailable: false })).toEqual(["local", "connected"])
-  expect(executionChoices({ localExecution: true, cloudAvailable: true })).toEqual(["local", "cloud", "connected"])
-  expect(executionChoices({ localExecution: false, cloudAvailable: true })).toEqual(["cloud", "connected"])
+test("a desktop offers this machine, a signed one the cloud workspace too, and the web only the cloud workspace", () => {
+  expect(executionChoices(desktop)).toEqual(["local"])
+  expect(executionChoices(signedDesktop)).toEqual(["local", "cloud"])
+  expect(executionChoices(hosted)).toEqual(["cloud"])
 })
 
-test("this machine is ready only where local execution exists", () => {
-  expect(executionBlock("local", { localExecution: true, cloudAvailable: false }, folder)).toBeUndefined()
-  expect(executionBlock("local", { localExecution: false, cloudAvailable: true }, repository)).toBe("machine")
-  expect(executionBlock("connected", { localExecution: false, cloudAvailable: true }, repository)).toBe("machine")
+test("the web offers to connect this computer only once it knows no machine is connected; a desktop never does", () => {
+  expect(offersConnectComputer(hosted)).toBe(true)
+  expect(offersConnectComputer({ ...hosted, machineConnected: true })).toBe(false)
+  expect(offersConnectComputer({ ...hosted, machineConnected: undefined })).toBe(false)
+  expect(offersConnectComputer({ ...desktop, machineConnected: false })).toBe(false)
 })
 
-test("the cloud needs a signed control plane and a repository, never a local folder", () => {
-  expect(executionBlock("cloud", { localExecution: true, cloudAvailable: false }, repository)).toBe("signIn")
-  expect(executionBlock("cloud", { localExecution: true, cloudAvailable: true }, folder)).toBe("folder")
-  expect(executionBlock("cloud", { localExecution: true, cloudAvailable: true }, repository)).toBeUndefined()
-  expect(executionBlock("cloud", { localExecution: false, cloudAvailable: true }, { kind: "connectedRepository", connectionId: "gh_1", fullName: "acme/widgets" })).toBeUndefined()
+test("this machine is always ready; the cloud workspace needs a signed control plane, a repository and a name", () => {
+  expect(executionBlock(executionPlan("local", ""), desktop, folder)).toBeUndefined()
+  expect(executionBlock(executionPlan("cloud", "Widgets"), desktop, repository)).toBe("signIn")
+  expect(executionBlock(executionPlan("cloud", "Widgets"), signedDesktop, folder)).toBe("folder")
+  expect(executionBlock(executionPlan("cloud", "   "), signedDesktop, repository)).toBe("name")
+  expect(executionBlock(executionPlan("cloud", " Widgets "), signedDesktop, repository)).toBeUndefined()
+  expect(executionBlock(executionPlan("cloud", "Widgets"), hosted, { kind: "connectedRepository", connectionId: "gh_1", fullName: "acme/widgets" })).toBeUndefined()
+})
+
+test("the cloud plan carries the trimmed name", () => {
+  expect(executionPlan("cloud", " Payments ")).toEqual({ kind: "cloud", name: "Payments" })
+  expect(executionPlan("local", "ignored")).toEqual({ kind: "local" })
 })

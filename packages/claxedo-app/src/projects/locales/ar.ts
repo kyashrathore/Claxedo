@@ -21,7 +21,6 @@ export default {
   "projects.edit.action": "تحرير",
   "projects.chip.project": "مشروع",
   "projects.chip.self": "هذا الكمبيوتر",
-  "projects.chip.workspace": "مساحة عمل",
   "projects.create.continue": "إرسال",
   "projects.connect.connecting": "جارٍ التوصيل…",
   "projects.settings.group": "إعدادات",

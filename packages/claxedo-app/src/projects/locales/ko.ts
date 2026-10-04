@@ -21,7 +21,6 @@ export default {
   "projects.edit.action": "편집",
   "projects.chip.project": "프로젝트",
   "projects.chip.self": "이 컴퓨터",
-  "projects.chip.workspace": "작업 공간",
   "projects.create.continue": "제출",
   "projects.connect.connecting": "연결 중…",
   "projects.settings.group": "설정",

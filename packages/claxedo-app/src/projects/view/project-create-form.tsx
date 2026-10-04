@@ -231,7 +231,9 @@ export function ProjectCreateForm(props: ProjectCreateFormProps) {
       >
         <FolderField look={look()} folder={form.folder()} onChoose={() => void chooseFolder()} />
       </Show>
-      <NameField look={look()} name={form.name()} onName={form.setName} />
+      <Show when={!props.connectedRepositoryOnly}>
+        <NameField look={look()} name={form.name()} onName={form.setName} />
+      </Show>
       <Show when={form.error()}>
         <p class="text-12-regular text-icon-warning-base" role="alert">
           {form.error()}

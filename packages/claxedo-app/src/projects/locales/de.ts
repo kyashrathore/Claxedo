@@ -21,7 +21,6 @@ export default {
   "projects.edit.action": "Bearbeiten",
   "projects.chip.project": "Projekt",
   "projects.chip.self": "Dieser Computer",
-  "projects.chip.workspace": "Arbeitsbereich",
   "projects.create.continue": "Absenden",
   "projects.connect.connecting": "Verbinden…",
   "projects.connect.enter.before": "Eingabe",

@@ -37,6 +37,19 @@ function Step(props: { readonly number: string; readonly title: string; readonly
   )
 }
 
+export function MachineConnectSteps() {
+  const t = useTranslator(settingsDictionary)
+  return (
+    <ol class="settings-steps">
+      <Step number="1" title={t("settings.machines.step.here")} description={t("settings.machines.step.here.description")} />
+      <Step number="2" title={t("settings.machines.step.another")} description={t("settings.machines.step.another.description")}>
+        <CommandLine command={INVITE_COMMAND} label={t("settings.machines.copyInvite")} />
+        <CommandLine command={CONNECT_COMMAND} label={t("settings.machines.copyConnect")} />
+      </Step>
+    </ol>
+  )
+}
+
 function AddMachine(props: { readonly empty: boolean }) {
   const t = useTranslator(settingsDictionary)
   const [open, setOpen] = createSignal(false)
@@ -52,13 +65,7 @@ function AddMachine(props: { readonly empty: boolean }) {
           <Show when={props.empty}>
             <p class="settings-row-description">{t("settings.machines.empty")}</p>
           </Show>
-          <ol class="settings-steps">
-            <Step number="1" title={t("settings.machines.step.here")} description={t("settings.machines.step.here.description")} />
-            <Step number="2" title={t("settings.machines.step.another")} description={t("settings.machines.step.another.description")}>
-              <CommandLine command={INVITE_COMMAND} label={t("settings.machines.copyInvite")} />
-              <CommandLine command={CONNECT_COMMAND} label={t("settings.machines.copyConnect")} />
-            </Step>
-          </ol>
+          <MachineConnectSteps />
         </div>
       </Show>
     </div>

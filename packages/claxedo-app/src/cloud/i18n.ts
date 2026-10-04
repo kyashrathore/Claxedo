@@ -1,10 +1,10 @@
 import { useTranslator, type DomainTranslate, type Translations } from "@/i18n"
 
 const en = {
-  "cloud.new": "New workspace",
-  "cloud.remove.title": "Delete workspace",
-  "cloud.remove.confirm": "Delete workspace \"{{name}}\"?",
-  "cloud.remove.button": "Delete workspace",
+  "cloud.new": "New cloud workspace",
+  "cloud.remove.title": "Delete cloud workspace",
+  "cloud.remove.confirm": "Delete cloud workspace \"{{name}}\"?",
+  "cloud.remove.button": "Delete cloud workspace",
   "cloud.cancel": "Cancel",
   "cloud.deleting": "Deleting…",
   "cloud.loading": "Loading",
@@ -15,7 +15,7 @@ const en = {
   "cloud.creating": "Creating…",
   "cloud.create.name": "Name",
   "cloud.create.branch": "Branch",
-  "cloud.create.failed": "The workspace could not be created",
+  "cloud.create.failed": "The cloud workspace could not be created",
   "cloud.start": "Start",
   "cloud.stop": "Stop",
   "cloud.open": "Open",

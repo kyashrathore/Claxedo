@@ -7,11 +7,11 @@ import { primaryPlacement } from "../open"
 import { inCatalogOrder } from "../project-order"
 import { useProjects } from "../store"
 import { createDraftContext, type DraftPlacementResolver, type DraftTarget } from "../draft-context"
-import { useBranchChip, useEnvironmentChip, useWorkspaceChip } from "./context-chips"
+import type { WhereCreation } from "../draft-where"
+import { useBranchChip } from "./branch-chip"
+import { useWhereChip } from "./where-chip"
 import { SessionContextRow, type ContextChip, type ContextChipAvatar } from "./context-row"
 import { ProjectCreateForm } from "./project-create-form"
-
-export type DraftCreation = "worktree" | "cloud"
 
 function projectDetail(project: Project, placements: readonly Placement[]): string {
   const hosted = placements.some((placement) => placement.projectId === project.id && placement.kind === "cloud")
@@ -59,7 +59,7 @@ export function NewSessionContextRow(
     readonly resolver: DraftPlacementResolver
     readonly onOpen: (target: DraftTarget) => void
     readonly branch?: boolean
-    readonly onCreatingChange?: (creating: DraftCreation | undefined) => void
+    readonly onCreatingChange?: (creating: WhereCreation | undefined) => void
   },
 ): JSX.Element {
   const t = useProjectsText()
@@ -92,14 +92,9 @@ export function NewSessionContextRow(
   })
   const context = createDraftContext(() => ({ projectId: props.projectId, placementId: props.placementId }))
   props.resolver.attach(context)
-  createEffect(() => props.onCreatingChange?.(context.creating() ? (context.hostKind() === "provisioner" ? "cloud" : "worktree") : undefined))
-  const environmentChip = useEnvironmentChip(context)
-  const workspaceChip = useWorkspaceChip(context)
+  createEffect(() => props.onCreatingChange?.(context.creating()))
+  const whereChip = useWhereChip(context)
   const branchChip = useBranchChip(context)
-  const chips = createMemo((): ContextChip[] => {
-    const environment = environmentChip()
-    const branch = props.branch === false ? [] : [branchChip()]
-    return [projectChip(), ...(environment ? [environment] : []), workspaceChip(), ...branch]
-  })
+  const chips = createMemo((): ContextChip[] => [projectChip(), whereChip(), ...(props.branch === false ? [] : [branchChip()])])
   return <SessionContextRow chips={chips()} />
 }

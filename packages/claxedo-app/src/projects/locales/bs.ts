@@ -21,7 +21,6 @@ export default {
   "projects.edit.action": "Uredi",
   "projects.chip.project": "Projekat",
   "projects.chip.self": "Ovaj računar",
-  "projects.chip.workspace": "Radni prostor",
   "projects.create.continue": "Pošalji",
   "projects.connect.connecting": "Povezivanje…",
   "projects.settings.group": "Postavke",

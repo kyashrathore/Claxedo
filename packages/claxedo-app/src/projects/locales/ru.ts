@@ -21,7 +21,6 @@ export default {
   "projects.edit.action": "Редактировать",
   "projects.chip.project": "Проект",
   "projects.chip.self": "Этот компьютер",
-  "projects.chip.workspace": "Рабочее пространство",
   "projects.create.continue": "Отправить",
   "projects.connect.connecting": "Подключение…",
   "projects.settings.group": "Настройки",

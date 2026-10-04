@@ -26,7 +26,7 @@ const en = {
   "terminal.creator.tab": "New Terminal",
   "terminal.creator.title": "Start a terminal",
   "terminal.creator.inNewWorktree": "· in a new worktree",
-  "terminal.creator.inNewSandbox": "· in a new cloud sandbox",
+  "terminal.creator.inNewCloudWorkspace": "· in a new cloud workspace",
   "terminal.creator.shell": "Shell",
   "terminal.creator.loginShell": "login shell",
   "terminal.creator.starting": "Starting…",

@@ -21,7 +21,6 @@ export default {
   "projects.edit.action": "编辑",
   "projects.chip.project": "项目",
   "projects.chip.self": "这台电脑",
-  "projects.chip.workspace": "工作区",
   "projects.create.continue": "提交",
   "projects.connect.connecting": "连接中…",
   "projects.connect.enter.before": "回车",

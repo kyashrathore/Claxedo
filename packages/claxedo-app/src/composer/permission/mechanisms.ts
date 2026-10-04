@@ -13,7 +13,7 @@ export const HARNESS_LABELS: Record<BuiltinHarnessId, string> = {
 }
 
 const NO_MODE_SURFACE: Partial<Record<BuiltinHarnessId, string>> = {
-  pi: "Pi does not expose a permission mode. Its tools run with the permissions of the selected Local machine or Cloud sandbox.",
+  pi: "Pi does not expose a permission mode. Its tools run with the permissions of the selected local machine or cloud workspace.",
   opencode: "OpenCode has no permission modes of its own. It asks for each permission as a request in the session.",
 }
 

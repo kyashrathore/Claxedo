@@ -4,7 +4,7 @@
       display: none;
     }
 
-    .session-context-row [data-chip="context-chip-worktree"] .ui-context-chip-label,
+    .session-context-row [data-chip="context-chip-where"] .ui-context-chip-label,
     .session-context-row [data-chip="context-chip-branch"] .ui-context-chip-label {
       display: inline;
     }

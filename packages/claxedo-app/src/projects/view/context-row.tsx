@@ -11,6 +11,7 @@ export type ContextChipOption = {
   value: string
   label: string
   detail?: string
+  group?: string
   avatar?: ContextChipAvatar
 }
 
@@ -24,6 +25,7 @@ export type ContextChip = {
   icon: JSX.Element
   avatar?: ContextChipAvatar
   label: string
+  title?: string
   ariaLabel: string
   options: ContextChipOption[]
   current?: string

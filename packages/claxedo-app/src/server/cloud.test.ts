@@ -76,8 +76,8 @@ test("signed desktop: a repository's cloud workspace is created on the account's
 test("signed desktop: a connected repository names its connection and full name in main's flat operation input", async () => {
   await createRoot(async (dispose) => {
     const { cloud, workspaces, operations } = world(true)
-    await cloud.create({ source: { kind: "connectedRepository", connectionId: "gh_1", fullName: "acme/widgets" } })
-    expect(operations()).toEqual([{ operation: "workspace.create", input: { connectionId: "gh_1", repoFullName: "acme/widgets" } }])
+    await cloud.create({ source: { kind: "connectedRepository", connectionId: "gh_1", fullName: "acme/widgets" }, name: "Widgets" })
+    expect(operations()).toEqual([{ operation: "workspace.create", input: { workspaceName: "Widgets", connectionId: "gh_1", repoFullName: "acme/widgets" } }])
     workspaces.dispose()
     dispose()
   })
@@ -86,10 +86,10 @@ test("signed desktop: a connected repository names its connection and full name 
 test("without an account the project's cloud workspace is created and deleted on this server, and a bare repository's is refused", async () => {
   await createRoot(async (dispose) => {
     const { cloud, workspaces, posted, listed, operations } = world(false)
-    await expect(cloud.create({ source: { kind: "repository", url: "https://github.com/acme/widgets" } })).rejects.toThrow("created on a signed control plane")
-    const workspace = await cloud.create({ projectId: projectId("prj_widgets"), branch: "main" })
+    await expect(cloud.create({ source: { kind: "repository", url: "https://github.com/acme/widgets" }, name: "Widgets" })).rejects.toThrow("created on a signed control plane")
+    const workspace = await cloud.create({ projectId: projectId("prj_widgets"), name: "Payments", branch: "main" })
     expect(workspace).toMatchObject({ id: placementId("ws_new"), projectId: projectId("prj_widgets") })
-    expect(posted).toEqual([{ path: "/api/workspace/create", body: { projectId: "prj_widgets", gitBranch: "main", repoUrl: "https://github.com/acme/widgets" } }])
+    expect(posted).toEqual([{ path: "/api/workspace/create", body: { projectId: "prj_widgets", workspaceName: "Payments", gitBranch: "main", repoUrl: "https://github.com/acme/widgets" } }])
     expect(operations()).toEqual([])
     expect(await listed()).toEqual([placementId("ws_new")])
     await cloud.remove(placementId("ws_new"))
@@ -107,7 +107,7 @@ test("signed: a workspace the account created is reported before the catalog rea
     })
     const reported: string[] = []
     failing = true
-    await expect(cloud.create({ source: { kind: "repository", url: "https://github.com/acme/widgets" }, onCreated: (id) => reported.push(id) })).rejects.toThrow()
+    await expect(cloud.create({ source: { kind: "repository", url: "https://github.com/acme/widgets" }, name: "Widgets", onCreated: (id) => reported.push(id) })).rejects.toThrow()
     expect(reported).toEqual([placementId("ws_new")])
     expect(operations()).toHaveLength(1)
     workspaces.dispose()

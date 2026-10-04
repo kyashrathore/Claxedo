@@ -21,7 +21,6 @@ export default {
   "projects.edit.action": "Düzenle",
   "projects.chip.project": "Proje",
   "projects.chip.self": "Bu bilgisayar",
-  "projects.chip.workspace": "Çalışma Alanı",
   "projects.create.continue": "Gönder",
   "projects.connect.connecting": "Bağlanıyor…",
   "projects.settings.group": "Ayarlar",

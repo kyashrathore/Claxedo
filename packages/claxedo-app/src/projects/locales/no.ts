@@ -21,7 +21,6 @@ export default {
   "projects.edit.action": "Rediger",
   "projects.chip.project": "Prosjekt",
   "projects.chip.self": "Denne maskinen",
-  "projects.chip.workspace": "Arbeidsområde",
   "projects.create.continue": "Send inn",
   "projects.connect.connecting": "Kobler til…",
   "projects.settings.group": "Innstillinger",

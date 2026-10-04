@@ -25,7 +25,7 @@ export const CloudWorkspaceItem: Component<{
   return (
     <li class="cloud-row" data-workspace-id={props.row.id} data-state={props.row.state.kind}>
       <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span class="truncate text-sm font-medium">{props.row.name}</span>
+        <span class="truncate text-sm font-medium" title={props.row.id}>{props.row.name}</span>
         <Show when={props.row.branch}>{(branch) => <span class="cloud-hint truncate">{branch()}</span>}</Show>
         <Show when={cloudFailureReason(props.row.state)}>
           {(reason) => (

@@ -11,6 +11,7 @@ export const CreateCloudWorkspace: Component<{ cloud: CloudWorkspaces }> = (prop
   const [branch, setBranch] = createSignal("")
   const creation = createFlow<"creating", CloudWorkspace>()
   const creating = () => creation.state().kind === "running"
+  const named = () => name().trim() !== ""
   const failure = () => {
     const state = creation.state()
     return state.kind === "failed" ? state.error.message : undefined
@@ -18,8 +19,8 @@ export const CreateCloudWorkspace: Component<{ cloud: CloudWorkspaces }> = (prop
 
   const submit = async (event: SubmitEvent) => {
     event.preventDefault()
-    if (creating()) return
-    const input = { ...(name().trim() ? { name: name().trim() } : {}), ...(branch().trim() ? { branch: branch().trim() } : {}) }
+    if (creating() || !named()) return
+    const input = { name: name().trim(), ...(branch().trim() ? { branch: branch().trim() } : {}) }
     await runFlow(creation, "creating", () => props.cloud.create(input), toAppError)
     if (creation.state().kind !== "done") return
     setName("")
@@ -35,6 +36,7 @@ export const CreateCloudWorkspace: Component<{ cloud: CloudWorkspaces }> = (prop
           placeholder={t("cloud.create.name")}
           label={t("cloud.create.name")}
           hideLabel
+          required
           onChange={setName}
         />
         <TextField
@@ -46,7 +48,7 @@ export const CreateCloudWorkspace: Component<{ cloud: CloudWorkspaces }> = (prop
           spellcheck={false}
           onChange={setBranch}
         />
-        <Button type="submit" variant="contrast" disabled={creating()}>
+        <Button type="submit" variant="contrast" disabled={creating() || !named()}>
           {creating() ? t("cloud.creating") : t("cloud.new")}
         </Button>
       </div>

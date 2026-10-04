@@ -4,7 +4,7 @@ Owns: the cloud workspace as a placement of a project, its lifecycle machine, an
 
 ## Concepts
 
-- **Cloud workspace** (`CloudWorkspace`): a placement (`id: PlacementId`) of a project, with a name, an optional branch and the server-reported `status`.
+- **Cloud workspace** (`CloudWorkspace`): a placement (`id: PlacementId`) of a project, with a name, an optional branch and the server-reported `status`. The name is required: every create form asks for it and the server refuses a create without one (`workspace_name_required`). A row shows the name, with the id as its tooltip.
 - **Row** (`CloudWorkspaceRow`): a workspace with its effective `state`, the machine state the views draw.
 
 ## One home
@@ -21,7 +21,7 @@ A create failure is shown by the create form; the workspace does not exist yet, 
 
 ## API
 
-`useCloudWorkspaces(projectId, enabled)` returns the list machine (`loading`, `ready(rows)`, `failed(error)`) and the commands. The first run places a new project in the cloud through `server.cloud.create({ source })` directly, on a hosted plane and on a signed desktop alike: the signed account creates it, and its control plane derives the project. Rows come from `server.queries.cloud.list()` and commands go through `server.cloud`.
+`useCloudWorkspaces(projectId, enabled)` returns the list machine (`loading`, `ready(rows)`, `failed(error)`) and the commands. The first run places a new project in the cloud through `server.cloud.create({ source, name })` directly, on a hosted plane and on a signed desktop alike: the signed account creates it, and its control plane derives the project. Rows come from `server.queries.cloud.list()` and commands go through `server.cloud`.
 
 ## Flows
 

@@ -2,20 +2,31 @@ import type { PlacementId, Project, ProjectSource } from "@/server"
 
 export type OnboardingDraft = { readonly source: ProjectSource; readonly name?: string }
 
-export type ExecutionChoice = "local" | "cloud" | "connected"
+export type ExecutionChoice = "local" | "cloud"
 
-export type ExecutionFacts = { readonly localExecution: boolean; readonly cloudAvailable: boolean }
+export type ExecutionPlan = { readonly kind: "local" } | { readonly kind: "cloud"; readonly name: string }
 
-export type ExecutionBlock = "signIn" | "folder" | "machine"
+export type ExecutionFacts = { readonly localExecution: boolean; readonly cloudAvailable: boolean; readonly machineConnected: boolean | undefined }
+
+export type ExecutionBlock = "signIn" | "folder" | "name"
 
 export function executionChoices(facts: ExecutionFacts): readonly ExecutionChoice[] {
-  return [...(facts.localExecution ? (["local"] as const) : []), ...(facts.cloudAvailable ? (["cloud"] as const) : []), "connected"]
+  return [...(facts.localExecution ? (["local"] as const) : []), ...(facts.cloudAvailable ? (["cloud"] as const) : [])]
 }
 
-export function executionBlock(choice: ExecutionChoice, facts: ExecutionFacts, source: ProjectSource | undefined): ExecutionBlock | undefined {
-  if (choice !== "cloud") return facts.localExecution ? undefined : "machine"
+export function offersConnectComputer(facts: ExecutionFacts): boolean {
+  return !facts.localExecution && facts.machineConnected === false
+}
+
+export function executionPlan(choice: ExecutionChoice, workspaceName: string): ExecutionPlan {
+  return choice === "cloud" ? { kind: "cloud", name: workspaceName.trim() } : { kind: "local" }
+}
+
+export function executionBlock(plan: ExecutionPlan, facts: ExecutionFacts, source: ProjectSource | undefined): ExecutionBlock | undefined {
+  if (plan.kind === "local") return undefined
   if (!facts.cloudAvailable) return "signIn"
-  return source?.kind === "folder" ? "folder" : undefined
+  if (source?.kind === "folder") return "folder"
+  return plan.name ? undefined : "name"
 }
 
 export type Created =

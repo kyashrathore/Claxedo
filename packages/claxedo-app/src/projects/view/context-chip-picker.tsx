@@ -19,6 +19,7 @@ function ChipTrigger(props: { chip: ContextChip }) {
       data-chip={props.chip.slot}
       type="button"
       aria-label={props.chip.ariaLabel}
+      title={props.chip.title}
       disabled={props.chip.disabled}
       class="flex h-7 min-w-0 shrink items-center gap-1.5 rounded-md px-2 text-compact font-body leading-4 text-v2-text-text-muted transition-colors duration-150 hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base disabled:pointer-events-none disabled:opacity-50 data-[expanded]:bg-v2-overlay-simple-overlay-hover data-[expanded]:text-v2-text-text-base"
     >
@@ -77,7 +78,7 @@ function ChipList(props: { chip: ContextChip; ref: (ref: ListRef) => void; close
         key={(option) => option.value}
         current={current()}
         filterKeys={["label", "detail", "value"]}
-        groupBy={() => props.chip.groupLabel ?? ""}
+        groupBy={(option) => option.group ?? props.chip.groupLabel ?? ""}
         onSelect={(option) => {
           props.close()
           if (option) props.chip.onSelect(option.value)

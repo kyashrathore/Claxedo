@@ -21,7 +21,6 @@ export default {
   "projects.edit.action": "Edytuj",
   "projects.chip.project": "Projekt",
   "projects.chip.self": "Ten komputer",
-  "projects.chip.workspace": "Przestrzeń robocza",
   "projects.create.continue": "Prześlij",
   "projects.connect.connecting": "Łączenie…",
   "projects.settings.group": "Ustawienia",

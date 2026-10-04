@@ -1,6 +1,6 @@
 import { createSignal, For, Show, type JSX } from "solid-js"
 import { useErrorCopy, useTranslator } from "@/i18n"
-import { createDraftPlacementResolver, NewSessionContextRow, type DraftCreation } from "@/projects"
+import { createDraftPlacementResolver, NewSessionContextRow, type WhereCreation } from "@/projects"
 import { isTerminalSessionRequired, toAppError, useServer, type PlacementId } from "@/server"
 import type { PaneProps } from "@/shell"
 import { ClaxedoIcon, ClaxedoLogo } from "@/ui"
@@ -59,7 +59,7 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
   const projectId = () => server.placements.byId(props.state.placementId)?.projectId
   const [starting, setStarting] = createSignal<string>()
   const [error, setError] = createSignal<string>()
-  const [creating, setCreating] = createSignal<DraftCreation>()
+  const [creating, setCreating] = createSignal<WhereCreation>()
   const draft = createDraftPlacementResolver()
   const launchers = () => terminalLaunchers(t("terminal.creator.shell"))
   const sessionMissing = () =>
@@ -120,7 +120,7 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
           <Show when={creating()}>
             {(kind) => (
               <span class="truncate text-xs text-v2-text-text-faint">
-                {t(kind() === "cloud" ? "terminal.creator.inNewSandbox" : "terminal.creator.inNewWorktree")}
+                {t(kind() === "cloud" ? "terminal.creator.inNewCloudWorkspace" : "terminal.creator.inNewWorktree")}
               </span>
             )}
           </Show>

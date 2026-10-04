@@ -5,8 +5,8 @@ import { useServer } from "@/server"
 import { draftPath } from "@/shell"
 import { createFinish } from "./finish"
 import { useOnboardingText } from "./i18n"
-import { executionBlock, type ExecutionChoice, type ExecutionFacts, type OnboardingDraft } from "./model"
-import { createOnboardingTarget, finishFailure, openedPlacement, type Placing } from "./place"
+import { executionBlock, executionPlan, type ExecutionChoice, type ExecutionFacts, type OnboardingDraft } from "./model"
+import { createOnboardingTarget, finishFailure, openedPlacement, startCreated, type Placing } from "./place"
 import { onboardingSteps, type OnboardingStepId } from "./steps"
 
 export function draftName(draft: OnboardingDraft): string {
@@ -36,23 +36,32 @@ function useOnboardingFinish(placing: Accessor<Placing | undefined>) {
   }
   return createFinish({
     create: (hold) => createOnboardingTarget(server, t, held(), hold),
-    open: async (created) => navigate(draftPath(openedPlacement(t, created, (project) => primaryPlacement(server.placements.list(), project)?.id))),
+    open: async (created) => {
+      await startCreated(server, created)
+      navigate(draftPath(openedPlacement(t, created, (project) => primaryPlacement(server.placements.list(), project)?.id)))
+    },
     describe: (error, created) => finishFailure(t, error, created),
   })
+}
+
+function createExecution(facts: Accessor<ExecutionFacts>) {
+  const [chosen, setChosen] = createSignal<ExecutionChoice>()
+  const [workspaceName, setWorkspaceName] = createSignal("")
+  const choice = (): ExecutionChoice => chosen() ?? (facts().localExecution ? "local" : "cloud")
+  return { choice, choose: setChosen, workspaceName, setWorkspaceName, plan: createMemo(() => executionPlan(choice(), workspaceName())) }
 }
 
 export function createOnboardingWizard(facts: Accessor<ExecutionFacts>) {
   const stepper = createStepper()
   const [draft, setDraft] = createSignal<OnboardingDraft>()
   const [aiReady, setAiReady] = createSignal(false)
-  const [chosen, setChosen] = createSignal<ExecutionChoice>()
-  const choice = (): ExecutionChoice => chosen() ?? (facts().localExecution ? "local" : "cloud")
+  const { plan, ...execution } = createExecution(facts)
   const placing = () => {
     const held = draft()
-    return held && { draft: held, choice: choice() }
+    return held && { draft: held, plan: plan() }
   }
   const finish = useOnboardingFinish(placing)
-  const blocked = createMemo(() => executionBlock(choice(), facts(), draft()?.source))
+  const blocked = createMemo(() => executionBlock(plan(), facts(), draft()?.source))
   const move = (index: number) => {
     finish.moved()
     const target = onboardingSteps[index]
@@ -65,8 +74,7 @@ export function createOnboardingWizard(facts: Accessor<ExecutionFacts>) {
     aiReady,
     setAiReady,
     blocked,
-    choice,
-    choose: setChosen,
+    ...execution,
     chooseSource: (source: OnboardingDraft) => {
       setDraft(source)
       move(1)

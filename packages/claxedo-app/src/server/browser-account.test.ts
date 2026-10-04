@@ -109,12 +109,12 @@ test("a signed browser creates a cloud workspace from a connected repository thr
     const server = createServer({ serverUrl: "https://worker.test", cookies: true })
     try {
       await server.ready
-      const workspace = await server.cloud.create({ source: { kind: "connectedRepository", connectionId: "github_1", fullName: "owner/app" } })
+      const workspace = await server.cloud.create({ source: { kind: "connectedRepository", connectionId: "github_1", fullName: "owner/app" }, name: "App" })
       expect([String(workspace.id), String(workspace.projectId)]).toEqual(["ws_cloud", "prj_app"])
       const request = calls.find((call) => call.path === "/api/workspace/create")
       expect(request?.init?.credentials).toBe("include")
       const body = request?.init?.body
-      expect(typeof body === "string" ? JSON.parse(body) : body).toEqual({ connectionId: "github_1", repo: { fullName: "owner/app" } })
+      expect(typeof body === "string" ? JSON.parse(body) : body).toEqual({ workspaceName: "App", connectionId: "github_1", repo: { fullName: "owner/app" } })
       expect(calls.some((call) => call.path.startsWith("/api/claxedo/projects"))).toBe(false)
     } finally { server.dispose(); dispose() }
   })

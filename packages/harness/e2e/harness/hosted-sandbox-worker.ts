@@ -217,7 +217,7 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
       if (outbound && typeof outboundTarget !== "string") return response(res, 400, { error: "outbound target required" })
       const url = typeof outboundTarget === "string" ? new URL(outboundTarget) : original
       if (outbound) {
-        const github = await scriptedGithub(request, url)
+        const github = await scriptedGithub(request, url, input.gitUrl)
         if (github) return sendResponse(res, github)
         const mcp = await scriptedHostedMcp(request, url, input.root)
         if (mcp) return sendResponse(res, mcp)

@@ -26,7 +26,10 @@ const collection = gitHubArchiveFetch({
   },
 })
 
-export async function scriptedGithub(request: IncomingMessage, url: URL): Promise<Response | undefined> {
+export const HOSTED_CODE_HOST_REPOSITORY = "hosted-e2e/widgets"
+export const HOSTED_CODE_HOST_TOKEN = "hosted-token-hosted-person-a"
+
+export async function scriptedGithub(request: IncomingMessage, url: URL, gitUrl: string): Promise<Response | undefined> {
   if (url.origin === "https://github.com" && url.pathname === "/login/oauth/access_token") {
     const chunks: Buffer[] = []
     for await (const chunk of request) chunks.push(Buffer.from(chunk))
@@ -41,10 +44,14 @@ export async function scriptedGithub(request: IncomingMessage, url: URL): Promis
     || (url.origin === "https://codeload.github.com" && url.pathname.startsWith(`${repository}zip/`))) {
     return collection.fetch(url.toString())
   }
-  if (url.origin !== "https://api.github.com" || (url.pathname !== "/user" && url.pathname !== "/user/emails")) return undefined
+  if (url.origin !== "https://api.github.com" || !["/user", "/user/emails", "/user/repos"].includes(url.pathname)) return undefined
   const person = request.headers.authorization?.replace(/^Bearer /i, "")
   if (person !== "hosted-token-hosted-person-a" && person !== "hosted-token-hosted-person-b") {
     return Response.json({ message: "unauthorized" }, { status: 401 })
+  }
+  if (url.pathname === "/user/repos") {
+    const [, name] = HOSTED_CODE_HOST_REPOSITORY.split("/")
+    return Response.json([{ id: 1, name, full_name: HOSTED_CODE_HOST_REPOSITORY, clone_url: gitUrl, private: false, permissions: { pull: true } }])
   }
   const id = person.endsWith("-a") ? 101 : 202
   const email = `hosted-person-${id}@example.test`

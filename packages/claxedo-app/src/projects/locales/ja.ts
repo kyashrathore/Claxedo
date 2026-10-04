@@ -21,7 +21,6 @@ export default {
   "projects.edit.action": "編集",
   "projects.chip.project": "プロジェクト",
   "projects.chip.self": "このコンピュータ",
-  "projects.chip.workspace": "ワークスペース",
   "projects.create.continue": "送信",
   "projects.connect.connecting": "接続中…",
   "projects.settings.group": "設定",

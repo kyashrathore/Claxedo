@@ -29,13 +29,13 @@ export type WorkspaceRuntime =
 
 export type CloudProjectCreateInput = {
   readonly projectId: ProjectId
-  readonly name?: string
+  readonly name: string
   readonly branch?: string
 }
 
 export type CloudSourceCreateInput = {
   readonly source: Exclude<ProjectSource, { readonly kind: "folder" }>
-  readonly name?: string
+  readonly name: string
   readonly onCreated?: (id: PlacementId) => void
 }
 

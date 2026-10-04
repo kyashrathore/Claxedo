@@ -21,7 +21,6 @@ export default {
   "projects.edit.action": "編輯",
   "projects.chip.project": "專案",
   "projects.chip.self": "這台電腦",
-  "projects.chip.workspace": "工作區",
   "projects.create.continue": "提交",
   "projects.connect.connecting": "連接中…",
   "projects.settings.group": "設定",

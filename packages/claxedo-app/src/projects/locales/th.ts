@@ -21,7 +21,6 @@ export default {
   "projects.edit.action": "แก้ไข",
   "projects.chip.project": "โปรเจกต์",
   "projects.chip.self": "คอมพิวเตอร์เครื่องนี้",
-  "projects.chip.workspace": "พื้นที่ทำงาน",
   "projects.create.continue": "ส่ง",
   "projects.connect.connecting": "กำลังเชื่อมต่อ…",
   "projects.settings.group": "การตั้งค่า",

@@ -28,8 +28,9 @@ export { listLivePlugins, registerLivePlugin, writeLivePlugin, type LivePluginFo
 export { APP_PLUGIN_WARNING, appPluginDialog, appPluginRow, approveAppPlugin } from "./app-plugins"
 export { breakFixturePlugin, FIXTURE_ROUTES, fixtureFolder, writeFixturePlugin, type FixtureVersion } from "./fixture-plugin"
 export { type Account, type SignedStack } from "./signed-stack"
+export { ownerDevices, revokeOwnerMachines } from "./machine-devices"
 export {
-  cloudMessages, cloudPrompt, cloudTurn, createCloudSession, listedSessions, makeCloudWorkspace, sessionConnection, startCloudWorkspace, stopCloudWorkspace,
+  cloudMessages, cloudPrompt, cloudTurn, cloudWorkspaceNames, createCloudSession, listedSessions, makeCloudWorkspace, sessionConnection, startCloudWorkspace, stopCloudWorkspace,
   storedMessages, storeOwnerKey, type CloudWorkspace,
 } from "./cloud"
 export { SCRIPTED_ACP_CONNECTION_ID, SCRIPTED_ACP_HARNESS, UNSET_ACP_HARNESS } from "../../../harness/e2e/harness/acp/connection"
