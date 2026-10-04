@@ -14,6 +14,10 @@ See [`docs/architecture.md`](docs/architecture.md) for the five deployment
 shapes, the two event systems, the harness transport seam, and the
 journal-backed store, in one place.
 
+## Terminal creation ownership
+
+A native PTY spawn can return before its child establishes its own POSIX process group. `pty/creation-identity.ts` allows a one-second retry window for the same newly spawned process to become its group leader before `pty/session-start.ts` records ownership; each identity probe retains its own timeout. It refuses an old or changed creation identity and a native exit; it never substitutes the parent group. Probe failures remain unowned and are logged. Removal can then use the recorded identity to capture and retire detached descendants without signalling a neighboring terminal.
+
 ## Install
 
 ```sh
