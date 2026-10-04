@@ -22,7 +22,7 @@ Owns: terminal panes, the one attach path to a runtime PTY, terminal links, the 
 - Closing a terminal tab ends its PTY: the provider listens to the workbench's `onClosed` for the `terminal` kind and removes the terminal on the server. The store treats the server's `not_found` answer as ended and drops the row, so closing a terminal that already died clears it from the rail too. A failure to end it is logged and shown.
 - `TerminalProvider` mounts once inside the scoped shell, under the commands provider, because it reads the route, the workbench and the command registry. It owns the stores, at most 8 placements, and never evicts a placement a mounted pane retains.
 - The placement a new terminal opens in is the one the URL names.
-- A terminal on a placement reached over the relay belongs to a session: the runtime refuses one without it (`pty_session_id_required`). It is created with the session the route has open on that placement (`openSession`, passed as `openSessionId`). With none open, the creator and `terminal.new` refuse before any request with "Open a session on this machine to start a terminal"; `server.terminals.requiresOpenSession` says which placements need one, and `createPty` enforces it. A placement this machine serves is unchanged: its terminals carry no session.
+- A terminal is the workspace's, never a session's: it is created with no session on every placement, and the runtime admits any workspace token with write access to every terminal on it. A refusal arrives as the `forbidden` error class with its own copy, never as a sign-in failure.
 - Status copy comes from the failure reason, never from an error's message.
 
 ## Creating terminals

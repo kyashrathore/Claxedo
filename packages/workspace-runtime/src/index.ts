@@ -68,19 +68,15 @@ export type { WorkspaceHost, WorkspaceHostOptions } from "./workspace"
 
 export { Pty } from "./pty/index"
 export {
-  authorizePtyAttach,
   createAuthorizedPtyConnection,
   isPtyStreamSocket,
   ptyAccessRefusalResponse,
   ptyStreamAccess,
   PTY_NOT_FOUND_REFUSAL,
 } from "./pty/authorized-connection"
-export type {
-  AuthorizedPtyConnection,
-  PtyAccessRefusal,
-  PtyStreamAccess,
-  PtyStreamSocket,
-} from "./pty/authorized-connection"
+export type { AuthorizedPtyConnection, PtyStreamSocket } from "./pty/authorized-connection"
+export { admitTerminal } from "./pty/terminal-authority"
+export type { PtyAccessRefusal, TerminalAccess } from "./pty/terminal-authority"
 export type {
   WorkspaceRuntimeStore,
   WorkspaceRuntimeStoreFactory,

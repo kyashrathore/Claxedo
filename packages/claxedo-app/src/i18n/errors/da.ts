@@ -2,6 +2,7 @@ import type { ErrorMessages } from "./model"
 
 export default {
   auth: ["Log ind igen", "Dit login er udløbet eller blevet afvist. Log ind igen for at fortsætte."],
+  forbidden: ["Ikke tilladt", "Din konto har ikke adgang til dette. Bed ejeren om adgang."],
   rate_limit: ["For mange forespørgsler", "Serveren begrænser forespørgsler. Vent et øjeblik, og prøv igen."],
   network: ["Kan ikke nå serveren", "Serveren kunne ikke nås. Tjek forbindelsen, og prøv igen."],
   not_found: ["Ikke fundet", "Dette findes ikke længere. Det er muligvis blevet slettet."],

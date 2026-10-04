@@ -57,4 +57,5 @@ export const queryKeys = {
   gitDiffFile: (server: string, placementId: PlacementId, scope: DiffScope, file: string) => ["server", server, "git", placementId, "diff", scope, file] as const,
   gitAll: (server: string) => ["server", server, "git"] as const,
   gitOf: (server: string, placementId: PlacementId) => ["server", server, "git", placementId] as const,
+  terminalAgents: (server: string, placementId: PlacementId) => ["server", server, "terminal-agents", placementId] as const,
 } as const

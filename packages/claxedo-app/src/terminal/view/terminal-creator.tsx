@@ -1,7 +1,8 @@
 import { createSignal, For, Show, type JSX } from "solid-js"
+import { useQuery } from "@tanstack/solid-query"
 import { useErrorCopy, useTranslator } from "@/i18n"
 import { createDraftPlacementResolver, NewSessionContextRow, type WhereCreation } from "@/projects"
-import { isTerminalSessionRequired, toAppError, useServer, type PlacementId } from "@/server"
+import { toAppError, useServer, type PlacementId } from "@/server"
 import type { PaneProps } from "@/shell"
 import { ClaxedoIcon, ClaxedoLogo } from "@/ui"
 import { useWorkbench } from "@/workbench"
@@ -41,12 +42,37 @@ function LauncherTile(props: {
           ↵
         </span>
       </span>
-      <code class="w-full truncate font-mono text-2xs text-v2-text-text-faint">
-        {props.starting === props.launcher.id
-          ? t("terminal.creator.starting")
-          : (props.launcher.command ?? t("terminal.creator.loginShell"))}
-      </code>
+      <span class="w-full truncate text-2xs text-v2-text-text-faint">
+        {props.starting === props.launcher.id ? t("terminal.creator.starting") : t(props.launcher.description)}
+      </span>
     </button>
+  )
+}
+
+function LauncherGrid(props: {
+  readonly placementId: PlacementId
+  readonly starting: string | undefined
+  readonly onLaunch: (launcher: TerminalLauncher) => void
+}): JSX.Element {
+  const t = useTranslator(terminalDictionary)
+  const server = useServer()
+  const agents = useQuery(() => server.queries.terminals.agents(props.placementId))
+  const launchers = () => terminalLaunchers(t("terminal.creator.shell"), agents.data ?? [])
+  return (
+    <>
+      <div class="grid gap-2 p-3" style={{ "grid-template-columns": "repeat(auto-fill, minmax(9.5rem, 1fr))" }}>
+        <For each={launchers()}>
+          {(launcher, index) => (
+            <LauncherTile launcher={launcher} index={index()} starting={props.starting} onLaunch={props.onLaunch} />
+          )}
+        </For>
+      </div>
+      <Show when={agents.isPending || agents.isError}>
+        <div class="px-3.5 pb-2.5 text-xs text-v2-text-text-faint">
+          {t(agents.isError ? "terminal.creator.agentsFailed" : "terminal.creator.agentsLoading")}
+        </div>
+      </Show>
+    </>
   )
 }
 
@@ -61,16 +87,8 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
   const [error, setError] = createSignal<string>()
   const [creating, setCreating] = createSignal<WhereCreation>()
   const draft = createDraftPlacementResolver()
-  const launchers = () => terminalLaunchers(t("terminal.creator.shell"))
-  const sessionMissing = () =>
-    (creating() === "cloud" || server.terminals.requiresOpenSession(props.state.placementId))
-    && (creating() !== undefined || runtime.openSession()?.placementId !== props.state.placementId)
   const launch = async (launcher: TerminalLauncher) => {
     if (starting()) return
-    if (sessionMissing()) {
-      setError(t("terminal.sessionRequired"))
-      return
-    }
     setStarting(launcher.id)
     setError(undefined)
     try {
@@ -81,7 +99,7 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
       const terminal = await runtime.store(placementId).create({ command: launcher.command, title: launcher.title })
       runtime.open({ placementId, terminalId: terminal.id }, props.paneId)
     } catch (cause) {
-      setError(isTerminalSessionRequired(cause) ? t("terminal.sessionRequired") : errorCopy(toAppError(cause)).message)
+      setError(errorCopy(toAppError(cause)).message)
     } finally {
       setStarting(undefined)
     }
@@ -125,18 +143,7 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
             )}
           </Show>
               </div>
-              <div class="grid gap-2 p-3" style={{ "grid-template-columns": "repeat(auto-fill, minmax(9.5rem, 1fr))" }}>
-                <For each={launchers()}>
-                  {(launcher, index) => (
-                    <LauncherTile
-                      launcher={launcher}
-                      index={index()}
-                      starting={starting()}
-                      onLaunch={(next) => void launch(next)}
-                    />
-                  )}
-                </For>
-              </div>
+              <LauncherGrid placementId={props.state.placementId} starting={starting()} onLaunch={(next) => void launch(next)} />
               <Show when={error()}>
                 {(message) => (
                   <div

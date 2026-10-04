@@ -5,15 +5,15 @@ import path from "node:path"
 import { Hono, type Context } from "hono"
 import type { UpgradeWebSocket, WSEvents, WSContext } from "hono/ws"
 import { PtyRoutes } from "./pty"
+import { installedTerminalAgents } from "../pty/terminal-agents"
 import { Pty } from "../pty/index"
 import {
   errorBody,
   JSON_BODY_LIMIT_BYTES,
-  managedWorkspaceSessionAccessPolicy,
+  remoteWorkspaceSessionAccessPolicy,
   type SessionAccessPolicy,
 } from "@claxedo/session-core"
 import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
-import { createDiskHistory } from "../pty/history-disk"
 import { withWorkspaceTarget } from "../target"
 import { withSessionCore } from "../session-context"
 import { testSessionCore } from "@claxedo/session-core/testing"
@@ -46,23 +46,24 @@ function relayAuth(
   }
 }
 
-function privateSessionPolicy(owners: Record<string, string>): SessionAccessPolicy {
-  const allowed = (actorId: string | undefined, sessionId: string | undefined) =>
-    !!sessionId && owners[sessionId] === actorId
-  const policy: SessionAccessPolicy = {
-    sessionAuthority: "managed-private",
-    authorizeSessionStartStatus: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
-    authorizeSessionStart: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
-    authorize: async (input) => allowed(input.actor?.actorId, input.sessionId)
-      ? { allowed: true }
-      : { allowed: false, status: 403, code: "private_session", message: "Session is private" },
-    filterSessions: async (input) => input.sessionIds.filter((sessionId) => allowed(input.actor?.actorId, sessionId)),
-    authorizePrefix: async () => ({ allowed: true }),
-  }
-  policy.authorizeStream = async (input, lease) => allowed(input.actor?.actorId, input.sessionId)
-    ? { allowed: true, lease: lease ?? "terminal-capability", expiresAt: Date.now() + 15_000 }
-    : { allowed: false, status: 403, code: "private_session", message: "Session is private" }
-  return policy
+type HostCall = { action: string; lease?: string; authorization?: string }
+
+/** The real remote composition every managed host builds, answering host authority over a scripted control plane. */
+function hostPolicy(state: { active: boolean; calls: HostCall[] } = { active: true, calls: [] }) {
+  let leases = 0
+  return remoteWorkspaceSessionAccessPolicy({
+    url: "http://control-plane.test/runtime/session-authority",
+    fetch: async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as { action: string; lease?: string }
+      const authorization = new Headers(init?.headers).get("authorization") ?? undefined
+      state.calls.push({ action: body.action, ...(body.lease ? { lease: body.lease } : {}), ...(authorization ? { authorization } : {}) })
+      if (!state.active) {
+        return Response.json({ error: { code: "runtime_access_token_inactive", message: "Runtime Access Token is inactive" } }, { status: 401 })
+      }
+      leases += 1
+      return Response.json({ allowed: true, lease: `host-lease-${leases}`, expiresAt: Date.now() + 15_000 })
+    },
+  })
 }
 
 /** The PTY routes inside a session core rooted where the test pins the runtime, as a host serves them. */
@@ -72,24 +73,26 @@ function ptyRoutes(policy?: SessionAccessPolicy, root?: string) {
     .route("/", PtyRoutes(upgradeWebSocket, policy))
 }
 
-function appForRole(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"]) {
+function appFor(
+  policy: SessionAccessPolicy,
+  role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"] = "editor",
+  options: { actorId?: string; sessionScope?: string; upgrade?: UpgradeWebSocket } = {},
+) {
   const app = new Hono<{ Variables: RelayHostAuthContext }>()
   app.use("*", async (c, next) => {
-    c.set("relayHostAuth", relayAuth(role))
+    c.set("relayHostAuth", {
+      ...relayAuth(role, options.actorId),
+      ...(options.sessionScope ? { session_id: options.sessionScope } : {}),
+    })
     return await next()
   })
-  app.route("/", ptyRoutes())
-  return app
-}
-
-function appForActor(actorId: string, policy: SessionAccessPolicy) {
-  const app = new Hono<{ Variables: RelayHostAuthContext }>()
-  app.use("*", async (c, next) => {
-    c.set("relayHostAuth", relayAuth("editor", actorId))
-    return await next()
-  })
-  app.route("/", ptyRoutes(policy))
-  return app
+  app.route("/", new Hono<{ Variables: RelayHostAuthContext }>()
+    .use("*", (_c, next) => withSessionCore(testSessionCore(process.env.WORKSPACE_RUNTIME_DIRECTORY ?? path.join(os.tmpdir(), "pty-routes-unserved-root")), next))
+    .route("/", PtyRoutes(options.upgrade ?? upgradeWebSocket, policy)))
+  return {
+    request: (url: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}) =>
+      app.request(url, { ...init, headers: { ...init.headers, authorization: "Bearer relay-token" } }),
+  }
 }
 
 afterEach(() => {
@@ -257,13 +260,7 @@ describe("PtyRoutes", () => {
     })
   })
 
-  test("allows terminal routes for authenticated editors", async () => {
-    const res = await appForRole("editor").request("http://localhost/")
-
-    expect(res.status).toBe(200)
-  })
-
-  test("isolates PTY list, detail, scrollback connect, and delete between editors", async () => {
+  test("every terminal on the workspace reaches an editor, whatever session labels it", async () => {
     const info = (id: string, sessionId?: string): Pty.Info => ({
       id,
       ...(sessionId ? { sessionId } : {}),
@@ -274,32 +271,22 @@ describe("PtyRoutes", () => {
       status: "running",
       pid: 1,
     })
-    const rows = [info("pty_a", "session_a"), info("pty_b", "session_b"), info("pty_local")]
+    const rows = [info("pty_a", "session_in_session_host"), info("pty_b")]
     const list = spyOn(Pty, "list").mockReturnValue(rows)
     const get = spyOn(Pty, "get").mockImplementation((id) => rows.find((row) => row.id === id))
     const remove = spyOn(Pty, "remove").mockResolvedValue(undefined)
-    const policy = privateSessionPolicy({ session_a: "editor_a", session_b: "editor_b" })
+    const state = { active: true, calls: [] as HostCall[] }
 
     try {
-      const editorA = appForActor("editor_a", policy)
-      const editorB = appForActor("editor_b", policy)
-
-      await expect((await editorA.request("http://localhost/")).json()).resolves.toEqual([rows[0]])
-      await expect((await editorB.request("http://localhost/")).json()).resolves.toEqual([rows[1]])
-
-      expect((await editorA.request("http://localhost/pty_b")).status).toBe(403)
-      expect((await editorA.request("http://localhost/pty_b/connect", {
-        headers: { connection: "Upgrade", upgrade: "websocket" },
-      })).status).toBe(403)
-      expect((await editorA.request("http://localhost/pty_b", { method: "DELETE" })).status).toBe(403)
-      expect(remove).not.toHaveBeenCalled()
-
-      expect((await editorB.request("http://localhost/pty_b")).status).toBe(200)
-      expect((await editorB.request("http://localhost/pty_b/connect", {
+      const editor = appFor(hostPolicy(state))
+      await expect((await editor.request("http://localhost/")).json()).resolves.toEqual(rows)
+      expect((await editor.request("http://localhost/pty_a")).status).toBe(200)
+      expect((await editor.request("http://localhost/pty_a/connect", {
         headers: { connection: "Upgrade", upgrade: "websocket" },
       })).status).toBe(501)
-      expect((await editorB.request("http://localhost/pty_b", { method: "DELETE" })).status).toBe(200)
-      expect(remove).toHaveBeenCalledWith("pty_b")
+      expect((await editor.request("http://localhost/pty_a", { method: "DELETE" })).status).toBe(200)
+      expect(remove).toHaveBeenCalledWith("pty_a")
+      expect(state.calls.every((call) => call.action === "host_read" && call.authorization === "Bearer relay-token")).toBe(true)
     } finally {
       list.mockRestore()
       get.mockRestore()
@@ -307,9 +294,42 @@ describe("PtyRoutes", () => {
     }
   })
 
-  test("attaches the route's socket through the authorized lifetime and closes it when access is revoked", async () => {
+  test("a viewer, a session-scoped token and a revoked workspace token reach no terminal", async () => {
+    const rows: Pty.Info[] = [{ id: "pty_a", title: "a", command: "/bin/sh", args: [], cwd: "/workspace", status: "running", pid: 1 }]
+    const list = spyOn(Pty, "list").mockReturnValue(rows)
+    const get = spyOn(Pty, "get").mockReturnValue(rows[0])
+    const remove = spyOn(Pty, "remove").mockResolvedValue(undefined)
+    const revoked = { active: false, calls: [] as HostCall[] }
+
+    try {
+      const refusals = [
+        { app: appFor(hostPolicy(), "viewer"), status: 403, code: "terminal_role_denied" },
+        { app: appFor(hostPolicy(), "editor", { sessionScope: "session_shared" }), status: 403, code: "relay_scope_denied" },
+        { app: appFor(hostPolicy(revoked)), status: 401, code: "runtime_access_token_inactive" },
+      ]
+      for (const { app, status, code } of refusals) {
+        for (const request of [
+          app.request("http://localhost/"),
+          app.request("http://localhost/pty_a"),
+          app.request("http://localhost/pty_a", { method: "DELETE" }),
+          app.request("http://localhost/pty_a/connect", { headers: { connection: "Upgrade", upgrade: "websocket" } }),
+          app.request("http://localhost/", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }),
+        ]) {
+          const response = await request
+          expect(response.status).toBe(status)
+          expect(((await response.json()) as { error: { code: string } }).error.code).toBe(code)
+        }
+      }
+      expect(remove).not.toHaveBeenCalled()
+    } finally {
+      list.mockRestore()
+      get.mockRestore()
+      remove.mockRestore()
+    }
+  })
+
+  test("attaches the route's socket on the host lease and closes it when the workspace token is revoked", async () => {
     let events: WSEvents | undefined
-    let allowed = true
     let guardedSocket: Parameters<typeof Pty.connect>[1] | undefined
     const rawSocket = {
       readyState: 1,
@@ -318,15 +338,13 @@ describe("PtyRoutes", () => {
       close: spyOn({ call(_code?: number, _reason?: string) {} }, "call"),
     }
     const disconnected = spyOn({ call() {} }, "call")
-    const streamLeases: Array<string | undefined> = []
     const upgrade = ((createEvents: (c: Context) => WSEvents | Promise<WSEvents>) => async (c: Context) => {
       events = await createEvents(c)
       return new Response(null, { status: 200 })
     }) as unknown as UpgradeWebSocket
     const info: Pty.Info = {
-      id: "pty_private",
-      sessionId: "session_private",
-      title: "Private terminal",
+      id: "pty_workspace",
+      title: "Workspace terminal",
       command: "/bin/sh",
       args: [],
       cwd: "/workspace",
@@ -338,128 +356,60 @@ describe("PtyRoutes", () => {
       guardedSocket = socket
       return { onMessage() {}, onClose: disconnected }
     })
-    const policy: SessionAccessPolicy = {
-      sessionAuthority: "managed-private",
-      authorizeSessionStartStatus: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
-      authorizeSessionStart: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
-      authorize: async () => allowed
-        ? { allowed: true }
-        : { allowed: false, status: 403, code: "private_session", message: "Session is private" },
-      authorizeStream: async (_input, lease) => {
-        streamLeases.push(lease)
-        return allowed
-          ? { allowed: true, lease: "renewable-lease", expiresAt: Date.now() + 1_500 }
-          : { allowed: false, status: 403, code: "private_session", message: "Session is private" }
-      },
-      filterSessions: async (input) => input.sessionIds,
-      authorizePrefix: async () => ({ allowed: true }),
+    const state = { active: true, calls: [] as HostCall[] }
+    const policy = hostPolicy(state)
+    const authorizeHost = policy.authorizeHost!
+    policy.authorizeHost = async (input) => {
+      const decision = await authorizeHost(input)
+      return decision.allowed ? { ...decision, expiresAt: Date.now() + 1_500 } : decision
     }
-    const app = new Hono<{ Variables: RelayHostAuthContext }>()
-    app.use("*", async (c, next) => {
-      c.set("relayHostAuth", relayAuth("editor", "participant"))
-      return await next()
-    })
-    app.route("/", PtyRoutes(upgrade, policy))
 
     try {
-      expect((await app.request("http://localhost/pty_private/connect", {
+      expect((await appFor(policy, "editor", { upgrade }).request("http://localhost/pty_workspace/connect", {
         headers: { connection: "Upgrade", upgrade: "websocket" },
       })).status).toBe(200)
-      events?.onOpen?.(new Event("open"), {
-        raw: rawSocket,
-        close: rawSocket.close,
-      } as unknown as WSContext)
-      // The terminal is attached only once the stream decision has answered,
-      // so nothing of it was readable during the upgrade itself.
+      events?.onOpen?.(new Event("open"), { raw: rawSocket, close: rawSocket.close } as unknown as WSContext)
       expect(guardedSocket).toBeUndefined()
       await new Promise((resolve) => setTimeout(resolve, 0))
       expect(guardedSocket).toBeDefined()
 
-      allowed = false
+      state.active = false
       await new Promise((resolve) => setTimeout(resolve, 1_050))
-      guardedSocket!.send("private output after removal")
+      guardedSocket!.send("output after revocation")
 
       expect(rawSocket.send).not.toHaveBeenCalled()
-      expect(rawSocket.close).toHaveBeenCalledWith(1008, "Session access denied")
+      expect(rawSocket.close).toHaveBeenCalledWith(1008, "Terminal access denied")
       expect(disconnected).toHaveBeenCalledTimes(1)
-      expect(streamLeases).toEqual([undefined, "renewable-lease"])
+      expect(state.calls.map((call) => call.lease)).toEqual([undefined, "host-lease-1"])
+      expect(state.calls[1]?.authorization).toBeUndefined()
     } finally {
       get.mockRestore()
       connect.mockRestore()
     }
   })
 
-  test("keeps a read-only participant reading and drops what they type", async () => {
-    let events: WSEvents | undefined
-    const typed: unknown[] = []
-    const operations: string[] = []
-    const rawSocket = {
-      readyState: 1,
-      bufferedAmount: 0,
-      send: spyOn({ call() {} }, "call"),
-      close: spyOn({ call(_code?: number, _reason?: string) {} }, "call"),
-    }
-    let guardedSocket: Parameters<typeof Pty.connect>[1] | undefined
-    const upgrade = ((createEvents: (c: Context) => WSEvents | Promise<WSEvents>) => async (c: Context) => {
-      events = await createEvents(c)
-      return new Response(null, { status: 200 })
-    }) as unknown as UpgradeWebSocket
-    const info: Pty.Info = {
-      id: "pty_shared",
-      sessionId: "session_shared",
-      title: "Shared terminal",
-      command: "/bin/sh",
-      args: [],
-      cwd: "/workspace",
-      status: "running",
-      pid: 1,
-    }
-    const get = spyOn(Pty, "get").mockReturnValue(info)
-    const connect = spyOn(Pty, "connect").mockImplementation((_id, socket) => {
-      guardedSocket = socket
-      return { onMessage: (message: unknown) => { typed.push(message) }, onClose() {} }
-    })
-    const policy: SessionAccessPolicy = {
-      ...privateSessionPolicy({ session_shared: "reader" }),
-      authorizeStream: async (input) => {
-        operations.push(input.operation)
-        return input.operation === "pty_write"
-          ? { allowed: false, status: 403, code: "session_write_forbidden", message: "Session is shared for reading" }
-          : { allowed: true, lease: "read-lease", expiresAt: Date.now() + 15_000 }
-      },
-    }
-    const app = new Hono<{ Variables: RelayHostAuthContext }>()
-    app.use("*", async (c, next) => {
-      c.set("relayHostAuth", relayAuth("editor", "reader"))
-      return await next()
-    })
-    app.route("/", PtyRoutes(upgrade, policy))
-
+  test("names the agent CLIs installed on this runtime for the terminal picker", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pty-agents-"))
+    const previousPath = process.env.PATH
     try {
-      expect((await app.request("http://localhost/pty_shared/connect", {
-        headers: { connection: "Upgrade", upgrade: "websocket" },
-      })).status).toBe(200)
-      events?.onOpen?.(new Event("open"), { raw: rawSocket, close: rawSocket.close } as unknown as WSContext)
-      await new Promise((resolve) => setTimeout(resolve, 0))
-
-      events?.onMessage?.({ data: "rm -rf /\r" } as MessageEvent, {} as WSContext)
-      await new Promise((resolve) => setTimeout(resolve, 0))
-
-      expect(typed).toEqual([])
-      expect(rawSocket.close).not.toHaveBeenCalled()
-      guardedSocket!.send("output the reader may still see")
-      expect(rawSocket.send).toHaveBeenCalledWith("output the reader may still see")
-      expect(operations).toEqual(["pty_read", "pty_write"])
+      await fs.writeFile(path.join(root, "cursor-agent"), "#!/bin/sh\n", { mode: 0o755 })
+      process.env.PATH = root
+      const response = await appFor(hostPolicy()).request("http://localhost/agents")
+      expect(response.status).toBe(200)
+      await expect(response.json()).resolves.toEqual({ agents: installedTerminalAgents(process.env) })
+      expect(installedTerminalAgents({ PATH: root }, root)).toEqual(["cursor"])
+      const refused = await appFor(hostPolicy(), "viewer").request("http://localhost/agents")
+      expect(refused.status).toBe(403)
     } finally {
-      get.mockRestore()
-      connect.mockRestore()
+      process.env.PATH = previousPath
+      await fs.rm(root, { recursive: true, force: true })
     }
   })
 
-  test("requires and authorizes a persisted session identity for managed PTY creation", async () => {
+  test("creates a terminal with no session and binds the agent hook to the host lease", async () => {
     const create = spyOn(Pty, "create").mockImplementation(async (input) => ({
       id: "pty_created",
-      sessionId: input.sessionId,
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
       title: "Terminal",
       command: "/bin/sh",
       args: [],
@@ -469,164 +419,25 @@ describe("PtyRoutes", () => {
     }))
     const bind = spyOn(Pty, "bindAccessOwner").mockReturnValue(true)
     const commit = spyOn(Pty, "commit").mockReturnValue(undefined)
-    const app = appForActor("editor_a", privateSessionPolicy({ session_a: "editor_a" }))
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = os.tmpdir()
 
     try {
-      const missing = await app.request("http://localhost/", {
+      const created = await appFor(hostPolicy(), "editor", { actorId: "editor_a" }).request("http://localhost/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: "Terminal" }),
       })
-      expect(missing.status).toBe(400)
-      expect(create).not.toHaveBeenCalled()
-
-      const denied = await app.request("http://localhost/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "Terminal", sessionId: "session_b" }),
-      })
-      expect(denied.status).toBe(403)
-      expect(create).not.toHaveBeenCalled()
-
-      const allowed = await app.request("http://localhost/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "Terminal", sessionId: "session_a" }),
-      })
-      expect(allowed.status).toBe(200)
-      await expect(allowed.json()).resolves.toMatchObject({ sessionId: "session_a" })
-      expect(create).toHaveBeenCalledTimes(1)
-      expect(create.mock.calls[0]?.[2]).toMatchObject({
-        sessionId: "session_a",
-        authorityLease: "terminal-capability",
-      })
-    } finally {
-      create.mockRestore()
-      bind.mockRestore()
-      commit.mockRestore()
-    }
-  })
-
-  test("mints the terminal agent-hook capability from a canonical managed-private composition", async () => {
-    // The composition under test is the one every managed host builds, not a
-    // hand-written policy object: a managed runtime whose authority bundle
-    // comes from `managedWorkspaceSessionAccessPolicy` must be able to
-    // authorize the agent-hook stream, or every managed terminal answers 503
-    // `terminal_capability_authority_unavailable`.
-    const streamed: Array<{ sessionId: string; operation: string; lease?: string }> = []
-    const policy = managedWorkspaceSessionAccessPolicy({
-      requireActor: true,
-      authority: {
-        authorizeSessionRead: () => true,
-        authorizeSessionWrite: () => true,
-        authorizeSessionStream: (input, lease) => {
-          streamed.push({
-            sessionId: input.sessionId,
-            operation: input.operation,
-            ...(lease ? { lease } : {}),
-          })
-          return { allowed: true, lease: "authority-lease", expiresAt: 1_700_000_000_000 }
-        },
-        registerSession: () => true,
-        acquireTurn: (input) => ({
-          allowed: true,
-          turnId: input.turnId,
-          leaseId: "turn_lease_1",
-          fencingToken: 1,
-          acquiredAt: Date.now(),
-          expiresAt: Date.now() + 15_000,
-        }),
-        renewTurn: (input) => ({
-          allowed: true,
-          turnId: input.turnId,
-          leaseId: input.leaseId,
-          fencingToken: input.fencingToken + 1,
-          acquiredAt: Date.now(),
-          expiresAt: Date.now() + 15_000,
-        }),
-        releaseTurn: () => ({ released: true }),
-      },
-    })
-    expect(policy.sessionAuthority).toBe("managed-private")
-    const create = spyOn(Pty, "create").mockImplementation(async (input) => ({
-      id: "pty_managed",
-      sessionId: input.sessionId,
-      title: "Terminal",
-      command: "/bin/sh",
-      args: [],
-      cwd: "/workspace",
-      status: "running" as const,
-      pid: 1,
-    }))
-    const bind = spyOn(Pty, "bindAccessOwner").mockReturnValue(true)
-    const commit = spyOn(Pty, "commit").mockReturnValue(undefined)
-
-    try {
-      const created = await appForActor("editor_a", policy).request("http://localhost/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "Terminal", sessionId: "session_a" }),
-      })
       expect(created.status).toBe(200)
-      expect(streamed).toEqual([{ sessionId: "session_a", operation: "agent_lifecycle_write" }])
       expect(create.mock.calls[0]?.[2]).toMatchObject({
-        sessionId: "session_a",
-        authorityLease: "authority-lease",
-        authorityExpiresAt: 1_700_000_000_000,
+        context: { actor: { actorId: "editor_a" }, authority: { workspaceId: "ws_1", role: "editor" } },
+        authorityLease: "host-lease-1",
       })
-      expect(create.mock.calls[0]?.[0]?.env?.CLAXEDO_AGENT_HOOK_TOKEN).toBeTypeOf("string")
+      expect(create.mock.calls[0]?.[0]?.env?.CLAXEDO_AGENT_HOOK_TOKEN).toBe(create.mock.calls[0]?.[2]?.token)
+      expect(bind).toHaveBeenCalledWith("pty_created", "editor_a")
     } finally {
       create.mockRestore()
       bind.mockRestore()
       commit.mockRestore()
-    }
-  })
-
-  test("prevents an editor from restoring another private session's disk scrollback", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pty-private-history-"))
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = path.join(root, "workspace")
-    process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR = path.join(root, "history")
-    const history = await createDiskHistory({
-      directory: process.env.WORKSPACE_RUNTIME_DIRECTORY,
-      id: "pty_private_a",
-      limit: 1024,
-      sessionId: "session_a",
-    })
-    history.append("editor A private scrollback")
-    await history.close()
-    const create = spyOn(Pty, "create").mockImplementation(async (input) => ({
-      id: "pty_replacement",
-      sessionId: input.sessionId,
-      title: "Terminal",
-      command: "/bin/sh",
-      args: [],
-      cwd: process.env.WORKSPACE_RUNTIME_DIRECTORY!,
-      status: "running" as const,
-      pid: 1,
-    }))
-    const policy = privateSessionPolicy({ session_a: "editor_a", session_b: "editor_b" })
-
-    try {
-      const response = await appForActor("editor_b", policy).request("http://localhost/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: "session_b",
-          env: { previousPtyId: "pty_private_a" },
-        }),
-      })
-
-      expect(response.status).toBe(403)
-      await expect(response.json()).resolves.toEqual({
-        error: {
-          code: "pty_history_forbidden",
-          message: "PTY history belongs to another session",
-        },
-      })
-      expect(create).not.toHaveBeenCalled()
-    } finally {
-      create.mockRestore()
-      await fs.rm(root, { recursive: true, force: true })
     }
   })
 

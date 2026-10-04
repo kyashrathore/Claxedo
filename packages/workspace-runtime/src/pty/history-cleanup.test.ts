@@ -6,7 +6,6 @@ import {
   cleanupOrphanedHistory,
   createDiskHistory,
   historyPath,
-  readHistorySessionId,
   renameHistory,
 } from "./history-disk"
 
@@ -82,24 +81,6 @@ describe("cleanupOrphanedHistory", () => {
     expect(await fs.readFile(historyPath(directory, "pty_live"), "utf8")).toContain(
       "output after the sweep",
     )
-  })
-})
-
-describe("PTY history session ownership", () => {
-  test("persists ownership and carries it across cold-restore re-keying", async () => {
-    const history = await createDiskHistory({
-      directory: "/proj",
-      id: "pty_old",
-      limit: 1024,
-      sessionId: "session_private",
-    })
-    history.append("private scrollback")
-    await history.close()
-
-    expect(await readHistorySessionId("/proj", "pty_old")).toBe("session_private")
-    await renameHistory("/proj", "pty_old", "pty_new")
-    expect(await readHistorySessionId("/proj", "pty_old")).toBeUndefined()
-    expect(await readHistorySessionId("/proj", "pty_new")).toBe("session_private")
   })
 })
 

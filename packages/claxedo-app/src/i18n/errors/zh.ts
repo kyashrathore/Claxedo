@@ -2,6 +2,7 @@ import type { ErrorMessages } from "./model"
 
 export default {
   auth: ["请重新登录", "登录已过期或被拒绝。请重新登录后继续。"],
+  forbidden: ["无权访问", "你的账户无权访问此内容。请向其所有者申请访问权限。"],
   rate_limit: ["请求过多", "服务器正在限制请求。请稍候再试。"],
   network: ["无法连接服务器", "无法连接到服务器。请检查网络连接后重试。"],
   not_found: ["未找到", "该内容已不存在，可能已被删除。"],

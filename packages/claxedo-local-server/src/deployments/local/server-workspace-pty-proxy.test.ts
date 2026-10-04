@@ -20,9 +20,9 @@ import { setLocalHostEndpoints } from "./host-session-authority"
  * Who may attach to a terminal on a machine that serves its own user and
  * relayed org members on one loopback listener.
  *
- * The terminal is the surface the session policy's prose is about — a reader
- * without a grant on the session must not see what the agent drove — and it is
- * the one surface that never reaches the runtime's own routes, because the
+ * A terminal is the workspace's: a relayed caller reaches it only while the
+ * control plane still holds its workspace token live. It is the one surface
+ * that never reaches the runtime's own routes, because the
  * runtime's WebSocket upgrade is bound to a `@hono/node-ws` instance no
  * listener ever serves. So every case below is the same attach twice, once
  * with the relay's marks and once without, against a real listener and a real
@@ -64,10 +64,8 @@ let proxyOnly: { port: number; close: () => Promise<void> } | undefined
 let port: number
 let origin: string
 const authorityCalls: AuthorityCall[] = []
-/** Actors the fake control plane admits to the session named in the request. */
+/** Actors whose workspace token the fake control plane still holds live. */
 let admitted = new Set<string>()
-/** Actors it admits for reading only — the share that buys eyes and no keyboard. */
-let readOnly = new Set<string>()
 /** How long a stream lease it hands out; the deadline an open socket is held to. */
 let leaseMs = 60_000
 /** Terminals a case started. Nothing else retires them: they belong to the process, not to the server. */
@@ -118,11 +116,7 @@ function listen(target: Server) {
   })
 }
 
-/**
- * The control plane's session authority, reduced to the rule this surface
- * depends on: a session is reachable by the actors it was shared to and by
- * nobody else.
- */
+/** The control plane's host authority, reduced to whether the caller's workspace token is still live. */
 function fakeAuthority() {
   return createServer((request, response) => {
     let raw = ""
@@ -145,9 +139,7 @@ function fakeAuthority() {
         ...(body.writeClass ? { writeClass: body.writeClass } : {}),
         ...(body.lease ? { lease: body.lease } : {}),
       })
-      const allowed = !!actor
-        && admitted.has(actor.actorId)
-        && !(body.action === "write" && readOnly.has(actor.actorId))
+      const allowed = !!actor && admitted.has(actor.actorId)
       response.statusCode = allowed ? 200 : 403
       response.setHeader("content-type", "application/json")
       response.end(allowed
@@ -360,7 +352,6 @@ beforeEach(async () => {
   process.env.CLAXEDO_DATA_DIR = dataDir
   authorityCalls.length = 0
   admitted = new Set([OWNER.actorId])
-  readOnly = new Set()
   leaseMs = 60_000
 
   authority = fakeAuthority()
@@ -418,7 +409,7 @@ async function startTerminal(workspace: string, sessionId: string) {
 }
 
 describe("attaching to an in-process terminal by workspace id", () => {
-  test("a relayed member the authority does not place on the terminal's session is refused the upgrade", async () => {
+  test("a relayed member whose workspace token the authority refuses is refused the upgrade", async () => {
     const workspace = await resolveWorkspace()
     const pty = await startTerminal(workspace, "ses_shared")
     const target = `/api/wr/pty/${pty}/connect?workspaceId=${workspace}`
@@ -429,8 +420,8 @@ describe("attaching to an in-process terminal by workspace id", () => {
     expect(member).toBe(403)
     expect(owner).toBe(101)
     expect(authorityCalls.map((call) => `${call.action}:${call.sessionId}:${call.actorId}`)).toEqual([
-      `read:ses_shared:${MEMBER.actorId}`,
-      `read:ses_shared:${OWNER.actorId}`,
+      `host_read:undefined:${MEMBER.actorId}`,
+      `host_read:undefined:${OWNER.actorId}`,
     ])
   }, 60_000)
 
@@ -456,8 +447,8 @@ describe("attaching to an in-process terminal by workspace id", () => {
 })
 
 /**
- * What the socket does after it is open, which is the whole of P-82: an
- * admission is not a permission to type, and it is not a permission that lasts.
+ * What the socket does after it is open: an admission is not a permission that
+ * lasts.
  * Every case below runs against the real listener, the real proxy and a real
  * shell.
  */
@@ -474,29 +465,6 @@ describe("what an attached terminal may do while it is attached", () => {
     return socket
   }
 
-  test("a share that buys reading keeps its output and cannot type", async () => {
-    const workspace = await resolveWorkspace()
-    const pty = await startTerminal(workspace, "ses_shared")
-    const target = `/api/wr/pty/${pty}/connect?workspaceId=${workspace}`
-    admitted.add(MEMBER.actorId)
-    readOnly.add(MEMBER.actorId)
-
-    const reader = await attach(target, relayed("member-token"))
-    const owner = await attach(target, relayed("owner-token"))
-    expect(await owner.until(() => PROMPT.test(owner.output()))).toBe(true)
-
-    reader.send("echo pwned\r")
-    await new Promise((resolve) => setTimeout(resolve, 750))
-    owner.send("echo alive\r")
-
-    expect(await reader.until(() => reader.output().includes("alive"))).toBe(true)
-    expect(reader.output()).not.toContain("pwned")
-    expect(reader.open()).toBe(true)
-    const memberCalls = authorityCalls.filter((call) => call.actorId === MEMBER.actorId)
-    expect(memberCalls.some((call) => call.action === "write" && call.stream === true)).toBe(true)
-    expect(memberCalls.every((call) => call.sessionId === "ses_shared")).toBe(true)
-  }, 60_000)
-
   test("the owner types and the shell answers", async () => {
     const workspace = await resolveWorkspace()
     const pty = await startTerminal(workspace, "ses_shared")
@@ -505,10 +473,7 @@ describe("what an attached terminal may do while it is attached", () => {
     owner.send("echo terminal-is-live\r")
 
     expect(await owner.until(() => /terminal-is-live\r?\n/.test(owner.output()))).toBe(true)
-    expect(authorityCalls.map((call) => `${call.action}:${call.stream === true}`)).toEqual([
-      "read:true",
-      "write:true",
-    ])
+    expect(authorityCalls.map((call) => call.action)).toEqual(["host_read"])
   }, 60_000)
 
   test("revoking a grant closes the socket it already holds, by the lease deadline", async () => {
@@ -524,7 +489,7 @@ describe("what an attached terminal may do while it is attached", () => {
 
     expect(closed).toBe(true)
     expect(owner.closeCode()).toBe(1008)
-    expect(authorityCalls.some((call) => call.stream === true && call.lease === "stream_lease")).toBe(true)
+    expect(authorityCalls.some((call) => call.action === "host_read" && call.lease === "stream_lease")).toBe(true)
   }, 60_000)
 
   test("the machine's own user reads and types with no authority asked", async () => {
@@ -566,8 +531,8 @@ describe("attaching over the relay-shaped workspace path", () => {
     expect(owner).toBe(101)
     expect(direct).toBe(101)
     expect(authorityCalls.map((call) => `${call.action}:${call.actorId}`)).toEqual([
-      `read:${MEMBER.actorId}`,
-      `read:${OWNER.actorId}`,
+      `host_read:${MEMBER.actorId}`,
+      `host_read:${OWNER.actorId}`,
     ])
   }, 60_000)
 })

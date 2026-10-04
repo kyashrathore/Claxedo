@@ -198,6 +198,7 @@ function privateSessionPolicy(owners: Record<string, string>): SessionAccessPoli
       : { allowed: false, status: 403, code: "private_session", message: "Session is private" },
     filterSessions: async (input) => input.sessionIds.filter((sessionId) => allowed(input.actor?.actorId, sessionId)),
     authorizePrefix: async () => ({ allowed: true }),
+    authorizeHost: managedPolicy.authorizeHost,
   }
 }
 
@@ -258,7 +259,7 @@ const managedPolicy = managedWorkspaceSessionAccessPolicy({
 })
 managedPolicy.authorizeHost = async (input) =>
   input.authority && input.authority.sessionId === undefined
-    ? { allowed: true }
+    ? { allowed: true, lease: input.lease ? `${input.lease}:renewed` : "terminal-lease", expiresAt: Date.now() + 15_000 }
     : { allowed: false, status: 403, code: "host_authority_denied", message: "Current host authority is required" }
 
 function managedApp(
@@ -356,7 +357,7 @@ describe("AgentHookRoutes", () => {
     })
   })
 
-  test("keeps lifecycle prompt and assistant content private between editors", async () => {
+  test("lets only a terminal's creator write its lifecycle while every workspace editor reads it", async () => {
     const terminalId = "pty_private_hook"
     const get = spyOn(Pty, "get").mockImplementation((id) => id === terminalId
       ? {
@@ -404,7 +405,7 @@ describe("AgentHookRoutes", () => {
         },
       })
 
-      expect((await editorB.request(`http://localhost/terminal-session?terminalId=${terminalId}`)).status).toBe(403)
+      expect((await editorB.request(`http://localhost/terminal-session?terminalId=${terminalId}`)).status).toBe(200)
       expect((await editorB.request("http://localhost/agent-lifecycle", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -811,7 +812,7 @@ describe("AgentHookRoutes", () => {
 
       const attacker = await managedApp("actor_attacker", "viewer", "ses_shared").request("http://localhost/terminal-session?terminalId=pty_metadata")
       expect(attacker.status).toBe(403)
-      await expect(attacker.json()).resolves.toMatchObject({ error: { code: "session_scope_denied" } })
+      await expect(attacker.json()).resolves.toMatchObject({ error: { code: "relay_scope_denied" } })
 
       const ownerRead = await managedApp("actor_owner").request("http://localhost/terminal-session?terminalId=pty_metadata")
       expect(ownerRead.status).toBe(200)
@@ -901,7 +902,6 @@ describe("AgentHookRoutes", () => {
         actor: { actorId: "actor_owner", actorKind: "human" as const },
         authority: { managed: true as const, workspaceId: "ws_1", orgId: "org_1", role: "editor" as const },
       },
-      sessionId: `session_${terminalId}`,
       authorityLease: `lease_${terminalId}`,
       authorityExpiresAt: Date.now() + 15_000,
     })
@@ -968,7 +968,6 @@ describe("AgentHookRoutes", () => {
             actor: { actorId: "actor_owner", actorKind: "human" },
             authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "editor" },
           },
-          sessionId: "session_private",
           authorityLease: "terminal-lease",
           authorityExpiresAt: Date.now() + 15_000,
         }
@@ -1003,7 +1002,7 @@ describe("AgentHookRoutes", () => {
 
   test("revokes a terminal callback before publication when capability renewal is denied", async () => {
     const policy = { ...managedPolicy }
-    policy.authorizeStream = async () => ({
+    policy.authorizeHost = async () => ({
       allowed: false,
       status: 403,
       code: "runtime_access_token_revoked",
@@ -1027,7 +1026,6 @@ describe("AgentHookRoutes", () => {
         actor: { actorId: "actor_revoked", actorKind: "human" },
         authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "editor" },
       },
-      sessionId: "session_revoked",
       authorityLease: "expired-lease",
       authorityExpiresAt: Date.now() - 1,
     })

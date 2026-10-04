@@ -9,6 +9,7 @@ declare module "@tanstack/solid-query" {
 
 const RETRYABLE: Readonly<Record<ErrorClass, boolean>> = {
   auth: false,
+  forbidden: false,
   rate_limit: true,
   network: true,
   not_found: false,
@@ -40,8 +41,11 @@ export class ServerError extends Error implements AppError {
   }
 }
 
-function errorClassForStatus(status: number): ErrorClass {
-  if (status === 401 || status === 403) return "auth"
+const SIGN_IN_REFUSAL = /(^|_)(token|proof|credential)(_|$)/
+
+function errorClassForStatus(status: number, code?: string): ErrorClass {
+  if (status === 401) return "auth"
+  if (status === 403) return code !== undefined && SIGN_IN_REFUSAL.test(code) ? "auth" : "forbidden"
   if (status === 404) return "not_found"
   if (status === 409) return "conflict"
   if (status === 429) return "rate_limit"
@@ -83,7 +87,7 @@ export function statusError(status: number, text: string, label = "Request"): Se
 
 export function errorFromBody(status: number, body: ErrorBody, label = "Request"): ServerError {
   return new ServerError({
-    class: errorClassForStatus(status),
+    class: errorClassForStatus(status, body.code),
     message: body.message ?? `${label} failed with status ${status}`,
     status,
     ...(body.code !== undefined ? { code: body.code } : {}),
@@ -166,7 +170,7 @@ export function isRetryableServerError(error: unknown): boolean {
   return error instanceof ServerError ? error.retryable : false
 }
 
-const ERROR_CLASSES: ReadonlySet<string> = new Set<ErrorClass>(["auth", "rate_limit", "network", "not_found", "conflict", "invalid", "internal"])
+const ERROR_CLASSES: ReadonlySet<string> = new Set<ErrorClass>(["auth", "forbidden", "rate_limit", "network", "not_found", "conflict", "invalid", "internal"])
 
 export function isAppError(value: unknown): value is AppError {
   if (value instanceof ServerError) return true

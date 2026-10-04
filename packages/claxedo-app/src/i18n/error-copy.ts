@@ -31,6 +31,8 @@ function errorTranslations(messages: ErrorMessages): Record<ErrorKey, string> {
     "i18n.error.reload": messages.reload,
     "i18n.error.auth.title": messages.auth[0],
     "i18n.error.auth.message": messages.auth[1],
+    "i18n.error.forbidden.title": messages.forbidden[0],
+    "i18n.error.forbidden.message": messages.forbidden[1],
     "i18n.error.rate_limit.title": messages.rate_limit[0],
     "i18n.error.rate_limit.message": messages.rate_limit[1],
     "i18n.error.network.title": messages.network[0],

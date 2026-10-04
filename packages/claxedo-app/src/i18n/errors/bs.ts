@@ -2,6 +2,7 @@ import type { ErrorMessages } from "./model"
 
 export default {
   auth: ["Ponovo se prijavite", "Vaša prijava je istekla ili je odbijena. Ponovo se prijavite da nastavite."],
+  forbidden: ["Nije dozvoljeno", "Vaš račun nema pristup ovome. Zatražite pristup od vlasnika."],
   rate_limit: ["Previše zahtjeva", "Server ograničava zahtjeve. Sačekajte trenutak, pa pokušajte ponovo."],
   network: ["Server nije dostupan", "Nije moguće doći do servera. Provjerite vezu, pa pokušajte ponovo."],
   not_found: ["Nije pronađeno", "Ovo više ne postoji. Možda je obrisano."],

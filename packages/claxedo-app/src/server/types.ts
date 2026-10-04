@@ -19,7 +19,7 @@ import type { HarnessSelection } from "../lib/harness-selection"
 import type { MachinePrincipal } from "./access-types"
 import type { MachineId, PlacementId, ProjectId, RequestId, SessionId, UserId } from "./ids"
 
-export type ErrorClass = "auth" | "rate_limit" | "network" | "not_found" | "conflict" | "invalid" | "internal"
+export type ErrorClass = "auth" | "forbidden" | "rate_limit" | "network" | "not_found" | "conflict" | "invalid" | "internal"
 
 export type AppError = {
   readonly class: ErrorClass

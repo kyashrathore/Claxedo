@@ -2,17 +2,15 @@ import { readField } from "@claxedo/helpers/readers"
 import { contractMismatch, ServerError, responseErrorCode } from "./errors"
 import type { PlacementId, TerminalId } from "./ids"
 import type { TerminalsApi } from "./api"
-import type { Terminal, TerminalAttachInput, TerminalCreateInput, TerminalPresence, TerminalStream } from "./terminal-types"
+import type { Terminal, TerminalAgentId, TerminalAttachInput, TerminalCreateInput, TerminalPresence, TerminalStream } from "./terminal-types"
 import { jsonInit, withQuery, type RuntimeRoute, type Transport } from "./transport"
 import type { Workspaces } from "./workspaces"
-import { agentStatusFromWire, PTY_NOT_FOUND, PTY_PATH, TERMINAL_HOOK_PATH, terminalFrameOf, terminalFromWire } from "./wire/terminals"
+import { fetchQuery } from "./fetch-query"
+import { queryKeys } from "./query-keys"
+import type { FetchQuery } from "./types"
+import { agentStatusFromWire, PTY_AGENTS_PATH, PTY_NOT_FOUND, PTY_PATH, TERMINAL_HOOK_PATH, terminalAgentsFromWire, terminalFrameOf, terminalFromWire } from "./wire/terminals"
 
 const PROTOCOL_ERROR_CLOSE = 1002
-const TERMINAL_SESSION_REQUIRED = "terminal_session_required"
-
-export function isTerminalSessionRequired(error: unknown): boolean {
-  return error instanceof ServerError && error.code === TERMINAL_SESSION_REQUIRED
-}
 
 function attachSocket(socket: WebSocket, input: TerminalAttachInput): TerminalStream {
   const decoder = new TextDecoder()
@@ -38,14 +36,9 @@ function ptyPath(terminalId: TerminalId) {
 }
 
 async function createPty(transport: Transport, where: RuntimeRoute, input: TerminalCreateInput): Promise<Terminal> {
-  const sessionId = input.sessionId ?? (where.remote ? input.openSessionId : undefined)
-  if (where.remote && !sessionId) {
-    throw new ServerError({ class: "invalid", code: TERMINAL_SESSION_REQUIRED, message: "A terminal on a placement reached over the relay belongs to a session, and none is open" })
-  }
   const body = {
     title: input.title,
     createRequestId: input.createRequestId,
-    ...(sessionId ? { sessionId } : {}),
     ...(input.command ? { initialCommand: input.command } : {}),
     env: {
       CLAXEDO_PORT: new URL(transport.serverUrl).port,
@@ -69,6 +62,16 @@ async function presenceOf(transport: Transport, where: RuntimeRoute, terminalId:
   return (await responseErrorCode(response)) === PTY_NOT_FOUND ? "gone" : "unreachable"
 }
 
+export function terminalQueries(transport: Transport, workspaces: Workspaces) {
+  const agents = (placementId: PlacementId): FetchQuery<readonly TerminalAgentId[]> =>
+    fetchQuery(queryKeys.terminalAgents(transport.serverUrl, placementId), async () => {
+      const answer = terminalAgentsFromWire(await transport.runtimeJson(await workspaces.route(placementId), PTY_AGENTS_PATH))
+      if (!answer) throw contractMismatch("terminal agents")
+      return answer
+    })
+  return { agents }
+}
+
 export function createTerminalsApi(transport: Transport, workspaces: Workspaces): TerminalsApi {
   const route = (placementId: PlacementId) => workspaces.route(placementId)
   return {
@@ -78,7 +81,6 @@ export function createTerminalsApi(transport: Transport, workspaces: Workspaces)
       return rows.flatMap((row) => terminalFromWire(row, placementId) ?? [])
     },
     create: async (input) => createPty(transport, await route(input.placementId), input),
-    requiresOpenSession: (placementId) => workspaces.catalog()?.placements.find((record) => record.placement.id === placementId)?.route.remote === true,
     update: async (placementId, terminalId, input) => {
       await transport.runtimeJson(await route(placementId), ptyPath(terminalId), jsonInit("PUT", input))
     },

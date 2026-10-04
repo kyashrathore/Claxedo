@@ -307,7 +307,6 @@ export async function startTerminal(
     directory: cwd,
     id,
     limit: HISTORY_LIMIT,
-    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
   })
   // Fire-and-forget, once per process, after the first terminal exists.
   sweepStaleHistoryOnce()

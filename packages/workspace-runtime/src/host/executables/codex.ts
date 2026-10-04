@@ -1,5 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
+import { isExecutableFile, resolveOnPath } from "./path-lookup"
 
 export const CODEX_INSTALL_HINT =
   "Install it with `npm install -g @openai/codex` (or see https://developers.openai.com/codex/cli), then restart Claxedo."
@@ -10,47 +11,6 @@ const NATIVE_TARGETS: Partial<Record<NodeJS.Platform, Partial<Record<NodeJS.Arch
   darwin: { x64: "x86_64-apple-darwin", arm64: "aarch64-apple-darwin" },
   linux: { x64: "x86_64-unknown-linux-musl", arm64: "aarch64-unknown-linux-musl" },
   win32: { x64: "x86_64-pc-windows-msvc", arm64: "aarch64-pc-windows-msvc" },
-}
-
-function isExecutableFile(candidate: string, platform: NodeJS.Platform): boolean {
-  try {
-    if (!fs.statSync(candidate).isFile()) return false
-    if (platform === "win32") return true
-    fs.accessSync(candidate, fs.constants.X_OK)
-    return true
-  } catch {
-    return false
-  }
-}
-
-function windowsPathExtensions(env: NodeJS.ProcessEnv): string[] {
-  return (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
-    .split(";")
-    .map((extension) => extension.trim().toLowerCase())
-    .filter(Boolean)
-}
-
-function resolveOnPath(
-  command: string,
-  platform: NodeJS.Platform,
-  env: NodeJS.ProcessEnv,
-): string | undefined {
-  const extensions = platform === "win32" ? windowsPathExtensions(env) : [""]
-  const hasExtension = extensions.some((extension) => command.toLowerCase().endsWith(extension))
-  const names = platform === "win32" && !hasExtension
-    ? extensions.map((extension) => `${command}${extension}`)
-    : [command]
-  const delimiter = platform === "win32" ? ";" : path.delimiter
-
-  for (const entry of (env.PATH ?? env.Path ?? "").split(delimiter)) {
-    const directory = entry.trim().replace(/^"(.*)"$/, "$1")
-    if (!directory) continue
-    for (const name of names) {
-      const candidate = path.join(directory, name)
-      if (isExecutableFile(candidate, platform)) return candidate
-    }
-  }
-  return undefined
 }
 
 /**

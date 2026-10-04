@@ -125,7 +125,7 @@ Root runtime value exports:
 `FIRST_PARTY_MCP_PATH`, `FIRST_PARTY_MCP_SERVER_NAME`, `Pty`, `PTY_NOT_FOUND_REFUSAL`,
 `WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER`,
 `WorkspaceRuntimeRouteManifest`, `WorkspaceRuntimeRoutes`, `WorkspaceWorktreeManager`,
-`authorizePtyAttach`, `createAuthorizedPtyConnection`,
+`admitTerminal`, `createAuthorizedPtyConnection`,
 `isPtyStreamSocket`, `ptyAccessRefusalResponse`, `ptyStreamAccess`, 
 `createRuntimeCredentialIssuer`, `createWorkspaceHost`,
 `createWorkspaceRuntimeApp`, `createWorkspaceRuntimeJwtManagementAuth`, `embeddedWorkspaceRuntimeExposure`,
@@ -181,7 +181,7 @@ projection compose those concerns outside the OSS runtime boundary.
 | `GET  /api/wr/events` | [`routes/events.ts`](src/routes/events.ts) | exposure-dependent runtime auth; a principal the workspace admits reads unscoped and the session authority decides per session what reaches it (the workspace's owner is not special); a refused principal reads one session under `?sessionID=` |
 | `*    /api/wr/file/*`, `GET /api/wr/find/file` | [`routes/file.ts`](src/routes/file.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/diff/*`, `* /api/wr/git/*` | [`routes/diff.ts`](src/routes/diff.ts), [`routes/git-source.ts`](src/routes/git-source.ts) | exposure-dependent runtime auth |
-| `*    /api/wr/pty/*` | [`routes/pty.ts`](src/routes/pty.ts) | exposure-dependent runtime auth |
+| `*    /api/wr/pty/*` | [`routes/pty.ts`](src/routes/pty.ts) | exposure-dependent runtime auth; a terminal is the workspace's: a workspace token with role editor or above reaches every terminal, rechecked with the host authority (`pty/terminal-authority.ts`); a session-scoped token reaches none (`relay_scope_denied`), a viewer none (`terminal_role_denied`); a `sessionId` on create is only a label |
 | `*    /api/wr/hook/*` | [`routes/agent-hook.ts`](src/routes/agent-hook.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/worktrees/*` | [`routes/worktree.ts`](src/routes/worktree.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/execution-env/*` | [`routes/execution-env.ts`](src/routes/execution-env.ts), [`routes/mcp-stdio-relay.ts`](src/routes/mcp-stdio-relay.ts) | relay exposure only: a `cloud-vm` Relay Host Token with a `session_id` claim and role editor or above; no control-plane call per request |

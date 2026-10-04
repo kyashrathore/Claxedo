@@ -2,6 +2,7 @@ import type { ErrorMessages } from "./model"
 
 export default {
   auth: ["Reconnectez-vous", "Votre connexion a expiré ou a été refusée. Reconnectez-vous pour continuer."],
+  forbidden: ["Non autorisé", "Votre compte n'a pas accès à ceci. Demandez l'accès à son propriétaire."],
   rate_limit: ["Trop de requêtes", "Le serveur limite les requêtes. Patientez un instant, puis réessayez."],
   network: ["Serveur injoignable", "Le serveur est injoignable. Vérifiez la connexion, puis réessayez."],
   not_found: ["Introuvable", "Cet élément n'existe plus. Il a peut-être été supprimé."],

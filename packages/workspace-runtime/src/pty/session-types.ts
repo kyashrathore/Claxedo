@@ -13,7 +13,6 @@ export type AgentHookAccessBinding = {
     actor: SessionAccessActor
     authority: SessionWorkspaceAuthority
   }
-  sessionId: string
   authorityLease: string
   authorityExpiresAt: number
 }

@@ -227,7 +227,7 @@ test("session reads: a harness without todos reads as no todos, and any other to
   expect(await startSessionReads(opened(unsupported).context, ref, shape).todos).toEqual([])
 
   const refused = { error: { status: 403, code: "session_access_denied", message: "Not yours" } }
-  await expect(startSessionReads(opened(refused).context, ref, shape).todos).rejects.toMatchObject({ class: "auth", code: "session_access_denied" })
+  await expect(startSessionReads(opened(refused).context, ref, shape).todos).rejects.toMatchObject({ class: "forbidden", code: "session_access_denied" })
 })
 
 test("session reads: a cold open of a cloud session no list page has named asks its host once, and a session host serves all of it", async () => {

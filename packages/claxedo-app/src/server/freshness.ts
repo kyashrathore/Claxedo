@@ -43,6 +43,7 @@ export const freshness = {
   gitBases: fileOwned,
   gitDiff: fileOwned,
   gitDiffFile: fileOwned,
+  terminalAgents: { kind: "once", reason: "the agent CLIs installed in a workspace image do not change while the app runs" },
   accounts: { kind: "once", reason: "accounts change only through this app's account and provider-connect writes, which invalidate the list" },
   accountsEffective: { kind: "once", reason: "under the accounts prefix, so every account write refreshes it with the list" },
   machineLogins: { kind: "once", reason: "a login scan starts each harness CLI; it is re-read only by an explicit check or rescan, which write the result" },

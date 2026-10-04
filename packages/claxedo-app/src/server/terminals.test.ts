@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
-import { placementId, sessionId } from "./ids"
-import { createTerminalsApi, isTerminalSessionRequired } from "./terminals"
+import { placementId } from "./ids"
+import { createTerminalsApi } from "./terminals"
 import type { Transport } from "./transport"
 import type { Workspaces } from "./workspaces"
 
@@ -27,29 +27,10 @@ function world() {
   return { api: createTerminalsApi(transport, workspaces), bodies }
 }
 
-test("a terminal on a placement reached over the relay carries the session open in the route", async () => {
+test("a terminal on a placement reached over the relay is the workspace's: it is created with no session", async () => {
   const { api, bodies } = world()
-  await api.create({ placementId: relayed, title: "Shell", createRequestId: "c1", openSessionId: sessionId("ses_open") })
-  expect(bodies.map((body) => body.sessionId)).toEqual(["ses_open"])
-})
-
-test("a terminal on a placement reached over the relay with no session open is refused before anything is sent", async () => {
-  const { api, bodies } = world()
-  const outcome = await api.create({ placementId: relayed, title: "Shell", createRequestId: "c2" })
-    .then(() => "created", (error: unknown) => (isTerminalSessionRequired(error) ? "session required" : "another refusal"))
-  expect(outcome).toBe("session required")
-  expect(bodies).toEqual([])
-})
-
-test("a terminal on this machine's own placement is created as before, with no session", async () => {
-  const { api, bodies } = world()
-  await api.create({ placementId: local, title: "Shell", createRequestId: "c3", openSessionId: sessionId("ses_open") })
-  await api.create({ placementId: local, title: "Shell", createRequestId: "c4" })
+  await api.create({ placementId: relayed, title: "Shell", createRequestId: "c1" })
+  await api.create({ placementId: local, title: "Shell", createRequestId: "c2" })
   expect(bodies.map((body) => body.sessionId)).toEqual([undefined, undefined])
-})
-
-test("a placement reached over the relay requires an open session before a terminal is asked for; this machine's does not", () => {
-  const { api } = world()
-  expect(api.requiresOpenSession(relayed)).toBe(true)
-  expect(api.requiresOpenSession(local)).toBe(false)
+  expect(bodies.map((body) => body.createRequestId)).toEqual(["c1", "c2"])
 })

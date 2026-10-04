@@ -6,7 +6,6 @@ import {
   toAppError,
   type PlacementId,
   type Server,
-  type SessionId,
   type ServerEvent,
   type Terminal,
   type TerminalAgentStatus,
@@ -32,13 +31,10 @@ export type TerminalStore = {
 
 export type TerminalLaunch = { readonly command?: string; readonly title?: string }
 
-export type OpenSession = { readonly placementId: PlacementId; readonly sessionId: SessionId }
-
 export type TerminalStoreInput = {
   readonly server: Server
   readonly placementId: PlacementId
   readonly defaultTitle: () => string
-  readonly openSession: () => OpenSession | undefined
 }
 
 type TerminalRows = ReturnType<typeof createTerminalRows>
@@ -115,15 +111,12 @@ type StoreParts = {
   readonly placementId: PlacementId
   readonly rows: TerminalRows
   readonly defaultTitle: () => string
-  readonly openSession: () => OpenSession | undefined
 }
 
 async function createTerminal(input: StoreParts, launch: TerminalLaunch | undefined): Promise<Terminal> {
   const title = launch?.title ?? input.defaultTitle()
   const command = launch?.command ? { command: launch.command } : {}
-  const open = input.openSession()
-  const session = open?.placementId === input.placementId ? { openSessionId: open.sessionId } : {}
-  const terminal = await input.api.create({ placementId: input.placementId, title, createRequestId: uuid(), ...command, ...session })
+  const terminal = await input.api.create({ placementId: input.placementId, title, createRequestId: uuid(), ...command })
   input.rows.upsert(terminal)
   return terminal
 }
@@ -138,7 +131,6 @@ async function recoverTerminal(
     title: previous?.title ?? input.defaultTitle(),
     createRequestId: uuid(),
     previousTerminalId: terminalId,
-    ...(previous?.sessionId ? { sessionId: previous.sessionId } : {}),
   })
   batch(() => {
     input.rows.markLost(terminalId)
@@ -166,7 +158,7 @@ export function createTerminalStore(input: TerminalStoreInput): TerminalStore {
     load: load.state,
     rows: rows.all,
     row: rows.find,
-    create: (launch) => createTerminal({ api, placementId, rows, defaultTitle: input.defaultTitle, openSession: input.openSession }, launch),
+    create: (launch) => createTerminal({ api, placementId, rows, defaultTitle: input.defaultTitle }, launch),
     drop: rows.remove,
     close: async (terminalId) => {
       await api.remove(placementId, terminalId).catch((cause: unknown) => {
@@ -180,6 +172,6 @@ export function createTerminalStore(input: TerminalStoreInput): TerminalStore {
     },
     clearSeen: rows.clearSeen,
     lost: rows.lost,
-    recover: (terminalId) => recoverTerminal({ api, placementId, rows, defaultTitle: input.defaultTitle, openSession: input.openSession }, terminalId),
+    recover: (terminalId) => recoverTerminal({ api, placementId, rows, defaultTitle: input.defaultTitle }, terminalId),
   }
 }

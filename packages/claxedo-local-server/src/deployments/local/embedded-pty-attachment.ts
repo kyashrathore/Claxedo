@@ -4,7 +4,7 @@ import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import type { SessionAccessPolicy } from "@claxedo/session-core"
 import {
-  authorizePtyAttach,
+  admitTerminal,
   createAuthorizedPtyConnection,
   Pty,
   ptyAccessRefusalResponse,
@@ -58,7 +58,7 @@ export async function attachEmbeddedPty(input: EmbeddedPtyAttachInput, policy: S
     method: input.method,
     path: input.path,
   })
-  const admission = await authorizePtyAttach({ policy, access, info })
+  const admission = await admitTerminal(policy, access)
   if (!admission.allowed) return { ok: false, response: ptyAccessRefusalResponse(admission) }
   return {
     ok: true,

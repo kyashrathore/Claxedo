@@ -21,6 +21,7 @@ import { organizationQueries } from "./organizations"
 import { projectQueries } from "./projects"
 import { queryKeys } from "./query-keys"
 import { taskQueries } from "./tasks"
+import { terminalQueries } from "./terminals"
 import type { Transport } from "./transport"
 import type { FetchQuery, Placement } from "./types"
 import { usageQueries } from "./usage"
@@ -53,6 +54,7 @@ export function createQueries(transport: Transport, workspaces: Workspaces, acco
     tasks: taskQueries(transport),
     codeHost: cloud.codeHost,
     cloud: cloud.cloud,
+    terminals: terminalQueries(transport, workspaces),
     files: fileQueries(transport, workspaces),
     git: gitQueries(transport, workspaces),
     harnesses: harnessQueries(transport, workspaces),

@@ -46,6 +46,7 @@ import type {
 } from "./marketplace-types"
 import type {
   Terminal,
+  TerminalAgentId,
   TerminalAgentStatus,
   TerminalAttachInput,
   TerminalCreateInput,
@@ -125,7 +126,6 @@ export type PlacementsApi = {
 export type TerminalsApi = {
   readonly list: (placementId: PlacementId) => Promise<readonly Terminal[]>
   readonly create: (input: TerminalCreateInput) => Promise<Terminal>
-  readonly requiresOpenSession: (placementId: PlacementId) => boolean
   readonly update: (placementId: PlacementId, terminalId: TerminalId, input: TerminalUpdateInput) => Promise<void>
   readonly remove: (placementId: PlacementId, terminalId: TerminalId) => Promise<void>
   readonly presence: (placementId: PlacementId, terminalId: TerminalId) => Promise<TerminalPresence>
@@ -242,6 +242,7 @@ export type ServerQueries = {
     readonly commands: (placementId: PlacementId, harness: string) => FetchQuery<readonly RuntimeCommand[]>
     readonly stopsBackgroundTasks: (ref: SessionLocation) => FetchQuery<boolean>
   }
+  readonly terminals: { readonly agents: (placementId: PlacementId) => FetchQuery<readonly TerminalAgentId[]> }
   readonly files: {
     readonly tree: (placementId: PlacementId, path: string) => FetchQuery<readonly FileNode[]>
     readonly content: (placementId: PlacementId, path: string) => FetchQuery<FileContent>

@@ -34,6 +34,8 @@ import { Pty } from "../pty/index"
 import { authoritativeWorkspaceId } from "../target"
 import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 import { authorizeHostCapability, type HostCapabilityAccessOptions } from "./host-capability-access"
+import { authorizeTerminal, terminalLease } from "../pty/terminal-authority"
+import { ptyAccessRefusalResponse } from "../pty/authorized-connection"
 
 const log = Log.create({ service: "agent-hook" })
 
@@ -422,7 +424,7 @@ function canAdminister(context: AgentHookContext) {
   return context.authority !== undefined && context.authority.sessionId === undefined
 }
 
-async function authorizeTerminal(
+async function authorizeTerminalHook(
   c: Context<{ Variables: RelayHostAuthContext }>,
   options: AgentHookRoutesOptions,
   input: {
@@ -434,28 +436,19 @@ async function authorizeTerminal(
 ): Promise<{ context: AgentHookContext } | { response: Response }> {
   const context = input.context ?? sessionAccessContext(c)
   const info = Pty.get(input.terminalId)
+  if (input.capability && (input.operation !== "agent_lifecycle_write" || info?.status !== "running")) {
+    return { response: terminalPrivate() }
+  }
+  const caller = { ...context, method: c.req.method, path: c.req.path }
+  const decision = await authorizeTerminal(options.sessionAccessPolicy, caller, input.capability?.authorityLease)
+  if (!decision.allowed) return { response: ptyAccessRefusalResponse(decision) }
   if (input.capability) {
-    if (
-      input.operation !== "agent_lifecycle_write"
-      || info?.status !== "running"
-      || info.sessionId !== input.capability.sessionId
-      || !options.sessionAccessPolicy?.authorizeStream
-    ) return { response: terminalPrivate() }
-    const renewed = await options.sessionAccessPolicy.authorizeStream({
-      ...context,
-      operation: input.operation,
-      sessionId: input.capability.sessionId,
-      method: c.req.method,
-      path: c.req.path,
-    }, input.capability.authorityLease)
-    if (!renewed.allowed) return { response: sessionAccessDenied(renewed) }
+    const renewed = terminalLease(decision, Date.now())
+    if (!renewed.allowed) return { response: ptyAccessRefusalResponse(renewed) }
     if (!Pty.renewAgentHookAccess(input.capability.token, {
       authorityLease: renewed.lease,
       authorityExpiresAt: renewed.expiresAt,
     })) return { response: terminalPrivate() }
-  } else {
-    const denied = await authorizeHostCapability(c, options, input.operation, context, info?.sessionId)
-    if (denied) return { response: denied }
   }
   const storedOwner = terminalSessions.get(input.terminalId)?.ownerActorId
   const runtimeOwner = Pty.accessOwner(input.terminalId)
@@ -520,7 +513,7 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions) {
         terminalId: payload.terminalId,
       })
       const lifecycleAccess = lifecycleContext(c, resolvedTerminalId)
-      const access = await authorizeTerminal(c, options, {
+      const access = await authorizeTerminalHook(c, options, {
         operation: "agent_lifecycle_write",
         terminalId: resolvedTerminalId,
         context: lifecycleAccess.context,
@@ -614,7 +607,7 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions) {
         return c.json({ success: false, error: "tabId or terminalId is required" }, 400)
       }
       const resolvedTerminalId = resolveTerminalId({ tabId, terminalId }) || clean(terminalId)
-      const terminalAccess = await authorizeTerminal(c, options, {
+      const terminalAccess = await authorizeTerminalHook(c, options, {
         operation: "agent_lifecycle_read",
         terminalId: resolvedTerminalId,
       })
@@ -692,7 +685,7 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions) {
       if (!Number.isFinite(port) || port <= 0) {
         return c.json({ success: false, error: "Invalid port" }, 400)
       }
-      const access = await authorizeTerminal(c, options, {
+      const access = await authorizeTerminalHook(c, options, {
         operation: "agent_lifecycle_read",
         terminalId,
       })

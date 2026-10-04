@@ -1,12 +1,21 @@
 import type { TerminalCheckpoint } from "@claxedo/workspace-runtime/client"
 import type { ServerEvent } from "../events"
-import { sessionId, terminalId, type PlacementId } from "../ids"
-import type { Terminal, TerminalAgentStatus, TerminalFrame } from "../terminal-types"
+import { terminalId, type PlacementId } from "../ids"
+import type { Terminal, TerminalAgentId, TerminalAgentStatus, TerminalFrame } from "../terminal-types"
 import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
 
 export const PTY_PATH = "/api/wr/pty"
 export const TERMINAL_HOOK_PATH = "/api/wr/hook/terminal-session"
 export const PTY_NOT_FOUND = "pty_session_not_found"
+export const PTY_AGENTS_PATH = `${PTY_PATH}/agents`
+
+const TERMINAL_AGENT_IDS: ReadonlySet<string> = new Set<TerminalAgentId>(["claude", "codex", "cursor"])
+
+export function terminalAgentsFromWire(value: unknown): readonly TerminalAgentId[] | undefined {
+  const agents = isRecord(value) ? value.agents : undefined
+  if (!Array.isArray(agents)) return undefined
+  return agents.filter((agent): agent is TerminalAgentId => typeof agent === "string" && TERMINAL_AGENT_IDS.has(agent))
+}
 
 export type ParsedTerminalFrame = { readonly ok: true; readonly frame?: TerminalFrame } | { readonly ok: false; readonly reason: string }
 
@@ -15,7 +24,6 @@ export function terminalFromWire(value: unknown, placementId: PlacementId): Term
   const id = nonEmptyString(value.id)
   if (!id) return undefined
   const cwd = nonEmptyString(value.cwd)
-  const owner = nonEmptyString(value.sessionId)
   const command = nonEmptyString(value.command)
   const createRequestId = nonEmptyString(value.createRequestId)
   return {
@@ -23,7 +31,6 @@ export function terminalFromWire(value: unknown, placementId: PlacementId): Term
     placementId,
     title: nonEmptyString(value.title) ?? id,
     ...(cwd ? { cwd } : {}),
-    ...(owner ? { sessionId: sessionId(owner) } : {}),
     ...(command ? { command } : {}),
     ...(createRequestId ? { createRequestId } : {}),
   }

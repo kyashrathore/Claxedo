@@ -11,8 +11,6 @@ import {
   WorkspaceTargetError,
   managedWorkspaceSessionAccessPolicy,
   sessionAccessContext,
-  sessionAccessDenied,
-  type SessionAccessOperation,
   type SessionAccessPolicy,
 } from "@claxedo/session-core"
 import { routeParam } from "@claxedo/helpers/route-param"
@@ -23,14 +21,18 @@ import {
 } from "../target"
 import { currentSessionCore } from "../session-context"
 import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
-import { readHistorySessionId } from "../pty/history-disk"
 import {
-  authorizePtyAttach,
   createAuthorizedPtyConnection,
   isPtyStreamSocket,
   ptyAccessRefusalResponse,
-  type PtyStreamAdmission,
 } from "../pty/authorized-connection"
+import {
+  admitTerminal,
+  authorizeTerminal,
+  type TerminalAccess,
+  type TerminalAdmission,
+} from "../pty/terminal-authority"
+import { installedTerminalAgents } from "../pty/terminal-agents"
 import { volatileLaunchOwnership, type LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
 
 function invalidInput(details: Record<string, unknown>) {
@@ -51,10 +53,6 @@ function invalidPath(message: string) {
   return errorBody("pty_invalid_path", message)
 }
 
-function sessionRequired() {
-  return errorBody("pty_session_id_required", "Managed PTY creation requires a sessionId")
-}
-
 function requestPort(url: string): string | undefined {
   try {
     const parsed = new URL(url)
@@ -64,8 +62,18 @@ function requestPort(url: string): string | undefined {
   }
 }
 
+function agentHookBinding(caller: TerminalAccess, admission: TerminalAdmission): Pty.AgentHookAccessBinding | undefined {
+  if (!caller.actor || !caller.authority || !admission.lease || admission.expiresAt === undefined) return undefined
+  return {
+    token: crypto.randomUUID().replaceAll("-", ""),
+    context: { actor: caller.actor, authority: caller.authority },
+    authorityLease: admission.lease,
+    authorityExpiresAt: admission.expiresAt,
+  }
+}
+
 /** The admission the pre-upgrade handler took, read by the upgrade closure behind it. */
-type PtyRouteVariables = RelayHostAuthContext & { ptyStreamAdmission?: PtyStreamAdmission }
+type PtyRouteVariables = RelayHostAuthContext & { ptyStreamAdmission?: TerminalAdmission }
 
 /**
  * `ownership` is resolved per request, not captured once: one process serves
@@ -81,50 +89,26 @@ export function PtyRoutes(
   policy: SessionAccessPolicy = managedWorkspaceSessionAccessPolicy(),
   options: PtyRouteOptions = {},
 ) {
-  const authorize = async (
-    c: Context<{ Variables: PtyRouteVariables }>,
-    info: Pty.Info,
-    operation: Extract<SessionAccessOperation, "pty_read" | "pty_write">,
-  ) => {
-    const access = sessionAccessContext(c)
-    if (!access.authority) return undefined
-    if (!info.sessionId) return c.json(notFound(), 404)
-    const decision = await policy.authorize({
-      ...access,
-      operation,
-      sessionId: info.sessionId,
-      method: c.req.method,
-      path: c.req.path,
-    })
-    if (!decision.allowed) return sessionAccessDenied(decision)
-    return undefined
-  }
-
-  const attachAccess = (c: Context<{ Variables: PtyRouteVariables }>) => ({
+  const access = (c: Context<{ Variables: PtyRouteVariables }>) => ({
     ...sessionAccessContext(c),
     method: c.req.method,
     path: c.req.path,
   })
+
+  const authorize = async (c: Context<{ Variables: PtyRouteVariables }>) => {
+    const decision = await authorizeTerminal(policy, access(c))
+    return decision.allowed ? undefined : ptyAccessRefusalResponse(decision)
+  }
 
   return new Hono<{ Variables: PtyRouteVariables }>()
     .onError((err, c) => {
       if (isRequestBodyTooLarge(err)) return c.json(requestBodyTooLargeBody(), 413)
       throw err
     })
-    // Terminal access is sensitive even when the transport method is GET.
     .get("/", async (c) => {
-      const rows = Pty.list()
-      const access = sessionAccessContext(c)
-      if (!access.authority) return c.json(rows)
-      const scoped = rows.filter((row) => row.sessionId)
-      const allowed = new Set(await policy.filterSessions({
-        ...access,
-        operation: "pty_read",
-        method: c.req.method,
-        path: c.req.path,
-        sessionIds: scoped.map((row) => row.sessionId!),
-      }))
-      return c.json(scoped.filter((row) => allowed.has(row.sessionId!)))
+      const guarded = await authorize(c)
+      if (guarded) return guarded
+      return c.json(Pty.list())
     })
     .post("/", async (c) => {
       const body = await boundedJsonBody(c)
@@ -132,18 +116,9 @@ export function PtyRoutes(
       if (!parsed.success) {
         return c.json(invalidInput(parsed.error.flatten()), 400)
       }
-      const access = sessionAccessContext(c)
-      if (access.authority && !parsed.data.sessionId) return c.json(sessionRequired(), 400)
-      if (access.authority) {
-        const decision = await policy.authorize({
-          ...access,
-          operation: "pty_write",
-          sessionId: parsed.data.sessionId,
-          method: c.req.method,
-          path: c.req.path,
-        })
-        if (!decision.allowed) return sessionAccessDenied(decision)
-      }
+      const caller = access(c)
+      const admission = await admitTerminal(policy, caller)
+      if (!admission.allowed) return ptyAccessRefusalResponse(admission)
       const input = parsed.data
       const workspaceId = authoritativeWorkspaceId()
       const { CLAXEDO_WORKSPACE_ID: _untrustedWorkspaceId, ...environment } = input.env ?? {}
@@ -171,46 +146,8 @@ export function PtyRoutes(
         }
         throw err
       }
-      if (
-        access.authority
-        && input.env?.previousPtyId
-        && await readHistorySessionId(cwd, input.env.previousPtyId) !== input.sessionId
-      ) {
-        return sessionAccessDenied({
-          allowed: false,
-          status: 403,
-          code: "pty_history_forbidden",
-          message: "PTY history belongs to another session",
-        })
-      }
       const port = requestPort(c.req.url)
-      const accessContext = sessionAccessContext(c)
-      const agentHookAuthority = accessContext.actor && accessContext.authority && input.sessionId
-        ? policy.authorizeStream
-          ? await policy.authorizeStream({
-              ...accessContext,
-              operation: "agent_lifecycle_write",
-              sessionId: input.sessionId,
-              method: c.req.method,
-              path: c.req.path,
-            })
-          : {
-              allowed: false as const,
-              status: 503 as const,
-              code: "terminal_capability_authority_unavailable",
-              message: "Managed terminal callback authority is unavailable",
-            }
-        : undefined
-      if (agentHookAuthority && !agentHookAuthority.allowed) return sessionAccessDenied(agentHookAuthority)
-      const agentHookAccess = accessContext.actor && accessContext.authority && input.sessionId && agentHookAuthority?.allowed
-        ? {
-            token: crypto.randomUUID().replaceAll("-", ""),
-            context: { actor: accessContext.actor, authority: accessContext.authority },
-            sessionId: input.sessionId,
-            authorityLease: agentHookAuthority.lease,
-            authorityExpiresAt: agentHookAuthority.expiresAt,
-          }
-        : undefined
+      const agentHookAccess = agentHookBinding(caller, admission)
       const info = await Pty.create(
         {
           ...input,
@@ -227,7 +164,7 @@ export function PtyRoutes(
         options.ownership?.() ?? volatileLaunchOwnership(),
         agentHookAccess,
       )
-      const actorId = sessionAccessContext(c).actor?.actorId
+      const actorId = caller.actor?.actorId
       if (actorId && !Pty.bindAccessOwner(info.id, actorId)) {
         await Pty.remove(info.id)
         return c.json(errorBody("pty_owner_bind_failed", "Terminal ownership could not be recorded"), 503)
@@ -238,6 +175,11 @@ export function PtyRoutes(
       Pty.commit(info.id)
       return c.json(info)
     })
+    .get("/agents", async (c) => {
+      const guarded = await authorize(c)
+      if (guarded) return guarded
+      return c.json({ agents: installedTerminalAgents() })
+    })
     .get("/:ptyID", async (c) => {
       const id = c.req.param("ptyID")
       const info = Pty.get(id)
@@ -245,7 +187,7 @@ export function PtyRoutes(
         log.info("terminal lookup: no such PTY in this process", { ptyId: id })
         return c.json(notFound(), 404)
       }
-      const guarded = await authorize(c, info, "pty_read")
+      const guarded = await authorize(c)
       if (guarded) return guarded
       return c.json(info)
     })
@@ -258,7 +200,7 @@ export function PtyRoutes(
       }
       const current = Pty.get(id)
       if (!current) return c.json(notFound(), 404)
-      const guarded = await authorize(c, current, "pty_write")
+      const guarded = await authorize(c)
       if (guarded) return guarded
       const info = await Pty.update(id, parsed.data)
       if (!info) return c.json(notFound(), 404)
@@ -268,7 +210,7 @@ export function PtyRoutes(
       const id = c.req.param("ptyID")
       const info = Pty.get(id)
       if (!info) return c.json(notFound(), 404)
-      const guarded = await authorize(c, info, "pty_write")
+      const guarded = await authorize(c)
       if (guarded) return guarded
       await Pty.remove(id)
       return c.json(true)
@@ -281,7 +223,7 @@ export function PtyRoutes(
           log.warn("terminal attach refused: no such PTY in this process", { ptyId: c.req.param("ptyID") })
           return c.json(notFound(), 404)
         }
-        const admission = await authorizePtyAttach({ policy, access: attachAccess(c), info })
+        const admission = await admitTerminal(policy, access(c))
         if (!admission.allowed) return ptyAccessRefusalResponse(admission)
         // The upgrade below is a second closure over the same request; the
         // admission it runs on travels on the context rather than being asked
@@ -301,7 +243,7 @@ export function PtyRoutes(
         const connection = createAuthorizedPtyConnection({
           ptyId: routeParam(c, "ptyID"),
           policy,
-          access: attachAccess(c),
+          access: access(c),
           admission,
           ...(cursor === undefined ? {} : { cursor }),
         })

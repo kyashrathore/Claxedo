@@ -1,6 +1,6 @@
-import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { isExecutableFile, isFile, resolveOnPath } from "./path-lookup"
 
 /**
  * The Claude native harness spawns the Claude Code CLI out of process — the
@@ -36,32 +36,6 @@ const NPM_PACKAGE_ENTRY_CANDIDATES: ReadonlyArray<ReadonlyArray<string>> = [
   ["node_modules", "@anthropic-ai", "claude-code", "cli.js"],
 ]
 
-function isFile(candidate: string): boolean {
-  try {
-    return fs.statSync(candidate).isFile()
-  } catch {
-    return false
-  }
-}
-
-function isExecutableFile(candidate: string, platform: NodeJS.Platform): boolean {
-  if (!isFile(candidate)) return false
-  if (platform === "win32") return true
-  try {
-    fs.accessSync(candidate, fs.constants.X_OK)
-    return true
-  } catch {
-    return false
-  }
-}
-
-function windowsPathExtensions(env: NodeJS.ProcessEnv): string[] {
-  return (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
-    .split(";")
-    .map((ext) => ext.trim().toLowerCase())
-    .filter(Boolean)
-}
-
 /**
  * The SDK spawns the executable directly (no shell, no PATHEXT). A Windows npm
  * install resolves `claude` to a `.cmd`/`.ps1` shim it can't spawn, so follow
@@ -77,23 +51,6 @@ function normalizeForSdkSpawn(resolved: string, platform: NodeJS.Platform): stri
     if (isFile(candidate)) return candidate
   }
   return resolved
-}
-
-/** Resolve a bare command against PATH (+ PATHEXT on Windows). */
-function resolveOnPath(command: string, platform: NodeJS.Platform, env: NodeJS.ProcessEnv): string | undefined {
-  const p = platform === "win32" ? path.win32 : path.posix
-  const extensions = platform === "win32" ? windowsPathExtensions(env) : [""]
-  const hasExtension = extensions.some((ext) => command.toLowerCase().endsWith(ext))
-  const names = platform === "win32" && !hasExtension ? extensions.map((ext) => `${command}${ext}`) : [command]
-  for (const entry of (env.PATH ?? env.Path ?? "").split(path.delimiter)) {
-    const dir = entry.trim().replace(/^"(.*)"$/, "$1")
-    if (!dir) continue
-    for (const name of names) {
-      const candidate = p.join(dir, name)
-      if (isExecutableFile(candidate, platform)) return candidate
-    }
-  }
-  return undefined
 }
 
 /** Standard Claude Code install locations that are not always on a GUI app's PATH. */

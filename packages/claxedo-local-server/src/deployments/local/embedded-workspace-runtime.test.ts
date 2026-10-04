@@ -1072,30 +1072,15 @@ describe("attaching to an embedded workspace terminal", () => {
     ...(sessionId ? { session_id: sessionId } : {}),
   })
 
-  function policyDeciding(verdict: (operation: string) => boolean) {
+  function hostAuthority(live: boolean) {
     const asked: string[] = []
-    const denial = {
-      allowed: false as const,
-      status: 403 as const,
-      code: "private_session",
-      message: "Session is private",
+    const policy = managedWorkspaceSessionAccessPolicy()
+    policy.authorizeHost = (input) => {
+      asked.push(input.hostAccess)
+      return live
+        ? { allowed: true, lease: "host-lease", expiresAt: Date.now() + 60_000 }
+        : { allowed: false, status: 401, code: "runtime_access_token_inactive", message: "Runtime Access Token is inactive" }
     }
-    const policy = managedWorkspaceSessionAccessPolicy({
-      authority: {
-        authorizeSessionRead: () => ({ allowed: true }),
-        authorizeSessionWrite: () => ({ allowed: true }),
-        authorizeSessionStream: (input) => {
-          asked.push(input.operation)
-          return verdict(input.operation)
-            ? { allowed: true as const, lease: "stream-lease", expiresAt: Date.now() + 60_000 }
-            : denial
-        },
-        registerSession: () => ({ allowed: true }),
-        acquireTurn: () => denial,
-        renewTurn: () => denial,
-        releaseTurn: () => denial,
-      },
-    })
     return { policy, asked }
   }
 
@@ -1124,7 +1109,7 @@ describe("attaching to an embedded workspace terminal", () => {
   test("the identity the ingress verified is the one the mounted policy is asked about", async () => {
     const { root, project } = await makeWorkspaceRoot("embedded-terminal-identity-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
-    const refusing = policyDeciding(() => false)
+    const refusing = hostAuthority(false)
     configureEmbeddedWorkspaceRuntime({
     sessionIdWorkspace: () => undefined, sessionAccessPolicy: refusing.policy })
     const pty = await terminal(project, "ses_1")
@@ -1143,9 +1128,8 @@ describe("attaching to an embedded workspace terminal", () => {
       const owner = await attachEmbeddedWorkspacePty(request)
 
       expect(shareHolder.ok ? undefined : shareHolder.response.status).toBe(403)
-      expect(member.ok ? undefined : member.response.status).toBe(403)
-      // A token scoped to one session never reaches the session question at all.
-      expect(refusing.asked).toEqual(["pty_read"])
+      expect(member.ok ? undefined : member.response.status).toBe(401)
+      expect(refusing.asked, "a token scoped to one session never reaches the host question").toEqual(["read"])
       // The machine's own user carries no identity, so the policy has nobody
       // to refuse and the socket is its own.
       expect(owner.ok).toBe(true)
@@ -1157,12 +1141,11 @@ describe("attaching to an embedded workspace terminal", () => {
     }
   })
 
-  test("an admitted member gets a connection that reads the terminal and drops what it may not type", async () => {
-    const { root, project } = await makeWorkspaceRoot("embedded-terminal-readonly-")
+  test("a workspace member the host authority admits reads and types at the terminal", async () => {
+    const { root, project } = await makeWorkspaceRoot("embedded-terminal-member-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
-    const readOnly = policyDeciding((operation) => operation === "pty_read")
-    configureEmbeddedWorkspaceRuntime({
-    sessionIdWorkspace: () => undefined, sessionAccessPolicy: readOnly.policy })
+    const live = hostAuthority(true)
+    configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined, sessionAccessPolicy: live.policy })
     const pty = await terminal(project, "ses_1")
     const received: string[] = []
     try {
@@ -1186,12 +1169,14 @@ describe("attaching to an embedded workspace terminal", () => {
         close: () => {},
       })
       await new Promise((resolve) => setTimeout(resolve, 50))
-      attach.connection.onMessage("echo pwned\r")
-      await new Promise((resolve) => setTimeout(resolve, 750))
+      attach.connection.onMessage("echo member-typed\r")
+      const deadline = Date.now() + 5_000
+      while (!/\nmember-typed\r?\n/.test(received.join("")) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 25))
+      }
 
-      expect(received.length).toBeGreaterThan(0)
-      expect(received.join("")).not.toContain("pwned")
-      expect(readOnly.asked).toEqual(["pty_read", "pty_write"])
+      expect(received.join("")).toMatch(/\nmember-typed\r?\n/)
+      expect(live.asked).toEqual(["read"])
     } finally {
       configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
       await Pty.remove(pty.id)

@@ -1,14 +1,8 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import { Pty } from "./index"
-import {
-  authorizePtyAttach,
-  createAuthorizedPtyConnection,
-  ptyStreamAccess,
-  type PtyStreamAccess,
-  type PtyStreamAdmission,
-  type PtyStreamSocket,
-} from "./authorized-connection"
-import type { SessionAccessPolicy } from "@claxedo/session-core"
+import { createAuthorizedPtyConnection, ptyStreamAccess, type PtyStreamSocket } from "./authorized-connection"
+import { admitTerminal, type TerminalAccess, type TerminalAdmission } from "./terminal-authority"
+import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "@claxedo/session-core"
 import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 
 const info: Pty.Info = {
@@ -38,7 +32,7 @@ function identity(
   }
 }
 
-function relayed(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"] = "editor", sessionScope?: string): PtyStreamAccess {
+function relayed(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"] = "editor", sessionScope?: string): TerminalAccess {
   return ptyStreamAccess({
     identity: { ...identity(role), ...(sessionScope ? { session_id: sessionScope } : {}) },
     authorization: "Bearer relay-token",
@@ -47,61 +41,41 @@ function relayed(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"
   })
 }
 
-const local: PtyStreamAccess = ptyStreamAccess({ method: "GET", path: "/pty_1/connect" })
+const local: TerminalAccess = ptyStreamAccess({ method: "GET", path: "/pty_1/connect" })
 
-test.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])("attach refuses an invalid read lease deadline (%s)", async (offset) => {
-  const { policy } = authority({ leaseMs: offset })
-  const result = await authorizePtyAttach({ policy, access: relayed(), info })
-  expect(result).toMatchObject({ allowed: false, status: 503, code: "pty_stream_authority_unavailable" })
-})
-
-type StreamCall = { operation: string; lease?: string }
+type HostCall = { hostAccess: string; lease?: string }
 
 /**
- * The control plane, reduced to the two verdicts a terminal asks it for and
- * the lease lifetime it answers with. `read`/`write` are flipped per test to
- * stand for a grant being changed while a socket is open.
+ * The control plane's host authority, reduced to the verdict a terminal asks
+ * it for and the lease lifetime it answers with. `active` is flipped per test
+ * to stand for the workspace token being revoked while a socket is open.
  */
-function authority(options: {
-  read?: boolean
-  write?: boolean
-  leaseMs?: number
-  throws?: boolean
-  omitStream?: boolean
-} = {}) {
+function authority(options: { active?: boolean; leaseMs?: number; throws?: boolean; omitHost?: boolean } = {}) {
   const state = {
-    read: options.read ?? true,
-    write: options.write ?? true,
+    active: options.active ?? true,
     leaseMs: options.leaseMs ?? 15_000,
     throws: options.throws ?? false,
-    calls: [] as StreamCall[],
-    authorizeCalls: [] as string[],
+    calls: [] as HostCall[],
+    leases: 0,
   }
-  const denial = { allowed: false as const, status: 403 as const, code: "private_session", message: "Session is private" }
-  const policy: SessionAccessPolicy = {
-    sessionAuthority: "managed-private",
-    authorizeSessionStartStatus: () => denial,
-    authorizeSessionStart: () => denial,
-    authorize: async (request) => {
-      state.authorizeCalls.push(request.operation)
+  const policy: SessionAccessPolicy = managedWorkspaceSessionAccessPolicy({ requireActor: false })
+  if (!options.omitHost) {
+    policy.authorizeHost = async (request) => {
+      state.calls.push({ hostAccess: request.hostAccess, ...(request.lease ? { lease: request.lease } : {}) })
       if (state.throws) throw new Error("authority is down")
-      return state.read ? { allowed: true } : denial
-    },
-    filterSessions: async (request) => request.sessionIds,
-    authorizePrefix: async () => ({ allowed: true }),
-  }
-  if (!options.omitStream) {
-    policy.authorizeStream = async (request, lease) => {
-      state.calls.push({ operation: request.operation, ...(lease ? { lease } : {}) })
-      if (state.throws) throw new Error("authority is down")
-      const granted = request.operation === "pty_write" ? state.write && state.read : state.read
-      return granted
-        ? { allowed: true, lease: `${request.operation}-lease`, expiresAt: Date.now() + state.leaseMs }
-        : denial
+      if (!state.active) return { allowed: false, status: 401, code: "runtime_access_token_inactive", message: "Runtime Access Token is inactive" }
+      state.leases += 1
+      return { allowed: true, lease: `host-lease-${state.leases}`, expiresAt: Date.now() + state.leaseMs }
     }
   }
   return { state, policy }
 }
+
+test.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])("attach refuses an invalid lease deadline (%s)", async (offset) => {
+  const { policy } = authority({ leaseMs: offset })
+  const result = await admitTerminal(policy, relayed())
+  expect(result).toMatchObject({ allowed: false, status: 503, code: "pty_stream_authority_unavailable" })
+})
 
 function fakeSocket() {
   const sent: Array<string | Uint8Array | ArrayBuffer> = []
@@ -170,17 +144,17 @@ function pty() {
   return handle
 }
 
-function refusalOf(admission: Awaited<ReturnType<typeof authorizePtyAttach>>) {
+function refusalOf(admission: TerminalAdmission | { allowed: false; status: number; code: string }) {
   return admission.allowed ? undefined : admission
 }
 
 /** Admission and attach, the way both entrypoints compose them. */
 async function attach(
   policy: SessionAccessPolicy,
-  access: PtyStreamAccess,
+  access: TerminalAccess,
   options: { now?: () => number } = {},
 ) {
-  const admission = await authorizePtyAttach({ policy, access, info })
+  const admission = await admitTerminal(policy, access)
   if (!admission.allowed) return { admission }
   const socket = fakeSocket()
   const connection = createAuthorizedPtyConnection({
@@ -196,42 +170,52 @@ async function attach(
 }
 
 describe("attaching to a terminal", () => {
-  test("a relayed caller the authority refuses never reaches the PTY", async () => {
+  test("a relayed caller whose workspace token is revoked never reaches the PTY", async () => {
     const terminal = pty()
-    const { policy, state } = authority({ read: false })
+    const { policy, state } = authority({ active: false })
 
     const { admission, socket } = await attach(policy, relayed())
 
-    expect(refusalOf(admission)).toMatchObject({ status: 403, code: "private_session" })
+    expect(refusalOf(admission)).toMatchObject({ status: 401, code: "runtime_access_token_inactive" })
     expect(socket).toBeUndefined()
     expect(terminal.connected).toBe(0)
-    expect(state.calls).toEqual([{ operation: "pty_read" }])
+    expect(state.calls).toEqual([{ hostAccess: "read" }])
+  })
+
+  test("a terminal labelled with another session is the workspace's and attaches", async () => {
+    const terminal = pty()
+    const { policy } = authority()
+
+    const { admission } = await attach(policy, relayed())
+
+    expect(admission.allowed).toBe(true)
+    expect(terminal.connected).toBe(1)
   })
 
   test("the admission's own deadline is enforced before the terminal is attached", async () => {
     const terminal = pty()
     const { policy } = authority()
     const socket = fakeSocket()
-    const stale: PtyStreamAdmission = { allowed: true, lease: "read-lease", expiresAt: Date.now() - 1 }
+    const stale: TerminalAdmission = { allowed: true, lease: "host-lease", expiresAt: Date.now() - 1 }
 
     createAuthorizedPtyConnection({ ptyId: "pty_1", policy, access: relayed(), admission: stale }).onOpen(socket)
     await settle()
 
     expect(terminal.connected).toBe(0)
     expect(socket.sent).toEqual([])
-    expect(socket.closes).toEqual([{ code: 1008, reason: "Session access expired" }])
+    expect(socket.closes).toEqual([{ code: 1008, reason: "Terminal access expired" }])
   })
 
   test("a client gone before the attach runs is never connected", async () => {
     const terminal = pty()
     const { policy } = authority()
-    const admission = await authorizePtyAttach({ policy, access: relayed(), info })
+    const admission = await admitTerminal(policy, relayed())
     const socket = fakeSocket()
     const connection = createAuthorizedPtyConnection({
       ptyId: "pty_1",
       policy,
       access: relayed(),
-      admission: admission as PtyStreamAdmission,
+      admission: admission as TerminalAdmission,
     })
 
     connection.onOpen(socket)
@@ -252,22 +236,14 @@ describe("attaching to a terminal", () => {
     expect(terminal.connected).toBe(0)
   })
 
-  test("a managed policy with no stream capability fails closed", async () => {
+  test("a managed policy with no host authority fails closed", async () => {
     const terminal = pty()
-    const { policy } = authority({ omitStream: true })
+    const { policy } = authority({ omitHost: true })
 
     const { admission } = await attach(policy, relayed())
 
-    expect(refusalOf(admission)).toMatchObject({ status: 503, code: "pty_stream_authority_unavailable" })
+    expect(refusalOf(admission)).toMatchObject({ status: 503, code: "host_authority_required" })
     expect(terminal.connected).toBe(0)
-  })
-
-  test("a managed policy with no stream capability keeps the refusal it can state", async () => {
-    const { policy } = authority({ omitStream: true, read: false })
-
-    const { admission } = await attach(policy, relayed())
-
-    expect(refusalOf(admission)).toMatchObject({ status: 403, code: "private_session" })
   })
 
   test("the machine's own user attaches with no authority asked and types", async () => {
@@ -281,7 +257,6 @@ describe("attaching to a terminal", () => {
     expect(terminal.connected).toBe(1)
     expect(terminal.typed).toEqual(["ls\r"])
     expect(state.calls).toEqual([])
-    expect(state.authorizeCalls).toEqual([])
   })
 
   test("each attach asks for its own authority", async () => {
@@ -290,65 +265,25 @@ describe("attaching to a terminal", () => {
     const first = await attach(policy, relayed())
     first.connection?.onClose()
 
-    state.read = false
+    state.active = false
     const second = await attach(policy, relayed())
 
-    expect(state.calls).toEqual([{ operation: "pty_read" }, { operation: "pty_read" }])
-    expect(refusalOf(second.admission)).toMatchObject({ status: 403 })
+    expect(state.calls).toEqual([{ hostAccess: "read" }, { hostAccess: "read" }])
+    expect(refusalOf(second.admission)).toMatchObject({ status: 401 })
   })
 })
 
 describe("typing at a terminal", () => {
-  test("a read-only grant keeps its output and loses its keystrokes", async () => {
+  test("an editor's keystrokes reach the terminal without a question per keystroke", async () => {
     const terminal = pty()
-    const { policy, state } = authority({ write: false })
-
-    const { connection, socket } = await attach(policy, relayed())
-    connection!.onMessage("rm -rf /\r")
-    await settle()
-
-    expect(terminal.typed).toEqual([])
-    expect(socket!.closes).toEqual([])
-    terminal.attached?.send("output after the refused keystroke")
-    expect(socket!.sent).toEqual(["output after the refused keystroke"])
-    expect(state.calls).toEqual([{ operation: "pty_read" }, { operation: "pty_write" }])
-  })
-
-  test("a refused writer is answered locally rather than re-asked per keystroke", async () => {
-    pty()
-    const { policy, state } = authority({ write: false })
+    const { policy, state } = authority()
 
     const { connection } = await attach(policy, relayed())
     for (const key of ["a", "b", "c", "d"]) connection!.onMessage(key)
     await settle()
 
-    expect(state.calls.filter((call) => call.operation === "pty_write")).toHaveLength(1)
-  })
-
-  test("keystrokes reach the terminal in arrival order across their write decisions", async () => {
-    const terminal = pty()
-    const { policy } = authority()
-    // Each write decision answers faster than the one before it, so a queue
-    // that let them run together would deliver the keystrokes backwards.
-    let pending = 3
-    const slow: SessionAccessPolicy = {
-      ...policy,
-      authorizeStream: async (request, lease) => {
-        if (request.operation !== "pty_write") return { allowed: true, lease: "read-lease", expiresAt: Date.now() + 15_000 }
-        await new Promise((resolve) => setTimeout(resolve, pending-- * 10))
-        // Still valid, but within the renewal window, so every keystroke asks
-        // for its own decision without accepting an expired grant.
-        return { allowed: true, lease: lease ?? "write-lease", expiresAt: Date.now() + 500 }
-      },
-    }
-
-    const { connection } = await attach(slow, relayed())
-    connection!.onMessage("first")
-    connection!.onMessage("second")
-    connection!.onMessage("third")
-    await new Promise((resolve) => setTimeout(resolve, 250))
-
-    expect(terminal.typed).toEqual(["first", "second", "third"])
+    expect(terminal.typed).toEqual(["a", "b", "c", "d"])
+    expect(state.calls).toEqual([{ hostAccess: "read" }])
   })
 
   test("a promised binary frame keeps its place in the queue", async () => {
@@ -365,64 +300,22 @@ describe("typing at a terminal", () => {
     expect(terminal.typed[1]).toBe("text")
   })
 
-  test("a keystroke whose write decision lands after the client left is dropped", async () => {
+  test("a keystroke that arrives after the lease ran out is dropped and the socket closed", async () => {
     const terminal = pty()
     const { policy } = authority()
-    const slow: SessionAccessPolicy = {
-      ...policy,
-      authorizeStream: async (request, lease) => {
-        if (request.operation === "pty_write") await new Promise((resolve) => setTimeout(resolve, 40))
-        return policy.authorizeStream!(request, lease)
-      },
-    }
+    let clock = Date.now()
 
-    const { connection } = await attach(slow, relayed())
+    const { connection, socket } = await attach(policy, relayed(), { now: () => clock })
+    clock += 15_001
     connection!.onMessage("late\r")
-    connection!.onClose()
-    await new Promise((resolve) => setTimeout(resolve, 120))
-
-    expect(terminal.typed).toEqual([])
-    expect(terminal.disconnects).toBe(1)
-  })
-
-  test("a keystroke whose write decision outlives the read deadline is dropped", async () => {
-    const terminal = pty()
-    const { policy } = authority({ leaseMs: 30 })
-    const slow: SessionAccessPolicy = {
-      ...policy,
-      authorizeStream: async (request, lease) => {
-        if (request.operation === "pty_write") await new Promise((resolve) => setTimeout(resolve, 60))
-        return policy.authorizeStream!(request, lease)
-      },
-    }
-
-    const { connection, socket } = await attach(slow, relayed())
-    connection!.onMessage("late\r")
-    await new Promise((resolve) => setTimeout(resolve, 120))
-
-    expect(terminal.typed).toEqual([])
-    expect(socket!.closes).toEqual([{ code: 1008, reason: "Session access expired" }])
-  })
-
-  test.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])("an expired or malformed write deadline (%s) never admits a keystroke", async (offset) => {
-    const terminal = pty()
-    const { policy } = authority()
-    const stale: SessionAccessPolicy = {
-      ...policy,
-      authorizeStream: async (request, lease) => request.operation === "pty_write"
-        ? { allowed: true, lease: "stale-write", expiresAt: Date.now() + offset }
-        : policy.authorizeStream!(request, lease),
-    }
-    const { connection, socket } = await attach(stale, relayed())
-    connection!.onMessage("must not reach the shell")
     await settle()
+
     expect(terminal.typed).toEqual([])
-    expect(socket!.closes).toEqual([])
-    connection!.onClose()
+    expect(socket!.closes).toEqual([{ code: 1008, reason: "Terminal access expired" }])
   })
 })
 
-describe("a grant taken away while the socket is open", () => {
+describe("a workspace token revoked while the socket is open", () => {
   test("the stream closes within the renewal window and releases nothing after", async () => {
     const terminal = pty()
     const { policy, state } = authority({ leaseMs: 1_500 })
@@ -430,16 +323,16 @@ describe("a grant taken away while the socket is open", () => {
     const { socket } = await attach(policy, relayed())
     expect(terminal.connected).toBe(1)
 
-    state.read = false
+    state.active = false
     await new Promise((resolve) => setTimeout(resolve, 1_100))
-    terminal.attached?.send("output after the grant was removed")
+    terminal.attached?.send("output after the token was revoked")
 
     expect(socket!.sent).toEqual([])
-    expect(socket!.closes).toEqual([{ code: 1008, reason: "Session access denied" }])
+    expect(socket!.closes).toEqual([{ code: 1008, reason: "Terminal access denied" }])
     expect(terminal.disconnects).toBe(1)
     expect(state.calls).toEqual([
-      { operation: "pty_read" },
-      { operation: "pty_read", lease: "pty_read-lease" },
+      { hostAccess: "read" },
+      { hostAccess: "read", lease: "host-lease-1" },
     ])
   }, 10_000)
 
@@ -447,12 +340,9 @@ describe("a grant taken away while the socket is open", () => {
     const terminal = pty()
     const { policy } = authority()
     let clock = Date.now()
-    const held: SessionAccessPolicy = {
-      ...policy,
-      authorizeStream: async () => ({ allowed: true, lease: "lease", expiresAt: clock + 1_000 }),
-    }
+    policy.authorizeHost = async () => ({ allowed: true, lease: "lease", expiresAt: clock + 1_000 })
 
-    const { socket } = await attach(held, relayed(), { now: () => clock })
+    const { socket } = await attach(policy, relayed(), { now: () => clock })
     terminal.attached?.send("inside the lease")
     clock += 1_001
     terminal.attached?.send("past the lease")
@@ -471,47 +361,48 @@ describe("a grant taken away while the socket is open", () => {
     await settle()
 
     expect(terminal.typed).toEqual([])
-    expect(socket!.closes).toEqual([{ code: 1008, reason: "Session not found" }])
+    expect(socket!.closes).toEqual([{ code: 1008, reason: "Terminal not found" }])
   })
 })
 
 describe("admission before the upgrade", () => {
-  test("a token scoped to one session is refused a terminal, even that session's", async () => {
+  test("a cloud runtime admits no unstamped caller", async () => {
+    const admission = await admitTerminal(managedWorkspaceSessionAccessPolicy({ requireActor: true }), local)
+
+    expect(refusalOf(admission)).toMatchObject({ status: 403, code: "session_actor_required" })
+  })
+
+  test("a token scoped to one session is refused a terminal, even one labelled with it", async () => {
     const { policy, state } = authority()
-    const admission = await authorizePtyAttach({ policy, access: relayed("viewer", info.sessionId), info })
+    const admission = await admitTerminal(policy, relayed("editor", info.sessionId))
 
     expect(refusalOf(admission)).toMatchObject({ status: 403, code: "relay_scope_denied" })
     expect(state.calls).toEqual([])
-    expect(state.authorizeCalls).toEqual([])
   })
 
-  test("a terminal bound to no session is not reachable by a relayed caller", async () => {
-    const { policy } = authority()
-    const admission = await authorizePtyAttach({
-      policy,
-      access: relayed(),
-      info: { ...info, sessionId: undefined },
-    })
+  test("a workspace viewer is refused a terminal without asking the authority", async () => {
+    const { policy, state } = authority()
+    const admission = await admitTerminal(policy, relayed("viewer"))
 
-    expect(refusalOf(admission)).toMatchObject({ status: 404 })
+    expect(refusalOf(admission)).toMatchObject({ status: 403, code: "terminal_role_denied" })
+    expect(state.calls).toEqual([])
   })
 
   test("the machine's own user is admitted without a question, on no deadline", async () => {
     const { policy, state } = authority()
-    const admission = await authorizePtyAttach({ policy, access: local, info })
+    const admission = await admitTerminal(policy, local)
 
     expect(admission).toEqual({ allowed: true })
     expect(state.calls).toEqual([])
-    expect(state.authorizeCalls).toEqual([])
   })
 
-  test("a relayed caller is admitted on the authority's own lease and deadline", async () => {
+  test("a relayed editor is admitted on the authority's own lease and deadline", async () => {
     const { policy } = authority({ leaseMs: 30_000 })
-    const admission = await authorizePtyAttach({ policy, access: relayed(), info })
+    const admission = await admitTerminal(policy, relayed())
 
     expect(admission.allowed).toBe(true)
-    expect((admission as PtyStreamAdmission).lease).toBe("pty_read-lease")
-    expect((admission as PtyStreamAdmission).expiresAt).toBeGreaterThan(Date.now())
+    expect((admission as TerminalAdmission).lease).toBe("host-lease-1")
+    expect((admission as TerminalAdmission).expiresAt).toBeGreaterThan(Date.now())
   })
 })
 

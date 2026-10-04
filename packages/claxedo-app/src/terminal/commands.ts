@@ -1,6 +1,6 @@
 import { useTranslator } from "@/i18n"
 import { usePanel } from "@/panel"
-import { isTerminalSessionRequired, toAppError, type PlacementId } from "@/server"
+import { toAppError, type PlacementId } from "@/server"
 import { useCommands } from "@/shell"
 import { showToast } from "@/ui"
 import { useWorkbench } from "@/workbench"
@@ -21,7 +21,7 @@ function useStartShell(terminals: Terminals): () => void {
     panel.close()
     openNew(placementId).catch((error: unknown) => {
       console.error("Terminal could not be created", { placementId, error: toAppError(error) })
-      showToast({ title: t(isTerminalSessionRequired(error) ? "terminal.sessionRequired" : "terminal.createFailed") })
+      showToast({ title: t("terminal.createFailed") })
     })
   }
 }

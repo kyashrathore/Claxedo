@@ -2,6 +2,7 @@ import type { ErrorMessages } from "./model"
 
 export default {
   auth: ["Vuelve a iniciar sesión", "Tu sesión caducó o fue rechazada. Inicia sesión de nuevo para continuar."],
+  forbidden: ["No permitido", "Tu cuenta no tiene acceso a esto. Pide acceso a su propietario."],
   rate_limit: ["Demasiadas solicitudes", "El servidor está limitando las solicitudes. Espera un momento y vuelve a intentarlo."],
   network: ["No se puede conectar con el servidor", "No se pudo conectar con el servidor. Comprueba la conexión y vuelve a intentarlo."],
   not_found: ["No encontrado", "Esto ya no existe. Es posible que se haya eliminado."],

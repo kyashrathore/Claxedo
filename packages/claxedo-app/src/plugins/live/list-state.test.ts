@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { liveListState } from "./list-state"
 
-const refused = { class: "auth", message: "Live plugins belong to this machine's owner", retryable: false, status: 403 } as const
+const refused = { class: "forbidden", message: "Live plugins belong to this machine's owner", retryable: false, status: 403 } as const
 
 describe("the live plugin list", () => {
   test("a server that does not offer live plugins to this connection lists none", () => {

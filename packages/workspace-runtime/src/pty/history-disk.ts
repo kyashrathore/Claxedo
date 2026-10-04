@@ -2,28 +2,10 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { workspaceRuntimePtyHistoryDir } from "../env"
 import { safeTrimStart } from "./safe-slice"
-import { asRecord, asString } from "@claxedo/helpers/guards"
 
 export function historyPath(directory: string, id: string, root = workspaceRuntimePtyHistoryDir()) {
   const key = Buffer.from(directory).toString("base64url")
   return path.join(root, key, `${id}.log`)
-}
-
-function historySessionPath(directory: string, id: string, root = workspaceRuntimePtyHistoryDir()) {
-  return historyPath(directory, id, root).replace(/\.log$/, ".session.json")
-}
-
-export async function readHistorySessionId(
-  directory: string,
-  id: string,
-  root = workspaceRuntimePtyHistoryDir(),
-) {
-  try {
-    const parsed = asRecord(JSON.parse(await fs.readFile(historySessionPath(directory, id, root), "utf8")))
-    return asString(parsed?.sessionId) || undefined
-  } catch {
-    return undefined
-  }
 }
 
 export async function renameHistory(
@@ -36,10 +18,6 @@ export async function renameHistory(
   const newPath = historyPath(directory, newId, root)
   await fs.mkdir(path.dirname(newPath), { recursive: true })
   await fs.rename(oldPath, newPath)
-  await fs.rename(
-    historySessionPath(directory, oldId, root),
-    historySessionPath(directory, newId, root),
-  ).catch(() => {})
 }
 
 /**
@@ -87,7 +65,6 @@ export async function cleanupOrphanedHistory(
         const fstat = await fs.stat(filePath)
         if (now - fstat.mtimeMs > maxAgeMs) {
           await fs.rm(filePath, { force: true })
-          await fs.rm(filePath.replace(/\.log$/, ".session.json"), { force: true })
           removed += 1
         }
       } catch {}
@@ -118,7 +95,7 @@ export async function cleanupOrphanedHistory(
  * The live tail a running session serves (`Pty.snapshot`) comes from
  * `session.buffer`, which has its own separate 2 MB cap, independent of this.
  */
-export async function createDiskHistory(input: { directory: string; id: string; limit: number; sessionId?: string }) {
+export async function createDiskHistory(input: { directory: string; id: string; limit: number }) {
   const file = historyPath(input.directory, input.id)
   /** Approximate on-disk size. Only ever used to decide when to compact, so a
    *  code-unit/byte discrepancy on non-ASCII content is harmless. */
@@ -168,9 +145,6 @@ export async function createDiskHistory(input: { directory: string; id: string; 
     .catch(() => {
       bytes = 0
     })
-  if (input.sessionId) {
-    await fs.writeFile(historySessionPath(input.directory, input.id), JSON.stringify({ sessionId: input.sessionId }))
-  }
 
   return {
     append(data: string) {

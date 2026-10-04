@@ -1,12 +1,11 @@
 import type { TerminalCheckpoint } from "@claxedo/workspace-runtime/client"
-import type { PlacementId, SessionId, TerminalId } from "./ids"
+import type { PlacementId, TerminalId } from "./ids"
 
 export type Terminal = {
   readonly id: TerminalId
   readonly placementId: PlacementId
   readonly title: string
   readonly cwd?: string
-  readonly sessionId?: SessionId
   readonly command?: string
   readonly createRequestId?: string
 }
@@ -15,11 +14,11 @@ export type TerminalCreateInput = {
   readonly placementId: PlacementId
   readonly title: string
   readonly command?: string
-  readonly sessionId?: SessionId
-  readonly openSessionId?: SessionId
   readonly previousTerminalId?: TerminalId
   readonly createRequestId: string
 }
+
+export type TerminalAgentId = "claude" | "codex" | "cursor"
 
 export type TerminalSize = { readonly cols: number; readonly rows: number }
 

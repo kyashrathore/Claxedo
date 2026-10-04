@@ -185,7 +185,7 @@ test("sessions: a refused send is not resent when the sandbox did not stop, or w
   const stillLive = sendFixture([stopped], false)
   await expect(stillLive.send()).rejects.toBe(stopped)
   expect(stillLive.sent).toHaveLength(1)
-  const denied = new ServerError({ class: "auth", code: "session_access_denied", message: "Not yours" })
+  const denied = new ServerError({ class: "forbidden", code: "session_access_denied", message: "Not yours" })
   const refused = sendFixture([denied], true)
   await expect(refused.send()).rejects.toBe(denied)
   expect(refused.woke).toEqual([])
