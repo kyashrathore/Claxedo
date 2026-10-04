@@ -30,7 +30,7 @@ export function d1OrgSandboxDriver(database: D1Database, now: () => number = Dat
       const leases = `from sandbox_leases where status <> 'destroyed'
         and json_extract(labels_json, '$.${SANDBOX_KEY_LABEL}') = ? and json_extract(labels_json, '$.${SANDBOX_ORG_LABEL}') = ?`
       const administers = mayGuard({ userId }, "administer", { kind: "org", orgId })
-      const [using, removed] = await database.batch([
+      const [using, removed] = await database.batch<{ workspaces: number }>([
         database.prepare(`select count(*) as workspaces ${leases}`).bind(keyId, orgId),
         database
           .prepare(`delete from hosted_provider_credentials
@@ -38,7 +38,7 @@ export function d1OrgSandboxDriver(database: D1Database, now: () => number = Dat
               and ${administers.sql} and not exists (select 1 ${leases})`)
           .bind(orgId, keyId, ...administers.bind, keyId, orgId),
       ])
-      const workspaces = (using?.results[0] as { workspaces: number } | undefined)?.workspaces ?? 0
+      const workspaces = using?.results[0]?.workspaces ?? 0
       return workspaces > 0 ? { workspaces } : { deleted: (removed?.meta.changes ?? 0) > 0 }
     },
   }
