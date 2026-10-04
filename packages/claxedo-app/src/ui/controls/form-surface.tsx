@@ -62,6 +62,22 @@ export function FormDialog(props: FormSurfaceProps): JSX.Element {
   )
 }
 
+export function Drawer(props: ParentProps<{ readonly title: string; readonly description?: JSX.Element; readonly closeLabel: string; readonly onClose: () => void }>): JSX.Element {
+  return (
+    <DialogV2 containerClass="form-drawer" aria-label={props.title}>
+      <DialogHeader>
+        <DialogTitleGroup title={props.title} description={props.description} />
+      </DialogHeader>
+      <DialogBody class="form-surface-body">{props.children}</DialogBody>
+      <DialogFooter>
+        <ButtonV2 type="button" variant="neutral" onClick={() => props.onClose()}>
+          {props.closeLabel}
+        </ButtonV2>
+      </DialogFooter>
+    </DialogV2>
+  )
+}
+
 export function FormDrawer(props: FormSurfaceProps): JSX.Element {
   return (
     <DialogV2 containerClass="form-drawer" aria-label={props.title}>

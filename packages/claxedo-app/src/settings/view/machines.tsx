@@ -1,12 +1,11 @@
 import { createMemo, createSignal, For, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { useAuth } from "@/auth"
 import { useTranslator } from "@/i18n"
 import { copyText } from "@/lib/clipboard"
 import { useServer, type Machine } from "@/server"
-import { Button, ClaxedoIconButton, Tag } from "@/ui"
+import { Button, ClaxedoIconButton, Drawer, useDialog } from "@/ui"
 import { settingsDictionary, type SettingsKey } from "../i18n"
-import { SettingsGroup, SettingsIntro, SettingsList, SettingsRow } from "./section"
+import { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsRow } from "./section"
 
 const INVITE_COMMAND = "claxedo host invite --name build-box --root ~/code"
 const CONNECT_COMMAND = "claxedo connect --token-file ./invite.txt --install-service"
@@ -50,26 +49,19 @@ export function MachineConnectSteps() {
   )
 }
 
-function AddMachine(props: { readonly empty: boolean }) {
+function ConnectMachineDrawer() {
   const t = useTranslator(settingsDictionary)
-  const [open, setOpen] = createSignal(false)
+  const dialog = useDialog()
   return (
-    <div class="settings-add-machine">
-      <Show when={!props.empty}>
-        <Button size="small" variant="ghost" data-action="add-machine" aria-expanded={open()} onClick={() => setOpen(!open())}>
-          {t(open() ? "settings.machines.hideInstructions" : "settings.machines.addAnother")}
-        </Button>
-      </Show>
-      <Show when={props.empty || open()}>
-        <div class="settings-instructions">
-          <Show when={props.empty}>
-            <p class="settings-row-description">{t("settings.machines.empty")}</p>
-          </Show>
-          <MachineConnectSteps />
-        </div>
-      </Show>
-    </div>
+    <Drawer title={t("settings.machines.connect.title")} description={t("settings.machines.connect.description")} closeLabel={t("settings.machines.connect.done")} onClose={() => dialog.close()}>
+      <MachineConnectSteps />
+    </Drawer>
   )
+}
+
+export function useConnectMachine(): () => void {
+  const dialog = useDialog()
+  return () => dialog.show(() => <ConnectMachineDrawer />)
 }
 
 function machineStatus(machine: Machine): SettingsKey {
@@ -88,14 +80,7 @@ function MachineRow(props: { readonly machine: Machine }) {
   return (
     <SettingsRow
       leading={<span class="settings-dot" data-tone={props.machine.online ? "success" : "muted"} aria-hidden="true" />}
-      title={
-        <span class="settings-machine-title">
-          <span>{props.machine.name}</span>
-          <Show when={props.machine.isThisMachine}>
-            <Tag>{t("settings.machines.thisComputer")}</Tag>
-          </Show>
-        </span>
-      }
+      title={props.machine.name}
       description={t(machineStatus(props.machine))}
     />
   )
@@ -103,34 +88,34 @@ function MachineRow(props: { readonly machine: Machine }) {
 
 export function MachinesSection() {
   const t = useTranslator(settingsDictionary)
-  const auth = useAuth()
   const server = useServer()
-  const signedIn = () => auth.state().kind === "signedIn"
+  const connect = useConnectMachine()
   const query = useQuery(() => server.queries.machines.list())
   const machines = createMemo(() => listedMachines(query.data ?? []))
+  const action = (
+    <Button size="small" variant="ghost" data-action="add-machine" onClick={connect}>
+      {t("settings.machines.connect.action")}
+    </Button>
+  )
   return (
     <div class="settings-body">
       <SettingsIntro description={t("settings.machines.description")} />
-      <SettingsGroup title={t("settings.machines.remoteAccess")}>
-        <SettingsList variant="outline">
-          <SettingsRow
-            leading={<span class="settings-dot" data-tone="muted" aria-hidden="true" />}
-            title={t(signedIn() ? "settings.machines.remoteAccess.unavailable" : "settings.machines.remoteAccess.signIn")}
-            description={t(signedIn() ? "settings.machines.remoteAccess.unavailable.description" : "settings.machines.remoteAccess.signIn.description")}
-          >
-            <Button size="small" variant="neutral" disabled>
-              {t("settings.machines.remoteAccess.enable")}
-            </Button>
-          </SettingsRow>
-        </SettingsList>
-      </SettingsGroup>
-      <SettingsGroup title={t("settings.machines.yours")} description={t("settings.machines.yours.description")}>
-        <Show when={machines().length > 0}>
+      <SettingsGroup title={t("settings.machines.yours")} action={machines().length > 0 ? action : undefined}>
+        <Show
+          when={machines().length > 0}
+          fallback={
+            <SettingsEmpty>
+              <span class="settings-empty-line">
+                <span>{t("settings.machines.empty")}</span>
+                {action}
+              </span>
+            </SettingsEmpty>
+          }
+        >
           <SettingsList>
             <For each={machines()}>{(machine) => <MachineRow machine={machine} />}</For>
           </SettingsList>
         </Show>
-        <AddMachine empty={machines().length === 0} />
       </SettingsGroup>
     </div>
   )

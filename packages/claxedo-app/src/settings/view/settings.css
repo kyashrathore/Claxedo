@@ -246,21 +246,12 @@
   font-variant-numeric: tabular-nums;
 }
 
-.settings-add-machine {
+.settings-empty-line {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
-}
-
-.settings-instructions {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  align-self: stretch;
-  padding: 16px;
-  border: 1px dashed var(--v2-border-border-muted);
-  border-radius: var(--radius-lg);
 }
 
 .settings-steps {

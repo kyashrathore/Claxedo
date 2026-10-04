@@ -20,7 +20,7 @@ test("43 desktop this computer: Settings → Machines shows the computer the des
 
   const yours = window.getByRole("group", { name: "Your machines" })
   await expect(yours.getByText(report.displayName ?? "", { exact: true })).toBeVisible()
-  await expect(yours.getByText("This computer", { exact: true })).toBeVisible()
-  await expect(yours.getByText("Connected · only reachable from this computer", { exact: true })).toBeVisible()
-  await expect(yours.getByText("No machine is enrolled yet", { exact: false })).toHaveCount(0)
+  await expect(yours.getByText("This computer", { exact: true })).toHaveCount(0)
+  await expect(yours.getByText("Online · not reachable from your other devices yet", { exact: true })).toBeVisible()
+  await expect(yours.getByText("No machine is connected yet.", { exact: true })).toHaveCount(0)
 })
