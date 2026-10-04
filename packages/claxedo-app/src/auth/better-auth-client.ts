@@ -26,7 +26,10 @@ export type BetterAuthClientFactory = (options: {
   fetchOptions: { credentials: "include" }
 }) => BetterAuthBrowserClient
 
-export const productionClientFactory: BetterAuthClientFactory = (options) => createAuthClient(options)
+export const productionClientFactory: BetterAuthClientFactory = (options) => createAuthClient({
+  ...options,
+  fetchOptions: { ...options.fetchOptions, timeout: 15_000 },
+})
 
 export async function clientResult<T>(action: string, call: ClientResult<T>): Promise<T | null> {
   const result = await call
