@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
 import { createBoatSandboxDriver, type BoatFetch } from "./boat"
-import { createSandboxManager, type SandboxDriverEnsureInput } from ".."
+import { createSandboxManager, isSandboxRuntimeBootFailure, type SandboxDriverEnsureInput } from ".."
 import { createMemoryLeaseStore, sandboxLease } from "../stores/memory"
 
 type Call = { path: string; method: string; headers: Record<string, string>; body?: any }
@@ -544,7 +544,7 @@ describe("boat sandbox driver", () => {
       },
     })
     const failure = await driver.ensureHost(ensureInput()).catch((error: unknown) => error as Error)
-    expect(failure).toBeInstanceOf(Error)
+    expect(isSandboxRuntimeBootFailure(failure)).toBe(true)
     expect((failure as Error).message).toContain("Startup failed: [redacted]")
     expect((failure as Error).message).not.toContain("synthetic-runtime-secret")
     expect((failure as Error).message.length).toBeLessThan(750)

@@ -1,10 +1,11 @@
 import { trimToUndefined } from "@claxedo/helpers/string"
-import type {
-  SandboxDriver,
-  SandboxDriverEnsureInput,
-  SandboxLease,
-  SandboxTarget,
-  SandboxResource,
+import {
+  SandboxRuntimeBootError,
+  type SandboxDriver,
+  type SandboxDriverEnsureInput,
+  type SandboxLease,
+  type SandboxTarget,
+  type SandboxResource,
 } from "../contract"
 import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"
 import { envFile, shell } from "../command"
@@ -254,7 +255,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     } catch {
       diagnostic = "container diagnostics unavailable"
     }
-    throw new BoatDriverError(`Boat ${sandboxId} runtime did not become healthy: ${last}; ${diagnostic}`)
+    throw new SandboxRuntimeBootError(`Boat ${sandboxId} runtime did not become healthy: ${last}; ${diagnostic}`)
   }
 
   async function startContainer(sandboxId: string, input: SandboxDriverEnsureInput, hostId: string) {
