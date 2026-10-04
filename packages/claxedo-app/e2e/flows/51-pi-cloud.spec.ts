@@ -19,8 +19,6 @@ import {
   type SignedStack,
 } from "../harness"
 
-test.skip(({ isMobile }) => isMobile, "the cloud Pi flow runs once at desktop width")
-
 async function runningCloudWorkspace(signed: SignedStack) {
   await storeOwnerKey(signed, "openai", "cloud-owner-key")
   const workspace = await makeCloudWorkspace(signed, "main")
@@ -41,7 +39,8 @@ async function startPiFromComposer(page: Page, signed: SignedStack, workspace: C
   return await (await reserved).json() as { sessionId: string; sessionHostRoot?: string }
 }
 
-test("51 Pi started from the composer on a cloud workspace runs in its own session host, writes on the workspace machine, reloads from the host and is deleted there", async ({ signedCloud, page }) => {
+test("51 Pi started from the composer on a cloud workspace runs in its own session host, writes on the workspace machine, reloads from the host and is deleted there", async ({ signedCloud, page, isMobile }) => {
+  test.skip(isMobile, "workspace file panel coverage runs at desktop width")
   test.setTimeout(240_000)
   const workspace = await runningCloudWorkspace(signedCloud)
   signedCloud.hosted.model.scriptTool({ name: "write", input: { path: "cloud-pi.txt", content: "written by cloud Pi" }, whenPromptIncludes: "CLOUDPIWROTE" })
@@ -78,7 +77,8 @@ test("51 Pi started from the composer on a cloud workspace runs in its own sessi
   await expect(page.getByRole("navigation", { name: UI.rail }).getByText("No sessions match the current view.")).toBeVisible()
 })
 
-test("51 a cloud Pi session opens by its URL, and a Codex session on the same workspace runs on the workspace machine", async ({ signedCloud, page }) => {
+test("51 a cloud Pi session opens by its URL, and a Codex session on the same workspace runs on the workspace machine", async ({ signedCloud, page, isMobile }) => {
+  test.skip(isMobile, "cross-harness placement coverage runs at desktop width")
   test.setTimeout(240_000)
   const workspace = await runningCloudWorkspace(signedCloud)
   await signedCloud.signIn(page, signedCloud.owner)
@@ -97,4 +97,18 @@ test("51 a cloud Pi session opens by its URL, and a Codex session on the same wo
   expect(listed.find((row) => row.sessionId === sessionId)).toBeDefined()
   expect(listed.find((row) => row.sessionId === sessionId)).not.toHaveProperty("sessionHostRoot")
   expect(listed.find((row) => row.sessionId === pi.sessionId)?.sessionHostRoot).toBe(pi.sessionId)
+})
+
+test("51 cloud Pi keeps its model available after first-turn credential delivery without reloading", async ({ signedCloud, page }) => {
+  test.setTimeout(240_000)
+  const workspace = await runningCloudWorkspace(signedCloud)
+  await signedCloud.signIn(page, signedCloud.owner)
+  const reservation = await startPiFromComposer(page, signedCloud, workspace, "Reply with exactly this one token: PIMODELREADY")
+  await expect(page.getByText("PIMODELREADY", { exact: true })).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByRole("button", { name: "Select harness and model" })).toContainText("GPT-4.1")
+  await expect(page.getByRole("status", { name: /Pi is not set up/ })).toHaveCount(0)
+  await sendPrompt(page, "Reply with exactly this one token: PIMODELAGAIN")
+  await expect(page.getByText("PIMODELAGAIN", { exact: true })).toBeVisible({ timeout: 60_000 })
+  const host = await sessionConnection(signedCloud, workspace, reservation.sessionId)
+  expect(assistantText(await host.call("GET", `/session/${reservation.sessionId}/message`) as MessageRow[])).toContain("PIMODELAGAIN")
 })

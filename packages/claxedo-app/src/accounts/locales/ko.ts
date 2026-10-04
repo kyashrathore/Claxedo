@@ -191,6 +191,4 @@ export default {
   "settings.models.harness.empty": "{{harness}}이(가) {{workspace}}에 대해 보고한 모델이 없습니다.",
   "settings.providers.status.notConnected": "연결되지 않음",
   "common.loading": "로딩 중",
-  "settings.scope.workspace.loading": "워크스페이스 불러오는 중…",
-  "settings.scope.workspace.empty": "아직 워크스페이스가 없습니다",
 }

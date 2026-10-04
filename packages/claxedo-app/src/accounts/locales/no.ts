@@ -191,6 +191,4 @@ export default {
   "settings.models.harness.empty": "{{harness}} rapporterer ingen modeller for {{workspace}}.",
   "settings.providers.status.notConnected": "Ikke tilkoblet",
   "common.loading": "Laster",
-  "settings.scope.workspace.loading": "Laster arbeidsområder…",
-  "settings.scope.workspace.empty": "Ingen arbeidsområder ennå",
 }

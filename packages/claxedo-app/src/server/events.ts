@@ -1,7 +1,7 @@
 import type { SessionLastTurn } from "@claxedo/agent-runtime-contract"
 import type { PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
 import type { CloudWorkspaceStatus } from "./cloud-types"
-import type { HarnessConnectionState, HarnessHealth } from "./harness-types"
+import type { HarnessConnectionState, HarnessHealth, HarnessOptions } from "./harness-types"
 import type { Terminal, TerminalAgentStatus } from "./terminal-types"
 import type { BackgroundWork, SessionStatus } from "./status-types"
 import type { AgentRequest, FileDiff, SessionGoal, SessionLocation, SessionReader, SessionRow, Subagent, Todo, TranscriptMessage, TranscriptPart } from "./types"
@@ -41,6 +41,7 @@ export type ServerEvent =
   | { readonly type: "diffChanged"; readonly ref: SessionLocation; readonly diff: readonly FileDiff[] }
   | { readonly type: "goalChanged"; readonly ref: SessionLocation; readonly goal: SessionGoal | undefined }
   | { readonly type: "subagentUpdated"; readonly ref: SessionLocation; readonly subagent: Subagent }
+  | { readonly type: "harnessOptionsChanged"; readonly ref: SessionLocation; readonly options: HarnessOptions }
   | {
       readonly type: "harnessHealthChanged"
       readonly ref: SessionLocation

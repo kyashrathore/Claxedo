@@ -50,6 +50,10 @@ function twoResourceDriver() {
     suspend: record("suspend"),
     stop: record("stop"),
     destroy: record("destroy"),
+    deleteSnapshot: async (target, snapshotId) => {
+      expect(snapshotId).toBe(`snap_${target.sandboxId}`)
+      await record("deleteSnapshot")(target)
+    },
     touch: record("touch"),
     snapshot: async (target) => {
       calls.push({ op: "snapshot", sandboxId: target.sandboxId })
@@ -135,6 +139,83 @@ describe("sandbox manager", () => {
     expect(await manager.destroy("ws_1")).toEqual({ ok: false, reason: "runtime_lease_changed" })
     expect((await store.get("ws_1"))?.epoch).toBe(5)
     expect((await store.get("ws_1"))?.status).toBe("acquiring")
+  })
+
+  test("destroy fences an acquisition with no resource and refuses its late handoff", async () => {
+    const store = createMemoryLeaseStore([sandboxLease({ workspaceId: "ws_1", status: "acquiring", epoch: 4 })])
+    const destroy = vi.fn(async () => {})
+    const manager = createSandboxManager({ leaseStore: store, driver: fakeDriver({ destroy }) })
+    expect(await manager.destroy("ws_1")).toEqual({ ok: true, status: "destroyed" })
+    expect(await store.recordTarget("ws_1", 4, { sandboxId: "late", hostId: "late", labels: {} })).toBeUndefined()
+    expect(await store.recordFailure("ws_1", 4, "late failure")).toBeUndefined()
+    expect(destroy).not.toHaveBeenCalled()
+    expect(await manager.destroy("never_acquired")).toEqual({ ok: true, status: "destroyed" })
+  })
+
+  test("destroy cleans a resource recorded between its lease read and fencing write", async () => {
+    const store = createMemoryLeaseStore([sandboxLease({ workspaceId: "ws_1", status: "acquiring", epoch: 4 })])
+    const update = store.update.bind(store)
+    store.update = async (id, epoch, patch, expectedStatus) => {
+      if (patch.status === "stopped") await store.recordTarget(id, epoch, { sandboxId: "sb_race", hostId: "host_race", labels: {} })
+      return update(id, epoch, patch, expectedStatus)
+    }
+    const destroy = vi.fn(async () => {})
+    const manager = createSandboxManager({ leaseStore: store, driver: fakeDriver({ destroy }) })
+    expect(await manager.destroy("ws_1")).toEqual({ ok: true, status: "destroyed" })
+    expect(destroy).toHaveBeenCalledWith(expect.objectContaining({ sandboxId: "sb_race" }))
+  })
+
+  test("a provider deletion failure retains the resource for a successful retry", async () => {
+    const store = createMemoryLeaseStore([sandboxLease({ workspaceId: "ws_1", sandboxId: "sb_1", hostId: "host_1" })])
+    const destroy = vi.fn().mockRejectedValueOnce(new Error("provider unavailable")).mockResolvedValue(undefined)
+    const manager = createSandboxManager({ leaseStore: store, driver: fakeDriver({ destroy }) })
+    await expect(manager.destroy("ws_1")).rejects.toThrow("provider unavailable")
+    expect(await store.get("ws_1")).toMatchObject({ status: "stopped", sandboxId: "sb_1" })
+    expect(await manager.destroy("ws_1")).toEqual({ ok: true, status: "destroyed" })
+    expect(destroy).toHaveBeenCalledTimes(2)
+  })
+
+  test("workspace deletion retires the lease before provider cleanup and across process restart", async () => {
+    const store = createMemoryLeaseStore([sandboxLease({ workspaceId: "ws_1", sandboxId: "sb_1", hostId: "host_1" })])
+    const driver = fakeDriver({ destroy: vi.fn(async () => {
+      expect((await store.get("ws_1"))?.status).toBe("retiring")
+      const other = createSandboxManager({ leaseStore: store, driver })
+      expect(await other.ensure("ws_1", { homeRegion: "us-east" })).toMatchObject({ status: "unavailable", error: "runtime_lease_retired" })
+      expect(await other.release("ws_1")).toEqual({ released: false })
+    }) })
+    const manager = createSandboxManager({ leaseStore: store, driver })
+    expect(await manager.destroy("ws_1", { retireLease: { homeRegion: "us-east" } })).toEqual({ ok: true, status: "destroyed" })
+    expect((await store.get("ws_1"))?.status).toBe("retired")
+    expect(await manager.ensure("ws_1", { homeRegion: "us-east" })).toMatchObject({ status: "unavailable", error: "runtime_lease_retired" })
+    expect(driver.ensureHost).not.toHaveBeenCalled()
+  })
+
+  test("retirement fences a workspace that never acquired compute and refuses late handoffs", async () => {
+    const store = createMemoryLeaseStore()
+    const driver = fakeDriver()
+    const manager = createSandboxManager({ leaseStore: store, driver })
+    expect(await manager.destroy("ws_1", { retireLease: { homeRegion: "eu-west" } })).toEqual({ ok: true, status: "destroyed" })
+    expect(await store.get("ws_1")).toMatchObject({ status: "retired", homeRegion: "eu-west" })
+    expect(await store.acquire("ws_1", { driver: "test", homeRegion: "eu-west", staleAfterMs: 0 })).toMatchObject({ acquired: false, lease: { status: "retired" } })
+    expect(await store.recordTarget("ws_1", 1, { sandboxId: "late", hostId: "late", labels: {} })).toBeUndefined()
+    expect(await store.update("ws_1", 1, { status: "ready" })).toBeUndefined()
+    await store.release("ws_1")
+    expect((await store.get("ws_1"))?.status).toBe("retired")
+    expect(driver.ensureHost).not.toHaveBeenCalled()
+  })
+
+  test("failed retirement is retried without allowing startup, while ordinary compute destruction remains recreatable", async () => {
+    const store = createMemoryLeaseStore([sandboxLease({ workspaceId: "ws_1", sandboxId: "sb_1", hostId: "host_1" })])
+    const destroy = vi.fn().mockRejectedValueOnce(new Error("provider unavailable")).mockResolvedValue(undefined)
+    const driver = fakeDriver({ destroy })
+    const manager = createSandboxManager({ leaseStore: store, driver })
+    await expect(manager.destroy("ws_1", { retireLease: { homeRegion: "us-east" } })).rejects.toThrow("provider unavailable")
+    expect((await store.get("ws_1"))?.status).toBe("retiring")
+    expect(await createSandboxManager({ leaseStore: store, driver }).destroy("ws_1")).toEqual({ ok: true, status: "destroyed" })
+    expect((await store.get("ws_1"))?.status).toBe("retired")
+    await manager.ensure("ws_compute", { homeRegion: "us-east" })
+    await manager.destroy("ws_compute")
+    expect(await manager.ensure("ws_compute", { homeRegion: "us-east" })).toMatchObject({ status: "ready", epoch: 2 })
   })
 
   test.each(["stopped", "destroyed"] as const)("a failed in-flight resume does not overwrite %s or return its stale target", async (status) => {
@@ -1081,7 +1162,7 @@ describe("sandbox manager", () => {
     await manager.checkpoint("ws_a", { runtime })
     await manager.destroy("ws_a")
     expect(calls.map((call) => call.sandboxId)).toEqual(Array(calls.length).fill("sandbox_ws_a"))
-    expect(calls.map((call) => call.op)).toEqual(["touch", "snapshot", "snapshot", "destroy"])
+    expect(calls.map((call) => call.op)).toEqual(["touch", "snapshot", "snapshot", "deleteSnapshot", "destroy"])
     await expect(store.get("ws_b")).resolves.toMatchObject({
       status: "ready",
       sandboxId: "sandbox_ws_b",

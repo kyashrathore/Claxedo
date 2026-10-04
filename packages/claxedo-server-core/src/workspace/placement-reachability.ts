@@ -1,5 +1,5 @@
 import { asRecord, asString } from "@claxedo/helpers/guards"
-import { authorityRowBacking, readyCloudWorkspaces } from "./cloud-runtime-readiness"
+import { authorityRowBacking } from "./cloud-runtime-readiness"
 import type { SandboxManagerPort } from "../sandbox/manager-port"
 
 /**
@@ -25,6 +25,19 @@ export async function withAuthorityRowReachability(
   manager: Pick<SandboxManagerPort, "target"> | undefined,
   rows: readonly unknown[],
 ) {
-  const readyCloud = await readyCloudWorkspaces(manager, rows)
-  return rows.map((row) => ({ ...asRecord(row), reachable: authorityRowReachable(row, readyCloud) }))
+  return Promise.all(rows.map(async (row) => {
+    const record = asRecord(row)
+    if (authorityRowBacking(row) !== "cloud-vm") {
+      return { ...record, reachable: authorityRowReachable(row, new Set()) }
+    }
+    const id = asString(record?.workspace_id) ?? asString(record?.workspaceId)
+    if (!id || !manager) return { ...record, reachable: false, status: "failed", error: "Cloud runtime is unavailable" }
+    const target = await manager.target(id)
+    if (target.status === "ready") return { ...record, reachable: true, status: "ready" }
+    if (target.leaseStatus === "acquiring") return { ...record, reachable: false, status: "provisioning" }
+    if (target.leaseStatus === "stopped" || target.leaseStatus === "destroyed" || target.reason === "runtime_lease_missing") {
+      return { ...record, reachable: false, status: "stopped" }
+    }
+    return { ...record, reachable: false, status: "failed", error: target.reason }
+  }))
 }

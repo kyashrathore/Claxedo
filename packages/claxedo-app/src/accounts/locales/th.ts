@@ -189,6 +189,4 @@ export default {
   "settings.models.harness.empty": "{{harness}} ไม่ได้รายงานโมเดลสำหรับ {{workspace}}",
   "settings.providers.status.notConnected": "ไม่ได้เชื่อมต่อ",
   "common.loading": "กำลังโหลด",
-  "settings.scope.workspace.loading": "กำลังโหลดพื้นที่ทำงาน…",
-  "settings.scope.workspace.empty": "ยังไม่มีพื้นที่ทำงาน",
 }

@@ -1,6 +1,7 @@
 /// <reference types="bun" />
-import { beforeEach, expect, test } from "bun:test"
+import { beforeEach, expect, jest, spyOn, test } from "bun:test"
 import { createBetterAuthBrowserAdapter } from "./better-auth-adapter"
+import { productionClientFactory } from "./better-auth-client"
 
 const api = "https://api.claxedo.test"
 const app = "https://app.claxedo.test"
@@ -75,6 +76,32 @@ test("better auth: initialize reads the live descriptor and the session", async 
   expect(auth.methods()).toEqual(["email-password", "github"])
   expect(auth.user()).toBeNull()
   expect(auth.loading()).toBe(false)
+})
+
+test("better auth: a session request that never answers ends startup with a visible failure", async () => {
+  jest.useFakeTimers()
+  const started = Promise.withResolvers<void>()
+  const request = spyOn(globalThis, "fetch").mockImplementation(Object.assign(async (_url: RequestInfo | URL, init?: RequestInit) => {
+    expect(init?.credentials).toBe("include")
+    started.resolve()
+    return new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("Session request timed out", "AbortError")), { once: true })
+    })
+  }, { preconnect: globalThis.fetch.preconnect }))
+  try {
+    const adapter = createBetterAuthBrowserAdapter({ request: async () => Response.json(descriptor(["github"])), createClient: productionClientFactory })
+    const pending = adapter.initialize(deployment)
+    await started.promise
+    expect(adapter.useAuth().loading()).toBe(true)
+    jest.advanceTimersByTime(15_000)
+    await pending
+    expect(adapter.useAuth().loading()).toBe(false)
+    expect(adapter.useAuth().unavailable()).toContain("Session request timed out")
+    expect(adapter.useAuth().user()).toBeNull()
+  } finally {
+    request.mockRestore()
+    jest.useRealTimers()
+  }
 })
 
 test("better auth: an email sign-in lands on the app and adopts the user; sign-out clears it", async () => {

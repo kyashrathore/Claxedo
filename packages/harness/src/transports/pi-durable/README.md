@@ -47,3 +47,9 @@ Pi commits a tool call's intent before executing it. When the process dies, reop
 ## Placement port
 
 `PiPlacement.open` returns the session's `Harness`, root conversation and live registry, without resuming; the transport installs its extensions and resumes. `env` builds the execution environment, `mcpTransport` the transport for one server, `prepareTurn` (cloud) delivers the turn's credentials, projection and provider definitions before each turn, and `refreshCredential` renews an expiring subscription.
+
+A cloud turn publishes its actual model and effort options through `config-update` after `prepareTurn` delivers credentials and the conversation accepts the model. A model read made before that delivery can be empty; the event replaces that earlier catalog without a reload or an invented model.
+
+`model-catalog.ts` owns the conversation's durable model choices: model IDs, display names and supported effort levels, derived from the latest delivered credentials and definitions. Session configuration reads and validates against that document; drafts derive the same choices from their supplied account rows. Local open records its supplied catalog. Cloud open preserves the document until `prepareTurn` delivers credentials; an empty attachment outside a turn is not a revocation. An explicit credential update replaces the catalog, including clearing it when no providers remain. The document contains no credentials or endpoints and grants no execution authority: every turn still requires a newly delivered direct credential.
+
+Reviewed transport budget: 1,698 production lines, exactly 43 more for the durable model-catalog owner and shared effort validation. Server Worker closure verification passed with this owner. No per-file size limit changed.

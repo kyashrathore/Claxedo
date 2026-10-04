@@ -1,4 +1,4 @@
-import { z } from "zod"
+import { runtimeProviderCatalog } from "@claxedo/server-core/credentials/runtime-provider-catalog"
 import type { Context } from "hono"
 import { resolveWorkspace, workspaceIdFromDirectoryRef } from "@claxedo/server-core/workspace/store/index"
 import { workspaceIdFromWorkspaceRef } from "@claxedo/server-core/workspace/refs"
@@ -8,14 +8,6 @@ import { HTTPException } from "hono/http-exception"
 import type { ProviderCatalogEntry } from "@claxedo/harness/contract"
 import { sandboxFetchOptionsForRequest } from "../workspace/sandbox-fetch-options"
 import type { AgentConfigRouteOptions } from "./route-options"
-
-const modelSchema = z.object({
-  providerID: z.string(), id: z.string(), name: z.string().optional(), variants: z.array(z.string()).optional(),
-  cost: z.array(z.object({ input: z.number(), output: z.number() })),
-})
-const catalogSchema = z.array(z.object({
-  id: z.string(), name: z.string(), env: z.array(z.string()), connected: z.boolean(), models: z.array(modelSchema),
-}))
 
 /**
  * The provider catalog of the workspace a request names, read from that
@@ -44,5 +36,5 @@ export async function workspaceProviderCatalog(c: Context, options: AgentConfigR
     throw error
   }
   if (!response.ok) throw new Error(`Workspace provider catalog failed (${response.status})`)
-  return catalogSchema.parse(await response.json())
+  return runtimeProviderCatalog.parse(await response.json())
 }

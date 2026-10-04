@@ -1,7 +1,8 @@
 import * as fs from "fs"
 import * as os from "os"
 import * as path from "path"
-import { LaunchRefusedError, identityFromSpawn, launchErrorText, readCreationIdentity, type LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
+import { LaunchRefusedError, launchErrorText, type LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
+import { readPtyCreationIdentity } from "./creation-identity"
 import { Log } from "../log"
 import { shellQuote } from "@claxedo/helpers"
 import { BIN_DIR, getTerminalEnvVars, isSetupComplete, setupAgentHooks } from "../agent-hooks"
@@ -253,18 +254,14 @@ export async function startTerminal(
     while (awaitingPid()) await new Promise((resolve) => setTimeout(resolve, 10))
   }
   const pid = ptyProcess.pid
-  const observed = Number.isInteger(pid) && pid > 0
-    ? await readCreationIdentity(pid).catch((error: unknown) => {
-        log.error("could not read the terminal's creation identity; it cannot be retired by signal", { id, pid, error: String(error) })
-        return undefined
-      })
-    : undefined
+  const { observed, identity } = await readPtyCreationIdentity(pid, spawnedAt, () => nativeExit !== undefined).catch((error: unknown) => {
+    log.error("could not read the terminal's creation identity; it cannot be retired by signal", { id, pid, error: String(error) })
+    return { observed: undefined, identity: undefined }
+  })
   // The PTY library's own spawn helper is the child's parent, not this
   // runtime, so parentage proves nothing. What does: a process that already
   // existed before this spawn cannot be the one this spawn created, and a
   // pid that is not its own group leader is not a terminal session.
-  const started = identityFromSpawn(observed, spawnedAt)
-  const identity = started && started.processGroupId === started.pid ? started : undefined
   if (observed && !identity) {
     log.error("the PTY reported a pid this spawn cannot own; it will not be signalled", {
       id,

@@ -102,12 +102,12 @@ function plane() {
   }
   const listed = async () => (await fixture.authority.listWorkspaces(people.owner) as Array<{ workspace_id: string }>).map((row) => row.workspace_id)
   const live = (account: string) => (accounts.get(account)?.live ?? []).map((target) => target.workspaceId)
-  return { accounts, released, remove, provisioned, listed, live, leaseStore }
+  return { accounts, released, remove, provisioned, listed, live, leaseStore, manager: sandboxes.manager }
 }
 
 describe("DELETE /api/workspace/:id on the hosted control plane", () => {
   test("the owner's delete destroys the sandbox on the operator's account, withdraws its runtime, deletes the row, and a repeat is answered as done", async () => {
-    const { released, remove, provisioned, listed, live, leaseStore } = plane()
+    const { released, remove, provisioned, listed, live, leaseStore, manager } = plane()
     await provisioned("ws_operator")
     expect(live("operator")).toEqual(["ws_operator"])
 
@@ -115,7 +115,9 @@ describe("DELETE /api/workspace/:id on the hosted control plane", () => {
     expect(first.status).toBe(200)
     expect(await first.json()).toEqual({ deleted: true })
     expect(live("operator")).toEqual([])
-    expect((await leaseStore.get("ws_operator"))?.status).toBe("destroyed")
+    expect((await leaseStore.get("ws_operator"))?.status).toBe("retired")
+    expect(await manager.ensure("ws_operator", { homeRegion: "us-east", labels: {} })).toMatchObject({ status: "unavailable", error: "runtime_lease_retired" })
+    expect(live("operator")).toEqual([])
     expect(released).toEqual(["ws_operator"])
     expect(await listed()).not.toContain("ws_operator")
     await expect(fixture.authority.openWorkspace(people.owner, { workspaceId: "ws_operator" })).rejects.toMatchObject({ status: 403 })
@@ -127,7 +129,7 @@ describe("DELETE /api/workspace/:id on the hosted control plane", () => {
   })
 
   test("a workspace on its organization's own key is destroyed through that key's provider account", async () => {
-    const { remove, provisioned, live } = plane()
+    const { remove, provisioned, live, leaseStore, manager } = plane()
     const store = hostedOrgCredentials(orgId, { database: fixture.database, env })
     const boat = await store.putCredential({ owner: null, provider_id: "boat", kind: "sandbox_driver", source: "managed", secret: JSON.stringify({ api_key: "bx-delete" }) })
     try {
@@ -137,6 +139,9 @@ describe("DELETE /api/workspace/:id on the hosted control plane", () => {
       expect((await remove("ws_org_key")).status).toBe(200)
       expect(live("org-boat-bx-delete")).toEqual([])
       expect(live("operator")).toEqual([])
+      expect((await leaseStore.get("ws_org_key"))?.status).toBe("retired")
+      expect(await manager.ensure("ws_org_key", { homeRegion: "us-east", labels: {} })).toMatchObject({ status: "unavailable", error: "runtime_lease_retired" })
+      expect(live("org-boat-bx-delete")).toEqual([])
     } finally {
       await store.deleteCredential(boat.id)
     }
@@ -172,10 +177,13 @@ describe("DELETE /api/workspace/:id on the hosted control plane", () => {
   })
 
   test("a workspace whose sandbox was never provisioned is deleted", async () => {
-    const { remove, listed } = plane()
+    const { remove, listed, leaseStore, manager, live } = plane()
     await fixture.authority.createCloudWorkspace(people.owner, { workspaceId: "ws_never", displayName: "never", repoUrl: "https://github.com/acme/widgets" })
 
     expect((await remove("ws_never")).status).toBe(200)
     expect(await listed()).not.toContain("ws_never")
+    expect((await leaseStore.get("ws_never"))?.status).toBe("retired")
+    expect(await manager.ensure("ws_never", { homeRegion: "us-east", labels: {} })).toMatchObject({ status: "unavailable", error: "runtime_lease_retired" })
+    expect(live("operator")).toEqual([])
   })
 })

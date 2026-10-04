@@ -23,9 +23,14 @@ type Posted = { readonly path: string; readonly body: unknown }
 
 function transport(posted: Posted[]): Transport {
   let provisioned = false
+  let status = "ready"
   const json = async (path: string, init?: RequestInit) => {
     if (path === "/api/claxedo/bootstrap") return bootstrap
-    if (path === "/api/workspace?host=provisioner") return { workspaces: provisioned ? [created] : [] }
+    if (path === "/api/workspace?host=provisioner") return { workspaces: provisioned ? [{ ...created, status }] : [] }
+    if (path === "/api/workspace/ws_new/lifecycle/stop" && init?.method === "POST") {
+      status = "stopped"
+      return { ok: true, status }
+    }
     if (path === "/api/workspace/ws_new" && init?.method === "DELETE") {
       provisioned = false
       return { deleted: true }
@@ -55,10 +60,24 @@ function world(signed: boolean, catalog: () => void = () => {}) {
   const wire = transport(posted)
   const workspaces = createWorkspaces(wire, queryClient, signed ? account : undefined)
   const project = async (id: ProjectId) => ({ id, source: { kind: "repository", url: "https://github.com/acme/widgets" } }) as Pick<Project, "id" | "source"> as Project
-  const cloud = createCloudApi(wire, workspaces, wakes, project, signed ? account : undefined, queryClient)
-  const listed = async () => (await queryClient.fetchQuery({ ...cloudQueries(wire).cloud.list(), staleTime: Infinity })).map((workspace) => workspace.id)
-  return { cloud, workspaces, posted, listed, operations: () => operations.filter((entry) => entry.operation === "workspace.create") }
+  const cloud = createCloudApi(wire, workspaces, wakes, project, signed ? account : undefined)
+  const inventory = () => queryClient.fetchQuery({ ...cloudQueries(wire).cloud.list(), staleTime: Infinity })
+  const listed = async () => (await inventory()).map((workspace) => workspace.id)
+  const statuses = async () => (await inventory()).map((workspace) => workspace.status.kind)
+  return { cloud, workspaces, posted, listed, statuses, operations: () => operations.filter((entry) => entry.operation === "workspace.create") }
 }
+
+test("a completed stop refreshes the cached authoritative cloud lifecycle without an event or page reload", async () => {
+  await createRoot(async (dispose) => {
+    const { cloud, workspaces, statuses } = world(false)
+    await cloud.create({ projectId: projectId("prj_widgets") })
+    expect(await statuses()).toEqual(["ready"])
+    await cloud.stop(placementId("ws_new"))
+    expect(await statuses()).toEqual(["stopped"])
+    workspaces.dispose()
+    dispose()
+  })
+})
 
 test("signed desktop: a repository's cloud workspace is created on the account's control plane and read back from its catalog", async () => {
   await createRoot(async (dispose) => {

@@ -193,6 +193,4 @@ export default {
   "settings.models.harness.empty": "{{harness}} no informa modelos para {{workspace}}.",
   "settings.providers.status.notConnected": "No conectado",
   "common.loading": "Cargando",
-  "settings.scope.workspace.loading": "Cargando espacios de trabajo…",
-  "settings.scope.workspace.empty": "Aún no hay espacios de trabajo",
 }

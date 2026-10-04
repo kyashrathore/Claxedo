@@ -37,6 +37,7 @@ function harnessNoticeInput(input: SelectorNoticeInput, setupRequired: boolean):
   return {
     harnessLabel: harness() ? input.harnessLabel(harness()!) : "Agent",
     runtimeUnavailable: availability.isError(),
+    modelRuntimeRequired: !!harness() && isCatalogHarness(harness()) && catalog.providers.runtimeRequired(),
     connectionState: selection().connectionState,
     optionsFailed: availability.modelOptionsFailed(),
     noModels: !availability.hasModelOptions() && !availability.modelLoading() && !catalog.unread(),

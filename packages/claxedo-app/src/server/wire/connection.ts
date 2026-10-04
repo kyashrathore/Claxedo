@@ -22,7 +22,6 @@ export type WorkspaceConnections = {
 }
 
 export const WORKSPACE_STOPPED = "workspace_stopped"
-export const CLOUD_RUNTIME_UNAVAILABLE = "cloud_runtime_unavailable"
 const WORKSPACE_HOST_OFFLINE = "workspace_host_offline"
 const WORKSPACE_CHECKPOINT_FROZEN = "workspace_checkpoint_frozen"
 
@@ -65,9 +64,4 @@ export function connectionAnswerFromWire(body: unknown, workspaceId: string, ses
   if (sessionId && row.sessionId !== sessionId) throw new ServerError({ class: "internal", message: "Session connection scope does not match the requested session" })
   const link = { ...linkOf(row, workspaceId), ...(sessionId ? { sessionId } : {}) }
   return { kind: "ready", link, ...(row.backing === "durable-object" && sessionId ? { sessionHostRoot: sessionId } : {}) }
-}
-
-export function unavailableRetryAfter(body: unknown): number | undefined {
-  const error = isRecord(body) && isRecord(body.error) ? body.error : undefined
-  return retryAfterOf(error?.retryAfterMs)
 }

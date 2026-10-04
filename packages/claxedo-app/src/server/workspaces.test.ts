@@ -5,6 +5,7 @@ import { createRoot } from "solid-js"
 import { placementId, projectId } from "./ids"
 import type { Transport } from "./transport"
 import { createWorkspaces } from "./workspaces"
+import { queryKeys } from "./query-keys"
 
 const bootstrap = {
   deployment: { serverKind: "daemon", issuesSessions: false },
@@ -31,6 +32,10 @@ test("the placement catalog stays readable once the query cache's collection tim
     expect(workspaces.list().map((placement) => String(placement.id))).toEqual(["ws_app"])
     await workspaces.load()
     expect(reads).toEqual(["/api/claxedo/bootstrap"])
+    const cloudKey = queryKeys.cloud("http://127.0.0.1:1")
+    queryClient.setQueryData(cloudKey, [])
+    await workspaces.refresh()
+    expect(queryClient.getQueryState(cloudKey)?.isInvalidated).toBe(true)
     workspaces.dispose()
     dispose()
   })

@@ -173,6 +173,7 @@ function SessionBody(props: {
               hidden={blocked()}
               afterAccepted={() => {
                 peek.sent()
+                scroll.resume()
               }}
               queuedEdit={queueEdit.edit}
               dropZone={() => body}

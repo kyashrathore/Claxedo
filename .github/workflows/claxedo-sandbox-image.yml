@@ -10,7 +10,7 @@ on:
       - packages/process-ownership/**
       - packages/sandbox-manager/**
       - packages/claxedo-server/scripts/sandbox/build-sandbox-image.ts
-      - packages/claxedo-server/src/hosts/workspace-runtime/host-entry.ts
+      - packages/claxedo-server/src/hosts/workspace-runtime/**
       - packages/workspace-runtime/**
       - .github/actions/setup-bun/action.yml
       - .github/workflows/claxedo-sandbox-image.yml
@@ -20,6 +20,15 @@ on:
         description: "workspace-runtime core version used for image naming (defaults to the checkout's package.json)"
         required: false
         type: string
+      agent_plugins:
+        description: "Build the Agent Plugins runtime entrypoint as an immutable image for an enabled deployment"
+        required: false
+        default: false
+        type: boolean
+      verify_image:
+        description: "Verify the native sandbox policy against this existing immutable image instead of building"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -27,6 +36,7 @@ permissions:
 
 jobs:
   build:
+    if: ${{ inputs.verify_image == '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -50,7 +60,13 @@ jobs:
       - name: Build and push sandbox image
         env:
           WORKSPACE_RUNTIME_VERSION: ${{ inputs.runtime_version }}
-        run: bun run --cwd packages/claxedo-server sandbox:image --push --latest
+          AGENT_PLUGINS: ${{ inputs.agent_plugins }}
+        run: |
+          if [ "$AGENT_PLUGINS" = true ]; then
+            bun run --cwd packages/claxedo-server sandbox:image --push --agent-plugins
+          else
+            bun run --cwd packages/claxedo-server sandbox:image --push --latest
+          fi
 
       # Surface the content build-id / image tag so operators can pin the
       # control plane (CLAXEDO_SANDBOX_BUILD_ID / CLAXEDO_SANDBOX_IMAGE): two
@@ -70,3 +86,14 @@ jobs:
           else
             echo "no build-info.json emitted"
           fi
+
+  verify-native-policy:
+    if: ${{ inputs.verify_image != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Verify native Codex sandbox with restricted container capabilities
+        env:
+          RUNTIME_IMAGE: ${{ inputs.verify_image }}
+        run: bash packages/sandbox-manager/scripts/check-boat-sandbox-policy.sh "$RUNTIME_IMAGE"

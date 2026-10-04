@@ -1,10 +1,11 @@
 import { spawnSync } from "node:child_process"
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
 import { createBoatSandboxDriver, type BoatFetch } from "./boat"
 import { createSandboxManager, type SandboxDriverEnsureInput } from ".."
+import { shell } from "../command"
 import { createMemoryLeaseStore, sandboxLease } from "../stores/memory"
 
 type Call = { path: string; method: string; headers: Record<string, string>; body?: any }
@@ -54,6 +55,7 @@ function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnc
   const states = options?.states ?? ["ready"]
   let stateIdx = 0
   let healthChecks = 0
+  let deleted = false
   const hostUrl = options?.hostUrl ?? "https://machine-2593.on.boat.dev"
 
   const fetchImpl: BoatFetch = async (input, init) => {
@@ -64,9 +66,11 @@ function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnc
     const json = (obj: object, status = 200) => Response.json({ ok: true, ...obj }, { status })
 
     if (path === "/sandboxes" && method === "POST") {
+      deleted = false
       return json({ type: "sandbox.created", status: "provisioning", ttlSeconds: body.ttlSeconds, sandbox: sandboxRecord("provisioning") }, 202)
     }
     if (path === `/sandboxes/${ID}` && method === "GET") {
+      if (deleted) return Response.json({ ok: false, code: "not_found" }, { status: 404 })
       const state = states[Math.min(stateIdx, states.length - 1)]
       stateIdx++
       return json({ type: "sandbox.info", sandbox: sandboxRecord(state) })
@@ -92,6 +96,7 @@ function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnc
       return json({ type: "sandbox.resuming", id: ID, status: "provisioning", sandbox: sandboxRecord("provisioning") }, 202)
     }
     if (path === `/sandboxes/${ID}` && method === "DELETE") {
+      deleted = true
       return json({ type: "sandbox.deleting", operation: { id: "op_1", kind: "sandbox", targetId: ID, status: "queued" } }, 202)
     }
     return Response.json({ ok: false, code: "not_found", message: `unhandled ${method} ${path}` }, { status: 404 })
@@ -103,18 +108,22 @@ function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnc
  * Runs the driver's container start command under a real `sh`, with `docker`
  * and `timeout` replaced by a recorder over one container slot: `docker info`
  * fails until the daemon has been asked `daemonUpAfter` times, `inspect`
- * answers the slot's image, and `run` fills the slot unless Boat's own
+ * answers the slot's image and boot command, and `run` fills the slot unless Boat's own
  * recreation (`recreatedDuringRun`) fills it first and the create conflicts.
  */
-function runStartCommand(command: string, vm: { existingImage?: string; daemonUpAfter?: number; recreatedDuringRun?: string }) {
+function runStartCommand(command: string, vm: {
+  existingImage?: string; existingCommand?: string; existingInit?: boolean; existingPolicy?: boolean
+  daemonUpAfter?: number; recreatedDuringRun?: string; recreatedInit?: boolean; recreatedPolicy?: boolean
+  apparmor?: boolean; policyLoadFailure?: boolean; envInstallFailure?: boolean
+  pullFailure?: boolean; restoredDuringPull?: boolean
+}) {
   const dir = mkdtempSync(path.join(tmpdir(), "boat-start-"))
   const bin = path.join(dir, "bin")
   mkdirSync(bin)
   const log = path.join(dir, "docker.log")
   const slot = path.join(dir, "container")
   writeFileSync(log, "")
-  writeFileSync(path.join(dir, ".claxedo-runtime-env"), "")
-  if (vm.existingImage) writeFileSync(slot, vm.existingImage)
+  writeFileSync(path.join(dir, ".claxedo-runtime-env.stage"), "export CLAXEDO_ENV_TEST=delivered\n")
   const tool = (name: string, body: string) => {
     writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`)
     chmodSync(path.join(bin, name), 0o755)
@@ -122,24 +131,49 @@ function runStartCommand(command: string, vm: { existingImage?: string; daemonUp
   tool("timeout", 'shift\nexec "$@"')
   tool("docker", [
     `echo "$*" >> ${log}`,
+    `download() { if [ -f ${dir}/fixture-ready ]; then [ '${vm.pullFailure ?? false}' != true ] || return 125; [ '${vm.restoredDuringPull ?? false}' != true ] || cp ${dir}/restored-container ${slot}; fi; touch ${dir}/image-ready; }`,
     `case "$1" in`,
-    `  info) n=$(($(cat ${dir}/info 2>/dev/null || echo 0) + 1)); echo $n > ${dir}/info; [ $n -gt ${vm.daemonUpAfter ?? 0} ] ;;`,
-    `  inspect) cat ${slot} 2>/dev/null ;;`,
+    `  info) if [ "$2" = --format ]; then echo '${JSON.stringify(vm.apparmor ? ["name=apparmor"] : [])}'; exit 0; fi; n=$(($(cat ${dir}/info 2>/dev/null || echo 0) + 1)); echo $n > ${dir}/info; [ $n -gt ${vm.daemonUpAfter ?? 0} ] ;;`,
+    `  inspect) case "$*" in *HostConfig.Init*) cat ${slot} 2>/dev/null ;; *) sed -E 's/^([^ ]+) (true|false) [^ ]+ /\\1 /' ${slot} 2>/dev/null ;; esac ;;`,
     `  rm) rm -f ${slot} ;;`,
-    `  run) if [ -n "${vm.recreatedDuringRun ?? ""}" ]; then echo "${vm.recreatedDuringRun ?? ""}" > ${slot}; echo Conflict >&2; exit 125; fi; echo ${IMAGE} > ${slot} ;;`,
+    `  image) [ -f ${dir}/image-ready ] ;;`,
+    `  pull) download ;;`,
+    `  run) init=false; previous=; image=; policy=missing; for last; do [ "$last" != --init ] || init=true; [ "$last" != -lc ] || image="$previous"; case "$last" in claxedo.runtime.security=*) policy="\${last#*=}" ;; esac; previous="$last"; done`,
+    `    [ -f ${dir}/image-ready ] || download || exit $?`,
+    `    if [ -f ${slot} ]; then echo Conflict >&2; exit 125; fi`,
+    `    printf '%s' "$last" > ${dir}/boot`,
+    `    if [ -n "${vm.recreatedDuringRun ?? ""}" ] && [ ! -f ${dir}/recreated ]; then touch ${dir}/recreated; printf '%s %s %s -lc %s' '${vm.recreatedDuringRun ?? ""}' '${vm.recreatedInit ?? true}' ${vm.recreatedPolicy === false ? "missing" : '"$policy"'} "$last" > ${slot}; echo Conflict >&2; exit 125; fi`,
+    `    printf '%s %s %s -lc %s' "$image" "$init" "$policy" "$last" > ${slot} ;;`,
     `  start) [ -f ${slot} ] ;;`,
     `esac`,
   ].join("\n"))
   tool("sleep", "exit 0")
+  tool("sudo", `echo "$*" >> ${dir}/policy.log\nif [ "$2" = install ]; then shift 2; [ '${vm.envInstallFailure ?? false}' != true ] || exit 1; exec install -m 600 "$7" "$8"; fi\nexit ${vm.policyLoadFailure ? 1 : 0}`)
+  if (vm.existingImage) {
+    spawnSync("sh", ["-c", command], { cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8" })
+    const workspace = path.join(dir, "claxedo-persistent", "workspace")
+    mkdirSync(workspace, { recursive: true })
+    writeFileSync(path.join(workspace, "user-work.txt"), "keep my work")
+    writeFileSync(slot, readFileSync(slot, "utf8").replace(IMAGE, vm.existingImage))
+    if (vm.existingCommand) writeFileSync(slot, readFileSync(slot, "utf8").replace(/ -lc [\s\S]*/, ` -lc ${vm.existingCommand}`))
+    if (vm.existingInit === false) writeFileSync(slot, readFileSync(slot, "utf8").replace(" true ", " false "))
+    if (vm.existingPolicy === false) writeFileSync(slot, readFileSync(slot, "utf8").replace(/ (true|false) [^ ]+ /, " $1 missing "))
+    writeFileSync(path.join(dir, "restored-container"), readFileSync(slot, "utf8"))
+    if (vm.existingImage !== IMAGE) rmSync(path.join(dir, "image-ready"), { force: true })
+    writeFileSync(log, "")
+    writeFileSync(path.join(dir, "info"), "0")
+  }
+  writeFileSync(path.join(dir, ".claxedo-runtime-env.stage"), "export CLAXEDO_ENV_TEST=delivered\n")
+  writeFileSync(path.join(dir, "fixture-ready"), "")
   const result = spawnSync("sh", ["-c", command], { cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8" })
   const calls = readFileSync(log, "utf8").split("\n").filter(Boolean).map((line) => line.split(" ").slice(0, 2).join(" "))
   return { status: result.status, calls, dir }
 }
 
-async function startCommand() {
+async function startCommand(input?: Partial<SandboxDriverEnsureInput>, runtimeCommand?: string) {
   const boat = fakeBoat()
-  const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0 })
-  await driver.ensureHost(ensureInput())
+  const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0, runtimeCommand })
+  await driver.ensureHost(ensureInput(input))
   const command = commandsOf(boat.calls).find((c) => c.includes("docker info"))
   if (!command) throw new Error("no container start command")
   return command
@@ -148,6 +182,23 @@ async function startCommand() {
 const commandsOf = (calls: Call[]) => calls.filter((c) => c.path.endsWith("/commands")).map((c) => c.body.command as string)
 
 describe("boat sandbox driver", () => {
+  test("delivers the reviewed native sandbox policy before starting a restricted container", async () => {
+    const boat = fakeBoat()
+    await createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl }).ensureHost(ensureInput())
+    const writes = boat.calls.filter((call) => call.path.endsWith("/files"))
+    const seccomp = writes.find((call) => call.body.path === ".claxedo-runtime-seccomp.json")
+    expect(JSON.parse(seccomp?.body.content ?? "null")?.defaultAction).toBe("SCMP_ACT_ERRNO")
+    expect(writes.find((call) => call.body.path === ".claxedo-runtime.apparmor")?.body.content).toContain("profile claxedo-workspace-runtime")
+    const start = commandsOf(boat.calls).find((command) => command.includes("docker run"))!
+    expect(start).toContain("--cap-drop ALL --cap-add SETFCAP --cap-add CHOWN --security-opt no-new-privileges")
+    expect(start).toContain("--security-opt seccomp=")
+    expect(start).toContain("sudo -n apparmor_parser -r -W")
+    expect(start).not.toContain("seccomp=unconfined")
+    expect(start).not.toContain("--privileged")
+    expect(start).not.toContain("SYS_ADMIN")
+    expect(boat.calls.indexOf(seccomp!)).toBeLessThan(boat.calls.findIndex((call) => call.body?.command === start))
+  })
+
   test.each(["transport", "http", "exit"] as const)("registry password cleanup %s failure prevents publishing the runtime", async (failure) => {
     const boat = fakeBoat()
     const driver = createBoatSandboxDriver({
@@ -235,6 +286,7 @@ describe("boat sandbox driver", () => {
     expect(boat.calls.map(({ path, method, body }) => ({ path, method, body }))).toEqual([
       { path: "/sandboxes", method: "POST", body: { noEnv: true, ttlSeconds: null } },
       { path: `/sandboxes/${ID}`, method: "DELETE", body: undefined },
+      { path: `/sandboxes/${ID}`, method: "GET", body: undefined },
     ])
     expect(boat.calls[1].headers).toMatchObject({ "X-Ascii-Confirm-Delete": ID, Authorization: "Bearer k" })
   })
@@ -285,6 +337,7 @@ describe("boat sandbox driver", () => {
     expect(boat.calls.map(({ method, path }) => ({ method, path }))).toEqual([
       { method: "POST", path: "/sandboxes" },
       { method: "DELETE", path: `/sandboxes/${ID}` },
+      { method: "GET", path: `/sandboxes/${ID}` },
     ])
   })
 
@@ -346,7 +399,7 @@ describe("boat sandbox driver", () => {
     expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/claxedo":'/root/.claxedo'`)
     expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/workspace-runtime":'/root/.workspace-runtime'`)
     expect(run?.body.command).not.toContain("--env ")
-    const envWrite = boat.calls.find((c) => c.path.endsWith("/files") && c.body?.path === ".claxedo-runtime-env")
+    const envWrite = boat.calls.find((c) => c.path.endsWith("/files") && c.body?.path === ".claxedo-runtime-env.stage")
     expect(envWrite?.body).toMatchObject({ encoding: "utf8" })
     expect(envWrite?.body?.content).toContain("export WORKSPACE_RUNTIME_WORKSPACE_ID='ws1'")
     expect(envWrite?.body?.content).toContain("export WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL='https://api.example.test/.well-known/jwks.json'")
@@ -376,32 +429,145 @@ describe("boat sandbox driver", () => {
   test("a fresh VM waits for the Docker daemon, then creates the runtime container, leaving its bind sources for Docker to create", async () => {
     const run = runStartCommand(await startCommand(), { daemonUpAfter: 2 })
     expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["info", "info", "info", "inspect --format", "rm -f", "run -d"])
+    expect(run.calls).toEqual(["info", "info", "info", "info --format", "image inspect", `pull ${IMAGE}`, "inspect --format", "rm -f", "run -d"])
     expect(existsSync(path.join(run.dir, "claxedo-persistent"))).toBe(false)
   })
 
   test("a repeated start finds the container the first one created and only starts it", async () => {
     const run = runStartCommand(await startCommand(), { existingImage: IMAGE, daemonUpAfter: 1 })
     expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["info", "info", "inspect --format", "start claxedo-runtime"])
+    expect(run.calls).toEqual(["info", "info", "info --format", "image inspect", "inspect --format", "start claxedo-runtime"])
+  })
+
+  test("a container without an init reaper is replaced while its persistent workspace is kept", async () => {
+    const command = await startCommand()
+    expect(command).toContain("docker run -d --init --name claxedo-runtime")
+    const run = runStartCommand(command, { existingImage: IMAGE, existingInit: false })
+    expect(run.status).toBe(0)
+    expect(run.calls).toEqual(["info", "info --format", "image inspect", "inspect --format", "rm -f", "run -d"])
+    expect(readFileSync(path.join(run.dir, "claxedo-persistent", "workspace", "user-work.txt"), "utf8")).toBe("keep my work")
+  })
+
+  test("staged environment delivery installs a private root-owned container file and removes the upload", async () => {
+    const run = runStartCommand(await startCommand(), {})
+    expect(run.status).toBe(0)
+    expect(readFileSync(path.join(run.dir, "policy.log"), "utf8")).toContain("-n install -m 600 -o 0 -g 0 .claxedo-runtime-env.stage .claxedo-runtime-env")
+    expect(statSync(path.join(run.dir, ".claxedo-runtime-env")).mode & 0o777).toBe(0o600)
+    expect(readFileSync(path.join(run.dir, ".claxedo-runtime-env"), "utf8")).toBe("export CLAXEDO_ENV_TEST=delivered\n")
+    expect(existsSync(path.join(run.dir, ".claxedo-runtime-env.stage"))).toBe(false)
+  })
+
+  test("an environment ownership installation failure prevents container mutation", async () => {
+    const run = runStartCommand(await startCommand(), { envInstallFailure: true })
+    expect(run.status).not.toBe(0)
+    expect(run.calls).toEqual([])
+    expect(statSync(path.join(run.dir, ".claxedo-runtime-env.stage")).mode & 0o777).toBe(0o600)
+  })
+
+  test("a container with the old security policy is replaced without losing its workspace", async () => {
+    const run = runStartCommand(await startCommand(), { existingImage: IMAGE, existingPolicy: false })
+    expect(run.status).toBe(0)
+    expect(run.calls).toContain("rm -f")
+    expect(readFileSync(path.join(run.dir, "container"), "utf8")).not.toContain("missing")
+    expect(readFileSync(path.join(run.dir, "claxedo-persistent", "workspace", "user-work.txt"), "utf8")).toBe("keep my work")
+  })
+
+  test("an AppArmor host loads the policy before launching its container", async () => {
+    const run = runStartCommand(await startCommand(), { apparmor: true })
+    expect(run.status).toBe(0)
+    expect(readFileSync(path.join(run.dir, "policy.log"), "utf8")).toContain("-n apparmor_parser -r -W .claxedo-runtime.apparmor")
+    expect(readFileSync(path.join(run.dir, "docker.log"), "utf8")).toContain("--security-opt=apparmor=claxedo-workspace-runtime")
+  })
+
+  test("an AppArmor policy load failure never starts an unprotected container", async () => {
+    const run = runStartCommand(await startCommand(), { apparmor: true, policyLoadFailure: true })
+    expect(run.status).not.toBe(0)
+    expect(run.calls).not.toContain("run -d")
+    expect(run.calls).not.toContain("start claxedo-runtime")
   })
 
   test("a container of another image is replaced by one of the image this boot names", async () => {
     const run = runStartCommand(await startCommand(), { existingImage: "ghcr.io/test/sandbox:0" })
     expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d"])
+    expect(run.calls).toEqual(["info", "info --format", "image inspect", `pull ${IMAGE}`, "inspect --format", "rm -f", "run -d"])
+  })
+
+  test("a failed image download preserves the existing container and workspace", async () => {
+    const previous = "ghcr.io/test/sandbox:0"
+    const run = runStartCommand(await startCommand(), { existingImage: previous, pullFailure: true })
+    expect(run.status).not.toBe(0)
+    expect(run.calls).not.toContain("rm -f")
+    expect(readFileSync(path.join(run.dir, "container"), "utf8").startsWith(previous)).toBe(true)
+    expect(readFileSync(path.join(run.dir, "claxedo-persistent", "workspace", "user-work.txt"), "utf8")).toBe("keep my work")
+  })
+
+  test("an image upgrade reconciles the old container Boat restores during the new image download", async () => {
+    const run = runStartCommand(await startCommand(), { existingImage: "ghcr.io/test/sandbox:0", restoredDuringPull: true })
+    expect(run.status).toBe(0)
+    expect(readFileSync(path.join(run.dir, "container"), "utf8").startsWith(IMAGE)).toBe(true)
+    expect(run.calls.filter((call) => call === "run -d")).toHaveLength(1)
+    expect(readFileSync(path.join(run.dir, "claxedo-persistent", "workspace", "user-work.txt"), "utf8")).toBe("keep my work")
+  })
+
+  test("a container with an older boot command is replaced while its persistent workspace is kept", async () => {
+    const run = runStartCommand(await startCommand(), { existingImage: IMAGE, existingCommand: "exec /usr/local/bin/workspace-runtime" })
+    expect(run.status).toBe(0)
+    expect(run.calls).toEqual(["info", "info --format", "image inspect", "inspect --format", "rm -f", "run -d"])
+    expect(readFileSync(path.join(run.dir, "claxedo-persistent", "workspace", "user-work.txt"), "utf8")).toBe("keep my work")
+  })
+
+  test.skipIf(process.platform !== "linux")("the actual boot command repairs a foreign-owned bind root before Git opens the checkout", async () => {
+    const root = (args: string[]) => {
+      const isolated = ["env", "-u", "SUDO_UID", "-u", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_COUNT=0", ...args]
+      return process.getuid?.() === 0
+        ? spawnSync(isolated[0], isolated.slice(1), { encoding: "utf8" })
+        : spawnSync("sudo", ["-n", ...isolated], { encoding: "utf8" })
+    }
+    const dir = mkdtempSync(path.join(tmpdir(), "boat-mounted-owner-"))
+    const workspace = path.join(dir, "workspace with 'quote")
+    try {
+      expect(root(["git", "init", "--quiet", workspace]).status).toBe(0)
+      expect(root(["chown", "65534:65534", workspace]).status).toBe(0)
+      expect(statSync(workspace).uid).toBe(65534)
+      const refused = root(["git", "-C", workspace, "rev-parse", "--show-toplevel"])
+      expect(refused.status).toBe(128)
+      expect(refused.stderr).toContain("dubious ownership")
+      const run = runStartCommand(await startCommand({ workspaceRoot: workspace }, "git rev-parse --show-toplevel"), {})
+      const boot = readFileSync(path.join(run.dir, "boot"), "utf8").replace(". /run/claxedo-runtime.env", `. ${shell(path.join(run.dir, ".claxedo-runtime-env"))}`)
+      const result = root(["sh", "-c", boot])
+      expect(result.stderr).toBe("")
+      expect(result.status).toBe(0)
+      expect(result.stdout.trim()).toBe(workspace)
+      expect(statSync(workspace).uid).toBe(0)
+    } finally {
+      root(["rm", "-rf", "--", dir])
+    }
   })
 
   test("a create that loses the race to Boat's recreation starts the container Boat recreated", async () => {
     const run = runStartCommand(await startCommand(), { recreatedDuringRun: IMAGE })
     expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d", "inspect --format", "start claxedo-runtime"])
+    expect(run.calls).toEqual(["info", "info --format", "image inspect", `pull ${IMAGE}`, "inspect --format", "rm -f", "run -d", "inspect --format", "start claxedo-runtime"])
   })
 
-  test("a create that fails for any other reason fails the start", async () => {
+  test("a create that races an older container restored without init replaces that container", async () => {
+    const run = runStartCommand(await startCommand(), { recreatedDuringRun: IMAGE, recreatedInit: false })
+    expect(run.status).toBe(0)
+    expect(readFileSync(path.join(run.dir, "container"), "utf8")).toMatch(new RegExp(`${IMAGE} true [a-f0-9]{64} -lc `))
+    expect(run.calls.filter((call) => call === "run -d")).toHaveLength(2)
+  })
+
+  test("a create that races an older policy replaces the restored container once", async () => {
+    const run = runStartCommand(await startCommand(), { recreatedDuringRun: IMAGE, recreatedPolicy: false })
+    expect(run.status).toBe(0)
+    expect(readFileSync(path.join(run.dir, "container"), "utf8")).not.toContain("missing")
+    expect(run.calls.filter((call) => call === "run -d")).toHaveLength(2)
+  })
+
+  test("a create that races a different image refuses to reuse or replace the competing container", async () => {
     const run = runStartCommand(await startCommand(), { recreatedDuringRun: "ghcr.io/test/sandbox:0" })
     expect(run.status).not.toBe(0)
-    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d", "inspect --format"])
+    expect(run.calls).toEqual(["info", "info --format", "image inspect", `pull ${IMAGE}`, "inspect --format", "rm -f", "run -d", "inspect --format", "inspect --format"])
   })
 
   test("keeps env values and registry credentials out of command strings", async () => {
@@ -427,7 +593,7 @@ describe("boat sandbox driver", () => {
     }
 
     const writes = boat.calls.filter((c) => c.path.endsWith("/files") && c.method === "PUT")
-    const envWrite = writes.find((c) => c.body.path === ".claxedo-runtime-env")
+    const envWrite = writes.find((c) => c.body.path === ".claxedo-runtime-env.stage")
     expect(envWrite?.body.content).toContain("export RUNTIME_SECRET='synthetic-runtime-secret'")
     expect(envWrite?.body.content).toContain("export CALLER_SECRET='synthetic-caller-secret'")
     expect(envWrite?.body.content).toContain("export PEM='-----BEGIN-----\nline2\n-----END-----'")
@@ -525,6 +691,86 @@ describe("boat sandbox driver", () => {
     expect(boat.healthChecks).toBeGreaterThanOrEqual(2)
   })
 
+  test("destroy waits for the sandbox to disappear after an asynchronous deletion acknowledgement", async () => {
+    const boat = fakeBoat()
+    let deleting = false
+    let reads = 0
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, provisionIntervalMs: 0, fetchImpl: async (url, init) => {
+      if (init?.method === "DELETE") deleting = true
+      if (deleting && url === `${API}/sandboxes/${ID}` && init?.method === "GET" && reads++ < 2) {
+        return Response.json({ ok: true, type: "sandbox.info", sandbox: sandboxRecord("ready") })
+      }
+      return boat.fetchImpl(url, init)
+    } })
+    const target = await driver.ensureHost(ensureInput())
+    if ("provisioning" in target) throw new Error("unexpected provisioning")
+    await driver.destroy!(target)
+    expect(reads).toBe(3)
+  })
+
+  test("destroy does not report success while the provider still lists the sandbox", async () => {
+    const boat = fakeBoat()
+    let deleting = false
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, provisionTimeoutMs: 0, fetchImpl: async (url, init) => {
+      if (init?.method === "DELETE") deleting = true
+      if (deleting && url === `${API}/sandboxes/${ID}` && init?.method === "GET") return Response.json({ ok: true, type: "sandbox.info", sandbox: sandboxRecord("ready") })
+      return boat.fetchImpl(url, init)
+    } })
+    const target = await driver.ensureHost(ensureInput())
+    if ("provisioning" in target) throw new Error("unexpected provisioning")
+    await expect(driver.destroy!(target)).rejects.toThrow("deletion did not complete")
+  })
+
+  test("destroy is idempotent for an absent sandbox but still refuses authorization failures", async () => {
+    const boat = fakeBoat()
+    let status = 404
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async (url, init) => {
+      if (init?.method === "DELETE") return Response.json({ ok: false, code: status === 404 ? "not_found" : "unauthorized" }, { status })
+      return boat.fetchImpl(url, init)
+    } })
+    const target = await driver.ensureHost(ensureInput())
+    if ("provisioning" in target) throw new Error("unexpected provisioning")
+    await expect(driver.destroy!(target)).resolves.toBeUndefined()
+    status = 401
+    await expect(driver.destroy!(target)).rejects.toMatchObject({ status: 401 })
+  })
+
+  test("an unhealthy runtime reports bounded container diagnostics with staged secrets redacted", async () => {
+    const boat = fakeBoat()
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, healthTimeoutMs: 0,
+      env: () => ({ RUNTIME_SECRET: "synthetic-runtime-secret" }),
+      fetchImpl: async (url, init) => {
+        const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+        if (body?.command?.includes("docker logs")) {
+          expect(body.timeoutSeconds).toBe(10)
+          expect(body.command).not.toContain("synthetic-runtime-secret")
+          expect(body.command).not.toContain(".Config.Env")
+          return Response.json({ ok: true, ...commandFinished({
+            stdout: `status=exited exit=1 oom=false\n${"x".repeat(800)}\nStartup failed: synthetic-runtime-secret`,
+          }) })
+        }
+        return boat.fetchImpl(url, init)
+      },
+    })
+    const failure = await driver.ensureHost(ensureInput()).catch((error: unknown) => error as Error)
+    expect(failure).toBeInstanceOf(Error)
+    expect((failure as Error).message).toContain("Startup failed: [redacted]")
+    expect((failure as Error).message).not.toContain("synthetic-runtime-secret")
+    expect((failure as Error).message.length).toBeLessThan(750)
+  })
+
+  test("a failed diagnostic request preserves the health failure", async () => {
+    const boat = fakeBoat()
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, healthTimeoutMs: 0,
+      fetchImpl: async (url, init) => {
+        const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+        if (body?.command?.includes("docker logs")) throw new Error("transport leaked-secret")
+        return boat.fetchImpl(url, init)
+      },
+    })
+    await expect(driver.ensureHost(ensureInput())).rejects.toThrow("runtime did not become healthy: workspace runtime not ready; container diagnostics unavailable")
+  })
+
   test("refuses an oversized acknowledgement, a redirect-capable or non-HTTPS endpoint, and never copies provider text", async () => {
     const huge = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async () => new Response("x".repeat(5 * 1024 * 1024)) })
     await expect(huge.ensureHost(ensureInput())).rejects.toMatchObject({ code: "invalid_response" })
@@ -537,12 +783,23 @@ describe("boat sandbox driver", () => {
       () => { throw new Error("expected ensure to fail") },
       (cause: unknown) => cause as Error,
     )
-    expect(redirect).toBe("error")
+    expect(redirect).toBe("manual")
     expect(error).toMatchObject({ code: "unauthorized", status: 401 })
     expect(error.message).not.toContain("boat_secret")
     for (const baseUrl of ["http://boat.dev/api/v1", "https://user:secret@boat.dev/api/v1", "https://boat.dev/api/v1?secret=x"]) {
       expect(() => createBoatSandboxDriver({ apiKey: "k", image: IMAGE, baseUrl })).toThrow(/HTTPS/)
     }
+  })
+
+  test.each([301, 302, 303, 307, 308])("refuses redirect %s without forwarding credentials or treating it as pending provisioning", async (status) => {
+    const calls: string[] = []
+    const driver = createBoatSandboxDriver({ apiKey: "boat_secret", image: IMAGE, fetchImpl: async (url, init) => {
+      calls.push(url)
+      expect(init?.redirect).toBe("manual")
+      return new Response(null, { status, headers: { Location: "https://other.example/collect" } })
+    } })
+    await expect(driver.ensureHost(ensureInput())).rejects.toMatchObject({ code: "redirect_refused", status })
+    expect(calls).toEqual([`${API}/sandboxes`])
   })
 
   test("option-like image identifiers are rejected before the docker run", async () => {
@@ -577,6 +834,7 @@ describe("boat sandbox driver", () => {
     expect(boat.calls.map(({ method, path }) => ({ method, path }))).toEqual([
       { method: "POST", path: `/sandboxes/${ID}/stop` },
       { method: "DELETE", path: `/sandboxes/${ID}` },
+      { method: "GET", path: `/sandboxes/${ID}` },
     ])
   })
 

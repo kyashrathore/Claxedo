@@ -144,6 +144,22 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.deepEqual(spent, new Set([`Bearer ${SECRET}`]))
   })
 
+  void it("keeps delivered model options after an idle object restart without requesting another secret delivery", { timeout: 120_000 }, async () => {
+    const root = "ses_catalog"
+    const host = await session(root)
+    await host.prompt("msg_catalog", "Reply with exactly this one token: PICATALOG")
+    await host.settled("PICATALOG")
+    await eventually("the catalog turn lease released", async () => host.controlPlane.calls.releases.includes("msg_catalog") ? true : undefined)
+    const before = await host.json<{ options: Array<{ id: string; currentValue?: string }> }>(`/session/${root}/config-options`)
+    assert.equal(before.options.find((option) => option.id === "model")?.currentValue, MODEL.modelID)
+    await host.crash()
+    assert.deepEqual(await host.json(`/session/${root}/config-options`), before)
+    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_catalog"])
+    await host.prompt("msg_restored_catalog", "Reply with exactly this one token: PIRESTOREDCATALOG")
+    await host.settled("PIRESTOREDCATALOG")
+    assert.deepEqual(host.controlPlane.calls.deliveries, ["msg_catalog", "msg_restored_catalog"])
+  })
+
   void it("stops a turn and the command it was running on the machine", { timeout: 120_000 }, async () => {
     const root = "ses_stop"
     const host = await session(root)

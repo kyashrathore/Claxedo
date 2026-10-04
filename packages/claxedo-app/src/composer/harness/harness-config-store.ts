@@ -10,6 +10,19 @@ import { createScopeCaches } from "./scope-caches"
 import type { HarnessScopeInput } from "./store-policy"
 import { applyPushedHarnessHealth, commitSessionSelection, probeHarnessHealth } from "./session-harness"
 
+function subscribeHarnessState(wiring: HarnessWiring, options: ReturnType<typeof wireOptionsLoader>) {
+  return wiring.server.subscribe((event) => {
+    if (event.type === "harnessOptionsChanged") {
+      const scope = sessionComposerKey(event.ref)
+      if (!wiring.store.heldHarness(scope)) options.receive(scope, event.options)
+      return
+    }
+    if (event.type === "harnessHealthChanged") {
+      applyPushedHarnessHealth(wiring, sessionComposerKey(event.ref), { harnessHealth: event.health, connectionState: event.connectionState })
+    }
+  })
+}
+
 export function createHarnessConfigStore(server: Server, storage: DraftDefaultStorage) {
   const store = createHarnessStore(storage)
   const wiring: HarnessWiring = { server, api: server.harnessConfig, store, caches: createScopeCaches(), hasConfigOptions: createConfigOptionsProbe(server) }
@@ -19,12 +32,7 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
   const hydrator = wireHydrator(wiring, fetchConfigOptions)
   const modelWriter = wireModelWriter(wiring, fetchConfigOptions)
   const switcher = wireSwitcher(wiring, fetchConfigOptions)
-  onCleanup(
-    server.subscribe((event) => {
-      if (event.type !== "harnessHealthChanged") return
-      applyPushedHarnessHealth(wiring, sessionComposerKey(event.ref), { harnessHealth: event.health, connectionState: event.connectionState })
-    }),
-  )
+  onCleanup(subscribeHarnessState(wiring, optionsLoader))
   return {
     hydrate: hydrator.hydrate,
     reprobe: hydrator.reprobe,

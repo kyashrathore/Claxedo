@@ -82,7 +82,7 @@ export function createBoatClient(options: { apiKey: string; baseUrl?: string; ti
     try {
       response = await fetchImpl(`${baseUrl}${path}`, {
         method: init?.method ?? "GET",
-        redirect: "error",
+        redirect: "manual",
         headers: {
           Authorization: `Bearer ${options.apiKey}`,
           ...(init?.body === undefined ? {} : { "Content-Type": "application/json" }),
@@ -93,6 +93,10 @@ export function createBoatClient(options: { apiKey: string; baseUrl?: string; ti
       })
     } catch {
       throw new BoatApiError(`Boat ${init?.method ?? "GET"} ${path} failed before acknowledgement`, "transport_failed")
+    }
+    if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel()
+      throw new BoatApiError(`Boat ${init?.method ?? "GET"} ${path} refused a redirect`, "redirect_refused", response.status)
     }
     const body = await readBoundedResponseJson(response).catch(() => undefined)
     // Provider error text is never copied: command bodies and their output can carry secrets.

@@ -7,6 +7,7 @@ import type { FirstTurnErrorClass } from "./turn-error-classes"
 import type { TurnAccount } from "./turn-account"
 import type { RuntimeDiagnostic } from "./diagnostics"
 import type { RawHarnessEvent } from "./raw-harness-event"
+import type { AgentConfigOption } from "./content"
 
 export const AGENT_RUNTIME_EVENT_CONTRACT_VERSION = 9
 
@@ -133,7 +134,7 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "tool-terminal"; toolCallId: string; terminalId: string }
   | { type: "available-commands-update"; commands: AgentSessionCommand[] }
   | { type: "session-agent"; agentId: string }
-  | { type: "config-update"; options: Array<{ id: string; name: string; category?: string; type: "select" | "boolean"; currentValue: string | boolean; selectOptions?: Array<{ id: string; name: string }> }> }
+  | { type: "config-update"; options: AgentConfigOption[] }
   | {
       type: "session-info"
       title?: string | null

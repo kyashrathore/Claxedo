@@ -7,7 +7,7 @@ export type CloudWorkspaceEvent =
   | { readonly type: "commandFailed"; readonly reason: string }
 
 export function canStart(state: CloudWorkspaceStatus): boolean {
-  return state.kind === "stopped" || state.kind === "failed"
+  return state.kind === "stopped" || state.kind === "failed" || state.kind === "provisioning"
 }
 
 export function canStop(state: CloudWorkspaceStatus): boolean {

@@ -189,6 +189,4 @@ export default {
   "settings.models.harness.empty": "{{harness}} 未為 {{workspace}} 回報任何模型。",
   "settings.providers.status.notConnected": "未連線",
   "common.loading": "載入中",
-  "settings.scope.workspace.loading": "正在載入工作區…",
-  "settings.scope.workspace.empty": "尚無工作區",
 }

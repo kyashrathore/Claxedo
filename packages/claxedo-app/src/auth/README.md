@@ -12,6 +12,9 @@ Owns: the account, as one port with two bindings: the browser's own sign-in sess
 - `BrowserAuthDescriptor`: the live deployment's declaration, read from `GET /api/claxedo/auth/descriptor` and validated against the canonical `account-contract/auth` types with the browser binding's schema; a mismatch leaves the app signed out with the reason, never a startup failure.
 - `AuthUser`: the sanitized identity (id, name, email, image). The browser binding exposes no token; the HTTP-only Better Auth cookie stays with the browser. Desktop main owns its credential.
 - The auth routes answer JSON, and a proxy's HTML error page has no fields to read, so `authResponseBody` reads a body only when the response says it is JSON (`better-auth-error.ts`).
+- Better Auth client requests have a 15-second deadline. A stalled session read ends startup in the existing unavailable state instead of leaving Loading indefinitely; no identity is synthesized and the browser's cookie is retained.
+
+The deadline and its real-client fetch-boundary regression add 30 counted lines to Shell and platform, measured at 6,722. The app total is measured at 96,740 after the account-settings simplification. The aggregate budgets use those exact measurements; no per-file ceiling changed.
 - Origins (`origins.ts`): `apiOrigin()` is `VITE_CLAXEDO_SERVER_URL` or the page origin; `appOrigin()` is the page origin; `serverIssuesSessions()` is `VITE_CLAXEDO_ISSUES_SESSIONS !== "0"`.
 
 - Invitation continuation (`login-continuation.ts`): sign-in or sign-up retains `/invitations#<token>`, then calls the server's typed `acceptOrgInvitation` action. The server owns email matching, expiry, revocation, single use and membership; the app owns only the authentication and acceptance screen.

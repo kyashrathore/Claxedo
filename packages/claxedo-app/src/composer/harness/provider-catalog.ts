@@ -34,6 +34,7 @@ export function createProviderCatalog(input: {
     request: () => setRequested(true),
     resolved: () => input.harness() !== "" && query.isFetched,
     loading: () => input.harness() !== "" && query.isFetching,
+    runtimeRequired: () => catalog()?.modelDiscovery === "runtime-required",
     error: () => (query.error ? query.error.message || `Failed to load ${input.harness()} models` : undefined),
     refresh: async () => {
       await query.refetch()

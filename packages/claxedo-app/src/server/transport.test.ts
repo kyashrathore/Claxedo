@@ -8,6 +8,17 @@ const fetcher = spyOn(globalThis, "fetch")
 const link = { relayUrl: "https://relay.test", runtimeAccessToken: "session-rat", tokenExpiresAt: Date.now() + 3_600_000 }
 const cloud = { directory: "workspace:ws_cloud", workspaceId: "ws_cloud", remote: true }
 
+test("cookie-authenticated bodyless mutations declare JSON without changing explicit upload types", async () => {
+  fetcher.mockResolvedValue(new Response(null, { status: 204 }))
+  const transport = createTransport({ serverUrl: "https://cp.test", cookies: true })
+  await transport.request("/api/workspace/ws_cloud", { method: "DELETE" })
+  const deletion = fetcher.mock.calls[0]?.[1]
+  expect(deletion?.credentials).toBe("include")
+  expect(new Headers(deletion?.headers).get("content-type")).toBe("application/json")
+  await transport.request("/upload", { method: "PUT", body: "text", headers: { "Content-Type": "text/plain" } })
+  expect(new Headers(fetcher.mock.calls[1]?.[1]?.headers).get("content-type")).toBe("text/plain")
+})
+
 afterEach(() => fetcher.mockReset())
 afterAll(() => fetcher.mockRestore())
 

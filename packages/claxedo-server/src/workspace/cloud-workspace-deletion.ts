@@ -4,6 +4,7 @@ import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/serve
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
+import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { ControlPlaneServices } from "../authority/services"
 import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import { contentfulStatus } from "../platform/http/status"
@@ -42,6 +43,9 @@ export function cloudWorkspaceDeletion(
       })
       // The authority answers a workspace its caller already deleted as done and refuses anyone else's.
       if (!opened) return c.json(await authority.deleteWorkspace(auth, { workspaceId }))
+      if (!opened.workspace || opened.allowed === false || opened.role !== "owner") {
+        return c.json({ error: apiError("workspace_authorization_denied", "Workspace owner required") }, 403)
+      }
       if (opened.workspace?.backing !== "cloud-vm") {
         return c.json({ error: apiError("workspace_not_cloud", "A machine's workspace is withdrawn by unassigning its host") }, 409)
       }
@@ -49,7 +53,8 @@ export function cloudWorkspaceDeletion(
       if (!sandboxManager) {
         return c.json({ error: apiError("sandbox_driver_unavailable", "No cloud sandbox driver is configured on this control plane") }, 503)
       }
-      const refused = await destroySandbox(sandboxManager, workspaceId)
+      const refused = await destroySandbox(sandboxManager, workspaceId, options)
+      if (refused === "runtime_lease_changed") return c.json({ error: apiError(refused, "The workspace runtime changed during deletion; delete it again") }, 409)
       if (refused) return c.json({ error: apiError("workspace_sandbox_destroy_failed", "The workspace's sandbox could not be destroyed; delete it again", { reason: refused }) }, 502)
       await options.releaseRuntime?.({ workspaceId })
       const deleted = await authority.deleteWorkspace(auth, { workspaceId })
@@ -64,18 +69,14 @@ export function cloudWorkspaceDeletion(
 }
 
 /**
- * Why the sandbox may still be running; nothing once it is gone. A lease that
- * never named a provider resource is released rather than destroyed: a
- * remnant of an attempt still in flight is then unowned, which the sweep
- * collects.
+ * Permanent deletion retires the lease, even if provisioning has not handed
+ * off a resource. Late or repeated provisioning cannot recreate the workspace.
+ * A provider failure leaves the retirement fence in place and can be retried.
  */
-async function destroySandbox(sandboxManager: SandboxManager, workspaceId: string): Promise<string | undefined> {
-  const destroyed = await sandboxManager.destroy(workspaceId).catch((error: unknown) => ({
+async function destroySandbox(sandboxManager: SandboxManager, workspaceId: string, options: WorkspaceRouteOptions): Promise<string | undefined> {
+  const destroyed = await sandboxManager.destroy(workspaceId, { retireLease: { homeRegion: normalizeClaxedoRegion(undefined, options.defaultHomeRegion) } }).catch((error: unknown) => ({
     ok: false as const,
     reason: error instanceof Error ? error.message : String(error),
   }))
-  if (destroyed.ok || destroyed.reason === "runtime_lease_missing") return undefined
-  if (destroyed.reason !== "runtime_lease_resource_missing") return destroyed.reason
-  await sandboxManager.release(workspaceId)
-  return undefined
+  return destroyed.ok ? undefined : destroyed.reason
 }

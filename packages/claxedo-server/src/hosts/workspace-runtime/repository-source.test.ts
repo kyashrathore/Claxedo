@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises"
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { serveGitOrigin, type GitOrigin } from "../../test-support/git-origin"
 import { prepareRuntimeRepository } from "./repository-source"
@@ -57,6 +57,40 @@ describe("sandbox repository preparation", () => {
     expect(await readFile(path.join(f.checkout, "hello.txt"), "utf8")).toBe("selected repository 5\n")
   })
 
+  test("a boot interrupted after git init finishes configuring its origin on the next boot", async () => {
+    const f = await origin()
+    await mkdir(f.checkout)
+    f.git(["init", "--quiet"], f.checkout)
+    await expect(prepareRuntimeRepository(f.checkout, f.env)).resolves.toEqual({ branch: "trunk" })
+    expect(f.git(["remote", "get-url", "origin"], f.checkout)).toBe(f.repoUrl)
+    expect(await readFile(path.join(f.checkout, "hello.txt"), "utf8")).toBe("selected repository 5\n")
+  })
+
+  test.each(["untracked files", "index entries", "another remote"])("a missing origin does not authorize replacing %s", async (work) => {
+    const f = await origin()
+    await mkdir(f.checkout)
+    f.git(["init", "--quiet"], f.checkout)
+    const name = work === "index entries" ? " " : "keep.txt"
+    const file = path.join(f.checkout, name)
+    if (work === "another remote") {
+      f.git(["remote", "add", "upstream", "https://github.com/other/repo.git"], f.checkout)
+    } else {
+      await writeFile(file, "keep")
+      if (work === "index entries") {
+        f.git(["add", name], f.checkout)
+        await rm(file)
+      }
+    }
+    let requests = 0
+    f.served.onRequest = () => { requests++ }
+    await expect(prepareRuntimeRepository(f.checkout, f.env)).rejects.toThrow("contains other work")
+    expect(requests).toBe(0)
+    expect(f.git(["remote"], f.checkout)).toBe(work === "another remote" ? "upstream" : "")
+    if (work === "untracked files") expect(await readFile(file, "utf8")).toBe("keep")
+    if (work === "index entries") expect(f.git(["show", `:${name}`], f.checkout)).toBe("keep")
+    if (work === "another remote") expect(f.git(["remote", "get-url", "upstream"], f.checkout)).toBe("https://github.com/other/repo.git")
+  })
+
   test("the whole preparation shares one deadline, so time spent in one step is gone for the next", async () => {
     const f = await origin()
     let clock = Date.now()
@@ -103,4 +137,3 @@ describe("sandbox repository preparation", () => {
     await expect(readdir(f.checkout)).rejects.toThrow()
   })
 })
-

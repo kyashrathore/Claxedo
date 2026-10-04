@@ -8,6 +8,7 @@ import {
   type HostedCredentialDatabase,
 } from "./index"
 import { hostedPiCredentials } from "./pi"
+import { hostedOpenCodeCredentials } from "./opencode"
 import { piCredentialProviderIDs } from "@claxedo/server-core/credentials/pi-provider-projection"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { checkCredential } from "@claxedo/server-core/credentials/operations/check"
@@ -151,6 +152,22 @@ describe("hostedOrgCredentials (org-partitioned CRUD over D1)", () => {
     await credentials.setAccountSources(piCredentialProviderIDs("anthropic"), "org", undefined, "A")
     expect((await pi.piProviderCatalog(as("A"))).connected).toContain("anthropic")
     expect((await pi.piProviderCatalog(as("B"))).connected).not.toContain("anthropic")
+  })
+
+  test("hosted OpenCode catalogs use selected accounts and never invent models without a runtime", async () => {
+    const orgId = freshOrg("opencode-org")
+    const credentials = store(orgId)
+    await credentials.putCredential({ ...write, owner: null, provider_id: "anthropic" })
+    await credentials.putCredential({ ...write, owner: "A", provider_id: "openai" })
+    const catalog = hostedOpenCodeCredentials({ resolveOrgId: async () => orgId, credentials: () => credentials, runtimeProviders: async () => undefined })
+    const as = (subject: string) => ({ mode: "signed" as const, user: { subject, tokenIdentifier: subject, issuer: "test" } })
+    expect((await catalog.opencodeProviderCatalog(as("A"))).connected).toEqual(["openai"])
+    expect((await catalog.opencodeProviderCatalog(as("B"))).connected).toEqual([])
+    await credentials.setAccountSources(["anthropic"], "org", undefined, "A")
+    const chosen = await catalog.opencodeProviderCatalog(as("A"))
+    expect(chosen.connected).toEqual(expect.arrayContaining(["openai", "anthropic"]))
+    expect(chosen.all.every((provider) => Object.keys(provider.models).length === 0)).toBe(true)
+    expect(JSON.stringify(chosen)).not.toContain("secret")
   })
 
   test("Pi's Anthropic connected by a Claude Code login says so and is not Pi's own key; Pi's own key is", async () => {

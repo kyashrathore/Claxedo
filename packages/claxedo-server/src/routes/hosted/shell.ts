@@ -30,13 +30,14 @@ import {
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
-import { connectLiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
+import { connectLiveSyncRoom } from "../../deployments/hosted-workerd/live-sync-client.cf"
+import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
 import { requireAuthority, type WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
 import { createRelayRuntimeClient, decodeRelayRuntimeJson } from "../../workspace/relay-runtime-client"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/governance/route-ownership"
 import type { ControlPlaneServices } from "../../authority/services"
-import { resolveWorkspaceRuntimeTarget } from "../../authority/runtime-target"
+import { resolveWorkspaceRuntimeTarget, WorkspaceRuntimeTargetError } from "../../authority/runtime-target"
 import { relayRole } from "../../authority/pulled-session"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { workspaceIdFromWorkspaceRef } from "@claxedo/server-core/workspace/refs"
@@ -45,6 +46,9 @@ import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
 import { asRecord, asString } from "@claxedo/helpers/guards"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
 import { providerAuthMethodsForHarness } from "@claxedo/server-core/credentials/provider-auth/methods"
+import type { OpenCodeCatalog } from "@claxedo/server-core/credentials/opencode-provider-projection"
+import { runtimeProviderCatalog } from "@claxedo/server-core/credentials/runtime-provider-catalog"
+import { projectProviderCatalog, readProviderCatalogView, ProviderCatalogViewError } from "@claxedo/server-core/credentials/provider-catalog-view"
 
 export type HostedShellRouteOptions = {
   authentication?: RequestAuthenticationAdapter
@@ -77,6 +81,7 @@ export type HostedShellRouteOptions = {
    * that does.
    */
   piProviderCatalog?: (auth: SignedControlPlaneAuth) => Promise<Record<string, unknown>>
+  opencodeProviderCatalog?: (auth: SignedControlPlaneAuth, workspaceId?: string) => Promise<OpenCodeCatalog>
   /**
    * Ask the runtime of a workspace placed on a machine for harness health and
    * identity,
@@ -310,6 +315,25 @@ export function hostedHarnessRuntimeStatus(
   }
 }
 
+export function hostedRuntimeProviderCatalog(services: ControlPlaneServices) {
+  return async (auth: SignedControlPlaneAuth, workspaceId: string | undefined) => {
+    if (!workspaceId) return undefined
+    const target = await openHarnessTarget(services, auth, workspaceId)
+    if (!target || target.authorityRole !== "owner") throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Workspace owner required")
+    try {
+      await resolveWorkspaceRuntimeTarget(services, auth, { workspaceId, workspace: target.authorityWorkspace })
+    } catch (error) {
+      if (error instanceof WorkspaceRuntimeTargetError && error.code === "cloud_runtime_unavailable") return undefined
+      throw error
+    }
+    await verifyHarnessRuntime(services, auth, target, undefined)
+    return runtimeProviderCatalog.parse(await harnessRuntimeJson(services, auth, {
+      ...target,
+      path: "/api/wr/harness-providers?nativeHarness=opencode",
+    }))
+  }
+}
+
 function decodeHarnessSelection(input: unknown): RuntimeHarnessSelection | undefined {
   const row = asRecord(input)
   if (row?.kind === "connection" && typeof row.connectionId === "string" && row.connectionId.trim()) {
@@ -504,10 +528,17 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
       try {
         const auth = await signedAuth(c, options)
         if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
-        if (c.req.query("nativeHarness") !== "pi" || c.req.query("connectionId")) return c.json({ error: { code: "provider_catalog_unsupported", message: "Provider catalog requires nativeHarness=pi" } }, 400)
+        const harness = c.req.query("nativeHarness")
+        if ((harness !== "pi" && harness !== "opencode") || c.req.query("connectionId")) return c.json({ error: { code: "provider_catalog_unsupported", message: "Provider catalog requires nativeHarness=pi or nativeHarness=opencode" } }, 400)
+        if (harness === "opencode") {
+          if (!options.opencodeProviderCatalog) return c.json({ error: { code: "provider_catalog_unavailable", message: "OpenCode provider catalog is not configured" } }, 503)
+          const view = readProviderCatalogView({ provider: c.req.query("provider"), view: c.req.query("view") })
+          return c.json(projectProviderCatalog(await options.opencodeProviderCatalog(auth, c.req.query("workspaceId")), view))
+        }
         if (!options.piProviderCatalog) return c.json({ error: { code: "provider_catalog_unavailable", message: "Pi provider catalog is not configured" } }, 503)
         return c.json(await options.piProviderCatalog(auth))
       } catch (err) {
+        if (err instanceof ProviderCatalogViewError) return c.json({ error: { code: err.code, message: err.message } }, err.status)
         return authErrorResponse(c, err)
       }
     })

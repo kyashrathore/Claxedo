@@ -68,6 +68,7 @@ export type SessionScreenTextKey =
   | "sessionScreen.goal.metric.tokenBudget"
   | "sessionScreen.goal.metric.timeUsed"
   | "sessionScreen.workspace.asleep"
+  | "sessionScreen.workspace.start"
   | "sessionScreen.workspace.machineOffline"
   | "sessionScreen.workspace.waking"
   | "sessionScreen.workspace.restoring"
@@ -151,6 +152,7 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.goal.metric.tokenBudget": "{{count}} token budget",
   "sessionScreen.goal.metric.timeUsed": "{{seconds}}s",
   "sessionScreen.workspace.asleep": "This workspace is asleep. Your next message wakes it.",
+  "sessionScreen.workspace.start": "Start workspace",
   "sessionScreen.workspace.machineOffline": "This session's machine is offline. Its messages show again when the machine is back.",
   "sessionScreen.workspace.waking": "Waking up the workspace…",
   "sessionScreen.workspace.restoring": "Restoring it from a snapshot",

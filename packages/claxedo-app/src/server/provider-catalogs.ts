@@ -55,7 +55,7 @@ export function createProviderCatalogsApi(transport: Transport, workspaces: Work
     const provider = detail.all.find((item) => item.id === providerId)
     if (!provider) throw new Error(`Provider ${providerId} was not returned by the runtime`)
     queryClient.setQueryData<ProviderCatalog>(catalogQueryKey(transport.serverUrl, harness, placementId), (current) =>
-      current ? { all: current.all.map((item) => (item.id === providerId ? provider : item)), connected: detail.connected, default: detail.default } : detail,
+      current ? { ...detail, all: current.all.map((item) => (item.id === providerId ? provider : item)) } : detail,
     )
   }
   return {

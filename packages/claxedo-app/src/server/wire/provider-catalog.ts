@@ -26,6 +26,7 @@ function isProviderSource(value: unknown): value is ProviderSource {
 }
 
 export type ProviderCatalog = {
+  readonly modelDiscovery: "available" | "runtime-required"
   readonly all: readonly CatalogProvider[]
   readonly connected: readonly string[]
   readonly default: Readonly<Record<string, string>>
@@ -62,6 +63,7 @@ function providerOf(value: unknown): CatalogProvider | undefined {
 export function providerCatalogFromWire(body: unknown, harness: string): ProviderCatalog {
   const unreadable = () => new ServerError({ class: "internal", message: `Received an unreadable ${harness} provider catalog` })
   if (!isRecord(body) || !Array.isArray(body.all) || !Array.isArray(body.connected) || !isRecord(body.default)) throw unreadable()
+  if (body.modelAvailability !== "available" && body.modelAvailability !== "runtime_required") throw unreadable()
   const all = body.all.map(providerOf)
   if (all.some((provider) => !provider)) throw unreadable()
   const defaults: Record<string, string> = {}
@@ -70,6 +72,7 @@ export function providerCatalogFromWire(body: unknown, harness: string): Provide
     defaults[provider] = model
   }
   return {
+    modelDiscovery: body.modelAvailability === "available" ? "available" : "runtime-required",
     all: all.filter((provider): provider is CatalogProvider => !!provider),
     connected: body.connected.filter((id): id is string => typeof id === "string"),
     default: defaults,

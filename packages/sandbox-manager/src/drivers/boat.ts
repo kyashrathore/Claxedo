@@ -11,8 +11,9 @@ import { envFile, shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { assertSandboxImageReference } from "../image-name"
 import { sandboxDriverCatalog } from "../driver-catalog"
-import { createBoatClient, type BoatFetch } from "./boat-client"
+import { BoatApiError, createBoatClient, type BoatFetch } from "./boat-client"
 import { isTransientDriverError } from "./transient-error"
+import { boatContainerSecurity, type BoatContainerSecurity } from "./boat-security"
 
 // Boat (https://boat.dev) runs persistent Linux microVMs with Docker on the
 // VM's own kernel but no workspace-runtime baked in, so this driver delivers
@@ -68,6 +69,7 @@ const DOCKER_DAEMON_WAIT_SECONDS = 120
 // where commands also start; the container reads the env through a read-only
 // bind mount.
 const RUNTIME_ENV_PATH = ".claxedo-runtime-env"
+const RUNTIME_ENV_STAGING_PATH = ".claxedo-runtime-env.stage"
 const REGISTRY_PASSWORD_PATH = ".claxedo-registry-password"
 const CONTAINER_ENV_PATH = "/run/claxedo-runtime.env"
 // Everything the runtime keeps lives under one root on the VM's disk: the
@@ -193,43 +195,53 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
    * Boat reports the sandbox ready, so the chain waits for the daemon. Boat
    * then recreates the containers that were running, pulling their images
    * again (docs.boat.dev/snapshots, "What is captured"), while the driver
-   * boots the runtime too. Whichever creates the container first wins: an
-   * existing container of this image is started, and a create that loses the
-   * race starts the one that won. The workspace and the runtime's own state
+   * boots the runtime too. A container with the desired image, init, policy
+   * identity and boot command is reused. A restored older configuration of
+   * this image and command is replaced once if it wins the creation race.
+   * The workspace and the runtime's own state
    * are bind-mounted from the sandbox filesystem the snapshot keeps.
    */
-  function containerStartScript(input: SandboxDriverEnsureInput): string {
+  function containerStartScript(input: SandboxDriverEnsureInput, security: BoatContainerSecurity): string {
     const port = runtimePort(input)
     const directory = workspaceDirectory(input)
     const image = shell(resolveImage(input))
     const bootScript = [
       `. ${CONTAINER_ENV_PATH}`,
       `mkdir -p ${shell(directory)}`,
+      `chown "$(id -u):$(id -g)" ${shell(directory)}`,
       `cd ${shell(directory)}`,
       `exec ${runtimeCommand}`,
     ].join(" && ")
     const mounts = [["workspace", directory], ...PERSISTENT_HOME_MOUNTS]
-    const run = `docker run -d --name ${containerName} -p ${port}:${port} `
+    const run = `docker run -d --init --name ${containerName} -p ${port}:${port} `
+      + `${security.args} `
       + `-v "$(pwd)/${RUNTIME_ENV_PATH}:${CONTAINER_ENV_PATH}:ro" `
       + mounts.map(([source, target]) => `-v "$(pwd)/${PERSISTENT_ROOT}/${source}":${shell(target)} `).join("")
       + `--entrypoint sh ${image} -lc ${shell(bootScript)}`
-    const ours = `[ "$(docker inspect --format '{{.Config.Image}}' ${containerName} 2>/dev/null)" = ${image} ]`
+    const identity = shell(`${resolveImage(input)} true ${security.identity} -lc ${bootScript}`)
+    const ours = `[ "$(docker inspect --format '{{.Config.Image}} {{.HostConfig.Init}} {{index .Config.Labels "claxedo.runtime.security"}} {{join .Config.Cmd " "}}' ${containerName} 2>/dev/null)" = ${identity} ]`
+    const sameBoot = `[ "$(docker inspect --format '{{.Config.Image}} {{join .Config.Cmd " "}}' ${containerName} 2>/dev/null)" = ${shell(`${resolveImage(input)} -lc ${bootScript}`)} ]`
+    const replace = `{ docker rm -f ${containerName} >/dev/null 2>&1 || true; } && ${run}`
     const steps = [
-      `chmod 600 ${RUNTIME_ENV_PATH}`,
+      `chmod 600 ${RUNTIME_ENV_STAGING_PATH}`,
+      `sudo -n install -m 600 -o 0 -g 0 ${RUNTIME_ENV_STAGING_PATH} ${RUNTIME_ENV_PATH}`,
+      `rm -f ${RUNTIME_ENV_STAGING_PATH}`,
       `timeout ${DOCKER_DAEMON_WAIT_SECONDS} sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'`,
+      security.prepare,
       ...(options.registryAuth
         ? [`{ chmod 600 ${REGISTRY_PASSWORD_PATH}; docker login ${shell(options.registryAuth.server)} `
           + `--username ${shell(options.registryAuth.username)} --password-stdin < ${REGISTRY_PASSWORD_PATH}; `
           + `rc=$?; rm -f ${REGISTRY_PASSWORD_PATH}; (exit $rc); }`]
         : []),
+      `{ docker image inspect ${image} >/dev/null 2>&1 || docker pull ${image}; }`,
       `if ${ours}; then docker start ${containerName} >/dev/null; `
-      + `else { docker rm -f ${containerName} >/dev/null 2>&1 || true; } `
-      + `&& { ${run} || { ${ours} && docker start ${containerName} >/dev/null; }; }; fi`,
+      + `else { ${replace}; } || { ${ours} && docker start ${containerName} >/dev/null; } `
+      + `|| { ${sameBoot} && { ${replace}; }; }; fi`,
     ]
     return steps.join(" && ")
   }
 
-  async function waitForHealth(sandboxId: string, input: SandboxDriverEnsureInput) {
+  async function waitForHealth(sandboxId: string, input: SandboxDriverEnsureInput, secrets: readonly string[]) {
     const port = runtimePort(input)
     const until = Date.now() + healthTimeoutMs
     let last = "workspace runtime not ready"
@@ -242,13 +254,25 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
       last = `health probe returned ${code ?? "no response"}`
       await sleep(healthIntervalMs)
     }
-    throw new BoatDriverError(`Boat ${sandboxId} runtime did not become healthy: ${last}`)
+    let diagnostic: string
+    try {
+      const result = await client.command(sandboxId, {
+        command: `docker inspect --format 'status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' ${shell(containerName)}; docker logs --tail 20 ${shell(containerName)} 2>&1`,
+        timeoutSeconds: 10,
+      })
+      diagnostic = scrubbedTail(`${result.stdout}\n${result.stderr}`, secrets)
+    } catch {
+      diagnostic = "container diagnostics unavailable"
+    }
+    throw new BoatDriverError(`Boat ${sandboxId} runtime did not become healthy: ${last}; ${diagnostic}`)
   }
 
   async function startContainer(sandboxId: string, input: SandboxDriverEnsureInput, hostId: string) {
     const env = { ...bootEnv(input, hostId), ...(await options.env?.(input, { id: hostId })) }
-    const script = containerStartScript(input)
-    await client.writeFile(sandboxId, { path: RUNTIME_ENV_PATH, content: envFile(env) })
+    const security = await boatContainerSecurity()
+    const script = containerStartScript(input, security)
+    for (const file of security.files) await client.writeFile(sandboxId, file)
+    await client.writeFile(sandboxId, { path: RUNTIME_ENV_STAGING_PATH, content: envFile(env) })
     if (options.registryAuth) {
       await client.writeFile(sandboxId, { path: REGISTRY_PASSWORD_PATH, content: options.registryAuth.password })
     }
@@ -268,11 +292,12 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     }
     if (failures.length === 1) throw failures[0]
     if (failures.length > 1) throw new AggregateError(failures, `Boat ${sandboxId} container start and registry password cleanup failed`)
+    return secrets
   }
 
   async function boot(sandboxId: string, input: SandboxDriverEnsureInput, hostId: string): Promise<SandboxTarget> {
     const port = runtimePort(input)
-    await startContainer(sandboxId, input, hostId)
+    const secrets = await startContainer(sandboxId, input, hostId)
     await input.onImageReady?.()
     // Boat gates a hosted port behind a `_token` query, and `host url` prints
     // the gated URL again unless it also carries `--public`. The relay joins
@@ -280,7 +305,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     // runtime authenticates every route itself except the anonymous
     // `/global/health` probe (liveness, the workspace id and the lease epoch).
     await execOrThrow(sandboxId, `host ${port} --public`, "host publish")
-    await waitForHealth(sandboxId, input)
+    await waitForHealth(sandboxId, input, secrets)
     const urlResult = await execOrThrow(sandboxId, `host url ${port} --public`, "host url")
     const url = trimToUndefined(urlResult.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).pop())
     if (!url?.startsWith("https://") || url.includes("?")) {
@@ -347,7 +372,23 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
   }
 
   async function destroy(target: SandboxResource) {
-    await client.delete(target.sandboxId)
+    try {
+      await client.delete(target.sandboxId)
+    } catch (error) {
+      if (error instanceof BoatApiError && error.status === 404) return
+      throw error
+    }
+    const until = Date.now() + provisionTimeoutMs
+    for (;;) {
+      try {
+        await client.get(target.sandboxId)
+      } catch (error) {
+        if (error instanceof BoatApiError && error.status === 404) return
+        throw error
+      }
+      if (Date.now() >= until) throw new BoatDriverError(`Boat ${target.sandboxId} deletion did not complete`)
+      await sleep(provisionIntervalMs)
+    }
   }
 
   return {

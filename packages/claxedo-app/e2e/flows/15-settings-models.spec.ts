@@ -14,6 +14,26 @@ async function credentialNamed(url: string, label: string): Promise<Credential |
   return (await credentials(url)).find((row) => row.provider_id === "cursor-sdk" && row.label === label)
 }
 
+test("15 settings: accounts can be connected before any workspace exists", async ({ stack, app }) => {
+  const projects = await fetch(new URL("/api/claxedo/projects", stack.url))
+  expect(projects.status).toBe(200)
+  expect(await projects.json()).toMatchObject({ projects: [] })
+  await app.goto(`${stack.url}/settings/models`)
+  const cursor = harnessSection(app, "Cursor")
+  await cursor.getByRole("button", { name: "Add an account" }).click()
+  const dialog = app.getByRole("dialog").filter({ hasText: "Connect Cursor" })
+  await dialog.getByRole("textbox", { name: "Cursor API key" }).fill("cursor-key-before-workspace")
+  await dialog.getByRole("textbox", { name: "Label" }).fill("Before workspace")
+  await dialog.getByRole("button", { name: "Continue" }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(cursor.getByRole("radio", { name: /^Before workspace/ })).toBeVisible()
+  expect(await credentialNamed(stack.url, "Before workspace")).toBeDefined()
+  await cursor.getByRole("tab", { name: "Models" }).click()
+  await expect(cursor.getByText("Open a workspace to discover this harness's models. Your connected accounts are available in the Accounts tab.")).toBeVisible()
+  await cursor.getByRole("tab", { name: "Accounts" }).click()
+  await expect(cursor.getByRole("radio", { name: /^Before workspace/ })).toBeVisible()
+})
+
 test("15 settings: Models lists each agent's accounts and this computer's logins", async ({ stack, app, isMobile }) => {
   const workspace = await stack.daemon.makeWorkspace("models", "Models")
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
@@ -140,7 +160,7 @@ test("15 settings: a model switched off in Models leaves the composer's picker",
   })
 })
 
-test("15 settings: Models reads each agent's options, catalog and accounts once", async ({ stack, app, isMobile }) => {
+test("15 settings: Models reads account catalogs once and discovers only the opened harness's models", async ({ stack, app, isMobile }) => {
   const workspace = await stack.daemon.makeWorkspace("reads", "Reads")
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
   await openSettings(app, isMobile)
@@ -153,6 +173,6 @@ test("15 settings: Models reads each agent's options, catalog and accounts once"
   const reads = await settled()
   expect(reads.filter((path, index) => reads.indexOf(path) !== index), "read twice").toEqual([])
   expect(reads.filter((path) => path.startsWith("/api/claxedo/agent-config/harness/options")).sort()).toEqual(
-    ["claude", "codex", "cursor", "pi", "scripted-acp"].map((harness) => `/api/claxedo/agent-config/harness/options?${harness}`),
+    ["/api/claxedo/agent-config/harness/options?cursor"],
   )
 })

@@ -28,6 +28,8 @@ const LEASE_STATUSES: readonly SandboxLeaseRowStatus[] = [
   "stopping",
   "stopped",
   "destroyed",
+  "retiring",
+  "retired",
   "failed",
 ]
 

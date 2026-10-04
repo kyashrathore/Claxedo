@@ -23,6 +23,8 @@
  * with `state.acceptWebSocket` and stores the subscriber principal in the socket
  * attachment, which survives eviction. Heartbeats and reauthorization stay in
  * the outer Worker stream; the room owns no timer or pending streaming fetch.
+ * `live-sync-client.cf.ts` owns that SSE bridge; `live-sync-protocol.ts` owns
+ * its shared identity headers and socket contract.
  *
  * ## Last-Event-ID replay
  *
@@ -43,15 +45,19 @@
  * else, and a cursor-less connection served nothing from the ring.
  */
 
+import {
+  HEADER_CURSOR, HEADER_HEARTBEAT_MS, HEADER_LAST_EVENT_ID,
+  HEARTBEAT, SSE_HEADERS, SSE_QUEUE_LIMIT, roomPrincipalFromHeaders,
+  type LiveSyncSocket,
+} from "./live-sync-protocol"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-runtime-contract"
 import { createSseReplayBuffer } from "@claxedo/helpers/sse"
 import { eventVisibleTo, type EventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
 import { isRetainedControlPlaneEvent, supersededControlPlaneEventKey } from "@claxedo/server-core/platform/http/event-retention"
 import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
-import { liveSyncRoomNameForPrincipal, type LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
 import { liveSyncEvents } from "./live-sync-admission"
 import { cursorAhead, replayGapEvent, type LiveSyncStreamGapEvent } from "./live-sync-replay-gap"
-import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 
 /**
  * Held connections one room admits, across both hold mechanisms.
@@ -89,30 +95,7 @@ function maxConnections(env: LiveSyncRoomEnv): number {
   if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_MAX_CONNECTIONS
   return Math.min(Math.floor(parsed), MAX_CONNECTIONS_CEILING)
 }
-const SSE_QUEUE_LIMIT = 32
 const MAX_SOCKET_BUFFER_BYTES = 256 * 1024
-const HEARTBEAT: { type: "heartbeat" } = { type: "heartbeat" }
-
-// The room receives the resolved caller identity from the Worker (a trusted
-// internal DO fetch — DOs are unreachable from outside the Worker), so it can
-// apply `eventVisibleTo` per held connection without re-verifying the bearer.
-// `x-livesync-org` carries the authority-internal org id resolved at connect
-// (`authority.resolveOrgId`), matching the namespace events are stamped
-// with — never the raw identity-provider org claim (see `EventScopePrincipal`).
-const HEADER_MODE = "x-livesync-mode"
-const HEADER_SUBJECT = "x-livesync-subject"
-const HEADER_ORG = "x-livesync-org"
-const HEADER_HEARTBEAT_MS = "x-livesync-heartbeat-ms"
-/** The client's SSE `Last-Event-ID`, forwarded on the internal connect fetch. */
-const HEADER_LAST_EVENT_ID = "x-livesync-last-event-id"
-/**
- * Response header on the room's `/connect` reply carrying the cursor this
- * connection resumes from. The bridge cannot compute it: for a cursor-less
- * client the resume point is the room's own `lastId()`, which only the room
- * knows, and getting it wrong is the difference between "everything from now
- * on" and "re-deliver the whole retained log on the next reconnect".
- */
-const HEADER_CURSOR = "x-livesync-cursor"
 
 type LiveSyncFrame = ControlPlaneEvent | LiveSyncStreamGapEvent
 
@@ -124,16 +107,6 @@ type LiveSyncFrame = ControlPlaneEvent | LiveSyncStreamGapEvent
  * line, exactly like the three already-resumable streams.
  */
 type LiveSyncWireFrame = { id: string; frame: LiveSyncFrame }
-
-/** Structural type of the CF `DurableObjectState` bits the room touches. */
-export type LiveSyncSocket = EventTarget & {
-  accept?: () => void
-  send(data: string): void
-  close(code?: number, reason?: string): void
-  serializeAttachment?(attachment: LiveSyncSocketAttachment): void
-  deserializeAttachment?(): LiveSyncSocketAttachment | undefined
-  bufferedAmount?: number
-}
 
 export type LiveSyncRoomState = {
   acceptWebSocket?: (socket: LiveSyncSocket) => void
@@ -152,112 +125,6 @@ type HeldConnection = {
   controller: ReadableStreamDefaultController<Uint8Array>
   principal: EventScopePrincipal
 }
-
-type LiveSyncSocketAttachment = {
-  principal: EventScopePrincipal
-}
-
-/**
- * The resolved subscriber a live-sync connection is held for. `auth` is the
- * verified control-plane context (the identity provider claims — used only for heartbeat
- * reauthorization comparisons); `orgId` is the authority-internal org id
- * resolved via `authority.resolveOrgId(auth)` at connect time, the identity
- * rooms are named with and `eventVisibleTo` scopes on. Absent `orgId` (no
- * authority composed) degrades to the subject-keyed owner room, where
- * org-scoped events stay invisible fail-closed.
- */
-export type LiveSyncSubscriber = {
-  auth: ControlPlaneAuthContext
-  orgId?: string
-}
-
-/** Build the per-connection scope principal from the trusted internal headers. */
-export function roomPrincipalFromHeaders(headers: Headers): EventScopePrincipal {
-  const mode = headers.get(HEADER_MODE)
-  if (mode !== "signed") return { mode: "unsigned-local" }
-  const orgId = headers.get(HEADER_ORG) ?? undefined
-  return {
-    mode: "signed",
-    subject: headers.get(HEADER_SUBJECT) ?? "",
-    ...(orgId ? { orgId } : {}),
-  }
-}
-
-function replayPrincipalKey(principal: EventScopePrincipal) {
-  if (principal.mode === "unsigned-local") return "local"
-  return `signed:${principal.orgId ?? ""}:${principal.subject}`
-}
-
-/**
- * Derive the DO room name from a resolved subscriber. A subscriber joins the
- * room of their active org — named by the authority-internal org id resolved
- * at connect — where a share publisher with that org nudges; the
- * per-connection `eventVisibleTo` filter narrows each notice to its
- * recipient. Signed callers with no resolved org, and unsigned-local/loopback,
- * key by subject.
- */
-export function liveSyncRoomName(subscriber: LiveSyncSubscriber): string {
-  if (subscriber.auth.mode !== "signed") return "owner:local"
-  return liveSyncRoomNameForPrincipal({
-    ownerUserId: subscriber.auth.user.subject,
-    orgId: subscriber.orgId,
-  })
-}
-
-/**
- * The one publisher-side room-name derivation, applying the same
- * org-first/owner-fallback policy as `liveSyncRoomName` (which delegates here,
- * so subscriber and publisher cannot drift). A publisher that composes the
- * string by hand (`` `org:${orgId}` ``) silently disagrees with the subscriber
- * whenever its org field is absent or from the wrong namespace, and its events
- * strand in a room nobody is held in.
- *
- * Room names live in the authority-internal namespace —
- * `orgId` must be the internal org id (SQLite `org_id`, i.e.
- * `authority.resolveOrgId` output, which is also what runtime-token claims and
- * share notices carry) and `ownerUserId` the auth subject,
- * because that is the material `connectLiveSyncRoom` keys the subscriber's room
- * with. Issuer org claims (`org_...`,
- * `ControlPlaneAuthContext.user.orgId`) are a different namespace: passing one
- * as `orgId` names a room no subscriber ever joins.
- *
- * Throws when the material cannot name a real room (absent, empty, or a
- * literal "undefined"/"null" from stringifying a missing field), so a broken
- * publisher fails loudly at the publish site instead of quietly dropping the
- * frame.
- */
-
-/** Serialize the resolved identity into the trusted internal-fetch headers. */
-export function liveSyncRoomConnectHeaders(
-  subscriber: LiveSyncSubscriber,
-  heartbeatMs?: number,
-  lastEventId?: string,
-): Record<string, string> {
-  const headers: Record<string, string> = { accept: "text/event-stream" }
-  if (subscriber.auth.mode === "signed") {
-    headers[HEADER_MODE] = "signed"
-    headers[HEADER_SUBJECT] = subscriber.auth.user.subject
-    if (subscriber.orgId) headers[HEADER_ORG] = subscriber.orgId
-  } else {
-    headers[HEADER_MODE] = "unsigned-local"
-  }
-  if (heartbeatMs && Number.isFinite(heartbeatMs) && heartbeatMs > 0) {
-    headers[HEADER_HEARTBEAT_MS] = String(Math.floor(heartbeatMs))
-  }
-  // The header value is forwarded unchanged. The bearer is not re-verified
-  // inside the room, but the cursor is not an authorization input: every
-  // replayed frame still clears `eventVisibleTo` against the identity in the
-  // headers above, so a forged cursor can only change which of the caller's
-  // own frames it receives.
-  if (lastEventId) headers[HEADER_LAST_EVENT_ID] = lastEventId
-  return headers
-}
-
-const SSE_HEADERS = {
-  "Content-Type": "text/event-stream",
-  "Cache-Control": "no-store",
-  Connection: "keep-alive",
-} as const
 
 function isConstructor(value: unknown): value is new () => unknown {
   return typeof value === "function"
@@ -289,15 +156,9 @@ function defaultUpgradeResponse(client: LiveSyncSocket, headers?: Record<string,
   return new Response(null, { status: 101, webSocket: client, ...(headers ? { headers } : {}) } as ResponseInit)
 }
 
-function socketFromResponse(response: Response) {
-  return (response as Response & { webSocket?: LiveSyncSocket }).webSocket
-}
-
-function sameSubscriber(left: LiveSyncSubscriber, right: LiveSyncSubscriber) {
-  if (left.auth.mode !== right.auth.mode) return false
-  if (left.auth.mode === "unsigned-local" || right.auth.mode === "unsigned-local") return true
-  if (left.auth.user.subject !== right.auth.user.subject) return false
-  return left.auth.user.orgId === right.auth.user.orgId && left.orgId === right.orgId
+function replayPrincipalKey(principal: EventScopePrincipal) {
+  if (principal.mode === "unsigned-local") return "local"
+  return `signed:${principal.orgId ?? ""}:${principal.subject}`
 }
 
 export class LiveSyncRoom {
@@ -686,7 +547,8 @@ export class LiveSyncRoom {
 
   webSocketClose(socket: LiveSyncSocket, code: number, reason: string) {
     const principal = socket.deserializeAttachment?.()?.principal
-    socket.close(code, reason)
+    // An abnormal disconnect has no close frame to acknowledge; 1006 cannot be sent.
+    if (code !== 1006) socket.close(code, reason)
     if (principal) this.releaseReplay(principal, socket)
   }
 
@@ -696,178 +558,3 @@ export class LiveSyncRoom {
     if (principal) this.releaseReplay(principal, socket)
   }
 }
-
-export type LiveSyncReauthorization = {
-  intervalMs: number
-  current: () => Promise<LiveSyncSubscriber>
-}
-
-/**
- * Route a resolved subscriber's client connection to their room. Production
- * rooms return a hibernatable WebSocket; this function bridges it back to the
- * browser's existing SSE response, writes its heartbeats and runs its
- * reauthorization (comparing fresh the identity provider claims against
- * `subscriber.auth` — a claims change closes the stream so the client
- * reconnects and re-resolves its org). The two run on separate timers.
- */
-export function connectLiveSyncRoom(
-  namespace: LiveSyncRoomNamespace,
-  subscriber: LiveSyncSubscriber,
-  heartbeatMs?: number,
-  reauthorization?: LiveSyncReauthorization,
-  lastEventId?: string,
-): Promise<Response> {
-  return namespace
-    .get(namespace.idFromName(liveSyncRoomName(subscriber)))
-    .fetch(
-      new Request("https://live-sync-room.internal/connect", {
-        method: "GET",
-        headers: {
-          ...liveSyncRoomConnectHeaders(subscriber, heartbeatMs, lastEventId),
-          upgrade: "websocket",
-          connection: "Upgrade",
-        },
-      }),
-    )
-    .then((response) => {
-      const socket = socketFromResponse(response)
-      // No socket means the room answered with its own SSE body (the Node/test
-      // fallback), which already carries its bootstrap frame and replay.
-      if (!socket) return response
-      const encoder = new TextEncoder()
-      // The room computes the resume cursor because a cursor-less client
-      // resumes at the room's `lastId()`. Falling back to the caller's own
-      // cursor keeps a resuming client exact if the header is ever lost; a
-      // cursor-less one would then be handed "0", which on this stream costs a
-      // redundant replay of retained doorbells, not a resurrected dock.
-      const cursor = response.headers.get(HEADER_CURSOR) ?? lastEventId ?? "0"
-      const intervalMs = heartbeatMs && Number.isFinite(heartbeatMs) && heartbeatMs > 0
-        ? Math.floor(heartbeatMs)
-        : EVENT_STREAM_HEARTBEAT_MS
-      let stopped = false
-      let beatTimer: ReturnType<typeof setTimeout> | undefined
-      let reauthorizeTimer: ReturnType<typeof setTimeout> | undefined
-      let controller: ReadableStreamDefaultController<Uint8Array> | undefined
-
-      const later = (run: () => void, ms: number) => {
-        const timer = setTimeout(run, ms)
-        ;(timer as { unref?: () => void }).unref?.()
-        return timer
-      }
-      const stop = (error?: unknown, settleStream = true) => {
-        if (stopped) return
-        stopped = true
-        if (beatTimer !== undefined) clearTimeout(beatTimer)
-        if (reauthorizeTimer !== undefined) clearTimeout(reauthorizeTimer)
-        socket.close(error ? 1011 : 1000, error ? "live-sync stream failed" : "live-sync stream closed")
-        if (!controller || !settleStream) return
-        if (error) controller.error(error)
-        else controller.close()
-      }
-      const write = (data: unknown, id?: string) => {
-        if (!controller || stopped) return false
-        if (controller.desiredSize !== null && controller.desiredSize <= 0) {
-          stop(new Error("live-sync client is too slow"))
-          return false
-        }
-        const body = typeof data === "string" ? data : JSON.stringify(data)
-        controller.enqueue(encoder.encode(`${id ? `id: ${id}\n` : ""}data: ${body}\n\n`))
-        return true
-      }
-      /**
-       * Unwrap the internal id-carrying envelope back into the public wire the
-       * hosted client already reads: the bare event JSON on `data:`, with `id:`
-       * as its own line. claxedo-app captures `id:` before it decides whether a
-       * frame has a payload it cares about, so an unhandled frame still
-       * advances the cursor correctly.
-       */
-      const writeMessage = (raw: string) => {
-        let parsed: unknown
-        try {
-          parsed = JSON.parse(raw)
-        } catch {
-          return write(raw)
-        }
-        const envelope = asRecord(parsed)
-        if (envelope && "frame" in envelope && typeof envelope.id === "string") {
-          return write(envelope.frame, envelope.id)
-        }
-        return write(raw)
-      }
-      const beat = () => {
-        if (stopped) return
-        try {
-          if (!write(HEARTBEAT)) return
-          beatTimer = later(beat, intervalMs)
-        } catch (error) {
-          stop(error)
-        }
-      }
-      const reauthorize = async (check: LiveSyncReauthorization) => {
-        if (stopped) return
-        let current: LiveSyncSubscriber
-        try {
-          current = await check.current()
-        } catch {
-          // Bearer tokens outlive nothing: a five-minute access token will
-          // expire under a long-lived stream, and the re-check then throws
-          // an AuthenticationError with the response already streaming — no
-          // 401 can exist anymore. That is the client's cue to reconnect
-          // with a fresh token, not a server failure: erroring the stream
-          // here would end every wr/events invocation as an uncaught
-          // exception on a five-minute cycle. Close cleanly instead; the
-          // client's reconnect performs a full, fresh authorization.
-          stop()
-          return
-        }
-        if (!sameSubscriber(subscriber, current)) {
-          // Same shape for a subscriber whose authorization changed (org
-          // moved, actor revoked): the reconnect re-authorizes from scratch
-          // and lands in the right room — or is refused with a real 401.
-          stop()
-          return
-        }
-        if (!stopped) reauthorizeTimer = later(() => void reauthorize(check), check.intervalMs)
-      }
-
-      const body = new ReadableStream<Uint8Array>({
-        start(streamController) {
-          controller = streamController
-          socket.addEventListener("message", (event) => {
-            const data = "data" in event ? event.data : undefined
-            if (typeof data === "string") writeMessage(data)
-            else if (data instanceof ArrayBuffer) writeMessage(new TextDecoder().decode(data))
-          })
-          socket.addEventListener("close", () => stop())
-          socket.addEventListener("error", () => stop(new Error("live-sync room socket failed")))
-          // The bootstrap frame is written before `accept()`, not after. The
-          // room has already queued this connection's replayed frames on the
-          // socket, and accepting is what releases them; writing the cursor
-          // first is the only ordering that guarantees a replayed frame can
-          // never precede the bootstrap and walk the reader's cursor forward
-          // past frames it has not received.
-          write(HEARTBEAT, cursor)
-          socket.accept?.()
-          beatTimer = later(beat, intervalMs)
-          if (reauthorization) {
-            reauthorizeTimer = later(() => void reauthorize(reauthorization), reauthorization.intervalMs)
-          }
-        },
-        cancel() {
-          stop(undefined, false)
-        },
-      }, { highWaterMark: SSE_QUEUE_LIMIT })
-      return new Response(body, { headers: SSE_HEADERS })
-    })
-}
-
-// The publisher-side helpers live in platform/ so hosts and domains can ring
-// the doorbell without importing a deployment. Re-exported here because this
-// module is where the room itself is defined.
-export {
-  liveSyncRoomNameForPrincipal,
-  nudgeLiveSyncRoom,
-  type LiveSyncRoomNamespace,
-  type LiveSyncRoomStub,
-} from "../../platform/http/live-sync-publish"
-import { asRecord } from "@claxedo/server-core/platform/json/index"

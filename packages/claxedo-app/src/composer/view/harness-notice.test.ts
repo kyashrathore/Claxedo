@@ -5,6 +5,12 @@ import { resolveHarnessNotice } from "./harness-notice"
 const base = { harnessLabel: "Cursor", runtimeUnavailable: false, optionsFailed: false, noModels: false }
 const open = () => undefined
 
+test("harness notice: missing runtime models do not imply missing provider credentials", () => {
+  expect(resolveHarnessNotice({ ...base, harnessLabel: "OpenCode", modelRuntimeRequired: true, setupRequired: true, noModels: true, openProviders: open })).toEqual({
+    kind: "models-runtime-required", tone: "warning", message: "Start the workspace to discover OpenCode models", detail: "Your connected accounts are available in Settings.", retry: false,
+  })
+})
+
 test("harness notice: a connection state outranks everything, with its own copy", () => {
   expect(resolveHarnessNotice({ ...base, runtimeUnavailable: true, connectionState: { connectionId: "c", state: "disconnected" } })).toEqual({
     kind: "connection-disconnected",

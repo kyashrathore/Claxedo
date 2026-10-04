@@ -3,7 +3,7 @@ import { createHostedAccount, type HostedAccount } from "./account"
 import { responseError, toAppError } from "./errors"
 import { createRelay, type Relay } from "./relay"
 import { startWorkspace, type StartOptions } from "./workspace-start"
-import { CLOUD_RUNTIME_UNAVAILABLE, connectionAnswerFromWire, unavailableRetryAfter, type ConnectionAnswer, type WorkspaceConnections } from "./wire/connection"
+import { connectionAnswerFromWire, type ConnectionAnswer, type WorkspaceConnections } from "./wire/connection"
 import { SESSION_LIST_SORT, sessionHostRootFromListItem } from "./wire/session-row"
 import { asArray, asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { ServerError } from "./errors"
@@ -40,7 +40,8 @@ function socketUrl(serverUrl: string, path: string) {
 
 function withRequestDefaults(config: ServerConfig, init: RequestInit | undefined): RequestInit {
   const headers = new Headers(init?.headers)
-  if (typeof init?.body === "string" && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
+  const jsonMutation = init?.body === undefined && ["POST", "PUT", "PATCH", "DELETE"].includes(init?.method?.toUpperCase() ?? "GET")
+  if ((typeof init?.body === "string" || jsonMutation) && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
   if (!headers.has("Accept")) headers.set("Accept", "application/json")
   return {
     ...init,
@@ -92,11 +93,7 @@ type Request = Transport["request"]
 async function requestConnection(request: Request, workspaceId: string, start: boolean): Promise<ConnectionAnswer> {
   const response = await request(`/api/workspace/${encodeURIComponent(workspaceId)}/connection`, start ? { method: "POST", body: "{}" } : undefined)
   if (response.ok) return connectionAnswerFromWire(await response.json(), workspaceId)
-  const body = response.clone()
-  const error = await responseError(response, start ? "Workspace start" : "Workspace connection")
-  const retryAfterMs = start && error.code === CLOUD_RUNTIME_UNAVAILABLE ? unavailableRetryAfter(JSON.parse(await body.text())) : undefined
-  if (retryAfterMs === undefined) throw error
-  return { kind: "provisioning", retryAfterMs }
+  throw await responseError(response, start ? "Workspace start" : "Workspace connection")
 }
 
 export function createWorkspaceConnections(request: Request, account?: HostedAccount): WorkspaceConnections {

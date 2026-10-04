@@ -77,6 +77,39 @@ comparison and each provider's required options. Swap `createMemoryLeaseStore`
 for a persisted `SandboxLeaseStore` implementation (e.g. backed by SQLite) to
 survive process restarts.
 
+The Boat driver assigns the mounted workspace root to the container's runtime
+user before starting the runtime, so Git accepts the checkout's ownership.
+It changes only the mount root's owner, preserving ownership within the person's
+checkout. Docker's init process reaps orphaned harness children so exited Git
+children cannot leave a retired Codex process group populated by zombies.
+A container is reused only when its image, init setting, security-policy digest and boot command match;
+if Boat restores the same image and boot command with an older configuration during creation,
+the driver replaces that known old container once. A competing different image
+or command remains a startup failure.
+Replacing an outdated container preserves the bind-mounted workspace and state.
+The [native harness policy](src/drivers/boat-security/README.md) keeps seccomp,
+AppArmor where supported, and no-new-privileges while allowing Codex's nested
+user namespaces. Only `SETFCAP` (UID-zero mapping) and `CHOWN` (workspace-root
+ownership repair) remain from Docker's default capability set. Policy staging
+or AppArmor load failure prevents startup; the driver never retries unconfined.
+The Boat driver checks the runtime's health endpoint after starting its container.
+If startup never becomes healthy, the failure includes a bounded container log
+tail and container exit information, with staged environment and registry secret
+values redacted before truncation. A diagnostic request failure preserves the
+original health failure. This evidence identifies a failed runtime boot without
+reporting the VM itself as ready.
+
+Workspace deletion calls `destroy` with `retireLease` and the placement's home
+region. This fences acquisition before provider cleanup, persists `retiring`
+across cleanup failures, and records `retired` only after cleanup succeeds.
+Neither state accepts provisioning results, heartbeats, or lease release.
+An empty workspace receives the same fence without starting compute. Ordinary
+`destroy` still permits fresh compute to be acquired for a surviving workspace.
+The hosted route removes the workspace record only after retirement and runtime
+credential withdrawal succeed. Boat deletion waits for the sandbox read to
+report absence; an asynchronous deletion acknowledgement alone is insufficient.
+Snapshot deletion failures propagate and leave cleanup retryable.
+
 ## Credentials & secrets
 
 There are two distinct channels for getting values into a sandbox, chosen by

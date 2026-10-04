@@ -21,8 +21,8 @@ function recordingTransport(paths: string[]) {
     json: async (path: string) => {
       paths.push(path)
       const provider = new URL(path, "http://route.local").searchParams.get("provider")
-      if (provider) return { all: [{ id: provider, name: "Acme", source: "custom", models: { m1: { name: "M1" }, m2: { name: "M2" } } }], connected: [provider], default: {} }
-      return { all: [{ id: "acme", name: "Acme", models: {} }], connected: ["acme"], default: {} }
+      if (provider) return { modelAvailability: "available", all: [{ id: provider, name: "Acme", source: "custom", models: { m1: { name: "M1" }, m2: { name: "M2" } } }], connected: [provider], default: {} }
+      return { modelAvailability: "available", all: [{ id: "acme", name: "Acme", models: {} }], connected: ["acme"], default: {} }
     },
   } as unknown as Transport
 }
@@ -60,6 +60,7 @@ test("provider catalogs: a read without a placement, and pi's read, name no work
 
 test("provider catalogs: a Pi provider connected through another harness's login keeps that harness, and no Disconnect source", () => {
   const catalog = providerCatalogFromWire({
+    modelAvailability: "runtime_required",
     all: [
       { id: "anthropic", name: "Anthropic", source: "harness", harness: "claude", models: {} },
       { id: "openai", name: "OpenAI", source: "api", models: {} },
@@ -68,4 +69,11 @@ test("provider catalogs: a Pi provider connected through another harness's login
     default: {},
   }, "pi")
   expect(catalog.all.map((provider) => [provider.id, provider.source, provider.harness])).toEqual([["anthropic", "harness", "claude"], ["openai", "api", undefined]])
+  expect(catalog.modelDiscovery).toBe("runtime-required")
+})
+
+test("provider catalogs: missing or invalid discovery metadata is a contract failure", () => {
+  for (const modelAvailability of [undefined, "unknown"]) {
+    expect(() => providerCatalogFromWire({ all: [], connected: [], default: {}, modelAvailability }, "opencode")).toThrow("unreadable")
+  }
 })
