@@ -119,7 +119,7 @@ export type PlacementsApi = {
   readonly byId: (id: PlacementId) => Placement | undefined
   readonly list: () => readonly Placement[]
   readonly load: () => Promise<readonly Placement[]>
-  readonly createWorktree: (projectId: ProjectId, input: WorktreeCreateInput) => Promise<Placement>
+  readonly createWorktree: (root: PlacementId, input: WorktreeCreateInput) => Promise<Placement>
 }
 
 export type TerminalsApi = {

@@ -6,10 +6,8 @@ import type { Workspaces } from "./workspaces"
 import { WORKTREE_ROUTE } from "./wire/placements"
 
 export function createWorktreeCreator(transport: Transport, workspaces: Workspaces): PlacementsApi["createWorktree"] {
-  return async (projectId, input) => {
-    const root = workspaces.list().find((placement) => placement.projectId === projectId && placement.kind === "folder")
-    if (!root) throw new ServerError({ class: "not_found", message: `Project ${projectId} has no folder placement to branch from` })
-    const at = withQuery(WORKTREE_ROUTE, { workspaceId: (await workspaces.route(root.id)).workspaceId })
+  return async (root, input) => {
+    const at = withQuery(WORKTREE_ROUTE, { workspaceId: (await workspaces.route(root)).workspaceId })
     const directory = readString(await transport.json(at, jsonInit("POST", {
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.baseRef !== undefined ? { baseRef: input.baseRef } : {}),

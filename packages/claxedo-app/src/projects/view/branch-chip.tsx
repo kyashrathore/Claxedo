@@ -5,11 +5,12 @@ import type { ContextChip } from "./context-row"
 
 function branchLabel(t: ReturnType<typeof useProjectsText>, context: DraftContext, selected: string | undefined): string {
   const state = context.branches()
-  if (state.kind !== "ready") return state.kind === "failed" ? t("projects.chip.branch.unavailable") : t("projects.chip.branch.loading")
-  if (context.creating()) {
-    const branch = selected ?? t(context.creating() === "cloud" ? "projects.chip.branch.default" : "projects.chip.branch.currentCommit")
-    return t("projects.chip.branch.from", { branch })
+  const known = context.current()?.branch
+  if (state.kind !== "ready") {
+    if (known && !context.creating()) return known
+    return state.kind === "failed" ? t("projects.chip.branch.unavailable") : t("projects.chip.branch.loading")
   }
+  if (context.creating()) return t("projects.chip.branch.from", { branch: selected ?? t("projects.chip.branch.currentCommit") })
   const branch = state.current ?? t("projects.chip.branch.detached")
   return state.dirty ? t("projects.chip.branch.dirty", { branch }) : branch
 }
@@ -18,7 +19,7 @@ export function useBranchChip(context: DraftContext): () => ContextChip {
   const t = useProjectsText()
   return () => {
     const state = context.branches()
-    const selected = context.creating() === "cloud" ? context.base() : context.branch()
+    const selected = context.branch()
     return {
       slot: "context-chip-branch",
       icon: <Icon name="branch" size="small" />,

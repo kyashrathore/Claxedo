@@ -17,13 +17,11 @@ export default {
   "projects.edit.color.select": "选择{{color}}颜色",
   "projects.edit.action": "编辑",
   "projects.chip.project": "项目",
-  "projects.chip.self": "这台电脑",
   "projects.create.continue": "提交",
   "projects.connect.connecting": "连接中…",
   "projects.connect.enter.before": "回车",
   "projects.settings.group": "设置",
   "projects.placement.open": "打开",
-  "projects.add.name": "名称",
   "projects.edit.environment": "环境",
   "projects.title": "项目",
 }

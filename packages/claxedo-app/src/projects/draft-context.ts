@@ -16,19 +16,23 @@ function createWhere(server: Server, draft: Accessor<DraftTarget>) {
     return chosen.kind === "placement" ? chosen.id : draft().placementId
   }
   const machineOf = (target: Placement) => machineOfPlacement(machines.data ?? [], target)
-  return { entries, choice, setChoice, current, placement, machineOf, machinesLoaded: () => machines.data !== undefined, roots: createMemo(() => worktreeRoots(entries())) }
+  return {
+    entries,
+    choice,
+    setChoice,
+    current,
+    placement,
+    machineOf,
+    machinesLoaded: () => machines.data !== undefined,
+    hasMachine: () => machines.data?.some((machine) => machine.enrolled || machine.isThisMachine) === true,
+    roots: createMemo(() => worktreeRoots(entries())),
+  }
 }
 
 type Where = ReturnType<typeof createWhere>
 
-function createResolver(server: Server, draft: Accessor<DraftTarget>, where: Where, base: Accessor<string | undefined>) {
+function createResolver(server: Server, where: Where, base: Accessor<string | undefined>) {
   const create = async (choice: WhereNew): Promise<PlacementId> => {
-    const projectId = draft().projectId
-    if (choice.kind === "newCloud") {
-      const workspace = await server.cloud.create({ projectId, name: choice.name, ...(choice.branch ? { branch: choice.branch } : {}) })
-      where.setChoice({ kind: "placement", id: workspace.id, pendingName: workspace.name })
-      return workspace.id
-    }
     const branch = base()
     const placement = await server.placements.createWorktree(choice.root, branch ? { baseRef: branch } : {})
     where.setChoice({ kind: "placement", id: placement.id, pendingName: placement.label })
@@ -63,8 +67,10 @@ export function createDraftContext(draft: Accessor<DraftTarget>) {
     choice: where.choice,
     current: where.current,
     creating,
+    projectId: () => draft().projectId,
     machineOf: where.machineOf,
     machinesLoaded: where.machinesLoaded,
+    hasMachine: where.hasMachine,
     worktreeRoots: where.roots,
     canCreateCloud: () => server.capabilities()?.features.cloud === true,
     choose,
@@ -72,7 +78,7 @@ export function createDraftContext(draft: Accessor<DraftTarget>) {
     branch: branchChoice.branch,
     base: branchChoice.base,
     chooseBranch: branchChoice.choose,
-    resolve: createResolver(server, draft, where, branchChoice.base),
+    resolve: createResolver(server, where, branchChoice.base),
   }
 }
 

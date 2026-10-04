@@ -39,5 +39,4 @@ export { promptEcho } from "./wire/prompt"
 export { ServerProvider } from "./provider"
 
 
-export { localFileContentQuery } from "./files"
 export { piProviderAccountIds } from "./wire/accounts"

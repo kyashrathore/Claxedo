@@ -2,14 +2,13 @@ import { parseAgentFileContent } from "@claxedo/agent-runtime-contract"
 import { isRecord } from "@claxedo/helpers/guards"
 import { desktopBridge } from "../lib/desktop-bridge"
 import { isLocalPlacement } from "./placement-runtime"
-import type { Server } from "./api"
-import { contractMismatch } from "./errors"
+import { contractMismatch, ServerError } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import type { PlacementId } from "./ids"
 import { queryKeys } from "./query-keys"
 import { withQuery, type Transport } from "./transport"
 import type { FileContent, FileNode, FileSearchEntries } from "./git-types"
-import type { FetchQuery } from "./types"
+import type { FetchQuery, Placement } from "./types"
 import type { Workspaces } from "./workspaces"
 
 const FILE_PATH = "/api/wr/file"
@@ -38,8 +37,14 @@ export function fileQueries(transport: Transport, workspaces: Workspaces) {
         return node ? [node] : []
       })
     })
-  const content = (placementId: PlacementId, path: string): FetchQuery<FileContent> => fetchQuery(queryKeys.fileContent(server, placementId, path), async () =>
+  const runtimeContent = (placementId: PlacementId, path: string): FetchQuery<FileContent> => fetchQuery(queryKeys.fileContent(server, placementId, path), async () =>
     fileContent(await transport.runtimeJson(await workspaces.route(placementId), withQuery(`${FILE_PATH}/content`, { path }))))
+  const content = (placementId: PlacementId, path: string): FetchQuery<FileContent> => {
+    if (!path.startsWith("/")) return runtimeContent(placementId, path)
+    const placement = workspaces.byId(placementId)
+    const relative = placement?.path ? insideRoot(placement.path, path) : undefined
+    return relative === undefined ? outsideContent(placement, path) : runtimeContent(placementId, relative)
+  }
   const search = (placementId: PlacementId, query: string, entries: FileSearchEntries): FetchQuery<readonly string[]> => fetchQuery(queryKeys.fileSearch(server, placementId, query, entries), async () => {
       const rows = await transport.runtimeJson(await workspaces.route(placementId), withQuery(SEARCH_PATH, { query, limit: SEARCH_LIMIT, dirs: entries === "all" }))
       if (!Array.isArray(rows)) throw contractMismatch("file search")
@@ -48,12 +53,15 @@ export function fileQueries(transport: Transport, workspaces: Workspaces) {
   return { tree, content, search }
 }
 
-export function localFileContentQuery(server: Pick<Server, "placements" | "capabilities">, placementId: PlacementId, path: string): FetchQuery<FileContent> {
-  const query = fetchQuery<FileContent>(queryKeys.localFileContent(placementId, path), async () => {
-    const bridge = desktopBridge()
-    if (!bridge || !isLocalPlacement(server.placements.byId(placementId))) {
-      throw new Error("This file cannot be opened on this computer.")
-    }
+function insideRoot(root: string, path: string): string | undefined {
+  const base = root.endsWith("/") ? root : `${root}/`
+  return path.startsWith(base) && path.length > base.length ? path.slice(base.length) : undefined
+}
+
+function outsideContent(placement: Placement | undefined, path: string): FetchQuery<FileContent> {
+  const query = fetchQuery<FileContent>(queryKeys.outsideFileContent(placement?.id, path), async () => {
+    const bridge = isLocalPlacement(placement) ? desktopBridge() : undefined
+    if (!bridge) throw new ServerError({ class: "not_found", message: "This file is outside the workspace, so it opens only in the desktop app on the machine that holds it." })
     return fileContent(await bridge.readFileContent(path))
   })
   return { ...query, staleTime: 0 }

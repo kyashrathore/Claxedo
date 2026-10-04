@@ -1,7 +1,7 @@
 import { createSignal, onCleanup, Show, type JSX } from "solid-js"
 import { useServer, type Integration, type IntegrationFailure, type IntegrationGrant } from "@/server"
 import { useProjectsText, type ProjectsText } from "../i18n"
-import type { CreateFormLook } from "./project-create-repository"
+import { FIELD_BOX } from "./project-create-repository"
 import { Button } from "@/ui"
 
 const FAILURE_KEYS = {
@@ -54,11 +54,11 @@ function createConnect(integration: () => Integration) {
 
 type Connect = ReturnType<typeof createConnect>
 
-function TokenForm(props: { look: CreateFormLook; integration: Integration; state: Connect }): JSX.Element {
+function TokenForm(props: { integration: Integration; state: Connect }): JSX.Element {
   const t = useProjectsText()
   const prompt = () => props.integration.prompts.find((item) => item.secret) ?? props.integration.prompts[0]
-  const text = () => (props.look.comfortable ? "text-13-regular" : "text-12-regular")
-  const box = () => `${props.look.box} ${props.look.comfortable ? "text-14-regular" : "text-13-regular"}`
+  const text = () => "text-13-regular"
+  const box = () => `${FIELD_BOX} text-14-regular`
   return (
     <div class="flex flex-col gap-2">
       <input
@@ -72,7 +72,7 @@ function TokenForm(props: { look: CreateFormLook; integration: Integration; stat
         class={`${box()} w-full min-w-0 text-text-strong placeholder:text-text-weak/60 focus:outline-none focus:border-border-interactive-base`}
       />
       <div class="flex flex-wrap items-center gap-3">
-        <Button type="button" variant="neutral" size={props.look.comfortable ? "normal" : "small"} disabled={props.state.busy() || !props.state.secret().trim()} onClick={() => void props.state.connect("key")}>
+        <Button type="button" variant="neutral" size="normal" disabled={props.state.busy() || !props.state.secret().trim()} onClick={() => void props.state.connect("key")}>
           {props.state.busy() ? t("projects.connect.connecting") : t("projects.connect.withToken")}
         </Button>
         <Show when={prompt()?.createUrl}>
@@ -87,10 +87,10 @@ function TokenForm(props: { look: CreateFormLook; integration: Integration; stat
   )
 }
 
-function GrantWaiting(props: { look: CreateFormLook; grant: IntegrationGrant }): JSX.Element {
+function GrantWaiting(props: { grant: IntegrationGrant }): JSX.Element {
   const t = useProjectsText()
   return (
-    <div class={`flex flex-col gap-1 ${props.look.comfortable ? "text-13-regular" : "text-12-regular"} text-text-base`}>
+    <div class="flex flex-col gap-1 text-13-regular text-text-base">
       <Show when={props.grant.userCode}>
         {(code) => (
           <span>
@@ -114,24 +114,24 @@ function failureText(t: ProjectsText, reason: IntegrationFailure): string {
   return t(FAILURE_KEYS[reason])
 }
 
-export function ConnectCodeHost(props: { look: CreateFormLook; integration: Integration }): JSX.Element {
+export function ConnectCodeHost(props: { integration: Integration }): JSX.Element {
   const t = useProjectsText()
   const state = createConnect(() => props.integration)
   const usesOAuth = () => props.integration.methods.includes("oauth")
   return (
     <div class="flex flex-col gap-2">
-      <span class={`${props.look.comfortable ? "text-13-regular" : "text-12-regular"} text-text-weak`}>{t("projects.connect.intro", { host: props.integration.name })}</span>
+      <span class="text-13-regular text-text-weak">{t("projects.connect.intro", { host: props.integration.name })}</span>
       <Show
         when={state.grant()}
         fallback={
-          <Show when={usesOAuth()} fallback={<TokenForm look={props.look} integration={props.integration} state={state} />}>
-            <Button type="button" variant="neutral" size={props.look.comfortable ? "normal" : "small"} class="self-start" disabled={state.busy()} onClick={() => void state.connect("oauth")}>
+          <Show when={usesOAuth()} fallback={<TokenForm integration={props.integration} state={state} />}>
+            <Button type="button" variant="neutral" size="normal" class="self-start" disabled={state.busy()} onClick={() => void state.connect("oauth")}>
               {state.busy() ? t("projects.connect.connecting") : t("projects.connect.oauth", { host: props.integration.name })}
             </Button>
           </Show>
         }
       >
-        {(pending) => <GrantWaiting look={props.look} grant={pending()} />}
+        {(pending) => <GrantWaiting grant={pending()} />}
       </Show>
       <Show when={state.failure()}>
         {(reason) => (

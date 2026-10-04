@@ -3,49 +3,7 @@ import type { AppError, CodeHostConnection, CodeHostRepository } from "@/server"
 import { Field, Select } from "@/ui"
 import { useProjectsText } from "../i18n"
 
-export type CreateFormLook = {
-  readonly comfortable: boolean
-  readonly label: string
-  readonly box: string
-  readonly field: string
-  readonly hint: string
-  readonly link: string
-}
-
-export function createFormLook(comfortable: boolean): CreateFormLook {
-  const box = comfortable
-    ? "h-10 rounded-lg border border-border-base bg-surface-inset-base px-3"
-    : "h-8 rounded-md border border-border-base bg-surface-inset-base px-2.5"
-  return {
-    comfortable,
-    label: comfortable ? "text-[length:var(--font-size-intermediate)] font-medium text-text-weak" : "text-12-medium text-text-weak",
-    box,
-    field: `${box} w-full min-w-0 ${comfortable ? "text-14-regular" : "text-13-regular"} text-text-strong placeholder:text-text-weak/60 focus:outline-none focus:border-border-interactive-base`,
-    hint: comfortable ? "text-12-regular text-text-weak" : "text-11-regular text-text-weak",
-    link: `${comfortable ? "text-12-medium" : "text-11-medium"} text-text-weak underline-offset-2 hover:text-text-strong hover:underline focus-visible:underline focus-visible:outline-none`,
-  }
-}
-
-export function UrlField(props: { look: CreateFormLook; url: string; onUrl: (url: string) => void; host: string | undefined }) {
-  const t = useProjectsText()
-  return (
-    <label class="flex flex-col gap-1">
-      <span class={props.look.label}>{t("projects.add.url")}</span>
-      <input
-        type="text"
-        value={props.url}
-        onInput={(event) => props.onUrl(event.currentTarget.value)}
-        placeholder={t("projects.create.url.placeholder")}
-        aria-label={t("projects.add.url")}
-        spellcheck={false}
-        class={props.look.field}
-      />
-      <span class={props.look.hint}>
-        {props.host ? t("projects.create.url.hint.host", { host: props.host }) : t("projects.create.url.hint.none")}
-      </span>
-    </label>
-  )
-}
+export const FIELD_BOX = "h-10 rounded-lg border border-border-base bg-surface-inset-base px-3"
 
 export function AccountSelect(props: { connections: readonly CodeHostConnection[]; current: CodeHostConnection; onSelect: (id: string) => void }) {
   const t = useProjectsText()
@@ -66,7 +24,6 @@ export function AccountSelect(props: { connections: readonly CodeHostConnection[
 }
 
 type RepositoryListProps = {
-  look: CreateFormLook
   repositories: readonly CodeHostRepository[] | undefined
   loading: boolean
   error: AppError | null
@@ -78,7 +35,7 @@ type RepositoryListProps = {
 
 function RepositoryRows(props: RepositoryListProps & { matches: readonly CodeHostRepository[] }): JSX.Element {
   const t = useProjectsText()
-  const row = () => (props.look.comfortable ? "text-13-regular" : "text-12-regular")
+  const row = () => "text-13-regular"
   return (
     <>
       <Show when={props.loading}>
@@ -133,12 +90,12 @@ export function RepositoryList(props: RepositoryListProps) {
         aria-label={t("projects.add.search")}
         autocomplete="off"
         spellcheck={false}
-        class={`${props.look.box} ${props.look.comfortable ? "text-14-regular" : "text-13-regular"} w-full min-w-0 text-text-strong placeholder:text-text-weak/60 focus:outline-none focus:border-border-interactive-base`}
+        class={`${FIELD_BOX} text-14-regular w-full min-w-0 text-text-strong placeholder:text-text-weak/60 focus:outline-none focus:border-border-interactive-base`}
       />
       <div
         role="radiogroup"
         aria-label={t("projects.add.repositories")}
-        class={`flex max-h-56 flex-col overflow-y-auto rounded-md border border-border-base ${props.look.comfortable ? "max-h-72" : ""}`}
+        class="flex max-h-60 flex-col overflow-y-auto rounded-md border border-border-base"
       >
         <RepositoryRows {...props} matches={matches()} />
       </div>

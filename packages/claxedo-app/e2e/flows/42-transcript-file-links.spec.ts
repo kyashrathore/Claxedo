@@ -89,7 +89,7 @@ test("42 transcript file links: a workspace Markdown link opens its file and cop
   await artifact.click({ button: "right" })
   await expect(app.getByRole("button", { name: "Open externally", exact: true })).toHaveCount(0)
   await app.getByRole("button", { name: "Open", exact: true }).click()
-  await expect(app.getByText("This file cannot be opened on this computer.", { exact: true })).toBeVisible()
+  await expect(app.getByText("This file is outside the workspace, so it opens only in the desktop app on the machine that holds it.", { exact: true })).toBeVisible()
   await link.click()
   await expect(app.getByRole("complementary", { name: "Workspace panel" }).getByText("markdown-file-links", { exact: true }).first()).toBeVisible()
   expect(assistantText(await api.messages(workspace.directory, session.id))).toContain("README.md:1")

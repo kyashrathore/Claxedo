@@ -1,54 +1,87 @@
 import type { JSX } from "solid-js"
+import { cloudFailureReason, useCloudStatusText, useCloudWorkspaces, type CloudWorkspaces } from "@/cloud"
 import { placementId, type Placement } from "@/server"
-import { settingsPath, useShellRoute } from "@/shell"
-import { ClaxedoIcon as Icon, SemanticIcon } from "@/ui"
+import { useConnectMachine } from "@/settings"
+import { ClaxedoIcon as Icon, useDialog } from "@/ui"
 import type { DraftContext } from "../draft-context"
-import { entryPlace, groupedPlaces, type WhereEntry, type WherePlace } from "../draft-where"
+import { groupedPlaces, type WhereEntry, type WherePlace } from "../draft-where"
 import { useProjectsText, type ProjectsKey, type ProjectsText } from "../i18n"
-import type { ContextChip, ContextChipOption } from "./context-row"
-import { NewCloudWorkspacePanel } from "./new-cloud-workspace-panel"
+import type { ContextChip, ContextChipAction, ContextChipOption } from "./context-row"
+import { DialogNewCloudWorkspace } from "./new-cloud-workspace-dialog"
 
-const CONNECT_COMPUTER = "connect-computer"
+const PLACE_GROUP: Record<WherePlace, ProjectsKey> = { machine: "projects.chip.machines", cloud: "projects.chip.cloud" }
 
-const PLACE_GROUP: Record<WherePlace, ProjectsKey> = { computer: "projects.chip.self", cloud: "projects.chip.cloud", machine: "projects.chip.machines" }
+type Words = { readonly t: ProjectsText; readonly context: DraftContext; readonly cloudStatus: (placement: Placement) => string | undefined }
 
-function whereEntryLabel(t: ProjectsText, entry: { readonly place: WherePlace; readonly placement: Placement }): string {
-  return entry.place === "computer" && entry.placement.kind === "folder" ? t("projects.chip.main") : entry.placement.label
+function machineStatus(words: Words, placement: Placement): string {
+  const machine = words.context.machineOf(placement)
+  const online = machine ? machine.online : placement.reachable
+  return words.t(online ? "projects.where.online" : "projects.where.offline")
 }
 
-function whereEntryDetail(context: DraftContext, entry: { readonly place: WherePlace; readonly placement: Placement }): string | undefined {
-  if (entry.place === "cloud") return entry.placement.id
-  if (entry.place === "machine") return (entry.placement.machineId && context.machineName(entry.placement.machineId)) ?? entry.placement.path
-  return undefined
+function entryLabel(words: Words, placement: Placement): string {
+  if (placement.kind !== "folder") return placement.label
+  return words.context.machineOf(placement)?.name ?? placement.label
 }
 
-function whereOption(t: ProjectsText, context: DraftContext, entry: WhereEntry, grouped: ReadonlySet<WherePlace>): ContextChipOption {
-  const group = grouped.has(entryPlace(entry)) ? { group: t(PLACE_GROUP[entryPlace(entry)]) } : {}
-  if (entry.kind === "connectComputer") return { value: CONNECT_COMPUTER, label: t("projects.chip.connect"), detail: t("projects.chip.connect.detail"), ...group }
-  const detail = whereEntryDetail(context, entry)
-  return { value: entry.placement.id, label: whereEntryLabel(t, entry), ...(detail ? { detail } : {}), ...group }
+function entryDetail(words: Words, placement: Placement): string | undefined {
+  if (placement.kind === "cloud") return words.cloudStatus(placement)
+  const machine = placement.kind === "folder" ? placement.label : words.context.machineOf(placement)?.name
+  return [machine, machineStatus(words, placement)].filter(Boolean).join(" · ")
+}
+
+function whereOption(words: Words, entry: WhereEntry, grouped: ReadonlySet<WherePlace>): ContextChipOption {
+  const detail = entryDetail(words, entry.placement)
+  return {
+    value: entry.placement.id,
+    label: entryLabel(words, entry.placement),
+    ...(detail ? { detail } : {}),
+    ...(grouped.has(entry.place) ? { group: words.t(PLACE_GROUP[entry.place]) } : {}),
+  }
 }
 
 function whereIcon(context: DraftContext): JSX.Element {
-  const creating = context.creating()
-  if (creating === "cloud") return <Icon name="cloud-upload" size="small" />
-  if (creating === "worktree") return <SemanticIcon concept="isolationWorktree" size="small" />
-  const current = context.current()
-  if (current?.kind === "cloud") return <Icon name="cloud" size="small" />
-  return current?.kind === "worktree" ? <SemanticIcon concept="isolationWorktree" size="small" /> : <Icon name="monitor" size="small" />
+  const kind = context.creating() === "worktree" ? "worktree" : context.current()?.kind
+  if (kind === "cloud") return <Icon name="cloud" size="small" />
+  return <Icon name={kind === "worktree" ? "worktree" : "server"} size="small" />
 }
 
-function whereLabel(t: ProjectsText, context: DraftContext): string {
+function whereLabel(words: Words): string {
+  const { t, context } = words
   const choice = context.choice()
-  if (choice.kind === "newCloud") return t("projects.chip.newCloud.named", { name: choice.name })
-  if (choice.kind === "newWorktree") return t("projects.chip.newWorktree")
-  const entry = context.entries().find((item) => item.kind === "placement" && item.placement.id === context.current()?.id)
-  return entry?.kind === "placement" ? whereEntryLabel(t, entry) : ""
+  if (choice.kind === "newWorktree") return t("projects.chip.newWorktree.pending")
+  const current = context.current()
+  return current ? entryLabel(words, current) : choice.pendingName ?? ""
+}
+
+function createActions(words: Words, openCloud: () => void, connect: () => void): readonly ContextChipAction[] {
+  const { t, context } = words
+  const worktrees = context.worktreeRoots().map((root) => ({
+    label: t("projects.chip.newWorktree", { machine: context.machineOf(root)?.name ?? root.label }),
+    onSelect: () => context.choose({ kind: "newWorktree", root: root.id }),
+  }))
+  const cloud = context.canCreateCloud() ? [{ label: t("projects.chip.newCloud"), onSelect: openCloud }] : []
+  const machine = context.machinesLoaded() && !context.hasMachine() ? [{ label: t("projects.where.connectMachine"), onSelect: connect }] : []
+  return [...worktrees, ...cloud, ...machine]
+}
+
+function useCloudStatus(cloud: CloudWorkspaces): Words["cloudStatus"] {
+  const status = useCloudStatusText()
+  return (placement) => {
+    const list = cloud.list()
+    const row = list.kind === "ready" ? list.rows.find((item) => item.id === placement.id) : undefined
+    return row ? [status(row.state), cloudFailureReason(row.state)].filter(Boolean).join(" — ") : undefined
+  }
 }
 
 export function useWhereChip(context: DraftContext): () => ContextChip {
   const t = useProjectsText()
-  const route = useShellRoute()
+  const dialog = useDialog()
+  const connect = useConnectMachine()
+  const cloud = useCloudWorkspaces(context.projectId, context.canCreateCloud)
+  const words: Words = { t, context, cloudStatus: useCloudStatus(cloud) }
+  const openCloud = () =>
+    dialog.show(() => <DialogNewCloudWorkspace cloud={cloud} onCreated={(workspace) => context.choose({ kind: "placement", id: workspace.id, pendingName: workspace.name })} />)
   return () => {
     const entries = context.entries()
     const grouped = groupedPlaces(entries)
@@ -56,18 +89,14 @@ export function useWhereChip(context: DraftContext): () => ContextChip {
     return {
       slot: "context-chip-where",
       icon: whereIcon(context),
-      label: whereLabel(t, context),
-      ...(current?.kind === "cloud" ? { title: current.id } : {}),
+      label: whereLabel(words),
       ariaLabel: t("projects.chip.where"),
       search: { placeholder: t("projects.chip.where.search") },
       emptyMessage: t("projects.chip.where.empty"),
       current: current?.id,
-      options: entries.map((entry) => whereOption(t, context, entry, grouped)),
-      onSelect: (value) => (value === CONNECT_COMPUTER ? route.navigate(settingsPath("machines")) : context.choose({ kind: "placement", id: placementId(value) })),
-      ...(context.canCreateWorktree() ? { action: { label: t("projects.chip.newWorktree"), onSelect: () => context.choose({ kind: "newWorktree" }) } } : {}),
-      ...(context.canCreateCloud()
-        ? { panel: { label: t("projects.chip.newCloud"), render: (input) => <NewCloudWorkspacePanel {...input} onName={context.choose} /> } }
-        : {}),
+      options: entries.map((entry) => whereOption(words, entry, grouped)),
+      onSelect: (value) => context.choose({ kind: "placement", id: placementId(value) }),
+      actions: createActions(words, openCloud, connect),
     }
   }
 }

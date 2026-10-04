@@ -39,12 +39,14 @@ function placementRecordFromRow(row: Row, workspace: string, project: string): P
   const host = isRecord(row.placement) ? firstTextOf(row.placement, "host_enrollment_id") : undefined
   const remoteDirectory = firstTextOf(row, "remote_directory", "remoteDirectory")
   const gitRemote = firstTextOf(row, "repo_url", "repoUrl")
+  const branch = firstTextOf(row, "git_branch", "gitBranch")
   const placement: Placement = {
     id: placementId(workspace),
     projectId: projectId(project),
     kind: cloud ? "cloud" : "worktree",
     label: firstTextOf(row, "workspace_name", "workspaceName", "display_name", "displayName") ?? workspace,
     ...(remoteDirectory ? { path: remoteDirectory } : {}),
+    ...(branch ? { branch } : {}),
     reachable: row.reachable === true,
     onThisMachine: false,
     ...(host ? { machineId: machineId(host) } : {}),

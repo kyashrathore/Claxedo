@@ -33,11 +33,7 @@ export type ContextChip = {
   search?: { placeholder: string }
   groupLabel?: string
   emptyMessage: string
-  action?: ContextChipAction
-  panel?: {
-    label: string
-    render: (input: { close: () => void; back: () => void; hold: (active: boolean) => void }) => JSX.Element
-  }
+  actions?: readonly ContextChipAction[]
   disabled?: boolean
 }
 

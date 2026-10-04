@@ -60,6 +60,7 @@ function placementRecord(project: Record<string, unknown>, key: string, row: Rec
   const { remote, machine } = remoteOf(row, self)
   const root = directory === nonEmptyString(project.worktree)
   const gitRemote = gitRemoteOf(project, row)
+  const branch = nonEmptyString(row.git_branch) ?? nonEmptyString(row.gitBranch)
   return {
     placement: {
       id: placementId(id),
@@ -67,6 +68,7 @@ function placementRecord(project: Record<string, unknown>, key: string, row: Rec
       kind: placementKind(row, root),
       label: placementLabel(row, location),
       path: location,
+      ...(branch ? { branch } : {}),
       reachable: row.reachable === true,
       onThisMachine: !remote,
       ...(machine ? { machineId: machine } : {}),

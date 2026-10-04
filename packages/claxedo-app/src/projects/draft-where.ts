@@ -7,11 +7,10 @@ export type WhereEntry = { readonly place: WherePlace; readonly placement: Place
 export type WhereChoice =
   | { readonly kind: "placement"; readonly id: PlacementId; readonly pendingName?: string }
   | { readonly kind: "newWorktree"; readonly root: PlacementId }
-  | { readonly kind: "newCloud"; readonly name: string; readonly branch?: string }
 
 export type WhereNew = Exclude<WhereChoice, { readonly kind: "placement" }>
 
-export type WhereCreation = "worktree" | "cloud"
+export type WhereCreation = "worktree"
 
 export type WhereFacts = {
   readonly placements: readonly Placement[]
@@ -49,12 +48,5 @@ export function currentPlacement(entries: readonly WhereEntry[], choice: WhereCh
 }
 
 export function creationOf(choice: WhereChoice): WhereCreation | undefined {
-  if (choice.kind === "newWorktree") return "worktree"
-  return choice.kind === "newCloud" ? "cloud" : undefined
-}
-
-export function newCloudChoice(name: string, branch: string): WhereChoice | undefined {
-  const named = name.trim()
-  const from = branch.trim()
-  return named ? { kind: "newCloud", name: named, ...(from ? { branch: from } : {}) } : undefined
+  return choice.kind === "newWorktree" ? "worktree" : undefined
 }

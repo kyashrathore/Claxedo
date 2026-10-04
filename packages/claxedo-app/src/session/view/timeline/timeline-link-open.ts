@@ -17,7 +17,7 @@ function fileOpeners(host: TimelineLinkHost) {
   const openFileExternally = (raw: string) => {
     const path = timelineAbsoluteFilePath(resolveTimelinePath(raw, host.placementPath))
     if (!path || !host.platform.openPath) {
-      host.onError(new Error("This file cannot be opened on this computer."))
+      host.onError(new Error("Open externally works in the desktop app, for files on its own machine."))
       return
     }
     void host.platform.openPath(path).catch(host.onError)
@@ -28,7 +28,7 @@ function fileOpeners(host: TimelineLinkHost) {
     if (target) host.openFocus({ kind: "file", ...target })
     else {
       if (timelineAbsoluteFilePath(raw) && host.platform.canReadLocalFiles) host.openFocus({ kind: "file", ...splitFileLineSuffix(stripMentionSigil(raw)) })
-      else host.onError(new Error("This file cannot be opened on this computer."))
+      else host.onError(new Error("This file is outside the workspace, so it opens only in the desktop app on the machine that holds it."))
     }
   }
 

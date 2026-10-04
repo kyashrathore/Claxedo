@@ -136,11 +136,7 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
                 <ClaxedoIcon name="terminal" size="small" class="text-icon-weak-base" />
                 <span class="text-sm font-medium text-text-weak">{t("terminal.creator.title")}</span>
           <Show when={creating()}>
-            {(kind) => (
-              <span class="truncate text-xs text-v2-text-text-faint">
-                {t(kind() === "cloud" ? "terminal.creator.inNewCloudWorkspace" : "terminal.creator.inNewWorktree")}
-              </span>
-            )}
+            <span class="truncate text-xs text-v2-text-text-faint">{t("terminal.creator.inNewWorktree")}</span>
           </Show>
               </div>
               <LauncherGrid placementId={props.state.placementId} starting={starting()} onLaunch={(next) => void launch(next)} />

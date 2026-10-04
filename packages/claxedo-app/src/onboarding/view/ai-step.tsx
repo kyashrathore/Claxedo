@@ -23,12 +23,12 @@ function CatalogSection(props: { readonly providers: HarnessProviders; readonly 
   )
 }
 
-function Loading(props: { readonly onMachine: boolean }) {
+function Loading(props: { readonly onMachine: boolean; readonly machine: string }) {
   const t = useOnboardingText()
   return (
     <p class="flex items-center gap-2 py-2 text-12-regular text-text-weak">
       <Spinner class="size-4" />
-      <span>{t(props.onMachine ? "onboarding.ai.scanning" : "onboarding.ai.loading")}</span>
+      <span>{props.onMachine ? t("onboarding.ai.scanning", { machine: props.machine }) : t("onboarding.ai.loading")}</span>
     </p>
   )
 }
@@ -63,6 +63,7 @@ function CatalogChoice(props: { readonly catalogs: readonly HarnessProviders[]; 
 function AccountSetup(props: { readonly onReady: (ready: boolean) => void }) {
   const t = useOnboardingText()
   const accounts = useAccounts()
+  const machine = () => accounts.machineName() ?? t("onboarding.execution.local.loading")
   const { catalogs, connected } = useCatalogs(accounts.onMachine() ? CATALOG_HARNESSES : HOSTED_CATALOG_HARNESSES)
   const [chosen, setChosen] = createSignal<string>()
   createEffect(() => props.onReady(accounts.runnable() || connected()))
@@ -70,10 +71,10 @@ function AccountSetup(props: { readonly onReady: (ready: boolean) => void }) {
   return (
     <div class="flex flex-col gap-4">
       <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <span class="text-12-medium text-text-weak">{t(accounts.onMachine() ? "onboarding.ai.logins" : "onboarding.ai.accounts")}</span>
+        <span class="text-12-medium text-text-weak">{accounts.onMachine() ? t("onboarding.ai.logins", { machine: machine() }) : t("onboarding.ai.accounts")}</span>
         <CatalogChoice catalogs={catalogs} chosen={chosen()} onChoose={(id) => setChosen(chosen() === id ? undefined : id)} />
       </div>
-      <Show when={accounts.opened()} fallback={<Loading onMachine={accounts.onMachine()} />}>
+      <Show when={accounts.opened()} fallback={<Loading onMachine={accounts.onMachine()} machine={machine()} />}>
         <div class="flex flex-col gap-6">
           <For each={harnesses}>{(harness) => <AgentHarnessAccounts harness={harness} accounts={accounts} />}</For>
         </div>

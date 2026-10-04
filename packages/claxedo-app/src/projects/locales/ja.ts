@@ -17,12 +17,10 @@ export default {
   "projects.edit.color.select": "{{color}}の色を選択",
   "projects.edit.action": "編集",
   "projects.chip.project": "プロジェクト",
-  "projects.chip.self": "このコンピュータ",
   "projects.create.continue": "送信",
   "projects.connect.connecting": "接続中…",
   "projects.settings.group": "設定",
   "projects.placement.open": "開く",
-  "projects.add.name": "名前",
   "projects.edit.environment": "環境",
   "projects.title": "プロジェクト",
 }

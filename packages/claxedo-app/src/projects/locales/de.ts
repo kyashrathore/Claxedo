@@ -17,7 +17,6 @@ export default {
   "projects.edit.color.select": "{{color}}-Farbe auswählen",
   "projects.edit.action": "Bearbeiten",
   "projects.chip.project": "Projekt",
-  "projects.chip.self": "Dieser Computer",
   "projects.create.continue": "Absenden",
   "projects.connect.connecting": "Verbinden…",
   "projects.connect.enter.before": "Eingabe",

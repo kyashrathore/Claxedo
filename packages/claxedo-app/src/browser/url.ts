@@ -26,3 +26,9 @@ export function displayHost(url: string): string {
 export function visibleUrl(url: string): string {
   return url === "about:blank" ? "" : url
 }
+
+const LOOPBACK_HOSTS: readonly string[] = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]"]
+
+export function isLoopbackPage(url: string): boolean {
+  return URL.canParse(url) && LOOPBACK_HOSTS.includes(new URL(url).hostname)
+}

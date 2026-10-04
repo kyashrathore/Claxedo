@@ -5,7 +5,7 @@ import { toAppError, type CloudWorkspace } from "@/server"
 import { FormDialog, TextField, useDialog } from "@/ui"
 import { useProjectsText } from "../i18n"
 
-export function DialogNewCloudWorkspace(props: { readonly cloud: CloudWorkspaces }): JSX.Element {
+export function DialogNewCloudWorkspace(props: { readonly cloud: CloudWorkspaces; readonly onCreated?: (workspace: CloudWorkspace) => void }): JSX.Element {
   const t = useProjectsText()
   const dialog = useDialog()
   const [name, setName] = createSignal("")
@@ -18,7 +18,10 @@ export function DialogNewCloudWorkspace(props: { readonly cloud: CloudWorkspaces
   const submit = async () => {
     const input = { name: name().trim(), ...(branch().trim() ? { branch: branch().trim() } : {}) }
     await runFlow(creation, "creating", () => props.cloud.create(input), toAppError)
-    if (creation.state().kind === "done") dialog.close()
+    const state = creation.state()
+    if (state.kind !== "done") return
+    dialog.close()
+    props.onCreated?.(state.result)
   }
   return (
     <FormDialog

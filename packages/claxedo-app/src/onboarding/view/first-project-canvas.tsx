@@ -13,7 +13,7 @@ export function FirstProjectCanvas(_props: PageProps) {
   const auth = useAuth()
   const dialog = useDialog()
   const capabilities = () => server.capabilities()
-  const machines = useQuery(() => ({ ...server.queries.machines.list(), enabled: capabilities()?.thisMachine === undefined }))
+  const machines = useQuery(() => server.queries.machines.list())
   return (
     <main class="first-project" data-testid="first-project-canvas">
       <ArtworkPlate />
@@ -22,7 +22,8 @@ export function FirstProjectCanvas(_props: PageProps) {
           {(known) => (
             <OnboardingWizard
               facts={{
-                localExecution: known().thisMachine !== undefined,
+                localExecution: known().localExecution,
+                machineName: machines.data?.find((machine) => machine.isThisMachine)?.name,
                 cloudAvailable: auth.state().kind === "signedIn",
                 machineConnected: machines.data?.some((machine) => machine.enrolled),
               }}

@@ -14,12 +14,12 @@ function firstSend() {
   return createRoot((dispose) => ({ dispose, send: createFirstSend() }))
 }
 
-test("first send: a new cloud workspace reads creating, then sending to the created placement", async () => {
+test("first send: a new worktree reads creating, then sending to the created placement", async () => {
   const { send } = firstSend()
   const steps: string[] = []
   let finishCreate: (() => void) | undefined
   const attempt: FirstSendAttempt<string> = async (report) => {
-    report({ type: "createStarted", choice: { kind: "newCloud", name: "ux-audit" } })
+    report({ type: "createStarted", choice: { kind: "newWorktree", root: placementId("pl_root") } })
     steps.push(send.state().kind)
     await new Promise<void>((resolve) => (finishCreate = resolve))
     report({ type: "placementResolved", placementId: created })
@@ -27,7 +27,7 @@ test("first send: a new cloud workspace reads creating, then sending to the crea
     return "session"
   }
   const result = send.run(attempt)
-  expect(send.state()).toEqual({ kind: "creating", choice: { kind: "newCloud", name: "ux-audit" } })
+  expect(send.state()).toEqual({ kind: "creating", choice: { kind: "newWorktree", root: placementId("pl_root") } })
   finishCreate?.()
   expect(await result).toBe("session")
   expect(steps).toEqual(["creating", "sending"])

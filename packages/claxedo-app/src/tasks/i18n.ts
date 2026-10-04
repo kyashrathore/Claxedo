@@ -167,7 +167,7 @@ const en = {
   "tasks.preset.instructionsPlaceholder": "What this agent should always do, whatever the task says",
   "tasks.preset.capabilities": "Capabilities",
   "tasks.preset.guaranteeLocal":
-    "Uses this machine's current skills and plugins. The selection below is not enforced for local sessions.",
+    "Uses the skills and plugins installed on the machine the session runs on. The selection below is not enforced there.",
   "tasks.preset.guaranteeCloud":
     "Only the selected plugins and skills are installed in the isolated cloud environment, and only their credentials are brokered. The repository, shell and network still follow the host's policy, so this limits registered capabilities, not everything the agent can reach.",
   "tasks.preset.emptySelection":

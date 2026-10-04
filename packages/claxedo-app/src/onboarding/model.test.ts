@@ -1,24 +1,24 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
-import { executionBlock, executionChoices, executionPlan, offersConnectComputer } from "./model"
+import { executionBlock, executionChoices, executionPlan, offersConnectMachine } from "./model"
 
 const repository = { kind: "repository", url: "https://github.com/acme/widgets" } as const
 const folder = { kind: "folder", path: "/home/me/widgets" } as const
-const desktop = { localExecution: true, cloudAvailable: false, machineConnected: undefined }
-const signedDesktop = { localExecution: true, cloudAvailable: true, machineConnected: undefined }
-const hosted = { localExecution: false, cloudAvailable: true, machineConnected: false }
+const desktop = { localExecution: true, machineName: "Ada's MacBook", cloudAvailable: false, machineConnected: undefined }
+const signedDesktop = { localExecution: true, machineName: "Ada's MacBook", cloudAvailable: true, machineConnected: undefined }
+const hosted = { localExecution: false, machineName: undefined, cloudAvailable: true, machineConnected: false }
 
-test("a desktop offers this machine, a signed one the cloud workspace too, and the web only the cloud workspace", () => {
+test("a desktop offers its own machine, a signed one the cloud workspace too, and the web only the cloud workspace", () => {
   expect(executionChoices(desktop)).toEqual(["local"])
   expect(executionChoices(signedDesktop)).toEqual(["local", "cloud"])
   expect(executionChoices(hosted)).toEqual(["cloud"])
 })
 
-test("the web offers to connect this computer only once it knows no machine is connected; a desktop never does", () => {
-  expect(offersConnectComputer(hosted)).toBe(true)
-  expect(offersConnectComputer({ ...hosted, machineConnected: true })).toBe(false)
-  expect(offersConnectComputer({ ...hosted, machineConnected: undefined })).toBe(false)
-  expect(offersConnectComputer({ ...desktop, machineConnected: false })).toBe(false)
+test("the web offers to connect a machine only once it knows no machine is connected; a desktop never does", () => {
+  expect(offersConnectMachine(hosted)).toBe(true)
+  expect(offersConnectMachine({ ...hosted, machineConnected: true })).toBe(false)
+  expect(offersConnectMachine({ ...hosted, machineConnected: undefined })).toBe(false)
+  expect(offersConnectMachine({ ...desktop, machineConnected: false })).toBe(false)
 })
 
 test("this machine is always ready; the cloud workspace needs a signed control plane, a repository and a name", () => {

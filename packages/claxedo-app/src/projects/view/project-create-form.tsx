@@ -1,59 +1,45 @@
 import { createMemo, createSignal, Show, type Accessor, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { codeHostConnections, codeHostIntegrations, toAppError, useServer, type Project, type ProjectSource } from "@/server"
+import { Button, ClaxedoIcon as Icon, SegmentedControl, SegmentedControlItem, TextField } from "@/ui"
 import { useProjectsText } from "../i18n"
+import { draftProjectName } from "../project-source"
 import { ConnectCodeHost } from "./project-create-connect"
-import { AccountSelect, createFormLook, RepositoryList, UrlField, type CreateFormLook } from "./project-create-repository"
-import { ClaxedoIcon as Icon, Button } from "@/ui"
+import { AccountSelect, FIELD_BOX, RepositoryList } from "./project-create-repository"
 
 type Submit =
   | { onSubmit: (source: ProjectSource, name: string | undefined) => void | Promise<void>; submitLabel?: string; onCreated?: undefined }
   | { onSubmit?: undefined; onCreated: (project: Project) => void }
 
 export type ProjectCreateFormProps = {
-  size?: "compact" | "comfortable"
-  localExecution: boolean
+  folderMachine?: string
   connectedRepositoryOnly?: boolean
   pickFolder?: () => Promise<string | undefined>
   onCancel?: () => void
 } & Submit
 
-function FolderField(props: { look: CreateFormLook; folder: string; onChoose: () => void }) {
+type SourceMode = "folder" | "repository"
+type RepositoryEntry = "list" | "url"
+
+function FolderField(props: { machine: string; folder: string; onChoose: () => void }) {
   const t = useProjectsText()
-  const text = () => (props.look.comfortable ? "text-14-regular" : "text-13-regular")
   return (
-    <div class="flex flex-col gap-1">
-      <span class={props.look.label}>{t("projects.add.folder")}</span>
+    <div class="flex flex-col gap-1.5">
+      <span class="text-[length:var(--font-size-intermediate)] font-medium text-text-weak">{t("projects.create.folder.label", { machine: props.machine })}</span>
       <button
         type="button"
         aria-label={t("projects.create.folder.choose")}
         title={props.folder || undefined}
-        class={`${props.look.box} flex w-full min-w-0 items-center gap-2 text-left transition-colors hover:border-border-interactive-base focus-visible:border-border-interactive-base focus-visible:outline-none`}
+        class={`${FIELD_BOX} flex w-full min-w-0 items-center gap-2 text-left transition-colors hover:border-border-interactive-base focus-visible:border-border-interactive-base focus-visible:outline-none`}
         onClick={() => props.onChoose()}
       >
         <Icon name="folder" size="small" class="shrink-0 text-icon-weak-base" />
-        <Show when={props.folder} fallback={<span class={`min-w-0 flex-1 truncate ${text()} text-text-weak/60`}>{t("projects.create.folder.placeholder")}</span>}>
-          <span class={`min-w-0 flex-1 truncate font-mono text-text-strong ${props.look.comfortable ? "text-13-regular" : "text-12-regular"}`}>
-            {props.folder}
-          </span>
-        </Show>
-        <span class={`shrink-0 ${props.look.comfortable ? "text-12-medium" : "text-11-medium"} text-text-weak`}>
-          {props.folder ? t("projects.create.folder.change") : t("projects.add.folder.browse")}
+        <span class="min-w-0 flex-1 truncate font-mono text-13-regular" classList={{ "text-text-strong": !!props.folder, "text-text-weak": !props.folder }}>
+          {props.folder || t("projects.create.folder.placeholder")}
         </span>
+        <span class="shrink-0 text-12-medium text-text-weak">{props.folder ? t("projects.create.folder.change") : t("projects.add.folder.browse")}</span>
       </button>
-      <span class={props.look.hint}>{t("projects.create.folder.hint")}</span>
     </div>
-  )
-}
-
-function NameField(props: { look: CreateFormLook; name: string; onName: (name: string) => void }) {
-  const t = useProjectsText()
-  return (
-    <label class="flex flex-col gap-1">
-      <span class={props.look.label}>{t("projects.add.name")}</span>
-      <input type="text" value={props.name} onInput={(event) => props.onName(event.currentTarget.value)} aria-label={t("projects.add.name")} spellcheck={false} class={props.look.field} />
-      <span class={props.look.hint}>{t("projects.add.name.hint")}</span>
-    </label>
   )
 }
 
@@ -65,7 +51,7 @@ function createRepositoryChoice(active: Accessor<boolean>, connectedOnly: Access
   const usable = createMemo(() => codeHostConnections(offered.data).filter((connection) => connection.status !== "broken"))
   const [chosenId, setChosenId] = createSignal<string>()
   const connection = createMemo(() => usable().find((item) => item.id === chosenId()) ?? usable()[0])
-  const [entry, setEntry] = createSignal<"list" | "url">("list")
+  const [entry, setEntry] = createSignal<RepositoryEntry>("list")
   const view = (): "checking" | "url" | "connect" | "list" | "failed" | "unavailable" => {
     if (!connectionsServed()) return connectedOnly() ? "unavailable" : "url"
     if (offered.isPending) return "checking"
@@ -78,67 +64,66 @@ function createRepositoryChoice(active: Accessor<boolean>, connectedOnly: Access
     const id = connection()?.id ?? ""
     return { ...server.queries.codeHost.repositories(id), enabled: active() && view() === "list" && id !== "" }
   })
-  return { integration, usable, connection, setChosenId, entry, setEntry, view, repositories, error: () => offered.error, retry: () => offered.refetch(), connectedOnly }
+  const switchable = () => !connectedOnly() && integration() !== undefined
+  return { integration, usable, connection, setChosenId, entry, setEntry, view, repositories, switchable, error: () => offered.error, retry: () => offered.refetch() }
 }
 
 type RepositoryChoice = ReturnType<typeof createRepositoryChoice>
 
-function RepositorySection(props: {
-  look: CreateFormLook
-  choice: RepositoryChoice
-  url: string
-  onUrl: (url: string) => void
-  query: string
-  onQuery: (query: string) => void
-  selected: string | undefined
-  onSelect: (fullName: string) => void
-  onEntry: () => void
-}): JSX.Element {
+function RepositoryStatus(props: { choice: RepositoryChoice }): JSX.Element {
   const t = useProjectsText()
-  const host = () => props.choice.integration()?.name
   return (
-    <div class="flex flex-col gap-3">
+    <>
       <Show when={props.choice.view() === "checking"}>
-        <span class={props.look.hint}>{t("projects.create.checking")}</span>
+        <span class="text-12-regular text-text-weak">{t("projects.create.checking")}</span>
       </Show>
       <Show when={props.choice.view() === "failed"}>
         <p role="alert" class="text-12-regular text-icon-warning-base">{toAppError(props.choice.error()).message}</p>
         <Button type="button" variant="neutral" class="self-start" onClick={() => void props.choice.retry()}>{t("projects.create.retry")}</Button>
       </Show>
       <Show when={props.choice.view() === "unavailable"}>
-        <p role="alert" class={props.look.hint}>{t("projects.create.hostUnavailable")}</p>
+        <p role="alert" class="text-12-regular text-text-weak">{t("projects.create.hostUnavailable")}</p>
       </Show>
       <Show when={props.choice.view() === "connect" ? props.choice.integration() : undefined}>
-        {(integration) => <ConnectCodeHost look={props.look} integration={integration()} />}
+        {(integration) => <ConnectCodeHost integration={integration()} />}
       </Show>
+    </>
+  )
+}
+
+function RepositorySection(props: { choice: RepositoryChoice; url: string; onUrl: (url: string) => void; query: string; onQuery: (query: string) => void; selected: string | undefined; onSelect: (fullName: string) => void }): JSX.Element {
+  const t = useProjectsText()
+  const host = () => props.choice.integration()?.name
+  return (
+    <div class="flex flex-col gap-3">
+      <Show when={props.choice.switchable() ? host() : undefined}>
+        {(name) => (
+          <SegmentedControl class="segmented-control-v2--fit" aria-label={t("projects.create.entry")} value={props.choice.entry()} onChange={(value) => (value === "list" || value === "url") && props.choice.setEntry(value)}>
+            <SegmentedControlItem value="list">{t("projects.create.choose", { host: name() })}</SegmentedControlItem>
+            <SegmentedControlItem value="url">{t("projects.add.pasteUrl")}</SegmentedControlItem>
+          </SegmentedControl>
+        )}
+      </Show>
+      <RepositoryStatus choice={props.choice} />
       <Show when={props.choice.view() === "list" ? props.choice.connection() : undefined}>
         {(connection) => (
           <>
             <Show when={props.choice.usable().length > 1}>
               <AccountSelect connections={props.choice.usable()} current={connection()} onSelect={props.choice.setChosenId} />
             </Show>
-            <RepositoryList
-              look={props.look}
-              repositories={props.choice.repositories.data}
-              loading={props.choice.repositories.isPending}
-              error={props.choice.repositories.error}
-              query={props.query}
-              onQuery={props.onQuery}
-              selected={props.selected}
-              onSelect={props.onSelect}
-            />
+            <RepositoryList repositories={props.choice.repositories.data} loading={props.choice.repositories.isPending} error={props.choice.repositories.error} query={props.query} onQuery={props.onQuery} selected={props.selected} onSelect={props.onSelect} />
           </>
         )}
       </Show>
       <Show when={props.choice.view() === "url"}>
-        <UrlField look={props.look} url={props.url} onUrl={props.onUrl} host={host()} />
-      </Show>
-      <Show when={!props.choice.connectedOnly() && host()}>
-        {(name) => (
-          <button type="button" class={`${props.look.link} self-start`} onClick={() => props.onEntry()}>
-            {props.choice.entry() === "url" ? t("projects.create.choose", { host: name() }) : t("projects.add.pasteUrl")}
-          </button>
-        )}
+        <TextField
+          label={t("projects.add.url")}
+          description={host() ? t("projects.create.url.hint.host", { host: host() ?? "" }) : t("projects.create.url.hint.none")}
+          placeholder={t("projects.create.url.placeholder")}
+          value={props.url}
+          onChange={props.onUrl}
+          spellcheck={false}
+        />
       </Show>
     </div>
   )
@@ -150,11 +135,11 @@ function createFormState(props: ProjectCreateFormProps) {
   const [repoUrl, setRepoUrl] = createSignal("")
   const [busy, setBusy] = createSignal(false)
   const [error, setError] = createSignal("")
-  const [source, setSource] = createSignal<"folder" | "repository">("folder")
+  const [source, setSource] = createSignal<SourceMode>("folder")
   const [query, setQuery] = createSignal("")
   const [selected, setSelected] = createSignal<string>()
-  const offersFolder = () => props.localExecution && Boolean(props.pickFolder)
-  const mode = () => (offersFolder() ? source() : "repository")
+  const offersFolder = () => props.folderMachine !== undefined && Boolean(props.pickFolder)
+  const mode = (): SourceMode => (offersFolder() ? source() : "repository")
   const choice = createRepositoryChoice(() => mode() === "repository", () => props.connectedRepositoryOnly === true)
   const chosen = (): ProjectSource | undefined => {
     if (mode() === "folder") return folder() ? { kind: "folder", path: folder() } : undefined
@@ -163,19 +148,36 @@ function createFormState(props: ProjectCreateFormProps) {
     if (choice.view() !== "url") return undefined
     return repoUrl().trim() ? { kind: "repository", url: repoUrl().trim() } : undefined
   }
-  return { name, setName, folder, setFolder, repoUrl, setRepoUrl, busy, setBusy, error, setError, source, setSource, query, setQuery, selected, setSelected, offersFolder, mode, choice, chosen }
+  return { name, setName, folder, setFolder, repoUrl, setRepoUrl, busy, setBusy, error, setError, setSource, query, setQuery, selected, setSelected, offersFolder, mode, choice, chosen }
 }
 
-export function ProjectCreateForm(props: ProjectCreateFormProps) {
+type FormState = ReturnType<typeof createFormState>
+
+function SourceSwitch(props: { form: FormState }) {
   const t = useProjectsText()
+  return (
+    <SegmentedControl
+      class="segmented-control-v2--fit"
+      aria-label={t("projects.create.source")}
+      value={props.form.mode()}
+      onChange={(value) => {
+        if (value !== "folder" && value !== "repository") return
+        props.form.setError("")
+        props.form.setSource(value)
+      }}
+    >
+      <SegmentedControlItem value="folder">{t("projects.create.source.folder")}</SegmentedControlItem>
+      <SegmentedControlItem value="repository">{t("projects.create.source.repository")}</SegmentedControlItem>
+    </SegmentedControl>
+  )
+}
+
+function useSubmit(props: ProjectCreateFormProps, form: FormState) {
   const server = useServer()
-  const form = createFormState(props)
-  const look = createMemo(() => createFormLook(props.size === "comfortable"))
-  const canSubmit = () => !form.busy() && Boolean(form.chosen())
-  const submit = async (event: Event) => {
+  return async (event: Event) => {
     event.preventDefault()
     const picked = form.chosen()
-    if (!picked || !canSubmit()) return
+    if (!picked || form.busy()) return
     const name = form.name().trim() || undefined
     form.setBusy(true)
     form.setError("")
@@ -188,66 +190,45 @@ export function ProjectCreateForm(props: ProjectCreateFormProps) {
       form.setBusy(false)
     }
   }
+}
+
+export function ProjectCreateForm(props: ProjectCreateFormProps) {
+  const t = useProjectsText()
+  const form = createFormState(props)
+  const submit = useSubmit(props, form)
   const chooseFolder = async () => {
     const picked = await props.pickFolder?.()
     if (picked) form.setFolder(picked)
   }
   const submitLabel = () => (props.onSubmit ? (props.submitLabel ?? t("projects.create.continue")) : form.busy() ? t("projects.create.creating") : t("projects.add.create"))
-  const control = (): "normal" | "small" => (look().comfortable ? "normal" : "small")
+  const namePlaceholder = () => {
+    const picked = form.chosen()
+    return picked ? draftProjectName(picked) : ""
+  }
   return (
-    <form onSubmit={(event) => void submit(event)} class={look().comfortable ? "flex w-full flex-col gap-4" : "flex w-[340px] max-w-full flex-col gap-3"}>
+    <form onSubmit={(event) => void submit(event)} class="flex w-full flex-col gap-4">
       <Show when={form.offersFolder()}>
-        <div class="-mb-2 flex justify-end">
-          <button
-            type="button"
-            class={look().link}
-            onClick={() => {
-              form.setError("")
-              form.setSource(form.source() === "folder" ? "repository" : "folder")
-            }}
-          >
-            {form.mode() === "folder" ? t("projects.create.clone") : t("projects.create.folderInstead")}
-          </button>
-        </div>
+        <SourceSwitch form={form} />
       </Show>
       <Show
-        when={form.mode() === "folder"}
+        when={form.mode() === "folder" ? props.folderMachine : undefined}
         fallback={
-          <RepositorySection
-            look={look()}
-            choice={form.choice}
-            url={form.repoUrl()}
-            onUrl={form.setRepoUrl}
-            query={form.query()}
-            onQuery={form.setQuery}
-            selected={form.selected()}
-            onSelect={form.setSelected}
-            onEntry={() => {
-              form.setError("")
-              form.choice.setEntry(form.choice.entry() === "url" ? "list" : "url")
-            }}
-          />
+          <RepositorySection choice={form.choice} url={form.repoUrl()} onUrl={form.setRepoUrl} query={form.query()} onQuery={form.setQuery} selected={form.selected()} onSelect={form.setSelected} />
         }
       >
-        <FolderField look={look()} folder={form.folder()} onChoose={() => void chooseFolder()} />
+        {(machine) => <FolderField machine={machine()} folder={form.folder()} onChoose={() => void chooseFolder()} />}
       </Show>
       <Show when={!props.connectedRepositoryOnly}>
-        <NameField look={look()} name={form.name()} onName={form.setName} />
+        <TextField label={t("projects.add.name")} placeholder={namePlaceholder()} value={form.name()} onChange={form.setName} spellcheck={false} />
       </Show>
       <Show when={form.error()}>
-        <p class="text-12-regular text-icon-warning-base" role="alert">
-          {form.error()}
-        </p>
+        <p class="text-12-regular text-icon-warning-base" role="alert">{form.error()}</p>
       </Show>
       <div class="flex justify-end gap-2 pt-1">
         <Show when={props.onCancel}>
-          <Button type="button" variant="ghost" size={control()} onClick={() => props.onCancel?.()}>
-            {t("projects.cancel")}
-          </Button>
+          <Button type="button" variant="ghost" size="normal" onClick={() => props.onCancel?.()}>{t("projects.cancel")}</Button>
         </Show>
-        <Button type="submit" variant="contrast" size={control()} disabled={!canSubmit()}>
-          {submitLabel()}
-        </Button>
+        <Button type="submit" variant="contrast" size="normal" disabled={form.busy() || !form.chosen()}>{submitLabel()}</Button>
       </div>
     </form>
   )

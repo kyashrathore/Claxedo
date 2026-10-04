@@ -9,7 +9,7 @@ const en = {
   "cloud.status.starting": "Starting",
   "cloud.status.ready": "Running",
   "cloud.status.stopping": "Stopping",
-  "cloud.status.stopped": "Stopped",
+  "cloud.status.stopped": "Asleep",
   "cloud.status.failed": "Failed",
 }
 

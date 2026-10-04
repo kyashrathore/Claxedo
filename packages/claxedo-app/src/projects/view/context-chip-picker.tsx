@@ -1,10 +1,9 @@
-import { createEffect, createMemo, onCleanup, Show, untrack, type JSX } from "solid-js"
+import { createEffect, createSignal, For, onCleanup, Show, type JSX } from "solid-js"
 import { Popover as Kobalte } from "@kobalte/core/popover"
-import { createStore } from "solid-js/store"
 import { Icon, List, type ListRef, ProjectAvatar } from "@/ui"
 import { COMPOSER_MENU_CLASS } from "@/composer"
 import { handleDocumentSearchKeydown } from "../search-keydown"
-import type { ContextChip, ContextChipAvatar, ContextChipOption } from "./context-row"
+import type { ContextChip, ContextChipAction, ContextChipAvatar, ContextChipOption } from "./context-row"
 
 const FOOTER_ROW =
   "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-13-regular text-text-weak transition-colors duration-150 hover:bg-[var(--overlay-surface-hover)] hover:text-text-base"
@@ -54,50 +53,54 @@ function ChipOptionRow(props: { option: ContextChipOption }) {
   )
 }
 
-function ChipFooter(props: { label: string; onClick: () => void }) {
+function ChipFooter(props: { actions: readonly ContextChipAction[]; divided: boolean; close: () => void }) {
   return (
-    <div class="mt-1 shrink-0 border-t border-v2-border-border-muted p-1 pt-1">
-      <button type="button" class={FOOTER_ROW} onClick={() => props.onClick()}>
-        <Icon name="plus-small" size="small" class="shrink-0" />
-        <span class="truncate">{props.label}</span>
-      </button>
+    <div class="shrink-0 p-1" classList={{ "mt-1 border-t border-v2-border-border-muted": props.divided }}>
+      <For each={props.actions}>
+        {(action) => (
+          <button
+            type="button"
+            class={FOOTER_ROW}
+            onClick={() => {
+              props.close()
+              action.onSelect()
+            }}
+          >
+            <Icon name="plus-small" size="small" class="shrink-0" />
+            <span class="truncate">{action.label}</span>
+          </button>
+        )}
+      </For>
     </div>
   )
 }
 
-function ChipList(props: { chip: ContextChip; ref: (ref: ListRef) => void; close: () => void; openPanel: () => void }) {
+function ChipList(props: { chip: ContextChip; ref: (ref: ListRef) => void; close: () => void }) {
   const current = () => props.chip.options.find((option) => option.value === props.chip.current)
   return (
     <>
-      <List
-        ref={props.ref}
-        class="flex-1 min-h-0 p-1 [&_.ui-list-scroll]:flex-1 [&_.ui-list-scroll]:min-h-0"
-        search={props.chip.search ? { placeholder: props.chip.search.placeholder, autofocus: true } : undefined}
-        emptyMessage={props.chip.emptyMessage}
-        items={() => props.chip.options}
-        key={(option) => option.value}
-        current={current()}
-        filterKeys={["label", "detail", "value"]}
-        groupBy={(option) => option.group ?? props.chip.groupLabel ?? ""}
-        onSelect={(option) => {
-          props.close()
-          if (option) props.chip.onSelect(option.value)
-        }}
-      >
-        {(option) => <ChipOptionRow option={option} />}
-      </List>
-      <Show when={props.chip.action}>
-        {(action) => (
-          <ChipFooter
-            label={action().label}
-            onClick={() => {
-              props.close()
-              action().onSelect()
-            }}
-          />
-        )}
+      <Show when={props.chip.options.length > 0 || !props.chip.actions?.length}>
+        <List
+          ref={props.ref}
+          class="flex-1 min-h-0 p-1 [&_.ui-list-scroll]:flex-1 [&_.ui-list-scroll]:min-h-0"
+          search={props.chip.search ? { placeholder: props.chip.search.placeholder, autofocus: true } : undefined}
+          emptyMessage={props.chip.emptyMessage}
+          items={() => props.chip.options}
+          key={(option) => option.value}
+          current={current()}
+          filterKeys={["label", "detail", "value"]}
+          groupBy={(option) => option.group ?? props.chip.groupLabel ?? ""}
+          onSelect={(option) => {
+            props.close()
+            if (option) props.chip.onSelect(option.value)
+          }}
+        >
+          {(option) => <ChipOptionRow option={option} />}
+        </List>
       </Show>
-      <Show when={props.chip.panel}>{(panel) => <ChipFooter label={panel().label} onClick={props.openPanel} />}</Show>
+      <Show when={props.chip.actions?.length ? props.chip.actions : undefined}>
+        {(actions) => <ChipFooter actions={actions()} divided={props.chip.options.length > 0} close={props.close} />}
+      </Show>
     </>
   )
 }
@@ -111,49 +114,19 @@ function bindSearchTypeahead(input: () => HTMLInputElement | undefined, setFilte
   onCleanup(() => document.removeEventListener("keydown", handler, true))
 }
 
-function createPickerState() {
-  const [store, setStore] = createStore({ open: false, panel: false, hold: false })
-  const close = () => {
-    setStore({ open: false, panel: false, hold: false })
-  }
-  const back = () => {
-    setStore({ open: true, panel: false })
-  }
-  return {
-    store,
-    setStore,
-    close,
-    back,
-    isOpen: () => store.open,
-    panelShown: () => store.panel,
-  }
-}
-
 export function ContextChipPicker(props: { chip: ContextChip }): JSX.Element {
   const chip = () => props.chip
-  const state = createPickerState()
+  const [open, setOpen] = createSignal(false)
+  const close = () => setOpen(false)
   let contentRef: HTMLDivElement | undefined
   let listRef: ListRef | undefined
-  const showPanel = createMemo(() => state.panelShown() && !!chip().panel)
-  const panelContent = createMemo(() => {
-    if (!showPanel()) return undefined
-    return untrack(() => chip().panel?.render({ close: state.close, back: state.back, hold: (active) => state.setStore("hold", active) }))
-  })
   const searchInput = () => contentRef?.querySelector<HTMLInputElement>(".ui-list-search-wrapper input") ?? undefined
   createEffect(() => {
-    if (!state.isOpen() || !chip().search) return
+    if (!open() || !chip().search) return
     bindSearchTypeahead(searchInput, (value) => listRef?.setFilter(value))
   })
   return (
-    <Kobalte
-      open={state.isOpen()}
-      onOpenChange={(next) => (next ? state.setStore("open", true) : state.close())}
-      modal={false}
-      placement="bottom-start"
-      gutter={4}
-      fitViewport
-      overlap
-    >
+    <Kobalte open={open()} onOpenChange={setOpen} modal={false} placement="bottom-start" gutter={4} fitViewport overlap>
       <ChipTrigger chip={chip()} />
       <Kobalte.Portal>
         <Kobalte.Content
@@ -164,22 +137,11 @@ export function ContextChipPicker(props: { chip: ContextChip }): JSX.Element {
           onEscapeKeyDown={(event) => {
             event.preventDefault()
             event.stopPropagation()
-            if (!state.store.hold) state.close()
+            close()
           }}
-          onPointerDownOutside={(event) => (state.store.hold ? event.preventDefault() : state.close())}
-          onFocusOutside={(event) => (state.store.hold ? event.preventDefault() : state.close())}
         >
           <Kobalte.Title class="sr-only">{chip().ariaLabel}</Kobalte.Title>
-          <Show when={panelContent()}>
-            {(content) => (
-              <div class="flex min-h-0 flex-col p-2">
-                {content()}
-              </div>
-            )}
-          </Show>
-          <Show when={!state.panelShown()}>
-            <ChipList chip={chip()} ref={(ref) => (listRef = ref)} close={state.close} openPanel={() => state.setStore("panel", true)} />
-          </Show>
+          <ChipList chip={chip()} ref={(ref) => (listRef = ref)} close={close} />
         </Kobalte.Content>
       </Kobalte.Portal>
     </Kobalte>

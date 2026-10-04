@@ -35,7 +35,7 @@ export const freshness = {
   fileTree: fileOwned,
   fileContent: fileOwned,
   localFilesAll: { kind: "once", reason: "the desktop file prefix configures gcTime 0; each artifact is read afresh when its tab mounts" },
-  localFileContent: { kind: "once", reason: "local artifacts are re-read on every file-tab mount with staleTime 0 and gcTime 0; no workspace event owns them" },
+  outsideFileContent: { kind: "once", reason: "files outside a workspace are re-read on every file-tab mount with staleTime 0 and gcTime 0; no workspace event owns them" },
   fileSearch: fileOwned,
   gitStatus: fileOwned,
   gitLog: fileOwned,

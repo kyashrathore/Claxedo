@@ -25,7 +25,6 @@ const en = {
   "terminal.creator.tab": "New Terminal",
   "terminal.creator.title": "Start a terminal",
   "terminal.creator.inNewWorktree": "· in a new worktree",
-  "terminal.creator.inNewCloudWorkspace": "· in a new cloud workspace",
   "terminal.creator.shell": "Shell",
   "terminal.creator.loginShell": "A shell in this workspace",
   "terminal.creator.claude": "Anthropic's coding agent",

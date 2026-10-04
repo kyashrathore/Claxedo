@@ -1,8 +1,7 @@
 import { createEffect, createMemo, type JSX } from "solid-js"
-import { projectId, useServer, type Placement, type Project, type ProjectId } from "@/server"
+import { projectId, useServer, type Project, type ProjectId } from "@/server"
 import { ClaxedoIcon as Icon, useDialog } from "@/ui"
 import { useProjectsText } from "../i18n"
-import { pickProjectFolderWith } from "../pick-project-folder"
 import { primaryPlacement } from "../open"
 import { inCatalogOrder } from "../project-order"
 import { useProjects } from "../store"
@@ -11,11 +10,12 @@ import type { WhereCreation } from "../draft-where"
 import { useBranchChip } from "./branch-chip"
 import { useWhereChip } from "./where-chip"
 import { SessionContextRow, type ContextChip, type ContextChipAvatar } from "./context-row"
-import { ProjectCreateForm } from "./project-create-form"
+import { DialogCreateProject } from "./create-project-dialog"
+import { sourceLabel } from "../project-source"
 
-function projectDetail(project: Project, placements: readonly Placement[]): string {
-  const hosted = placements.some((placement) => placement.projectId === project.id && placement.kind === "cloud")
-  return hosted || !project.directory ? project.id : project.directory
+function projectDetail(project: Project): string | undefined {
+  const source = sourceLabel(project.source)
+  return source || project.directory
 }
 
 function avatarOf(project: Project | undefined, fallback: string): ContextChipAvatar {
@@ -28,30 +28,6 @@ function useProjectChoices() {
     const state = projects()
     return state.kind === "ready" ? inCatalogOrder(state.data) : []
   })
-}
-
-type CreatePanelInput = { close: () => void; back: () => void; hold: (active: boolean) => void }
-
-function CreateProjectPanel(props: CreatePanelInput & { readonly pickFolder: () => Promise<string | undefined>; readonly onCreated: (project: Project) => void }): JSX.Element {
-  const server = useServer()
-  return (
-    <ProjectCreateForm
-      localExecution={server.capabilities()?.thisMachine !== undefined}
-      pickFolder={async () => {
-        props.hold(true)
-        try {
-          return await props.pickFolder()
-        } finally {
-          props.hold(false)
-        }
-      }}
-      onCreated={(project) => {
-        props.close()
-        props.onCreated(project)
-      }}
-      onCancel={props.back}
-    />
-  )
 }
 
 export function NewSessionContextRow(
@@ -72,7 +48,6 @@ export function NewSessionContextRow(
     const placement = primaryPlacement(server.placements.list(), id)
     if (placement) props.onOpen({ projectId: id, placementId: placement.id })
   }
-  const pickFolder = pickProjectFolderWith(dialog)
   const projectChip = (): ContextChip => ({
     slot: "context-chip-project",
     icon: <Icon name="folder" size="small" />,
@@ -83,12 +58,12 @@ export function NewSessionContextRow(
     groupLabel: t("projects.title"),
     emptyMessage: t("projects.empty"),
     current: props.projectId,
-    options: choices().map((project) => ({ value: project.id, label: project.name, detail: projectDetail(project, server.placements.list()), avatar: avatarOf(project, project.name) })),
+    options: choices().map((project) => {
+      const detail = projectDetail(project)
+      return { value: project.id, label: project.name, ...(detail ? { detail } : {}), avatar: avatarOf(project, project.name) }
+    }),
     onSelect: (value) => openProject(projectId(value)),
-    panel: {
-      label: t("projects.chip.create"),
-      render: (input) => <CreateProjectPanel {...input} pickFolder={pickFolder} onCreated={(project) => openProject(project.id)} />,
-    },
+    actions: [{ label: t("projects.chip.create"), onSelect: () => dialog.show(() => <DialogCreateProject onCreated={(project) => openProject(project.id)} />) }],
   })
   const context = createDraftContext(() => ({ projectId: props.projectId, placementId: props.placementId }))
   props.resolver.attach(context)

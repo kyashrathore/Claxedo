@@ -6,7 +6,12 @@ export type ExecutionChoice = "local" | "cloud"
 
 export type ExecutionPlan = { readonly kind: "local" } | { readonly kind: "cloud"; readonly name: string }
 
-export type ExecutionFacts = { readonly localExecution: boolean; readonly cloudAvailable: boolean; readonly machineConnected: boolean | undefined }
+export type ExecutionFacts = {
+  readonly localExecution: boolean
+  readonly machineName: string | undefined
+  readonly cloudAvailable: boolean
+  readonly machineConnected: boolean | undefined
+}
 
 export type ExecutionBlock = "signIn" | "folder" | "name"
 
@@ -14,7 +19,7 @@ export function executionChoices(facts: ExecutionFacts): readonly ExecutionChoic
   return [...(facts.localExecution ? (["local"] as const) : []), ...(facts.cloudAvailable ? (["cloud"] as const) : [])]
 }
 
-export function offersConnectComputer(facts: ExecutionFacts): boolean {
+export function offersConnectMachine(facts: ExecutionFacts): boolean {
   return !facts.localExecution && facts.machineConnected === false
 }
 
