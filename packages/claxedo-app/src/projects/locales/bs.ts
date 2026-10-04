@@ -17,7 +17,6 @@ export default {
   "projects.edit.color.select": "Odaberi boju {{color}}",
   "projects.edit.startup": "Skripta za pokretanje radnog prostora",
   "projects.edit.startup.description": "Pokreće se nakon kreiranja novog radnog prostora (worktree).",
-  "projects.edit.startup.placeholder": "npr. bun install",
   "projects.edit.action": "Uredi",
   "projects.chip.project": "Projekat",
   "projects.chip.self": "Ovaj računar",

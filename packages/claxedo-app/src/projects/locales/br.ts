@@ -17,7 +17,6 @@ export default {
   "projects.edit.color.select": "Selecionar cor {{color}}",
   "projects.edit.startup": "Script de inicialização do espaço de trabalho",
   "projects.edit.startup.description": "Executa após criar um novo espaço de trabalho (worktree).",
-  "projects.edit.startup.placeholder": "ex: bun install",
   "projects.edit.action": "Editar",
   "projects.chip.project": "Projeto",
   "projects.chip.self": "Este computador",

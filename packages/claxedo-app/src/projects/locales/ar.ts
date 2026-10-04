@@ -17,7 +17,6 @@ export default {
   "projects.edit.color.select": "اختر لون {{color}}",
   "projects.edit.startup": "سكريبت بدء تشغيل مساحة العمل",
   "projects.edit.startup.description": "يتم تشغيله بعد إنشاء مساحة عمل جديدة (شجرة عمل).",
-  "projects.edit.startup.placeholder": "مثال: bun install",
   "projects.edit.action": "تحرير",
   "projects.chip.project": "مشروع",
   "projects.chip.self": "هذا الكمبيوتر",

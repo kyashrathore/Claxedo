@@ -20,15 +20,10 @@
   }
 }
 
-.projects-placement {
+.projects-where-actions {
   display: flex;
-  min-height: 44px;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  border: 1px solid var(--v2-border-border-base);
-  border-radius: 10px;
-  padding: 10px 12px;
+  gap: 8px;
 }
 
 .projects-add-page {
@@ -89,11 +84,6 @@
 
 .projects-settings-row:last-child {
   border-bottom: 0;
-}
-
-.projects-settings-row:hover .projects-settings-row-name {
-  text-decoration: underline;
-  text-underline-offset: 2px;
 }
 
 .projects-settings-row-text {

@@ -17,7 +17,6 @@ export default {
   "projects.edit.color.select": "{{color}}-Farbe auswählen",
   "projects.edit.startup": "Startup-Skript für Arbeitsbereich",
   "projects.edit.startup.description": "Wird nach dem Erstellen eines neuen Arbeitsbereichs (Worktree) ausgeführt.",
-  "projects.edit.startup.placeholder": "z. B. bun install",
   "projects.edit.action": "Bearbeiten",
   "projects.chip.project": "Projekt",
   "projects.chip.self": "Dieser Computer",

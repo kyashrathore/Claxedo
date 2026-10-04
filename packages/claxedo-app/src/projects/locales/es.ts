@@ -17,7 +17,6 @@ export default {
   "projects.edit.color.select": "Seleccionar color {{color}}",
   "projects.edit.startup": "Script de inicio del espacio de trabajo",
   "projects.edit.startup.description": "Se ejecuta después de crear un nuevo espacio de trabajo (árbol de trabajo).",
-  "projects.edit.startup.placeholder": "p. ej. bun install",
   "projects.edit.action": "Editar",
   "projects.chip.project": "Proyecto",
   "projects.chip.self": "Este ordenador",

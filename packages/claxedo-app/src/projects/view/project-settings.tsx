@@ -1,18 +1,17 @@
 import { A, useNavigate } from "@solidjs/router"
 import { Match, Show, Switch, type JSX } from "solid-js"
-import { CloudWorkspacesSection } from "@/cloud"
 import { createFlow, runFlow } from "@/lib/flow"
-import { toAppError, type MissingCheckout, type Project, type ProjectId } from "@/server"
+import { toAppError, useServer, type MissingCheckout, type Project, type ProjectId } from "@/server"
 import { SettingsGroup, SettingsList, SettingsNote, SettingsRow } from "@/settings"
 import { ClaxedoIcon as Icon, useDialog, Button, Avatar } from "@/ui"
 import { useProjectsText } from "../i18n"
-import { usePlacementOpener } from "../open"
 import { sourceLabel } from "../project-source"
 import { getAvatarColors } from "../project-avatar"
 import { projectSettingsPath } from "../routes"
 import { useProject, useProjectCommands } from "../store"
 import { DialogEditProject } from "./edit-project-dialog"
-import { PlacementList } from "./placement-list"
+import { DrawerProjectEnvironment } from "./project-environment-drawer"
+import { WhereItRuns } from "./where-it-runs"
 import { RemoveProjectDialog } from "./remove-project-dialog"
 
 function MissingCheckoutSection(props: { readonly id: ProjectId; readonly checkout: MissingCheckout }): JSX.Element {
@@ -52,19 +51,20 @@ function MissingCheckoutSection(props: { readonly id: ProjectId; readonly checko
   )
 }
 
-function ProjectFields(props: { readonly project: Project }): JSX.Element {
+function ProjectFields(props: { readonly project: Project; readonly editable: boolean }): JSX.Element {
   const t = useProjectsText()
   const dialog = useDialog()
   const image = () => props.project.icon?.override
   const color = () => props.project.icon?.color || "pink"
-  const variables = () => Object.keys(props.project.env).join(", ")
   return (
     <SettingsGroup
       title={t("projects.settings.group")}
       action={
-        <Button variant="neutral" size="small" onClick={() => dialog.show(() => <DialogEditProject project={props.project} />)}>
-          {t("projects.edit.action")}
-        </Button>
+        props.editable ? (
+          <Button variant="neutral" size="small" onClick={() => dialog.show(() => <DialogEditProject project={props.project} />)}>
+            {t("projects.edit.action")}
+          </Button>
+        ) : undefined
       }
     >
       <SettingsList>
@@ -77,22 +77,29 @@ function ProjectFields(props: { readonly project: Project }): JSX.Element {
         <Show when={!image()}>
           <SettingsRow title={t("projects.edit.color")} description={color()} />
         </Show>
-        <SettingsRow title={t("projects.edit.startup")} description={props.project.commands?.start || t("projects.settings.none")} />
-        <SettingsRow title={t("projects.edit.environment")} description={variables() || t("projects.settings.none")} />
       </SettingsList>
     </SettingsGroup>
   )
 }
 
-function ProjectPlacements(props: { readonly project: Project }): JSX.Element {
+function WorkspaceSetup(props: { readonly project: Project }): JSX.Element {
   const t = useProjectsText()
-  const open = usePlacementOpener()
+  const dialog = useDialog()
+  const variables = () => Object.keys(props.project.env).join(", ")
   return (
-    <SettingsGroup title={t("projects.placements")}>
-      <PlacementList projectId={() => props.project.id} />
-      <Show when={props.project.source?.kind !== "folder"}>
-        <CloudWorkspacesSection projectId={() => props.project.id} onOpen={open} />
-      </Show>
+    <SettingsGroup
+      title={t("projects.environment.title")}
+      description={t("projects.environment.summary")}
+      action={
+        <Button variant="neutral" size="small" onClick={() => dialog.show(() => <DrawerProjectEnvironment project={props.project} />)}>
+          {t("projects.environment.edit")}
+        </Button>
+      }
+    >
+      <SettingsList>
+        <SettingsRow title={t("projects.edit.startup")} description={props.project.commands?.start || t("projects.settings.none")} />
+        <SettingsRow title={t("projects.edit.environment")} description={variables() || t("projects.settings.none")} />
+      </SettingsList>
     </SettingsGroup>
   )
 }
@@ -124,6 +131,8 @@ function ProjectSettingsHeader(props: { readonly project: Project }): JSX.Elemen
 
 export function ProjectSettings(props: { readonly id: ProjectId }): JSX.Element {
   const t = useProjectsText()
+  const server = useServer()
+  const configurable = () => server.projects.configurationAvailable()
   const view = useProject(() => props.id)
   const project = () => {
     const state = view()
@@ -155,9 +164,12 @@ export function ProjectSettings(props: { readonly id: ProjectId }): JSX.Element 
             <>
               <ProjectSettingsHeader project={row()} />
               <Show when={row().missingCheckout}>{(checkout) => <MissingCheckoutSection id={props.id} checkout={checkout()} />}</Show>
-              <ProjectFields project={row()} />
-              <ProjectPlacements project={row()} />
-              <ProjectRemoval id={props.id} name={row().name} />
+              <ProjectFields project={row()} editable={configurable()} />
+              <WhereItRuns project={row()} />
+              <Show when={configurable()}>
+                <WorkspaceSetup project={row()} />
+                <ProjectRemoval id={props.id} name={row().name} />
+              </Show>
             </>
           )}
         </Match>

@@ -1,10 +1,9 @@
 import { createMemo, createUniqueId, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { toAppError, useServer, type Project } from "@/server"
-import { useDialog, Button, Dialog, Field, Textarea, TextField, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@/ui"
+import { useDialog, Button, Dialog, TextField, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@/ui"
 import { getFilename } from "@/ui/utils"
 import { useProjectsText } from "../i18n"
-import { EnvironmentEditor, environmentRecord, environmentRows, environmentRowsProblem } from "./environment-editor"
 import { ProjectColorField, ProjectIconField } from "./edit-project-icon"
 
 function readImage(file: File, onLoad: (url: string) => void) {
@@ -24,9 +23,6 @@ function useEditProjectStore(project: Project) {
     name: defaultName(),
     color: project.icon?.color || "pink",
     iconUrl: project.icon?.override || "",
-    startup: project.commands?.start ?? "",
-    environment: environmentRows(project.env),
-    environmentError: "",
     saveError: "",
     saving: false,
     dragOver: false,
@@ -45,20 +41,12 @@ export function DialogEditProject(props: { project: Project }) {
 
   async function handleSubmit(e: SubmitEvent) {
     e.preventDefault()
-    if (environmentRowsProblem(store.environment)) return
     setStore({ saving: true, saveError: "" })
     const name = store.name.trim() === folderName() ? "" : store.name.trim()
-    const start = store.startup.trim()
     try {
-      await server.projects.update(props.project.id, {
-        name,
-        env: environmentRecord(store.environment),
-        icon: { color: store.color, override: store.iconUrl },
-        commands: { start },
-      })
+      await server.projects.update(props.project.id, { name, icon: { color: store.color, override: store.iconUrl } })
     } catch (cause) {
-      const error = toAppError(cause)
-      setStore(error.code === "project_env_invalid" ? { saving: false, environmentError: error.message } : { saving: false, saveError: error.message })
+      setStore({ saving: false, saveError: toAppError(cause).message })
       return
     }
     setStore("saving", false)
@@ -96,32 +84,6 @@ export function DialogEditProject(props: { project: Project }) {
           <Show when={!store.iconUrl}>
             <ProjectColorField color={store.color} label={store.name || defaultName()} onColor={(color) => setStore("color", color)} />
           </Show>
-          <Field>
-            <Field.Label>{t("projects.edit.startup")}</Field.Label>
-            <Textarea
-              class="textarea-v2--full-width"
-              style={{ "font-family": "var(--font-family-mono)" }}
-              placeholder={t("projects.edit.startup.placeholder")}
-              value={store.startup}
-              onInput={(event) => setStore("startup", event.currentTarget.value)}
-              spellcheck={false}
-            />
-            <Field.Suffix>{t("projects.edit.startup.description")}</Field.Suffix>
-          </Field>
-          <div class="flex flex-col gap-2">
-            <div class="flex flex-col gap-0.5">
-              <span class="text-13-medium text-text-strong">{t("projects.edit.environment")}</span>
-              <span class="text-12-regular text-text-weak">
-                {t("projects.edit.environment.before")}
-                <code>.env</code>
-                {t("projects.edit.environment.after")}
-              </span>
-            </div>
-            <EnvironmentEditor rows={store.environment} onChange={(rows) => setStore("environment", rows)} />
-            <Show when={store.environmentError}>
-              <p class="text-12-regular text-icon-warning-base" role="alert">{store.environmentError}</p>
-            </Show>
-          </div>
         </form>
       </DialogBody>
       <DialogFooter>

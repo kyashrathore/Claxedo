@@ -1,3 +1,3 @@
-export { CloudWorkspaces as CloudWorkspacesSection } from "./view/cloud-workspaces"
 export { useCloudStatusText } from "./view/cloud-status"
-export { useRunningCloudWorkspaces } from "./store"
+export { useCloudWorkspaces, useRunningCloudWorkspaces, type CloudWorkspaceRow, type CloudWorkspaces } from "./store"
+export { canStart, canStop, cloudFailureReason } from "./model"

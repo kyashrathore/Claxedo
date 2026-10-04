@@ -17,7 +17,6 @@ export default {
   "projects.edit.color.select": "Vælg farven {{color}}",
   "projects.edit.startup": "Opstartsscript for arbejdsområde",
   "projects.edit.startup.description": "Køres efter oprettelse af et nyt arbejdsområde (worktree).",
-  "projects.edit.startup.placeholder": "f.eks. bun install",
   "projects.edit.action": "Rediger",
   "projects.chip.project": "Projekt",
   "projects.chip.self": "Denne computer",

@@ -17,7 +17,6 @@ export default {
   "projects.edit.color.select": "Выбрать цвет {{color}}",
   "projects.edit.startup": "Скрипт запуска рабочего пространства",
   "projects.edit.startup.description": "Запускается после создания нового рабочего пространства (worktree).",
-  "projects.edit.startup.placeholder": "например, bun install",
   "projects.edit.action": "Редактировать",
   "projects.chip.project": "Проект",
   "projects.chip.self": "Этот компьютер",

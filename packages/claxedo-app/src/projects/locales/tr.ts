@@ -17,7 +17,6 @@ export default {
   "projects.edit.color.select": "{{color}} rengini seç",
   "projects.edit.startup": "Çalışma alanı başlatma betiği",
   "projects.edit.startup.description": "Yeni bir çalışma alanı (worktree) oluşturduktan sonra çalışır.",
-  "projects.edit.startup.placeholder": "örneğin bun install",
   "projects.edit.action": "Düzenle",
   "projects.chip.project": "Proje",
   "projects.chip.self": "Bu bilgisayar",
