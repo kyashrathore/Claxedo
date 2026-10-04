@@ -278,7 +278,7 @@ export type SandboxExposure =
   | { kind: "private-network" }
   | { kind: "embedded" }
 
-export type SandboxLeaseStatus = "acquiring" | "ready" | "unavailable" | "stopped" | "destroyed"
+export type SandboxLeaseStatus = "acquiring" | "ready" | "unavailable" | "stopped" | "destroyed" | "retiring" | "retired"
 
 export type SandboxLease = {
   workspaceId: string
@@ -546,7 +546,8 @@ export type SandboxManager = {
   checkpoint: (workspaceId: string, input: SandboxCheckpointCaptureInput) => Promise<SandboxCheckpointResult>
   restore: (workspaceId: string, input: SandboxCheckpointRestoreInput) => Promise<SandboxCheckpointResult>
   stop: (workspaceId: string, input?: SandboxStopInput) => Promise<SandboxMutationResult>
-  destroy: (workspaceId: string) => Promise<SandboxMutationResult>
+  /** Workspace deletion retires its lease; ordinary compute destruction permits a later acquisition. */
+  destroy: (workspaceId: string, input?: { retireLease: { homeRegion: SandboxRegion } }) => Promise<SandboxMutationResult>
   release: (workspaceId: string) => Promise<{ released: boolean }>
   garbageCollect: () => Promise<SandboxGarbageCollectResult>
   list: () => Promise<SandboxLease[]>
@@ -733,4 +734,3 @@ export type SandboxManagerOptions = {
    */
   onEgressUnenforced?: (event: SandboxEgressUnenforcedEvent) => void
 }
-

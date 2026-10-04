@@ -76,7 +76,7 @@ const restore: SandboxRestoreStatus = {
  * untested, and D1 has no transaction to fall back on — the statement IS the
  * concurrency control.
  */
-function raceBeforeFirstWrite(target: D1Database, competitor: () => Promise<unknown>): D1Database {
+function raceBeforeFirstWrite(target: D1Database, competitor: () => Promise<unknown>, prefix = "update "): D1Database {
   let armed = true
   const wrapBound = (bound: D1PreparedStatement): D1PreparedStatement =>
     new Proxy(bound, {
@@ -103,7 +103,7 @@ function raceBeforeFirstWrite(target: D1Database, competitor: () => Promise<unkn
       if (property !== "prepare") return Reflect.get(source, property).bind(source)
       return (query: string) => {
         const statement = source.prepare(query)
-        return query.trimStart().startsWith("update ") ? wrapStatement(statement) : statement
+        return query.trimStart().startsWith(prefix) ? wrapStatement(statement) : statement
       }
     },
   })
@@ -424,7 +424,7 @@ describe("d1 sandbox lease store", () => {
     expect(await leaseStore.get("ws_1")).toEqual(updated)
   })
 
-  test.each(["stopped", "destroyed"] as const)("a delayed heartbeat or provisioning answer cannot reverse %s", async (status) => {
+  test.each(["stopped", "destroyed", "retiring", "retired"] as const)("a delayed heartbeat or provisioning answer cannot reverse %s", async (status) => {
     for (const operation of ["heartbeat", "provision"] as const) {
       const { target, leaseStore } = await store()
       await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW })
@@ -437,6 +437,20 @@ describe("d1 sandbox lease store", () => {
       expect(result).toBeUndefined()
       expect(await leaseStore.get("ws_1")).toMatchObject({ status, sandboxId: "first" })
     }
+  })
+
+  test("retirement wins against a delayed same-epoch acquisition and release", async () => {
+    const { target, leaseStore } = await store()
+    await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW })
+    await leaseStore.update("ws_1", 1, { status: "stopped" })
+    const delayed = createD1SandboxLeaseStore({ database: raceBeforeFirstWrite(target, () => leaseStore.update("ws_1", 1, { status: "retiring" }), "insert ") })
+    expect(await delayed.acquire("ws_1", { ...ACQUIRE, now: NOW + STALE_AFTER_MS })).toMatchObject({ acquired: false, lease: { status: "retiring", epoch: 1 } })
+    expect(await leaseStore.update("ws_1", 1, { status: "ready" })).toBeUndefined()
+    expect(await leaseStore.recordFailure("ws_1", 1, "late error")).toBeUndefined()
+    await leaseStore.release("ws_1")
+    expect((await leaseStore.get("ws_1"))?.status).toBe("retiring")
+    await leaseStore.update("ws_1", 1, { status: "retired" }, "retiring")
+    expect(await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW + STALE_AFTER_MS })).toMatchObject({ acquired: false, lease: { status: "retired" } })
   })
 
   test("a sandbox manager provisions and lists a workspace against this store", async () => {

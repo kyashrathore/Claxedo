@@ -17,7 +17,7 @@ export function createMemoryLeaseStore(seed: SandboxLease[] = []): SandboxLeaseS
     async acquire(workspaceId: string, input: SandboxLeaseAcquireInput): Promise<SandboxLeaseAcquireResult> {
       const now = input.now ?? Date.now()
       const current = leases.get(workspaceId)
-      if (current?.status === "ready") {
+      if (current?.status === "ready" || current?.status === "retiring" || current?.status === "retired") {
         return { acquired: false, lease: current, retryAfterMs: 0 }
       }
       if (current?.status === "acquiring" && now - current.updatedAt < input.staleAfterMs) {
@@ -54,7 +54,7 @@ export function createMemoryLeaseStore(seed: SandboxLease[] = []): SandboxLeaseS
     async recordTarget(workspaceId: string, expectedEpoch: number, target: SandboxProvisionedTarget) {
       const current = leases.get(workspaceId)
       if (!current || current.epoch !== expectedEpoch) return undefined
-      if (current.status === "stopped" || current.status === "destroyed") return undefined
+      if (["stopped", "destroyed", "retiring", "retired"].includes(current.status)) return undefined
       const next = applySandboxProvisionedTarget(current, target, Date.now())
       leases.set(workspaceId, next)
       return next
@@ -63,6 +63,8 @@ export function createMemoryLeaseStore(seed: SandboxLease[] = []): SandboxLeaseS
       const current = leases.get(workspaceId)
       if (!current || current.epoch !== expectedEpoch) return undefined
       if (expectedStatus !== undefined && current.status !== expectedStatus) return undefined
+      if (current.status === "retired" && patch.status !== "retired") return undefined
+      if (current.status === "retiring" && patch.status !== "retiring" && patch.status !== "retired") return undefined
       const next = applySandboxLeasePatch(current, patch, Date.now())
       leases.set(workspaceId, next)
       return next
@@ -70,7 +72,7 @@ export function createMemoryLeaseStore(seed: SandboxLease[] = []): SandboxLeaseS
     async recordFailure(workspaceId: string, expectedEpoch: number, error: string, nextRetryAt?: number) {
       const current = leases.get(workspaceId)
       if (!current || current.epoch !== expectedEpoch) return undefined
-      if (current.status === "stopped" || current.status === "destroyed") return undefined
+      if (["stopped", "destroyed", "retiring", "retired"].includes(current.status)) return undefined
       const next = {
         ...current,
         status: "unavailable" as const,
@@ -83,6 +85,8 @@ export function createMemoryLeaseStore(seed: SandboxLease[] = []): SandboxLeaseS
       return next
     },
     async release(workspaceId: string) {
+      const current = leases.get(workspaceId)
+      if (current?.status === "retiring" || current?.status === "retired") return
       leases.delete(workspaceId)
     },
     async get(workspaceId: string) {

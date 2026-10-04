@@ -286,4 +286,17 @@ describe("checkpoint lifecycle", () => {
     expect(await manager.destroy("ws_1")).toEqual({ ok: true, status: "destroyed" })
     expect(deleteSnapshot).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "ws_1" }), "snapshot-1")
   })
+
+  test("a snapshot deletion failure keeps retirement retryable instead of declaring cleanup complete", async () => {
+    const store = createMemoryLeaseStore()
+    const deleteSnapshot = vi.fn().mockRejectedValueOnce(new Error("snapshot deletion failed")).mockResolvedValue(undefined)
+    const manager = createSandboxManager({ leaseStore: store, driver: driver({ deleteSnapshot, destroy: vi.fn(async () => {}) }) })
+    await manager.ensure("ws_1", { homeRegion: "us-east" })
+    await manager.checkpoint("ws_1", { runtime: runtime() })
+    await expect(manager.destroy("ws_1", { retireLease: { homeRegion: "us-east" } })).rejects.toThrow("snapshot deletion failed")
+    expect((await store.get("ws_1"))?.status).toBe("retiring")
+    expect(await manager.destroy("ws_1")).toEqual({ ok: true, status: "destroyed" })
+    expect((await store.get("ws_1"))?.status).toBe("retired")
+    expect(deleteSnapshot).toHaveBeenCalledTimes(2)
+  })
 })

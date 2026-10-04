@@ -65,7 +65,7 @@ export async function applySandboxRuntimeSnapshot(input: {
   }
   // Stopping and destroying are decisions of the lifecycle owner. A report
   // from the sandbox is not how either is reversed.
-  if (current.status === "stopped" || current.status === "destroyed") {
+  if (["stopped", "destroyed", "retiring", "retired"].includes(current.status)) {
     return { ok: false, reason: "runtime_lease_not_serving" }
   }
   const timestamp = snapshot.now ?? (input.now ?? Date.now)()

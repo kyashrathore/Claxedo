@@ -156,7 +156,7 @@ function rowValues(
  * either read before writing, or read back after losing a guarded write.
  */
 function refusal(lease: SandboxLease, now: number, staleAfterMs: number): SandboxLeaseAcquireResult | undefined {
-  if (lease.status === "ready") return { acquired: false, lease, retryAfterMs: 0 }
+  if (lease.status === "ready" || lease.status === "retiring" || lease.status === "retired") return { acquired: false, lease, retryAfterMs: 0 }
   if (lease.status === "acquiring" && now - lease.updatedAt < staleAfterMs) {
     return { acquired: false, lease, retryAfterMs: Math.max(0, staleAfterMs - (now - lease.updatedAt)) }
   }
@@ -245,12 +245,12 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
     const statement = current
       ? `insert into ${TABLE} (${COLUMNS.join(", ")}) values (${COLUMNS.map(() => "?").join(", ")})
          on conflict(workspace_id) do update set ${CONFLICT_COLUMNS.map((column) => `${column} = excluded.${column}`).join(", ")}
-         where ${TABLE}.epoch = ?`
+         where ${TABLE}.epoch = ? and ${TABLE}.status = ?`
       : `insert into ${TABLE} (${COLUMNS.join(", ")}) values (${COLUMNS.map(() => "?").join(", ")})
          on conflict(workspace_id) do nothing`
     const result = await database
       .prepare(statement)
-      .bind(...(current ? [...values, current.epoch] : values))
+      .bind(...(current ? [...values, current.epoch, current.status] : values))
       .run()
     return result.meta.changes === 0 ? undefined : { acquired: true, lease: next }
   }
@@ -273,7 +273,7 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
     async recordTarget(workspaceId: string, expectedEpoch: number, target: SandboxProvisionedTarget) {
       const current = await read(workspaceId)
       if (!current || current.epoch !== expectedEpoch) return undefined
-      if (sandboxLeaseStatus(current.status) === "stopped" || sandboxLeaseStatus(current.status) === "destroyed") return undefined
+      if (["stopped", "destroyed", "retiring", "retired"].includes(sandboxLeaseStatus(current.status))) return undefined
       return await writeFenced(
         workspaceId,
         expectedEpoch,
@@ -288,6 +288,8 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
       const current = await read(workspaceId)
       if (!current || current.epoch !== expectedEpoch) return undefined
       if (expectedStatus !== undefined && sandboxLeaseStatus(current.status) !== expectedStatus) return undefined
+      if (current.status === "retired" && patch.status !== "retired") return undefined
+      if (current.status === "retiring" && patch.status !== "retiring" && patch.status !== "retired") return undefined
       const columns = new Set<typeof COLUMNS[number]>(["updated_at"])
       for (const [key, column] of PATCH_COLUMNS) {
         if (patch[key] !== undefined) columns.add(column)
@@ -300,14 +302,14 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
         applySandboxLeasePatch(toSandboxLease(current), patch, clock()),
         current,
         [...columns],
-        expectedStatus === undefined ? undefined : current.status,
+        current.status,
       )
     },
 
     async recordFailure(workspaceId: string, expectedEpoch: number, error: string, nextRetryAt?: number) {
       const current = await read(workspaceId)
       if (!current || current.epoch !== expectedEpoch) return undefined
-      if (sandboxLeaseStatus(current.status) === "stopped" || sandboxLeaseStatus(current.status) === "destroyed") return undefined
+      if (["stopped", "destroyed", "retiring", "retired"].includes(sandboxLeaseStatus(current.status))) return undefined
       const failedAt = clock()
       const next: SandboxLease = {
         ...toSandboxLease(current),
@@ -322,7 +324,7 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
     },
 
     async release(workspaceId: string) {
-      await database.prepare(`delete from ${TABLE} where workspace_id = ?`).bind(workspaceId).run()
+      await database.prepare(`delete from ${TABLE} where workspace_id = ? and status not in ('retiring', 'retired')`).bind(workspaceId).run()
     },
 
     async get(workspaceId: string) {

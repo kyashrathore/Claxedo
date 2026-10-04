@@ -29,7 +29,7 @@ export type SandboxEnsureResult =
   | { status: "provisioning"; retryAfterMs: number; epoch: number; homeRegion: string; bootMode?: "restore" | "resume" | "cold-start" }
   | { status: "unavailable"; retryAfterMs?: number; error?: string; epoch?: number; homeRegion: string }
 
-export type SandboxLeaseStatus = "acquiring" | "ready" | "unavailable" | "stopped" | "destroyed"
+export type SandboxLeaseStatus = "acquiring" | "ready" | "unavailable" | "stopped" | "destroyed" | "retiring" | "retired"
 
 export type SandboxTargetResult =
   | SandboxReadyTarget

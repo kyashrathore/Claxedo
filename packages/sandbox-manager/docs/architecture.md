@@ -37,7 +37,7 @@ new epoch, invokes the driver, and returns a `SandboxEnsureResult` of
 
 A `SandboxLease` (`src/index.ts`) is the manager's own persisted row shape:
 `workspaceId`, `homeRegion`, `driver`, `epoch`, `status`
-(`"acquiring" | "ready" | "unavailable" | "stopped" | "destroyed"`),
+(`"acquiring" | "ready" | "unavailable" | "stopped" | "destroyed" | "retiring" | "retired"`),
 `retryCount`, timestamps, and the resolved `sandboxId` / `url` / `hostId` /
 `driverResourceId` once ready. This is distinct from `SandboxLeaseRow`
 (`src/lease-types.ts`), the DB-shaped row (`snake_case`) a lease store

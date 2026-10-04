@@ -84,6 +84,17 @@ values redacted before truncation. A diagnostic request failure preserves the
 original health failure. This evidence identifies a failed runtime boot without
 reporting the VM itself as ready.
 
+Workspace deletion calls `destroy` with `retireLease` and the placement's home
+region. This fences acquisition before provider cleanup, persists `retiring`
+across cleanup failures, and records `retired` only after cleanup succeeds.
+Neither state accepts provisioning results, heartbeats, or lease release.
+An empty workspace receives the same fence without starting compute. Ordinary
+`destroy` still permits fresh compute to be acquired for a surviving workspace.
+The hosted route removes the workspace record only after retirement and runtime
+credential withdrawal succeed. Boat deletion waits for the sandbox read to
+report absence; an asynchronous deletion acknowledgement alone is insufficient.
+Snapshot deletion failures propagate and leave cleanup retryable.
+
 ## Credentials & secrets
 
 There are two distinct channels for getting values into a sandbox, chosen by

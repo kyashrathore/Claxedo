@@ -90,7 +90,7 @@ describe("sandboxLeaseRowStatus", () => {
   })
 
   test("the states that survive a round trip come back unchanged", () => {
-    for (const status of ["ready", "stopped", "destroyed"] as const) {
+    for (const status of ["ready", "stopped", "destroyed", "retiring", "retired"] as const) {
       expect(sandboxLeaseStatus(sandboxLeaseRowStatus({ ...lease, status }))).toBe(status)
     }
   })

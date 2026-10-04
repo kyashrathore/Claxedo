@@ -54,6 +54,7 @@ function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnc
   const states = options?.states ?? ["ready"]
   let stateIdx = 0
   let healthChecks = 0
+  let deleted = false
   const hostUrl = options?.hostUrl ?? "https://machine-2593.on.boat.dev"
 
   const fetchImpl: BoatFetch = async (input, init) => {
@@ -64,9 +65,11 @@ function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnc
     const json = (obj: object, status = 200) => Response.json({ ok: true, ...obj }, { status })
 
     if (path === "/sandboxes" && method === "POST") {
+      deleted = false
       return json({ type: "sandbox.created", status: "provisioning", ttlSeconds: body.ttlSeconds, sandbox: sandboxRecord("provisioning") }, 202)
     }
     if (path === `/sandboxes/${ID}` && method === "GET") {
+      if (deleted) return Response.json({ ok: false, code: "not_found" }, { status: 404 })
       const state = states[Math.min(stateIdx, states.length - 1)]
       stateIdx++
       return json({ type: "sandbox.info", sandbox: sandboxRecord(state) })
@@ -92,6 +95,7 @@ function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnc
       return json({ type: "sandbox.resuming", id: ID, status: "provisioning", sandbox: sandboxRecord("provisioning") }, 202)
     }
     if (path === `/sandboxes/${ID}` && method === "DELETE") {
+      deleted = true
       return json({ type: "sandbox.deleting", operation: { id: "op_1", kind: "sandbox", targetId: ID, status: "queued" } }, 202)
     }
     return Response.json({ ok: false, code: "not_found", message: `unhandled ${method} ${path}` }, { status: 404 })
@@ -235,6 +239,7 @@ describe("boat sandbox driver", () => {
     expect(boat.calls.map(({ path, method, body }) => ({ path, method, body }))).toEqual([
       { path: "/sandboxes", method: "POST", body: { noEnv: true, ttlSeconds: null } },
       { path: `/sandboxes/${ID}`, method: "DELETE", body: undefined },
+      { path: `/sandboxes/${ID}`, method: "GET", body: undefined },
     ])
     expect(boat.calls[1].headers).toMatchObject({ "X-Ascii-Confirm-Delete": ID, Authorization: "Bearer k" })
   })
@@ -285,6 +290,7 @@ describe("boat sandbox driver", () => {
     expect(boat.calls.map(({ method, path }) => ({ method, path }))).toEqual([
       { method: "POST", path: "/sandboxes" },
       { method: "DELETE", path: `/sandboxes/${ID}` },
+      { method: "GET", path: `/sandboxes/${ID}` },
     ])
   })
 
@@ -517,6 +523,50 @@ describe("boat sandbox driver", () => {
     expect(boat.healthChecks).toBeGreaterThanOrEqual(2)
   })
 
+  test("destroy waits for the sandbox to disappear after an asynchronous deletion acknowledgement", async () => {
+    const boat = fakeBoat()
+    let deleting = false
+    let reads = 0
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, provisionIntervalMs: 0, fetchImpl: async (url, init) => {
+      if (init?.method === "DELETE") deleting = true
+      if (deleting && url === `${API}/sandboxes/${ID}` && init?.method === "GET" && reads++ < 2) {
+        return Response.json({ ok: true, type: "sandbox.info", sandbox: sandboxRecord("ready") })
+      }
+      return boat.fetchImpl(url, init)
+    } })
+    const target = await driver.ensureHost(ensureInput())
+    if ("provisioning" in target) throw new Error("unexpected provisioning")
+    await driver.destroy!(target)
+    expect(reads).toBe(3)
+  })
+
+  test("destroy does not report success while the provider still lists the sandbox", async () => {
+    const boat = fakeBoat()
+    let deleting = false
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, provisionTimeoutMs: 0, fetchImpl: async (url, init) => {
+      if (init?.method === "DELETE") deleting = true
+      if (deleting && url === `${API}/sandboxes/${ID}` && init?.method === "GET") return Response.json({ ok: true, type: "sandbox.info", sandbox: sandboxRecord("ready") })
+      return boat.fetchImpl(url, init)
+    } })
+    const target = await driver.ensureHost(ensureInput())
+    if ("provisioning" in target) throw new Error("unexpected provisioning")
+    await expect(driver.destroy!(target)).rejects.toThrow("deletion did not complete")
+  })
+
+  test("destroy is idempotent for an absent sandbox but still refuses authorization failures", async () => {
+    const boat = fakeBoat()
+    let status = 404
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async (url, init) => {
+      if (init?.method === "DELETE") return Response.json({ ok: false, code: status === 404 ? "not_found" : "unauthorized" }, { status })
+      return boat.fetchImpl(url, init)
+    } })
+    const target = await driver.ensureHost(ensureInput())
+    if ("provisioning" in target) throw new Error("unexpected provisioning")
+    await expect(driver.destroy!(target)).resolves.toBeUndefined()
+    status = 401
+    await expect(driver.destroy!(target)).rejects.toMatchObject({ status: 401 })
+  })
+
   test("an unhealthy runtime reports bounded container diagnostics with staged secrets redacted", async () => {
     const boat = fakeBoat()
     const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, healthTimeoutMs: 0,
@@ -616,6 +666,7 @@ describe("boat sandbox driver", () => {
     expect(boat.calls.map(({ method, path }) => ({ method, path }))).toEqual([
       { method: "POST", path: `/sandboxes/${ID}/stop` },
       { method: "DELETE", path: `/sandboxes/${ID}` },
+      { method: "GET", path: `/sandboxes/${ID}` },
     ])
   })
 

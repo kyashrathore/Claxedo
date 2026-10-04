@@ -62,6 +62,7 @@ function fakeAuthority(overrides: Record<string, unknown> = {}) {
   return {
     usersMe: vi.fn(async () => ({ subject: "user_1", user_id: "user_1", actor_id: "user_1", actor_kind: "human", actor_public_id: "user_pub_1", actor_name: "User One" })),
     authorizeWorkspaceCreate: vi.fn(async () => {}),
+    deleteWorkspace: vi.fn(async () => ({ deleted: true })),
     openWorkspace: vi.fn(async (_auth: unknown, args: { workspaceId: string }) => ({
       allowed: true,
       role: "owner",
@@ -1476,6 +1477,71 @@ describe("hosted cloud workspace create (POST /create)", () => {
       }),
     )
     expect([401, 403]).toContain(res.status)
+  })
+})
+
+describe("hosted workspace deletion", () => {
+  test("destroys cloud compute and revokes runtime credentials before deleting the authority row", async () => {
+    const calls: string[] = []
+    const authority = fakeAuthority({
+      openWorkspace: vi.fn(async () => ({ allowed: true, role: "owner", workspace: cloudRow({ workspaceId: "ws_cloud" }) })),
+      deleteWorkspace: vi.fn(async () => { calls.push("authority"); return { deleted: true } }),
+    })
+    const manager = { destroy: vi.fn(async () => { calls.push("destroy"); return { ok: true, status: "destroyed" } }) } as unknown as SandboxManager
+    const releaseRuntime = vi.fn(async () => { calls.push("credentials") })
+    const { app } = buildApp({ authority, sandboxManager: manager, options: { releaseRuntime, defaultHomeRegion: "eu-west" } })
+    const response = await app.fetch(del("/ws_cloud"))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ deleted: true })
+    expect(calls).toEqual(["destroy", "credentials", "authority"])
+    expect(manager.destroy).toHaveBeenCalledWith("ws_cloud", { retireLease: { homeRegion: "eu-west" } })
+    expect(releaseRuntime).toHaveBeenCalledWith({ workspaceId: "ws_cloud" })
+  })
+
+  test.each(["viewer", "editor", "admin"])("refuses a %s before any compute or credential mutation", async (role) => {
+    const authority = fakeAuthority({ openWorkspace: vi.fn(async () => ({ allowed: true, role, workspace: cloudRow({ workspaceId: "ws_cloud" }) })) })
+    const destroy = vi.fn()
+    const releaseRuntime = vi.fn()
+    const { app } = buildApp({ authority, sandboxManager: { destroy } as unknown as SandboxManager, options: { releaseRuntime } })
+    expect((await app.fetch(del("/ws_cloud"))).status).toBe(403)
+    expect(destroy).not.toHaveBeenCalled()
+    expect(releaseRuntime).not.toHaveBeenCalled()
+    expect(authority.deleteWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("a cleanup conflict leaves the workspace available for retry", async () => {
+    const authority = fakeAuthority({ openWorkspace: vi.fn(async () => ({ allowed: true, role: "owner", workspace: cloudRow({ workspaceId: "ws_cloud" }) })) })
+    const destroy = vi.fn(async () => ({ ok: false, reason: "runtime_lease_changed" }))
+    const releaseRuntime = vi.fn()
+    const { app } = buildApp({ authority, sandboxManager: { destroy } as unknown as SandboxManager, options: { releaseRuntime } })
+    const response = await app.fetch(del("/ws_cloud"))
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ error: { code: "runtime_lease_changed" } })
+    expect(authority.deleteWorkspace).not.toHaveBeenCalled()
+    expect(releaseRuntime).not.toHaveBeenCalled()
+  })
+
+  test("an unavailable driver cannot hide a cloud workspace before cleanup", async () => {
+    const authority = fakeAuthority({ openWorkspace: vi.fn(async () => ({ allowed: true, role: "owner", workspace: cloudRow({ workspaceId: "ws_cloud" }) })) })
+    const { app } = buildApp({ authority })
+    expect((await app.fetch(del("/ws_cloud"))).status).toBe(503)
+    expect(authority.deleteWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("deleting a machine placement never touches cloud compute", async () => {
+    const destroy = vi.fn()
+    const { app, authority } = buildApp({ sandboxManager: { destroy } as unknown as SandboxManager })
+    expect((await app.fetch(del("/ws_1"))).status).toBe(200)
+    expect(destroy).not.toHaveBeenCalled()
+    expect(authority?.deleteWorkspace).toHaveBeenCalled()
+  })
+
+  test("a rejected bearer cannot delete a workspace", async () => {
+    const authority = fakeAuthority()
+    const { app } = buildApp({ authority, verifier: async () => { throw new ControlPlaneAuthError(401, "invalid_bearer_token", "invalid") } })
+    expect((await app.fetch(del("/ws_1", "forged"))).status).toBe(401)
+    expect(authority.openWorkspace).not.toHaveBeenCalled()
+    expect(authority.deleteWorkspace).not.toHaveBeenCalled()
   })
 })
 

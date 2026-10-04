@@ -5,6 +5,7 @@ import type { SandboxLeaseRow } from "@claxedo/sandbox-manager/lease-types"
 export function sandboxLeaseStatus(status: SandboxLeaseRow["status"]): SandboxLease["status"] {
   if (status === "ready") return "ready"
   if (status === "destroyed") return "destroyed"
+  if (status === "retiring" || status === "retired") return status
   if (status === "stopped" || status === "stopping") return "stopped"
   if (status === "pending" || status === "acquiring" || status === "starting") return "acquiring"
   return "unavailable"
@@ -12,12 +13,13 @@ export function sandboxLeaseStatus(status: SandboxLeaseRow["status"]): SandboxLe
 
 /**
  * The inverse: port status -> stored row status. The conversion is lossy (the
- * row's ten states collapse to the port's five), so the two directions only
+ * row's states collapse to the port's lifecycle states), so the two directions only
  * round-trip when they are read together, which is why they share a file.
  */
 export function sandboxLeaseRowStatus(lease: SandboxLease): SandboxLeaseRow["status"] {
   if (lease.status === "ready" || lease.status === "stopped") return lease.status
   if (lease.status === "unavailable") return lease.nextRetryAt === undefined ? "failed" : "backoff"
   if (lease.status === "destroyed") return "destroyed"
+  if (lease.status === "retiring" || lease.status === "retired") return lease.status
   return "acquiring"
 }

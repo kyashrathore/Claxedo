@@ -11,7 +11,7 @@ import { envFile, shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { assertSandboxImageReference } from "../image-name"
 import { sandboxDriverCatalog } from "../driver-catalog"
-import { createBoatClient, type BoatFetch } from "./boat-client"
+import { BoatApiError, createBoatClient, type BoatFetch } from "./boat-client"
 import { isTransientDriverError } from "./transient-error"
 
 // Boat (https://boat.dev) runs persistent Linux microVMs with Docker on the
@@ -356,7 +356,23 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
   }
 
   async function destroy(target: SandboxResource) {
-    await client.delete(target.sandboxId)
+    try {
+      await client.delete(target.sandboxId)
+    } catch (error) {
+      if (error instanceof BoatApiError && error.status === 404) return
+      throw error
+    }
+    const until = Date.now() + provisionTimeoutMs
+    for (;;) {
+      try {
+        await client.get(target.sandboxId)
+      } catch (error) {
+        if (error instanceof BoatApiError && error.status === 404) return
+        throw error
+      }
+      if (Date.now() >= until) throw new BoatDriverError(`Boat ${target.sandboxId} deletion did not complete`)
+      await sleep(provisionIntervalMs)
+    }
   }
 
   return {

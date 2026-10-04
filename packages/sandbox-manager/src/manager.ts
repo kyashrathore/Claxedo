@@ -26,7 +26,6 @@ import {
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "./constants"
 import {
   captureSandboxCheckpoint,
-  discardSnapshot,
   restoreSandboxCheckpoint,
   type SandboxCheckpointCaptureInput,
   type SandboxCheckpointResult,
@@ -74,7 +73,7 @@ function defaultEgressUnenforcedSink(event: SandboxEgressUnenforcedEvent) {
  */
 type LifecycleOperation =
   | { kind: "checkpoint" | "restore"; promise: Promise<SandboxCheckpointResult> }
-  | { kind: "stop" | "destroy"; promise: Promise<SandboxMutationResult> }
+  | { kind: "stop" | "destroy" | "retire"; promise: Promise<SandboxMutationResult> }
 
 const DEFAULT_APP_LABEL = "claxedo"
 
@@ -227,7 +226,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
 
   function mutationLifecycle(
     workspaceId: string,
-    kind: "stop" | "destroy",
+    kind: "stop" | "destroy" | "retire",
     run: () => Promise<SandboxMutationResult>,
   ): Promise<SandboxMutationResult> {
     const current = lifecycleOperations.get(workspaceId)
@@ -450,6 +449,9 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         }
       }
       const existing = await options.leaseStore.get(workspaceId)
+      if (existing?.status === "retiring" || existing?.status === "retired") {
+        return { status: "unavailable", error: "runtime_lease_retired", epoch: existing.epoch, homeRegion: existing.homeRegion }
+      }
       if (existing?.nextRetryAt && existing.nextRetryAt > now()) {
         if (existing.status === "acquiring") {
           return {
@@ -511,6 +513,9 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         now: now(),
       })
       if (!acquired.acquired) {
+        if (acquired.lease.status === "retiring" || acquired.lease.status === "retired") {
+          return { status: "unavailable", error: "runtime_lease_retired", epoch: acquired.lease.epoch, homeRegion: acquired.lease.homeRegion }
+        }
         return {
           status: "provisioning",
           retryAfterMs: acquired.retryAfterMs,
@@ -580,27 +585,51 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         return stopped(checkpoint)
       })
     },
-    async destroy(workspaceId) {
-      return await mutationLifecycle(workspaceId, "destroy", async () => {
-        const lease = await options.leaseStore.get(workspaceId)
-        if (lease?.status === "destroyed") return { ok: true as const, status: "destroyed" as const }
-        if (!lease) return { ok: false as const, reason: "runtime_lease_missing" }
-        const target = leaseResource(lease)
-        if (!target) return { ok: false as const, reason: "runtime_lease_resource_missing" }
-        await options.driver.destroy?.(target)
-        const updated = await options.leaseStore.update(workspaceId, target.epoch, { status: "destroyed" })
-        if (!updated) return { ok: false as const, reason: "runtime_lease_changed" }
-        if (lease.checkpoint && lease.persistence?.capture !== "same-resource") {
-          await discardSnapshot(options.driver.deleteSnapshot, target, lease.checkpoint.providerReference)
+    async destroy(workspaceId, input) {
+      return await mutationLifecycle(workspaceId, input?.retireLease ? "retire" : "destroy", async () => {
+        let lease = await options.leaseStore.get(workspaceId)
+        if (!lease && input?.retireLease) {
+          lease = (await options.leaseStore.acquire(workspaceId, { homeRegion: input.retireLease.homeRegion, driver: options.driver.id, staleAfterMs, now: now() })).lease
         }
+        if (lease?.status === "retired") return { ok: true as const, status: "destroyed" as const }
+        if (lease?.status === "destroyed") {
+          if (input?.retireLease && !await options.leaseStore.update(workspaceId, lease.epoch, { status: "retired" }, "destroyed")) {
+            return { ok: false as const, reason: "runtime_lease_changed" }
+          }
+          return { ok: true as const, status: "destroyed" as const }
+        }
+        if (!lease) return { ok: true as const, status: "destroyed" as const }
+        const retiring = !!input?.retireLease || lease.status === "retiring"
+        const fence = retiring ? "retiring" : "stopped"
+        // Fence provisioning before provider deletion. A late resource handoff
+        // is refused by recordTarget and its driver must clean up that resource.
+        // Keep a failed deletion retryable rather than recording it as finished.
+        const fenced = await options.leaseStore.update(workspaceId, lease.epoch, { status: fence }, lease.status)
+        if (!fenced) return { ok: false as const, reason: "runtime_lease_changed" }
+        const target = leaseResource(fenced)
+        if ((fenced.sandboxId || fenced.checkpoint) && !target) return { ok: false as const, reason: "runtime_lease_resource_missing" }
+        if (target) {
+          if (!options.driver.destroy) return { ok: false as const, reason: "sandbox_destroy_unsupported" }
+          if (fenced.checkpoint && fenced.persistence?.capture !== "same-resource") {
+            if (!options.driver.deleteSnapshot) return { ok: false as const, reason: "snapshot_delete_unsupported" }
+            await options.driver.deleteSnapshot(target, fenced.checkpoint.providerReference)
+            if (!await options.leaseStore.update(workspaceId, fenced.epoch, { status: fence, checkpoint: null }, fence)) {
+              return { ok: false as const, reason: "runtime_lease_changed" }
+            }
+          }
+          await options.driver.destroy(target)
+        }
+        const updated = await options.leaseStore.update(workspaceId, fenced.epoch, { status: retiring ? "retired" : "destroyed" }, fence)
+        if (!updated) return { ok: false as const, reason: "runtime_lease_changed" }
         return { ok: true as const, status: "destroyed" as const }
       })
     },
     async release(workspaceId) {
       const lease = await options.leaseStore.get(workspaceId)
       if (!lease) return { released: false }
+      if (lease.status === "retiring" || lease.status === "retired") return { released: false }
       await options.leaseStore.release(workspaceId)
-      return { released: true }
+      return { released: await options.leaseStore.get(workspaceId) === undefined }
     },
     async garbageCollect() {
       if (!options.driver.list) {

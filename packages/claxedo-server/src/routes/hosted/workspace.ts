@@ -527,6 +527,37 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
 
         return c.json({ workspaceId, directory })
       })
+      .delete("/:id", async (c) => {
+        const result = await signedOrError(c.req.raw, authOptions(), services)
+        if ("error" in result) return c.json(result.error, result.status)
+        if (!result.auth) return c.json(missingBearerBody(), 401)
+        const auth = result.auth
+        const workspaceId = routeParam(c, "id")
+        try {
+          const authority = requireAuthority(services)
+          const opened = await authority.openWorkspace(auth, { workspaceId })
+          if (!opened.workspace || opened.allowed === false || opened.role !== "owner") {
+            return c.json({ error: apiError("workspace_authorization_denied", "Workspace owner required") }, 403)
+          }
+          const limit = await controlPlaneRateLimitError(services, controlPlaneRateLimiter, auth, {
+            key: `workspace.delete:${workspaceId}`, action: "workspace.delete.denied", workspaceId,
+          })
+          if (limit) return c.json(limit.body, limit.status)
+          if (opened.workspace.backing === "cloud-vm") {
+            const manager = services?.sandbox.sandboxManager
+            if (!manager) return c.json({ error: apiError("sandbox_driver_unavailable", "Cloud sandbox cleanup is unavailable") }, 503)
+            const destroyed = await manager.destroy(workspaceId, { retireLease: { homeRegion: normalizeClaxedoRegion(undefined, options.defaultHomeRegion) } })
+            if (!destroyed.ok) return c.json({ error: apiError(destroyed.reason, "The workspace runtime could not be deleted") }, 409)
+          }
+          await options.releaseRuntime?.({ workspaceId })
+          const deleted = await authority.deleteWorkspace(auth, { workspaceId })
+          return c.json(deleted)
+        } catch (error) {
+          if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
+          if (isClaxedoError(error)) return c.json({ error: apiError(error.code, error.message) }, contentfulStatus(error.status))
+          throw error
+        }
+      })
       .get("/:id/connection", (c) => connectionResponse(c, { readOnly: true }))
       .post("/:id/connection", async (c) => {
         const body = parsedBody(connectionBody, await c.req.json().catch(() => ({})))

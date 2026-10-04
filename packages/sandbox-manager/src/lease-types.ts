@@ -14,6 +14,8 @@ export type SandboxLeaseRowStatus =
   | "stopping"
   | "stopped"
   | "destroyed"
+  | "retiring"
+  | "retired"
   | "failed"
 
 export type SandboxComputeClass = "small" | "medium" | "large" | "gpu"
