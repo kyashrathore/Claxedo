@@ -80,3 +80,5 @@ The only module that knows today's server: its routes, its OpenCode-shaped paylo
 `CLAXEDO_E2E_PORT_RANGE=46800-46899 bun e2e/probes/adapter-smoke.ts` runs the adapter against a real daemon started by the e2e harness, through a TCP proxy it can cut: projects, placements, files, git, terminals, harness options, create, session reads, a streamed turn, the project list and its row statuses, queue, stop, resume by `Last-Event-ID` and a forced replay gap.
 
 Provider catalog reads require the server's model availability metadata. The wire adapter maps it to `modelDiscovery`; provider detail merges retain the returned discovery state. Missing or unknown metadata fails the read rather than inventing availability.
+
+The runtime `session.config` frame maps to `harnessOptionsChanged`, using the same decoder as the model options read and retaining the session address. This carries a harness catalog that becomes available after turn-scoped credential delivery.

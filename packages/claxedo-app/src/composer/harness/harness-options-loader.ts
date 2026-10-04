@@ -52,7 +52,12 @@ export function createHarnessOptionsLoader<ScopeInput>(input: LoaderInput<ScopeI
       return undefined
     }
   }
-  return { load }
+  const receive = (scope: string, payload: HarnessOptions) => {
+    const type = input.currentHarness(scope)
+    if (!type) return
+    applyOptions(input, { scope, type, id: input.cache.nextSeq(scope) }, payload)
+  }
+  return { load, receive }
 }
 
 function abandonOptionsRequest<ScopeInput>(input: LoaderInput<ScopeInput>, request: Request) {

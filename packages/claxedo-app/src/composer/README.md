@@ -122,3 +122,7 @@ The prompt editor and everything that turns a draft into one `PromptInput` for `
 - 3 (send a turn), 4 (stop and queued messages), 5 (errors by class), 6 (attachments, marks, quoted comments, `@file`, slash commands, a new session's harness default), 7 (goal mode), 33 (phone).
 
 A provider catalog reports whether its engine supplied models or needs a running runtime. The composer carries that fact into its notice and never interprets a runtime-required catalog as missing credentials. Flow 24 covers the stopped OpenCode draft, its catalog response, and explicit startup.
+
+The harness option store consumes `harnessOptionsChanged` for an open session. The pushed catalog supersedes any older pending options read through the same options sequence and response policy. A locally held harness switch ignores the previous session harness's options.
+
+Reviewed budget: Composer 12,579 and app total 97,186 lines, measured with no headroom. The increase owns pushed harness options, stale-read supersession, the event decoder, and their regression tests; no per-file size limit changed.

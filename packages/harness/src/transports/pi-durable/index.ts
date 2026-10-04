@@ -72,6 +72,10 @@ export class PiDurableTransport implements HarnessTransport {
     const thinkingLevel = piThinkingLevel(piModel(entry.credentials, ref), turn.effort)
     await entry.runtime.conversation.configure({ model: ref, ...(thinkingLevel === undefined ? {} : { thinkingLevel }) }, BACKGROUND_CONTEXT)
     if (broker.signal.aborted) return
+    if (this.placement.prepareTurn) {
+      const preview = await this.config.options({ session }, "peek")
+      yield { event: { type: "config-update", options: [...preview.options] }, source: { dir: "in", method: "config/options" } }
+    }
     const run = new PiRun(entry.sessionId, broker, { requestId: turn.turnId })
     const release = entry.stream.claim(run, turn.assistantMessageId)
     const stop = () => { void entry.stop().then(undefined, (error: unknown) => run.fail(error)) }

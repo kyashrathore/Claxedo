@@ -47,3 +47,7 @@ Pi commits a tool call's intent before executing it. When the process dies, reop
 ## Placement port
 
 `PiPlacement.open` returns the session's `Harness`, root conversation and live registry, without resuming; the transport installs its extensions and resumes. `env` builds the execution environment, `mcpTransport` the transport for one server, `prepareTurn` (cloud) delivers the turn's credentials, projection and provider definitions before each turn, and `refreshCredential` renews an expiring subscription.
+
+A cloud turn publishes its actual model and effort options through `config-update` after `prepareTurn` delivers credentials and the conversation accepts the model. A model read made before that delivery can be empty; the event replaces that earlier catalog without a reload or an invented model.
+
+Reviewed transport budget: 1,655 production lines, exactly four more for the authoritative post-delivery config event. No per-file size limit changed.
