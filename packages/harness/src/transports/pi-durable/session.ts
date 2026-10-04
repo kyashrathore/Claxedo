@@ -9,6 +9,7 @@ import { piConfiguration } from "./errors"
 import { claxedoPiExtension } from "./extension"
 import { PiMcpTools } from "./mcp"
 import { cachedMcpTools, recordMcpTools } from "./mcp-cache"
+import { recordModelCatalog } from "./model-catalog"
 import type { PiPlacement, PiSessionRuntime } from "./placement"
 import { PiSessionStream } from "./stream"
 
@@ -38,6 +39,7 @@ export class PiSession {
     const runtime = await placement.open({ sessionId: start.sessionId, directory: start.directory, models: credentials.models })
     const session = new PiSession(input, start, credentials, runtime)
     try {
+      if (!placement.prepareTurn) await recordModelCatalog(runtime, credentials)
       await session.install()
       await session.stream.open()
       runtime.harness.resume()
@@ -56,7 +58,10 @@ export class PiSession {
 
   async configure(update: TransportConfigUpdate): Promise<void> {
     this.start = mergeStartInput(this.start, update)
-    if (update.credentials || update.providerDefinitions) this.credentials.update(this.start.credentials, this.start.providerDefinitions ?? [])
+    if (update.credentials || update.providerDefinitions) {
+      this.credentials.update(this.start.credentials, this.start.providerDefinitions ?? [])
+      await recordModelCatalog(this.runtime, this.credentials)
+    }
     if (update.projection) await this.install()
   }
 
