@@ -256,6 +256,7 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
       await readCatalogs(reread(), accountPlacements?.reread())
       await queryClient.invalidateQueries({ queryKey: queryKeys.placements(transport.serverUrl) })
       await queryClient.invalidateQueries({ queryKey: queryKeys.projects(transport.serverUrl) })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.cloud(transport.serverUrl) })
       await shared.refresh()
     },
     ...accountReads(merged.linked, accountPlacements !== undefined, load),

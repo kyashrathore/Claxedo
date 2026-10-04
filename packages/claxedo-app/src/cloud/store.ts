@@ -64,7 +64,11 @@ export function useCloudWorkspaces(projectId: Accessor<ProjectId>, enabled: Acce
 
   return {
     list,
-    create: (input) => server.cloud.create({ projectId: projectId(), ...input }),
+    create: async (input) => {
+      const workspace = await server.cloud.create({ projectId: projectId(), ...input })
+      void command(workspace.id, { type: "startRequested" }, () => server.cloud.start(workspace.id))
+      return workspace
+    },
     start: (id) => command(id, { type: "startRequested" }, () => server.cloud.start(id)),
     stop: (id) => command(id, { type: "stopRequested" }, () => server.cloud.stop(id)),
     remove: (id) => command(id, undefined, () => server.cloud.remove(id)),
