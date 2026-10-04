@@ -41,7 +41,6 @@ export default {
   "usage.claxedo.unavailable": "Использование через Claxedo недоступно",
   "usage.quota.signedIn": "Также выполнен вход",
   "usage.quota.notConnected": "Не подключены",
-  "usage.quota.notConnectedHint": "Установлены на этом компьютере, но вход не выполнен или они не запущены, поэтому тариф не сообщают.",
   "usage.quota.updated": "Обновлено {{time}}",
   "usage.quota.windowPercent": "Использовано {{percent}}%",
   "usage.quota.windowReached": "Лимит исчерпан",

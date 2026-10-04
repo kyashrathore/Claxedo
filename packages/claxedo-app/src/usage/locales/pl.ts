@@ -40,7 +40,6 @@ export default {
   "usage.claxedo.unavailable": "Użycie przez Claxedo jest niedostępne",
   "usage.quota.signedIn": "Również zalogowane",
   "usage.quota.notConnected": "Niepołączone",
-  "usage.quota.notConnectedHint": "Zainstalowane na tym komputerze, ale niezalogowane lub nieuruchomione, więc nie zgłaszają planu.",
   "usage.quota.updated": "Zaktualizowano {{time}}",
   "usage.quota.windowPercent": "Wykorzystano {{percent}}%",
   "usage.quota.windowReached": "Osiągnięto limit",

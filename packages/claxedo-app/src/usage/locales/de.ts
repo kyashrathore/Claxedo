@@ -41,7 +41,6 @@ export default {
   "usage.claxedo.unavailable": "Die Nutzung über Claxedo ist nicht verfügbar",
   "usage.quota.signedIn": "Ebenfalls angemeldet",
   "usage.quota.notConnected": "Nicht verbunden",
-  "usage.quota.notConnectedHint": "Auf diesem Rechner installiert, aber nicht angemeldet oder nicht gestartet, daher melden sie keinen Tarif.",
   "usage.quota.updated": "Aktualisiert {{time}}",
   "usage.quota.windowPercent": "{{percent}}% verbraucht",
   "usage.quota.windowReached": "Limit erreicht",

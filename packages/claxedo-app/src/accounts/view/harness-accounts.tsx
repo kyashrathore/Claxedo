@@ -10,13 +10,13 @@ import { AgentHarnessRow } from "./harness-row"
 
 const UNREAD: AccountsSnapshot = { cloudOnly: false, stored: [], effective: undefined, machineLogins: [], sources: { sources: new Map(), org: [], canRemoveOrgAccounts: false }, scannedAt: 0 }
 
-function LoadingNote(props: { readonly onMachine: boolean }) {
+function LoadingNote(props: { readonly onMachine: boolean; readonly machineName: string | undefined }) {
   const t = useAccountsText()
   const elapsed = useElapsed()
   return (
     <Show when={elapsed()}>
       <SettingsEmpty>
-        <span role="status">{t(props.onMachine ? "settings.providers.agents.scanning" : "settings.providers.agents.loading")}</span>
+        <span role="status">{props.onMachine ? t("settings.providers.agents.scanning", { machine: props.machineName ?? t("settings.providers.agents.machineFallback") }) : t("settings.providers.agents.loading")}</span>
       </SettingsEmpty>
     </Show>
   )
@@ -27,9 +27,10 @@ function useScannedLabel(accounts: Accounts) {
   const i18n = useI18n()
   return () => {
     const load = accounts.load()
-    if (!accounts.opened()) return t("settings.providers.agents.scanning")
+    const machine = accounts.machineName() ?? t("settings.providers.agents.machineFallback")
+    if (!accounts.opened()) return t("settings.providers.agents.scanning", { machine })
     if (accounts.scanning()) return t("settings.providers.agents.rescanning")
-    if (load.kind !== "ready") return t("settings.providers.agents.scanFailed")
+    if (load.kind !== "ready") return t("settings.providers.agents.scanFailed", { machine })
     const at = load.snapshot.scannedAt
     return Date.now() - at < 60_000 ? t("settings.providers.agents.scannedNow") : t("settings.providers.agents.scannedAt", { when: formatRelativeTime(at, i18n.intlTag()) })
   }
@@ -58,7 +59,7 @@ export function AgentHarnessAccounts(props: { readonly harness: Harness; readonl
     return load.kind === "failed" ? UNREAD : undefined
   }
   return (
-    <Show when={snapshot()} fallback={<LoadingNote onMachine={props.accounts.onMachine()} />}>
+    <Show when={snapshot()} fallback={<LoadingNote onMachine={props.accounts.onMachine()} machineName={props.accounts.machineName()} />}>
       {(current) => (
         <SettingsList>
           <AgentHarnessRow

@@ -41,7 +41,6 @@ export default {
   "usage.claxedo.unavailable": "Claxedo 経由の使用量は取得できません",
   "usage.quota.signedIn": "その他のサインイン済み",
   "usage.quota.notConnected": "未接続",
-  "usage.quota.notConnectedHint": "このマシンにインストールされていますが、サインインしていないか実行されていないため、プランを報告しません。",
   "usage.quota.updated": "{{time}}に更新",
   "usage.quota.windowPercent": "{{percent}}% 使用",
   "usage.quota.windowReached": "上限に到達",

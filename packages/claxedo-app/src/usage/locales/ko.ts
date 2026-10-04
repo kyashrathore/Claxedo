@@ -41,7 +41,6 @@ export default {
   "usage.claxedo.unavailable": "Claxedo를 통한 사용량을 사용할 수 없습니다",
   "usage.quota.signedIn": "다른 로그인 계정",
   "usage.quota.notConnected": "연결되지 않음",
-  "usage.quota.notConnectedHint": "이 컴퓨터에 설치되어 있지만 로그인하지 않았거나 실행 중이 아니어서 플랜을 보고하지 않습니다.",
   "usage.quota.updated": "{{time}} 업데이트됨",
   "usage.quota.windowPercent": "{{percent}}% 사용",
   "usage.quota.windowReached": "한도 도달",

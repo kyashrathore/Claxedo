@@ -41,7 +41,6 @@ export default {
   "usage.claxedo.unavailable": "الاستخدام عبر Claxedo غير متاح",
   "usage.quota.signedIn": "مسجّل الدخول أيضًا",
   "usage.quota.notConnected": "غير متصل",
-  "usage.quota.notConnectedHint": "مثبّت على هذا الجهاز، لكنه غير مسجّل الدخول أو لا يعمل، لذا لا يبلّغ عن أي خطة.",
   "usage.quota.updated": "حُدّث {{time}}",
   "usage.quota.windowPercent": "{{percent}}% مستخدم",
   "usage.quota.windowReached": "تم بلوغ الحد",

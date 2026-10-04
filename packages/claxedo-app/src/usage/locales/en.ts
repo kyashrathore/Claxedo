@@ -28,7 +28,7 @@ export default {
   "usage.quota.inUse": "In use",
   "usage.quota.signedIn": "Also signed in",
   "usage.quota.notConnected": "Not connected",
-  "usage.quota.notConnectedHint": "Installed on this machine, but not signed in or not running, so they report no plan.",
+  "usage.quota.notConnectedHint": "Installed on your machine, but not signed in or not running, so they report no plan.",
   "usage.quota.updated": "Updated {{time}}",
   "usage.quota.windowUsed": "{{account}} {{window}}: {{percent}}% used",
   "usage.quota.windowPercent": "{{percent}}% used",

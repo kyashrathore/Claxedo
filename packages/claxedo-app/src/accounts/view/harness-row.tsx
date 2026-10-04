@@ -25,7 +25,7 @@ function useAccountRows(props: HarnessRowProps) {
   const t = useAccountsText()
   const windowName = useWindowName()
   return createMemo((): AccountWords[] => {
-    const words = { t, windowName }
+    const words = { t, windowName, machineName: props.accounts.machineName() }
     const stored = harnessAccounts(props.harness, props.snapshot.stored).map((row) => storedAccountWords(words, row, props.accounts.liveChecks()[row.id]))
     const login = machineLoginOf(props.harness, props.snapshot)
     const org = orgAccountWords(words, props.harness, props.snapshot, selectedAccountKey(props.harness, props.snapshot) === ORG_ACCOUNT_KEY, access.can("accounts.removeOrg", props.snapshot.sources))
@@ -33,16 +33,12 @@ function useAccountRows(props: HarnessRowProps) {
   })
 }
 
-function sourceKey(account: AccountWords) {
-  if (account.key === ORG_ACCOUNT_KEY) return undefined
-  return account.machine ? "settings.providers.agents.sourceMachine" : "settings.providers.agents.sourceStored"
-}
-
-function AccountLabel(props: { readonly account: AccountWords; readonly onMachine: boolean }) {
+function AccountLabel(props: { readonly account: AccountWords; readonly onMachine: boolean; readonly machineName?: string }) {
   const t = useAccountsText()
   const source = () => {
-    const key = sourceKey(props.account)
-    return key ? t(key) : undefined
+    if (props.account.source === "stored") return t("settings.providers.agents.sourceStored")
+    if (props.account.source === "machine") return t("settings.providers.agents.sourceMachine", { machine: props.machineName ?? t("settings.providers.agents.machineFallback") })
+    return undefined
   }
   return (
     <span class="flex flex-wrap items-center gap-1.5">
@@ -100,7 +96,7 @@ function AccountItem(props: { readonly account: AccountWords; readonly row: Harn
           disabled={account().disabled}
           data-invalid={account().refused ? "" : undefined}
           title={account().identity}
-          label={<AccountLabel account={account()} onMachine={accounts().onMachine()} />}
+          label={<AccountLabel account={account()} onMachine={accounts().onMachine()} machineName={accounts().machineName()} />}
           description={account().detail === undefined ? undefined : <span class="text-13-regular text-text-weak">{account().detail}</span>}
         />
         <span class="flex shrink-0 items-center justify-end gap-2" classList={{ "w-full": confirming() }}>

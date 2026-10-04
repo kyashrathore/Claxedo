@@ -40,7 +40,7 @@ test("15 settings: Models lists each agent's accounts and this computer's logins
   await openSettings(app, isMobile)
   await openSection(app, isMobile, "Models")
   const claude = app.getByRole("radiogroup", { name: "Claude Code" })
-  const claudeMachineLogin = claude.getByRole("radio", { name: /^This computer's login/ })
+  const claudeMachineLogin = claude.getByRole("radio", { name: /^Login on / })
   const storedClaudeKey = (await credentials(stack.url)).some((row) => row.provider_id === "anthropic" && row.is_active)
   if (storedClaudeKey) {
     await expect(claudeMachineLogin).not.toBeChecked()
@@ -50,7 +50,7 @@ test("15 settings: Models lists each agent's accounts and this computer's logins
   }
   const section = harnessSection(app, "Cursor")
   const cursor = app.getByRole("radiogroup", { name: "Cursor" })
-  const machineLogin = cursor.getByRole("radio", { name: /^This computer's login/ })
+  const machineLogin = cursor.getByRole("radio", { name: /^Login on / })
   await expect(machineLogin).toBeChecked()
 
   const addKey = async (label: string) => {

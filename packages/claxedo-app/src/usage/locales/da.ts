@@ -39,7 +39,6 @@ export default {
   "usage.claxedo.unavailable": "Forbrug via Claxedo er ikke tilgængeligt",
   "usage.quota.signedIn": "Også logget ind",
   "usage.quota.notConnected": "Ikke forbundet",
-  "usage.quota.notConnectedHint": "Installeret på denne maskine, men ikke logget ind eller ikke kørende, så de rapporterer ingen plan.",
   "usage.quota.updated": "Opdateret {{time}}",
   "usage.quota.windowPercent": "{{percent}}% brugt",
   "usage.quota.windowReached": "Grænse nået",

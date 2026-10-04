@@ -41,7 +41,6 @@ export default {
   "usage.claxedo.unavailable": "ไม่มีข้อมูลการใช้งานผ่าน Claxedo",
   "usage.quota.signedIn": "ลงชื่อเข้าใช้อยู่ด้วย",
   "usage.quota.notConnected": "ไม่ได้เชื่อมต่อ",
-  "usage.quota.notConnectedHint": "ติดตั้งอยู่บนเครื่องนี้ แต่ยังไม่ได้ลงชื่อเข้าใช้หรือไม่ได้ทำงานอยู่ จึงไม่รายงานแผน",
   "usage.quota.updated": "อัปเดต {{time}}",
   "usage.quota.windowPercent": "ใช้ไป {{percent}}%",
   "usage.quota.windowReached": "ถึงขีดจำกัดแล้ว",

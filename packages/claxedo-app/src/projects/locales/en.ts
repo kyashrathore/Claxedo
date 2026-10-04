@@ -82,7 +82,7 @@ export default {
   "projects.remove.cloudFirst": "Delete its cloud workspaces first.",
   "projects.checkout.missing": "Folder missing",
   "projects.checkout.missing.row": "Folder missing: {{directory}}",
-  "projects.checkout.missing.description": "{{directory}} is no longer on this machine, so sessions in this project can't start.",
+  "projects.checkout.missing.description": "{{directory}} is gone, so sessions in this project can't start there.",
   "projects.checkout.remote": "Remote",
   "projects.checkout.remote.none": "No remote was recorded for this folder, so it can't be cloned back. Restore it yourself or remove the project.",
   "projects.checkout.clone": "Clone at this location",

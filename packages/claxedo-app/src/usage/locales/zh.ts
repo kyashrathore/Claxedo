@@ -41,7 +41,6 @@ export default {
   "usage.claxedo.unavailable": "通过 Claxedo 的用量不可用",
   "usage.quota.signedIn": "其他已登录账户",
   "usage.quota.notConnected": "未连接",
-  "usage.quota.notConnectedHint": "已安装在此设备上，但未登录或未运行，因此不报告套餐。",
   "usage.quota.updated": "{{time}}更新",
   "usage.quota.windowPercent": "已用 {{percent}}%",
   "usage.quota.windowReached": "已达上限",

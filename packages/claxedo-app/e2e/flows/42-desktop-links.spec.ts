@@ -21,7 +21,7 @@ for (const renderer of ["file", "http"] as const) {
       }
       await window.getByRole("link", { name: "Models", exact: true }).click()
       const claude = window.getByRole("radiogroup", { name: "Claude Code" })
-      await expect(claude.getByRole("radio", { name: /^This computer's login/ })).toBeVisible()
+      await expect(claude.getByRole("radio", { name: /^Login on / })).toBeVisible()
       await expect(window.getByText("Couldn't read this machine")).toHaveCount(0)
       await window.getByRole("link", { name: "Back", exact: true }).click()
       await expect(window.getByTestId("settings-sidebar")).toHaveCount(0)

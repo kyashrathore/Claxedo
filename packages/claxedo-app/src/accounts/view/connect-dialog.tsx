@@ -1,5 +1,4 @@
 import { connectSubject, connectVars } from "@/lib/harness-catalog"
-import { useServer } from "@/server"
 import { ClaxedoIconButton as IconButton, useDialog, Dialog, DialogBody } from "@/ui"
 import { CONTEXT_COPY, type ConnectFormInput } from "../connect-form"
 import { useAccountsText } from "../i18n"
@@ -7,12 +6,10 @@ import { ProviderConnectForm } from "./connect-form"
 
 function ConnectCard(props: ConnectFormInput & { readonly onClose: () => void }) {
   const t = useAccountsText()
-  const server = useServer()
   const subject = () => connectSubject(props.context)
   const title = () =>
     props.credentialId ? t("settings.providers.connect.reconnectTitle", { provider: subject() }) : t(CONTEXT_COPY.title[props.context.kind], connectVars(props.context))
-  const stored = () => (server.capabilities()?.thisMachine ? "settings.providers.connect.subtitle" : "settings.providers.connect.subtitleHosted")
-  const subtitle = () => (props.credentialId ? t("settings.providers.connect.reconnectSubtitle") : t(stored(), { provider: subject() }))
+  const subtitle = () => (props.credentialId ? t("settings.providers.connect.reconnectSubtitle") : t("settings.providers.connect.subtitle", { provider: subject() }))
   return (
     <div class="flex min-h-0 flex-col" data-credential={props.credentialId}>
       <div class="flex shrink-0 items-start justify-between gap-3 border-b border-border-weak-base py-3 pl-4 pr-3">

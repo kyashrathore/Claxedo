@@ -10,7 +10,7 @@ const SOURCE_KEY = { own: "settings.providers.accountSource.own", org: "settings
 export function createCatalogAccountSources(harness: () => string, refreshCatalog: () => Promise<unknown>) {
   const server = useServer()
   const t = useAccountsText()
-  const enabled = () => harness() === "pi" && server.capabilities() !== undefined && server.capabilities()?.thisMachine === undefined
+  const enabled = () => harness() === "pi" && server.capabilities() !== undefined
   const query = useQuery(() => ({ ...server.queries.accounts.sources(), enabled: enabled() }))
   const [writing, setWriting] = createSignal<string>()
   const read = () => (enabled() ? query.data : undefined)

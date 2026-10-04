@@ -41,7 +41,6 @@ export default {
   "usage.claxedo.unavailable": "Bruk via Claxedo er ikke tilgjengelig",
   "usage.quota.signedIn": "Også pålogget",
   "usage.quota.notConnected": "Ikke tilkoblet",
-  "usage.quota.notConnectedHint": "Installert på denne maskinen, men ikke pålogget eller ikke startet, så de rapporterer ingen plan.",
   "usage.quota.updated": "Oppdatert {{time}}",
   "usage.quota.windowPercent": "{{percent}} % brukt",
   "usage.quota.windowReached": "Grensen er nådd",

@@ -15,6 +15,7 @@ export type AccountsLoad =
 export type Accounts = {
   readonly load: Accessor<AccountsLoad>
   readonly onMachine: Accessor<boolean>
+  readonly machineName: Accessor<string | undefined>
   readonly opened: Accessor<boolean>
   readonly scanning: Accessor<boolean>
   readonly activity: Accessor<AccountActivity | undefined>
@@ -38,6 +39,8 @@ function useAccountReads(server: Server) {
   const list = useQuery(() => server.queries.accounts.list())
   const effective = useQuery(() => server.queries.accounts.effective())
   const logins = useQuery(() => ({ ...server.queries.accounts.machineLogins(), enabled: onMachine() }))
+  const machines = useQuery(() => ({ ...server.queries.machines.list(), enabled: onMachine() }))
+  const machineName = () => machines.data?.find((machine) => machine.isThisMachine)?.name
   const sources = useQuery(() => server.queries.accounts.sources())
   const queries = [list, effective, logins, sources] as const
   const machineLogins = (): readonly MachineLogin[] | undefined => (onMachine() ? logins.data : [])
@@ -50,7 +53,7 @@ function useAccountReads(server: Server) {
     const error = queries.map((query) => query.error).find((candidate) => candidate)
     return error ? { kind: "failed", error: toAppError(error) } : { kind: "loading" }
   })
-  return { load, onMachine, opened: () => load().kind !== "loading", fetching: () => queries.some((query) => query.isFetching) }
+  return { load, onMachine, machineName, opened: () => load().kind !== "loading", fetching: () => queries.some((query) => query.isFetching) }
 }
 
 function useActivity() {
@@ -107,6 +110,7 @@ export function useAccounts(): Accounts {
   return {
     load: reads.load,
     onMachine: reads.onMachine,
+    machineName: reads.machineName,
     opened: reads.opened,
     scanning: () => rescanning() || reads.fetching(),
     activity,

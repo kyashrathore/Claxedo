@@ -45,16 +45,16 @@ const en = {
   "plugins.lastFailure": "The newest build failed, so the previous one keeps running: {{reason}}",
   "plugins.remove": "Remove",
   "plugins.remove.title": "Remove {{name}}?",
-  "plugins.remove.description": "The app plugin is unregistered from this machine. Its folder is kept.",
+  "plugins.remove.description": "The app plugin is unregistered. Its folder is kept.",
   "plugins.remove.failed": "Removing the app plugin {{name}} failed: {{reason}}",
   "plugins.cancel": "Cancel",
   "plugins.confirm": "Confirm",
-  "plugins.safeMode": "Safe mode: every app plugin from this machine is off.",
+  "plugins.safeMode": "Safe mode: every app plugin is off.",
   "plugins.safeMode.leave": "Leave safe mode",
   "plugins.boundary.failed": "The app plugin {{name}} failed",
   "plugins.boundary.retry": "Try again",
-  "plugins.list.notOwner": "App plugins on this machine belong to its owner, so none run for you here.",
-  "plugins.list.failed": "The app plugins on this machine could not be read: {{reason}}",
+  "plugins.list.notOwner": "These app plugins belong to the machine's owner, so none run for you here.",
+  "plugins.list.failed": "The app plugins could not be read: {{reason}}",
 }
 
 export type PluginsKey = keyof typeof en

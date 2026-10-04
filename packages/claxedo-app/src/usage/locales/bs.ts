@@ -40,7 +40,6 @@ export default {
   "usage.claxedo.unavailable": "Korištenje preko Claxedo nije dostupno",
   "usage.quota.signedIn": "Također prijavljeni",
   "usage.quota.notConnected": "Nije povezano",
-  "usage.quota.notConnectedHint": "Instalirano na ovom računaru, ali nije prijavljeno ili nije pokrenuto, pa ne prijavljuje plan.",
   "usage.quota.updated": "Ažurirano {{time}}",
   "usage.quota.windowPercent": "{{percent}}% iskorišteno",
   "usage.quota.windowReached": "Limit dostignut",

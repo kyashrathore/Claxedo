@@ -32,7 +32,7 @@ export default {
   "settings.keybindings.group.general": "General",
   "settings.connections.description": "Services your agents can use.",
   "settings.connections.agents": "Other agents",
-  "settings.connections.agents.description": "Agents set up on this computer that you can pick as a harness. Their own settings and keys stay on the computer.",
+  "settings.connections.agents.description": "Agents set up on your machine that you can pick as a harness. Their own settings and keys stay on that machine.",
   "settings.connections.integrations": "Integrations",
   "settings.connections.integrations.empty": "No integrations available.",
   "settings.connections.nothing": "There is nothing to connect here yet.",

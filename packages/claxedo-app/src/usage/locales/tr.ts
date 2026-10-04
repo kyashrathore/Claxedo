@@ -40,7 +40,6 @@ export default {
   "usage.claxedo.unavailable": "Claxedo üzerinden kullanım kullanılamıyor",
   "usage.quota.signedIn": "Ayrıca oturum açık",
   "usage.quota.notConnected": "Bağlı değil",
-  "usage.quota.notConnectedHint": "Bu makinede yüklü, ancak oturum açılmamış veya çalışmıyor; bu yüzden plan bildirmiyorlar.",
   "usage.quota.updated": "{{time}} güncellendi",
   "usage.quota.windowPercent": "%{{percent}} kullanıldı",
   "usage.quota.windowReached": "Sınıra ulaşıldı",

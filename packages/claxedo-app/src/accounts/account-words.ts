@@ -37,12 +37,13 @@ export type AccountWords = {
   readonly refused: boolean
   readonly identity?: string
   readonly reach?: AccountReach
+  readonly source?: "machine" | "stored"
   readonly cloudConsent?: CloudConsent
   readonly machine: boolean
   readonly disabled: boolean
 }
 
-type Words = { readonly t: AccountsText; readonly windowName: (window: QuotaWindow) => string }
+type Words = { readonly t: AccountsText; readonly windowName: (window: QuotaWindow) => string; readonly machineName?: string }
 
 export const VERDICT_KEY = {
   ok: "settings.providers.live.ok",
@@ -92,6 +93,7 @@ export function storedAccountWords(words: Words, row: HarnessAccount, live: Live
     refused,
     ...(identity === undefined || identity.readable ? {} : { identity: identity.text }),
     ...(reach === undefined ? {} : { reach }),
+    source: "stored",
     ...(cloudConsent === undefined ? {} : { cloudConsent }),
     machine: false,
     disabled: false,
@@ -152,10 +154,12 @@ export function machineLoginWords(words: Words, login: MachineLogin, harness: Ha
     ...(stranded ? [t("settings.providers.agents.machineStrands", { name: harness.label })] : []),
   ].join(" · ")
   const reach = accountReach(undefined)
+  const email = login.state === "signed_in" ? login.email : undefined
   return {
     key: MACHINE_LOGIN_KEY,
     ids: [],
-    label: login.state === "signed_in" && login.email ? login.email : t("settings.providers.agents.machineLogin"),
+    label: email ?? t("settings.providers.agents.machineLogin", { machine: words.machineName ?? t("settings.providers.agents.machineFallback") }),
+    ...(email ? { source: "machine" as const } : {}),
     ...(detail === undefined ? {} : { detail }),
     ...(login.state === "unknown" && detail !== undefined ? { alert: detail } : {}),
     ...(login.usageAt === undefined ? {} : { checkedAt: login.usageAt }),
