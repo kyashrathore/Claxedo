@@ -5,6 +5,7 @@ import type { SessionLocation } from "../types"
 import { provisionStatus } from "./cloud"
 import { goalFromWire } from "./goal"
 import { connectionStateFromWire, harnessHealthFromWire } from "./harness-state"
+import { harnessOptionsFromWire } from "./harness-options"
 import { subagentFromWire } from "./subagents"
 import { isPermissionWire, isQuestionWire, requestFromPermission, requestFromQuestion } from "./requests"
 import { isSessionWire, lastTurnFromWire, listedStatusFromListItem, readerFromWire, sessionLocationFor, sessionRowFromSession, type Address } from "./session-row"
@@ -126,6 +127,8 @@ function activityEvent(frame: Frame, ref: SessionLocation): ServerEvent | undefi
     }
     case "harness.health":
       return harnessHealthEvent(properties, ref)
+    case "session.config":
+      return Array.isArray(properties.options) ? { type: "harnessOptionsChanged", ref, options: harnessOptionsFromWire(properties) } : undefined
     default:
       return undefined
   }
@@ -251,7 +254,7 @@ function statusNotice(frame: Frame, address: Address): ServerEvent | undefined {
 
 export const STATUS_NOTICE = "session.status.changed"
 
-const SESSION_FRAME = /^(message\.|session\.(status|idle|error|updated|deleted|diff|background-work)$|todo\.updated$|goal\.(updated|cleared)$|subagent\.updated$|harness\.health$|permission\.|question\.)/
+const SESSION_FRAME = /^(message\.|session\.(status|idle|error|updated|deleted|diff|background-work|config)$|todo\.updated$|goal\.(updated|cleared)$|subagent\.updated$|harness\.health$|permission\.|question\.)/
 
 export function serverEventFromFrame(frame: Frame, address: Address): ServerEvent | undefined {
   if (frame.type === STATUS_NOTICE) return statusNotice(frame, address)

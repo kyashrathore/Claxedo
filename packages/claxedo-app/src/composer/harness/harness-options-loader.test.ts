@@ -62,3 +62,13 @@ test("options loader: a failed read names the server's reason, or a plain failur
   await offline.loader.load("draft:a", codex)
   expect(offline.patches.at(-1)?.configError).toBe("Failed to load model options")
 })
+
+
+test("options loader: a pushed catalog supersedes the empty read started before credential delivery", async () => {
+  const run = harness([{ source: "harness", stale: false, offersOptions: false, serviceTiers: [] }])
+  const pending = run.loader.load("session:pi", codex)
+  run.loader.receive("session:pi", answer(false))
+  await pending
+  expect(run.patches).toHaveLength(1)
+  expect(run.patches[0]).toMatchObject({ selectedModel: "gpt", dynamicModels: [{ id: "gpt", name: "GPT" }], configError: undefined })
+})

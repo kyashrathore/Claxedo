@@ -148,3 +148,14 @@ test("frames: todo and diff frames keep only the entries their contract admits",
   expect(todos && serverEventFromFrame(todos, address)).toEqual({ type: "todosChanged", ref, todos: [todo] })
   expect(diffs && serverEventFromFrame(diffs, address)).toEqual({ type: "diffChanged", ref, diff: [diff] })
 })
+
+
+test("frames: session.config preserves the session address and authoritative model choices", () => {
+  const frame = frameFromWire({ directory: "/work", payload: { type: "session.config", properties: {
+    sessionID: "s1", options: [{ id: "model", name: "Model", category: "model", type: "select", currentValue: "openai/gpt-4.1",
+      selectOptions: [{ id: "openai/gpt-4.1", name: "GPT-4.1", connected: true }] }],
+  } } })
+  expect(frame && serverEventFromFrame(frame, address)).toMatchObject({ type: "harnessOptionsChanged", ref, options: {
+    source: "harness", stale: false, models: { current: "openai/gpt-4.1", choices: [{ id: "openai/gpt-4.1", name: "GPT-4.1", connected: true }] },
+  } })
+})
