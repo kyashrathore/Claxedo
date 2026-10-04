@@ -316,6 +316,16 @@ describe("VercelSandboxDriver", () => {
     expect(result).not.toHaveProperty("runtimeUrl")
   })
 
+  test("reports its image ready when the sandbox exists, before the runtime starts", async () => {
+    const created = sandbox()
+    const driver = createVercelSandboxDriver({ ...baseOptions, sandbox: factory({ create: vi.fn(async () => created) }) })
+    let runtimeStarted: boolean | undefined
+
+    await driver.ensureHost({ ...input, onImageReady: async () => { runtimeStarted = created.runCommand.mock.calls.length > 0 } })
+
+    expect(runtimeStarted).toBe(false)
+  })
+
   test("driver snapshot boot bypasses the default snapshot", async () => {
     const vercel = factory()
     const driver = createVercelSandboxDriver({ ...baseOptions, sandbox: vercel })

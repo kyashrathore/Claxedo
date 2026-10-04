@@ -355,6 +355,17 @@ describe("boat sandbox driver", () => {
     expect(commandsOf(boat.calls)).toContain("host url 2593 --public")
   })
 
+  test("reports its image ready once the runtime container has started, before the runtime is published", async () => {
+    const boat = fakeBoat({ states: ["ready"] })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, provisionIntervalMs: 0, healthIntervalMs: 0 })
+    let seen: string[] = []
+
+    await driver.ensureHost({ ...ensureInput(), onImageReady: async () => { seen = commandsOf(boat.calls) } })
+
+    expect(seen.some((command) => command.includes("docker run"))).toBe(true)
+    expect(seen).not.toContain("host 2593 --public")
+  })
+
   test("refuses a published URL that still carries Boat's access token", async () => {
     const boat = fakeBoat({ hostUrl: "https://machine-2593.on.boat.dev?_token=synthetic-host-token" })
     const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0 })
