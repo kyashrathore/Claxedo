@@ -198,7 +198,7 @@ function privateSessionPolicy(owners: Record<string, string>): SessionAccessPoli
       : { allowed: false, status: 403, code: "private_session", message: "Session is private" },
     filterSessions: async (input) => input.sessionIds.filter((sessionId) => allowed(input.actor?.actorId, sessionId)),
     authorizePrefix: async () => ({ allowed: true }),
-    authorizeHost: managedPolicy.authorizeHost,
+    authorizeHost: (input) => managedPolicy.authorizeHost!(input),
   }
 }
 

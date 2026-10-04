@@ -85,21 +85,24 @@ const ENTRIES = [
   // (`workspace/cloud-workspace-deletion.ts`), with the D1 deletion statements
   // as a module of their own (`d1/workspace-deletion.ts`). Every entry serves
   // the OpenCode provider catalog from the caller's selected accounts and the
-  // workspace engine (`credentials/worker/opencode.ts`).
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 149, packages: 19 },
+  // workspace engine (`credentials/worker/opencode.ts`). Every entry lists a
+  // connected Pi provider's models and answers a Pi draft's options from the
+  // launch catalog the session host runs Pi with (`@claxedo/harness/pi-catalog`),
+  // which brings `@earendil-works/pi-ai`.
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 149, packages: 20 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
   // plus `agent-plugins/signed-scope.ts`, the caller and write guard the
   // activation and source stores share, and the Pi launch a session served by
   // its own Durable Object is delivered (`agent-plugins/runtime/session-host-launch.ts`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 201, packages: 23 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 201, packages: 24 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
   // ready cloud runtime and admits it at the session-rows ingest, and only
   // this entry has cloud runtimes to publish rows.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 208, packages: 23 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 208, packages: 24 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

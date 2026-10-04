@@ -54,7 +54,7 @@ function hostPolicy(state: { active: boolean; calls: HostCall[] } = { active: tr
   return remoteWorkspaceSessionAccessPolicy({
     url: "http://control-plane.test/runtime/session-authority",
     fetch: async (_url, init) => {
-      const body = JSON.parse(String(init?.body)) as { action: string; lease?: string }
+      const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { action: string; lease?: string }
       const authorization = new Headers(init?.headers).get("authorization") ?? undefined
       state.calls.push({ action: body.action, ...(body.lease ? { lease: body.lease } : {}), ...(authorization ? { authorization } : {}) })
       if (!state.active) {
@@ -358,9 +358,9 @@ describe("PtyRoutes", () => {
     })
     const state = { active: true, calls: [] as HostCall[] }
     const policy = hostPolicy(state)
-    const authorizeHost = policy.authorizeHost!
+    const host = hostPolicy(state)
     policy.authorizeHost = async (input) => {
-      const decision = await authorizeHost(input)
+      const decision = await host.authorizeHost!(input)
       return decision.allowed ? { ...decision, expiresAt: Date.now() + 1_500 } : decision
     }
 

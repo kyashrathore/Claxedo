@@ -117,8 +117,13 @@ export const serverWorkerd: Policy = {
   // their own (`authority/adapters/d1/workspace-deletion.ts`).
   // +1 module (owner: the hosted shell's provider catalog route): the OpenCode
   // catalog joins the caller's selected D1 accounts with the workspace engine's
-  // catalog in `credentials/worker/opencode.ts`. 149/19, no headroom.
-  ceilings: { modules: 149, packages: 19 },
+  // catalog in `credentials/worker/opencode.ts`.
+  // +1 package (owner: the hosted shell's Pi catalog and Pi draft options
+  // route): `@earendil-works/pi-ai`, reached only through
+  // `@claxedo/harness/pi-catalog`, the launch catalog the session host runs Pi
+  // with, so the plane lists a connected provider's models and answers a Pi
+  // draft on a cloud workspace without the workspace. 149/20, no headroom.
+  ceilings: { modules: 149, packages: 20 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
