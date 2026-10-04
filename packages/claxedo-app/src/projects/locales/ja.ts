@@ -15,8 +15,6 @@ export default {
   "projects.edit.icon.recommended": "推奨: 128x128px",
   "projects.edit.color": "色",
   "projects.edit.color.select": "{{color}}の色を選択",
-  "projects.edit.startup": "ワークスペース起動スクリプト",
-  "projects.edit.startup.description": "新しいワークスペース (ワークツリー) を作成した後に実行されます。",
   "projects.edit.action": "編集",
   "projects.chip.project": "プロジェクト",
   "projects.chip.self": "このコンピュータ",

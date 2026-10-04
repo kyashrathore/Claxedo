@@ -2,7 +2,7 @@ import { For, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { canStart, canStop, cloudFailureReason, useCloudStatusText, useCloudWorkspaces, type CloudWorkspaceRow, type CloudWorkspaces } from "@/cloud"
 import { useServer, type Placement, type Project } from "@/server"
-import { SettingsEmpty, SettingsGroup, SettingsList, SettingsRow, useConnectMachine } from "@/settings"
+import { SettingsEmpty, SettingsGroup, SettingsList, SettingsNote, SettingsRow, useConnectMachine } from "@/settings"
 import { Button, requestConfirm, useDialog } from "@/ui"
 import { useProjectsText } from "../i18n"
 import { usePlacementOpener } from "../open"
@@ -88,6 +88,9 @@ export function WhereItRuns(props: { readonly project: Project }): JSX.Element {
         </Show>
         <Button variant="ghost" size="small" icon="plus" onClick={connectMachine}>{t("projects.where.connectMachine")}</Button>
       </div>
+      <Show when={cloudOffered()}>
+        <SettingsNote>{t("projects.where.setup")}</SettingsNote>
+      </Show>
     </SettingsGroup>
   )
 }

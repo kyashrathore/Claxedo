@@ -3,7 +3,7 @@ import path from "node:path"
 import type { Page } from "@playwright/test"
 import { expect, gitFolder, sendPrompt, sessionRoute, test, UI, type Stack } from "../harness"
 
-type ProjectRecord = { id: string; name: string; directory?: string | null; repoUrl?: string | null; available?: boolean }
+type ProjectRecord = { id: string; name: string; directory?: string | null; repoUrl?: string | null; available?: boolean; env?: Record<string, string> }
 
 async function serverProjects(url: string): Promise<ProjectRecord[]> {
   const response = await fetch(new URL("/api/claxedo/projects", url))
@@ -52,12 +52,6 @@ async function renameProject(stack: Stack, app: Page, id: string, from: string, 
     const field = dialog.getByRole("textbox", { name: "Name", exact: true })
     await expect(field).toHaveValue(from)
     await expect(dialog.getByRole("button", { name: "Save" })).toBeInViewport({ ratio: 1 })
-    const lastField = dialog.getByRole("button", { name: "+ Add variable" })
-    await field.hover()
-    await expect(async () => {
-      await app.mouse.wheel(0, 400)
-      await expect(lastField).toBeInViewport({ ratio: 1, timeout: 1000 })
-    }).toPass()
     await field.fill(to)
     await dialog.getByRole("button", { name: "Save" }).click()
     await expect(dialog).toHaveCount(0)
@@ -69,6 +63,16 @@ async function renameProject(stack: Stack, app: Page, id: string, from: string, 
     await app.getByRole("button", { name: "Edit", exact: true }).click()
     await edit()
     await expect(app.getByRole("heading", { level: 2, name: to })).toBeVisible()
+  })
+  await test.step("the project's environment is edited in a drawer and read back by id", async () => {
+    await app.getByRole("group", { name: "Environment" }).getByRole("button", { name: "Edit…" }).click()
+    const drawer = app.getByRole("dialog", { name: "Environment" })
+    await drawer.getByRole("textbox", { name: "Variable name" }).fill("API_URL")
+    await drawer.getByRole("textbox", { name: "Variable value" }).fill("https://example.test")
+    await drawer.getByRole("button", { name: "Save" }).click()
+    await expect(drawer).toHaveCount(0)
+    await expect(app.getByRole("group", { name: "Environment" }).getByText("API_URL", { exact: true })).toBeVisible()
+    expect((await serverProject(stack.url, id)).project?.env).toEqual({ API_URL: "https://example.test" })
   })
 }
 

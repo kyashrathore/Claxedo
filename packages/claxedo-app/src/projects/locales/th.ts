@@ -15,8 +15,6 @@ export default {
   "projects.edit.icon.recommended": "แนะนำ: 128x128px",
   "projects.edit.color": "สี",
   "projects.edit.color.select": "เลือกสี {{color}}",
-  "projects.edit.startup": "สคริปต์เริ่มต้นพื้นที่ทำงาน",
-  "projects.edit.startup.description": "ทำงานหลังจากสร้างพื้นที่ทำงานใหม่ (worktree)",
   "projects.edit.action": "แก้ไข",
   "projects.chip.project": "โปรเจกต์",
   "projects.chip.self": "คอมพิวเตอร์เครื่องนี้",

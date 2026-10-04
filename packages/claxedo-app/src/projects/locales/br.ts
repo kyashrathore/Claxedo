@@ -15,8 +15,6 @@ export default {
   "projects.edit.icon.recommended": "Recomendado: 128x128px",
   "projects.edit.color": "Cor",
   "projects.edit.color.select": "Selecionar cor {{color}}",
-  "projects.edit.startup": "Script de inicialização do espaço de trabalho",
-  "projects.edit.startup.description": "Executa após criar um novo espaço de trabalho (worktree).",
   "projects.edit.action": "Editar",
   "projects.chip.project": "Projeto",
   "projects.chip.self": "Este computador",

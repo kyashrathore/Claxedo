@@ -15,8 +15,6 @@ export default {
   "projects.edit.icon.recommended": "موصى به: 128x128px",
   "projects.edit.color": "لون",
   "projects.edit.color.select": "اختر لون {{color}}",
-  "projects.edit.startup": "سكريبت بدء تشغيل مساحة العمل",
-  "projects.edit.startup.description": "يتم تشغيله بعد إنشاء مساحة عمل جديدة (شجرة عمل).",
   "projects.edit.action": "تحرير",
   "projects.chip.project": "مشروع",
   "projects.chip.self": "هذا الكمبيوتر",

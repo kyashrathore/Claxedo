@@ -15,8 +15,6 @@ export default {
   "projects.edit.icon.recommended": "Anbefalet: 128x128px",
   "projects.edit.color": "Farve",
   "projects.edit.color.select": "Vælg farven {{color}}",
-  "projects.edit.startup": "Opstartsscript for arbejdsområde",
-  "projects.edit.startup.description": "Køres efter oprettelse af et nyt arbejdsområde (worktree).",
   "projects.edit.action": "Rediger",
   "projects.chip.project": "Projekt",
   "projects.chip.self": "Denne computer",

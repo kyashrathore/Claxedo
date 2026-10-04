@@ -2,7 +2,7 @@ import { isRecord } from "@claxedo/helpers/guards"
 import { unreachable } from "../../lib/machine"
 import { ServerError } from "../errors"
 import { projectId } from "../ids"
-import type { MissingCheckout, Project, ProjectCommands, ProjectIcon, ProjectSource } from "../types"
+import type { MissingCheckout, Project, ProjectIcon, ProjectSource } from "../types"
 
 type WireProject = {
   readonly id: string
@@ -11,7 +11,6 @@ type WireProject = {
   readonly directory?: string | null
   readonly repoUrl?: string | null
   readonly icon?: { readonly override?: unknown; readonly color?: unknown }
-  readonly commands?: { readonly start?: unknown }
   readonly available: boolean
   readonly missingCheckout?: { readonly directory?: unknown; readonly remote?: unknown }
   readonly created_at: number
@@ -35,10 +34,6 @@ function iconOf(project: WireProject): ProjectIcon | undefined {
   return override || color ? { ...(override ? { override } : {}), ...(color ? { color } : {}) } : undefined
 }
 
-function commandsOf(project: WireProject): ProjectCommands | undefined {
-  return typeof project.commands?.start === "string" ? { start: project.commands.start } : undefined
-}
-
 function missingCheckoutOf(project: WireProject): MissingCheckout | undefined {
   const checkout = project.missingCheckout
   if (typeof checkout?.directory !== "string") return undefined
@@ -48,7 +43,6 @@ function missingCheckoutOf(project: WireProject): MissingCheckout | undefined {
 function projectFromWire(project: WireProject): Project {
   const source = sourceOf(project)
   const icon = iconOf(project)
-  const commands = commandsOf(project)
   const missingCheckout = missingCheckoutOf(project)
   return {
     id: projectId(project.id),
@@ -56,7 +50,6 @@ function projectFromWire(project: WireProject): Project {
     ...(source ? { source } : {}),
     ...(project.directory ? { directory: project.directory } : {}),
     ...(icon ? { icon } : {}),
-    ...(commands ? { commands } : {}),
     available: project.available,
     ...(missingCheckout ? { missingCheckout } : {}),
     env: project.env ?? {},

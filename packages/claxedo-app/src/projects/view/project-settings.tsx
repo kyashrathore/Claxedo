@@ -97,7 +97,6 @@ function WorkspaceSetup(props: { readonly project: Project }): JSX.Element {
       }
     >
       <SettingsList>
-        <SettingsRow title={t("projects.edit.startup")} description={props.project.commands?.start || t("projects.settings.none")} />
         <SettingsRow title={t("projects.edit.environment")} description={variables() || t("projects.settings.none")} />
       </SettingsList>
     </SettingsGroup>

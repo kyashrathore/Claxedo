@@ -15,8 +15,6 @@ export default {
   "projects.edit.icon.recommended": "권장: 128x128px",
   "projects.edit.color": "색상",
   "projects.edit.color.select": "{{color}} 색상 선택",
-  "projects.edit.startup": "작업 공간 시작 스크립트",
-  "projects.edit.startup.description": "새 작업 공간(작업 트리)을 만든 뒤 실행됩니다.",
   "projects.edit.action": "편집",
   "projects.chip.project": "프로젝트",
   "projects.chip.self": "이 컴퓨터",

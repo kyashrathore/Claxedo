@@ -15,8 +15,6 @@ export default {
   "projects.edit.icon.recommended": "建議：128x128px",
   "projects.edit.color": "顏色",
   "projects.edit.color.select": "選擇{{color}}顏色",
-  "projects.edit.startup": "工作區啟動腳本",
-  "projects.edit.startup.description": "在建立新的工作區 (worktree) 後執行。",
   "projects.edit.action": "編輯",
   "projects.chip.project": "專案",
   "projects.chip.self": "這台電腦",

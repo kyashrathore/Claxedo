@@ -72,15 +72,12 @@ export type ProjectSource =
 
 export type ProjectIcon = { readonly override?: string; readonly color?: string }
 
-export type ProjectCommands = { readonly start?: string }
-
 export type Project = {
   readonly id: ProjectId
   readonly name: string
   readonly source?: ProjectSource
   readonly directory?: string
   readonly icon?: ProjectIcon
-  readonly commands?: ProjectCommands
   readonly available: boolean
   readonly missingCheckout?: MissingCheckout
   readonly env: Readonly<Record<string, string>>
@@ -94,7 +91,6 @@ export type ProjectUpdate = {
   readonly name?: string
   readonly env?: Readonly<Record<string, string>>
   readonly icon?: ProjectIcon
-  readonly commands?: ProjectCommands
 }
 
 export type SessionSelections = {
