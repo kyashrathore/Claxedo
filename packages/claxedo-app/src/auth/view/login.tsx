@@ -5,6 +5,8 @@ import type { BrowserAuthMethod, BrowserAuthSignInOptions } from "../browser-aut
 import { createOrgInvitationFlow, loginOAuthContinuation } from "../login-continuation"
 import { apiOrigin, appOrigin } from "../origins"
 import { useAuth } from "../provider"
+import { ClaxedoIcon as Icon } from "@/ui"
+import { AuthSplit } from "./auth-split"
 import "./auth.css"
 
 const providerName = (method: "google" | "github") => (method === "google" ? "Google" : "GitHub")
@@ -131,33 +133,30 @@ function createLoginController(token?: string) {
   }
 }
 
+const LEAD = "Every coding agent, on any machine, from anywhere."
+
 function LoginForm(props: { invitationToken?: string }) {
   const controller = createLoginController(props.invitationToken)
   return (
-    <main class="auth-page">
-      <section class="auth-card">
-        <h1 class="auth-title">{controller.invitation ? "Join your organization" : "Claxedo"}</h1>
-        <p class="auth-subtitle">
-          {controller.invitation
-            ? "Use the email address that received this invitation."
-            : "Cloud-first development environment"}
-        </p>
-        <Show when={controller.joined()} fallback={<LoginActions controller={controller} />}>
-          <p class="auth-subtitle">You have joined the organization.</p>
-          <a class="auth-button" href="/">
-            Continue to Claxedo
-          </a>
-        </Show>
-        <Show when={controller.failure()}>
-          {(failure) => (
-            <p role="alert" class="auth-error">
-              {failure().message}
-            </p>
-          )}
-        </Show>
-        <Show when={controller.auth.unavailable()}>{(reason) => <p class="auth-note">{reason()}</p>}</Show>
-      </section>
-    </main>
+    <AuthSplit
+      title={controller.invitation ? "Join your organization" : "Sign in to Claxedo"}
+      lead={controller.invitation ? "Use the email address that received this invitation." : LEAD}
+    >
+      <Show when={controller.joined()} fallback={<LoginActions controller={controller} />}>
+        <p class="auth-subtitle">You have joined the organization.</p>
+        <a class="auth-button auth-button-icon" href="/">
+          Continue to Claxedo
+        </a>
+      </Show>
+      <Show when={controller.failure()}>
+        {(failure) => (
+          <p role="alert" class="auth-error">
+            {failure().message}
+          </p>
+        )}
+      </Show>
+      <Show when={controller.auth.unavailable()}>{(reason) => <p class="auth-note">{reason()}</p>}</Show>
+    </AuthSplit>
   )
 }
 
@@ -173,7 +172,7 @@ function LoginActions(props: { controller: LoginController }) {
           </button>
           <button
             type="button"
-            class="auth-button"
+            class="auth-button auth-button-secondary"
             disabled={controller.busy()}
             onClick={() => void controller.auth.signOut()}
           >
@@ -197,23 +196,29 @@ function LoginActions(props: { controller: LoginController }) {
           {(method) => (
             <button
               type="button"
-              class="auth-button"
+              class="auth-button auth-button-icon"
               disabled={controller.busy()}
               onClick={() => void controller.continueWith(method)}
             >
+              <Show when={method === "github"}>
+                <Icon name="github" size="small" />
+              </Show>
               Continue with {providerName(method)}
             </button>
           )}
         </For>
         <Show when={controller.auth.methods().includes("email-password")}>
-          <LoginCredentials controller={controller} />
+          <Show when={controller.socialMethods().length > 0}>
+            <p class="auth-divider">or</p>
+          </Show>
+          <LoginCredentials controller={controller} secondary={controller.socialMethods().length > 0} />
         </Show>
       </div>
     </Show>
   )
 }
 
-function LoginCredentials(props: { controller: LoginController }) {
+function LoginCredentials(props: { controller: LoginController; secondary: boolean }) {
   const controller = props.controller
   return (
     <form
@@ -243,7 +248,7 @@ function LoginCredentials(props: { controller: LoginController }) {
           onInput={(event) => controller.setPassword(event.currentTarget.value)}
         />
       </label>
-      <button type="submit" class="auth-button" disabled={controller.busy()}>
+      <button type="submit" class="auth-button" classList={{ "auth-button-secondary": props.secondary }} disabled={controller.busy()}>
         {controller.invitation
           ? controller.action() === "signUp"
             ? "Create account and join"
@@ -253,7 +258,7 @@ function LoginCredentials(props: { controller: LoginController }) {
       <Show when={controller.invitation}>
         <button
           type="button"
-          class="auth-button"
+          class="auth-button auth-button-secondary"
           disabled={controller.busy()}
           onClick={() => controller.setAction(controller.action() === "signUp" ? "signIn" : "signUp")}
         >

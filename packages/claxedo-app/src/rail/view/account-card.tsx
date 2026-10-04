@@ -73,18 +73,29 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
   const view = useAccountView()
   let trigger: HTMLButtonElement | undefined
   const [open, setOpen] = createSignal(false)
+  const [signingOut, setSigningOut] = createSignal(false)
   const select = (action: () => void) => () => {
     trigger?.focus()
     action()
   }
   const settle = (work: Promise<void>, title: string) =>
-    void work.catch((error: unknown) => {
+    work.catch((error: unknown) => {
       showToast({ title, description: failureMessage(error) })
     })
-  const signIn = () => settle(auth.signIn({ redirectUrl: appUrl(location) }), t("rail.account.signInFailed"))
-  const signOut = () => settle(auth.signOut(), t("rail.account.signOutFailed"))
+  const signIn = () => void settle(auth.signIn({ redirectUrl: appUrl(location) }), t("rail.account.signInFailed"))
+  const signOut = () => {
+    setSigningOut(true)
+    void settle(auth.signOut(), t("rail.account.signOutFailed")).finally(() => setSigningOut(false))
+  }
   return (
-    <DropdownMenu placement="top-start" gutter={6} sameWidth onOpenChange={setOpen} getAnchorRect={(trigger) => (props.anchor() ?? trigger)?.getBoundingClientRect()}>
+    <DropdownMenu
+      placement="top-start"
+      gutter={6}
+      sameWidth
+      open={open() || signingOut()}
+      onOpenChange={(next) => signingOut() || setOpen(next)}
+      getAnchorRect={(trigger) => (props.anchor() ?? trigger)?.getBoundingClientRect()}
+    >
       <DropdownMenu.Trigger
         ref={(element) => (trigger = element)}
         aria-label={view().label}
@@ -122,18 +133,24 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
             </DropdownMenu.Item>
           </DropdownMenu.Group>
           <Show when={view().pending}>
-            <DropdownMenu.Item onSelect={signOut}>
+            <DropdownMenu.Item onSelect={() => void settle(auth.signOut(), t("rail.account.signOutFailed"))}>
               <Icon name="circle-ban-sign" size="small" />
               {t("rail.account.cancelSignIn")}
             </DropdownMenu.Item>
           </Show>
-          <Show when={view().action}>
-            {(action) => (
-              <DropdownMenu.Item onSelect={action() === "signin" ? signIn : signOut}>
-                <Icon name="arrow-right" size="small" />
-                {action() === "signin" ? t("rail.account.signIn") : t("rail.account.logout")}
-              </DropdownMenu.Item>
-            )}
+          <Show when={view().action === "signin"}>
+            <DropdownMenu.Item onSelect={signIn}>
+              <Icon name="arrow-right" size="small" />
+              {t("rail.account.signIn")}
+            </DropdownMenu.Item>
+          </Show>
+          <Show when={view().action === "logout"}>
+            <DropdownMenu.Item closeOnSelect={false} disabled={signingOut()} onSelect={signOut}>
+              <Show when={signingOut()} fallback={<Icon name="arrow-right" size="small" />}>
+                <Spinner class="size-3.5" />
+              </Show>
+              {signingOut() ? t("rail.account.signingOut") : t("rail.account.logout")}
+            </DropdownMenu.Item>
           </Show>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>

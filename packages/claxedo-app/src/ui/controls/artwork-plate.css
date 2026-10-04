@@ -1,0 +1,39 @@
+.ui-artwork-plate {
+  --dot: 2px;
+  --plate-ink: color-mix(in oklab, var(--text-base) 42%, transparent);
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask-image: var(--plate-mask, radial-gradient(ellipse 58% 62% at 50% 46%, rgb(0 0 0 / 0.22), #000 92%));
+  mask-image: var(--plate-mask, radial-gradient(ellipse 58% 62% at 50% 46%, rgb(0 0 0 / 0.22), #000 92%));
+}
+
+.ui-artwork-plate::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: calc(960 * var(--dot));
+  aspect-ratio: 960 / 661;
+  translate: -50% 0;
+  background-color: var(--plate-ink);
+  image-rendering: pixelated;
+  -webkit-mask: url("../assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat;
+  mask: url("../assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat;
+}
+
+html[data-color-scheme="dark"] .ui-artwork-plate {
+  --plate-ink: color-mix(in oklab, var(--text-base) 15%, transparent);
+}
+
+html[data-color-scheme="dark"] .ui-artwork-plate::before {
+  -webkit-mask:
+    url("../assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    url("../assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat exclude,
+    linear-gradient(#000 0 0);
+}

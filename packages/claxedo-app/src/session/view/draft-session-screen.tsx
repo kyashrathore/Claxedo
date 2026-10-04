@@ -4,7 +4,6 @@ import { createDraftPlacementResolver, NewSessionContextRow } from "@/projects"
 import { useServer, type PlacementId, type ProjectId, type PromptInput } from "@/server"
 import { useSessionStores, type SentPrompt, type SessionView } from "@/session"
 import type { PaneProps } from "@/shell"
-import { ClaxedoLogo } from "@/ui"
 import { useWorkbench } from "@/workbench"
 import { pendingMessage } from "../transcript/send"
 import { draftSessionPaneKind, newDraft } from "./draft-pane"
@@ -74,11 +73,6 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
               data-component="session-new-design-content"
               classList={{ "w-full": true, "max-w-[720px]": !sent(), "pointer-events-auto px-3 md:max-w-192 md:mx-auto 2xl:max-w-[880px]": !!sent() }}
             >
-              <Show when={!sent()}>
-                <div class="mb-5 flex justify-center">
-                  <ClaxedoLogo class="w-12 opacity-14" />
-                </div>
-              </Show>
               <Show when={sent()} fallback={<PlacementNotice placementId={props.state.placementId} />}>
                 <FirstSendNotice state={firstSend.state()} onRetry={firstSend.retry} />
               </Show>

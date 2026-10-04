@@ -1,5 +1,4 @@
 .first-project {
-  --first-project-plate-ink: color-mix(in oklab, var(--text-base) 42%, transparent);
   --first-project-edge: color-mix(in oklab, var(--text-interactive-base) 58%, transparent);
 
   position: relative;
@@ -29,45 +28,6 @@
 .first-project-lede,
 .first-project-diagnostics {
   flex-shrink: 0;
-}
-
-.first-project-plate {
-  --dot: 2px;
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-  pointer-events: none;
-  -webkit-mask-image: radial-gradient(ellipse 58% 62% at 50% 46%, rgb(0 0 0 / 0.22), #000 92%);
-  mask-image: radial-gradient(ellipse 58% 62% at 50% 46%, rgb(0 0 0 / 0.22), #000 92%);
-}
-
-.first-project-plate::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  width: calc(960 * var(--dot));
-  aspect-ratio: 960 / 661;
-  translate: -50% 0;
-  background-color: var(--first-project-plate-ink);
-  image-rendering: pixelated;
-  -webkit-mask: url("./assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat;
-  mask: url("./assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat;
-}
-
-html[data-color-scheme="dark"] .first-project {
-  --first-project-plate-ink: color-mix(in oklab, var(--text-base) 15%, transparent);
-}
-
-html[data-color-scheme="dark"] .first-project-plate::before {
-  -webkit-mask:
-    url("./assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask:
-    url("./assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat exclude,
-    linear-gradient(#000 0 0);
 }
 
 .first-project-steps {

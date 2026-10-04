@@ -4,7 +4,7 @@ import { useAuth } from "@/auth"
 import { pickProjectFolderWith } from "@/projects"
 import { useServer } from "@/server"
 import type { PageProps } from "@/shell"
-import { useDialog } from "@/ui"
+import { ArtworkPlate, useDialog } from "@/ui"
 import { OnboardingWizard } from "./wizard"
 import "./first-project-canvas.css"
 
@@ -16,7 +16,7 @@ export function FirstProjectCanvas(_props: PageProps) {
   const machines = useQuery(() => ({ ...server.queries.machines.list(), enabled: capabilities()?.thisMachine === undefined }))
   return (
     <main class="first-project" data-testid="first-project-canvas">
-      <div class="first-project-plate" aria-hidden="true" />
+      <ArtworkPlate />
       <div class="first-project-content">
         <Show when={capabilities()}>
           {(known) => (

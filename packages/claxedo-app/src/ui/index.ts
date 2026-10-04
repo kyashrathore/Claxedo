@@ -12,6 +12,7 @@ export { SidePanelTab } from "./controls/side-panel-tab"
 export { ResizeSeparator, type ResizeGrowth } from "./controls/resize-separator"
 export { DelayedLoading } from "./controls/delayed-loading"
 export { SkeletonBar } from "./controls/skeleton"
+export { ArtworkPlate } from "./controls/artwork-plate"
 export {
   browserToolbarSlot,
   fileHeaderActionsSlot,

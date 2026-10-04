@@ -1,4 +1,4 @@
-# Onboarding assets
+# Artwork
 
 ## tod-jag-mandir-dither.webp
 
