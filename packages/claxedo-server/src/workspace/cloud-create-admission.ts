@@ -5,7 +5,7 @@ import {
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
-import type { ControlPlaneServices } from "../authority/services"
+import type { ControlPlaneServices, SandboxKeyedDriver } from "../authority/services"
 import {
   createFixedWindowConnectionRateLimiter,
   type ConnectionRateLimiter,
@@ -79,6 +79,8 @@ export type CloudCreateUsage = {
     caller: CloudCreateCaller
     workspaceId: string
     driver: string
+    /** Whose provider account pays for the machine; an organization's own key is not the operator's cost. */
+    keyOwner?: SandboxKeyedDriver["key"]
     startedAt: number
     services?: ControlPlaneServices
   }): void

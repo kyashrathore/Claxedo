@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import { HostedSandboxAdminRoutes } from "./sandbox-admin"
-import { createSandboxManager, type SandboxDriver } from "@claxedo/sandbox-manager"
+import { createSandboxManager, type SandboxDriver, type SandboxManager } from "@claxedo/sandbox-manager"
 import { createMemoryLeaseStore, sandboxLease } from "@claxedo/sandbox-manager/stores/memory"
 
 function fakeDriver(overrides: Partial<SandboxDriver> = {}): SandboxDriver {
@@ -197,6 +197,25 @@ describe("hosted sandbox admin routes", () => {
     expect(body.destroyed.map((target) => target.sandboxId)).toEqual(["sandbox_orphan"])
     expect(body.listingUnsupported).toBeUndefined()
     expect(destroy).toHaveBeenCalled()
+  })
+
+  test("a sweep over several keys closes what it destroyed and counts the keys it could not open, even when one account could not be listed", async () => {
+    const orphan = { workspaceId: "ws_orphan", sandboxId: "sandbox_orphan", url: "https://runtime.test/orphan", hostId: "host_orphan", driver: { id: "boat", resourceId: "r" } }
+    const sandboxManager = {
+      garbageCollect: async () => ({
+        destroyed: [orphan], kept: [], skipped: [], failed: [],
+        listingUnsupported: true as const, driver: "cloudflare",
+        unreachable: [{ driver: "vercel", error: "The sandbox provider key this workspace was created with has been removed" }],
+      }),
+    } as unknown as SandboxManager
+    const telemetry = { capture: vi.fn() }
+    const app = HostedSandboxAdminRoutes({ adminToken: "admin_secret", sandboxManager, telemetry })
+
+    const res = await app.fetch(request("/internal/sandbox-manager/gc", { token: "admin_secret" }))
+
+    expect(res.status).toBe(501)
+    expect(telemetry.capture).toHaveBeenCalledWith("system", "sandbox.garbage_collect", expect.objectContaining({ destroyed: 1, unreachable: 1 }))
+    expect(telemetry.capture).toHaveBeenCalledWith("system", "sandbox.lease_closed", expect.objectContaining({ workspace_id: "ws_orphan", driver: "boat", reason: "gc" }))
   })
 
   test("idle stop is authorized by its own token alone and answers a refused stop as a conflict", async () => {

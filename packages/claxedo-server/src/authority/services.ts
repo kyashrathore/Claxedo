@@ -61,10 +61,15 @@ export type ControlPlaneServices = ControlPlaneServicesContract & {
   close?: () => void
 }
 
+/** A sandbox driver and whose provider key it spends: the operator's or its organization's. */
+export type SandboxKeyedDriver = { driver: SandboxDriver; key: "operator" | "org" }
+
 export type HostedControlPlaneSandbox = Omit<ControlPlaneSandbox, "sandboxManager"> & {
   sandboxManager?: SandboxManager
-  /** The driver a workspace's sandbox is, or would be, provisioned with: its organization's key or the operator's. */
-  workspaceDriver?: (workspaceId: string) => Promise<SandboxDriver>
+  /** The driver a workspace's sandbox is, or would be, provisioned with. */
+  workspaceDriver?: (workspaceId: string) => Promise<SandboxKeyedDriver>
+  /** The driver a new workspace of the organization would be provisioned with. */
+  orgDriver?: (orgId: string) => Promise<SandboxKeyedDriver>
 }
 
 export type ControlPlaneServicesOptions = {

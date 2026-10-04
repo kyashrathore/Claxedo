@@ -926,7 +926,7 @@ describe("hosted Tasks cloud start from inside a session", () => {
     const rootEnvironment = vi.fn(async () => ({ WORKSPACE_RUNTIME_TASKS_CAPABILITY: "root-grant" }))
     const controlPlane = await database()
     const app = await hostedApp(
-      { sandboxManager, defaultDriver: "modal" },
+      { sandboxManager, defaultDriver: "modal", orgDriver: async () => ({ driver: { ...driver, id: "modal" }, key: "operator" }) },
       {
         signingEnv,
         database: controlPlane,

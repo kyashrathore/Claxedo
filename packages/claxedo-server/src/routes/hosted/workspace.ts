@@ -425,13 +425,6 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         // fixes deployment_mode; a personal-account token carries no org claim
         // and falls through to the ops plane rather than inventing an org id.
         const leaseStartedAt = Date.now()
-        options.sandboxUsage?.leaseOpened({
-          caller: { kind: "signed", auth },
-          workspaceId,
-          driver: services?.sandbox.defaultDriver ?? "unknown",
-          startedAt: leaseStartedAt,
-          ...(services ? { services } : {}),
-        })
 
         // Kick off provisioning. The lease state machine + driver.ensureHost are
         // idempotent and re-polled by the app via /connection, so the response
@@ -443,6 +436,15 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         const runtimeContext = { workspaceId }
         keepAlivePastResponse(c, Promise.resolve()
           .then(async () => {
+            const placed = await services?.sandbox.workspaceDriver?.(workspaceId)
+            options.sandboxUsage?.leaseOpened({
+              caller: { kind: "signed", auth },
+              workspaceId,
+              driver: placed?.driver.id ?? "unknown",
+              ...(placed ? { keyOwner: placed.key } : {}),
+              startedAt: leaseStartedAt,
+              ...(services ? { services } : {}),
+            })
             const runtimePreparation = await options.prepareRuntime?.(runtimeContext)
             // This is the hosted, multi-tenant create path: the sandbox runs
             // agent-authored code over someone's private checkout, and an
@@ -474,7 +476,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
               egress: options,
               preparation: runtimePreparation,
             }))
-            return { result, runtimePreparation }
+            return { result, runtimePreparation, placed }
           })
           // The lease row exists once `ensure` has acquired it, so the tenant is
           // stamped here rather than before: the sandbox manager's acquire port
@@ -482,7 +484,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           // point that holds both the verified tenant and a lease to attach it
           // to. Metering attribution never gates provisioning, so a deployment
           // with no workspace authority configured simply records nothing.
-          .then(async ({ result, runtimePreparation }) => {
+          .then(async ({ result, runtimePreparation, placed }) => {
             if (result.status === "ready") await options.provisionRuntime?.(runtimeContext, runtimePreparation)
             // The only refusal that lands here is
             // `sandbox_egress_policy_unenforceable`: a driver that does enforce
@@ -503,7 +505,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
                 workspaceId,
                 properties: {
                   reason: result.error,
-                  driver: services?.sandbox.defaultDriver ?? "unknown",
+                  driver: placed?.driver.id ?? "unknown",
                 },
               })
               return

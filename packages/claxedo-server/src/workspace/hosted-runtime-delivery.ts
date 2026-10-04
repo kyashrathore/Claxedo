@@ -1,5 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import type { SandboxBrokeredSecret, SandboxDriver, SandboxManager, SandboxManagerInput } from "@claxedo/sandbox-manager"
+import type { SandboxBrokeredSecret, SandboxManager, SandboxManagerInput } from "@claxedo/sandbox-manager"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { UserAgentConfigRepository } from "@claxedo/server-core/agent-config/repository"
 import { userAgentConfigStore } from "@claxedo/server-core/agent-config/repository"
@@ -11,7 +11,7 @@ import {
   nativeProviderDeliveriesFromRepository,
   nativeProviderSecrets,
 } from "@claxedo/server-core/credentials/native-delivery-plan"
-import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
+import type { ControlPlaneCredentials, ControlPlaneServices, SandboxKeyedDriver } from "../authority/services"
 import { storeRenewal } from "../credentials/store-renewal"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "./route-support"
 import { mintSupervisorBackplaneToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
@@ -52,7 +52,7 @@ export function createHostedRuntimeDelivery(input: {
   database: D1Database
   services: ControlPlaneServices
   sandboxManager: SandboxManager
-  workspaceDriver: (workspaceId: string) => Promise<SandboxDriver>
+  workspaceDriver: (workspaceId: string) => Promise<SandboxKeyedDriver>
   sandboxInput(
     workspaceId: string,
     prepared: { preparation: WorkspaceRuntimePreparation | undefined; secrets: readonly SandboxBrokeredSecret[] },
@@ -83,7 +83,7 @@ export function createHostedRuntimeDelivery(input: {
       selected,
       readSecret: (credential) => credentials.resolveCredentialSecretById?.(credential.id) ?? Promise.resolve(null),
       renew: storeRenewal(credentials),
-      secretBrokering: (await input.workspaceDriver(workspaceId)).metadata.secretBrokering,
+      secretBrokering: (await input.workspaceDriver(workspaceId)).driver.metadata.secretBrokering,
     })
     return { delivered, selections }
   }

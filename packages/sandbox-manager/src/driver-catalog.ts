@@ -1,14 +1,9 @@
 import { validateSandboxPersistenceCapabilities, type SandboxDriverMetadata } from "./contract"
-import { workspaceRuntimeVersion } from "./runtime-version"
-import { defaultSandboxImage } from "./image-name"
 import {
   dockerSandboxDriverEnabled as contractDockerSandboxDriverEnabled,
-  sandboxDriverAuthValues,
   sandboxDriverCredentialFields,
   sandboxDriverId,
   sandboxDriverLabels,
-  type SandboxDriverAuth,
-  type SandboxDriverConfig,
   type SandboxDriverEnv,
   type SandboxDriverID,
 } from "@claxedo/sandbox-contract"
@@ -179,28 +174,6 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
       },
     },
   },
-}
-
-export function sandboxDriverAuth<T extends SandboxDriverID>(
-  cfg: SandboxDriverConfig | undefined,
-  id: T,
-  env: SandboxDriverEnv = process.env,
-): SandboxDriverAuth[T] | undefined {
-  if (id === "docker") {
-    const configured = sandboxDriverAuthValues(cfg, "docker", env)
-    if (!configured) return undefined
-    const image = configured.image ?? defaultSandboxImage(workspaceRuntimeVersion(), undefined, env)
-    return { image } as SandboxDriverAuth[T]
-  }
-  return sandboxDriverAuthValues(cfg, id, env)
-}
-
-export function hasSandboxDriverAuth(
-  cfg: SandboxDriverConfig | undefined,
-  id: SandboxDriverID,
-  env: SandboxDriverEnv = process.env,
-) {
-  return !!sandboxDriverAuth(cfg, id, env)
 }
 
 export function dockerSandboxDriverEnabled(env: SandboxDriverEnv = process.env) {

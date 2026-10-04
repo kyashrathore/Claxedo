@@ -698,6 +698,8 @@ export type SandboxGarbageCollectResult = {
   listingUnsupported?: true
   /** Driver id, so an ops report can name which driver could not look. */
   driver?: string
+  /** Provider accounts a sweep over several keys could not open, so nothing on them was examined. */
+  unreachable?: Array<{ driver: string; error: string }>
 }
 
 /**

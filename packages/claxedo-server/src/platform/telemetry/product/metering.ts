@@ -47,6 +47,8 @@ export type SandboxLeaseOpened = {
   workspace_id: string
   sandbox_id?: string
   driver: string
+  /** `org` when the organization's own provider key made the machine. */
+  key_owner?: "operator" | "org"
   started_at: number
 }
 
@@ -66,6 +68,7 @@ export function leaseOpenedProperties(input: SandboxLeaseOpened) {
     workspace_id: input.workspace_id,
     ...(input.sandbox_id ? { sandbox_id: input.sandbox_id } : {}),
     driver: input.driver,
+    ...(input.key_owner ? { key_owner: input.key_owner } : {}),
     started_at: input.started_at,
   }
 }

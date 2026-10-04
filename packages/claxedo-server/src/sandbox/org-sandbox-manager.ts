@@ -1,8 +1,14 @@
-import type { SandboxDriver, SandboxLeaseStore, SandboxManager } from "@claxedo/sandbox-manager"
+import type { SandboxDriver, SandboxGarbageCollectResult, SandboxLeaseStore, SandboxManager } from "@claxedo/sandbox-manager"
+import type { SandboxKeyedDriver } from "../authority/services"
 import { OPERATOR_SANDBOX_KEY, type OrgSandboxDrivers, type SandboxKeyBinding } from "./org-sandbox-drivers"
 
 export const SANDBOX_KEY_LABEL = "sandboxKey"
 export const SANDBOX_ORG_LABEL = "sandboxOrg"
+
+/** Whose provider account a recorded `sandboxKey` label spends, without naming the key. */
+export function sandboxKeyOwner(key: string | undefined): SandboxKeyedDriver["key"] {
+  return key && key !== OPERATOR_SANDBOX_KEY ? "org" : "operator"
+}
 
 /**
  * One `SandboxManager` over every key a deployment spends. A workspace's first
@@ -10,7 +16,9 @@ export const SANDBOX_ORG_LABEL = "sandboxOrg"
  * labels record that key, so every later stop, snapshot or destroy reaches the
  * provider account that made the machine even after the organization adds or
  * switches keys. Lease-only operations need no driver and go to the operator's
- * manager, which shares the one lease store.
+ * manager, which shares the one lease store. A sweep visits the operator's
+ * account and every organization key a lease names, each through its own
+ * driver; one organization's revoked or removed key cannot stop the others'.
  */
 export function createOrgSandboxManager(input: {
   leaseStore: SandboxLeaseStore
@@ -19,11 +27,11 @@ export function createOrgSandboxManager(input: {
   manager: (driver: SandboxDriver) => SandboxManager
 }) {
   const operator = input.manager(input.drivers.operator.driver)
-  const keyed = new WeakMap<SandboxKeyBinding, SandboxManager>()
+  const managers = new WeakMap<SandboxKeyBinding, SandboxManager>()
   const managerFor = (binding: SandboxKeyBinding) => {
     if (binding.key === OPERATOR_SANDBOX_KEY) return operator
-    const manager = keyed.get(binding) ?? input.manager(binding.driver)
-    keyed.set(binding, manager)
+    const manager = managers.get(binding) ?? input.manager(binding.driver)
+    managers.set(binding, manager)
     return manager
   }
   const bound = async (workspaceId: string, fresh: boolean): Promise<{ binding: SandboxKeyBinding; orgId?: string }> => {
@@ -58,8 +66,46 @@ export function createOrgSandboxManager(input: {
     destroy: async (workspaceId) => (await routed(workspaceId)).destroy(workspaceId),
     recordStartPhases: async (workspaceId, phases) => (await routed(workspaceId)).recordStartPhases(workspaceId, phases),
     markStartPhase: async (workspaceId, phase) => (await routed(workspaceId)).markStartPhase(workspaceId, phase),
-    garbageCollect: () => operator.garbageCollect(),
+    garbageCollect: async () => {
+      const sweeps = [await operator.garbageCollect()]
+      const unreachable: Array<{ driver: string; error: string }> = []
+      for (const { key, orgId, driver } of await leasedOrgKeys(input.leaseStore)) {
+        try {
+          sweeps.push(await managerFor(await input.drivers.forKey(orgId, key)).garbageCollect())
+        } catch (error) {
+          unreachable.push({ driver, error: error instanceof Error ? error.message : String(error) })
+        }
+      }
+      return mergedSweeps(sweeps, unreachable)
+    },
     list: () => operator.list(),
   }
-  return { manager, workspaceDriver: async (workspaceId: string) => (await bound(workspaceId, true)).binding.driver }
+  const keyedDriver = (binding: SandboxKeyBinding): SandboxKeyedDriver => ({ driver: binding.driver, key: sandboxKeyOwner(binding.key) })
+  return {
+    manager,
+    workspaceDriver: async (workspaceId: string) => keyedDriver((await bound(workspaceId, true)).binding),
+    orgDriver: async (orgId: string) => keyedDriver(await input.drivers.forOrg(orgId)),
+  }
+}
+
+async function leasedOrgKeys(leaseStore: SandboxLeaseStore) {
+  const keys = new Map<string, { key: string; orgId: string; driver: string }>()
+  for (const lease of await leaseStore.list()) {
+    const key = lease.labels?.[SANDBOX_KEY_LABEL]
+    const orgId = lease.labels?.[SANDBOX_ORG_LABEL]
+    if (key && key !== OPERATOR_SANDBOX_KEY && orgId && !keys.has(key)) keys.set(key, { key, orgId, driver: lease.driver })
+  }
+  return [...keys.values()]
+}
+
+function mergedSweeps(sweeps: SandboxGarbageCollectResult[], unreachable: Array<{ driver: string; error: string }>): SandboxGarbageCollectResult {
+  const blind = sweeps.find((sweep) => sweep.listingUnsupported)
+  return {
+    destroyed: sweeps.flatMap((sweep) => sweep.destroyed),
+    kept: sweeps.flatMap((sweep) => sweep.kept),
+    skipped: sweeps.flatMap((sweep) => sweep.skipped),
+    failed: sweeps.flatMap((sweep) => sweep.failed),
+    ...(blind ? { listingUnsupported: true as const, ...(blind.driver ? { driver: blind.driver } : {}) } : {}),
+    ...(unreachable.length ? { unreachable } : {}),
+  }
 }

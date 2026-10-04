@@ -45,7 +45,7 @@ import { recordRelayRuntimeToken } from "./relay-token-record"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { isSandboxProvisionerID } from "@claxedo/sandbox-contract"
 import { orgSandboxDrivers, type HostedSandboxKeys } from "../sandbox/org-sandbox-drivers"
-import { createOrgSandboxManager } from "../sandbox/org-sandbox-manager"
+import { createOrgSandboxManager, SANDBOX_KEY_LABEL, sandboxKeyOwner } from "../sandbox/org-sandbox-manager"
 
 export { HostedWorkerCompositionError } from "./composition-error"
 
@@ -154,7 +154,8 @@ export function sandboxEgressUnenforcedSink(telemetry: ControlPlaneTelemetry) {
 /**
  * Each cloud start phase as an ops-plane fact. The workspace's project is the
  * repository it checked out, which is what a per-repository read of recent
- * starts groups on; the repository URL itself is tenant data and stays out.
+ * starts groups on; the repository URL itself is tenant data and stays out, as
+ * does which organization key made the machine beyond that one did.
  */
 export function sandboxStartPhaseSink(telemetry: ControlPlaneTelemetry) {
   return (event: SandboxStartPhaseEvent) => {
@@ -164,6 +165,7 @@ export function sandboxStartPhaseSink(telemetry: ControlPlaneTelemetry) {
       workspace_id: event.workspaceId,
       epoch: event.epoch,
       driver: event.driver,
+      key_owner: sandboxKeyOwner(event.labels[SANDBOX_KEY_LABEL]),
       region: event.homeRegion,
       boot_mode: event.bootMode,
       ...(event.labels.projectId ? { project_id: event.labels.projectId } : {}),
@@ -220,7 +222,8 @@ function sandboxManager(
     onStartPhase: sandboxStartPhaseSink(telemetry),
   })
   if (!sandbox.keys || !bindings.orgCredentials) {
-    return { manager: manager(sandbox.driver), workspaceDriver: async () => sandbox.driver }
+    const operator = { driver: sandbox.driver, key: "operator" as const }
+    return { manager: manager(sandbox.driver), workspaceDriver: async () => operator, orgDriver: async () => operator }
   }
   return createOrgSandboxManager({
     leaseStore: sandbox.leaseStore,
@@ -414,7 +417,12 @@ export function composeProviderNeutralHostedControlPlane(
       hostTunnelResolver: bindings.hostTunnelResolver,
     },
     sandbox: (sandbox
-      ? { sandboxManager: sandbox.manager, workspaceDriver: sandbox.workspaceDriver, ...(managerDriver ? { defaultDriver: managerDriver } : {}) }
+      ? {
+          sandboxManager: sandbox.manager,
+          workspaceDriver: sandbox.workspaceDriver,
+          orgDriver: sandbox.orgDriver,
+          ...(managerDriver ? { defaultDriver: managerDriver } : {}),
+        }
       : {}),
     telemetry,
     localExecution: { enabled: false },
