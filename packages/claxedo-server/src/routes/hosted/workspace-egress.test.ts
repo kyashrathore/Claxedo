@@ -124,7 +124,7 @@ async function create(app: ReturnType<typeof buildApp>["app"], token = "user_1")
     new Request(`${REQUEST_ORIGIN}/create`, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ projectId: "proj_1", repoUrl: REPO_URL }),
+      body: JSON.stringify({ projectId: "proj_1", workspaceName: "Egress", repoUrl: REPO_URL }),
     }),
   )
   const body = (await res.json()) as { workspaceId?: string }

@@ -142,6 +142,7 @@ describe("refreshing a running hosted sandbox", () => {
       headers: { authorization: "Bearer owner", "content-type": "application/json" },
       body: JSON.stringify({
         projectId: "proj_1",
+        workspaceName: "Widgets",
         repoUrl: "https://github.com/acme/widgets.git",
         gitBranch: "main",
         remoteDirectory: "/srv/widgets",
