@@ -13,6 +13,7 @@ import { assertSandboxImageReference } from "../image-name"
 import { sandboxDriverCatalog } from "../driver-catalog"
 import { BoatApiError, createBoatClient, type BoatFetch } from "./boat-client"
 import { isTransientDriverError } from "./transient-error"
+import { boatContainerSecurity, type BoatContainerSecurity } from "./boat-security"
 
 // Boat (https://boat.dev) runs persistent Linux microVMs with Docker on the
 // VM's own kernel but no workspace-runtime baked in, so this driver delivers
@@ -193,12 +194,13 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
    * Boat reports the sandbox ready, so the chain waits for the daemon. Boat
    * then recreates the containers that were running, pulling their images
    * again (docs.boat.dev/snapshots, "What is captured"), while the driver
-   * boots the runtime too. Whichever creates the container first wins: an
-   * existing container of this image and boot command is started, and a create that loses the
-   * race starts the one that won. The workspace and the runtime's own state
+   * boots the runtime too. A container with the desired image, init, policy
+   * identity and boot command is reused. A restored older configuration of
+   * this image and command is replaced once if it wins the creation race.
+   * The workspace and the runtime's own state
    * are bind-mounted from the sandbox filesystem the snapshot keeps.
    */
-  function containerStartScript(input: SandboxDriverEnsureInput): string {
+  function containerStartScript(input: SandboxDriverEnsureInput, security: BoatContainerSecurity): string {
     const port = runtimePort(input)
     const directory = workspaceDirectory(input)
     const image = shell(resolveImage(input))
@@ -211,16 +213,18 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     ].join(" && ")
     const mounts = [["workspace", directory], ...PERSISTENT_HOME_MOUNTS]
     const run = `docker run -d --init --name ${containerName} -p ${port}:${port} `
+      + `${security.args} `
       + `-v "$(pwd)/${RUNTIME_ENV_PATH}:${CONTAINER_ENV_PATH}:ro" `
       + mounts.map(([source, target]) => `-v "$(pwd)/${PERSISTENT_ROOT}/${source}":${shell(target)} `).join("")
       + `--entrypoint sh ${image} -lc ${shell(bootScript)}`
-    const identity = shell(`${resolveImage(input)} true -lc ${bootScript}`)
-    const ours = `[ "$(docker inspect --format '{{.Config.Image}} {{.HostConfig.Init}} {{join .Config.Cmd " "}}' ${containerName} 2>/dev/null)" = ${identity} ]`
+    const identity = shell(`${resolveImage(input)} true ${security.identity} -lc ${bootScript}`)
+    const ours = `[ "$(docker inspect --format '{{.Config.Image}} {{.HostConfig.Init}} {{index .Config.Labels "claxedo.runtime.security"}} {{join .Config.Cmd " "}}' ${containerName} 2>/dev/null)" = ${identity} ]`
     const sameBoot = `[ "$(docker inspect --format '{{.Config.Image}} {{join .Config.Cmd " "}}' ${containerName} 2>/dev/null)" = ${shell(`${resolveImage(input)} -lc ${bootScript}`)} ]`
     const replace = `{ docker rm -f ${containerName} >/dev/null 2>&1 || true; } && ${run}`
     const steps = [
       `chmod 600 ${RUNTIME_ENV_PATH}`,
       `timeout ${DOCKER_DAEMON_WAIT_SECONDS} sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'`,
+      security.prepare,
       ...(options.registryAuth
         ? [`{ chmod 600 ${REGISTRY_PASSWORD_PATH}; docker login ${shell(options.registryAuth.server)} `
           + `--username ${shell(options.registryAuth.username)} --password-stdin < ${REGISTRY_PASSWORD_PATH}; `
@@ -261,7 +265,9 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
 
   async function startContainer(sandboxId: string, input: SandboxDriverEnsureInput, hostId: string) {
     const env = { ...bootEnv(input, hostId), ...(await options.env?.(input, { id: hostId })) }
-    const script = containerStartScript(input)
+    const security = await boatContainerSecurity()
+    const script = containerStartScript(input, security)
+    for (const file of security.files) await client.writeFile(sandboxId, file)
     await client.writeFile(sandboxId, { path: RUNTIME_ENV_PATH, content: envFile(env) })
     if (options.registryAuth) {
       await client.writeFile(sandboxId, { path: REGISTRY_PASSWORD_PATH, content: options.registryAuth.password })

@@ -159,6 +159,8 @@
   "files": [
     "README.md",
     "LICENSE",
+    "src/drivers/boat-security/LICENSE",
+    "src/drivers/boat-security/README.md",
     "dist"
   ],
   "publishConfig": {

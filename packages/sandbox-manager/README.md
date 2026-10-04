@@ -82,11 +82,16 @@ user before starting the runtime, so Git accepts the checkout's ownership.
 It changes only the mount root's owner, preserving ownership within the person's
 checkout. Docker's init process reaps orphaned harness children so exited Git
 children cannot leave a retired Codex process group populated by zombies.
-A container is reused only when its image, init setting and boot command match;
-if Boat restores the same image and boot command without init during creation,
+A container is reused only when its image, init setting, security-policy digest and boot command match;
+if Boat restores the same image and boot command with an older configuration during creation,
 the driver replaces that known old container once. A competing different image
 or command remains a startup failure.
 Replacing an outdated container preserves the bind-mounted workspace and state.
+The [native harness policy](src/drivers/boat-security/README.md) keeps seccomp,
+AppArmor where supported, and no-new-privileges while allowing Codex's nested
+user namespaces. Only `SETFCAP` (UID-zero mapping) and `CHOWN` (workspace-root
+ownership repair) remain from Docker's default capability set. Policy staging
+or AppArmor load failure prevents startup; the driver never retries unconfined.
 The Boat driver checks the runtime's health endpoint after starting its container.
 If startup never becomes healthy, the failure includes a bounded container log
 tail and container exit information, with staged environment and registry secret

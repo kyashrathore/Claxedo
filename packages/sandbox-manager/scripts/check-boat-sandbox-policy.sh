@@ -9,17 +9,21 @@ esac
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 policy="$root/src/drivers/boat-security"
 apparmor=()
+apparmor_source=$(mktemp)
+trap 'rm -f "$apparmor_source"' EXIT
+python3 -c 'import json,sys; sys.stdout.write("\n".join(json.load(open(sys.argv[1]))))' \
+  "$policy/apparmor.json" > "$apparmor_source"
 if docker info --format '{{json .SecurityOptions}}' | grep -Fq 'name=apparmor'; then
-  sudo apparmor_parser -r -W "$policy/apparmor.profile"
-  sudo grep -Fxq 'codex-security-container (enforce)' /sys/kernel/security/apparmor/profiles
-  apparmor=(--security-opt apparmor=codex-security-container)
+  sudo apparmor_parser -r -W "$apparmor_source"
+  sudo grep -Fxq 'claxedo-workspace-runtime (enforce)' /sys/kernel/security/apparmor/profiles
+  apparmor=(--security-opt apparmor=claxedo-workspace-runtime)
 fi
 
-docker run --rm --init --cap-drop ALL --cap-add SETFCAP --security-opt no-new-privileges \
+docker run --rm --init --cap-drop ALL --cap-add SETFCAP --cap-add CHOWN --security-opt no-new-privileges \
   --security-opt "seccomp=$policy/seccomp.json" "${apparmor[@]}" \
   --entrypoint sh "$image" -lc '
     set -eu
-    grep -Eq "^CapEff:[[:space:]]+0000000080000000$" /proc/self/status
+    grep -Eq "^CapEff:[[:space:]]+0000000080000001$" /proc/self/status
     grep -Eq "^NoNewPrivs:[[:space:]]+1$" /proc/self/status
     grep -Eq "^Seccomp:[[:space:]]+2$" /proc/self/status
     unshare -Ur true
@@ -28,6 +32,9 @@ docker run --rm --init --cap-drop ALL --cap-add SETFCAP --security-opt no-new-pr
       exit 1
     fi
     mkdir -p /workspace /root/.codex-policy-home
+    chown 1000:1000 /workspace
+    chown "$(id -u):$(id -g)" /workspace
+    test "$(stat -c %u:%g /workspace)" = "$(id -u):$(id -g)"
     export CODEX_HOME=/root/.codex-policy-home
     codex sandbox -P :workspace -C /workspace -- sh -lc '\''
       set -eu
