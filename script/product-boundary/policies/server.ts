@@ -114,9 +114,11 @@ export const serverWorkerd: Policy = {
   // +2 modules (owner: the hosted workspace router): the owner deletes a cloud
   // workspace through `workspace/cloud-workspace-deletion.ts`, which destroys
   // its sandbox before the row, and the D1 deletion statements are a module of
-  // their own (`authority/adapters/d1/workspace-deletion.ts`). 148/19, no
-  // headroom.
-  ceilings: { modules: 148, packages: 19 },
+  // their own (`authority/adapters/d1/workspace-deletion.ts`).
+  // +1 module (owner: the hosted shell's provider catalog route): the OpenCode
+  // catalog joins the caller's selected D1 accounts with the workspace engine's
+  // catalog in `credentials/worker/opencode.ts`. 149/19, no headroom.
+  ceilings: { modules: 149, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
