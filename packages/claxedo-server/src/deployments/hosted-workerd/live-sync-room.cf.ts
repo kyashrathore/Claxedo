@@ -686,7 +686,7 @@ export class LiveSyncRoom {
 
   webSocketClose(socket: LiveSyncSocket, code: number, reason: string) {
     const principal = socket.deserializeAttachment?.()?.principal
-    socket.close(code, reason)
+    if (code !== 1006) socket.close(code, reason)
     if (principal) this.releaseReplay(principal, socket)
   }
 

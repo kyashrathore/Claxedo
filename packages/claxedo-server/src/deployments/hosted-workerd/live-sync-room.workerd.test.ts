@@ -33,6 +33,19 @@ beforeAll(async () => {
           fetch(request, env) {
             const url = new URL(request.url)
             const org = url.searchParams.get("org") ?? "acme"
+            if (url.pathname === "/abnormal-close") {
+              const pair = new WebSocketPair()
+              pair[0].accept()
+              pair[1].accept()
+              try {
+                new LiveSyncRoom({}, {}).webSocketClose(pair[1], 1006, "")
+                return new Response(null, { status: 204 })
+              } catch (error) {
+                return new Response(error.message, { status: 500 })
+              } finally {
+                pair[0].close(1000)
+              }
+            }
             if (url.pathname === "/connect") {
               const subject = url.searchParams.get("as") ?? "alice"
               const lastEventId = request.headers.get("last-event-id") ?? undefined
@@ -152,6 +165,11 @@ function room(org: string) {
 }
 
 describe("LiveSyncRoom workerd integration", () => {
+  test("an abnormal close is not echoed with its reserved 1006 code, which workerd refuses", async () => {
+    const response = await miniflare.dispatchFetch("https://live-sync.test/abnormal-close")
+    expect(response.status, await response.text()).toBe(204)
+  })
+
   test("bridges a real hibernatable Durable Object socket to SSE and fans a nudge", async () => {
     const acme = room("acme")
     const stream = await acme.connect()
