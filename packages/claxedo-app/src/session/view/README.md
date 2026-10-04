@@ -42,6 +42,7 @@ The pane that shows one session: the moved timeline (`timeline/`, owned by the t
 
 ## Following the end
 
+- Expanding transcript details pauses following while the reader inspects them. An accepted local send resumes the existing timeline scroll controller, clears any history selection, and follows the new turn. A rejected send leaves the reader's position alone.
 - The timeline follows the end only while a turn is active (`turnActive(status)`) or for 300 ms after it ends, so the finished turn's trailing layout still lands at the bottom.
 - The browser can deliver a scroll event after our own `scrollTop` write; a scroll that lands within 2 px of our last write inside 1.5 s is ours, not the reader's.
 - A wheel or swipe inside a nested scroller (`[data-scrollable]`) never counts as leaving the end.

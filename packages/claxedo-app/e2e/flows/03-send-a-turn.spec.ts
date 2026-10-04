@@ -101,6 +101,13 @@ test("03 send a turn: the reply streams in with its tool groups, diff, todo list
 
   const messages = await api.messages(workspace.directory, session.id)
   expect(assistantText(messages)).toContain("Done. The sum is")
+
+  await test.step("sending after reading expanded tools resumes following the reply", async () => {
+    await stack.acp.write("follow-up", { steps: [{ kind: "text", text: "The follow-up is visible without jumping or reloading." }] })
+    await sendPrompt(app, `Confirm the notes. ${acpScriptToken("follow-up")}`)
+    await expect(app.getByText("The follow-up is visible without jumping or reloading.", { exact: true })).toBeInViewport()
+    expect(assistantText(await api.messages(workspace.directory, session.id))).toContain("The follow-up is visible without jumping or reloading.")
+  })
 })
 
 test("03 thinking streams open while the model thinks, then folds to how long it took", async ({ stack, api, app }) => {
