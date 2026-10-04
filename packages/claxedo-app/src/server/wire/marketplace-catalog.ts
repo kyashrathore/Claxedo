@@ -16,7 +16,7 @@ import type {
 
 type Row = Record<string, unknown>
 
-export const PLUGIN_HARNESSES: readonly PluginHarness[] = ["opencode", "claude", "codex", "cursor", "acp"]
+export const PLUGIN_HARNESSES: readonly PluginHarness[] = ["opencode", "claude", "codex", "cursor", "pi", "acp"]
 
 const SOURCE_KINDS: readonly PluginSourceKind[] = ["claxedo", "personal", "organization"]
 

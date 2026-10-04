@@ -28,16 +28,18 @@ function catalog(supportedHarnesses: readonly string[], harnesses: Record<string
   return { revision: 3, supportedHarnesses, candidates: [candidate(harnesses)], errors: [] }
 }
 
-const everyTarget = { opencode: activation, claude: activation, codex: activation, cursor: activation, acp: activation }
+const HOSTED_TARGETS = ["opencode", "claude", "codex", "cursor", "pi", "acp"] as const
+const everyTarget = Object.fromEntries(HOSTED_TARGETS.map((id) => [id, activation]))
 
-test("plugin catalog from the wire: custom ACP agents are a plugin target", () => {
-  const parsed = marketplaceCatalogFromWire(catalog(["opencode", "claude", "codex", "cursor", "acp"], everyTarget))
-  expect(parsed?.supportedHarnesses).toEqual(["opencode", "claude", "codex", "cursor", "acp"])
+test("plugin catalog from the wire: the hosted catalog's targets, Pi and custom ACP agents included, parse", () => {
+  const parsed = marketplaceCatalogFromWire(catalog(HOSTED_TARGETS, everyTarget))
+  expect(parsed?.supportedHarnesses).toEqual([...HOSTED_TARGETS])
+  expect(parsed?.candidates[0]?.harnesses.pi).toEqual(activation)
   expect(parsed?.candidates[0]?.harnesses.acp).toEqual(activation)
 })
 
 test("plugin catalog from the wire: an unknown target or a candidate missing a target is a contract mismatch", () => {
-  expect(marketplaceCatalogFromWire(catalog(["opencode", "pi"], everyTarget))).toBeUndefined()
-  const withoutAcp = { opencode: activation, claude: activation, codex: activation, cursor: activation }
-  expect(marketplaceCatalogFromWire(catalog(["opencode"], withoutAcp))).toBeUndefined()
+  expect(marketplaceCatalogFromWire(catalog(["opencode", "gemini"], everyTarget))).toBeUndefined()
+  const withoutPi = Object.fromEntries(HOSTED_TARGETS.filter((id) => id !== "pi").map((id) => [id, activation]))
+  expect(marketplaceCatalogFromWire(catalog(["opencode"], withoutPi))).toBeUndefined()
 })

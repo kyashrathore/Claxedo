@@ -404,6 +404,16 @@ describe("hosted Agent Plugins routes", () => {
     expect(catalog.candidates[0]).not.toHaveProperty("sourceLabel")
   })
 
+  test("names every plugin target the app reads, and gives each candidate a state for each", async () => {
+    const subject = await fixture()
+
+    const catalog = await (await request(subject.app, "/")).json()
+
+    const targets = ["opencode", "claude", "codex", "cursor", "pi", "acp"]
+    expect(catalog.supportedHarnesses).toEqual(targets)
+    for (const candidate of catalog.candidates) expect(Object.keys(candidate.harnesses).toSorted()).toEqual(targets.toSorted())
+  })
+
   test("reads the caller's retained plugins once per catalog request", async () => {
     const subject = await fixture()
 
