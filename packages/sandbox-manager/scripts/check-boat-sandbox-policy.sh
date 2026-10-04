@@ -39,5 +39,6 @@ docker run --rm --init --cap-drop ALL --security-opt no-new-privileges \
       test "$(cat /workspace/native-sandbox-probe.txt)" = native-sandbox-ok
     '\''
     test ! -e /etc/claxedo-policy-must-not-exist
+    node /opt/workspace-runtime/workspace-runtime-image-smoke.mjs
     echo NATIVE_SANDBOX_POLICY_OK
   '
