@@ -1,4 +1,4 @@
-import type { ComposerNoticeTone } from "./composer-notice"
+import type { ComposerNoticeTone } from "./notice-slot"
 import type { HarnessConnectionState } from "@/server"
 
 export type HarnessNoticeInput = {

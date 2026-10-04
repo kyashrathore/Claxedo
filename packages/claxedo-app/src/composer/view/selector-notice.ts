@@ -1,7 +1,7 @@
 import { createMemo, type Accessor } from "solid-js"
 import type { HarnessScopeInput, HarnessSelectionController, HarnessSelectionSnapshot } from "../harness/controller"
 import { harnessDisplayLabel, harnessSelectionId, isCatalogHarness, type HarnessType } from "../harness/profile"
-import type { ComposerNotice } from "./composer-notice"
+import type { ComposerNotice } from "./notice-slot"
 import { resolveHarnessNotice, type HarnessNoticeInput } from "./harness-notice"
 import type { ModelAvailability } from "./harness-model-availability"
 import type { PickerItem } from "./model-list"

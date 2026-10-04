@@ -33,11 +33,13 @@ export async function hostedWorkspace(stack: HostedStack, owner: HostedPerson, n
 
 export async function connectHostedWorkspace(stack: HostedStack, owner: HostedPerson, workspaceId: string) {
   let connected = false
+  let runtimeAccessToken: string | undefined
   for (let attempt = 0; attempt < 30; attempt++) {
     const started = await hostedFetch(stack, `/api/workspace/${encodeURIComponent(workspaceId)}/connection`, {
       method: "POST", headers: { "content-type": "application/json" }, body: "{}",
     }, owner)
     if (started.ok) {
+      runtimeAccessToken = (await started.json() as { runtimeAccessToken?: string }).runtimeAccessToken
       connected = true
       break
     }
@@ -49,9 +51,8 @@ export async function connectHostedWorkspace(stack: HostedStack, owner: HostedPe
   }
   if (!connected) throw new Error(`hosted workspace ${workspaceId} never finished provisioning`)
   const targetFile = path.join(stack.root, "local-broker-targets", `${workspaceId}.json`)
-  let runtimeAccessToken: string | undefined
   let connectionReadback = "none"
-  for (let attempt = 0; attempt < 60; attempt++) {
+  for (let attempt = 0; attempt < 60 && !runtimeAccessToken; attempt++) {
     try {
       await fs.access(targetFile)
     } catch (error) {

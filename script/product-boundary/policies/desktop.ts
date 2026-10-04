@@ -523,9 +523,15 @@ export const desktopRenderer: Policy = {
   // draft's placements in `projects/draft-where.ts`, draws them from
   // `projects/view/where-chip.tsx` and asks a new cloud workspace's name in
   // `projects/view/new-cloud-workspace-panel.tsx`, replacing
-  // `projects/draft-workspaces.ts`. They add no package edge. 1323/36, no
-  // headroom.
-  ceilings: { modules: 1323, packages: 36 },
+  // `projects/draft-workspaces.ts`. They add no package edge.
+  // The one notice slot above the composer (owner: the composer domain) ranks
+  // its notices in `composer/view/notice-slot.ts`; a draft's first send is its
+  // machine in `session/view/first-send.ts` and its notice in
+  // `session/view/first-send-notice.ts`; a placement's lifecycle notice in
+  // `session/view/placement-notice.tsx` replaces the four `workspace-sleep/`
+  // cards; the workbench matches a pane by route in `workbench/route-match.ts`.
+  // They add no package edge. 1324/36, no headroom.
+  ceilings: { modules: 1324, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
