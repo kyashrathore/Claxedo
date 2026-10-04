@@ -1063,6 +1063,29 @@ describe("hosted workspace list (GET /api/workspace)", () => {
     ])
   })
 
+  test("each cloud row carries the lifecycle status its lease names, read without starting compute", async () => {
+    const leases: Record<string, unknown> = {
+      ws_ready: { status: "ready", sandboxId: "box", url: "https://runtime.test", hostId: "host", epoch: 1, homeRegion: "eu-west" },
+      ws_booting: { status: "unavailable", reason: "runtime_acquiring", leaseStatus: "acquiring" },
+      ws_stopped: { status: "unavailable", reason: "runtime_stopped", leaseStatus: "stopped" },
+      ws_never: { status: "unavailable", reason: "runtime_lease_missing" },
+      ws_broken: { status: "unavailable", reason: "provider_rejected", leaseStatus: "unavailable" },
+    }
+    const authority = fakeAuthority({ listWorkspaces: vi.fn(async () => Object.keys(leases).map((workspace_id) => ({ workspace_id, backing: "cloud-vm" }))) })
+    const ensure = vi.fn()
+    const target = vi.fn(async (id: string) => leases[id])
+    const { app } = buildApp({ authority, sandboxManager: { target, ensure } as unknown as SandboxManager })
+    const json = (await (await app.fetch(get("/?host=provisioner"))).json()) as { workspaces: unknown[] }
+    expect(json.workspaces).toEqual([
+      { workspace_id: "ws_ready", backing: "cloud-vm", status: "ready", reachable: true },
+      { workspace_id: "ws_booting", backing: "cloud-vm", status: "provisioning", reachable: false },
+      { workspace_id: "ws_stopped", backing: "cloud-vm", status: "stopped", reachable: false },
+      { workspace_id: "ws_never", backing: "cloud-vm", status: "stopped", reachable: false },
+      { workspace_id: "ws_broken", backing: "cloud-vm", status: "failed", error: "provider_rejected", reachable: false },
+    ])
+    expect(ensure).not.toHaveBeenCalled()
+  })
+
   test("unsigned (no host query) returns an empty list and never touches the authority", async () => {
     const { app, authority } = buildApp({})
     const res = await app.fetch(new Request("http://cp.test/"))
