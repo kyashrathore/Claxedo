@@ -1,0 +1,7 @@
+# Native harness container policy verification
+
+Staging's Boat container rejects Codex 0.159.2 Bubblewrap namespace creation. Live diagnostics show user namespaces enabled, Docker's default seccomp filter active, and `docker-default (enforce)` AppArmor. Disabling Codex's own sandbox is not a repair.
+
+The candidate policies in this directory are copied unchanged from OpenAI's Apache-2.0 licensed [codex-security](https://github.com/openai/codex-security/tree/1fb0e5fbf8684c926cac2a36d08389b212d28d5a/docker) at commit `1fb0e5fbf8684c926cac2a36d08389b212d28d5a`; the license is retained alongside them. The seccomp profile allows Bubblewrap's nested user/mount namespaces while otherwise denying unlisted syscalls. It must be combined with `--cap-drop ALL` and `no-new-privileges`. The AppArmor profile retains proc, sysfs and kernel restrictions while allowing nested namespace mounts.
+
+`scripts/check-boat-sandbox-policy.sh` verifies the real pinned runtime image: zero effective capabilities, no-new-privileges, active seccomp, a successful unprivileged user namespace, refusal of a mount namespace without a new user namespace, and Codex workspace writes with an outside-workspace write denied. This is a CI experiment, not an active Boat driver policy. Only integrate the candidate after these checks pass and runtime startup/persistence are checked under the same policy.

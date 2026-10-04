@@ -25,6 +25,10 @@ on:
         required: false
         default: false
         type: boolean
+      verify_image:
+        description: "Verify the native sandbox policy against this existing immutable image instead of building"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -32,6 +36,7 @@ permissions:
 
 jobs:
   build:
+    if: ${{ inputs.verify_image == '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -81,3 +86,14 @@ jobs:
           else
             echo "no build-info.json emitted"
           fi
+
+  verify-native-policy:
+    if: ${{ inputs.verify_image != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Verify native Codex sandbox with restricted container capabilities
+        env:
+          RUNTIME_IMAGE: ${{ inputs.verify_image }}
+        run: bash packages/sandbox-manager/scripts/check-boat-sandbox-policy.sh "$RUNTIME_IMAGE"
