@@ -65,13 +65,28 @@ async function preparedBranch(directory: string, source: RepositorySource) {
   return head.trim().replace(/^origin\//, "") || undefined
 }
 
+async function prepareOrigin(run: Git, directory: string, entries: readonly string[], source: RepositorySource) {
+  const remotes = (await run(["remote"], directory)).trim().split(/\s+/).filter(Boolean)
+  if (!remotes.includes("origin")) {
+    const indexed = await run(["ls-files", "--cached", "-z"], directory)
+    if (remotes.length || indexed || entries.some((entry) => entry !== ".git")) {
+      throw new Error("Cannot configure the selected origin in an unfinished checkout that contains other work")
+    }
+    await run(["remote", "add", "origin", source.repoUrl], directory)
+  }
+  const origin = (await run(["remote", "get-url", "origin"], directory)).trim()
+  if (origin !== source.repoUrl) throw new Error("The workspace checkout's origin is not the selected repository")
+}
+
 /**
  * Checks out the tip of the selected repository before the runtime reports
  * ready, within one deadline for the whole preparation. The checkout is made in
- * place, so a boot stopped mid-fetch leaves a repository whose HEAD names no
- * commit yet, which the next boot finishes. A checkout with a commit is the
- * person's work and is left exactly as it is. Answers, when a repository is
- * selected, the branch whose history is still to come.
+ * place, so a boot stopped after init or mid-fetch leaves a repository whose
+ * HEAD names no commit yet, which the next boot finishes. A missing origin is
+ * configured only in an empty, unindexed checkout with no other remotes.
+ * A checkout with a commit is the person's work and is left exactly as it is.
+ * Answers, when a repository is selected, the branch whose history is still
+ * to come.
  */
 export async function prepareRuntimeRepository(directory: string, env: NodeJS.ProcessEnv) {
   const source = selectedSource(env)
@@ -83,13 +98,11 @@ export async function prepareRuntimeRepository(directory: string, env: NodeJS.Pr
     if (entries.includes(".git")) {
       await clearStaleShallowLock(directory)
       if (await hasCommit(directory)) return { branch: await preparedBranch(directory, source) }
-      const origin = (await run(["remote", "get-url", "origin"], directory)).trim()
-      if (origin !== source.repoUrl) throw new Error("The workspace checkout's origin is not the selected repository")
     } else {
       if (entries.length) throw new Error("Cannot prepare the selected repository in a nonempty workspace directory")
       await run(["init", "--quiet"], directory)
-      await run(["remote", "add", "origin", source.repoUrl], directory)
     }
+    await prepareOrigin(run, directory, entries, source)
     return { branch: await checkOut(run, directory, source) }
   } catch (error) {
     if (error instanceof GitTimeoutError) {
