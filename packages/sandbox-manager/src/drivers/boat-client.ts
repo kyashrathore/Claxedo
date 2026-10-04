@@ -82,7 +82,7 @@ export function createBoatClient(options: { apiKey: string; baseUrl?: string; ti
     try {
       response = await fetchImpl(`${baseUrl}${path}`, {
         method: init?.method ?? "GET",
-        redirect: "error",
+        redirect: "manual",
         headers: {
           Authorization: `Bearer ${options.apiKey}`,
           ...(init?.body === undefined ? {} : { "Content-Type": "application/json" }),

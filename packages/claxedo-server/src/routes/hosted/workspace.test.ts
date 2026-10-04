@@ -1037,7 +1037,7 @@ describe("hosted workspace list (GET /api/workspace)", () => {
     const json = (await res.json()) as { workspaces: Array<{ workspace_id: string }> }
     expect(json.workspaces).toEqual([
       { workspace_id: "ws_user", backing: "local-worktree", reachable: false },
-      { workspace_id: "ws_cloud", backing: "cloud-vm", reachable: false },
+      { workspace_id: "ws_cloud", backing: "cloud-vm", reachable: false, status: "failed", error: "Cloud runtime is unavailable" },
     ])
     expect(authority!.listWorkspaces).toHaveBeenCalledTimes(1)
   })

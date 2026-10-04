@@ -1,5 +1,28 @@
 import { describe, expect, test } from "vitest"
-import { authorityRowReachable } from "./placement-reachability"
+import { authorityRowReachable, withAuthorityRowReachability } from "./placement-reachability"
+import type { SandboxTargetResult } from "../sandbox/manager-port"
+
+test("cloud inventory reports the authoritative lease lifecycle without starting compute", async () => {
+  const targets: Record<string, SandboxTargetResult> = {
+    cold: { status: "unavailable", reason: "runtime_lease_missing" },
+    starting: { status: "unavailable", reason: "runtime_acquiring", leaseStatus: "acquiring" },
+    stopped: { status: "unavailable", reason: "runtime_stopped", leaseStatus: "stopped" },
+    failed: { status: "unavailable", reason: "provider_rejected", leaseStatus: "unavailable" },
+    ready: { status: "ready", sandboxId: "box", url: "https://runtime.test", hostId: "host", epoch: 1, homeRegion: "eu" },
+  }
+  const calls: string[] = []
+  const rows = await withAuthorityRowReachability({ target: async (id) => { calls.push(id); return targets[id] } }, [
+    ...Object.keys(targets).map((workspace_id) => ({ workspace_id, backing: "cloud-vm" })),
+    { workspace_id: "machine", backing: "local-worktree", host_online: true },
+  ])
+  expect(calls).toEqual(Object.keys(targets))
+  expect(rows).toMatchObject([
+    { status: "stopped", reachable: false }, { status: "provisioning", reachable: false },
+    { status: "stopped", reachable: false }, { status: "failed", error: "provider_rejected", reachable: false },
+    { status: "ready", reachable: true }, { reachable: true },
+  ])
+  expect(rows[5]).not.toHaveProperty("status")
+})
 
 describe("authorityRowReachable", () => {
   test("a cloud row answers with its sandbox lease, a machine row with its serving enrollment or this server", () => {

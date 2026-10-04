@@ -40,7 +40,8 @@ function socketUrl(serverUrl: string, path: string) {
 
 function withRequestDefaults(config: ServerConfig, init: RequestInit | undefined): RequestInit {
   const headers = new Headers(init?.headers)
-  if (typeof init?.body === "string" && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
+  const jsonMutation = init?.body === undefined && ["POST", "PUT", "PATCH", "DELETE"].includes(init?.method?.toUpperCase() ?? "GET")
+  if ((typeof init?.body === "string" || jsonMutation) && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
   if (!headers.has("Accept")) headers.set("Accept", "application/json")
   return {
     ...init,

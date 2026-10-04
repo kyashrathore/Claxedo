@@ -1,5 +1,5 @@
 import { asRecord, asString } from "@claxedo/helpers/guards"
-import { authorityRowBacking, readyCloudWorkspaces } from "./cloud-runtime-readiness"
+import { authorityRowBacking, cloudWorkspaceLifecycles } from "./cloud-runtime-readiness"
 import type { SandboxManagerPort } from "../sandbox/manager-port"
 
 /**
@@ -20,11 +20,18 @@ export function authorityRowReachable(
   return record?.host_online === true || servedHere.has(workspaceId)
 }
 
-/** Authority rows as a signed list answers them, each carrying `reachable` from the predicate above. */
+/**
+ * Authority rows as a signed list answers them, each carrying `reachable`
+ * from the predicate above and a cloud row its lease's lifecycle `status`.
+ */
 export async function withAuthorityRowReachability(
   manager: Pick<SandboxManagerPort, "target"> | undefined,
   rows: readonly unknown[],
 ) {
-  const readyCloud = await readyCloudWorkspaces(manager, rows)
-  return rows.map((row) => ({ ...asRecord(row), reachable: authorityRowReachable(row, readyCloud) }))
+  const lifecycles = await cloudWorkspaceLifecycles(manager, rows)
+  return rows.map((row) => {
+    const record = asRecord(row)
+    const lifecycle = lifecycles.get(asString(record?.workspace_id) ?? asString(record?.workspaceId) ?? "")
+    return { ...record, ...lifecycle, reachable: lifecycle ? lifecycle.status === "ready" : authorityRowReachable(row, new Set()) }
+  })
 }
