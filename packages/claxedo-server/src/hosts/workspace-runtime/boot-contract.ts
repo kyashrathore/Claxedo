@@ -12,3 +12,6 @@ export const RUNTIME_PREPARATION_DEADLINE_MS = 30 * 60_000
 
 /** Leads the stderr line a runtime whose boot failed prints before it exits. */
 export const WORKSPACE_RUNTIME_BOOT_FAILED = "workspace_runtime_boot_failed"
+
+/** Where the control plane takes, once, the start phases a runtime timed while it booted. */
+export const RUNTIME_START_PHASES_PATH = "/api/claxedo/start-phases"

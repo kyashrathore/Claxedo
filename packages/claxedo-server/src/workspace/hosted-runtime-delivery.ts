@@ -18,6 +18,8 @@ import { mintSupervisorBackplaneToken } from "@claxedo/server-core/platform/auth
 import { createWorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { cloudRootBacking } from "./cloud-root-backing"
+import { createHostedRuntimeFetch } from "./relay-runtime-client"
+import { recordRuntimeStartPhases } from "./runtime-start-phases"
 
 const log = Log.create({ service: "hosted-runtime-delivery" })
 
@@ -109,6 +111,13 @@ export function createHostedRuntimeDelivery(input: {
     await client.applyConfig(snapshot, options)
     await input.deliverSessionRowsPass?.(workspaceId).catch((error: unknown) => {
       log.warn("session rows pass delivery failed", { workspaceId, error: String(error) })
+    })
+    await recordRuntimeStartPhases({
+      sandboxManager: input.sandboxManager,
+      workspaceId,
+      runtimeFetch: (path, init) => createHostedRuntimeFetch(input.services)(workspaceId, person.orgId, path, init),
+    }).catch((error: unknown) => {
+      log.warn("runtime start phases were not recorded", { workspaceId, error: String(error) })
     })
   }
   const provisionRuntime = (context: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => push(context.workspaceId, preparation)

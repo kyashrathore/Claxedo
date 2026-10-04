@@ -13,18 +13,37 @@ import { mintOwnerGrant } from "../../session/owner-grant"
 import { serveGitOrigin } from "../../test-support/git-origin"
 import { usageReportPlane, USAGE_REPORT_URL } from "../../test-support/usage-report-plane"
 import { FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID } from "./first-party-mcp"
+import { RUNTIME_START_PHASES_PATH } from "./boot-contract"
 import {
   claxedoCorsOrigin,
   claxedoRuntimeHarnessFromEnv,
   claxedoWorkspaceRuntimeBootFromEnv,
   claxedoWorkspaceRuntimeLaunch,
+  type ClaxedoWorkspaceRuntimeBoot,
 } from "./runtime-boot"
+import { Hono } from "hono"
+import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
+import type { WorkspaceRuntimeRouteContext } from "@claxedo/workspace-runtime/route-contribution"
 import {
   buildAssistantMessage,
   messageCompleted,
   messageUpdated,
   sessionUsage,
 } from "@claxedo/session-core"
+
+const CONTROL_PLANE_CALLER = { principal_kind: "service", actor_id: "control-plane" }
+
+async function takeStartPhases(boot: ClaxedoWorkspaceRuntimeBoot, caller: object = CONTROL_PLANE_CALLER) {
+  const contribution = boot.options.routeContributions?.find((entry) => entry.id === "start-phases")
+  if (!contribution) throw new Error("a relay runtime mounts its start phases")
+  const relay = new Hono<{ Variables: RelayHostAuthContext }>()
+  relay.use("*", async (c, next) => {
+    c.set("relayHostAuth", caller as RelayHostAuthContext["relayHostAuth"])
+    await next()
+  })
+  relay.route("/", contribution.mount({} as WorkspaceRuntimeRouteContext).routes)
+  return await relay.request(RUNTIME_START_PHASES_PATH, { method: "POST" })
+}
 
 describe("claxedo workspace-runtime boot policy", () => {
   test("installs the clone placeholder as an authorization header for the workspace repository alone before boot returns", async () => {
@@ -256,6 +275,39 @@ describe("claxedo workspace-runtime boot policy", () => {
     })
     expect(boot.hostname).toBe("0.0.0.0")
     expect(boot.options.exposure?.kind).toBe("private-network")
+  })
+
+  test("a relay runtime hands the control plane its checkout's duration and size once, and no one else", async () => {
+    const origin = await serveGitOrigin()
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    try {
+      const boot = await claxedoWorkspaceRuntimeBootFromEnv({
+        WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-start",
+        WORKSPACE_RUNTIME_DIRECTORY: path.join(origin.directory, "workspace"),
+        WORKSPACE_RUNTIME_SOURCE_KIND: "git",
+        WORKSPACE_RUNTIME_GIT_REPO_URL: origin.repoUrl,
+        WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey),
+        WORKSPACE_RUNTIME_RELAY_URL: "https://relay.example",
+      })
+      expect((await takeStartPhases(boot, { principal_kind: "user", actor_id: "act_reader" })).status).toBe(403)
+      const first = await (await takeStartPhases(boot)).json() as { phases: { phase: string; durationMs: number }[]; repoSizeBytes: number }
+      expect(first.phases).toEqual([{ phase: "repository_checkout", durationMs: expect.any(Number) }])
+      expect(first.repoSizeBytes).toBeGreaterThan(0)
+      expect(await (await takeStartPhases(boot)).json()).toEqual({ phases: [] })
+    } finally {
+      await origin.close()
+    }
+  })
+
+  test("a runtime with no repository times no checkout", async () => {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    const boot = await claxedoWorkspaceRuntimeBootFromEnv({
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-empty",
+      WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
+      WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey),
+      WORKSPACE_RUNTIME_RELAY_URL: "https://relay.example",
+    })
+    expect(await (await takeStartPhases(boot)).json()).toEqual({ phases: [] })
   })
 
   test("relay env wires relay exposure and the host tunnel", async () => {

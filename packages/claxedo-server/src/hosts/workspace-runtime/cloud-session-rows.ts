@@ -1,14 +1,11 @@
 import { decodeJwt } from "jose"
 import { Hono } from "hono"
-import { createMiddleware } from "hono/factory"
 import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { RuntimeStore } from "@claxedo/session-core"
 import type { WorkspaceRuntimeServerOptions } from "@claxedo/workspace-runtime"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
-import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 import { workspaceId } from "@claxedo/workspace-runtime/host"
 import type { HostSessionRow } from "@claxedo/server-core/platform/auth/host-session-rows"
-import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { SessionRowStatus } from "@claxedo/server-core/session/navigation-list"
 import { SESSION_ROWS_PASS_PATH, type SessionRowsPassHeld } from "@claxedo/server-core/hosts/workspace-runtime/env"
 import { createRuntimeSessionStatus } from "@claxedo/server-core/session/publish/runtime-session-status"
@@ -16,6 +13,7 @@ import { createSessionRowsPublisher, type SessionRowSource } from "@claxedo/serv
 import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { controlPlaneOrigin } from "./tasks-grant"
+import { controlPlaneOnly } from "./control-plane-only"
 import { expiryOf, halfLifeRenewal, nodeRenewalTimers, type RenewalOutcome, type RenewalTimers } from "./half-life-renewal"
 
 const log = Log.create({ service: "cloud-session-rows" })
@@ -55,11 +53,6 @@ function held(token: string | undefined): SessionRowsPassHeld {
   } catch {
     return null
   }
-}
-
-function fromControlPlane(auth: RelayHostAuthContext["relayHostAuth"]) {
-  return !!auth && "principal_kind" in auth
-    && auth.principal_kind === CONTROL_PLANE_RUNTIME_ACTOR.principalKind && auth.actor_id === CONTROL_PLANE_RUNTIME_ACTOR.actorId
 }
 
 /**
@@ -173,13 +166,7 @@ export function cloudSessionRows(
       id: "session-rows",
       mount: () => {
         const routes = new Hono()
-        // The relay host auth middleware the runtime mounts ahead of every contribution sets `relayHostAuth`.
-        routes.use(SESSION_ROWS_PASS_PATH, createMiddleware<{ Variables: RelayHostAuthContext }>(async (c, next) => {
-          if (!fromControlPlane(c.get("relayHostAuth"))) {
-            return c.json({ error: { code: "forbidden", message: "Only the control plane hands this runtime its session rows pass" } }, 403)
-          }
-          return await next()
-        }))
+        routes.use(SESSION_ROWS_PASS_PATH, controlPlaneOnly("Only the control plane hands this runtime its session rows pass"))
         routes.get(SESSION_ROWS_PASS_PATH, (c) => c.json({ held: held(token) }))
         routes.put(SESSION_ROWS_PASS_PATH, async (c) => {
           const next = stringField(asRecord(await c.req.json().catch(() => undefined)), "token")
