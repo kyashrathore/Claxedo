@@ -135,7 +135,7 @@ async function composition() {
 }
 
 describe("refreshing a running hosted sandbox", () => {
-  test("a refresh that re-creates the host hands the driver everything the create did", async () => {
+  test("a refresh that re-creates the host hands the driver everything the first start did", async () => {
     const { app, delivery, created, lose } = await composition()
     const res = await app.fetch(new Request(`${REQUEST_ORIGIN}/create`, {
       method: "POST",
@@ -149,7 +149,13 @@ describe("refreshing a running hosted sandbox", () => {
       }),
     }))
     expect(res.status).toBe(200)
-    await vi.waitFor(() => expect(created).toHaveLength(1))
+    const { workspaceId } = await res.json() as { workspaceId: string }
+    await app.fetch(new Request(`${REQUEST_ORIGIN}/${workspaceId}/connection`, {
+      method: "POST",
+      headers: { authorization: "Bearer owner", "content-type": "application/json" },
+      body: "{}",
+    }))
+    expect(created).toHaveLength(1)
 
     lose()
     await delivery.pluginsChanged("owner")
@@ -173,7 +179,7 @@ describe("refreshing a running hosted sandbox", () => {
       secrets: [expect.objectContaining({ name: "ANTHROPIC_API_KEY" })],
     })
     expect(provisioned(fromRefresh)).toEqual(provisioned(fromCreate))
-    const workspaceId = fromRefresh?.workspaceId
+    expect(fromRefresh?.workspaceId).toBe(workspaceId)
     expect(pushed.slice(-2), "a ready runtime gets its settings, then its session rows pass").toEqual(["config", `session rows pass ${workspaceId}`])
   })
 })

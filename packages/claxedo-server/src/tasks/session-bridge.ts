@@ -97,8 +97,8 @@ export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
    */
   cloudCreateAdmission?: CloudCreateAdmission
   /**
-   * The usage side effects the workspace create route runs on a lease it
-   * opens, fired identically for a task-driven root: the event that makes the
+   * The usage side effects a workspace's first explicit start runs on the
+   * lease it opens, fired identically for a task-driven root: the event that makes the
    * spend attributable and the tenant stamp the concurrency cap counts.
    * Absent, a root's lease is created but unattributed, which is exactly what
    * leaves it invisible to the cap.
@@ -242,7 +242,7 @@ function createTasksCloudTarget(
           ...(workspace.remote_directory ? { remoteDirectory: workspace.remote_directory } : {}),
           ...(input.services.defaultHomeRegion ? { homeRegion: input.services.defaultHomeRegion } : {}),
         })
-        // Same position the create route fires it: the authority row exists,
+        // Same position the first start fires it: the authority row exists,
         // the sandbox does not yet, and `startedAt` covers the cold start.
         if (context.created) {
           input.sandboxUsage?.leaseOpened({
@@ -269,7 +269,7 @@ function createTasksCloudTarget(
     }
     if ("code" in allocated) return { blocker: { code: allocated.code, detail: allocated.detail } }
     // The lease row exists once `ensure` acquired it, so the tenant stamp the
-    // cap counts on lands here — the same post-acquire point the create route
+    // cap counts on lands here — the same post-ensure point the first start
     // stamps it, as the caller the lease was opened for. An allocation that
     // reached this far admitted, so `creator` resolved.
     if (creator) {

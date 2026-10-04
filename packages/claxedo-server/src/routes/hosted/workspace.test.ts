@@ -459,6 +459,7 @@ describe("hosted connection", () => {
     })
     const sandboxManager = {
       ensure: vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 3, homeRegion: "apac-south" })),
+    target: vi.fn(async () => ({ status: "unavailable" as const, reason: "runtime_lease_not_ready", leaseStatus: "acquiring" as const })),
     } as unknown as SandboxManager
     const { app, capture } = buildApp({ authority: authority, sandboxManager })
     const res = await app.fetch(post("/ws_1/connection", {}))
@@ -701,6 +702,7 @@ describe("hosted connection", () => {
         epoch: 9,
         homeRegion: "eu-west",
       })),
+      target: vi.fn(async () => ({ status: "unavailable" as const, reason: "runtime_lease_not_ready", leaseStatus: "acquiring" as const })),
     } as unknown as SandboxManager
     const { app, capture } = buildApp({ authority: authority, sandboxManager })
     // The 409 is the explicit connect's answer; the GET read reports the same
@@ -726,6 +728,7 @@ describe("hosted connection", () => {
       homeRegion: "eu-west",
       relayRoom: "ws_1",
       retryAfterMs: 5_000,
+      reason: "retry cap reached",
     })
   })
 
@@ -745,6 +748,7 @@ describe("hosted connection", () => {
         epoch: 9,
         homeRegion: "eu-west",
       })),
+      target: vi.fn(async () => ({ status: "unavailable" as const, reason: "runtime_lease_not_ready", leaseStatus: "acquiring" as const })),
     } as unknown as SandboxManager
     const { app } = buildApp({ authority: authority, sandboxManager })
     const res = await app.fetch(post("/ws_1/connection", {}))
@@ -1119,75 +1123,21 @@ describe("hosted workspace list (GET /api/workspace)", () => {
 })
 
 describe("hosted cloud workspace create (POST /create)", () => {
-  test("on Workers the provisioning is held open past the response via waitUntil", async () => {
-    // workerd cancels detached promises once the response returns, so the
-    // route hands the whole chain — ensure AND the runtime provisioning that
-    // follows a ready lease — to executionCtx.waitUntil.
+  test("creates the workspace and starts nothing: no ensure, and no work held past the response", async () => {
     const authority = fakeAuthority({ createCloudWorkspace: vi.fn(async () => ({ workspace_id: "ignored" })) })
-    const ensure = vi.fn(async () => ({ status: "ready", routingId: "routing_test", epoch: 1, homeRegion: "us-east", sandboxId: "sb_1", url: "https://sb.test" }))
-    const preparation = { secrets: [] }
-    const prepareRuntime = vi.fn(async () => preparation)
-    const provisionRuntime = vi.fn(async () => undefined)
-    const { app } = buildApp({ authority, sandboxManager: { ensure } as unknown as SandboxManager, options: { prepareRuntime, provisionRuntime } })
+    const ensure = vi.fn()
+    const prepareRuntime = vi.fn()
+    const { app } = buildApp({ authority, sandboxManager: { ensure } as unknown as SandboxManager, options: { prepareRuntime } })
     const waitUntil = vi.fn()
     const res = await app.fetch(
-      post("/create", { workspaceName: "Held open", repoUrl: "https://github.com/a/b" }),
+      post("/create", { workspaceName: "Cold", repoUrl: "https://github.com/a/b" }),
       undefined,
       { waitUntil, passThroughOnException() {}, props: {} } as never,
     )
     expect(res.status).toBe(200)
-    const body = (await res.json()) as { workspaceId: string }
-    expect(waitUntil).toHaveBeenCalledTimes(1)
-    await (waitUntil.mock.calls[0] as unknown as [Promise<unknown>])[0]
-    expect(ensure).toHaveBeenCalledWith(body.workspaceId, expect.objectContaining({ homeRegion: "us-east" }))
-    expect(prepareRuntime).toHaveBeenCalledWith({ workspaceId: body.workspaceId })
-    expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: body.workspaceId }, preparation)
-    expect(ensure).toHaveBeenCalledWith(body.workspaceId, expect.objectContaining({ secrets: [] }))
-  })
-
-  test("launches the sandbox with the readable environment its runtime preparation resolved", async () => {
-    const authority = fakeAuthority({ createCloudWorkspace: vi.fn(async () => ({ workspace_id: "ignored" })) })
-    const ensure = vi.fn(async () => ({ status: "ready", routingId: "routing_test", epoch: 1, homeRegion: "us-east", sandboxId: "sb_1", url: "https://sb.test" }))
-    const preparation = {
-      env: { WORKSPACE_RUNTIME_MCP_TOOL_GROUPS: "sessions,subagents" },
-      state: { kind: "test-plan" },
-    }
-    const provisionRuntime = vi.fn(async () => undefined)
-    const { app } = buildApp({
-      authority,
-      sandboxManager: { ensure } as unknown as SandboxManager,
-      options: { prepareRuntime: async () => preparation, provisionRuntime },
-    })
-    const waitUntil = vi.fn()
-    const res = await app.fetch(
-      post("/create", { workspaceName: "Prepared", repoUrl: "https://github.com/a/b" }),
-      undefined,
-      { waitUntil, passThroughOnException() {}, props: {} } as never,
-    )
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as { workspaceId: string }
-    await (waitUntil.mock.calls[0] as unknown as [Promise<unknown>])[0]
-    expect(ensure).toHaveBeenCalledWith(body.workspaceId, expect.objectContaining({ env: preparation.env }))
-    expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: body.workspaceId }, preparation)
-  })
-
-  test("opens the lease's metering under the driver, and whose key, the workspace is placed on", async () => {
-    const authority = fakeAuthority({ createCloudWorkspace: vi.fn(async () => ({ workspace_id: "ignored" })) })
-    const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
-    const workspaceDriver = vi.fn(async () => ({ driver: { id: "boat" } as SandboxDriver, key: "org" as const }))
-    const sandboxUsage = { leaseOpened: vi.fn(), recordLeaseTenant: vi.fn(async () => undefined) }
-    const { app } = buildApp({ authority, sandboxManager: { ensure } as unknown as SandboxManager, workspaceDriver, options: { sandboxUsage } })
-    const waitUntil = vi.fn()
-    const res = await app.fetch(
-      post("/create", { workspaceName: "Org key", repoUrl: "https://github.com/a/b" }),
-      undefined,
-      { waitUntil, passThroughOnException() {}, props: {} } as never,
-    )
-    const body = (await res.json()) as { workspaceId: string }
-    await (waitUntil.mock.calls[0] as unknown as [Promise<unknown>])[0]
-    expect(workspaceDriver).toHaveBeenCalledWith(body.workspaceId)
-    expect(sandboxUsage.leaseOpened).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: body.workspaceId, driver: "boat", keyOwner: "org" }))
-    expect(sandboxUsage.leaseOpened.mock.invocationCallOrder[0]).toBeLessThan(ensure.mock.invocationCallOrder[0])
+    expect(waitUntil).not.toHaveBeenCalled()
+    expect(ensure).not.toHaveBeenCalled()
+    expect(prepareRuntime).not.toHaveBeenCalled()
   })
 
   test("503 sandbox_driver_unavailable when no sandbox driver is composed", async () => {
@@ -1229,7 +1179,7 @@ describe("hosted cloud workspace create (POST /create)", () => {
     expect(args).toMatchObject({ repoUrl: "https://github.com/a/b", displayName: "First cloud" })
   })
 
-  test("creates the cloud workspace doc and kicks off provisioning", async () => {
+  test("creates the cloud workspace doc and leaves its start to the first explicit start", async () => {
     const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
     const authority = fakeAuthority({ createCloudWorkspace })
     const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
@@ -1253,29 +1203,7 @@ describe("hosted cloud workspace create (POST /create)", () => {
       repoUrl: "https://github.com/a/b",
       homeRegion: "us-east",
     })
-    // provisioning kicked off for the same workspace id (fire-and-forget)
-    await Promise.resolve()
-    expect(ensure).toHaveBeenCalledTimes(1)
-    const [ensuredWorkspaceId, ensured] = ensure.mock.calls[0] as unknown as [
-      string,
-      Record<string, unknown>,
-    ]
-    expect(ensuredWorkspaceId).toBe(body.workspaceId)
-    expect(ensured).toMatchObject({
-      homeRegion: "us-east",
-      labels: {
-        projectId: "proj_1",
-      },
-      workspaceRoot: "/workspace",
-      source: {
-        kind: "git",
-        repoUrl: "https://github.com/a/b",
-      },
-    })
-    // Hosted creates are always egress-contained (security review §6.14). The
-    // allowlist contents are pinned in `hosted-workspace-egress.test.ts`; what
-    // matters here is that this call site cannot go back to allow-all.
-    expect(ensured.net).toMatchObject({ mode: "restricted" })
+    expect(ensure).not.toHaveBeenCalled()
   })
 
   test("a branch name git refuses is refused at create, before any workspace exists to fail every boot", async () => {
@@ -1462,10 +1390,8 @@ describe("hosted cloud workspace create (POST /create)", () => {
         sandboxManager: { ensure } as unknown as SandboxManager,
         options: { connections: { repositoryForAuth } },
       })
-      const waitUntil = vi.fn()
-      const res = await app.fetch(post("/create", { workspaceName: "Widgets", connectionId: "conn_org", repo: { fullName: "acme/widgets" } }), undefined, { waitUntil, passThroughOnException() {}, props: {} } as never)
+      const res = await app.fetch(post("/create", { workspaceName: "Widgets", connectionId: "conn_org", repo: { fullName: "acme/widgets" } }))
       expect(res.status).toBe(200)
-      await (waitUntil.mock.calls[0] as unknown as [Promise<unknown>])[0]
       expect(repositoryForAuth).toHaveBeenCalledWith(expect.anything(), "conn_org", "acme/widgets")
       const created = (createCloudWorkspace.mock.calls[0] as unknown[])[1] as { repoUrl?: string; repoConnectionId?: string }
       expect([created.repoUrl, created.repoConnectionId]).toEqual([repository.cloneUrl, visibility.bound])
@@ -1536,6 +1462,59 @@ describe("hosted cloud workspace create (POST /create)", () => {
       }),
     )
     expect([401, 403]).toContain(res.status)
+  })
+})
+
+describe("the start that opens a cloud workspace's first lease", () => {
+  const cloudAuthority = () => fakeAuthority({
+    openWorkspace: vi.fn(async () => ({
+      allowed: true,
+      role: "owner",
+      workspace: { workspace_id: "ws_1", project_id: "proj_1", backing: "cloud-vm", home_region: "us-east" },
+    })),
+  })
+  const leaseMissing = { status: "unavailable" as const, reason: "runtime_lease_missing" }
+  const leaseAcquiring = { status: "unavailable" as const, reason: "runtime_lease_not_ready", leaseStatus: "acquiring" as const }
+
+  test("meters the lease under the driver, and whose key, it is placed on before ensure, stamps its tenant after, and meters a later start of it no more", async () => {
+    const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+    const target = vi.fn().mockResolvedValueOnce(leaseMissing).mockResolvedValue(leaseAcquiring)
+    const workspaceDriver = vi.fn(async () => ({ driver: { id: "boat" } as SandboxDriver, key: "org" as const }))
+    const sandboxUsage = { leaseOpened: vi.fn(), recordLeaseTenant: vi.fn(async () => undefined) }
+    const { app } = buildApp({ authority: cloudAuthority(), sandboxManager: { ensure, target } as unknown as SandboxManager, workspaceDriver, options: { sandboxUsage } })
+
+    expect((await app.fetch(post("/ws_1/connection", {}))).status).toBe(200)
+    expect(sandboxUsage.leaseOpened).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "ws_1", driver: "boat", keyOwner: "org" }))
+    expect(sandboxUsage.leaseOpened.mock.invocationCallOrder[0]).toBeLessThan(ensure.mock.invocationCallOrder[0])
+    expect(sandboxUsage.recordLeaseTenant).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "ws_1" }))
+    expect(sandboxUsage.recordLeaseTenant.mock.invocationCallOrder[0]).toBeGreaterThan(ensure.mock.invocationCallOrder[0])
+
+    expect((await app.fetch(post("/ws_1/connection", {}))).status).toBe(200)
+    expect(ensure).toHaveBeenCalledTimes(2)
+    expect(sandboxUsage.leaseOpened).toHaveBeenCalledTimes(1)
+    expect(sandboxUsage.recordLeaseTenant).toHaveBeenCalledTimes(1)
+  })
+
+  test("the concurrent-lease cap refuses a first start before ensure, and never a start of a workspace already leased", async () => {
+    const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+    const countActiveOrgSandboxLeases = vi.fn(async () => 2)
+    const missing = buildApp({
+      authority: cloudAuthority(),
+      sandboxManager: { ensure, target: vi.fn(async () => leaseMissing) } as unknown as SandboxManager,
+      options: { sandboxLeaseCap: 2, countActiveOrgSandboxLeases },
+    })
+    const refused = await missing.app.fetch(post("/ws_1/connection", {}))
+    expect(refused.status).toBe(429)
+    expect(await refused.json()).toMatchObject({ error: { code: "sandbox_lease_limit_reached" } })
+    expect(ensure).not.toHaveBeenCalled()
+
+    const leased = buildApp({
+      authority: cloudAuthority(),
+      sandboxManager: { ensure, target: vi.fn(async () => leaseAcquiring) } as unknown as SandboxManager,
+      options: { sandboxLeaseCap: 2, countActiveOrgSandboxLeases },
+    })
+    expect((await leased.app.fetch(post("/ws_1/connection", {}))).status).toBe(200)
+    expect(ensure).toHaveBeenCalledTimes(1)
   })
 })
 

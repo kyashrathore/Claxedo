@@ -23,6 +23,7 @@ import { sandboxRuntimeBootFailure, type SandboxManager } from "@claxedo/sandbox
 import { sessionHostAdmits } from "../authority/session-hosts"
 import { workspaceRoleAllowsWrite } from "../authority/pulled-session"
 import { mintSessionHostConnection } from "./session-host-connection"
+import type { CloudCreateAdmission, CloudCreateUsage } from "../workspace/cloud-create-admission"
 
 type HostedConnectionDenial = {
   error: ReturnType<typeof apiError>
@@ -212,6 +213,34 @@ async function mintCloudConnection(
   } as const
 }
 
+/** What the start that opens a cloud workspace's first lease answers to: the lease cap, then the usage seams. */
+export type FirstLease = {
+  readonly admission: Pick<CloudCreateAdmission, "capLease">
+  readonly usage: CloudCreateUsage | undefined
+}
+
+async function openingFirstLease(
+  services: ControlPlaneServices | undefined,
+  lease: FirstLease,
+  auth: SignedControlPlaneAuth,
+  input: { workspaceId: string; hostManager: SandboxManager },
+): Promise<HostedConnectionDenial | boolean> {
+  const current = await input.hostManager.target(input.workspaceId)
+  if (current.status !== "unavailable" || current.reason !== "runtime_lease_missing") return false
+  const denied = await lease.admission.capLease({ kind: "signed", auth })
+  if (denied) return { error: denied.body.error, status: denied.status }
+  const placed = await services?.sandbox.workspaceDriver?.(input.workspaceId)
+  lease.usage?.leaseOpened({
+    caller: { kind: "signed", auth },
+    workspaceId: input.workspaceId,
+    driver: placed?.driver.id ?? "unknown",
+    ...(placed ? { keyOwner: placed.key } : {}),
+    startedAt: Date.now(),
+    ...(services ? { services } : {}),
+  })
+  return true
+}
+
 /**
  * The connect path (POST `/:id/connection`, POST `/:id/connection/refresh`):
  * the ONLY route that runs `sandboxManager.ensure`, so starting billable
@@ -222,6 +251,7 @@ export async function hostedConnectionInfo(
   options: WorkspaceRouteOptions,
   auth: SignedControlPlaneAuth,
   workspaceId: string,
+  lease: FirstLease,
   previousJti?: string,
 ) {
   const ingress = await cloudConnectionIngress(services, options, auth, workspaceId)
@@ -241,10 +271,16 @@ export async function hostedConnectionInfo(
       status: 409,
     } as const
   }
+  const opening = await openingFirstLease(services, lease, auth, { workspaceId, hostManager })
+  if (typeof opening !== "boolean") return opening
   const ensured = await hostManager.ensure(workspaceId, hostedSandboxInput(workspace, {
     egress: options,
     preparation,
   }))
+  if (opening && ensured.epoch !== undefined) {
+    await Promise.resolve(lease.usage?.recordLeaseTenant({ caller: { kind: "signed", auth }, workspaceId }))
+      .catch((cause: unknown) => console.error(`[workspace] the lease tenant of ${workspaceId} was not recorded`, cause instanceof Error ? cause.message : String(cause)))
+  }
   captureWorkspaceTelemetry({
     services,
     auth,
@@ -289,6 +325,7 @@ export async function hostedConnectionInfo(
         homeRegion,
         relayRoom: workspaceId,
         retryAfterMs: ensured.retryAfterMs,
+        ...(ensured.error ? { reason: ensured.error } : {}),
       },
     })
     // A boot that failed fails the same way until the person changes what it

@@ -495,6 +495,7 @@ describe("signed Composio Gmail on Miniflare", () => {
             epoch: 1,
             homeRegion: "us-east",
           })),
+          target: vi.fn(async () => ({ status: "ready", hostId: "host_cloud", epoch: 1 })),
         },
       },
       telemetry: { capture: vi.fn() },
@@ -508,7 +509,7 @@ describe("signed Composio Gmail on Miniflare", () => {
       provisionRuntime: async ({ workspaceId }, preparation?: WorkspaceRuntimePreparation) => {
         await provisionForMint(workspaceId, preparation)
       },
-    }, auth, "ws_cloud_mint")
+    }, auth, "ws_cloud_mint", { admission: { capLease: async () => undefined }, usage: undefined })
 
     expect(local).toMatchObject({ connection: { backing: "local-worktree", runtimeAccessToken: "runtime-token" } })
     expect(cloud).toMatchObject({ connection: { backing: "cloud-vm", runtimeAccessToken: "runtime-token" } })

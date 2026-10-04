@@ -22,8 +22,9 @@ import {
  * `POST /create` requests per minute, per caller.
  *
  * Sized against what the operation COSTS, not against what the transport can
- * take. Every accepted create clones a repo into a freshly provisioned sandbox
- * VM — seconds to minutes of cold start, billed. Nothing legitimate approaches
+ * take. Every accepted create is a workspace whose first start clones a repo
+ * into a freshly provisioned sandbox VM — seconds to minutes of cold start,
+ * billed. Nothing legitimate approaches
  * this: the app creates one workspace per explicit user action, and even an
  * impatient human retrying a failed create stays in low single digits per
  * minute. Five leaves room for retries and double-submits while cutting the
@@ -68,10 +69,11 @@ export type CloudCreateAdmissionDenial = {
 }
 
 /**
- * The product-owned usage side effects a cloud create runs on the lease it
- * opens — `leaseOpened` before provisioning starts so `startedAt` covers the
- * cold start, `recordLeaseTenant` once the lease row exists so the
- * concurrency cap has something to count. The tenant is the caller this
+ * The product-owned usage side effects run on a cloud workspace's first
+ * lease, by the Tasks allocation that opens it or by the explicit start that
+ * opens a route-created one — `leaseOpened` before provisioning starts so
+ * `startedAt` covers the cold start, `recordLeaseTenant` once the lease row
+ * exists so the concurrency cap has something to count. The tenant is the caller this
  * admission already verified; it is never an input a caller supplies.
  */
 export type CloudCreateUsage = {
@@ -134,6 +136,12 @@ export type CloudCreateAdmission = {
     selectors: { orgId?: string; projectId?: string },
     options?: { existing?: boolean },
   ): Promise<CloudCreateAdmissionDenial | undefined>
+  /**
+   * The concurrent-lease cap alone, for the start that opens a cloud
+   * workspace's first lease: a route-created workspace opens none until its
+   * first explicit start.
+   */
+  capLease(caller: CloudCreateCaller): Promise<CloudCreateAdmissionDenial | undefined>
 }
 
 /**
@@ -175,6 +183,14 @@ export function createCloudCreateAdmission(
     })
   const countActiveLeases = input.countActiveLeases ?? unavailableActiveLeaseCounter
   const leaseCap = input.leaseCap ?? DEFAULT_SANDBOX_LEASE_CAP
+  const capLease = (caller: CloudCreateCaller) =>
+    sandboxLeaseCapDenial(input.services, {
+      tenant: callerTenant(caller),
+      ...(callerAudit(caller) ? { audit: callerAudit(caller) } : {}),
+      cap: leaseCap,
+      action: "workspace.create.denied",
+      countActiveLeases,
+    })
   return {
     preflight: (caller) =>
       controlPlaneRateLimitDenial(input.services, rateLimiter, {
@@ -219,13 +235,8 @@ export function createCloudCreateAdmission(
       // very spend it is resuming — the same reason the route's wake path does
       // not re-cap an existing workspace.
       if (options?.existing) return undefined
-      return await sandboxLeaseCapDenial(input.services, {
-        tenant: callerTenant(caller),
-        ...(callerAudit(caller) ? { audit: callerAudit(caller) } : {}),
-        cap: leaseCap,
-        action: "workspace.create.denied",
-        countActiveLeases,
-      })
+      return await capLease(caller)
     },
+    capLease,
   }
 }

@@ -25,11 +25,9 @@ import type { ControlPlaneServices } from "../../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
-import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
 import { hostedConnectionInfo, hostedConnectionStatus, hostedSessionConnection, hostedSessionHostConnection } from "../../connections/hosted-connection-info"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
-import { hostedSandboxInput } from "../../workspace/hosted-sandbox-input"
-import { apiError, captureWorkspaceTelemetry, missingBearerBody, parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
+import { apiError, missingBearerBody, parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
 import { asRecord } from "@claxedo/helpers/guards"
 import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { contentfulStatus } from "../../platform/http/status"
@@ -45,8 +43,8 @@ import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/re
 // create and wake) lives on the shared WorkspaceRouteOptions so the wake
 // choke point (hosted-connection-info.ts) reads the same hook.
 //
-// The three additions here are hosted-only knobs for `POST /create`, the one
-// route in this file that provisions real infrastructure. They are optional, so
+// The additions here are hosted-only knobs for `POST /create` and for the
+// start that opens a cloud workspace's first lease. They are optional, so
 // every existing composition keeps type-checking and gets the safe defaults.
 export type HostedWorkspaceRouteOptions = WorkspaceRouteOptions & {
   /**
@@ -201,7 +199,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           ? await hostedSessionHostConnection(services, options, auth, { workspaceId, ...input.session })
           : input.readOnly
           ? await hostedConnectionStatus(services, options, auth, workspaceId)
-          : await hostedConnectionInfo(services, options, auth, workspaceId, input.previousJti)
+          : await hostedConnectionInfo(services, options, auth, workspaceId, { admission: createAdmission, usage: options.sandboxUsage }, input.previousJti)
       if ("error" in result)
         return c.json({ error: result.error }, result.status)
       // Any status-bearing body (`provisioning`, `stopped`) minted nothing, so
@@ -286,22 +284,20 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       // + side-effect-free keeps the resolve loop quiet and lets the session create
       // proceed over the relay using the inventory-known workspace.
       .get("/resolve", (c) => c.json(null))
-      // Cloud workspace creation on the HOSTED control plane. The local Node
-      // server's `routes/workspace.ts` `/create` is fat (filesystem config,
-      // credential registry, telemetry) and Node-only; the hosted path is thin:
-      // record the cloud workspace in the authority and kick off provisioning through
-      // the composed SandboxManager (which drives the native edge
-      // SandboxDriver, e.g. Cloudflare). Provisioning progress is observed via
-      // `/:id/connection` polling, so this returns as soon as the doc exists.
+      // Cloud workspace creation on the HOSTED control plane records the
+      // workspace in the authority and starts nothing. Its first lease opens on
+      // the explicit start (`POST /:id/connection`), which runs `ensure` inside
+      // its own request: a Worker cuts work held past a response (`waitUntil`)
+      // about 30 s after it, which left a cold start's lease `acquiring` with no
+      // sandbox until the 60 s stale window let the next start take it over.
       .post("/create", async (c) => {
         const authResult = await signedOrError(c.req.raw, authOptions(), services)
         if ("error" in authResult) return c.json(authResult.error, authResult.status)
         const auth = authResult.auth
         if (!auth) return c.json(missingBearerBody(), 401)
 
-        // Before the body is read and long before the authority round-trip or
-        // `sandboxManager.ensure`: a flood must be rejected while it is still
-        // cheap to reject. Keyed on the caller alone (`workspaces.create`)
+        // Before the body is read and long before the authority round-trip: a
+        // flood must be rejected while it is still cheap to reject. Keyed on the caller alone (`workspaces.create`)
         // because no workspace exists yet.
         const createLimit = await createAdmission.preflight({ kind: "signed", auth })
         if (createLimit) return c.json(createLimit.body, createLimit.status)
@@ -326,8 +322,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         )
         if (createDenied) return c.json(createDenied.body, createDenied.status)
 
-        const sandboxManager = services?.sandbox.sandboxManager
-        if (!sandboxManager) {
+        if (!services?.sandbox.sandboxManager) {
           // No sandbox driver composed (no native driver credentials, or the
           // explicitly selected driver is missing backend env). Fail with a
           // precise, actionable error instead
@@ -418,119 +413,6 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           if (isClaxedoError(err)) return c.json({ error: apiError(err.code, err.message) }, contentfulStatus(err.status))
           throw err
         }
-        const row = (await requireAuthority(services).openWorkspace(auth, { workspaceId })).workspace
-        if (!row) throw new Error(`workspace ${workspaceId} was created but its row cannot be read back`)
-
-        // Sandbox-compute metering: the create path is the
-        // one lease-open site that holds a signed tenant, so the opening event is
-        // emitted here rather than inside the manager. `started_at` is stamped
-        // before `ensure` so the interval covers the cold start the user is
-        // actually paying for. This shell only serves the hosted plane, which
-        // fixes deployment_mode; a personal-account token carries no org claim
-        // and falls through to the ops plane rather than inventing an org id.
-        const leaseStartedAt = Date.now()
-
-        // Kick off provisioning. The lease state machine + driver.ensureHost are
-        // idempotent and re-polled by the app via /connection, so the response
-        // does not wait for it: a slow cold-start must not block the create.
-        // It is held open past the response (`waitUntil` on Workers) because
-        // workerd cancels detached work with the request, which left the first
-        // `ensure` — and the Agent Plugins runtime provisioning behind it — to
-        // whichever `/connection` poll came next.
-        const runtimeContext = { workspaceId }
-        keepAlivePastResponse(c, Promise.resolve()
-          .then(async () => {
-            const placed = await services?.sandbox.workspaceDriver?.(workspaceId)
-            options.sandboxUsage?.leaseOpened({
-              caller: { kind: "signed", auth },
-              workspaceId,
-              driver: placed?.driver.id ?? "unknown",
-              ...(placed ? { keyOwner: placed.key } : {}),
-              startedAt: leaseStartedAt,
-              ...(services ? { services } : {}),
-            })
-            const runtimePreparation = await options.prepareRuntime?.(runtimeContext)
-            // This is the hosted, multi-tenant create path: the sandbox runs
-            // agent-authored code over someone's private checkout, and an
-            // omitted `net` means allow-all, so the policy is always supplied.
-            // What reaches the driver is the manager's call, resolved by
-            // `sandboxEgressDisposition`:
-            //
-            //  - a driver that can enforce (vercel) is handed the allowlist and
-            //    contains the sandbox;
-            //  - a driver declaring `egressControl: "none"` (cloudflare, the
-            //    fetch bridge, docker, modal, box) has it withheld, and the
-            //    sandbox comes up with unrestricted egress. Withholding keeps
-            //    the drivers that throw on a restricted policy from seeing one,
-            //    and stops the ones that silently drop it from pretending. That
-            //    exposure is loud: the manager warns, and the hosted
-            //    composition emits `sandbox.egress_unenforced` per create
-            //    (`sandboxEgressUnenforcedSink`). `public-docs/sandbox-egress.md`
-            //    has the operator-facing matrix.
-            //
-            // Only `sandbox_egress_policy_unenforceable` fails closed; it is the
-            // sole reason that reaches the refusal branch below.
-            //
-            // The allowlist is the relay of the workspace's region, the
-            // control-plane origin the sandbox is given and the one git host
-            // the row records, plus the model-provider and package-registry
-            // floor.
-            // See `hostedSandboxNetworkPolicy` for what is excluded and why.
-            const result = await sandboxManager.ensure(workspaceId, hostedSandboxInput(row, {
-              egress: options,
-              preparation: runtimePreparation,
-            }))
-            return { result, runtimePreparation, placed }
-          })
-          // The lease row exists once `ensure` has acquired it, so the tenant is
-          // stamped here rather than before: the sandbox manager's acquire port
-          // carries a workspace and a driver but no org, and this is the nearest
-          // point that holds both the verified tenant and a lease to attach it
-          // to. Metering attribution never gates provisioning, so a deployment
-          // with no workspace authority configured simply records nothing.
-          .then(async ({ result, runtimePreparation, placed }) => {
-            if (result.status === "ready") await options.provisionRuntime?.(runtimeContext, runtimePreparation)
-            // The only refusal that lands here is
-            // `sandbox_egress_policy_unenforceable`: a driver that does enforce
-            // egress, handed an encoding it cannot express (hosts-only vercel
-            // and a CIDR-only policy). The prefix match stays broad so any
-            // future `sandbox_egress_*` refusal surfaces rather than vanishing.
-            //
-            // It is a deployment fault, not a transient one: no retry helps and
-            // no sandbox will ever come up. `ensure` is fire-and-forget, so
-            // without this the only signal an operator gets is a workspace that
-            // provisions forever. There is no lease to attribute, so metering
-            // is skipped.
-            if (result.status === "unavailable" && result.error?.startsWith("sandbox_egress_")) {
-              captureWorkspaceTelemetry({
-                services,
-                auth,
-                event: "workspace.create.sandbox_egress_refused",
-                workspaceId,
-                properties: {
-                  reason: result.error,
-                  driver: placed?.driver.id ?? "unknown",
-                },
-              })
-              return
-            }
-            // Two independent stamps, matching `recordTenant`'s two:
-            //
-            //  - `owner_subject` always, because the concurrency cap counts on it
-            //    and every signed request carries a subject; gating it on
-            //    `leaseIdentity` left personal-account leases unattributed and
-            //    the cap unable to bind.
-            //  - the metering pair only when a signed org claim produced a
-            //    `leaseIdentity`. A usage fact keyed on a fabricated org (say
-            //    `personal:<subject>`) would corrupt every per-org aggregate
-            //    downstream, which is why the owner is a separate column rather
-            //    than an org id we invent to make the count work.
-            await Promise.resolve(options.sandboxUsage?.recordLeaseTenant({ caller: { kind: "signed", auth }, workspaceId })).catch(() => undefined)
-          })
-          .catch((cause: unknown) => {
-            console.error(`[workspace] background provisioning of ${workspaceId} failed`, cause instanceof Error ? cause.message : String(cause))
-          }))
-
         return c.json({ workspaceId, directory })
       })
       .get("/:id/connection", (c) => connectionResponse(c, { readOnly: true }))

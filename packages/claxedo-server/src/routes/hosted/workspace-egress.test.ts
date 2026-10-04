@@ -16,9 +16,9 @@ import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./works
 /**
  * Security review 2026-07-27 §6.14 — hosted sandbox egress containment.
  *
- * `POST /create` is the hosted, multi-tenant provisioning path: the sandbox it
- * creates clones someone's private repository and runs agent-authored code
- * inside it. It called `sandboxManager.ensure` with no `net`, and an omitted
+ * The explicit start (`POST /:id/connection`) is the hosted, multi-tenant
+ * provisioning path: the sandbox it boots clones someone's private repository
+ * and runs agent-authored code inside it. It called `sandboxManager.ensure` with no `net`, and an omitted
  * policy means allow-all, so every hosted sandbox ever provisioned could reach
  * any host on the internet. The egress machinery existed on the capable
  * drivers; nothing upstream engaged it.
@@ -93,7 +93,8 @@ function buildApp(egressControl: SandboxEgressControl, options: Partial<HostedWo
   const rows = new Map<string, Record<string, unknown>>()
   const services = {
     authority: {
-      usersMe: vi.fn(async () => ({ subject: "user_1" })),
+      usersMe: vi.fn(async () => ({ subject: "user_1", actor_id: "user_1", actor_kind: "human", actor_public_id: "user_1", actor_name: "User One" })),
+      recordRuntimeAccessToken: vi.fn(async () => ({})),
       authorizeWorkspaceCreate: vi.fn(async () => {}),
       createCloudWorkspace: vi.fn(async (_auth: unknown, args: { workspaceId: string; projectId?: string; repoUrl?: string }) => {
         rows.set(args.workspaceId, { workspace_id: args.workspaceId, project_id: args.projectId, backing: "cloud-vm", repo_url: args.repoUrl })
@@ -111,6 +112,7 @@ function buildApp(egressControl: SandboxEgressControl, options: Partial<HostedWo
     verifier,
     relayUrl: RELAY_URL,
     sandboxControlPlaneOrigin: CONTROL_PLANE_ORIGIN,
+    runtimeAccessTokenSigner: async () => ({ runtimeAccessToken: "rat", tokenExpiresAt: 1_000_000, jti: "jti_rat" }),
     countActiveOrgSandboxLeases: async () => 0,
     // No real DNS in tests: clone admission resolves through this stub.
     resolveRepoAddresses: async () => ["140.82.112.3"],
@@ -128,13 +130,18 @@ async function create(app: ReturnType<typeof buildApp>["app"], token = "user_1")
     }),
   )
   const body = (await res.json()) as { workspaceId?: string }
-  // `ensure` is fire-and-forget so the create response does not wait on a cold
-  // start; let the kicked-off promise settle before asserting on the driver.
-  await new Promise((resolve) => setTimeout(resolve, 0))
+  const started = await app.fetch(
+    new Request(`${REQUEST_ORIGIN}/${body.workspaceId}/connection`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: "{}",
+    }),
+  )
+  expect(started.status).toBe(200)
   return { res, body }
 }
 
-describe("POST /create hands the driver a restricted egress policy", () => {
+describe("the first start hands the driver a restricted egress policy", () => {
   test("the driver is provisioned with a restricted policy, not allow-all", async () => {
     const { app, seen } = buildApp("hosts-and-cidrs")
     const { res } = await create(app)
@@ -189,22 +196,16 @@ describe("POST /create hands the driver a restricted egress policy", () => {
   })
 })
 
-describe("POST /create with a driver that cannot contain egress", () => {
+describe("the first start with a driver that cannot contain egress", () => {
   /**
-   * Inverted 2026-07-28 by owner directive: "for egress in sandbox enforce
-   * where we can and document where we cant."
-   *
-   * These three tests previously asserted the manager REFUSED the create
-   * (`ensureHost` never called, no lease, a `workspace.create.
-   * sandbox_egress_refused` telemetry event). That posture failed closed but
-   * took the most likely production driver offline: explicit cloudflare selection
-   * prefers cloudflare, and cloudflare declares `egressControl: "none"`.
-   *
-   * The create now proceeds. What must NOT happen is the driver receiving a
-   * policy it cannot honour — half the `"none"` drivers throw on one — and what
-   * must not happen silently is the degrade itself. The manager owns the
-   * warning; see `packages/sandbox-manager/src/egress-policy.test.ts` for the
-   * assertions on it and `public-docs/sandbox-egress.md` for the operator page.
+   * Owner directive: "for egress in sandbox enforce where we can and document
+   * where we cant." Refusing an uncontained driver would take the most likely
+   * production driver offline (cloudflare declares `egressControl: "none"`).
+   * What must NOT happen is the driver receiving a policy it cannot honour —
+   * half the `"none"` drivers throw on one — and what must not happen silently
+   * is the degrade itself. The manager owns the warning; see
+   * `packages/sandbox-manager/src/egress-policy.test.ts` and
+   * `public-docs/sandbox-egress.md`.
    */
   test("an uncontained driver still provisions, and is handed no policy", async () => {
     const { app, driver, seen, leaseStore } = buildApp("none")
@@ -217,27 +218,6 @@ describe("POST /create with a driver that cannot contain egress", () => {
     expect(seen).toHaveLength(1)
     expect(seen[0].net).toBeUndefined()
     expect(await leaseStore.get(body.workspaceId!)).toMatchObject({ status: "ready" })
-  })
-
-  test("the route's refusal telemetry no longer has anything to report", async () => {
-    // `workspace.ts` still emits `workspace.create.sandbox_egress_refused`
-    // when `ensure` returns an `sandbox_egress_*` error. With the refusal gone
-    // for `"none"` drivers that branch simply never fires. It is left in place
-    // deliberately: it still covers `sandbox_egress_policy_unenforceable`,
-    // which an enforcing-but-wrong-encoding driver can still produce.
-    const { app, capture } = buildApp("none")
-    await create(app)
-    expect(
-      capture.mock.calls.filter((call) => call[1] === "workspace.create.sandbox_egress_refused"),
-    ).toEqual([])
-  })
-
-  test("a contained driver is unaffected and emits no refusal", async () => {
-    const { app, capture } = buildApp("hosts-and-cidrs")
-    await create(app)
-    expect(
-      capture.mock.calls.filter((call) => call[1] === "workspace.create.sandbox_egress_refused"),
-    ).toEqual([])
   })
 
   test("an enforcing driver handed an encoding it cannot express is still refused", async () => {
@@ -260,7 +240,7 @@ describe("POST /create with a driver that cannot contain egress", () => {
 // The behavioural tests above prove the policy is passed TODAY; this proves
 // nobody can quietly stop passing it.
 
-const routeSource = fs.readFileSync(path.join(import.meta.dirname, "workspace.ts"), "utf8")
+const routeSource = fs.readFileSync(path.join(import.meta.dirname, "../../connections/hosted-connection-info.ts"), "utf8")
 
 /** Strip whole-line comments so prose about `net:` cannot satisfy the check. */
 function code(source: string) {
@@ -299,6 +279,6 @@ describe("the hosted ensure call site cannot omit the egress policy", () => {
     // row, so a new hosted provisioning path gets the policy by using it. Do
     // not add an exemption.
     expect(ensureArguments().filter((argument) => !argument.startsWith("hostedSandboxInput("))).toEqual([])
-    expect(code(routeSource)).toContain('import { hostedSandboxInput } from "../../workspace/hosted-sandbox-input"')
+    expect(code(routeSource)).toContain('import { hostedSandboxInput } from "../workspace/hosted-sandbox-input"')
   })
 })

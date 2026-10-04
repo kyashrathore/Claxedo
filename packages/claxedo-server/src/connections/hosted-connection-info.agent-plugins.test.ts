@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
-import { hostedConnectionInfo } from "./hosted-connection-info"
+import { hostedConnectionInfo, type FirstLease } from "./hosted-connection-info"
 import { hostTunnelConnectionInfo } from "./host-tunnel-connection"
 
 const auth = {
@@ -9,6 +9,8 @@ const auth = {
   token: "token",
   user: { subject: "user_1", tokenIdentifier: "user_1", issuer: "https://issuer.test" },
 } as unknown as SignedControlPlaneAuth
+
+const LEASED: FirstLease = { admission: { capLease: async () => undefined }, usage: undefined }
 
 function subject(order: string[]) {
   const signer = vi.fn(async () => {
@@ -49,6 +51,7 @@ function subject(order: string[]) {
           order.push("ensure")
           return { status: "ready", hostId: "host_1", epoch: 1, homeRegion: "us-east" }
         }),
+        target: vi.fn(async () => ({ status: "ready", hostId: "host_1", epoch: 1 })),
       },
     },
     telemetry: { capture: vi.fn() },
@@ -67,7 +70,7 @@ describe("Agent Plugins cloud readiness gate", () => {
       runtimeAccessTokenSigner: signer,
       provisionRuntime: async () => { order.push("plugins") },
       sandboxEgressExtraHosts: ["registry.acme.test"],
-    }, auth, "ws_1")
+    }, auth, "ws_1", LEASED)
 
     expect(order).toEqual(["ensure", "plugins", "token"])
     expect(result).toMatchObject({ connection: { runtimeAccessToken: "runtime-token" } })
@@ -95,7 +98,7 @@ describe("Agent Plugins cloud readiness gate", () => {
       runtimeAccessTokenSigner: signer,
       prepareRuntime,
       provisionRuntime,
-    }, auth, "ws_1")
+    }, auth, "ws_1", LEASED)
 
     expect(order).toEqual(["prepare", "ensure", "plugins", "token"])
     expect(services.sandbox.sandboxManager!.ensure).toHaveBeenCalledWith("ws_1", {
@@ -128,10 +131,10 @@ describe("Agent Plugins cloud readiness gate", () => {
       prepareRuntime: async () => ({
         secrets: [{ name: "CLAXEDO_MCP_A", value: "Bearer gateway-token", hosts: ["mcp-a.example"], header: "Authorization" }],
       }),
-    }, auth, "ws_1")
+    }, auth, "ws_1", LEASED)
     expect(warm).toMatchObject({ connection: { runtimeAccessToken: "runtime-token" } })
 
-    const result = await hostedConnectionInfo(services, options, auth, "ws_1")
+    const result = await hostedConnectionInfo(services, options, auth, "ws_1", LEASED)
     expect(result).toMatchObject({ connection: { runtimeAccessToken: "runtime-token" } })
     expect(services.sandbox.sandboxManager!.ensure).toHaveBeenLastCalledWith("ws_1", expect.objectContaining({ secrets: [] }))
   })
@@ -144,7 +147,7 @@ describe("Agent Plugins cloud readiness gate", () => {
       sandboxControlPlaneOrigin: "https://control.test",
       runtimeAccessTokenSigner: signer,
       prepareRuntime: async () => { throw new Error("gateway signing key unavailable") },
-    }, auth, "ws_1")
+    }, auth, "ws_1", LEASED)
 
     expect(result).toMatchObject({
       status: 409,
@@ -163,7 +166,7 @@ describe("Agent Plugins cloud readiness gate", () => {
       sandboxControlPlaneOrigin: "https://control.test",
       runtimeAccessTokenSigner: signer,
       provisionRuntime: async () => { throw new Error("artifact corrupt") },
-    }, auth, "ws_1")
+    }, auth, "ws_1", LEASED)
 
     expect(order).toEqual(["ensure"])
     expect(signer).not.toHaveBeenCalled()
