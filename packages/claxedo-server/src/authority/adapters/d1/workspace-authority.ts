@@ -22,6 +22,7 @@ import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-
 import { d1BatchAssertionFailed } from "../../../platform/db/d1-constraint"
 import { D1WorkspaceAuthorityError } from "./workspace-authority-error"
 import { workspaceCreationStatements } from "./workspace-creation"
+import { workspaceDeletedBy, workspaceDeletionStatements } from "./workspace-deletion"
 import { requireBootstrapClaim, sameIdentity, userDeployedOwnerBootstrapClaimHash, userDeployedOwnerIdentityHash, validateIdentity } from "./owner-identity"
 
 const KNOWN_HOME_REGIONS = new Set(["apac-south", "apac-east", "eu-west", "us-east", "us-west"])
@@ -806,33 +807,14 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
 
   private async deleteWorkspaceAs(who: Principal, args: { workspaceId: string }) {
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    if (!(await may(this.database, who, "administer", { kind: "workspace", workspaceId }))) throw denied()
-    const assertionId = this.randomId("assert")
-    const now = this.now()
+    if (!(await may(this.database, who, "administer", { kind: "workspace", workspaceId }))) {
+      if (await workspaceDeletedBy(this.database, { ownerUserId: who.userId, workspaceId })) return { deleted: true }
+      throw denied()
+    }
     await batchUnder(
       this.database,
       mayGuard(who, "administer", { kind: "workspace", workspaceId }),
-      [
-        this.database
-          .prepare(
-            `
-        update workspaces set deleted_at = ?, updated_at = ?
-        where workspace_id = ? and deleted_at is null and owner_user_id = ?
-      `,
-          )
-          .bind(now, now, workspaceId, who.userId),
-        this.database
-          .prepare(
-            `
-        insert into authority_batch_assertions (assertion_id, passed)
-        values (?, case when exists (
-          select 1 from workspaces where workspace_id = ? and owner_user_id = ? and deleted_at = ?
-        ) then 1 else 0 end)
-      `,
-          )
-          .bind(assertionId, workspaceId, who.userId, now),
-        this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(assertionId),
-      ],
+      workspaceDeletionStatements(this.database, { ownerUserId: who.userId, workspaceId, assertionId: this.randomId("assert"), now: this.now() }),
       (statements) => this.guardedBatch(statements, "Workspace deletion changed concurrently"),
     )
     return { deleted: true }

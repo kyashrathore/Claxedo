@@ -34,6 +34,7 @@ import { asRecord } from "@claxedo/helpers/guards"
 import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { contentfulStatus } from "../../platform/http/status"
 import { hostAssignmentHandlers } from "../../workspace/host-assignment-handlers"
+import { cloudWorkspaceDeletion } from "../../workspace/cloud-workspace-deletion"
 import { connectionRateLimitError, controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
 import type { ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
 import { createCloudCreateAdmission, type CloudCreateUsage } from "../../workspace/cloud-create-admission"
@@ -161,6 +162,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
     ...(options.privateRepoHosts ? { privateHosts: options.privateRepoHosts } : {}),
   }
   const hostAssignment = hostAssignmentHandlers(services, options, controlPlaneRateLimiter)
+  const deleteCloudWorkspace = cloudWorkspaceDeletion(services, options, controlPlaneRateLimiter)
 
   const authOptions = () => ({
     ...options,
@@ -542,5 +544,6 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       })
       .post("/:id/host-assignment", hostAssignment.assign)
       .delete("/:id/host-assignment", hostAssignment.unassign)
+      .delete("/:id", deleteCloudWorkspace)
   )
 }

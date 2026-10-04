@@ -3,7 +3,7 @@ import { expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/solid-query"
 import { createRoot } from "solid-js"
 import { createHostedAccount } from "./account"
-import { createCloudApi } from "./cloud"
+import { cloudQueries, createCloudApi } from "./cloud"
 import { placementId, projectId, type ProjectId } from "./ids"
 import type { Transport } from "./transport"
 import type { Project } from "./types"
@@ -21,9 +21,15 @@ const wakes: WorkspaceWakes = {
 
 type Posted = { readonly path: string; readonly body: unknown }
 
-function transport(posted: Posted[]): Transport {
+function transport(posted: Posted[], provisioned: Set<string>): Transport {
   const json = async (path: string, init?: RequestInit) => {
     if (path === "/api/claxedo/bootstrap") return bootstrap
+    if (path === "/api/workspace?host=provisioner") return { workspaces: [...provisioned].map((id) => ({ ...created, workspace_id: id })) }
+    if (init?.method === "DELETE" && path.startsWith("/api/workspace/")) {
+      posted.push({ path, body: "DELETE" })
+      provisioned.delete(decodeURIComponent(path.slice("/api/workspace/".length)))
+      return { deleted: true }
+    }
     if (path !== "/api/workspace/create") throw new Error(`unexpected ${path}`)
     posted.push({ path, body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body })
     return { workspaceId: "ws_new", directory: "/workspace/widgets" }
@@ -45,11 +51,13 @@ function world(signed: boolean, catalog: () => void = () => {}) {
     if (operation === "workspace.list.provisioner") catalog()
     return { workspaces: operation === "workspace.list.provisioner" && made ? [created] : [] }
   })
-  const wire = transport(posted)
+  const provisioned = new Set<string>()
+  const wire = transport(posted, provisioned)
   const workspaces = createWorkspaces(wire, queryClient, signed ? account : undefined)
   const project = async (id: ProjectId) => ({ id, source: { kind: "repository", url: "https://github.com/acme/widgets" } }) as Pick<Project, "id" | "source"> as Project
-  const cloud = createCloudApi(wire, workspaces, wakes, project, signed ? account : undefined)
-  return { cloud, workspaces, posted, operations: () => operations.filter((entry) => entry.operation === "workspace.create") }
+  const cloud = createCloudApi(wire, workspaces, wakes, project, signed ? account : undefined, queryClient)
+  const listed = async () => (await queryClient.fetchQuery({ ...cloudQueries(wire).cloud.list(), staleTime: Infinity })).map((workspace) => workspace.id)
+  return { cloud, workspaces, posted, provisioned, listed, operations: () => operations.filter((entry) => entry.operation === "workspace.create") }
 }
 
 test("signed desktop: a repository's cloud workspace is created on the account's control plane and read back from its catalog", async () => {
@@ -99,6 +107,20 @@ test("signed: a workspace the account created is reported before the catalog rea
     await expect(cloud.create({ source: { kind: "repository", url: "https://github.com/acme/widgets" }, onCreated: (id) => reported.push(id) })).rejects.toThrow()
     expect(reported).toEqual([placementId("ws_new")])
     expect(operations()).toHaveLength(1)
+    workspaces.dispose()
+    dispose()
+  })
+})
+
+test("deleting a cloud workspace sends DELETE for it and the cloud list read after it no longer has it", async () => {
+  await createRoot(async (dispose) => {
+    const { cloud, workspaces, posted, provisioned, listed } = world(false)
+    provisioned.add("ws_gone")
+    provisioned.add("ws_kept")
+    expect(await listed()).toEqual([placementId("ws_gone"), placementId("ws_kept")])
+    await cloud.remove(placementId("ws_gone"))
+    expect(posted).toEqual([{ path: "/api/workspace/ws_gone", body: "DELETE" }])
+    expect(await listed()).toEqual([placementId("ws_kept")])
     workspaces.dispose()
     dispose()
   })
