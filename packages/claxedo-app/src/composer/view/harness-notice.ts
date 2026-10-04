@@ -4,6 +4,7 @@ import type { HarnessConnectionState } from "@/server"
 export type HarnessNoticeInput = {
   harnessLabel: string
   runtimeUnavailable: boolean
+  modelRuntimeRequired?: boolean
   connectionState?: HarnessConnectionState
   optionsFailed: boolean
   noModels: boolean
@@ -53,6 +54,7 @@ export function resolveHarnessNotice(input: HarnessNoticeInput): HarnessNotice |
       retry: true,
     }
   }
+  if (input.modelRuntimeRequired) return { kind: "models-runtime-required", tone: "warning", message: `Start the workspace to discover ${input.harnessLabel} models`, detail: "Your connected accounts are available in Settings.", retry: false }
   if ((input.setupRequired || isProviderSetupError(input.configError)) && input.openProviders) {
     const detail = "Add credentials in Settings → Providers."
     return { kind: "setup-required", tone: "warning", message: `${input.harnessLabel} is not set up`, detail, retry: false, action: openProviders(input.openProviders) }

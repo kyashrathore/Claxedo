@@ -120,3 +120,5 @@ The prompt editor and everything that turns a draft into one `PromptInput` for `
 ## Flows
 
 - 3 (send a turn), 4 (stop and queued messages), 5 (errors by class), 6 (attachments, marks, quoted comments, `@file`, slash commands, a new session's harness default), 7 (goal mode), 33 (phone).
+
+A provider catalog reports whether its engine supplied models or needs a running runtime. The composer carries that fact into its notice and never interprets a runtime-required catalog as missing credentials. Flow 24 covers the stopped OpenCode draft, its catalog response, and explicit startup.

@@ -55,7 +55,7 @@ test("hosted OpenCode catalog authenticates the caller and serves summary and pr
   const calls: unknown[] = []
   const catalog = HostedShellRoutes({ authConfig: signedConfig, verifier, opencodeProviderCatalog: async (auth, workspaceId): Promise<OpenCodeCatalog> => {
     calls.push({ owner: auth.user.subject, workspaceId })
-    return { all: [
+    return { modelAvailability: "available", all: [
       { id: "openai", name: "OpenAI", env: [], source: "api", models: { gpt: { id: "gpt", name: "GPT", connected: true, free: false } } },
       { id: "anthropic", name: "Anthropic", env: [], source: "config", models: { sonnet: { id: "sonnet", name: "Sonnet", connected: false, free: false } } },
     ], connected: ["openai"], default: { openai: "gpt" } }

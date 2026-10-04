@@ -28,6 +28,7 @@ export type OpenCodeCatalogProvider = {
 }
 
 export type OpenCodeCatalog = {
+  modelAvailability: "available" | "runtime_required"
   all: OpenCodeCatalogProvider[]
   connected: string[]
   default: Record<string, string>
@@ -102,5 +103,5 @@ export function projectOpenCodeProviderCatalog(options: {
     const first = Object.keys(provider.models).sort()[0]
     return first ? [[provider.id, first] as const] : []
   })
-  return { all, connected: [...entries.values()].filter((entry) => entry.connected).map((entry) => entry.id), default: Object.fromEntries(defaults) }
+  return { modelAvailability: options.engine === undefined ? "runtime_required" : "available", all, connected: [...entries.values()].filter((entry) => entry.connected).map((entry) => entry.id), default: Object.fromEntries(defaults) }
 }

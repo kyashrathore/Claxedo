@@ -35,6 +35,7 @@ test("a runnable provider carries the engine's models, costs and variants", asyn
     { providerID: "zen", id: "one", name: "Zen One", cost: [{ input: 0, output: 0 }] },
   ] }) })
   expect(catalog.connected).toEqual(["zen"])
+  expect(catalog.modelAvailability).toBe("available")
   expect(catalog.default).toEqual({ zen: "one" })
   expect(catalog.all).toEqual([{ id: "zen", name: "Zen", env: ["ZEN_KEY"], source: "config", models: {
     two: { id: "two", name: "Zen Two", connected: true, free: false, variants: { high: {} } },
@@ -94,6 +95,7 @@ test("with no engine to ask, the vendors and declared providers are listed, conn
   putCustomProvider(declared, "org_accounts")
   putCustomProvider({ ...declared, providerID: "keyed", name: "Keyed" }, "org_accounts")
   const catalog = opencodeProviderCatalog({ actor: "person_a", org: "org_accounts", engine: undefined })
+  expect(catalog.modelAvailability).toBe("runtime_required")
   expect(catalog.all.map((provider) => [provider.id, provider.source])).toEqual([
     ["anthropic", "api"], ["openai", "config"], ["openrouter", "config"], ["google", "config"], ["groq", "config"], ["xai", "config"],
     ["keyed", "custom"], ["keyless", "custom"],
