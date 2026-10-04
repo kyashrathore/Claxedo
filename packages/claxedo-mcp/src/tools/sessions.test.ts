@@ -609,18 +609,27 @@ describe("session_create", () => {
     expect(state.creates).toEqual([])
   })
 
+  test("refuses a cloud placement without a name before anything is created", async () => {
+    const state = local()
+    const { url, control, created } = await listen({ mount: "hosted", workspaces: [state] })
+    const refusal = await call(await connect(url, "cli-jwt"), "session_create", { placement: { cloud: { repoUrl: "https://github.com/me/app.git" } } })
+    expect(refusal).toMatchObject({ isError: true })
+    expect(control.calls.map((row) => row.path)).not.toContain("/api/workspace/create")
+    expect(created).toEqual([])
+  })
+
   test("refuses cloud placement from inside a session until the account allows it", async () => {
     const state = local()
     const denied = await listen({ local: state, workspaces: [state] })
     const refusal = await call(await connect(denied.url, "rt-token"), "session_create", {
-      placement: { cloud: { repoUrl: "https://github.com/me/app.git" } },
+      placement: { cloud: { repoUrl: "https://github.com/me/app.git", name: "App" } },
     })
     expect(refusal).toMatchObject({ isError: true })
     expect(refusal.text).toMatch(/act on my other machines|act on other machines/)
     expect(denied.created).toEqual([])
 
     const allowed = await listen({ local: state, workspaces: [state], crossMachineWrites: true })
-    await json(await connect(allowed.url, "rt-token"), "session_create", { placement: { cloud: { repoUrl: "https://github.com/me/app.git" } } })
+    await json(await connect(allowed.url, "rt-token"), "session_create", { placement: { cloud: { repoUrl: "https://github.com/me/app.git", name: "App" } } })
     expect(allowed.created).toHaveLength(1)
   })
 

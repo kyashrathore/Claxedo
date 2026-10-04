@@ -50,7 +50,7 @@ const placementSchema = z
     z.strictObject({
       cloud: z.strictObject({
         repoUrl: z.string().trim().min(1).describe("Clone URL for the new cloud workspace."),
-        name: z.string().trim().min(1).optional().describe("Display name for the new workspace."),
+        name: z.string().trim().min(1).describe("Display name for the new workspace."),
       }),
     }),
   ])
@@ -387,7 +387,7 @@ async function placeInWorktree(
  */
 async function placeOnCloud(
   ctx: McpToolContext,
-  cloud: Readonly<{ repoUrl: string; name?: string }>,
+  cloud: Readonly<{ repoUrl: string; name: string }>,
 ): Promise<PlacedSession> {
   if (ctx.credential.kind === "runtime" && !ctx.credential.crossMachineWrites) {
     throw new McpAccessDenied(
@@ -400,7 +400,7 @@ async function placeOnCloud(
   const response = await controlPlane("/api/workspace/create", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ repoUrl: cloud.repoUrl, ...(cloud.name ? { workspaceName: cloud.name } : {}) }),
+    body: JSON.stringify({ repoUrl: cloud.repoUrl, workspaceName: cloud.name }),
   })
   if (!response.ok) throw await workspaceRuntimeClientError("workspace.create", response)
   const created = asRecord(await response.json())

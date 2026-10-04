@@ -309,6 +309,10 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         const parsed = parsedBody(createCloudBody, await c.req.json().catch(() => ({})))
         if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
         const body = parsed.body
+        const displayName = body.workspaceName?.trim()
+        if (!displayName) {
+          return c.json({ error: apiError("workspace_name_required", "A cloud workspace needs a name") }, 400)
+        }
 
         // Admission for every create, not only one that names a tenant:
         // the authority's own create admission against the organization the
@@ -383,8 +387,6 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         // and publishes its own creation time; the random suffix is what makes
         // this one unguessable.
         const workspaceId = newWorkspaceId()
-        const displayName =
-          body.workspaceName?.trim() || body.repoName?.trim() || workspaceId
         const directory = body.remoteDirectory?.trim() || WORKSPACE_DIR
         const homeRegion = normalizeClaxedoRegion(undefined, options.defaultHomeRegion)
 

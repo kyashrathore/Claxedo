@@ -1170,9 +1170,24 @@ describe("hosted cloud workspace create (POST /create)", () => {
   test("503 sandbox_driver_unavailable when no sandbox driver is composed", async () => {
     const authority = fakeAuthority()
     const { app } = buildApp({ authority: authority })
-    const res = await app.fetch(post("/create", { projectId: "proj_1" }))
+    const res = await app.fetch(post("/create", { projectId: "proj_1", workspaceName: "Feature X" }))
     expect(res.status).toBe(503)
     expect(await res.json()).toMatchObject({ error: { code: "sandbox_driver_unavailable" } })
+  })
+
+  test("refuses a create without a name before admission, creating and provisioning nothing", async () => {
+    const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
+    const authority = fakeAuthority({ createCloudWorkspace })
+    const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+    const { app } = buildApp({ authority, sandboxManager: { ensure } as unknown as SandboxManager })
+    for (const body of [{ repoUrl: "https://github.com/a/b", repoName: "b" }, { workspaceName: "   ", repoUrl: "https://github.com/a/b" }]) {
+      const res = await app.fetch(post("/create", body))
+      expect(res.status).toBe(400)
+      expect(await res.json()).toMatchObject({ error: { code: "workspace_name_required" } })
+    }
+    expect(authority.authorizeWorkspaceCreate).not.toHaveBeenCalled()
+    expect(createCloudWorkspace).not.toHaveBeenCalled()
+    expect(ensure).not.toHaveBeenCalled()
   })
 
   test("lets the authority derive the project when the caller names none", async () => {
@@ -1425,7 +1440,7 @@ describe("hosted cloud workspace create (POST /create)", () => {
         options: { connections: { repositoryForAuth } },
       })
       const waitUntil = vi.fn()
-      const res = await app.fetch(post("/create", { connectionId: "conn_org", repo: { fullName: "acme/widgets" } }), undefined, { waitUntil, passThroughOnException() {}, props: {} } as never)
+      const res = await app.fetch(post("/create", { workspaceName: "Widgets", connectionId: "conn_org", repo: { fullName: "acme/widgets" } }), undefined, { waitUntil, passThroughOnException() {}, props: {} } as never)
       expect(res.status).toBe(200)
       await (waitUntil.mock.calls[0] as unknown as [Promise<unknown>])[0]
       expect(repositoryForAuth).toHaveBeenCalledWith(expect.anything(), "conn_org", "acme/widgets")
@@ -1453,6 +1468,7 @@ describe("hosted cloud workspace create (POST /create)", () => {
 
     const res = await app.fetch(post("/create", {
       orgId: "org_acme",
+      workspaceName: "Widgets",
       connectionId: "conn_1",
       repo: { fullName: "acme/widgets" },
     }))
