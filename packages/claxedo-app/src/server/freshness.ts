@@ -45,6 +45,7 @@ export const freshness = {
   accountsEffective: { kind: "once", reason: "under the accounts prefix, so every account write refreshes it with the list" },
   machineLogins: { kind: "once", reason: "a login scan starts each harness CLI; it is re-read only by an explicit check or rescan, which write the result" },
   accountSources: { kind: "once", reason: "under the accounts prefix, so every account write, a source choice included, refreshes it with the list" },
+  sandboxKeys: { kind: "once", reason: "under the accounts prefix, so saving, checking, removing a sandbox key or choosing the default refreshes it with the list" },
   marketplace: { kind: "once", reason: "the plugin catalog changes through this app's installs, removals and activations, which invalidate every catalog" },
   marketplaceSources: { kind: "once", reason: "plugin sources change through this app's source writes, which invalidate the list" },
   marketplaceSkill: { kind: "once", reason: "a skill document changes only with its plugin; nothing in this app refreshes it after the first read" },

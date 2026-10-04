@@ -15,6 +15,7 @@ Returns `principal`, `orgRole` (the user principal's role, `undefined` for a mac
 | --- | --- |
 | `org.manage`, `org.accounts`, `plugins.manage` | the principal's org role is `owner` or `admin` (`isOrgManager`) |
 | `accounts.removeOrg` | `canRemoveOrgAccounts` from the credential server's account-source response; missing facts deny access |
+| `sandbox.manage` | `canManageSandboxKeys` from the credential server's sandbox-key listing (an org owner or admin on a hosted plane, the operator at the machine locally); missing facts deny access |
 
 A fact the server has not reported answers `false`. Nothing is re-derived from relay, runtime or control-plane rules. `scripts/checks/access-boundary.ts` enforces this outside `src/access`: it fails a comparison, `switch` case or list membership on a role name, an ordering on a rank, and a read of `capabilities.prompt` or of a share-management flag.
 

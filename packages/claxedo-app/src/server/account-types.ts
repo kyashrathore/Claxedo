@@ -47,3 +47,18 @@ export type MachineLogin = {
 export type AccountVerdict = "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expired" | "unknown"
 
 export type AccountCheck = { readonly verdict: AccountVerdict; readonly usage?: readonly QuotaWindow[] }
+
+export type SandboxDriverField = { readonly key: string; readonly label: string; readonly secret: boolean }
+
+export type SandboxDriverOption = { readonly id: string; readonly label: string; readonly fields: readonly SandboxDriverField[] }
+
+export type SandboxKeys =
+  | {
+    readonly kind: "listed"
+    readonly drivers: readonly SandboxDriverOption[]
+    readonly keys: readonly Account[]
+    readonly defaultDriver?: string
+    readonly managedDriver?: string
+    readonly canManage: boolean
+  }
+  | { readonly kind: "unsupported" }
