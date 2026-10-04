@@ -103,7 +103,15 @@ export const serverWorkerd: Policy = {
   // served by the `routes/runtime-sandbox-secrets.ts` router. After it
   // provisions a cloud runtime the plane takes the start phases that runtime
   // timed in its sandbox (`workspace/runtime-start-phases.ts`).
-  ceilings: { modules: 142, packages: 19 },
+  // +4 modules (owner: the hosted sandbox manager composition): an
+  // organization's own sandbox provider key provisions its new workspaces.
+  // `sandbox/org-sandbox-drivers.ts` picks the org's key or the operator's
+  // driver, `sandbox/org-sandbox-manager.ts` routes each workspace's lifecycle
+  // to the key its lease records, and the D1 plane keeps the org's chosen
+  // driver (`sandbox/stores/d1-org-driver.ts`) behind the shared credential
+  // routes' key policy (`sandbox/hosted-sandbox-driver-keys.ts`). None of
+  // them imports a sandbox provider. 146/19, no headroom.
+  ceilings: { modules: 146, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

@@ -43,9 +43,14 @@ Provider model groups render one `SettingsList` card: the header owns provider i
 
 Success shows "{vendor} connected", rescans (on the web, rereads the accounts) and closes the dialog.
 
+## Sandbox keys
+
+Settings → Models ends with a "Sandbox" group (`SandboxSection`): the keys for the services that run cloud workspaces, which only the sandbox manager spends and no harness or workspace receives. `useSandboxKeys()` (`sandbox-store.ts`) reads `server.queries.accounts.sandbox()` (`/api/claxedo/credentials/sandbox-drivers`): the catalog's drivers with their fields, the stored keys, the driver new workspaces use and the deployment's managed driver. A server that keeps no sandbox keys answers 501 and the group is absent; it is drawn only when `useAccess().can("sandbox.manage", …)` passes on the listing's `can_manage` fact (an organization owner or admin on a hosted plane, the operator at the machine locally). Add saves the chosen driver's fields as one `sandbox_driver` credential (`server.accounts.saveSandboxKey`) and checks it at once; Check and Remove are the accounts' own `check` and `remove`; the default picker lists the drivers that hold a key and writes `server.accounts.chooseSandboxDriver`. With no key it says the deployment's managed driver is in use. A check that never reached the provider stays on the row as "Couldn't check" with its reason.
+
 ## Flows
 
 - Flow 15, "Models lists each agent's accounts": add two Cursor keys through the dialog, switch between them, remove both (both apps).
 - Flow 15, "the local operator removes a saved organization account": select the machine login, cancel removal, delete the saved organization credential, and verify deletion and machine selection persist after reload (desktop and phone).
 - Flow 15, "an unavailable selected organization account": show the selected source's failure, choose the machine login, and verify the empty org row disappears and the own-source selection persists after reload (desktop and phone).
+- Flow 15, "the machine's operator adds a sandbox provider key": add a Modal key through the Sandbox group, see it checked and chosen as the default provider, remove it (web and phone).
 - Flow 1 checks the AI step lists the Claude Code card.

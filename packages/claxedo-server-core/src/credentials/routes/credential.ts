@@ -37,14 +37,21 @@ import {
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/partition"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import type { CredentialMetadata, CredentialWrite } from "@claxedo/server-core/credentials/types"
+import {
+  chosenSandboxKey,
+  isSandboxKey,
+  sandboxKeyListing,
+  sandboxKeyWrite,
+  type SandboxDriverKeyContext,
+  type SandboxDriverKeys,
+} from "./sandbox-driver-keys"
 
 const log = Log.create({ service: "credential-routes" })
 
-// Sandbox driver credentials are written only by the sandbox driver settings
-// route, which verifies the fields and stores them as one JSON object.
 const putBody = z.object({
   provider_id: z.string().min(1),
-  kind: z.enum(["api_key", "oauth_token", "subscription_session"]),
+  kind: z.enum(["api_key", "oauth_token", "subscription_session", "sandbox_driver"]),
   source: z.enum(["managed", "local_only", "env", "upstream_sync"]).default("managed"),
   label: z.string().optional(),
   account_id: z.string().optional(),
@@ -72,6 +79,8 @@ const saveDiscoveredBody = z.object({
 })
 
 const scopeBody = z.object({ scope: z.enum(ACCOUNT_SCOPES) })
+
+const sandboxDefaultBody = z.object({ driver: z.string().min(1).nullable() }).strict()
 
 const reconnectBody = z.object({ secret: z.string().min(1) })
 
@@ -164,6 +173,8 @@ export type CredentialRoutesOptions = {
   authentication?: RequestAuthenticationAdapter
   /** A host whose organization is the authority's, not a token claim (hosted), resolves it here. */
   resolveOrg?: (request: Request) => Promise<string> | string
+  /** Absent on a host that provisions no sandboxes and keeps no provider keys for them. */
+  sandboxDriverKeys?: SandboxDriverKeys
 }
 
 type RequestAuthOptions = Pick<CredentialRoutesOptions, "authConfig" | "verifier" | "authentication">
@@ -233,6 +244,22 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
   const orgs = new WeakMap<Request, string>()
   const org = (request: Request) => orgs.get(request) ?? SINGLE_TENANT_ORG
   const canRemoveOrgAccounts = (request: Request) => localOperators.has(request) && org(request) === SINGLE_TENANT_ORG
+  const sandboxKeys = options.sandboxDriverKeys
+  const keyContext = (request: Request): SandboxDriverKeyContext => ({
+    org: org(request),
+    person: actor(request),
+    localOperator: localOperators.has(request),
+  })
+  const managesSandboxKeys = async (request: Request) => !!sandboxKeys && await sandboxKeys.canManage(request, keyContext(request))
+  const managedSandboxKey = async (request: Request, row: CredentialMetadata | undefined) =>
+    !!row && !!sandboxKeys && isSandboxKey(sandboxKeys, row, keyContext(request)) && await managesSandboxKeys(request)
+  const sandboxListing = async (request: Request, keys: SandboxDriverKeys) =>
+    sandboxKeyListing(keys, await credentials.listCredentials(org(request)), keyContext(request), {
+      canManage: await managesSandboxKeys(request),
+      redact: (row) => redact(row),
+    })
+  const sandboxKeysUnavailable = () => errorBody("sandbox_driver_keys_unavailable", "This host keeps no sandbox provider keys")
+  const sandboxKeysForbidden = () => errorBody("sandbox_driver_keys_forbidden", "Only an organization owner or admin manages sandbox provider keys")
   /**
    * One row, in the caller's org. Scoped before anything else runs: an
    * out-of-org id must 404 before a secret is resolved or a provider is called
@@ -339,7 +366,9 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
   })
   return app
     .get("/", async (c) => {
-      const creds = (await credentials.listCredentials(org(c.req.raw))).filter((row) => row.owner === actor(c.req.raw)).map(redact)
+      const creds = (await credentials.listCredentials(org(c.req.raw)))
+        .filter((row) => row.owner === actor(c.req.raw) && row.kind !== "sandbox_driver")
+        .map(redact)
       return c.json({ credentials: creds })
     })
     .get("/effective", async (c) => {
@@ -398,6 +427,24 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
         return c.json(errorBody("credential_machine_login_failed", "Failed to read this computer's logins", { detail }), 500)
       }
     })
+    .get("/sandbox-drivers", async (c) => {
+      if (!sandboxKeys) return c.json(sandboxKeysUnavailable(), 501)
+      return c.json(await sandboxListing(c.req.raw, sandboxKeys))
+    })
+    .put("/sandbox-drivers/default", async (c) => {
+      if (!sandboxKeys) return c.json(sandboxKeysUnavailable(), 501)
+      if (!await managesSandboxKeys(c.req.raw)) return c.json(sandboxKeysForbidden(), 403)
+      const body = sandboxDefaultBody.safeParse(await c.req.json().catch(() => null))
+      if (!body.success) return c.json(invalidBody(body.error), 400)
+      const chosen = body.data.driver === null
+        ? undefined
+        : chosenSandboxKey(sandboxKeys, await credentials.listCredentials(org(c.req.raw)), keyContext(c.req.raw), body.data.driver)
+      if (body.data.driver !== null && !chosen) {
+        return c.json(errorBody("sandbox_driver_key_missing", "Add a key for this sandbox provider before choosing it"), 400)
+      }
+      await sandboxKeys.chooseDriver(c.req.raw, keyContext(c.req.raw), chosen ? sandboxKeys.drivers.find((id) => id === chosen.provider_id) : undefined)
+      return c.json(await sandboxListing(c.req.raw, sandboxKeys))
+    })
     .get("/:providerId", async (c) => {
       const cred = await credentials.getCredentialByProvider(c.req.param("providerId"), { owner: actor(c.req.raw) }, org(c.req.raw))
       if (!cred) return c.json({ credential: null })
@@ -406,14 +453,22 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
     .put("/", async (c) => {
       const body = putBody.safeParse(await c.req.json().catch(() => null))
       if (!body.success) return c.json(invalidBody(body.error), 400)
+      let write: CredentialWrite = {
+        ...body.data,
+        owner: actor(c.req.raw),
+        ...(body.data.scope === "shared" ? {
+          consent: { at: (options.now ?? Date.now)(), surface: "api_key" as const },
+        } : {}),
+      }
+      if (body.data.kind === "sandbox_driver") {
+        if (!sandboxKeys) return c.json(sandboxKeysUnavailable(), 501)
+        if (!await managesSandboxKeys(c.req.raw)) return c.json(sandboxKeysForbidden(), 403)
+        const key = sandboxKeyWrite(sandboxKeys, keyContext(c.req.raw), body.data)
+        if (!key) return c.json(errorBody("sandbox_driver_key_invalid", "Fill in every field this sandbox provider needs"), 400)
+        write = key
+      }
       try {
-        const cred = await credentials.putCredential({
-          ...body.data,
-          owner: actor(c.req.raw),
-          ...(body.data.scope === "shared" ? {
-            consent: { at: (options.now ?? Date.now)(), surface: "api_key" as const },
-          } : {}),
-        }, org(c.req.raw))
+        const cred = await credentials.putCredential(write, org(c.req.raw))
         return c.json({ credential: redact(cred) })
       } catch (error) {
         if (error instanceof CredentialDeliveryError) throw error
@@ -475,7 +530,8 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
     .post("/:id/verify", async (c) => {
       const id = c.req.param("id")
       const scope = org(c.req.raw)
-      const credential = await findCredential(id, scope, actor(c.req.raw))
+      const row = await readCredential(id, scope)
+      const credential = row?.owner === actor(c.req.raw) || await managedSandboxKey(c.req.raw, row) ? row : undefined
       if (!credential) {
         return c.json(errorBody("credential_not_found", "Credential not found"), 404)
       }
@@ -573,7 +629,11 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
     })
     .delete("/:id", async (c) => {
       const row = await readCredential(c.req.param("id"), org(c.req.raw))
-      const removable = row && (row.owner === actor(c.req.raw) || (row.owner === null && fanoutEligible(row) && canRemoveOrgAccounts(c.req.raw)))
+      const removable = row && (
+        row.owner === actor(c.req.raw)
+        || (row.owner === null && fanoutEligible(row) && canRemoveOrgAccounts(c.req.raw))
+        || await managedSandboxKey(c.req.raw, row)
+      )
       if (!removable) return c.json({ deleted: false })
       const deleted = await credentials.deleteCredential(c.req.param("id"), org(c.req.raw))
       return c.json({ deleted })

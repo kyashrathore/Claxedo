@@ -24,7 +24,7 @@ async function database() {
     database.prepare("insert into users values (?, 'active', ?, ?, null, null)").bind("user-1", 1, 1),
     database.prepare("insert into actors values (?, ?, 'human', 'active', ?, ?, null)").bind("actor-1", "user-1", 1, 1),
     database
-      .prepare("insert into orgs values (?, ?, 'deployment', ?, ?, ?, ?, null)")
+      .prepare("insert into orgs (org_id, name, kind, owner_user_id, deployment_id, created_at, updated_at, deleted_at) values (?, ?, 'deployment', ?, ?, ?, ?, null)")
       .bind("org-1", "Deployment", "user-1", "deployment-1", 1, 1),
     database
       .prepare("insert into projects values (?, ?, ?, ?, ?, ?, null)")

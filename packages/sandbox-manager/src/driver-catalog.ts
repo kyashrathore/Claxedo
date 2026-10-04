@@ -2,9 +2,7 @@ import { validateSandboxPersistenceCapabilities, type SandboxDriverMetadata } fr
 import { workspaceRuntimeVersion } from "./runtime-version"
 import { defaultSandboxImage } from "./image-name"
 import {
-  defaultSandboxDriverID,
   dockerSandboxDriverEnabled as contractDockerSandboxDriverEnabled,
-  listSandboxDrivers,
   sandboxDriverAuthValues,
   sandboxDriverCredentialFields,
   sandboxDriverId,
@@ -15,7 +13,7 @@ import {
   type SandboxDriverID,
 } from "@claxedo/sandbox-contract"
 
-export { defaultSandboxDriverID, listSandboxDrivers, sandboxDriverId }
+export { sandboxDriverId }
 
 export type SandboxDriverCatalogEntry<ID extends string = SandboxDriverID> = {
   id: ID

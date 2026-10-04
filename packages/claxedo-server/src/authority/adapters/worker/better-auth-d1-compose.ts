@@ -13,6 +13,8 @@ import { USER_DEPLOYED_OWNER_CLAIM_HEADER } from "../d1/owner-identity"
 import { createD1HostTunnelTargetResolver } from "../d1/host-tunnel-relay-target"
 import { hostedCredentialsEnabled, hostedOrgCredentials } from "../../../credentials/worker/index"
 import { d1UserAgentConfigRepository } from "../d1/user-agent-config"
+import { hostedSandboxDriverKeys } from "../../../sandbox/hosted-sandbox-driver-keys"
+import { isSandboxProvisionerID } from "@claxedo/sandbox-contract"
 import { createHostedRuntimeDelivery } from "../../../workspace/hosted-runtime-delivery"
 import { hostedSandboxEgress } from "../../../deployments/hosted-shared/hosted-sandbox-egress"
 import { hostedWorkspaceSandboxInput } from "./hosted-workspace-sandbox-input"
@@ -238,13 +240,14 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     }),
   })
   const settings = d1UserAgentConfigRepository(input.controlPlaneDatabase)
-  const delivery = input.sandbox && plane.orgCredentials && plane.services.sandbox.sandboxManager
+  const { sandboxManager, workspaceDriver } = plane.services.sandbox
+  const delivery = input.sandbox && plane.orgCredentials && sandboxManager && workspaceDriver
     ? createHostedRuntimeDelivery({
         authority,
         database: input.controlPlaneDatabase,
         services: plane.services,
-        sandboxManager: plane.services.sandbox.sandboxManager,
-        driver: input.sandbox.driver,
+        sandboxManager,
+        workspaceDriver,
         sandboxInput: hostedWorkspaceSandboxInput({ database: input.controlPlaneDatabase, egress: hostedSandboxEgress(plane) }),
         settings,
         credentials: plane.orgCredentials,
@@ -267,7 +270,20 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       agentConfigRepository: settings,
       ...(delivery ? {
         settingsChanged: delivery.settingsChanged,
-        accountSetup: { changed: delivery.reconcileCredentialDelivery },
+        accountSetup: {
+          changed: delivery.reconcileCredentialDelivery,
+          ...(input.sandbox?.keys && isSandboxProvisionerID(input.sandbox.driver.id)
+            ? {
+                sandboxDriverKeys: hostedSandboxDriverKeys({
+                  database: input.controlPlaneDatabase,
+                  authority,
+                  drivers: input.sandbox.keys.drivers,
+                  managed: input.sandbox.driver.id,
+                  ...(input.now ? { now: input.now } : {}),
+                }),
+              }
+            : {}),
+        },
         productWorkspace: {
           prepareRuntime: delivery.prepareRuntime,
           provisionRuntime: delivery.provisionRuntime,

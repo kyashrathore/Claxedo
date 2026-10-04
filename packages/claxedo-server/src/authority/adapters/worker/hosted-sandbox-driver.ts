@@ -2,6 +2,9 @@ import type { SandboxDriver } from "@claxedo/sandbox-manager"
 import { createBoatSandboxDriver } from "@claxedo/sandbox-manager/drivers/boat"
 import { createCloudflareSandboxDriver } from "@claxedo/sandbox-manager/drivers/cloudflare"
 import { createFetchBridgeSandboxDriver } from "@claxedo/sandbox-manager/drivers/fetch-bridge"
+import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
+import { sandboxDriverIds, type SandboxDriverID } from "@claxedo/sandbox-contract"
+import type { HostedSandboxKeys } from "../../../sandbox/org-sandbox-drivers"
 
 import {
   supervisorBackplaneTokenAudience,
@@ -79,17 +82,9 @@ export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undef
   const name = trimToUndefined(env.CLAXEDO_SANDBOX_DRIVER)?.toLowerCase()
   if (!name) return undefined
   if (name === "cloudflare") {
-    const workerUrl = trimToUndefined(env.CLOUDFLARE_SANDBOX_WORKER_URL)
-    const apiToken = trimToUndefined(env.CLOUDFLARE_SANDBOX_API_TOKEN)
-    if (!workerUrl || !apiToken) return undefined
-    return createCloudflareSandboxDriver({ workerUrl, apiToken, ...sandboxRuntimeOptions(env) })
+    return cloudflareDriver(env, { worker_url: env.CLOUDFLARE_SANDBOX_WORKER_URL, api_token: env.CLOUDFLARE_SANDBOX_API_TOKEN })
   }
-  if (name === "boat") {
-    const apiKey = trimToUndefined(env.BOAT_API_KEY)
-    const image = trimToUndefined(env.CLAXEDO_SANDBOX_IMAGE)
-    if (!apiKey || !image) return undefined
-    return createBoatSandboxDriver({ apiKey, image, ...sandboxRuntimeOptions(env) })
-  }
+  if (name === "boat") return boatDriver(env, { api_key: env.BOAT_API_KEY })
 
   if (name !== "fetch") {
     throw new HostedWorkerCompositionError(
@@ -106,4 +101,35 @@ export function hostedSandboxDriver(env: HostedWorkerEnv): SandboxDriver | undef
     autoStopMs: positiveInteger(env, "CLAXEDO_SANDBOX_AUTO_STOP_MS", 30 * 60_000),
     autoDeleteMs: positiveInteger(env, "CLAXEDO_SANDBOX_AUTO_DELETE_MS", 24 * 60 * 60_000),
   })
+}
+
+function cloudflareDriver(env: HostedWorkerEnv, auth: { worker_url?: string; api_token?: string }) {
+  const workerUrl = trimToUndefined(auth.worker_url)
+  const apiToken = trimToUndefined(auth.api_token)
+  if (!workerUrl || !apiToken) return undefined
+  return createCloudflareSandboxDriver({ workerUrl, apiToken, ...sandboxRuntimeOptions(env) })
+}
+
+function boatDriver(env: HostedWorkerEnv, auth: { api_key?: string }) {
+  const apiKey = trimToUndefined(auth.api_key)
+  const image = trimToUndefined(env.CLAXEDO_SANDBOX_IMAGE)
+  if (!apiKey || !image) return undefined
+  return createBoatSandboxDriver({ apiKey, image, ...sandboxRuntimeOptions(env) })
+}
+
+/**
+ * The drivers an organization's own key can provision with on this Worker:
+ * the catalog's drivers that run in a Worker. Each is built with the
+ * deployment's runtime settings and the organization's key in place of the
+ * operator's.
+ */
+export function hostedSandboxKeyDrivers(env: HostedWorkerEnv): Omit<HostedSandboxKeys, "chosenDriver"> {
+  return {
+    drivers: sandboxDriverIds.filter((id) => sandboxDriverCatalog[id].metadata.driverRunsIn.some((runtime) => runtime === "worker")),
+    create: (id: SandboxDriverID, fields: Record<string, string>) => {
+      if (id === "cloudflare") return cloudflareDriver(env, fields)
+      if (id === "boat") return boatDriver(env, fields)
+      return undefined
+    },
+  }
 }

@@ -1,5 +1,5 @@
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
-import { hostedSandboxDriver } from "../../authority/adapters/worker/hosted-sandbox-driver"
+import { hostedSandboxDriver, hostedSandboxKeyDrivers } from "../../authority/adapters/worker/hosted-sandbox-driver"
 import { composeWithCloudSandbox } from "./full-hosted-sandbox"
 import {
   composeBetterAuthD1AgentPlugins,
@@ -36,7 +36,7 @@ const composition = settledCompositionCache(
       )
     }
     return composeWithCloudSandbox(
-      { database: env.CONTROL_PLANE_DB, signingEnv: stringEnvironment(env), driver },
+      { database: env.CONTROL_PLANE_DB, signingEnv: stringEnvironment(env), driver, keyDrivers: hostedSandboxKeyDrivers(stringEnvironment(env)) },
       (extra) => composeBetterAuthD1AgentPlugins(env, extra),
     )
   },

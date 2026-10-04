@@ -44,6 +44,8 @@ import { HostedWorkerCompositionError } from "./composition-error"
 import { recordRelayRuntimeToken } from "./relay-token-record"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { isSandboxProvisionerID } from "@claxedo/sandbox-contract"
+import { orgSandboxDrivers, type HostedSandboxKeys } from "../sandbox/org-sandbox-drivers"
+import { createOrgSandboxManager } from "../sandbox/org-sandbox-manager"
 
 export { HostedWorkerCompositionError } from "./composition-error"
 
@@ -178,12 +180,15 @@ export type HostedSandboxBinding = {
   driver: SandboxDriver
   leaseStore: SandboxLeaseStore
   deliverSessionRowsPass?: (workspaceId: string) => Promise<void>
+  /** Organization keys this deployment can provision with; absent, every workspace runs on `driver`. */
+  keys?: HostedSandboxKeys
 }
 
 function sandboxManager(
   env: HostedWorkerEnv,
   telemetry: ControlPlaneTelemetry,
   sandbox: HostedSandboxBinding | undefined,
+  bindings: Pick<HostedControlPlaneAdapterBindings, "authority" | "orgCredentials">,
 ) {
   const selectedDriver = trimToUndefined(env.CLAXEDO_SANDBOX_DRIVER)
   if (!sandbox) {
@@ -205,14 +210,23 @@ function sandboxManager(
   // here: a driver may narrow its declaration against the catalog entry
   // (`drivers/docker.ts` does), and two independent readings of the same
   // capability are two things that can disagree. One check, one warning.
-  return createSandboxManager({
+  const manager = (driver: SandboxDriver) => createSandboxManager({
     leaseStore: sandbox.leaseStore,
-    driver: sandbox.driver,
+    driver,
     staleAfterMs: positiveInteger(env, "CLAXEDO_SANDBOX_ACQUIRE_STALE_MS", 60_000),
     retryAfterMs: positiveInteger(env, "CLAXEDO_SANDBOX_PROVISIONING_RETRY_MS", 2_000),
     maxRetryCount: limits.sandboxMaxRetryCount,
     onEgressUnenforced: sandboxEgressUnenforcedSink(telemetry),
     onStartPhase: sandboxStartPhaseSink(telemetry),
+  })
+  if (!sandbox.keys || !bindings.orgCredentials) {
+    return { manager: manager(sandbox.driver), workspaceDriver: async () => sandbox.driver }
+  }
+  return createOrgSandboxManager({
+    leaseStore: sandbox.leaseStore,
+    drivers: orgSandboxDrivers({ operator: sandbox.driver, keys: sandbox.keys, credentials: bindings.orgCredentials }),
+    workspaceOrg: async (workspaceId) => (await bindings.authority.resolveWorkspaceOwner?.(workspaceId))?.orgId,
+    manager,
   })
 }
 
@@ -355,7 +369,8 @@ export function composeProviderNeutralHostedControlPlane(
   // what emits the boot-time "this driver cannot contain egress" event, and a
   // sink that does not exist yet cannot receive it.
   const telemetry = workerTelemetry(env)
-  const manager = sandboxManager(env, telemetry, bindings.sandbox)
+  const sandbox = sandboxManager(env, telemetry, bindings.sandbox, bindings)
+  const manager = sandbox?.manager
   // The provisioner this deployment places every cloud workspace on. A driver
   // whose id names no provisioner leaves it undeclared, and the allocator
   // refuses rather than storing a root whose machine nothing names.
@@ -398,7 +413,9 @@ export function composeProviderNeutralHostedControlPlane(
       hostTunnelTokenVerifier: hostTunnelTokenVerifier(env),
       hostTunnelResolver: bindings.hostTunnelResolver,
     },
-    sandbox: (manager ? { sandboxManager: manager, ...(managerDriver ? { defaultDriver: managerDriver } : {}) } : {}),
+    sandbox: (sandbox
+      ? { sandboxManager: sandbox.manager, workspaceDriver: sandbox.workspaceDriver, ...(managerDriver ? { defaultDriver: managerDriver } : {}) }
+      : {}),
     telemetry,
     localExecution: { enabled: false },
     defaultHomeRegion: homeRegion,

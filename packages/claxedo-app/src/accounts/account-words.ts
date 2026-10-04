@@ -44,7 +44,7 @@ export type AccountWords = {
 
 type Words = { readonly t: AccountsText; readonly windowName: (window: QuotaWindow) => string }
 
-const VERDICT_KEY = {
+export const VERDICT_KEY = {
   ok: "settings.providers.live.ok",
   auth_failed: "settings.providers.live.authFailed",
   no_billing: "settings.providers.live.noBilling",

@@ -15,7 +15,9 @@ import {
   createTestBackend,
   setBackendOverride,
 } from "@claxedo/server-core/credentials/backend-registry"
-import { putCredential, setActiveCredentials } from "@claxedo/server-core/credentials/registry"
+import { putCredential, resolveSecretById, setActiveCredentials } from "@claxedo/server-core/credentials/registry"
+import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/default-credentials"
+import { loadUserConfig, sandboxDriverConfig } from "@claxedo/server-core/agent-config/index"
 import { createLocalCredentialBroker } from "../credentials/broker"
 import { providerProjection } from "@claxedo/agent-runtime-contract"
 import { DAEMON_PROTOCOL_HEADER } from "@claxedo/helpers/claxedo-daemon"
@@ -192,24 +194,29 @@ describe("local composition — credential routes", () => {
   })
 })
 
-describe("local composition — sandbox driver settings", () => {
-  test("serves the provider catalog at the renderer's hosted-compatible path", async () => {
-    const response = await app().request("http://localhost/api/workspace/drivers")
-    expect(response.status).toBe(200)
+describe("local composition — sandbox provider keys", () => {
+  const put = (instance: ReturnType<typeof app>, url: string, body: unknown) =>
+    instance.request(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
 
-    const body = await response.json() as {
-      default_driver?: string
-      drivers?: Array<{ id: string; label: string; fields: unknown[] }>
-    }
+  test("the operator keeps a person's own key through the shared credential route and picks the default driver", async () => {
+    setBackendOverride(createTestBackend())
+    const instance = app({ services: services({ credentials: defaultControlPlaneCredentials() }) })
+    const key = { provider_id: "boat", kind: "sandbox_driver", secret: JSON.stringify({ api_key: " bx-local " }) }
 
-    expect(body.default_driver).toBe("cloudflare")
-    expect(body.drivers?.map((driver) => driver.id)).toEqual([
-      "modal",
-      "vercel",
-      "cloudflare",
-      "boat",
-    ])
-    expect(body.drivers?.every((driver) => driver.label && driver.fields.length > 0)).toBe(true)
+    expect((await put(instance, "http://claxedo.example.com/api/claxedo/credentials", key)).status).toBe(403)
+    expect((await put(instance, "http://localhost/api/claxedo/credentials", { ...key, provider_id: "fetch" })).status).toBe(400)
+    expect((await put(instance, "http://localhost/api/claxedo/credentials", key)).status).toBe(200)
+
+    const listing = await (await instance.request("http://localhost/api/claxedo/credentials/sandbox-drivers")).json()
+    expect(listing).toMatchObject({ default_driver: "boat", managed_driver: null, can_manage: true, keys: [{ provider_id: "boat", owner: "local", kind: "sandbox_driver" }] })
+    expect(listing.drivers.map((driver: { id: string }) => driver.id)).toEqual(["modal", "vercel", "cloudflare", "boat"])
+    expect((await (await instance.request("http://localhost/api/claxedo/credentials")).json()).credentials).toEqual([])
+    expect(await resolveSecretById(listing.keys[0].id)).toBe(JSON.stringify({ api_key: "bx-local" }))
+
+    expect((await put(instance, "http://localhost/api/claxedo/credentials/sandbox-drivers/default", { driver: "vercel" })).status).toBe(400)
+    expect((await put(instance, "http://localhost/api/claxedo/credentials/sandbox-drivers/default", { driver: "boat" })).status).toBe(200)
+    expect(sandboxDriverConfig(await loadUserConfig()).default_driver).toBe("boat")
+    expect((await instance.request("http://localhost/api/workspace/drivers")).status).toBe(404)
   })
 })
 

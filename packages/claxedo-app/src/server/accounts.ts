@@ -8,6 +8,7 @@ import { queryKeys } from "./query-keys"
 import { jsonInit, withQuery, type Transport } from "./transport"
 import type { FetchQuery } from "./types"
 import { accountCheckFromWire, accountFromWire, machineLoginFromWire, rowsFromWire } from "./wire/accounts"
+import { createSandboxKeyWrites, sandboxKeyQueries } from "./sandbox-keys"
 
 const CREDENTIALS_PATH = "/api/claxedo/credentials"
 
@@ -38,7 +39,7 @@ export function accountQueries(transport: Transport) {
       return { kind: "listed", accounts: rowsFromWire(body, "credentials", accountFromWire) ?? [] }
     })
   const machineLogins = (): FetchQuery<readonly MachineLogin[]> => fetchQuery(queryKeys.machineLogins(server), () => fetchMachineLogins(transport, {}))
-  return { list, effective, machineLogins, ...accountSourceQueries(transport) }
+  return { list, effective, machineLogins, ...accountSourceQueries(transport), ...sandboxKeyQueries(transport) }
 }
 
 export function createAccountsApi(transport: Transport, queryClient: QueryClient): AccountsApi {
@@ -47,6 +48,8 @@ export function createAccountsApi(transport: Transport, queryClient: QueryClient
   const post = (path: string, body: unknown) => transport.json(`${CREDENTIALS_PATH}${path}`, jsonInit("POST", body))
   return {
     ...createAccountSourceWrites(transport, changed),
+    ...createSandboxKeyWrites(transport, changed),
+    ...createMachineLoginScans(transport, queryClient),
     select: async (ids) => {
       await post("/activate", { ids })
       await changed()
@@ -65,6 +68,13 @@ export function createAccountsApi(transport: Transport, queryClient: QueryClient
       await changed()
       return check
     },
+    refresh: changed,
+  }
+}
+
+function createMachineLoginScans(transport: Transport, queryClient: QueryClient): Pick<AccountsApi, "checkMachineLogin" | "rescan"> {
+  const server = transport.serverUrl
+  return {
     checkMachineLogin: async (harness) => {
       const logins = await fetchMachineLogins(transport, { harness, fresh: true })
       queryClient.setQueryData<readonly MachineLogin[]>(queryKeys.machineLogins(server), (current) => [
@@ -73,7 +83,6 @@ export function createAccountsApi(transport: Transport, queryClient: QueryClient
       ])
       return logins
     },
-    refresh: changed,
     rescan: async () => {
       const logins = await fetchMachineLogins(transport, { fresh: true })
       queryClient.setQueryData<readonly MachineLogin[]>(queryKeys.machineLogins(server), logins)

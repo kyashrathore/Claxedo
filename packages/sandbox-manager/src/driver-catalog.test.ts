@@ -1,9 +1,7 @@
 import { describe, expect, test } from "vitest"
 import {
-  defaultSandboxDriverID,
   dockerSandboxDriverEnabled,
   hasSandboxDriverAuth,
-  listSandboxDrivers,
   sandboxDriverCatalog,
   sandboxDriverId,
   sandboxDriverAuth,
@@ -83,12 +81,7 @@ describe("sandbox driver catalog", () => {
     expect(dockerSandboxDriverEnabled({})).toBe(false)
     expect(dockerSandboxDriverEnabled({ CLAXEDO_ENABLE_DOCKER_SANDBOX: "1" })).toBe(true)
     expect(sandboxDriverId("docker", undefined, {})).toBeUndefined()
-    expect(listSandboxDrivers(undefined, {}).drivers.map((driver) => driver.id)).not.toContain("docker")
     expect(sandboxDriverId("docker", undefined, { CLAXEDO_ENABLE_DOCKER_SANDBOX: "1" })).toBe("docker")
-    expect(defaultSandboxDriverID(undefined, {
-      CLAXEDO_ENABLE_DOCKER_SANDBOX: "1",
-      CLAXEDO_DOCKER_SANDBOX_DEFAULT: "1",
-    })).toBe("docker")
   })
 
   test("checks driver auth from config or env", () => {
@@ -102,16 +95,6 @@ describe("sandbox driver catalog", () => {
       CLOUDFLARE_SANDBOX_WORKER_URL: "https://worker.test",
     })).toBe(true)
     expect(hasSandboxDriverAuth(undefined, "docker", {})).toBe(false)
-  })
-
-  test("uses default_driver as the canonical config and response key", () => {
-    expect(defaultSandboxDriverID({ default_driver: "modal" }, {})).toBe("modal")
-    expect(listSandboxDrivers({ default_driver: "cloudflare" }, {}).default_driver).toBe("cloudflare")
-  })
-
-  test("does not accept legacy default_provider config", () => {
-    expect(defaultSandboxDriverID({ default_provider: "vercel" } as never, {})).toBe("cloudflare")
-    expect(listSandboxDrivers({ default_provider: "cloudflare" } as never, {})).not.toHaveProperty("default_provider")
   })
 
   test("does not expose descriptive-only capability flags", () => {

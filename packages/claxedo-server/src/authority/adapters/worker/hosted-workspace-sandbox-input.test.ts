@@ -16,7 +16,7 @@ async function sandboxInput(rows: Row[]) {
   const db = instance.database
   await db.batch([
     db.prepare("insert into users values ('owner', 'active', 1, 1, null, null)"),
-    db.prepare("insert into orgs values ('org', 'Org', 'deployment', 'owner', 'deployment-1', 1, 1, null)"),
+    db.prepare("insert into orgs (org_id, name, kind, owner_user_id, deployment_id, created_at, updated_at, deleted_at) values ('org', 'Org', 'deployment', 'owner', 'deployment-1', 1, 1, null)"),
     db.prepare("insert into projects values ('project', 'org', 'repo:one', 'owner', 1, 1, null)"),
     ...rows.map((row) => db.prepare(`insert into workspaces
       (workspace_id, org_id, project_id, owner_user_id, backing, display_name, home_region, repo_url, git_branch, remote_directory, created_at, updated_at, deleted_at)

@@ -816,17 +816,30 @@ describe("credential routes", () => {
     expect(registry.deleteCredential).toHaveBeenCalledWith("cred_1", SINGLE_TENANT_ORG)
   })
 
-  test("refuses a sandbox driver credential, which only the sandbox driver settings route writes", async () => {
+  test("a sandbox provider key is refused by a host that keeps none, and stored whole by one that does", async () => {
     const registry = credentials()
-    const app = CredentialRoutes(registry)
-
-    const put = await app.request("http://localhost/", {
+    const send = (app: ReturnType<typeof CredentialRoutes>, secret: unknown) => app.request("http://localhost/", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider_id: "boat", kind: "sandbox_driver", source: "managed", secret: "boat-key" }),
+      body: JSON.stringify({ provider_id: "boat", kind: "sandbox_driver", source: "managed", secret: JSON.stringify(secret) }),
     })
-    expect(put.status).toBe(400)
+    expect((await send(CredentialRoutes(registry), { api_key: "boat-key" })).status).toBe(501)
+    const keeping = CredentialRoutes(registry, {
+      sandboxDriverKeys: {
+        drivers: ["boat"],
+        owner: "org",
+        canManage: async () => true,
+        chosenDriver: async () => undefined,
+        chooseDriver: async () => {},
+      },
+    })
+    expect((await send(keeping, { key: "boat-key" })).status).toBe(400)
     expect(registry.putCredential).not.toHaveBeenCalled()
+    expect((await send(keeping, { api_key: " boat-key " })).status).toBe(200)
+    expect(registry.putCredential).toHaveBeenCalledWith(
+      { owner: null, provider_id: "boat", kind: "sandbox_driver", source: "managed", label: "Boat", secret: JSON.stringify({ api_key: "boat-key" }) },
+      SINGLE_TENANT_ORG,
+    )
   })
 
   test("returns structured validation errors", async () => {

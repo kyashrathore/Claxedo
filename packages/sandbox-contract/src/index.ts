@@ -286,40 +286,35 @@ export function sandboxDriverId(
   return input
 }
 
-export function defaultSandboxDriverID(
-  cfg?: SandboxDriverConfig,
-  env: SandboxDriverEnv = process.env,
-): SandboxDriverID {
-  return sandboxDriverId(cfg?.default_driver, cfg, env)
-    ?? (enabled(env.CLAXEDO_DOCKER_SANDBOX_DEFAULT) && sandboxDriverAuthValues(cfg, "docker", env)
-      ? "docker"
-      : "cloudflare")
+/**
+ * A driver's credential fields as the one JSON object a `sandbox_driver`
+ * credential stores: every catalog field present and trimmed, and a
+ * Cloudflare Worker URL in its canonical form. Undefined when a field is
+ * missing or the Worker URL is not an acceptable endpoint.
+ */
+export function sandboxDriverSecret(id: SandboxDriverID, input: Record<string, unknown>): string | undefined {
+  const values: Record<string, string> = {}
+  for (const field of sandboxDriverCredentialFields[id]) {
+    const raw = input[field.key]
+    const value = typeof raw === "string" ? raw.trim() : ""
+    if (!value) return undefined
+    values[field.key] = value
+  }
+  if (id === "cloudflare") {
+    try { values.worker_url = cloudflareWorkerBaseUrl(values.worker_url) } catch { return undefined }
+  }
+  return JSON.stringify(values)
 }
 
-export function listSandboxDrivers(
-  cfg?: SandboxDriverConfig,
-  env: SandboxDriverEnv = process.env,
-  managedDriverIds: ReadonlySet<string> = new Set(),
-) {
-  const defaultDriver = defaultSandboxDriverID(cfg, env)
-  return {
-    default_driver: defaultDriver,
-    drivers: sandboxDriverIds
-      .filter((id) => id !== "docker" || !!sandboxDriverAuthValues(cfg, "docker", env))
-      .map((id) => {
-        const configuredFromConfigOrEnv = !!sandboxDriverAuthValues(cfg, id, env)
-        const configured = id === "docker"
-          ? configuredFromConfigOrEnv
-          : configuredFromConfigOrEnv || managedDriverIds.has(id)
-        return {
-          id,
-          label: sandboxDriverLabels[id],
-          fields: sandboxDriverCredentialFields[id],
-          configured,
-          source: configuredFromConfigOrEnv ? "config" as const : configured ? "managed" as const : "none" as const,
-          default: id === defaultDriver,
-        }
-      }),
-  }
+/**
+ * The driver new workspaces use: the chosen one while it holds a key, else the
+ * first driver that holds one, else the deployment's own managed driver.
+ */
+export function effectiveSandboxDriver<Managed extends string>(input: {
+  chosen?: string
+  keyed: readonly SandboxDriverID[]
+  managed?: Managed
+}): SandboxDriverID | Managed | undefined {
+  return input.keyed.find((id) => id === input.chosen) ?? input.keyed[0] ?? input.managed
 }
 export * from "./start-phases"

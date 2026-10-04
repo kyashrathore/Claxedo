@@ -369,6 +369,7 @@ CREATE TABLE orgs (
   created_at integer not null,
   updated_at integer not null,
   deleted_at integer,
+  sandbox_driver text,
   check ((kind = 'deployment') = (deployment_id is not null))
 );
 
