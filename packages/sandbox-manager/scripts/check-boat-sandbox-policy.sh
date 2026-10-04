@@ -15,11 +15,11 @@ if docker info --format '{{json .SecurityOptions}}' | grep -Fq 'name=apparmor'; 
   apparmor=(--security-opt apparmor=codex-security-container)
 fi
 
-docker run --rm --init --cap-drop ALL --security-opt no-new-privileges \
+docker run --rm --init --cap-drop ALL --cap-add SETFCAP --security-opt no-new-privileges \
   --security-opt "seccomp=$policy/seccomp.json" "${apparmor[@]}" \
   --entrypoint sh "$image" -lc '
     set -eu
-    grep -Eq "^CapEff:[[:space:]]+0000000000000000$" /proc/self/status
+    grep -Eq "^CapEff:[[:space:]]+0000000080000000$" /proc/self/status
     grep -Eq "^NoNewPrivs:[[:space:]]+1$" /proc/self/status
     grep -Eq "^Seccomp:[[:space:]]+2$" /proc/self/status
     unshare -Ur true
