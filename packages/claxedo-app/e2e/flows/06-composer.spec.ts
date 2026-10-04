@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url"
-import { acpScriptToken, expect, installedCli, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
+import { acpScriptToken, expect, installedCli, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI, showHarnesses } from "../harness"
 
 const IMAGE = fileURLToPath(new URL("../../public/web-app-manifest-192x192.png", import.meta.url))
 const IMAGE_NAME = "web-app-manifest-192x192.png"
@@ -65,7 +65,7 @@ test("06 a new session starts on the folder's harness, then on the harness last 
   await openDraft()
   await expect(picker).toHaveAttribute("data-harness", "pi")
   await picker.click()
-  await app.getByRole("button", { name: /^Harness/ }).click()
+  await showHarnesses(app)
   await app.getByRole("button", { name: "Scripted ACP" }).click()
   await expect(picker).toHaveAttribute("data-harness", "scripted-acp")
   await app.keyboard.press("Escape")

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { Page } from "@playwright/test"
-import { expect, gitFolder, sendPrompt, sessionRoute, test, UI, type Stack } from "../harness"
+import { expect, gitFolder, sendPrompt, servingMachineName, sessionRoute, test, UI, type Stack } from "../harness"
 
 type ProjectRecord = { id: string; name: string; directory?: string | null; repoUrl?: string | null; available?: boolean; env?: Record<string, string> }
 
@@ -40,7 +40,7 @@ async function createFolderProject(app: Page, typed: string, folder: string) {
 
 async function cloneProject(app: Page, url: string, name: string) {
   await openCreatePanel(app)
-  await app.getByRole("button", { name: "Clone a repository instead" }).click()
+  await app.getByRole("button", { name: "Repository", exact: true }).click()
   await app.getByRole("textbox", { name: "Repository URL" }).fill(url)
   await app.getByRole("button", { name: "Create project", exact: true }).click()
   await expect(projectChip(app)).toContainText(name)
@@ -156,11 +156,12 @@ test("02 a new local worktree picked in the Where chip is made on the first send
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
   await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
   const chip = app.getByRole("button", { name: "Where it runs", exact: true })
-  await expect(chip).toContainText("main")
+  const machine = await servingMachineName(stack.url)
+  await expect(chip).toHaveText(machine)
   await expect(app.getByRole("button", { name: "Current branch" })).toContainText("main")
   await chip.click()
-  await app.getByRole("button", { name: "New local worktree" }).click()
-  await expect(chip).toContainText("New local worktree")
+  await app.getByRole("button", { name: `New worktree on ${machine}`, exact: true }).click()
+  await expect(chip).toHaveText("New worktree")
   await chooseScriptedHarness(app)
   await sendPrompt(app, "Start in a new worktree")
   await expect(app).toHaveURL(/\/w\/[^/]+\/session\/[^/?]+$/)

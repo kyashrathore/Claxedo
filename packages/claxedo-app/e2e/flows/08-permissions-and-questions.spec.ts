@@ -1,4 +1,4 @@
-import { acpScriptToken, assistantText, expect, installedCli, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI, watchPageWork } from "../harness"
+import { acpScriptToken, assistantText, expect, installedCli, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI, watchPageWork, showHarnesses } from "../harness"
 
 test("08 a permission prompt blocks the composer until it is allowed from its dock", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("permission")
@@ -123,7 +123,7 @@ test("08 a harness switch mid-session moves the chip to the new harness, whose m
   await expect(chip).toHaveText("Plan")
 
   await picker.click()
-  await app.getByRole("button", { name: /^Harness/ }).click()
+  await showHarnesses(app)
   await app.getByRole("button", { name: "Scripted ACP" }).click()
   await expect(picker).toHaveAttribute("data-harness", "scripted-acp")
   await app.keyboard.press("Escape")

@@ -18,3 +18,11 @@ export async function revokeOwnerMachines(signed: SignedStack) {
     expect(revoked.status, revoked.body).toBe(200)
   }
 }
+
+export async function servingMachineName(url: string): Promise<string> {
+  const response = await fetch(new URL("/api/claxedo/bootstrap", url))
+  expect(response.status).toBe(200)
+  const name = ((await response.json()) as { host?: { name?: string } }).host?.name
+  expect(name).toBeTruthy()
+  return name ?? ""
+}

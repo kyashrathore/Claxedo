@@ -28,7 +28,7 @@ export { listLivePlugins, registerLivePlugin, writeLivePlugin, type LivePluginFo
 export { APP_PLUGIN_WARNING, appPluginDialog, appPluginRow, approveAppPlugin } from "./app-plugins"
 export { breakFixturePlugin, FIXTURE_ROUTES, fixtureFolder, writeFixturePlugin, type FixtureVersion } from "./fixture-plugin"
 export { type Account, type SignedStack } from "./signed-stack"
-export { ownerDevices, revokeOwnerMachines } from "./machine-devices"
+export { ownerDevices, revokeOwnerMachines, servingMachineName } from "./machine-devices"
 export {
   cloudMessages, cloudPrompt, cloudTurn, cloudWorkspaceNames, cloudWorkspaces, createCloudSession, listedSessions, makeCloudWorkspace, sessionConnection, startCloudWorkspace, stopCloudWorkspace,
   storedMessages, storeOwnerKey, type CloudWorkspace,
@@ -44,7 +44,7 @@ export { type ScriptedModelRequest, type ScriptedModelServer, type ScriptedToolC
 export { expectWithinBaseline, settled, type Surface } from "./a11y"
 export { expectNothingAnimating } from "./animations"
 export { sessionRoute, UI } from "./ui-names"
-export { sendPrompt, type SendOptions } from "./composer"
+export { sendPrompt, showHarnesses, type SendOptions } from "./composer"
 export { apiRequests, holdEveryRequest, holdResponse } from "./requests"
 export { recordStillness, sinceFirstReady, stillnessAfter, type Stillness } from "./stillness"
 export { watchPageWork, type PageWork, type PageWorkInput } from "./page-work"

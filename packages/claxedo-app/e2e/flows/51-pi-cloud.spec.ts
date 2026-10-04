@@ -17,6 +17,7 @@ import {
   type CloudWorkspace,
   type MessageRow,
   type SignedStack,
+  showHarnesses,
 } from "../harness"
 
 async function runningCloudWorkspace(signed: SignedStack) {
@@ -30,7 +31,7 @@ async function startPiFromComposer(page: Page, signed: SignedStack, workspace: C
   await page.goto(`${signed.url}${sessionRoute(workspace.id)}`)
   await page.getByRole("button", { name: /^Select harness and model/ }).click()
   const picker = page.getByRole("dialog", { name: "Select harness, model and effort" })
-  await picker.getByRole("button", { name: /^Harness/ }).click()
+  await showHarnesses(picker)
   await page.getByRole("button", { name: "Pi", exact: true }).click()
   await picker.getByRole("button", { name: "GPT-4.1", exact: true }).click()
   await page.keyboard.press("Escape")

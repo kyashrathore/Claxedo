@@ -15,7 +15,7 @@ test("48 startup: web onboarding starts from a connected GitHub repository, neve
   await expect(page.getByRole("heading", { name: "Start with a project" })).toBeVisible()
   await expect(page.getByRole("button", { name: "Connect GitHub", exact: true })).toBeVisible()
   await expect(page.getByRole("textbox", { name: "Repository URL" })).toHaveCount(0)
-  await expect(page.getByRole("button", { name: "Paste a URL instead" })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "Paste URL" })).toHaveCount(0)
   await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeDisabled()
 })
 

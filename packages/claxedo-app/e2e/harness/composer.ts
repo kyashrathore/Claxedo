@@ -19,3 +19,9 @@ export async function sendPrompt(page: Page, text: string, options: SendOptions 
   }
   await page.keyboard.press("Enter")
 }
+
+export async function showHarnesses(scope: Page | Locator) {
+  const header = scope.getByRole("button", { name: /^Harness/ })
+  await expect(header).toBeVisible()
+  if ((await header.getAttribute("aria-expanded")) !== "true") await header.click()
+}

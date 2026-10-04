@@ -3,8 +3,13 @@ import { useQuery } from "@tanstack/solid-query"
 import { machineOfPlacement, useServer, type Placement, type PlacementId, type ProjectId, type Server } from "@/server"
 import { createDraftBranches } from "./draft-branches"
 import { creationOf, currentPlacement, whereEntries, worktreeRoots, type WhereChoice, type WhereNew } from "./draft-where"
+import { useProject, type ProjectView } from "./store"
 
 export type DraftTarget = { readonly projectId: ProjectId; readonly placementId: PlacementId }
+
+function clonesFromRepository(view: ProjectView): boolean {
+  return view.kind === "ready" && (view.project.source?.kind === "repository" || view.project.source?.kind === "connectedRepository")
+}
 
 function createWhere(server: Server, draft: Accessor<DraftTarget>) {
   const machines = useQuery(() => server.queries.machines.list())
@@ -50,6 +55,7 @@ export type DraftContext = ReturnType<typeof createDraftContext>
 
 export function createDraftContext(draft: Accessor<DraftTarget>) {
   const server = useServer()
+  const project = useProject(() => draft().projectId)
   const where = createWhere(server, draft)
   const creating = () => creationOf(where.choice())
   const branchSource = (): PlacementId => {
@@ -72,7 +78,7 @@ export function createDraftContext(draft: Accessor<DraftTarget>) {
     machinesLoaded: where.machinesLoaded,
     hasMachine: where.hasMachine,
     worktreeRoots: where.roots,
-    canCreateCloud: () => server.capabilities()?.features.cloud === true,
+    canCreateCloud: () => server.capabilities()?.features.cloud === true && clonesFromRepository(project()),
     choose,
     branches: branchChoice.branches,
     branch: branchChoice.branch,

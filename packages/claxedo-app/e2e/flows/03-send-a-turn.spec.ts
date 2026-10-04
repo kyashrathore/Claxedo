@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test"
 import { installPaintedFrames } from "../harness/painted-frames"
-import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_CONNECTION_ID, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
+import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_CONNECTION_ID, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI, showHarnesses } from "../harness"
 
 type FirstPaintWindow = Window & { __firstTranscriptPaint?: Promise<string> }
 
@@ -213,7 +213,7 @@ test("03 a draft's first send the runtime refuses leaves no session, keeps the m
   const picker = app.locator('[data-action="prompt-harness-model"]').filter({ visible: true })
   await expect(picker).toHaveAttribute("data-harness", "pi")
   await picker.click()
-  await app.getByRole("button", { name: /^Harness/ }).click()
+  await showHarnesses(app)
   await app.getByRole("button", { name: "Scripted ACP" }).click()
   await expect(picker).toHaveAttribute("data-harness", "scripted-acp")
   await app.keyboard.press("Escape")

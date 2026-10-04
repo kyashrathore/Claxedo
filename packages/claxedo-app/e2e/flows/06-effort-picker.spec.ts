@@ -1,4 +1,4 @@
-import { expect, sendPrompt, sessionRoute, test } from "../harness"
+import { expect, sendPrompt, sessionRoute, test, showHarnesses } from "../harness"
 
 test("06 effort picker: an OpenCode model's effort variants show in the picker, and the chosen one is the variant the engine runs", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("opencode-effort")
@@ -32,7 +32,7 @@ test("06 effort picker: a new Claude session retains its draft effort after crea
   const workspace = await stack.daemon.makeWorkspace("claude-draft-effort")
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
   await app.getByRole("button", { name: /^Select harness and model/ }).click()
-  await app.getByRole("button", { name: /^Harness/ }).click()
+  await showHarnesses(app)
   await app.getByRole("button", { name: "Claude Code", exact: true }).click()
   const picker = app.getByRole("dialog", { name: "Select harness, model and effort" })
   const effort = picker.getByRole("slider", { name: "Effort" })

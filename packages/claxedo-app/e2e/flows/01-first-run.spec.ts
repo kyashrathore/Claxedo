@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { Page } from "@playwright/test"
-import { assistantText, cloudWorkspaceNames, expect, gitFolder, installedCli, revokeOwnerMachines, sendPrompt, storeOwnerKey, test } from "../harness"
+import { assistantText, cloudWorkspaceNames, expect, gitFolder, installedCli, revokeOwnerMachines, sendPrompt, servingMachineName, showHarnesses, storeOwnerKey, test } from "../harness"
 import { HOSTED_CODE_HOST_REPOSITORY, HOSTED_CODE_HOST_TOKEN } from "../../../harness/e2e/harness/hosted-scripted-github"
 
 const MARKER = "FIRSTRUN1"
@@ -19,8 +19,9 @@ function pageOverflows(app: Page) {
   })
 }
 
-async function onboard(app: Page, fromHome: string) {
+async function onboard(app: Page, fromHome: string, machine: string) {
   await expect(app.getByRole("heading", { level: 1, name: "Start with a project" })).toBeVisible()
+  await expect(app.getByText(`Folder on ${machine}`, { exact: true })).toBeVisible()
   await app.getByRole("button", { name: "Choose folder" }).click()
   await app.getByRole("textbox", { name: "Search folders" }).fill(fromHome)
   await app.getByRole("dialog", { name: "New Project" }).getByRole("button", { name: /first/ }).click()
@@ -29,10 +30,10 @@ async function onboard(app: Page, fromHome: string) {
   await expect(app.getByRole("radiogroup", { name: "Claude Code" })).toBeVisible()
   await app.getByRole("button", { name: "Next", exact: true }).click()
   const where = app.getByRole("radiogroup", { name: "Where work runs" })
-  await expect(where.getByRole("radio", { name: /^Just this machine/ })).toBeChecked()
+  await expect(where.getByRole("radio", { name: new RegExp(`^${machine.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`) })).toBeChecked()
   await expect(where.getByRole("radio")).toHaveCount(1)
-  await expect(app.getByText("Another machine")).toHaveCount(0)
-  await expect(app.getByRole("button", { name: /^This computer — connect it/ })).toHaveCount(0)
+  await expect(app.getByText(/this machine|this computer/i).filter({ visible: true })).toHaveCount(0)
+  await expect(app.getByRole("button", { name: "Connect a machine…" })).toHaveCount(0)
   expect(await pageOverflows(app)).toBe(false)
   await app.getByRole("button", { name: "Open project" }).click()
 }
@@ -41,7 +42,7 @@ test("01 first run: onboarding detects the agents, adds a folder project, and th
   const claude = await installedCli("claude")
   test.skip(!claude.available, claude.available ? "" : claude.reason)
   const folder = await gitFolder(path.join(stack.dataDir, "folders"), "first")
-  await onboard(app, path.join("folders", "first"))
+  await onboard(app, path.join("folders", "first"), await servingMachineName(stack.url))
   await sendPrompt(app, `Reply with exactly this one token: ${MARKER}`)
   await expect(app.getByText(MARKER, { exact: true })).toBeVisible()
 
@@ -77,8 +78,12 @@ test("01 first run on the web: a connected repository, the AI, a named cloud wor
   const finish = page.getByRole("button", { name: "Create workspace" })
   await expect(finish).toBeDisabled()
   await expect(page.getByText("Name the cloud workspace to create it.")).toBeVisible()
-  await page.getByRole("button", { name: /^This computer — connect it/ }).click()
-  await expect(page.getByRole("button", { name: "Copy invite command" })).toBeVisible()
+  await expect(page.getByText(/this machine|this computer/i).filter({ visible: true })).toHaveCount(0)
+  await page.getByRole("button", { name: "Connect a machine…" }).click()
+  const drawer = page.getByRole("dialog", { name: "Connect a machine" })
+  await expect(drawer.getByRole("button", { name: "Copy invite command" })).toBeVisible()
+  await drawer.getByRole("button", { name: "Done" }).click()
+  await expect(drawer).toHaveCount(0)
   expect(await pageOverflows(page)).toBe(false)
   await page.getByRole("textbox", { name: "Cloud workspace name" }).fill("first")
   await finish.click()
@@ -89,7 +94,7 @@ test("01 first run on the web: a connected repository, the AI, a named cloud wor
   await expect(page.getByText("This workspace is asleep. Your next message wakes it.")).toHaveCount(0)
   await page.getByRole("button", { name: /^Select harness and model/ }).click()
   const picker = page.getByRole("dialog", { name: "Select harness, model and effort" })
-  await picker.getByRole("button", { name: /^Harness/ }).click()
+  await showHarnesses(picker)
   await page.getByRole("button", { name: "Pi", exact: true }).click()
   await picker.getByRole("button", { name: "GPT-4.1", exact: true }).click()
   await page.keyboard.press("Escape")
