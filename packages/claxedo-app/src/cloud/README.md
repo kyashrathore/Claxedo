@@ -19,6 +19,10 @@ Owns: the cloud workspace as a placement of a project, its lifecycle machine, an
 
 A create failure is shown by the create form. Once a project workspace is created, the store starts it through the shared wake owner and displays boot failures on that workspace's row, so retry uses the existing workspace. The form remains busy through startup. Workspace refresh invalidates the cloud list as well as placements and projects, so the created row and final runtime status appear without a page reload.
 
+Successful stop also awaits the shared workspace refresh. The list reads the resulting authoritative status instead of remaining on its optimistic `stopping` state when no lifecycle event arrives. Deletion uses that same refresh; it does not invalidate the cloud list a second time.
+
+The stop regression adds 19 counted test lines while the shared refresh removes two production lines. The aggregate app budget is the exact resulting 97,203 lines; file-size limits are unchanged.
+
 The explicit startup flow and its transition regression bring Projects and cloud to 3,026 counted lines. Together with the explicit draft wake action and cloud-list refresh regression, the app measures 96,766 lines. Aggregate budgets use those exact measurements; no file-size limit changed.
 
 ## API
