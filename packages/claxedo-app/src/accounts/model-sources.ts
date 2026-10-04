@@ -28,19 +28,17 @@ export function groupContext(group: SourceGroup, item: ModelItem) {
 
 export type SettingsPlacement = { readonly placementId: PlacementId; readonly label: string }
 
-export type SettingsScope = { readonly loading: boolean; readonly placement?: SettingsPlacement }
-
-export function useSettingsScope(): Accessor<SettingsScope> {
+export function useSettingsPlacement(): Accessor<SettingsPlacement | undefined> {
   const server = useServer()
   const projects = useProjects()
-  return createMemo((): SettingsScope => {
+  return createMemo(() => {
     const state = projects()
-    if (state.kind !== "ready") return { loading: state.kind === "loading" }
+    if (state.kind !== "ready") return undefined
     for (const project of inCatalogOrder(state.data.filter((item) => item.available))) {
       const placement = primaryPlacement(server.placements.list(), project.id)
-      if (placement) return { loading: false, placement: { placementId: placement.id, label: project.name } }
+      if (placement) return { placementId: placement.id, label: project.name }
     }
-    return { loading: false }
+    return undefined
   })
 }
 

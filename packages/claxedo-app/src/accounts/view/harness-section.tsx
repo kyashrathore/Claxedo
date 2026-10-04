@@ -44,15 +44,15 @@ function HarnessTabs(props: { readonly tab: HarnessTab; readonly onTab: (tab: Ha
   )
 }
 
-function CatalogAccounts(props: { readonly harness: string; readonly placement: SettingsPlacement; readonly onAddCustomRef: (open: () => void) => void }) {
-  const providers = createHarnessProviders(() => props.harness, () => props.placement.placementId)
+function CatalogAccounts(props: { readonly harness: string; readonly onAddCustomRef: (open: () => void) => void }) {
+  const providers = createHarnessProviders(() => props.harness)
   return <HarnessProvidersSection providers={providers} onAddCustomRef={props.onAddCustomRef} />
 }
 
-function AccountsTab(props: { readonly harness: ModelsHarness; readonly accounts: Accounts; readonly placement: SettingsPlacement; readonly onAddRef: (open: () => void) => void }) {
+function AccountsTab(props: { readonly harness: ModelsHarness; readonly accounts: Accounts; readonly onAddRef: (open: () => void) => void }) {
   const t = useAccountsText()
   return (
-    <Switch fallback={<CatalogAccounts harness={props.harness.slug} placement={props.placement} onAddCustomRef={props.onAddRef} />}>
+    <Switch fallback={<CatalogAccounts harness={props.harness.slug} onAddCustomRef={props.onAddRef} />}>
       <Match when={props.harness.cli}>{(cli) => <AgentHarnessAccounts harness={cli()} accounts={props.accounts} headerless onAddAccountRef={props.onAddRef} />}</Match>
       <Match when={props.harness.kind === "connection"}>
         <SettingsEmpty>
@@ -63,31 +63,36 @@ function AccountsTab(props: { readonly harness: ModelsHarness; readonly accounts
   )
 }
 
-export function HarnessSection(props: { readonly harness: ModelsHarness; readonly accounts: Accounts; readonly placement: SettingsPlacement; readonly tab: HarnessTab; readonly onTab: (tab: HarnessTab) => void }) {
+function HarnessModels(props: { readonly harness: ModelsHarness; readonly placement: SettingsPlacement }) {
   const t = useAccountsText()
   const visibility = useModelVisibility()
-  const [addAccount, setAddAccount] = createSignal<() => void>()
   const source = useModelSource(props.harness.selection, () => props.placement)
   const count = createMemo(() => enabledCount(source(), (item, group) => visibility.visible(modelKeyOf(item), groupContext(group, item))))
-  const sole = () => soleSelfGroup(source(), props.harness.slug)
-  const actions = (
+  return (
     <>
-      <Show when={props.tab === "accounts" && addAccount()}>
-        {(open) => (
-          <button type="button" class={LINK} data-action="agent-add-account" onClick={() => open()()}>
-            {props.harness.slug === "opencode" ? t("provider.custom.title") : t("settings.providers.agents.addAccount")}
-          </button>
-        )}
-      </Show>
-      <Show when={props.tab === "models" ? sole() : undefined}>
-        {(group) => (
-          <button type="button" class={LINK} data-action="settings-models-group-toggle-all" onClick={() => visibility.setGroupVisibility(group().groupKey, count() === 0, group().items.map(modelKeyOf))}>
-            {t(count() === 0 ? "settings.models.group.enableAll" : "settings.models.group.disableAll")}
-          </button>
-        )}
-      </Show>
+      <div class="flex items-center justify-between gap-4">
+        <span class="text-12-regular text-text-weak tabular-nums">{t("settings.models.enabled.count", { count: String(count()) })}</span>
+        <Show when={soleSelfGroup(source(), props.harness.slug)}>
+          {(group) => (
+            <button type="button" class={LINK} data-action="settings-models-group-toggle-all" onClick={() => visibility.setGroupVisibility(group().groupKey, count() === 0, group().items.map(modelKeyOf))}>
+              {t(count() === 0 ? "settings.models.group.enableAll" : "settings.models.group.disableAll")}
+            </button>
+          )}
+        </Show>
+      </div>
+      <ModelsTab source={source()} harness={props.harness.slug} harnessLabel={props.harness.label} workspace={props.placement.label} />
     </>
   )
+}
+
+export function HarnessSection(props: { readonly harness: ModelsHarness; readonly accounts: Accounts; readonly placement?: SettingsPlacement; readonly tab: HarnessTab; readonly onTab: (tab: HarnessTab) => void }) {
+  const t = useAccountsText()
+  const [addAccount, setAddAccount] = createSignal<() => void>()
+  const actions = <Show when={props.tab === "accounts" && addAccount()}>{(open) => (
+    <button type="button" class={LINK} data-action="agent-add-account" onClick={() => open()()}>
+      {props.harness.slug === "opencode" ? t("provider.custom.title") : t("settings.providers.agents.addAccount")}
+    </button>
+  )}</Show>
   return (
     <section class="flex flex-col gap-4">
       <div class="flex items-baseline justify-between gap-4">
@@ -95,12 +100,13 @@ export function HarnessSection(props: { readonly harness: ModelsHarness; readonl
           <ProviderIcon id={props.harness.slug} class="size-4 shrink-0 icon-strong-base" />
           <h2 class="text-14-medium text-text-strong">{props.harness.label}</h2>
         </div>
-        <span class="text-12-regular text-text-weak tabular-nums">{t("settings.models.enabled.count", { count: String(count()) })}</span>
       </div>
       <div class="flex flex-col gap-4">
         <HarnessTabs tab={props.tab} onTab={props.onTab} actions={actions} />
-        <Show when={props.tab === "models"} fallback={<AccountsTab harness={props.harness} accounts={props.accounts} placement={props.placement} onAddRef={(open) => setAddAccount(() => open)} />}>
-          <ModelsTab source={source()} harness={props.harness.slug} harnessLabel={props.harness.label} workspace={props.placement.label} />
+        <Show when={props.tab === "models"} fallback={<AccountsTab harness={props.harness} accounts={props.accounts} onAddRef={(open) => setAddAccount(() => open)} />}>
+          <Show when={props.placement} fallback={<SettingsEmpty><span>{t("settings.models.workspace.required")}</span></SettingsEmpty>}>
+            {(placement) => <HarnessModels harness={props.harness} placement={placement()} />}
+          </Show>
         </Show>
       </div>
     </section>

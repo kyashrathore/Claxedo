@@ -188,6 +188,4 @@ export default {
   "settings.models.harness.empty": "{{harness}} は {{workspace}} 向けのモデルを報告していません。",
   "settings.providers.status.notConnected": "未接続",
   "common.loading": "読み込み中",
-  "settings.scope.workspace.loading": "ワークスペースを読み込み中…",
-  "settings.scope.workspace.empty": "ワークスペースはまだありません",
 }

@@ -8,7 +8,7 @@ import { SettingsIntro } from "@/settings"
 import type { SettingsSection } from "@/shell"
 import { useAccountsText } from "../i18n"
 import { harnesses } from "../model"
-import { useSettingsScope } from "../model-sources"
+import { useSettingsPlacement } from "../model-sources"
 import { useAccounts } from "../store"
 import { MachineScanStatus } from "./harness-accounts"
 import { HarnessSection, type HarnessTab, type ModelsHarness } from "./harness-section"
@@ -32,7 +32,7 @@ function useModelsHarnesses() {
 function ModelsSection() {
   const t = useAccountsText()
   const accounts = useAccounts()
-  const scope = useSettingsScope()
+  const placement = useSettingsPlacement()
   const list = useModelsHarnesses()
   const [tabs, setTabs] = createStore<Record<string, HarnessTab>>({})
   return (
@@ -41,18 +41,11 @@ function ModelsSection() {
       <Show when={accounts.onMachine()}>
         <MachineScanStatus accounts={accounts} />
       </Show>
-      <Show
-        when={scope().placement}
-        fallback={<p class="text-12-regular text-text-weak">{scope().loading ? t("settings.scope.workspace.loading") : t("settings.scope.workspace.empty")}</p>}
-      >
-        {(placement) => (
-          <div class="flex flex-col gap-10">
-            <For each={list()}>
-              {(harness) => <HarnessSection harness={harness} accounts={accounts} placement={placement()} tab={tabs[harness.slug] ?? "accounts"} onTab={(tab) => setTabs(harness.slug, tab)} />}
-            </For>
-          </div>
-        )}
-      </Show>
+      <div class="flex flex-col gap-10">
+        <For each={list()}>
+          {(harness) => <HarnessSection harness={harness} accounts={accounts} placement={placement()} tab={tabs[harness.slug] ?? "accounts"} onTab={(tab) => setTabs(harness.slug, tab)} />}
+        </For>
+      </div>
       <SandboxSection />
     </div>
   )

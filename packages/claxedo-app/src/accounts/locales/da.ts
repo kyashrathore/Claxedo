@@ -191,6 +191,4 @@ export default {
   "settings.models.harness.empty": "{{harness}} rapporterer ingen modeller for {{workspace}}.",
   "settings.providers.status.notConnected": "Ikke forbundet",
   "common.loading": "Indlæser",
-  "settings.scope.workspace.loading": "Indlæser arbejdsområder…",
-  "settings.scope.workspace.empty": "Ingen arbejdsområder endnu",
 }

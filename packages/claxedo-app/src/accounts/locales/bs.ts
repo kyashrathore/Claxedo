@@ -190,6 +190,4 @@ export default {
   "settings.models.harness.empty": "{{harness}} ne prijavljuje nijedan model za {{workspace}}.",
   "settings.providers.status.notConnected": "Nije povezano",
   "common.loading": "Učitavanje",
-  "settings.scope.workspace.loading": "Učitavanje radnih prostora…",
-  "settings.scope.workspace.empty": "Još nema radnih prostora",
 }
