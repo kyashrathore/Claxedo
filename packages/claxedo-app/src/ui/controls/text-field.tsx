@@ -21,6 +21,7 @@ export function TextField(props: TextFieldProps) {
   return (
     <FieldV2 invalid={local.invalid} class={local.class}>
       <Show when={local.label}>{(label) => <FieldV2.Label classList={{ "sr-only": local.hideLabel }}>{label()}</FieldV2.Label>}</Show>
+      <Show when={local.description}>{(description) => <FieldV2.Prefix>{description()}</FieldV2.Prefix>}</Show>
       <TextInputV2
         {...input}
         class="text-input-v2--full-width"
@@ -29,7 +30,6 @@ export function TextField(props: TextFieldProps) {
         showCopyButton={local.copyable}
         onCopyClick={() => void copyText(local.value ?? "")}
       />
-      <Show when={local.description}>{(description) => <FieldV2.Suffix>{description()}</FieldV2.Suffix>}</Show>
       <Show when={local.error}>
         {(error) => (
           <FieldV2.Suffix>

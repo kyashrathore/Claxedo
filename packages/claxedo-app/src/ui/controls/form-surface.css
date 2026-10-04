@@ -1,0 +1,28 @@
+[data-component="dialog-v2"]:has(.form-drawer) {
+  justify-content: flex-end;
+  align-items: stretch;
+}
+
+[data-component="dialog-v2"] .ui-dialog-container.form-drawer {
+  width: min(100vw, 480px);
+  height: 100dvh;
+  max-height: none;
+  border-radius: 0;
+}
+
+.form-surface-body {
+  padding: 0 16px;
+}
+
+.form-surface-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-surface-error {
+  margin: 0;
+  font-size: var(--font-size-small);
+  color: var(--v2-state-fg-danger);
+  overflow-wrap: anywhere;
+}
