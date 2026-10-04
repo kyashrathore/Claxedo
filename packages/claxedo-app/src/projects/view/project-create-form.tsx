@@ -172,7 +172,7 @@ function SourceSwitch(props: { form: FormState }) {
   )
 }
 
-function useSubmit(props: ProjectCreateFormProps, form: FormState) {
+function useProjectCreateSubmit(props: ProjectCreateFormProps, form: FormState) {
   const server = useServer()
   return async (event: Event) => {
     event.preventDefault()
@@ -195,7 +195,7 @@ function useSubmit(props: ProjectCreateFormProps, form: FormState) {
 export function ProjectCreateForm(props: ProjectCreateFormProps) {
   const t = useProjectsText()
   const form = createFormState(props)
-  const submit = useSubmit(props, form)
+  const submit = useProjectCreateSubmit(props, form)
   const chooseFolder = async () => {
     const picked = await props.pickFolder?.()
     if (picked) form.setFolder(picked)

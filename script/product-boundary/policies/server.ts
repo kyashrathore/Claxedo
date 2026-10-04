@@ -122,8 +122,14 @@ export const serverWorkerd: Policy = {
   // route): `@earendil-works/pi-ai`, reached only through
   // `@claxedo/harness/pi-catalog`, the launch catalog the session host runs Pi
   // with, so the plane lists a connected provider's models and answers a Pi
-  // draft on a cloud workspace without the workspace. 149/20, no headroom.
-  ceilings: { modules: 149, packages: 20 },
+  // draft on a cloud workspace without the workspace.
+  // +2 modules (owner: the D1 workspace and host-access authorities): the
+  // devices surface's listing of a person's machines by enrollment id
+  // (`authority/adapters/d1/host-assignment-devices.ts`) and a workspace row's
+  // shape and JSON with its repository connection
+  // (`authority/adapters/d1/workspace-row-json.ts`), split from their
+  // authorities. 151/20, no headroom.
+  ceilings: { modules: 151, packages: 20 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

@@ -46,6 +46,7 @@ import {
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
+import { listHostAssignmentDevices, stringList } from "./host-assignment-devices"
 import type { D1WorkspaceAuthority } from "./workspace-authority"
 import {
   activeGuard, batchUnder, deleteAssertion, mayGuard, maySql, wonAssertion, type WorkspaceAction,
@@ -477,50 +478,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
 
   /** Every live assignment on the account, grouped for the devices surface. */
   async listHostAssignments(auth: SignedControlPlaneAuth) {
-    const who = await this.requirePrincipal(auth)
-    const rows = await this.database.prepare(`
-      select assignment.workspace_id, assignment.host_id, enrollment.enrollment_id,
-        enrollment.display_name, enrollment.last_seen_at, enrollment.expires_at,
-        coalesce(enrollment.acked_workspace_ids, '[]') as acked_workspace_ids
-      from host_workspace_assignments assignment
-      inner join host_enrollments enrollment on enrollment.host_id = assignment.host_id
-        and enrollment.owner_actor_id = assignment.owner_actor_id
-      where assignment.owner_actor_id = ?
-        and enrollment.revoked_at is null and enrollment.paused_at is null
-        and enrollment.expires_at > ?
-      order by assignment.host_id, assignment.workspace_id
-    `).bind(who.actorId, this.now()).all<{
-      workspace_id: string
-      host_id: string
-      enrollment_id: string
-      display_name: string | null
-      last_seen_at: number
-      expires_at: number
-      acked_workspace_ids: string
-    }>()
-    const groups = new Map<string, {
-      host_id: string
-      enrollment_id: string
-      display_name: string
-      last_seen_at: number
-      expires_at: number
-      workspace_ids: string[]
-      acked_workspace_ids: string[]
-    }>()
-    for (const row of rows.results ?? []) {
-      const group = groups.get(row.host_id) ?? {
-        host_id: row.host_id,
-        enrollment_id: row.enrollment_id,
-        display_name: row.display_name ?? row.host_id,
-        last_seen_at: row.last_seen_at,
-        expires_at: row.expires_at,
-        workspace_ids: [],
-        acked_workspace_ids: storedStringList(row.acked_workspace_ids),
-      }
-      group.workspace_ids.push(row.workspace_id)
-      groups.set(row.host_id, group)
-    }
-    return [...groups.values()]
+    return await listHostAssignmentDevices(this.database, (await this.requirePrincipal(auth)).actorId, this.now())
   }
 
   async createHostEnrollmentRequest(auth: SignedControlPlaneAuth, args: { hostId: string }) {
@@ -1837,19 +1795,6 @@ function denied(message = "Workspace authority denied access") {
 }
 
 
-
-/** A stored JSON array of ids; a column that is not one contributes no ids. */
-function storedStringList(raw: string): string[] {
-  try {
-    return stringList(parseJson(raw))
-  } catch {
-    return []
-  }
-}
-
-function stringList(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
-}
 
 /** A stored JWK, read as the record it is; the caller checks the key material itself. */
 function storedJsonWebKey(raw: string): JsonWebKey | undefined {

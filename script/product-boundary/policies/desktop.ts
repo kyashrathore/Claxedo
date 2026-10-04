@@ -520,10 +520,12 @@ export const desktopRenderer: Policy = {
   // `accounts/view/sandbox-section.tsx`, `sandbox-key-row.tsx` and
   // `sandbox-key-form.tsx`. They add no package edge.
   // The new-session row's Where chip (owner: the projects domain) groups the
-  // draft's placements in `projects/draft-where.ts`, draws them from
-  // `projects/view/where-chip.tsx` and asks a new cloud workspace's name in
-  // `projects/view/new-cloud-workspace-panel.tsx`, replacing
-  // `projects/draft-workspaces.ts`. They add no package edge.
+  // draft's placements in `projects/draft-where.ts` and draws them from
+  // `projects/view/where-chip.tsx`, creating a cloud workspace through the shared
+  // `new-cloud-workspace-dialog.tsx`; its Project chip creates a project in
+  // `projects/view/create-project-dialog.tsx`; the Browser tab refuses another
+  // machine's localhost in `browser/view/elsewhere-page.tsx`. They add no
+  // package edge.
   // The one notice slot above the composer (owner: the composer domain) ranks
   // its notices in `composer/view/notice-slot.ts`; a draft's first send is its
   // machine in `session/view/first-send.ts` and its notice in

@@ -13,7 +13,7 @@ const PLACE_GROUP: Record<WherePlace, ProjectsKey> = { machine: "projects.chip.m
 
 type Words = { readonly t: ProjectsText; readonly context: DraftContext; readonly cloudStatus: (placement: Placement) => string | undefined }
 
-function machineStatus(words: Words, placement: Placement): string {
+function placementOnline(words: Words, placement: Placement): string {
   const machine = words.context.machineOf(placement)
   const online = machine ? machine.online : placement.reachable
   return words.t(online ? "projects.where.online" : "projects.where.offline")
@@ -27,7 +27,7 @@ function entryLabel(words: Words, placement: Placement): string {
 function entryDetail(words: Words, placement: Placement): string | undefined {
   if (placement.kind === "cloud") return words.cloudStatus(placement)
   const machine = placement.kind === "folder" ? placement.label : words.context.machineOf(placement)?.name
-  return [machine, machineStatus(words, placement)].filter(Boolean).join(" · ")
+  return [machine, placementOnline(words, placement)].filter(Boolean).join(" · ")
 }
 
 function whereOption(words: Words, entry: WhereEntry, grouped: ReadonlySet<WherePlace>): ContextChipOption {
