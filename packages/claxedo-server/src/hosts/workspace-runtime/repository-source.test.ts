@@ -57,6 +57,25 @@ describe("sandbox repository preparation", () => {
     expect(await readFile(path.join(f.checkout, "hello.txt"), "utf8")).toBe("selected repository 5\n")
   })
 
+  test("a boot interrupted after git init finishes configuring its origin on the next boot", async () => {
+    const f = await origin()
+    await mkdir(f.checkout)
+    f.git(["init", "--quiet"], f.checkout)
+    await expect(prepareRuntimeRepository(f.checkout, f.env)).resolves.toEqual({ branch: "trunk" })
+    expect(f.git(["remote", "get-url", "origin"], f.checkout)).toBe(f.repoUrl)
+    expect(await readFile(path.join(f.checkout, "hello.txt"), "utf8")).toBe("selected repository 5\n")
+  })
+
+  test("an unfinished checkout holding anything but its .git is not given an origin", async () => {
+    const f = await origin()
+    await mkdir(f.checkout)
+    f.git(["init", "--quiet"], f.checkout)
+    await writeFile(path.join(f.checkout, "keep.txt"), "keep")
+    await expect(prepareRuntimeRepository(f.checkout, f.env)).rejects.toThrow("nonempty workspace directory")
+    expect(f.git(["remote"], f.checkout)).toBe("")
+    expect(await readFile(path.join(f.checkout, "keep.txt"), "utf8")).toBe("keep")
+  })
+
   test("the whole preparation shares one deadline, so time spent in one step is gone for the next", async () => {
     const f = await origin()
     let clock = Date.now()
@@ -103,4 +122,3 @@ describe("sandbox repository preparation", () => {
     await expect(readdir(f.checkout)).rejects.toThrow()
   })
 })
-
