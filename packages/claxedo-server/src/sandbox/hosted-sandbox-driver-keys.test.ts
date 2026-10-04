@@ -90,6 +90,9 @@ describe("organization sandbox provider keys on the hosted plane", () => {
     expect((await call("member", `/${row.id}/verify`, "POST", {})).status).toBe(404)
     expect(await (await call("owner", `/${row.id}/verify`, "POST", {})).json()).toMatchObject({ health: "ok" })
     expect(probed).toEqual(["https://boat.dev/api/v1/me"])
+    boatAnswer = 429
+    expect(await (await call("owner", `/${row.id}/verify`, "POST", {})).json()).toMatchObject({ health: "rate_capped" })
+    expect((await listing("owner")).default_driver).toBe("boat")
     boatAnswer = 401
     expect(await (await call("owner", `/${row.id}/verify`, "POST", {})).json()).toMatchObject({ health: "auth_failed" })
     expect((await listing("owner")).default_driver).toBe("fetch")

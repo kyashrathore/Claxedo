@@ -3,6 +3,7 @@ import type { SandboxDriver } from "@claxedo/sandbox-manager"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import { jsonStringEntries } from "@claxedo/server-core/platform/runtime/lib/json"
 import { parseJsonRecord } from "@claxedo/server-core/platform/json/index"
+import { usableSandboxKey } from "@claxedo/server-core/credentials/routes/sandbox-driver-keys"
 import type { ControlPlaneCredentials } from "../authority/services"
 
 export const OPERATOR_SANDBOX_KEY = "operator"
@@ -46,7 +47,7 @@ export function orgSandboxDrivers(input: {
   return {
     operator,
     async forOrg(orgId: string): Promise<SandboxKeyBinding> {
-      const available = (await orgKeys(orgId)).filter((row) => row.status === "available")
+      const available = (await orgKeys(orgId)).filter(usableSandboxKey)
       const keyed = available.flatMap((row) => driverOf(row) ?? [])
       const chosen = effectiveSandboxDriver({ chosen: await input.keys.chosenDriver(orgId), keyed })
       const row = available.find((candidate) => candidate.provider_id === chosen)

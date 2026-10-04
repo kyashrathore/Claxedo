@@ -513,8 +513,13 @@ export const desktopRenderer: Policy = {
   // workbench and plugin panes check stored pane state with `shell/json.ts` and
   // adapt a typed pane kind through `shell/pane-kind-entry.tsx`. They add no
   // package edge.
-  // 1315/36, no headroom.
-  ceilings: { modules: 1315, packages: 36 },
+  // Settings → Models' Sandbox group (owner: the accounts domain's sandbox
+  // provider keys) reads and writes the keys through `server/sandbox-keys.ts`
+  // and `server/wire/sandbox-keys.ts`, keeps their activity in
+  // `accounts/sandbox-store.ts`, and draws them from
+  // `accounts/view/sandbox-section.tsx`, `sandbox-key-row.tsx` and
+  // `sandbox-key-form.tsx`. They add no package edge. 1321/36, no headroom.
+  ceilings: { modules: 1321, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

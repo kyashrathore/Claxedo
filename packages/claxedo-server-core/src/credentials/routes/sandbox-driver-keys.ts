@@ -35,6 +35,13 @@ function keyDriver(keys: SandboxDriverKeys, providerId: string) {
   return keys.drivers.find((id) => id === providerId)
 }
 
+const REFUSED_HEALTH: ReadonlySet<string> = new Set(["auth_failed", "no_billing", "expired"])
+
+/** A key the provider has not refused: a rate cap or an unreachable check leaves it in use. */
+export function usableSandboxKey(row: CredentialMetadata) {
+  return row.status !== "revoked" && row.status !== "expired" && !REFUSED_HEALTH.has(row.health ?? "")
+}
+
 export function isSandboxKey(keys: SandboxDriverKeys, row: CredentialMetadata, context: SandboxDriverKeyContext) {
   return row.kind === "sandbox_driver" && row.owner === keyOwner(keys, context) && keyDriver(keys, row.provider_id) !== undefined
 }
@@ -70,7 +77,7 @@ export async function sandboxKeyListing<Row>(
 ) {
   const stored = storedSandboxKeys(keys, rows, context)
   const keyed = stored.flatMap((row) => {
-    const id = row.status === "available" ? keyDriver(keys, row.provider_id) : undefined
+    const id = usableSandboxKey(row) ? keyDriver(keys, row.provider_id) : undefined
     return id ? [id] : []
   })
   return {
