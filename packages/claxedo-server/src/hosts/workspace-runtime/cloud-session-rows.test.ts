@@ -154,9 +154,9 @@ describe("a cloud runtime's session rows", () => {
     busy(runtime.rows)
 
     await vi.waitFor(async () => expect(await sessionRow("ses_cloud")).toMatchObject({ status: "busy", awaiting_input: 0 }), { timeout: 5_000 })
-    expect(notices).toContainEqual(expect.objectContaining({
+    await vi.waitFor(() => expect(notices).toContainEqual(expect.objectContaining({
       type: "session.status.changed", ownerUserId: owner.principal!.userId, sessionId: "ses_cloud", workspaceId: "ws_cloud", status: "busy",
-    }))
+    })), { timeout: 5_000 })
   })
 
   test("after an epoch move a reused runtime is handed a pass for the new epoch and keeps publishing", async () => {

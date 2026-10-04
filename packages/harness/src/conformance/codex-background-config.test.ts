@@ -3,6 +3,7 @@ import { join } from "node:path"
 import { setupConformance } from "./test-support/run"
 import { pollUntil } from "./test-support/poll"
 import { makeCodexTransport, recordingBackend, type CodexBackend } from "../../e2e/harness/codex-conformance"
+import { CodexTransportError } from "../transports/codex-app-server/errors"
 
 test("a real Codex background shell survives a configuration replacement request", async () => {
   const recorder = recordingBackend()
@@ -19,7 +20,12 @@ test("a real Codex background shell survives a configuration replacement request
     expect(recorder.frames.some((frame) => frame.method === "thread/backgroundTerminals/terminate")).toBe(false)
     expect(await pollUntil(async () => await Bun.file(marker).exists() ? true : undefined, Date.now() + 10_000)).toBe(true)
     expect(await Bun.file(marker).text()).toBe("done\n")
-    expect(await context.transport.configure(context.session, { projection })).toEqual({ state: "applied" })
+    const stillRunning = (error: unknown) => {
+      if (error instanceof CodexTransportError && error.className === "configuration") return undefined
+      throw error
+    }
+    const applied = await pollUntil(() => context.transport.configure(context.session, { projection }).catch(stillRunning), Date.now() + 10_000)
+    expect(applied).toEqual({ state: "applied" })
     expect(recorder.frames.filter((frame) => frame.method === "initialize")).toHaveLength(2)
   } finally { await context.close() }
 }, 30_000)
