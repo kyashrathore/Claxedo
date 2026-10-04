@@ -45,7 +45,7 @@ export function createQueries(transport: Transport, workspaces: Workspaces, acco
     livePlugins: livePluginQueries(transport),
     projects: projectQueries(transport, workspaces),
     placements: placementQueries(transport, workspaces),
-    machines: machineQueries(transport, workspaces, thisMachineReport),
+    machines: machineQueries(transport, workspaces, account, thisMachineReport),
     organizations: organizationQueries(transport.serverUrl, account),
     accounts: accountQueries(transport),
     usage: usageQueries(transport),

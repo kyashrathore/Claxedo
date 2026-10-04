@@ -1,5 +1,6 @@
 import { isNonBlankString, isRecord } from "@claxedo/helpers/guards"
 import { readArray, readField } from "@claxedo/helpers/readers"
+import type { HostedAccount } from "./account"
 import { fetchQuery } from "./fetch-query"
 import { machineId } from "./ids"
 import { queryKeys } from "./query-keys"
@@ -9,8 +10,6 @@ import type { Workspaces } from "./workspaces"
 import { UNENROLLED_MACHINE, type BootstrapDeclaration } from "./wire/placements"
 
 const MACHINE_ONLINE_WINDOW_MS = 120_000
-
-const DEVICES_PATH = "/api/claxedo/remote-access/devices"
 
 type DeviceRow = { readonly host_id: string; readonly display_name: string; readonly last_seen_at: number }
 
@@ -49,19 +48,23 @@ async function namedByReport(machine: Machine, report: MachineReport | undefined
   return name ? { ...machine, name } : machine
 }
 
-async function loadMachines(transport: Transport, workspaces: Workspaces, report: MachineReport | undefined): Promise<readonly Machine[]> {
-  const { declaration } = await workspaces.load()
-  if (!declaration.issuesSessions) {
-    const machine = thisMachine(declaration, transport.loopback)
-    return machine ? [await namedByReport(machine, report)] : []
-  }
-  const devices = readArray(await transport.json(DEVICES_PATH), "devices") ?? []
-  const now = Date.now()
-  return devices.filter(isDeviceRow).map((row) => machineFromDevice(row, declaration.enrollmentId, now))
+async function accountDevices(account: HostedAccount | undefined): Promise<readonly unknown[]> {
+  return account ? (readArray(await account.run("machines.list"), "devices") ?? []) : []
 }
 
-export function machineQueries(transport: Transport, workspaces: Workspaces, report?: MachineReport) {
+async function loadMachines(transport: Transport, workspaces: Workspaces, report: MachineReport | undefined, account: HostedAccount | undefined): Promise<readonly Machine[]> {
+  const [{ declaration }, devices] = await Promise.all([workspaces.load(), accountDevices(account)])
+  const now = Date.now()
+  const enrolled = devices.filter(isDeviceRow).map((row) => machineFromDevice(row, declaration.enrollmentId, now))
+  const local = thisMachine(declaration, transport.loopback)
+  if (!local) return enrolled
+  const named = await namedByReport(local, report)
+  const listed = enrolled.find((machine) => machine.isThisMachine)
+  return listed ? [{ ...listed, online: true }, ...enrolled.filter((machine) => machine !== listed)] : [named, ...enrolled]
+}
+
+export function machineQueries(transport: Transport, workspaces: Workspaces, account: HostedAccount | undefined, report?: MachineReport) {
   return {
-    list: (): FetchQuery<readonly Machine[]> => fetchQuery(queryKeys.machines(transport.serverUrl), () => loadMachines(transport, workspaces, report)),
+    list: (): FetchQuery<readonly Machine[]> => fetchQuery(queryKeys.machines(transport.serverUrl), () => loadMachines(transport, workspaces, report, account)),
   }
 }

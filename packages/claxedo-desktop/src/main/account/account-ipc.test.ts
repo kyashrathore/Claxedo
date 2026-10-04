@@ -567,6 +567,7 @@ test("the renderer-visible operation set stays pinned", async () => {
     "documents.update",
     "documents.workSource",
     "documents.workSourcePin",
+    "machines.list",
     "org.create",
     "org.ensureDefaultTeam",
     "org.invitations.accept",

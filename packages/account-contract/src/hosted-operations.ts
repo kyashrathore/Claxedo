@@ -139,6 +139,12 @@ export const HOSTED_OPERATIONS = {
     exposure: { renderer: false, app: false },
     response: "http",
   }),
+  "machines.list": defineOperation({
+    method: "GET", path: operationPath("/api/claxedo/remote-access/devices"),
+    input: operationInput({}),
+    output: withArrays("devices"), retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
   "workspace.list.provisioner": defineOperation({
     method: "GET", path: operationPath("/api/workspace?host=provisioner"),
     input: operationInput({}),

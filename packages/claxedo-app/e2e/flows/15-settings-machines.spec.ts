@@ -19,7 +19,7 @@ async function connectInstructions(app: Page) {
 
 test("15 Machines lists the machine the app runs on with its state, and Connect a machine opens the instructions", async ({ stack, app }) => {
   const yours = await machines(app, stack.url)
-  await expect(yours.getByText(/^Online/)).toHaveCount(1)
+  await expect(yours.getByText(/^You're on this machine/)).toHaveCount(1)
   await expect(yours.getByText("This computer", { exact: true })).toHaveCount(0)
   await expect(app.getByText("No machine is connected yet.", { exact: true })).toHaveCount(0)
   await connectInstructions(app)
