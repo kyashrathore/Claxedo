@@ -1,3 +1,4 @@
+import type { QueryClient } from "@tanstack/solid-query"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { readArray } from "@claxedo/helpers/readers"
 import type { HostedAccount } from "./account"
@@ -83,6 +84,7 @@ export function createCloudApi(
   wakes: WorkspaceWakes,
   project: (id: ProjectId) => Promise<Project>,
   account: HostedAccount | undefined,
+  queryClient: QueryClient,
 ): CloudApi {
   const at = (id: PlacementId, suffix = "") => `/api/workspace/${encodeURIComponent(id)}${suffix}`
   const forProject = createForProject(transport, workspaces, project)
@@ -97,6 +99,7 @@ export function createCloudApi(
     remove: async (id) => {
       await transport.json(at(id), { method: "DELETE" })
       await workspaces.refresh()
+      await queryClient.invalidateQueries({ queryKey: queryKeys.cloud(transport.serverUrl) })
     },
   }
 }

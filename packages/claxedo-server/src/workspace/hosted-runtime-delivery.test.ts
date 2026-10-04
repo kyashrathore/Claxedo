@@ -110,7 +110,7 @@ async function composition() {
     database: instance.database,
     services,
     sandboxManager,
-    driver,
+    workspaceDriver: async () => ({ driver, key: "operator" }),
     sandboxInput: async (workspaceId, prepared) => hostedSandboxInput(rows.get(workspaceId) ?? {}, { egress, ...prepared }),
     settings: { read: async () => ({ version: 3, connections: {} }), write: async () => {} },
     credentials: () => ({ listCredentials: async () => [], accountSelections: async () => ({}) }) as never,

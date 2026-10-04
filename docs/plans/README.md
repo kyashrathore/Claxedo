@@ -42,6 +42,10 @@ doc or package README that owns it.
   (app, UI kit and harness out of scope). Keeps Pages, Teams, the browser pane and channels; adds plugin backends,
   status-hook templates, D1 plus R2 transcripts, a runtime-neutral session core, and the access model (org members,
   per-team and per-member project access, private pages with shares; Phase 1A).
+- [Sandbox provider setup, prebuilds and machine sizes](./2026-10-04-feat-sandbox-prebuilds-plan.md)
+  — slice 1 (start and prebuild telemetry) implemented on `feat/sandbox-start-telemetry`; slices 2–5 planned.
+  Org provider keys on the shared credentials route, `.claxedo/setup.sh`/`start.sh`, one prebuild per key with
+  push and daily builds, and per-driver machine classes.
 - [Consolidation before launch](./2026-09-30-001-refactor-consolidation-before-launch-plan.md)
   — in progress on `goal/foundation`. Lanes C1–C10 settle machine access, one stored schema per store,
   relay fences, session reads and idempotency, hosted operation declarations, error codes, shared machine

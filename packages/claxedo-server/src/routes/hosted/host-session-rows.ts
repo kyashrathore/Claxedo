@@ -60,6 +60,20 @@ function background(c: Context): ((work: Promise<unknown>) => void) | undefined 
 }
 
 /**
+ * A cloud runtime's first published session created after its lease epoch's
+ * start ends that start's last phase; rows of sessions from before it (a full
+ * resync of a restored workspace) record nothing.
+ */
+function markFirstSession(services: ControlPlaneServices, lease: { workspaceId: string; epoch: number }, rows: readonly { createdAt: number }[]) {
+  const manager = services.sandbox.sandboxManager
+  if (!manager || !rows.length) return undefined
+  const newest = Math.max(...rows.map((row) => row.createdAt))
+  return manager.markStartPhase(lease.workspaceId, { epoch: lease.epoch, phase: "first_session_ready", notBefore: newest }).catch((error: unknown) => {
+    console.error("[claxedo-server] WARN  first session start phase was not recorded:", { workspaceId: lease.workspaceId, error: String(error) })
+  })
+}
+
+/**
  * `POST /api/claxedo/host/session-rows`: a host publishes its sessions' list
  * rows. A machine sends the Host Tunnel Token its last heartbeat gave it,
  * which names the host, its owner and the workspaces it may serve; a cloud
@@ -70,8 +84,8 @@ function background(c: Context): ((work: Promise<unknown>) => void) | undefined 
  *
  * The rows are committed before any notice goes out. Each room's notices go
  * in one nudge, all rooms at once, after the answer where the Worker can keep
- * running; a failed nudge is logged and costs its readers a re-read, never the
- * host's publish.
+ * running, as does the first-session start phase; a failed nudge is logged and
+ * costs its readers a re-read, never the host's publish.
  */
 export function HostSessionRowsRoutes(
   services: ControlPlaneServices,
@@ -99,6 +113,7 @@ export function HostSessionRowsRoutes(
       }
       const { hostId, rows, removed } = parsed.data
       let publisher: HostSessionRowsPublisher
+      let firstSession: Promise<unknown> | undefined
       if (cloud) {
         const holder = await cloud.admit(token, hostId)
         if (!holder) return c.json({ error: { code: "invalid_session_rows_pass", message: "Session rows pass refused" } }, 401)
@@ -110,6 +125,7 @@ export function HostSessionRowsRoutes(
           return c.json({ accepted: 0, refused: [], credential })
         }
         publisher = holder
+        firstSession = markFirstSession(services, holder.lease, rows)
       } else {
         const claims = await verify?.(token, hostId).catch(() => undefined)
         if (!claims) return c.json({ error: { code: "invalid_host_tunnel_token", message: "Host Tunnel Token refused" } }, 401)
@@ -124,10 +140,14 @@ export function HostSessionRowsRoutes(
       }
       const { statusNotices, ...result } = await publish(publisher, { rows, removed })
       const notify = options.notify
-      if (notify && statusNotices.length) {
-        const delivery = Promise.all([...noticesByRoom(statusNotices)].map(([orgId, notices]) => notify(orgId, notices).catch((error: unknown) => {
+      const nudges = notify
+        ? [...noticesByRoom(statusNotices)].map(([orgId, notices]) => notify(orgId, notices).catch((error: unknown) => {
           console.error("[claxedo-server] WARN  session.status.changed nudge failed:", { orgId, notices: notices.length, error: String(error) })
-        })))
+        }))
+        : []
+      const work = firstSession ? [...nudges, firstSession] : nudges
+      if (work.length) {
+        const delivery = Promise.all(work)
         const later = background(c)
         if (later) later(delivery)
         else await delivery

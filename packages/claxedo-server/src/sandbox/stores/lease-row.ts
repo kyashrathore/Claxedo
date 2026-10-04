@@ -8,7 +8,9 @@ import type {
   SandboxCheckpointReference,
   SandboxPersistenceCapabilities,
   SandboxRestoreStatus,
+  SandboxStartProgress,
 } from "@claxedo/sandbox-manager"
+import { sandboxStartPhases } from "@claxedo/sandbox-contract"
 import type {
   SandboxComputeClass,
   SandboxLeaseRow,
@@ -181,6 +183,23 @@ export function leaseRestore(input: unknown): SandboxRestoreStatus | null {
   return parsed && isRestoreStatus(parsed) ? parsed : null
 }
 
+const BOOT_MODES: readonly SandboxStartProgress["bootMode"][] = ["restore", "resume", "cold-start"]
+
+function isStartProgress(value: Record<string, unknown>): value is SandboxStartProgress {
+  return (
+    typeof value.startedAt === "number" &&
+    typeof value.markedAt === "number" &&
+    BOOT_MODES.some((mode) => mode === value.bootMode) &&
+    Array.isArray(value.phases) &&
+    value.phases.every((phase) => sandboxStartPhases.some((known) => known === phase))
+  )
+}
+
+export function leaseStart(input: unknown): SandboxStartProgress | null {
+  const parsed = leaseJsonRecord(input)
+  return parsed && isStartProgress(parsed) ? parsed : null
+}
+
 /**
  * Column names differ between the two stores (D1 stores `url`/`labels_json`,
  * the local SQLite schema stores `runtime_url`/`labels`), so each store hands
@@ -216,6 +235,7 @@ export function toSandboxLeaseRow(columns: RawLeaseColumns): SandboxLeaseRow {
     checkpoint: leaseCheckpoint(columns.checkpoint),
     persistence: leasePersistence(columns.persistence),
     restore: leaseRestore(columns.restore),
+    start: leaseStart(columns.start),
     created_at: leaseInteger(columns.created_at) ?? 0,
     updated_at: leaseInteger(columns.updated_at) ?? 0,
   }

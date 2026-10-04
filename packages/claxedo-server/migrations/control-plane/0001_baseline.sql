@@ -369,6 +369,7 @@ CREATE TABLE orgs (
   created_at integer not null,
   updated_at integer not null,
   deleted_at integer,
+  sandbox_driver text,
   check ((kind = 'deployment') = (deployment_id is not null))
 );
 
@@ -465,7 +466,7 @@ CREATE TABLE sandbox_leases (
   restore_json text check (restore_json is null or json_valid(restore_json)),
   created_at integer not null,
   updated_at integer not null
-, routing_id TEXT);
+, routing_id TEXT, start_json text check (start_json is null or json_valid(start_json)));
 
 CREATE TABLE sandbox_passes (
   jti text primary key,

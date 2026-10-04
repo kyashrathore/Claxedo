@@ -137,6 +137,9 @@ function runStartCommand(command: string, vm: { existingImage?: string; existing
   tool("sleep", "exit 0")
   if (vm.existingImage) {
     spawnSync("sh", ["-c", command], { cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8" })
+    const workspace = path.join(dir, "claxedo-persistent", "workspace")
+    mkdirSync(workspace, { recursive: true })
+    writeFileSync(path.join(workspace, "user-work.txt"), "keep my work")
     if (vm.existingCommand) writeFileSync(slot, `${vm.existingImage} -lc ${vm.existingCommand}`)
     writeFileSync(log, "")
     writeFileSync(path.join(dir, "info"), "0")
@@ -354,7 +357,6 @@ describe("boat sandbox driver", () => {
     expect(run?.body.command).toContain("ghcr.io/test/sandbox:1")
     expect(run?.body.command).toContain("-p 2593:2593")
     expect(run?.body.command).toContain(".claxedo-runtime-env:/run/claxedo-runtime.env:ro")
-    expect(run?.body.command).toContain("mkdir -p claxedo-persistent/workspace claxedo-persistent/claxedo claxedo-persistent/workspace-runtime")
     expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/workspace":'/workspace'`)
     expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/claxedo":'/root/.claxedo'`)
     expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/workspace-runtime":'/root/.workspace-runtime'`)
@@ -367,6 +369,17 @@ describe("boat sandbox driver", () => {
     expect(commandsOf(boat.calls)).toContain("host url 2593 --public")
   })
 
+  test("reports its image ready once the runtime container has started, before the runtime is published", async () => {
+    const boat = fakeBoat({ states: ["ready"] })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, provisionIntervalMs: 0, healthIntervalMs: 0 })
+    let seen: string[] = []
+
+    await driver.ensureHost({ ...ensureInput(), onImageReady: async () => { seen = commandsOf(boat.calls) } })
+
+    expect(seen.some((command) => command.includes("docker run"))).toBe(true)
+    expect(seen).not.toContain("host 2593 --public")
+  })
+
   test("refuses a published URL that still carries Boat's access token", async () => {
     const boat = fakeBoat({ hostUrl: "https://machine-2593.on.boat.dev?_token=synthetic-host-token" })
     const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0 })
@@ -375,13 +388,11 @@ describe("boat sandbox driver", () => {
     expect(failure?.message).not.toContain("synthetic-host-token")
   })
 
-  test("a fresh VM waits for the Docker daemon, then creates the runtime container", async () => {
+  test("a fresh VM waits for the Docker daemon, then creates the runtime container, leaving its bind sources for Docker to create", async () => {
     const run = runStartCommand(await startCommand(), { daemonUpAfter: 2 })
     expect(run.status).toBe(0)
     expect(run.calls).toEqual(["info", "info", "info", "inspect --format", "rm -f", "run -d"])
-    for (const state of ["workspace", "claxedo", "workspace-runtime"]) {
-      expect(existsSync(path.join(run.dir, "claxedo-persistent", state))).toBe(true)
-    }
+    expect(existsSync(path.join(run.dir, "claxedo-persistent"))).toBe(false)
   })
 
   test("a repeated start finds the container the first one created and only starts it", async () => {
@@ -400,7 +411,7 @@ describe("boat sandbox driver", () => {
     const run = runStartCommand(await startCommand(), { existingImage: IMAGE, existingCommand: "exec /usr/local/bin/workspace-runtime" })
     expect(run.status).toBe(0)
     expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d"])
-    expect(existsSync(path.join(run.dir, "claxedo-persistent", "workspace"))).toBe(true)
+    expect(readFileSync(path.join(run.dir, "claxedo-persistent", "workspace", "user-work.txt"), "utf8")).toBe("keep my work")
   })
 
   test.skipIf(process.platform !== "linux")("the actual boot command repairs a foreign-owned bind root before Git opens the checkout", async () => {

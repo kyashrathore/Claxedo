@@ -32,11 +32,6 @@ import { controlPlaneRateLimitError } from "./runtime-token-guards"
 /** Names, ids and a repository URL — the control-plane JSON bound. */
 const ASSIGN_BODY_LIMIT_BYTES = 16 * 1024
 
-/**
- * This handler is mounted from two routers (`workspace/routes/index.ts`,
- * `routes/hosted/workspace.ts`) and a mount may add its own cap — running the
- * middleware inside keeps the bound on the read rather than on the wiring.
- */
 const assignBodyLimit = bodyLimit({
   maxSize: ASSIGN_BODY_LIMIT_BYTES,
   onError: (c) =>

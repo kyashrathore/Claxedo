@@ -224,6 +224,7 @@ function createTasksCloudTarget(
       },
       originKey: startOriginId(origin.actor.scopeId, origin.task.id, origin.slot, origin.attempt),
       projectId: origin.task.projectId,
+      orgId: origin.actor.scopeId,
       displayName: `${origin.task.title} (${origin.slot}, attempt ${origin.attempt})`,
       admit: async (workspace, context) => {
         if (!creator) {
@@ -247,7 +248,8 @@ function createTasksCloudTarget(
           input.sandboxUsage?.leaseOpened({
             caller: creator.caller,
             workspaceId: workspace.id,
-            driver: input.services.sandbox.defaultDriver ?? "unknown",
+            driver: context.placed.driver.id,
+            keyOwner: context.placed.key,
             startedAt: Date.now(),
             services: input.services,
           })

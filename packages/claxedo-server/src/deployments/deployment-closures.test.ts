@@ -73,24 +73,34 @@ const ENTRIES = [
   // (`credentials/store-renewal.ts`) and answers a sandbox renewing it
   // mid-turn (`routes/runtime-credential-refresh.ts`) under the turn lease
   // check connection secrets share (`session/turn-lease-authority.ts`), both
-  // served by the `routes/runtime-sandbox-secrets.ts` router.
-  // Each hosted entry includes credentials/worker/opencode.ts, the selected-account catalog owner.
-  // Each also separates the live-sync SSE client and shared handshake protocol
-  // from the room's connection/replay state: two modules, no new packages.
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 144, packages: 19 },
+  // The selected-account OpenCode catalog is owned by credentials/worker/opencode.ts.
+  // The live-sync SSE client and shared handshake protocol have separate owners
+  // from the room connection and replay state, adding two modules and no packages.
+  // served by the `routes/runtime-sandbox-secrets.ts` router. Every entry's
+  // runtime delivery takes the start phases a cloud runtime it provisioned
+  // timed in its sandbox (`workspace/runtime-start-phases.ts`).
+  // Every entry composes the sandbox manager over organization keys: the
+  // key choice (`sandbox/org-sandbox-drivers.ts`), the per-key lifecycle
+  // routing (`sandbox/org-sandbox-manager.ts`), the D1 org's chosen driver
+  // (`sandbox/stores/d1-org-driver.ts`) and the credential routes' key policy
+  // (`sandbox/hosted-sandbox-driver-keys.ts`); none imports a provider.
+  // Every entry deletes an owner's cloud workspace sandbox first
+  // (`workspace/cloud-workspace-deletion.ts`), with the D1 deletion statements
+  // as a module of their own (`d1/workspace-deletion.ts`).
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 151, packages: 19 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
   // plus `agent-plugins/signed-scope.ts`, the caller and write guard the
   // activation and source stores share, and the Pi launch a session served by
   // its own Durable Object is delivered (`agent-plugins/runtime/session-host-launch.ts`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 196, packages: 23 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 203, packages: 23 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
   // ready cloud runtime and admits it at the session-rows ingest, and only
   // this entry has cloud runtimes to publish rows.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 203, packages: 23 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 210, packages: 23 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

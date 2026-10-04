@@ -7,7 +7,7 @@ import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/s
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./workspace"
 import { D1WorkspaceAuthorityError } from "../../authority/adapters/d1/workspace-authority-error"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
-import { sandboxRuntimeBootFailedError, type SandboxManager } from "@claxedo/sandbox-manager"
+import { sandboxRuntimeBootFailedError, type SandboxDriver, type SandboxManager } from "@claxedo/sandbox-manager"
 
 /**
  * Hosted workspace routes under machine-wide enrollment. These prove the
@@ -133,11 +133,13 @@ function buildApp(opts: {
   authority?: ReturnType<typeof fakeAuthority>
   options?: Partial<HostedWorkspaceRouteOptions>
   sandboxManager?: SandboxManager
+  workspaceDriver?: ControlPlaneServices["sandbox"]["workspaceDriver"]
   verifier?: ControlPlaneTokenVerifier
 }) {
   const authority = "authority" in opts ? opts.authority : fakeAuthority()
   const { services, capture } = fakeServices(authority)
   services.sandbox.sandboxManager = opts.sandboxManager
+  services.sandbox.workspaceDriver = opts.workspaceDriver
   const app = HostedWorkspaceRoutes(services, {
     authConfig,
     verifier: opts.verifier ?? verifier,
@@ -1147,6 +1149,25 @@ describe("hosted cloud workspace create (POST /create)", () => {
     expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: body.workspaceId }, preparation)
   })
 
+  test("opens the lease's metering under the driver, and whose key, the workspace is placed on", async () => {
+    const authority = fakeAuthority({ createCloudWorkspace: vi.fn(async () => ({ workspace_id: "ignored" })) })
+    const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+    const workspaceDriver = vi.fn(async () => ({ driver: { id: "boat" } as SandboxDriver, key: "org" as const }))
+    const sandboxUsage = { leaseOpened: vi.fn(), recordLeaseTenant: vi.fn(async () => undefined) }
+    const { app } = buildApp({ authority, sandboxManager: { ensure } as unknown as SandboxManager, workspaceDriver, options: { sandboxUsage } })
+    const waitUntil = vi.fn()
+    const res = await app.fetch(
+      post("/create", { workspaceName: "Org key", repoUrl: "https://github.com/a/b" }),
+      undefined,
+      { waitUntil, passThroughOnException() {}, props: {} } as never,
+    )
+    const body = (await res.json()) as { workspaceId: string }
+    await (waitUntil.mock.calls[0] as unknown as [Promise<unknown>])[0]
+    expect(workspaceDriver).toHaveBeenCalledWith(body.workspaceId)
+    expect(sandboxUsage.leaseOpened).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: body.workspaceId, driver: "boat", keyOwner: "org" }))
+    expect(sandboxUsage.leaseOpened.mock.invocationCallOrder[0]).toBeLessThan(ensure.mock.invocationCallOrder[0])
+  })
+
   test("503 sandbox_driver_unavailable when no sandbox driver is composed", async () => {
     const authority = fakeAuthority()
     const { app } = buildApp({ authority: authority })
@@ -1528,12 +1549,14 @@ describe("hosted workspace deletion", () => {
     expect(authority.deleteWorkspace).not.toHaveBeenCalled()
   })
 
-  test("deleting a machine placement never touches cloud compute", async () => {
+  test("a machine placement must be unassigned through its host and never touches cloud compute", async () => {
     const destroy = vi.fn()
     const { app, authority } = buildApp({ sandboxManager: { destroy } as unknown as SandboxManager })
-    expect((await app.fetch(del("/ws_1"))).status).toBe(200)
+    const response = await app.fetch(del("/ws_1"))
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ error: { code: "workspace_not_cloud" } })
     expect(destroy).not.toHaveBeenCalled()
-    expect(authority?.deleteWorkspace).toHaveBeenCalled()
+    expect(authority?.deleteWorkspace).not.toHaveBeenCalled()
   })
 
   test("a rejected bearer cannot delete a workspace", async () => {

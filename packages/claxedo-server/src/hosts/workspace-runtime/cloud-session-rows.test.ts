@@ -5,6 +5,7 @@ import path from "node:path"
 import { Hono } from "hono"
 import { decodeJwt, exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { BackgroundWork } from "@claxedo/agent-runtime-contract"
+import { createSandboxManager, type SandboxStartPhaseEvent } from "@claxedo/sandbox-manager"
 import { sessionStatusSnapshot } from "@claxedo/session-core"
 import { openTestRuntimeStore } from "@claxedo/session-core/testing"
 import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
@@ -78,7 +79,20 @@ async function plane() {
     now: () => clock ?? Date.now(),
   })
   const notices: SessionStatusChangedEvent[] = []
-  const services = { relay: {}, authority: store } as unknown as ControlPlaneServices
+  const startPhases: SandboxStartPhaseEvent[] = []
+  const sandboxManager = createSandboxManager({
+    leaseStore: leases,
+    driver: {
+      id: "test",
+      metadata: {
+        driverRunsIn: ["node"], hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host", targetAccess: "relay", secretBrokering: "none", egressControl: "hosts-and-cidrs",
+        persistence: { resume: "same-sandbox", capture: "none", clone: false, captureSource: "not-applicable", retention: "not-applicable", restoreMount: "not-applicable" },
+      },
+      ensureHost: async (input) => ({ sandboxId: `sb_${input.workspaceId}`, url: "https://sandbox.test", hostId: "host-cloud", labels: input.labels }),
+    },
+    onStartPhase: (event) => void startPhases.push(event),
+  })
+  const services = { relay: {}, authority: store, sandbox: { sandboxManager } } as unknown as ControlPlaneServices
   const app = new Hono().route("/api/claxedo/host/session-rows", HostSessionRowsRoutes(services, {
     notify: async (_orgId, sent) => void notices.push(...sent),
     sessionRowsPasses: passes,
@@ -98,7 +112,7 @@ async function plane() {
     return delivered.at(-1)!
   }
   return {
-    database: fixture.database, owner, other, leases, passes, notices, fetch, post, sessionRow, serve, issue, minted,
+    database: fixture.database, owner, other, leases, passes, notices, fetch, post, sessionRow, serve, issue, minted, sandboxManager, startPhases,
     setClock: (at: number | undefined) => { clock = at },
     attach: (next: Runtime) => { runtime = next },
   }
@@ -136,8 +150,8 @@ function bootRuntime(
   return { rows, relay }
 }
 
-function busy(rows: CloudSessionRows) {
-  rows.onPresentationEvent({ directory: DIRECTORY, payload: { id: "evt_busy", type: "session.status", properties: { sessionID: "ses_cloud", status: { type: "busy" } } } })
+function busy(rows: CloudSessionRows, sessionID = "ses_cloud") {
+  rows.onPresentationEvent({ directory: DIRECTORY, payload: { id: "evt_busy", type: "session.status", properties: { sessionID, status: { type: "busy" } } } })
 }
 
 const row = (workspaceId: string, sessionId: string) =>
@@ -184,6 +198,26 @@ describe("a cloud runtime's session rows", () => {
     await passes.deliver("ws_cloud")
 
     expect(minted).toHaveLength(1)
+  })
+
+  test("the first session created after a lease epoch's start ends that start, and a restored workspace's older sessions do not", async () => {
+    const { fetch, passes, attach, leases, sandboxManager, startPhases, sessionRow } = await plane()
+    const held = await leases.get("ws_cloud")
+    await leases.update("ws_cloud", held!.epoch, { status: "stopped" })
+    expect(await sandboxManager.ensure("ws_cloud", { homeRegion: "us-east" })).toMatchObject({ status: "ready", epoch: held!.epoch + 1 })
+    const store = runtimeStore()
+    const runtime = bootRuntime(fetch, store)
+    attach(runtime)
+
+    await passes.deliver("ws_cloud")
+    await vi.waitFor(async () => expect(await sessionRow("ses_cloud")).toMatchObject({ status: "idle" }), { timeout: 5_000 })
+    expect(startPhases.map((event) => event.phase)).toEqual(["lease_decision", "runtime_ready"])
+
+    store.bindSession({ owner: { kind: "machine-owner" }, sessionId: "ses_new", workspaceId: "ws_cloud", directory: DIRECTORY, title: "New", agentSessionId: "agent_new", createdAt: Date.now(), updatedAt: Date.now() })
+    busy(runtime.rows, "ses_new")
+
+    await vi.waitFor(() => expect(startPhases.map((event) => event.phase)).toContain("first_session_ready"), { timeout: 5_000 })
+    expect(startPhases.at(-1)).toMatchObject({ phase: "first_session_ready", epoch: held!.epoch + 1, workspaceId: "ws_cloud" })
   })
 
   test("only the control plane hands a runtime its pass", async () => {

@@ -56,6 +56,7 @@ const COLUMNS = [
   "checkpoint_json",
   "persistence_json",
   "restore_json",
+  "start_json",
   "created_at",
   "updated_at",
 ] as const
@@ -66,7 +67,7 @@ const CONFLICT_COLUMNS = COLUMNS.filter((column) => column !== "workspace_id" &&
 const PATCH_COLUMNS = [
   ["status", "status"], ["retryCount", "retry_count"], ["nextRetryAt", "next_retry_at"],
   ["lastHeartbeatAt", "last_heartbeat_at"], ["lastActivityAt", "last_activity_at"], ["lastError", "last_error"],
-  ["checkpoint", "checkpoint_json"], ["restore", "restore_json"],
+  ["checkpoint", "checkpoint_json"], ["restore", "restore_json"], ["start", "start_json"],
 ] as const satisfies ReadonlyArray<readonly [keyof SandboxLeasePatch, typeof COLUMNS[number]]>
 
 /**
@@ -81,6 +82,7 @@ function toLeaseRow(row: Record<string, unknown>): SandboxLeaseRow {
     checkpoint: row.checkpoint_json,
     persistence: row.persistence_json,
     restore: row.restore_json,
+    start: row.start_json,
   })
 }
 
@@ -107,6 +109,7 @@ function toSandboxLease(input: SandboxLeaseRow): SandboxLease {
     checkpoint: input.checkpoint ?? undefined,
     persistence: input.persistence ?? undefined,
     restore: input.restore ?? undefined,
+    start: input.start ?? undefined,
   }
 }
 
@@ -146,6 +149,7 @@ function rowValues(
     json(lease.checkpoint),
     json(lease.persistence),
     json(lease.restore),
+    json(lease.start),
     lease.createdAt,
     lease.updatedAt,
   ]

@@ -25,6 +25,17 @@ function selectedSource(env: NodeJS.ProcessEnv): RepositorySource | undefined {
   return { repoUrl, ...(branch ? { branch } : {}) }
 }
 
+export function selectsRepository(env: NodeJS.ProcessEnv) {
+  return selectedSource(env) !== undefined
+}
+
+/** The checkout's object store on disk, packed and loose, as `git count-objects` reports it in KiB. */
+export async function repositorySizeBytes(directory: string) {
+  const counts = await git(["count-objects", "-v"], directory)
+  const kib = (name: string) => Number(new RegExp(`^${name}: (\\d+)$`, "m").exec(counts)?.[1] ?? 0)
+  return (kib("size") + kib("size-pack")) * 1024
+}
+
 async function hasCommit(directory: string) {
   try {
     await git(["rev-parse", "--verify", "--quiet", "HEAD"], directory)

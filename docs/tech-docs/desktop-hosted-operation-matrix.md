@@ -55,9 +55,6 @@ Also excluded from AccountPort (intentional non-rows):
 - **Workspace-scoped** `GET /api/wr/events` after connection mint — RAT data
   plane (same as other post-mint runtime traffic). The control plane's own
   notice stream is `controlPlane.events` below.
-- **Sandbox driver** routes (`GET|PUT /api/workspace/drivers*`) — local sidecar
-  only; signed hosted sessions may view them through the local proxy but do not
-  spend the Hosted Server bearer on them.
 - **Machine pause** — desktop reaches it through Host
   Connector IPC. The enrollment handshake itself is the `host.enrollmentNonce` and
   `host.enrollCurrentMachine` rows below, performed by main for the Host
@@ -264,9 +261,13 @@ are withheld from the renderer (see "Withheld from the renderer" below).
 
 ### Provisioning and sandbox
 
-Sandbox driver configuration (`/api/workspace/drivers*`) is local-sidecar-only —
-see "What is deliberately NOT an account operation". Cloud create listens for
-`provision` frames on `controlPlane.events` rather than opening a second stream.
+Sandbox provider keys are credentials of kind `sandbox_driver` on the shared
+`/api/claxedo/credentials` routes, served by the local sidecar (the person's own
+keys) and the hosted plane (the organization's keys, managed by an owner or
+admin). `GET /api/claxedo/credentials/sandbox-drivers` lists the catalog, the
+stored keys and the driver new workspaces use; `PUT .../sandbox-drivers/default`
+chooses among the stored keys. Cloud create listens for `provision` frames on
+`controlPlane.events` rather than opening a second stream.
 
 ### Billing
 

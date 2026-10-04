@@ -3,7 +3,7 @@ import { expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/solid-query"
 import { createRoot } from "solid-js"
 import { createHostedAccount } from "./account"
-import { createCloudApi } from "./cloud"
+import { cloudQueries, createCloudApi } from "./cloud"
 import { placementId, projectId, type ProjectId } from "./ids"
 import type { Transport } from "./transport"
 import type { Project } from "./types"
@@ -22,9 +22,16 @@ const wakes: WorkspaceWakes = {
 type Posted = { readonly path: string; readonly body: unknown }
 
 function transport(posted: Posted[]): Transport {
+  let provisioned = false
   const json = async (path: string, init?: RequestInit) => {
     if (path === "/api/claxedo/bootstrap") return bootstrap
+    if (path === "/api/workspace?host=provisioner") return { workspaces: provisioned ? [created] : [] }
+    if (path === "/api/workspace/ws_new" && init?.method === "DELETE") {
+      provisioned = false
+      return { deleted: true }
+    }
     if (path !== "/api/workspace/create") throw new Error(`unexpected ${path}`)
+    provisioned = true
     posted.push({ path, body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body })
     return { workspaceId: "ws_new", directory: "/workspace/widgets" }
   }
@@ -48,8 +55,9 @@ function world(signed: boolean, catalog: () => void = () => {}) {
   const wire = transport(posted)
   const workspaces = createWorkspaces(wire, queryClient, signed ? account : undefined)
   const project = async (id: ProjectId) => ({ id, source: { kind: "repository", url: "https://github.com/acme/widgets" } }) as Pick<Project, "id" | "source"> as Project
-  const cloud = createCloudApi(wire, workspaces, wakes, project, signed ? account : undefined)
-  return { cloud, workspaces, posted, operations: () => operations.filter((entry) => entry.operation === "workspace.create") }
+  const cloud = createCloudApi(wire, workspaces, wakes, project, signed ? account : undefined, queryClient)
+  const listed = async () => (await queryClient.fetchQuery({ ...cloudQueries(wire).cloud.list(), staleTime: Infinity })).map((workspace) => workspace.id)
+  return { cloud, workspaces, posted, listed, operations: () => operations.filter((entry) => entry.operation === "workspace.create") }
 }
 
 test("signed desktop: a repository's cloud workspace is created on the account's control plane and read back from its catalog", async () => {
@@ -75,14 +83,17 @@ test("signed desktop: a connected repository names its connection and full name 
   })
 })
 
-test("without an account the project's cloud workspace is created on this server, and a bare repository's is refused", async () => {
+test("without an account the project's cloud workspace is created and deleted on this server, and a bare repository's is refused", async () => {
   await createRoot(async (dispose) => {
-    const { cloud, workspaces, posted, operations } = world(false)
+    const { cloud, workspaces, posted, listed, operations } = world(false)
     await expect(cloud.create({ source: { kind: "repository", url: "https://github.com/acme/widgets" } })).rejects.toThrow("created on a signed control plane")
     const workspace = await cloud.create({ projectId: projectId("prj_widgets"), branch: "main" })
     expect(workspace).toMatchObject({ id: placementId("ws_new"), projectId: projectId("prj_widgets") })
     expect(posted).toEqual([{ path: "/api/workspace/create", body: { projectId: "prj_widgets", gitBranch: "main", repoUrl: "https://github.com/acme/widgets" } }])
     expect(operations()).toEqual([])
+    expect(await listed()).toEqual([placementId("ws_new")])
+    await cloud.remove(placementId("ws_new"))
+    expect(await listed()).toEqual([])
     workspaces.dispose()
     dispose()
   })

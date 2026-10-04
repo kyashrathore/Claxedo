@@ -1,5 +1,6 @@
 import type { SandboxBrokeredSecret, SandboxManagerInput } from "@claxedo/sandbox-manager"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
+import { isSandboxProvisionerID } from "@claxedo/sandbox-contract"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import {
@@ -10,7 +11,7 @@ import {
   projectEnv,
   type Workspace,
 } from "@claxedo/server-core/workspace/store/index"
-import type { ControlPlaneServices } from "../authority/services"
+import type { ControlPlaneServices, SandboxKeyedDriver } from "../authority/services"
 import { hostedSandboxInput, type WorkspaceSandboxEgress } from "./hosted-sandbox-input"
 
 const log = Log.create({ service: "origin-cloud-workspace" })
@@ -43,6 +44,8 @@ export type OriginCloudWorkspaceInput = {
   originKey: string
   /** The project whose authorized remote and environment this root clones. */
   projectId: string
+  /** The organization the root is created in, whose sandbox provider key places it. */
+  orgId: string
   displayName: string
   /**
    * What every hosted root's egress allowlist is built from besides the git
@@ -57,7 +60,7 @@ export type OriginCloudWorkspaceInput = {
    * distinguishes a row this attempt filed from one it found, so
    * once-per-create side effects (usage metering) do not re-fire on a retry.
    */
-  admit(workspace: Workspace, context: { created: boolean }): Promise<void>
+  admit(workspace: Workspace, context: OriginCloudAdmission): Promise<void>
   /**
    * Undo of `admit`, for a workspace whose sandbox definitely failed. Left
    * behind, the authority's row outlives the store's and the next attempt at
@@ -76,6 +79,9 @@ export type OriginCloudWorkspaceInput = {
    */
   prepare?(workspace: Workspace): Promise<OriginCloudWorkspacePreparation>
 }
+
+/** A root this attempt filed carries the driver, and whose key, it was placed on. */
+export type OriginCloudAdmission = { created: true; placed: SandboxKeyedDriver } | { created: false }
 
 export type OriginCloudWorkspacePreparation = Readonly<{
   secrets?: readonly SandboxBrokeredSecret[]
@@ -179,11 +185,12 @@ async function allocate(
       detail: `Project ${input.projectId} has no remote this control plane can clone into an isolated cloud root`,
     }
   }
-  const driver = input.services.sandbox.defaultDriver
+  const placed = await input.services.sandbox.orgDriver?.(input.orgId)
+  const driver = placed?.driver.id
   // The driver is this root's placement: the provisioner owns the machine it
   // provisions. A row stored without it names no machine at all, and the store
   // refuses it.
-  if (!driver) {
+  if (!placed || !isSandboxProvisionerID(driver)) {
     return {
       code: "placement_unsupported",
       detail: "This control plane's sandbox provisioner is not one a workspace placement can name",
@@ -205,7 +212,7 @@ async function allocate(
   if (!workspace) {
     return { code: "source_unavailable", detail: "The cloud workspace for this attempt could not be stored" }
   }
-  return await admit(workspace, input, { created: true })
+  return await admit(workspace, input, { created: true, placed })
 }
 
 /**
@@ -221,7 +228,7 @@ async function allocate(
 async function admit(
   workspace: Workspace,
   input: OriginCloudWorkspaceInput,
-  context: { created: boolean },
+  context: OriginCloudAdmission,
 ): Promise<Workspace | OriginCloudWorkspaceRefusal> {
   try {
     await input.admit(workspace, context)

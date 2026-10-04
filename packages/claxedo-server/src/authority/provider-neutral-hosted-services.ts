@@ -36,7 +36,7 @@ import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/r
 import { sandboxRelayTargetLookup, type HostTunnelTargetResolver } from "./sandbox-relay-target"
 import type { SessionHostAuthority } from "./session-hosts"
 import type { RelayTargetLookup } from "../deployments/shared-routes/internal-relay"
-import type { SandboxDriver, SandboxEgressUnenforcedEvent } from "@claxedo/sandbox-manager"
+import type { SandboxDriver, SandboxEgressUnenforcedEvent, SandboxStartPhaseEvent } from "@claxedo/sandbox-manager"
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT, createSandboxManager, type SandboxLeaseStore } from "@claxedo/sandbox-manager"
@@ -44,6 +44,8 @@ import { HostedWorkerCompositionError } from "./composition-error"
 import { recordRelayRuntimeToken } from "./relay-token-record"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { isSandboxProvisionerID } from "@claxedo/sandbox-contract"
+import { orgSandboxDrivers, type HostedSandboxKeys } from "../sandbox/org-sandbox-drivers"
+import { createOrgSandboxManager, SANDBOX_KEY_LABEL, sandboxKeyOwner } from "../sandbox/org-sandbox-manager"
 
 export { HostedWorkerCompositionError } from "./composition-error"
 
@@ -150,6 +152,29 @@ export function sandboxEgressUnenforcedSink(telemetry: ControlPlaneTelemetry) {
 }
 
 /**
+ * Each cloud start phase as an ops-plane fact. The workspace's project is the
+ * repository it checked out, which is what a per-repository read of recent
+ * starts groups on; the repository URL itself is tenant data and stays out,
+ * and so does the provider key: `key_owner` says only whose account it was.
+ */
+export function sandboxStartPhaseSink(telemetry: ControlPlaneTelemetry) {
+  return (event: SandboxStartPhaseEvent) => {
+    telemetry.capture("system", "sandbox.start_phase", {
+      phase: event.phase,
+      duration_ms: event.durationMs,
+      workspace_id: event.workspaceId,
+      epoch: event.epoch,
+      driver: event.driver,
+      key_owner: sandboxKeyOwner(event.labels[SANDBOX_KEY_LABEL]),
+      region: event.homeRegion,
+      boot_mode: event.bootMode,
+      ...(event.labels.projectId ? { project_id: event.labels.projectId } : {}),
+      ...(event.repoSizeBytes === undefined ? {} : { repo_size_bytes: event.repoSizeBytes }),
+    })
+  }
+}
+
+/**
  * A full-hosted deployment's sandbox driver and durable lease store, and how a
  * ready sandbox's runtime is handed the pass it publishes session rows with.
  */
@@ -157,12 +182,15 @@ export type HostedSandboxBinding = {
   driver: SandboxDriver
   leaseStore: SandboxLeaseStore
   deliverSessionRowsPass?: (workspaceId: string) => Promise<void>
+  /** Organization keys this deployment can provision with; absent, every workspace runs on `driver`. */
+  keys?: HostedSandboxKeys
 }
 
 function sandboxManager(
   env: HostedWorkerEnv,
   telemetry: ControlPlaneTelemetry,
   sandbox: HostedSandboxBinding | undefined,
+  bindings: Pick<HostedControlPlaneAdapterBindings, "authority" | "orgCredentials">,
 ) {
   const selectedDriver = trimToUndefined(env.CLAXEDO_SANDBOX_DRIVER)
   if (!sandbox) {
@@ -184,13 +212,24 @@ function sandboxManager(
   // here: a driver may narrow its declaration against the catalog entry
   // (`drivers/docker.ts` does), and two independent readings of the same
   // capability are two things that can disagree. One check, one warning.
-  return createSandboxManager({
+  const manager = (driver: SandboxDriver) => createSandboxManager({
     leaseStore: sandbox.leaseStore,
-    driver: sandbox.driver,
+    driver,
     staleAfterMs: positiveInteger(env, "CLAXEDO_SANDBOX_ACQUIRE_STALE_MS", 60_000),
     retryAfterMs: positiveInteger(env, "CLAXEDO_SANDBOX_PROVISIONING_RETRY_MS", 2_000),
     maxRetryCount: limits.sandboxMaxRetryCount,
     onEgressUnenforced: sandboxEgressUnenforcedSink(telemetry),
+    onStartPhase: sandboxStartPhaseSink(telemetry),
+  })
+  if (!sandbox.keys || !bindings.orgCredentials) {
+    const operator = { driver: sandbox.driver, key: "operator" as const }
+    return { manager: manager(sandbox.driver), workspaceDriver: async () => operator, orgDriver: async () => operator }
+  }
+  return createOrgSandboxManager({
+    leaseStore: sandbox.leaseStore,
+    drivers: orgSandboxDrivers({ operator: sandbox.driver, keys: sandbox.keys, credentials: bindings.orgCredentials }),
+    workspaceOrg: async (workspaceId) => (await bindings.authority.resolveWorkspaceOwner?.(workspaceId))?.orgId,
+    manager,
   })
 }
 
@@ -333,7 +372,8 @@ export function composeProviderNeutralHostedControlPlane(
   // what emits the boot-time "this driver cannot contain egress" event, and a
   // sink that does not exist yet cannot receive it.
   const telemetry = workerTelemetry(env)
-  const manager = sandboxManager(env, telemetry, bindings.sandbox)
+  const sandbox = sandboxManager(env, telemetry, bindings.sandbox, bindings)
+  const manager = sandbox?.manager
   // The provisioner this deployment places every cloud workspace on. A driver
   // whose id names no provisioner leaves it undeclared, and the allocator
   // refuses rather than storing a root whose machine nothing names.
@@ -376,7 +416,14 @@ export function composeProviderNeutralHostedControlPlane(
       hostTunnelTokenVerifier: hostTunnelTokenVerifier(env),
       hostTunnelResolver: bindings.hostTunnelResolver,
     },
-    sandbox: (manager ? { sandboxManager: manager, ...(managerDriver ? { defaultDriver: managerDriver } : {}) } : {}),
+    sandbox: (sandbox
+      ? {
+          sandboxManager: sandbox.manager,
+          workspaceDriver: sandbox.workspaceDriver,
+          orgDriver: sandbox.orgDriver,
+          ...(managerDriver ? { defaultDriver: managerDriver } : {}),
+        }
+      : {}),
     telemetry,
     localExecution: { enabled: false },
     defaultHomeRegion: homeRegion,

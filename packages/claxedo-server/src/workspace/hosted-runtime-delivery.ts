@@ -1,5 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import type { SandboxBrokeredSecret, SandboxDriver, SandboxManager, SandboxManagerInput } from "@claxedo/sandbox-manager"
+import type { SandboxBrokeredSecret, SandboxManager, SandboxManagerInput } from "@claxedo/sandbox-manager"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { UserAgentConfigRepository } from "@claxedo/server-core/agent-config/repository"
 import { userAgentConfigStore } from "@claxedo/server-core/agent-config/repository"
@@ -11,13 +11,15 @@ import {
   nativeProviderDeliveriesFromRepository,
   nativeProviderSecrets,
 } from "@claxedo/server-core/credentials/native-delivery-plan"
-import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
+import type { ControlPlaneCredentials, ControlPlaneServices, SandboxKeyedDriver } from "../authority/services"
 import { storeRenewal } from "../credentials/store-renewal"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "./route-support"
 import { mintSupervisorBackplaneToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { createWorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { cloudRootBacking } from "./cloud-root-backing"
+import { createHostedRuntimeFetch } from "./relay-runtime-client"
+import { recordRuntimeStartPhases } from "./runtime-start-phases"
 
 const log = Log.create({ service: "hosted-runtime-delivery" })
 
@@ -50,7 +52,7 @@ export function createHostedRuntimeDelivery(input: {
   database: D1Database
   services: ControlPlaneServices
   sandboxManager: SandboxManager
-  driver: SandboxDriver
+  workspaceDriver: (workspaceId: string) => Promise<SandboxKeyedDriver>
   sandboxInput(
     workspaceId: string,
     prepared: { preparation: WorkspaceRuntimePreparation | undefined; secrets: readonly SandboxBrokeredSecret[] },
@@ -67,7 +69,7 @@ export function createHostedRuntimeDelivery(input: {
     if (!person) throw new Error(`workspace ${workspaceId} has no active owner`)
     return person
   }
-  const deliveries = async (person: { userId: string; orgId: string }) => {
+  const deliveries = async (workspaceId: string, person: { userId: string; orgId: string }) => {
     const credentials = input.credentials(person.orgId)
     const selected = (await credentials.listCredentials())
       .filter((credential) => (credential.kind === "api_key" || credential.kind === "oauth_token")
@@ -81,7 +83,7 @@ export function createHostedRuntimeDelivery(input: {
       selected,
       readSecret: (credential) => credentials.resolveCredentialSecretById?.(credential.id) ?? Promise.resolve(null),
       renew: storeRenewal(credentials),
-      secretBrokering: input.driver.metadata.secretBrokering,
+      secretBrokering: (await input.workspaceDriver(workspaceId)).driver.metadata.secretBrokering,
     })
     return { delivered, selections }
   }
@@ -90,13 +92,13 @@ export function createHostedRuntimeDelivery(input: {
   const prepare = async ({ workspaceId }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
     if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return {}
     const person = await owner(workspaceId)
-    return { secrets: nativeProviderSecrets((await deliveries(person)).delivered) }
+    return { secrets: nativeProviderSecrets((await deliveries(workspaceId, person)).delivered) }
   }
   const push = async (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined) => {
     if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return
     const person = await owner(workspaceId)
     const config = await userAgentConfigStore(input.settings, person.userId).read()
-    const { delivered, selections } = await deliveries(person)
+    const { delivered, selections } = await deliveries(workspaceId, person)
     const snapshot = composeRuntimeConfigSnapshot({
       config,
       provisionedRunner: input.provisionedRunner,
@@ -109,6 +111,13 @@ export function createHostedRuntimeDelivery(input: {
     await client.applyConfig(snapshot, options)
     await input.deliverSessionRowsPass?.(workspaceId).catch((error: unknown) => {
       log.warn("session rows pass delivery failed", { workspaceId, error: String(error) })
+    })
+    await recordRuntimeStartPhases({
+      sandboxManager: input.sandboxManager,
+      workspaceId,
+      runtimeFetch: (path, init) => createHostedRuntimeFetch(input.services)(workspaceId, person.orgId, path, init),
+    }).catch((error: unknown) => {
+      log.warn("runtime start phases were not recorded", { workspaceId, error: String(error) })
     })
   }
   const provisionRuntime = (context: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => push(context.workspaceId, preparation)

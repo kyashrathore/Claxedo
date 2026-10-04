@@ -71,6 +71,9 @@ export function workspaceRuntimeOwnerGrantToken(env: Record<string, string | und
 /** Where a cloud runtime takes, and answers about, the pass it publishes its sessions' list rows with. */
 export const SESSION_ROWS_PASS_PATH = "/api/claxedo/session-rows/pass"
 
+/** Where the control plane takes, once, the start phases a cloud runtime timed while it booted. */
+export const RUNTIME_START_PHASES_PATH = "/api/claxedo/start-phases"
+
 /** The pass a runtime holds, as its claims read without verifying; null before the control plane delivered one. */
 export type SessionRowsPassHeld = { epoch: number; issuedAt: number; expiresAt: number } | null
 

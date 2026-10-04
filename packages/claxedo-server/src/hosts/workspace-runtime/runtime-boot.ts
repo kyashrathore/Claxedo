@@ -21,7 +21,8 @@ import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
 import { sandboxConnectionSecrets } from "./connection-secrets"
 import { sandboxDirectCredentialRefresh } from "./direct-credential-refresh"
 import { configureRuntimeGitAuth } from "./git-auth"
-import { prepareRuntimeRepository } from "./repository-source"
+import { prepareRuntimeRepository, repositorySizeBytes, selectsRepository } from "./repository-source"
+import { runtimeStartPhases } from "./runtime-start-phases"
 import { repositoryHistory } from "./repository-history"
 import { workspaceRuntimeOwnerGrant } from "./owner-grant"
 import { workspaceRuntimeTasksGrant } from "./tasks-grant"
@@ -139,7 +140,14 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   const targetDirectory = workspaceDir(env)
   const harness = claxedoRuntimeHarnessFromEnv(env)
   await configureRuntimeGitAuth(env)
-  const checkout = await prepareRuntimeRepository(targetDirectory, env)
+  const startPhases = runtimeStartPhases()
+  const checkout = selectsRepository(env)
+    ? await startPhases.measure("repository_checkout", () => prepareRuntimeRepository(targetDirectory, env))
+    : undefined
+  if (checkout) {
+    const size = await repositorySizeBytes(targetDirectory).catch(() => undefined)
+    if (size !== undefined) startPhases.repositorySize(size)
+  }
   const history = checkout?.branch ? repositoryHistory(targetDirectory, checkout.branch) : undefined
   // The owner the control plane launched this root for, presented on the
   // runtime's own session calls. Its unverified `user_id` names the actor in
@@ -236,6 +244,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
     routeContributions: [
       ...(input.routeContributions ?? []),
       ...(sessionRows ? [sessionRows.routes] : []),
+      ...(relayOptions.relayHostAuth ? [startPhases.routes] : []),
       firstPartyMcpRuntimeContribution({
         verifyRuntimeCredential: firstPartyMcp.verify,
         enabledToolGroups,

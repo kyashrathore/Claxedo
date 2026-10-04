@@ -34,6 +34,7 @@ import { asRecord } from "@claxedo/helpers/guards"
 import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { contentfulStatus } from "../../platform/http/status"
 import { hostAssignmentHandlers } from "../../workspace/host-assignment-handlers"
+import { cloudWorkspaceDeletion } from "../../workspace/cloud-workspace-deletion"
 import { connectionRateLimitError, controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
 import type { ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
 import { createCloudCreateAdmission, type CloudCreateUsage } from "../../workspace/cloud-create-admission"
@@ -161,6 +162,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
     ...(options.privateRepoHosts ? { privateHosts: options.privateRepoHosts } : {}),
   }
   const hostAssignment = hostAssignmentHandlers(services, options, controlPlaneRateLimiter)
+  const deleteCloudWorkspace = cloudWorkspaceDeletion(services, options, controlPlaneRateLimiter)
 
   const authOptions = () => ({
     ...options,
@@ -425,13 +427,6 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         // fixes deployment_mode; a personal-account token carries no org claim
         // and falls through to the ops plane rather than inventing an org id.
         const leaseStartedAt = Date.now()
-        options.sandboxUsage?.leaseOpened({
-          caller: { kind: "signed", auth },
-          workspaceId,
-          driver: services?.sandbox.defaultDriver ?? "unknown",
-          startedAt: leaseStartedAt,
-          ...(services ? { services } : {}),
-        })
 
         // Kick off provisioning. The lease state machine + driver.ensureHost are
         // idempotent and re-polled by the app via /connection, so the response
@@ -443,6 +438,15 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         const runtimeContext = { workspaceId }
         keepAlivePastResponse(c, Promise.resolve()
           .then(async () => {
+            const placed = await services?.sandbox.workspaceDriver?.(workspaceId)
+            options.sandboxUsage?.leaseOpened({
+              caller: { kind: "signed", auth },
+              workspaceId,
+              driver: placed?.driver.id ?? "unknown",
+              ...(placed ? { keyOwner: placed.key } : {}),
+              startedAt: leaseStartedAt,
+              ...(services ? { services } : {}),
+            })
             const runtimePreparation = await options.prepareRuntime?.(runtimeContext)
             // This is the hosted, multi-tenant create path: the sandbox runs
             // agent-authored code over someone's private checkout, and an
@@ -474,7 +478,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
               egress: options,
               preparation: runtimePreparation,
             }))
-            return { result, runtimePreparation }
+            return { result, runtimePreparation, placed }
           })
           // The lease row exists once `ensure` has acquired it, so the tenant is
           // stamped here rather than before: the sandbox manager's acquire port
@@ -482,7 +486,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           // point that holds both the verified tenant and a lease to attach it
           // to. Metering attribution never gates provisioning, so a deployment
           // with no workspace authority configured simply records nothing.
-          .then(async ({ result, runtimePreparation }) => {
+          .then(async ({ result, runtimePreparation, placed }) => {
             if (result.status === "ready") await options.provisionRuntime?.(runtimeContext, runtimePreparation)
             // The only refusal that lands here is
             // `sandbox_egress_policy_unenforceable`: a driver that does enforce
@@ -503,7 +507,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
                 workspaceId,
                 properties: {
                   reason: result.error,
-                  driver: services?.sandbox.defaultDriver ?? "unknown",
+                  driver: placed?.driver.id ?? "unknown",
                 },
               })
               return
@@ -527,37 +531,6 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
 
         return c.json({ workspaceId, directory })
       })
-      .delete("/:id", async (c) => {
-        const result = await signedOrError(c.req.raw, authOptions(), services)
-        if ("error" in result) return c.json(result.error, result.status)
-        if (!result.auth) return c.json(missingBearerBody(), 401)
-        const auth = result.auth
-        const workspaceId = routeParam(c, "id")
-        try {
-          const authority = requireAuthority(services)
-          const opened = await authority.openWorkspace(auth, { workspaceId })
-          if (!opened.workspace || opened.allowed === false || opened.role !== "owner") {
-            return c.json({ error: apiError("workspace_authorization_denied", "Workspace owner required") }, 403)
-          }
-          const limit = await controlPlaneRateLimitError(services, controlPlaneRateLimiter, auth, {
-            key: `workspace.delete:${workspaceId}`, action: "workspace.delete.denied", workspaceId,
-          })
-          if (limit) return c.json(limit.body, limit.status)
-          if (opened.workspace.backing === "cloud-vm") {
-            const manager = services?.sandbox.sandboxManager
-            if (!manager) return c.json({ error: apiError("sandbox_driver_unavailable", "Cloud sandbox cleanup is unavailable") }, 503)
-            const destroyed = await manager.destroy(workspaceId, { retireLease: { homeRegion: normalizeClaxedoRegion(undefined, options.defaultHomeRegion) } })
-            if (!destroyed.ok) return c.json({ error: apiError(destroyed.reason, "The workspace runtime could not be deleted") }, 409)
-          }
-          await options.releaseRuntime?.({ workspaceId })
-          const deleted = await authority.deleteWorkspace(auth, { workspaceId })
-          return c.json(deleted)
-        } catch (error) {
-          if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
-          if (isClaxedoError(error)) return c.json({ error: apiError(error.code, error.message) }, contentfulStatus(error.status))
-          throw error
-        }
-      })
       .get("/:id/connection", (c) => connectionResponse(c, { readOnly: true }))
       .post("/:id/connection", async (c) => {
         const body = parsedBody(connectionBody, await c.req.json().catch(() => ({})))
@@ -571,5 +544,6 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       })
       .post("/:id/host-assignment", hostAssignment.assign)
       .delete("/:id/host-assignment", hostAssignment.unassign)
+      .delete("/:id", deleteCloudWorkspace)
   )
 }

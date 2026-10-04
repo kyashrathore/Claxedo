@@ -4,7 +4,7 @@ import type { QueryClient } from "@tanstack/solid-query"
 import type { SharedSessions } from "./shared-sessions"
 import type { StartupState } from "./startup"
 import type { RuntimeCommand } from "@claxedo/agent-runtime-contract"
-import type { Account, AccountCheck, AccountSources, EffectiveAccounts, MachineLogin } from "./account-types"
+import type { Account, AccountCheck, AccountSources, EffectiveAccounts, MachineLogin, SandboxKeys } from "./account-types"
 import type { CloudCreateInput, CloudWorkspace, CodeHostRepository, WorkspaceRuntime } from "./cloud-types"
 import type { HarnessOptions } from "./harness-types"
 import type { ConnectionState, ServerEvent } from "./events"
@@ -157,6 +157,8 @@ export type AccountsApi = {
   readonly checkMachineLogin: (harness: string) => Promise<readonly MachineLogin[]>
   readonly rescan: () => Promise<void>
   readonly refresh: () => Promise<void>
+  readonly saveSandboxKey: (driver: string, fields: Readonly<Record<string, string>>) => Promise<Account>
+  readonly chooseSandboxDriver: (driver: string | null) => Promise<void>
 }
 
 export type MarketplaceApi = {
@@ -210,6 +212,7 @@ export type ServerQueries = {
     readonly effective: () => FetchQuery<EffectiveAccounts>
     readonly machineLogins: () => FetchQuery<readonly MachineLogin[]>
     readonly sources: () => FetchQuery<AccountSources>
+    readonly sandbox: () => FetchQuery<SandboxKeys>
   }
   readonly usage: { readonly summary: (input: UsageRequest) => FetchQuery<UsageSummary> }
   readonly marketplace: {

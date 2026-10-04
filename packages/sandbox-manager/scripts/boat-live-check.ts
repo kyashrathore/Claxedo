@@ -10,7 +10,7 @@ const image = args.find((arg) => arg.startsWith("--image="))?.slice("--image=".l
 const apiKey = process.env.BOAT_API_KEY?.trim()
 if (!args.includes("--yes-live") || !image || !apiKey) {
   console.error("usage: BOAT_API_KEY=<key> bun scripts/boat-live-check.ts --yes-live --image=<workspace-runtime image>")
-  console.error("Creates one billable Boat sandbox, boots the image in it, stops, resumes and deletes it.")
+  console.error("Creates one billable Boat sandbox, boots the image in it with a public repository checked out, stops, resumes and deletes it.")
   process.exit(2)
 }
 
@@ -37,6 +37,7 @@ const ensure: SandboxDriverEnsureInput = {
   homeRegion: "us-east",
   epoch: 1,
   labels: { app: "claxedo-live-check", workspaceId },
+  source: { kind: "git", repoUrl: "https://github.com/octocat/Hello-World" },
   async onResource(resource) {
     sandboxId = resource.sandboxId
     report("created", { sandboxId })
@@ -65,11 +66,17 @@ async function archived(id: string) {
 
 const MARKERS = [".live-check", "/root/.claxedo/.live-check", "/root/.workspace-runtime/.live-check"]
 const STATE_FILES = "find /root/.claxedo /root/.workspace-runtime -type f | wc -l"
+const WORKSPACE_GIT = "stat -c %u /workspace && git -C /workspace rev-parse --git-path shallow --abbrev-ref HEAD"
 
 async function inWorkspace(id: string, command: string) {
   const result = await client.command(id, { command: `docker exec claxedo-runtime sh -c ${JSON.stringify(command)}` })
-  if (result.exitCode !== 0) throw new Error(`workspace command exited ${result.exitCode}`)
+  if (result.exitCode !== 0) throw new Error(`workspace command exited ${result.exitCode}: ${result.stderr.trim().slice(-400)}`)
   return result.stdout.trim()
+}
+
+function gitFacts(output: string) {
+  const [ownerUid, shallow, branch] = output.split("\n")
+  return { ownerUid, shallow, branch }
 }
 
 async function vmFacts(id: string) {
@@ -110,6 +117,7 @@ try {
   const first = await timed("booted", async () => booted(await driver.ensureHost(ensure)), (target) => ({ sandboxId: target.sandboxId, url: target.url }))
   await timed("public health", () => publicHealth(first.url), (status) => ({ status }))
   await timed("vm tools", () => client.command(first.sandboxId, { command: "command -v flock || echo missing" }), (result) => ({ flock: result.stdout.trim() }))
+  await timed("workspace git", () => inWorkspace(first.sandboxId, WORKSPACE_GIT), gitFacts)
   await timed("markers written", () => inWorkspace(first.sandboxId, MARKERS.map((file) => `echo ${workspaceId} > ${file}`).join(" && ")))
   const stateBefore = await timed("runtime state files", () => inWorkspace(first.sandboxId, STATE_FILES), (count) => ({ count }))
   await timed("stop requested", () => client.stop(first.sandboxId))
@@ -117,6 +125,7 @@ try {
   const lease = sandboxLease({ workspaceId, driver: "boat", sandboxId: first.sandboxId, hostId: first.hostId, url: first.url, status: "stopped" })
   const second = await timed("resumed", async () => booted(await driver.resumeHost?.({ lease, ensure })), (target) => ({ url: target.url, sameUrl: target.url === first.url }))
   await timed("public health after resume", () => publicHealth(second.url), (status) => ({ status }))
+  await timed("workspace git after resume", () => inWorkspace(second.sandboxId, WORKSPACE_GIT), gitFacts)
   const read = MARKERS.map((file) => `cat ${file} 2>/dev/null || echo missing`).join("; ")
   const markers = await timed("markers read", async () => (await inWorkspace(second.sandboxId, read)).split("\n"), (lines) => ({
     survived: Object.fromEntries(MARKERS.map((file, index) => [file, lines[index] === workspaceId])),

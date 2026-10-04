@@ -100,12 +100,26 @@ export const serverWorkerd: Policy = {
   // plan mid-turn through `routes/runtime-credential-refresh.ts`, proven by
   // the turn lease check it shares with connection secrets
   // (`session/turn-lease-authority.ts`); both of a sandbox's secret routes are
-  // served by the `routes/runtime-sandbox-secrets.ts` router.
-  // Hosted OpenCode account projection is owned by credentials/worker/opencode.ts;
-  // it joins the caller's selected D1 accounts with the authorized runtime catalog.
-  // The live-sync client's SSE bridge and shared handshake protocol are separate
-  // owners from LiveSyncRoom's connection and replay state, with no new packages.
-  ceilings: { modules: 144, packages: 19 },
+  // The selected-account OpenCode catalog is owned by credentials/worker/opencode.ts.
+  // The live-sync SSE client and shared handshake protocol have separate owners
+  // from the room connection and replay state, adding two modules and no packages.
+  // served by the `routes/runtime-sandbox-secrets.ts` router. After it
+  // provisions a cloud runtime the plane takes the start phases that runtime
+  // timed in its sandbox (`workspace/runtime-start-phases.ts`).
+  // +4 modules (owner: the hosted sandbox manager composition): an
+  // organization's own sandbox provider key provisions its new workspaces.
+  // `sandbox/org-sandbox-drivers.ts` picks the org's key or the operator's
+  // driver, `sandbox/org-sandbox-manager.ts` routes each workspace's lifecycle
+  // to the key its lease records, and the D1 plane keeps the org's chosen
+  // driver (`sandbox/stores/d1-org-driver.ts`) behind the shared credential
+  // routes' key policy (`sandbox/hosted-sandbox-driver-keys.ts`). None of
+  // them imports a sandbox provider.
+  // +2 modules (owner: the hosted workspace router): the owner deletes a cloud
+  // workspace through `workspace/cloud-workspace-deletion.ts`, which destroys
+  // its sandbox before the row, and the D1 deletion statements are a module of
+  // their own (`authority/adapters/d1/workspace-deletion.ts`). 151/19 including the three account and live-sync modules above, no
+  // headroom.
+  ceilings: { modules: 151, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

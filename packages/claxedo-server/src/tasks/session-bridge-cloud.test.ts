@@ -143,7 +143,10 @@ function runtime() {
 
 function services(
   sandboxManager: SandboxManager | undefined,
-  sandbox: ControlPlaneServices["sandbox"] = { defaultDriver: "modal" },
+  sandbox: ControlPlaneServices["sandbox"] = {
+    defaultDriver: "modal",
+    orgDriver: async () => ({ driver: fakeDriver({ id: "modal" }).driver, key: "operator" }),
+  },
 ) {
   const created = new Map<string, { projectId?: string; displayName: string }>()
   const authority = {
@@ -529,7 +532,7 @@ describe("hosted tasks cloud roots", () => {
     runtime()
     const composition = services(
       createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: fakeDriver().driver }),
-      {},
+      { orgDriver: async () => ({ driver: fakeDriver().driver, key: "operator" }) },
     )
 
     const { started } = await start(bridge(composition), "tsk_one")
@@ -573,6 +576,24 @@ describe("hosted tasks cloud roots", () => {
     expect((await start(bridge(composition), "tsk_one")).started).toMatchObject({ ok: true })
 
     expect(await rootOf("tsk_one")).toMatchObject({ kind: "cloud", driver: "modal" })
+  })
+
+  test("places a root on its organization's own sandbox key and opens its lease metered against that key", async () => {
+    runtime()
+    const orgDriver = vi.fn(async () => ({ driver: fakeDriver({ id: "boat" }).driver, key: "org" as const }))
+    const composition = services(
+      createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: fakeDriver().driver }),
+      { defaultDriver: "modal", orgDriver },
+    )
+    const usage = { leaseOpened: vi.fn(), recordLeaseTenant: vi.fn(async () => undefined) }
+    const kit = bridge(composition, selectedCapabilities(), undefined, signedPerson, undefined, usage)
+
+    expect((await start(kit, "tsk_one")).started).toMatchObject({ ok: true })
+    const root = await rootOf("tsk_one")
+    expect(root).toMatchObject({ kind: "cloud", driver: "boat" })
+    expect(orgDriver).toHaveBeenCalledWith("org")
+    expect(usage.leaseOpened).toHaveBeenCalledOnce()
+    expect(usage.leaseOpened).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: root?.id, driver: "boat", keyOwner: "org" }))
   })
 
   test("keeps a root out of its project's workspace list, so an ordinary start still resolves one workspace", async () => {

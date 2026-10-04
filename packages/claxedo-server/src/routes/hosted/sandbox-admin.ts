@@ -66,23 +66,14 @@ export function HostedSandboxAdminRoutes(options: HostedSandboxAdminOptions = {}
       kept: result.kept.length,
       skipped: result.skipped.length,
       failed: result.failed.length,
+      ...(result.unreachable ? { unreachable: result.unreachable.length } : {}),
       ...(result.listingUnsupported ? { listingUnsupported: true, driver: result.driver } : {}),
     })
-    // A driver that cannot enumerate provider state did not sweep — it
-    // failed to look. Four empty arrays behind a 200 is the silent success
-    // the review names, so this path is loud in both channels: a warning the
-    // cron surfaces, and a non-2xx the caller (including the cron's own
-    // response check in worker.ts) cannot mistake for a clean sweep.
-    if (result.listingUnsupported) {
-      console.warn(
-        `[sandbox-gc] driver "${result.driver ?? "unknown"}" cannot list provider state — `
-        + "orphaned sandboxes are UNDETECTABLE from the control plane; provider-side expiry is the only reaper",
-      )
-      return c.json({ ...result, error: "sandbox_gc_listing_unsupported" }, 501)
-    }
     // Metric spec §4.2: a GC destroy ends a billable interval, one event
     // per reclaimed sandbox rather than one per sweep — the rollup counts
-    // leases, so a batched event would collapse many closes into one.
+    // leases, so a batched event would collapse many closes into one. A sweep
+    // over several provider keys destroys on the keys it could list even when
+    // another could not, so these close before any refusal below.
     //
     // These routes authenticate an OPERATOR bearer token, not a user, so no
     // signed tenant exists at this site by construction and the events go out
@@ -103,6 +94,21 @@ export function HostedSandboxAdminRoutes(options: HostedSandboxAdminOptions = {}
         },
         systemReason: "internal_admin_token_has_no_user",
       })
+    }
+    for (const account of result.unreachable ?? []) {
+      console.warn(`[sandbox-gc] an organization's "${account.driver}" sandbox key could not be swept: ${account.error}`)
+    }
+    // A driver that cannot enumerate provider state did not sweep — it
+    // failed to look. Four empty arrays behind a 200 is the silent success
+    // the review names, so this path is loud in both channels: a warning the
+    // cron surfaces, and a non-2xx the caller (including the cron's own
+    // response check in worker.ts) cannot mistake for a clean sweep.
+    if (result.listingUnsupported) {
+      console.warn(
+        `[sandbox-gc] driver "${result.driver ?? "unknown"}" cannot list provider state — `
+        + "orphaned sandboxes are UNDETECTABLE from the control plane; provider-side expiry is the only reaper",
+      )
+      return c.json({ ...result, error: "sandbox_gc_listing_unsupported" }, 501)
     }
     return c.json(result)
   })

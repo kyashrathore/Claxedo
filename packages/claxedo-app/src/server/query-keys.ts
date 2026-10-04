@@ -14,6 +14,7 @@ export const queryKeys = {
   accountsEffective: (server: string) => ["server", server, "accounts", "effective"] as const,
   machineLogins: (server: string) => ["server", server, "accounts", "machine-logins"] as const,
   accountSources: (server: string) => ["server", server, "accounts", "sources"] as const,
+  sandboxKeys: (server: string) => ["server", server, "accounts", "sandbox"] as const,
   usage: (server: string, request: unknown) => ["server", server, "usage", request] as const,
   usageAll: (server: string) => ["server", server, "usage"] as const,
   marketplace: (server: string, projectId: ProjectId | undefined) => ["server", server, "marketplace", projectId ?? ""] as const,

@@ -4,6 +4,8 @@ import type { ControlPlaneServices } from "../../authority/services"
 import type { HostedSandboxBinding } from "../../authority/provider-neutral-hosted-services"
 import { createD1SandboxPassRegister } from "../../platform/auth/d1-sandbox-pass-register"
 import { createD1SandboxLeaseStore } from "../../sandbox/stores/d1"
+import { d1OrgSandboxDriver } from "../../sandbox/stores/d1-org-driver"
+import type { HostedSandboxKeys } from "../../sandbox/org-sandbox-drivers"
 import { createSessionRowsPasses, type SessionRowsPasses } from "../../session/session-rows-pass"
 import { createHostedRuntimeFetch } from "../../workspace/relay-runtime-client"
 
@@ -14,7 +16,12 @@ import { createHostedRuntimeFetch } from "../../workspace/relay-runtime-client"
  * that composition provisions, and is admitted by that plane's ingest.
  */
 export function composeWithCloudSandbox<Composed extends { plane: { services: ControlPlaneServices } }>(
-  input: { database: D1Database; signingEnv: Record<string, string | undefined>; driver: SandboxDriver },
+  input: {
+    database: D1Database
+    signingEnv: Record<string, string | undefined>
+    driver: SandboxDriver
+    keyDrivers: Omit<HostedSandboxKeys, "chosenDriver">
+  },
   compose: (extra: { sandbox: HostedSandboxBinding; sessionRowsPasses: SessionRowsPasses }) => Composed,
 ): Composed {
   const leaseStore = createD1SandboxLeaseStore({ database: input.database })
@@ -31,7 +38,12 @@ export function composeWithCloudSandbox<Composed extends { plane: { services: Co
     runtimeFetch: (workspaceId, orgId, path, init) => createHostedRuntimeFetch(services())(workspaceId, orgId, path, init),
   })
   composed = compose({
-    sandbox: { driver: input.driver, leaseStore, deliverSessionRowsPass: sessionRowsPasses.deliver },
+    sandbox: {
+      driver: input.driver,
+      leaseStore,
+      deliverSessionRowsPass: sessionRowsPasses.deliver,
+      keys: { ...input.keyDrivers, chosenDriver: d1OrgSandboxDriver(input.database).chosen },
+    },
     sessionRowsPasses,
   })
   return composed

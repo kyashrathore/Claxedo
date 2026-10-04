@@ -491,6 +491,41 @@ describe("d1 sandbox lease store", () => {
       sandboxId: "sandbox_ws_1",
     })
   })
+
+  test("a start polled by managers composed per request keeps its phases in start_json until the next epoch", async () => {
+    let at = NOW
+    const { leaseStore } = await store(() => at)
+    const phases: Array<[string, number]> = []
+    let polls = 0
+    const driver: SandboxDriver = {
+      ...fakeDriver(),
+      ensureHost: async (input) => {
+        polls += 1
+        await input.onResource?.({ sandboxId: "sandbox_ws_1", hostId: "host_ws_1", labels: input.labels })
+        if (polls === 1) {
+          at += 800
+          return { provisioning: true as const, retryAfterMs: 1_000 }
+        }
+        return { sandboxId: "sandbox_ws_1", url: "https://runtime.test/ws_1", hostId: "host_ws_1", labels: input.labels }
+      },
+    }
+    const manager = () => createSandboxManager({ leaseStore, driver, now: () => at, onStartPhase: (event) => phases.push([event.phase, event.durationMs]) })
+
+    await expect(manager().ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "provisioning" })
+    at += 1_200
+    await expect(manager().ensure("ws_1", { homeRegion: "us-east" })).resolves.toMatchObject({ status: "ready" })
+    await manager().recordStartPhases("ws_1", { epoch: 1, phases: [{ phase: "repository_checkout", durationMs: 450 }] })
+
+    expect(phases).toEqual([["lease_decision", 0], ["provider_ready", 0], ["runtime_ready", 2_000], ["repository_checkout", 450]])
+    await expect(leaseStore.get("ws_1")).resolves.toMatchObject({
+      start: { startedAt: NOW, bootMode: "cold-start", markedAt: NOW + 2_000, phases: ["lease_decision", "provider_ready", "runtime_ready", "repository_checkout"] },
+    })
+
+    await leaseStore.update("ws_1", 1, { status: "stopped" })
+    const next = await leaseStore.acquire("ws_1", { ...ACQUIRE, now: at })
+    expect(next).toMatchObject({ acquired: true, lease: { epoch: 2 } })
+    expect((await leaseStore.get("ws_1"))?.start).toBeUndefined()
+  })
 })
 
 for (const action of ["resume", "release"] as const) {
