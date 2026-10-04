@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
@@ -114,7 +114,8 @@ function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnc
 function runStartCommand(command: string, vm: {
   existingImage?: string; existingCommand?: string; existingInit?: boolean; existingPolicy?: boolean
   daemonUpAfter?: number; recreatedDuringRun?: string; recreatedInit?: boolean; recreatedPolicy?: boolean
-  apparmor?: boolean; policyLoadFailure?: boolean
+  apparmor?: boolean; policyLoadFailure?: boolean; envInstallFailure?: boolean
+  pullFailure?: boolean; restoredDuringPull?: boolean
 }) {
   const dir = mkdtempSync(path.join(tmpdir(), "boat-start-"))
   const bin = path.join(dir, "bin")
@@ -122,7 +123,7 @@ function runStartCommand(command: string, vm: {
   const log = path.join(dir, "docker.log")
   const slot = path.join(dir, "container")
   writeFileSync(log, "")
-  writeFileSync(path.join(dir, ".claxedo-runtime-env"), "")
+  writeFileSync(path.join(dir, ".claxedo-runtime-env.stage"), "export CLAXEDO_ENV_TEST=delivered\n")
   const tool = (name: string, body: string) => {
     writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`)
     chmodSync(path.join(bin, name), 0o755)
@@ -130,11 +131,16 @@ function runStartCommand(command: string, vm: {
   tool("timeout", 'shift\nexec "$@"')
   tool("docker", [
     `echo "$*" >> ${log}`,
+    `download() { if [ -f ${dir}/fixture-ready ]; then [ '${vm.pullFailure ?? false}' != true ] || return 125; [ '${vm.restoredDuringPull ?? false}' != true ] || cp ${dir}/restored-container ${slot}; fi; touch ${dir}/image-ready; }`,
     `case "$1" in`,
     `  info) if [ "$2" = --format ]; then echo '${JSON.stringify(vm.apparmor ? ["name=apparmor"] : [])}'; exit 0; fi; n=$(($(cat ${dir}/info 2>/dev/null || echo 0) + 1)); echo $n > ${dir}/info; [ $n -gt ${vm.daemonUpAfter ?? 0} ] ;;`,
     `  inspect) case "$*" in *HostConfig.Init*) cat ${slot} 2>/dev/null ;; *) sed -E 's/^([^ ]+) (true|false) [^ ]+ /\\1 /' ${slot} 2>/dev/null ;; esac ;;`,
     `  rm) rm -f ${slot} ;;`,
+    `  image) [ -f ${dir}/image-ready ] ;;`,
+    `  pull) download ;;`,
     `  run) init=false; previous=; image=; policy=missing; for last; do [ "$last" != --init ] || init=true; [ "$last" != -lc ] || image="$previous"; case "$last" in claxedo.runtime.security=*) policy="\${last#*=}" ;; esac; previous="$last"; done`,
+    `    [ -f ${dir}/image-ready ] || download || exit $?`,
+    `    if [ -f ${slot} ]; then echo Conflict >&2; exit 125; fi`,
     `    printf '%s' "$last" > ${dir}/boot`,
     `    if [ -n "${vm.recreatedDuringRun ?? ""}" ] && [ ! -f ${dir}/recreated ]; then touch ${dir}/recreated; printf '%s %s %s -lc %s' '${vm.recreatedDuringRun ?? ""}' '${vm.recreatedInit ?? true}' ${vm.recreatedPolicy === false ? "missing" : '"$policy"'} "$last" > ${slot}; echo Conflict >&2; exit 125; fi`,
     `    printf '%s %s %s -lc %s' "$image" "$init" "$policy" "$last" > ${slot} ;;`,
@@ -142,7 +148,7 @@ function runStartCommand(command: string, vm: {
     `esac`,
   ].join("\n"))
   tool("sleep", "exit 0")
-  tool("sudo", `echo "$*" >> ${dir}/policy.log\nexit ${vm.policyLoadFailure ? 1 : 0}`)
+  tool("sudo", `echo "$*" >> ${dir}/policy.log\nif [ "$2" = install ]; then shift 2; [ '${vm.envInstallFailure ?? false}' != true ] || exit 1; exec install -m 600 "$7" "$8"; fi\nexit ${vm.policyLoadFailure ? 1 : 0}`)
   if (vm.existingImage) {
     spawnSync("sh", ["-c", command], { cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8" })
     const workspace = path.join(dir, "claxedo-persistent", "workspace")
@@ -152,9 +158,13 @@ function runStartCommand(command: string, vm: {
     if (vm.existingCommand) writeFileSync(slot, readFileSync(slot, "utf8").replace(/ -lc [\s\S]*/, ` -lc ${vm.existingCommand}`))
     if (vm.existingInit === false) writeFileSync(slot, readFileSync(slot, "utf8").replace(" true ", " false "))
     if (vm.existingPolicy === false) writeFileSync(slot, readFileSync(slot, "utf8").replace(/ (true|false) [^ ]+ /, " $1 missing "))
+    writeFileSync(path.join(dir, "restored-container"), readFileSync(slot, "utf8"))
+    if (vm.existingImage !== IMAGE) rmSync(path.join(dir, "image-ready"), { force: true })
     writeFileSync(log, "")
     writeFileSync(path.join(dir, "info"), "0")
   }
+  writeFileSync(path.join(dir, ".claxedo-runtime-env.stage"), "export CLAXEDO_ENV_TEST=delivered\n")
+  writeFileSync(path.join(dir, "fixture-ready"), "")
   const result = spawnSync("sh", ["-c", command], { cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8" })
   const calls = readFileSync(log, "utf8").split("\n").filter(Boolean).map((line) => line.split(" ").slice(0, 2).join(" "))
   return { status: result.status, calls, dir }
@@ -389,7 +399,7 @@ describe("boat sandbox driver", () => {
     expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/claxedo":'/root/.claxedo'`)
     expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/workspace-runtime":'/root/.workspace-runtime'`)
     expect(run?.body.command).not.toContain("--env ")
-    const envWrite = boat.calls.find((c) => c.path.endsWith("/files") && c.body?.path === ".claxedo-runtime-env")
+    const envWrite = boat.calls.find((c) => c.path.endsWith("/files") && c.body?.path === ".claxedo-runtime-env.stage")
     expect(envWrite?.body).toMatchObject({ encoding: "utf8" })
     expect(envWrite?.body?.content).toContain("export WORKSPACE_RUNTIME_WORKSPACE_ID='ws1'")
     expect(envWrite?.body?.content).toContain("export WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL='https://api.example.test/.well-known/jwks.json'")
@@ -419,14 +429,14 @@ describe("boat sandbox driver", () => {
   test("a fresh VM waits for the Docker daemon, then creates the runtime container, leaving its bind sources for Docker to create", async () => {
     const run = runStartCommand(await startCommand(), { daemonUpAfter: 2 })
     expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["info", "info", "info", "info --format", "inspect --format", "rm -f", "run -d"])
+    expect(run.calls).toEqual(["info", "info", "info", "info --format", "image inspect", `pull ${IMAGE}`, "inspect --format", "rm -f", "run -d"])
     expect(existsSync(path.join(run.dir, "claxedo-persistent"))).toBe(false)
   })
 
   test("a repeated start finds the container the first one created and only starts it", async () => {
     const run = runStartCommand(await startCommand(), { existingImage: IMAGE, daemonUpAfter: 1 })
     expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["info", "info", "info --format", "inspect --format", "start claxedo-runtime"])
+    expect(run.calls).toEqual(["info", "info", "info --format", "image inspect", "inspect --format", "start claxedo-runtime"])
   })
 
   test("a container without an init reaper is replaced while its persistent workspace is kept", async () => {
@@ -434,8 +444,24 @@ describe("boat sandbox driver", () => {
     expect(command).toContain("docker run -d --init --name claxedo-runtime")
     const run = runStartCommand(command, { existingImage: IMAGE, existingInit: false })
     expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["info", "info --format", "inspect --format", "rm -f", "run -d"])
+    expect(run.calls).toEqual(["info", "info --format", "image inspect", "inspect --format", "rm -f", "run -d"])
     expect(readFileSync(path.join(run.dir, "claxedo-persistent", "workspace", "user-work.txt"), "utf8")).toBe("keep my work")
+  })
+
+  test("staged environment delivery installs a private root-owned container file and removes the upload", async () => {
+    const run = runStartCommand(await startCommand(), {})
+    expect(run.status).toBe(0)
+    expect(readFileSync(path.join(run.dir, "policy.log"), "utf8")).toContain("-n install -m 600 -o 0 -g 0 .claxedo-runtime-env.stage .claxedo-runtime-env")
+    expect(statSync(path.join(run.dir, ".claxedo-runtime-env")).mode & 0o777).toBe(0o600)
+    expect(readFileSync(path.join(run.dir, ".claxedo-runtime-env"), "utf8")).toBe("export CLAXEDO_ENV_TEST=delivered\n")
+    expect(existsSync(path.join(run.dir, ".claxedo-runtime-env.stage"))).toBe(false)
+  })
+
+  test("an environment ownership installation failure prevents container mutation", async () => {
+    const run = runStartCommand(await startCommand(), { envInstallFailure: true })
+    expect(run.status).not.toBe(0)
+    expect(run.calls).toEqual([])
+    expect(statSync(path.join(run.dir, ".claxedo-runtime-env.stage")).mode & 0o777).toBe(0o600)
   })
 
   test("a container with the old security policy is replaced without losing its workspace", async () => {
@@ -463,13 +489,30 @@ describe("boat sandbox driver", () => {
   test("a container of another image is replaced by one of the image this boot names", async () => {
     const run = runStartCommand(await startCommand(), { existingImage: "ghcr.io/test/sandbox:0" })
     expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["info", "info --format", "inspect --format", "rm -f", "run -d"])
+    expect(run.calls).toEqual(["info", "info --format", "image inspect", `pull ${IMAGE}`, "inspect --format", "rm -f", "run -d"])
+  })
+
+  test("a failed image download preserves the existing container and workspace", async () => {
+    const previous = "ghcr.io/test/sandbox:0"
+    const run = runStartCommand(await startCommand(), { existingImage: previous, pullFailure: true })
+    expect(run.status).not.toBe(0)
+    expect(run.calls).not.toContain("rm -f")
+    expect(readFileSync(path.join(run.dir, "container"), "utf8").startsWith(previous)).toBe(true)
+    expect(readFileSync(path.join(run.dir, "claxedo-persistent", "workspace", "user-work.txt"), "utf8")).toBe("keep my work")
+  })
+
+  test("an image upgrade reconciles the old container Boat restores during the new image download", async () => {
+    const run = runStartCommand(await startCommand(), { existingImage: "ghcr.io/test/sandbox:0", restoredDuringPull: true })
+    expect(run.status).toBe(0)
+    expect(readFileSync(path.join(run.dir, "container"), "utf8").startsWith(IMAGE)).toBe(true)
+    expect(run.calls.filter((call) => call === "run -d")).toHaveLength(1)
+    expect(readFileSync(path.join(run.dir, "claxedo-persistent", "workspace", "user-work.txt"), "utf8")).toBe("keep my work")
   })
 
   test("a container with an older boot command is replaced while its persistent workspace is kept", async () => {
     const run = runStartCommand(await startCommand(), { existingImage: IMAGE, existingCommand: "exec /usr/local/bin/workspace-runtime" })
     expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["info", "info --format", "inspect --format", "rm -f", "run -d"])
+    expect(run.calls).toEqual(["info", "info --format", "image inspect", "inspect --format", "rm -f", "run -d"])
     expect(readFileSync(path.join(run.dir, "claxedo-persistent", "workspace", "user-work.txt"), "utf8")).toBe("keep my work")
   })
 
@@ -504,7 +547,7 @@ describe("boat sandbox driver", () => {
   test("a create that loses the race to Boat's recreation starts the container Boat recreated", async () => {
     const run = runStartCommand(await startCommand(), { recreatedDuringRun: IMAGE })
     expect(run.status).toBe(0)
-    expect(run.calls).toEqual(["info", "info --format", "inspect --format", "rm -f", "run -d", "inspect --format", "start claxedo-runtime"])
+    expect(run.calls).toEqual(["info", "info --format", "image inspect", `pull ${IMAGE}`, "inspect --format", "rm -f", "run -d", "inspect --format", "start claxedo-runtime"])
   })
 
   test("a create that races an older container restored without init replaces that container", async () => {
@@ -524,7 +567,7 @@ describe("boat sandbox driver", () => {
   test("a create that races a different image refuses to reuse or replace the competing container", async () => {
     const run = runStartCommand(await startCommand(), { recreatedDuringRun: "ghcr.io/test/sandbox:0" })
     expect(run.status).not.toBe(0)
-    expect(run.calls).toEqual(["info", "info --format", "inspect --format", "rm -f", "run -d", "inspect --format", "inspect --format"])
+    expect(run.calls).toEqual(["info", "info --format", "image inspect", `pull ${IMAGE}`, "inspect --format", "rm -f", "run -d", "inspect --format", "inspect --format"])
   })
 
   test("keeps env values and registry credentials out of command strings", async () => {
@@ -550,7 +593,7 @@ describe("boat sandbox driver", () => {
     }
 
     const writes = boat.calls.filter((c) => c.path.endsWith("/files") && c.method === "PUT")
-    const envWrite = writes.find((c) => c.body.path === ".claxedo-runtime-env")
+    const envWrite = writes.find((c) => c.body.path === ".claxedo-runtime-env.stage")
     expect(envWrite?.body.content).toContain("export RUNTIME_SECRET='synthetic-runtime-secret'")
     expect(envWrite?.body.content).toContain("export CALLER_SECRET='synthetic-caller-secret'")
     expect(envWrite?.body.content).toContain("export PEM='-----BEGIN-----\nline2\n-----END-----'")

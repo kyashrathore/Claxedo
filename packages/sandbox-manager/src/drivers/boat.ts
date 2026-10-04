@@ -69,6 +69,7 @@ const DOCKER_DAEMON_WAIT_SECONDS = 120
 // where commands also start; the container reads the env through a read-only
 // bind mount.
 const RUNTIME_ENV_PATH = ".claxedo-runtime-env"
+const RUNTIME_ENV_STAGING_PATH = ".claxedo-runtime-env.stage"
 const REGISTRY_PASSWORD_PATH = ".claxedo-registry-password"
 const CONTAINER_ENV_PATH = "/run/claxedo-runtime.env"
 // Everything the runtime keeps lives under one root on the VM's disk: the
@@ -222,7 +223,9 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     const sameBoot = `[ "$(docker inspect --format '{{.Config.Image}} {{join .Config.Cmd " "}}' ${containerName} 2>/dev/null)" = ${shell(`${resolveImage(input)} -lc ${bootScript}`)} ]`
     const replace = `{ docker rm -f ${containerName} >/dev/null 2>&1 || true; } && ${run}`
     const steps = [
-      `chmod 600 ${RUNTIME_ENV_PATH}`,
+      `chmod 600 ${RUNTIME_ENV_STAGING_PATH}`,
+      `sudo -n install -m 600 -o 0 -g 0 ${RUNTIME_ENV_STAGING_PATH} ${RUNTIME_ENV_PATH}`,
+      `rm -f ${RUNTIME_ENV_STAGING_PATH}`,
       `timeout ${DOCKER_DAEMON_WAIT_SECONDS} sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'`,
       security.prepare,
       ...(options.registryAuth
@@ -230,6 +233,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
           + `--username ${shell(options.registryAuth.username)} --password-stdin < ${REGISTRY_PASSWORD_PATH}; `
           + `rc=$?; rm -f ${REGISTRY_PASSWORD_PATH}; (exit $rc); }`]
         : []),
+      `{ docker image inspect ${image} >/dev/null 2>&1 || docker pull ${image}; }`,
       `if ${ours}; then docker start ${containerName} >/dev/null; `
       + `else { ${replace}; } || { ${ours} && docker start ${containerName} >/dev/null; } `
       + `|| { ${sameBoot} && { ${replace}; }; }; fi`,
@@ -268,7 +272,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     const security = await boatContainerSecurity()
     const script = containerStartScript(input, security)
     for (const file of security.files) await client.writeFile(sandboxId, file)
-    await client.writeFile(sandboxId, { path: RUNTIME_ENV_PATH, content: envFile(env) })
+    await client.writeFile(sandboxId, { path: RUNTIME_ENV_STAGING_PATH, content: envFile(env) })
     if (options.registryAuth) {
       await client.writeFile(sandboxId, { path: REGISTRY_PASSWORD_PATH, content: options.registryAuth.password })
     }
