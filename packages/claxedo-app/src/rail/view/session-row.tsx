@@ -1,10 +1,10 @@
 import { createMemo, createSignal, Show, type JSX } from "solid-js"
-import { useTranslator } from "@/i18n"
+import { useTranslator, type DomainTranslate } from "@/i18n"
 import { useAgeClock } from "@/lib/clock"
 import { canSettle, type SessionRowView } from "@/session"
 import { useShellLayout } from "@/shell"
 import { createHoverEngagement } from "../hover-engagement"
-import { railDictionary } from "../i18n"
+import { railDictionary, type RailKey } from "../i18n"
 import { navigationStatus, sessionAge, sessionAgeSince, type SessionMarker } from "../model"
 import { NavigationRow, NavigationRowStatusGutter } from "./navigation-row"
 import { SessionRowMenu, type SessionRowMenuActions } from "./session-row-menu"
@@ -40,18 +40,32 @@ function SessionTitle(props: { readonly title: string; readonly hovered: boolean
 
 const MARKER_ICON = { cloud: "cloud", machine: "server", worktree: "worktree" } as const
 
-function MarkerIcon(props: { readonly marker: SessionMarker; readonly projectLabel: string }): JSX.Element {
+function markerLabel(t: DomainTranslate<RailKey>, marker: SessionMarker, projectLabel: string): string {
+  if (marker.kind === "cloud") return `${t("rail.marker.cloud")} · ${marker.name}`
+  if (marker.kind === "machine") return `${t("rail.marker.machine")} · ${marker.name}`
+  const base = t("rail.marker.worktree", { project: projectLabel, name: marker.name })
+  return marker.path && marker.path !== marker.name ? `${base} · ${marker.path}` : base
+}
+
+function SessionRowMeta(props: { readonly row: SessionRowView; readonly marker: SessionMarker | undefined; readonly projectLabel: string; readonly caption?: string }): JSX.Element {
   const t = useTranslator(railDictionary)
-  const label = () => {
-    const { kind, name, path } = props.marker
-    if (kind === "cloud") return `${t("rail.marker.cloud")} · ${name}`
-    if (kind === "machine") return `${t("rail.marker.machine")} · ${name}`
-    const base = t("rail.marker.worktree", { project: props.projectLabel, name })
-    return path && path !== name ? `${base} · ${path}` : base
-  }
+  const now = useAgeClock(() => sessionAgeSince(props.row))
   return (
-    <span data-icon-interaction="passive" role="img" aria-label={label()} title={label()} class="shrink-0 text-icon-weak-base/80 leading-none">
-      <Icon name={MARKER_ICON[props.marker.kind]} size="small" />
+    <span class="ui-session-navigation-meta flex min-w-0 items-center gap-1 text-xs leading-4">
+      <Show when={props.caption}>
+        {(caption) => <span class="min-w-0 shrink truncate">{caption()}</span>}
+      </Show>
+      <Show when={props.marker}>
+        {(marker) => (
+          <span role="img" aria-label={markerLabel(t, marker(), props.projectLabel)} title={markerLabel(t, marker(), props.projectLabel)} class="flex min-w-0 shrink items-center gap-1">
+            <Show when={props.caption}><span aria-hidden="true">·</span></Show>
+            <Icon name={MARKER_ICON[marker().kind]} size="small" class="size-3 shrink-0" />
+            <span class="min-w-0 truncate" aria-hidden="true">{marker().name}</span>
+          </span>
+        )}
+      </Show>
+      <Show when={props.caption || props.marker}><span aria-hidden="true">·</span></Show>
+      <span class="shrink-0 tabular-nums">{sessionAge(props.row, now())}</span>
     </span>
   )
 }
@@ -87,7 +101,6 @@ export function RailSessionRow(props: SessionRowProps): JSX.Element {
   const engagement = createHoverEngagement()
   const layout = useShellLayout()
   const status = () => navigationStatus(props.row)
-  const now = useAgeClock(() => sessionAgeSince(props.row))
   const openMenu = (event: MouseEvent) => {
     event.preventDefault()
     setMenu({ x: event.clientX, y: event.clientY })
@@ -104,15 +117,11 @@ export function RailSessionRow(props: SessionRowProps): JSX.Element {
       prepareDrag={props.prepareDrag}
     >
       <NavigationRowStatusGutter status={status()} />
-      <div class="relative z-[1] pointer-events-none flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
+      <div class="relative z-[1] pointer-events-none flex flex-col gap-0.5 flex-1 min-w-0 overflow-hidden py-1.5">
         <SessionTitle title={props.row.title} hovered={engagement.hovered()} />
-        <Show when={props.caption}>{(caption) => <span class="ui-session-navigation-caption shrink-0 max-w-[40%] truncate text-xs">{caption()}</span>}</Show>
-        <Show when={props.marker}>{(marker) => <MarkerIcon marker={marker()} projectLabel={props.projectLabel} />}</Show>
+        <SessionRowMeta row={props.row} marker={props.marker} projectLabel={props.projectLabel} caption={props.caption} />
       </div>
-      <div class="size-6 shrink-0 relative z-10 flex items-center justify-end self-stretch">
-        <span class="ui-session-navigation-time flex items-center justify-end text-xs tabular-nums">
-          {sessionAge(props.row, now())}
-        </span>
+      <div class="size-6 shrink-0 relative z-10 flex items-center justify-end self-start mt-1">
         <Show when={engagement.engaged() && !layout.coarsePointer()}>
           <SettleButton row={props.row} touch={false} onToggleSettled={props.onToggleSettled} />
         </Show>

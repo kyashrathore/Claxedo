@@ -48,7 +48,7 @@ const en = {
   "rail.noMatches": "No sessions match the current view.",
   "rail.loadMore": "Load more",
   "rail.loadingMore": "Loading...",
-  "rail.loadingSessions": "Loading sessions...",
+  "rail.loadingSessions": "Loading sessions",
   "rail.loadFailed": "Could not load sessions.",
   "rail.loadMoreFailed": "Could not load more sessions.",
   "rail.partialLoad": "Some of this project's sessions could not be loaded.",

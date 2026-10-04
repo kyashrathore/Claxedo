@@ -89,27 +89,6 @@
   }
 }
 
-.session-skeleton-bar {
-  background: color-mix(in oklab, var(--text-weak) 16%, transparent);
-}
-
-@keyframes session-skeleton-breathe {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.4;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .session-skeleton-bar {
-    animation: none;
-    opacity: 0.7;
-  }
-}
-
 [data-surface="overlay"],
 .overlay-palette {
   --background-base: var(--overlay-surface);
@@ -430,7 +409,7 @@ html[data-theme="codex"] [data-testid="rail-sidebar-session-row"][data-active="t
   font-weight: var(--font-weight-body);
 }
 
-html[data-theme="codex"] .ui-session-navigation-time {
+html[data-theme="codex"] .ui-session-navigation-meta {
   font-size: var(--font-size-small);
 }
 

@@ -11,6 +11,7 @@ export { SidePanelHeader, SidePanelToggle } from "./controls/side-panel-header"
 export { SidePanelTab } from "./controls/side-panel-tab"
 export { ResizeSeparator, type ResizeGrowth } from "./controls/resize-separator"
 export { DelayedLoading } from "./controls/delayed-loading"
+export { SkeletonBar } from "./controls/skeleton"
 export {
   browserToolbarSlot,
   fileHeaderActionsSlot,

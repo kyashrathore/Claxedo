@@ -4,6 +4,8 @@ export type SessionScreenTextKey =
   | `sessionScreen.interrupted.${"title" | "description" | "resume" | "prompt"}`
   | `sessionScreen.timeline.${TimelineTextKey}`
   | "sessionScreen.loading"
+  | "sessionScreen.loadingSlow"
+  | "sessionScreen.loadingSlowUnnamed"
   | "sessionScreen.untitled"
   | "sessionScreen.subagent.label"
   | "sessionScreen.subagent.task"
@@ -90,6 +92,8 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.interrupted.resume": "Resume",
   "sessionScreen.interrupted.prompt": "Continue the interrupted work. Check what completed before the interruption before repeating any actions.",
   "sessionScreen.loading": "Loading messages...",
+  "sessionScreen.loadingSlow": "Still reading this session's history from {{where}}.",
+  "sessionScreen.loadingSlowUnnamed": "Still reading this session's history.",
   "sessionScreen.untitled": "Session",
   "sessionScreen.subagent.label": "Subagent",
   "sessionScreen.subagent.task": "Delegated task",

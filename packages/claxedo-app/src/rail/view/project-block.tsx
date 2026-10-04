@@ -8,7 +8,7 @@ import { SESSION_GROUP_PAGE_SIZE, type RailRow, type SessionMarker } from "../mo
 import type { ProjectSection } from "../project-sections"
 import { ProjectHeader } from "./project-header"
 import { ProjectRows } from "./project-rows"
-import { SessionListNotice, SessionLoadMore } from "./session-list-notice"
+import { SessionListNotice, SessionLoadMore, SessionRowsLoading } from "./session-list-notice"
 import type { SessionRowMenuActions } from "./session-row-menu"
 import { useProjectTerminals } from "./terminal-row"
 
@@ -72,7 +72,7 @@ function ProjectSessions(
         onToggleSettled={props.onToggleSettled}
       />
       <Show when={props.paging.loadingInitial()}>
-        <SessionListNotice variant="loading">{t("rail.loadingSessions")}</SessionListNotice>
+        <SessionRowsLoading />
       </Show>
       <Show when={props.paging.errorInitial()}>
         <SessionListNotice variant="error" actionLabel={t("rail.retry")} onAction={() => void props.list.reload()}>

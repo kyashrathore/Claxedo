@@ -1,33 +1,22 @@
-import { Index } from "solid-js"
-import { DelayedLoading } from "@/ui"
+import { Index, Show } from "solid-js"
+import { SLOW_LOAD_MS, useElapsed } from "@/lib/delay"
+import { usePhone } from "@/lib/viewport"
+import { useServer, type PlacementId } from "@/server"
+import { DelayedLoading, SkeletonBar } from "@/ui"
 import { useSessionScreenText } from "./text"
 
-type SkeletonBar = {
-  width: number
-  delay: string
-}
-
 type SkeletonTurn = {
-  bubble: string
-  user: SkeletonBar[]
-  assistant: SkeletonBar[]
+  readonly bubble: string
+  readonly user: readonly number[]
+  readonly assistant: readonly number[]
 }
 
-const TURNS: SkeletonTurn[] = (() => {
-  const shape = [
-    { bubble: "min(52%, 40ch)", user: [100], assistant: [97, 84, 62] },
-    { bubble: "min(68%, 52ch)", user: [100, 71], assistant: [92, 100, 78, 45] },
-  ]
-  let step = 0
-  const bar = (width: number): SkeletonBar => ({ width, delay: `${step++ * 70}ms` })
-  return shape.map((turn) => ({
-    bubble: turn.bubble,
-    user: turn.user.map(bar),
-    assistant: turn.assistant.map(bar),
-  }))
-})()
+const TURNS: readonly SkeletonTurn[] = [
+  { bubble: "min(52%, 40ch)", user: [100], assistant: [97, 84, 62] },
+  { bubble: "min(68%, 52ch)", user: [100, 71], assistant: [92, 100, 78, 45] },
+]
 
-export function SessionTimelineSkeleton(props: { centered?: boolean }) {
+export function SessionTimelineSkeleton(props: { centered?: boolean; waiting?: string }) {
   const t = useSessionScreenText()
   const centered = () => props.centered !== false
 
@@ -60,26 +49,37 @@ export function SessionTimelineSkeleton(props: { centered?: boolean }) {
                     class="flex flex-col gap-2.5 rounded-md border border-border-weak-base bg-surface-base px-3 py-2.5"
                     style={{ width: turn().bubble }}
                   >
-                    <Index each={turn().user}>{(bar) => <SkeletonLine bar={bar()} />}</Index>
+                    <Index each={turn().user}>{(width) => <SkeletonBar width={`${width()}%`} class="h-3" />}</Index>
                   </div>
                 </div>
                 <div class="mt-6 flex flex-col gap-2.5">
-                  <Index each={turn().assistant}>{(bar) => <SkeletonLine bar={bar()} />}</Index>
+                  <Index each={turn().assistant}>{(width) => <SkeletonBar width={`${width()}%`} class="h-3" />}</Index>
                 </div>
               </div>
             )}
           </Index>
         </div>
+        <Show when={props.waiting}>
+          {(waiting) => (
+            <p data-testid="session-messages-waiting" class="w-full px-4 pt-6 text-center text-12-regular text-text-weaker md:px-5">
+              {waiting()}
+            </p>
+          )}
+        </Show>
       </DelayedLoading>
     </div>
   )
 }
 
-function SkeletonLine(props: { bar: SkeletonBar }) {
-  return (
-    <div
-      class="session-skeleton-bar h-3 rounded-sm"
-      style={{ width: `${props.bar.width}%`, "animation-delay": props.bar.delay }}
-    />
-  )
+export function SessionHistoryLoading(props: { placementId: PlacementId }) {
+  const t = useSessionScreenText()
+  const server = useServer()
+  const phone = usePhone()
+  const slow = useElapsed(SLOW_LOAD_MS)
+  const waiting = () => {
+    if (!slow()) return undefined
+    const where = server.placements.byId(props.placementId)?.label
+    return where ? t("sessionScreen.loadingSlow", { where }) : t("sessionScreen.loadingSlowUnnamed")
+  }
+  return <SessionTimelineSkeleton centered={!phone()} waiting={waiting()} />
 }

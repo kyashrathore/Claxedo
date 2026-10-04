@@ -20,21 +20,12 @@
   font-weight: var(--font-weight-semibold, 600);
 }
 
-.ui-session-navigation-time {
+.ui-session-navigation-meta {
   color: var(--text-weaker);
-  opacity: 1;
 }
 
-[data-slot="session-navigation-row"][data-active="true"] .ui-session-navigation-time {
+[data-slot="session-navigation-row"][data-active="true"] .ui-session-navigation-meta {
   color: color-mix(in srgb, var(--text-base) 70%, transparent);
-}
-
-.ui-session-navigation-caption {
-  color: var(--text-weaker);
-}
-
-[data-slot="session-navigation-row"]:is(:hover, :focus-within) .ui-session-navigation-time {
-  opacity: 0;
 }
 
 .ui-session-title {

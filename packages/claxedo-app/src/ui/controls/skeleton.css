@@ -1,0 +1,4 @@
+.ui-skeleton-bar {
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--text-weak) 16%, transparent);
+}

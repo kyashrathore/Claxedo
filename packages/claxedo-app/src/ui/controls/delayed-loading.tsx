@@ -1,12 +1,7 @@
-import { Show, createSignal, onCleanup, onMount, type JSX } from "solid-js"
-
-const LOADING_INDICATOR_DELAY_MS = 100
+import { Show, type JSX } from "solid-js"
+import { useElapsed } from "@/lib/delay"
 
 export function DelayedLoading(props: { children: JSX.Element }) {
-  const [visible, setVisible] = createSignal(false)
-  onMount(() => {
-    const timer = setTimeout(() => setVisible(true), LOADING_INDICATOR_DELAY_MS)
-    onCleanup(() => clearTimeout(timer))
-  })
+  const visible = useElapsed()
   return <Show when={visible()}>{props.children}</Show>
 }

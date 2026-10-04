@@ -6,7 +6,7 @@ import { railDictionary } from "../i18n"
 import { SESSION_GROUP_PAGE_SIZE, sessionRowKey } from "../model"
 import { createRowNavigation } from "./row-navigation"
 import { createSessionActions } from "./session-actions"
-import { SessionListNotice, SessionLoadMore } from "./session-list-notice"
+import { SessionListNotice, SessionLoadMore, SessionRowsLoading } from "./session-list-notice"
 import { RailSessionRow } from "./session-row"
 
 function ActivityNotices(props: { readonly count: number }): JSX.Element {
@@ -19,7 +19,7 @@ function ActivityNotices(props: { readonly count: number }): JSX.Element {
   return (
     <>
       <Show when={props.count === 0 && reading()}>
-        <SessionListNotice variant="loading">{t("rail.loadingSessions")}</SessionListNotice>
+        <SessionRowsLoading />
       </Show>
       <Show when={failed()}>
         <SessionListNotice variant="error" actionLabel={t("rail.retry")} onAction={() => void list.reload()}>{t("rail.loadFailed")}</SessionListNotice>

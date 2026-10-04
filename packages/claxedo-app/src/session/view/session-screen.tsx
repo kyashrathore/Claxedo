@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, Match, on, Show, Switch } from "solid-js"
 import { Composer, promptText, SelectionComment, sessionComposerKey, useComposerStore } from "@/composer"
-import { usePhone } from "@/lib/viewport"
+import { useElapsed } from "@/lib/delay"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { sessionId, useServer, type SessionLocation } from "@/server"
 import { usePanel } from "@/panel"
@@ -18,7 +18,7 @@ import { createTimelineHost } from "./timeline-host"
 import { createTimelineScroll } from "./timeline-scroll"
 import { createDockFollow } from "./dock-follow"
 import { navTurns } from "./nav-turns"
-import { SessionTimelineSkeleton } from "./session-timeline-skeleton"
+import { SessionHistoryLoading } from "./session-timeline-skeleton"
 import { installSessionScreenKeydown } from "./session-screen-keydown"
 import { SessionConnectionLine } from "./connection-line"
 import { commitDeltasWhileShown } from "./delta-frames"
@@ -143,6 +143,9 @@ function SessionBody(props: {
           data-session-transcript-collapsed={transcriptCollapsed() ? "true" : undefined}
           classList={{ "session-floating-timeline": props.floating, "session-floating-timeline-collapsed": transcriptCollapsed() }}
         >
+          <Show when={props.view.state().kind === "loading" && !props.view.conversation()}>
+            <SessionHistoryLoading placementId={props.view.ref.placementId} />
+          </Show>
           <SessionTimeline view={props.view} queued={queueEdit.queued} navTurns={turns()} host={host} active={props.active} onScreen={!transcriptCollapsed()} scroll={scroll} onRecover={props.controls.owner ? recovery.recover : undefined} follow={!props.controls.send} />
         </div>
       </div>
@@ -197,14 +200,14 @@ export function SessionSurface(props: SessionSurfaceProps) {
   })
   const unshared = () => standing().shared && controls().owner
   const t = useSessionScreenText()
-  const phone = usePhone()
+  const placeholderDue = useElapsed()
   const stores = useSessionStores()
   const panel = usePanel()
   const floating = () => !props.readOnly && controls().send && panel.maximized() && props.active
   const view = createMemo(() => stores.open(props.sessionRef))
   commitDeltasWhileShown(view)
   markSeenWhileShown(view, () => props.active && !props.readOnly, stores.list)
-  holdPaneReveal(() => view().state().kind === "loading")
+  holdPaneReveal(() => view().state().kind === "loading" && !placeholderDue())
   const failure = () => {
     const state = view().state()
     return state.kind === "failed" ? state : undefined
@@ -238,9 +241,6 @@ export function SessionSurface(props: SessionSurfaceProps) {
                 onRetry={() => void view().reload()}
               />
             )}
-          </Match>
-          <Match when={view().state().kind === "loading" && !view().conversation()}>
-            <SessionTimelineSkeleton centered={!phone()} />
           </Match>
         </Switch>
       </FailureBoundary>

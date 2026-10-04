@@ -104,7 +104,7 @@ Directives a tool reads are not comments and stay, with no prose added: `// @ts-
 ## Loading states
 
 - Every async view renders from its machine: idle, loading, ready or failed, each drawn explicitly. No spinner without a failure path.
-- Show a placeholder only after 150 ms, so fast loads don't flash. A secondary load never blocks the shell or the transcript.
+- Show a placeholder only after `PLACEHOLDER_DELAY_MS` (50 ms, `src/lib/delay.ts`), so fast loads don't flash; past `SLOW_LOAD_MS` (2 s) say what the load waits for. A secondary load never blocks the shell or the transcript.
 - Optimistic changes are pending entries in the store, confirmed or rolled back by the server; never a second copy of the data.
 
 ## Performance
