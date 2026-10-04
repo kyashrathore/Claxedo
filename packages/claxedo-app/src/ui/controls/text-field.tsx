@@ -1,4 +1,4 @@
-import { Show, splitProps } from "solid-js"
+import { Show, splitProps, type JSX } from "solid-js"
 import { FieldV2 } from "@opencode-ai/ui/v2/field-v2"
 import { copyText } from "@/lib/clipboard"
 import { TextInputV2, type TextInputV2Props } from "@opencode-ai/ui/v2/text-input-v2"
@@ -7,7 +7,7 @@ export interface TextFieldProps
   extends Omit<TextInputV2Props, "value" | "onChange" | "onInput" | "invalid" | "showCopyButton" | "onCopyClick" | "class" | "classList"> {
   label?: string
   hideLabel?: boolean
-  description?: string
+  description?: JSX.Element
   error?: string
   invalid?: boolean
   value?: string

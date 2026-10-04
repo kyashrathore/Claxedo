@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import type { IntegrationConnectOutcome } from "@/server"
-import { connectError } from "./connections"
+import { connectError, integrationPurpose } from "./connections"
 
 type Failed = Extract<IntegrationConnectOutcome, { kind: "failed" }>
 
@@ -28,4 +28,10 @@ test("connectError: a verify failure names why the credentials were refused", ()
   expect(connectError({ kind: "failed", reason: "rejected", status: 400, code: "connection_verify_failed", verifyReason: "unauthorized" })).toBe(
     "The provided credentials were rejected. Check the values and try again.",
   )
+})
+
+test("integrationPurpose says in one sentence what an integration is used for, never its capability ids", () => {
+  expect(integrationPurpose(["code-host", "work-source"], "en")).toBe("Lets agents clone your repositories into cloud workspaces and read the issues you give them.")
+  expect(integrationPurpose(["docs"], "en")).toBe("Lets agents read your documents.")
+  expect(integrationPurpose(["unknown-capability"], "en")).toBeUndefined()
 })

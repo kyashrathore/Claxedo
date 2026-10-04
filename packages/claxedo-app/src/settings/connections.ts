@@ -59,10 +59,10 @@ export function createConnectForm(scope: ConnectionScope) {
 
 export function connectError(outcome: Extract<IntegrationConnectOutcome, { kind: "failed" }>): string {
   if (outcome.code === "connection_verify_failed" || outcome.code === "verify_failed") return verifyFailedMessage(outcome.verifyReason)
-  if (outcome.reason === "unreachable") return "Could not reach the server. Try again."
-  if (outcome.reason === "unoffered") return "This server does not offer this integration."
-  if (outcome.reason === "rejected") return "The server refused this connection. Check the values and try again."
-  if (outcome.status === undefined) return "The server did not return an authorization URL. Try again."
+  if (outcome.reason === "unreachable") return "Could not reach Claxedo. Check your connection and try again."
+  if (outcome.reason === "unoffered") return "Claxedo doesn't offer this integration here."
+  if (outcome.reason === "rejected") return "The connection was refused. Check the values and try again."
+  if (outcome.status === undefined) return "The sign-in page didn't open. Try again."
   return "Connecting failed. Try again."
 }
 
@@ -71,4 +71,21 @@ export function grantError(reason: IntegrationFailure): string {
   if (reason === "expired") return "The authorization attempt expired. Try again."
   if (reason === "timeout") return "Timed out waiting for authorization. Try again."
   return "Authorization failed. Try again."
+}
+
+const CAPABILITY_PURPOSE: Readonly<Record<string, string>> = {
+  "code-host": "clone your repositories into cloud workspaces",
+  "work-source": "read the issues you give them",
+  docs: "read your documents",
+  channel: "reach you in chat",
+  mcp: "use its tools",
+}
+
+export function integrationPurpose(capabilities: readonly string[], locale: string): string | undefined {
+  const phrases = capabilities.flatMap((capability) => {
+    const phrase = CAPABILITY_PURPOSE[capability]
+    return phrase ? [phrase] : []
+  })
+  if (phrases.length === 0) return undefined
+  return `Lets agents ${new Intl.ListFormat(locale, { type: "conjunction" }).format(phrases)}.`
 }
