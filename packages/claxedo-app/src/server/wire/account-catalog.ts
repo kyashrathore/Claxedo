@@ -1,6 +1,6 @@
 import { isRecord } from "@claxedo/helpers/guards"
 import { machineId, placementId, projectId } from "../ids"
-import type { Placement, Project } from "../types"
+import type { Placement, Project, ProjectSource } from "../types"
 import type { PlacementRecord } from "./placements"
 
 export type AccountCatalog = {
@@ -55,15 +55,25 @@ function placementRecordFromRow(row: Row, workspace: string, project: string): P
   return { placement, route: { directory: `workspace:${workspace}`, workspaceId: workspace, remote: true } }
 }
 
+function projectSource(rows: readonly Row[], placements: readonly PlacementRecord[]): ProjectSource | undefined {
+  for (const row of rows) {
+    const connectionId = firstTextOf(row, "repo_connection_id", "repoConnectionId")
+    const fullName = ownerRepository(firstTextOf(row, "repo_url", "repoUrl"))
+    if (connectionId && fullName) return { kind: "connectedRepository", connectionId, fullName }
+  }
+  const repository = placements.map((record) => record.placement.gitRemote).find((remote) => remote !== undefined)
+  return repository ? { kind: "repository", url: repository } : undefined
+}
+
 function projectFromRows(id: string, rows: readonly Row[], placements: readonly PlacementRecord[]): Project {
   const named = rows.map((row) => projectName(row, id)).find((name) => name !== id) ?? id
-  const repository = placements.map((record) => record.placement.gitRemote).find((remote) => remote !== undefined)
+  const source = projectSource(rows, placements)
   const created = Math.min(...rows.map((row) => firstTimeOf(row, "created_at", "createdAt") ?? 0))
   const updated = Math.max(...rows.map((row) => firstTimeOf(row, "updated_at", "updatedAt", "last_seen_at") ?? created))
   return {
     id: projectId(id),
     name: named,
-    ...(repository ? { source: { kind: "repository", url: repository } } : {}),
+    ...(source ? { source } : {}),
     available: placements.some((record) => record.placement.reachable),
     env: {},
     createdAt: created,

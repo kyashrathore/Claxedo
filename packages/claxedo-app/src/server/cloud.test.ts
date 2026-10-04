@@ -9,6 +9,7 @@ import type { Transport } from "./transport"
 import type { Project } from "./types"
 import type { WorkspaceWakes } from "./workspace-wakes"
 import { createWorkspaces } from "./workspaces"
+import { accountCatalogFromWire } from "./wire/account-catalog"
 
 const bootstrap = { deployment: { serverKind: "daemon", issuesSessions: false }, project: [] }
 const created = { workspace_id: "ws_new", project_id: "prj_widgets", backing: "cloud-vm", repo_url: "https://github.com/acme/widgets", workspace_name: "Widgets", status: "provisioning" }
@@ -43,7 +44,11 @@ function transport(posted: Posted[]): Transport {
   return { serverUrl: "http://127.0.0.1:1", loopback: true, json, onSessionHost: () => () => undefined } as Pick<Transport, "serverUrl" | "loopback" | "json" | "onSessionHost"> as Transport
 }
 
-function world(signed: boolean, catalog: () => void = () => {}) {
+type ProjectRead = (id: ProjectId) => Promise<Project>
+
+const publicProject: ProjectRead = async (id) => ({ id, source: { kind: "repository", url: "https://github.com/acme/widgets" } }) as Pick<Project, "id" | "source"> as Project
+
+function world(signed: boolean, catalog: () => void = () => {}, project: ProjectRead = publicProject) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const posted: Posted[] = []
   const operations: Array<{ readonly operation: string; readonly input: unknown }> = []
@@ -59,7 +64,6 @@ function world(signed: boolean, catalog: () => void = () => {}) {
   })
   const wire = transport(posted)
   const workspaces = createWorkspaces(wire, queryClient, signed ? account : undefined)
-  const project = async (id: ProjectId) => ({ id, source: { kind: "repository", url: "https://github.com/acme/widgets" } }) as Pick<Project, "id" | "source"> as Project
   const cloud = createCloudApi(wire, workspaces, wakes, project, signed ? account : undefined)
   const inventory = () => queryClient.fetchQuery({ ...cloudQueries(wire).cloud.list(), staleTime: Infinity })
   const listed = async () => (await inventory()).map((workspace) => workspace.id)
@@ -129,6 +133,20 @@ test("signed: a workspace the account created is reported before the catalog rea
     await expect(cloud.create({ source: { kind: "repository", url: "https://github.com/acme/widgets" }, name: "Widgets", onCreated: (id) => reported.push(id) })).rejects.toThrow()
     expect(reported).toEqual([placementId("ws_new")])
     expect(operations()).toHaveLength(1)
+    workspaces.dispose()
+    dispose()
+  })
+})
+
+test("a Where-picker cloud workspace for a private connected repository carries the connection its project was cloned with", async () => {
+  const sibling = { workspace_id: "ws_first", project_id: "prj_widgets", backing: "cloud-vm", repo_url: "https://github.com/acme/widgets.git", repo_connection_id: "conn_github", display_name: "First" }
+  const [listed] = accountCatalogFromWire([sibling]).projects
+  if (!listed) throw new Error("the catalog grouped no project")
+  expect(listed.source).toEqual({ kind: "connectedRepository", connectionId: "conn_github", fullName: "acme/widgets" })
+  await createRoot(async (dispose) => {
+    const { cloud, workspaces, posted } = world(false, () => {}, async () => listed)
+    await cloud.create({ projectId: projectId("prj_widgets"), name: "Checkout" })
+    expect(posted).toEqual([{ path: "/api/workspace/create", body: { projectId: "prj_widgets", workspaceName: "Checkout", connectionId: "conn_github", repo: { fullName: "acme/widgets" } } }])
     workspaces.dispose()
     dispose()
   })

@@ -128,6 +128,7 @@ type WorkspaceAccessRow = {
   home_region: string | null
   repo_url: string | null
   repo_name: string | null
+  repo_connection_id: string | null
   git_branch: string | null
   remote_directory: string | null
   host_enrollment_id: string | null
@@ -1010,6 +1011,7 @@ function workspaceJson(row: WorkspaceAccessRow) {
     ...(row.home_region ? { home_region: row.home_region } : {}),
     ...(row.repo_url ? { repo_url: row.repo_url } : {}),
     ...(row.repo_name ? { repo_name: row.repo_name } : {}),
+    ...(row.repo_connection_id ? { repo_connection_id: row.repo_connection_id } : {}),
     ...(row.git_branch ? { git_branch: row.git_branch } : {}),
     ...(row.remote_directory ? { remote_directory: row.remote_directory } : {}),
   }

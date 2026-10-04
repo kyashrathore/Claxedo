@@ -642,6 +642,23 @@ describe("a workspace's row carries its placement", () => {
     expect(listed.get("ws_vm")).toMatchObject({ placement: {} })
   })
 
+  test("a private repository's row names the connection it clones with, so a sibling workspace can clone it too", async () => {
+    const { authority } = await setup({ kind: "claxedo-hosted" })
+    const alice = await signed(authority, identity("alice"))
+    const orgId = await authority.resolveOrgId(alice)
+    await authority.createWorkspace(alice, {
+      workspaceId: "ws_private",
+      orgId,
+      displayName: "private",
+      repoUrl: "https://github.com/acme/private.git",
+      repoConnectionId: "conn_github",
+      backing: "cloud-vm",
+    })
+    const listed = new Map((await authority.listWorkspaces(alice)).map((row) => [row.workspace_id, row]))
+    expect(listed.get("ws_private")).toMatchObject({ repo_connection_id: "conn_github" })
+    expect(await authority.openWorkspace(alice, { workspaceId: "ws_private" })).toMatchObject({ workspace: { repo_connection_id: "conn_github" } })
+  })
+
   test("no workspace row carries an access mode any more", async () => {
     const { authority, database } = await setup({ kind: "claxedo-hosted" })
     const alice = await signed(authority, identity("alice"))
