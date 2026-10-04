@@ -49,6 +49,19 @@ test("Codex cancellation never allows a command", async () => {
   expect(answer).toEqual({ decision: "cancel" })
 })
 
+test("Codex file approval displays the requested reason and write root from the current protocol", async () => {
+  const request: ServerRequest = { method: "item/fileChange/requestApproval", id: 4,
+    params: { threadId: "thread", turnId: "turn", itemId: "patch", startedAtMs: 1,
+      reason: "command failed; retry without sandbox?", grantRoot: "/workspace" } }
+  const requests: TurnRequest[] = []
+  expect(await answerCodexRequest(request, broker(async (value) => {
+    requests.push(value)
+    return { kind: "permission", decision: "deny" }
+  }), "s1")).toEqual({ decision: "decline" })
+  expect(requests[0]).toMatchObject({ kind: "permission", permission: { title: request.params.reason,
+    patterns: [JSON.stringify({ reason: request.params.reason, grantRoot: "/workspace" }, null, 2)] } })
+})
+
 test("Codex tells an MCP server a rejected elicitation was declined and a withdrawn one was cancelled", async () => {
   const elicitation = { method: "mcpServer/elicitation/request", id: 1,
     params: { threadId: "thread", turnId: "turn", serverName: "server", mode: "form", message: "Name", requestedSchema: { type: "object", properties: {} } } } as unknown as ServerRequest

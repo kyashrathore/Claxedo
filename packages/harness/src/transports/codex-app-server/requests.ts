@@ -32,9 +32,11 @@ function decisionResponse(method: string, decision: string, params: Record<strin
 
 async function approval(method: string, params: Record<string, unknown>, message: RpcMessage, broker: RequestBroker, sessionId: string,
   context?: RequestContext): Promise<unknown> {
-  const command = typeof params.command === "string" ? params.command : JSON.stringify(params.changes ?? params.permissions ?? {})
+  const fileChange = method === "item/fileChange/requestApproval"
+  const command = fileChange ? JSON.stringify({ reason: params.reason, grantRoot: params.grantRoot }, null, 2)
+    : typeof params.command === "string" ? params.command : JSON.stringify(params.changes ?? params.permissions ?? {})
   const { threadId: _threadId, turnId: _turnId, itemId: _itemId, startedAtMs: _startedAtMs, approvalId: _approvalId, ...keyParams } = params
-  const answer = await broker.ask(permissionRequest({ sessionId, permission: method, title: command,
+  const answer = await broker.ask(permissionRequest({ sessionId, permission: method, title: fileChange ? asString(params.reason) ?? method : command,
     patterns: [command], metadata: { method, params }, harnessPayload: message,
     grantKey: grantIdentity([method, context?.directory, context?.permissionMode, keyParams]),
     options: [
