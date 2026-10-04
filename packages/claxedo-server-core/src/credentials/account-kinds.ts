@@ -10,9 +10,9 @@ import type { CredentialKind, CredentialMetadata } from "./types"
  *
  * Everything else stays server-side and reaches its consumer another way:
  *  - `kind: "sandbox_driver"` (Vercel/Cloudflare/…): provisioning
- *    credentials the DRIVER injects natively; the driver API token controls
- *    EVERY sandbox and must never sit in a sandbox's own config. Resolved for
- *    provisioning via `config.sandbox_driver`, never through this fanout.
+ *    credentials only the sandbox manager spends; the driver API token
+ *    controls EVERY sandbox and must never sit in a sandbox's own config, so
+ *    it is read where a driver is built, never through this fanout.
  *  - `integration:*` (connections) and `channel:*` (channel state): reach
  *    consumers only through their own gated paths (the connections token
  *    endpoint, the channel runtime).

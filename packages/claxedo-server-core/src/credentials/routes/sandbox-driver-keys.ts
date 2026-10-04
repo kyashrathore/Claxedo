@@ -24,7 +24,7 @@ export type SandboxDriverKeys = {
   managed?: SandboxProvisionerID
   canManage: (request: Request, context: SandboxDriverKeyContext) => Promise<boolean>
   chosenDriver: (context: SandboxDriverKeyContext) => Promise<string | undefined>
-  chooseDriver: (context: SandboxDriverKeyContext, driver: SandboxDriverID | undefined) => Promise<void>
+  chooseDriver: (request: Request, context: SandboxDriverKeyContext, driver: SandboxDriverID | undefined) => Promise<void>
 }
 
 function keyOwner(keys: SandboxDriverKeys, context: SandboxDriverKeyContext) {

@@ -60,7 +60,7 @@ import type { HostedControlPlane } from "../../authority/hosted-services"
 import type { IdempotencyCoordinator } from "../../authority/http/idempotency"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { hostedPiCredentials } from "../../credentials/worker/pi"
-import { hostedCredentialRoutes } from "../../credentials/worker/routes"
+import { hostedCredentialRoutes, type HostedCredentialRoutesInput } from "../../credentials/worker/routes"
 import { envelopeKeyProviderFromEnv } from "@claxedo/server-core/credentials/envelope"
 import { hostedAgentConfigRoutes } from "../../agent-config/hosted-routes"
 import type { UserAgentConfigRepository } from "@claxedo/server-core/agent-config/repository"
@@ -114,9 +114,10 @@ export type HostedCoreAppOptions = {
   /**
    * The shared account setup routes (`/api/claxedo/credentials`) over the
    * plane's per-org credential stores, and how a credential change reaches
-   * running workspaces.
+   * running workspaces, with the organization's sandbox provider keys on a
+   * plane that provisions cloud sandboxes.
    */
-  accountSetup?: { changed: (orgId: string) => Promise<void> }
+  accountSetup?: Pick<HostedCredentialRoutesInput, "changed" | "sandboxDriverKeys">
   /**
    * Build-composed product route families (Agent Plugins today). An entry
    * passes an explicit array; the base core passes none and imports no

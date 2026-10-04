@@ -5,6 +5,8 @@ import { ProviderAuthRoutes } from "@claxedo/server-core/credentials/routes/prov
 import { createProviderAuthService } from "@claxedo/server-core/credentials/provider-auth/service"
 import { ControlPlaneAuthError, controlPlaneAuthContext, type ControlPlaneAuthConfig, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
+import type { SandboxDriverKeys } from "@claxedo/server-core/credentials/routes/sandbox-driver-keys"
+import type { SandboxDriverID, SandboxProvisionerID } from "@claxedo/sandbox-contract"
 import type { ControlPlaneCredentials } from "../../authority/services"
 import { orgRoutedCredentials } from "./org-routed"
 
@@ -17,6 +19,28 @@ export type HostedCredentialRoutesInput = {
   /** The plane's credential keys: a sign-in's callback can land on another Worker instance than its authorize did. */
   keys: EnvelopeKeyProvider
   fetch?: typeof fetch
+  /** Absent on a plane that provisions no cloud sandboxes. */
+  sandboxDriverKeys?: HostedSandboxDriverKeys
+}
+
+/** The organization's sandbox provider keys beside the deployment's managed driver. */
+export type HostedSandboxDriverKeys = {
+  drivers: readonly SandboxDriverID[]
+  managed: SandboxProvisionerID
+  administers(auth: SignedControlPlaneAuth, orgId: string): Promise<boolean>
+  chosen(orgId: string): Promise<string | undefined>
+  choose(auth: SignedControlPlaneAuth, orgId: string, driver: SandboxDriverID | undefined): Promise<void>
+}
+
+function orgSandboxDriverKeys(keys: HostedSandboxDriverKeys, signed: (request: Request) => Promise<SignedControlPlaneAuth>): SandboxDriverKeys {
+  return {
+    drivers: keys.drivers,
+    owner: "org",
+    managed: keys.managed,
+    canManage: async (request, { org }) => keys.administers(await signed(request), org),
+    chosenDriver: ({ org }) => keys.chosen(org),
+    chooseDriver: async (request, { org }, driver) => keys.choose(await signed(request), org, driver),
+  }
 }
 
 /**
@@ -27,14 +51,19 @@ export type HostedCredentialRoutesInput = {
  */
 export function hostedCredentialRoutes(input: HostedCredentialRoutesInput) {
   const credentials = orgRoutedCredentials(input.credentials, input.changed)
-  const resolveOrg = async (request: Request) => {
+  const signed = async (request: Request) => {
     const auth = await controlPlaneAuthContext(request, { authentication: input.authentication, config: input.authConfig })
     if (auth.mode !== "signed") throw new ControlPlaneAuthError(401, "missing_bearer_token", "Signed authentication is required")
-    return await input.resolveOrgId(auth)
+    return auth
   }
+  const resolveOrg = async (request: Request) => await input.resolveOrgId(await signed(request))
   const auth = { authentication: input.authentication, authConfig: input.authConfig, resolveOrg }
   const service = createProviderAuthService(credentials, { reach: "cloud", keys: input.keys, ...(input.fetch ? { fetch: input.fetch } : {}) })
   return new Hono()
-    .route("/api/claxedo/credentials", CredentialRoutes(credentials, auth))
+    .route("/api/claxedo/credentials", CredentialRoutes(credentials, {
+      ...auth,
+      ...(input.fetch ? { fetch: input.fetch } : {}),
+      ...(input.sandboxDriverKeys ? { sandboxDriverKeys: orgSandboxDriverKeys(input.sandboxDriverKeys, signed) } : {}),
+    }))
     .route("/", ProviderAuthRoutes({ service, ...auth }))
 }

@@ -13,7 +13,7 @@ export function localSandboxDriverKeys(env: SandboxDriverEnv): SandboxDriverKeys
     owner: "person",
     canManage: async (_request, context) => context.localOperator,
     chosenDriver: async () => sandboxDriverConfig(await loadUserConfig()).default_driver,
-    chooseDriver: async (_context, driver) => {
+    chooseDriver: async (_request, _context, driver) => {
       const config = await loadUserConfig()
       const { auth } = sandboxDriverConfig(config)
       setSandboxDriverConfig(config, { ...(auth ? { auth } : {}), ...(driver ? { default_driver: driver } : {}) })

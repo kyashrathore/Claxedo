@@ -36,7 +36,7 @@ test("the composed plane's ready sandbox is handed a pass for its lease epoch ov
   } as unknown as ControlPlaneServices
   const driver = { id: "test" } as unknown as SandboxDriver
 
-  const composed = composeWithCloudSandbox({ database: backing.database, signingEnv, driver }, (extra) => ({ plane: { services }, extra }))
+  const composed = composeWithCloudSandbox({ database: backing.database, signingEnv, driver, keyDrivers: { drivers: [], create: () => undefined } }, (extra) => ({ plane: { services }, extra }))
   await composed.extra.sandbox.deliverSessionRowsPass!("ws_cloud")
 
   expect(composed.extra.sandbox.driver).toBe(driver)

@@ -50,7 +50,7 @@ export function createHostedRuntimeDelivery(input: {
   database: D1Database
   services: ControlPlaneServices
   sandboxManager: SandboxManager
-  driver: SandboxDriver
+  workspaceDriver: (workspaceId: string) => Promise<SandboxDriver>
   sandboxInput(
     workspaceId: string,
     prepared: { preparation: WorkspaceRuntimePreparation | undefined; secrets: readonly SandboxBrokeredSecret[] },
@@ -67,7 +67,7 @@ export function createHostedRuntimeDelivery(input: {
     if (!person) throw new Error(`workspace ${workspaceId} has no active owner`)
     return person
   }
-  const deliveries = async (person: { userId: string; orgId: string }) => {
+  const deliveries = async (workspaceId: string, person: { userId: string; orgId: string }) => {
     const credentials = input.credentials(person.orgId)
     const selected = (await credentials.listCredentials())
       .filter((credential) => (credential.kind === "api_key" || credential.kind === "oauth_token")
@@ -81,7 +81,7 @@ export function createHostedRuntimeDelivery(input: {
       selected,
       readSecret: (credential) => credentials.resolveCredentialSecretById?.(credential.id) ?? Promise.resolve(null),
       renew: storeRenewal(credentials),
-      secretBrokering: input.driver.metadata.secretBrokering,
+      secretBrokering: (await input.workspaceDriver(workspaceId)).metadata.secretBrokering,
     })
     return { delivered, selections }
   }
@@ -90,13 +90,13 @@ export function createHostedRuntimeDelivery(input: {
   const prepare = async ({ workspaceId }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
     if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return {}
     const person = await owner(workspaceId)
-    return { secrets: nativeProviderSecrets((await deliveries(person)).delivered) }
+    return { secrets: nativeProviderSecrets((await deliveries(workspaceId, person)).delivered) }
   }
   const push = async (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined) => {
     if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return
     const person = await owner(workspaceId)
     const config = await userAgentConfigStore(input.settings, person.userId).read()
-    const { delivered, selections } = await deliveries(person)
+    const { delivered, selections } = await deliveries(workspaceId, person)
     const snapshot = composeRuntimeConfigSnapshot({
       config,
       provisionedRunner: input.provisionedRunner,

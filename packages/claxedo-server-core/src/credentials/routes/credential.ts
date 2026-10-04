@@ -442,7 +442,7 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
       if (body.data.driver !== null && !chosen) {
         return c.json(errorBody("sandbox_driver_key_missing", "Add a key for this sandbox provider before choosing it"), 400)
       }
-      await sandboxKeys.chooseDriver(keyContext(c.req.raw), chosen ? sandboxKeys.drivers.find((id) => id === chosen.provider_id) : undefined)
+      await sandboxKeys.chooseDriver(c.req.raw, keyContext(c.req.raw), chosen ? sandboxKeys.drivers.find((id) => id === chosen.provider_id) : undefined)
       return c.json(await sandboxListing(c.req.raw, sandboxKeys))
     })
     .get("/:providerId", async (c) => {
