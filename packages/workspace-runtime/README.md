@@ -14,6 +14,10 @@ See [`docs/architecture.md`](docs/architecture.md) for the five deployment
 shapes, the two event systems, the harness transport seam, and the
 journal-backed store, in one place.
 
+## Terminal creation ownership
+
+A PTY's pid can reach the runtime before its child has made itself a process-group leader. `pty/creation-identity.ts` reads the new process's creation identity for up to one second until it leads its own group, and records nothing for a process older than the spawn, one whose identity changes meanwhile, or one that exits. Only a recorded identity lets removal retire the terminal's detached descendants by signal.
+
 ## Install
 
 ```sh
