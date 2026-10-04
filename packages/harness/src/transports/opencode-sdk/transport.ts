@@ -6,7 +6,8 @@ import { loadLaunchDocument } from "./launch-policy.js"
 import { openCodeLocationClient } from "./host.js"
 import { openCodeCapabilities } from "./capabilities.js"
 import { rollbackOpenCodeSession } from "./open-rollback.js"
-import { engineProviderBinding } from "./credentials.js"
+import { engineProviderBinding, selectedPlan } from "./credentials.js"
+import { createPlanLogin, type OpenCodePlanLogin } from "./chatgpt-plan.js"
 import { applyEngineProviders, engineProviderConfigurationKey, engineProviderDefinitions } from "./provider-configuration.js"
 import { OpenCodeOwnerMismatchError } from "./errors.js"
 import { TransportError } from "../../contract/errors.js"
@@ -25,6 +26,7 @@ import { attachedSessionEntry, mergeStartInput, sessionConnectionHealth, session
 export class OpenCodeSdkTransport implements HarnessTransport {
   readonly kind = "opencode-sdk" as const
   private readonly runtime: OpenCodeRuntime
+  private readonly plan: OpenCodePlanLogin
   private readonly entries = new Map<string, Entry>()
   private readonly bindingChanges = createKeyedSerializer()
   private providerInput?: DraftLaunch
@@ -33,7 +35,9 @@ export class OpenCodeSdkTransport implements HarnessTransport {
   private readonly closing = new AbortController()
 
   constructor(private readonly services: HarnessServices, options: OpenCodeSdkTransportOptions) {
-    this.runtime = createOpenCodeRuntime(options)
+    this.plan = createPlanLogin(() => this.runtime.host, { refresh: async (request) => this.services.refreshCredential?.(request),
+      sessions: () => [...this.entries].flatMap(([id, entry]) => entry.active ? [id] : []) })
+    this.runtime = createOpenCodeRuntime({ ...options, plugins: [...(options.plugins ?? []), this.plan.plugin] })
   }
 
   private assertOwner(credentials: DraftLaunch["credentials"]): void {
@@ -97,7 +101,8 @@ export class OpenCodeSdkTransport implements HarnessTransport {
     } catch (error) {
       const failures = await rollbackOpenCodeSession({ runtime: this.runtime, scope, upstream, rowID: row?.id,
         registered, priorDefinitions: priorStart ? engineProviderDefinitions(priorStart) : [],
-        ...(priorStart ? { priorBinding: engineProviderBinding(priorStart) } : {}) })
+        ...(priorStart ? { priorBinding: engineProviderBinding(priorStart) } : {}),
+        restorePlan: () => this.plan.offer(priorStart && selectedPlan(priorStart.credentials), scope.directory) })
       this.providerInput = priorStart
       if (failures.length) throw new TransportError("opencode", "session",
         `OpenCode open failed and rollback failed: ${failures.map((failure) => errorMessage(failure)).join("; ")}`, { cause: error })
@@ -114,9 +119,11 @@ export class OpenCodeSdkTransport implements HarnessTransport {
   }
 
   private async applyProviders(input: DraftLaunch): Promise<void> {
-    if (this.providerInput && engineProviderConfigurationKey(input) === engineProviderConfigurationKey(this.providerInput)) return
-    await applyEngineProviders(this.runtime, input, this.providerInput)
-    this.providerInput = input
+    if (!this.providerInput || engineProviderConfigurationKey(input) !== engineProviderConfigurationKey(this.providerInput)) {
+      await applyEngineProviders(this.runtime, input, this.providerInput)
+      this.providerInput = input
+    }
+    await this.plan.offer(selectedPlan(input.credentials), this.scope(input).directory)
   }
 
   private readAsDraft<T>(draft: DraftLaunch, read: (scope: WorkspaceScope) => Promise<T>): Promise<T> {

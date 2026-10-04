@@ -11,6 +11,7 @@ export async function rollbackOpenCodeSession(input: {
   registered: boolean
   priorDefinitions?: readonly ProviderDefinition[]
   priorBinding?: ProviderBinding
+  restorePlan(): Promise<void>
 }): Promise<unknown[]> {
   const failures: unknown[] = []
   if (input.registered && input.rowID) {
@@ -22,5 +23,6 @@ export async function rollbackOpenCodeSession(input: {
   try { await input.runtime.defineProviders(input.priorDefinitions ?? []) } catch (cause) { failures.push(cause) }
   try { await input.runtime.bindProviders(input.priorBinding ?? noProviderBinding) }
   catch (cause) { failures.push(cause) }
+  try { await input.restorePlan() } catch (cause) { failures.push(cause) }
   return failures
 }

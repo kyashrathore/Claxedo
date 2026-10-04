@@ -89,8 +89,12 @@ export function accountHolder(launch: LaunchComposer, owner: TurnActor): string 
   return owner.kind === "person" ? owner.userId : "machine-owner"
 }
 
-/** Harnesses that spend an account handed over as its secret: Pi calls the vendor in process, Codex signs in with a ChatGPT plan's tokens. */
-const DIRECT_HARNESSES: ReadonlySet<string> = new Set(["pi", "codex"])
+/**
+ * Harnesses that spend an account handed over as its secret: Pi calls the
+ * vendor in process, and Codex and OpenCode sign in with a ChatGPT plan's
+ * access token.
+ */
+const DIRECT_HARNESSES: ReadonlySet<string> = new Set(["pi", "codex", "opencode"])
 
 export function sessionCredentials(launch: LaunchComposer, session: Pick<SessionLaunch, "owner" | "config">): ResolvedCredentials {
   const snapshot = launch.credentials()

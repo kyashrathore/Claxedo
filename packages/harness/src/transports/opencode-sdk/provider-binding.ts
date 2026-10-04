@@ -3,7 +3,8 @@ import type { Plugin } from "@opencode-ai/plugin"
 import { watchPluginEvents } from "./plugin-events.js"
 
 export type ProviderBindingBound = Readonly<{ baseURL: string; apiKey: string }>
-export type ProviderBindingOverlay = ProviderBindingBound | ProviderUnavailable
+export type ProviderBindingPlan = Readonly<{ baseURL: string; plan: string }>
+export type ProviderBindingOverlay = ProviderBindingBound | ProviderBindingPlan | ProviderUnavailable
 export type ProviderBinding = Readonly<{
   overlays: Readonly<Record<string, ProviderBindingOverlay>>
   unbound: "engine" | "disabled"
@@ -23,7 +24,8 @@ type HeldTransform = { register: () => Promise<Registration>; holds: () => Promi
 function holds(provider: Pick<CatalogProvider, "settings" | "activation">, overlay: ProviderBindingOverlay): boolean {
   return isProviderUnavailable(overlay)
     ? provider.activation === "disabled"
-    : provider.activation !== "auto" && provider.settings?.baseURL === overlay.baseURL && provider.settings?.apiKey === overlay.apiKey
+    : provider.activation !== "auto" && provider.settings?.baseURL === overlay.baseURL
+      && ("plan" in overlay || provider.settings?.apiKey === overlay.apiKey)
 }
 
 class BindingPolicy {
@@ -43,7 +45,7 @@ class BindingPolicy {
           return
         }
         if (provider.activation !== "disabled") provider.activation = "enabled"
-        provider.settings = { ...provider.settings, baseURL: overlay.baseURL, apiKey: overlay.apiKey }
+        provider.settings = { ...provider.settings, baseURL: overlay.baseURL, ...("plan" in overlay ? {} : { apiKey: overlay.apiKey }) }
       })
     }
     if (this.binding.unbound !== "disabled") return

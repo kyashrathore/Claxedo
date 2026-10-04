@@ -19,9 +19,10 @@ export type CredentialReach = { local: true; cloud: boolean; reason?: string }
 
 /**
  * The plan logins a cloud runtime is handed as the access token itself. Codex
- * signs in with a ChatGPT plan's tokens (`chatgptAuthTokens`) and Pi reads the
- * account from the token, so each sends the plan's account header on its own
- * and no edge has to; the refresh token stays with the credential store.
+ * signs in with a ChatGPT plan's tokens (`chatgptAuthTokens`), and OpenCode's
+ * plan path and Pi read the account from the token, so each sends the plan's
+ * account header on its own and no edge has to; the refresh token stays with
+ * the credential store.
  */
 const DIRECT_PLAN_PROVIDERS: ReadonlySet<string> = new Set(["codex-app-server"])
 
