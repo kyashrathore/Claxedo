@@ -80,7 +80,9 @@ survive process restarts.
 The Boat driver assigns the mounted workspace root to the container's runtime
 user before starting the runtime, so Git accepts the checkout's ownership.
 It changes only the mount root's owner, preserving ownership within the person's
-checkout. A container is reused only when its image and boot command both match;
+checkout. Docker's init process reaps orphaned harness children so exited Git
+children cannot leave a retired Codex process group populated by zombies.
+A container is reused only when its image, init setting and boot command match;
 replacing an outdated container preserves the bind-mounted workspace and state.
 The Boat driver checks the runtime's health endpoint after starting its container.
 If startup never becomes healthy, the failure includes a bounded container log

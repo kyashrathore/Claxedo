@@ -111,7 +111,7 @@ function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnc
  * answers the slot's image and boot command, and `run` fills the slot unless Boat's own
  * recreation (`recreatedDuringRun`) fills it first and the create conflicts.
  */
-function runStartCommand(command: string, vm: { existingImage?: string; existingCommand?: string; daemonUpAfter?: number; recreatedDuringRun?: string }) {
+function runStartCommand(command: string, vm: { existingImage?: string; existingCommand?: string; existingInit?: boolean; daemonUpAfter?: number; recreatedDuringRun?: string }) {
   const dir = mkdtempSync(path.join(tmpdir(), "boat-start-"))
   const bin = path.join(dir, "bin")
   mkdirSync(bin)
@@ -130,7 +130,7 @@ function runStartCommand(command: string, vm: { existingImage?: string; existing
     `  info) n=$(($(cat ${dir}/info 2>/dev/null || echo 0) + 1)); echo $n > ${dir}/info; [ $n -gt ${vm.daemonUpAfter ?? 0} ] ;;`,
     `  inspect) cat ${slot} 2>/dev/null ;;`,
     `  rm) rm -f ${slot} ;;`,
-    `  run) for last; do :; done; printf '%s' "$last" > ${dir}/boot; printf '%s -lc %s' '${vm.recreatedDuringRun ?? vm.existingImage ?? IMAGE}' "$last" > ${slot}; if [ -n "${vm.recreatedDuringRun ?? ""}" ]; then echo Conflict >&2; exit 125; fi ;;`,
+    `  run) init=false; for last; do [ "$last" != --init ] || init=true; done; printf '%s' "$last" > ${dir}/boot; printf '%s %s -lc %s' '${vm.recreatedDuringRun ?? vm.existingImage ?? IMAGE}' "$init" "$last" > ${slot}; if [ -n "${vm.recreatedDuringRun ?? ""}" ]; then echo Conflict >&2; exit 125; fi ;;`,
     `  start) [ -f ${slot} ] ;;`,
     `esac`,
   ].join("\n"))
@@ -140,7 +140,8 @@ function runStartCommand(command: string, vm: { existingImage?: string; existing
     const workspace = path.join(dir, "claxedo-persistent", "workspace")
     mkdirSync(workspace, { recursive: true })
     writeFileSync(path.join(workspace, "user-work.txt"), "keep my work")
-    if (vm.existingCommand) writeFileSync(slot, `${vm.existingImage} -lc ${vm.existingCommand}`)
+    if (vm.existingCommand) writeFileSync(slot, `${vm.existingImage} true -lc ${vm.existingCommand}`)
+    if (vm.existingInit === false) writeFileSync(slot, readFileSync(slot, "utf8").replace(" true -lc ", " false -lc "))
     writeFileSync(log, "")
     writeFileSync(path.join(dir, "info"), "0")
   }
@@ -399,6 +400,15 @@ describe("boat sandbox driver", () => {
     const run = runStartCommand(await startCommand(), { existingImage: IMAGE, daemonUpAfter: 1 })
     expect(run.status).toBe(0)
     expect(run.calls).toEqual(["info", "info", "inspect --format", "start claxedo-runtime"])
+  })
+
+  test("a container without an init reaper is replaced while its persistent workspace is kept", async () => {
+    const command = await startCommand()
+    expect(command).toContain("docker run -d --init --name claxedo-runtime")
+    const run = runStartCommand(command, { existingImage: IMAGE, existingInit: false })
+    expect(run.status).toBe(0)
+    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d"])
+    expect(readFileSync(path.join(run.dir, "claxedo-persistent", "workspace", "user-work.txt"), "utf8")).toBe("keep my work")
   })
 
   test("a container of another image is replaced by one of the image this boot names", async () => {

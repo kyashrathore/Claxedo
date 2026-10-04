@@ -210,12 +210,12 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
       `exec ${runtimeCommand}`,
     ].join(" && ")
     const mounts = [["workspace", directory], ...PERSISTENT_HOME_MOUNTS]
-    const run = `docker run -d --name ${containerName} -p ${port}:${port} `
+    const run = `docker run -d --init --name ${containerName} -p ${port}:${port} `
       + `-v "$(pwd)/${RUNTIME_ENV_PATH}:${CONTAINER_ENV_PATH}:ro" `
       + mounts.map(([source, target]) => `-v "$(pwd)/${PERSISTENT_ROOT}/${source}":${shell(target)} `).join("")
       + `--entrypoint sh ${image} -lc ${shell(bootScript)}`
-    const identity = shell(`${resolveImage(input)} -lc ${bootScript}`)
-    const ours = `[ "$(docker inspect --format '{{.Config.Image}} {{join .Config.Cmd " "}}' ${containerName} 2>/dev/null)" = ${identity} ]`
+    const identity = shell(`${resolveImage(input)} true -lc ${bootScript}`)
+    const ours = `[ "$(docker inspect --format '{{.Config.Image}} {{.HostConfig.Init}} {{join .Config.Cmd " "}}' ${containerName} 2>/dev/null)" = ${identity} ]`
     const steps = [
       `chmod 600 ${RUNTIME_ENV_PATH}`,
       `timeout ${DOCKER_DAEMON_WAIT_SECONDS} sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'`,
