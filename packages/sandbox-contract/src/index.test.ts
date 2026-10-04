@@ -7,6 +7,8 @@ import {
   safeRepoUrl,
   sandboxDriverAuthValues,
   dockerSandboxDriverEnabled,
+  effectiveSandboxDriver,
+  sandboxDriverSecret,
   isSandboxDriverID,
   sandboxDriverCredentialFields,
   sandboxDriverIds,
@@ -32,6 +34,21 @@ describe("sandbox contract", () => {
     expect(isSandboxDriverID("Vercel")).toBe(false)
     expect(isSandboxDriverID("fetch")).toBe(false)
     expect(isSandboxDriverID(undefined)).toBe(false)
+  })
+
+  test("a driver secret holds every catalog field, trimmed, with the Worker URL canonical", () => {
+    expect(sandboxDriverSecret("boat", { api_key: "  bx-1 ", extra: "dropped" })).toBe(JSON.stringify({ api_key: "bx-1" }))
+    expect(sandboxDriverSecret("cloudflare", { api_token: "cf", worker_url: "https://worker.test/sandbox/" }))
+      .toBe(JSON.stringify({ api_token: "cf", worker_url: "https://worker.test/sandbox" }))
+    expect(sandboxDriverSecret("cloudflare", { api_token: "cf", worker_url: "http://worker.test" })).toBeUndefined()
+    expect(sandboxDriverSecret("vercel", { access_token: "t", team_id: "team", project_id: " " })).toBeUndefined()
+  })
+
+  test("new workspaces use the chosen keyed driver, else the first keyed one, else the managed one", () => {
+    expect(effectiveSandboxDriver({ chosen: "boat", keyed: ["cloudflare", "boat"], managed: "fetch" })).toBe("boat")
+    expect(effectiveSandboxDriver({ chosen: "vercel", keyed: ["cloudflare", "boat"], managed: "fetch" })).toBe("cloudflare")
+    expect(effectiveSandboxDriver({ chosen: "boat", keyed: [], managed: "fetch" })).toBe("fetch")
+    expect(effectiveSandboxDriver({ keyed: [] })).toBeUndefined()
   })
 
   test("keeps local Docker activation explicit", () => {

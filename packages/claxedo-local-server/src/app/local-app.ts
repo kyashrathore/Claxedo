@@ -49,6 +49,7 @@ import { embeddedSessionDrivenOnlyByMachineUser, onEmbeddedWorkspaceRuntime } fr
 import { ProjectRoutes } from "@claxedo/server-core/projects/routes"
 import { localProjectStore, systemRepoAddresses } from "@claxedo/server-core/projects/local-store"
 import { requireSignedControlPlaneRoute } from "@claxedo/server-core/platform/http/control-plane-route-auth"
+import { localSandboxDriverKeys } from "../credentials/sandbox-driver-keys"
 import { CredentialRoutes } from "@claxedo/server-core/credentials/routes/credential"
 import { readMachineAgentUsage } from "../usage/adapters/token-tracker-usage-limits"
 import { ProviderAuthRoutes } from "@claxedo/server-core/credentials/routes/provider-auth"
@@ -73,7 +74,6 @@ import {
 import { TASKS_OPERATIONS } from "@claxedo/server-core/tasks-host/capability"
 import { BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import type { TasksSessionGrants } from "@claxedo/server-core/tasks-host/session-grants"
-import { SandboxDriverSettingsRoutes } from "@claxedo/server-core/sandbox/routes/sandbox-driver-settings-routes"
 import { BROKER_ROUTE_PATTERN, isBrokerPath, loopbackBrokerRoutes } from "@claxedo/egress-broker"
 import type { LocalDaemonLifecycle, MachineRecoveryCaller } from "./local-daemon-lifecycle"
 import {
@@ -446,6 +446,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   app.route("/", ProviderAuthRoutes({ service: createProviderAuthService(services.credentials), ...authRouteOptions(services) }))
   app.route("/api/claxedo/credentials", CredentialRoutes(services.credentials, {
     agentUsage: readMachineAgentUsage,
+    sandboxDriverKeys: localSandboxDriverKeys(env),
     ...authRouteOptions(services),
     ...(env.CLAXEDO_CREDENTIALS_TOKEN?.trim() ? { token: env.CLAXEDO_CREDENTIALS_TOKEN.trim() } : {}),
     // Derived from the environment, never caller-supplied, since an omitted
@@ -497,13 +498,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     ...(options.refreshSessionProjection ? { refreshSessionProjection: options.refreshSessionProjection } : {}),
   }))
   const localWorkspaceRoutes = LocalWorkspaceRoutes(authRouteOptions(services))
-  const sandboxDriverSettingsRoutes = SandboxDriverSettingsRoutes({
-    credentials: services.credentials,
-    env,
-    ...authRouteOptions(services),
-  })
   app.route("/api/claxedo/workspace", localWorkspaceRoutes)
-  app.route("/api/claxedo/workspace", sandboxDriverSettingsRoutes)
   app.route("/api/claxedo/projects", ProjectRoutes({
     store: localProjectStore(),
     authenticate: (request) => requireSignedControlPlaneRoute(request, authRouteOptions(services)),
@@ -514,7 +509,6 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   // every product. On desktop, the authoritative local workspace store answers
   // it; this avoids treating an intentionally absent hosted router as a 404.
   app.route("/api/workspace", localWorkspaceRoutes)
-  app.route("/api/workspace", sandboxDriverSettingsRoutes)
   app.route("/api/claxedo/network-policy", NetworkPolicyRoutes(authRouteOptions(services)))
   app.route("/api/claxedo/host-serving", HostServingRoutes())
   app.route("/api/claxedo/host-provider-config", HostProviderConfigRoutes())

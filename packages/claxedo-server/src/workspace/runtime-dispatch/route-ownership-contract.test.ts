@@ -55,7 +55,6 @@ describe("route ownership", () => {
       "/api/control",
       "/api/control/runtime/heartbeat",
       "/api/workspace",
-      "/api/workspace/drivers",
       "/api/claxedo/network-policy",
       "/documents",
       "/documents/some-document",
