@@ -540,8 +540,17 @@ export const desktopRenderer: Policy = {
   // cloud workspace dialog and environment drawer (`projects/view/where-it-runs.tsx`,
   // `new-cloud-workspace-dialog.tsx`, `project-environment-drawer.tsx`) replace
   // the cloud domain's section, row and inline create form, the placement list
-  // and the inline connect form. They add no package edge. 1327/36, no headroom.
-  ceilings: { modules: 1327, packages: 36 },
+  // and the inline connect form. They add no package edge.
+  // The shell's loading and sign-in surfaces (owner: the app's shell, auth and
+  // kit domains): the one placeholder bar (`ui/controls/skeleton.tsx` and its
+  // stylesheet), the artwork plate shared by onboarding and sign-in
+  // (`ui/controls/artwork-plate.tsx` and its stylesheet), the two-column
+  // sign-in layout (`auth/view/auth-split.tsx`), the on-demand view helper the
+  // split routes load through (`lib/lazy-view.ts`), and the auth store's read
+  // of the last signed-in user for the startup restore (`auth/persistence.ts`,
+  // which the renderer did not reach before). They add no package edge.
+  // 1334/36, no headroom.
+  ceilings: { modules: 1334, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

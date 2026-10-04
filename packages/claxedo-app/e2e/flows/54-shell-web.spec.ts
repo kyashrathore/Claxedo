@@ -4,11 +4,9 @@ import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, test, UI, type SignedStac
 async function held(page: Page, pattern: RegExp) {
   const waiting: Route[] = []
   let failing = false
-  await page.route(pattern, (route) => {
-    if (failing) {
-      return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "history read failed" }) })
-    }
-    waiting.push(route)
+  await page.route(pattern, async (route) => {
+    if (failing) await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "history read failed" }) })
+    else waiting.push(route)
   })
   return {
     fail: () => (failing = true),
