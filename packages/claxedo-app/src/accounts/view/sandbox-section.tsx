@@ -1,10 +1,10 @@
-import { createSignal, For, Match, Show, Switch } from "solid-js"
+import { For, Match, Show, Switch } from "solid-js"
 import { useAccess } from "@/access"
 import { SettingsEmpty, SettingsGroup, SettingsList, SettingsNote, SettingsRow } from "@/settings"
-import { Select } from "@/ui"
+import { Select, useDialog } from "@/ui"
 import { useAccountsText } from "../i18n"
 import { useSandboxKeys, type SandboxKeysStore, type SandboxListing } from "../sandbox-store"
-import { SandboxKeyForm } from "./sandbox-key-form"
+import { DrawerSandboxKey } from "./sandbox-key-form"
 import { SandboxKeyRow } from "./sandbox-key-row"
 
 const LINK = "rounded-md border-none bg-transparent px-1 py-0.5 text-12-regular text-text-interactive-base"
@@ -34,12 +34,10 @@ function DefaultDriver(props: { readonly listing: SandboxListing; readonly store
 
 function SandboxKeys(props: { readonly listing: SandboxListing; readonly store: SandboxKeysStore }) {
   const t = useAccountsText()
-  const [adding, setAdding] = createSignal(false)
+  const dialog = useDialog()
   const label = (providerId: string) => props.listing.drivers.find((driver) => driver.id === providerId)?.label ?? providerId
   const add = (
-    <Show when={!adding()}>
-      <button type="button" class={LINK} onClick={() => setAdding(true)}>{t("settings.sandbox.add")}</button>
-    </Show>
+    <button type="button" class={LINK} onClick={() => dialog.show(() => <DrawerSandboxKey drivers={props.listing.drivers} store={props.store} />)}>{t("settings.sandbox.add")}</button>
   )
   return (
     <SettingsGroup title={t("settings.sandbox.title")} description={t("settings.sandbox.description")} action={add}>
@@ -47,13 +45,10 @@ function SandboxKeys(props: { readonly listing: SandboxListing; readonly store: 
         <DefaultDriver listing={props.listing} store={props.store} />
         <For each={props.listing.keys}>{(account) => <SandboxKeyRow account={account} label={label(account.providerId)} store={props.store} />}</For>
       </SettingsList>
-      <Show when={props.listing.keys.length === 0 && !adding()}>
+      <Show when={props.listing.keys.length === 0}>
         <SettingsEmpty>
           <span>{t("settings.sandbox.empty")}</span>
         </SettingsEmpty>
-      </Show>
-      <Show when={adding()}>
-        <SandboxKeyForm drivers={props.listing.drivers} store={props.store} onDone={() => setAdding(false)} />
       </Show>
     </SettingsGroup>
   )

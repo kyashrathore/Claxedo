@@ -14,8 +14,8 @@ test("15 settings: the machine's operator adds a sandbox provider key, sees it i
   await expect(sandbox.getByText("No sandbox keys yet.", { exact: true })).toBeVisible()
   await expect(sandbox.getByText("None yet", { exact: true })).toBeVisible()
 
-  await sandbox.getByRole("button", { name: "Add a key", exact: true }).click()
-  const form = sandbox.getByRole("form", { name: "Add a key" })
+  await sandbox.getByRole("button", { name: "Add a key…", exact: true }).click()
+  const form = app.getByRole("dialog", { name: "Add a sandbox key" })
   await form.getByRole("textbox", { name: "Token ID", exact: true }).fill("modal-token-id")
   await form.getByLabel("Token Secret", { exact: true }).fill("modal-token-secret")
   await form.getByRole("button", { name: "Save key", exact: true }).click()

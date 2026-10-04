@@ -1,13 +1,13 @@
-import { createSignal, For, Show } from "solid-js"
+import { createSignal, For } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { SandboxDriverOption } from "@/server"
-import { SettingsNote } from "@/settings"
-import { Button, Select, TextField } from "@/ui"
+import { Field, FormDrawer, Select, TextField, useDialog } from "@/ui"
 import { useAccountsText } from "../i18n"
 import type { SandboxKeysStore } from "../sandbox-store"
 
-export function SandboxKeyForm(props: { readonly drivers: readonly SandboxDriverOption[]; readonly store: SandboxKeysStore; readonly onDone: () => void }) {
+export function DrawerSandboxKey(props: { readonly drivers: readonly SandboxDriverOption[]; readonly store: SandboxKeysStore }) {
   const t = useAccountsText()
+  const dialog = useDialog()
   const [driverId, setDriverId] = createSignal(props.drivers[0]?.id)
   const [values, setValues] = createStore<Record<string, string>>({})
   const [missing, setMissing] = createSignal(false)
@@ -19,19 +19,31 @@ export function SandboxKeyForm(props: { readonly drivers: readonly SandboxDriver
     const fields = Object.fromEntries(chosen.fields.map((field) => [field.key, (values[field.key] ?? "").trim()]))
     setMissing(Object.values(fields).some((value) => !value))
     if (missing()) return
-    if (await props.store.save(chosen.id, fields)) props.onDone()
+    if (await props.store.save(chosen.id, fields)) dialog.close()
   }
   return (
-    <form class="settings-fields" aria-label={t("settings.sandbox.add")} onSubmit={(event) => { event.preventDefault(); void submit() }}>
-      <Select
-        aria-label={t("settings.sandbox.add.provider")}
-        options={[...props.drivers]}
-        current={driver()}
-        value={(option) => option.id}
-        label={(option) => option.label}
-        onSelect={(option) => option && setDriverId(option.id)}
-        appearance="inline"
-      />
+    <FormDrawer
+      title={t("settings.sandbox.add.title")}
+      description={t("settings.sandbox.description")}
+      submitLabel={t("settings.sandbox.add.save")}
+      busyLabel={t("settings.sandbox.add.saving")}
+      cancelLabel={t("common.cancel")}
+      busy={saving()}
+      error={missing() ? t("settings.sandbox.add.required") : undefined}
+      onSubmit={() => void submit()}
+      onCancel={() => dialog.close()}
+    >
+      <Field>
+        <Field.Label>{t("settings.sandbox.add.provider")}</Field.Label>
+        <Select
+          aria-label={t("settings.sandbox.add.provider")}
+          options={[...props.drivers]}
+          current={driver()}
+          value={(option) => option.id}
+          label={(option) => option.label}
+          onSelect={(option) => option && setDriverId(option.id)}
+        />
+      </Field>
       <For each={driver()?.fields ?? []}>
         {(field) => (
           <TextField
@@ -44,13 +56,6 @@ export function SandboxKeyForm(props: { readonly drivers: readonly SandboxDriver
           />
         )}
       </For>
-      <Show when={missing()}>
-        <SettingsNote tone="danger">{t("settings.sandbox.add.required")}</SettingsNote>
-      </Show>
-      <div class="flex items-center gap-2">
-        <Button type="submit" size="small" disabled={saving()}>{saving() ? t("settings.sandbox.add.saving") : t("settings.sandbox.add.save")}</Button>
-        <Button type="button" size="small" variant="ghost" disabled={saving()} onClick={() => props.onDone()}>{t("common.cancel")}</Button>
-      </div>
-    </form>
+    </FormDrawer>
   )
 }
