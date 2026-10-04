@@ -4,7 +4,7 @@ import { ArtworkPlate } from "@/ui"
 export function AuthSplit(props: { readonly title: string; readonly lead: string; readonly children: JSX.Element }) {
   return (
     <main class="auth-split">
-      <div class="auth-split-art">
+      <div class="auth-split-art" data-testid="sign-in-artwork">
         <ArtworkPlate class="auth-split-plate" />
       </div>
       <section class="auth-split-panel">

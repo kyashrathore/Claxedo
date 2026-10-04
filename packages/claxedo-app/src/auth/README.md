@@ -20,11 +20,13 @@ Owns: the account, as one port with two bindings: the browser's own sign-in sess
 
 `AuthState`: `signedOut(reason?)` → `signingIn` → `signedIn(user)`; `signedIn` → `expired` when a refresh is refused. Events: `started`, `settled(user, reason?)`, `signedOut`, `expired`. The session's `loading`, `user` and `unavailable` signals feed `settled`; nothing else decides the state. Main's desktop states map onto it: `pending` → `signingIn`, `signed` → `signedIn` (with `identityResolving` while its name is still being looked up), `unsigned` → `signedOut`, `unavailable` → `signedOut` with main's detail as the reason. A state main never sends decodes as unavailable, never as signed.
 
+`restoringUserId()`: the last user id this browser recorded (`persistence.ts`), only from creation until the first `settled`, which ends it in the same update as the state; an interactive sign-in never sets it. The app builds the server scope for it so startup reads run beside the session read (`src/shell/README.md`).
+
 `InvitationState` (`model.ts`): `idle` → `authenticating` → `accepting` → `joined(result)` or `failed(failure)`. Pending email verification returns to `idle`. A refused acceptance can be retried explicitly; a successful acceptance is retained so the screen sends no second consume request.
 
 ## Routes
 
-`authRoutes` (`routes.ts`): `/login`, `/device` (device grant approval, where the CLI's sign-in is approved), `/oauth/consent` (MCP scope consent), `/invitations#<token>` (sign-up/sign-in and invitation acceptance). The shell registers them outside the app shell.
+`authRoutes` (`routes.ts`): `/login` and `/invitations` draw `AuthSplit` (`view/auth-split.tsx`): the kit's `ArtworkPlate` in the left column from 768 px, and one column with the title, one line and the sign-in methods (the provider's mark on its button, then email) on a phone. Routes: `/login`, `/device` (device grant approval, where the CLI's sign-in is approved), `/oauth/consent` (MCP scope consent), `/invitations#<token>` (sign-up/sign-in and invitation acceptance). The shell registers them outside the app shell.
 
 ## Invariants
 
