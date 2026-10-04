@@ -101,7 +101,9 @@ export const serverWorkerd: Policy = {
   // the turn lease check it shares with connection secrets
   // (`session/turn-lease-authority.ts`); both of a sandbox's secret routes are
   // served by the `routes/runtime-sandbox-secrets.ts` router.
-  ceilings: { modules: 141, packages: 19 },
+  // Hosted OpenCode account projection is owned by credentials/worker/opencode.ts;
+  // it joins the caller's selected D1 accounts with the authorized runtime catalog.
+  ceilings: { modules: 142, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

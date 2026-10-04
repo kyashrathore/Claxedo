@@ -74,20 +74,21 @@ const ENTRIES = [
   // mid-turn (`routes/runtime-credential-refresh.ts`) under the turn lease
   // check connection secrets share (`session/turn-lease-authority.ts`), both
   // served by the `routes/runtime-sandbox-secrets.ts` router.
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 141, packages: 19 },
+  // Each hosted entry includes credentials/worker/opencode.ts, the selected-account catalog owner.
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 142, packages: 19 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
   // plus `agent-plugins/signed-scope.ts`, the caller and write guard the
   // activation and source stores share, and the Pi launch a session served by
   // its own Durable Object is delivered (`agent-plugins/runtime/session-host-launch.ts`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 193, packages: 23 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 194, packages: 23 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
   // ready cloud runtime and admits it at the session-rows ingest, and only
   // this entry has cloud runtimes to publish rows.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 200, packages: 23 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 201, packages: 23 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

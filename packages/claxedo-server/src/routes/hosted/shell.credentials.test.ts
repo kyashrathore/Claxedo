@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "vitest"
 import { HostedShellRoutes } from "./shell"
 import type { ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
+import type { OpenCodeCatalog } from "@claxedo/server-core/credentials/opencode-provider-projection"
 
 // An unverifiable bearer falls back to `verifyCliAccessBearer`, which reads
 // these from process.env. Clear them so "invalid token" is deterministic here
@@ -49,6 +50,29 @@ const verifier = async (token: string) => {
 function app() {
   return HostedShellRoutes({ authConfig: signedConfig, verifier })
 }
+
+test("hosted OpenCode catalog authenticates the caller and serves summary and provider views", async () => {
+  const calls: unknown[] = []
+  const catalog = HostedShellRoutes({ authConfig: signedConfig, verifier, opencodeProviderCatalog: async (auth, workspaceId): Promise<OpenCodeCatalog> => {
+    calls.push({ owner: auth.user.subject, workspaceId })
+    return { all: [
+      { id: "openai", name: "OpenAI", env: [], source: "api", models: { gpt: { id: "gpt", name: "GPT", connected: true, free: false } } },
+      { id: "anthropic", name: "Anthropic", env: [], source: "config", models: { sonnet: { id: "sonnet", name: "Sonnet", connected: false, free: false } } },
+    ], connected: ["openai"], default: { openai: "gpt" } }
+  } })
+  const route = "/api/claxedo/agent-config/providers?nativeHarness=opencode&workspaceId=ws_a"
+  const headers = { authorization: "Bearer token-a" }
+  expect((await catalog.request(route)).status).toBe(401)
+  expect(calls).toEqual([])
+  const summary = await catalog.request(`${route}&view=summary`, { headers })
+  expect(summary.status).toBe(200)
+  expect((await summary.json()).all[1].models).toEqual({})
+  const detail = await catalog.request(`${route}&provider=anthropic`, { headers })
+  expect((await detail.json()).all).toMatchObject([{ id: "anthropic", models: { sonnet: { id: "sonnet" } } }])
+  expect(calls).toEqual(Array(2).fill({ owner: "user_a", workspaceId: "ws_a" }))
+  expect((await catalog.request(`${route}&view=invalid`, { headers })).status).toBe(400)
+  expect((await catalog.request(`${route}&provider=missing`, { headers })).status).toBe(404)
+})
 
 describe("sign-in methods", () => {
   test("every native harness is answered with the methods a cloud sandbox can spend: Codex's ChatGPT plan, never OpenAI's", async () => {
