@@ -21,7 +21,7 @@ import {
 
 import { JwksRoutes } from "../../authority/routes/jwks"
 import { OAuthProtectedResourceRoutes } from "../../mcp/oauth-protected-resource"
-import { HostedShellRoutes, hostedHarnessRuntimeStatus } from "../../routes/hosted/shell"
+import { HostedShellRoutes, hostedHarnessRuntimeStatus, hostedRuntimeProviderCatalog } from "../../routes/hosted/shell"
 import { HostedAuthProfileRoutes } from "../../routes/hosted/auth-profile"
 import { HostedDeviceAuthRoutes } from "../../routes/hosted/device-auth"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
@@ -60,6 +60,7 @@ import type { HostedControlPlane } from "../../authority/hosted-services"
 import type { IdempotencyCoordinator } from "../../authority/http/idempotency"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { hostedPiCredentials } from "../../credentials/worker/pi"
+import { hostedOpenCodeCredentials } from "../../credentials/worker/opencode"
 import { hostedCredentialRoutes, type HostedCredentialRoutesInput } from "../../credentials/worker/routes"
 import { envelopeKeyProviderFromEnv } from "@claxedo/server-core/credentials/envelope"
 import { hostedAgentConfigRoutes } from "../../agent-config/hosted-routes"
@@ -331,6 +332,11 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       liveSyncRoom: options.liveSyncRoom,
       ...(services.authority ? { resolveOrgId: (auth) => services.authority!.resolveOrgId(auth) } : {}),
       harnessStatus: hostedHarnessRuntimeStatus(services),
+      ...hostedOpenCodeCredentials({
+        resolveOrgId: (auth) => requireAuthority(services).resolveOrgId(auth),
+        credentials: plane.orgCredentials,
+        runtimeProviders: hostedRuntimeProviderCatalog(services),
+      }),
       ...hostedPiCredentials({
         resolveOrgId: (auth) => requireAuthority(services).resolveOrgId(auth),
         credentials: plane.orgCredentials,
