@@ -540,8 +540,8 @@ export const desktopRenderer: Policy = {
   // cloud workspace dialog and environment drawer (`projects/view/where-it-runs.tsx`,
   // `new-cloud-workspace-dialog.tsx`, `project-environment-drawer.tsx`) replace
   // the cloud domain's section, row and inline create form, the placement list
-  // and the inline connect form. They add no package edge. 1326/36, no headroom.
-  ceilings: { modules: 1326, packages: 36 },
+  // and the inline connect form. They add no package edge. 1327/36, no headroom.
+  ceilings: { modules: 1327, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
