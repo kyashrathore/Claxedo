@@ -3,30 +3,32 @@ import { useTranslator } from "@/i18n"
 import { usePreferences } from "@/settings"
 import { settingsPath, useShellRoute } from "@/shell"
 import { railDictionary } from "../i18n"
-import { AccountCard, USAGE_SECTION } from "./account-card"
+import { AccountCard } from "./account-card"
 import { ActivityView } from "./activity-view"
 import { GlobalNavigation } from "./global-navigation"
 import { ProjectTree } from "./project-tree"
 import { moveRowFocus } from "./row-navigation"
 import { createActivityFilter, SessionsHeading } from "./sessions-heading"
 import { SharedSessionsSection } from "./shared-sessions"
-import { ClaxedoIcon as Icon, Tooltip } from "@/ui"
+import { ClaxedoIcon as Icon } from "@/ui"
 
-function UsageButton(): JSX.Element {
+function SettingsEntry(): JSX.Element {
   const t = useTranslator(railDictionary)
   const routing = useShellRoute()
+  const active = () => routing.pathname().startsWith(settingsPath())
   return (
-    <Tooltip value={t("rail.account.usage")}>
-      <button
-        type="button"
-        aria-label={t("rail.account.usage")}
-        data-testid="rail-usage"
-        class="flex size-[var(--sidebar-row-height)] shrink-0 items-center justify-center rounded-[var(--sidebar-row-radius)] text-icon-weak-base transition-colors hover:bg-[var(--row-surface-hover)] hover:text-icon-base"
-        onClick={() => routing.navigate(settingsPath(USAGE_SECTION))}
-      >
-        <Icon name="gauge" size="small" />
-      </button>
-    </Tooltip>
+    <button
+      type="button"
+      aria-current={active() ? "page" : undefined}
+      class="sidebar-row w-full flex items-center gap-2 leading-4 font-medium transition-[background-color,color] duration-100"
+      classList={{ "bg-surface-base-hover text-text-strong": active(), "text-text-base/80 hover:text-text-base hover:bg-surface-base-hover/35": !active() }}
+      onClick={() => routing.navigate(settingsPath())}
+    >
+      <span class="flex size-4 shrink-0 items-center justify-center">
+        <Icon name="settings-gear" size="small" />
+      </span>
+      <span class="min-w-0 truncate leading-4">{t("rail.settings")}</span>
+    </button>
   )
 }
 
@@ -51,11 +53,11 @@ export function MainSidebar(): JSX.Element {
         </div>
       </div>
       <div class="px-2.5 py-2">
-        <div ref={foot} class="flex items-center gap-1 border-t border-border-weak-base/15 pt-2">
+        <SettingsEntry />
+        <div ref={foot} class="flex items-center gap-1 border-t border-border-weak-base/15 pt-2 mt-1">
           <div class="min-w-0 flex-1">
             <AccountCard anchor={() => foot} />
           </div>
-          <UsageButton />
         </div>
       </div>
     </>
