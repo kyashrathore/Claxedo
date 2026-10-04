@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
@@ -404,21 +404,28 @@ describe("boat sandbox driver", () => {
   })
 
   test.skipIf(process.platform !== "linux")("the actual boot command repairs a foreign-owned bind root before Git opens the checkout", async () => {
-    const root = (args: string[]) => process.getuid?.() === 0
-      ? spawnSync(args[0], args.slice(1), { encoding: "utf8" })
-      : spawnSync("sudo", ["-n", ...args], { encoding: "utf8" })
+    const root = (args: string[]) => {
+      const isolated = ["env", "-u", "SUDO_UID", "-u", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_COUNT=0", ...args]
+      return process.getuid?.() === 0
+        ? spawnSync(isolated[0], isolated.slice(1), { encoding: "utf8" })
+        : spawnSync("sudo", ["-n", ...isolated], { encoding: "utf8" })
+    }
     const dir = mkdtempSync(path.join(tmpdir(), "boat-mounted-owner-"))
     const workspace = path.join(dir, "workspace with 'quote")
     try {
       expect(root(["git", "init", "--quiet", workspace]).status).toBe(0)
       expect(root(["chown", "65534:65534", workspace]).status).toBe(0)
-      expect(root(["git", "-C", workspace, "rev-parse", "--show-toplevel"]).stderr).toContain("dubious ownership")
+      expect(statSync(workspace).uid).toBe(65534)
+      const refused = root(["git", "-C", workspace, "rev-parse", "--show-toplevel"])
+      expect(refused.status).toBe(128)
+      expect(refused.stderr).toContain("dubious ownership")
       const run = runStartCommand(await startCommand({ workspaceRoot: workspace }, "git rev-parse --show-toplevel"), {})
       const boot = readFileSync(path.join(run.dir, "boot"), "utf8").replace(". /run/claxedo-runtime.env", `. ${shell(path.join(run.dir, ".claxedo-runtime-env"))}`)
       const result = root(["sh", "-c", boot])
       expect(result.stderr).toBe("")
       expect(result.status).toBe(0)
       expect(result.stdout.trim()).toBe(workspace)
+      expect(statSync(workspace).uid).toBe(0)
     } finally {
       root(["rm", "-rf", "--", dir])
     }
