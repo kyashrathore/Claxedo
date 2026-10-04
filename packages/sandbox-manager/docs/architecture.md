@@ -74,6 +74,26 @@ the existing target keeps resolving for routing while the error is recorded
 for observability only; only a cold acquire/`"acquiring"` failure bumps
 `retryCount` and schedules backoff.
 
+## Start timing
+
+Each lease epoch starts once. A lease that is not serving yet records its start
+in `lease.start` (`SandboxStartProgress`), so a start that a driver answers with
+"provisioning" keeps its timing across the polls of later requests. A serving
+lease that is re-ensured is not a start, and the next `acquire` begins a new
+epoch with no start recorded.
+
+`provision()` ends `lease_decision` when it begins a start, `provider_ready`
+when the driver calls `onResource`, `image_ready` when a driver that can tell
+calls `onImageReady`, and `runtime_ready` when the driver returns a serving
+target. Each phase is timed from the one before. One provision call writes what
+it observed once, after the driver work, and emits each phase through the
+`onStartPhase` option. Phases from outside the manager join the same epoch:
+`recordStartPhases` takes durations the runtime measured inside the sandbox, and
+`markStartPhase` ends a phase now, refusing evidence older than the start. A
+phase reaches the sink at most once per epoch. The vocabulary and the
+`createSandboxPhaseTimer` a single process times its own phases with are in
+`@claxedo/sandbox-contract`.
+
 ## Driver comparison
 
 All eight metadata fields come straight from each driver's `metadata` object
