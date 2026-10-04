@@ -1164,7 +1164,7 @@ describe("hosted cloud workspace create (POST /create)", () => {
     await (waitUntil.mock.calls[0] as unknown as [Promise<unknown>])[0]
     expect(workspaceDriver).toHaveBeenCalledWith(body.workspaceId)
     expect(sandboxUsage.leaseOpened).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: body.workspaceId, driver: "boat", keyOwner: "org" }))
-    expect(sandboxUsage.leaseOpened.mock.invocationCallOrder[0]).toBeLessThan(ensure.mock.invocationCallOrder[0]!)
+    expect(sandboxUsage.leaseOpened.mock.invocationCallOrder[0]).toBeLessThan(ensure.mock.invocationCallOrder[0])
   })
 
   test("503 sandbox_driver_unavailable when no sandbox driver is composed", async () => {

@@ -154,8 +154,8 @@ export function sandboxEgressUnenforcedSink(telemetry: ControlPlaneTelemetry) {
 /**
  * Each cloud start phase as an ops-plane fact. The workspace's project is the
  * repository it checked out, which is what a per-repository read of recent
- * starts groups on; the repository URL itself is tenant data and stays out, as
- * does which organization key made the machine beyond that one did.
+ * starts groups on; the repository URL itself is tenant data and stays out,
+ * and so does the provider key: `key_owner` says only whose account it was.
  */
 export function sandboxStartPhaseSink(telemetry: ControlPlaneTelemetry) {
   return (event: SandboxStartPhaseEvent) => {
