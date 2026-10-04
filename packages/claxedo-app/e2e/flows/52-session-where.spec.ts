@@ -107,17 +107,17 @@ test("52 a refused cloud workspace says why in its dialog, and the draft keeps i
   await expect(page.getByRole("textbox", { name: UI.composer })).toHaveText("Keep this draft")
 })
 
-test("52 with one machine its folder is listed under the machine's own name with its state", async ({ signedCloud: signed, page }, testInfo) => {
+test("52 with one machine its folder is listed with the machine's own name and its state", async ({ signedCloud: signed, page }, testInfo) => {
   const folder = await signed.makeWorkspace("notes-folder", "notes")
   const [device] = await ownerDevices(signed)
   await signed.signIn(page, signed.owner)
   await page.goto(`${signed.url}${sessionRoute(folder.id)}`)
   const chip = whereChip(page)
-  await expect(chip).toHaveText("Signed fixture machine")
+  await expect(chip).toHaveText("notes-folder")
   await chip.click()
   const picker = wherePicker(page)
-  const row = picker.locator('[data-slot="list-item"]').filter({ hasText: "Signed fixture machine" })
-  await expect(row).toContainText(/Online|Offline/)
+  const row = picker.locator('[data-slot="list-item"]').filter({ hasText: "notes-folder" })
+  await expect(row).toContainText(/Signed fixture machine · (Online|Offline)/)
   await expect(picker.getByRole("button", { name: "Connect a machine…" })).toHaveCount(0)
   await expect(picker.getByRole("button", { name: /^New worktree on / })).toHaveCount(0)
   await expect(picker.getByText(/This computer|this machine/i)).toHaveCount(0)

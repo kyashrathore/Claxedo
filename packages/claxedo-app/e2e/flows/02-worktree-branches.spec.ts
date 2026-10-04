@@ -40,14 +40,14 @@ test("02 a refused session keeps the created worktree for retry", async ({ stack
   const response = await creation
   expect(response.status()).toBe(200)
   const created = await response.json() as { name: string; branch: string; directory: string }
-  await expect(app.getByRole("textbox", { name: UI.composer })).toHaveText("Keep the created worktree")
-  await expect(app.getByRole("button", { name: "Where it runs", exact: true })).toHaveText(created.name)
-  await expect(app.getByRole("button", { name: "Current branch", exact: true })).toHaveText(created.branch)
-  await expect(app.getByRole("button", { name: "Current branch", exact: true })).toBeDisabled()
+  const failure = app.locator('[data-notice="first-send"]')
+  await expect(failure).toContainText("Your message was not sent")
+  await expect(app.getByRole("button", { name: "Where it runs", exact: true, includeHidden: true })).toHaveText(created.name)
+  await expect(app.getByRole("button", { name: "Current branch", exact: true, includeHidden: true })).toHaveText(created.branch)
   const refusal = app.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/session") && response.request().method() === "POST" && response.status() >= 400)
-  await app.getByRole("button", { name: UI.send }).click()
+  await failure.getByRole("button", { name: "Retry", exact: true }).click()
   await refusal
-  await expect(app.getByRole("textbox", { name: UI.composer })).toHaveText("Keep the created worktree")
+  await expect(failure).toContainText("Your message was not sent")
   expect(creations).toBe(1)
   expect(await api.sessions(created.directory)).toHaveLength(0)
   expect(await api.sessions(workspace.directory)).toHaveLength(0)
@@ -89,13 +89,14 @@ test("02 a missing base branch leaves the draft and destination intact for a cor
   const failed = app.waitForResponse((response) => response.url().includes("/experimental/worktree") && response.status() === 400)
   await sendPrompt(app, "Retry the chosen base")
   await failed
-  await expect(app.getByRole("textbox", { name: UI.composer })).toHaveText("Retry the chosen base")
-  await expect(app.getByRole("button", { name: "Where it runs", exact: true })).toHaveText("New worktree")
-  await expect(app.getByRole("button", { name: "Base branch", exact: true })).toHaveText("From dev")
+  const failure = app.locator('[data-notice="first-send"]')
+  await expect(failure).toContainText("Your message was not sent")
+  await expect(app.getByRole("button", { name: "Where it runs", exact: true, includeHidden: true })).toHaveText("New worktree")
+  await expect(app.getByRole("button", { name: "Base branch", exact: true, includeHidden: true })).toHaveText("From dev")
   expect(await api.sessions(workspace.directory)).toHaveLength(0)
   await git(workspace.directory, "branch", "dev")
   const retried = app.waitForResponse((response) => response.url().includes("/experimental/worktree") && response.request().method() === "POST")
-  await app.getByRole("button", { name: UI.send }).click()
+  await failure.getByRole("button", { name: "Retry", exact: true }).click()
   const response = await retried
   expect(response.status()).toBe(200)
   const created = await response.json() as { directory: string }

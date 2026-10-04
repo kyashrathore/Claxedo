@@ -64,14 +64,12 @@ const Context = createContext<ReturnType<typeof init>>()
 
 function init() {
   const [stack, setStack] = createSignal<Active[]>([])
-  const timer = { current: undefined as ReturnType<typeof setTimeout> | undefined }
-  const lock = { value: false }
+  const closing = new Map<string, ReturnType<typeof setTimeout>>()
   const retired = new Set<Active>()
 
   onCleanup(() => {
-    if (timer.current === undefined) return
-    clearTimeout(timer.current)
-    timer.current = undefined
+    for (const timer of closing.values()) clearTimeout(timer)
+    closing.clear()
   })
 
   // A dialog replaced by `show()` keeps its root — and so its portal, and so
@@ -87,25 +85,16 @@ function init() {
   })
 
   const close = (id?: string) => {
-    const items = stack()
-    const current = id ? items.find((item) => item.id === id) : items.at(-1)
-    if (!current || lock.value) return
-    lock.value = true
+    const open = stack().filter((item) => !closing.has(item.id))
+    const current = id ? open.find((item) => item.id === id) : open.at(-1)
+    if (!current) return
     current.onClose?.()
     current.setClosing(true)
-
-    const closed = current.id
-    if (timer.current !== undefined) {
-      clearTimeout(timer.current)
-      timer.current = undefined
-    }
-
-    timer.current = setTimeout(() => {
-      timer.current = undefined
+    closing.set(current.id, setTimeout(() => {
+      closing.delete(current.id)
       current.dispose()
-      setStack((items) => items.filter((item) => item.id !== closed))
-      lock.value = false
-    }, 100)
+      setStack((items) => items.filter((item) => item.id !== current.id))
+    }, 100))
   }
 
   createEffect(() => {
@@ -194,21 +183,15 @@ function init() {
   }
 
   const push = (element: DialogElement, owner: Owner, onClose?: () => void) => {
-    if (timer.current !== undefined) {
-      clearTimeout(timer.current)
-      timer.current = undefined
-    }
-    lock.value = false
     mount(element, owner, onClose)
   }
 
   const show = (element: DialogElement, owner: Owner, onClose?: () => void) => {
-    if (timer.current !== undefined) {
-      clearTimeout(timer.current)
-      timer.current = undefined
-    }
-    lock.value = false
     const replaced = stack()
+    for (const item of replaced) {
+      clearTimeout(closing.get(item.id))
+      closing.delete(item.id)
+    }
     for (const item of replaced) retired.add(item)
     mount(element, owner, onClose)
     setStack((items) => items.filter((item) => !replaced.includes(item)))

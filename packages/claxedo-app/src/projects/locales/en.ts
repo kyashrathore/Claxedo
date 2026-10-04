@@ -30,7 +30,7 @@ export default {
   "projects.chip.branch.unavailable": "Branches unavailable",
   "projects.chip.branch.empty": "No branches",
   "projects.chip.branch.failed": "Could not load branches",
-  "projects.create.title": "New project",
+  "projects.create.title": "Create project",
   "projects.create.description": "A repository or a folder your sessions work in.",
   "projects.create.checking": "Checking connected accounts…",
   "projects.create.source": "Source",
