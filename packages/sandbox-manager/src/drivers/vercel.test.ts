@@ -321,7 +321,7 @@ describe("VercelSandboxDriver", () => {
     const driver = createVercelSandboxDriver({ ...baseOptions, sandbox: factory({ create: vi.fn(async () => created) }) })
     let runtimeStarted: boolean | undefined
 
-    await driver.ensureHost({ ...input, onImageReady: async () => { runtimeStarted = created.runCommand.mock.calls.length > 0 } })
+    await driver.ensureHost({ ...input, onImageReady: async () => { runtimeStarted = vi.mocked(created.runCommand).mock.calls.length > 0 } })
 
     expect(runtimeStarted).toBe(false)
   })
