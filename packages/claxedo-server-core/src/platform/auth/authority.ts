@@ -310,6 +310,7 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Pa
     auth: SignedControlPlaneAuth,
   ) => Promise<Array<{
     host_id: string
+    enrollment_id: string
     display_name: string
     last_seen_at: number
     expires_at: number

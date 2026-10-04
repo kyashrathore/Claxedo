@@ -9,7 +9,7 @@ import type { Workspaces } from "./workspaces"
 function fixture(kind: Placement["kind"], signed: boolean, sessionHost?: { sessionId: string }) {
   const runs: { operation: string; input: unknown }[] = []
   const account = createHostedAccount(async (operation, input) => (runs.push({ operation, input }), {}))
-  const placement = { id: placementId("ws_1"), projectId: projectId("proj"), kind, label: "main", reachable: true }
+  const placement = { id: placementId("ws_1"), projectId: projectId("proj"), kind, label: "main", reachable: true, onThisMachine: false }
   const route = { directory: "workspace:ws_1", workspaceId: "ws_1", remote: true, ...(sessionHost ? { sessionHost } : {}) }
   const workspaces = {
     byId: () => placement,

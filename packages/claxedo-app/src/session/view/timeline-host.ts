@@ -73,8 +73,7 @@ async function findFiles(input: TimelineHostInput, query: string): Promise<reado
 
 function localDesktopBridge(input: TimelineHostInput): ReturnType<typeof desktopBridge> {
   const placement = input.server.placements.byId(input.view.ref.placementId)
-  const machine = input.server.capabilities()?.thisMachine
-  return isLocalPlacement(placement, machine?.id) ? desktopBridge() : undefined
+  return isLocalPlacement(placement) ? desktopBridge() : undefined
 }
 
 function timelinePlatform(input: TimelineHostInput): TimelineHost["platform"] {

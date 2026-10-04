@@ -46,6 +46,7 @@ function placementRecordFromRow(row: Row, workspace: string, project: string): P
     label: firstTextOf(row, "workspace_name", "workspaceName", "display_name", "displayName") ?? workspace,
     ...(remoteDirectory ? { path: remoteDirectory } : {}),
     reachable: row.reachable === true,
+    onThisMachine: false,
     ...(host ? { machineId: machineId(host) } : {}),
     ...(gitRemote ? { gitRemote } : {}),
   }

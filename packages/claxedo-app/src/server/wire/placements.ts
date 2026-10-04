@@ -18,14 +18,13 @@ export type BootstrapDeclaration = {
   readonly documents: boolean
   readonly connections: boolean
   readonly enrollmentId?: string
+  readonly machineName?: string
 }
 
 export type BootstrapCatalog = {
   readonly declaration: BootstrapDeclaration
   readonly placements: readonly PlacementRecord[]
 }
-
-export const UNENROLLED_MACHINE = "this-machine"
 
 export const WORKTREE_ROUTE = "/experimental/worktree"
 
@@ -40,7 +39,7 @@ function remoteOf(row: Record<string, unknown>, self: string | undefined): { rem
   const enrollment = nonEmptyString(placement?.host_enrollment_id)
   const own = enrollment !== undefined && enrollment === self
   if (row.backing === "local-worktree" && !own) return { remote: true, ...(enrollment ? { machine: machineId(enrollment) } : {}) }
-  return { remote: false, machine: machineId(self ?? UNENROLLED_MACHINE) }
+  return { remote: false, ...(self ? { machine: machineId(self) } : {}) }
 }
 
 function placementLabel(row: Record<string, unknown>, directory: string) {
@@ -69,6 +68,7 @@ function placementRecord(project: Record<string, unknown>, key: string, row: Rec
       label: placementLabel(row, location),
       path: location,
       reachable: row.reachable === true,
+      onThisMachine: !remote,
       ...(machine ? { machineId: machine } : {}),
       ...(gitRemote ? { gitRemote } : {}),
     },
@@ -97,6 +97,7 @@ export function bootstrapCatalog(body: unknown): BootstrapCatalog {
   const deployment = isRecord(root.deployment) ? root.deployment : {}
   const host = isRecord(root.host) ? root.host : {}
   const enrollmentId = nonEmptyString(host.enrollment)
+  const machineName = nonEmptyString(host.name)
   if (deployment.serverKind !== "daemon" && deployment.serverKind !== "hosted") throw contractMismatch("server kind")
   return {
     declaration: {
@@ -106,6 +107,7 @@ export function bootstrapCatalog(body: unknown): BootstrapCatalog {
       documents: deployment.documents === true,
       connections: deployment.connections === true,
       ...(enrollmentId ? { enrollmentId } : {}),
+      ...(machineName ? { machineName } : {}),
     },
     placements: placementsFromProjects(root.project, enrollmentId),
   }

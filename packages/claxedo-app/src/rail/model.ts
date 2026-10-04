@@ -1,6 +1,6 @@
 import { unreachable } from "@/lib/machine"
 import { formatCompactAge } from "@/lib/relative-time"
-import type { MachineId, Placement, ProjectId, SessionId, SessionLocation } from "@/server"
+import type { Placement, ProjectId, SessionId, SessionLocation } from "@/server"
 import { sessionActivity, unseenOutcome, type SessionRowView, type UnseenOutcome } from "@/session"
 import type { TerminalItem } from "@/terminal"
 
@@ -75,10 +75,10 @@ export type SessionMarkerKind = "cloud" | "machine" | "worktree"
 
 export type SessionMarker = { readonly kind: SessionMarkerKind; readonly name: string; readonly path: string | undefined }
 
-export function sessionMarker(placement: Placement | undefined, thisMachine: MachineId | undefined): SessionMarker | undefined {
+export function sessionMarker(placement: Placement | undefined): SessionMarker | undefined {
   if (!placement) return undefined
   const name = placement.label
   if (placement.kind === "cloud") return { kind: "cloud", name, path: undefined }
-  if (placement.machineId && placement.machineId !== thisMachine) return { kind: "machine", name, path: undefined }
+  if (placement.machineId && !placement.onThisMachine) return { kind: "machine", name, path: undefined }
   return placement.kind === "worktree" ? { kind: "worktree", name, path: placement.path } : undefined
 }

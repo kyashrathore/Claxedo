@@ -51,7 +51,7 @@ export function fileQueries(transport: Transport, workspaces: Workspaces) {
 export function localFileContentQuery(server: Pick<Server, "placements" | "capabilities">, placementId: PlacementId, path: string): FetchQuery<FileContent> {
   const query = fetchQuery<FileContent>(queryKeys.localFileContent(placementId, path), async () => {
     const bridge = desktopBridge()
-    if (!bridge || !isLocalPlacement(server.placements.byId(placementId), server.capabilities()?.thisMachine?.id)) {
+    if (!bridge || !isLocalPlacement(server.placements.byId(placementId))) {
       throw new Error("This file cannot be opened on this computer.")
     }
     return fileContent(await bridge.readFileContent(path))

@@ -1025,15 +1025,15 @@ describe("hosted-core remote access (the owner's view)", () => {
   test("lists the account's machines, including one that serves nothing yet", async () => {
     const response = await core({
       listHostAssignments: vi.fn(async () => [
-        { host_id: "host_a", display_name: "laptop", last_seen_at: 10, expires_at: 99, workspace_ids: ["ws_1", "ws_2"], acked_workspace_ids: ["ws_1"] },
+        { host_id: "host_a", enrollment_id: "enr_a", display_name: "laptop", last_seen_at: 10, expires_at: 99, workspace_ids: ["ws_1", "ws_2"], acked_workspace_ids: ["ws_1"] },
       ]),
-      activeHostEnrollment: vi.fn(async () => ({ active: true, host_id: "host_b", display_name: "desk", last_seen_at: 20, expires_at: 99 })),
+      activeHostEnrollment: vi.fn(async () => ({ active: true, enrollment_id: "enr_b", host_id: "host_b", display_name: "desk", last_seen_at: 20, expires_at: 99 })),
     }).request("/api/claxedo/remote-access/devices", { headers: signed })
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
       devices: [
-        { host_id: "host_b", display_name: "desk", last_seen_at: 20, workspace_ids: [] },
-        { host_id: "host_a", display_name: "laptop", last_seen_at: 10, workspace_ids: ["ws_1", "ws_2"] },
+        { host_id: "host_b", enrollment_id: "enr_b", display_name: "desk", last_seen_at: 20, workspace_ids: [] },
+        { host_id: "host_a", enrollment_id: "enr_a", display_name: "laptop", last_seen_at: 10, workspace_ids: ["ws_1", "ws_2"] },
       ],
     })
   })

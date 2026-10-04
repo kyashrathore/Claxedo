@@ -22,6 +22,7 @@ export function hostedRemoteAccessService(authority: WorkspaceAuthority): Remote
       ])
       const devices = assignments.map((host) => ({
         hostId: host.host_id,
+        enrollmentId: host.enrollment_id,
         displayName: host.display_name,
         lastSeenAt: host.last_seen_at,
         workspaceIds: host.workspace_ids,
@@ -30,6 +31,7 @@ export function hostedRemoteAccessService(authority: WorkspaceAuthority): Remote
       if (active.active && !devices.some((device) => device.hostId === active.host_id)) {
         devices.unshift({
           hostId: active.host_id,
+          enrollmentId: active.enrollment_id,
           displayName: active.display_name ?? active.host_id,
           lastSeenAt: active.last_seen_at,
           workspaceIds: [],

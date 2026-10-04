@@ -59,6 +59,7 @@ import { hostServingEnrollmentId } from "@claxedo/host-serving/serving"
 import { HostServingRoutes } from "../workspace/host-serving-routes"
 import { HostProviderConfigRoutes } from "../workspace/host-provider-config-routes"
 import { BootstrapRoutes } from "../deployments/shared-routes/bootstrap"
+import { machineDisplayName } from "@claxedo/helpers/machine-name"
 import { daemonAdmission, machineRecoveryFence } from "./daemon-admission"
 import { relayReplayAdmission } from "../workspace/runtime-dispatch/relay-admission"
 import { markInProcessDaemonRequest } from "../platform/in-process-request"
@@ -89,6 +90,12 @@ import { localDocumentsRoutes } from "./local-documents"
 import { appPluginAuthoring } from "../plugins/authoring"
 import { LivePluginRoutes } from "../plugins/routes"
 import { LIVE_PLUGINS_ROUTE_PATH } from "../plugins/service"
+
+let derivedMachineName: string | undefined
+function localMachineName() {
+  derivedMachineName ??= machineDisplayName(process.platform)
+  return derivedMachineName
+}
 
 /**
  * Paths whose responses carry credential material: the registry routers, and
@@ -441,6 +448,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     // mounted: the daemon starts before the machine has enrolled and outlives
     // every sign-out.
     hostEnrollmentId: hostServingEnrollmentId,
+    hostName: localMachineName,
     ...authRouteOptions(services),
   }))
   app.route("/", ProviderAuthRoutes({ service: createProviderAuthService(services.credentials), ...authRouteOptions(services) }))

@@ -2,7 +2,7 @@ import type { MachineId, OrgId, UserId } from "./ids"
 
 export type OrgRole = "owner" | "admin" | "member"
 
-export type MachinePrincipal = { readonly kind: "machine"; readonly machineId: MachineId }
+export type MachinePrincipal = { readonly kind: "machine"; readonly machineId?: MachineId }
 
 export type UserPrincipal = {
   readonly kind: "user"

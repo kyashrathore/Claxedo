@@ -43,6 +43,8 @@ type Options = {
    * Absent means unenrolled, which still serves this machine's own directories.
    */
   hostEnrollmentId?: () => string | undefined
+  /** The name this machine derives for itself; an enrolled machine's control-plane name is its owner's rename. */
+  hostName?: () => string
 }
 
 
@@ -80,7 +82,7 @@ function deployment(options: Options) {
 }
 
 function bootstrapHostIdentity(options: Options) {
-  return { enrollment: options.hostEnrollmentId?.() ?? null }
+  return { enrollment: options.hostEnrollmentId?.() ?? null, ...(options.hostName ? { name: options.hostName() } : {}) }
 }
 
 async function localBootstrapBody(options: Options) {

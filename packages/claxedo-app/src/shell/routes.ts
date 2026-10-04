@@ -1,5 +1,5 @@
 import { placementId, sessionId, terminalId } from "@/server"
-import type { MachineId, Placement, PlacementId, SessionId, SessionLocation, TerminalId } from "@/server"
+import { isLocalPlacement, type Placement, type PlacementId, type SessionId, type SessionLocation, type TerminalId } from "@/server"
 import type { PageEntry, PaneRoute, RouteEntry } from "./types"
 
 export type RouteParams = Readonly<Record<string, string>>
@@ -31,10 +31,8 @@ export function localSessionPath(session: SessionId): string {
 export function sessionLinkPath(
   ref: Pick<SessionLocation, "placementId" | "sessionId">,
   placement: Placement | undefined,
-  thisMachine: MachineId | undefined,
 ): string {
-  const local = !!placement && !!thisMachine && placement.kind !== "cloud" && placement.machineId === thisMachine
-  return local ? localSessionPath(ref.sessionId) : sessionPath(ref)
+  return isLocalPlacement(placement) ? localSessionPath(ref.sessionId) : sessionPath(ref)
 }
 
 export function terminalPath(placement: PlacementId, terminal: TerminalId): string {

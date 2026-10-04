@@ -44,13 +44,12 @@ export type SharedSessionRow = {
 }
 
 export type Machine = {
-  readonly id: MachineId
+  readonly id?: MachineId
   readonly name: string
   readonly ownerId?: UserId
   readonly online: boolean
   readonly isThisMachine: boolean
   readonly enrolled: boolean
-  readonly placementIds: readonly PlacementId[]
 }
 
 export type PlacementKind = "folder" | "worktree" | "cloud"
@@ -63,6 +62,7 @@ export type Placement = {
   readonly path?: string
   readonly branch?: string
   readonly machineId?: MachineId
+  readonly onThisMachine: boolean
   readonly gitRemote?: string
   readonly reachable: boolean
 }
@@ -252,8 +252,6 @@ export type QueuedPromptControl = {
 export type HarnessInfo = {
   readonly id: string
   readonly name: string
-  readonly available: boolean
-  readonly unavailableReason?: string
   readonly models: readonly ModelChoice[]
   readonly efforts: readonly string[]
   readonly goalMode: "native" | "evaluated" | "none"
@@ -262,17 +260,12 @@ export type HarnessInfo = {
 export type Capabilities = {
   readonly principal: MachinePrincipal
   readonly signedIn: boolean
-  readonly thisMachine?: Machine
+  readonly localExecution: boolean
   readonly harnesses: readonly HarnessInfo[]
   readonly features: {
     readonly documents: boolean
     readonly connections: boolean
     readonly cloud: boolean
-    readonly remoteAccess: boolean
-    readonly marketplace: boolean
-    readonly terminals: boolean
-    readonly browser: boolean
-    readonly sharing: boolean
     readonly livePlugins: boolean
   }
 }

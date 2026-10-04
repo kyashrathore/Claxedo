@@ -13,6 +13,7 @@ export type RemoteAccessOwnerService = {
   status(auth?: SignedControlPlaneAuth): Promise<{ enrolled: boolean; enabled: boolean }>
   devices(auth: SignedControlPlaneAuth): Promise<Array<{
     hostId: string
+    enrollmentId: string
     displayName: string
     lastSeenAt: number
     workspaceIds: string[]
@@ -82,6 +83,7 @@ export function RemoteAccessOwnerRoutes(options: RemoteAccessRouteOptions) {
     return c.json({
       devices: (await options.service.devices(auth)).map((device) => ({
         host_id: device.hostId,
+        enrollment_id: device.enrollmentId,
         display_name: device.displayName,
         last_seen_at: device.lastSeenAt,
         workspace_ids: device.workspaceIds,

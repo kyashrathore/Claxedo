@@ -31,7 +31,7 @@ export function usePlacementNotice(placementId: Accessor<PlacementId | undefined
     const id = placementId()
     if (!id) return undefined
     const placement = server.placements.byId(id)
-    return placementNotice(t, { placement, runtime: server.cloud.runtime(id), offline: isOfflineMachine(placement, server.capabilities()?.thisMachine?.id), wake: wake(id) })
+    return placementNotice(t, { placement, runtime: server.cloud.runtime(id), offline: isOfflineMachine(placement), wake: wake(id) })
   }
 }
 

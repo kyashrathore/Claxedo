@@ -20,10 +20,3 @@ export function desktopBridge(): DesktopBridge | undefined {
   const api = readField(globalThis, "api")
   return isDesktopBridge(api) ? api : undefined
 }
-
-export function desktopMachineReport(): (() => Promise<unknown>) | undefined {
-  const connector = readField(desktopBridge(), "hostConnector")
-  const status = readField(connector, "status")
-  if (typeof status !== "function") return undefined
-  return async (): Promise<unknown> => Reflect.apply(status, connector, [])
-}

@@ -94,7 +94,7 @@ describe("remote access routes", () => {
   test("lists and revokes enrolled machines through signed auth", async () => {
     const service = {
       status: vi.fn(async () => ({ enrolled: true, enabled: true })),
-      devices: vi.fn(async () => [{ hostId: "host_1", displayName: "Mac", lastSeenAt: 10, workspaceIds: ["ws_1", "ws_2"] }]),
+      devices: vi.fn(async () => [{ hostId: "host_1", enrollmentId: "enr_1", displayName: "Mac", lastSeenAt: 10, workspaceIds: ["ws_1", "ws_2"] }]),
       revoke: vi.fn(async () => ({ revoked: true })),
       rename: vi.fn(async () => ({ displayName: "Renamed" })),
     }
@@ -106,7 +106,7 @@ describe("remote access routes", () => {
     })
 
     await expect((await app.request("http://localhost/devices")).json()).resolves.toEqual({
-      devices: [{ host_id: "host_1", display_name: "Mac", last_seen_at: 10, workspace_ids: ["ws_1", "ws_2"] }],
+      devices: [{ host_id: "host_1", enrollment_id: "enr_1", display_name: "Mac", last_seen_at: 10, workspace_ids: ["ws_1", "ws_2"] }],
     })
     await expect((await app.request("http://localhost/devices/host_1", { method: "DELETE" })).json())
       .resolves.toEqual({ revoked: true })

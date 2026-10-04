@@ -2,7 +2,6 @@ import { accountBinding } from "#account-binding"
 import { createMemo, Show, type JSX, type ParentProps } from "solid-js"
 import { AuthProvider, useAuth, type Auth } from "@/auth"
 import { I18nProvider } from "@/i18n"
-import { desktopMachineReport } from "@/lib/desktop-bridge"
 import { ClockProvider } from "@/lib/clock"
 import { tabStorage } from "@/lib/persisted"
 import { ProjectListProvider } from "@/projects"
@@ -33,8 +32,7 @@ function serverAccess(auth: Auth, principal: string | undefined): ServerAccess {
 }
 
 function ServerScope(props: ParentProps<{ readonly access: ServerAccess; readonly serverUrl?: string }>): JSX.Element {
-  const report = desktopMachineReport()
-  const server = createServer({ serverUrl: props.serverUrl, ...props.access, ...(report ? { thisMachineReport: report } : {}) })
+  const server = createServer({ serverUrl: props.serverUrl, ...props.access })
   return (
     <ServerProvider server={server}>
       <SessionStoresProvider>

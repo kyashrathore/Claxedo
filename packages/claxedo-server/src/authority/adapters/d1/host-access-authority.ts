@@ -479,7 +479,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
   async listHostAssignments(auth: SignedControlPlaneAuth) {
     const who = await this.requirePrincipal(auth)
     const rows = await this.database.prepare(`
-      select assignment.workspace_id, assignment.host_id,
+      select assignment.workspace_id, assignment.host_id, enrollment.enrollment_id,
         enrollment.display_name, enrollment.last_seen_at, enrollment.expires_at,
         coalesce(enrollment.acked_workspace_ids, '[]') as acked_workspace_ids
       from host_workspace_assignments assignment
@@ -492,6 +492,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     `).bind(who.actorId, this.now()).all<{
       workspace_id: string
       host_id: string
+      enrollment_id: string
       display_name: string | null
       last_seen_at: number
       expires_at: number
@@ -499,6 +500,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     }>()
     const groups = new Map<string, {
       host_id: string
+      enrollment_id: string
       display_name: string
       last_seen_at: number
       expires_at: number
@@ -508,6 +510,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     for (const row of rows.results ?? []) {
       const group = groups.get(row.host_id) ?? {
         host_id: row.host_id,
+        enrollment_id: row.enrollment_id,
         display_name: row.display_name ?? row.host_id,
         last_seen_at: row.last_seen_at,
         expires_at: row.expires_at,

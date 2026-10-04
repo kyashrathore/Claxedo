@@ -467,6 +467,7 @@ describe("D1 host access authority", () => {
     expect(await input.hostAccess.listHostAssignments(alice)).toMatchObject([
       {
         host_id: "machine-b",
+        enrollment_id: enrollmentId,
         display_name: "Laptop B",
         workspace_ids: ["ws_local"],
         acked_workspace_ids: ["ws_local"],

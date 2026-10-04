@@ -1,7 +1,7 @@
 import { For, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { canStart, canStop, cloudFailureReason, useCloudStatusText, useCloudWorkspaces, type CloudWorkspaceRow, type CloudWorkspaces } from "@/cloud"
-import { useServer, type Placement, type Project } from "@/server"
+import { machineOfPlacement, useServer, type Placement, type Project } from "@/server"
 import { SettingsEmpty, SettingsGroup, SettingsList, SettingsNote, SettingsRow, useConnectMachine } from "@/settings"
 import { Button, requestConfirm, useDialog } from "@/ui"
 import { useProjectsText } from "../i18n"
@@ -70,8 +70,7 @@ export function WhereItRuns(props: { readonly project: Project }): JSX.Element {
     const state = cloud.list()
     return state.kind === "ready" ? state.rows : []
   }
-  const machineName = (placement: Placement) =>
-    (machines.data?.find((machine) => machine.placementIds.includes(placement.id)) ?? machines.data?.find((machine) => machine.id === placement.machineId))?.name
+  const machineName = (placement: Placement) => machineOfPlacement(machines.data ?? [], placement)?.name
   const loading = () => placements().kind === "loading" || (cloudOffered() && cloud.list().kind === "loading")
   const empty = () => !loading() && local().length === 0 && cloudRows().length === 0
   const newCloud = () => dialog.show(() => <DialogNewCloudWorkspace cloud={cloud} />)

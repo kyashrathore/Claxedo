@@ -40,13 +40,13 @@ function placementQueries(transport: Transport, workspaces: Workspaces) {
   return { list, byProject }
 }
 
-export function createQueries(transport: Transport, workspaces: Workspaces, account: HostedAccount | undefined, thisMachineReport?: () => Promise<unknown>): ServerQueries {
+export function createQueries(transport: Transport, workspaces: Workspaces, account: HostedAccount | undefined): ServerQueries {
   const cloud = cloudQueries(transport)
   return {
     livePlugins: livePluginQueries(transport),
     projects: projectQueries(transport, workspaces),
     placements: placementQueries(transport, workspaces),
-    machines: machineQueries(transport, workspaces, account, thisMachineReport),
+    machines: machineQueries(transport, workspaces, account),
     organizations: organizationQueries(transport.serverUrl, account),
     accounts: accountQueries(transport),
     usage: usageQueries(transport),

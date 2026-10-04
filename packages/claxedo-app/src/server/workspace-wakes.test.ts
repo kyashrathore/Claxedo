@@ -17,8 +17,8 @@ type Start = { resolve: () => void; reject: (error: unknown) => void }
 function fixture(running: { value: boolean }) {
   const starts: Start[] = []
   const placements: Record<string, Placement> = {
-    ws_cloud: { id: cloud, projectId: "proj" as Placement["projectId"], kind: "cloud", label: "main", reachable: false },
-    ws_folder: { id: folder, projectId: "proj" as Placement["projectId"], kind: "folder", label: "repo", reachable: false },
+    ws_cloud: { id: cloud, projectId: "proj" as Placement["projectId"], kind: "cloud", label: "main", reachable: false, onThisMachine: false },
+    ws_folder: { id: folder, projectId: "proj" as Placement["projectId"], kind: "folder", label: "repo", reachable: false, onThisMachine: false },
   }
   const transport = {
     startRuntime: (_workspaceId: string, options?: StartOptions) => {

@@ -51,7 +51,7 @@ export function SessionTimeline(props: {
         directory={props.host.placementPath}
         onNavigateToSession={props.host.navigation.toSession}
         onSessionHref={(id) =>
-          sessionLinkPath({ placementId: props.view.ref.placementId, sessionId: sessionId(id) }, server.placements.byId(props.view.ref.placementId), server.capabilities()?.thisMachine?.id)
+          sessionLinkPath({ placementId: props.view.ref.placementId, sessionId: sessionId(id) }, server.placements.byId(props.view.ref.placementId))
         }
         resolveSubagents={resolveSubagents}
         loadToolBody={(part) => void props.view.loadPart(part.messageID, part.id)}

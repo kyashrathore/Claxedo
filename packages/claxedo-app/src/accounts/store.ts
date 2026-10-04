@@ -35,7 +35,7 @@ function effectiveByProvider(effective: EffectiveAccounts): ReadonlyMap<string, 
 }
 
 function useAccountReads(server: Server) {
-  const onMachine = () => server.capabilities()?.thisMachine !== undefined
+  const onMachine = () => server.capabilities()?.localExecution === true
   const list = useQuery(() => server.queries.accounts.list())
   const effective = useQuery(() => server.queries.accounts.effective())
   const logins = useQuery(() => ({ ...server.queries.accounts.machineLogins(), enabled: onMachine() }))
