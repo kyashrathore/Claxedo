@@ -77,6 +77,13 @@ comparison and each provider's required options. Swap `createMemoryLeaseStore`
 for a persisted `SandboxLeaseStore` implementation (e.g. backed by SQLite) to
 survive process restarts.
 
+The Boat driver checks the runtime's health endpoint after starting its container.
+If startup never becomes healthy, the failure includes a bounded container log
+tail and container exit information, with staged environment and registry secret
+values redacted before truncation. A diagnostic request failure preserves the
+original health failure. This evidence identifies a failed runtime boot without
+reporting the VM itself as ready.
+
 ## Credentials & secrets
 
 There are two distinct channels for getting values into a sandbox, chosen by

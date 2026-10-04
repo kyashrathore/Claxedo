@@ -517,6 +517,42 @@ describe("boat sandbox driver", () => {
     expect(boat.healthChecks).toBeGreaterThanOrEqual(2)
   })
 
+  test("an unhealthy runtime reports bounded container diagnostics with staged secrets redacted", async () => {
+    const boat = fakeBoat()
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, healthTimeoutMs: 0,
+      env: () => ({ RUNTIME_SECRET: "synthetic-runtime-secret" }),
+      fetchImpl: async (url, init) => {
+        const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+        if (body?.command?.includes("docker logs")) {
+          expect(body.timeoutSeconds).toBe(10)
+          expect(body.command).not.toContain("synthetic-runtime-secret")
+          expect(body.command).not.toContain(".Config.Env")
+          return Response.json({ ok: true, ...commandFinished({
+            stdout: `status=exited exit=1 oom=false\n${"x".repeat(800)}\nStartup failed: synthetic-runtime-secret`,
+          }) })
+        }
+        return boat.fetchImpl(url, init)
+      },
+    })
+    const failure = await driver.ensureHost(ensureInput()).catch((error: unknown) => error as Error)
+    expect(failure).toBeInstanceOf(Error)
+    expect((failure as Error).message).toContain("Startup failed: [redacted]")
+    expect((failure as Error).message).not.toContain("synthetic-runtime-secret")
+    expect((failure as Error).message.length).toBeLessThan(750)
+  })
+
+  test("a failed diagnostic request preserves the health failure", async () => {
+    const boat = fakeBoat()
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, healthTimeoutMs: 0,
+      fetchImpl: async (url, init) => {
+        const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+        if (body?.command?.includes("docker logs")) throw new Error("transport leaked-secret")
+        return boat.fetchImpl(url, init)
+      },
+    })
+    await expect(driver.ensureHost(ensureInput())).rejects.toThrow("runtime did not become healthy: workspace runtime not ready; container diagnostics unavailable")
+  })
+
   test("refuses an oversized acknowledgement, a redirect-capable or non-HTTPS endpoint, and never copies provider text", async () => {
     const huge = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: async () => new Response("x".repeat(5 * 1024 * 1024)) })
     await expect(huge.ensureHost(ensureInput())).rejects.toMatchObject({ code: "invalid_response" })

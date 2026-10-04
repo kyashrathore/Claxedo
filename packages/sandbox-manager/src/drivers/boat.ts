@@ -228,7 +228,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     return steps.join(" && ")
   }
 
-  async function waitForHealth(sandboxId: string, input: SandboxDriverEnsureInput) {
+  async function waitForHealth(sandboxId: string, input: SandboxDriverEnsureInput, secrets: readonly string[]) {
     const port = runtimePort(input)
     const until = Date.now() + healthTimeoutMs
     let last = "workspace runtime not ready"
@@ -241,7 +241,17 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
       last = `health probe returned ${code ?? "no response"}`
       await sleep(healthIntervalMs)
     }
-    throw new BoatDriverError(`Boat ${sandboxId} runtime did not become healthy: ${last}`)
+    let diagnostic: string
+    try {
+      const result = await client.command(sandboxId, {
+        command: `docker inspect --format 'status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' ${shell(containerName)}; docker logs --tail 20 ${shell(containerName)} 2>&1`,
+        timeoutSeconds: 10,
+      })
+      diagnostic = scrubbedTail(`${result.stdout}\n${result.stderr}`, secrets)
+    } catch {
+      diagnostic = "container diagnostics unavailable"
+    }
+    throw new BoatDriverError(`Boat ${sandboxId} runtime did not become healthy: ${last}; ${diagnostic}`)
   }
 
   async function startContainer(sandboxId: string, input: SandboxDriverEnsureInput, hostId: string) {
@@ -267,18 +277,19 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     }
     if (failures.length === 1) throw failures[0]
     if (failures.length > 1) throw new AggregateError(failures, `Boat ${sandboxId} container start and registry password cleanup failed`)
+    return secrets
   }
 
   async function boot(sandboxId: string, input: SandboxDriverEnsureInput, hostId: string): Promise<SandboxTarget> {
     const port = runtimePort(input)
-    await startContainer(sandboxId, input, hostId)
+    const secrets = await startContainer(sandboxId, input, hostId)
     // Boat gates a hosted port behind a `_token` query, and `host url` prints
     // the gated URL again unless it also carries `--public`. The relay joins
     // request paths onto this base URL and would drop that query, so the
     // runtime authenticates every route itself except the anonymous
     // `/global/health` probe (liveness, the workspace id and the lease epoch).
     await execOrThrow(sandboxId, `host ${port} --public`, "host publish")
-    await waitForHealth(sandboxId, input)
+    await waitForHealth(sandboxId, input, secrets)
     const urlResult = await execOrThrow(sandboxId, `host url ${port} --public`, "host url")
     const url = trimToUndefined(urlResult.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).pop())
     if (!url?.startsWith("https://") || url.includes("?")) {
