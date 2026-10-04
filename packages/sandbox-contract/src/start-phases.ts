@@ -40,7 +40,7 @@ export function isSandboxRuntimeStartPhase(input: unknown): input is SandboxRunt
 export function createSandboxPhaseTimer<Phase extends string>(now: () => number = Date.now) {
   const timings: SandboxPhaseTiming<Phase>[] = []
   return {
-    async measure<T>(phase: Phase, run: () => Promise<T>): Promise<T> {
+    measure: async <T>(phase: Phase, run: () => Promise<T>): Promise<T> => {
       const startedAt = now()
       try {
         return await run()

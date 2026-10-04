@@ -298,6 +298,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     managerInput: SandboxManagerInput,
     enteredAt: number,
   ): Promise<SandboxEnsureResult> {
+    let start: ReturnType<typeof starts.observe>
     try {
       const ensure = ensureHostInput({
         driver: options.driver,
@@ -325,12 +326,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       }
       const resuming = Boolean(lease.sandboxId && ensure.bootSource?.kind === "default" && options.driver.resumeHost)
       const bootMode: SandboxBootMode = resuming ? "resume" : ensure.bootSource?.kind === "driver-snapshot" ? "restore" : "cold-start"
-      // A serving lease is re-ensured on every connection; only a lease that is
-      // not serving yet is starting, and an epoch starts once.
-      let start = lease.status === "ready" ? undefined : lease.start ?? await starts.begin(lease, bootMode, enteredAt, ensure.labels)
-      const ended = async (phase: "provider_ready" | "image_ready" | "runtime_ready") => {
-        if (start) start = await starts.mark(lease, start, phase, ensure.labels)
-      }
+      start = starts.observe(lease, { bootMode, enteredAt, labels: ensure.labels })
       ensure.onResource = async (resource) => {
         const recorded = await options.leaseStore.recordTarget(workspaceId, lease.epoch, {
           ...resource,
@@ -338,9 +334,9 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           persistence: options.driver.metadata.persistence,
         })
         if (!recorded) throw new Error("runtime_lease_changed")
-        await ended("provider_ready")
+        start?.end("provider_ready")
       }
-      ensure.onImageReady = () => ended("image_ready")
+      ensure.onImageReady = async () => start?.end("image_ready")
       const target = resuming
         ? await options.driver.resumeHost!({ lease, ensure })
         : await options.driver.ensureHost(ensure)
@@ -376,7 +372,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       if (!updated) return { status: "unavailable", error: "runtime_lease_changed", epoch: lease.epoch, homeRegion }
       const resolved = await leaseTarget(updated)
       if (resolved.status === "ready") {
-        await ended("runtime_ready")
+        start?.end("runtime_ready")
         return resolved
       }
       return {
@@ -415,6 +411,8 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         epoch: lease.epoch,
         homeRegion,
       }
+    } finally {
+      await start?.flush()
     }
   }
 
