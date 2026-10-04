@@ -27,9 +27,9 @@ docker run --rm --init --cap-drop ALL --cap-add SETFCAP --security-opt no-new-pr
       echo "Unexpected mount namespace authority outside a user namespace" >&2
       exit 1
     fi
-    mkdir -p /workspace /tmp/codex-policy-home
-    export CODEX_HOME=/tmp/codex-policy-home
-    codex sandbox -c sandbox_mode=\"workspace-write\" -C /workspace -- sh -lc '\''
+    mkdir -p /workspace /root/.codex-policy-home
+    export CODEX_HOME=/root/.codex-policy-home
+    codex sandbox -P :workspace -C /workspace -- sh -lc '\''
       set -eu
       printf native-sandbox-ok > /workspace/native-sandbox-probe.txt
       if printf forbidden > /etc/claxedo-policy-must-not-exist; then
