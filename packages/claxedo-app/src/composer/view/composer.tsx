@@ -9,6 +9,7 @@ import { renderPromptEditor } from "../editor/serialization"
 import { PromptInputFrame } from "./frame"
 import { createPromptToolbarMotion } from "./toolbar-motion"
 import { createComposerToasts, ReadingNotices } from "./notice"
+import { ComposerNoticeProvider, createComposerNoticeChannel, useComposerNoticeChannel } from "./composer-notice"
 import { SessionHealthPeek } from "./health-peek"
 import { createEditorPlaceholder } from "./editor-placeholder"
 import { createPromptPopoverBindings } from "./popover-bindings"
@@ -27,6 +28,8 @@ export function Composer(props: ComposerProps) {
   const motion = createPromptToolbarMotion({ shellMode: () => mode() === "shell", pending: composer.harnessPending })
   const panel = usePanel()
   createComposerToasts(composer)
+  const inherited = useComposerNoticeChannel()
+  const notices = inherited ?? createComposerNoticeChannel()
 
   const fileItems = createMemo(() => composer.draft().context.filter((item): item is FileContextItem => item.type === "file"))
   const quoteItems = createMemo(() => composer.draft().context.filter((item): item is QuoteContextItem => item.type === "quote"))
@@ -37,7 +40,7 @@ export function Composer(props: ComposerProps) {
   const imageMarkBindings = createPromptImageMarkBindings({ composer, dialog })
 
   return (
-    <>
+    <ComposerNoticeProvider channel={notices}>
     <Show when={props.view}>
       <SessionHealthPeek composer={composer} />
     </Show>
@@ -47,6 +50,7 @@ export function Composer(props: ComposerProps) {
       {...contextBindings}
       {...imageMarkBindings}
       rootRef={composer.refs.setRoot}
+      notices={() => (inherited ? [] : notices.notices())}
       editorRef={(element) => {
         composer.refs.setEditor(element)
         renderPromptEditor(element, composer.draft().prompt)
@@ -123,6 +127,6 @@ export function Composer(props: ComposerProps) {
       readOnly={() => props.readOnly === true}
       t={t}
     />
-    </>
+    </ComposerNoticeProvider>
   )
 }

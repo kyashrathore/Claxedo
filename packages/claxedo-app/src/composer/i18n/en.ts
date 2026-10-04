@@ -1,5 +1,7 @@
 export type ComposerTextKey =
   | "composer.attachment.reading"
+  | "composer.notice.more"
+  | "composer.notice.less"
   | "composer.attachment.refused.title"
   | "composer.attachment.refused.description"
   | "composer.attachment.unreadable.title"
@@ -119,6 +121,8 @@ export type ComposerTextKey =
 
 export const composerEnglish: Record<ComposerTextKey, string> = {
   "composer.attachment.reading": "Reading {{filename}}…",
+  "composer.notice.more": "+{{count}} more",
+  "composer.notice.less": "Show less",
   "composer.attachment.refused.title": "{{harness}} cannot take this attachment",
   "composer.attachment.refused.description": "{{harness}} has no prompt input for {{mime}}, and this session has no workspace folder to keep the file in.",
   "composer.attachment.unreadable.title": "Attachment could not be read",

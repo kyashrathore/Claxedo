@@ -3,12 +3,7 @@ import type { ComposerTextKey } from "../i18n"
 import { DockShellForm } from "@/ui"
 import { PromptDragOverlay } from "./drag-overlay"
 import { PromptPopover, type AtOption, type SlashCommand } from "./slash-popover"
-import {
-  ComposerNoticeProvider,
-  ComposerNoticeRow,
-  createComposerNoticeChannel,
-  useComposerNoticeChannel,
-} from "./composer-notice"
+import { ComposerNoticeRow, type ComposerNotice } from "./composer-notice"
 import { PromptContextStrip, type PromptContextStripProps } from "./context-strip"
 import { PromptEditorSurface, type PromptEditorSurfaceProps, type PromptPopoverKind } from "./editor-surface"
 import { PromptToolbar, type PromptToolbarProps } from "./toolbar"
@@ -38,6 +33,7 @@ export type PromptInputFrameProps = PromptPopoverBindings &
   PromptContextStripProps &
   PromptToolbarProps & {
     rootRef: (el: HTMLDivElement) => void
+    notices: Accessor<readonly ComposerNotice[]>
     className?: string
     newSession: Accessor<boolean>
     collapsed: Accessor<boolean>
@@ -49,12 +45,9 @@ export type PromptInputFrameProps = PromptPopoverBindings &
   }
 
 export const PromptInputFrame: Component<PromptInputFrameProps> = (props) => {
-  const inherited = useComposerNoticeChannel()
-  const own = inherited ? undefined : createComposerNoticeChannel()
-  const notice = () => own?.current()
+  const notices = props.notices
 
   return (
-  <ComposerNoticeProvider channel={inherited ?? own!}>
   <div
     ref={props.rootRef}
     data-component="composer-frame"
@@ -88,7 +81,7 @@ export const PromptInputFrame: Component<PromptInputFrameProps> = (props) => {
         {props.documentNotice}
       </div>
     </Show>
-    <ComposerNoticeRow notice={notice()} />
+    <ComposerNoticeRow notices={notices()} />
     <DockShellForm
       data-component={props.newSession() ? "session-new-composer" : "session-composer"}
       data-surface="composer"
@@ -97,7 +90,7 @@ export const PromptInputFrame: Component<PromptInputFrameProps> = (props) => {
       onSubmit={props.handleSubmit}
       classList={{
         "group/prompt-input min-h-[96px] w-full rounded-xl bg-v2-background-bg-base": true,
-        "relative z-10 -mt-2": !!notice(),
+        "relative z-10 -mt-2": notices().length > 0,
         "border-icon-info-active border-dashed": props.draggingType() !== null,
         [props.className ?? ""]: !!props.className,
       }}
@@ -111,6 +104,5 @@ export const PromptInputFrame: Component<PromptInputFrameProps> = (props) => {
       <PromptToolbar {...props} />
     </DockShellForm>
   </div>
-  </ComposerNoticeProvider>
   )
 }

@@ -1,6 +1,6 @@
 import { createContext, useContext } from "solid-js"
 import { createStore, produce, unwrap } from "solid-js/store"
-import type { PlacementId, SessionLocation } from "@/server"
+import type { SessionLocation } from "@/server"
 import type {
   AttachmentState,
   ContextItem,
@@ -23,7 +23,7 @@ const MAX_ENTRIES = 20
 export type ComposerKey = string
 
 export const sessionComposerKey = (ref: SessionLocation): ComposerKey => `session:${ref.sessionId}`
-export const draftComposerKey = (placementId: PlacementId): ComposerKey => `draft:${placementId}`
+export const draftComposerKey = (draftId: string): ComposerKey => `draft:${draftId}`
 
 export type DraftRef = { readonly key: ComposerKey; readonly forkId?: number }
 

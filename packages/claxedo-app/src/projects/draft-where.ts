@@ -11,6 +11,8 @@ export type WhereChoice =
   | { readonly kind: "newWorktree" }
   | { readonly kind: "newCloud"; readonly name: string }
 
+export type WhereNew = Exclude<WhereChoice, { readonly kind: "placement" }>
+
 export type WhereCreation = "worktree" | "cloud"
 
 export type WhereFacts = {

@@ -207,7 +207,7 @@ test("03 a draft's first send is one request: its message shows in the session l
   expect(JSON.stringify(sent)).toContain(text)
 })
 
-test("03 a draft's first send the runtime refuses leaves no session, and its text goes back to the composer with the error", async ({ stack, api, app }) => {
+test("03 a draft's first send the runtime refuses leaves no session, keeps the message with the error and Retry, and its text stays in that draft", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("refused-first")
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
   const picker = app.locator('[data-action="prompt-harness-model"]').filter({ visible: true })
@@ -222,13 +222,14 @@ test("03 a draft's first send the runtime refuses leaves no session, and its tex
   const text = "A first prompt to a connection removed since the draft picked it"
   await sendPrompt(app, text)
 
-  await expect(app.getByText(`Connection "${SCRIPTED_ACP_CONNECTION_ID}" is not configured on this runtime`).filter({ visible: true }).first()).toBeVisible()
-  await expect(app.getByRole("textbox", { name: UI.composer })).toHaveText(text)
-  await expect(app.locator('[data-component="user-message"]')).toHaveCount(0)
-  await expect(app.getByRole("button", { name: "Where it runs", exact: true })).toBeVisible()
+  const failure = app.locator('[data-notice="first-send"]')
+  await expect(failure).toContainText(`Connection "${SCRIPTED_ACP_CONNECTION_ID}" is not configured on this runtime`)
+  await expect(failure.getByRole("button", { name: "Retry", exact: true })).toBeVisible()
+  await expect(app.locator('[data-component="user-message"]').filter({ hasText: text })).toBeVisible()
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeHidden()
   expect(await api.sessions(workspace.directory)).toEqual([])
   await app.reload()
-  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+  await expect(app.getByRole("textbox", { name: UI.composer })).toHaveText(text)
   expect(await api.sessions(workspace.directory)).toEqual([])
   await expect(app.getByTestId("rail-sidebar-session-row")).toHaveCount(0)
 })

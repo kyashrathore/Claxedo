@@ -43,6 +43,10 @@ export async function cloudWorkspaceNames(signed: SignedStack): Promise<string[]
   return (await cloudCatalog(signed)).flatMap((row) => (row.display_name ? [row.display_name] : []))
 }
 
+export async function cloudWorkspaces(signed: SignedStack): Promise<Array<CloudWorkspace & { name?: string }>> {
+  return (await cloudCatalog(signed)).map((row) => ({ id: row.workspace_id, projectId: row.project_id, ...(row.display_name ? { name: row.display_name } : {}) }))
+}
+
 export async function makeCloudWorkspace(signed: SignedStack, name: string): Promise<CloudWorkspace> {
   const call = asOwner(signed)
   const created = JSON.parse((await call("POST", "/api/workspace/create", { workspaceName: name, repoName: name, repoUrl: signed.hosted.gitUrl })).body) as { workspaceId: string }

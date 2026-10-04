@@ -18,7 +18,7 @@ import {
 } from "../harness"
 
 const ASLEEP = "This workspace is asleep. Your next message wakes it."
-const WAKING = "Waking up the workspace…"
+const WAKING = "Waking main"
 
 function wakeRequests(page: Page, workspace: CloudWorkspace) {
   const seen: string[] = []
@@ -59,7 +59,7 @@ async function openSession(page: Page, signed: SignedStack, workspace: CloudWork
   await page.goto(`${signed.url}${sessionRoute(workspace.id, sessionId)}`)
 }
 
-test("24 a gone sandbox: its session reads from the control plane with the asleep card, and nothing wakes it", async ({ signedCloud, page }) => {
+test("24 a gone sandbox: its session reads from the control plane with the asleep line, nothing wakes it until Wake now", async ({ signedCloud, page }) => {
   test.setTimeout(120_000)
   const { workspace, sessionId } = await asleepWithHistory(signedCloud)
   const wakes = wakeRequests(page, workspace)
@@ -73,6 +73,10 @@ test("24 a gone sandbox: its session reads from the control plane with the aslee
   await expect(page.getByText("Stored in the cloud")).toBeVisible()
   await expect(page.getByText(ASLEEP)).toBeVisible()
   expect(wakes).toEqual([])
+
+  await page.getByRole("button", { name: "Wake now", exact: true }).click()
+  await expect(page.getByText(ASLEEP)).toHaveCount(0, { timeout: 60_000 })
+  expect(wakes.filter((request) => request.startsWith("POST /api/workspace/"))).toHaveLength(1)
 })
 
 test("24 sending to a gone sandbox wakes it, shows the dock waking up, then sends and the reply arrives", async ({ signedCloud, page }) => {

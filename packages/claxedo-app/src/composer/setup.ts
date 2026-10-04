@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } 
 import { isStoppedCloud, useServer, type PlacementId, type PromptInput } from "@/server"
 import type { SessionView } from "@/session"
 import { showToast, useDialog } from "@/ui"
-import type { ImagePart, Submission } from "./model"
+import type { Draft, ImagePart, Submission } from "./model"
 import { promptImages } from "./model"
 import { useComposerStore, type ComposerKey, type ComposerStore } from "./store"
 import { useCommands, useShellRegistries, type Commands } from "@/shell"
@@ -26,7 +26,7 @@ export type ComposerProps = {
   readonly readOnly?: boolean
   readonly manageSession?: boolean
   readonly hidden?: boolean
-  readonly startSession?: (submission: Submission, prompt: PromptInput) => Promise<SessionView>
+  readonly startSession?: (submission: Submission, prompt: PromptInput, draft: Draft) => Promise<SessionView>
   readonly afterAccepted?: (view: SessionView) => void
   readonly queuedEdit?: { readonly active: () => boolean; readonly cancel: () => void; readonly replace: (input: PromptInput) => Promise<boolean> }
   readonly dropZone?: () => HTMLElement | undefined

@@ -1,4 +1,4 @@
-import type { JSX } from "solid-js"
+import { Show, type JSX } from "solid-js"
 import { usePhone } from "@/lib/viewport"
 import { useServer, type PlacementId } from "@/server"
 import { usePreferences } from "@/settings"
@@ -25,7 +25,7 @@ function DraftTranscriptRow(props: { readonly centered: boolean; readonly childr
   )
 }
 
-export function DraftTranscript(props: { readonly message: OptimisticUserMessage; readonly placementId: PlacementId }) {
+export function DraftTranscript(props: { readonly message: OptimisticUserMessage; readonly placementId: PlacementId; readonly thinking: boolean }) {
   const server = useServer()
   const phone = usePhone()
   const preferences = usePreferences()
@@ -41,7 +41,9 @@ export function DraftTranscript(props: { readonly message: OptimisticUserMessage
           </DraftTranscriptRow>
           <DraftTranscriptRow centered={!phone()}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-              <TimelineThinkingRow t={t} showReasoningSummaries={preferences.transcript.showReasoningSummaries} />
+              <Show when={props.thinking}>
+                <TimelineThinkingRow t={t} showReasoningSummaries={preferences.transcript.showReasoningSummaries} />
+              </Show>
             </div>
           </DraftTranscriptRow>
           <div aria-hidden="true" class="h-16 shrink-0" />

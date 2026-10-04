@@ -9,6 +9,7 @@ import { createLayoutApi, type WorkbenchApi } from "./layout-api"
 import { createPaneApi, type PaneApi } from "./pane-api"
 import { reducers } from "./reducers/index"
 import { createRevealHolds, type RevealHolds } from "./reveal-holds"
+import { samePaneRoute } from "./route-match"
 import { selectors } from "./selectors"
 import type { WorkbenchState } from "./types"
 import { validate } from "./validate"
@@ -163,7 +164,8 @@ function createOpenEncoded(input: {
   }
 }
 
-function openRoute(kinds: readonly AnyPaneKind[], openEncoded: OpenEncoded, route: PaneRoute, focus: boolean): string | undefined {
+function openRoute(kinds: readonly AnyPaneKind[], openEncoded: OpenEncoded, showing: OpenedPane | undefined, route: PaneRoute, focus: boolean): string | undefined {
+  if (showing?.content) return openEncoded(showing.kind, showing.content.encode(), focus)
   for (const kind of kinds) {
     const opened = kind.fromRoute(route)
     if (opened) return openEncoded(kind, opened.encode(), focus)
@@ -194,7 +196,10 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
     layout,
     content,
     open,
-    openRoute: (route, focus = true) => openRoute(kinds(), openEncoded, route, focus),
+    openRoute: (route, focus = true) => {
+      const showing = layout().contentIds.map(content).find((opened) => samePaneRoute(opened?.content?.route(), route))
+      return openRoute(kinds(), openEncoded, showing, route, focus)
+    },
     routeOf: (contentId) => content(contentId)?.content?.route(),
     closeContent,
     move: (tabId, index) => apply((s) => reducers.contents.reorder(s, tabId, index)),

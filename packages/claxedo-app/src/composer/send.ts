@@ -111,7 +111,7 @@ type SendInput = {
   working: Accessor<boolean>
   goalCapable: Accessor<boolean>
   view: Accessor<SessionView | undefined>
-  startSession?: (submission: Submission, prompt: PromptInput) => Promise<SessionView>
+  startSession?: (submission: Submission, prompt: PromptInput, draft: Draft) => Promise<SessionView>
   afterAccepted?: (view: SessionView) => void
   queuedReplace: () => ((input: PromptInput) => Promise<boolean>) | undefined
   focusEditor: () => void
@@ -155,7 +155,7 @@ async function startDraftSession(input: SendInput, submission: Submission, promp
   const key = input.key()
   const draft = input.store.take(key)
   setBooting(true)
-  const view = await required(input.startSession)(submission, prompt).catch((error: unknown) => {
+  const view = await required(input.startSession)(submission, prompt, draft).catch((error: unknown) => {
     input.store.restore(key, draft)
     throw error
   })

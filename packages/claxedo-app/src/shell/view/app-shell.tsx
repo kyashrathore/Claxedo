@@ -45,7 +45,7 @@ function ScopedShell(props: AppShellProps & { readonly scope: string }): JSX.Ele
   const routing = useShellRoute()
   const workbench = createWorkbenchStore(preferenceKey("workbench", props.scope), registries.paneKinds.list)
   return (
-    <ComposerStoreProvider>
+    <ComposerStoreProvider scope={props.scope}>
       <WorkbenchProvider store={workbench}>
         <ShellLayoutProvider scope={props.scope}>
           <CommandsProvider>

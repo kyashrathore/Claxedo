@@ -2,7 +2,7 @@ import { createEffect, For } from "solid-js"
 import { showToast } from "@/ui"
 import type { AttachmentState } from "../model"
 import type { ComposerSetup } from "../setup"
-import { ComposerNoticeRow } from "./composer-notice"
+import { publishComposerNotice } from "./composer-notice"
 
 type FailedAttachment = Extract<AttachmentState, { kind: "failed" }>
 
@@ -35,15 +35,12 @@ export function createComposerToasts(composer: ComposerSetup) {
   })
 }
 
+function ReadingNotice(props: { composer: ComposerSetup; filename: string; id: string }) {
+  publishComposerNotice(() => ({ kind: `attachment-reading:${props.id}`, tone: "progress", message: props.composer.t("composer.attachment.reading", { filename: props.filename }) }))
+  return null
+}
+
 export function ReadingNotices(props: { composer: ComposerSetup }) {
   const reading = () => props.composer.attachments().filter((state) => state.kind === "reading")
-  return (
-    <For each={reading()}>
-      {(state) => (
-        <ComposerNoticeRow
-          notice={{ kind: "attachment-reading", tone: "info", message: props.composer.t("composer.attachment.reading", { filename: state.filename }) }}
-        />
-      )}
-    </For>
-  )
+  return <For each={reading()}>{(state) => <ReadingNotice composer={props.composer} filename={state.filename} id={state.id} />}</For>
 }

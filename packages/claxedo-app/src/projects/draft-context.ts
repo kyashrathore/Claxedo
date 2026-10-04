@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } 
 import { useQuery } from "@tanstack/solid-query"
 import { useServer, type MachineId, type PlacementId, type ProjectId, type Server } from "@/server"
 import { createDraftBranches } from "./draft-branches"
-import { creationOf, currentPlacement, localRoot, whereEntries, type WhereChoice } from "./draft-where"
+import { creationOf, currentPlacement, localRoot, whereEntries, type WhereChoice, type WhereNew } from "./draft-where"
 
 export type DraftTarget = { readonly projectId: ProjectId; readonly placementId: PlacementId }
 
@@ -29,7 +29,7 @@ function createWhere(server: Server, draft: Accessor<DraftTarget>) {
 type Where = ReturnType<typeof createWhere>
 
 function createResolver(server: Server, draft: Accessor<DraftTarget>, where: Where, base: Accessor<string | undefined>) {
-  const create = async (choice: WhereChoice): Promise<PlacementId> => {
+  const create = async (choice: WhereNew): Promise<PlacementId> => {
     const projectId = draft().projectId
     const branch = base()
     const placement = choice.kind === "newCloud"
@@ -38,9 +38,11 @@ function createResolver(server: Server, draft: Accessor<DraftTarget>, where: Whe
     where.setChoice({ kind: "placement", id: placement.id })
     return placement.id
   }
-  return async (): Promise<PlacementId> => {
+  return async (onCreate?: (choice: WhereNew) => void): Promise<PlacementId> => {
     const choice = where.choice()
-    return choice.kind === "placement" ? where.placement() : create(choice)
+    if (choice.kind === "placement") return where.placement()
+    onCreate?.(choice)
+    return create(choice)
   }
 }
 
@@ -75,7 +77,7 @@ export function createDraftContext(draft: Accessor<DraftTarget>) {
 
 export type DraftPlacementResolver = {
   readonly attach: (context: DraftContext) => void
-  readonly resolve: (draft: DraftTarget) => Promise<PlacementId>
+  readonly resolve: (draft: DraftTarget, onCreate?: (choice: WhereNew) => void) => Promise<PlacementId>
 }
 
 export function createDraftPlacementResolver(): DraftPlacementResolver {
@@ -87,6 +89,6 @@ export function createDraftPlacementResolver(): DraftPlacementResolver {
         if (attached === context) attached = undefined
       })
     },
-    resolve: (draft) => attached?.resolve() ?? Promise.resolve(draft.placementId),
+    resolve: (draft, onCreate) => attached?.resolve(onCreate) ?? Promise.resolve(draft.placementId),
   }
 }

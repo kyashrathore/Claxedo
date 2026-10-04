@@ -26,7 +26,7 @@ import { markSeenWhileShown } from "./seen-while-shown"
 import { createScreenTurnRecovery } from "./turn-recovery-actions"
 import { createFloatingPeek } from "./floating-peek"
 import { PreviousMessagesRow, turnActive, type TimelineHost } from "./timeline"
-import { PlacementStateCards } from "./workspace-sleep"
+import { PlacementNoticeSlot } from "./placement-notice"
 import "./session-screen.css"
 import "./session-floating.css"
 
@@ -162,7 +162,7 @@ function SessionBody(props: {
             <SessionConnectionLine />
           </Show>
           <Show when={composing()} fallback={<ChildNotice t={t} readOnly={props.readOnly} onBack={toParent} />}>
-            <PlacementStateCards placementId={props.view.ref.placementId} />
+            <PlacementNoticeSlot placementId={props.view.ref.placementId}>
             <Composer
               readOnly={!props.controls.send}
               manageSession={props.controls.owner}
@@ -180,6 +180,7 @@ function SessionBody(props: {
               collapsible={props.floating}
               registerRecovery={recovery.register}
             />
+            </PlacementNoticeSlot>
           </Show>
         </DockLayout>
       </div>

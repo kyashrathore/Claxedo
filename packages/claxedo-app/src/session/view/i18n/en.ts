@@ -74,6 +74,9 @@ export type SessionScreenTextKey =
   | "sessionScreen.workspace.resuming"
   | "sessionScreen.workspace.wakeFailed"
   | "sessionScreen.workspace.retryWake"
+  | "sessionScreen.workspace.wakeNow"
+  | "sessionScreen.workspace.starting"
+  | `sessionScreen.firstSend.${"creatingCloud" | "creatingWorktree" | "failed"}`
   | "sessionScreen.child.promptDisabled"
   | "sessionScreen.child.backToParent"
   | "command.message.previous"
@@ -152,11 +155,16 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.goal.metric.timeUsed": "{{seconds}}s",
   "sessionScreen.workspace.asleep": "This workspace is asleep. Your next message wakes it.",
   "sessionScreen.workspace.machineOffline": "This session's machine is offline. Its messages show again when the machine is back.",
-  "sessionScreen.workspace.waking": "Waking up the workspace…",
-  "sessionScreen.workspace.restoring": "Restoring it from a snapshot",
-  "sessionScreen.workspace.resuming": "Resuming its sandbox",
-  "sessionScreen.workspace.wakeFailed": "Couldn't wake the workspace.",
+  "sessionScreen.workspace.waking": "Waking {{name}}",
+  "sessionScreen.workspace.starting": "Starting the machine, about a minute",
+  "sessionScreen.workspace.restoring": "Restoring files",
+  "sessionScreen.workspace.resuming": "Resuming the machine",
+  "sessionScreen.workspace.wakeFailed": "Couldn't wake {{name}}",
   "sessionScreen.workspace.retryWake": "Try again",
+  "sessionScreen.workspace.wakeNow": "Wake now",
+  "sessionScreen.firstSend.creatingCloud": "Creating {{name}}…",
+  "sessionScreen.firstSend.creatingWorktree": "Creating the worktree…",
+  "sessionScreen.firstSend.failed": "Your message was not sent",
   "sessionScreen.child.promptDisabled": "Subagent sessions cannot be prompted.",
   "sessionScreen.child.backToParent": "Back to main session.",
   "sessionScreen.timeline.command.session.new": "New session",

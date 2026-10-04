@@ -1,15 +1,8 @@
-import {
-  createContext,
-  createEffect,
-  createSignal,
-  onCleanup,
-  useContext,
-  Show,
-  type Accessor,
-  type JSX,
-} from "solid-js"
+import { createContext, createEffect, createMemo, createSignal, For, onCleanup, useContext, Show, type Accessor, type JSX } from "solid-js"
+import { Spinner } from "@/ui"
+import { useComposerText } from "../text"
 
-export type ComposerNoticeTone = "critical" | "warning" | "info"
+export type ComposerNoticeTone = "critical" | "warning" | "progress" | "info"
 
 export type ComposerNotice = {
   kind: string
@@ -21,13 +14,29 @@ export type ComposerNotice = {
 }
 
 export type ComposerNoticeChannel = {
-  current: Accessor<ComposerNotice | undefined>
-  publish: (notice: ComposerNotice | undefined) => void
+  notices: Accessor<readonly ComposerNotice[]>
+  publish: (source: object, notice: ComposerNotice | undefined) => void
+}
+
+const TONE_ORDER: readonly ComposerNoticeTone[] = ["critical", "warning", "progress", "info"]
+
+export function rankedNotices(published: Iterable<ComposerNotice>): readonly ComposerNotice[] {
+  const byKind = new Map<string, ComposerNotice>()
+  for (const notice of published) if (!byKind.has(notice.kind)) byKind.set(notice.kind, notice)
+  return [...byKind.values()].toSorted((left, right) => TONE_ORDER.indexOf(left.tone) - TONE_ORDER.indexOf(right.tone))
 }
 
 export function createComposerNoticeChannel(): ComposerNoticeChannel {
-  const [current, setCurrent] = createSignal<ComposerNotice | undefined>()
-  return { current, publish: (notice) => setCurrent(() => notice) }
+  const [published, setPublished] = createSignal<ReadonlyMap<object, ComposerNotice>>(new Map())
+  const notices = createMemo(() => rankedNotices(published().values()))
+  const publish = (source: object, notice: ComposerNotice | undefined) =>
+    setPublished((current) => {
+      const next = new Map(current)
+      if (notice) next.set(source, notice)
+      else next.delete(source)
+      return next
+    })
+  return { notices, publish }
 }
 
 const ComposerNoticeContext = createContext<ComposerNoticeChannel>()
@@ -43,19 +52,57 @@ export function useComposerNoticeChannel() {
 export function publishComposerNotice(notice: Accessor<ComposerNotice | undefined>) {
   const channel = useComposerNoticeChannel()
   if (!channel) return
-  createEffect(() => channel.publish(notice()))
-  onCleanup(() => channel.publish(undefined))
+  const source = {}
+  createEffect(() => channel.publish(source, notice()))
+  onCleanup(() => channel.publish(source, undefined))
 }
 
-export function ComposerNoticeRow(props: { notice: ComposerNotice | undefined; class?: string }) {
+export function ComposerNoticeRow(props: { notices: readonly ComposerNotice[]; class?: string }) {
+  const t = useComposerText()
+  const [expanded, setExpanded] = createSignal(false)
+  const more = () => props.notices.slice(1)
   return (
-    <Show when={props.notice}>
-      {(notice) => <ComposerNoticeCard notice={notice()} class={props.class} />}
+    <Show when={props.notices[0]}>
+      {(notice) => (
+        <div class={"flex min-w-0 flex-col overflow-hidden rounded-t-xl border border-b-0 border-v2-border-border-muted bg-v2-background-bg-deep px-3 pt-2 pb-4" + (props.class ? " " + props.class : "")}>
+          <ComposerNoticeCard notice={notice()} />
+          <Show when={more().length > 0}>
+            <Show when={expanded()} fallback={<NoticeMoreButton label={t("composer.notice.more", { count: String(more().length) })} onClick={() => setExpanded(true)} />}>
+              <For each={more()}>{(other) => <ComposerNoticeCard notice={other} />}</For>
+              <NoticeMoreButton label={t("composer.notice.less")} onClick={() => setExpanded(false)} />
+            </Show>
+          </Show>
+        </div>
+      )}
     </Show>
   )
 }
 
-function ComposerNoticeCard(props: { notice: ComposerNotice; class?: string }) {
+function NoticeMoreButton(props: { label: string; onClick: () => void }) {
+  return (
+    <button type="button" data-action="composer-notice-more" class="self-start pl-3.5 text-12-regular text-v2-text-text-faint hover:text-v2-text-text-base" onClick={() => props.onClick()}>
+      {props.label}
+    </button>
+  )
+}
+
+function NoticeMark(props: { tone: ComposerNoticeTone }) {
+  return (
+    <Show when={props.tone !== "progress"} fallback={<Spinner class="mt-px size-3 shrink-0" />}>
+      <span
+        aria-hidden="true"
+        class="mt-[6px] size-1.5 shrink-0 rounded-full"
+        classList={{
+          "bg-surface-critical-strong": props.tone === "critical",
+          "bg-surface-warning-strong": props.tone === "warning",
+          "bg-icon-weak-base": props.tone === "info",
+        }}
+      />
+    </Show>
+  )
+}
+
+function ComposerNoticeCard(props: { notice: ComposerNotice }) {
   return (
     <div
       data-notice={props.notice.kind}
@@ -63,37 +110,14 @@ function ComposerNoticeCard(props: { notice: ComposerNotice; class?: string }) {
       role={props.notice.tone === "critical" ? "alert" : "status"}
       aria-live={props.notice.tone === "critical" ? "assertive" : "polite"}
       title={props.notice.title ?? [props.notice.message, props.notice.detail].filter(Boolean).join(" — ")}
-      class={
-        "flex min-w-0 items-start gap-2 overflow-hidden rounded-t-xl border border-b-0 border-v2-border-border-muted bg-v2-background-bg-deep px-3 pt-2 pb-4" +
-        (props.class ? " " + props.class : "")
-      }
+      class="flex min-w-0 items-start gap-2 py-0.5"
     >
-      <span
-        aria-hidden="true"
-        class="mt-[6px] size-1.5 shrink-0 rounded-full"
-        classList={{
-          "bg-surface-critical-strong": props.notice.tone === "critical",
-          "bg-surface-warning-strong": props.notice.tone === "warning",
-          "bg-icon-weak-base": props.notice.tone === "info",
-        }}
-      />
+      <NoticeMark tone={props.notice.tone} />
       <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span class="truncate text-12-medium text-v2-text-text-base">
-          {props.notice.message}
-        </span>
-        <Show when={props.notice.detail}>
-          {(detail) => (
-            <span
-              class="line-clamp-2 text-12-regular text-v2-text-text-faint"
-            >
-              {detail()}
-            </span>
-          )}
-        </Show>
+        <span class="truncate text-12-medium text-v2-text-text-base">{props.notice.message}</span>
+        <Show when={props.notice.detail}>{(detail) => <span class="line-clamp-2 text-12-regular text-v2-text-text-faint">{detail()}</span>}</Show>
       </div>
-      <Show when={props.notice.action}>
-        {(action) => <ComposerNoticeActionButton action={action()} />}
-      </Show>
+      <Show when={props.notice.action}>{(action) => <ComposerNoticeActionButton action={action()} />}</Show>
     </div>
   )
 }

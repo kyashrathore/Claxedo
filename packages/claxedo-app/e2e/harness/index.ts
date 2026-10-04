@@ -30,7 +30,7 @@ export { breakFixturePlugin, FIXTURE_ROUTES, fixtureFolder, writeFixturePlugin, 
 export { type Account, type SignedStack } from "./signed-stack"
 export { ownerDevices, revokeOwnerMachines } from "./machine-devices"
 export {
-  cloudMessages, cloudPrompt, cloudTurn, cloudWorkspaceNames, createCloudSession, listedSessions, makeCloudWorkspace, sessionConnection, startCloudWorkspace, stopCloudWorkspace,
+  cloudMessages, cloudPrompt, cloudTurn, cloudWorkspaceNames, cloudWorkspaces, createCloudSession, listedSessions, makeCloudWorkspace, sessionConnection, startCloudWorkspace, stopCloudWorkspace,
   storedMessages, storeOwnerKey, type CloudWorkspace,
 } from "./cloud"
 export { SCRIPTED_ACP_CONNECTION_ID, SCRIPTED_ACP_HARNESS, UNSET_ACP_HARNESS } from "../../../harness/e2e/harness/acp/connection"

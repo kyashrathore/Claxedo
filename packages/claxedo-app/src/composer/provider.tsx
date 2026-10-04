@@ -9,9 +9,9 @@ import { createComposerPersistence } from "./persistence"
 import { ComposerStoreContext, createComposerStore } from "./store"
 import { createQuoteSurfaces, QuoteSurfacesContext } from "./quote/surfaces"
 
-export function ComposerStoreProvider(props: ParentProps) {
+export function ComposerStoreProvider(props: ParentProps<{ readonly scope: string }>) {
   const server = useServer()
-  const persistence = createDeferredPersistence(createComposerPersistence(localStorage, server.harnessConfig.serverUrl), window)
+  const persistence = createDeferredPersistence(createComposerPersistence(localStorage, `${server.harnessConfig.serverUrl}:${props.scope}`), window)
   onCleanup(persistence.dispose)
   const store = createComposerStore(persistence)
   const harness = createHarnessConfigStore(server, localStorage)

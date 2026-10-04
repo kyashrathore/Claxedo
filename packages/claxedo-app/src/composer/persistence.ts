@@ -150,8 +150,8 @@ export function persistedEntryOf(value: unknown): PersistedEntry | undefined {
   }
 }
 
-export function createComposerPersistence(storage: Storage | undefined, serverUrl: string): ComposerPersistence {
-  const storageKey = (key: string) => `claxedo:composer:${serverUrl}:${key}`
+export function createComposerPersistence(storage: Storage | undefined, scope: string): ComposerPersistence {
+  const storageKey = (key: string) => `claxedo:composer:${scope}:${key}`
   return {
     load: (key) => {
       const raw = storage?.getItem(storageKey(key))
