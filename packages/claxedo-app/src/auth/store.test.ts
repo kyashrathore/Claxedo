@@ -23,9 +23,9 @@ function restoringBinding() {
     unavailable: () => null,
     identityResolving: () => false,
     offered: () => true,
-    signIn: async () => setUser({ id: "user-1", email: "ada@example.test" }),
+    signIn: async () => { setUser({ id: "user-1", email: "ada@example.test" }) },
     signUp: async () => {},
-    signOut: async () => setUser(null),
+    signOut: async () => { setUser(null) },
     refresh: async () => {},
     controlPlane: { kind: "cookie" },
   }
