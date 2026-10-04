@@ -19,12 +19,12 @@ export function SectionHeader(props: {
     <button
       type="button"
       data-expanded={props.expanded ? "true" : undefined}
-      disabled={props.disabled || props.loading}
+      disabled={props.disabled}
       aria-busy={props.loading}
       aria-expanded={props.expanded}
       title={props.hint}
       class={`shrink-0 disabled:pointer-events-none disabled:opacity-45 ${HARNESS_PICKER_ROW_CLASS}`}
-      onClick={props.onToggle}
+      onClick={() => !props.loading && props.onToggle()}
     >
       <Icon
         name="chevron-right"
@@ -42,8 +42,8 @@ export function SectionHeader(props: {
         <span
           class="min-w-0 truncate text-right text-compact transition-colors duration-150"
           classList={{
-            "text-text-weak": !props.expanded && !props.loading,
-            "text-text-weaker": props.expanded || props.loading,
+            "text-text-base": !props.expanded,
+            "text-text-weak": props.expanded,
           }}
         >
           {props.loading ? "Loading…" : props.value}

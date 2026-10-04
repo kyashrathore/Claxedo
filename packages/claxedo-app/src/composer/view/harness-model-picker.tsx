@@ -39,8 +39,10 @@ export function HarnessModelPicker<H>(
       open={open()}
       onOpenChange={(next) => {
         setOpen(next)
-        if (next) props.onOpen?.()
-        if (!next) setSection("model")
+        if (next) {
+          setSection(props.harness() === undefined ? "harness" : "model")
+          props.onOpen?.()
+        }
       }}
       modal={false}
       placement="top-end"

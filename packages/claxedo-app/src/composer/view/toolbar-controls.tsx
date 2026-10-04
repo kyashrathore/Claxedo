@@ -80,7 +80,7 @@ export function PromptToolbarControls(props: {
         enabled={() => {
           if (!props.approveEnabled() || !props.active()) return false
           const groups = props.permissionGroups()
-          if (!groups) return true
+          if (!groups) return false
           const offered = groups.harness.rows
           if (offered.length > 0) return true
           return groups.harness.loading === true

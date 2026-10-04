@@ -38,20 +38,23 @@ export function isNativeSdkHarness(type: HarnessType) {
   return type.kind === "native" && ["claude", "codex", "cursor"].includes(type.harnessId)
 }
 
+const PI_PROVIDER_NAMES: Readonly<Record<string, string>> = {
+  "openai-codex": "OpenAI Codex",
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  openrouter: "OpenRouter",
+  google: "Google",
+  groq: "Groq",
+  xai: "xAI",
+}
+
 export function harnessModelPickerProvider(harness: HarnessType, item: { id: string; providerId?: string }) {
   const harnessId = item.providerId ?? harnessSelectionId(harness)
   const label = harnessDisplayLabel(harnessId)
   if (!selectsNativeHarness(harness, "pi")) return { id: harnessId, name: label }
   const slash = item.id.indexOf("/")
   const provider = slash > 0 ? item.id.slice(0, slash) : harnessId
-  return {
-    id: harnessId,
-    name: provider
-      .split(/[-_]/)
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" "),
-  }
+  return { id: harnessId, name: PI_PROVIDER_NAMES[provider] ?? harnessDisplayLabel(provider) }
 }
 
 export function selectsNativeHarness(type: HarnessType, id: NativeHarnessId): boolean {

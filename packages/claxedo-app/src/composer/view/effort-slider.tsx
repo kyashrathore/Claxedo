@@ -33,7 +33,6 @@ export function EffortSlider(props: {
       aria-valuenow={index()}
       aria-valuetext={props.label(props.current)}
       title={`Effort · ${props.label(props.current)}`}
-      data-supported="true"
       data-dragging={dragging() ? "true" : undefined}
       class="harness-picker-effort"
       style={{ "--effort-ratio": ratio() }}

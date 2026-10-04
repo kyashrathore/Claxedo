@@ -14,8 +14,8 @@ export function OptionRow(props: { selected: boolean; icon?: JSX.Element; label:
         <span class="flex shrink-0 items-center">{props.icon}</span>
       </Show>
       <span
-        class="min-w-0 flex-1 truncate"
-        classList={{ "text-text-base": props.selected, "text-text-weak": !props.selected }}
+        class="min-w-0 flex-1 truncate text-text-base"
+        classList={{ "font-medium": props.selected }}
       >
         {props.label}
       </span>

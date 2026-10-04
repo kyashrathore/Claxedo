@@ -7,7 +7,7 @@ import { harnessDisplayLabel, type HarnessType } from "./profile"
 const BUILTIN_HARNESS_OPTIONS: HarnessType[] = NATIVE_HARNESS_IDS.map(nativeHarness)
 
 export function harnessOptionGroup(input: HarnessType) {
-  return input.kind === "native" ? "Native SDK" : "Connections"
+  return input.kind === "native" ? "Harnesses" : "Other agents"
 }
 
 export function createHarnessOptionList(server: Server) {

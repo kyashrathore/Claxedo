@@ -57,7 +57,7 @@ export function PromptPermissionControl(props: {
             class={`${COMPOSER_MENU_CLASS} overflow-y-auto`}
             style={{ "max-height": "min(420px, var(--kb-popper-content-available-height, 420px))" }}
           >
-            <Show when={props.groups()} fallback={<DropdownMenu.Item disabled>Resolving harness…</DropdownMenu.Item>}>
+            <Show when={props.groups()}>
               {(groups) => (
                 <>
                   <Show

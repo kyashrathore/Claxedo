@@ -14,6 +14,7 @@ export type ModelSectionProps = {
   modelLoading: Accessor<boolean>
   modelDisabled: Accessor<boolean>
   modelError?: Accessor<ModelLoadFailure | undefined>
+  onAddAccount?: () => void
 }
 
 export function HarnessPickerModelSection(props: {
@@ -35,9 +36,16 @@ export function HarnessPickerModelSection(props: {
         <SectionPanel class="flex min-h-0 flex-1 flex-col">
           <Show
             when={props.picker.modelError?.()}
-            fallback={<ModelList model={props.picker.model()} tooltips={false} onSelect={props.onSelect} />}
+            fallback={
+              <Show
+                when={props.picker.model().list().length > 0 || !props.picker.onAddAccount}
+                fallback={<ModelNotice critical={false} failure={{ message: "No models yet", detail: "Add an account for this harness to choose a model.", action: { label: "Add an account", run: () => props.picker.onAddAccount?.() } }} />}
+              >
+                <ModelList model={props.picker.model()} tooltips={false} onSelect={props.onSelect} />
+              </Show>
+            }
           >
-            {(failure) => <ModelLoadFailureNotice failure={failure()} />}
+            {(failure) => <ModelNotice critical failure={failure()} />}
           </Show>
         </SectionPanel>
       </Show>
@@ -45,11 +53,13 @@ export function HarnessPickerModelSection(props: {
   )
 }
 
-function ModelLoadFailureNotice(props: { failure: ModelLoadFailure }) {
+function ModelNotice(props: { failure: ModelLoadFailure; critical: boolean }) {
   return (
     <div class="flex min-h-0 flex-1 flex-col items-start gap-2 px-3 py-4">
       <div class="flex items-center gap-2">
-        <span aria-hidden="true" class="size-1.5 shrink-0 rounded-full bg-icon-critical-base" />
+        <Show when={props.critical}>
+          <span aria-hidden="true" class="size-1.5 shrink-0 rounded-full bg-icon-critical-base" />
+        </Show>
         <span class="text-compact font-medium text-text-base">{props.failure.message}</span>
       </div>
       <Show when={props.failure.detail}>

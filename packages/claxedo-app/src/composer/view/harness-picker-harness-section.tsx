@@ -28,7 +28,7 @@ export function HarnessPickerHarnessSection<H>(props: {
     <>
       <SectionHeader
         label="Harness"
-        value={props.picker.harness() ? props.picker.harnessLabel(props.picker.harness()!) : "Select agent"}
+        value={props.picker.harness() ? props.picker.harnessLabel(props.picker.harness()!) : "Select a harness"}
         expanded={props.section() === "harness"}
         disabled={props.picker.harnessDisabled()}
         hint={props.picker.harnessHint?.()}
@@ -39,9 +39,9 @@ export function HarnessPickerHarnessSection<H>(props: {
           <For each={props.groups()}>
             {([group, options]) => (
               <>
-                <div class="px-2 pb-0.5 pt-2 text-xs font-medium uppercase tracking-[var(--letter-spacing-label)] text-text-weaker first:pt-0.5">
-                  {group}
-                </div>
+                <Show when={props.groups().length > 1}>
+                  <div class="px-2 pb-0.5 pt-2 text-xs font-medium text-text-weak first:pt-0.5">{group}</div>
+                </Show>
                 <For each={options}>
                   {(option) => (
                     <OptionRow

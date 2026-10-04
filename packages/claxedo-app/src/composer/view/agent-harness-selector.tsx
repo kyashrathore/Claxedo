@@ -124,6 +124,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         }}
         onHarnessSelect={harnessSwitch.apply}
         modelError={modelError}
+        onAddAccount={openProviders}
         model={model}
         modelLabel={trigger.label}
         modelLoading={availability.modelLoadingOrSwitching}

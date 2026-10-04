@@ -66,7 +66,7 @@ export function modelLabel(input: ModelLabelInput): string {
   if (picked && picked.name !== picked.id) return picked.name
   if (input.savedModelUnavailable !== undefined) return input.savedModelUnavailable
   if (input.managedDefault && harness) return `${input.harnessLabel(harness)} default`
-  if (!harness) return "Select agent"
+  if (!harness) return "Select a harness"
   const known = input.rememberedName ?? (isClientDefaultPlaceholder(selectedModel) ? undefined : selectedModel)
   if (known) return known
   if (input.modelLoading) return "Loading models"

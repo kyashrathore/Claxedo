@@ -178,11 +178,6 @@
   box-shadow: 0 0 0 1.5px var(--overlay-border);
 }
 
-.harness-picker-effort[data-supported="false"] {
-  background: transparent;
-  border: 1px dashed var(--overlay-border);
-  cursor: default;
-}
 
 .harness-picker-effort-fill {
   position: absolute;

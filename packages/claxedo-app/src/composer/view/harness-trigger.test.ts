@@ -16,7 +16,7 @@ test("model label: the placeholders show only when nothing is known", () => {
     catalogUnread: false,
     hasModelOptions: false,
   }
-  expect(modelLabel(nothing), "a new draft with no default").toBe("Select agent")
+  expect(modelLabel(nothing), "a new draft with no default").toBe("Select a harness")
   expect(modelLabel({ ...nothing, harness: codex }), "a harness with no model to pick").toBe("Select model")
   expect(modelLabel({ ...nothing, harness: codex, modelLoading: true })).toBe("Loading models")
   expect(modelLabel({ ...nothing, harness: codex, selectedModel: "gpt-5", modelLoading: true }), "a known model while its list loads").toBe("gpt-5")
