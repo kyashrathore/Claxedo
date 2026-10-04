@@ -12,7 +12,7 @@ type SearchInput = {
   readonly home: () => string
 }
 
-type Search = SearchInput & { readonly browsable: () => Promise<boolean> }
+type Search = SearchInput
 
 function logged<T>(what: string, context: Readonly<Record<string, string>>, fallback: T) {
   return (error: unknown): T => {
@@ -36,7 +36,6 @@ function scopedInput(search: Search, value: string): Scoped | undefined {
 
 async function folderChildren(search: Search, dir: string): Promise<Entry[]> {
   const key = trimTrailing(dir)
-  if (!(await search.browsable())) return []
   const { queryClient, queries } = search.server
   return queryClient
     .fetchQuery({ ...queries.folders.children(key), staleTime: Number.POSITIVE_INFINITY })
@@ -55,7 +54,6 @@ async function matchingFolders(search: Search, dir: string, query: string, limit
 }
 
 async function find(search: Search, scoped: Scoped, query: string, active: () => boolean) {
-  if (!(await search.browsable())) return []
   const results = await search.server.folders
     .search(scoped.directory, query, 50)
     .catch(logged<readonly string[]>("search", { directory: scoped.directory, query }, []))
@@ -97,9 +95,7 @@ async function walk(search: Search, scoped: Scoped, query: string, raw: string, 
 
 export function createFolderSearch(input: SearchInput): (filter: string) => Promise<string[]> {
   let current = 0
-  let allowed: Promise<boolean> | undefined
-  const browsable = () => (allowed ??= input.server.folders.browsable().catch(logged("browsing check", {}, false)))
-  const search: Search = { ...input, browsable }
+  const search: Search = input
   return async (filter) => {
     const token = ++current
     const active = () => token === current

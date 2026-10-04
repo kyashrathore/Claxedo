@@ -1,4 +1,4 @@
-import { asArray, isRecord, isString } from "@claxedo/helpers/guards"
+import { asArray, isString } from "@claxedo/helpers/guards"
 import { readString } from "@claxedo/helpers/readers"
 import { ServerError } from "./errors"
 import { fetchQuery } from "./fetch-query"
@@ -17,7 +17,6 @@ export type FolderQueries = {
 
 export type FoldersApi = {
   readonly search: (scope: string, query: string, limit: number) => Promise<readonly string[]>
-  readonly browsable: () => Promise<boolean>
 }
 
 async function readPaths(transport: Transport): Promise<ServerPaths> {
@@ -48,10 +47,5 @@ export function createFoldersApi(transport: Transport): FoldersApi {
   return {
     search: async (scope, query, limit) =>
       asArray(await transport.json(withQuery("/find/file", { directory: scope, query, type: "directory", limit: String(limit) }))).filter(isString),
-    browsable: async () => {
-      if (transport.loopback) return true
-      const body = await transport.json("/api/claxedo/health")
-      return isRecord(body) && body.localExecution === true
-    },
   }
 }
