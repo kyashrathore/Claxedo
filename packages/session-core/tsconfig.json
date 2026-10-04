@@ -1,0 +1,24 @@
+{
+  "extends": "@tsconfig/bun/tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "customConditions": [
+      "development"
+    ],
+    "noEmit": true,
+    "noUncheckedIndexedAccess": false,
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "bun"
+    ],
+    "noImplicitOverride": false
+  },
+  "include": [
+    "src"
+  ]
+}

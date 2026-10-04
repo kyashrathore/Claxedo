@@ -1,0 +1,914 @@
+import Database from "better-sqlite3"
+import { describe, expect, test } from "vitest"
+import { readFileSync, readdirSync, rmSync } from "fs"
+import { randomUUID } from "crypto"
+import os from "os"
+import path from "path"
+import { getTableColumns, getTableName, is } from "drizzle-orm"
+import { SQLiteTable } from "drizzle-orm/sqlite-core"
+import { repair } from "./repair"
+import * as credentialTables from "../../credentials/provider-credential.sql"
+import * as customProviderTables from "../../credentials/custom-provider.sql"
+import * as machineLoginUsageTables from "../../credentials/machine-login-usage.sql"
+import * as documentTables from "../../documents/index.sql"
+import * as networkPolicyTables from "../../sandbox/network/policy.sql"
+import * as cloudSessionTables from "../../session/cloud.sql"
+import * as sessionMetaTables from "../../session/meta.sql"
+import * as usageTables from "../../usage/usage.sql"
+
+const retiredPageTable = ["claxedo", "page"].join("_")
+const retiredArenaTable = ["claxedo", "page", "arena"].join("_")
+
+function entries() {
+  const dir = path.join(import.meta.dirname, "claxedo-migration")
+  return readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+    .map((name, idx) => ({
+      name,
+      sql: readFileSync(path.join(dir, name, "migration.sql"), "utf-8"),
+      timestamp: idx,
+    }))
+}
+
+function hasTable(db: InstanceType<typeof Database>, name: string) {
+  return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name)
+}
+
+function queryPlan(db: InstanceType<typeof Database>, sql: string) {
+  return (db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all() as Array<{ detail: string }>)
+    .map((row) => row.detail)
+    .join("\n")
+}
+
+function hasColumn(db: InstanceType<typeof Database>, table: string, name: string) {
+  const rows = db.prepare(`PRAGMA table_info(\`${table}\`)`).all() as Array<{ name: string }>
+  return rows.some((row) => row.name === name)
+}
+
+function hasIndex(db: InstanceType<typeof Database>, name: string) {
+  return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?").get(name)
+}
+
+function column(db: InstanceType<typeof Database>, table: string, name: string) {
+  const rows = db.prepare(`PRAGMA table_info(\`${table}\`)`).all() as Array<{ name: string; notnull: number }>
+  return rows.find((row) => row.name === name)
+}
+
+function apply(db: InstanceType<typeof Database>) {
+  entries().forEach((entry) => {
+    entry.sql
+      .split("--> statement-breakpoint")
+      .map((sql) => sql.trim())
+      .filter(Boolean)
+      .forEach((sql) => db.exec(sql))
+  })
+}
+
+function applyMigration(db: InstanceType<typeof Database>, name: string) {
+  const entry = entries().find((item) => item.name === name)
+  if (!entry) throw new Error(`missing migration ${name}`)
+  entry.sql
+    .split("--> statement-breakpoint")
+    .map((sql) => sql.trim())
+    .filter(Boolean)
+    .forEach((sql) => db.exec(sql))
+}
+
+/**
+ * Every column a drizzle table definition would select, as `table.column`. A
+ * column declared here without a migration reads as "no such column" at the
+ * first query against a fresh database, which is the drift `repair` exists to
+ * heal after the fact.
+ */
+function drizzleColumns() {
+  return [credentialTables, customProviderTables, machineLoginUsageTables, documentTables, networkPolicyTables, cloudSessionTables, sessionMetaTables, usageTables]
+    .flatMap((mod) => Object.values(mod).filter((value): value is SQLiteTable => is(value, SQLiteTable)))
+    .flatMap((table) => Object.values(getTableColumns(table)).map((col) => `${getTableName(table)}.${col.name}`))
+}
+
+describe("claxedo schema", () => {
+  test("bundled migrations create every column the drizzle definitions select", () => {
+    const sqlite = new Database(":memory:")
+
+    apply(sqlite)
+
+    const columns = drizzleColumns()
+    expect(columns.length).toBeGreaterThan(50)
+    expect(columns.filter((name) => {
+      const [table, col] = name.split(".")
+      return !hasColumn(sqlite, table, col)
+    })).toEqual([])
+    expect(queryPlan(sqlite, "SELECT * FROM claxedo_usage_turn_current WHERE settlement = 'provisional'")).toContain(
+      "claxedo_usage_turn_current_settlement_idx",
+    )
+    expect(
+      queryPlan(sqlite, "SELECT * FROM claxedo_usage_turn_current WHERE session_id = 's' AND message_id = 'm'"),
+    ).toContain("claxedo_usage_turn_current_session_message_idx")
+  })
+
+  test("bundled migrations keep the retired tables dropped and the sandbox columns under their driver names", () => {
+    const sqlite = new Database(":memory:")
+
+    apply(sqlite)
+
+    for (const table of [retiredPageTable, retiredArenaTable, "claxedo_document", ["claxedo", "document", "revision"].join("_")]) {
+      expect(hasTable(sqlite, table), table).toBe(false)
+    }
+    const renamed = [
+      ["claxedo_terminal_session", "provider", "driver"],
+      ["claxedo_workspace_lease", "provider", "driver"],
+      ["claxedo_workspace_lease", "provider_object_id", "driver_resource_id"],
+      ["claxedo_workspace_lease", "provider_snapshot_id", "driver_snapshot_id"],
+      ["claxedo_runtime_snapshot", "provider_snapshot_id", "driver_snapshot_id"],
+    ]
+    for (const [table, old, current] of renamed) {
+      expect(hasColumn(sqlite, table, old), `${table}.${old}`).toBe(false)
+      expect(hasColumn(sqlite, table, current), `${table}.${current}`).toBe(true)
+    }
+  })
+
+  test("sandbox driver credential migration renames old sandbox driver credential kind", () => {
+    const sqlite = new Database(":memory:")
+
+    applyMigration(sqlite, "20260411000000_provider_credentials")
+    const insert = sqlite.prepare(`
+      INSERT INTO claxedo_provider_credential (
+        id,
+        provider_id,
+        kind,
+        source,
+        status,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `)
+    insert.run("cred_1", "vercel", "sandbox_provider", "managed", "available", 1, 1)
+    insert.run("cred_2", "modal", "runtime_host_provider", "managed", "available", 1, 1)
+
+    applyMigration(sqlite, "20260702000100_sandbox_driver_credentials")
+
+    expect(sqlite.prepare("SELECT id, kind FROM claxedo_provider_credential ORDER BY id").all()).toEqual([
+      { id: "cred_1", kind: "sandbox_driver" },
+      { id: "cred_2", kind: "sandbox_driver" },
+    ])
+  })
+
+  test("hybrid placement migration preserves workspace rows and permits directory-less sessions", () => {
+    const sqlite = new Database(":memory:")
+
+    applyMigration(sqlite, "20260320190000_session_meta")
+    sqlite
+      .prepare(
+        `
+      INSERT INTO claxedo_session_meta (
+        session_id,
+        workspace_id,
+        project_id,
+        directory,
+        title,
+        parent_session_id,
+        archived_at,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+      )
+      .run("legacy", "ws_1", "proj_1", "", "Legacy", null, null, 1, 2)
+    sqlite
+      .prepare(
+        `
+      INSERT INTO claxedo_session_meta (
+        session_id,
+        workspace_id,
+        project_id,
+        directory,
+        title,
+        parent_session_id,
+        archived_at,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+      )
+      .run("legacy_dir", "ws_1", "proj_1", "/tmp/project", "Legacy Dir", null, null, 3, 4)
+    applyMigration(sqlite, "20260603000100_hybrid_session_placement")
+
+    expect(sqlite.prepare("SELECT * FROM claxedo_session_meta WHERE session_id = ?").get("legacy")).toMatchObject({
+      session_id: "legacy",
+      workspace_id: "ws_1",
+      project_id: "proj_1",
+      host: "workspace",
+      directory: null,
+      title: "Legacy",
+      created_at: 1,
+      updated_at: 2,
+    })
+    expect(
+      sqlite.prepare("SELECT host, directory FROM claxedo_session_meta WHERE session_id = ?").get("legacy_dir"),
+    ).toEqual({
+      host: "workspace",
+      directory: "/tmp/project",
+    })
+    sqlite
+      .prepare(
+        `
+      INSERT INTO claxedo_session_meta (
+        session_id,
+        host,
+        directory,
+        title,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `,
+      )
+      .run("central", "central", null, "Central", 3, 4)
+    expect(
+      sqlite.prepare("SELECT host, directory FROM claxedo_session_meta WHERE session_id = ?").get("central"),
+    ).toEqual({
+      host: "central",
+      directory: null,
+    })
+  })
+
+  test("connection scoping migrates a pre-feature database file and preserves credential metadata", () => {
+    const file = path.join(os.tmpdir(), `claxedo-connection-migration-${randomUUID()}.db`)
+    const sqlite = new Database(file)
+    const target = "20260710000400_connection_scoping"
+    try {
+      for (const entry of entries()) {
+        if (entry.name === target) break
+        applyMigration(sqlite, entry.name)
+      }
+      sqlite
+        .prepare(
+          `
+        INSERT INTO claxedo_connection (
+          integration_id, account_label, granted_capabilities, fields, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `,
+        )
+        .run("notion", "Legacy Notion", JSON.stringify(["docs"]), JSON.stringify({ workspace: "acme" }), 1, 2)
+      sqlite
+        .prepare(
+          `
+        INSERT INTO claxedo_provider_credential (
+          id, provider_id, kind, source, secure_ref, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+        )
+        .run("credential_1", "integration:notion", "api_key", "managed", "secret-ref-1", "available", 1, 2)
+
+      applyMigration(sqlite, target)
+
+      const connection = sqlite.prepare("SELECT * FROM claxedo_connection WHERE integration_id = 'notion'").get() as {
+        id: string
+        owner: string | null
+        account_label: string
+        granted_capabilities: string
+      }
+      expect(connection.id).toMatch(/^[a-f0-9]{32}$/)
+      expect(connection.owner).toBeNull()
+      expect(connection.account_label).toBe("Legacy Notion")
+      expect(JSON.parse(connection.granted_capabilities)).toEqual(["docs"])
+      expect(
+        sqlite
+          .prepare("SELECT provider_id, secure_ref FROM claxedo_provider_credential WHERE id = 'credential_1'")
+          .get(),
+      ).toEqual({ provider_id: `integration:${connection.id}`, secure_ref: "secret-ref-1" })
+      expect(() =>
+        sqlite
+          .prepare(
+            `
+        INSERT INTO claxedo_connection (id, integration_id, owner, granted_capabilities, fields, created_at, updated_at)
+        VALUES ('duplicate-team', 'notion', NULL, '[]', '{}', 3, 3)
+      `,
+          )
+          .run(),
+      ).toThrow()
+      expect(() =>
+        sqlite
+          .prepare(
+            `
+        INSERT INTO claxedo_connection (id, integration_id, owner, granted_capabilities, fields, created_at, updated_at)
+        VALUES ('personal-notion', 'notion', 'user-a', '[]', '{}', 3, 3)
+      `,
+          )
+          .run(),
+      ).not.toThrow()
+    } finally {
+      sqlite.close()
+      rmSync(file, { force: true })
+    }
+  })
+
+  test("message event ordinal migrations backfill monotonic ordinals", () => {
+    const sqlite = new Database(":memory:")
+    const target = "20260502000100_message_event_ordinal"
+    for (const entry of entries()) {
+      if (entry.name === target) break
+      applyMigration(sqlite, entry.name)
+    }
+
+    const insert = sqlite.prepare(`
+      INSERT INTO claxedo_cloud_message
+        (message_id, session_id, workspace_id, role, ordinal, data, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    ;[
+      ["msg_a2", "sess_a", 1, 200],
+      ["msg_a1", "sess_a", 0, 100],
+      ["msg_b1", "sess_b", 0, 150],
+      ["msg_a3", "sess_a", 2, 300],
+      ["msg_b2", "sess_b", 1, 250],
+    ].forEach(([messageId, sessionId, ordinal, createdAt]) => {
+      insert.run(
+        messageId,
+        sessionId,
+        sessionId,
+        "assistant",
+        ordinal,
+        JSON.stringify({ info: { id: messageId }, parts: [] }),
+        createdAt,
+        createdAt,
+      )
+    })
+
+    applyMigration(sqlite, target)
+    applyMigration(sqlite, "20260502000200_cloud_message_event_log")
+
+    const messageRows = sqlite
+      .prepare(
+        `
+      SELECT session_id, event_ordinal
+      FROM claxedo_cloud_message
+      ORDER BY session_id, event_ordinal
+    `,
+      )
+      .all() as { session_id: string; event_ordinal: number }[]
+    const eventRows = sqlite
+      .prepare(
+        `
+      SELECT session_id, event_ordinal
+      FROM claxedo_cloud_message_event
+      ORDER BY session_id, event_ordinal
+    `,
+      )
+      .all() as { session_id: string; event_ordinal: number }[]
+
+    expect(Map.groupBy(messageRows, (row) => row.session_id)).toEqual(
+      new Map([
+        [
+          "sess_a",
+          [
+            { session_id: "sess_a", event_ordinal: 1 },
+            { session_id: "sess_a", event_ordinal: 2 },
+            { session_id: "sess_a", event_ordinal: 3 },
+          ],
+        ],
+        [
+          "sess_b",
+          [
+            { session_id: "sess_b", event_ordinal: 1 },
+            { session_id: "sess_b", event_ordinal: 2 },
+          ],
+        ],
+      ]),
+    )
+    expect(Map.groupBy(eventRows, (row) => row.session_id)).toEqual(Map.groupBy(messageRows, (row) => row.session_id))
+  })
+
+  function migratedUntil(target: string) {
+    const sqlite = new Database(":memory:")
+    for (const entry of entries()) {
+      if (entry.name === target) break
+      applyMigration(sqlite, entry.name)
+    }
+    return sqlite
+  }
+
+  function plantUsageTurn(sqlite: InstanceType<typeof Database>, messageId: string) {
+    for (const table of ["claxedo_usage_turn_revision", "claxedo_usage_turn_current"]) {
+      sqlite.prepare(`
+        INSERT INTO ${table} (host_id, session_ref, session_id, message_id, revision, payload_hash, observed_at,
+          settlement, status, location, harness, provider_id, model_id, cache_write_tokens, quality_json)
+        VALUES ('host_1', 'ref_1', 'ses_1', ?, 1, 'hash', 1, 'final', 'completed', 'local', 'claude', 'anthropic', 'm', 40, '{}')
+      `).run(messageId)
+    }
+  }
+
+  test("the one-hour cache write migration keeps every turn and leaves its share unknown", () => {
+    const target = "20260923000100_usage_cache_write_1h"
+    const sqlite = migratedUntil(target)
+    plantUsageTurn(sqlite, "msg_before")
+
+    applyMigration(sqlite, target)
+
+    for (const table of ["claxedo_usage_turn_revision", "claxedo_usage_turn_current"]) {
+      expect(sqlite.prepare(`SELECT message_id, cache_write_tokens, cache_write_1h_tokens FROM ${table}`).all(), table)
+        .toEqual([{ message_id: "msg_before", cache_write_tokens: 40, cache_write_1h_tokens: null }])
+    }
+  })
+
+  test("repair gives usage tables that missed the one-hour cache write migration their column", () => {
+    const sqlite = migratedUntil("20260923000100_usage_cache_write_1h")
+    plantUsageTurn(sqlite, "msg_before")
+
+    const fixed = repair(sqlite)
+
+    expect(fixed).toEqual(expect.arrayContaining([
+      "claxedo_usage_turn_revision.cache_write_1h_tokens",
+      "claxedo_usage_turn_current.cache_write_1h_tokens",
+    ]))
+    expect(sqlite.prepare("SELECT message_id, cache_write_1h_tokens FROM claxedo_usage_turn_current").all())
+      .toEqual([{ message_id: "msg_before", cache_write_1h_tokens: null }])
+    expect(repair(sqlite).filter((name) => name.includes("cache_write_1h"))).toEqual([])
+  })
+
+  function plantOutbox(sqlite: InstanceType<typeof Database>) {
+    const stamp = sqlite.prepare(`
+      INSERT INTO claxedo_usage_outbox (host_id, session_ref, message_id, revision, payload_hash, org_id, user_id, state, attempts, created_at, updated_at)
+      VALUES ('host_1', 'ref_1', ?, ?, 'hash', ?, ?, 'pending', 0, 1, 1)
+    `)
+    stamp.run("msg_owned", 1, "org_a", "user_a")
+    stamp.run("msg_owned", 2, null, null)
+    stamp.run("msg_moved", 1, "org_a", "user_a")
+    stamp.run("msg_moved", 2, "org_b", "user_b")
+    stamp.run("msg_machine", 1, null, null)
+  }
+
+  const ownedTurns = [
+    { message_id: "msg_moved", org_id: "org_b", user_id: "user_b" },
+    { message_id: "msg_owned", org_id: "org_a", user_id: "user_a" },
+  ]
+
+  test("the turn owner migration files each turn under the account its latest stamped revision named", () => {
+    const target = "20260923000200_usage_turn_owner"
+    const sqlite = migratedUntil(target)
+    plantOutbox(sqlite)
+
+    applyMigration(sqlite, target)
+
+    expect(sqlite.prepare("SELECT message_id, org_id, user_id FROM claxedo_usage_turn_owner ORDER BY message_id").all())
+      .toEqual(ownedTurns)
+    expect(hasTable(sqlite, "claxedo_usage_outbox")).toBe(false)
+  })
+
+  test("repair retires an outbox that outlived the owner migration the same way the migration does", () => {
+    const sqlite = new Database(":memory:")
+    apply(sqlite)
+    sqlite.exec(`
+      CREATE TABLE claxedo_usage_outbox (
+        host_id text NOT NULL, session_ref text NOT NULL, message_id text NOT NULL, revision integer NOT NULL,
+        payload_hash text NOT NULL, org_id text, user_id text, state text NOT NULL DEFAULT 'pending',
+        attempts integer NOT NULL DEFAULT 0, created_at integer NOT NULL, updated_at integer NOT NULL,
+        PRIMARY KEY (host_id, session_ref, message_id, revision)
+      )
+    `)
+    plantOutbox(sqlite)
+
+    const fixed = repair(sqlite)
+
+    expect(fixed).toContain("claxedo_usage_outbox.retired")
+    expect(sqlite.prepare("SELECT message_id, org_id, user_id FROM claxedo_usage_turn_owner ORDER BY message_id").all())
+      .toEqual(ownedTurns)
+    expect(hasTable(sqlite, "claxedo_usage_outbox")).toBe(false)
+    expect(repair(sqlite)).not.toContain("claxedo_usage_outbox.retired")
+  })
+
+  test("repair heals partial migrations", () => {
+    const sqlite = new Database(":memory:")
+
+    const fixed = repair(sqlite)
+
+    expect(fixed).toContain("claxedo_page_status")
+    expect(fixed).toContain("claxedo_document_index")
+    expect(fixed).toContain("claxedo_local_project")
+    expect(hasTable(sqlite, "claxedo_page_status")).toBe(true)
+    expect(hasTable(sqlite, "claxedo_document_index")).toBe(true)
+    expect(hasTable(sqlite, "claxedo_local_project")).toBe(true)
+    expect(fixed).toEqual(
+      expect.arrayContaining([
+        "claxedo_usage_turn_revision",
+        "claxedo_usage_turn_current",
+        "claxedo_usage_turn_owner",
+        "claxedo_usage_turn_meter_state",
+      ]),
+    )
+    expect(hasTable(sqlite, "claxedo_usage_turn_current")).toBe(true)
+    expect(hasTable(sqlite, "claxedo_usage_turn_owner")).toBe(true)
+    expect(hasTable(sqlite, "claxedo_usage_turn_meter_state")).toBe(true)
+    expect(hasTable(sqlite, retiredArenaTable)).toBe(false)
+    expect(hasTable(sqlite, retiredPageTable)).toBe(false)
+  })
+
+  test("repair gives a drifted credential table every column the registry selects", () => {
+    const sqlite = new Database(":memory:")
+    applyMigration(sqlite, "20260411000000_provider_credentials")
+    sqlite.prepare(`
+      INSERT INTO claxedo_provider_credential (id, provider_id, kind, source, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run("cred_1", "openai", "api_key", "managed", "available", 1, 2)
+
+    const fixed = repair(sqlite)
+
+    expect(fixed).toEqual(expect.arrayContaining([
+      "claxedo_provider_credential.org_id",
+      "claxedo_provider_credential.revision",
+      "claxedo_provider_credential.usage_windows",
+      "claxedo_provider_credential.usage_at",
+      "claxedo_provider_credential.owner",
+      "claxedo_provider_credential.is_active",
+      "claxedo_provider_credential.activated_at",
+      "claxedo_provider_credential.active_idx",
+    ]))
+    // A drizzle `select()` names every column, so one missing column fails
+    // every credential read rather than only the feature that introduced it.
+    expect(
+      sqlite
+        .prepare(`
+          SELECT id, org_id, owner, is_active, activated_at, revision, usage_windows, usage_at
+          FROM claxedo_provider_credential
+        `)
+        .get(),
+    ).toEqual({
+      id: "cred_1",
+      org_id: "__local__",
+      owner: null,
+      is_active: 0,
+      activated_at: null,
+      revision: 1,
+      usage_windows: null,
+      usage_at: null,
+    })
+    expect(hasIndex(sqlite, "claxedo_provider_credential_active_idx")).toBe(true)
+    expect(hasTable(sqlite, "claxedo_machine_login_usage")).toBe(true)
+    expect(sqlite.prepare("SELECT harness, account, usage_windows, usage_at FROM claxedo_machine_login_usage").all())
+      .toEqual([])
+  })
+
+  test("repair keeps one active mark per provider before it builds the unique index", () => {
+    const sqlite = new Database(":memory:")
+    applyMigration(sqlite, "20260411000000_provider_credentials")
+    sqlite.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `owner` text")
+    sqlite.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `is_active` integer NOT NULL DEFAULT 0")
+    const insert = sqlite.prepare(`
+      INSERT INTO claxedo_provider_credential (id, provider_id, kind, source, status, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+    `)
+    insert.run("cred_old", "claude-sdk", "oauth_token", "managed", "available", 1, 10)
+    insert.run("cred_new", "claude-sdk", "oauth_token", "managed", "available", 1, 20)
+
+    const fixed = repair(sqlite)
+
+    expect(fixed).toContain("claxedo_provider_credential.active_idx")
+    expect(hasIndex(sqlite, "claxedo_provider_credential_active_idx")).toBe(true)
+    expect(sqlite.prepare("SELECT id FROM claxedo_provider_credential WHERE is_active = 1").all())
+      .toEqual([{ id: "cred_new" }])
+  })
+
+  test("repair keeps the mark stated last, not the row touched last", () => {
+    const sqlite = new Database(":memory:")
+    applyMigration(sqlite, "20260411000000_provider_credentials")
+    sqlite.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `owner` text")
+    sqlite.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `is_active` integer NOT NULL DEFAULT 0")
+    sqlite.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `activated_at` integer")
+    const insert = sqlite.prepare(`
+      INSERT INTO claxedo_provider_credential (id, provider_id, kind, source, status, is_active, activated_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+    `)
+    // A Check after the switch stamps the older mark's row last.
+    insert.run("cred_checked", "claude-sdk", "oauth_token", "managed", "available", 20, 1, 30)
+    insert.run("cred_marked", "claude-sdk", "oauth_token", "managed", "available", 25, 2, 25)
+
+    repair(sqlite)
+
+    expect(sqlite.prepare("SELECT id FROM claxedo_provider_credential WHERE is_active = 1").all())
+      .toEqual([{ id: "cred_marked" }])
+  })
+
+  test("repair leaves an already-built active index and its marks alone", () => {
+    const sqlite = new Database(":memory:")
+    apply(sqlite)
+    sqlite.prepare(`
+      INSERT INTO claxedo_provider_credential (id, org_id, provider_id, kind, source, status, is_active, revision, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?, ?)
+    `).run("cred_1", "__local__", "claude-sdk", "oauth_token", "managed", "available", 1, 2)
+
+    const fixed = repair(sqlite)
+
+    expect(fixed).not.toContain("claxedo_provider_credential.active_idx")
+    expect(sqlite.prepare("SELECT id FROM claxedo_provider_credential WHERE is_active = 1").all())
+      .toEqual([{ id: "cred_1" }])
+  })
+
+  test("repair upgrades legacy session meta placement schema", () => {
+    const sqlite = new Database(":memory:")
+
+    applyMigration(sqlite, "20260320190000_session_meta")
+    sqlite
+      .prepare(
+        `
+      INSERT INTO claxedo_session_meta (
+        session_id,
+        workspace_id,
+        project_id,
+        directory,
+        title,
+        parent_session_id,
+        archived_at,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+      )
+      .run("legacy", "ws_1", "proj_1", "", "Legacy", null, null, 1, 2)
+    sqlite
+      .prepare(
+        `
+      INSERT INTO claxedo_session_meta (
+        session_id,
+        workspace_id,
+        project_id,
+        directory,
+        title,
+        parent_session_id,
+        archived_at,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+      )
+      .run("legacy_dir", "ws_1", "proj_1", "/tmp/project", "Legacy Dir", null, null, 3, 4)
+
+    const fixed = repair(sqlite)
+
+    expect(fixed).toContain("claxedo_session_meta.placement")
+    expect(hasColumn(sqlite, "claxedo_session_meta", "host")).toBe(true)
+    expect(column(sqlite, "claxedo_session_meta", "directory")?.notnull).toBe(0)
+    expect(sqlite.prepare("SELECT * FROM claxedo_session_meta WHERE session_id = ?").get("legacy")).toMatchObject({
+      session_id: "legacy",
+      workspace_id: "ws_1",
+      project_id: "proj_1",
+      host: "workspace",
+      directory: null,
+      title: "Legacy",
+    })
+    expect(
+      sqlite.prepare("SELECT host, directory FROM claxedo_session_meta WHERE session_id = ?").get("legacy_dir"),
+    ).toEqual({
+      host: "workspace",
+      directory: "/tmp/project",
+    })
+    expect(hasTable(sqlite, "claxedo_session_meta_old_repair")).toBe(false)
+    expect(hasIndex(sqlite, "claxedo_session_meta_archive_human_turn_idx")).toBe(true)
+    expect(repair(sqlite)).toEqual([])
+  })
+
+  test("a placement rebuild keeps the last human turn and the last turn's outcome it was given", () => {
+    const sqlite = new Database(":memory:")
+
+    // The shape that triggers a placement rebuild — NOT NULL directory, no session_ref
+    // — but already carrying the column, as a database migrated before repair runs.
+    sqlite.exec(`
+      CREATE TABLE claxedo_session_meta (
+        session_id text PRIMARY KEY NOT NULL,
+        workspace_id text,
+        project_id text,
+        host text NOT NULL DEFAULT 'workspace',
+        directory text NOT NULL,
+        title text,
+        parent_session_id text,
+        archived_at integer,
+        created_at integer NOT NULL,
+        updated_at integer NOT NULL,
+        last_human_turn_at integer,
+        last_turn_status text,
+        last_turn_completed_at integer
+      )
+    `)
+    sqlite
+      .prepare(
+        `INSERT INTO claxedo_session_meta (
+          session_id, workspace_id, project_id, host, directory, title,
+          parent_session_id, archived_at, created_at, updated_at, last_human_turn_at,
+          last_turn_status, last_turn_completed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run("s1", null, null, "workspace", "/tmp/project", "Session", null, null, 3, 4, 777, "failed", 888)
+
+    expect(repair(sqlite)).toContain("claxedo_session_meta.placement")
+    expect(hasColumn(sqlite, "claxedo_session_meta", "last_human_turn_at")).toBe(true)
+    expect(
+      sqlite.prepare("SELECT last_human_turn_at, last_turn_status, last_turn_completed_at FROM claxedo_session_meta WHERE session_id = ?").get("s1"),
+    ).toEqual({ last_human_turn_at: 777, last_turn_status: "failed", last_turn_completed_at: 888 })
+  })
+
+  test("repair preserves session meta hosts during placement rebuilds", () => {
+    const sqlite = new Database(":memory:")
+
+    sqlite.exec(`
+      CREATE TABLE claxedo_session_meta (
+        session_id text PRIMARY KEY NOT NULL,
+        workspace_id text,
+        project_id text,
+        host text NOT NULL DEFAULT 'workspace',
+        directory text NOT NULL,
+        title text,
+        parent_session_id text,
+        archived_at integer,
+        created_at integer NOT NULL,
+        updated_at integer NOT NULL
+      )
+    `)
+    sqlite
+      .prepare(
+        `
+      INSERT INTO claxedo_session_meta (
+        session_id,
+        workspace_id,
+        project_id,
+        host,
+        directory,
+        title,
+        parent_session_id,
+        archived_at,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+      )
+      .run("central", null, null, "central", "", "Central", null, null, 3, 4)
+
+    const fixed = repair(sqlite)
+
+    expect(fixed).toContain("claxedo_session_meta.placement")
+    expect(column(sqlite, "claxedo_session_meta", "directory")?.notnull).toBe(0)
+    expect(
+      sqlite.prepare("SELECT host, directory FROM claxedo_session_meta WHERE session_id = ?").get("central"),
+    ).toEqual({
+      host: "central",
+      directory: null,
+    })
+  })
+
+  test("repair upgrades legacy sandbox driver column names", () => {
+    const sqlite = new Database(":memory:")
+
+    applyMigration(sqlite, "20260411100000_workspace_lease")
+    applyMigration(sqlite, "20260411100001_prepared_image")
+    sqlite
+      .prepare(
+        `
+      INSERT INTO claxedo_workspace_lease (
+        workspace_id,
+        lease_id,
+        epoch,
+        status,
+        provider,
+        provider_object_id,
+        provider_snapshot_id,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+      )
+      .run("ws_1", "lease_1", 1, "ready", "vercel", "sandbox_1", "snapshot_1", 1, 2)
+    sqlite
+      .prepare(
+        `
+      INSERT INTO claxedo_runtime_snapshot (
+        id,
+        workspace_id,
+        runtime_snapshot_id,
+        provider_snapshot_id,
+        reason,
+        status,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `,
+      )
+      .run("snap_1", "ws_1", "runtime_snap_1", "driver_snap_1", "manual", "ready", 3)
+
+    const fixed = repair(sqlite)
+
+    expect(fixed).toEqual(
+      expect.arrayContaining([
+        "claxedo_workspace_lease.driver",
+        "claxedo_workspace_lease.driver_resource_id",
+        "claxedo_workspace_lease.driver_snapshot_id",
+        "claxedo_runtime_snapshot.driver_snapshot_id",
+      ]),
+    )
+    expect(hasColumn(sqlite, "claxedo_workspace_lease", "provider")).toBe(false)
+    expect(hasColumn(sqlite, "claxedo_workspace_lease", "provider_object_id")).toBe(false)
+    expect(hasColumn(sqlite, "claxedo_workspace_lease", "provider_snapshot_id")).toBe(false)
+    expect(hasColumn(sqlite, "claxedo_runtime_snapshot", "provider_snapshot_id")).toBe(false)
+    expect(
+      sqlite
+        .prepare(
+          "SELECT driver, driver_resource_id, driver_snapshot_id FROM claxedo_workspace_lease WHERE workspace_id = ?",
+        )
+        .get("ws_1"),
+    ).toEqual({
+      driver: "vercel",
+      driver_resource_id: "sandbox_1",
+      driver_snapshot_id: "snapshot_1",
+    })
+    expect(
+      sqlite.prepare("SELECT driver_snapshot_id FROM claxedo_runtime_snapshot WHERE id = ?").get("snap_1"),
+    ).toEqual({
+      driver_snapshot_id: "driver_snap_1",
+    })
+  })
+
+  test("repair upgrades cloud session driver column name", () => {
+    const sqlite = new Database(":memory:")
+
+    applyMigration(sqlite, "20260320120000_cloud_session")
+    sqlite
+      .prepare(
+        `
+      INSERT INTO claxedo_cloud_session (
+        session_id,
+        workspace_id,
+        directory,
+        title,
+        provider,
+        data,
+        created_at,
+        updated_at,
+        deleted_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+      )
+      .run("sess_1", "ws_1", "/workspace", "Cloud", "vercel", "{}", 1, 2, null)
+
+    const fixed = repair(sqlite)
+
+    expect(fixed).toContain("claxedo_cloud_session.driver")
+    expect(hasColumn(sqlite, "claxedo_cloud_session", "provider")).toBe(false)
+    expect(sqlite.prepare("SELECT driver FROM claxedo_cloud_session WHERE session_id = ?").get("sess_1")).toEqual({
+      driver: "vercel",
+    })
+  })
+
+  test("repair upgrades terminal session driver column name", () => {
+    const sqlite = new Database(":memory:")
+
+    applyMigration(sqlite, "20260310000000_initial")
+    sqlite
+      .prepare(
+        `
+      INSERT INTO claxedo_terminal_session (
+        terminal_id,
+        tab_id,
+        workspace_id,
+        provider,
+        session_id,
+        transcript_path,
+        ref_name,
+        prompt,
+        last_assistant_message,
+        event_type,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+      )
+      .run("term_1", "tab_1", "ws_1", "vercel", "sess_1", null, null, null, null, null, 1)
+
+    const fixed = repair(sqlite)
+
+    expect(fixed).toContain("claxedo_terminal_session.driver")
+    expect(hasColumn(sqlite, "claxedo_terminal_session", "provider")).toBe(false)
+    expect(sqlite.prepare("SELECT driver FROM claxedo_terminal_session WHERE terminal_id = ?").get("term_1")).toEqual({
+      driver: "vercel",
+    })
+  })
+
+  test("repair rolls back failed session meta placement rebuilds", () => {
+    const sqlite = new Database(":memory:")
+
+    sqlite.exec(`
+      CREATE TABLE claxedo_session_meta (
+        session_id text PRIMARY KEY NOT NULL,
+        directory text NOT NULL
+      )
+    `)
+    sqlite
+      .prepare("INSERT INTO claxedo_session_meta (session_id, directory) VALUES (?, ?)")
+      .run("broken", "/tmp/project")
+
+    expect(() => repair(sqlite)).toThrow()
+    expect(hasTable(sqlite, "claxedo_session_meta")).toBe(true)
+    expect(hasTable(sqlite, "claxedo_session_meta_old_repair")).toBe(false)
+    expect(
+      sqlite.prepare("SELECT session_id, directory FROM claxedo_session_meta WHERE session_id = ?").get("broken"),
+    ).toEqual({
+      session_id: "broken",
+      directory: "/tmp/project",
+    })
+  })
+})

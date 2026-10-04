@@ -1,0 +1,45 @@
+import type { Translations } from "@/i18n"
+
+const en = {
+  "browser.back": "Go back",
+  "browser.forward": "Go forward",
+  "browser.reload": "Reload",
+  "browser.address.placeholder": "Enter URL or search",
+  "browser.inspect": "Inspect element",
+  "browser.inspect.tooltip": "Pick an element to annotate",
+  "browser.pick.label": "{{tag}} on {{host}}",
+  "browser.options": "Browser options",
+  "browser.screenshot": "Take Screenshot",
+  "browser.devTools": "Open DevTools",
+  "browser.hardReload": "Hard Reload",
+  "browser.copyUrl": "Copy URL",
+  "browser.clearCookies": "Clear Cookies",
+  "browser.console.show": "Show console",
+  "browser.console": "Console",
+  "browser.console.devTools": "Open Chromium DevTools",
+  "browser.console.clear": "Clear console",
+  "browser.console.empty": "No console output yet.",
+  "browser.toast.copied": "URL copied",
+  "browser.toast.copyFailed": "Failed to copy URL",
+  "browser.toast.screenshot": "Screenshot captured",
+  "browser.toast.screenshotFailed": "Screenshot failed: {{code}}",
+  "browser.toast.hardReloadFailed": "Hard reload failed: {{error}}",
+  "browser.toast.devToolsFailed": "Could not open DevTools: {{error}}",
+  "browser.toast.cookiesCleared": "Cookies cleared for agent browser",
+  "browser.toast.cookiesFailed": "Clear cookies failed: {{error}}",
+  "browser.toast.pickSent": "Comment sent to session",
+  "browser.toast.pickLocal": "No session focused — comment saved locally",
+  "browser.toast.actionFailed": "The browser action failed.",
+  "browser.toast.pageNotReady": "The page is not ready yet.",
+  "browser.web.title": "Browser tabs are unavailable.",
+  "browser.web.hint": "Open this workspace in the Claxedo desktop app to use the browser.",
+  "browser.mixedContent.title": "This source requires HTTPS.",
+  "browser.mixedContent.hint": "Hosted Claxedo blocks insecure embedded content.",
+  "browser.preview.title": "External source preview",
+  "browser.preview.document": "Browser preview",
+  "browser.noPlacement": "Open a project to use the browser.",
+}
+
+export type BrowserKey = keyof typeof en
+
+export const browserDictionary = { en } satisfies Translations<BrowserKey>

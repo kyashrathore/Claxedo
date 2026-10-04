@@ -1,0 +1,53 @@
+{
+  "name": "@claxedo/plugin-build",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Builds a Claxedo plugin's app entry into one browser bundle whose host-provided modules resolve from the plugin runtime global",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyashrathore/Claxedo.git",
+    "directory": "packages/claxedo-plugin-build"
+  },
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./bundle-hash": {
+      "types": "./src/bundle-hash.ts",
+      "development": "./src/bundle-hash.ts",
+      "default": "./src/bundle-hash.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test src"
+  },
+  "dependencies": {
+    "@babel/core": "7.28.4",
+    "@babel/preset-typescript": "7.27.1",
+    "@claxedo/helpers": "workspace:*",
+    "@claxedo/plugin-api": "workspace:*",
+    "babel-preset-solid": "1.9.12",
+    "esbuild": "0.25.12",
+    "solid-js": "catalog:"
+  },
+  "optionalDependencies": {
+    "@typescript/typescript-darwin-arm64": "catalog:",
+    "@typescript/typescript-darwin-x64": "catalog:",
+    "@typescript/typescript-linux-arm64": "catalog:",
+    "@typescript/typescript-linux-x64": "catalog:",
+    "@typescript/typescript-win32-arm64": "catalog:",
+    "@typescript/typescript-win32-x64": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "@tsconfig/node-lts": "22.0.4",
+    "@types/babel__core": "7.20.5",
+    "@types/bun": "catalog:"
+  }
+}

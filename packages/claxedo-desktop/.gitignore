@@ -1,0 +1,40 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+out/
+.artifacts/
+
+resources/opencode-cli*
+resources/claxedo-mcp*
+resources/claxedo-server.js
+resources/claxedo-server/
+# bundle-claxedo-server.ts builds into a pid-suffixed staging dir and renames it
+# onto resources/claxedo-server. A killed build (not a failed one — failure
+# removes it) orphans 340 MB under a name nothing ever collects.
+resources/claxedo-server.pending-*/
+resources/claxedo-server-compile-cache/
+resources/opencode-compile-cache/
+resources/acp/
+resources/mermaid/
+resources/icons

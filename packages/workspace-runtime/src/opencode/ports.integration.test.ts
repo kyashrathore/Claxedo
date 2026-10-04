@@ -1,0 +1,167 @@
+/**
+ * The ports against a real embedded host — one process, one SQLite file, two
+ * workspace directories — through `createOpenCodeHost`, the product's public
+ * SDK entrypoint. Mocks of `client.sessions.*` pass whether or not the SDK's
+ * layer graph resolves; a real host does not.
+ *
+ * No credentials are configured, so no turn runs. Admission, projection,
+ * paging, revert staging and scope enforcement are all observable without one.
+ */
+import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import * as fs from "node:fs"
+import * as os from "node:os"
+import * as path from "node:path"
+import {
+  createCatalogPort,
+  createInteractionPort,
+  createOpenCodeHost,
+  createSessionPort,
+  WorkspaceScope,
+  WorkspaceScopeError,
+  type OpenCodeCatalogPort,
+  type OpenCodeHost,
+  type OpenCodeInteractionPort,
+  type OpenCodeSessionPort,
+} from "@claxedo/harness/opencode-sdk"
+import { wakeMessageId } from "@claxedo/session-core"
+
+let root: string
+let host: OpenCodeHost
+let sessions: OpenCodeSessionPort
+let catalog: OpenCodeCatalogPort
+let interactions: OpenCodeInteractionPort
+let alpha: WorkspaceScope
+let beta: WorkspaceScope
+
+function workspace(name: string): string {
+  const directory = path.join(root, name)
+  fs.mkdirSync(directory, { recursive: true })
+  fs.writeFileSync(path.join(directory, "README.md"), `# ${name}\n`)
+  return directory
+}
+
+beforeAll(async () => {
+  root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-ports-"))
+  host = createOpenCodeHost({ databasePath: path.join(root, "opencode.db") })
+  sessions = createSessionPort(host)
+  catalog = createCatalogPort(host)
+  interactions = createInteractionPort(host)
+  alpha = WorkspaceScope.authorize({ workspaceID: "ws-alpha", directory: workspace("alpha") })
+  beta = WorkspaceScope.authorize({ workspaceID: "ws-beta", directory: workspace("beta") })
+  await host.client()
+})
+
+afterAll(async () => {
+  await host?.close()
+  if (root) fs.rmSync(root, { recursive: true, force: true })
+})
+
+describe("session port against a real host", () => {
+  test("create, get, rename and list stay inside one workspace", async () => {
+    const created = await sessions.create(alpha, { title: "first" })
+    expect(created.directory).toBe(alpha.directory)
+    expect(created.title).toBe("first")
+
+    const fetched = await sessions.get(alpha, created.id)
+    expect(fetched.id).toBe(created.id)
+
+    await sessions.rename(alpha, created.id, "renamed")
+    expect((await sessions.get(alpha, created.id)).title).toBe("renamed")
+
+    // `sessions.list` is host-global unless the FLAT directory filter lands.
+    // Beta must not see alpha's session.
+    await sessions.create(beta, { title: "beta only" })
+    const alphaPage = await sessions.list(alpha)
+    const betaPage = await sessions.list(beta)
+    expect(alphaPage.sessions.map((row) => row.title)).toContain("renamed")
+    expect(betaPage.sessions.map((row) => row.title)).not.toContain("renamed")
+  })
+
+  test("a session id from another workspace fails closed", async () => {
+    const mine = await sessions.create(alpha, { title: "private" })
+    // The SDK authorizes nothing here; the port's re-validation is the whole
+    // defense, so assert on the port and not on the SDK's behaviour.
+    await expect(sessions.get(beta, mine.id)).rejects.toBeInstanceOf(WorkspaceScopeError)
+    await expect(sessions.rename(beta, mine.id, "stolen")).rejects.toBeInstanceOf(WorkspaceScopeError)
+    await expect(sessions.remove(beta, mine.id)).rejects.toBeInstanceOf(WorkspaceScopeError)
+    // And it is still there, under its own title.
+    expect((await sessions.get(alpha, mine.id)).title).toBe("private")
+  })
+
+  test("prompt admits a turn and the message shows up in the page", async () => {
+    const session = await sessions.create(alpha, { title: "prompted" })
+    const admitted = await sessions.prompt(alpha, session.id, { text: "say hi", delivery: "steer" })
+    expect(admitted.sessionID).toBe(session.id)
+    expect(admitted.text).toBe("say hi")
+    expect(admitted.id).toStartWith("msg_")
+
+    const page = await sessions.messages(alpha, session.id, { limit: 10 })
+    // Admission is recorded on the inbox; the message list only fills once the
+    // turn produces one. Either way the call answers rather than 500s.
+    expect(Array.isArray(page.messages)).toBe(true)
+  })
+
+  test("a caller-supplied message id must be msg_-shaped, and the same one admits one turn", async () => {
+    const session = await sessions.create(alpha, { title: "wake target" })
+    const id = wakeMessageId("ses_child", "msg_child_reply_r")
+
+    await expect(sessions.prompt(alpha, session.id, { text: "raw", id: "wake:ses_child:msg_child_reply_r" }))
+      .rejects.toMatchObject({ message: expect.stringContaining('Expected a string starting with "msg_"') })
+
+    const first = await sessions.prompt(alpha, session.id, { text: "Subagent finished.", id })
+    expect(first.id).toBe(id)
+
+    // The engine reconciles a message id it has already admitted rather than
+    // opening a second turn, which is what makes a re-offered wake safe.
+    const second = await sessions.prompt(alpha, session.id, { text: "Subagent finished.", id })
+    expect(second.id).toBe(first.id)
+    expect(second.createdAt).toBe(first.createdAt)
+  })
+
+  test("interrupt answers an admitted prompt", async () => {
+    const session = await sessions.create(alpha, { title: "controls" })
+    await sessions.prompt(alpha, session.id, { text: "work" })
+    await sessions.interrupt(alpha, session.id)
+  })
+
+  test("fork refuses an empty session with a typed reason", async () => {
+    const session = await sessions.create(alpha, { title: "original" })
+    // V2 will not fork a session that has produced no durable message. The adapter must surface this as a typed failure rather
+    // than an empty success - fabricating a fork id here would strand the UI
+    // on a session that does not exist.
+    await expect(sessions.fork(alpha, session.id, { type: "through" })).rejects.toMatchObject({
+      _tag: "InvalidRequestError",
+      kind: "empty_session",
+    })
+  })
+
+  test("remove deletes only after ownership is proven", async () => {
+    const session = await sessions.create(alpha, { title: "doomed" })
+    await sessions.remove(alpha, session.id)
+    const page = await sessions.list(alpha)
+    expect(page.sessions.map((row) => row.id)).not.toContain(session.id)
+  })
+})
+
+describe("catalog and interaction ports", () => {
+  test("catalogs answer for a workspace instead of 500ing", async () => {
+    // A bare workspace with no config has no agents or commands; each call must
+    // still resolve.
+    expect(Array.isArray(await catalog.agents(alpha))).toBe(true)
+    expect(Array.isArray(await catalog.commands(alpha))).toBe(true)
+    expect(Array.isArray(await catalog.models(alpha))).toBe(true)
+  })
+
+  test("replying into another workspace's session fails closed", async () => {
+    const mine = await sessions.create(alpha, { title: "interaction scope" })
+    await expect(
+      interactions.replyPermission(beta, { sessionID: mine.id, requestID: "req_x", reply: "once" }),
+    ).rejects.toBeInstanceOf(WorkspaceScopeError)
+    await expect(
+      interactions.replyForm(beta, { sessionID: mine.id, formID: "frm_x", answer: { a: "b" } }),
+    ).rejects.toBeInstanceOf(WorkspaceScopeError)
+    await expect(interactions.cancelForm(beta, { sessionID: mine.id, formID: "frm_x" })).rejects.toBeInstanceOf(
+      WorkspaceScopeError,
+    )
+  })
+})

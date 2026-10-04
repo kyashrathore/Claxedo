@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "claxedo",
+  "description": "Claxedo monorepo: coding-agent workbench, runtimes, and control plane",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.14",
+  "scripts": {
+    "dev": "bun run dev:desktop",
+    "dev:desktop": "bun --cwd packages/claxedo-desktop dev",
+    "lint": "bun run --cwd packages/harness generate:codex-protocol && oxlint",
+    "typecheck": "bun run --cwd packages/harness generate:codex-protocol && bun turbo typecheck",
+    "test:architecture-ratchets": "BUN_CONFIG_FILE=./script/architecture-ratchets.bunfig.toml bun test ./script/agent-plugins-retirement.test.ts ./script/upstream-engine-retirement.test.ts ./script/session-core-node-free.test.ts ./script/bun-build.test.ts ./script/published-exports-plugin.test.ts ./script/file-size/verify.test.ts && bun ./script/product-boundary/verify.ts --all --source-only && bun ./script/helpers/verify.ts && bun ./script/file-size/verify.ts",
+    "test:ci-policy": "node --test script/ci-changes.test.mjs",
+    "prepush": "bun run lint && bun run typecheck && bun run test:ci-policy && bun run test:architecture-ratchets && bun run --cwd packages/claxedo-app check",
+    "postinstall": "bun script/apply-dependency-patches.ts && bun script/fix-node-pty.ts",
+    "prepare": "husky",
+    "test": "echo 'do not run tests from root' && exit 1",
+    "docs:check-links": "bun ./script/check-doc-links.ts",
+    "build:packages": "bun turbo build --filter=@claxedo/agent-runtime-contract --filter=@claxedo/process-ownership --filter=@claxedo/channels --filter=@claxedo/connections --filter=@claxedo/egress-broker --filter=@claxedo/helpers --filter=@claxedo/host-connector --filter=@claxedo/sandbox-contract --filter=@claxedo/sandbox-manager --filter=@claxedo/workspace-relay-protocol --filter=@claxedo/workspace-relay --filter=@claxedo/session-core --filter=@claxedo/workspace-runtime"
+  },
+  "workspaces": {
+    "packages": [
+      "packages/*"
+    ],
+    "catalog": {
+      "@types/bun": "1.3.14",
+      "@opentui/core": "0.3.4",
+      "@tanstack/solid-virtual": "3.13.37",
+      "@shikijs/stream": "4.2.0",
+      "@kobalte/core": "0.13.12",
+      "@types/node": "24.12.2",
+      "@tsconfig/node22": "22.0.5",
+      "@tsconfig/bun": "1.0.10",
+      "@cloudflare/workers-types": "5.20260724.1",
+      "@pierre/diffs": "1.4.3",
+      "@tailwindcss/vite": "4.3.3",
+      "diff": "8.0.3",
+      "dompurify": "3.4.12",
+      "drizzle-orm": "1.0.0-rc.2",
+      "hono": "4.12.34",
+      "fuzzysort": "3.1.0",
+      "marked": "18.0.7",
+      "marked-shiki": "1.2.1",
+      "remend": "1.3.0",
+      "typescript": "7.0.2",
+      "@typescript/typescript-darwin-arm64": "7.0.2",
+      "@typescript/typescript-darwin-x64": "7.0.2",
+      "@typescript/typescript-linux-arm64": "7.0.2",
+      "@typescript/typescript-linux-x64": "7.0.2",
+      "@typescript/typescript-win32-arm64": "7.0.2",
+      "@typescript/typescript-win32-x64": "7.0.2",
+      "@typescript/native-preview": "7.0.0-dev.20251207.1",
+      "remeda": "2.39.0",
+      "shiki": "4.2.0",
+      "solid-list": "0.3.0",
+      "solid-sonner": "0.3.1",
+      "tailwindcss": "4.3.3",
+      "vite": "7.1.4",
+      "@solidjs/meta": "0.29.4",
+      "@solidjs/router": "0.15.4",
+      "solid-js": "1.9.12",
+      "vite-plugin-solid": "2.11.14",
+      "@lydell/node-pty": "1.2.0-beta.14"
+    }
+  },
+  "devDependencies": {
+    "@tsconfig/bun": "catalog:",
+    "@typescript/native-preview": "catalog:",
+    "glob": "13.0.6",
+    "husky": "9.1.7",
+    "oxlint": "1.60.0",
+    "oxlint-tsgolint": "0.21.0",
+    "prettier": "3.9.6",
+    "semver": "^7.6.0",
+    "turbo": "2.10.7"
+  },
+  "dependencies": {
+    "@claxedo/server-core": "workspace:*",
+    "@claxedo/workspace-relay-protocol": "workspace:*",
+    "typescript": "catalog:"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kyashrathore/Claxedo"
+  },
+  "license": "MIT",
+  "prettier": {
+    "semi": false,
+    "printWidth": 120
+  },
+  "trustedDependencies": [
+    "better-sqlite3",
+    "esbuild",
+    "protobufjs",
+    "web-tree-sitter",
+    "electron"
+  ],
+  "overrides": {
+    "@opentui/core": "catalog:",
+    "@types/bun": "catalog:",
+    "@types/node": "catalog:",
+    "shiki": "catalog:",
+    "@shikijs/types": "4.2.0",
+    "@shikijs/transformers": "4.2.0",
+    "@solid-primitives/event-listener": "2.4.6",
+    "@solid-primitives/resize-observer": "2.2.0",
+    "dompurify": "3.4.12"
+  },
+  "claxedoDependencyPatches": {
+    "app-builder-lib@26.8.1": "patches/app-builder-lib@26.8.1.patch",
+    "better-auth@1.7.1": "patches/better-auth@1.7.1.patch",
+    "@better-auth/oauth-provider@1.7.1": "patches/@better-auth%2Foauth-provider@1.7.1.patch",
+    "@npmcli/agent@4.0.2": "patches/@npmcli%2Fagent@4.0.2.patch",
+    "@silvia-odwyer/photon-node@0.3.4": "patches/@silvia-odwyer%2Fphoton-node@0.3.4.patch",
+    "@ai-sdk/xai@3.0.82": "patches/@ai-sdk%2Fxai@3.0.82.patch",
+    "@ai-sdk/google@3.0.73": "patches/@ai-sdk%2Fgoogle@3.0.73.patch",
+    "@modelcontextprotocol/sdk@1.29.0": "patches/@modelcontextprotocol%2Fsdk@1.29.0.patch",
+    "@pierre/diffs@1.4.3": "patches/@pierre%2Fdiffs@1.4.3.patch",
+    "@solidjs/router@0.15.4": "patches/@solidjs%2Frouter@0.15.4.patch",
+    "@tanstack/solid-query@5.99.2": "patches/@tanstack%2Fsolid-query@5.99.2.patch",
+    "@tanstack/virtual-core@3.17.8": "patches/@tanstack%2Fvirtual-core@3.17.8.patch",
+    "@kobalte/core@0.13.12": "patches/@kobalte%2Fcore@0.13.12.patch",
+    "tokentracker-cli@0.91.0": "patches/tokentracker-cli@0.91.0.patch",
+    "@opencode-ai/sdk@0.0.0-beta-19271": "patches/@opencode-ai%2Fsdk@0.0.0-beta-19271.patch",
+    "@opencode-ai/client@0.0.0-beta-19271": "patches/@opencode-ai%2Fclient@0.0.0-beta-19271.patch",
+    "@opencode-ai/server@0.0.0-beta-19271": "patches/@opencode-ai%2Fserver@0.0.0-beta-19271.patch",
+    "@opencode-ai/simulation@0.0.0-beta-19271": "patches/@opencode-ai%2Fsimulation@0.0.0-beta-19271.patch",
+    "@opencode-ai/core@0.0.0-beta-19271": "patches/@opencode-ai%2Fcore@0.0.0-beta-19271.patch"
+  }
+}

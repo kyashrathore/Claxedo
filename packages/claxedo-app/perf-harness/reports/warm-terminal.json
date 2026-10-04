@@ -1,0 +1,140 @@
+{
+  "generated_at": "2026-07-24T01:24:19.887Z",
+  "status": "warn",
+  "targets": {
+    "rate_target_hz": 120,
+    "rate_floor_hz": 60
+  },
+  "flows": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "live-terminal-switch",
+      "name": "Switch between three live terminals",
+      "started_at": "2026-07-24T01:24:06.764Z",
+      "duration_ms": 6096.416875999999,
+      "seed": {
+        "repos": 1,
+        "sessions": 3,
+        "messages": 1500,
+        "terminals": 3,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "headline": {
+        "label": "live-terminal-switch",
+        "worstFrameMs": 18.9,
+        "p95FrameMs": 18.9,
+        "framesOver833": 11,
+        "framesOver1667": 11,
+        "sampleCount": 25,
+        "completionMs": 197.88,
+        "verdict": "red"
+      },
+      "metrics": [
+        {
+          "metric": "terminal_switch_ms",
+          "value": 35.2,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            35.2,
+            17
+          ],
+          "p50": 17,
+          "p95": 35.2,
+          "min": 17,
+          "max": 35.2,
+          "mean": 26.1,
+          "relative_stddev": 0.3486590038314177
+        },
+        {
+          "metric": "terminal_resize_ms",
+          "value": 35.1000000089407,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            35.1000000089407,
+            25.600000008940697
+          ],
+          "p50": 25.600000008940697,
+          "p95": 35.1000000089407,
+          "min": 25.600000008940697,
+          "max": 35.1000000089407,
+          "mean": 30.350000008940697,
+          "relative_stddev": 0.156507413462956
+        }
+      ],
+      "validation_failures": [],
+      "diagnostics": {
+        "retainedBytes": 7806,
+        "retainedProcesses": 4,
+        "droppedTicks": 0,
+        "maxSourceDurationMs": 0,
+        "maxReconciliationDurationMs": 0,
+        "collections": 12,
+        "sampleCount": 36,
+        "controlHeadline": {
+          "label": "live-terminal-switch",
+          "worstFrameMs": 18.9,
+          "p95FrameMs": 18.9,
+          "framesOver833": 9,
+          "framesOver1667": 9,
+          "sampleCount": 24,
+          "completionMs": 173.51,
+          "verdict": "red"
+        },
+        "enabledHeadline": {
+          "label": "live-terminal-switch",
+          "worstFrameMs": 18.9,
+          "p95FrameMs": 18.9,
+          "framesOver833": 11,
+          "framesOver1667": 11,
+          "sampleCount": 25,
+          "completionMs": 197.88,
+          "verdict": "red"
+        }
+      },
+      "attribution": {
+        "git_sha": "9eaf26280438f1d8020b95dd864100695a5e34b4",
+        "git_branch": "codex/fix-codex-acp-live-models",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/packages/claxedo-app/perf-harness/src/cli.ts run --scenario live-terminal-switch --no-trend --debug --output warm-terminal.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/packages/claxedo-app/perf-harness",
+        "bun_version": "1.3.14",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:57971",
+          "mock_port": 57972,
+          "dev_command": "node ./node_modules/vite/bin/vite.js preview --config vite.cloud.config.ts --host 127.0.0.1 --port 57971"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/fix-codex-acp-live-models:9eaf26280438f1d8020b95dd864100695a5e34b4"
+      },
+      "budget": {
+        "scenario": "live-terminal-switch",
+        "worst_frame_ms": 120
+      },
+      "status": "warn",
+      "failures": [],
+      "warnings": [
+        "disabled control base-app gate: p95 frame 18.90ms > 16.67ms — sustained below 60hz",
+        "disabled control base-app gate: 9 frames dropped below 60hz (allowance 2)"
+      ]
+    }
+  ]
+}

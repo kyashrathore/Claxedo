@@ -1,0 +1,178 @@
+{
+  "generated_at": "2026-06-08T08:57:01.587Z",
+  "status": "fail",
+  "targets": {
+    "rate_target_hz": 120,
+    "rate_floor_hz": 60
+  },
+  "flows": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "workspace-switch",
+      "name": "Switch across five workspaces",
+      "started_at": "2026-06-08T08:57:01.497Z",
+      "duration_ms": 57753.416291999994,
+      "seed": {
+        "repos": 1,
+        "sessions": 10,
+        "messages": 1000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 5,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "headline": {
+        "label": "workspace-switch",
+        "worstFrameMs": 0,
+        "p95FrameMs": 0,
+        "framesOver833": 0,
+        "framesOver1667": 0,
+        "sampleCount": 0,
+        "completionMs": 20196.2,
+        "verdict": "green"
+      },
+      "metrics": [
+        {
+          "metric": "file_tree_load_ms",
+          "value": 9034.5,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            9034.5
+          ],
+          "p50": 9034.5,
+          "p95": 9034.5,
+          "min": 9034.5,
+          "max": 9034.5,
+          "mean": 9034.5,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "file_tree_control_ms",
+          "value": 4030.300000000745,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            4030.300000000745
+          ],
+          "p50": 4030.300000000745,
+          "p95": 4030.300000000745,
+          "min": 4030.300000000745,
+          "max": 4030.300000000745,
+          "mean": 4030.300000000745,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "file_tree_state_ms",
+          "value": 5004.0999999996275,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            5004.0999999996275
+          ],
+          "p50": 5004.0999999996275,
+          "p95": 5004.0999999996275,
+          "min": 5004.0999999996275,
+          "max": 5004.0999999996275,
+          "mean": 5004.0999999996275,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "file_tree_first_frame_ms",
+          "value": 9034.5,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            9034.5
+          ],
+          "p50": 9034.5,
+          "p95": 9034.5,
+          "min": 9034.5,
+          "max": 9034.5,
+          "mean": 9034.5,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "file_tree_data_ms",
+          "value": null,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            null
+          ],
+          "p50": null,
+          "p95": null,
+          "min": null,
+          "max": null,
+          "mean": null,
+          "relative_stddev": null
+        }
+      ],
+      "validation_failures": [
+        "error boundary rendered for workspace-switch",
+        "session messages were not requested for workspace-switch",
+        "workspace was not visible in the sidebar: main",
+        "workspace was not visible in the sidebar: workspace 2",
+        "workspace was not visible in the sidebar: workspace 3",
+        "workspace was not visible in the sidebar: workspace 4",
+        "workspace was not visible in the sidebar: workspace 5",
+        "workspace was not clickable in the visible UI: workspace 2",
+        "workspace files navigator did not visibly render",
+        "transcript text was not visible for workspace-switch: workspace-switch session 1",
+        "transcript text was not visible for workspace-switch: workspace-switch session 2"
+      ],
+      "artifacts": {
+        "video": "reports/videos/claxedo-workspace-switch-1.webm"
+      },
+      "attribution": {
+        "git_sha": "ae609dc6cb0e0618f85d7aad47b6f09752308120",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts run --scenario workspace-switch --debug --output prod-workspace-switch.json --no-trend",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:64647",
+          "mock_port": 32123,
+          "dev_command": "bun run serve -- --host 127.0.0.1 --port 64647"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:ae609dc6cb0e0618f85d7aad47b6f09752308120"
+      },
+      "budget": {
+        "scenario": "workspace-switch",
+        "worst_frame_ms": 137
+      },
+      "status": "fail",
+      "failures": [
+        "error boundary rendered for workspace-switch",
+        "session messages were not requested for workspace-switch",
+        "workspace was not visible in the sidebar: main",
+        "workspace was not visible in the sidebar: workspace 2",
+        "workspace was not visible in the sidebar: workspace 3",
+        "workspace was not visible in the sidebar: workspace 4",
+        "workspace was not visible in the sidebar: workspace 5",
+        "workspace was not clickable in the visible UI: workspace 2",
+        "workspace files navigator did not visibly render",
+        "transcript text was not visible for workspace-switch: workspace-switch session 1",
+        "transcript text was not visible for workspace-switch: workspace-switch session 2"
+      ],
+      "warnings": []
+    }
+  ]
+}

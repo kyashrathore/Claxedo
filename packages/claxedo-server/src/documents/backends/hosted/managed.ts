@@ -1,0 +1,680 @@
+import {
+  DocumentAlreadyExistsError,
+  DocumentInvalidEntryError,
+  DocumentNotFoundError,
+  DocumentSnapshotCorruptError,
+  DocumentSnapshotNotFoundError,
+  DocumentTooLargeError,
+  DocumentVersionConflictError,
+} from "@claxedo/server-core/documents/errors"
+import type {
+  DocumentActor,
+  DocumentEntry,
+  DocumentHandle,
+  DocumentVersion,
+  DocumentWorkspace,
+  SnapshotID,
+  SnapshotRef,
+  WriteResult,
+} from "@claxedo/server-core/documents/port"
+import { toDocumentVersion, toSnapshotID } from "@claxedo/server-core/documents/port"
+import {
+  boundedSnapshotPins,
+  expiredSnapshotLease,
+  MAX_SNAPSHOT_METADATA_BYTES,
+  requireBoundedSnapshotMetadata,
+} from "@claxedo/server-core/documents/snapshot-pins"
+import { mapBounded } from "@claxedo/server-core/documents/map-bounded"
+import { asRecord, parseJsonRecord } from "@claxedo/server-core/platform/json/index"
+
+export const DEFAULT_MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
+const DEFAULT_MAX_SNAPSHOTS = 50
+const DEFAULT_MAX_SNAPSHOT_AGE_MS = 30 * 24 * 60 * 60 * 1_000
+const PENDING_SNAPSHOT_LEASE_MS = 5 * 60_000
+const SNAPSHOT_DELETE_GRACE_MS = 60_000
+export const DEFAULT_MAX_LIST_OBJECTS = 10_000
+
+export type ConditionalObject = Readonly<{
+  key: string
+  body: Uint8Array
+  etag: string
+  uploadedAt: number
+}>
+
+export type ObjectListingItem = Readonly<{ key: string; etag: string; uploadedAt: number }>
+
+/**
+ * A listing is an ordinary readonly array so every caller can keep iterating it, but it also
+ * carries whether the listing stopped short of the end. Listings are bounded (see
+ * `maxListObjects`) and a bounded listing that quietly looked complete would let callers treat a
+ * prefix of a project as the whole project — so truncation is part of the value, not an exception.
+ */
+export type ObjectListingState = Readonly<{ truncated: boolean; cursor?: string }>
+
+export type ObjectListing = readonly ObjectListingItem[] & ObjectListingState
+
+export function objectListing(
+  items: readonly ObjectListingItem[],
+  state: ObjectListingState = { truncated: false },
+): ObjectListing {
+  return Object.assign([...items], state)
+}
+
+export type ConditionalObjectStore = Readonly<{
+  get(key: string): Promise<ConditionalObject | undefined>
+  put(
+    key: string,
+    body: Uint8Array,
+    condition: Readonly<{ etag?: string; absent?: true }>,
+  ): Promise<Readonly<{ etag: string; uploadedAt: number }> | undefined>
+  delete(key: string): Promise<void>
+  list(prefix: string, options?: Readonly<{ limit?: number; cursor?: string }>): Promise<ObjectListing>
+}>
+
+export type HostedManagedHandle = DocumentHandle &
+  Readonly<{
+    origin: "managed"
+    placement: "hosted"
+    orgId: string
+    relativePath: string
+    objectKey: string
+  }>
+
+export type HostedManagedWorkspace = DocumentWorkspace<HostedManagedHandle> &
+  Readonly<{
+    create(
+      entry: DocumentEntry,
+      request: Readonly<{ markdown: string; actor: DocumentActor; sessionId?: string }>,
+    ): Promise<WriteResult>
+  }>
+
+export function hostedManagedRelativePath(input: Readonly<{ documentId: string; slug: string }>) {
+  requireSegment(input.documentId, "document id")
+  const slug =
+    input.slug
+      .trim()
+      .toLowerCase()
+      .replaceAll(/[^a-z0-9]+/g, "-")
+      .replaceAll(/^-|-$/g, "") || "document"
+  return `${input.documentId}/${slug}.md`
+}
+
+export function createHostedManagedDocumentWorkspace(
+  options: Readonly<{
+    store: ConditionalObjectStore
+    maxDocumentBytes?: number
+    maxSnapshots?: number
+    maxSnapshotAgeMs?: number
+    now?: () => number
+    beforeSnapshotGcClaim?: (snapshotId: SnapshotID) => void | Promise<void>
+    afterSnapshotGcClaim?: (snapshotId: SnapshotID) => void | Promise<void>
+    snapshotDeleteGraceMs?: number
+    beforeCanonicalWrite?: () => void | Promise<void>
+  }>,
+): HostedManagedWorkspace {
+  const maxDocumentBytes = options.maxDocumentBytes ?? DEFAULT_MAX_DOCUMENT_BYTES
+  const maxSnapshots = options.maxSnapshots ?? DEFAULT_MAX_SNAPSHOTS
+  const maxSnapshotAgeMs = options.maxSnapshotAgeMs ?? DEFAULT_MAX_SNAPSHOT_AGE_MS
+  const now = options.now ?? Date.now
+  const snapshotDeleteGraceMs = options.snapshotDeleteGraceMs ?? SNAPSHOT_DELETE_GRACE_MS
+
+  return {
+    async create(entry, request) {
+      const handle = await resolve(entry)
+      const body = encode(request.markdown, maxDocumentBytes)
+      const claimKey = `document-publish/${handle.orgId}/${handle.projectId}/${handle.documentId}.json`
+      const sha256 = await hash(request.markdown)
+      const claimed = await options.store.put(claimKey, new TextEncoder().encode(JSON.stringify({ sha256 })), {
+        absent: true,
+      })
+      if (!claimed) {
+        const existing = await options.store.get(claimKey)
+        const claim = existing ? parseClaim(existing) : undefined
+        if (!claim || claim.sha256 !== sha256 || (await options.store.get(handle.objectKey))) {
+          throw new DocumentAlreadyExistsError(handle.documentId)
+        }
+      }
+      const snapshot = await captureMarkdown(handle, request.markdown, {
+        reason: "document.created",
+        actor: request.actor,
+        ...(request.sessionId ? { sessionId: request.sessionId } : {}),
+      })
+      const created = await options.store.put(handle.objectKey, body, { absent: true })
+      if (!created) throw new DocumentAlreadyExistsError(handle.documentId)
+      return {
+        markdown: request.markdown,
+        version: toDocumentVersion(created.etag),
+        modifiedAt: created.uploadedAt,
+        snapshot,
+      }
+    },
+
+    resolve,
+
+    async read(handle) {
+      const object = await options.store.get(handle.objectKey)
+      if (!object) throw new DocumentNotFoundError(handle.documentId)
+      return {
+        markdown: decode(object.body, handle.documentId),
+        version: toDocumentVersion(object.etag),
+        modifiedAt: object.uploadedAt,
+      }
+    },
+
+    async write(handle, request) {
+      const snapshot = await captureMarkdown(
+        handle,
+        request.markdown,
+        {
+          reason: "document.written",
+          actor: request.actor,
+          ...(request.sessionId ? { sessionId: request.sessionId } : {}),
+        },
+        "pending",
+      )
+      await options.beforeCanonicalWrite?.()
+      const written = await options.store.put(handle.objectKey, encode(request.markdown, maxDocumentBytes), {
+        etag: request.expectedVersion,
+      })
+      if (!written) throw new DocumentVersionConflictError(await currentVersion(handle))
+      await finalizeSnapshot(handle, snapshot.id).catch((error) => {
+        console.error(`[hosted-documents] snapshot finalize failed for ${handle.documentId}:`, error)
+      })
+      await collect(handle).catch((error) => {
+        console.error(`[hosted-documents] snapshot maintenance failed for ${handle.documentId}:`, error)
+      })
+      return {
+        markdown: request.markdown,
+        version: toDocumentVersion(written.etag),
+        modifiedAt: written.uploadedAt,
+        snapshot,
+      }
+    },
+
+    snapshot: capture,
+    listSnapshots,
+
+    async readSnapshot(handle, snapshotId) {
+      const snapshot = await readSnapshot(handle, snapshotId)
+      return {
+        markdown: snapshot.markdown,
+        version: toDocumentVersion(snapshot.object.etag),
+        modifiedAt: snapshot.metadata.createdAt,
+      }
+    },
+
+    async restore(handle, snapshotId, request) {
+      const desired = await readSnapshot(handle, snapshotId)
+      const current = await options.store.get(handle.objectKey)
+      if ((current?.etag ?? null) !== request.expectedVersion) {
+        throw new DocumentVersionConflictError(current ? toDocumentVersion(current.etag) : null)
+      }
+      const restored = await options.store.put(
+        handle.objectKey,
+        desired.object.body,
+        current ? { etag: current.etag } : { absent: true },
+      )
+      if (!restored) throw new DocumentVersionConflictError(await currentVersion(handle))
+      return {
+        markdown: desired.markdown,
+        version: toDocumentVersion(restored.etag),
+        modifiedAt: restored.uploadedAt,
+        snapshot: desired.metadata,
+      }
+    },
+
+    pinSnapshot: (handle, snapshotId, pin) => updatePins(handle, snapshotId, (pins) => [...pins, pin]),
+    unpinSnapshot: (handle, snapshotId, pin) =>
+      updatePins(handle, snapshotId, (pins) => pins.filter((candidate) => candidate !== pin)),
+    collectSnapshots: collect,
+  }
+
+  async function resolve(entry: DocumentEntry): Promise<HostedManagedHandle> {
+    if (entry.origin !== "managed" || entry.placement !== "hosted") {
+      throw new DocumentInvalidEntryError("Hosted managed storage requires managed hosted entries")
+    }
+    if (!entry.orgId) throw new DocumentInvalidEntryError("Hosted managed storage requires authenticated org scope")
+    requireSegment(entry.orgId, "org id")
+    requireSegment(entry.projectId, "project id")
+    requireSegment(entry.documentId, "document id")
+    const relativePath = requireRelativePath(entry.relativePath)
+    return {
+      origin: "managed",
+      placement: "hosted",
+      orgId: entry.orgId,
+      projectId: entry.projectId,
+      documentId: entry.documentId,
+      relativePath,
+      objectKey: `documents/${entry.orgId}/${entry.projectId}/${entry.documentId}/${relativePath.split("/").at(-1)}`,
+    }
+  }
+
+  /** The canonical version of the stored object, or null when nothing is stored. */
+  async function currentVersion(handle: HostedManagedHandle): Promise<DocumentVersion | null> {
+    const object = await options.store.get(handle.objectKey)
+    return object ? toDocumentVersion(object.etag) : null
+  }
+
+  async function capture(
+    handle: HostedManagedHandle,
+    request: Readonly<{ reason: string; actor: DocumentActor; sessionId?: string }>,
+  ) {
+    const current = await options.store.get(handle.objectKey)
+    if (!current) throw new DocumentNotFoundError(handle.documentId)
+    return await captureMarkdown(handle, decode(current.body, handle.documentId), request)
+  }
+
+  async function captureMarkdown(
+    handle: HostedManagedHandle,
+    markdown: string,
+    request: Readonly<{ reason: string; actor: DocumentActor; sessionId?: string }>,
+    state: "active" | "pending" = "active",
+  ) {
+    const sha256 = await hash(markdown)
+    const id = toSnapshotID(sha256)
+    const contentKey = `${historyPrefix(handle)}${id}.md`
+    const metadataKey = `${historyPrefix(handle)}${id}.json`
+    const existing = await options.store.get(metadataKey)
+    if (existing) {
+      const value = parseSnapshotState(existing, id, maxDocumentBytes)
+      if (state === "active" && value.state === "pending") await finalizeSnapshot(handle, id)
+      return publicSnapshot(value)
+    }
+    const head = await latestStamp(handle)
+    const createdAt = Math.max(now(), head.stamp + 1)
+    const metadata: SnapshotRef & { state: "active" | "pending" } = {
+      id,
+      sha256,
+      size: encode(markdown, maxDocumentBytes).byteLength,
+      reason: request.reason,
+      actor: request.actor,
+      ...(request.sessionId ? { sessionId: request.sessionId } : {}),
+      createdAt,
+      pins: [],
+      state,
+      ...(state === "pending" ? { leaseUntil: now() + PENDING_SNAPSHOT_LEASE_MS } : {}),
+    }
+    await options.store.put(contentKey, new TextEncoder().encode(markdown), { absent: true })
+    const created = await options.store.put(metadataKey, requireBoundedSnapshotMetadata(metadata), {
+      absent: true,
+    })
+    if (!created) {
+      const winner = await options.store.get(metadataKey)
+      if (!winner) throw new DocumentVersionConflictError(null)
+      return parseSnapshot(winner, id, maxDocumentBytes)
+    }
+    await recordStamp(handle, createdAt, head.etag)
+    if (state === "active")
+      await collect(handle).catch((error) => {
+        console.error(`[hosted-documents] snapshot maintenance failed for ${handle.documentId}:`, error)
+      })
+    return publicSnapshot(metadata)
+  }
+
+  /**
+   * One LIST plus one concurrent GET per history object. Every caller that needs more than a single
+   * snapshot goes through here, so a write reads history once instead of re-listing it per phase.
+   */
+  async function readHistory(handle: HostedManagedHandle) {
+    const objects = await options.store.list(historyPrefix(handle))
+    return (
+      await mapBounded(
+        objects.filter((object) => object.key.endsWith(".json")),
+        async (object) => {
+          const value = await options.store.get(object.key)
+          if (!value) return undefined
+          const snapshotId = toSnapshotID(object.key.split("/").at(-1)!.slice(0, -5))
+          return { key: object.key, etag: value.etag, state: parseSnapshotState(value, snapshotId, maxDocumentBytes) }
+        },
+      )
+    ).filter((entry): entry is { key: string; etag: string; state: SnapshotState } => Boolean(entry))
+  }
+
+  function activeSnapshots(history: readonly { state: SnapshotState }[]) {
+    return history
+      .filter((entry) => entry.state.state === "active")
+      .map((entry) => publicSnapshot(entry.state))
+      .sort((left, right) => right.createdAt - left.createdAt || right.id.localeCompare(left.id))
+  }
+
+  async function listSnapshots(handle: HostedManagedHandle) {
+    return activeSnapshots(await readHistory(handle))
+  }
+
+  /**
+   * Snapshot `createdAt` must be strictly increasing per document. The head object records the
+   * highest stamp ever issued so a write does not have to list history to find it; a head that runs
+   * ahead of the newest live snapshot is still monotone, so it never needs to move backwards. On
+   * miss it is rebuilt from history, keeping history authoritative.
+   */
+  async function latestStamp(handle: HostedManagedHandle) {
+    const head = await options.store.get(historyHeadKey(handle))
+    if (head) {
+      const stamp = parseHistoryHead(head.body)
+      if (stamp !== undefined) return { stamp, etag: head.etag as string | undefined }
+    }
+    const highest = (await readHistory(handle)).reduce((max, entry) => Math.max(max, entry.state.createdAt), 0)
+    return { stamp: highest, etag: head?.etag }
+  }
+
+  async function recordStamp(handle: HostedManagedHandle, stamp: number, etag: string | undefined) {
+    const body = new TextEncoder().encode(JSON.stringify({ version: 1, createdAt: stamp }))
+    // Best-effort: losing this CAS only means the next write rebuilds the head from history.
+    await options.store.put(historyHeadKey(handle), body, etag ? { etag } : { absent: true }).catch(() => undefined)
+  }
+
+  async function readSnapshot(handle: HostedManagedHandle, snapshotId: SnapshotID) {
+    const metadataObject = await options.store.get(`${historyPrefix(handle)}${snapshotId}.json`)
+    if (!metadataObject) throw new DocumentSnapshotNotFoundError(snapshotId)
+    const metadata = parseSnapshot(metadataObject, snapshotId, maxDocumentBytes)
+    const object = await options.store.get(`${historyPrefix(handle)}${snapshotId}.md`)
+    if (!object) throw new DocumentSnapshotNotFoundError(snapshotId)
+    const markdown = decode(object.body, handle.documentId)
+    if ((await hash(markdown)) !== metadata.sha256 || object.body.byteLength !== metadata.size) {
+      throw new DocumentSnapshotCorruptError(snapshotId)
+    }
+    return { markdown, metadata, object }
+  }
+
+  async function updatePins(
+    handle: HostedManagedHandle,
+    snapshotId: SnapshotID,
+    update: (pins: readonly string[]) => readonly string[],
+  ) {
+    const key = `${historyPrefix(handle)}${snapshotId}.json`
+    for (const _attempt of [0, 1, 2]) {
+      const object = await options.store.get(key)
+      if (!object) throw new DocumentSnapshotNotFoundError(snapshotId)
+      const state = parseSnapshotState(object, snapshotId, maxDocumentBytes)
+      if (
+        state.state === "pending" ||
+        state.state === "deleting-final" ||
+        (state.state === "deleting" && (state.deleteAfter ?? 0) <= now())
+      ) {
+        throw new DocumentSnapshotNotFoundError(snapshotId)
+      }
+      const { deleteAfter: _deleteAfter, leaseUntil: _leaseUntil, ...current } = state
+      const next = { ...current, state: "active" as const, pins: boundedSnapshotPins(update(current.pins), now()) }
+      if (await options.store.put(key, requireBoundedSnapshotMetadata(next), { etag: object.etag })) return next
+    }
+    throw new DocumentVersionConflictError(null)
+  }
+
+  async function collect(handle: HostedManagedHandle) {
+    // One history read for the whole sweep, walked concurrently. Each object's transition is
+    // independently CAS-guarded, so ordering between distinct snapshots never mattered.
+    const history = await readHistory(handle)
+    const canonical = await options.store.get(handle.objectKey)
+    const canonicalHash = canonical ? await hash(decode(canonical.body, handle.documentId)) : undefined
+    const survivors = await mapBounded(history, async (listed) => {
+      const snapshot = listed.state
+      const snapshotId = snapshot.id
+      if (snapshot.state === "pending" && canonicalHash === snapshot.id) {
+        const { leaseUntil: _leaseUntil, ...active } = snapshot
+        const promoted = await options.store.put(
+          listed.key,
+          requireBoundedSnapshotMetadata({ ...active, state: "active" }),
+          { etag: listed.etag },
+        )
+        return promoted ? { ...listed, state: { ...active, state: "active" as const }, etag: promoted.etag } : listed
+      }
+      if (snapshot.state === "pending" && (snapshot.leaseUntil ?? 0) > now()) return listed
+      if (snapshot.state === "deleting" && (snapshot.deleteAfter ?? 0) > now()) return listed
+      if (
+        snapshot.state === "deleting" &&
+        !(await options.store.put(
+          listed.key,
+          requireBoundedSnapshotMetadata({ ...snapshot, state: "deleting-final" }),
+          { etag: listed.etag },
+        ))
+      )
+        return listed
+      if (snapshot.state !== "deleting" && snapshot.state !== "deleting-final" && snapshot.state !== "pending") {
+        return listed
+      }
+      await options.store.delete(`${historyPrefix(handle)}${snapshotId}.md`)
+      await options.store.delete(listed.key)
+      return undefined
+    })
+    const snapshots = activeSnapshots(survivors.filter((entry): entry is (typeof history)[number] => Boolean(entry)))
+    const unpinned = snapshots.filter((snapshot) => snapshot.pins.every((pin) => expiredSnapshotLease(pin, now())))
+    const expiredBefore = now() - maxSnapshotAgeMs
+    await unpinned
+      .filter((snapshot, index) => index >= maxSnapshots || (index > 0 && snapshot.createdAt < expiredBefore))
+      .reduce(async (previous, snapshot) => {
+        await previous
+        await options.beforeSnapshotGcClaim?.(snapshot.id)
+        const key = `${historyPrefix(handle)}${snapshot.id}.json`
+        const object = await options.store.get(key)
+        if (!object) return
+        let current = parseSnapshotState(object, snapshot.id, maxDocumentBytes)
+        if (current.state !== "active") return
+        const activePins = current.pins.filter((pin) => !expiredSnapshotLease(pin, now()))
+        if (activePins.length) return
+        let etag = object.etag
+        if (current.pins.length) {
+          const pruned = await options.store.put(
+            key,
+            requireBoundedSnapshotMetadata({
+              ...current,
+              pins: activePins,
+            }),
+            { etag },
+          )
+          if (!pruned) return
+          etag = pruned.etag
+          current = { ...current, pins: activePins }
+        }
+        const claimed = await options.store.put(
+          key,
+          requireBoundedSnapshotMetadata({
+            ...current,
+            state: "deleting",
+            deleteAfter: now() + snapshotDeleteGraceMs,
+          }),
+          {
+            etag,
+          },
+        )
+        if (!claimed) return
+        await options.afterSnapshotGcClaim?.(snapshot.id)
+        if (snapshotDeleteGraceMs > 0) return
+        const final = await options.store.put(
+          key,
+          requireBoundedSnapshotMetadata({ ...current, state: "deleting-final", deleteAfter: now() }),
+          { etag: claimed.etag },
+        )
+        if (!final) return
+        await options.store.delete(`${historyPrefix(handle)}${snapshot.id}.md`)
+        await options.store.delete(key)
+      }, Promise.resolve())
+  }
+
+  async function finalizeSnapshot(handle: HostedManagedHandle, snapshotId: SnapshotID) {
+    const key = `${historyPrefix(handle)}${snapshotId}.json`
+    const object = await options.store.get(key)
+    if (!object) throw new DocumentSnapshotNotFoundError(snapshotId)
+    const snapshot = parseSnapshotState(object, snapshotId, maxDocumentBytes)
+    if (snapshot.state === "active") return
+    const { leaseUntil: _leaseUntil, ...active } = snapshot
+    if (
+      snapshot.state !== "pending" ||
+      !(await options.store.put(key, requireBoundedSnapshotMetadata({ ...active, state: "active" }), {
+        etag: object.etag,
+      }))
+    )
+      throw new DocumentVersionConflictError(null)
+  }
+}
+
+// The R2 object store moved to `r2-object-store.cf.ts`: it is written against
+// R2's conditional-write semantics, so it carries the runtime marker.
+export {
+  createR2ConditionalObjectStore,
+  resumeAfterKey,
+  type R2BucketBinding,
+  type R2ObjectBody,
+} from "./r2-object-store.cf"
+
+function historyPrefix(handle: HostedManagedHandle) {
+  return `document-history/${handle.orgId}/${handle.projectId}/${handle.documentId}/`
+}
+
+/**
+ * Lives outside `historyPrefix` so it is never mistaken for a snapshot by a listing. Holds only the
+ * highest `createdAt` ever issued — a monotonicity accelerator, rebuildable from history.
+ */
+function historyHeadKey(handle: HostedManagedHandle) {
+  return `document-history-head/${handle.orgId}/${handle.projectId}/${handle.documentId}.json`
+}
+
+function parseHistoryHead(body: Uint8Array) {
+  let value: Record<string, unknown> | undefined
+  try {
+    value = parseJsonRecord(new TextDecoder("utf-8", { fatal: true }).decode(body))
+  } catch {
+    return undefined
+  }
+  return value?.version === 1 && typeof value.createdAt === "number" && Number.isSafeInteger(value.createdAt)
+    ? value.createdAt
+    : undefined
+}
+
+function parseSnapshot(object: ConditionalObject, snapshotId: SnapshotID, maxDocumentBytes: number) {
+  const value = parseSnapshotState(object, snapshotId, maxDocumentBytes)
+  if (value.state !== "active") throw new DocumentSnapshotNotFoundError(snapshotId)
+  return publicSnapshot(value)
+}
+
+function parseSnapshotState(object: ConditionalObject, snapshotId: SnapshotID, maxDocumentBytes: number) {
+  try {
+    if (object.body.byteLength > MAX_SNAPSHOT_METADATA_BYTES) throw new DocumentSnapshotCorruptError(snapshotId)
+    const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(object.body))
+    const snapshot = snapshotState(value, snapshotId, maxDocumentBytes)
+    if (!snapshot) throw new DocumentSnapshotCorruptError(snapshotId)
+    return snapshot
+  } catch (error) {
+    if (error instanceof DocumentSnapshotCorruptError) throw error
+    throw new DocumentSnapshotCorruptError(snapshotId, { cause: error })
+  }
+}
+
+type SnapshotState = SnapshotRef &
+  Readonly<{
+    state: "active" | "pending" | "deleting" | "deleting-final"
+    leaseUntil?: number
+    deleteAfter?: number
+  }>
+
+function snapshotState(value: unknown, snapshotId: SnapshotID, maxDocumentBytes: number): SnapshotState | undefined {
+  const record = asRecord(value)
+  if (!record) return undefined
+  if (record.id !== snapshotId || typeof record.id !== "string" || !/^[a-f0-9]{64}$/.test(record.id)) return undefined
+  if (record.sha256 !== snapshotId || typeof record.sha256 !== "string") return undefined
+  if (
+    typeof record.size !== "number" ||
+    !Number.isSafeInteger(record.size) ||
+    record.size < 0 ||
+    record.size > maxDocumentBytes
+  )
+    return undefined
+  if (typeof record.reason !== "string" || !record.reason.trim()) return undefined
+  if (!snapshotActor(record.actor)) return undefined
+  if (typeof record.createdAt !== "number" || !validTimestamp(record.createdAt)) return undefined
+  if (record.sessionId !== undefined && (typeof record.sessionId !== "string" || !record.sessionId.trim())) return undefined
+  if (!Array.isArray(record.pins) || !record.pins.every((pin) => typeof pin === "string")) return undefined
+  const pinValues = record.pins
+  const state = record.state ?? "active"
+  if (!isSnapshotState(state)) return undefined
+  if (record.leaseUntil !== undefined && !validTimestamp(record.leaseUntil)) return undefined
+  if (record.deleteAfter !== undefined && !validTimestamp(record.deleteAfter)) return undefined
+  if (
+    state === "pending"
+      ? record.leaseUntil === undefined || record.deleteAfter !== undefined
+      : record.leaseUntil !== undefined
+  )
+    return undefined
+  if (
+    state === "deleting" || state === "deleting-final"
+      ? record.deleteAfter === undefined
+      : record.deleteAfter !== undefined
+  )
+    return undefined
+
+  try {
+    const pins = boundedSnapshotPins(pinValues, Number.NEGATIVE_INFINITY)
+    if (pins.length !== pinValues.length || pins.some((pin, index) => pin !== pinValues[index])) return undefined
+    return {
+      id: toSnapshotID(record.id),
+      sha256: record.sha256,
+      size: record.size,
+      reason: record.reason,
+      actor: record.actor,
+      ...(typeof record.sessionId === "string" ? { sessionId: record.sessionId } : {}),
+      createdAt: record.createdAt,
+      pins,
+      state,
+      ...(typeof record.leaseUntil === "number" ? { leaseUntil: record.leaseUntil } : {}),
+      ...(typeof record.deleteAfter === "number" ? { deleteAfter: record.deleteAfter } : {}),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+function validTimestamp(value: unknown): value is number {
+  return (
+    typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && Number.isFinite(new Date(value).getTime())
+  )
+}
+
+function isSnapshotState(value: unknown): value is SnapshotState["state"] {
+  return value === "active" || value === "pending" || value === "deleting" || value === "deleting-final"
+}
+
+function snapshotActor(value: unknown): value is DocumentActor {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  if (!("type" in value) || !["user", "agent", "system"].includes(String(value.type))) return false
+  return "id" in value && typeof value.id === "string" && Boolean(value.id.trim())
+}
+
+function parseClaim(object: ConditionalObject) {
+  const value = parseJsonRecord(new TextDecoder().decode(object.body))
+  return typeof value?.sha256 === "string" ? { sha256: value.sha256 } : undefined
+}
+
+function publicSnapshot(value: ReturnType<typeof parseSnapshotState>) {
+  const { state: _state, leaseUntil: _leaseUntil, deleteAfter: _deleteAfter, ...snapshot } = value
+  return snapshot
+}
+
+function encode(markdown: string, maxBytes: number) {
+  if (markdown.includes("\0")) throw new DocumentInvalidEntryError("Document Markdown cannot contain NUL bytes")
+  const body = new TextEncoder().encode(markdown)
+  if (body.byteLength > maxBytes) throw new DocumentTooLargeError(body.byteLength, maxBytes)
+  return body
+}
+
+function decode(body: Uint8Array, documentId: string) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(body)
+  } catch {
+    throw new DocumentInvalidEntryError(`Hosted document ${documentId} is not valid UTF-8`)
+  }
+}
+
+function requireSegment(value: string, name: string) {
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new DocumentInvalidEntryError(`Hosted ${name} is invalid`)
+}
+
+function requireRelativePath(value: string) {
+  if (!/^[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\.md$/.test(value)) {
+    throw new DocumentInvalidEntryError("Hosted managed relative path is invalid")
+  }
+  return value
+}
+
+async function hash(markdown: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(markdown))
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+}

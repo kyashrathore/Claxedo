@@ -1,0 +1,65 @@
+import { defaultStatusHooks, defaultGenericWrappers } from "../../status-hooks"
+import { afterEach, describe, expect, it } from "bun:test"
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs"
+import { tmpdir } from "os"
+import path from "path"
+import { createStatusHooksManifest, writeStatusHooksArtifacts } from "./setup"
+
+const dirs: string[] = []
+
+afterEach(() => {
+  for (const dir of dirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+function temp() {
+  const dir = mkdtempSync(path.join(tmpdir(), "status-hooks-core-"))
+  dirs.push(dir)
+  return dir
+}
+
+describe("writeStatusHooksArtifacts", () => {
+  it("writes generic hook artifacts and returns the manifest", async () => {
+    const root = temp()
+    const manifest = createStatusHooksManifest(root)
+
+    const result = await writeStatusHooksArtifacts(manifest, {
+      templates: defaultStatusHooks,
+      genericWrappers: defaultGenericWrappers,
+      port: 4312,
+      force: true,
+    })
+
+    expect(result).toEqual(manifest)
+    expect(existsSync(manifest.files.notify)).toBe(true)
+    expect(existsSync(path.join(manifest.dirs.hooks, "gemini-hook.sh"))).toBe(true)
+    expect(existsSync(path.join(manifest.dirs.hooks, "cursor-hook.sh"))).toBe(true)
+    expect(JSON.parse(readFileSync(path.join(manifest.dirs.hooks, "claude-settings.json"), "utf-8")).hooks.UserPromptSubmit).toEqual([
+      { hooks: [{ type: "command", command: `'${manifest.files.notify}' --harness=claude` }] },
+    ])
+    expect(existsSync(path.join(manifest.dirs.hooks, "copilot-hook.sh"))).toBe(true)
+    expect(existsSync(path.join(manifest.dirs.bin, "claude"))).toBe(true)
+    expect(existsSync(path.join(manifest.dirs.bin, "codex"))).toBe(true)
+    expect(existsSync(path.join(manifest.dirs.bin, "amp"))).toBe(true)
+    expect(existsSync(path.join(manifest.dirs.bin, "copilot"))).toBe(true)
+    expect(existsSync(path.join(manifest.dirs.shell, ".zshrc"))).toBe(true)
+    expect(existsSync(path.join(manifest.dirs.bash, "rcfile"))).toBe(true)
+    expect(readFileSync(manifest.files.notify, "utf-8")).toContain("4312")
+    expect(readFileSync(path.join(manifest.dirs.bin, "amp"), "utf-8")).not.toContain('hook_event_name')
+  })
+
+  it("writes a Codex wrapper whose hooks run Claxedo's notify script", async () => {
+    const root = temp()
+    const manifest = createStatusHooksManifest(root)
+
+    await writeStatusHooksArtifacts(manifest, {
+      templates: defaultStatusHooks,
+      genericWrappers: defaultGenericWrappers,
+      port: 4312,
+      force: true,
+    })
+
+    expect(readFileSync(path.join(manifest.dirs.bin, "codex"), "utf-8")).toContain(`command="'\\''${manifest.files.notify}'\\'' --harness=codex"`)
+  })
+})

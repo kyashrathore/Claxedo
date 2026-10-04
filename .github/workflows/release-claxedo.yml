@@ -1,0 +1,444 @@
+name: Release Claxedo
+
+on:
+  push:
+    tags:
+      - "claxedo-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 0.0.60)"
+        required: true
+        type: string
+      platforms:
+        description: "Platforms to build"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - macos
+          - windows
+          - linux
+
+env:
+  CLAXEDO_CHANNEL: prod
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: meta
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [[ "$GITHUB_REF" == refs/tags/claxedo-v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/claxedo-v}"
+          else
+            echo "No version input and no claxedo-v* tag; refusing to release the package.json placeholder version" >&2
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=claxedo-v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing $VERSION"
+
+  build-desktop:
+    needs: [prepare]
+    # Desktop public OAuth/control-plane values are environment-scoped, not
+    # repo-level.
+    #
+    # KNOWN DEFECT, deliberately not fixed here: this workflow builds the
+    # signed installers users download, but resolves `staging`. Every shipped
+    # release therefore carries staging's desktop OAuth client registration,
+    # the `-staging` control plane URL, and staging's PostHog project —
+    # so real user installs are indistinguishable from test runs.
+    #
+    # Switching this to `production` is a ONE-WORD change, but it must not
+    # happen until the production environment carries real values for
+    # CLAXEDO_CONTROL_PLANE_URL, the desktop's sole authentication trust anchor.
+    # Flipping it first would ship builds pointing at nothing, which is worse
+    # than the current mislabelling. The production environment already holds
+    # the correct PostHog project (337043); that registration is what remains.
+    environment: staging
+    runs-on: ${{ matrix.host }}
+    env:
+      # electron-vite runs under Node, whose default ~2GB old-space no longer
+      # fits the renderer bundle on the mac legs (both OOM-killed in the first
+      # v0.0.65 build). Job-level so package.ts's internal rebuild inherits it
+      # too — step-level env did not reach it and the OOM moved there.
+      NODE_OPTIONS: --max-old-space-size=4096
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            host: macos-15
+            target: aarch64-apple-darwin
+            arch: arm64
+            cmd: package:mac
+          - platform: macos
+            host: macos-15-intel
+            target: x86_64-apple-darwin
+            arch: x64
+            cmd: package:mac
+          - platform: windows
+            host: windows-latest
+            target: x86_64-pc-windows-msvc
+            arch: x64
+            cmd: package:win
+          - platform: linux
+            host: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            arch: x64
+            cmd: package:linux
+          - platform: linux
+            host: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            arch: arm64
+            cmd: package:linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip unselected platform
+        if: github.event_name != 'push' && github.event.inputs.platforms != 'all' && github.event.inputs.platforms != matrix.platform
+        run: echo "Skipping ${{ matrix.platform }}"
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libnotify-dev \
+            libxtst-dev \
+            libnss3-dev \
+            libgdk-pixbuf2.0-dev \
+            libgtk-3-dev \
+            libxss-dev
+
+      - name: Setup Bun
+        if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+
+      - name: Setup Node.js
+        if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Ensure node-gyp can build (macOS)
+        if: runner.os == 'macOS' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
+        # tree-sitter-powershell's trusted install script runs node-gyp 8.x,
+        # which imports distutils — removed in Python 3.12. Which python
+        # node-gyp finds on macos-latest is roulette; setuptools restores
+        # distutils deterministically.
+        run: python3 -m pip install --break-system-packages setuptools || python3 -m pip install setuptools
+
+      # Frozen + age-gate-off: a tag build adopts nothing new, it rebuilds the
+      # exact integrity-hashed graph already in bun.lock, so the age gate adds no
+      # protection here and only fails a platform leg on wall-clock time.
+      - name: Install dependencies
+        if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
+        run: bun install --frozen-lockfile --minimum-release-age=0
+
+      # The desktop server bundle consumes the @claxedo workspace packages as
+      # their published dist (script/published-exports-plugin.ts), which does
+      # not exist on a fresh checkout. One list: root package.json `build:packages`.
+      - name: Build dist-resolved workspace packages
+        if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
+        run: bun run build:packages
+
+      - name: Pin release version
+        if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          node <<'NODE'
+          const fs = require("fs")
+          for (const file of [
+            "packages/claxedo-app/package.json",
+            "packages/claxedo-desktop/package.json",
+          ]) {
+            const pkg = JSON.parse(fs.readFileSync(file, "utf8"))
+            pkg.version = process.env.VERSION
+            fs.writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`)
+          }
+          NODE
+
+      - name: Build desktop
+        if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
+        env:
+          CLAXEDO_CHANNEL: prod
+          RUST_TARGET: ${{ matrix.target }}
+          # Emit the optional hosted-contribution chunk, while keeping the
+          # renderer's base document and account boundary local/tokenless.
+          VITE_CLAXEDO_HOSTED_ACTIVATION: "true"
+          # The selected core origin is the only baked authentication trust
+          # anchor. Its live descriptor owns all public-client endpoints, ids,
+          # resources and scopes.
+          CLAXEDO_CORE_ORIGIN: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+          CLAXEDO_RELAY_ORIGINS: ${{ vars.CLAXEDO_WORKSPACE_RELAY_URL }}
+          # Telemetry has to be BAKED here, in both halves of the app, because
+          # a packaged build runs on a user's machine where none of these
+          # variables exist. Reading them only at runtime is why shipped
+          # desktop builds sent nothing before this.
+          #
+          #  - VITE_* reach the RENDERER (claxedo-app's analytics.ts), which
+          #    fires `app_launched` on every start — the recurring signal
+          #    DAU/WAU/MAU are computed from.
+          #  - CLAXEDO_* reach the MAIN process via electron.vite.config.ts
+          #    defines, which is what lets the once-per-profile
+          #    `app_installed` event send.
+          #
+          # Public by design: the renderer vars ship in the client bundle —
+          # this is the PostHog PROJECT key (capture-only), never a personal
+          # API key. An unset key leaves both halves uninitialized: no client,
+          # no network call, matching the "no keys configured => nothing sent"
+          # contract self-built binaries rely on.
+          #
+          # Mode defaults to "on" so an unpopulated repo var cannot silently
+          # ship a dark release; setting the repo var to "off" still disables
+          # telemetry without a code change. This mirrors deploy-claxedo-app.yml.
+          VITE_POSTHOG_KEY: ${{ vars.VITE_POSTHOG_KEY }}
+          VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST }}
+          VITE_CLAXEDO_TELEMETRY_MODE: ${{ vars.VITE_CLAXEDO_TELEMETRY_MODE || 'on' }}
+          CLAXEDO_POSTHOG_KEY: ${{ vars.VITE_POSTHOG_KEY }}
+          CLAXEDO_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST }}
+          CLAXEDO_TELEMETRY_MODE: ${{ vars.VITE_CLAXEDO_TELEMETRY_MODE || 'on' }}
+        working-directory: packages/claxedo-desktop
+        run: bun run build
+
+      # A source-map upload token is optional config: its absence must degrade
+      # to "no upload, release still green", never a failed build. secrets.* is
+      # not usable directly in `if:`, hence the bridge through a step output.
+      # Mirrors deploy-claxedo-app.yml.
+      - name: Check for PostHog source map token
+        id: posthog_cli_check
+        if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
+        env:
+          POSTHOG_CLI_TOKEN: ${{ secrets.POSTHOG_CLI_TOKEN }}
+        # bash syntax; the windows leg's default pwsh cannot parse `set -euo`.
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$POSTHOG_CLI_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Inject and upload PostHog source maps
+        if: steps.posthog_cli_check.outputs.enabled == 'true'
+        working-directory: packages/claxedo-desktop
+        env:
+          POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_TOKEN }}
+          POSTHOG_CLI_PROJECT_ID: ${{ vars.POSTHOG_CLI_PROJECT_ID }}
+          POSTHOG_CLI_HOST: ${{ vars.POSTHOG_CLI_HOST || 'https://us.posthog.com' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bunx @posthog/cli@0.9.1 --host "$POSTHOG_CLI_HOST" sourcemap inject --directory out/renderer --release-version "$GITHUB_SHA"
+          bunx @posthog/cli@0.9.1 --host "$POSTHOG_CLI_HOST" sourcemap upload --directory out/renderer --release-version "$GITHUB_SHA"
+
+      # Unconditional: build.sourcemap is "hidden" (vite.renderer.ts), so *.map
+      # files exist on disk whenever the build ran, upload token present or not.
+      # A shipped installer must never carry raw source maps.
+      - name: Strip source maps before packaging
+        if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
+        working-directory: packages/claxedo-desktop
+        # `find -delete` is GNU/BSD find; pwsh on the windows leg has neither.
+        shell: bash
+        run: find out -type f -name '*.map' -delete
+
+      - name: Import Apple certificate
+        if: runner.os == 'macOS' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          security import "$RUNNER_TEMP/certificate.p12" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain-db
+
+          rm "$RUNNER_TEMP/certificate.p12"
+
+      - name: Package macOS
+        if: runner.os == 'macOS' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
+        env:
+          CLAXEDO_CHANNEL: prod
+          RUST_TARGET: ${{ matrix.target }}
+          CSC_LINK: ${{ secrets.APPLE_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        working-directory: packages/claxedo-desktop
+        # --publish never: the create-release job uploads assets; electron-builder
+        # must not try to publish (it fails wanting GH_TOKEN after notarization).
+        run: bun run ${{ matrix.cmd }} -- --${{ matrix.arch }} --publish never
+
+      - name: Package Windows
+        if: runner.os == 'Windows' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
+        env:
+          CLAXEDO_CHANNEL: prod
+          RUST_TARGET: ${{ matrix.target }}
+        working-directory: packages/claxedo-desktop
+        run: bun run ${{ matrix.cmd }} -- --publish never
+
+      - name: Package Linux
+        if: runner.os == 'Linux' && (github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform)
+        env:
+          CLAXEDO_CHANNEL: prod
+          RUST_TARGET: ${{ matrix.target }}
+        working-directory: packages/claxedo-desktop
+        run: bun run ${{ matrix.cmd }} -- --${{ matrix.arch }} --publish never
+
+      - name: Upload build artifacts
+        if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
+        uses: actions/upload-artifact@v4
+        with:
+          name: claxedo-${{ matrix.target }}-${{ needs.prepare.outputs.version }}
+          path: |
+            packages/claxedo-desktop/dist/*.dmg
+            packages/claxedo-desktop/dist/*.zip
+            packages/claxedo-desktop/dist/*.exe
+            packages/claxedo-desktop/dist/*.AppImage
+            packages/claxedo-desktop/dist/*.deb
+            packages/claxedo-desktop/dist/*.rpm
+            packages/claxedo-desktop/dist/*.yml
+            packages/claxedo-desktop/dist/*.yaml
+            packages/claxedo-desktop/dist/*.blockmap
+          retention-days: 7
+          # A packaging step that silently produces nothing must fail here,
+          # not surface later as an empty release (bit by the bun --cwd no-op).
+          if-no-files-found: error
+
+      - name: Cleanup keychain
+        if: runner.os == 'macOS' && always()
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          if [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
+
+  create-release:
+    needs: [prepare, build-desktop]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect release assets
+        shell: bash
+        run: |
+          mkdir -p release
+          find artifacts -type f \( \
+            -name '*.dmg' -o \
+            -name '*.zip' -o \
+            -name '*.exe' -o \
+            -name '*.AppImage' -o \
+            -name '*.deb' -o \
+            -name '*.rpm' -o \
+            -name '*.blockmap' \
+          \) -exec cp {} release/ \;
+
+          echo "Release artifacts:"
+          ls -la release/
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: Claxedo v${{ needs.prepare.outputs.version }}
+          draft: true
+          prerelease: false
+          generate_release_notes: true
+          files: release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  finalize-latest-yml:
+    needs: [prepare, build-desktop, create-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+
+      # Same rationale as the other release installs: exact locked graph, and the
+      # age gate must never brick the updater-feed job on wall-clock time.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --minimum-release-age=0
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare latest yml payloads
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          mkdir -p latest-yml
+
+          for target in \
+            aarch64-apple-darwin \
+            x86_64-apple-darwin \
+            x86_64-pc-windows-msvc \
+            x86_64-unknown-linux-gnu \
+            aarch64-unknown-linux-gnu
+          do
+            src="artifacts/claxedo-${target}-${VERSION}"
+            if [ ! -d "$src" ]; then
+              continue
+            fi
+            mkdir -p "latest-yml/latest-yml-${target}"
+            cp "$src"/*.yml "latest-yml/latest-yml-${target}/" 2>/dev/null || true
+            cp "$src"/*.yaml "latest-yml/latest-yml-${target}/" 2>/dev/null || true
+          done
+
+          find latest-yml -type f
+
+      - name: Finalize latest yml files
+        working-directory: packages/claxedo-desktop
+        env:
+          LATEST_YML_DIR: ${{ github.workspace }}/latest-yml
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLAXEDO_VERSION: ${{ needs.prepare.outputs.version }}
+          CLAXEDO_TAG: ${{ needs.prepare.outputs.tag }}
+        run: bun ./scripts/finalize-latest-yml.ts

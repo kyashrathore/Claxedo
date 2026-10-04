@@ -1,0 +1,14 @@
+scrollTop: 0
+background subagents:
+- region "Background subagents":
+  - heading "Background subagents" [level=2]
+  - link "acp, done":
+    - /url: /s/<id>
+    - text: acp Look up the name · Background · continues independently done
+row 0:
+- text: Delegate it. acp-script:subagent-chip-0 Build · <time>
+- button "Copy message"
+row 1:
+- paragraph: The helper finished.
+- button "Copy response"
+- text: Build · 0s

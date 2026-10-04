@@ -1,0 +1,128 @@
+diff --git a/dist/index.js b/dist/index.js
+index 7dd0394..852e94d 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1491,8 +1491,7 @@ function setupNativeEvents(preload = true, explicitLinks = false, actionBase = "
+   };
+ }
+ 
+-function Router(props) {
+-  if (isServer) return StaticRouter(props);
++function browserIntegration(props) {
+   const getSource = () => {
+     const url = window.location.pathname.replace(/^\/+/, "/") + window.location.search;
+     const state = window.history.state && window.history.state._depth && Object.keys(window.history.state).length === 1 ? undefined : window.history.state;
+@@ -1502,7 +1501,7 @@ function Router(props) {
+     };
+   };
+   const beforeLeave = createBeforeLeave();
+-  return createRouter({
++  return {
+     get: getSource,
+     set({
+       value,
+@@ -1533,7 +1532,11 @@ function Router(props) {
+       go: delta => window.history.go(delta),
+       beforeLeave
+     }
+-  })(props);
++  };
++}
++function Router(props) {
++  if (isServer) return StaticRouter(props);
++  return createRouter(browserIntegration(props))(props);
+ }
+ 
+ function hashParser(str) {
+@@ -1845,4 +1848,4 @@ function json(data, init = {}) {
+   return response;
+ }
+ 
+-export { A, HashRouter, MemoryRouter, Navigate, Route, Router, StaticRouter, mergeSearchString as _mergeSearchString, action, cache, createAsync, createAsyncStore, createBeforeLeave, createMemoryHistory, createRouter, json, keepDepth, notifyIfNotBlocked, query, redirect, reload, revalidate, saveCurrentDepth, useAction, useBeforeLeave, useCurrentMatches, useHref, useIsRouting, useLocation, useMatch, useNavigate, useParams, usePreloadRoute, useResolvedPath, useSearchParams, useSubmission, useSubmissions };
++export { A, HashRouter, MemoryRouter, Navigate, Route, Router, StaticRouter, mergeSearchString as _mergeSearchString, action, browserIntegration, cache, createAsync, createAsyncStore, createBeforeLeave, createMemoryHistory, createRouter, json, keepDepth, notifyIfNotBlocked, query, redirect, reload, revalidate, saveCurrentDepth, useAction, useBeforeLeave, useCurrentMatches, useHref, useIsRouting, useLocation, useMatch, useNavigate, useParams, usePreloadRoute, useResolvedPath, useSearchParams, useSubmission, useSubmissions };
+diff --git a/dist/routers/Router.d.ts b/dist/routers/Router.d.ts
+index c6254ac..30b48b5 100644
+--- a/dist/routers/Router.d.ts
++++ b/dist/routers/Router.d.ts
+@@ -1,9 +1,18 @@
+ import type { BaseRouterProps } from "./components.jsx";
+ import type { JSX } from "solid-js";
++import type { LocationChange, RouterContext, RouterUtils } from "../types.js";
+ export type RouterProps = BaseRouterProps & {
+     url?: string;
+     actionBase?: string;
+     explicitLinks?: boolean;
+     preload?: boolean;
+ };
++export type BrowserIntegration = {
++    get: () => LocationChange;
++    set: (next: LocationChange) => void;
++    init: (notify: (value?: string | LocationChange) => void) => () => void;
++    create: (router: RouterContext) => void;
++    utils: Partial<RouterUtils>;
++};
++export declare function browserIntegration(props: Pick<RouterProps, "preload" | "explicitLinks" | "actionBase" | "transformUrl">): BrowserIntegration;
+ export declare function Router(props: RouterProps): JSX.Element;
+diff --git a/dist/routers/Router.js b/dist/routers/Router.js
+index 90c8319..26cacaf 100644
+--- a/dist/routers/Router.js
++++ b/dist/routers/Router.js
+@@ -3,9 +3,7 @@ import { createRouter, scrollToHash, bindEvent } from "./createRouter.js";
+ import { StaticRouter } from "./StaticRouter.js";
+ import { setupNativeEvents } from "../data/events.js";
+ import { createBeforeLeave, keepDepth, notifyIfNotBlocked, saveCurrentDepth } from "../lifecycle.js";
+-export function Router(props) {
+-    if (isServer)
+-        return StaticRouter(props);
++export function browserIntegration(props) {
+     const getSource = () => {
+         const url = window.location.pathname.replace(/^\/+/, "/") + window.location.search;
+         const state = window.history.state && window.history.state._depth && Object.keys(window.history.state).length === 1 ? undefined : window.history.state;
+@@ -15,7 +13,7 @@ export function Router(props) {
+         };
+     };
+     const beforeLeave = createBeforeLeave();
+-    return createRouter({
++    return {
+         get: getSource,
+         set({ value, replace, scroll, state }) {
+             if (replace) {
+@@ -41,5 +39,10 @@ export function Router(props) {
+             go: delta => window.history.go(delta),
+             beforeLeave
+         }
+-    })(props);
++    };
++}
++export function Router(props) {
++    if (isServer)
++        return StaticRouter(props);
++    return createRouter(browserIntegration(props))(props);
+ }
+diff --git a/dist/routers/index.d.ts b/dist/routers/index.d.ts
+index a1b331b..0722c82 100644
+--- a/dist/routers/index.d.ts
++++ b/dist/routers/index.d.ts
+@@ -1,8 +1,8 @@
+ export { Route } from "./components.jsx";
+ export type { BaseRouterProps, RouteProps } from "./components.jsx";
+ export { createRouter } from "./createRouter.js";
+-export { Router } from "./Router.js";
+-export type { RouterProps } from "./Router.js";
++export { Router, browserIntegration } from "./Router.js";
++export type { RouterProps, BrowserIntegration } from "./Router.js";
+ export { HashRouter } from "./HashRouter.js";
+ export type { HashRouterProps } from "./HashRouter.js";
+ export { MemoryRouter, createMemoryHistory } from "./MemoryRouter.js";
+diff --git a/dist/routers/index.js b/dist/routers/index.js
+index ee6a515..aac8013 100644
+--- a/dist/routers/index.js
++++ b/dist/routers/index.js
+@@ -1,6 +1,6 @@
+ export { Route } from "./components.jsx";
+ export { createRouter } from "./createRouter.js";
+-export { Router } from "./Router.js";
++export { Router, browserIntegration } from "./Router.js";
+ export { HashRouter } from "./HashRouter.js";
+ export { MemoryRouter, createMemoryHistory } from "./MemoryRouter.js";
+ export { StaticRouter } from "./StaticRouter.js";

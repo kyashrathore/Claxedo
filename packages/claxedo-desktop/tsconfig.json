@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    // Workspace packages export `development` -> src/*.ts ahead of `types` ->
+    // dist/*.d.ts, so typecheck reads sibling SOURCE and never needs a build.
+    "customConditions": ["development"],
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "strict": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "emitDeclarationOnly": false,
+    "outDir": "node_modules/.ts-dist",
+    "types": ["vite/client", "node", "electron"]
+  },
+  "include": ["src", "package.json"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/server", "src/host-connector-child"]
+}

@@ -1,0 +1,79 @@
+.ui-diff-changes {
+  display: flex;
+  direction: ltr;
+  unicode-bidi: isolate;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+
+  .ui-diff-changes-additions {
+    font-family: var(--font-family-mono);
+    font-feature-settings: var(--font-family-mono--font-feature-settings);
+    font-size: var(--font-size-base);
+    font-style: normal;
+    font-weight: var(--font-weight-regular);
+    line-height: var(--line-height-large);
+    letter-spacing: var(--letter-spacing-normal);
+    text-align: right;
+    color: var(--text-diff-add-base);
+  }
+
+  .ui-diff-changes-deletions {
+    font-family: var(--font-family-mono);
+    font-feature-settings: var(--font-family-mono--font-feature-settings);
+    font-size: var(--font-size-base);
+    font-style: normal;
+    font-weight: var(--font-weight-regular);
+    line-height: var(--line-height-large);
+    letter-spacing: var(--letter-spacing-normal);
+    text-align: right;
+    color: var(--text-diff-delete-base);
+  }
+}
+
+/*
+ * muted-hover variant: +N -N sit at --text-weaker at rest and only light
+ * green/red while their enclosing collapsible trigger is hovered (mouse-capable
+ * devices). tabular-nums so digit changes never shift layout.
+ */
+.ui-diff-changes[data-variant="muted-hover"] {
+  .ui-diff-changes-additions,
+  .ui-diff-changes-deletions {
+    color: var(--text-weaker);
+    font-variant-numeric: tabular-nums;
+    transition: color 0.15s ease;
+  }
+}
+
+@media (hover: hover) {
+  [data-slot="collapsible-trigger"]:hover
+    [data-component="diff-changes"][data-variant="muted-hover"]
+    .ui-diff-changes-additions {
+    color: var(--text-diff-add-base);
+  }
+
+  [data-slot="collapsible-trigger"]:hover
+    [data-component="diff-changes"][data-variant="muted-hover"]
+    .ui-diff-changes-deletions {
+    color: var(--text-diff-delete-base);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="diff-changes"][data-variant="muted-hover"] .ui-diff-changes-additions,
+  [data-component="diff-changes"][data-variant="muted-hover"] .ui-diff-changes-deletions {
+    transition: none;
+  }
+}
+
+.ui-diff-changes[data-variant="bars"] {
+  width: 18px;
+  height: 14px;
+  flex-shrink: 0;
+
+  svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+}

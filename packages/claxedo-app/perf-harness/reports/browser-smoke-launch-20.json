@@ -1,0 +1,291 @@
+{
+  "generated_at": "2026-05-23T09:37:53.269Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo",
+    "upstream"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "launch-project-20-sessions",
+      "name": "Launch Project 20 Sessions",
+      "started_at": "2026-05-23T09:37:22.920Z",
+      "duration_ms": 10380.256207999999,
+      "seed": {
+        "repos": 1,
+        "sessions": 20,
+        "messages": 2000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "launch_first_window_ms",
+          "value": 3404.739541,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            3404.739541
+          ],
+          "p50": 3404.739541,
+          "p95": 3404.739541,
+          "min": 3404.739541,
+          "max": 3404.739541,
+          "mean": 3404.739541,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_workspace_ready_ms",
+          "value": 8476.240875,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            8476.240875
+          ],
+          "p50": 8476.240875,
+          "p95": 8476.240875,
+          "min": 8476.240875,
+          "max": 8476.240875,
+          "mean": 8476.240875,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 661.4706249999999,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            661.4706249999999
+          ],
+          "p50": 661.4706249999999,
+          "p95": 661.4706249999999,
+          "min": 661.4706249999999,
+          "max": 661.4706249999999,
+          "mean": 661.4706249999999,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "memory_rss_mb",
+          "value": 77.62908935546875,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            77.62908935546875
+          ],
+          "p50": 77.62908935546875,
+          "p95": 77.62908935546875,
+          "min": 77.62908935546875,
+          "max": 77.62908935546875,
+          "mean": 77.62908935546875,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 994.486,
+        "memory_rss_mb": 77.62908935546875,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-launch-project-20-sessions-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "launch-project-20-sessions",
+        "metrics": {
+          "launch_first_window_ms": 570,
+          "launch_workspace_ready_ms": 9403,
+          "transcript_render_ms": 45,
+          "memory_rss_mb": 110
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "launch_first_window_ms p95 3404.739541 > 570",
+        "transcript_render_ms p95 661.4706249999999 > 45"
+      ]
+    },
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "launch-project-20-sessions",
+      "name": "Launch Project 20 Sessions",
+      "started_at": "2026-05-23T09:37:53.216Z",
+      "duration_ms": 29429.239667,
+      "seed": {
+        "repos": 1,
+        "sessions": 20,
+        "messages": 2000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "launch_first_window_ms",
+          "value": 2103.195667,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            2103.195667
+          ],
+          "p50": 2103.195667,
+          "p95": 2103.195667,
+          "min": 2103.195667,
+          "max": 2103.195667,
+          "mean": 2103.195667,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_workspace_ready_ms",
+          "value": 8047.566917,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            8047.566917
+          ],
+          "p50": 8047.566917,
+          "p95": 8047.566917,
+          "min": 8047.566917,
+          "max": 8047.566917,
+          "mean": 8047.566917,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 467.75091599999723,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            467.75091599999723
+          ],
+          "p50": 467.75091599999723,
+          "p95": 467.75091599999723,
+          "min": 467.75091599999723,
+          "max": 467.75091599999723,
+          "mean": 467.75091599999723,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "memory_rss_mb",
+          "value": 45.20416259765625,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            45.20416259765625
+          ],
+          "p50": 45.20416259765625,
+          "p95": 45.20416259765625,
+          "min": 45.20416259765625,
+          "max": 45.20416259765625,
+          "mean": 45.20416259765625,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 2290.174,
+        "memory_rss_mb": 45.20416259765625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [
+        "only 0 of 20 seeded sessions were visible in the session inventory",
+        "session row was not clickable in the visible UI: launch-project-20-sessions session 2",
+        "transcript text was not visible for launch-project-20-sessions: launch-project-20-sessions session 1"
+      ],
+      "artifacts": {
+        "video": "reports/videos/upstream-launch-project-20-sessions-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "launch-project-20-sessions",
+        "metrics": {
+          "launch_first_window_ms": 331,
+          "launch_workspace_ready_ms": 10419,
+          "transcript_render_ms": 17516,
+          "memory_rss_mb": 68
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "launch_first_window_ms p95 2103.195667 > 331",
+        "only 0 of 20 seeded sessions were visible in the session inventory",
+        "session row was not clickable in the visible UI: launch-project-20-sessions session 2",
+        "transcript text was not visible for launch-project-20-sessions: launch-project-20-sessions session 1"
+      ]
+    }
+  ],
+  "comparisons": [
+    {
+      "scenario": "launch-project-20-sessions",
+      "adapter": "browser",
+      "metric": "launch_first_window_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 3404.739541,
+      "upstream_p95": 2103.195667,
+      "winner_delta_percent": 38.22741382495666
+    },
+    {
+      "scenario": "launch-project-20-sessions",
+      "adapter": "browser",
+      "metric": "launch_workspace_ready_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 8476.240875,
+      "upstream_p95": 8047.566917,
+      "winner_delta_percent": 5.057359321445657
+    },
+    {
+      "scenario": "launch-project-20-sessions",
+      "adapter": "browser",
+      "metric": "transcript_render_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 661.4706249999999,
+      "upstream_p95": 467.75091599999723,
+      "winner_delta_percent": 29.2862149396283
+    },
+    {
+      "scenario": "launch-project-20-sessions",
+      "adapter": "browser",
+      "metric": "memory_rss_mb",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 77.62908935546875,
+      "upstream_p95": 45.20416259765625,
+      "winner_delta_percent": 41.76904176904177
+    }
+  ]
+}

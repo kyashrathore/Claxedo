@@ -1,0 +1,296 @@
+import fs from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
+import { afterEach, describe, expect, test } from "vitest"
+import { Hono } from "hono"
+import { inspectPluginTree } from "@claxedo/server-core/agent-plugins/artifacts/acquire"
+import { encodePluginTreeBase64 } from "@claxedo/server-core/agent-plugins/artifacts/codec"
+import { agentPluginTree } from "@claxedo/server-core/agent-plugins/artifacts/tree"
+import {
+  AGENT_PLUGINS_APPLY_VERSION_DEFAULT,
+  AGENT_PLUGINS_APPLY_VERSION_SELECTED,
+  AGENT_PLUGINS_RUNTIME_APPLY_PATH,
+} from "@claxedo/server-core/agent-plugins/runtime/apply-contract"
+import { mountRouteContributions } from "@claxedo/workspace-runtime/route-contribution"
+import { agentPluginWorkspaceRuntimeContribution } from "./runtime-contribution"
+import type { LaunchedPluginRoot } from "../test-support/launch"
+
+const roots: string[] = []
+afterEach(async () => Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true }))))
+
+async function fixture(input: { mcp?: boolean; env?: NodeJS.ProcessEnv } = {}) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "agent-plugins-runtime-"))
+  roots.push(root)
+  const artifact = await inspectPluginTree(agentPluginTree([
+    { path: "plugin.json", kind: "file", executableMode: 0, bytes: new TextEncoder().encode(JSON.stringify({
+      $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      name: "review",
+    })) },
+    { path: "skills", kind: "directory" },
+    { path: "skills/review", kind: "directory" },
+    { path: "skills/review/SKILL.md", kind: "file", executableMode: 0, bytes: new TextEncoder().encode("# Review\n") },
+    ...(input.mcp ? [{
+      path: "mcp.json",
+      kind: "file" as const,
+      executableMode: 0,
+      bytes: new TextEncoder().encode(JSON.stringify({
+        $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+        mcpServers: { docs: { type: "streamable-http", url: "https://upstream.example/mcp" } },
+      })),
+    }] : []),
+  ]))
+  const app = new Hono()
+  mountRouteContributions({
+    app,
+    contributions: [agentPluginWorkspaceRuntimeContribution({
+      runtimeRoot: root,
+      ...(input.env ? { env: input.env } : {}),
+    })],
+    context: {
+      workspaceId: "ws_1",
+      directory: "/workspace",
+      stateDirectory: root,
+      fetch: (request: Request) => Promise.resolve(app.fetch(request)),
+      sessionDrivenOnlyBy: () => false,
+      registerSessionTools: () => async () => {},
+      unregisterSessionTools: () => async () => {},
+    },
+  })
+  return { root, artifact, app }
+}
+
+describe("agentPluginWorkspaceRuntimeContribution", () => {
+  test("verifies delivered bytes, atomically materializes, and returns an idempotent receipt", async () => {
+    const { artifact, app } = await fixture()
+    const body = {
+      version: 1,
+      identity: { mode: "signed", userId: "user_1", projectId: "project_1" },
+      revision: 1,
+      selections: [{ pluginInstanceId: "claxedo/review", artifactDigest: artifact.digest, harnessIds: ["claude"] }],
+      artifacts: [{ digest: artifact.digest, tree: encodePluginTreeBase64(artifact.tree) }],
+      mcpServers: [],
+    }
+    const first = await app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    })
+    expect(first.status).toBe(200)
+    const applied = await first.json() as { generationId: string; harnessLaunch: { claude: { generation: string; pluginRoots: LaunchedPluginRoot[] } } }
+    expect(applied.harnessLaunch.claude.generation).toBe(applied.generationId)
+    expect(applied.harnessLaunch.claude.pluginRoots).toEqual([{ pluginInstanceId: "claxedo/review", root: expect.any(String), dataRoot: expect.any(String), skillNames: expect.any(Array) }])
+    expect(await fs.readFile(path.join(applied.harnessLaunch.claude.pluginRoots[0].root, "plugin.json"), "utf8")).toContain("review")
+
+    const second = await app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    })
+    expect(second.status).toBe(200)
+    expect((await second.json() as { generationId: string }).generationId).toBe(applied.generationId)
+  })
+
+  test("a materialization queued behind a failed request runs its own request", async () => {
+    const { artifact, app } = await fixture()
+    const post = (tree: string) => app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        version: 1, identity: { mode: "signed", userId: "user_1", projectId: "project_1" }, revision: 1,
+        selections: [{ pluginInstanceId: "claxedo/review", artifactDigest: artifact.digest, harnessIds: ["claude"] }],
+        artifacts: [{ digest: artifact.digest, tree }], mcpServers: [],
+      }),
+    })
+    const first = post("corrupt")
+    const second = post(encodePluginTreeBase64(artifact.tree))
+    expect((await first).status).toBe(500)
+    expect((await second).status).toBe(200)
+  })
+
+  test("refuses bytes outside the exact selected digest set", async () => {
+    const { artifact, app } = await fixture()
+    const response = await app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        identity: { mode: "signed", userId: "user_1", projectId: "project_1" },
+        revision: 1,
+        selections: [],
+        artifacts: [{ digest: artifact.digest, tree: encodePluginTreeBase64(artifact.tree) }],
+        mcpServers: [],
+      }),
+    })
+    expect(response.status).toBe(400)
+  })
+
+  test("projects only the sandbox-native broker reference, never the gateway credential", async () => {
+    const secretName = "CLAXEDO_MCP_ABC"
+    const { artifact, app } = await fixture({ mcp: true, env: { [secretName]: "secret_ref_reference" } })
+    const response = await app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        identity: { mode: "signed", userId: "user_1", projectId: "project_1" },
+        revision: 1,
+        selections: [{ pluginInstanceId: "claxedo/review", artifactDigest: artifact.digest, harnessIds: ["claude"] }],
+        artifacts: [{ digest: artifact.digest, tree: encodePluginTreeBase64(artifact.tree) }],
+        mcpServers: [{
+          pluginInstanceId: "claxedo/review",
+          artifactDigest: artifact.digest,
+          harnessId: "claude",
+          serverName: "docs",
+          state: "gateway",
+          url: "https://mcp-abc.gateway.example/api/claxedo/plugins/mcp/id",
+          brokeredSecretName: secretName,
+        }],
+      }),
+    })
+    expect(response.status).toBe(200)
+    const body = await response.json() as { harnessLaunch: { claude: { pluginRoots: LaunchedPluginRoot[] } } }
+    const config = JSON.parse(await fs.readFile(path.join(body.harnessLaunch.claude.pluginRoots[0].root, ".mcp.json"), "utf8"))
+    expect(config.mcpServers.docs).toEqual({
+      type: "http",
+      url: "https://mcp-abc.gateway.example/api/claxedo/plugins/mcp/id",
+      headers: { Authorization: "secret_ref_reference" },
+    })
+  })
+
+  test("refuses a gateway row whose transport or secret name is malformed", async () => {
+    const { artifact, app } = await fixture({ mcp: true, env: { CLAXEDO_MCP_ABC: "secret_ref_reference" } })
+    const docs = { pluginInstanceId: "claxedo/review", artifactDigest: artifact.digest, harnessId: "claude", serverName: "docs" }
+    const target = "https://mcp-abc.gateway.example/api/claxedo/plugins/mcp/id"
+    for (const server of [
+      { ...docs, state: "gateway", url: "http://mcp-abc.gateway.example/api/claxedo/plugins/mcp/id", brokeredSecretName: "CLAXEDO_MCP_ABC" },
+      { ...docs, state: "gateway", url: target, brokeredSecretName: "claxedo-mcp-abc" },
+      { ...docs, state: "gateway", url: target },
+      { ...docs, state: "unavailable" },
+    ]) {
+      const response = await app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          version: 1,
+          identity: { mode: "signed", userId: "user_1", projectId: "project_1" },
+          revision: 1,
+          selections: [{ pluginInstanceId: "claxedo/review", artifactDigest: artifact.digest, harnessIds: ["claude"] }],
+          artifacts: [{ digest: artifact.digest, tree: encodePluginTreeBase64(artifact.tree) }],
+          mcpServers: [server],
+        }),
+      })
+      expect(response.status, JSON.stringify(server)).toBe(400)
+      expect((await response.json() as { error: { code: string } }).error.code).toBe("agent_plugins_runtime_request_invalid")
+    }
+  })
+
+  test("withholds a server the control plane marked unavailable rather than projecting its upstream", async () => {
+    const { artifact, app } = await fixture({ mcp: true })
+    const response = await app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        identity: { mode: "signed", userId: "user_1", projectId: "project_1" },
+        revision: 1,
+        selections: [{ pluginInstanceId: "claxedo/review", artifactDigest: artifact.digest, harnessIds: ["claude"] }],
+        artifacts: [{ digest: artifact.digest, tree: encodePluginTreeBase64(artifact.tree) }],
+        mcpServers: [{
+          pluginInstanceId: "claxedo/review",
+          artifactDigest: artifact.digest,
+          harnessId: "claude",
+          serverName: "docs",
+          state: "unavailable",
+          reason: "gateway_unbound",
+        }],
+      }),
+    })
+    expect(response.status).toBe(200)
+    const body = await response.json() as { harnessLaunch: { claude: { pluginRoots: LaunchedPluginRoot[] } } }
+    const config = await fs.readFile(path.join(body.harnessLaunch.claude.pluginRoots[0].root, ".mcp.json"), "utf8").catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return ""
+      throw error
+    })
+    expect(config).not.toContain("docs")
+    expect(config).not.toContain("upstream.example")
+  })
+
+  test("the same revision under a different selection is a different generation, and the receipt names it", async () => {
+    const { artifact, app } = await fixture()
+    const apply = async (selectionHash: string) => {
+      const response = await app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          version: AGENT_PLUGINS_APPLY_VERSION_SELECTED,
+          identity: { mode: "signed", userId: "user_1", projectId: "project_1" },
+          revision: 4,
+          execution: { mode: "selected", selectionHash },
+          selections: [{
+            pluginInstanceId: "claxedo/review",
+            artifactDigest: artifact.digest,
+            harnessIds: ["claude"],
+            contribution: { kind: "plugin" },
+          }],
+          artifacts: [{ digest: artifact.digest, tree: encodePluginTreeBase64(artifact.tree) }],
+          mcpServers: [],
+        }),
+      })
+      expect(response.status).toBe(200)
+      return await response.json() as { generationId: string; selectionHash?: string }
+    }
+
+    const first = await apply("1".repeat(64))
+    expect(first.selectionHash).toBe("1".repeat(64))
+    expect(await apply("1".repeat(64))).toMatchObject({ generationId: first.generationId })
+
+    const other = await apply("2".repeat(64))
+    expect(other.generationId).not.toBe(first.generationId)
+    expect(other.selectionHash).toBe("2".repeat(64))
+  })
+
+  test("refuses a version it does not implement and a selection smuggled into a default request", async () => {
+    const { artifact, app } = await fixture()
+    const post = (body: unknown) => app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    })
+    const base = {
+      identity: { mode: "signed", userId: "user_1", projectId: "project_1" },
+      revision: 1,
+      artifacts: [{ digest: artifact.digest, tree: encodePluginTreeBase64(artifact.tree) }],
+      mcpServers: [],
+    }
+    const selection = {
+      pluginInstanceId: "claxedo/review",
+      artifactDigest: artifact.digest,
+      harnessIds: ["claude"],
+      contribution: { kind: "plugin" },
+    }
+
+    expect((await post({
+      ...base,
+      version: AGENT_PLUGINS_APPLY_VERSION_SELECTED + 1,
+      execution: { mode: "selected", selectionHash: "3".repeat(64) },
+      selections: [selection],
+    })).status).toBe(400)
+
+    // A runtime that reads only version 1 would apply the defaults these
+    // selections replace, so the contribution is not accepted at that version
+    // at all.
+    expect((await post({
+      ...base,
+      version: AGENT_PLUGINS_APPLY_VERSION_DEFAULT,
+      execution: { mode: "selected", selectionHash: "3".repeat(64) },
+      selections: [selection],
+    })).status).toBe(400)
+
+    expect((await post({
+      ...base,
+      version: AGENT_PLUGINS_APPLY_VERSION_SELECTED,
+      execution: { mode: "selected", selectionHash: "3".repeat(64) },
+      selections: [{ pluginInstanceId: "claxedo/review", artifactDigest: artifact.digest, harnessIds: ["claude"] }],
+    })).status).toBe(400)
+
+  })
+})

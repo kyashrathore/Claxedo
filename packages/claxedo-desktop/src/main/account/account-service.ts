@@ -1,0 +1,815 @@
+/**
+ * Electron main's account: the credential, and the only calls it will make.
+ *
+ * The three modules beside this one each own one decision — `oauth-flow.ts` how
+ * a sign-in proceeds, `credential-store.ts` where the result may be kept,
+ * `hosted-operations.ts` what may be asked for. This assembles them and is the
+ * only thing the IPC layer talks to.
+ *
+ * The credential never leaves this process. `run()` returns a DECODED result;
+ * there is no method here that returns a token, a header, or a raw Response,
+ * and `account-service.test.ts` asserts that rather than leaving it to review.
+ *
+ * Effects stay injected. A service that reached for `net.fetch` directly would
+ * be testable only inside Electron, which in practice means the renewal paths —
+ * the ones that matter, because they only run once a session has been open long
+ * enough for nobody to be watching — would never be tested at all.
+ *
+ * Requests renew ahead of expiry and recover one server-rejected token by
+ * renewing and retrying once. Unary calls and stream opens share that policy;
+ * a retry rejected with 401 ends the session.
+ */
+
+import { DesktopAuthDescriptorError, type BoundDesktopCredential } from "./auth-descriptor"
+import { CredentialStoreConflict, type CredentialStore, type StoredDesktopCredential } from "./credential-store"
+import type { DesktopNativeAuth, RefreshOutcome } from "./desktop-native-auth"
+import { shouldRefresh } from "./secure-storage"
+import {
+  isStreamHostedOperation,
+  resolveHostedOperation,
+  type HostedOperationName,
+} from "@claxedo/account-contract"
+import { fetchHosted } from "./hosted-transport"
+import type { CliCredentialFilePort } from "./cli-credential-file"
+import { readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
+
+export type { RefreshOutcome } from "./desktop-native-auth"
+
+export type AccountIdentity = {
+  userId: string
+  displayName?: string
+  email?: string
+  orgId?: string
+  method?: string
+}
+
+export type AccountState =
+  | { status: "unsigned"; remoteRevocation?: "confirmed" | "uncertain"; detail?: string }
+  | { status: "pending" }
+  | { status: "signed"; identity: AccountIdentity; identityLookup?: "failed" }
+  /**
+   * `transient` marks a deployment that could not be REACHED: the credential
+   * was neither confirmed nor refuted, the held session survives, and the
+   * next operation re-validates. Absent, the deployment answered and the
+   * session is over. Consumers that fail closed on a verdict (the Host
+   * Connector) keep serving through a transient one.
+   */
+  | { status: "unavailable"; reason: "no-secure-storage" | "callback-failed" | "revoked"; detail: string; transient?: true }
+
+type Credential = { ok: true; token: string } | { ok: false; detail: string }
+
+/**
+ * After a refresh fails, further renewals answer with that failure instead of
+ * re-running the exchange, for this long.
+ *
+ * Design invariant, independent of any one deployment's behavior: boot issues
+ * its hosted operations serially, and without this each one would re-attempt
+ * the full bounded refresh against a deployment already known to be failing,
+ * chaining N sequential timeouts behind the splash screen instead of one. See
+ * `account-service.test.ts`, "a failed refresh answers later operations
+ * without re-running until the cool-down passes".
+ */
+const REFRESH_FAILURE_COOLDOWN_SECONDS = 20
+/** Backoff for the profile lookup after a failure: quick, then patient, then stop asking. */
+const IDENTITY_RETRY_DELAYS_MS = [15_000, 60_000, 5 * 60_000] as const
+
+/**
+ * The control plane's error envelope, read in one place.
+ *
+ * Every failing hosted response carries `{ error: { code, message, ... } }`.
+ * The three readers below used to re-derive that nesting by hand — and the two
+ * call sites asserted `response.json()` into it — so the same shape had four
+ * spellings.
+ */
+function hostedError(value: unknown): Record<string, unknown> | undefined {
+  return readRecord(value, "error")
+}
+
+function connectionRetryResult(
+  name: HostedOperationName,
+  response: Response,
+  value: unknown,
+): { status: "provisioning"; retryAfterMs: number } | undefined {
+  if (name !== "workspace.connection.mint" && name !== "workspace.connection.refresh") return undefined
+  if (response.status !== 409 && response.status !== 429) return undefined
+  const bodyDelay = readFiniteNumber(hostedError(value), "retryAfterMs")
+  if (bodyDelay !== undefined) return { status: "provisioning", retryAfterMs: bodyDelay }
+  const header = response.headers.get("Retry-After")?.trim()
+  if (header && /^\d+$/.test(header)) {
+    return { status: "provisioning", retryAfterMs: Number(header) * 1_000 }
+  }
+  return undefined
+}
+
+function operationFailure(name: HostedOperationName, status: number, value: unknown) {
+  const error = hostedError(value)
+  if (!error) return new Error(`operation "${name}" failed: ${status}`)
+  const detail = [readString(error, "code")?.trim() ?? "", readString(error, "message")?.trim() ?? ""]
+    .filter(Boolean)
+    .join(": ")
+  return new Error(`operation "${name}" failed: ${status}${detail ? ` (${detail})` : ""}`)
+}
+
+export type AccountServiceOptions = {
+  auth: DesktopNativeAuth
+  store: CredentialStore
+  fetch: (
+    url: string,
+    init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal },
+  ) => Promise<Response>
+  /**
+   * Loads display identity for a live access token (OIDC userinfo).
+   *
+   * Optional: when absent the service still signs in, and the rail falls back
+   * to the generic "Account" label until something else supplies a name.
+   */
+  resolveIdentity?: (accessToken: string) => Promise<AccountIdentity>
+  /**
+   * Unix time in SECONDS — the unit of the credential's `expiresAt` and of
+   * the store's persistence clock. Every interval this service measures with
+   * it is expressed in seconds too: a millisecond constant here once turned a
+   * 20 s refresh cool-down into five and a half hours of instant failures
+   * after one 503 during a release.
+   */
+  now: () => number
+  /**
+   * Schedules the retry that recovers a session left unavailable by an
+   * unreachable deployment. Injected so a test does not wait 30 seconds;
+   * production uses `setTimeout`.
+   */
+  scheduleRevalidation?: (run: () => void, delayMs: number) => ReturnType<typeof setTimeout>
+  /**
+   * Mirrors this account into the `claxedo` CLI's credential file, when the
+   * user turned that on. Absent means the file is never touched.
+   */
+  cliCredentialFile?: CliCredentialFilePort
+  onError?: (stage: string, error: unknown) => void
+  onStateChange?: (next: AccountState, previous: AccountState) => void
+}
+
+export function createAccountService(options: AccountServiceOptions) {
+  let state: AccountState = { status: "unsigned" }
+  let credential: StoredDesktopCredential | undefined
+  let renewing: Promise<Credential> | undefined
+  let renewFailure: { at: number; detail: string } | undefined
+  let logoutInFlight: Promise<void> | undefined
+  let era = 0
+  const activeRequests = new Set<AbortController>()
+
+  const setState = (next: AccountState) => {
+    const previous = state
+    state = next
+    options.onStateChange?.(next, previous)
+    return next
+  }
+
+  const cancelActiveWork = () => {
+    options.auth.cancel()
+    for (const request of activeRequests) request.abort(new Error("account session ended"))
+    activeRequests.clear()
+  }
+
+  const clearLocal = () => {
+    credential = undefined
+    renewFailure = undefined
+    options.store.clear()
+    void options.cliCredentialFile?.revoke()
+  }
+
+  const rejectHeld = (held: StoredDesktopCredential, reason: string) => {
+    options.store.reject(held.revision, reason)
+    if (credential?.revision === held.revision) credential = undefined
+  }
+
+  const adopt = (
+    next: BoundDesktopCredential,
+    expectedRevision?: string | null,
+  ): { ok: true; credential: StoredDesktopCredential } | { ok: false; detail: string } => {
+    try {
+      const stored = options.store.save(next, expectedRevision)
+      credential = stored
+      renewFailure = undefined
+      void options.cliCredentialFile?.publish(stored)
+      return { ok: true, credential: stored }
+    } catch (error) {
+      options.onError?.("persist", error)
+      credential = undefined
+      const detail = `the credential could not be stored: ${String(error)}`
+      setState({ status: "unavailable", reason: "no-secure-storage", detail })
+      return { ok: false, detail }
+    }
+  }
+
+  const invalidate = (detail: string) => {
+    era++
+    cancelActiveWork()
+    clearLocal()
+    setState({ status: "unavailable", reason: "revoked", detail })
+  }
+
+  const validated = async (held: StoredDesktopCredential) => {
+    try {
+      await options.auth.validate(held)
+      return { ok: true as const, transient: false as const }
+    } catch (error) {
+      options.onError?.("descriptor", error)
+      if (error instanceof DesktopAuthDescriptorError && error.code === "credential_binding_mismatch") {
+        rejectHeld(held, error.message)
+      }
+      // A deployment we could not REACH has said nothing about this
+      // credential. Treating that silence as a verdict is what turned a ~2s
+      // 503 during a routine redeploy into a signed-out desktop: the session
+      // was intact, the credential was valid, and the only real fact was that
+      // the descriptor endpoint was briefly unavailable. Observed live —
+      // `[account] descriptor: ... failed: 503`, after which the desktop
+      // showed "Sign in" and remote access stayed down until someone noticed.
+      //
+      // The operation still fails (we will not use a credential this
+      // deployment has not validated), but the held session survives so the
+      // next attempt re-validates and recovers on its own. A descriptor that
+      // ANSWERS and rejects — a bad binding, a malformed document — is a real
+      // verdict and still ends the session.
+      const transient = error instanceof DesktopAuthDescriptorError && error.code === "descriptor_unavailable"
+      setState({
+        status: "unavailable",
+        reason: "callback-failed",
+        detail: transient
+          ? `the selected deployment is unreachable: ${String(error)}`
+          : `the selected deployment could not validate this credential: ${String(error)}`,
+        ...(transient ? { transient: true as const } : {}),
+      })
+      // Fail closed either way — a credential this deployment has not
+      // validated must not keep being used, and the Host Connector suspends
+      // on exactly this transition. What differs is the future: silence is
+      // retried by the callers below, a refusal is not.
+      return { ok: false as const, transient: transient }
+    }
+  }
+
+  /**
+   * Come back from a blip without the user doing anything.
+   *
+   * The only producers of `signed` are boot and an interactive sign-in, so
+   * treating `unavailable` as terminal would leave the desktop showing
+   * "Sign in" — and remote access suspended — after any transient descriptor
+   * failure (a ~2s 503 during a redeploy, say) until someone restarted it,
+   * even though nothing was wrong with the credential itself.
+   *
+   * So while a credential is held and the session is not signed, re-validate
+   * on a timer. Success returns the state to `signed` through the normal
+   * transition, which is what wakes the Host Connector's auth-lapse resume.
+   * The timer stops itself the moment either condition stops holding, and is
+   * unref'd so it never keeps the process alive.
+   */
+  const REVALIDATE_AFTER_UNREACHABLE_MS = 30_000
+  let revalidating: ReturnType<typeof setTimeout> | undefined
+
+  const scheduleRevalidation = () => {
+    // Either shape of "we hold something worth revalidating": adopted, or
+    // waiting to be adopted because the blip hit during restore.
+    if (revalidating || (!credential && !deferredAdoption)) return
+    revalidating = options.scheduleRevalidation
+      ? options.scheduleRevalidation(() => {
+          revalidating = undefined
+          void currentAccessToken()
+        }, REVALIDATE_AFTER_UNREACHABLE_MS)
+      : setTimeout(() => {
+          revalidating = undefined
+          void currentAccessToken()
+        }, REVALIDATE_AFTER_UNREACHABLE_MS)
+    ;(revalidating as { unref?: () => void })?.unref?.()
+  }
+
+  /**
+   * A credential that could not be adopted only because the deployment was
+   * unreachable. Held so the next operation retries adoption instead of
+   * waiting for another `restore()` — without this, a blip during launch left
+   * the desktop signed out until it was restarted, which is how a 2s 503
+   * outlived itself by hours.
+   */
+  let deferredAdoption: StoredDesktopCredential | undefined
+
+  const adoptDeferred = async () => {
+    const pending = deferredAdoption
+    if (!pending) return false
+    const check = await validated(pending)
+    if (!check.ok) {
+      if (!check.transient) deferredAdoption = undefined
+      return false
+    }
+    deferredAdoption = undefined
+    credential = pending
+    publishSigned(pending.tokens.accessToken, era)
+    return true
+  }
+
+  const exchangeRefresh = async (held: StoredDesktopCredential): Promise<Credential> => {
+    const startedIn = era
+    let outcome: RefreshOutcome
+    try {
+      outcome = await options.auth.refresh(held)
+    } catch (error) {
+      options.onError?.("refresh", error)
+      return { ok: false, detail: `could not renew the session: ${String(error)}` }
+    }
+    if (startedIn !== era || credential?.revision !== held.revision) return { ok: false, detail: "not signed in" }
+    if (!outcome.ok) {
+      options.onError?.("refresh", outcome.detail)
+      if (outcome.reason === "revoked") {
+        invalidate(outcome.detail)
+        return { ok: false, detail: "not signed in" }
+      }
+      return { ok: false, detail: `could not renew the session: ${outcome.detail}` }
+    }
+
+    const nextRefreshToken = outcome.tokens.refreshToken ?? held.tokens.refreshToken
+    const next: BoundDesktopCredential = {
+      binding: held.binding,
+      tokens: { ...outcome.tokens, refreshToken: nextRefreshToken },
+    }
+    try {
+      const stored = options.store.save(next, held.revision)
+      credential = stored
+      void options.cliCredentialFile?.publish(stored)
+      return { ok: true, token: stored.tokens.accessToken }
+    } catch (error) {
+      if (error instanceof CredentialStoreConflict) {
+        const winner = options.store.load(options.now())
+        if (
+          winner &&
+          (await validated(winner)).ok &&
+          !shouldRefresh({ expiresAt: winner.tokens.expiresAt, now: options.now() })
+        ) {
+          credential = winner
+          return { ok: true, token: winner.tokens.accessToken }
+        }
+        return { ok: false, detail: "another refresh changed the session; retry after it completes" }
+      }
+      options.onError?.("persist", error)
+      credential = undefined
+      const detail = `the renewed credential could not be stored: ${String(error)}`
+      setState({ status: "unavailable", reason: "no-secure-storage", detail })
+      return { ok: false, detail }
+    }
+  }
+
+  const renew = (held: StoredDesktopCredential) => {
+    // Electron's app-level single-instance lock makes this the one live writer
+    // for a profile. The promise serializes that process; the persisted
+    // revision rejects stale ownership/re-entrancy. This is not claimed as a
+    // cross-process filesystem CAS (rename alone cannot provide one).
+    if (renewing) return renewing
+    // A failed refresh answers for the next window instead of re-running: see
+    // `REFRESH_FAILURE_COOLDOWN_SECONDS` above. Failing fast lets the shell
+    // bootstrap fall back and render while the account stays degraded.
+    if (renewFailure && options.now() - renewFailure.at < REFRESH_FAILURE_COOLDOWN_SECONDS) {
+      return Promise.resolve<Credential>({ ok: false, detail: renewFailure.detail })
+    }
+    renewing = exchangeRefresh(held)
+      .then((result) => {
+        renewFailure = result.ok || result.detail === "not signed in"
+          ? undefined
+          : { at: options.now(), detail: result.detail }
+        return result
+      })
+      .finally(() => {
+        renewing = undefined
+      })
+    return renewing
+  }
+
+  const currentAccessToken = async (): Promise<Credential> => {
+    if (!credential) await adoptDeferred()
+    const held = credential
+    if (!held) return { ok: false, detail: "not signed in" }
+    const check = await validated(held)
+    if (!check.ok) {
+      if (check.transient) scheduleRevalidation()
+      return { ok: false, detail: "not signed in" }
+    }
+    // The deployment just validated a credential we already hold, so whatever
+    // made the session unavailable is over. Returning to `signed` here is the
+    // transition the Host Connector's auth-lapse resume waits for.
+    if (state.status !== "signed") publishSigned(held.tokens.accessToken, era)
+    if (!shouldRefresh({ expiresAt: held.tokens.expiresAt, now: options.now() })) {
+      return { ok: true, token: held.tokens.accessToken }
+    }
+    return await renew(held)
+  }
+
+  const reconcilePendingRevocation = async () => {
+    const pending = options.store.load(options.now())
+    if (pending?.persistenceState !== "revocation-pending") return true
+    setState({
+      status: "unsigned",
+      remoteRevocation: "uncertain",
+      detail: "remote logout is pending confirmation",
+    })
+    const outcome = await options.auth.revoke(pending)
+    const confirmed = outcome.state === "confirmed" && options.store.completeRevocation(pending.revision)
+    setState({
+      status: "unsigned",
+      remoteRevocation: confirmed ? "confirmed" : "uncertain",
+      ...(!confirmed
+        ? {
+            detail:
+              outcome.state === "uncertain"
+                ? outcome.detail
+                : "remote logout was confirmed, but the persisted revocation intent changed",
+          }
+        : {}),
+    })
+    return confirmed
+  }
+
+  /**
+   * Publish signed state with whatever profile userinfo can supply.
+   *
+   * Sign-in must not fail when userinfo is down — the credential is already
+   * adopted — but the rail's label is `displayName ?? email ?? "Account"`, so
+   * leaving `userId: ""` forever is what made a successful login look anonymous.
+   */
+  const publishSigned = (accessToken: string, startedIn: number) => {
+    if (startedIn !== era) return
+    // Credentials are authoritative as soon as `adopt` persists them. Profile
+    // lookup is display enrichment only: waiting on it turns a slow or hung
+    // /userinfo endpoint into a sign-in that never completes.
+    setState({ status: "signed", identity: { userId: "" } })
+    if (!options.resolveIdentity) return
+    resolveIdentityInto(accessToken, startedIn, 0)
+  }
+  /**
+   * The profile lookup, retried with backoff while the session stays the
+   * same. Without the retry, one timed-out /userinfo would leave the rail on
+   * a nameless "Signed in" until the next relaunch; retrying catches the
+   * stalled-edge case where the next attempt succeeds.
+   */
+  const resolveIdentityInto = (accessToken: string, startedIn: number, attempt: number) => {
+    void (async () => {
+      // On restore the persisted access token is usually already expired
+      // (5-minute TTL); resolving identity with it would answer 401 and leave
+      // every relaunch showing a nameless account. Identity follows the same
+      // token freshness rule as every hosted operation; the passed token is
+      // only the fallback when renewal is unavailable (e.g. mid-adopt).
+      const fresh = await currentAccessToken()
+      const identity = await options.resolveIdentity!(fresh.ok ? fresh.token : accessToken)
+      // Sign-out (or a superseding sign-in) may have happened while the
+      // optional lookup was in flight. Never republish stale identity.
+      if (startedIn !== era) return
+      setState({ status: "signed", identity })
+    })().catch((error) => {
+      if (startedIn !== era || state.status !== "signed") return
+      options.onError?.("identity", error)
+      // Still signed — the credential is adopted — but the rail must not keep
+      // a spinner up for a lookup that is over. Say the lookup failed, then
+      // try again later.
+      if (startedIn === era && state.status === "signed") {
+        setState({ status: "signed", identity: state.identity, identityLookup: "failed" })
+      }
+      const delay = IDENTITY_RETRY_DELAYS_MS[attempt]
+      if (delay === undefined) return
+      const schedule = options.scheduleRevalidation ?? ((run, ms) => setTimeout(run, ms))
+      const timer = schedule(() => {
+        if (startedIn !== era || state.status !== "signed") return
+        resolveIdentityInto(accessToken, startedIn, attempt + 1)
+      }, delay)
+      if (typeof timer === "object" && timer && "unref" in timer) (timer as { unref: () => void }).unref()
+    })
+  }
+
+  async function recoverAccountResponse(
+    response: Response,
+    held: StoredDesktopCredential,
+    startedIn: number,
+    issue: (token: string) => Promise<Response>,
+  ): Promise<Response> {
+    if (startedIn !== era) throw new Error("not signed in")
+    if (response.status !== 401) return response
+    const body: unknown = await response.json().catch(() => undefined)
+    if (startedIn !== era) throw new Error("not signed in")
+    // Missing credentials are a client error. Rejected credentials, including
+    // invalid_bearer_token, may have been retired before their local expiry.
+    const error = hostedError(body)
+    if (readString(error, "code") === "missing_bearer_token") {
+      throw new Error(readString(error, "message") ?? "The account request carried no credential.")
+    }
+    const renewed = await renew(held)
+    if (startedIn !== era) throw new Error("not signed in")
+    if (renewed.ok) {
+      const retried = await issue(renewed.token)
+      if (startedIn !== era) throw new Error("not signed in")
+      if (retried.status !== 401) return retried
+    }
+    invalidate("the server rejected this session")
+    throw new Error("session rejected")
+  }
+
+  return {
+    state: () => state,
+
+    async restore() {
+      try {
+        const storage = options.store.available()
+        if (!storage.usable) {
+          setState({ status: "unavailable", reason: "no-secure-storage", detail: storage.detail })
+          options.store.load(options.now())
+          return state
+        }
+        const stored = options.store.load(options.now())
+        if (!stored) return state
+        if (stored.persistenceState === "revocation-pending") {
+          await reconcilePendingRevocation()
+          return state
+        }
+        const adoption = await validated(stored)
+        if (!adoption.ok) {
+          // Unreachable is not a refusal: keep it adoptable so the next
+          // operation tries again instead of the user seeing "Sign in".
+          deferredAdoption = adoption.transient ? stored : undefined
+          if (adoption.transient) scheduleRevalidation()
+          return state
+        }
+        deferredAdoption = undefined
+        credential = stored
+        const startedIn = era
+        // Profile is best-effort and must not delay launch.
+        publishSigned(stored.tokens.accessToken, startedIn)
+      } catch (error) {
+        options.onError?.("restore", error)
+        setState({
+          status: "unavailable",
+          reason: "callback-failed",
+          detail: `credential restore failed: ${String(error)}`,
+        })
+      }
+      return state
+    },
+
+    async signIn() {
+      await logoutInFlight
+      // A signed account is the goal, not a state to replace: starting a
+      // second flow discarded the working session into `pending`, and the
+      // rail's "Cancel sign in" then logged the user out of it.
+      if (state.status === "signed") return { ok: true as const }
+      if (!(await reconcilePendingRevocation())) {
+        return {
+          ok: false as const,
+          reason: "callback-failed" as const,
+          detail: "remote logout is still pending confirmation; sign-in did not replace its retryable intent",
+        }
+      }
+      const startedIn = ++era
+      setState({ status: "pending" })
+      let result: Awaited<ReturnType<DesktopNativeAuth["signIn"]>>
+      try {
+        result = await options.auth.signIn()
+      } catch (error) {
+        const detail = `sign-in could not load the selected deployment: ${String(error)}`
+        setState({ status: "unavailable", reason: "callback-failed", detail })
+        return { ok: false as const, reason: "callback-failed" as const, detail }
+      }
+      if (startedIn !== era)
+        return { ok: false as const, reason: "callback-failed" as const, detail: "sign-in was cancelled" }
+      if (!result.ok) {
+        if (result.reason === "already-running") {
+          // Another attempt owns `pending`; do not clobber it.
+          return result
+        }
+        if (result.reason === "no-secure-storage") {
+          setState({ status: "unavailable", reason: "no-secure-storage", detail: result.detail })
+          return result
+        }
+        // timeout / callback-failed — back to unsigned so the rail can offer
+        // Sign in again instead of resting on a dead `pending`/`unavailable`.
+        // Keep the non-secret failure detail on the authoritative state. The
+        // IPC intentionally returns state rather than the OAuth result, so
+        // dropping it here made a failed token exchange look exactly like a
+        // user who never clicked Sign in and left no live diagnostic.
+        options.onError?.("sign-in", result.detail)
+        setState({ status: "unsigned", detail: result.detail })
+        return result
+      }
+      const adopted = adopt(result.credential)
+      if (!adopted.ok) {
+        // `adopt` has already put the service in `unavailable`. Reporting
+        // success here would leave the caller believing in a session that was
+        // never stored, and leave `pending` as the resting state of a sign-in
+        // that is over.
+        return { ok: false, reason: "no-secure-storage", detail: adopted.detail }
+      }
+      publishSigned(result.credential.tokens.accessToken, startedIn)
+      return { ok: true as const }
+    },
+
+    async signOut() {
+      if (logoutInFlight) return await logoutInFlight
+      const operation = (async () => {
+        const held = credential
+        const logoutEra = ++era
+        cancelActiveWork()
+        // Ahead of every branch below: the user asked to sign out, so the
+        // mirrored file goes whether or not this process still holds the
+        // credential and whether or not the remote revocation lands.
+        void options.cliCredentialFile?.revoke()
+        if (!held) {
+          const stored = options.store.load(options.now())
+          if (stored?.persistenceState === "revocation-pending") {
+            await reconcilePendingRevocation()
+          } else {
+            options.store.clear()
+            setState({ status: "unsigned" })
+          }
+          return
+        }
+        let pendingRevision: string | undefined
+        try {
+          pendingRevision = options.store.beginRevocation(held.revision)
+        } catch (error) {
+          options.onError?.("logout-persist", error)
+          try {
+            options.store.reject(held.revision, "logout could not persist a retryable revocation intent")
+          } catch (rejectError) {
+            options.onError?.("logout-quarantine", rejectError)
+          }
+        }
+        credential = undefined
+        setState({
+          status: "unsigned",
+          remoteRevocation: "uncertain",
+          detail: pendingRevision
+            ? "remote logout is pending confirmation"
+            : "local access ended, but remote logout cannot be retried from this device",
+        })
+        const outcome = await options.auth.revoke(held)
+        if (era !== logoutEra) return
+        if (outcome.state === "confirmed" && pendingRevision) {
+          options.store.completeRevocation(pendingRevision)
+        }
+        setState({
+          status: "unsigned",
+          remoteRevocation: outcome.state,
+          ...(outcome.state === "uncertain" ? { detail: outcome.detail } : {}),
+        })
+      })()
+      logoutInFlight = operation
+      try {
+        await operation
+      } finally {
+        if (logoutInFlight === operation) logoutInFlight = undefined
+      }
+    },
+
+    async run(name: HostedOperationName, input: Record<string, unknown> = {}): Promise<unknown> {
+      if (isStreamHostedOperation(name)) {
+        throw new Error(`hosted operation "${name}" is a stream; use account.stream.open`)
+      }
+      const startedIn = era
+      const access = await currentAccessToken()
+      if (!access.ok) throw new Error(access.detail)
+      const held = credential
+      if (startedIn !== era || !held) throw new Error("not signed in")
+      const request = resolveHostedOperation(name, input)
+      // One bounded attempt per hosted call — see hosted-transport.ts.
+      const issue = (token: string) =>
+        fetchHosted(
+          options.fetch,
+          `${held.binding.controlPlaneOrigin}${request.path}`,
+          {
+            method: request.method,
+            // Deliberately no invented desktop-version header/426 state: the
+            // selected core exposes no version-admission contract yet. Add both
+            // ends together when that server response is real and testable.
+            headers: {
+              authorization: `Bearer ${token}`,
+              ...(request.body ? { "content-type": "application/json" } : {}),
+              ...request.headers,
+            },
+            ...(request.body ? { body: JSON.stringify(request.body) } : {}),
+          },
+          (controller) => {
+            activeRequests.add(controller)
+            return () => activeRequests.delete(controller)
+          },
+        )
+      const response = await recoverAccountResponse(await issue(access.token), held, startedIn, issue)
+      if (request.response === "http") {
+        // Some reviewed operations have expected non-2xx outcomes (OAuth
+        // replacement confirmation, optimistic revision conflict). Preserve
+        // only status and JSON body; headers and the account credential remain
+        // in main.
+        const value = await response.json().catch(() => undefined)
+        if (startedIn !== era) throw new Error("not signed in")
+        return { status: response.status, ...(value !== undefined ? { body: value } : {}) }
+      }
+      if (!response.ok) {
+        const body: unknown = await response.json().catch(() => undefined)
+        if (startedIn !== era) throw new Error("not signed in")
+        // A cloud connection still provisioning answers 409/429 with a delay.
+        // That is a wait, not a failure, so it crosses the boundary as a value
+        // the caller can poll on rather than an error it would have to parse.
+        const retry = connectionRetryResult(name, response, body)
+        if (retry) return retry
+        if (name === "session.shares.list" && response.status >= 500) {
+          throw new Error(
+            "Could not load session people. This session may only exist locally — People shares a control-plane session.",
+          )
+        }
+        // Status + body must survive Electron IPC (Error properties do not).
+        // Callers that need 409 bodies (connections.connect) parse this prefix.
+        // `detail` is the fallback those callers show when the body is absent,
+        // so it names the operation, the status, and the server's code+message.
+        throw new Error(
+          `HOSTED_HTTP ${response.status} ${JSON.stringify({
+            detail: operationFailure(name, response.status, body).message,
+            body: body ?? null,
+          })}`,
+        )
+      }
+      if (startedIn !== era) throw new Error("not signed in")
+      // Binary export: never return a raw Response (headers include auth
+      // surface). Envelope the bytes so IPC stays JSON-shaped.
+      if (name === "documents.export") {
+        const bytes = Buffer.from(await response.arrayBuffer())
+        return {
+          bytesBase64: bytes.toString("base64"),
+          contentType: response.headers.get("content-type") ?? undefined,
+        }
+      }
+      // Decoded. Returning the Response would hand the renderer the headers,
+      // and one of them is the one thing this design exists to withhold.
+      const value = await response.json().catch(() => undefined)
+      if (startedIn !== era) throw new Error("not signed in")
+      return value
+    },
+
+    /**
+     * Open a named SSE stream. Main owns the fetch + AbortController; the
+     * caller (IPC) forwards text chunks to the renderer that opened it.
+     */
+    async openStream(input: {
+      name: HostedOperationName
+      params?: Record<string, unknown>
+      signal?: AbortSignal
+      onChunk: (text: string) => void
+    }): Promise<void> {
+      if (!isStreamHostedOperation(input.name)) {
+        throw new Error(`hosted operation "${input.name}" is not a stream`)
+      }
+      const startedIn = era
+      const access = await currentAccessToken()
+      if (!access.ok) throw new Error(access.detail)
+      const held = credential
+      if (startedIn !== era || !held) throw new Error("not signed in")
+      const request = resolveHostedOperation(input.name, input.params ?? {})
+      const controller = new AbortController()
+      activeRequests.add(controller)
+      const onAbort = () => controller.abort()
+      input.signal?.addEventListener("abort", onAbort, { once: true })
+      try {
+        // Each SSE HTTP attempt is bounded by hosted-transport.ts. The read loop uses
+        // `controller`, which stays registered for logout/caller aborts for
+        // the stream's whole life.
+        const issue = (token: string) => fetchHosted(
+          options.fetch,
+          `${held.binding.controlPlaneOrigin}${request.path}`,
+          {
+            method: request.method,
+            headers: {
+              authorization: `Bearer ${token}`,
+              Accept: "text/event-stream",
+              ...request.headers,
+            },
+          },
+          (attempt) => {
+            activeRequests.add(attempt)
+            return () => activeRequests.delete(attempt)
+          },
+          controller.signal,
+        )
+        const response = await recoverAccountResponse(await issue(access.token), held, startedIn, issue)
+        if (!response.ok || !response.body) {
+          const detail = (await response.text().catch(() => "")).trim()
+          throw new Error(
+            `HOSTED_HTTP ${response.status} ${JSON.stringify({
+              detail: detail || `operation "${input.name}" failed: ${response.status}`,
+              body: null,
+            })}`,
+          )
+        }
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        while (true) {
+          if (startedIn !== era) throw new Error("not signed in")
+          const next = await reader.read()
+          if (next.done) break
+          input.onChunk(decoder.decode(next.value, { stream: true }))
+        }
+        const tail = decoder.decode()
+        if (tail.length > 0) input.onChunk(tail)
+      } finally {
+        input.signal?.removeEventListener("abort", onAbort)
+        activeRequests.delete(controller)
+      }
+    },
+  }
+}

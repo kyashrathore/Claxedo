@@ -1,0 +1,195 @@
+import type { SessionConfig } from "@claxedo/agent-runtime-contract"
+import type { Hono, MiddlewareHandler } from "hono"
+import type { PtyRoutes } from "../routes/pty"
+import type { RuntimeHarnessSelection, RuntimeSnapshot } from "../routes/config"
+import type { WorkspaceCapabilities } from "../capabilities"
+import type { WorkspaceProfile } from "../profile"
+import type { AgentRuntimeHealth } from "@claxedo/agent-runtime-contract"
+import type { WorkspaceRuntimeExposure } from "../exposure"
+import type { WorkspaceEventFramesTap, RuntimeSessionTime, RuntimeStore, SessionCore, SessionStatusSnapshot } from "@claxedo/session-core"
+import type { RuntimeCredentialIssuer } from "../first-party-mcp/credential"
+import type { FirstPartyMcpServerEntry } from "../first-party-mcp/index"
+import type { ConnectionRuntimeStatus, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
+import type { LaunchOwnershipRecord } from "@claxedo/process-ownership/launch"
+import type { LaunchOwnershipReconciliation } from "../ownership/reconcile-launch-ownership"
+import type { PluginProjection } from "@claxedo/harness/contract"
+import type { PiShellServices } from "@claxedo/harness/pi-durable/shell"
+
+export type WorkspaceConnectionState = ConnectionRuntimeStatus & { connectionId: string }
+
+export type RuntimeConfigApplyStatus = {
+  state: "idle" | "applying" | "applied" | "failed"
+  revision: number
+  acceptedAt?: string
+  updatedAt?: string
+  harness?: RuntimeHarnessSelection
+  error?: {
+    code: string
+    message: string
+    details?: Record<string, unknown>
+  }
+}
+
+export type WorkspaceHostMountOptions = {
+  /** The stream's renewal cadence; a test shortens it to watch a lease lapse. */
+  renewalIntervalMs?: number
+  exposure: WorkspaceRuntimeExposure
+  /** When provided, also mounts the workspace core routes (file, diff,
+   *  PTY, tunnel, agent hooks, events, capabilities) as a
+   *  single unified host. Without this, only the session/runner
+   *  surfaces are mounted and callers must mount the core separately. */
+  core?: {
+    upgradeWebSocket: Parameters<typeof PtyRoutes>[0]
+    profile?: WorkspaceProfile
+  }
+  pty?: {
+    upgradeWebSocket: Parameters<typeof PtyRoutes>[0]
+  }
+  agentHooks?: boolean
+}
+
+export type WorkspaceCheckpointState = "active" | "freezing" | "frozen"
+export type WorkspaceCheckpointDrainPolicy = "drain" | "interrupt"
+
+export type WorkspaceCheckpointDetail = {
+  state: WorkspaceCheckpointState
+  activeWrites: number
+  activeTurns: number
+  reconciledEpoch?: number
+}
+
+/**
+ * One writer a freeze could not account for. `sessionId` is absent only for a
+ * checkpoint write, which belongs to no session; `detail` carries how many.
+ */
+export type WorkspaceCheckpointBlocker = {
+  sessionId?: string
+  turnId?: string
+  reason: string
+  error?: string
+}
+
+/**
+ * A freeze either fenced everything it could see, or names what it could not.
+ * There is no third answer, because a checkpoint taken under `frozen` is
+ * trusted to have no writer behind it.
+ */
+export type WorkspaceCheckpointFreezeResult =
+  | { state: "frozen"; detail: WorkspaceCheckpointDetail }
+  | { state: "blocked"; blockers: WorkspaceCheckpointBlocker[]; detail: WorkspaceCheckpointDetail }
+
+export type WorkspaceCheckpointControl = {
+  detail: () => WorkspaceCheckpointDetail
+  beginWrite: () => (() => void) | undefined
+  freeze: (
+    policy: WorkspaceCheckpointDrainPolicy,
+    options?: { deadlineAt?: number },
+  ) => Promise<WorkspaceCheckpointFreezeResult>
+  flush: () => Promise<void>
+  scrub: () => Promise<void>
+  resume: () => Promise<ReturnType<WorkspaceCheckpointControl["detail"]>>
+  restoreReconcile: (input: { epoch: number; checkpointId: string }) => Promise<ReturnType<WorkspaceCheckpointControl["detail"]>>
+}
+
+export type WorkspaceHost = {
+  sessionCore: SessionCore
+  mount: (app: Hono, options: WorkspaceHostMountOptions) => void
+  /**
+   * Every turn this runtime has admitted, by the identity its owner minted.
+   * Read without waiting on anything: a drain preview naming the turns it
+   * would interrupt must be answerable while one of them is wedged.
+   */
+  activeTurns: () => RecoveryTurnTarget[]
+  /**
+   * This mount, as the launch records it makes name it. A re-mount of the same
+   * workspace is a different generation, so nothing acknowledged for the
+   * previous one carries to it.
+   */
+  ownerGeneration: string
+  /** The workspace's store, opened on first use; one this build refuses throws a typed 503. */
+  store: () => RuntimeStore
+  whenStoreOpens: (opener: (store: RuntimeStore) => void) => void
+  /** For routes mounted ahead of `mount`'s gate: admits the store before they run. */
+  storeAdmission: MiddlewareHandler
+  /**
+   * Settles when the startup reconciliation of this workspace's launches has
+   * finished. A caller that must see the settled answer — a drain preview, a
+   * replacement deciding whether it may admit writes — awaits this first;
+   * request ingress deliberately does not.
+   */
+  launchReconciliation: () => Promise<LaunchOwnershipReconciliation | undefined>
+  /**
+   * Launches this workspace's store has no settled retirement for. Throws once
+   * the runtime is closing: the records outlive this process, and answering
+   * with none would report an owner as having nothing left to reconcile.
+   */
+  unresolvedLaunches: () => Promise<LaunchOwnershipRecord[]>
+  /** What `GET /session/status` answers, for every session in the store whatever its directory, read in process without a caller. */
+  sessionStatus: () => SessionStatusSnapshot
+  /** The session's times in this runtime's store; undefined when the store holds no such session or holds it without both times. */
+  sessionTime: (sessionId: string) => RuntimeSessionTime | undefined
+  /**
+   * The session exists and no turn relayed from another caller reached it or
+   * any session it descends from: everything it was asked came from the
+   * person at this machine or from sessions they drove.
+   */
+  drivenOnlyByMachineUser: (sessionId: string, ownerActorId?: string) => boolean
+  /**
+   * Every frame this host's `wr/events` serves, verbatim, for a process
+   * hosting several runtimes behind one stream. One object for the host's
+   * lifetime, so a consumer may subscribe across `mount`; it is fed by the
+   * mounted stream's own subscriptions and carries nothing until one exists.
+   */
+  frames: WorkspaceEventFramesTap
+  /** In-process consumers read the same committed configuration as the session API. */
+  getSessionConfig: (sessionId: string) => SessionConfig | undefined
+  parentSessionIdFor: (sessionId: string) => string | undefined
+  /**
+   * The issuer behind the bearer this runtime injects into its sessions, for
+   * the host that mounts `/api/claxedo/mcp` to verify callers with. Absent when
+   * the runtime was composed without `firstPartyMcpLaunch`.
+   */
+  runtimeCredentialIssuer: () => RuntimeCredentialIssuer | undefined
+  /** The `claxedo` MCP entry this runtime injects into a session's harness config, absent for the same reason. */
+  firstPartyMcpServer: (sessionId: string) => FirstPartyMcpServerEntry | undefined
+  shellServices: PiShellServices
+  piProjection: () => PluginProjection
+  apply: (snapshot: RuntimeSnapshot) => Promise<void>
+  detail: () => {
+    state: "ready" | "applying" | "error"
+    healthStatus: "ok" | "degraded" | "unavailable"
+    harness?: RuntimeHarnessSelection
+    error: string
+    harnessHealth: AgentRuntimeHealth
+    connectionState?: WorkspaceConnectionState
+    workspaceHarnessEnabled: boolean
+    configApply: RuntimeConfigApplyStatus
+  }
+  /** Read health for one session's resolved harness, without unrelated session history. */
+  readHarnessHealth: (input: { sessionId: string; directory?: string }) => Promise<AgentRuntimeHealth>
+  readConnectionState: (input?: { sessionId?: string; directory?: string }) => WorkspaceConnectionState | undefined
+  capabilities: () => WorkspaceCapabilities
+  /** Canonical in-process work that prevents daemon quiescence. */
+  activity: () => {
+    activeTurns: number
+    activeWrites: number
+    /** Sessions whose harness reports background work still running. */
+    backgroundWork: number
+    checkpointState: WorkspaceCheckpointState
+    /**
+     * What startup reconciliation found. Absent until it settles, because
+     * "nothing unresolved" and "not looked yet" are different answers.
+     */
+    launches?: { examined: number; live: number; retired: number; unresolved: number }
+  }
+  registerSessionTools: (input: {
+    sessionId: string
+    harness?: string
+    callbackUrl: string
+    tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown>; outputSchema?: Record<string, unknown>; callbackUrl?: string }>
+    dispatch?: (url: string, call: { sessionID: string; name: string; toolCallID: string; input: unknown }) => Promise<unknown>
+  }) => Promise<void>
+  unregisterSessionTools: (sessionId: string) => Promise<void>
+  checkpoint: WorkspaceCheckpointControl
+  dispose: () => Promise<void>
+}

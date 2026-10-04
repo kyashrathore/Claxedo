@@ -1,0 +1,21 @@
+@layer components {
+  :root {
+    --sidebar-row-height: 28px;
+    --sidebar-row-radius: var(--radius-md);
+    --sidebar-row-font-size: var(--font-size-compact);
+  }
+
+  .sidebar-row {
+    min-height: var(--sidebar-row-height);
+    padding-inline: 10px;
+    border-radius: var(--sidebar-row-radius);
+    font-size: var(--sidebar-row-font-size);
+  }
+
+  .sidebar-section-label {
+    font-size: var(--font-size-x-small);
+    font-weight: var(--font-weight-medium);
+    color: var(--text-weaker);
+    text-transform: uppercase;
+  }
+}

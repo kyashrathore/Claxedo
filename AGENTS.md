@@ -1,0 +1,38 @@
+## Engineering quality
+
+Before changing code, inspect the implementation, callers, contracts, tests, and runtime flow. Find the canonical owner, then extend, simplify, move, or fix it so the repository keeps one clear path. Reuse shared mechanisms while keeping caller-specific policy separate. Extract abstractions when they reduce future change locations or name a real concept. Give every function, file, directory, and package one clear responsibility, an accurate name, a narrow API, and the correct dependency direction. Keep related code and tests together. Preserve persisted and external contracts when required. Work in complete, reviewable slices; remove replaced paths; and verify behavior through focused tests, typechecks, builds, repository searches, and real public entrypoints.
+
+## Honest completion
+
+Treat work as complete when the implemented behavior satisfies the goal through real entrypoints and acceptance checks. Keep tests meaningful: exercise the actual implementation, preserve useful coverage, and investigate failures rather than shaping the test around the result. Use canonical data and events from their authoritative producer. Keep one implementation per responsibility and finish migrations by removing obsolete routes, flags, helpers, and temporary paths. Fallback and backward compatibility require an explicit user request. Verify the positive flow and relevant negative flows, including failure, recovery, persistence, security, and isolation. Report the exact commands run and their outcomes. When an environment or dependency is unavailable, identify the unverified acceptance criterion directly. Keep plans and documentation aligned with live code. Finish every requirement that can be completed; for anything blocked, state the unmet requirement, evidence, blocker, owner, and concrete follow-up.
+
+## Architecture ratchets
+
+Run `bun run test:architecture-ratchets` before completing any change that adds, removes, or redirects a production import. The pre-push hook runs this command after typecheck so deterministic closure drift fails locally instead of in CI.
+
+When a ratchet fails, do not blindly raise a ceiling or baseline. First identify the newly reachable module and its dependency chain, then remove an accidental edge or reuse the canonical owner. If the dependency is intentional, run the affected product's full `verify:closure`, raise only the exact measured ceiling with no headroom, and update the adjacent comment to name the reviewed owner and why it belongs in that product. Never hide a dependency from the scanner with an opaque dynamic import.
+
+When a file-size ratchet fails (the 800-line production budget or a reviewed per-file ceiling), treat it as a design signal, not a line-count problem. Ask how the file can become modular: name the responsibilities it holds, find the ones that are separate concepts or already have an owner, and split the file along them into several files with narrow APIs. Never shrink a working system to fit the number by joining lines, deleting comments or blank lines, inlining helpers, or shortening names, and never raise the ceiling instead of splitting.
+
+## Explanations and summaries
+
+Start with the direct answer, then build the mental model from the real code flow.
+Begin with the user action or system event that starts the behavior.
+Trace execution in order using exact repository names for components, functions, services, events, and files.
+Use nested labels when they make ownership and calls easier to follow.
+For example: `A. WorkspaceSidebar → A.1 WorkspaceList → A.1.1 useWorkspaces()`.
+Continue through the real boundary: `useWorkspaces()` calls `workspace.list`, which reads `WorkspaceStore`.
+For each step, explain what it receives, what it does, what it returns, and what runs next.
+Include meaningful branches in place: “If cached, return it; otherwise fetch it.”
+Identify where state lives and which component is authoritative for it.
+Trace the result back to the UI, client, or original caller.
+Explain relevant failure, disconnection, retry, and recovery behavior in the same flow.
+Clearly distinguish observed code, evidence-based inference, and proposed behavior.
+Explain the current flow completely before explaining a change.
+Then name the precise change point: “A.1.1 changes from X to Y because Z.”
+State which surrounding steps and contracts remain unchanged.
+Separate distinct user flows instead of merging them into one abstraction.
+Introduce a new term only when it names a necessary concept, and label proposed terms explicitly.
+Use diagrams as optional summaries after the plain-English flow is understandable.
+Keep the first explanation concise, then add depth through concrete causality and code references.
+End with the user-visible result, why the change helps, and any meaningful downside.

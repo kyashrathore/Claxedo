@@ -1,0 +1,12 @@
+[data-session-timeline-root] .scroll-view__viewport {
+  display: flex;
+  flex-direction: column;
+}
+
+[data-session-timeline-root][data-session-timeline-nav-gutter] .scroll-view__viewport {
+  padding-inline: 60px;
+}
+
+[data-session-timeline-root] [data-timeline-content] {
+  padding-bottom: var(--timeline-dock-inset, 0px);
+}

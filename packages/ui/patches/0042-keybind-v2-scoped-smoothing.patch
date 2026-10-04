@@ -1,0 +1,19 @@
+Subject: keybind-v2: font smoothing scoped to the component
+
+What: the sheet's universal rule (`* { -webkit-font-smoothing; -moz-osx-font-smoothing;
+text-rendering }`) applies to `[data-component="keybind-v2"]` instead; all three
+properties inherit, so the keys and labels keep them.
+Why: a universal rule in a component sheet restyles every element on the page the
+moment the component's module loads, and matches every element the style engine
+resolves.
+
+diff --git a/src/v2/components/keybind-v2.css b/src/v2/components/keybind-v2.css
+index 5248476f73..2fcd7b1e81 100644
+--- a/src/v2/components/keybind-v2.css
++++ b/src/v2/components/keybind-v2.css
+@@ -1,4 +1,4 @@
+-* {
++[data-component="keybind-v2"] {
+   -webkit-font-smoothing: antialiased;
+   -moz-osx-font-smoothing: grayscale;
+   text-rendering: geometricPrecision;

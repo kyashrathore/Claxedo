@@ -1,0 +1,182 @@
+{
+  "generated_at": "2026-06-06T20:31:53.166Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "long-session-switch",
+      "name": "Long Session Switch",
+      "started_at": "2026-06-06T20:31:53.086Z",
+      "duration_ms": 32989.702459,
+      "seed": {
+        "repos": 1,
+        "sessions": 2,
+        "messages": 20000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 206.30604099999982,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            206.30604099999982
+          ],
+          "p50": 206.30604099999982,
+          "p95": 206.30604099999982,
+          "min": 206.30604099999982,
+          "max": 206.30604099999982,
+          "mean": 206.30604099999982,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 1.6491249999962747,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.6491249999962747
+          ],
+          "p50": 1.6491249999962747,
+          "p95": 1.6491249999962747,
+          "min": 1.6491249999962747,
+          "max": 1.6491249999962747,
+          "mean": 1.6491249999962747,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "scroll_latency_ms",
+          "value": 20.648709000000963,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            20.648709000000963
+          ],
+          "p50": 20.648709000000963,
+          "p95": 20.648709000000963,
+          "min": 20.648709000000963,
+          "max": 20.648709000000963,
+          "mean": 20.648709000000963,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "incremental_append_latency_ms",
+          "value": 0.7327500000028522,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.7327500000028522
+          ],
+          "p50": 0.7327500000028522,
+          "p95": 0.7327500000028522,
+          "min": 0.7327500000028522,
+          "max": 0.7327500000028522,
+          "mean": 0.7327500000028522,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "tool_block_toggle_latency_ms",
+          "value": 1.879583999994793,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.879583999994793
+          ],
+          "p50": 1.879583999994793,
+          "p95": 1.879583999994793,
+          "min": 1.879583999994793,
+          "max": 1.879583999994793,
+          "mean": 1.879583999994793,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "memory_growth_mb",
+          "value": 6.99615478515625,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            6.99615478515625
+          ],
+          "p50": 6.99615478515625,
+          "p95": 6.99615478515625,
+          "min": 6.99615478515625,
+          "max": 6.99615478515625,
+          "mean": 6.99615478515625,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 2502.469,
+        "memory_rss_mb": 87.45193481445312,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [
+        "transcript text was not visible for long-session-switch: long-session-switch session 1"
+      ],
+      "artifacts": {
+        "video": "reports/videos/claxedo-long-session-switch-1.webm"
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts browser --target claxedo --scenario long-session-switch --output browser-claxedo-long-session-after-lazy-layout-2026-06-07.json --no-trend",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:61664",
+          "mock_port": 61665,
+          "dev_command": "bun --cwd packages/claxedo-app dev"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "long-session-switch",
+        "metrics": {
+          "surface_switch_latency_ms": 523,
+          "transcript_render_ms": 268,
+          "scroll_latency_ms": 55,
+          "incremental_append_latency_ms": 6,
+          "tool_block_toggle_latency_ms": 9,
+          "memory_growth_mb": 22
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "transcript text was not visible for long-session-switch: long-session-switch session 1"
+      ]
+    }
+  ],
+  "comparisons": []
+}

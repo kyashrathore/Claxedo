@@ -1,0 +1,406 @@
+import type { SubagentObservation, AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
+import type { AgentMessage, AgentSession } from "@claxedo/agent-runtime-contract"
+import type { RuntimeDirectory } from "../host/contracts"
+import type { SubagentStatus, SubagentUpdatedEvent, SubagentWake } from "@claxedo/agent-runtime-contract"
+import { asRecord, asNumber, asString } from "@claxedo/helpers/guards"
+import type { SessionPromptBody } from "../session/service"
+import type { SessionTurnOrigin } from "../session-access-policy"
+
+/** `providerKind` of a subagent row whose child is a session this runtime created itself. */
+export const HOST_CHILD_PROVIDER_KIND = "claxedo"
+export const MAX_ACTIVE_CHILDREN_PER_PARENT = 4
+const ACTIVE_CHILD_STATUSES: ReadonlySet<string> = new Set(["pending", "running", "paused"])
+const WAKE_SUMMARY_MAX_CHARS = 8_000
+
+export type HostChildRow = {
+  parentSessionId: string
+  subagentKey: string
+  childSessionId: string
+  status?: string
+  label?: string
+  subagentType?: string
+  attention?: number
+  wake?: SubagentWake
+}
+
+export type WakeParent = { parentSessionId: string; directory: string }
+
+export type ChildWakeAuthor = { id: string; name: string; kind: "agent" }
+
+export type PendingChildWake = {
+  subagentKey: string
+  childSessionId: string
+  label?: string
+  subagentType?: string
+  /** The result's observation, which the delivery's `wakeReceipt` names. */
+  observationId: string
+  result: ChildSummary
+}
+
+/**
+ * Where the identity behind a child outlives the request that created it.
+ *
+ * A completion wake is a turn on the parent, and the authority decides a turn
+ * about an actor. The request that created the child is long gone by then, and
+ * after a restart so is every in-process trace of it, so the actor it verified
+ * is read back from here instead. A host without this port drives wakes with
+ * no identity, which a managed runtime refuses.
+ */
+export type ChildOriginStore = {
+  record(parentSessionId: string, subagentKey: string, origin: SessionTurnOrigin): void | Promise<void>
+  read(parentSessionId: string, subagentKey: string): SessionTurnOrigin | undefined | Promise<SessionTurnOrigin | undefined>
+}
+
+export type ChildSessionHostInput = {
+  /** Admits and publishes one observation about a child this host made; the broker owns the rules. */
+  admit: (parentSessionId: string, observation: SubagentObservation) => Promise<SubagentUpdatedEvent>
+  deriveSessionId: ChildSessionHost["deriveSessionId"]
+  origins?: ChildOriginStore
+  listSubagents: (parentSessionId: string, directory: string) => Promise<unknown[]> | unknown[]
+  /** One parent's undelivered child results, oldest first. */
+  pendingWakes: (parentSessionId: string) => Promise<PendingChildWake[]> | PendingChildWake[]
+  /** Every parent still owed a wake, with the directory its turns run in. */
+  wakeParents: () => Promise<WakeParent[]> | WakeParent[]
+  getSession: (sessionId: string, directory: string) => Promise<AgentSession | null | undefined> | AgentSession | null | undefined
+  /** The message a turn ended in, after any prompt steered into it; either of the turn's message ids names it. */
+  turnReply: (sessionId: string, turnId: string) => Promise<AgentMessage | undefined> | AgentMessage | undefined
+  subscribeGlobal?: (fn: (event: AgentEventEnvelope) => void) => () => void
+  /**
+   * Starts the parent turn that carries a child's summary. Resolves once the
+   * turn is admitted (`started`) or refused because the parent is mid-turn
+   * (`busy`); the turn itself runs on, and `onSettled` fires when it ends.
+   */
+  startTurn: (input: {
+    parentSessionId: string
+    directory: string
+    body: SessionPromptBody
+    /** Who the parent sees wrote the wake: the child, always. */
+    author: ChildWakeAuthor
+    /** How the turn is re-authorized: what the creating request proved about itself. */
+    origin?: SessionTurnOrigin
+    onSettled: () => void
+  }) => Promise<"started" | "busy">
+}
+
+export type ChildSessionHost = {
+  withCreation<T>(parentSessionId: string, directory: RuntimeDirectory, create: () => Promise<T>): Promise<T>
+  deriveSessionId(input: { callerIdentity: string; clientRequestId: string }): string | Promise<string>
+  children(parentSessionId: string, directory: RuntimeDirectory): Promise<HostChildRow[]>
+  activeChildren(parentSessionId: string, directory: RuntimeDirectory): Promise<HostChildRow[]>
+  childOf(childSessionId: string, directory: RuntimeDirectory): Promise<HostChildRow | undefined>
+  admitCreated(input: {
+    parentSessionId: string
+    childSessionId: string
+    directory: RuntimeDirectory
+    harness: string
+    role?: string
+    title?: string
+    /** The creating request's verified identity, which the completion wake later runs as. */
+    origin?: SessionTurnOrigin
+  }): Promise<{ subagentKey: string }>
+  onTurnStarted(sessionId: string, directory: RuntimeDirectory, turnId: string): Promise<void>
+  onTurnSettled(sessionId: string, directory: RuntimeDirectory, turnId: string): Promise<void>
+  /** Re-offers every wake still pending, once, after a restart. */
+  recover(): Promise<void>
+  /** Refuses new background work and waits for what is already running. */
+  dispose(): void | Promise<void>
+}
+
+export function createChildSessionHost(input: ChildSessionHostInput): ChildSessionHost {
+  const admit = (parentSessionId: string, _directory: string, observation: SubagentObservation) =>
+    input.admit(parentSessionId, observation)
+  const offering = new Set<string>()
+  const settledWhileOffering = new Set<string>()
+  const creations = new Map<string, Promise<void>>()
+  const pendingAttention = new Map<string, Set<string>>()
+  let recovered: Promise<void> | undefined
+  /**
+   * Nothing this host does for itself is carried by a request, so nothing else
+   * knows to wait for it. Disposal stops new work and waits for what it finds,
+   * because the alternative is an offer reading a session out of a store the
+   * host is closing, or asking for an adapter the workspace has already
+   * refused to build.
+   */
+  let stopped = false
+  const running = new Set<Promise<unknown>>()
+  const track = <T>(work: Promise<T>) => {
+    running.add(work)
+    void work.catch(() => {}).finally(() => running.delete(work))
+    return work
+  }
+
+  async function children(parentSessionId: string, directory: RuntimeDirectory) {
+    const rows = await input.listSubagents(parentSessionId, requireDirectory(directory))
+    return rows.flatMap((row) => hostChildRow(parentSessionId, row) ?? [])
+  }
+
+  async function childOf(childSessionId: string, directory: RuntimeDirectory) {
+    const session = await input.getSession(childSessionId, requireDirectory(directory))
+    if (!session?.parentID) return undefined
+    return (await children(session.parentID, directory)).find((row) => row.childSessionId === childSessionId)
+  }
+
+  async function offerWakes(parentSessionId: string, directory: string): Promise<void> {
+    if (stopped || offering.has(parentSessionId)) return
+    offering.add(parentSessionId)
+    try {
+      const parent = await input.getSession(parentSessionId, directory)
+      if (!parent || parent.time?.archived !== undefined || parent.status === "busy") return
+      const wake = (await input.pendingWakes(parentSessionId))[0]
+      if (!wake) return
+      const origin = await input.origins?.read(parentSessionId, wake.subagentKey)
+      // Disposal may have begun while this offer was reading. Starting a turn
+      // now would ask a closing workspace for an adapter it refuses to build.
+      if (stopped) return
+      const started = await input.startTurn({
+        parentSessionId,
+        directory,
+        body: {
+          messageID: wakeMessageId(wake.childSessionId, wake.result.assistantMessageId),
+          parts: [{ type: "text", text: wakeText(wake) }],
+        },
+        author: { id: wake.childSessionId, name: wake.label ?? "Subagent", kind: "agent" },
+        ...(origin ? { origin } : {}),
+        onSettled: () => {
+          if (offering.has(parentSessionId)) {
+            settledWhileOffering.add(parentSessionId)
+            return
+          }
+          void track(offerWakes(parentSessionId, directory)).catch((error) => {
+            console.error(`child session wake for ${parentSessionId} failed after turn`, error)
+          })
+        },
+      })
+      if (started !== "started") return
+      await admit(parentSessionId, directory, {
+        observationId: `host:wake:delivered:${wake.observationId}`,
+        subagentKey: wake.subagentKey,
+        wakeReceipt: wake.observationId,
+      })
+    } finally {
+      offering.delete(parentSessionId)
+      if (settledWhileOffering.delete(parentSessionId)) await offerWakes(parentSessionId, directory)
+    }
+  }
+
+  async function updateAttention(sessionId: string, directory: string) {
+    const row = await childOf(sessionId, directory)
+    if (!row) return
+    const count = pendingAttention.get(sessionId)?.size ?? 0
+    if ((row.attention ?? 0) === count) return
+    await admit(row.parentSessionId, directory, {
+      observationId: `host:attention:${sessionId}:${crypto.randomUUID()}`,
+      subagentKey: row.subagentKey,
+      attention: count,
+    })
+  }
+
+  const unsubscribe = input.subscribeGlobal?.((event) => {
+    const change = attentionChange(event.payload)
+    if (!change || stopped) return
+    const pending = pendingAttention.get(change.sessionId) ?? new Set<string>()
+    if (change.kind === "add") pending.add(change.requestId)
+    else pending.delete(change.requestId)
+    pendingAttention.set(change.sessionId, pending)
+    void track(updateAttention(change.sessionId, event.directory)).catch((error) => {
+      console.error(`child session attention for ${change.sessionId} failed`, error)
+    })
+  })
+
+  return {
+    async withCreation(parentSessionId, directory, create) {
+      const key = JSON.stringify([directory, parentSessionId])
+      const previous = creations.get(key) ?? Promise.resolve()
+      let release = () => {}
+      const current = new Promise<void>((resolve) => { release = resolve })
+      creations.set(key, current)
+      await previous
+      try {
+        return await create()
+      } finally {
+        release()
+        if (creations.get(key) === current) creations.delete(key)
+      }
+    },
+    deriveSessionId: input.deriveSessionId,
+    children,
+    async activeChildren(parentSessionId, directory) {
+      return (await children(parentSessionId, directory)).filter((row) => ACTIVE_CHILD_STATUSES.has(row.status ?? "pending"))
+    },
+    childOf,
+    async admitCreated({ parentSessionId, childSessionId, directory, harness, role, title, origin }) {
+      const event = await admit(parentSessionId, requireDirectory(directory), {
+        observationId: `host:create:${childSessionId}`,
+        subagentKey: `subagent_${crypto.randomUUID()}`,
+        mode: "background",
+        status: "pending",
+        label: title ?? role ?? `${harness} subagent`,
+        subagentType: role ?? harness,
+        ...(title ? { description: title } : {}),
+        providerKind: HOST_CHILD_PROVIDER_KIND,
+        providerId: childSessionId,
+        childSessionId,
+        transcript: { kind: "live" },
+      })
+      if (origin) await input.origins?.record(parentSessionId, event.subagentKey, origin)
+      return { subagentKey: event.subagentKey }
+    },
+    async onTurnStarted(sessionId, directory, turnId) {
+      if (stopped) return
+      // The harness is already running this turn, so a failure here is the
+      // bookkeeping's alone: thrown, it would end the admission as failed and
+      // settle a turn that is still writing.
+      try {
+        const row = await childOf(sessionId, directory)
+        if (stopped || !row) return
+        await admit(row.parentSessionId, requireDirectory(directory), {
+          observationId: `host:running:${sessionId}:${turnId}`,
+          subagentKey: row.subagentKey,
+          providerKind: HOST_CHILD_PROVIDER_KIND,
+          stableCorrelationId: turnId,
+          harnessExecutionId: sessionId,
+          status: "running",
+        })
+      } catch (error) {
+        console.error(`child session bookkeeping for the start of ${sessionId} failed`, error)
+      }
+    },
+    async onTurnSettled(sessionId, requested, turnId) {
+      if (stopped) return
+      const directory = requireDirectory(requested)
+      const row = await childOf(sessionId, directory)
+      if (stopped) return
+      if (!row) {
+        await offerWakes(sessionId, directory)
+        return
+      }
+      const summary = childSummary(await input.turnReply(sessionId, turnId))
+      if (stopped) return
+      const parent = await input.getSession(row.parentSessionId, directory)
+      if (stopped) return
+      const parentGone = !parent || parent.time?.archived !== undefined
+      await admit(row.parentSessionId, directory, {
+        observationId: `host:finished:${sessionId}:${turnId}`,
+        subagentKey: row.subagentKey,
+        providerKind: HOST_CHILD_PROVIDER_KIND,
+        harnessExecutionId: sessionId,
+        stableCorrelationId: turnId,
+        status: parentGone ? "interrupted" : summary.status,
+        ...(parentGone ? {} : { wakeResult: summary }),
+      })
+      if (!parentGone) await offerWakes(row.parentSessionId, directory)
+    },
+    recover() {
+      if (stopped) return Promise.resolve()
+      recovered ??= track((async () => {
+        for (const parent of await input.wakeParents()) await offerWakes(parent.parentSessionId, parent.directory)
+      })().catch((error) => {
+        console.error("child session wake recovery failed", error)
+      }))
+      return recovered
+    },
+    async dispose() {
+      stopped = true
+      unsubscribe?.()
+      // One pass is not enough on its own: an offer settling here schedules the
+      // next one, and that one refuses on `stopped` and finishes, so this
+      // drains rather than chases.
+      while (running.size) {
+        const pending = [...running]
+        await Promise.allSettled(pending)
+      }
+    },
+  }
+}
+
+/**
+ * The user message id one finished child's wake turn carries.
+ *
+ * The `msg_` prefix is a hard constraint of the OpenCode engine:
+ * `Session.Message.ID` refuses every other shape, and the refusal arrives as a
+ * failed parent turn rather than a refused wake, so nothing upstream can see
+ * it. The rest is derived rather than minted because the id IS the exactly-once
+ * key: `Session.prompt` reconciles an id it has already admitted instead of
+ * opening a second turn, so a wake re-offered after a restart — or after a lost
+ * delivery observation — has to resolve to the same id from the same child.
+ */
+export function wakeMessageId(childSessionId: string, assistantMessageId: string | undefined): string {
+  return `msg_wake_${childSessionId}_${assistantMessageId ?? "none"}`
+}
+
+/** Host-owned children always belong to a workspace directory; a create without one has nowhere to run. */
+function requireDirectory(directory: RuntimeDirectory): string {
+  if (directory) return directory
+  throw new Error("child sessions require a workspace directory")
+}
+
+export function hostChildRow(parentSessionId: string, value: unknown): HostChildRow | undefined {
+  const row = asRecord(value)
+  if (!row || row.providerKind !== HOST_CHILD_PROVIDER_KIND) return undefined
+  const subagentKey = asString(row.subagentKey)
+  const childSessionId = asString(row.childSessionId)
+  if (!subagentKey || !childSessionId) return undefined
+  const wake = row.wake
+  return {
+    parentSessionId,
+    subagentKey,
+    childSessionId,
+    ...(asString(row.status) ? { status: asString(row.status) } : {}),
+    ...(asString(row.label) ? { label: asString(row.label) } : {}),
+    ...(asString(row.subagentType) ? { subagentType: asString(row.subagentType) } : {}),
+    ...(asNumber(row.attention) !== undefined ? { attention: asNumber(row.attention) } : {}),
+    ...(wake === "pending" || wake === "delivered" ? { wake } : {}),
+  }
+}
+
+type ChildSummary = { status: SubagentStatus; text: string; assistantMessageId?: string }
+
+/**
+ * A child turn's outcome as the reply it ended in records it: the reply's
+ * error decides failed versus killed, and its text is the summary the parent
+ * is woken with.
+ */
+export function childSummary(last: AgentMessage | undefined): ChildSummary {
+  if (!last) return { status: "completed", text: "" }
+  const error = last.info.error
+  const status: SubagentStatus = !error
+    ? "completed"
+    : error.name === "MessageAbortedError"
+      ? "killed"
+      : "failed"
+  const text = last.parts
+    .flatMap((part) => (part.type === "text" && typeof part.text === "string" ? [part.text] : []))
+    .join("\n")
+    .trim()
+  const detail = error ? asString(error.data?.message) ?? error.name : undefined
+  return {
+    status,
+    text: [text, detail ? `Error: ${detail}` : undefined].filter(Boolean).join("\n\n").slice(0, WAKE_SUMMARY_MAX_CHARS),
+    assistantMessageId: last.info.id,
+  }
+}
+
+function wakeText(wake: PendingChildWake) {
+  const heading = `Subagent "${wake.label ?? wake.subagentKey}"${wake.subagentType ? ` (${wake.subagentType})` : ""} ${wake.result.status}.`
+  return wake.result.text ? `${heading}\n\n${wake.result.text}` : `${heading}\n\n(no summary was produced)`
+}
+
+function attentionChange(payload: AgentEventEnvelope["payload"]): { kind: "add" | "remove"; sessionId: string; requestId: string } | undefined {
+  switch (payload.type) {
+    case "permission.asked":
+      return { kind: "add", sessionId: payload.properties.sessionID, requestId: `permission:${payload.properties.id}` }
+    case "permission.replied":
+    case "permission.expired":
+      return { kind: "remove", sessionId: payload.properties.sessionID, requestId: `permission:${payload.properties.requestID}` }
+    case "question.asked":
+      return { kind: "add", sessionId: payload.properties.sessionID, requestId: `question:${payload.properties.id}` }
+    case "question.replied":
+    case "question.rejected":
+    case "question.expired":
+      return { kind: "remove", sessionId: payload.properties.sessionID, requestId: `question:${payload.properties.requestID}` }
+    default:
+      return undefined
+  }
+}
+
+export type { SubagentUpdatedEvent } from "@claxedo/agent-runtime-contract"

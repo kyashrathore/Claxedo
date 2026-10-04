@@ -1,0 +1,158 @@
+diff --git a/dist/chunk/UGE6PPGT.jsx b/dist/chunk/UGE6PPGT.jsx
+--- a/dist/chunk/UGE6PPGT.jsx
++++ b/dist/chunk/UGE6PPGT.jsx
+@@ -59,8 +59,28 @@
+     { id: context.generateId("content") },
+     props
+   );
+-  const [local, others] = splitProps(mergedProps, ["ref", "id", "style"]);
+-  const { present } = createPresence({
++  const [local, others] = splitProps(mergedProps, ["ref", "id", "style", "staticPresence"]);
++  // CLAXEDO PATCH (perf) -- patches/@kobalte%2Fcore@0.13.12.patch.
++  // `staticPresence` declares that this content element carries no CSS
++  // animation or transition, so the exit-animation machinery has nothing to
++  // drive. That machinery is not free: `createPresence` reads
++  // `getComputedStyle(el).animationName` on every show change, and the effect
++  // on `present` writes two inline styles and then reads
++  // `getBoundingClientRect()`, to publish
++  // `--kb-collapsible-content-{height,width}`. Both force a style (and, for
++  // the rect, layout) pass over the subtree that was just mounted -- ~7ms per
++  // opened level when a file-tree reveal expands a path -- to produce values
++  // only the slideDown/slideUp keyframes ever read. With no animation
++  // configured `present()` is exactly `context.shouldMount()`, so expand /
++  // collapse semantics, the data-expanded/data-closed dataset and the
++  // registered content id are all unchanged.
++  // TO RE-ENABLE ANIMATION: stop passing `staticPresence` at the call site
++  // (packages/ui/src/components/collapsible.tsx and accordion.tsx) and the
++  // full upstream behaviour comes back. Call sites that never pass it -- e.g.
++  // packages/ui/src/v2/components/accordion-v2.tsx, whose content really does
++  // animate -- are untouched by this patch.
++  const staticPresence = local.staticPresence === true;
++  const { present } = staticPresence ? { present: context.shouldMount } : createPresence({
+     show: context.shouldMount,
+     element: () => ref() ?? null
+   });
+@@ -69,6 +89,7 @@
+   const isOpen = () => context.isOpen() || present();
+   let isMountAnimationPrevented = isOpen();
+   onMount(() => {
++    if (staticPresence) return;
+     const raf = requestAnimationFrame(() => {
+       isMountAnimationPrevented = false;
+     });
+@@ -85,7 +106,7 @@
+        */
+       present,
+       () => {
+-        if (!ref()) {
++        if (staticPresence || !ref()) {
+           return;
+         }
+         ref().style.transitionDuration = "0s";
+@@ -104,6 +125,7 @@
+     on(
+       context.isOpen,
+       (open) => {
++        if (staticPresence) return;
+         if (!open && ref()) {
+           ref().style.transitionDuration = "";
+           ref().style.animationName = "";
+diff --git a/dist/chunk/IN725QRS.js b/dist/chunk/IN725QRS.js
+--- a/dist/chunk/IN725QRS.js
++++ b/dist/chunk/IN725QRS.js
+@@ -34,10 +34,32 @@
+   const mergedProps = mergeDefaultProps({
+     id: context.generateId("content")
+   }, props);
+-  const [local, others] = splitProps(mergedProps, ["ref", "id", "style"]);
++  const [local, others] = splitProps(mergedProps, ["ref", "id", "style", "staticPresence"]);
++  // CLAXEDO PATCH (perf) -- patches/@kobalte%2Fcore@0.13.12.patch.
++  // `staticPresence` declares that this content element carries no CSS
++  // animation or transition, so the exit-animation machinery has nothing to
++  // drive. That machinery is not free: `createPresence` reads
++  // `getComputedStyle(el).animationName` on every show change, and the effect
++  // on `present` writes two inline styles and then reads
++  // `getBoundingClientRect()`, to publish
++  // `--kb-collapsible-content-{height,width}`. Both force a style (and, for
++  // the rect, layout) pass over the subtree that was just mounted -- ~7ms per
++  // opened level when a file-tree reveal expands a path -- to produce values
++  // only the slideDown/slideUp keyframes ever read. With no animation
++  // configured `present()` is exactly `context.shouldMount()`, so expand /
++  // collapse semantics, the data-expanded/data-closed dataset and the
++  // registered content id are all unchanged.
++  // TO RE-ENABLE ANIMATION: stop passing `staticPresence` at the call site
++  // (packages/ui/src/components/collapsible.tsx and accordion.tsx) and the
++  // full upstream behaviour comes back. Call sites that never pass it -- e.g.
++  // packages/ui/src/v2/components/accordion-v2.tsx, whose content really does
++  // animate -- are untouched by this patch.
++  const staticPresence = local.staticPresence === true;
+   const {
+     present
+-  } = createPresence({
++  } = staticPresence ? {
++    present: context.shouldMount
++  } : createPresence({
+     show: context.shouldMount,
+     element: () => ref() ?? null
+   });
+@@ -46,6 +68,7 @@
+   const isOpen = () => context.isOpen() || present();
+   let isMountAnimationPrevented = isOpen();
+   onMount(() => {
++    if (staticPresence) return;
+     const raf = requestAnimationFrame(() => {
+       isMountAnimationPrevented = false;
+     });
+@@ -61,7 +84,7 @@
+      */
+     present,
+     () => {
+-      if (!ref()) {
++      if (staticPresence || !ref()) {
+         return;
+       }
+       ref().style.transitionDuration = "0s";
+@@ -76,6 +99,7 @@
+     }
+   ));
+   createEffect(on(context.isOpen, (open) => {
++    if (staticPresence) return;
+     if (!open && ref()) {
+       ref().style.transitionDuration = "";
+       ref().style.animationName = "";
+diff --git a/dist/collapsible-trigger-6358fcd4.d.ts b/dist/collapsible-trigger-6358fcd4.d.ts
+--- a/dist/collapsible-trigger-6358fcd4.d.ts
++++ b/dist/collapsible-trigger-6358fcd4.d.ts
+@@ -21,6 +21,14 @@
+ declare function useCollapsibleContext(): CollapsibleContextValue;
+ 
+ interface CollapsibleContentOptions {
++    /**
++     * CLAXEDO PATCH (perf): declares that this content element carries no CSS
++     * animation or transition, so Kobalte skips the presence probe
++     * (`getComputedStyle().animationName`) and the `getBoundingClientRect()`
++     * measurement that publishes `--kb-collapsible-content-{height,width}`.
++     * Drop it again to restore animated presence.
++     */
++    staticPresence?: boolean;
+ }
+ interface CollapsibleContentCommonProps<T extends HTMLElement = HTMLElement> {
+     id: string;
+diff --git a/dist/index-4cb1a0c7.d.ts b/dist/index-4cb1a0c7.d.ts
+--- a/dist/index-4cb1a0c7.d.ts
++++ b/dist/index-4cb1a0c7.d.ts
+@@ -5,6 +5,14 @@
+ import { L as ListState } from './create-list-state-d9a0f1f2.js';
+ 
+ interface AccordionContentOptions {
++    /**
++     * CLAXEDO PATCH (perf): declares that this content element carries no CSS
++     * animation or transition, so Kobalte skips the presence probe
++     * (`getComputedStyle().animationName`) and the `getBoundingClientRect()`
++     * measurement that publishes `--kb-collapsible-content-{height,width}`.
++     * Drop it again to restore animated presence.
++     */
++    staticPresence?: boolean;
+ }
+ interface AccordionContentCommonProps<T extends HTMLElement = HTMLElement> extends CollapsibleContentCommonProps<T> {
+     id: string;

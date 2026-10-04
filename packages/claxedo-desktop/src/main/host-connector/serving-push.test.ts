@@ -1,0 +1,98 @@
+import { describe, expect, test } from "bun:test"
+
+import { setupHostServingPush } from "./serving-push"
+import { recordingDaemon } from "../test-support/daemon-fetch"
+
+const JWKS = "https://relay.test/.well-known/jwks.json"
+const AUTHORITY = "https://control-plane.test/api/runtime-authority/session-authorize"
+const SESSION_ROWS = "https://control-plane.test/api/claxedo/host/session-rows"
+const TUNNEL = {
+  hostTunnelToken: "htt.1",
+  hostId: "host_1",
+  enrollmentId: "enr_this_machine",
+  relayUrl: "https://relay.test",
+}
+
+function harness(options: { respond?: () => Response; origin?: string | Promise<string> } = {}) {
+  const logged: string[] = []
+  const { daemon, requests } = recordingDaemon({
+    ...(options.origin ? { origin: options.origin } : {}),
+    ...(options.respond ? { respond: () => options.respond!() } : {}),
+  })
+  const push = setupHostServingPush({
+    daemon,
+    log: { info: (message) => logged.push(`info ${message}`), warn: (message) => logged.push(`warn ${message}`) },
+  })
+  return {
+    push,
+    requests,
+    logged,
+    body: () => requests.at(-1)?.body,
+  }
+}
+
+describe("the serving push", () => {
+  test("PUTs the credential and every address to the daemon", async () => {
+    const host = harness()
+
+    await host.push({ tunnel: TUNNEL, endpoints: { relayJwksUrl: JWKS, sessionAuthorityUrl: AUTHORITY, sessionRowsUrl: SESSION_ROWS } })
+
+    expect(host.requests).toHaveLength(1)
+    expect(host.requests[0]?.url).toBe("http://127.0.0.1:4000/api/claxedo/host-serving")
+    expect(host.requests[0]?.method).toBe("PUT")
+    // The daemon refuses this route without it, so a push that stopped carrying
+    // it would fail silently at the machine rather than here.
+    expect(host.requests[0]?.capability).toBe("daemon-capability")
+    expect(host.body()).toEqual({
+      credential: TUNNEL,
+      endpoints: { relayJwksUrl: JWKS, sessionAuthorityUrl: AUTHORITY, sessionRowsUrl: SESSION_ROWS },
+    })
+  })
+
+  // The daemon declares this to every local client as the machine it is, so
+  // the credential has to reach it whole rather than as the fields main reads.
+  test("hands the daemon the enrollment the ack minted the credential for", async () => {
+    const host = harness()
+
+    await host.push({ tunnel: TUNNEL })
+
+    expect((host.body() as { credential?: Record<string, unknown> }).credential?.enrollmentId).toBe("enr_this_machine")
+  })
+
+  test("omits the field entirely when the ack named no address", async () => {
+    // The serving route's body is strict and its endpoints are optional; an
+    // explicit `endpoints: undefined` is not what "the ack named none" means.
+    const host = harness()
+
+    await host.push({ tunnel: TUNNEL })
+
+    expect(host.body()).toEqual({ credential: TUNNEL })
+  })
+
+  test("withdraws serving with a null credential", async () => {
+    const host = harness()
+
+    await host.push({ tunnel: null })
+
+    expect(host.body()).toEqual({ credential: null })
+  })
+
+  test("reports which addresses the daemon was given, and what it answered", async () => {
+    const host = harness({ respond: () => new Response("invalid_request_body", { status: 400 }) })
+
+    await host.push({ tunnel: TUNNEL, endpoints: { sessionAuthorityUrl: AUTHORITY } })
+
+    expect(host.logged).toEqual([
+      "info [host-serving] pushed credential=present endpoints=sessionAuthorityUrl -> 400 invalid_request_body",
+    ])
+  })
+
+  test("a daemon that never answers is reported, not thrown at the heartbeat", async () => {
+    const host = harness({ origin: Promise.reject(new Error("claxedo-server failed to start")) })
+
+    await host.push({ tunnel: TUNNEL })
+
+    expect(host.requests).toEqual([])
+    expect(host.logged).toEqual(["warn [host-serving] push failed: Error: claxedo-server failed to start"])
+  })
+})

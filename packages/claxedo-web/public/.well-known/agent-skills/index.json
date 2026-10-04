@@ -1,0 +1,26 @@
+{
+  "name": "Claxedo",
+  "url": "https://claxedo.com",
+  "skills": [
+    {
+      "name": "claxedo-workspace",
+      "description": "Explain and set up Claxedo, the open-source workspace that runs Claude Code, Codex, Cursor, and OpenCode with one shared configuration of plugins, skills, MCP servers, and credentials. Use when a user wants several coding agents in one place or wants to configure them once.",
+      "url": "https://claxedo.com/llms.md"
+    },
+    {
+      "name": "claxedo-install",
+      "description": "Download and install Claxedo Desktop for macOS, Windows, or Linux, and start in local mode without an account. Use when a user asks how to get or run Claxedo.",
+      "url": "https://claxedo.com/download.md"
+    },
+    {
+      "name": "claxedo-deploy",
+      "description": "Deploy the Claxedo control plane to the user's own Cloudflare account and enroll machines, following the credential-safety rules in the agent entry map. Use when a user wants to self-host or share sessions with a team.",
+      "url": "https://claxedo.com/start.md"
+    },
+    {
+      "name": "claxedo-compare",
+      "description": "Compare Claxedo with other coding-agent workspaces on open source, self-hosting, multiplayer, and sandbox support using the sourced comparison pages. Use when a user is choosing between agent workspaces.",
+      "url": "https://claxedo.com/compare.md"
+    }
+  ]
+}

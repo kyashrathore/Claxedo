@@ -1,0 +1,321 @@
+{
+  "generated_at": "2026-05-23T10:14:49.769Z",
+  "status": "pass",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo",
+    "upstream"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "agent-control-navigation",
+      "name": "Agent Control Navigation",
+      "started_at": "2026-05-23T10:14:39.714Z",
+      "duration_ms": 9501.466416000001,
+      "seed": {
+        "repos": 1,
+        "sessions": 8,
+        "messages": 4000,
+        "terminals": 3,
+        "changed_files": 80,
+        "projects": 2,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 100,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "agent_action_dispatch_ms",
+          "value": 29.102875000000495,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            29.102875000000495
+          ],
+          "p50": 29.102875000000495,
+          "p95": 29.102875000000495,
+          "min": 29.102875000000495,
+          "max": 29.102875000000495,
+          "mean": 29.102875000000495,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "agent_state_verify_ms",
+          "value": 0.5223749999986467,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.5223749999986467
+          ],
+          "p50": 0.5223749999986467,
+          "p95": 0.5223749999986467,
+          "min": 0.5223749999986467,
+          "max": 0.5223749999986467,
+          "mean": 0.5223749999986467,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 0.8128749999996217,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.8128749999996217
+          ],
+          "p50": 0.8128749999996217,
+          "p95": 0.8128749999996217,
+          "min": 0.8128749999996217,
+          "max": 0.8128749999996217,
+          "mean": 0.8128749999996217,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "command_execution_overhead_ms",
+          "value": 0.4635419999995065,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.4635419999995065
+          ],
+          "p50": 0.4635419999995065,
+          "p95": 0.4635419999995065,
+          "min": 0.4635419999995065,
+          "max": 0.4635419999995065,
+          "mean": 0.4635419999995065,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "event_backlog",
+          "value": 250,
+          "unit": "events",
+          "direction": "lower",
+          "samples": [
+            250
+          ],
+          "p50": 250,
+          "p95": 250,
+          "min": 250,
+          "max": 250,
+          "mean": 250,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 865.347,
+        "memory_rss_mb": 77.62908935546875,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 250,
+        "event_backlog": 4
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-agent-control-navigation-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "agent-control-navigation",
+        "metrics": {
+          "agent_action_dispatch_ms": 54,
+          "agent_state_verify_ms": 8,
+          "surface_switch_latency_ms": 6,
+          "command_execution_overhead_ms": 6,
+          "event_backlog": 385
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "agent-control-navigation",
+      "name": "Agent Control Navigation",
+      "started_at": "2026-05-23T10:14:49.707Z",
+      "duration_ms": 9402.391875,
+      "seed": {
+        "repos": 1,
+        "sessions": 8,
+        "messages": 4000,
+        "terminals": 3,
+        "changed_files": 80,
+        "projects": 2,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 100,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "agent_action_dispatch_ms",
+          "value": 43.49141700000109,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            43.49141700000109
+          ],
+          "p50": 43.49141700000109,
+          "p95": 43.49141700000109,
+          "min": 43.49141700000109,
+          "max": 43.49141700000109,
+          "mean": 43.49141700000109,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "agent_state_verify_ms",
+          "value": 0.9990420000031008,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.9990420000031008
+          ],
+          "p50": 0.9990420000031008,
+          "p95": 0.9990420000031008,
+          "min": 0.9990420000031008,
+          "max": 0.9990420000031008,
+          "mean": 0.9990420000031008,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 0.8722920000000158,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.8722920000000158
+          ],
+          "p50": 0.8722920000000158,
+          "p95": 0.8722920000000158,
+          "min": 0.8722920000000158,
+          "max": 0.8722920000000158,
+          "mean": 0.8722920000000158,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "command_execution_overhead_ms",
+          "value": 0.5106249999989814,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.5106249999989814
+          ],
+          "p50": 0.5106249999989814,
+          "p95": 0.5106249999989814,
+          "min": 0.5106249999989814,
+          "max": 0.5106249999989814,
+          "mean": 0.5106249999989814,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "event_backlog",
+          "value": 250,
+          "unit": "events",
+          "direction": "lower",
+          "samples": [
+            250
+          ],
+          "p50": 250,
+          "p95": 250,
+          "min": 250,
+          "max": 250,
+          "mean": 250,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 1545.214,
+        "memory_rss_mb": 61.03515625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 250,
+        "event_backlog": 4
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/upstream-agent-control-navigation-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "agent-control-navigation",
+        "metrics": {
+          "agent_action_dispatch_ms": 67,
+          "agent_state_verify_ms": 6,
+          "surface_switch_latency_ms": 6,
+          "command_execution_overhead_ms": 6,
+          "event_backlog": 385
+        }
+      },
+      "status": "pass",
+      "failures": []
+    }
+  ],
+  "comparisons": [
+    {
+      "scenario": "agent-control-navigation",
+      "adapter": "browser",
+      "metric": "agent_action_dispatch_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 29.102875000000495,
+      "upstream_p95": 43.49141700000109,
+      "winner_delta_percent": 33.083635789563345
+    },
+    {
+      "scenario": "agent-control-navigation",
+      "adapter": "browser",
+      "metric": "agent_state_verify_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 0.5223749999986467,
+      "upstream_p95": 0.9990420000031008,
+      "winner_delta_percent": 47.712408487628615
+    },
+    {
+      "scenario": "agent-control-navigation",
+      "adapter": "browser",
+      "metric": "surface_switch_latency_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 0.8128749999996217,
+      "upstream_p95": 0.8722920000000158,
+      "winner_delta_percent": 6.811595199817619
+    },
+    {
+      "scenario": "agent-control-navigation",
+      "adapter": "browser",
+      "metric": "command_execution_overhead_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 0.4635419999995065,
+      "upstream_p95": 0.5106249999989814,
+      "winner_delta_percent": 9.220660954627911
+    },
+    {
+      "scenario": "agent-control-navigation",
+      "adapter": "browser",
+      "metric": "event_backlog",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 250,
+      "upstream_p95": 250,
+      "winner_delta_percent": 0
+    }
+  ]
+}

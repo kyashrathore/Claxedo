@@ -1,0 +1,230 @@
+export type Claim = {
+  id: string
+  publicWording: string
+  owner: string
+  evidence: readonly [string, ...string[]]
+  verifiedAt: string
+  note?: string
+}
+
+export const claims = [
+  {
+    id: "free",
+    publicWording: "Claxedo is free.",
+    owner: "Claxedo product",
+    evidence: ["packages/claxedo-server/src/authority/adapters/worker/better-auth-d1-compose.ts"],
+    verifiedAt: "2026-09-28",
+  },
+  {
+    id: "desktop-local-mode",
+    publicWording: "Start locally without a Claxedo account.",
+    owner: "Claxedo Desktop",
+    evidence: [
+      "packages/claxedo-desktop/src/main/index.ts",
+      "packages/claxedo-desktop/src/main/account/lazy-account.ts",
+      "packages/claxedo-app/src/server/capabilities.ts",
+    ],
+    verifiedAt: "2026-09-28",
+  },
+  {
+    id: "sessions-and-terminals",
+    publicWording: "Chat sessions and terminals are equally first-class parts of the workspace.",
+    owner: "Claxedo App",
+    evidence: [
+      "packages/claxedo-app/src/session/index.ts",
+      "packages/claxedo-app/src/terminal/launchers.ts",
+    ],
+    verifiedAt: "2026-09-28",
+  },
+  {
+    id: "sidebar-or-tabs",
+    publicWording: "Sessions sit in a pinned sidebar, or, with the sidebar unpinned, as tabs in the workbench header.",
+    owner: "Claxedo App",
+    evidence: [
+      "packages/claxedo-app/src/rail/view/compact-switcher.tsx",
+      "packages/claxedo-app/src/shell/view/app-shell.tsx",
+      "packages/claxedo-app/e2e/flows/12-workbench-shell.spec.ts",
+    ],
+    verifiedAt: "2026-09-29",
+    note: "Owner ruling 2026-09-29.",
+  },
+  {
+    id: "cloudflare-five-minutes",
+    publicWording: "Deploy Claxedo for your whole team on your own Cloudflare in 5 minutes.",
+    owner: "Claxedo server",
+    evidence: [
+      "public-docs/user-deployed-cloudflare.md",
+      "packages/claxedo-server/scripts/deploy/deploy-user-cloudflare.ts",
+    ],
+    verifiedAt: "2026-09-29",
+    note: "Owner ruling 2026-09-29.",
+  },
+  {
+    id: "team-plugin-sharing",
+    publicWording: "Share skills and MCP servers with your whole team from one repo, on every machine.",
+    owner: "Agent Plugins module",
+    evidence: [
+      "packages/claxedo-server-core/src/agent-plugins/sources/registry.ts",
+      "packages/claxedo-server-core/src/agent-plugins/activation/store.ts",
+    ],
+    verifiedAt: "2026-09-29",
+    note: "Owner ruling 2026-09-29.",
+  },
+  {
+    id: "bring-your-own-sandbox",
+    publicWording: "Bring your own sandbox provider; Claxedo runs sessions in it.",
+    owner: "Sandbox manager",
+    evidence: [
+      "packages/sandbox-contract/src/index.ts",
+      "packages/sandbox-manager/docs/architecture.md",
+    ],
+    verifiedAt: "2026-09-29",
+    note: "Owner ruling 2026-09-29: bringing your own provider is the only option; there are no direct provider integrations.",
+  },
+  {
+    id: "agent-cli-access",
+    publicWording: "Use supported coding agents through Claxedo's chat UI, or run any installed agent CLI in a terminal.",
+    owner: "Claxedo App",
+    evidence: [
+      "packages/harness/package.json",
+      "packages/claxedo-app/src/terminal/agents.ts",
+      "packages/claxedo-app/src/terminal/launchers.ts",
+    ],
+    verifiedAt: "2026-09-28",
+  },
+  {
+    id: "harness-coverage",
+    publicWording: "Claxedo runs Claude Code, Codex, Cursor, OpenCode and Pi as built-in agents.",
+    owner: "Agent runtime",
+    evidence: [
+      "packages/agent-runtime-contract/src/harnesses.ts",
+      "packages/harness/src/profiles/claude-code/index.ts",
+      "packages/harness/src/profiles/codex/index.ts",
+      "packages/harness/src/profiles/cursor/index.ts",
+      "packages/harness/src/profiles/pi/index.ts",
+      "packages/harness/src/profiles/opencode/index.ts",
+    ],
+    verifiedAt: "2026-09-28",
+  },
+  {
+    id: "connected-placement",
+    publicWording: "Run sessions on this computer, on other machines you connect, or in a cloud sandbox, and reopen them from the desktop app, a browser or a phone.",
+    owner: "Claxedo runtime",
+    evidence: [
+      "packages/claxedo-host-connector/src/connector.ts",
+      "packages/claxedo-server/src/routes/remote-access.test.ts",
+      "packages/claxedo-server/src/workspace/hosted-runtime-delivery.ts",
+      "packages/claxedo-app/src/server/machines.ts",
+      "packages/claxedo-app/src/projects/draft-workspaces.ts",
+      "packages/claxedo-app/src/server/placement-streams.ts",
+      "packages/claxedo-app/src/auth/desktop-binding.ts",
+      "packages/claxedo-app/src/auth/browser-binding.ts",
+      "packages/claxedo-app/src/lib/viewport.ts",
+      "packages/claxedo-app/e2e/flows/33-phone.spec.ts",
+      "packages/workspace-relay/src/composition.test.ts",
+    ],
+    verifiedAt: "2026-09-28",
+  },
+  {
+    id: "agent-plugins",
+    publicWording: "Standard Agent Plugins make skills and MCP servers available to Claude Code, Codex, Cursor and OpenCode.",
+    owner: "Agent Plugins module",
+    evidence: [
+      "packages/claxedo-server-core/src/agent-plugins/runtime/harness-registry.ts",
+      "packages/claxedo-server-core/src/agent-plugins/catalog/validate-plugin.ts",
+      "packages/claxedo-local-server/src/agent-plugins/runtime/materialize.ts",
+      "packages/claxedo-local-server/src/agent-plugins/runtime/adapters/claude.ts",
+      "packages/claxedo-local-server/src/agent-plugins/runtime/adapters/codex.ts",
+      "packages/claxedo-local-server/src/agent-plugins/runtime/adapters/cursor.ts",
+      "packages/claxedo-local-server/src/agent-plugins/runtime/adapters/opencode.ts",
+    ],
+    verifiedAt: "2026-09-28",
+  },
+  {
+    id: "agent-plugins-follow-you",
+    publicWording: "Agent plugins a signed-in user enables reach every environment they sign into: this computer, their connected machines and their cloud sandboxes.",
+    owner: "Agent Plugins module",
+    evidence: [
+      "packages/claxedo-desktop/src/main/agent-plugins-signed-sync.ts",
+      "packages/claxedo-desktop/src/main/agent-plugins-signed-sync.test.ts",
+      "packages/claxedo-server/src/agent-plugins/hosted-composition.ts",
+      "packages/claxedo-server-core/src/agent-plugins/activation/effective.ts",
+      "packages/claxedo-local-server/src/agent-plugins/runtime/materialize.ts",
+      "packages/claxedo-app/src/marketplace/i18n.ts",
+    ],
+    verifiedAt: "2026-09-28",
+  },
+  {
+    id: "app-plugins-by-prompt",
+    publicWording: "An agent can scaffold, check and register an app plugin through the Claxedo MCP tools; the app runs it once the person approves it, and every later save goes live.",
+    owner: "App plugins",
+    evidence: [
+      "packages/claxedo-mcp/src/tools/app-plugins.ts",
+      "packages/claxedo-mcp/src/tools/app-plugins-guide.ts",
+      "packages/claxedo-plugin-build/src/build.ts",
+      "packages/claxedo-plugin-build/src/check.ts",
+      "packages/claxedo-plugin-build/src/watch.ts",
+      "packages/claxedo-local-server/src/app/local-app.ts",
+      "packages/claxedo-app/src/plugins/host.ts",
+      "packages/claxedo-app/src/plugins/approval.ts",
+      "packages/claxedo-app/src/plugins/live/controller.ts",
+      "packages/claxedo-app/e2e/flows/40-app-plugin-tools.spec.ts",
+    ],
+    verifiedAt: "2026-09-28",
+  },
+  {
+    id: "core-metrics",
+    publicWording:
+      "In the 29 September 2026 benchmark run, Claxedo beats T3 Code and OpenCode on five core metrics: app start (958 ms; 2.9× and 2.1× faster), session open (48 ms; 2.9× and 2.1×), session return (33 ms; 2.0× and 1.5×), memory after the switching walk (746 MiB; 1.8× and 2.0× less) and idle CPU (0.4% against 2.6% and 16.9%).",
+    owner: "Claxedo performance",
+    evidence: [
+      "docs/reports/2026-09-27-perf-goal-final.md",
+      "https://github.com/kyashrathore/agent-app-benchmark/blob/bfce5981e9ac796a03064850b6d42064315db769/README.md",
+    ],
+    note: "Numbers from the 29 September Claxedo-only rerun, paired with T3 Code and OpenCode runs from the same day, as reviewed by the team lead on 2026-09-29; no report for that rerun is in the repository yet. \"Beats\" means wins on medians (owner ruling 2026-09-29).",
+    verifiedAt: "2026-09-29",
+  },
+  {
+    id: "opencode-lineage",
+    publicWording: "Claxedo is built on the OpenCode engine.",
+    owner: "Claxedo maintainers",
+    evidence: ["LICENSE", "packages/harness/src/profiles/opencode/index.ts"],
+    verifiedAt: "2026-09-28",
+  },
+  {
+    id: "mit-platform",
+    publicWording: "Claxedo's clients, control plane, relay, workspace runtime, agent runtimes, extension system, and sandbox integration packages are MIT licensed.",
+    owner: "Claxedo maintainers",
+    evidence: [
+      "LICENSE",
+      "packages/claxedo-app/package.json",
+      "packages/claxedo-desktop/package.json",
+      "packages/claxedo-server/package.json",
+      "packages/claxedo-local-server/package.json",
+      "packages/workspace-relay/package.json",
+      "packages/workspace-relay-protocol/package.json",
+      "packages/workspace-runtime/package.json",
+      "packages/harness/package.json",
+      "packages/agent-runtime-contract/package.json",
+      "packages/claxedo-server-core/package.json",
+      "packages/sandbox-manager/package.json",
+    ],
+    verifiedAt: "2026-09-28",
+  },
+  {
+    id: "agent-runtime-study",
+    publicWording: "Across 92,390 measured intervals in one local corpus, the median time before a coding agent needed a full machine again was 10.8 seconds.",
+    owner: "Agent Runtime Stats",
+    evidence: [
+      "packages/claxedo-web/src/content/2026-08-09-runtime-study.json",
+      "packages/claxedo-web/src/pages/how-often-do-coding-agents-need-a-full-machine.astro",
+    ],
+    verifiedAt: "2026-08-09",
+  },
+] as const satisfies readonly Claim[]
+
+export const requireClaim = (id: string) => {
+  const item = claims.find((claim) => claim.id === id)
+  if (!item) throw new Error(`Public page requires a verified claim: ${id}`)
+  return item
+}

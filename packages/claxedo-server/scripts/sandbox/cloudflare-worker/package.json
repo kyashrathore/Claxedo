@@ -1,0 +1,15 @@
+{
+  "name": "claxedo-sandbox-proxy",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node ../../../node_modules/vitest/vitest.mjs run src"
+  },
+  "dependencies": {
+    "@cloudflare/sandbox": "0.12.9"
+  },
+  "devDependencies": {
+    "wrangler": "4.127.1"
+  }
+}

@@ -1,0 +1,284 @@
+import { describe, expect, test, vi } from "vitest"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { ControlPlaneServices } from "../authority/services"
+import { hostedConnectionInfo } from "./hosted-connection-info"
+import { hostTunnelConnectionInfo } from "./host-tunnel-connection"
+
+const auth = {
+  mode: "signed",
+  token: "token",
+  user: { subject: "user_1", tokenIdentifier: "user_1", issuer: "https://issuer.test" },
+} as unknown as SignedControlPlaneAuth
+
+function subject(order: string[]) {
+  const signer = vi.fn(async () => {
+    order.push("token")
+    return { runtimeAccessToken: "runtime-token", tokenExpiresAt: Date.now() + 60_000, jti: "jti_1" }
+  })
+  const services = {
+    authority: {
+      // The host declares its runtime's session authority on the heartbeat;
+      // the machine-placement mint asks for it before the plugin gate runs.
+      activeWorkspaceHost: vi.fn(async () => ({
+        active: true,
+        host_id: "host_1",
+        workspace_id: "ws_local",
+        expires_at: Date.now() + 60_000,
+        last_seen_at: Date.now(),
+      })),
+      usersMe: vi.fn(async () => ({
+        subject: "user_1",
+        // `resolveRuntimeActor` refuses to mint without a full actor identity.
+        actor_id: "user_1",
+        actor_kind: "human",
+        actor_public_id: "user_1",
+        actor_name: "Signed User",
+      })),
+      openWorkspace: vi.fn(async () => ({
+        allowed: true,
+        role: "owner",
+        workspace: { workspace_id: "ws_1", org_id: "org_1", project_id: "project_1", backing: "cloud-vm", home_region: "us-east", repo_url: "https://git.acme.test/private.git" },
+      })),
+      recordRuntimeAccessToken: vi.fn(async () => undefined),
+      auditAllow: vi.fn(async () => undefined),
+      auditDeny: vi.fn(async () => undefined),
+    },
+    sandbox: {
+      sandboxManager: {
+        ensure: vi.fn(async () => {
+          order.push("ensure")
+          return { status: "ready", hostId: "host_1", epoch: 1, homeRegion: "us-east" }
+        }),
+      },
+    },
+    telemetry: { capture: vi.fn() },
+  } as unknown as ControlPlaneServices
+  return { services, signer }
+}
+
+describe("Agent Plugins cloud readiness gate", () => {
+  test("applies the canonical plugin snapshot after VM health and before user token minting", async () => {
+    const order: string[] = []
+    const { services, signer } = subject(order)
+    const result = await hostedConnectionInfo(services, {
+      defaultHomeRegion: "us-east",
+      relayUrl: "wss://relay.test",
+      sandboxControlPlaneOrigin: "https://control.test",
+      runtimeAccessTokenSigner: signer,
+      provisionRuntime: async () => { order.push("plugins") },
+      sandboxEgressExtraHosts: ["registry.acme.test"],
+    }, auth, "ws_1")
+
+    expect(order).toEqual(["ensure", "plugins", "token"])
+    expect(result).toMatchObject({ connection: { runtimeAccessToken: "runtime-token" } })
+    expect(services.sandbox.sandboxManager!.ensure).toHaveBeenCalledWith("ws_1", expect.objectContaining({
+      net: expect.objectContaining({ mode: "restricted", hosts: expect.arrayContaining([
+        "relay.test", "control.test", "git.acme.test", "registry.acme.test", "api.anthropic.com",
+      ]) }),
+    }))
+  })
+
+  test("prepares brokered credentials before ensure and provisions the exact same immutable plan", async () => {
+    const order: string[] = []
+    const { services, signer } = subject(order)
+    const preparation = {
+      secrets: [{ name: "CLAXEDO_MCP_A", value: "Bearer gateway-token", hosts: ["mcp-a.example"], header: "Authorization" }],
+      env: { WORKSPACE_RUNTIME_MCP_TOOL_GROUPS: "sessions,subagents" },
+      state: { kind: "test-plan" },
+    }
+    const prepareRuntime = vi.fn(async () => { order.push("prepare"); return preparation })
+    const provisionRuntime = vi.fn(async () => { order.push("plugins") })
+    const result = await hostedConnectionInfo(services, {
+      defaultHomeRegion: "us-east",
+      relayUrl: "wss://relay.test",
+      sandboxControlPlaneOrigin: "https://control.test",
+      runtimeAccessTokenSigner: signer,
+      prepareRuntime,
+      provisionRuntime,
+    }, auth, "ws_1")
+
+    expect(order).toEqual(["prepare", "ensure", "plugins", "token"])
+    expect(services.sandbox.sandboxManager!.ensure).toHaveBeenCalledWith("ws_1", {
+      homeRegion: "us-east",
+      labels: { projectId: "project_1" },
+      workspaceRoot: "/workspace",
+      source: { kind: "git", repoUrl: "https://git.acme.test/private.git" },
+      net: expect.objectContaining({ mode: "restricted", hosts: expect.arrayContaining(["relay.test", "control.test", "git.acme.test"]) }),
+      secrets: preparation.secrets,
+      env: preparation.env,
+    })
+    expect(prepareRuntime).toHaveBeenCalledWith({ workspaceId: "ws_1" })
+    expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: "ws_1" }, preparation)
+    expect(result).toMatchObject({ connection: { runtimeAccessToken: "runtime-token" } })
+  })
+
+  test("forwards explicit withdrawal to ensure after credentials disappear", async () => {
+    const { services, signer } = subject([])
+    const options = {
+      relayUrl: "wss://relay.test",
+      sandboxControlPlaneOrigin: "https://control.test",
+      runtimeAccessTokenSigner: signer,
+      prepareRuntime: async () => ({ secrets: [] }),
+    }
+    // The preceding preparation carried a secret, so `[]` is a withdrawal and
+    // not a first ensure: a wake that omitted it would leave the previous
+    // credential installed at the provider edge.
+    const warm = await hostedConnectionInfo(services, {
+      ...options,
+      prepareRuntime: async () => ({
+        secrets: [{ name: "CLAXEDO_MCP_A", value: "Bearer gateway-token", hosts: ["mcp-a.example"], header: "Authorization" }],
+      }),
+    }, auth, "ws_1")
+    expect(warm).toMatchObject({ connection: { runtimeAccessToken: "runtime-token" } })
+
+    const result = await hostedConnectionInfo(services, options, auth, "ws_1")
+    expect(result).toMatchObject({ connection: { runtimeAccessToken: "runtime-token" } })
+    expect(services.sandbox.sandboxManager!.ensure).toHaveBeenLastCalledWith("ws_1", expect.objectContaining({ secrets: [] }))
+  })
+
+  test("a preparation that throws denies the wake and never reaches the driver", async () => {
+    const { services, signer } = subject([])
+
+    const result = await hostedConnectionInfo(services, {
+      relayUrl: "wss://relay.test",
+      sandboxControlPlaneOrigin: "https://control.test",
+      runtimeAccessTokenSigner: signer,
+      prepareRuntime: async () => { throw new Error("gateway signing key unavailable") },
+    }, auth, "ws_1")
+
+    expect(result).toMatchObject({
+      status: 409,
+      error: { code: "runtime_prepare_failed", message: "gateway signing key unavailable" },
+    })
+    expect(services.sandbox.sandboxManager!.ensure).not.toHaveBeenCalled()
+    expect(signer).not.toHaveBeenCalled()
+  })
+
+  test("a failed plugin apply denies handoff and never mints a runtime token", async () => {
+    const order: string[] = []
+    const { services, signer } = subject(order)
+    const result = await hostedConnectionInfo(services, {
+      defaultHomeRegion: "us-east",
+      relayUrl: "wss://relay.test",
+      sandboxControlPlaneOrigin: "https://control.test",
+      runtimeAccessTokenSigner: signer,
+      provisionRuntime: async () => { throw new Error("artifact corrupt") },
+    }, auth, "ws_1")
+
+    expect(order).toEqual(["ensure"])
+    expect(signer).not.toHaveBeenCalled()
+    expect(result).toMatchObject({ status: 409, error: { code: "runtime_provision_failed", message: "artifact corrupt" } })
+  })
+})
+
+function machinePlacedSubject(order: string[]) {
+  const signer = vi.fn(async () => {
+    order.push("token")
+    return { runtimeAccessToken: "runtime-token", tokenExpiresAt: Date.now() + 60_000, jti: "jti_1" }
+  })
+  const services = {
+    authority: {
+      // The host declares its runtime's session authority on the heartbeat;
+      // the machine-placement mint asks for it before the plugin gate runs.
+      activeWorkspaceHost: vi.fn(async () => ({
+        active: true,
+        host_id: "host_1",
+        workspace_id: "ws_local",
+        expires_at: Date.now() + 60_000,
+        last_seen_at: Date.now(),
+      })),
+      usersMe: vi.fn(async () => ({
+        subject: "user_1",
+        // `resolveRuntimeActor` refuses to mint without a full actor identity.
+        actor_id: "user_1",
+        actor_kind: "human",
+        actor_public_id: "user_1",
+        actor_name: "Signed User",
+      })),
+      openWorkspace: vi.fn(async () => ({
+        allowed: true,
+        role: "owner",
+        workspace: {
+          workspace_id: "ws_local",
+          org_id: "org_1",
+          backing: "local-worktree",
+          home_region: "us-east",
+        },
+      })),
+      activeLocalHostLink: vi.fn(async () => ({
+        active: true,
+        host_id: "host_local",
+        expires_at: Date.now() + 60_000,
+      })),
+      recordRuntimeAccessToken: vi.fn(async () => undefined),
+      auditAllow: vi.fn(async () => undefined),
+      auditDeny: vi.fn(async () => undefined),
+    },
+    sandbox: {},
+    telemetry: { capture: vi.fn() },
+  } as unknown as ControlPlaneServices
+  return { services, signer }
+}
+
+describe("Agent Plugins machine-placement readiness gate", () => {
+  test("applies the same signed snapshot before minting a local-session token", async () => {
+    const order: string[] = []
+    const { services, signer } = machinePlacedSubject(order)
+    const preparation = { state: { kind: "test-plan" } }
+    const prepareRuntime = vi.fn(async () => { order.push("prepare"); return preparation })
+    const provisionRuntime = vi.fn(async () => { order.push("plugins") })
+    const result = await hostTunnelConnectionInfo(services, {
+      defaultHomeRegion: "us-east",
+      relayUrl: "wss://relay.test",
+      sandboxControlPlaneOrigin: "https://control.test",
+      runtimeAccessTokenSigner: signer,
+      prepareRuntime,
+      provisionRuntime,
+    }, auth, "ws_local")
+
+    expect(order).toEqual(["prepare", "plugins", "token"])
+    expect(prepareRuntime).toHaveBeenCalledWith({ workspaceId: "ws_local" })
+    expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: "ws_local" }, preparation)
+    expect(result).toMatchObject({
+      connection: { backing: "local-worktree", runtimeAccessToken: "runtime-token" },
+    })
+  })
+
+  test("a preparation that throws denies the local session before any plugin apply", async () => {
+    const order: string[] = []
+    const { services, signer } = machinePlacedSubject(order)
+
+    const result = await hostTunnelConnectionInfo(services, {
+      defaultHomeRegion: "us-east",
+      relayUrl: "wss://relay.test",
+      sandboxControlPlaneOrigin: "https://control.test",
+      runtimeAccessTokenSigner: signer,
+      prepareRuntime: async () => { throw new Error("gateway signing key unavailable") },
+      provisionRuntime: async () => { order.push("plugins") },
+    }, auth, "ws_local")
+
+    expect(order).toEqual([])
+    expect(signer).not.toHaveBeenCalled()
+    expect(result).toMatchObject({
+      status: 409,
+      error: { code: "runtime_prepare_failed", message: "gateway signing key unavailable" },
+    })
+  })
+
+  test("a failed plugin apply denies the local session and never mints a runtime token", async () => {
+    const order: string[] = []
+    const { services, signer } = machinePlacedSubject(order)
+    const result = await hostTunnelConnectionInfo(services, {
+      defaultHomeRegion: "us-east",
+      relayUrl: "wss://relay.test",
+      sandboxControlPlaneOrigin: "https://control.test",
+      runtimeAccessTokenSigner: signer,
+      prepareRuntime: async () => { order.push("prepare"); return {} },
+      provisionRuntime: async () => { throw new Error("artifact corrupt") },
+    }, auth, "ws_local")
+
+    expect(order).toEqual(["prepare"])
+    expect(signer).not.toHaveBeenCalled()
+    expect(result).toMatchObject({ status: 409, error: { code: "runtime_provision_failed", message: "artifact corrupt" } })
+  })
+})

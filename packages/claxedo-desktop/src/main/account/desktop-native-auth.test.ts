@@ -1,0 +1,277 @@
+import { describe, expect, test } from "bun:test"
+
+import { createDesktopNativeAuth, revocationRejectedTheToken } from "./desktop-native-auth"
+import { REDIRECT_PATH, type OAuthSeams } from "./oauth-flow"
+import type { RefreshExchange } from "./electron-seams"
+
+/** The URL of a `fetch` double's argument, whichever of the three forms it takes. */
+function requestUrl(input: string | URL | Request): string {
+  return input instanceof Request ? input.url : String(input)
+}
+
+/** A `fetch` double's body. Everything under test sends a string. */
+function requestBody(body: BodyInit | null | undefined): string {
+  return typeof body === "string" ? body : ""
+}
+
+const NOW = 1_800_000_000_000
+const CORE = "https://core.example.com"
+
+function descriptor() {
+  const issuer = `${CORE}/api/auth`
+  return {
+    adapter: "better-auth" as const,
+    deploymentId: "deployment-1",
+    configurationVersion: "auth-v1",
+    expiresAt: NOW + 60_000,
+    issuer,
+    methods: ["github"],
+    browser: { trustedOrigins: ["https://app.example.com"] },
+    native: {
+      cli: {},
+      desktop: {
+        flow: "authorization-code-pkce",
+        clientId: "desktop-better-auth",
+        resource: `${CORE}/control-plane`,
+        scopes: ["offline_access", "workspace:read"],
+        tokenEndpointOrigin: new URL(issuer).origin,
+        controlPlaneOrigin: CORE,
+        revocation: {
+          protocol: "rfc7009",
+          endpoint: `${CORE}/api/auth/oauth2/revoke`,
+          tokenEndpointAuthMethod: "none",
+        },
+      },
+    },
+  }
+}
+
+function harness() {
+  const requests: Array<{ url: string; init?: RequestInit }> = []
+  const exchanges: Parameters<OAuthSeams["exchange"]>[0][] = []
+  const refreshes: Parameters<RefreshExchange>[0][] = []
+  let callback: ((url: string) => unknown) | undefined
+  let opened = ""
+  let clock = NOW
+  const seams: OAuthSeams = {
+    openExternal: async (url) => {
+      opened = url
+      queueMicrotask(() => {
+        const state = new URL(url).searchParams.get("state")
+        callback?.(`${REDIRECT_PATH}?code=code-1&state=${state}`)
+      })
+    },
+    listen: async (handler) => {
+      callback = handler
+      return { port: 51_337, close: async () => {} }
+    },
+    exchange: async (input) => {
+      exchanges.push(input)
+      return { accessToken: "access-1", refreshToken: "refresh-1", expiresAt: 2_000_000_000 }
+    },
+    safeStorage: () => ({ available: true, platform: "darwin" }),
+    setTimeout: () => ({ cancel: () => {} }),
+  }
+  const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+    requests.push({ url: requestUrl(url), init })
+    if (requestUrl(url) === `${CORE}/api/claxedo/auth/descriptor`) return Response.json(descriptor())
+    return new Response(null, { status: 200 })
+  }) as typeof fetch
+  const refresh: RefreshExchange = async (input) => {
+    refreshes.push(input)
+    return {
+      ok: true,
+      tokens: { accessToken: "access-2", refreshToken: "refresh-2", expiresAt: 2_000_000_100 },
+    }
+  }
+  const auth = createDesktopNativeAuth({ coreOrigin: CORE, seams, fetch: fetchImpl, refresh, now: () => clock })
+  return {
+    auth,
+    requests,
+    exchanges,
+    refreshes,
+    opened: () => opened,
+    expireDescriptor: () => {
+      clock = NOW + 60_001
+    },
+  }
+}
+
+describe("descriptor-selected desktop native auth", () => {
+  test("runs Better Auth authorization code + S256 PKCE on an OS-assigned loopback port", async () => {
+    const h = harness()
+    const signed = await h.auth.signIn()
+
+    expect(signed).toMatchObject({ ok: true, credential: { binding: { adapter: "better-auth" } } })
+    const authorize = new URL(h.opened())
+    expect(authorize.origin + authorize.pathname).toBe(`${CORE}/api/auth/oauth2/authorize`)
+    expect(authorize.searchParams.get("code_challenge_method")).toBe("S256")
+    expect(authorize.searchParams.get("resource")).toBe(`${CORE}/control-plane`)
+    expect(authorize.searchParams.get("redirect_uri")).toBe(`http://127.0.0.1:51337${REDIRECT_PATH}`)
+    expect(h.exchanges).toEqual([
+      expect.objectContaining({
+        tokenUrl: `${CORE}/api/auth/oauth2/token`,
+        clientId: "desktop-better-auth",
+        resource: `${CORE}/control-plane`,
+        redirectUri: `http://127.0.0.1:51337${REDIRECT_PATH}`,
+      }),
+    ])
+  })
+
+  test("revalidates descriptor expiry and immutable config before refresh and API use", async () => {
+    const h = harness()
+    const signed = await h.auth.signIn()
+    if (!signed.ok) throw new Error(signed.detail)
+    ;(signed.credential.binding as { configurationVersion: string }).configurationVersion = "auth-v0"
+
+    await expect(h.auth.validate(signed.credential)).rejects.toThrow(/selected authentication deployment/)
+    await expect(h.auth.refresh(signed.credential)).rejects.toThrow(/selected authentication deployment/)
+  })
+
+  test("revokes Better Auth remotely with the bound public client and refresh token", async () => {
+    const h = harness()
+    const signed = await h.auth.signIn()
+    if (!signed.ok) throw new Error(signed.detail)
+
+    await expect(h.auth.revoke(signed.credential)).resolves.toEqual({ state: "confirmed" })
+    const request = h.requests.find((candidate) => candidate.url.endsWith("/oauth2/revoke"))
+    expect(request?.init?.redirect).toBe("manual")
+    const body = new URLSearchParams(requestBody(request?.init?.body))
+    expect(body.get("client_id")).toBe("desktop-better-auth")
+    expect(body.get("token")).toBe("refresh-1")
+    expect(body.get("resource")).toBeNull()
+  })
+
+  test("rechecks descriptor expiry before refresh, API validation, and logout", async () => {
+    const h = harness()
+    const signed = await h.auth.signIn()
+    if (!signed.ok) throw new Error(signed.detail)
+    h.expireDescriptor()
+
+    await expect(h.auth.validate(signed.credential)).rejects.toThrow(/expired/)
+    await expect(h.auth.refresh(signed.credential)).rejects.toThrow(/expired/)
+    await expect(h.auth.revoke(signed.credential)).resolves.toMatchObject({ state: "uncertain" })
+    expect(h.requests.filter((request) => request.url.endsWith("/oauth2/revoke"))).toEqual([])
+  })
+})
+
+describe("descriptor memo", () => {
+  test("validation reuses the descriptor within its validity instead of fetching it per operation", async () => {
+    const h = harness()
+    const signed = await h.auth.signIn()
+    if (!signed.ok) throw new Error(signed.detail)
+    const before = h.requests.filter((r) => r.url.endsWith("/auth/descriptor")).length
+    await h.auth.validate(signed.credential)
+    await h.auth.validate(signed.credential)
+    expect(h.requests.filter((r) => r.url.endsWith("/auth/descriptor")).length).toBe(before)
+    h.expireDescriptor()
+    await h.auth.validate(signed.credential).catch(() => undefined)
+    expect(h.requests.filter((r) => r.url.endsWith("/auth/descriptor")).length).toBe(before + 1)
+  })
+})
+
+describe("descriptor fetch resilience", () => {
+  function flakyHarness(failure: unknown, failures = 1) {
+    const descriptorCalls: string[] = []
+    let remaining = failures
+    const fetchImpl = (async (url: string | URL | Request) => {
+      if (requestUrl(url) === `${CORE}/api/claxedo/auth/descriptor`) {
+        descriptorCalls.push(requestUrl(url))
+        if (remaining > 0) {
+          remaining -= 1
+          throw failure
+        }
+        return Response.json(descriptor())
+      }
+      return new Response(null, { status: 200 })
+    }) as typeof fetch
+    let callback: ((url: string) => unknown) | undefined
+    const seams: OAuthSeams = {
+      openExternal: async (url) => {
+        queueMicrotask(() => {
+          const state = new URL(url).searchParams.get("state")
+          callback?.(`${REDIRECT_PATH}?code=code-1&state=${state}`)
+        })
+      },
+      listen: async (handler) => {
+        callback = handler
+        return { port: 51_337, close: async () => {} }
+      },
+      exchange: async () => ({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: 2_000_000_000 }),
+      safeStorage: () => ({ available: true, platform: "darwin" }),
+      setTimeout: () => ({ cancel: () => {} }),
+    }
+    const auth = createDesktopNativeAuth({ coreOrigin: CORE, seams, fetch: fetchImpl, refresh: async () => ({ ok: false, detail: "unused" }), now: () => NOW })
+    return { auth, descriptorCalls }
+  }
+
+  test("a connection reset on the descriptor fetch is retried once on a fresh request", async () => {
+    const reset = Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } })
+    const { auth, descriptorCalls } = flakyHarness(reset)
+    const signed = await auth.signIn()
+    // The retry is what matters here: the second descriptor request answers,
+    // so discovery no longer fails on the reset.
+    expect(descriptorCalls).toHaveLength(2)
+    expect(signed).toMatchObject({ ok: true })
+  })
+  test("a socket the peer closed is retried like a reset", async () => {
+    const closed = Object.assign(new TypeError("fetch failed"), { cause: { code: "UND_ERR_SOCKET" } })
+    const { auth, descriptorCalls } = flakyHarness(closed)
+    expect(await auth.signIn()).toMatchObject({ ok: true })
+    expect(descriptorCalls).toHaveLength(2)
+  })
+  test("fetch failed display text alone cannot authorize a retry", async () => {
+    const fixture = flakyHarness(new TypeError("fetch failed"))
+    await expect(fixture.auth.discover()).rejects.toThrow("descriptor could not be loaded")
+    expect(fixture.descriptorCalls).toHaveLength(1)
+  })
+
+  test("two resets in a row still fail, and a non-network failure is not retried", async () => {
+    const reset = Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } })
+    const twice = flakyHarness(reset, 2)
+    await expect(twice.auth.signIn()).rejects.toThrow(/descriptor could not be loaded/)
+    expect(twice.descriptorCalls).toHaveLength(2)
+    const other = flakyHarness(new Error("boom"))
+    await expect(other.auth.signIn()).rejects.toThrow(/boom/)
+    expect(other.descriptorCalls).toHaveLength(1)
+  })
+})
+
+describe("revocationRejectedTheToken", () => {
+  test("treats a server rejection of the token as revoked", async () => {
+    // Better Auth's answer for a token it does not recognize. Reading this as
+    // merely uncertain left a pending intent that could never confirm, and
+    // signIn refuses to start while one is pending.
+    expect(
+      await revocationRejectedTheToken(
+        Response.json({ error: "invalid_request", error_description: "Invalid access token" }, { status: 400 }),
+      ),
+    ).toBe(true)
+    expect(
+      await revocationRejectedTheToken(Response.json({ error: "invalid_token" }, { status: 401 })),
+    ).toBe(true)
+    // Both shapes observed live on the same deployment, in either word order.
+    expect(
+      await revocationRejectedTheToken(
+        Response.json({ error: "invalid_request", error_description: "token not found" }, { status: 400 }),
+      ),
+    ).toBe(true)
+    expect(
+      await revocationRejectedTheToken(
+        Response.json({ error: "invalid_token", error_description: "refresh token not found" }, { status: 400 }),
+      ),
+    ).toBe(true)
+  })
+
+  test("keeps every answer that says nothing about the credential uncertain", async () => {
+    expect(await revocationRejectedTheToken(Response.json({ error: "server_error" }, { status: 500 }))).toBe(false)
+    expect(await revocationRejectedTheToken(Response.json({ error: "slow_down" }, { status: 429 }))).toBe(false)
+    expect(await revocationRejectedTheToken(new Response("nope", { status: 400 }))).toBe(false)
+    // A 400 that blames OUR request, not the token, is our bug to fix.
+    expect(
+      await revocationRejectedTheToken(
+        Response.json({ error: "invalid_request", error_description: "client_id is required" }, { status: 400 }),
+      ),
+    ).toBe(false)
+  })
+})

@@ -1,0 +1,64 @@
+import { createMemo, Show } from "solid-js"
+import { useSecondClock } from "@/lib/clock"
+import { isGeminiQuotaRetry, type SessionStatus } from "@/server"
+import { useTranscriptI18n } from "./i18n"
+import { Card, Tooltip, Spinner } from "@/ui"
+
+export function SessionRetry(props: { status: SessionStatus; show?: boolean }) {
+  const i18n = useTranscriptI18n()
+  const retry = createMemo(() => {
+    if (props.status.kind !== "retrying") return undefined
+    return props.status
+  })
+  const now = useSecondClock(() => retry()?.nextAt !== undefined)
+  const seconds = () => {
+    const next = retry()?.nextAt
+    return next ? Math.round((next - now()) / 1000) : 0
+  }
+  const message = createMemo(() => {
+    const current = retry()
+    if (!current) return ""
+    if (isGeminiQuotaRetry(current.message)) {
+      return i18n.t("transcript.sessionTurn.retry.geminiHot")
+    }
+    if (current.message.length > 80) return current.message.slice(0, 80) + "..."
+    return current.message
+  })
+  const truncated = createMemo(() => {
+    const current = retry()
+    if (!current) return false
+    return current.message.length > 80
+  })
+  const info = createMemo(() => {
+    const current = retry()
+    if (!current) return ""
+    const count = Math.max(0, seconds())
+    const delay = count > 0 ? i18n.t("transcript.sessionTurn.retry.inSeconds", { seconds: count }) : ""
+    const retrying = i18n.t("transcript.sessionTurn.retry.retrying")
+    const line = [retrying, delay].filter(Boolean).join(" ")
+    if (current.attempt === undefined) return line
+    return i18n.t("transcript.sessionTurn.retry.attemptLine", { line, attempt: current.attempt })
+  })
+
+  return (
+    <Show when={retry() && (props.show ?? true)}>
+      <div>
+        <Card variant="error" class="error-card">
+          <div class="flex items-start gap-2">
+            <Spinner class="size-4 mt-0.5" />
+            <div class="min-w-0">
+              <Show when={truncated()} fallback={<div>{message()}</div>}>
+                <Tooltip value={retry()?.message ?? ""} placement="top">
+                  <div class="cursor-help truncate">
+                    {message()}
+                  </div>
+                </Tooltip>
+              </Show>
+              <Show when={info()}>{(line) => <div>{line()}</div>}</Show>
+            </div>
+          </div>
+        </Card>
+      </div>
+    </Show>
+  )
+}

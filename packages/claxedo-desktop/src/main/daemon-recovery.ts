@@ -1,0 +1,537 @@
+/**
+ * Recovering a published daemon that stopped answering.
+ *
+ * This is the one path where HTTP cannot be asked, so every fact has to come
+ * from the OS and from the files the daemon left behind. Two rules make that
+ * safe, and both are refusals:
+ *
+ *   - Nothing is signalled until `(pid, group, start second, boot time)` still
+ *     answers for the launch the discovery file recorded. A failed health probe
+ *     is evidence about a listener, never authority over a pid.
+ *   - Nothing is reported as stopped until the leader is verified gone. A
+ *     survivor after KILL keeps the machine unresolved and blocks a replacement,
+ *     because two daemons over one data directory is worse than none.
+ *
+ * Every receipt is volatile: the daemon's own store is unreachable by
+ * definition here, and this process never edits it.
+ */
+
+import { randomUUID } from "node:crypto"
+import fs from "node:fs"
+import {
+  daemonOwnershipSnapshotPath,
+  isDaemonOwnershipSnapshot,
+  DEFAULT_RECOVERY_BUDGETS,
+  RecoveryContractError,
+  parseRecoveryOperation,
+  parseRecoveryOutcome,
+  parseRecoveryRequest,
+  recoveryTargetsMatch,
+  type RecoveryError,
+  type RecoveryFacts,
+  type RecoveryMachineTarget,
+  type RecoveryOperation,
+  type RecoveryOutcome,
+  type RecoveryRequest,
+  type RecoveryScopePreview,
+} from "@claxedo/agent-runtime-contract"
+import {
+  retire,
+  retirementSettled,
+  verifyCreationIdentity,
+  type IdentityVerdict,
+  type RetirementBudgets,
+  type RetirementResult,
+} from "@claxedo/process-ownership/launch"
+
+import { readArray, readField, readFiniteNumber, readRecord, readString } from "@claxedo/helpers/readers"
+import { CLAXEDO_DAEMON_PROTOCOL, DAEMON_PROTOCOL_HEADER } from "@claxedo/helpers/claxedo-daemon"
+import type { ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
+import type { DaemonFetch } from "./daemon-request"
+import { isMissingFile } from "@claxedo/helpers/fs"
+
+/** The redacted inventory the daemon republished. It is a view, never proof of exit. */
+export type DaemonOwnershipView = {
+  machineId: string
+  generation: string
+  pid: number
+  revision: string
+  changedAt: number
+  residencyPins: number
+  owners: Array<{ id: string; kind: string; generation: string; state: string; pins: boolean; detail?: string }>
+}
+
+/** The shape both the daemon's route and this bridge answer an inspection with. */
+export type DaemonRecoveryInspection = {
+  machineId: string
+  generation: string
+  target: RecoveryMachineTarget
+  scopeRevision: string
+  owners: DaemonOwnershipView["owners"]
+  preview: RecoveryScopePreview
+  residencyPins: number
+  operations: RecoveryOperation[]
+  receipt: "durable" | "volatile"
+}
+
+export type DaemonRecoveryResult = {
+  outcome: RecoveryOutcome
+  /**
+   * Whether a replacement daemon may be started. False whenever this process
+   * could not establish that the old one is gone.
+   */
+  replacementAllowed: boolean
+}
+
+export const claxedoDaemonOwnershipPath = daemonOwnershipSnapshotPath
+
+export function readDaemonOwnershipView(file: string): DaemonOwnershipView | undefined {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(fs.readFileSync(file, "utf8"))
+  } catch (error) {
+    if (isMissingFile(error) || error instanceof SyntaxError) return undefined
+    throw error
+  }
+  return isDaemonOwnershipSnapshot(parsed) ? parsed as DaemonOwnershipView : undefined
+}
+
+const RECORDED_BY: Record<Exclude<IdentityVerdict["state"], "live">, string> = {
+  exited: "which is no longer running",
+  identity_mismatch: "which now belongs to a different process",
+  unknown: "whose state could not be checked",
+}
+
+/**
+ * What stopping this daemon would interrupt, as far as anything here can know.
+ *
+ * The snapshot is rewritten only when the daemon's owners change, so it is
+ * current exactly while that daemon is alive; `daemon` is the caller's identity
+ * check of it. Authorization always covers the whole verified daemon
+ * generation — a current snapshot does not narrow it.
+ */
+export function daemonRecoveryPreview(
+  discovery: ClaxedoDaemonDiscovery,
+  snapshot: DaemonOwnershipView | undefined,
+  at: number,
+  daemon: IdentityVerdict["state"],
+): RecoveryScopePreview {
+  if (!snapshot || snapshot.generation !== discovery.generation) {
+    return {
+      sessions: [],
+      resources: [`daemon generation ${discovery.generation} (pid ${discovery.pid})`],
+      summary: "no ownership snapshot for this daemon generation; everything it owns is unknown",
+    }
+  }
+  const recorded = daemon === "live"
+    ? `${snapshot.owners.length} owners recorded, last changed ${Math.round((at - snapshot.changedAt) / 1000)}s ago`
+    : `${snapshot.owners.length} owners last recorded by pid ${discovery.pid}, ${RECORDED_BY[daemon]}`
+  return {
+    sessions: [],
+    resources: [
+      `daemon generation ${discovery.generation} (pid ${discovery.pid})`,
+      ...snapshot.owners.map((owner) => `${owner.id} (${owner.state})`),
+    ],
+    summary: `${recorded}; additional impact is unknown, so this authorizes the entire daemon generation`,
+  }
+}
+
+export async function daemonState(discovery: ClaxedoDaemonDiscovery, verify: typeof verifyCreationIdentity = verifyCreationIdentity) {
+  return discovery.identity ? (await verify(discovery.identity)).state : "unknown"
+}
+
+/**
+ * Verify, authorize, retire, verify again.
+ *
+ * `authorize` is the main-process decision: it is asked only once identity is
+ * established, and a "no" leaves the daemon running and the app in a state that
+ * exposes the recovery view. Launch says yes only to a live daemon of another
+ * build; a quit says yes to its own daemon once that daemon's own stop is overdue.
+ */
+export async function recoverPublishedDaemon(input: {
+  discovery: ClaxedoDaemonDiscovery
+  snapshot?: DaemonOwnershipView | undefined
+  authorize: (preview: RecoveryScopePreview) => boolean | Promise<boolean>
+  budgets?: RetirementBudgets
+  now?: () => number
+  verify?: typeof verifyCreationIdentity
+  retireLaunch?: typeof retire
+}): Promise<DaemonRecoveryResult> {
+  const now = input.now ?? Date.now
+  const verify = input.verify ?? verifyCreationIdentity
+  const retireLaunch = input.retireLaunch ?? retire
+  const budgets = input.budgets ?? DEFAULT_RECOVERY_BUDGETS
+  const target: RecoveryMachineTarget = {
+    scope: "machine",
+    machineId: "local",
+    ownerGeneration: input.discovery.generation,
+  }
+  const verdict = input.discovery.identity ? await verify(input.discovery.identity) : undefined
+  const preview = daemonRecoveryPreview(input.discovery, input.snapshot, now(), verdict?.state ?? "unknown")
+  const started = now()
+  const operation = (
+    state: RecoveryOperation["state"],
+    facts: RecoveryFacts,
+    error?: RecoveryError,
+    nextActions: RecoveryOperation["nextActions"] = [],
+  ): DaemonRecoveryResult => ({
+    outcome: {
+      kind: "operation",
+      operation: {
+        operationId: randomUUID(),
+        requestId: `desktop-launch-${input.discovery.generation}`,
+        target,
+        action: "stop_daemon",
+        scopeRevision: input.snapshot?.revision ?? "unverified",
+        attempt: 1,
+        state,
+        phase: error?.stage ?? "kill_verify",
+        phaseDeadlineAt: started + budgets.termGraceMs + budgets.killVerifyMs,
+        facts,
+        ...(error ? { initiatingError: error } : {}),
+        cleanupErrors: [],
+        nextActions,
+        // The daemon's store is unreachable here by definition, and this
+        // process never writes into it.
+        receipt: "volatile",
+        createdAt: started,
+        updatedAt: now(),
+      },
+    },
+    replacementAllowed: state === "succeeded",
+  })
+
+  const refusal = (code: RecoveryError["code"], message: string, stage: RecoveryError["stage"]) =>
+    operation(
+      "needs_action",
+      unknownFacts(input.discovery.generation, now()),
+      { code, origin: "desktop-launcher", target, stage, executionMayContinue: true, message, at: now() },
+      [{ action: "inspect", scopePreviewRequired: false, reason: preview.summary }],
+    )
+
+  if (!verdict) {
+    return refusal(
+      "ownership_unverified",
+      `The daemon published as pid ${input.discovery.pid} recorded no process identity, so nothing here can establish that this pid is still it. `
+        + "Stop that process yourself and remove the discovery file, then start the app again.",
+      "ack",
+    )
+  }
+
+  if (verdict.state === "unknown") {
+    return refusal(
+      "ownership_unverified",
+      `Whether pid ${input.discovery.pid} is still the recorded daemon could not be established: ${verdict.reason}`,
+      "ack",
+    )
+  }
+  if (verdict.state === "identity_mismatch") {
+    return refusal(
+      "signal_denied",
+      `Pid ${input.discovery.pid} now belongs to a different process; the recorded daemon was not signalled. `
+        + "Remove the stale discovery file to start a new daemon.",
+      "ack",
+    )
+  }
+  if (verdict.state === "exited") {
+    // Nothing was signalled, so nothing was contained: the group may still hold
+    // members this process has no identity for.
+    return operation("succeeded", {
+      execution: { value: "terminal", source: "desktop-launcher", observedAt: now(), generation: input.discovery.generation },
+      cleanup: { value: "unknown", source: "desktop-launcher", observedAt: now(), generation: input.discovery.generation },
+      persistence: { value: "unavailable", source: "desktop-launcher", observedAt: now(), generation: input.discovery.generation },
+    })
+  }
+
+  if (!(await input.authorize(preview))) {
+    return operation(
+      "needs_action",
+      runningFacts(input.discovery.generation, now()),
+      {
+        code: "ownership_unverified",
+        origin: "desktop-launcher",
+        target,
+        stage: "ack",
+        executionMayContinue: true,
+        message: "stopping this daemon has not been authorized; it is still running and no replacement was started",
+        at: now(),
+      },
+      [{ action: "stop_daemon", scopePreviewRequired: true, reason: preview.summary }],
+    )
+  }
+
+  const result = await retireLaunch({ identity: verdict.identity }, budgets)
+  return retirementOutcome(result, operation, input.discovery.generation, now, target, preview)
+}
+
+function retirementOutcome(
+  result: RetirementResult,
+  operation: (
+    state: RecoveryOperation["state"],
+    facts: RecoveryFacts,
+    error?: RecoveryError,
+    nextActions?: RecoveryOperation["nextActions"],
+  ) => DaemonRecoveryResult,
+  generation: string,
+  now: () => number,
+  target: RecoveryMachineTarget,
+  preview: RecoveryScopePreview,
+): DaemonRecoveryResult {
+  const at = now()
+  const facts: RecoveryFacts = {
+    execution: {
+      value: result.leader === "exited" ? "terminal" : result.leader === "alive" ? "running" : "unknown",
+      source: "desktop-launcher",
+      observedAt: at,
+      generation,
+    },
+    cleanup: {
+      value: result.descendants === "verified_clear" ? "verified_clear" : result.descendants === "owned" ? "owned" : "unknown",
+      source: "desktop-launcher",
+      observedAt: at,
+      generation,
+    },
+    persistence: { value: "unavailable", source: "desktop-launcher", observedAt: at, generation },
+  }
+  if (retirementSettled(result)) return operation("succeeded", facts)
+  const error: RecoveryError = result.error
+    ? { ...result.error, origin: "desktop-launcher", target, stage: "kill_verify", executionMayContinue: result.leader !== "exited", at }
+    : {
+        code: "exit_unverified",
+        origin: "desktop-launcher",
+        target,
+        stage: "kill_verify",
+        executionMayContinue: true,
+        message: `the daemon's leader is ${result.leader} and its group is ${result.descendants} after the retirement budget`,
+        at,
+      }
+  return operation("needs_action", facts, error, [
+    { action: "stop_daemon", scopePreviewRequired: true, reason: preview.summary },
+  ])
+}
+
+function runningFacts(generation: string, at: number): RecoveryFacts {
+  return {
+    execution: { value: "running", source: "desktop-launcher", observedAt: at, generation },
+    cleanup: { value: "owned", source: "desktop-launcher", observedAt: at, generation },
+    persistence: { value: "unavailable", source: "desktop-launcher", observedAt: at, generation },
+  }
+}
+
+function unknownFacts(generation: string, at: number): RecoveryFacts {
+  return {
+    execution: { value: "unknown", source: "desktop-launcher", observedAt: at, generation },
+    cleanup: { value: "unknown", source: "desktop-launcher", observedAt: at, generation },
+    persistence: { value: "unavailable", source: "desktop-launcher", observedAt: at, generation },
+  }
+}
+
+
+export const DAEMON_RECOVERY_CHANNELS = {
+  inspect: "daemon-recovery:inspect",
+  submit: "daemon-recovery:submit",
+  read: "daemon-recovery:read",
+} as const
+
+/**
+ * The recovery surface the renderer reaches.
+ *
+ * The daemon token never leaves this process: the renderer names an operation,
+ * and this forwards it over the authenticated daemon fetch. When there is no
+ * daemon to forward to, the held launch result is what it answers with, and an
+ * authorized stop runs the external retirement instead.
+ */
+/**
+ * The daemon's own inspection, read rather than assumed.
+ *
+ * This answer decides what the recovery UI offers and what a submitted
+ * operation is scoped to, so a body missing the scope revision or the target
+ * would put a stale revision on the wire and read as a generation conflict the
+ * user cannot act on. Owners and preview are shape-checked only: they are
+ * displayed, never compared.
+ */
+function daemonRecoveryInspection(body: unknown): DaemonRecoveryInspection {
+  const machineId = readString(body, "machineId")
+  const generation = readString(body, "generation")
+  const scopeRevision = readString(body, "scopeRevision")
+  const target = readRecord(body, "target")
+  const preview = readRecord(body, "preview")
+  const owners = readArray(body, "owners")
+  const operations = readArray(body, "operations")
+  const residencyPins = readFiniteNumber(body, "residencyPins")
+  const receipt = readString(body, "receipt")
+  if (machineId === undefined || generation === undefined || scopeRevision === undefined || !target || !preview
+    || !owners || !operations || residencyPins === undefined || (receipt !== "durable" && receipt !== "volatile")) {
+    throw new Error("the daemon answered a recovery inspection this build cannot read")
+  }
+  return {
+    machineId,
+    generation,
+    scopeRevision,
+    target: { scope: "machine", machineId, ownerGeneration: generation },
+    preview: {
+      sessions: (readArray(preview, "sessions") ?? []).map(String),
+      resources: (readArray(preview, "resources") ?? []).map(String),
+      summary: readString(preview, "summary") ?? "",
+    },
+    owners: owners.flatMap((owner) => {
+      const id = readString(owner, "id")
+      const kind = readString(owner, "kind")
+      const ownerGeneration = readString(owner, "generation")
+      const state = readString(owner, "state")
+      const detail = readString(owner, "detail")
+      return id !== undefined && kind !== undefined && ownerGeneration !== undefined && state !== undefined
+        ? [{ id, kind, generation: ownerGeneration, state, pins: readField(owner, "pins") === true,
+            ...(detail === undefined ? {} : { detail }) }]
+        : []
+    }),
+    operations: operations.map((operation) => parseRecoveryOperation(operation)),
+    residencyPins,
+    receipt,
+  }
+}
+
+export function daemonRecoveryBridge(input: {
+  daemon: () => DaemonFetch | undefined
+  unresolved: () => { discovery: ClaxedoDaemonDiscovery; result: DaemonRecoveryResult } | undefined
+  ownershipView: () => DaemonOwnershipView | undefined
+  onRecovered: (result: DaemonRecoveryResult) => void | Promise<void>
+  verify?: typeof verifyCreationIdentity
+}) {
+  const verify = input.verify ?? verifyCreationIdentity
+  const protocol = { [DAEMON_PROTOCOL_HEADER]: String(CLAXEDO_DAEMON_PROTOCOL) }
+  return {
+    async inspect(): Promise<DaemonRecoveryInspection> {
+      const daemon = input.daemon()
+      if (daemon) {
+        const response = await daemon("/api/claxedo/daemon/recovery", { headers: protocol })
+        return daemonRecoveryInspection(await response.json())
+      }
+      const held = input.unresolved()
+      if (!held) {
+        return {
+          machineId: "local",
+          generation: "",
+          target: { scope: "machine", machineId: "local", ownerGeneration: "" },
+          scopeRevision: "",
+          owners: [],
+          preview: { sessions: [], resources: [], summary: "no daemon is published on this machine" },
+          residencyPins: 0,
+          operations: [],
+          receipt: "volatile",
+        }
+      }
+      const snapshot = input.ownershipView()
+      // The same shape the daemon's own route answers, so a caller reads one
+      // inspection whether or not the daemon is reachable. What differs is what
+      // is in it, and the receipt says which of the two this is.
+      return {
+        machineId: "local",
+        generation: held.discovery.generation,
+        target: { scope: "machine", machineId: "local", ownerGeneration: held.discovery.generation },
+        scopeRevision: snapshot?.generation === held.discovery.generation ? snapshot.revision : "unverified",
+        owners: snapshot?.generation === held.discovery.generation ? snapshot.owners : [],
+        preview: daemonRecoveryPreview(held.discovery, snapshot, Date.now(), await daemonState(held.discovery, verify)),
+        residencyPins: snapshot?.generation === held.discovery.generation ? snapshot.residencyPins : 0,
+        operations: held.result.outcome.kind === "operation" ? [held.result.outcome.operation] : [],
+        receipt: "volatile",
+      }
+    },
+    async submit(body: unknown): Promise<RecoveryOutcome> {
+      // Parsed here even when it is only being forwarded: a request this
+      // process cannot read is one it should not be relaying under the machine
+      // capability the renderer does not hold.
+      let request: RecoveryRequest
+      try {
+        request = parseRecoveryRequest(body)
+      } catch (error) {
+        if (!(error instanceof RecoveryContractError)) throw error
+        return { kind: "refused", refusal: { kind: "unavailable", message: error.message } }
+      }
+      const daemon = input.daemon()
+      if (daemon) {
+        const response = await daemon("/api/claxedo/daemon/recovery", {
+          method: "POST",
+          headers: { ...protocol, "content-type": "application/json" },
+          body: JSON.stringify(request),
+        })
+        return parseRecoveryOutcome(await response.text())
+      }
+      const held = input.unresolved()
+      if (!held) {
+        return {
+          kind: "refused",
+          refusal: { kind: "unavailable", message: "no daemon on this machine is reachable for that operation" },
+        }
+      }
+      if (request.action !== "stop_daemon") {
+        return {
+          kind: "refused",
+          refusal: {
+            kind: "unavailable",
+            message: `a daemon that is not answering can only be stopped from here, not ${request.action}`,
+          },
+        }
+      }
+      const target: RecoveryMachineTarget = {
+        scope: "machine",
+        machineId: "local",
+        ownerGeneration: held.discovery.generation,
+      }
+      if (!recoveryTargetsMatch(request.target, target)) {
+        return {
+          kind: "refused",
+          refusal: {
+            kind: "generation_conflict",
+            message: "the request names a different machine or daemon generation than the one published here",
+            current: target,
+          },
+        }
+      }
+      const snapshot = input.ownershipView()
+      const scopeRevision = snapshot?.generation === held.discovery.generation ? snapshot.revision : "unverified"
+      if (request.scopeRevision !== scopeRevision) {
+        return {
+          kind: "refused",
+          refusal: {
+            kind: "scope_changed",
+            message: "this daemon's last published ownership differs from the preview this stop was authorized against",
+            scopeRevision,
+            preview: daemonRecoveryPreview(held.discovery, snapshot, Date.now(), await daemonState(held.discovery, verify)),
+          },
+        }
+      }
+      // The caller having reached here with a matching generation and scope
+      // revision IS the authorization: it was shown that preview through the
+      // bridge-carrying document and named it back.
+      const recovered = await recoverPublishedDaemon({
+        discovery: held.discovery,
+        snapshot,
+        authorize: () => true,
+        verify,
+      })
+      await input.onRecovered(recovered)
+      return recovered.outcome
+    },
+    async read(operationId: unknown): Promise<RecoveryOutcome> {
+      if (typeof operationId !== "string" || operationId.length === 0) {
+        return { kind: "refused", refusal: { kind: "unavailable", message: "an operation id is required" } }
+      }
+      const daemon = input.daemon()
+      if (daemon) {
+        const response = await daemon(`/api/claxedo/daemon/recovery/operations/${encodeURIComponent(operationId)}`, {
+          headers: protocol,
+        })
+        return parseRecoveryOutcome(await response.text())
+      }
+      const held = input.unresolved()
+      if (held?.result.outcome.kind === "operation" && held.result.outcome.operation.operationId === operationId) {
+        return held.result.outcome
+      }
+      return {
+        kind: "refused",
+        refusal: { kind: "receipt_expired", message: `operation ${operationId} is not held here`, requestId: operationId },
+      }
+    },
+  }
+}

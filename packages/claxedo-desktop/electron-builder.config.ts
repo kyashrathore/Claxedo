@@ -1,0 +1,296 @@
+import type { Configuration } from "electron-builder"
+import { existsSync, readdirSync } from "node:fs"
+import { join, resolve } from "node:path"
+
+import {
+  HOST_CONNECTOR_EXTRA_RESOURCE,
+  NATIVE_MODULES as BASE_NATIVE_MODULES,
+  asarStructuralGlobs,
+} from "./scripts/package-structure"
+import { CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME } from "./src/shared/compile-cache"
+import { resolveTargetOsArch } from "./scripts/target-platform"
+import { desktopProduct } from "./src/shared/desktop-product"
+
+const channel = (() => {
+  const raw = process.env.CLAXEDO_CHANNEL
+  if (raw === "dev" || raw === "beta" || raw === "prod") return raw
+  return "dev"
+})()
+
+// Node-style os-arch for the build TARGET, so the native module set below
+// can include platform-conditional entries (Windows-only process tree).
+const targetOsArch = resolveTargetOsArch()
+// Everything the app executes is bundled from entry points at build time
+// (electron-vite main/preload/renderer, Bun.build for claxedo-server), so no
+// node_modules ship — except native modules, which cannot be bundled. This is
+// the packaging invariant; scripts/verify-package-contents.ts enforces it
+// against the SAME declaration (scripts/package-structure.ts), so the config
+// and the check can no longer disagree about what is allowed to ship.
+const NATIVE_MODULES = [
+  ...BASE_NATIVE_MODULES,
+  // The wrapper's platform-specific binary package for the build TARGET; it
+  // ships beside the wrapper via the `files` from/to entry below, and this
+  // spelling keeps it asar-unpacked so its pty.node loads as a real file.
+  `@lydell/node-pty-${targetOsArch}`,
+]
+
+// Native prebuilds ship one variant per package per target — the loader picks
+// by exact platform-arch name, so foreign-arch variants are dead weight.
+// better-sqlite3's deps/ holds the sqlite3.c build source: only needed for
+// node-gyp rebuilds, never at runtime.
+const NATIVE_PLATFORM_FILES = [
+  `node_modules/better-sqlite3/prebuilds/${targetOsArch}.node`,
+]
+
+// Absolute directory of `@lydell/node-pty-<platform>-<arch>` for the build
+// TARGET. bun keeps this optionalDependency only inside its version-pinned
+// `node_modules/.bun/<name>@<version>/` store and never symlinks it anywhere a
+// normal resolve would reach, so scan the store rather than hardcoding a path
+// that would silently rot on the next dependency bump.
+const PTY_PLATFORM_PACKAGE_DIR = (() => {
+  const name = `@lydell/node-pty-${targetOsArch}`
+  const store = resolve(import.meta.dirname, "../../node_modules/.bun")
+  const prefix = `${name.replace("/", "+")}@`
+  const match = existsSync(store)
+    ? readdirSync(store)
+        .filter((entry) => entry.startsWith(prefix))
+        .map((entry) => join(store, entry, "node_modules", name))
+        .find((dir) => existsSync(join(dir, "package.json")))
+    : undefined
+  if (!match) {
+    // Fail the build rather than ship a runtime whose PTY module cannot load.
+    throw new Error(
+      `cannot locate ${name} under ${store} — workspace-runtime imports ` +
+        `@lydell/node-pty and will fail to load without it. ` +
+        `Run \`bun install\` for this target, or update this lookup.`,
+    )
+  }
+  return `${match}/`
+})()
+
+// Chromium-internal UI strings (menus, permission prompts, error pages) in the
+// app's own languages; every other locale is deleted from the bundle. The app's
+// own translations live in the renderer bundle, not here.
+//
+// electron-builder deletes any locale whose filename is not an EXACT match in
+// this list (ElectronFramework.ts: `wantedLanguages.includes(basename)`), and
+// the two platform families do NOT name locales the same way:
+//
+//   macOS   `.lproj` dirs, underscores, mostly bare language: en, en_GB, zh_CN
+//   win/lin `.pak` files, hyphens and regions:             en-US, en-GB, zh-CN
+//
+// Shipping one hyphenated list for both silently dropped SIX locales from the
+// mac build — including `en-US`, whose mac name is plain `en`. With no English
+// pak in the bundle, Chromium fell back to another bundled locale, so
+// `navigator.language` reported (say) German on an en-IN machine and the
+// renderer faithfully rendered its German dictionary. A wrong name here is a
+// silent delete, never a build error, so these lists MUST be verified against
+// the real bundle — scripts/verify-package-contents.ts asserts English survives.
+//
+// Keep both lists in sync with renderer/i18n LOCALES. `bs` (Bosnian) is
+// deliberately absent: Electron ships no such locale, so the app's own Bosnian
+// dictionary is served with English Chromium chrome.
+const MAC_ELECTRON_LANGUAGES = [
+  "en",
+  "en_GB",
+  "zh_CN",
+  "zh_TW",
+  "ko",
+  "de",
+  "es",
+  "fr",
+  "da",
+  "ja",
+  "pl",
+  "ru",
+  "ar",
+  "nb",
+  "pt_BR",
+]
+
+const PAK_ELECTRON_LANGUAGES = [
+  "en-US",
+  "en-GB",
+  "zh-CN",
+  "zh-TW",
+  "ko",
+  "de",
+  "es",
+  "fr",
+  "da",
+  "ja",
+  "pl",
+  "ru",
+  "ar",
+  "nb",
+  "pt-BR",
+]
+
+const getBase = (): Configuration => ({
+  artifactName: "claxedo-desktop-${os}-${arch}.${ext}",
+  // Smallest download electron-builder can produce; costs packaging time only.
+  compression: "maximum",
+  // Never node-gyp-rebuild the workspace's native deps against Electron's
+  // headers. Everything native that SHIPS is a prebuild selected by
+  // NATIVE_PLATFORM_FILES; the rebuild step only recompiles modules that are
+  // excluded from the bundle anyway — and it hard-fails on ones whose C++
+  // doesn't compile against Electron's V8 (node-liblzma, an optional dep of
+  // just-bash, killed both Linux release legs exactly this way).
+  npmRebuild: false,
+  directories: {
+    output: "dist",
+    buildResources: "resources",
+  },
+  files: [
+    // The declared structural roots — the only build output that goes in the
+    // asar. Everything else under resources/ is an `extraResources` sibling,
+    // because it is executed as a separate process and asar paths are not real
+    // filesystem paths.
+    ...asarStructuralGlobs(),
+    // The renderer builds with sourcemap:"hidden" for PostHog symbolication;
+    // the release workflow uploads and deletes the maps before packaging, but
+    // a local `package:*` run must not ship them either.
+    "!out/**/*.map",
+    "!**/node_modules/**",
+    // Only the app's native modules belong in asar. Recursive positive globs
+    // also admit private SDK copies under otherwise excluded parent packages;
+    // that SDK graph is staged separately through extraResources below.
+    ...NATIVE_MODULES.map((name) => `node_modules/${name}/**`),
+    "!**/node_modules/better-sqlite3/deps/**",
+    "!**/node_modules/better-sqlite3/prebuilds/**",
+    ...NATIVE_PLATFORM_FILES,
+    {
+      // The `@lydell/node-pty` wrapper (a desktop dependency, shipped by the
+      // glob above) `require()`s its platform binary package by computed name;
+      // in-asar code (workspace-runtime's PTY, the claxedo-server bundle)
+      // resolves both from the asar's node_modules. bun keeps this
+      // optionalDependency only in its store — never linked anywhere a files
+      // glob would find it — so it is copied in explicitly from the located
+      // store path.
+      from: PTY_PLATFORM_PACKAGE_DIR,
+      to: `node_modules/@lydell/node-pty-${targetOsArch}/`,
+    },
+  ],
+  asarUnpack: [
+    ...NATIVE_MODULES.map((name) => `**/node_modules/${name}/**`),
+    // Spawned as a child process by path; nothing can spawn out of an archive.
+    "**/out/main/launch-gate-child.mjs",
+  ],
+  extraResources: [
+    {
+      // Native/data-bearing SDK packages stay on the real filesystem.
+      // Node's ancestor lookup from app.asar/out/main reaches this directory.
+      from: "resources/claxedo-server/node_modules/",
+      to: "node_modules/",
+      filter: ["**/*"],
+    },
+    {
+      from: "resources/claxedo-server/opencode-sdk-inventory.json",
+      to: "opencode-sdk-inventory.json",
+    },
+    {
+      from: `resources/mermaid/${targetOsArch}/`,
+      to: "mermaid/",
+      filter: [targetOsArch.startsWith("win32-") ? "claxedo-mermaid-renderer.exe" : "claxedo-mermaid-renderer"],
+    },
+    {
+      // The separately fingerprinted Host Connector runs as a child process
+      // beside app.asar; neither main nor renderer imports its implementation.
+      ...HOST_CONNECTOR_EXTRA_RESOURCE,
+    },
+    {
+      // The same, for the server bundle's own static closure. Kept OUT of
+      // resources/claxedo-server/ deliberately: that directory is rebuilt from
+      // scratch by `bundleClaxedoServer`, which would delete a cache generated
+      // into it, and it is copied into the asar as the server bundle itself.
+      from: `resources/${CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME}/`,
+      to: `${CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME}/`,
+      filter: ["**/*"],
+    },
+  ],
+  mac: {
+    // `.lproj` names, not the `.pak` names win/linux use — see the lists above.
+    electronLanguages: MAC_ELECTRON_LANGUAGES,
+    category: "public.app-category.developer-tools",
+    icon: "resources/icons/icon.icns",
+    hardenedRuntime: true,
+    gatekeeperAssess: false,
+    entitlements: "resources/entitlements.plist",
+    entitlementsInherit: "resources/entitlements.plist",
+    notarize: true,
+    target: ["dmg", "zip"],
+  },
+  dmg: {
+    sign: true,
+  },
+  protocols: {
+    name: "Claxedo",
+    schemes: ["claxedo"],
+  },
+  win: {
+    electronLanguages: PAK_ELECTRON_LANGUAGES,
+    icon: "resources/icons/icon.ico",
+    target: ["nsis"],
+  },
+  nsis: {
+    oneClick: false,
+    allowToChangeInstallationDirectory: true,
+    installerIcon: "resources/icons/icon.ico",
+    installerHeaderIcon: "resources/icons/icon.ico",
+  },
+  linux: {
+    electronLanguages: PAK_ELECTRON_LANGUAGES,
+    icon: "resources/icons",
+    category: "Development",
+    target: ["AppImage", "deb", "rpm"],
+    // Explicit, not defaulted: the default derives from package.json's name
+    // ("@claxedo/desktop") through a sanitizer, which produced a binary name
+    // no tooling predicted. Pinning makes the binary path a contract.
+    executableName: "claxedo",
+  },
+})
+
+function getConfig() {
+  const base = getBase()
+  const product = desktopProduct(channel)
+
+  switch (channel) {
+    case "beta": {
+      return {
+        ...base,
+        ...product,
+        // Per-variant artifact names and a separate update feed: `channel:
+        // "beta"` makes electron-builder emit beta.yml / beta-mac.yml /
+        // beta-linux.yml and stamps that feed into the packaged app-update.yml,
+        // so a beta install polls only beta metadata and a stable artifact can
+        // never be offered to it (nor vice versa).
+        artifactName: "claxedo-desktop-beta-${os}-${arch}.${ext}",
+        protocols: { name: "Claxedo Beta", schemes: ["claxedo"] },
+        publish: { provider: "github", owner: "kyashrathore", repo: "Claxedo", channel: "beta" },
+        rpm: { packageName: "claxedo-beta" },
+      }
+    }
+    case "prod": {
+      return {
+        ...base,
+        ...product,
+        protocols: { name: "Claxedo", schemes: ["claxedo"] },
+        // "latest" is the installed base's feed — latest.yml / latest-mac.yml /
+        // latest-linux.yml — kept deliberately so stable clients keep updating.
+        publish: { provider: "github", owner: "kyashrathore", repo: "Claxedo", channel: "latest" },
+        rpm: { packageName: "claxedo" },
+      }
+    }
+    default: {
+      // "dev" — the same value `channel` above falls back to, so every path
+      // here answers a config rather than dropping off the end.
+      return {
+        ...base,
+        ...product,
+        rpm: { packageName: "claxedo-dev" },
+      }
+    }
+  }
+}
+
+export default getConfig()

@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# Rebake the crabbox Hetzner base image: boot a temp box, refresh system
+# packages + the bun install cache, snapshot it via the Hetzner API, and point
+# script/cbx at the new image ID.
+#
+# Run when: a cold box's first `bun install` feels slow (lockfile drift), or
+# the toolchain (bun / node / system packages) needs changes. Not needed for
+# repo code changes — those flow through sync on every run.
+#
+# Usage: ./script/cbx-rebake [--from-stock] [--delete-old]
+#
+#   --from-stock   build from Hetzner's stock Ubuntu instead of the current
+#                  snapshot, installing the whole toolchain from scratch.
+#
+# WHY --from-stock EXISTS: a Hetzner snapshot inherits the DISK SIZE of the
+# server it was taken on, and Hetzner refuses to boot a snapshot on any type
+# with a smaller disk. Rebaking from the current image therefore locks that
+# floor in forever — bun-ci-base-v3 was taken on a 640GB box, so every warmup
+# needed a 640GB type (cpx62) to hold 3.4GB of content, at ~4x the hourly rate
+# of a machine that actually fits the workload. Building from stock on a small
+# box is the only way to lower the floor again.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CBX="$ROOT/script/cbx"
+SLUG="cbx-rebake-$$"
+
+FROM_STOCK=0
+ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --from-stock) FROM_STOCK=1 ;;
+    *) ARGS+=("$arg") ;;
+  esac
+done
+set -- "${ARGS[@]+"${ARGS[@]}"}"
+
+set -a
+source "$ROOT/packages/claxedo-server/.env"
+set +a
+
+# The bake box only has to survive one `bun install` + one playwright install,
+# so it is sized for RAM, not speed — and its DISK becomes the new floor for
+# every future box, so keep it as small as the build tolerates. Availability
+# moves: check `/v1/datacenters` -> `server_types.available` before changing it.
+REBAKE_TYPE="${REBAKE_TYPE:-cpx32}"
+
+trap '"$CBX" stop "$SLUG" 2>/dev/null || true' EXIT
+
+if [[ "$FROM_STOCK" == "1" ]]; then
+  echo "==> warming temp box $SLUG from STOCK ubuntu (type=$REBAKE_TYPE)"
+  CRABBOX_HETZNER_IMAGE= \
+  CRABBOX_HETZNER_LOCATION="${CRABBOX_HETZNER_LOCATION:-nbg1}" \
+    crabbox warmup --slug "$SLUG" --type "$REBAKE_TYPE"
+else
+  echo "==> warming temp box $SLUG from current image"
+  "$CBX" warmup --slug "$SLUG"
+fi
+
+if [[ "$FROM_STOCK" == "1" ]]; then
+  echo "==> installing toolchain from scratch (node, bun, python3)"
+  "$CBX" run --id "$SLUG" -- bash -c '
+set -e
+sudo -n apt-get update -qq
+sudo -n DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl unzip python3 python-is-python3 build-essential >/dev/null
+# Node 22, matching what bun-ci-base-v1..v3 shipped and what the suite is known
+# green on. CI pins 24.15 for Playwright specifically because 24.16 hangs while
+# extracting Chromium — do not bump this without re-running the e2e lane.
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -n -E bash - >/dev/null 2>&1
+sudo -n DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs >/dev/null
+# Bun EXACTLY at the repo `packageManager` pin: a floating bun silently changes
+# lockfile + patch behaviour under us.
+BUN_VERSION="$(node -p "require(\"./package.json\").packageManager.split(\"@\")[1]")"
+curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}" >/dev/null
+sudo -n install -m 0755 "$HOME/.bun/bin/bun" /usr/local/bin/bun
+# node-gyp GLOBALLY, before the npx->bunx shim exists and before any install
+# runs. `tree-sitter-powershell` has a native install script that shells out to
+# `node-gyp`; with node-gyp absent it resolves through npx, the shim rewrites
+# that to `bunx node-gyp@latest`, and bunx unpacks a node-gyp whose own bin
+# cannot require its package root ("Cannot find module \"../\"") — so the whole
+# `bun install --frozen-lockfile` fails on a cold cache. A globally installed
+# node-gyp is found on PATH directly and never touches the shim. The old image
+# lineage never hit this because its cache was warmed before the shim landed.
+sudo -n npm install -g node-gyp >/dev/null 2>&1
+node -v && bun -v && python3 -V && node-gyp --version'
+fi
+
+echo "==> refreshing system packages, toolchain, umask, playwright, and bun cache"
+"$CBX" run --id "$SLUG" -- bash -c '
+set -e
+sudo -n apt-get update -qq && sudo -n apt-get upgrade -y -qq >/dev/null
+# bunx symlink + npx->bunx shim (npm cannot parse bun catalog: deps)
+sudo -n ln -sf /usr/local/bin/bun /usr/local/bin/bunx
+printf "#!/bin/sh\nexec bunx \"\$@\"\n" | sudo -n tee /usr/local/bin/npx >/dev/null
+sudo -n chmod +x /usr/local/bin/npx
+# tests assume umask 022 (box default 002 breaks opencode permission tests:
+# tool.write > file permissions > sets file permissions when writing sensitive data).
+#
+# NOT ~/.bashrc — that was the previous approach and it never worked. Ubuntu ships
+# bashrc with `case $- in *i*) ;; *) return;; esac` at the TOP, so a non-interactive
+# shell returns before reaching an appended line. `crabbox run -- bash -c` is
+# non-interactive, and `bash -lc` reaches bashrc via ~/.profile and hits the same
+# early return — verified 2026-07-25 on image 412360550: umask was 0002 in BOTH.
+#
+# pam_umask applies to the sshd session itself, before any shell rc runs, so it
+# covers every invocation shape.
+sudo -n sed -i "s/^UMASK.*/UMASK 022/" /etc/login.defs
+grep -q "pam_umask" /etc/pam.d/sshd || printf "session optional pam_umask.so umask=022\n" | sudo -n tee -a /etc/pam.d/sshd >/dev/null
+# Belt and braces for shells that bypass PAM: BASH_ENV is read by NON-interactive bash.
+printf "umask 022\n" | sudo -n tee /etc/crabbox-bashenv.sh >/dev/null
+grep -q "BASH_ENV" /etc/environment || printf "BASH_ENV=/etc/crabbox-bashenv.sh\n" | sudo -n tee -a /etc/environment >/dev/null
+# playwright lacks an ubuntu26.04 build; spoof 24.04 so install works
+grep -q "VERSION_ID=\"26.04\"" /etc/os-release && sudo -n sed -i.bak "s/VERSION_ID=\"26.04\"/VERSION_ID=\"24.04\"/" /etc/os-release || true
+bun install --frozen-lockfile >/dev/null
+# Install browsers with the REPO pinned playwright, not `bun x playwright`.
+# `bun x` resolves playwright@latest, and the npx->bunx shim means `npx
+# playwright` does too. A version that does not match the one the suite imports
+# wrote a ZERO-BYTE chrome-headless-shell here: the file existed, was
+# executable, launched and exited 0 with no output, so Playwright reported
+# "Target page, context or browser has been closed" for all 291 tests with
+# nothing in any log pointing at the browser cache.
+rm -rf ~/.cache/ms-playwright
+(cd packages/claxedo-app && ./node_modules/.bin/playwright install --with-deps chromium)
+# Never snapshot an image whose browser does not run. Running it is the only
+# check that would have caught the zero-byte binary; stat-ing the path did not.
+for name in chrome chrome-headless-shell; do
+  BIN=$(find ~/.cache/ms-playwright -name "$name" -type f | head -1)
+  if [ -z "$BIN" ] || [ ! -s "$BIN" ] || ! "$BIN" --version; then
+    echo "FATAL: playwright $name missing or unusable: [$BIN]" >&2
+    exit 1
+  fi
+done
+# keep the image lean: drop the synced workdir, retain bun + playwright caches
+cd / && sudo -n rm -rf /work/crabbox/*
+echo image-prepped'
+
+SERVER_ID="$("$CBX" list | awk -v s="$SLUG" 'index($2, s) > 0 {print $1; exit}')"
+[[ -n "$SERVER_ID" ]] || { echo "error: no server found for slug $SLUG"; exit 1; }
+
+echo "==> snapshotting server $SERVER_ID"
+IMAGE_ID="$(curl -sf -X POST \
+  -H "Authorization: Bearer $HETZNER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"description\":\"bun-ci-base rebaked $(date -u +%Y-%m-%d)\",\"type\":\"snapshot\",\"labels\":{\"crabbox\":\"true\",\"purpose\":\"ci-base\"}}" \
+  "https://api.hetzner.cloud/v1/servers/$SERVER_ID/actions/create_image" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["image"]["id"])')"
+
+echo "==> waiting for image $IMAGE_ID"
+STATUS=""
+for _ in $(seq 1 60); do
+  STATUS="$(curl -sf -H "Authorization: Bearer $HETZNER_TOKEN" \
+    "https://api.hetzner.cloud/v1/images/$IMAGE_ID" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["image"]["status"])')"
+  [[ "$STATUS" == "available" ]] && break
+  sleep 10
+done
+[[ "$STATUS" == "available" ]] || { echo "error: image stuck in status=$STATUS"; exit 1; }
+
+OLD_ID="$(grep -oE 'CRABBOX_HETZNER_IMAGE:-[0-9]+' "$CBX" | grep -oE '[0-9]+')"
+sed -i '' "s/CRABBOX_HETZNER_IMAGE:-[0-9]*/CRABBOX_HETZNER_IMAGE:-$IMAGE_ID/" "$CBX"
+echo "==> script/cbx now boots $IMAGE_ID (was $OLD_ID)"
+
+if [[ "${1:-}" == "--delete-old" && -n "$OLD_ID" ]]; then
+  curl -sf -X DELETE -H "Authorization: Bearer $HETZNER_TOKEN" \
+    "https://api.hetzner.cloud/v1/images/$OLD_ID" >/dev/null
+  echo "==> deleted old image $OLD_ID"
+fi
+
+echo "==> done (temp box stopped)"

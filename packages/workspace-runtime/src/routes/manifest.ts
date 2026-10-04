@@ -1,0 +1,40 @@
+export const WorkspaceRuntimeApiPrefix = "/api/wr"
+
+// The published public-API family prefixes (verified against
+// docs/api-manifest.json), not the server's whole mount surface: compat,
+// document, broker and root status mounts live outside this table, and the
+// composed-app inventory test is the completeness check for those.
+export const WorkspaceRuntimeRoutes = {
+  health: `${WorkspaceRuntimeApiPrefix}/health`,
+  capabilities: `${WorkspaceRuntimeApiPrefix}/capabilities`,
+  config: `${WorkspaceRuntimeApiPrefix}/config`,
+  harnessConfigOptions: `${WorkspaceRuntimeApiPrefix}/harness-config-options`,
+  harnessProviders: `${WorkspaceRuntimeApiPrefix}/harness-providers`,
+  pty: `${WorkspaceRuntimeApiPrefix}/pty`,
+  events: `${WorkspaceRuntimeApiPrefix}/events`,
+  file: `${WorkspaceRuntimeApiPrefix}/file`,
+  fileSearch: `${WorkspaceRuntimeApiPrefix}/find/file`,
+  diff: `${WorkspaceRuntimeApiPrefix}/diff`,
+  git: `${WorkspaceRuntimeApiPrefix}/git`,
+  worktrees: `${WorkspaceRuntimeApiPrefix}/worktrees`,
+  checkpoint: `${WorkspaceRuntimeApiPrefix}/checkpoint`,
+  hook: `${WorkspaceRuntimeApiPrefix}/hook`,
+  executionEnv: `${WorkspaceRuntimeApiPrefix}/execution-env`,
+} as const
+
+export type WorkspaceRuntimeRouteFamily = keyof typeof WorkspaceRuntimeRoutes
+
+function isRouteFamily(key: string): key is WorkspaceRuntimeRouteFamily {
+  return key in WorkspaceRuntimeRoutes
+}
+
+// Built from the table's own keys through a predicate: `Object.keys` types them
+// as `string`, and recognising each one keeps the family literal without
+// claiming a shape the table has not been asked about.
+export const WorkspaceRuntimeRouteManifest = Object.keys(WorkspaceRuntimeRoutes)
+  .filter(isRouteFamily)
+  .map((family) => ({ family, path: WorkspaceRuntimeRoutes[family] }))
+
+export function workspaceRuntimeRoute(path: string) {
+  return WorkspaceRuntimeRouteManifest.find((item) => path === item.path || path.startsWith(item.path + "/"))
+}

@@ -1,0 +1,35 @@
+{
+  "entries": [
+    {
+      "identifier": "urn:air:claxedo.com:docs:claxedo",
+      "displayName": "Claxedo",
+      "description": "Open-source workspace for coding agents (Claude Code, Codex, Cursor, OpenCode): set up plugins, skills, MCP servers, and credentials once; run sessions locally, on a cloud VM, or with a team on a self-hosted Cloudflare Worker.",
+      "type": "text/markdown",
+      "url": "https://claxedo.com/llms.md",
+      "tags": [
+        "coding-agents",
+        "developer-tools",
+        "open-source",
+        "mcp",
+        "sandbox"
+      ],
+      "representativeQueries": [
+        "run claude code and codex in one workspace",
+        "share my mcp servers and skills across coding agents",
+        "move a coding agent session to a cloud sandbox",
+        "self-host a multiplayer workspace for coding agents"
+      ]
+    },
+    {
+      "identifier": "urn:air:claxedo.com:docs:agent-entry",
+      "displayName": "Claxedo agent entry map",
+      "description": "Entry points and safety rules for agents helping users install, deploy, or configure Claxedo.",
+      "type": "text/markdown",
+      "url": "https://claxedo.com/start.md",
+      "representativeQueries": [
+        "install claxedo desktop",
+        "deploy the claxedo control plane to cloudflare"
+      ]
+    }
+  ]
+}

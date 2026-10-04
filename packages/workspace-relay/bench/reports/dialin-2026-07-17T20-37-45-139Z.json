@@ -1,0 +1,14 @@
+{
+  "sandboxId": "37752007-5668-489f-9e9d-aa3d4fbc4298",
+  "relayUrl": "wss://claxedo-workspace-relay-reeval.kanusdlp.workers.dev",
+  "workspaceId": "ws_reeval_dtn",
+  "hostId": "host_bench",
+  "localUrl": "http://localhost:3939",
+  "bundlePath": "/Users/yashvardhansingh/test/opencode/packages/workspace-relay/bench/reports/dialin-agent.bundle.cjs",
+  "registered": true,
+  "roundTrip": {
+    "connected": true,
+    "sent": 1,
+    "delivered": 1
+  }
+}

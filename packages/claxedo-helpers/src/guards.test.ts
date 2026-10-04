@@ -1,0 +1,158 @@
+import { describe, expect, test } from "bun:test"
+import {
+  asArray,
+  asArrayOrUndefined,
+  asBoolean,
+  asFiniteNumber,
+  asNumber,
+  asRecord,
+  asRecordOrEmpty,
+  asString,
+  assertNonNegativeSafeInteger,
+  assertRecord,
+  isBoolean,
+  isFiniteNumber,
+  isNonBlankString,
+  isNonEmptyString,
+  isNonNegativeSafeInteger,
+  isRecord,
+  isString,
+  isStringList,
+  nonEmptyString,
+  numberClaim,
+  stringClaim,
+  stringMembers,
+  typeOf,
+} from "./guards"
+
+test("stringMembers preserves string order and empty strings while excluding other values", () => {
+  expect(stringMembers(["a", 1, "", null, "b", "a"])).toEqual(["a", "", "b", "a"])
+  expect(stringMembers({ value: "a" })).toEqual([])
+})
+
+describe("typeOf", () => {
+  test("separates null and array from object", () => {
+    expect(typeOf(null)).toBe("null")
+    expect(typeOf([])).toBe("array")
+    expect(typeOf({})).toBe("object")
+    expect(typeOf(undefined)).toBe("undefined")
+    expect(typeOf(1n)).toBe("bigint")
+    expect(typeOf(() => {})).toBe("function")
+  })
+})
+
+describe("isRecord", () => {
+  test("rejects arrays and null, accepts plain and null-prototype objects", () => {
+    expect(isRecord({})).toBe(true)
+    expect(isRecord(Object.create(null))).toBe(true)
+    expect(isRecord([])).toBe(false)
+    expect(isRecord(null)).toBe(false)
+    expect(isRecord("x")).toBe(false)
+  })
+
+  test("asRecord passes the SAME object through, asRecordOrEmpty totalizes", () => {
+    const source = { a: 1 }
+    expect(asRecord(source)).toBe(source)
+    expect(asRecord([])).toBeUndefined()
+    expect(asRecordOrEmpty([])).toEqual({})
+    expect(asRecordOrEmpty(source)).toBe(source)
+  })
+
+  test("assertRecord names the label in the message", () => {
+    expect(() => assertRecord([], "payload")).toThrow("payload must be an object")
+    const source = { a: 1 }
+    expect(assertRecord(source, "payload")).toBe(source)
+  })
+})
+
+describe("string guards", () => {
+  test("isString/asString do not trim or reject blanks", () => {
+    expect(isString("")).toBe(true)
+    expect(asString("  ")).toBe("  ")
+    expect(asString(1)).toBeUndefined()
+  })
+
+  test("nonEmptyString rejects only the empty string and returns the ORIGINAL", () => {
+    // Deliberately does not trim: a whitespace-only string is non-empty.
+    expect(isNonEmptyString("")).toBe(false)
+    expect(isNonEmptyString("  ")).toBe(true)
+    expect(nonEmptyString(" a ")).toBe(" a ")
+    expect(nonEmptyString("")).toBeUndefined()
+    expect(nonEmptyString(0)).toBeUndefined()
+  })
+
+  test("isNonBlankString rejects whitespace-only strings and non-strings", () => {
+    expect(isNonBlankString(" a ")).toBe(true)
+    expect(isNonBlankString(" \t\n")).toBe(false)
+    expect(isNonBlankString("")).toBe(false)
+    expect(isNonBlankString(1)).toBe(false)
+  })
+})
+
+describe("number guards", () => {
+  test("asNumber preserves every number without coercion", () => {
+    expect(asNumber(0)).toBe(0)
+    expect(asNumber(Number.NaN)).toBeNaN()
+    expect(asNumber("1")).toBeUndefined()
+  })
+  test("finite excludes NaN and Infinity", () => {
+    expect(isFiniteNumber(Number.NaN)).toBe(false)
+    expect(isFiniteNumber(Number.POSITIVE_INFINITY)).toBe(false)
+    expect(asFiniteNumber("1")).toBeUndefined()
+    expect(asFiniteNumber(0)).toBe(0)
+  })
+
+  test("non-negative safe integer rejects fractions, negatives and unsafe magnitudes", () => {
+    expect(isNonNegativeSafeInteger(0)).toBe(true)
+    expect(isNonNegativeSafeInteger(-1)).toBe(false)
+    expect(isNonNegativeSafeInteger(1.5)).toBe(false)
+    expect(isNonNegativeSafeInteger(Number.MAX_SAFE_INTEGER + 2)).toBe(false)
+    expect(() => assertNonNegativeSafeInteger("limit", -1)).toThrow(
+      "limit must be a non-negative integer",
+    )
+    expect(assertNonNegativeSafeInteger("limit", 3)).toBeUndefined()
+  })
+})
+
+describe("boolean guards", () => {
+  test("no coercion", () => {
+    expect(isBoolean(0)).toBe(false)
+    expect(asBoolean("true")).toBeUndefined()
+    expect(asBoolean(false)).toBe(false)
+  })
+})
+
+describe("claims", () => {
+  test("stringClaim returns the untrimmed original but rejects blank", () => {
+    expect(stringClaim({ iss: " a " }, "iss")).toBe(" a ")
+    expect(stringClaim({ iss: "   " }, "iss")).toBeUndefined()
+    expect(stringClaim({}, "iss")).toBeUndefined()
+  })
+
+  test("numberClaim rejects numeric strings", () => {
+    expect(numberClaim({ exp: 1 }, "exp")).toBe(1)
+    expect(numberClaim({ exp: "1" }, "exp")).toBeUndefined()
+  })
+})
+
+describe("asArray", () => {
+  test("optional form preserves arrays and distinguishes absent values", () => {
+    const source = [1]
+    expect(asArrayOrUndefined(source)).toBe(source)
+    expect(asArrayOrUndefined("x")).toBeUndefined()
+  })
+  test("returns the array BY REFERENCE and totalizes everything else", () => {
+    const source = [1]
+    expect(asArray(source)).toBe(source)
+    expect(asArray("x")).toEqual([])
+  })
+})
+
+describe("isStringList", () => {
+  test("accepts an empty or all-string array only", () => {
+    expect(isStringList([])).toBe(true)
+    expect(isStringList(["a", ""])).toBe(true)
+    expect(isStringList(["a", 1])).toBe(false)
+    expect(isStringList("a")).toBe(false)
+  })
+})

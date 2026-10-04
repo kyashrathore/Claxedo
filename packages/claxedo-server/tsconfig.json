@@ -1,0 +1,18 @@
+{
+  "extends": "@tsconfig/node-lts/tsconfig.json",
+  "compilerOptions": {
+    // No outDir: typecheck is `tsc --noEmit` and the build is esbuild. An
+    // outDir makes TS enforce rootDir, which rejects the cross-package imports
+    // the policy/integration tests use.
+    "noEmit": true,
+    "noUncheckedIndexedAccess": false,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    // Workspace packages export `development` -> src/*.ts ahead of `types` ->
+    // dist/*.d.ts, so typecheck reads sibling SOURCE and never needs a build.
+    "customConditions": ["development"],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["bun", "node"]
+  },
+  "include": ["src", "scripts"]
+}

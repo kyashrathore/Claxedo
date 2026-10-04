@@ -1,0 +1,143 @@
+.ui-dropdown-menu-content,
+.ui-dropdown-menu-sub-content {
+  min-width: 8rem;
+  overflow: hidden;
+  border-radius: var(--surface-overlay-radius, var(--radius-md));
+  border: var(--surface-overlay-border, 1px solid var(--overlay-border));
+  background-clip: padding-box;
+  background-color: var(--overlay-surface);
+  padding: 4px;
+  box-shadow: var(--surface-overlay-shadow, var(--shadow-md));
+  z-index: 50;
+  transform-origin: var(--kb-menu-content-transform-origin);
+
+  &:focus,
+  &:focus-visible {
+    outline: none;
+  }
+
+  &[data-closed] {
+    animation: dropdown-menu-close 0.15s ease-out;
+  }
+
+  &[data-expanded] {
+    animation: dropdown-menu-open 0.15s ease-out;
+  }
+}
+
+.ui-dropdown-menu-content,
+.ui-dropdown-menu-sub-content {
+  .ui-dropdown-menu-item,
+  .ui-dropdown-menu-checkbox-item,
+  .ui-dropdown-menu-radio-item,
+  .ui-dropdown-menu-sub-trigger {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    cursor: default;
+    user-select: none;
+    outline: none;
+
+    font-family: var(--font-family-sans);
+    font-size: var(--menu-item-font-size);
+    font-weight: var(--menu-item-font-weight);
+    line-height: var(--menu-item-line-height);
+    letter-spacing: var(--letter-spacing-normal);
+    color: var(--overlay-text);
+
+    &[data-highlighted] {
+      background: var(--overlay-surface-hover);
+    }
+
+    &[data-disabled] {
+      color: var(--overlay-text-muted);
+      pointer-events: none;
+    }
+  }
+
+  .ui-dropdown-menu-checkbox-item,
+  .ui-dropdown-menu-radio-item {
+    padding-inline-end: 28px;
+  }
+
+  .ui-dropdown-menu-sub-trigger {
+    &[data-expanded] {
+      background: var(--overlay-surface-hover);
+    }
+  }
+
+  [data-slot="dropdown-menu-item-indicator"] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    position: absolute;
+    inset-inline-end: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  .ui-dropdown-menu-item-label {
+    flex: 1;
+  }
+
+  [data-slot="dropdown-menu-item-description"] {
+    font-size: var(--font-size-x-small);
+    color: var(--overlay-text-muted);
+  }
+
+  /*
+   * Kobalte renders this as an <hr>, so the UA's `border: 1px inset` applies on
+   * all four sides and stacks with `height` — the rule below used to paint a
+   * ~3px slab bleeding past the panel padding. Zero the border first, then draw
+   * the single hairline, and inset it so it reads as a divider between rows
+   * rather than a band across the whole panel.
+   */
+  [data-slot="dropdown-menu-separator"] {
+    height: 0;
+    margin: 4px;
+    border: 0;
+    border-top: 1px solid var(--overlay-border);
+  }
+
+  .ui-dropdown-menu-group-label {
+    display: block;
+    padding: 4px 8px;
+    font-family: var(--font-family-sans);
+    font-size: var(--menu-group-font-size);
+    font-weight: var(--menu-group-font-weight);
+    line-height: var(--menu-group-line-height);
+    letter-spacing: var(--letter-spacing-normal);
+    color: var(--overlay-text-muted);
+  }
+
+  [data-slot="dropdown-menu-arrow"] {
+    fill: var(--overlay-surface);
+  }
+}
+
+@keyframes dropdown-menu-open {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes dropdown-menu-close {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}

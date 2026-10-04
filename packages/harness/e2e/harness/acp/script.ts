@@ -1,0 +1,86 @@
+import fs from "node:fs/promises"
+import path from "node:path"
+import type { PlanEntry, PromptResponse, StopReason, ToolCallContent, ToolCallLocation, ToolKind } from "@agentclientprotocol/sdk"
+import { isMissingFile } from "@claxedo/helpers/fs"
+
+export const ACP_SCRIPT_DIR_ENV = "SCRIPTED_ACP_DIR"
+export const ACP_RED_ENV = "SCRIPTED_ACP_RED"
+export const ACP_NO_MODELS_ENV = "SCRIPTED_ACP_NO_MODELS"
+export const ACP_CORE_ENV = "SCRIPTED_ACP_CORE"
+export const ACP_WITHHOLD_ONCE_ENV = "SCRIPTED_ACP_WITHHOLD_ONCE_OPTION"
+export const ACP_FAULT_ENV = "SCRIPTED_ACP_FAULT"
+
+const SCRIPT_TOKEN = /acp-script:([A-Za-z0-9._-]+)/g
+
+export type AcpToolStep = {
+  kind: "tool"
+  tool: ToolKind
+  title: string
+  id?: string
+  input?: Record<string, unknown>
+  output?: unknown
+  text?: string
+  locations?: ToolCallLocation[]
+  content?: ToolCallContent[]
+  status?: "completed" | "failed" | "in_progress"
+}
+
+export type AcpStep =
+  | { kind: "text"; text: string; chunks?: number; delayMs?: number }
+  | { kind: "usage"; used: number; size: number }
+  | { kind: "prompt" }
+  | { kind: "env-digest"; name: string }
+  | { kind: "mcp"; marker: string }
+  | { kind: "reasoning"; text: string }
+  | { kind: "notice"; severity: string; title: string; description?: string }
+  | { kind: "image"; data: string; mimeType: string }
+  | { kind: "plan"; entries: PlanEntry[] }
+  | AcpToolStep
+  | { kind: "diff"; path: string; oldText: string | null; newText: string; title?: string }
+  | { kind: "permission"; tool: ToolKind; title: string; path?: string; input?: Record<string, unknown>; text?: string }
+  | { kind: "question"; message: string; options?: string[]; mode?: "form" | "url"; url?: string; schema?: Record<string, unknown> }
+  | { kind: "subagent"; name: string; task: string; steps: AcpStep[] }
+  | { kind: "hold"; name: string; ignoresCancel?: true }
+  | { kind: "error"; message: string }
+  | { kind: "stop"; reason: StopReason }
+
+export type AcpScript = { steps: AcpStep[]; stopReason?: StopReason; capturePrompt?: boolean; usage?: PromptResponse["usage"] }
+
+export function acpScriptToken(name: string) {
+  return `acp-script:${name}`
+}
+
+export function lastAcpScriptName(text: string): string | undefined {
+  return [...text.matchAll(SCRIPT_TOKEN)].at(-1)?.[1]
+}
+
+function scriptFile(dir: string, name: string) {
+  return path.join(dir, `${name}.json`)
+}
+
+export function holdReleaseFile(dir: string, name: string) {
+  return path.join(dir, `${name}.release`)
+}
+
+export function holdEnteredFile(dir: string, name: string) {
+  return path.join(dir, `${name}.entered`)
+}
+
+export async function writeAcpScript(dir: string, name: string, script: AcpScript) {
+  await fs.mkdir(dir, { recursive: true })
+  await fs.writeFile(scriptFile(dir, name), JSON.stringify(script))
+}
+
+export async function readAcpScript(dir: string, name: string): Promise<AcpScript | undefined> {
+  try {
+    return JSON.parse(await fs.readFile(scriptFile(dir, name), "utf8")) as AcpScript
+  } catch (error) {
+    if (isMissingFile(error)) return undefined
+    throw error
+  }
+}
+
+export async function releaseAcpHold(dir: string, name: string) {
+  await fs.mkdir(dir, { recursive: true })
+  await fs.writeFile(holdReleaseFile(dir, name), "released")
+}

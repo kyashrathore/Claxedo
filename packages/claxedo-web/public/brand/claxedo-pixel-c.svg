@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
+  <title id="title">Claxedo pixel C</title>
+  <desc id="description">A letter C built from rounded contribution graph tiles in Claxedo's dark theme.</desc>
+  <defs>
+    <clipPath id="icon-shape">
+      <rect width="512" height="512" rx="112"/>
+    </clipPath>
+    <pattern id="contribution-grid" width="32" height="32" patternUnits="userSpaceOnUse" x="24" y="24">
+      <rect width="24" height="24" rx="5" fill="#1c1c1c"/>
+    </pattern>
+    <rect id="pixel" width="24" height="24" rx="5"/>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="#101010"/>
+  <rect x="24" y="24" width="472" height="472" fill="url(#contribution-grid)" clip-path="url(#icon-shape)"/>
+
+  <g aria-hidden="true">
+    <!-- Top arc -->
+    <use href="#pixel" x="184" y="56" fill="#7e7e7e"/>
+    <use href="#pixel" x="216" y="56" fill="#a0a0a0"/>
+    <use href="#pixel" x="248" y="56" fill="#ededed"/>
+    <use href="#pixel" x="280" y="56" fill="#a0a0a0"/>
+    <use href="#pixel" x="312" y="56" fill="#7e7e7e"/>
+    <use href="#pixel" x="344" y="56" fill="#343434"/>
+
+    <use href="#pixel" x="120" y="88" fill="#7e7e7e"/>
+    <use href="#pixel" x="152" y="88" fill="#a0a0a0"/>
+    <use href="#pixel" x="184" y="88" fill="#ededed"/>
+    <use href="#pixel" x="216" y="88" fill="#a0a0a0"/>
+    <use href="#pixel" x="248" y="88" fill="#7e7e7e"/>
+    <use href="#pixel" x="280" y="88" fill="#a0a0a0"/>
+    <use href="#pixel" x="312" y="88" fill="#ededed"/>
+    <use href="#pixel" x="344" y="88" fill="#a0a0a0"/>
+    <use href="#pixel" x="376" y="88" fill="#7e7e7e"/>
+
+    <use href="#pixel" x="88" y="120" fill="#7e7e7e"/>
+    <use href="#pixel" x="120" y="120" fill="#ededed"/>
+    <use href="#pixel" x="152" y="120" fill="#a0a0a0"/>
+    <use href="#pixel" x="184" y="120" fill="#7e7e7e"/>
+    <use href="#pixel" x="376" y="120" fill="#343434"/>
+
+    <use href="#pixel" x="56" y="152" fill="#7e7e7e"/>
+    <use href="#pixel" x="88" y="152" fill="#a0a0a0"/>
+    <use href="#pixel" x="120" y="152" fill="#ededed"/>
+    <use href="#pixel" x="152" y="152" fill="#7e7e7e"/>
+
+    <!-- Stem -->
+    <use href="#pixel" x="56" y="184" fill="#a0a0a0"/>
+    <use href="#pixel" x="88" y="184" fill="#ededed"/>
+    <use href="#pixel" x="120" y="184" fill="#7e7e7e"/>
+
+    <use href="#pixel" x="56" y="216" fill="#ededed"/>
+    <use href="#pixel" x="88" y="216" fill="#a0a0a0"/>
+    <use href="#pixel" x="120" y="216" fill="#7e7e7e"/>
+
+    <use href="#pixel" x="56" y="248" fill="#a0a0a0"/>
+    <use href="#pixel" x="88" y="248" fill="#ededed"/>
+    <use href="#pixel" x="120" y="248" fill="#7e7e7e"/>
+
+    <use href="#pixel" x="56" y="280" fill="#7e7e7e"/>
+    <use href="#pixel" x="88" y="280" fill="#a0a0a0"/>
+    <use href="#pixel" x="120" y="280" fill="#ededed"/>
+
+    <use href="#pixel" x="56" y="312" fill="#a0a0a0"/>
+    <use href="#pixel" x="88" y="312" fill="#ededed"/>
+    <use href="#pixel" x="120" y="312" fill="#7e7e7e"/>
+
+    <!-- Bottom arc -->
+    <use href="#pixel" x="56" y="344" fill="#7e7e7e"/>
+    <use href="#pixel" x="88" y="344" fill="#a0a0a0"/>
+    <use href="#pixel" x="120" y="344" fill="#ededed"/>
+    <use href="#pixel" x="152" y="344" fill="#7e7e7e"/>
+
+    <use href="#pixel" x="88" y="376" fill="#7e7e7e"/>
+    <use href="#pixel" x="120" y="376" fill="#ededed"/>
+    <use href="#pixel" x="152" y="376" fill="#a0a0a0"/>
+    <use href="#pixel" x="184" y="376" fill="#7e7e7e"/>
+    <use href="#pixel" x="376" y="376" fill="#343434"/>
+
+    <use href="#pixel" x="120" y="408" fill="#7e7e7e"/>
+    <use href="#pixel" x="152" y="408" fill="#a0a0a0"/>
+    <use href="#pixel" x="184" y="408" fill="#ededed"/>
+    <use href="#pixel" x="216" y="408" fill="#a0a0a0"/>
+    <use href="#pixel" x="248" y="408" fill="#7e7e7e"/>
+    <use href="#pixel" x="280" y="408" fill="#a0a0a0"/>
+    <use href="#pixel" x="312" y="408" fill="#ededed"/>
+    <use href="#pixel" x="344" y="408" fill="#a0a0a0"/>
+    <use href="#pixel" x="376" y="408" fill="#7e7e7e"/>
+
+    <use href="#pixel" x="184" y="440" fill="#343434"/>
+    <use href="#pixel" x="216" y="440" fill="#7e7e7e"/>
+    <use href="#pixel" x="248" y="440" fill="#a0a0a0"/>
+    <use href="#pixel" x="280" y="440" fill="#ededed"/>
+    <use href="#pixel" x="312" y="440" fill="#a0a0a0"/>
+    <use href="#pixel" x="344" y="440" fill="#7e7e7e"/>
+  </g>
+</svg>

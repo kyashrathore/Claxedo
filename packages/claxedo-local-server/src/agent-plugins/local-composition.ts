@@ -1,0 +1,279 @@
+import path from "node:path"
+import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
+import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
+import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
+import { resolveEffectiveActivation } from "@claxedo/server-core/agent-plugins/activation/effective"
+import type { ArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
+import { claxedoPublicGitHubCatalogSourceProvider } from "@claxedo/server-core/agent-plugins/sources/github-public"
+import {
+  agentPluginCatalogSources,
+  createAgentPluginSourceProviderCache,
+} from "@claxedo/server-core/agent-plugins/sources/registry"
+import { AGENT_PLUGINS_ROUTE_PATH } from "@claxedo/server-core/agent-plugins/module"
+import type { AgentPluginReconcilePort, CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/ports"
+import type { AgentPluginRuntimeApplyRequest } from "@claxedo/server-core/agent-plugins/runtime/apply-contract"
+import { SUPPORTED_AGENT_PLUGIN_HARNESSES } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
+import { LocalAgentPluginArtifactStore } from "./artifacts/local-store"
+import { SqliteUnsignedAgentPluginActivationStore } from "./activation/sqlite-store"
+import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
+import { LOCAL_BUILTIN_DEPLOYMENT } from "./builtin-groups"
+import { createLocalAgentPluginsModule } from "./module"
+import { LocalAgentPluginSourceRoutes } from "./sources/routes"
+import { SqliteAgentPluginSourceStore } from "./sources/sqlite-store"
+import { acpAgentPluginAdapter } from "./runtime/adapters/acp"
+import { claudeAgentPluginAdapter } from "./runtime/adapters/claude"
+import { codexAgentPluginAdapter } from "./runtime/adapters/codex"
+import { cursorAgentPluginAdapter } from "./runtime/adapters/cursor"
+import { piAgentPluginAdapter } from "./runtime/adapters/pi"
+import { openCodeAgentPluginAdapter } from "./runtime/adapters/opencode"
+import { clearActiveGeneration, readActiveGeneration } from "./runtime/generation"
+import {
+  AgentPluginMaterializationError,
+  agentPluginAcpMcp,
+  agentPluginHarnessLaunch,
+  materializeAgentPluginGeneration,
+  readMaterializedAgentPluginGeneration,
+  type MaterializedAgentPluginGeneration,
+} from "./runtime/materialize"
+import { runtimeArtifactStore } from "./runtime/runtime-contribution"
+import { runtimeMcpServers } from "@claxedo/server-core/agent-plugins/runtime/mcp-projection"
+import { fanOutConfig } from "../agent-config/fanout"
+import type { AgentPluginRuntimeContribution } from "@claxedo/server-core/agent-config/index"
+
+/**
+ * The signed user's own runtime world, as the control plane hands it to a
+ * machine the user owns: the VM apply request plus the gateway credentials a
+ * sandbox driver would otherwise have brokered.
+ */
+export type SignedAgentPluginRuntime = AgentPluginRuntimeApplyRequest & {
+  secrets: ReadonlyArray<{ name: string; value: string }>
+}
+
+export type SignedAgentPluginRuntimeState = {
+  active: boolean
+  revision?: number
+  userId?: string
+  generationId?: string
+}
+
+export type LocalAgentPluginsComposition = {
+  routeContributions: readonly ControlPlaneRouteContribution[]
+  /** What the active generation contributes to every runtime snapshot this daemon builds. */
+  runtimeContribution: () => Promise<AgentPluginRuntimeContribution>
+  ready: Promise<void>
+  /** The signed world Electron main pulls; absent means the machine world launches. */
+  signedRuntime: {
+    apply(input: SignedAgentPluginRuntime): Promise<SignedAgentPluginRuntimeState>
+    clear(): Promise<SignedAgentPluginRuntimeState>
+    state(): SignedAgentPluginRuntimeState
+  }
+}
+
+/**
+ * Enabled desktop composition. Ordinary users read the one public Claxedo
+ * GitHub collection; tests and containing products may inject another already
+ * authorized source provider without adding source management to the module.
+ *
+ * Two runtime roots live side by side: the machine world (`runtime/`), fed by
+ * the unsigned SQLite store, and the signed world (`runtime-signed/`), fed by
+ * the control plane through the daemon's loopback surface. They never share a
+ * revision sequence — one counts this machine's mutations, the other the
+ * organization's — so each owns its own active pointer. While a signed world
+ * is applied it is what every harness launches with, because the hosted
+ * authority is canonical for a signed desktop; signing out returns the
+ * machine world without re-materializing anything.
+ */
+export function createLocalAgentPluginsComposition(
+  env: NodeJS.ProcessEnv = process.env,
+  options: {
+    sources?: CatalogSourceProvider
+    /** Runs after an activation or signed-world change is materialized; by default the runtime config fan-out, so running runtimes receive the new contribution. */
+    changed?: () => Promise<void>
+  } = {},
+): LocalAgentPluginsComposition {
+  const changed = options.changed ?? fanOutConfig
+  const artifacts = new LocalAgentPluginArtifactStore(dataDir())
+  const activations = new SqliteUnsignedAgentPluginActivationStore(ClaxedoDB.raw())
+  const runtimeRoot = path.join(dataDir(), "runtime")
+  const signedRuntimeRoot = path.join(dataDir(), "runtime-signed")
+  const sourceRegistry = new SqliteAgentPluginSourceStore(ClaxedoDB.raw())
+  const sourceProviders = createAgentPluginSourceProviderCache()
+  // Resolved per catalog read, not once here: a repository registered through
+  // `POST /api/claxedo/plugins/sources` has to appear in the next read without
+  // restarting the daemon.
+  const sources = agentPluginCatalogSources({
+    base: options.sources ?? claxedoPublicGitHubCatalogSourceProvider(),
+    cache: sourceProviders,
+    list: () => sourceRegistry.list(),
+  })
+  const adapters = () => [
+    openCodeAgentPluginAdapter(),
+    claudeAgentPluginAdapter(),
+    codexAgentPluginAdapter(),
+    cursorAgentPluginAdapter(),
+    piAgentPluginAdapter(),
+    acpAgentPluginAdapter(),
+  ]
+
+  let appliedRevision: number | undefined
+  let activeGeneration: MaterializedAgentPluginGeneration | undefined
+  let current = Promise.resolve()
+  const apply = async (revision: number) => {
+    const active = await readActiveGeneration(runtimeRoot)
+    if (active?.revision === revision) {
+      try {
+        activeGeneration = await readMaterializedAgentPluginGeneration(runtimeRoot)
+        appliedRevision = revision
+        return
+      } catch (cause) {
+        if (!(cause instanceof AgentPluginMaterializationError)) throw cause
+        // The active generation cannot be restored (a manifest an older build
+        // wrote, a projection removed from disk). The SQLite activation store
+        // is the durable state, so re-project it rather than refusing to
+        // start; the stale pointer is dropped first because activation only
+        // moves forward.
+        await clearActiveGeneration(runtimeRoot)
+      }
+    }
+    const selections = activations.listKnown().flatMap((known) => {
+      const byDigest = new Map<ArtifactDigest, string[]>()
+      for (const harnessId of SUPPORTED_AGENT_PLUGIN_HARNESSES) {
+        const snapshot = activations.read(known.pluginInstanceId, harnessId)
+        const effective = resolveEffectiveActivation({
+          mode: "unsigned",
+          pluginInstanceId: known.pluginInstanceId,
+          harnessId,
+          machineOverride: snapshot.machineOverride,
+          claxedoDefault: snapshot.claxedoDefault,
+          pins: snapshot.pins,
+        })
+        if (effective.status !== "ready" || !effective.effective) continue
+        const harnesses = byDigest.get(effective.artifactDigest) ?? []
+        harnesses.push(harnessId)
+        byDigest.set(effective.artifactDigest, harnesses)
+      }
+      return [...byDigest].map(([artifactDigest, harnessIds]) => ({
+        pluginInstanceId: known.pluginInstanceId,
+        artifactDigest,
+        harnessIds,
+      }))
+    })
+    activeGeneration = await materializeAgentPluginGeneration({
+      execution: { mode: "default" },
+      runtimeRoot,
+      identity: { mode: "unsigned", machineId: "local" },
+      revision,
+      selections,
+      artifacts,
+      adapters: adapters(),
+    })
+    appliedRevision = revision
+  }
+  const applyRevision = (revision: number) => {
+    current = current.then(() => apply(revision), () => apply(revision))
+    return current
+  }
+  const reconcile: AgentPluginReconcilePort = {
+    async reconcile(revision) {
+      await applyRevision(revision)
+      await changed()
+      return { state: "applied" }
+    },
+  }
+
+  // The signed world. Its generation is re-projected on every pull that
+  // carries new credentials even at an unchanged revision, because the
+  // gateway bearer is baked into the harness-facing MCP config: a refreshed
+  // token is a new projection of the same activation.
+  let signedGeneration: MaterializedAgentPluginGeneration | undefined
+  let signedIdentity: { userId: string; revision: number } | undefined
+  // The world the desktop last pushed stays applied across a daemon restart:
+  // the desktop withdraws it explicitly at sign-out and re-pushes it with
+  // fresh gateway credentials, so an absent push is not an absent world.
+  const restoreSigned = async () => {
+    const restored = await readMaterializedAgentPluginGeneration(signedRuntimeRoot)
+    if (!restored || restored.identity.mode !== "signed") return
+    signedGeneration = restored
+    signedIdentity = { userId: restored.identity.userId, revision: restored.revision }
+  }
+  let signedWork = restoreSigned()
+  const signedState = (): SignedAgentPluginRuntimeState =>
+    signedGeneration && signedIdentity
+      ? {
+          active: true,
+          revision: signedIdentity.revision,
+          userId: signedIdentity.userId,
+          generationId: signedGeneration.generationId,
+        }
+      : { active: false }
+  const applySigned = async (input: SignedAgentPluginRuntime) => {
+    const secrets = Object.fromEntries(input.secrets.map((secret) => [secret.name, secret.value]))
+    const active = await readActiveGeneration(signedRuntimeRoot)
+    if (active && active.revision >= input.revision) await clearActiveGeneration(signedRuntimeRoot)
+    signedGeneration = await materializeAgentPluginGeneration({
+      runtimeRoot: signedRuntimeRoot,
+      identity: input.identity,
+      revision: input.revision,
+      execution: input.execution,
+      selections: input.selections,
+      artifacts: await runtimeArtifactStore(input.artifacts),
+      mcpServers: runtimeMcpServers(input.mcpServers, secrets),
+      adapters: adapters(),
+    })
+    signedIdentity = { userId: input.identity.userId, revision: input.revision }
+  }
+  const clearSigned = async () => {
+    await clearActiveGeneration(signedRuntimeRoot)
+    signedGeneration = undefined
+    signedIdentity = undefined
+  }
+  const signedRuntime: LocalAgentPluginsComposition["signedRuntime"] = {
+    async apply(input) {
+      signedWork = signedWork.then(() => applySigned(input), () => applySigned(input))
+      await signedWork
+      await changed()
+      return signedState()
+    },
+    async clear() {
+      signedWork = signedWork.then(clearSigned, clearSigned)
+      await signedWork
+      await changed()
+      return signedState()
+    },
+    state: signedState,
+  }
+
+  const ready = applyRevision(activations.revision())
+  const module = createLocalAgentPluginsModule({
+    sources,
+    artifacts,
+    activations,
+    reconcile,
+    signedRuntime,
+    builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: LOCAL_BUILTIN_DEPLOYMENT },
+  })
+  const runtimeContribution = async () => {
+    // A failed apply belongs to the caller that asked for it; a snapshot read
+    // waits for queued work to settle and serves the last good generation.
+    await Promise.allSettled([current, signedWork])
+    const generation = signedGeneration ?? activeGeneration
+    return { harnessLaunch: agentPluginHarnessLaunch(generation), mcp: await agentPluginAcpMcp(generation) }
+  }
+  return {
+    routeContributions: [
+      ...module.routeContributions,
+      {
+        id: "agent-plugins-sources",
+        path: `${AGENT_PLUGINS_ROUTE_PATH}/sources`,
+        routes: LocalAgentPluginSourceRoutes({ registry: sourceRegistry, cache: sourceProviders }),
+      },
+    ],
+    runtimeContribution,
+    signedRuntime,
+    ready: ready.then(() => {
+      if (appliedRevision !== activations.revision()) {
+        throw new Error("Agent Plugins activation changed during startup reconciliation")
+      }
+    }),
+  }
+}

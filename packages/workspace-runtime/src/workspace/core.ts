@@ -1,0 +1,109 @@
+import {
+  type SessionCore,
+  type WorkspaceEventFramesTap,
+  type WorkspaceEventParents,
+  sessionEventDeliveryPolicy,
+  managedWorkspaceSessionAccessPolicy,
+  type SessionAccessPolicy,
+} from "@claxedo/session-core"
+import type { AgentSessionStarts } from "@claxedo/agent-runtime-contract"
+import type { LaunchOwnershipStore } from "@claxedo/process-ownership/launch"
+import type { Hono } from "hono"
+import { PtyRoutes, type PtyRouteOptions } from "../routes/pty"
+import { Pty } from "../pty/index"
+import { AgentHookRoutes } from "../routes/agent-hook"
+import { createDiffRoutes } from "../routes/diff"
+import { FileRoutes } from "../routes/file"
+import { GitSourceRoutes } from "../routes/git-source"
+import { GitWorktreeRoutes } from "../routes/git-worktree"
+import { WorkspaceRuntimeApiPrefix, WorkspaceRuntimeRoutes } from "../routes/manifest"
+import { assertWorkspaceRuntimeExposure, type WorkspaceRuntimeExposure } from "../exposure"
+
+type Socket = Parameters<typeof PtyRoutes>[0]
+
+export type MountedWorkspaceEvents = {
+  close: () => void
+  frames: WorkspaceEventFramesTap
+}
+
+export function mountWorkspacePty(
+  app: Hono,
+  upgradeWebSocket: Socket,
+  sessionAccessPolicy?: SessionAccessPolicy,
+  options?: PtyRouteOptions,
+) {
+  app.route(WorkspaceRuntimeRoutes.pty, PtyRoutes(upgradeWebSocket, sessionAccessPolicy, options))
+}
+
+export function mountWorkspaceAgentHooks(app: Hono, core: SessionCore, sessionAccessPolicy?: SessionAccessPolicy) {
+  app.route(WorkspaceRuntimeRoutes.hook, AgentHookRoutes({ bus: core.bus, sessionAccessPolicy }))
+}
+
+/**
+ * Mounts the workspace's stream. `close` releases its bus subscription;
+ * `frames` is the same subscriptions' frames, for a host that serves several
+ * runtimes on one stream of its own.
+ */
+export function mountWorkspaceEvents(app: Hono, options: {
+  core: SessionCore
+  directory: string
+  workspaceId?: string
+  sessionParents?: WorkspaceEventParents
+  sessionStarts?: Pick<AgentSessionStarts, "get">
+  sessionAccessPolicy?: SessionAccessPolicy
+  /** The delivery policy's renewal cadence; a test shortens it to watch a lease lapse. */
+  renewalIntervalMs?: number
+}): MountedWorkspaceEvents {
+  const policy = sessionEventDeliveryPolicy(options.sessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy())
+  const handler = options.core.events({
+    directory: options.directory,
+    ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+    ptyDirectory: (id) => Pty.get(id)?.cwd,
+    policy,
+    sessionAccessPolicy: options.sessionAccessPolicy,
+    sessionStarts: options.sessionStarts,
+    ...(options.sessionParents ? { sessionParents: options.sessionParents } : {}),
+    ...(options.renewalIntervalMs !== undefined ? { renewalIntervalMs: options.renewalIntervalMs } : {}),
+  })
+  app.get(WorkspaceRuntimeRoutes.events, handler)
+  return { close: handler.close, frames: handler.frames }
+}
+
+export function mountWorkspaceFiles(app: Hono, sessionAccessPolicy?: SessionAccessPolicy) {
+  // Every family here takes a directory, and a registered per-session worktree
+  // is one of the directories this runtime serves: the policy is what decides
+  // whether the caller may read or write the session that owns it.
+  const access = sessionAccessPolicy ? { sessionAccessPolicy } : {}
+  app.route(WorkspaceRuntimeRoutes.diff, createDiffRoutes({}, access))
+  app.route(WorkspaceRuntimeRoutes.git, GitSourceRoutes(access))
+  app.route(WorkspaceRuntimeRoutes.git, GitWorktreeRoutes(access))
+  app.route(WorkspaceRuntimeApiPrefix, FileRoutes(access))
+  // Claxedo client-presentation adapter routes. The neutral public runtime API is
+  // mounted above under /api/wr.
+  app.route("/", FileRoutes(access))
+}
+
+export function mountWorkspaceCore(
+  app: Hono,
+  upgradeWebSocket: Socket,
+  options: {
+    core: SessionCore
+    directory: string
+    workspaceId?: string
+    exposure: WorkspaceRuntimeExposure
+    sessionParents?: WorkspaceEventParents
+    sessionStarts?: Pick<AgentSessionStarts, "get">
+    sessionAccessPolicy?: SessionAccessPolicy
+    /** Resolved per launch, not captured: one process serves many workspaces. */
+    launchOwnership?: () => LaunchOwnershipStore
+    renewalIntervalMs?: number
+  },
+): MountedWorkspaceEvents {
+  assertWorkspaceRuntimeExposure({ exposure: options.exposure, env: process.env })
+  const ownership = options.launchOwnership ? { ownership: options.launchOwnership } : {}
+  mountWorkspacePty(app, upgradeWebSocket, options.sessionAccessPolicy, ownership)
+  mountWorkspaceAgentHooks(app, options.core, options.sessionAccessPolicy)
+  const events = mountWorkspaceEvents(app, options)
+  mountWorkspaceFiles(app, options.sessionAccessPolicy)
+  return events
+}

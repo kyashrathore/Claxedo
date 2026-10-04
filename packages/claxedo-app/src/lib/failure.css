@@ -1,0 +1,36 @@
+.failure-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 480px;
+  margin: 16px;
+  padding: 16px;
+  border: 1px solid var(--v2-state-border-danger, #7a2e2e);
+  border-radius: 10px;
+  background: var(--v2-state-bg-danger, #2a1515);
+  color: var(--v2-text-text-base, #ecebeb);
+}
+
+.failure-notice-title {
+  margin: 0;
+  font-weight: var(--v2-font-weight-semibold, 600);
+}
+
+.failure-notice-message {
+  margin: 0;
+  color: var(--v2-text-text-muted, #b8b0b0);
+  font-size: var(--v2-font-size-sm, 13px);
+  overflow-wrap: anywhere;
+}
+
+.failure-notice-retry {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--v2-border-border-base, #3a3535);
+  border-radius: 6px;
+  background: var(--v2-background-bg-button-neutral, #262121);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}

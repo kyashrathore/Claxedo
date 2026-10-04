@@ -1,0 +1,15 @@
+scrollTop: 0
+background subagents:
+(none)
+row 0:
+- text: Say you are ready. acp-script:text-presence-0 Build · <time>
+- button "Copy message"
+row 1:
+- paragraph: Ready for the next turn.
+- button "Copy response"
+- text: Build · <duration>
+row 2:
+- text: Answer after a blank start. acp-script:text-presence-1 Build · <time>
+- button "Copy message"
+row 3:
+

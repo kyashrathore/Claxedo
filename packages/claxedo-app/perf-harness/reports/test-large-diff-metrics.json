@@ -1,0 +1,333 @@
+{
+  "generated_at": "2026-06-07T11:54:51.194Z",
+  "status": "pass",
+  "adapters": [
+    "deterministic"
+  ],
+  "targets": [
+    "claxedo"
+  ],
+  "scenarios": [
+    {
+      "adapter": "deterministic",
+      "target": "claxedo",
+      "id": "large-diff-toggle",
+      "name": "Open a 500-file changed diff and toggle split/unified",
+      "started_at": "2026-06-07T11:54:51.110Z",
+      "duration_ms": 0.086166999999989,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 500,
+        "terminals": 0,
+        "changed_files": 500,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "vcs_load_ms",
+          "value": 858.9677575455843,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            734.8149830685567,
+            765.8484139898075,
+            801.034686664095,
+            807.7321171862761,
+            837.6112352721387,
+            858.9677575455843,
+            841.6027432185765,
+            841.4368617297858,
+            832.072665603061
+          ],
+          "p50": 832.072665603061,
+          "p95": 858.9677575455843,
+          "min": 734.8149830685567,
+          "max": 858.9677575455843,
+          "mean": 813.4579404753201,
+          "relative_stddev": 0.04710519414147076
+        },
+        {
+          "metric": "hunk_render_ms",
+          "value": 286.3225858485281,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            244.9383276895189,
+            255.28280466326913,
+            267.011562221365,
+            269.24403906209204,
+            279.2037450907129,
+            286.3225858485281,
+            280.5342477395255,
+            280.4789539099286,
+            277.3575552010203
+          ],
+          "p50": 277.3575552010203,
+          "p95": 286.3225858485281,
+          "min": 244.9383276895189,
+          "max": 286.3225858485281,
+          "mean": 271.1526468251067,
+          "relative_stddev": 0.047105194141470755
+        },
+        {
+          "metric": "review_panel_open_ms",
+          "value": 49.5558321660914,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            42.39317210010904,
+            44.18356234556581,
+            46.21353961523624,
+            46.59992983766978,
+            48.32372511185416,
+            49.5558321660914,
+            48.55400441645634,
+            48.54443433056456,
+            48.00419224633043
+          ],
+          "p50": 48.00419224633043,
+          "p95": 49.5558321660914,
+          "min": 42.39317210010904,
+          "max": 49.5558321660914,
+          "mean": 46.93026579665309,
+          "relative_stddev": 0.04710519414147075
+        },
+        {
+          "metric": "diff_toggle_latency_ms",
+          "value": 126.64268220223359,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            108.33810647805643,
+            112.91354821644596,
+            118.10126790560375,
+            119.0887095851561,
+            123.49396417473841,
+            126.64268220223359,
+            124.08245573094398,
+            124.05799884477611,
+            122.67738018506668
+          ],
+          "p50": 122.67738018506668,
+          "p95": 126.64268220223359,
+          "min": 108.33810647805643,
+          "max": 126.64268220223359,
+          "mean": 119.93290148033566,
+          "relative_stddev": 0.04710519414147079
+        },
+        {
+          "metric": "review_panel_reopen_ms",
+          "value": 49.5558321660914,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            42.39317210010904,
+            44.18356234556581,
+            46.21353961523624,
+            46.59992983766978,
+            48.32372511185416,
+            49.5558321660914,
+            48.55400441645634,
+            48.54443433056456,
+            48.00419224633043
+          ],
+          "p50": 48.00419224633043,
+          "p95": 49.5558321660914,
+          "min": 42.39317210010904,
+          "max": 49.5558321660914,
+          "mean": 46.93026579665309,
+          "relative_stddev": 0.04710519414147075
+        },
+        {
+          "metric": "review_panel_reopen_baseline_frame_ms",
+          "value": 27.53101787005078,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            23.551762277838357,
+            24.546423525314342,
+            25.67418867513125,
+            25.888849909816543,
+            26.84651395103009,
+            27.53101787005078,
+            26.9744468980313,
+            26.969130183646982,
+            26.6689956924058
+          ],
+          "p50": 26.6689956924058,
+          "p95": 27.53101787005078,
+          "min": 23.551762277838357,
+          "max": 27.53101787005078,
+          "mean": 26.072369887029495,
+          "relative_stddev": 0.04710519414147074
+        },
+        {
+          "metric": "review_panel_reopen_click_ms",
+          "value": 8.809925718416249,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            7.536563928908274,
+            7.854855528100589,
+            8.215740376042,
+            8.284431971141293,
+            8.590884464329628,
+            8.809925718416249,
+            8.631823007370015,
+            8.630121658767035,
+            8.534078621569856
+          ],
+          "p50": 8.534078621569856,
+          "p95": 8.809925718416249,
+          "min": 7.536563928908274,
+          "max": 8.809925718416249,
+          "mean": 8.343158363849438,
+          "relative_stddev": 0.04710519414147075
+        },
+        {
+          "metric": "review_panel_reopen_state_ms",
+          "value": 13.214888577624373,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            11.30484589336241,
+            11.782283292150883,
+            12.323610564063,
+            12.426647956711939,
+            12.886326696494443,
+            13.214888577624373,
+            12.947734511055023,
+            12.94518248815055,
+            12.801117932354783
+          ],
+          "p50": 12.801117932354783,
+          "p95": 13.214888577624373,
+          "min": 11.30484589336241,
+          "max": 13.214888577624373,
+          "mean": 12.514737545774157,
+          "relative_stddev": 0.047105194141470776
+        },
+        {
+          "metric": "review_panel_reopen_frame_ms",
+          "value": 27.53101787005078,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            23.551762277838357,
+            24.546423525314342,
+            25.67418867513125,
+            25.888849909816543,
+            26.84651395103009,
+            27.53101787005078,
+            26.9744468980313,
+            26.969130183646982,
+            26.6689956924058
+          ],
+          "p50": 26.6689956924058,
+          "p95": 27.53101787005078,
+          "min": 23.551762277838357,
+          "max": 27.53101787005078,
+          "mean": 26.072369887029495,
+          "relative_stddev": 0.04710519414147074
+        },
+        {
+          "metric": "line_comment_latency_ms",
+          "value": 44.04962859208125,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            37.68281964454137,
+            39.27427764050294,
+            41.07870188021,
+            41.42215985570647,
+            42.95442232164814,
+            44.04962859208125,
+            43.159115036850075,
+            43.15060829383517,
+            42.67039310784928
+          ],
+          "p50": 42.67039310784928,
+          "p95": 44.04962859208125,
+          "min": 37.68281964454137,
+          "max": 44.04962859208125,
+          "mean": 41.71579181924719,
+          "relative_stddev": 0.04710519414147079
+        },
+        {
+          "metric": "changed_file_navigation_ms",
+          "value": 71.58064646213202,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            61.234581922379725,
+            63.82070116581728,
+            66.75289055534125,
+            67.31100976552301,
+            69.80093627267823,
+            71.58064646213202,
+            70.13356193488137,
+            70.11973847748214,
+            69.33938880025508
+          ],
+          "p50": 69.33938880025508,
+          "p95": 71.58064646213202,
+          "min": 61.234581922379725,
+          "max": 71.58064646213202,
+          "mean": 67.78816170627667,
+          "relative_stddev": 0.047105194141470755
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 151.486,
+        "memory_rss_mb": 87.890625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/test/runner.test.ts",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "deterministic",
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "adapter": "deterministic",
+        "target": "claxedo",
+        "scenario": "large-diff-toggle",
+        "metrics": {
+          "vcs_load_ms": 1074,
+          "hunk_render_ms": 358,
+          "diff_toggle_latency_ms": 159,
+          "line_comment_latency_ms": 56,
+          "changed_file_navigation_ms": 90,
+          "review_panel_reopen_ms": 62,
+          "review_panel_open_ms": 62,
+          "review_panel_reopen_click_ms": 12,
+          "review_panel_reopen_state_ms": 17,
+          "review_panel_reopen_frame_ms": 35,
+          "review_panel_reopen_baseline_frame_ms": 35
+        }
+      },
+      "status": "pass",
+      "failures": []
+    }
+  ],
+  "comparisons": []
+}

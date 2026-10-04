@@ -1,0 +1,785 @@
+import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
+import { isBuiltinPluginInstanceId } from "@claxedo/server-core/agent-plugins/builtin/plugin"
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
+import fs from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
+import { afterEach, describe, expect, test, vi } from "vitest"
+import {
+  AgentPluginActivationStoreError,
+  type MutateSignedOrganizationDefault,
+  type MutateSignedUserActivation,
+  type SignedActivationSnapshot,
+  type SignedAgentPluginActivationStore,
+  type SignedKnownPlugin,
+  type UpdateSignedArtifactPin,
+} from "@claxedo/server-core/agent-plugins/activation/store"
+import type { ArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
+import type {
+  AgentPluginArtifactStore,
+  InspectedAgentPluginArtifact,
+  RetainedAgentPluginArtifact,
+} from "@claxedo/server-core/agent-plugins/artifacts/types"
+import type { CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/ports"
+import { fileSystemCollectionSource } from "@claxedo/server-core/agent-plugins/artifacts/node-tree"
+import {
+  SUPPORTED_AGENT_PLUGIN_HARNESSES,
+  isAgentPluginHarnessId,
+  type AgentPluginHarnessId,
+} from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
+import {
+  ControlPlaneAuthError,
+  type SignedControlPlaneAuth,
+} from "@claxedo/server-core/platform/auth/auth"
+import type { ControlPlaneServices } from "../authority/services"
+import { HostedAgentPluginRoutes } from "./routes"
+import type { AgentPluginMcpCatalogAuthenticationResolver } from "./mcp/catalog-auth"
+import { hostedMcpClientMetadata } from "./mcp/client-metadata"
+
+const roots: string[] = []
+
+const SKILL_MARKDOWN = "---\nname: triage\ndescription: Triage a review\n---\n\n# Triage\n\nRead the diff twice.\n"
+
+function mapKey(...parts: string[]) {
+  return JSON.stringify(parts)
+}
+
+class MemoryArtifacts implements AgentPluginArtifactStore {
+  readonly values = new Map<ArtifactDigest, RetainedAgentPluginArtifact>()
+
+  async put(artifact: InspectedAgentPluginArtifact) {
+    const retained = { digest: artifact.digest, root: `/retained/${artifact.digest.slice(7)}`, tree: artifact.tree, plugin: artifact.plugin }
+    this.values.set(artifact.digest, retained)
+    return retained
+  }
+
+  async get(digest: ArtifactDigest) {
+    return this.values.get(digest)
+  }
+}
+
+class MemorySignedActivations implements SignedAgentPluginActivationStore {
+  private currentRevision = 0
+  private readonly pins = new Map<string, SignedKnownPlugin["pins"]>()
+  private readonly userDefaults = new Map<string, boolean>()
+  private readonly projectOverrides = new Map<string, boolean>()
+  private readonly organizationDefaults = new Set<string>()
+
+  private subject(auth: SignedControlPlaneAuth) {
+    return auth.user.subject
+  }
+
+  private org(auth: SignedControlPlaneAuth) {
+    return auth.user.orgId ?? "org-main"
+  }
+
+  private checkRevision(expected: number) {
+    if (expected !== this.currentRevision) {
+      throw new AgentPluginActivationStoreError(
+        "revision-conflict",
+        `Agent plugin activation revision changed from ${expected} to ${this.currentRevision}`,
+      )
+    }
+  }
+
+  private supported(ids: readonly string[]): AgentPluginHarnessId[] {
+    const unique = [...new Set(ids)]
+    if (!unique.every(isAgentPluginHarnessId)) {
+      throw new AgentPluginActivationStoreError("unsupported-harness", "Unsupported Agent Plugins harness")
+    }
+    return unique
+  }
+
+  private writablePin(pluginInstanceId: string) {
+    const existing = this.pins.get(pluginInstanceId) ?? {}
+    this.pins.set(pluginInstanceId, existing)
+    return existing
+  }
+
+  async authorizeProject(_auth: SignedControlPlaneAuth, projectId: string) {
+    if (projectId === "forbidden") {
+      throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Project access denied")
+    }
+  }
+
+  async revision() {
+    return this.currentRevision
+  }
+
+  listKnownCalls = 0
+
+  async listKnown() {
+    this.listKnownCalls += 1
+    const ids = new Set(this.pins.keys())
+    for (const key of this.userDefaults.keys()) ids.add(JSON.parse(key)[1])
+    for (const key of this.projectOverrides.keys()) ids.add(JSON.parse(key)[2])
+    for (const key of this.organizationDefaults) ids.add(JSON.parse(key)[1])
+    return [...ids].sort().map((pluginInstanceId) => ({
+      pluginInstanceId,
+      pins: { ...this.pins.get(pluginInstanceId) },
+    }))
+  }
+
+  async read(
+    auth: SignedControlPlaneAuth,
+    input: { pluginInstanceId: string; harnessId: AgentPluginHarnessId; projectId?: string },
+  ): Promise<SignedActivationSnapshot> {
+    if (input.projectId) await this.authorizeProject(auth, input.projectId)
+    const userDefault = this.userDefaults.get(mapKey(this.subject(auth), input.pluginInstanceId, input.harnessId))
+    const projectOverride = input.projectId
+      ? this.projectOverrides.get(mapKey(this.subject(auth), input.projectId, input.pluginInstanceId, input.harnessId))
+      : undefined
+    const organizationDefault = this.organizationDefaults.has(mapKey(this.org(auth), input.pluginInstanceId, input.harnessId))
+    const pins = this.pins.get(input.pluginInstanceId) ?? {}
+    return {
+      revision: this.currentRevision,
+      pluginInstanceId: input.pluginInstanceId,
+      harnessId: input.harnessId,
+      ...(input.projectId ? { projectId: input.projectId } : {}),
+      ...(projectOverride !== undefined ? { projectOverride } : {}),
+      ...(userDefault !== undefined ? { userDefault } : {}),
+      ...(organizationDefault ? { organizationDefault: true as const } : {}),
+      pins: {
+        ...(pins.user ? { user: pins.user.digest } : {}),
+        ...(pins.organization ? { organization: pins.organization.digest } : {}),
+        ...(pins.claxedo ? { claxedo: pins.claxedo.digest } : {}),
+      },
+    }
+  }
+
+  async mutateUser(auth: SignedControlPlaneAuth, input: MutateSignedUserActivation) {
+    this.checkRevision(input.expectedRevision)
+    const harnesses = this.supported(input.harnessIds)
+    if (input.target.scope === "projects") {
+      for (const projectId of input.target.projectIds) await this.authorizeProject(auth, projectId)
+    }
+    const pin = this.writablePin(input.pluginInstanceId)
+    if (input.artifact) pin.user = input.artifact
+    if (input.choice === true && !pin.user) {
+      if (!isBuiltinPluginInstanceId(input.pluginInstanceId)) {
+        throw new AgentPluginActivationStoreError("artifact-unavailable", "User artifact is unavailable")
+      }
+    }
+    for (const harnessId of harnesses) {
+      if (input.target.scope === "all-projects") {
+        const key = mapKey(this.subject(auth), input.pluginInstanceId, harnessId)
+        if (input.choice === undefined) this.userDefaults.delete(key)
+        else this.userDefaults.set(key, input.choice)
+      } else {
+        for (const projectId of input.target.projectIds) {
+          const key = mapKey(this.subject(auth), projectId, input.pluginInstanceId, harnessId)
+          if (input.choice === undefined) this.projectOverrides.delete(key)
+          else this.projectOverrides.set(key, input.choice)
+        }
+      }
+    }
+    return ++this.currentRevision
+  }
+
+  async administersOrganization(auth: SignedControlPlaneAuth) {
+    return this.subject(auth) === "admin"
+  }
+
+  async mutateOrganizationDefault(auth: SignedControlPlaneAuth, input: MutateSignedOrganizationDefault) {
+    this.checkRevision(input.expectedRevision)
+    if (!(await this.administersOrganization(auth))) {
+      throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Organization admin access required")
+    }
+    const harnesses = this.supported(input.harnessIds)
+    const pin = this.writablePin(input.pluginInstanceId)
+    if (input.artifact) pin.organization = input.artifact
+    if (input.choice === true && !pin.organization) {
+      if (!isBuiltinPluginInstanceId(input.pluginInstanceId)) {
+        throw new AgentPluginActivationStoreError("artifact-unavailable", "Organization artifact is unavailable")
+      }
+    }
+    for (const harnessId of harnesses) {
+      const key = mapKey(this.org(auth), input.pluginInstanceId, harnessId)
+      if (input.choice === true) this.organizationDefaults.add(key)
+      else this.organizationDefaults.delete(key)
+    }
+    return ++this.currentRevision
+  }
+
+  async updateUserArtifact(_auth: SignedControlPlaneAuth, input: UpdateSignedArtifactPin) {
+    this.checkRevision(input.expectedRevision)
+    const pin = this.writablePin(input.pluginInstanceId)
+    if (!pin.user) throw new AgentPluginActivationStoreError("artifact-unavailable", "User pin does not exist")
+    pin.user = input.artifact
+    return ++this.currentRevision
+  }
+
+  async updateOrganizationArtifact(auth: SignedControlPlaneAuth, input: UpdateSignedArtifactPin) {
+    this.checkRevision(input.expectedRevision)
+    if (this.subject(auth) !== "admin") {
+      throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Organization admin access required")
+    }
+    const pin = this.writablePin(input.pluginInstanceId)
+    if (!pin.organization) throw new AgentPluginActivationStoreError("artifact-unavailable", "Organization pin does not exist")
+    pin.organization = input.artifact
+    return ++this.currentRevision
+  }
+}
+
+async function fixture(options: {
+  mcp?: boolean
+  mcpAuthentication?: AgentPluginMcpCatalogAuthenticationResolver
+  mcpClientMetadata?: ReturnType<typeof hostedMcpClientMetadata>
+  authentication?: RequestAuthenticationAdapter
+  builtInConsentChanged?: (auth: SignedControlPlaneAuth, groupId: string) => Promise<void>
+} = {}) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-hosted-agent-plugins-"))
+  roots.push(root)
+  const collection = path.join(root, "collection")
+  const plugin = path.join(collection, "review")
+  await fs.mkdir(plugin, { recursive: true })
+  await fs.writeFile(path.join(plugin, "plugin.json"), JSON.stringify({
+    $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+    name: "review",
+    version: "1.0.0",
+    extensions: { claxedo: { icon: "https://cdn.example/review.png" } },
+  }))
+  await fs.writeFile(path.join(plugin, "marker.txt"), "version one")
+  await fs.mkdir(path.join(plugin, "skills", "triage"), { recursive: true })
+  await fs.writeFile(path.join(plugin, "skills", "triage", "SKILL.md"), SKILL_MARKDOWN)
+  if (options.mcp) {
+    await fs.writeFile(path.join(plugin, "mcp.json"), JSON.stringify({
+      $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      mcpServers: { docs: { type: "streamable-http", url: "https://mcp.example/docs" } },
+    }))
+  }
+
+  const sources: CatalogSourceProvider = {
+    async listAuthorizedSources() {
+      return [await fileSystemCollectionSource({ id: "org-collection", kind: "organization", label: "Team", revision: "main" }, collection)]
+    },
+  }
+  const usersMe = vi.fn(async () => ({ user_id: "user-main", org_id: "org-main" }))
+  const services = {
+    auth: {
+      config: { enabled: true, issuer: "https://auth.test", jwksUrl: "https://auth.test/jwks" },
+      verifier: vi.fn(async (token: string) => ({
+        mode: "signed" as const,
+        user: {
+          subject: token,
+          tokenIdentifier: `https://auth.test|${token}`,
+          issuer: "https://auth.test",
+          orgId: "org-main",
+        },
+      })),
+    },
+    authority: {
+      usersMe,
+      listWorkspaces: vi.fn(async () => []),
+    },
+    telemetry: { capture: vi.fn() },
+  } as unknown as ControlPlaneServices
+  const activations = new MemorySignedActivations()
+  const artifacts = new MemoryArtifacts()
+  const reconcile = { reconcile: vi.fn(async () => ({ state: "applied" as const })) }
+  if (options.authentication) delete (services.auth as { verifier?: unknown }).verifier
+  const app = HostedAgentPluginRoutes({
+    services,
+    ...(options.authentication ? { authentication: options.authentication } : {}),
+    sources: () => sources,
+    activations,
+    administersOrganization: (auth) => activations.administersOrganization(auth),
+    artifacts,
+    reconcile,
+    builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: [] } },
+    ...(options.mcpAuthentication ? { mcpAuthentication: options.mcpAuthentication } : {}),
+    ...(options.mcpClientMetadata ? { mcpClientMetadata: options.mcpClientMetadata } : {}),
+    ...(options.builtInConsentChanged ? { builtInConsentChanged: options.builtInConsentChanged } : {}),
+  })
+  return { app, collection, plugin, activations, artifacts, reconcile, usersMe }
+}
+
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })))
+})
+
+async function request(app: ReturnType<typeof HostedAgentPluginRoutes>, pathName: string, token = "member", init?: RequestInit) {
+  return await app.request(`http://control.test${pathName}`, {
+    ...init,
+    headers: {
+      authorization: `Bearer ${token}`,
+      ...(init?.body ? { "content-type": "application/json" } : {}),
+      ...Object.fromEntries(new Headers(init?.headers)),
+    },
+  })
+}
+
+describe("hosted Agent Plugins routes", () => {
+  test("authenticates through the deployment's request adapter when the plane composes no token verifier", async () => {
+    // Better Auth + D1 planes authenticate every request through the adapter
+    // and have no verifier; staging release 66 answered every plugin route
+    // with auth_verifier_unavailable until the routes accepted the adapter.
+    const authentication: RequestAuthenticationAdapter = {
+      descriptor: {} as RequestAuthenticationAdapter["descriptor"],
+      authenticate: async (request) => {
+        if (request.headers.get("authorization") !== "Bearer member") throw new Error("unexpected credential")
+        return {
+          userId: "user-main",
+          actorId: "user-main",
+          actorKind: "human",
+          deploymentId: "deployment-1",
+          sessionId: "session-1",
+          authenticatedAt: 1,
+          methods: [],
+          assurance: "standard",
+          client: { kind: "browser" },
+          identity: { adapter: "better-auth", issuer: "https://auth.test", subject: "member" },
+        } as unknown as Awaited<ReturnType<RequestAuthenticationAdapter["authenticate"]>>
+      },
+    }
+    const subject = await fixture({ authentication })
+    const response = await request(subject.app, "/")
+    expect(response.status).toBe(200)
+    expect(subject.usersMe).toHaveBeenCalledTimes(1)
+    const body = await response.json() as { revision: number }
+    expect(body.revision).toBe(0)
+  })
+
+  test("establishes the canonical authority user before reading activation state", async () => {
+    const subject = await fixture()
+    let principalReady = false
+    subject.usersMe.mockImplementationOnce(async () => {
+      principalReady = true
+      return { user_id: "user-main", org_id: "org-main" }
+    })
+    const revision = vi.spyOn(subject.activations, "revision").mockImplementation(async () => {
+      expect(principalReady).toBe(true)
+      return 0
+    })
+
+    const response = await request(subject.app, "/")
+
+    expect(response.status).toBe(200)
+    expect(subject.usersMe).toHaveBeenCalledOnce()
+    expect(revision).toHaveBeenCalled()
+  })
+
+  test("serves Client ID Metadata publicly with an exact self-identifying client ID", async () => {
+    const metadata = hostedMcpClientMetadata("https://control.example.com")
+    const subject = await fixture({ mcpClientMetadata: metadata })
+
+    const response = await subject.app.request(`http://control.test${metadata.route}`)
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toBe("public, max-age=3600")
+    expect(await response.json()).toEqual(metadata.document)
+  })
+
+  test("projects MCP authentication state without exposing connection or credential metadata", async () => {
+    const mcpAuthentication = vi.fn<AgentPluginMcpCatalogAuthenticationResolver>(async ({ pluginInstanceId, server }) => ({
+      state: "oauth",
+      integrationId: `${pluginInstanceId}:${server.name}`,
+    }))
+    const subject = await fixture({ mcp: true, mcpAuthentication })
+    const catalog = await (await request(subject.app, "/")).json()
+
+    expect(catalog.candidates[0].mcpServers).toEqual([{
+      name: "docs",
+      type: "streamable-http",
+      authentication: {
+        state: "oauth",
+        integrationId: `${catalog.candidates[0].pluginInstanceId}:docs`,
+      },
+      cloud: { state: "gateway" },
+    }])
+    expect(JSON.stringify(catalog)).not.toContain("token")
+    expect(JSON.stringify(catalog)).not.toContain("connectionId")
+  })
+
+  test("projects the icon, skills, and named source of every candidate instead of a free-text label", async () => {
+    const subject = await fixture()
+
+    const catalog = await (await request(subject.app, "/")).json()
+
+    expect(catalog.candidates[0]).toMatchObject({
+      icon: { kind: "url", url: "https://cdn.example/review.png" },
+      skills: [{ name: "triage", description: "Triage a review", path: "skills/triage" }],
+      source: { id: "org-collection", kind: "organization", label: "Team" },
+    })
+    expect(catalog.candidates[0]).not.toHaveProperty("sourceLabel")
+  })
+
+  test("reads the caller's retained plugins once per catalog request", async () => {
+    const subject = await fixture()
+
+    const catalog = await (await request(subject.app, "/")).json()
+
+    expect(catalog.candidates.length).toBeGreaterThan(0)
+    expect(subject.activations.listKnownCalls).toBe(1)
+  })
+
+  test("serves a skill's catalog markdown before install and the retained copy after the source disappears", async () => {
+    const subject = await fixture()
+    const catalog = await (await request(subject.app, "/")).json()
+    const pluginInstanceId = catalog.candidates[0].pluginInstanceId as string
+    const skillPath = (skill: string) => `/${encodeURIComponent(pluginInstanceId)}/skills/${encodeURIComponent(skill)}`
+
+    const beforeInstall = await request(subject.app, skillPath("triage"))
+    expect(beforeInstall.status).toBe(200)
+    expect(await beforeInstall.json()).toEqual({
+      name: "triage",
+      description: "Triage a review",
+      markdown: SKILL_MARKDOWN,
+    })
+
+    await request(subject.app, "/activation", "member", {
+      method: "POST",
+      body: JSON.stringify({
+        pluginInstanceId,
+        harnessIds: ["opencode"],
+        choice: true,
+        expectedRevision: 0,
+        target: { scope: "all-projects" },
+      }),
+    })
+
+    const installed = await request(subject.app, skillPath("triage"))
+    expect(installed.status).toBe(200)
+    expect(await installed.json()).toEqual({
+      name: "triage",
+      description: "Triage a review",
+      markdown: SKILL_MARKDOWN,
+    })
+    expect((await request(subject.app, skillPath("unknown"))).status).toBe(404)
+    expect((await request(subject.app, skillPath("../plugin.json"))).status).toBe(404)
+    expect((await request(subject.app, skillPath("../../marker.txt"))).status).toBe(404)
+
+    // The project prefix authorizes the project and selects nothing else.
+    expect((await request(subject.app, `/projects/project-a${skillPath("triage")}`)).status).toBe(200)
+    expect((await request(subject.app, `/projects/forbidden${skillPath("triage")}`)).status).toBe(403)
+
+    await fs.rm(subject.collection, { recursive: true })
+    const gone = await (await request(subject.app, "/refresh")).json()
+    expect(gone.candidates[0]).toMatchObject({
+      sourceAvailable: false,
+      source: null,
+      icon: { kind: "url", url: "https://cdn.example/review.png" },
+      skills: [{ name: "triage", description: "Triage a review", path: "skills/triage" }],
+    })
+    expect((await request(subject.app, skillPath("triage"))).status).toBe(200)
+  })
+
+  test("applies a dynamic all-projects default while an explicit project disable wins", async () => {
+    const subject = await fixture()
+    expect((await subject.app.request("http://control.test/projects/project-a")).status).toBe(401)
+    const defaults = await request(subject.app, "/")
+    expect(defaults.status).toBe(200)
+    expect(await defaults.json()).toMatchObject({
+      selectedProjectId: null,
+      canManageOrganizationDefaults: false,
+      canManageOrganizationConnections: false,
+    })
+    expect((await request(subject.app, "/projects/forbidden")).status).toBe(403)
+
+    const first = await request(subject.app, "/projects/project-a")
+    expect(first.status).toBe(200)
+    const firstBody = await first.json()
+    const plugin = firstBody.candidates[0]
+
+    let response = await request(subject.app, "/activation", "member", {
+      method: "POST",
+      body: JSON.stringify({
+        pluginInstanceId: plugin.pluginInstanceId,
+        harnessIds: ["codex", "cursor"],
+        choice: true,
+        expectedRevision: 0,
+        target: { scope: "all-projects" },
+      }),
+    })
+    expect(response.status).toBe(200)
+    expect(subject.artifacts.values.size).toBe(1)
+
+    const future = await (await request(subject.app, "/projects/future-project")).json()
+    expect(future.candidates[0].harnesses.codex).toMatchObject({
+      projectOverride: null,
+      userDefault: true,
+      effective: { effective: true, winner: "user-default", status: "ready" },
+    })
+
+    response = await request(subject.app, "/activation", "member", {
+      method: "POST",
+      body: JSON.stringify({
+        pluginInstanceId: plugin.pluginInstanceId,
+        harnessIds: ["codex"],
+        choice: false,
+        expectedRevision: 1,
+        target: { scope: "projects", projectIds: ["project-a"] },
+      }),
+    })
+    expect(response.status).toBe(200)
+    const current = await (await request(subject.app, "/projects/project-a")).json()
+    expect(current.candidates[0].harnesses.codex).toMatchObject({
+      projectOverride: false,
+      userDefault: true,
+      effective: { effective: false, winner: "project" },
+    })
+    const stillFuture = await (await request(subject.app, "/projects/future-project")).json()
+    expect(stillFuture.candidates[0].harnesses.codex.effective.effective).toBe(true)
+  })
+
+  test("authorizes an entire project batch before writing and never accepts caller owner IDs", async () => {
+    const subject = await fixture()
+    const catalog = await (await request(subject.app, "/projects/project-a")).json()
+    const pluginInstanceId = catalog.candidates[0].pluginInstanceId
+
+    let response = await request(subject.app, "/activation", "member", {
+      method: "POST",
+      body: JSON.stringify({
+        pluginInstanceId,
+        harnessIds: ["claude"],
+        choice: true,
+        expectedRevision: 0,
+        target: { scope: "projects", projectIds: ["project-a", "forbidden"] },
+      }),
+    })
+    expect(response.status).toBe(403)
+    expect(await subject.activations.revision()).toBe(0)
+
+    response = await request(subject.app, "/activation", "member", {
+      method: "POST",
+      body: JSON.stringify({
+        pluginInstanceId,
+        harnessIds: ["claude"],
+        choice: true,
+        expectedRevision: 0,
+        ownerUserId: "another-user",
+        target: { scope: "projects", projectIds: ["project-a"] },
+      }),
+    })
+    expect(response.status).toBe(400)
+    expect(await subject.activations.revision()).toBe(0)
+  })
+
+  test("keeps retained metadata usable after the collection disappears and updates only explicitly", async () => {
+    const subject = await fixture()
+    const first = await (await request(subject.app, "/projects/project-a")).json()
+    const plugin = first.candidates[0]
+    await request(subject.app, "/activation", "member", {
+      method: "POST",
+      body: JSON.stringify({
+        pluginInstanceId: plugin.pluginInstanceId,
+        harnessIds: ["opencode"],
+        choice: true,
+        expectedRevision: 0,
+        target: { scope: "all-projects" },
+      }),
+    })
+    await fs.writeFile(path.join(subject.plugin, "marker.txt"), "version two")
+    const refreshed = await (await request(subject.app, "/projects/project-a/refresh")).json()
+    expect(refreshed.revision).toBe(1)
+    expect(refreshed.candidates[0]).toMatchObject({ updateAvailable: true, sourceAvailable: true })
+    expect(subject.reconcile.reconcile).toHaveBeenCalledTimes(1)
+
+    let response = await request(subject.app, "/update", "member", {
+      method: "POST",
+      body: JSON.stringify({ pluginInstanceId: plugin.pluginInstanceId, authority: "user", expectedRevision: 1 }),
+    })
+    expect(response.status).toBe(200)
+    const updateBody = await response.json()
+    expect(updateBody.revision).toBe(2)
+    const afterUpdate = await (await request(subject.app, "/projects/project-a")).json()
+    expect(afterUpdate.candidates[0]).toMatchObject({ updateAvailable: false })
+    expect(afterUpdate.candidates[0].harnesses.opencode.effective.effective).toBe(true)
+
+    await fs.rm(subject.collection, { recursive: true })
+    const gone = await (await request(subject.app, "/projects/project-a/refresh")).json()
+    // The retained plugin and the built-in, which no disappearing source can take.
+    expect(gone.candidates).toHaveLength(2)
+    expect(gone.candidates.at(-1)).toMatchObject({ pluginInstanceId: "claxedo", builtIn: true })
+    expect(gone.candidates[0]).toMatchObject({
+      pluginInstanceId: plugin.pluginInstanceId,
+      sourceAvailable: false,
+      artifactAvailable: true,
+    })
+    expect(gone.candidates[0].harnesses.opencode.effective.effective).toBe(true)
+  })
+
+  test("serves the built-in with its deployment defaults and every group's tools", async () => {
+    const subject = await fixture()
+    const catalog = await (await request(subject.app, "/projects/project-a")).json()
+    const builtIn = catalog.candidates.find((candidate: { pluginInstanceId: string }) => candidate.pluginInstanceId === "claxedo")
+    expect(builtIn).toMatchObject({ builtIn: true, sourceId: null, sourceAvailable: false, retainedDigest: null })
+    expect(Object.fromEntries(builtIn.groups.map((group: { id: string; enabled: boolean }) => [group.id, group.enabled])))
+      .toEqual({
+        "app-plugins": false,
+        attention: true,
+        documents: false,
+        review: true,
+        sessions: true,
+        subagents: true,
+        tasks: false,
+        workspaces: true,
+      })
+    const tasks = builtIn.groups.find((group: { id: string }) => group.id === "tasks")
+    expect(tasks).toMatchObject({ pluginInstanceId: "claxedo:tasks" })
+    expect(tasks.tools).toEqual(["task_list", "task_get", "task_create", "task_edit", "task_start"])
+  })
+
+  test("a group switch writes through the ordinary activation route, with nothing to acquire", async () => {
+    const subject = await fixture()
+    const before = await (await request(subject.app, "/projects/project-a")).json()
+    const response = await request(subject.app, "/activation", "member", {
+      method: "POST",
+      body: JSON.stringify({
+        pluginInstanceId: "claxedo:tasks",
+        harnessIds: [...SUPPORTED_AGENT_PLUGIN_HARNESSES],
+        choice: true,
+        expectedRevision: before.revision,
+        target: { scope: "projects", projectIds: ["project-a"] },
+      }),
+    })
+    expect(response.status).toBe(200)
+    expect(subject.artifacts.values.size).toBe(0)
+    const after = await (await request(subject.app, "/projects/project-a")).json()
+    const group = after.candidates
+      .find((candidate: { pluginInstanceId: string }) => candidate.pluginInstanceId === "claxedo")
+      .groups.find((entry: { id: string }) => entry.id === "tasks")
+    expect(group.enabled).toBe(true)
+    expect(after.candidates.map((candidate: { pluginInstanceId: string }) => candidate.pluginInstanceId)).not.toContain("claxedo:tasks")
+    const elsewhere = await (await request(subject.app, "/projects/project-b")).json()
+    expect(elsewhere.candidates
+      .find((candidate: { pluginInstanceId: string }) => candidate.pluginInstanceId === "claxedo")
+      .groups.find((entry: { id: string }) => entry.id === "tasks").enabled).toBe(false)
+  })
+
+  test("a group switch tells the composition which group's consent changed, after the commit and the reconcile", async () => {
+    const order: string[] = []
+    const consent = vi.fn(async (_auth: SignedControlPlaneAuth, groupId: string) => { order.push(`consent:${groupId}`) })
+    const subject = await fixture({ builtInConsentChanged: consent })
+    subject.reconcile.reconcile.mockImplementation(async () => { order.push("reconcile"); return { state: "applied" as const } })
+    const before = await (await request(subject.app, "/projects/project-a")).json()
+    const body = (choice: boolean | null, expectedRevision: number) => JSON.stringify({
+      pluginInstanceId: "claxedo:tasks", harnessIds: ["opencode"], choice, expectedRevision,
+      target: { scope: "projects", projectIds: ["project-a"] },
+    })
+    expect((await request(subject.app, "/activation", "member", { method: "POST", body: body(true, before.revision) })).status).toBe(200)
+    expect((await request(subject.app, "/activation", "member", { method: "POST", body: body(false, before.revision + 1) })).status).toBe(200)
+    expect(order).toEqual(["reconcile", "consent:tasks", "reconcile", "consent:tasks"])
+    expect(consent.mock.calls[0]?.[0]).toMatchObject({ user: { subject: "member" } })
+
+    const organization = await request(subject.app, "/organization-default", "admin", {
+      method: "POST",
+      body: JSON.stringify({ pluginInstanceId: "claxedo:tasks", harnessIds: ["opencode"], choice: true, expectedRevision: before.revision + 2 }),
+    })
+    expect(organization.status).toBe(200)
+    expect(order.at(-1)).toBe("consent:tasks")
+
+    // The commit stands when the withdrawal fails; the answer says so the way a failed reconcile does.
+    consent.mockRejectedValueOnce(new Error("register unreachable"))
+    const failed = await request(subject.app, "/activation", "member", { method: "POST", body: body(true, before.revision + 3) })
+    expect(failed.status).toBe(202)
+    expect(await failed.json()).toMatchObject({ revision: before.revision + 4, reconciliation: { state: "failed", message: "register unreachable" } })
+    expect(await subject.activations.revision()).toBe(before.revision + 4)
+  })
+
+  test("a group the first-party server does not register cannot be activated", async () => {
+    const subject = await fixture()
+    const catalog = await (await request(subject.app, "/projects/project-a")).json()
+    const response = await request(subject.app, "/activation", "member", {
+      method: "POST",
+      body: JSON.stringify({
+        pluginInstanceId: "claxedo:invented",
+        harnessIds: ["opencode"],
+        choice: true,
+        expectedRevision: catalog.revision,
+        target: { scope: "projects", projectIds: ["project-a"] },
+      }),
+    })
+    expect(response.status).toBe(404)
+  })
+
+  test("the built-in's own name is not an activation subject, so no write pretends it is", async () => {
+    const subject = await fixture()
+    const catalog = await (await request(subject.app, "/projects/project-a")).json()
+    const body = (extra: Record<string, unknown>) => JSON.stringify({
+      pluginInstanceId: "claxedo",
+      expectedRevision: catalog.revision,
+      ...extra,
+    })
+    const activation = await request(subject.app, "/activation", "member", {
+      method: "POST",
+      body: body({ harnessIds: ["opencode"], choice: false, target: { scope: "projects", projectIds: ["project-a"] } }),
+    })
+    expect(activation.status).toBe(400)
+    expect(await activation.json()).toMatchObject({ error: { code: "agent_plugins_tool_group_required" } })
+
+    const organization = await request(subject.app, "/organization-default", "admin", {
+      method: "POST",
+      body: body({ harnessIds: ["opencode"], choice: null }),
+    })
+    expect(organization.status).toBe(400)
+
+    const update = await request(subject.app, "/update", "member", {
+      method: "POST",
+      body: body({ authority: "user" }),
+    })
+    expect(await update.json()).toMatchObject({ error: { code: "agent_plugins_builtin_not_updatable" } })
+
+    // A refused write leaves nothing behind, which is what made the silent
+    // version of this worse than the error: the caller was told it worked.
+    expect(await subject.activations.revision()).toBe(catalog.revision)
+  })
+
+  test("an organization default names one tool group and needs no artifact", async () => {
+    const subject = await fixture()
+    const catalog = await (await request(subject.app, "/projects/project-a")).json()
+    const response = await request(subject.app, "/organization-default", "admin", {
+      method: "POST",
+      body: JSON.stringify({
+        pluginInstanceId: "claxedo:tasks",
+        harnessIds: [...SUPPORTED_AGENT_PLUGIN_HARNESSES],
+        choice: true,
+        expectedRevision: catalog.revision,
+      }),
+    })
+    expect(response.status).toBe(200)
+    expect(subject.artifacts.values.size).toBe(0)
+    const after = await (await request(subject.app, "/projects/project-a")).json()
+    expect(after.candidates
+      .find((candidate: { pluginInstanceId: string }) => candidate.pluginInstanceId === "claxedo")
+      .groups.find((group: { id: string }) => group.id === "tasks").enabled).toBe(true)
+  })
+
+  test("allows only an admin and a non-personal source to write or update an organization default", async () => {
+    const subject = await fixture()
+    const adminCatalog = await (await request(subject.app, "/", "admin")).json()
+    expect(adminCatalog).toMatchObject({
+      canManageOrganizationDefaults: true,
+      canManageOrganizationConnections: true,
+    })
+    const first = await (await request(subject.app, "/projects/project-a")).json()
+    const pluginInstanceId = first.candidates[0].pluginInstanceId
+
+    let response = await request(subject.app, "/organization-default", "member", {
+      method: "POST",
+      body: JSON.stringify({ pluginInstanceId, harnessIds: ["codex"], choice: true, expectedRevision: 0 }),
+    })
+    expect(response.status).toBe(403)
+    expect(await subject.activations.revision()).toBe(0)
+
+    response = await request(subject.app, "/organization-default", "admin", {
+      method: "POST",
+      body: JSON.stringify({ pluginInstanceId, harnessIds: ["codex"], choice: false, expectedRevision: 0 }),
+    })
+    expect(response.status).toBe(400)
+
+    response = await request(subject.app, "/organization-default", "admin", {
+      method: "POST",
+      body: JSON.stringify({ pluginInstanceId, harnessIds: ["codex"], choice: true, expectedRevision: 0 }),
+    })
+    expect(response.status).toBe(200)
+    expect(await subject.activations.revision()).toBe(1)
+
+    response = await request(subject.app, "/update", "member", {
+      method: "POST",
+      body: JSON.stringify({ pluginInstanceId, authority: "organization", expectedRevision: 1 }),
+    })
+    expect(response.status).toBe(403)
+    expect(await subject.activations.revision()).toBe(1)
+  })
+})

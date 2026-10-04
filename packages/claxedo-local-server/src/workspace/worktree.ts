@@ -1,0 +1,72 @@
+import path from "node:path"
+import fs from "node:fs/promises"
+import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
+import { gitRun } from "../shell/git"
+
+export type RegisteredWorktreeProvision = Readonly<{
+  repositoryDirectory: string
+  directory: string
+  workspaceName: string
+  workspaceId?: string
+  checkout:
+    | Readonly<{ kind: "detached"; revision: string }>
+    | Readonly<{ kind: "branch"; branch: string; baseRef?: string }>
+}>
+
+export class WorktreeProvisionError extends Error {
+  constructor(message: string, readonly detail: string) {
+    super(message)
+  }
+}
+
+async function worktreeBase(directory: string, reference: string) {
+  const resolved = await gitRun(directory, ["rev-parse", "--verify", "--end-of-options", `${reference}^{commit}`])
+  if (!resolved.ok) throw new WorktreeProvisionError("Invalid worktree base", resolved.err || resolved.out)
+  return resolved.out.trim()
+}
+
+export async function provisionRegisteredWorktree(input: RegisteredWorktreeProvision) {
+  const baseCommit = input.checkout.kind === "branch" && input.checkout.baseRef !== undefined
+    ? await worktreeBase(input.repositoryDirectory, input.checkout.baseRef)
+    : undefined
+  const project = await ensureWorkspace({ directory: input.repositoryDirectory })
+  if (!project || project.kind !== "local") {
+    throw new WorktreeProvisionError("Project workspace not found", input.repositoryDirectory)
+  }
+  const present = await fs.stat(path.join(input.directory, ".git")).then(() => true, () => false)
+  if (!present) {
+    await fs.mkdir(path.dirname(input.directory), { recursive: true })
+    const args = input.checkout.kind === "detached"
+      ? ["worktree", "add", "--detach", input.directory, input.checkout.revision]
+      : [
+          "worktree",
+          "add",
+          "-b",
+          input.checkout.branch,
+          input.directory,
+          ...(baseCommit !== undefined ? [baseCommit] : []),
+        ]
+    const created = await gitRun(project.directory, args)
+    if (!created.ok) {
+      throw new WorktreeProvisionError("Failed to create git worktree", created.err || created.out)
+    }
+  }
+  const workspace = await ensureWorkspace({
+    ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+    project_id: project.project_id ?? project.id,
+    project_name: project.project_name,
+    workspace_name: input.workspaceName,
+    directory: input.directory,
+  })
+  if (workspace) return workspace
+  if (!present) await removeGitWorktree(input.directory).catch(() => undefined)
+  throw new WorktreeProvisionError("Failed to register git worktree", input.directory)
+}
+
+async function removeGitWorktree(directory: string) {
+  if (!(await fs.stat(directory).then(() => true, () => false))) return
+  const common = await gitRun(directory, ["rev-parse", "--path-format=absolute", "--git-common-dir"])
+  if (!common.ok) throw new WorktreeProvisionError("Failed to locate git worktree", common.err || common.out)
+  const removed = await gitRun(directory, ["--git-dir", common.out, "worktree", "remove", "--force", directory])
+  if (!removed.ok) throw new WorktreeProvisionError("Failed to remove git worktree", removed.err || removed.out)
+}

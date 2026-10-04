@@ -1,0 +1,380 @@
+{
+  "reportDir": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/reports/marketplace-close-verify-after-route-1780818315919",
+  "initial": {
+    "label": "01-initial",
+    "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+    "titles": [],
+    "closeLabels": [
+      "Close workspace panel"
+    ],
+    "body": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain\nReview\nUncommitted\nLoading review..."
+  },
+  "afterNewSession": {
+    "label": "02-after-new-session",
+    "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+    "titles": [
+      "New Session"
+    ],
+    "closeLabels": [
+      "Close New Session",
+      "Close workspace panel"
+    ],
+    "body": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nc/m\nNew Session\nC\nX\nAsk anything, / for commands, @ for context...\nOpenCode\nSelect model\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain\nReview\nUncommitted\nLoading review...\nNew Session"
+  },
+  "afterMarketplace": {
+    "label": "03-after-marketplace",
+    "url": "http://localhost:4445/marketplace",
+    "titles": [
+      "New Session",
+      "Marketplace"
+    ],
+    "closeLabels": [
+      "Close New Session",
+      "Close Marketplace",
+      "Close workspace panel"
+    ],
+    "body": "Global\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nc/m\nNew Session\ng/g\nMarketplace\nMarketplace\nFeatured\nAll Extensions\nInstalled\n1\nOn this machine\n108\nSkills\nMCP Servers\nInfrastructure\nData & Analytics\nProductivity\nAgent Orchestration\nDetect existing\nFeatured\nHand-picked to start with.\n📄\nPDF\nSKILL\nRead, write, and edit PDFs across local files and URLs.\nInstalled\nMachine\n·\nanthropics/skills/tree/main/skills/pdf\n🛠️\nMCP Builder\nSKILL\nAuthor new MCP servers from a high-level spec.\nInstall\nMachine\n·\nanthropics/skills/tree/main/skills/mcp-builder\nC\nClaxedo\nMCP\nClaxedo tools for process management, terminal logs, session messages, log summaries, and browser panes.\nInstall\nMachine\n·\nkyashrathore/Claxedo/tree/dev/packages/claxedo-mcp\n📁\nFilesystem\nMCP\nRead, write, and search files within a sandboxed root.\nInstall\nMachine\n·\nmodelcont"
+  },
+  "afterCloseMarketplace": {
+    "label": "04-after-close-marketplace",
+    "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+    "titles": [
+      "New Session"
+    ],
+    "closeLabels": [
+      "Close New Session",
+      "Close workspace panel"
+    ],
+    "body": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nc/m\nNew Session\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain\nReview\nUncommitted\n411\n+23135\n-35796\n‪.agent-extensions/‬\nmaterialized.json\n+1\n-1\nbun.lock\n+28\n-0\n‪docs/plans/‬\ngoal.md\n+4061\n-331\nDiff too large to render\nLimit: 500 changed lines. Current: 4,392 changed lines.\nRender anyway\n‪docs/tech-docs/‬\nclaxedo-app-rewrite-plan.md\n+65\n-41\n‪packages/app/‬\npackage.json\n+1\n-0\n‪packages/app/src/components/‬\ndialog-connect-provider.tsx\n+25\n-19"
+  },
+  "afterCloseNewSession": {
+    "label": "05-after-close-new-session",
+    "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+    "titles": [],
+    "closeLabels": [
+      "Close workspace panel"
+    ],
+    "body": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain\nReview\nUncommitted\n411\n+23135\n-35796\n‪.agent-extensions/‬\nmaterialized.json\n+1\n-1\nbun.lock\n+28\n-0\n‪docs/plans/‬\ngoal.md\n+4061\n-331\nDiff too large to render\nLimit: 500 changed lines. Current: 4,392 changed lines.\nRender anyway\n‪docs/tech-docs/‬\nclaxedo-app-rewrite-plan.md\n+65\n-41\n‪packages/app/‬\npackage.json\n+1\n-0\n‪packages/app/src/components/‬\ndialog-connect-provider.tsx\n+25\n-19"
+  },
+  "marketplaceHadClose": true,
+  "marketplaceGoneAfterClose": true,
+  "newSessionStillThereAfterMarketplaceClose": true,
+  "newSessionGoneAfterClose": true,
+  "rangeErrors": 0,
+  "failedResponses": [],
+  "events": [
+    {
+      "t": 13,
+      "type": "console",
+      "level": "debug",
+      "text": "[vite] connecting...",
+      "location": {
+        "url": "http://localhost:4445/@vite/client",
+        "lineNumber": 732,
+        "columnNumber": 8
+      }
+    },
+    {
+      "t": 23,
+      "type": "console",
+      "level": "debug",
+      "text": "[vite] connected.",
+      "location": {
+        "url": "http://localhost:4445/@vite/client",
+        "lineNumber": 826,
+        "columnNumber": 11
+      }
+    },
+    {
+      "t": 289,
+      "type": "console",
+      "level": "log",
+      "text": "[claxedo:boot] start http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+      "location": {
+        "url": "http://localhost:4445/src/main.tsx?t=1780818190846",
+        "lineNumber": 67,
+        "columnNumber": 35
+      }
+    },
+    {
+      "t": 289,
+      "type": "console",
+      "level": "log",
+      "text": "[claxedo:boot] before-render {hasRoot: true}",
+      "location": {
+        "url": "http://localhost:4445/src/main.tsx?t=1780818190846",
+        "lineNumber": 249,
+        "columnNumber": 35
+      }
+    },
+    {
+      "t": 296,
+      "type": "console",
+      "level": "log",
+      "text": "[claxedo:boot] after-render {rootChildren: 2}",
+      "location": {
+        "url": "http://localhost:4445/src/main.tsx?t=1780818190846",
+        "lineNumber": 272,
+        "columnNumber": 35
+      }
+    },
+    {
+      "t": 361,
+      "type": "console",
+      "level": "debug",
+      "text": "[claxedo:session-hydrate] gate {directory: /Users/yashvardhansingh/test/opencode, sessionID: new, healthy: true, paneActive: true, signedControlPlane: false}",
+      "location": {
+        "url": "http://localhost:4445/src/session/store/session-controller.ts?t=1780814377380",
+        "lineNumber": 228,
+        "columnNumber": 10
+      }
+    },
+    {
+      "t": 419,
+      "type": "console",
+      "level": "warning",
+      "text": "Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview",
+      "location": {
+        "url": "http://localhost:4445/node_modules/.vite/deps/@clerk_clerk-js.js?v=72f84088",
+        "lineNumber": 45136,
+        "columnNumber": 39
+      }
+    },
+    {
+      "t": 2686,
+      "type": "state",
+      "label": "01-initial",
+      "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+      "titles": [],
+      "closeLabels": [
+        "Close workspace panel"
+      ],
+      "body": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain\nReview\nUncommitted\nLoading review..."
+    },
+    {
+      "t": 2706,
+      "type": "console",
+      "level": "debug",
+      "text": "[claxedo:session-hydrate] gate {directory: /Users/yashvardhansingh/test/opencode, sessionID: new, healthy: true, paneActive: true, signedControlPlane: false}",
+      "location": {
+        "url": "http://localhost:4445/src/session/store/session-controller.ts?t=1780814377380",
+        "lineNumber": 228,
+        "columnNumber": 10
+      }
+    },
+    {
+      "t": 3549,
+      "type": "state",
+      "label": "02-after-new-session",
+      "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+      "titles": [
+        "New Session"
+      ],
+      "closeLabels": [
+        "Close New Session",
+        "Close workspace panel"
+      ],
+      "body": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nc/m\nNew Session\nC\nX\nAsk anything, / for commands, @ for context...\nOpenCode\nSelect model\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain\nReview\nUncommitted\nLoading review...\nNew Session"
+    },
+    {
+      "t": 3557,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/api/claxedo/agent-config/agents?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode&type=opencode",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 3557,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/api/claxedo/agent-config/agents?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode&type=codex-acp",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 3557,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/api/claxedo/diff/targets?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 3557,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/provider?runner=codex-acp",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 3557,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/api/claxedo/agent-config/agents?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 3557,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/api/claxedo/agent-config/runner?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 3557,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 3558,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/api/claxedo/agent-config/runner/options?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode&type=codex-acp",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 3558,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/api/claxedo/diff/vcs?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode&mode=uncommitted&content=summary",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 3558,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/global/event",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 3563,
+      "type": "console",
+      "level": "debug",
+      "text": "[vite] connecting...",
+      "location": {
+        "url": "http://localhost:4445/@vite/client",
+        "lineNumber": 732,
+        "columnNumber": 8
+      }
+    },
+    {
+      "t": 3566,
+      "type": "console",
+      "level": "debug",
+      "text": "[vite] connected.",
+      "location": {
+        "url": "http://localhost:4445/@vite/client",
+        "lineNumber": 826,
+        "columnNumber": 11
+      }
+    },
+    {
+      "t": 3710,
+      "type": "console",
+      "level": "log",
+      "text": "[claxedo:boot] start http://localhost:4445/marketplace",
+      "location": {
+        "url": "http://localhost:4445/src/main.tsx?t=1780818190846",
+        "lineNumber": 67,
+        "columnNumber": 35
+      }
+    },
+    {
+      "t": 3710,
+      "type": "console",
+      "level": "log",
+      "text": "[claxedo:boot] before-render {hasRoot: true}",
+      "location": {
+        "url": "http://localhost:4445/src/main.tsx?t=1780818190846",
+        "lineNumber": 249,
+        "columnNumber": 35
+      }
+    },
+    {
+      "t": 3712,
+      "type": "console",
+      "level": "log",
+      "text": "[claxedo:boot] after-render {rootChildren: 2}",
+      "location": {
+        "url": "http://localhost:4445/src/main.tsx?t=1780818190846",
+        "lineNumber": 272,
+        "columnNumber": 35
+      }
+    },
+    {
+      "t": 3741,
+      "type": "console",
+      "level": "warning",
+      "text": "Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview",
+      "location": {
+        "url": "http://localhost:4445/node_modules/.vite/deps/@clerk_clerk-js.js?v=72f84088",
+        "lineNumber": 45136,
+        "columnNumber": 39
+      }
+    },
+    {
+      "t": 4970,
+      "type": "state",
+      "label": "03-after-marketplace",
+      "url": "http://localhost:4445/marketplace",
+      "titles": [
+        "New Session",
+        "Marketplace"
+      ],
+      "closeLabels": [
+        "Close New Session",
+        "Close Marketplace",
+        "Close workspace panel"
+      ],
+      "body": "Global\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nc/m\nNew Session\ng/g\nMarketplace\nMarketplace\nFeatured\nAll Extensions\nInstalled\n1\nOn this machine\n108\nSkills\nMCP Servers\nInfrastructure\nData & Analytics\nProductivity\nAgent Orchestration\nDetect existing\nFeatured\nHand-picked to start with.\n📄\nPDF\nSKILL\nRead, write, and edit PDFs across local files and URLs.\nInstalled\nMachine\n·\nanthropics/skills/tree/main/skills/pdf\n🛠️\nMCP Builder\nSKILL\nAuthor new MCP servers from a high-level spec.\nInstall\nMachine\n·\nanthropics/skills/tree/main/skills/mcp-builder\nC\nClaxedo\nMCP\nClaxedo tools for process management, terminal logs, session messages, log summaries, and browser panes.\nInstall\nMachine\n·\nkyashrathore/Claxedo/tree/dev/packages/claxedo-mcp\n📁\nFilesystem\nMCP\nRead, write, and search files within a sandboxed root.\nInstall\nMachine\n·\nmodelcont"
+    },
+    {
+      "t": 4985,
+      "type": "console",
+      "level": "debug",
+      "text": "[claxedo:session-hydrate] gate {directory: /Users/yashvardhansingh/test/opencode, sessionID: new, healthy: true, paneActive: true, signedControlPlane: false}",
+      "location": {
+        "url": "http://localhost:4445/src/session/store/session-controller.ts?t=1780814377380",
+        "lineNumber": 228,
+        "columnNumber": 10
+      }
+    },
+    {
+      "t": 5016,
+      "type": "console",
+      "level": "debug",
+      "text": "[claxedo:session-hydrate] gate {directory: /Users/yashvardhansingh/test/opencode, sessionID: new, healthy: true, paneActive: true, signedControlPlane: false}",
+      "location": {
+        "url": "http://localhost:4445/src/session/store/session-controller.ts?t=1780814377380",
+        "lineNumber": 228,
+        "columnNumber": 10
+      }
+    },
+    {
+      "t": 6270,
+      "type": "state",
+      "label": "04-after-close-marketplace",
+      "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+      "titles": [
+        "New Session"
+      ],
+      "closeLabels": [
+        "Close New Session",
+        "Close workspace panel"
+      ],
+      "body": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nc/m\nNew Session\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain\nReview\nUncommitted\n411\n+23135\n-35796\n‪.agent-extensions/‬\nmaterialized.json\n+1\n-1\nbun.lock\n+28\n-0\n‪docs/plans/‬\ngoal.md\n+4061\n-331\nDiff too large to render\nLimit: 500 changed lines. Current: 4,392 changed lines.\nRender anyway\n‪docs/tech-docs/‬\nclaxedo-app-rewrite-plan.md\n+65\n-41\n‪packages/app/‬\npackage.json\n+1\n-0\n‪packages/app/src/components/‬\ndialog-connect-provider.tsx\n+25\n-19"
+    },
+    {
+      "t": 6298,
+      "type": "console",
+      "level": "debug",
+      "text": "[claxedo:session-hydrate] gate {directory: /Users/yashvardhansingh/test/opencode, sessionID: new, healthy: true, paneActive: true, signedControlPlane: false}",
+      "location": {
+        "url": "http://localhost:4445/src/session/store/session-controller.ts?t=1780814377380",
+        "lineNumber": 228,
+        "columnNumber": 10
+      }
+    },
+    {
+      "t": 7561,
+      "type": "state",
+      "label": "05-after-close-new-session",
+      "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+      "titles": [],
+      "closeLabels": [
+        "Close workspace panel"
+      ],
+      "body": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain\nReview\nUncommitted\n411\n+23135\n-35796\n‪.agent-extensions/‬\nmaterialized.json\n+1\n-1\nbun.lock\n+28\n-0\n‪docs/plans/‬\ngoal.md\n+4061\n-331\nDiff too large to render\nLimit: 500 changed lines. Current: 4,392 changed lines.\nRender anyway\n‪docs/tech-docs/‬\nclaxedo-app-rewrite-plan.md\n+65\n-41\n‪packages/app/‬\npackage.json\n+1\n-0\n‪packages/app/src/components/‬\ndialog-connect-provider.tsx\n+25\n-19"
+    }
+  ]
+}

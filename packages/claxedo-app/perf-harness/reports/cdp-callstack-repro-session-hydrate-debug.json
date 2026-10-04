@@ -1,0 +1,919 @@
+{
+  "dom": {
+    "url": "http://localhost:4445/s/ses_16214a525ffeZGDqylEvDKPmMh",
+    "rootChildren": 2,
+    "bodyText": "main\nClaxedo · opencode\n›\nC\nX\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nC\nX",
+    "sessionContent": {
+      "sid": "ses_16214a525ffeZGDqylEvDKPmMh",
+      "dir": "/Users/yashvardhansingh/test/opencode",
+      "textLength": 0,
+      "rect": {
+        "x": 261,
+        "y": 37,
+        "width": 1538,
+        "height": 1062
+      }
+    },
+    "sessionRoot": {
+      "sid": "ses_16214a525ffeZGDqylEvDKPmMh",
+      "dir": "/Users/yashvardhansingh/test/opencode",
+      "firstFold": "false",
+      "messagesReady": "false",
+      "messageCount": "0",
+      "textLength": 0,
+      "rect": {
+        "x": 261,
+        "y": 37,
+        "width": 1538,
+        "height": 1062
+      }
+    },
+    "fastSwitch": null
+  },
+  "hasRangeError": false,
+  "events": [
+    {
+      "type": "console",
+      "ts": 1780814420599,
+      "level": "debug",
+      "text": "[vite] connecting...",
+      "location": {
+        "url": "http://localhost:4445/@vite/client",
+        "lineNumber": 732,
+        "columnNumber": 8
+      }
+    },
+    {
+      "type": "request",
+      "ts": 1780814420601,
+      "method": "GET",
+      "url": "http://localhost:4445/src/pages/permissions.tsx"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420602,
+      "method": "GET",
+      "url": "http://localhost:4445/src/context/file.tsx?t=1780809966696"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420603,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/context/file.tsx"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420603,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/components/file.tsx"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420604,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/context/permission.tsx?t=1780809966696"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420604,
+      "method": "GET",
+      "url": "http://localhost:4445/src/utils/server-health.ts?t=1780807546813"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420620,
+      "status": 200,
+      "url": "http://localhost:4445/src/pages/permissions.tsx"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420623,
+      "status": 200,
+      "url": "http://localhost:4445/src/context/file.tsx?t=1780809966696"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420627,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/context/file.tsx"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420627,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/components/file.tsx"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420630,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/context/permission.tsx?t=1780809966696"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420635,
+      "status": 200,
+      "url": "http://localhost:4445/src/utils/server-health.ts?t=1780807546813"
+    },
+    {
+      "type": "console",
+      "ts": 1780814420640,
+      "level": "debug",
+      "text": "[vite] connected.",
+      "location": {
+        "url": "http://localhost:4445/@vite/client",
+        "lineNumber": 826,
+        "columnNumber": 11
+      }
+    },
+    {
+      "type": "request",
+      "ts": 1780814420642,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/context/file/path.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420642,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/utils/file-request-cache.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420642,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/context/file/content-cache.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420642,
+      "method": "GET",
+      "url": "http://localhost:4445/src/context/file/view-cache.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420642,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/context/file/tree-store.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420642,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/context/file/watcher.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420642,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/context/file/types.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420645,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/components/prompt-input/files.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420645,
+      "method": "GET",
+      "url": "http://localhost:4445/src/components/prompt-input/resolve-session-id.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420646,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/constants/file-picker.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420649,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/theme/resolve.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420649,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/pierre/file-find.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420649,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/pierre/file-runtime.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420649,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/pierre/file-selection.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420649,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/components/file-media.tsx"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420649,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/components/file-search.tsx"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420650,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/context/permission-auto-respond.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420650,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/context/permission-auto-response-cache.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420652,
+      "method": "GET",
+      "url": "http://localhost:4445/src/shell/identity/resolve-workspace-ref.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420654,
+      "method": "GET",
+      "url": "http://localhost:4445/src/shell/runners/profile.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420675,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/context/file/path.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420675,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/utils/file-request-cache.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420675,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/context/file/content-cache.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420675,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/context/file/tree-store.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420675,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/context/file/watcher.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420676,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/context/file/types.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420676,
+      "status": 200,
+      "url": "http://localhost:4445/src/context/file/view-cache.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420682,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/components/prompt-input/files.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420683,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/components/file-icon.tsx"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420684,
+      "status": 200,
+      "url": "http://localhost:4445/src/components/prompt-input/resolve-session-id.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420688,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/constants/file-picker.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420689,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/utils/server-health.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420696,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/theme/resolve.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420699,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/pierre/file-runtime.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420699,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/pierre/file-selection.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420699,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/pierre/file-find.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420701,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/components/file-media.tsx"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420703,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/components/file-search.tsx"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420706,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/context/permission-auto-respond.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420706,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/context/permission-auto-response-cache.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420708,
+      "method": "GET",
+      "url": "http://localhost:4445/src/claxedo-ui/context/process-pane.tsx?t=1780813310829"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420709,
+      "status": 200,
+      "url": "http://localhost:4445/src/shell/identity/resolve-workspace-ref.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420709,
+      "status": 200,
+      "url": "http://localhost:4445/src/shell/runners/profile.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420723,
+      "method": "GET",
+      "url": "http://localhost:4445/src/session/submit/resolve.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420724,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/components/file-icon.tsx"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420724,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/components/file-icons/sprite.svg?import"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420724,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/utils/server-health.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420724,
+      "method": "GET",
+      "url": "http://localhost:4445/src/session/store/message-page.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420742,
+      "method": "GET",
+      "url": "http://localhost:4445/src/claxedo-ui/state/process-pane.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420744,
+      "method": "GET",
+      "url": "http://localhost:4445/src/claxedo-ui/components/dialog-process-diagnostics.tsx?t=1780813310829"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420744,
+      "status": 200,
+      "url": "http://localhost:4445/src/claxedo-ui/context/process-pane.tsx?t=1780813310829"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420745,
+      "method": "GET",
+      "url": "http://localhost:4445/src/process/process.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420745,
+      "method": "GET",
+      "url": "http://localhost:4445/src/process/client.ts?t=1780807546813"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420745,
+      "method": "GET",
+      "url": "http://localhost:4445/src/claxedo-ui/context/process-ownership.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420745,
+      "method": "GET",
+      "url": "http://localhost:4445/src/claxedo-ui/components/add-process-dialog.tsx?t=1780809908341"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420746,
+      "method": "GET",
+      "url": "http://localhost:4445/src/components/dialog-select-file.tsx?t=1780813310829"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420746,
+      "method": "GET",
+      "url": "http://localhost:4445/src/claxedo-ui/components/tab-file.tsx?t=1780809966696"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420746,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/components/file-tree.tsx?t=1780809966696"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420753,
+      "status": 200,
+      "url": "http://localhost:4445/src/session/submit/resolve.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420753,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/components/file-icons/sprite.svg?import"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420754,
+      "method": "GET",
+      "url": "http://localhost:4445/src/terminal/link-providers/file-path-link-provider.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420758,
+      "status": 200,
+      "url": "http://localhost:4445/src/session/store/message-page.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420762,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/node_modules/.bun/@solid-primitives+refs@1.1.3+95b571dd5236cc92/node_modules/@solid-primitives/refs/dist/index.js?v=72f84088"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420764,
+      "status": 200,
+      "url": "http://localhost:4445/src/claxedo-ui/state/process-pane.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420768,
+      "method": "GET",
+      "url": "http://localhost:4445/src/pages/session/message-timeline.tsx?t=1780809966696"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420768,
+      "status": 200,
+      "url": "http://localhost:4445/src/process/process.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420768,
+      "status": 200,
+      "url": "http://localhost:4445/src/process/client.ts?t=1780807546813"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420768,
+      "status": 200,
+      "url": "http://localhost:4445/src/claxedo-ui/components/dialog-process-diagnostics.tsx?t=1780813310829"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420768,
+      "status": 200,
+      "url": "http://localhost:4445/src/claxedo-ui/components/add-process-dialog.tsx?t=1780809908341"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420769,
+      "status": 200,
+      "url": "http://localhost:4445/src/claxedo-ui/context/process-ownership.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420770,
+      "status": 200,
+      "url": "http://localhost:4445/src/components/dialog-select-file.tsx?t=1780813310829"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420771,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/components/file-tree.tsx?t=1780809966696"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420771,
+      "status": 200,
+      "url": "http://localhost:4445/src/claxedo-ui/components/tab-file.tsx?t=1780809966696"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420778,
+      "status": 200,
+      "url": "http://localhost:4445/src/terminal/link-providers/file-path-link-provider.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420782,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/node_modules/.bun/@solid-primitives+refs@1.1.3+95b571dd5236cc92/node_modules/@solid-primitives/refs/dist/index.js?v=72f84088"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420788,
+      "status": 200,
+      "url": "http://localhost:4445/src/pages/session/message-timeline.tsx?t=1780809966696"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420790,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/components/message-part.tsx"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420790,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/pages/session/message-gesture.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420790,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/pages/session/message-timeline.data.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420790,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/pages/session/message-id-from-hash.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420805,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/pages/session/composer/session-permission-dock.tsx"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420805,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/pages/session/composer/session-question-dock.tsx?t=1780809966696"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420813,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/components/message-part.tsx"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420813,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/pages/session/message-gesture.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420813,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/components/apply-patch-file.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420813,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/components/message-file.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420813,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/components/message-part-text.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420813,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/pages/session/message-timeline.data.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420813,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/pages/session/message-id-from-hash.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420817,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/pages/session/composer/session-permission-dock.tsx"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420817,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/pages/session/composer/session-question-dock.tsx?t=1780809966696"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420818,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/pages/session/composer/session-question-cache.ts"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420819,
+      "method": "GET",
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/assets/icons/app/file-explorer.svg?import"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420821,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/components/apply-patch-file.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420822,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/components/message-file.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420822,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/components/message-part-text.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420822,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/app/src/pages/session/composer/session-question-cache.ts"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420824,
+      "status": 200,
+      "url": "http://localhost:4445/@fs/Users/yashvardhansingh/test/opencode/packages/ui/src/assets/icons/app/file-explorer.svg?import"
+    },
+    {
+      "type": "console",
+      "ts": 1780814420900,
+      "level": "log",
+      "text": "[claxedo:boot] start http://localhost:4445/s/ses_16214a525ffeZGDqylEvDKPmMh",
+      "location": {
+        "url": "http://localhost:4445/src/main.tsx?t=1780814377380",
+        "lineNumber": 67,
+        "columnNumber": 35
+      }
+    },
+    {
+      "type": "console",
+      "ts": 1780814420901,
+      "level": "log",
+      "text": "[claxedo:boot] before-render {hasRoot: true}",
+      "location": {
+        "url": "http://localhost:4445/src/main.tsx?t=1780814377380",
+        "lineNumber": 249,
+        "columnNumber": 35
+      }
+    },
+    {
+      "type": "console",
+      "ts": 1780814420909,
+      "level": "log",
+      "text": "[claxedo:boot] after-render {rootChildren: 2}",
+      "location": {
+        "url": "http://localhost:4445/src/main.tsx?t=1780814377380",
+        "lineNumber": 272,
+        "columnNumber": 35
+      }
+    },
+    {
+      "type": "request",
+      "ts": 1780814420909,
+      "method": "GET",
+      "url": "http://127.0.0.1:3001/api/claxedo/events"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420909,
+      "method": "GET",
+      "url": "http://127.0.0.1:3001/api/claxedo/health"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420909,
+      "method": "GET",
+      "url": "http://127.0.0.1:3001/global/health"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420916,
+      "status": 200,
+      "url": "http://127.0.0.1:3001/api/claxedo/events"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420916,
+      "status": 200,
+      "url": "http://127.0.0.1:3001/api/claxedo/health"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420916,
+      "status": 200,
+      "url": "http://127.0.0.1:3001/global/health"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420919,
+      "method": "GET",
+      "url": "http://127.0.0.1:3001/api/claxedo/bootstrap"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420919,
+      "method": "GET",
+      "url": "http://127.0.0.1:3001/global/event"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420922,
+      "status": 200,
+      "url": "http://127.0.0.1:3001/global/event"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420923,
+      "status": 200,
+      "url": "http://127.0.0.1:3001/api/claxedo/bootstrap"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420962,
+      "method": "GET",
+      "url": "http://127.0.0.1:3001/api/workspace?access=cloud"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420962,
+      "method": "GET",
+      "url": "http://127.0.0.1:3001/api/workspace?access=cloud"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420962,
+      "method": "PATCH",
+      "url": "http://127.0.0.1:3001/project/608c72e3-405a-4d2a-bf7f-883b8c76ea8e?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode"
+    },
+    {
+      "type": "request",
+      "ts": 1780814420962,
+      "method": "PATCH",
+      "url": "http://127.0.0.1:3001/project/0a2e65d6-7906-44a8-8359-7726b5a8c4b5?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fformlink"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420969,
+      "status": 200,
+      "url": "http://127.0.0.1:3001/project/608c72e3-405a-4d2a-bf7f-883b8c76ea8e?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420969,
+      "status": 200,
+      "url": "http://127.0.0.1:3001/api/workspace?access=cloud"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420969,
+      "status": 200,
+      "url": "http://127.0.0.1:3001/api/workspace?access=cloud"
+    },
+    {
+      "type": "response",
+      "ts": 1780814420969,
+      "status": 200,
+      "url": "http://127.0.0.1:3001/project/0a2e65d6-7906-44a8-8359-7726b5a8c4b5?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fformlink"
+    },
+    {
+      "type": "console",
+      "ts": 1780814421002,
+      "level": "warning",
+      "text": "Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview",
+      "location": {
+        "url": "http://localhost:4445/node_modules/.vite/deps/@clerk_clerk-js.js?v=72f84088",
+        "lineNumber": 45136,
+        "columnNumber": 39
+      }
+    },
+    {
+      "type": "request",
+      "ts": 1780814421004,
+      "method": "GET",
+      "url": "http://127.0.0.1:3001/api/workspace?access=user-hosted"
+    },
+    {
+      "type": "request",
+      "ts": 1780814421004,
+      "method": "GET",
+      "url": "http://127.0.0.1:3001/api/workspace?access=user-hosted"
+    },
+    {
+      "type": "response",
+      "ts": 1780814421006,
+      "status": 200,
+      "url": "http://127.0.0.1:3001/api/workspace?access=user-hosted"
+    },
+    {
+      "type": "response",
+      "ts": 1780814421007,
+      "status": 200,
+      "url": "http://127.0.0.1:3001/api/workspace?access=user-hosted"
+    },
+    {
+      "type": "request",
+      "ts": 1780814421007,
+      "method": "GET",
+      "url": "http://127.0.0.1:3001/api/workspace?access=cloud"
+    },
+    {
+      "type": "response",
+      "ts": 1780814421011,
+      "status": 200,
+      "url": "http://127.0.0.1:3001/api/workspace?access=cloud"
+    },
+    {
+      "type": "request",
+      "ts": 1780814421012,
+      "method": "GET",
+      "url": "http://127.0.0.1:3001/api/workspace?access=user-hosted"
+    },
+    {
+      "type": "response",
+      "ts": 1780814421013,
+      "status": 200,
+      "url": "http://127.0.0.1:3001/api/workspace?access=user-hosted"
+    }
+  ],
+  "screenshotPath": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/reports/cdp-callstack-repro-session-hydrate-debug.png"
+}

@@ -1,0 +1,39 @@
+Subject: dialog-v2: the body is the one scroller under a fixed header
+
+What: the dialog content clips (overflow hidden, no hidden-scrollbar rules) and the body
+scrolls (min-height 0, overflow auto, overscroll contained).
+Why: the content never overflowed while the body clipped, so a dialog taller than its
+maximum height cut off its last fields and actions (Edit project's Save).
+
+diff --git a/src/v2/components/dialog-v2.css b/src/v2/components/dialog-v2.css
+index 53470c889d207fd69223604101d1084faea06870..d317e06b47690849d988d75034dd5f32b4d7c6fb 100644
+--- a/src/v2/components/dialog-v2.css
++++ b/src/v2/components/dialog-v2.css
+@@ -36,15 +36,9 @@
+       width: 100%;
+       max-height: 100%;
+       flex: 1;
+-      overflow: auto;
++      overflow: hidden;
+       background: transparent;
+ 
+-      scrollbar-width: none;
+-      -ms-overflow-style: none;
+-      &::-webkit-scrollbar {
+-        display: none;
+-      }
+-
+       [data-slot="dialog-header"] {
+         display: flex;
+         flex-direction: row;
+@@ -143,7 +137,9 @@
+         display: flex;
+         flex-direction: column;
+         flex: 1;
+-        overflow: hidden;
++        min-height: 0;
++        overflow: auto;
++        overscroll-behavior: contain;
+ 
+         &:focus-visible {
+           outline: none;

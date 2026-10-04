@@ -1,0 +1,22 @@
+name: deploy-claxedo-app-staging
+
+# App-only staging release, by hand. Merging to `staging` deploys the app as
+# part of deploy-staging.yml, after the control plane it is built against; this
+# workflow exists for the case where only the app needs to go out again and the
+# rest of the staging release is already live.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: claxedo-cloud-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/deploy-claxedo-app.yml
+    with:
+      target_environment: staging
+    secrets: inherit

@@ -1,0 +1,1572 @@
+{
+  "adapter": "cursor-sdk",
+  "initialState": {
+    "toolsByCallId": {},
+    "usageByRunId": {},
+    "openShells": [],
+    "shellOutputByCallId": {},
+    "notedKinds": []
+  },
+  "calls": [
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/status",
+        "payload": {
+          "type": "status",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "status": "RUNNING"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "session-status",
+            "status": "busy"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/assistant",
+        "payload": {
+          "type": "assistant",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Hel"
+              }
+            ]
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "text-delta",
+            "delta": "Hel"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/assistant",
+        "payload": {
+          "type": "assistant",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "lo"
+              }
+            ]
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "text-delta",
+            "delta": "lo"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/assistant",
+        "payload": {
+          "type": "assistant",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "lo"
+              }
+            ]
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "text-delta",
+            "delta": "lo"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/assistant",
+        "payload": {
+          "type": "assistant",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "o!"
+              }
+            ]
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "text-delta",
+            "delta": "o!"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/thinking",
+        "payload": {
+          "type": "thinking",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "text": "Th"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "thinking-delta",
+            "delta": "Th"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/thinking",
+        "payload": {
+          "type": "thinking",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "text": "Th"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "thinking-delta",
+            "delta": "Th"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/thinking",
+        "payload": {
+          "type": "thinking",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "text": "",
+          "thinking_duration_ms": 1200
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/usage",
+        "payload": {
+          "type": "usage",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "usage": {
+            "inputTokens": 2,
+            "outputTokens": 3,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "totalTokens": 5
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {
+            "run-1": {
+              "input": 2,
+              "output": 3,
+              "reasoning": null,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "usage",
+            "contextSize": 0,
+            "contextUsed": 0,
+            "observation": {
+              "kind": "cumulative",
+              "providerObservationId": "run-1",
+              "tokens": {
+                "input": 2,
+                "output": 3,
+                "reasoning": null,
+                "cache": {
+                  "read": 0,
+                  "write": 0
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {
+          "run-1": {
+            "input": 2,
+            "output": 3,
+            "reasoning": null,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        },
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/status",
+        "payload": {
+          "type": "status",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "status": "FINISHED"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {
+            "run-1": {
+              "input": 2,
+              "output": 3,
+              "reasoning": null,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {
+          "run-1": {
+            "input": 2,
+            "output": 3,
+            "reasoning": null,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        },
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.local-run-stream",
+        "method": "result",
+        "payload": {
+          "schemaVersion": 1,
+          "type": "result",
+          "agentId": "agent-1",
+          "runId": "run-1",
+          "status": "finished"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "session-status",
+            "status": "idle"
+          },
+          {
+            "type": "finish",
+            "sessionId": "run-1"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/status",
+        "payload": {
+          "type": "status",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "status": "RUNNING"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "session-status",
+            "status": "busy"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/user",
+        "payload": {
+          "type": "user",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "message": {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "steered text"
+              }
+            ]
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/task",
+        "payload": {
+          "type": "task",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "text": "Summary of the earlier conversation"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "session-compaction",
+            "phase": "completed",
+            "summary": "Summary of the earlier conversation"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/tool_call",
+        "payload": {
+          "type": "tool_call",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "call_id": "c1",
+          "name": "shell",
+          "status": "running",
+          "args": {
+            "command": "echo hi",
+            "workingDirectory": "/repo"
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "c1": {
+              "toolName": "shell",
+              "kind": "command_execution",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            }
+          },
+          "usageByRunId": {},
+          "openShells": [
+            "c1"
+          ],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "tool-start",
+            "toolCallId": "c1",
+            "toolName": "shell",
+            "kind": "command_execution",
+            "display": {
+              "kind": "command_execution",
+              "intent": "shell",
+              "command": "echo hi",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "command_execution"
+              }
+            }
+          },
+          {
+            "type": "tool-input",
+            "toolCallId": "c1",
+            "input": {
+              "command": "echo hi",
+              "workingDirectory": "/repo",
+              "cwd": "/repo"
+            },
+            "display": {
+              "kind": "command_execution",
+              "intent": "shell",
+              "command": "echo hi",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "command_execution"
+              }
+            }
+          },
+          {
+            "type": "tool-status",
+            "toolCallId": "c1",
+            "status": "running",
+            "display": {
+              "kind": "command_execution",
+              "intent": "shell",
+              "command": "echo hi",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "command_execution"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "c1": {
+            "toolName": "shell",
+            "kind": "command_execution",
+            "input": {
+              "command": "echo hi",
+              "workingDirectory": "/repo",
+              "cwd": "/repo"
+            }
+          }
+        },
+        "usageByRunId": {},
+        "openShells": [
+          "c1"
+        ],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/tool_call",
+        "payload": {
+          "type": "tool_call",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "call_id": "c1",
+          "name": "shell",
+          "status": "running",
+          "args": {
+            "command": "echo hi",
+            "workingDirectory": "/repo"
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "c1": {
+              "toolName": "shell",
+              "kind": "command_execution",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            }
+          },
+          "usageByRunId": {},
+          "openShells": [
+            "c1"
+          ],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "tool-status",
+            "toolCallId": "c1",
+            "status": "running",
+            "display": {
+              "kind": "command_execution",
+              "intent": "shell",
+              "command": "echo hi",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "command_execution"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "c1": {
+            "toolName": "shell",
+            "kind": "command_execution",
+            "input": {
+              "command": "echo hi",
+              "workingDirectory": "/repo",
+              "cwd": "/repo"
+            }
+          }
+        },
+        "usageByRunId": {},
+        "openShells": [
+          "c1"
+        ],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.delta",
+        "method": "cursor/shell-output-delta",
+        "payload": {
+          "type": "shell-output-delta",
+          "event": {
+            "case": "start",
+            "value": {}
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "c1": {
+              "toolName": "shell",
+              "kind": "command_execution",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            }
+          },
+          "usageByRunId": {},
+          "openShells": [
+            "c1"
+          ],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "c1": {
+            "toolName": "shell",
+            "kind": "command_execution",
+            "input": {
+              "command": "echo hi",
+              "workingDirectory": "/repo",
+              "cwd": "/repo"
+            }
+          }
+        },
+        "usageByRunId": {},
+        "openShells": [
+          "c1"
+        ],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.delta",
+        "method": "cursor/shell-output-delta",
+        "payload": {
+          "type": "shell-output-delta",
+          "event": {
+            "case": "stdout",
+            "value": {
+              "data": "hi\n"
+            }
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "c1": {
+              "toolName": "shell",
+              "kind": "command_execution",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            }
+          },
+          "usageByRunId": {},
+          "openShells": [
+            "c1"
+          ],
+          "shellOutputByCallId": {
+            "c1": "hi\n"
+          },
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "tool-content",
+            "toolCallId": "c1",
+            "content": {
+              "type": "content",
+              "content": {
+                "type": "text",
+                "text": "hi\n"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "command_execution",
+                "stream": "stdout"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "c1": {
+            "toolName": "shell",
+            "kind": "command_execution",
+            "input": {
+              "command": "echo hi",
+              "workingDirectory": "/repo",
+              "cwd": "/repo"
+            }
+          }
+        },
+        "usageByRunId": {},
+        "openShells": [
+          "c1"
+        ],
+        "shellOutputByCallId": {
+          "c1": "hi\n"
+        },
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.delta",
+        "method": "cursor/shell-output-delta",
+        "payload": {
+          "type": "shell-output-delta",
+          "event": {
+            "case": "exit",
+            "value": {}
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "c1": {
+              "toolName": "shell",
+              "kind": "command_execution",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            }
+          },
+          "usageByRunId": {},
+          "openShells": [
+            "c1"
+          ],
+          "shellOutputByCallId": {
+            "c1": "hi\n"
+          },
+          "notedKinds": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "c1": {
+            "toolName": "shell",
+            "kind": "command_execution",
+            "input": {
+              "command": "echo hi",
+              "workingDirectory": "/repo",
+              "cwd": "/repo"
+            }
+          }
+        },
+        "usageByRunId": {},
+        "openShells": [
+          "c1"
+        ],
+        "shellOutputByCallId": {
+          "c1": "hi\n"
+        },
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/tool_call",
+        "payload": {
+          "type": "tool_call",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "call_id": "c1",
+          "name": "shell",
+          "status": "completed",
+          "args": {
+            "command": "echo hi",
+            "workingDirectory": "/repo"
+          },
+          "result": {
+            "status": "success",
+            "value": {
+              "exitCode": 0,
+              "signal": "",
+              "stdout": "hi\n",
+              "stderr": "",
+              "executionTime": 0
+            }
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "c1": {
+              "toolName": "shell",
+              "kind": "command_execution",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            }
+          },
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "tool-output",
+            "toolCallId": "c1",
+            "output": {
+              "exitCode": 0,
+              "signal": "",
+              "stdout": "hi\n",
+              "stderr": "",
+              "executionTime": 0
+            },
+            "display": {
+              "kind": "command_execution",
+              "intent": "shell",
+              "command": "echo hi",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            },
+            "metadata": {
+              "exitCode": 0,
+              "cursor": {
+                "itemType": "command_execution"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "c1": {
+            "toolName": "shell",
+            "kind": "command_execution",
+            "input": {
+              "command": "echo hi",
+              "workingDirectory": "/repo",
+              "cwd": "/repo"
+            }
+          }
+        },
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/usage",
+        "payload": {
+          "type": "usage",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "usage": {
+            "inputTokens": 100,
+            "outputTokens": 20,
+            "cacheReadTokens": 30,
+            "cacheWriteTokens": 4,
+            "totalTokens": 154,
+            "reasoningTokens": 6
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "c1": {
+              "toolName": "shell",
+              "kind": "command_execution",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            }
+          },
+          "usageByRunId": {
+            "run-1": {
+              "input": 100,
+              "output": 20,
+              "reasoning": 6,
+              "cache": {
+                "read": 30,
+                "write": 4
+              }
+            }
+          },
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "usage",
+            "contextSize": 0,
+            "contextUsed": 0,
+            "observation": {
+              "kind": "cumulative",
+              "providerObservationId": "run-1",
+              "tokens": {
+                "input": 100,
+                "output": 20,
+                "reasoning": 6,
+                "cache": {
+                  "read": 30,
+                  "write": 4
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "c1": {
+            "toolName": "shell",
+            "kind": "command_execution",
+            "input": {
+              "command": "echo hi",
+              "workingDirectory": "/repo",
+              "cwd": "/repo"
+            }
+          }
+        },
+        "usageByRunId": {
+          "run-1": {
+            "input": 100,
+            "output": 20,
+            "reasoning": 6,
+            "cache": {
+              "read": 30,
+              "write": 4
+            }
+          }
+        },
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/assistant",
+        "payload": {
+          "type": "assistant",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "notice"
+              }
+            ]
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "c1": {
+              "toolName": "shell",
+              "kind": "command_execution",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            }
+          },
+          "usageByRunId": {
+            "run-1": {
+              "input": 100,
+              "output": 20,
+              "reasoning": 6,
+              "cache": {
+                "read": 30,
+                "write": 4
+              }
+            }
+          },
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "text-delta",
+            "delta": "notice"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "c1": {
+            "toolName": "shell",
+            "kind": "command_execution",
+            "input": {
+              "command": "echo hi",
+              "workingDirectory": "/repo",
+              "cwd": "/repo"
+            }
+          }
+        },
+        "usageByRunId": {
+          "run-1": {
+            "input": 100,
+            "output": 20,
+            "reasoning": 6,
+            "cache": {
+              "read": 30,
+              "write": 4
+            }
+          }
+        },
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/usage",
+        "payload": {
+          "type": "usage",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "usage": {
+            "inputTokens": 7,
+            "outputTokens": 11,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "totalTokens": 18
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "c1": {
+              "toolName": "shell",
+              "kind": "command_execution",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            }
+          },
+          "usageByRunId": {
+            "run-1": {
+              "input": 107,
+              "output": 31,
+              "reasoning": 6,
+              "cache": {
+                "read": 30,
+                "write": 4
+              }
+            }
+          },
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "usage",
+            "contextSize": 0,
+            "contextUsed": 0,
+            "observation": {
+              "kind": "cumulative",
+              "providerObservationId": "run-1",
+              "tokens": {
+                "input": 107,
+                "output": 31,
+                "reasoning": 6,
+                "cache": {
+                  "read": 30,
+                  "write": 4
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "c1": {
+            "toolName": "shell",
+            "kind": "command_execution",
+            "input": {
+              "command": "echo hi",
+              "workingDirectory": "/repo",
+              "cwd": "/repo"
+            }
+          }
+        },
+        "usageByRunId": {
+          "run-1": {
+            "input": 107,
+            "output": 31,
+            "reasoning": 6,
+            "cache": {
+              "read": 30,
+              "write": 4
+            }
+          }
+        },
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/status",
+        "payload": {
+          "type": "status",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "status": "FINISHED"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "c1": {
+              "toolName": "shell",
+              "kind": "command_execution",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            }
+          },
+          "usageByRunId": {
+            "run-1": {
+              "input": 107,
+              "output": 31,
+              "reasoning": 6,
+              "cache": {
+                "read": 30,
+                "write": 4
+              }
+            }
+          },
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "c1": {
+            "toolName": "shell",
+            "kind": "command_execution",
+            "input": {
+              "command": "echo hi",
+              "workingDirectory": "/repo",
+              "cwd": "/repo"
+            }
+          }
+        },
+        "usageByRunId": {
+          "run-1": {
+            "input": 107,
+            "output": 31,
+            "reasoning": 6,
+            "cache": {
+              "read": 30,
+              "write": 4
+            }
+          }
+        },
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.local-run-stream",
+        "method": "result",
+        "payload": {
+          "schemaVersion": 1,
+          "type": "result",
+          "agentId": "agent-1",
+          "runId": "run-1",
+          "status": "finished"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "session-status",
+            "status": "idle"
+          },
+          {
+            "type": "finish",
+            "sessionId": "run-1"
+          }
+        ]
+      }
+    }
+  ]
+}

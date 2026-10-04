@@ -1,0 +1,100 @@
+---
+import { github, contact, version } from "../config"
+import { canonicalUrl, routes } from "../content/routes"
+import { site } from "../content/site"
+
+interface Props { pathname: string }
+const { pathname } = Astro.props
+const graph: Record<string, unknown>[] = [
+  {
+    "@type": "Organization",
+    "@id": canonicalUrl("/#organization"),
+    name: site.name,
+    description: site.description,
+    url: canonicalUrl("/"),
+    logo: canonicalUrl("/brand/claxedo-icon-dark.svg"),
+    sameAs: [github, "https://www.npmjs.com/org/claxedo", contact],
+    contactPoint: [
+      { "@type": "ContactPoint", contactType: "customer support", url: canonicalUrl(routes.contact) },
+      { "@type": "ContactPoint", contactType: "technical support", url: `${github}/issues` },
+    ],
+  },
+  {
+    "@type": "WebSite",
+    "@id": canonicalUrl("/#website"),
+    name: site.name,
+    description: site.description,
+    url: canonicalUrl("/"),
+    publisher: { "@id": canonicalUrl("/#organization") },
+  },
+]
+
+const normalizedPath = pathname.replace(/\/$/, "") || "/"
+
+const pageNames: Record<string, string> = {
+  [routes.pricing]: "Pricing",
+  [routes.download]: "Download",
+  [routes.compare]: "Compare",
+  [routes.about]: "About",
+  [routes.contact]: "Contact",
+  [routes.privacy]: "Privacy",
+  [routes.terms]: "Terms",
+  [routes.agentRuntimeStudy]: "How often do coding agents need a full machine?",
+}
+if (normalizedPath !== "/") {
+  const segments = normalizedPath.split("/").filter(Boolean)
+  const items = [{ "@type": "ListItem", position: 1, name: "Home", item: canonicalUrl("/") }]
+  segments.forEach((segment, index) => {
+    const path = `/${segments.slice(0, index + 1).join("/")}`
+    items.push({ "@type": "ListItem", position: index + 2, name: pageNames[path] ?? segment.replace(/-/g, " "), item: canonicalUrl(path) })
+  })
+  graph.push({ "@type": "BreadcrumbList", "@id": canonicalUrl(`${normalizedPath}#breadcrumbs`), itemListElement: items })
+}
+
+if (["/", "/pricing"].includes(normalizedPath)) {
+  graph.push({
+    "@type": "SoftwareApplication",
+    "@id": canonicalUrl("/#cloud-application"),
+    name: site.name,
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "Web",
+    url: routes.app,
+    isAccessibleForFree: true,
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD", description: "Free" },
+    publisher: { "@id": canonicalUrl("/#organization") },
+  })
+}
+
+if (["/", "/download", "/pricing"].includes(normalizedPath)) {
+  graph.push({
+    "@type": "SoftwareApplication",
+    "@id": canonicalUrl("/download#desktop-application"),
+    name: site.clients.desktop.name,
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "macOS, Windows, Linux",
+    softwareVersion: version,
+    url: canonicalUrl("/download"),
+    isAccessibleForFree: true,
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD", description: "Free" },
+    publisher: { "@id": canonicalUrl("/#organization") },
+  })
+}
+
+if (normalizedPath === routes.agentRuntimeStudy) {
+  graph.push({
+    "@type": "Article",
+    "@id": canonicalUrl(`${routes.agentRuntimeStudy}#article`),
+    headline: "How often do coding agents need a full machine?",
+    description: "Across 416,467 coding-agent execution calls, the median interval before a full machine was needed again was 10.8 seconds.",
+    datePublished: "2026-08-09",
+    dateModified: "2026-08-09",
+    mainEntityOfPage: canonicalUrl(routes.agentRuntimeStudy),
+    image: canonicalUrl("/agent-runtime-study-og.png"),
+    author: { "@id": canonicalUrl("/#organization") },
+    publisher: { "@id": canonicalUrl("/#organization") },
+  })
+}
+
+const value = JSON.stringify({ "@context": "https://schema.org", "@graph": graph }).replaceAll("<", "\\u003c")
+---
+<script is:inline type="application/ld+json" set:html={value} />

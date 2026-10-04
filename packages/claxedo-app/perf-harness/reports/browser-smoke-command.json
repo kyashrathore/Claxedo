@@ -1,0 +1,287 @@
+{
+  "generated_at": "2026-05-23T10:10:35.836Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo",
+    "upstream"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "command-palette-large-project",
+      "name": "Command Palette Large Project",
+      "started_at": "2026-05-23T10:10:25.406Z",
+      "duration_ms": 9402.488958,
+      "seed": {
+        "repos": 1,
+        "sessions": 40,
+        "messages": 8000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "command_palette_index_ms",
+          "value": 1.8801250000014988,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.8801250000014988
+          ],
+          "p50": 1.8801250000014988,
+          "p95": 1.8801250000014988,
+          "min": 1.8801250000014988,
+          "max": 1.8801250000014988,
+          "mean": 1.8801250000014988,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "command_palette_open_ms",
+          "value": 289.67520799999875,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            289.67520799999875
+          ],
+          "p50": 289.67520799999875,
+          "p95": 289.67520799999875,
+          "min": 289.67520799999875,
+          "max": 289.67520799999875,
+          "mean": 289.67520799999875,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "command_palette_search_ms",
+          "value": 277.06316700000025,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            277.06316700000025
+          ],
+          "p50": 277.06316700000025,
+          "p95": 277.06316700000025,
+          "min": 277.06316700000025,
+          "max": 277.06316700000025,
+          "mean": 277.06316700000025,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "command_execution_overhead_ms",
+          "value": 257.16970799999945,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            257.16970799999945
+          ],
+          "p50": 257.16970799999945,
+          "p95": 257.16970799999945,
+          "min": 257.16970799999945,
+          "max": 257.16970799999945,
+          "mean": 257.16970799999945,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 910.169,
+        "memory_rss_mb": 77.62908935546875,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-command-palette-large-project-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "command-palette-large-project",
+        "metrics": {
+          "command_palette_index_ms": 32,
+          "command_palette_open_ms": 8,
+          "command_palette_search_ms": 43,
+          "command_execution_overhead_ms": 7
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "command_palette_open_ms p95 289.67520799999875 > 8",
+        "command_palette_search_ms p95 277.06316700000025 > 43",
+        "command_execution_overhead_ms p95 257.16970799999945 > 7"
+      ]
+    },
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "command-palette-large-project",
+      "name": "Command Palette Large Project",
+      "started_at": "2026-05-23T10:10:35.796Z",
+      "duration_ms": 9800.190625,
+      "seed": {
+        "repos": 1,
+        "sessions": 40,
+        "messages": 8000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "command_palette_index_ms",
+          "value": 1.5612910000018019,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.5612910000018019
+          ],
+          "p50": 1.5612910000018019,
+          "p95": 1.5612910000018019,
+          "min": 1.5612910000018019,
+          "max": 1.5612910000018019,
+          "mean": 1.5612910000018019,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "command_palette_open_ms",
+          "value": 1280.5537909999985,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1280.5537909999985
+          ],
+          "p50": 1280.5537909999985,
+          "p95": 1280.5537909999985,
+          "min": 1280.5537909999985,
+          "max": 1280.5537909999985,
+          "mean": 1280.5537909999985,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "command_palette_search_ms",
+          "value": 276.8067919999994,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            276.8067919999994
+          ],
+          "p50": 276.8067919999994,
+          "p95": 276.8067919999994,
+          "min": 276.8067919999994,
+          "max": 276.8067919999994,
+          "mean": 276.8067919999994,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "command_execution_overhead_ms",
+          "value": 13.492707999997947,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            13.492707999997947
+          ],
+          "p50": 13.492707999997947,
+          "p95": 13.492707999997947,
+          "min": 13.492707999997947,
+          "max": 13.492707999997947,
+          "mean": 13.492707999997947,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 1529.419,
+        "memory_rss_mb": 51.021575927734375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/upstream-command-palette-large-project-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "command-palette-large-project",
+        "metrics": {
+          "command_palette_index_ms": 8,
+          "command_palette_open_ms": 7,
+          "command_palette_search_ms": 33,
+          "command_execution_overhead_ms": 6
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "command_palette_open_ms p95 1280.5537909999985 > 7",
+        "command_palette_search_ms p95 276.8067919999994 > 33",
+        "command_execution_overhead_ms p95 13.492707999997947 > 6"
+      ]
+    }
+  ],
+  "comparisons": [
+    {
+      "scenario": "command-palette-large-project",
+      "adapter": "browser",
+      "metric": "command_palette_index_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 1.8801250000014988,
+      "upstream_p95": 1.5612910000018019,
+      "winner_delta_percent": 16.958127784027273
+    },
+    {
+      "scenario": "command-palette-large-project",
+      "adapter": "browser",
+      "metric": "command_palette_open_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 289.67520799999875,
+      "upstream_p95": 1280.5537909999985,
+      "winner_delta_percent": 77.37891137132254
+    },
+    {
+      "scenario": "command-palette-large-project",
+      "adapter": "browser",
+      "metric": "command_palette_search_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 277.06316700000025,
+      "upstream_p95": 276.8067919999994,
+      "winner_delta_percent": 0.09253305041476112
+    },
+    {
+      "scenario": "command-palette-large-project",
+      "adapter": "browser",
+      "metric": "command_execution_overhead_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 257.16970799999945,
+      "upstream_p95": 13.492707999997947,
+      "winner_delta_percent": 94.75338362945998
+    }
+  ]
+}

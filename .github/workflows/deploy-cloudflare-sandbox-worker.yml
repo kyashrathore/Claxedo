@@ -1,0 +1,148 @@
+name: deploy-cloudflare-sandbox-worker
+
+# Builds the Cloudflare Sandbox worker's container image AND pushes it to
+# Cloudflare's registry from a CI runner with fast uplink — so the ~4.5GB image
+# never has to be pushed from a laptop. `wrangler deploy` does the whole thing
+# (local docker build in the runner -> push to registry.cloudflare.com -> deploy
+# the worker). Cloudflare has no server-side Dockerfile build, so this is the
+# "let the cloud build+push it" path.
+#
+# Required repo secrets:
+#   CLOUDFLARE_API_TOKEN  — token with Workers Scripts:Edit + Workers (Containers)
+#                           write on the target account. Create at
+#                           dash.cloudflare.com/profile/api-tokens.
+#   CLOUDFLARE_ACCOUNT_ID — the account to deploy into.
+#
+# The runner set baked into the image is the Dockerfile default
+# (CLAXEDO_NPM_AGENTS) — wrangler cannot inject a --build-arg, so edit the
+# Dockerfile default to change which agent CLIs ship.
+
+on:
+  # deploy-staging.yml calls this when a push to `staging` touched the Worker or
+  # a package the image bundles; it is the only automatic trigger.
+  workflow_call:
+    inputs:
+      deploy_worker:
+        description: "Deploy the Cloudflare sandbox Worker image"
+        required: false
+        type: boolean
+        default: true
+      agent_plugins:
+        description: "Include the optional Agent Plugins runtime materializer"
+        required: false
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      deploy_worker:
+        description: "Deploy the Cloudflare sandbox Worker image"
+        required: false
+        type: boolean
+        default: true
+      agent_plugins:
+        description: "Include the optional Agent Plugins runtime materializer"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: ${{ inputs.deploy_worker }}
+    runs-on: ubuntu-latest
+    environment: staging
+    defaults:
+      run:
+        working-directory: packages/claxedo-server/scripts/sandbox/cloudflare-worker
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Install worker dependencies
+        run: npm install
+
+      # build-sandbox-image.ts runs under tsx, which resolves every @claxedo
+      # package it imports through dist/, and a fresh runner has none.
+      - name: Build dist-resolved workspace packages
+        working-directory: ${{ github.workspace }}
+        run: bun run build:packages
+
+      # The image ships the in-repo workspace-runtime host bundle (COPY .build/)
+      # instead of npm-installing @claxedo/workspace-runtime — publishing is a
+      # separate release concern and no longer gates image builds.
+      - name: Bundle workspace-runtime host without Agent Plugins
+        if: ${{ !inputs.agent_plugins }}
+        run: npx tsx ../build-sandbox-image.ts --bundle-only --out=.build
+
+      - name: Bundle Agent Plugins workspace-runtime host into the wrangler build context
+        if: ${{ inputs.agent_plugins }}
+        run: npx tsx ../build-sandbox-image.ts --agent-plugins --bundle-only --out=.build
+
+      # The bundle step also writes scripts/sandbox/.build/build-info.json with
+      # the content build-id. Surface it so operators can wire
+      # CLAXEDO_SANDBOX_BUILD_ID onto the control plane — otherwise a rebuilt
+      # bundle at the same version never reaches sandboxes.
+      - name: Surface sandbox build identity
+        if: always()
+        run: |
+          INFO=../.build/build-info.json
+          if [ -f "$INFO" ]; then
+            echo "### Sandbox build identity" >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            cat "$INFO" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "Pin the control plane: set CLAXEDO_SANDBOX_BUILD_ID (or CLAXEDO_SANDBOX_IMAGE) to the value above." >> "$GITHUB_STEP_SUMMARY"
+            cat "$INFO"
+          else
+            echo "no build-info.json emitted"
+          fi
+
+      # The idle stop calls the control plane at CONTROL_PLANE_URL; a Worker
+      # without it refuses to start runtimes, so an empty value fails here.
+      - name: Deploy (build image in CI -> push to Cloudflare registry -> deploy worker)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CONTROL_PLANE_URL: ${{ vars.CLAXEDO_STAGING_API_ORIGIN }}
+        run: |
+          [ -n "$CONTROL_PLANE_URL" ] || { echo "::error::CLAXEDO_STAGING_API_ORIGIN is not configured in the staging environment"; exit 1; }
+          npm run deploy -- --var "CONTROL_PLANE_URL:$CONTROL_PLANE_URL"
+
+  synchronize-control-token:
+    needs: deploy
+    if: ${{ always() && needs.deploy.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    environment: staging
+    defaults:
+      run:
+        working-directory: packages/claxedo-server/scripts/sandbox/cloudflare-worker
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # The native driver and this Worker read the same staging credential even
+      # though the container deployment uses a repository-scoped token with
+      # broader image permissions. This job also supports a fast sync-only
+      # dispatch when deploy_worker is false.
+      - name: Synchronize sandbox control token
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SANDBOX_CONTROL_TOKEN: ${{ secrets.CLAXEDO_RUNTIME_ADMIN_TOKEN }}
+        run: printf '%s' "$SANDBOX_CONTROL_TOKEN" | npx --yes wrangler@4.127.1 secret put API_TOKEN
+
+      # The control plane's deploy uploads the same secret as
+      # CLOUDFLARE_SANDBOX_IDLE_STOP_TOKEN; it authorizes the idle stop alone.
+      - name: Synchronize the idle-stop token
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          IDLE_STOP_TOKEN: ${{ secrets.CLAXEDO_SANDBOX_IDLE_STOP_TOKEN }}
+        run: |
+          [ -n "$IDLE_STOP_TOKEN" ] || { echo "::error::CLAXEDO_SANDBOX_IDLE_STOP_TOKEN is not configured in the staging environment"; exit 1; }
+          printf '%s' "$IDLE_STOP_TOKEN" | npx --yes wrangler@4.127.1 secret put IDLE_STOP_TOKEN

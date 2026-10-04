@@ -1,0 +1,36 @@
+{
+  "rowId": "cf-smoke",
+  "shape": "c1/load1",
+  "target": "https://3939-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+  "relay": "https://claxedo-workspace-relay-reeval.kanusdlp.workers.dev",
+  "httpP99OverheadMs": null,
+  "wsMessageP99OverheadMs": 149.77,
+  "relayedWsMessages": {
+    "attempted": 2,
+    "delivered": 2
+  },
+  "directWsMessages": {
+    "attempted": 2,
+    "delivered": 2
+  },
+  "connectP95Ms": 1818.8,
+  "upstreamOpenP95Ms": 741,
+  "upstreamOpenSource": "relay-trace",
+  "holderSetup": {
+    "attempted": 1,
+    "delivered": 1
+  },
+  "upstreamFailureCodes": {},
+  "trace": {
+    "wsUpstreamOpenP95Ms": 741,
+    "maxQueuedFrames": 0,
+    "maxQueuedDelayMs": 0,
+    "samples": 1
+  },
+  "gates": {
+    "httpP99OverheadPass": true,
+    "wsMessageP99OverheadPass": false,
+    "zeroRelayedWsLossPass": true,
+    "pass": false
+  }
+}

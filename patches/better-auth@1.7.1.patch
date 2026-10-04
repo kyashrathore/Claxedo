@@ -1,0 +1,271 @@
+diff --git a/dist/api/routes/sign-up.mjs b/dist/api/routes/sign-up.mjs
+index ea3037f..b684c92 100644
+--- a/dist/api/routes/sign-up.mjs
++++ b/dist/api/routes/sign-up.mjs
+@@ -222,13 +222,18 @@ const signUpEmail = () => createAuthEndpoint("/sign-up/email", {
+ 		const hash = await ctx.context.password.hash(password);
+ 		let createdUser;
+ 		try {
+-			createdUser = await ctx.context.internalAdapter.createUser({
++			const created = await ctx.context.internalAdapter.createUserWithAccount({
+ 				email: normalizedEmail,
+ 				name,
+ 				image,
+ 				...additionalUserFields,
+ 				emailVerified: false
++			}, {
++				providerId: "credential",
++				issuer: createLocalAccountIssuer("credential"),
++				password: hash
+ 			}, { method: "email-password" });
++			createdUser = created.user;
+ 			if (!createdUser) throw APIError.from("BAD_REQUEST", BASE_ERROR_CODES.FAILED_TO_CREATE_USER);
+ 		} catch (e) {
+ 			if (isAPIError(e)) {
+@@ -240,13 +245,6 @@ const signUpEmail = () => createAuthEndpoint("/sign-up/email", {
+ 			throw APIError.from("UNPROCESSABLE_ENTITY", BASE_ERROR_CODES.FAILED_TO_CREATE_USER);
+ 		}
+ 		if (!createdUser) throw APIError.from("UNPROCESSABLE_ENTITY", BASE_ERROR_CODES.FAILED_TO_CREATE_USER);
+-		await ctx.context.internalAdapter.linkAccount({
+-			userId: createdUser.id,
+-			providerId: "credential",
+-			issuer: createLocalAccountIssuer("credential"),
+-			accountId: createdUser.id,
+-			password: hash
+-		});
+ 		if (ctx.context.options.emailVerification?.sendOnSignUp ?? ctx.context.options.emailAndPassword.requireEmailVerification) {
+ 			const token = await createEmailVerificationToken(ctx.context.secret, createdUser.email, void 0, ctx.context.options.emailVerification?.expiresIn);
+ 			const callbackURL = body.callbackURL ? encodeURIComponent(body.callbackURL) : encodeURIComponent("/");
+diff --git a/dist/db/internal-adapter.mjs b/dist/db/internal-adapter.mjs
+index 0f88105..50c6477 100644
+--- a/dist/db/internal-adapter.mjs
++++ b/dist/db/internal-adapter.mjs
+@@ -23,6 +23,89 @@ const createInternalAdapter = (adapter, ctx) => {
+ 	const verificationConsumeLocks = /* @__PURE__ */ new Map();
+ 	const sessionExpiration = options.session?.expiresIn || 3600 * 24 * 7;
+ 	const { createWithHooks, updateWithHooks, updateManyWithHooks, deleteWithHooks, deleteManyWithHooks, consumeOneWithHooks } = getWithHooks(adapter, ctx);
++	const d1Atomic = adapter[Symbol.for("claxedo.better-auth.d1.atomic.v1")];
++	const createUserWithAccount = async (user, account, source) => {
++		return runWithTransaction(adapter, async () => {
++			const userData = {
++				id: ctx.generateId({ model: "user" }) || generateId(),
++				createdAt: /* @__PURE__ */ new Date(),
++				updatedAt: /* @__PURE__ */ new Date(),
++				...user,
++				email: user.email?.toLowerCase()
++			};
++			if (options.user?.validateUserInfo) {
++				const validationSource = {
++					...source,
++					action: "create-user"
++				};
++				assertValidUserInfoSource(validationSource);
++				let endpointContext;
++				try {
++					endpointContext = await getCurrentAuthContext();
++				} catch (error) {
++					logger.error("Unable to run validateUserInfo: missing endpoint context", error);
++					throw new APIError("FORBIDDEN", {
++						code: "validation_context_missing",
++						message: "User validation requires an endpoint context"
++					});
++				}
++				await assertValidUserInfo(endpointContext, {
++					user: userData,
++					source: validationSource
++				});
++			}
++			if (!d1Atomic?.createUserAccount) {
++				const createdUser = await createWithHooks(userData, "user", void 0);
++				if (!createdUser) throw new APIError("BAD_REQUEST", { message: "Failed to create user" });
++				return {
++					user: createdUser,
++					account: await createWithHooks({
++						id: ctx.generateId({ model: "account" }) || generateId(),
++						...account,
++						accountId: account.accountId ?? (account.providerId === "credential" ? createdUser.id : void 0),
++						userId: createdUser.id,
++						createdAt: /* @__PURE__ */ new Date(),
++						updatedAt: /* @__PURE__ */ new Date()
++					}, "account", void 0)
++				};
++			}
++			const preparedUser = await createWithHooks(userData, "user", {
++				executeMainFn: false,
++				fn: async (data) => data
++			});
++			if (!preparedUser) throw new APIError("BAD_REQUEST", { message: "Failed to create user" });
++			const expectedAccountBinding = {
++				userId: preparedUser.id,
++				providerId: account.providerId,
++				issuer: account.issuer,
++				accountId: account.accountId ?? (account.providerId === "credential" ? preparedUser.id : void 0)
++			};
++			let committed;
++			const createdAccount = await createWithHooks({
++				id: ctx.generateId({ model: "account" }) || generateId(),
++				...account,
++				accountId: expectedAccountBinding.accountId,
++				userId: preparedUser.id,
++				createdAt: /* @__PURE__ */ new Date(),
++				updatedAt: /* @__PURE__ */ new Date()
++			}, "account", {
++				executeMainFn: false,
++				fn: async (preparedAccount) => {
++					if (preparedAccount.userId !== expectedAccountBinding.userId || preparedAccount.providerId !== expectedAccountBinding.providerId || preparedAccount.issuer !== expectedAccountBinding.issuer || preparedAccount.accountId !== expectedAccountBinding.accountId) throw new APIError("CONFLICT", {
++						code: "account_hook_binding_conflict",
++						message: "Account hook changed the selected authentication binding"
++					});
++					committed = await d1Atomic.createUserAccount(preparedUser, preparedAccount);
++					return committed.account;
++				}
++			});
++			if (!committed || !createdAccount) throw new APIError("BAD_REQUEST", { message: "Failed to create account" });
++			return {
++				user: committed.user,
++				account: createdAccount
++			};
++		});
++	};
+ 	/**
+ 	* Ends the live session rows matched by `where` without physically deleting
+ 	* them.
+@@ -118,25 +201,9 @@ const createInternalAdapter = (adapter, ctx) => {
+ 		}
+ 	}
+ 	return {
++		createUserWithAccount,
+ 		createOAuthUser: async (user, account) => {
+-			return runWithTransaction(adapter, async () => {
+-				const createdUser = await createWithHooks({
+-					createdAt: /* @__PURE__ */ new Date(),
+-					updatedAt: /* @__PURE__ */ new Date(),
+-					...user,
+-					email: user.email?.toLowerCase()
+-				}, "user", void 0);
+-				if (!createdUser) throw new APIError("BAD_REQUEST", { message: "Failed to create user" });
+-				return {
+-					user: createdUser,
+-					account: await createWithHooks({
+-						...account,
+-						userId: createdUser.id,
+-						createdAt: /* @__PURE__ */ new Date(),
+-						updatedAt: /* @__PURE__ */ new Date()
+-					}, "account", void 0)
+-				};
+-			});
++			return createUserWithAccount(user, account);
+ 		},
+ 		createUser: async (user, source) => {
+ 			const data = {
+diff --git a/dist/oauth2/link-account.mjs b/dist/oauth2/link-account.mjs
+index bdc01a2..f3e0e38 100644
+--- a/dist/oauth2/link-account.mjs
++++ b/dist/oauth2/link-account.mjs
+@@ -5,7 +5,7 @@ import { assertValidUserInfo } from "../utils/validate-user-info.mjs";
+ import { OAUTH_CALLBACK_ERROR_CODES, redirectOnError } from "./errors.mjs";
+ import { setTokenUtil } from "./utils.mjs";
+ import { createEmailVerificationToken } from "../api/routes/email-verification.mjs";
+-import { queueAfterTransactionHook, runWithTransaction } from "@better-auth/core/context";
++import { queueAfterTransactionHook } from "@better-auth/core/context";
+ import { isDevelopment } from "@better-auth/core/env";
+ import { APIError } from "@better-auth/core/error";
+ //#region src/oauth2/link-account.ts
+@@ -217,22 +217,14 @@ async function handleOAuthUserInfo(c, opts) {
+ 				issuer: account.issuer,
+ 				accountId: account.accountId
+ 			};
+-			const { createdUser, createdAccount } = await runWithTransaction(c.context.adapter, async () => {
+-				const createdUser = await c.context.internalAdapter.createUser({
++			const atomicUserAccount = await c.context.internalAdapter.createUserWithAccount({
+ 					name,
+ 					image,
+ 					...additionalUserFields,
+ 					email: userInfo.email.toLowerCase(),
+ 					emailVerified: userInfo.emailVerified
+-				}, source);
+-				return {
+-					createdUser,
+-					createdAccount: await c.context.internalAdapter.createAccount({
+-						...accountData,
+-						userId: createdUser.id
+-					})
+-				};
+-			});
++				}, accountData, source);
++			const { user: createdUser, account: createdAccount } = atomicUserAccount;
+ 			if (requireExactAccountBinding && (createdAccount.issuer !== account.issuer || createdAccount.accountId !== account.accountId || createdAccount.providerId !== account.providerId || createdAccount.userId !== createdUser.id)) throw new APIError("CONFLICT", {
+ 				code: "account_hook_binding_conflict",
+ 				message: "Account hook changed the selected authentication binding"
+
+diff --git a/dist/plugins/device-authorization/schema.mjs b/dist/plugins/device-authorization/schema.mjs
+--- a/dist/plugins/device-authorization/schema.mjs
++++ b/dist/plugins/device-authorization/schema.mjs
+@@ -14,6 +14,14 @@ const schema = { deviceCode: {
+ 			type: "string",
+ 			required: false
+ 		},
++		approvalSessionId: {
++			type: "string",
++			required: false
++		},
++		approvalAuthTime: {
++			type: "date",
++			required: false
++		},
+ 		expiresAt: {
+ 			type: "date",
+ 			required: true
+@@ -52,6 +60,8 @@ z.object({
+ 	deviceCode: z.string(),
+ 	userCode: z.string(),
+ 	userId: z.string().optional(),
++	approvalSessionId: z.string().optional(),
++	approvalAuthTime: z.date().optional(),
+ 	expiresAt: z.date(),
+ 	status: z.string(),
+ 	lastPolledAt: z.date().optional(),
+diff --git a/dist/plugins/device-authorization/schema.d.mts b/dist/plugins/device-authorization/schema.d.mts
+--- a/dist/plugins/device-authorization/schema.d.mts
++++ b/dist/plugins/device-authorization/schema.d.mts
+@@ -6,6 +6,8 @@ declare const deviceCode: z.ZodObject<{
+   deviceCode: z.ZodString;
+   userCode: z.ZodString;
+   userId: z.ZodOptional<z.ZodString>;
++  approvalSessionId: z.ZodOptional<z.ZodString>;
++  approvalAuthTime: z.ZodOptional<z.ZodDate>;
+   expiresAt: z.ZodDate;
+   status: z.ZodString;
+   lastPolledAt: z.ZodOptional<z.ZodDate>;
+diff --git a/dist/plugins/device-authorization/index.d.mts b/dist/plugins/device-authorization/index.d.mts
+--- a/dist/plugins/device-authorization/index.d.mts
++++ b/dist/plugins/device-authorization/index.d.mts
+@@ -123,6 +123,14 @@ declare const deviceAuthorization: <Grant extends DeviceAuthorizationGrant | und
+           type: "string";
+           required: false;
+         };
++        approvalSessionId: {
++          type: "string";
++          required: false;
++        };
++        approvalAuthTime: {
++          type: "date";
++          required: false;
++        };
+         expiresAt: {
+           type: "date";
+           required: true;
+diff --git a/dist/plugins/device-authorization/routes.mjs b/dist/plugins/device-authorization/routes.mjs
+--- a/dist/plugins/device-authorization/routes.mjs
++++ b/dist/plugins/device-authorization/routes.mjs
+@@ -621,7 +621,9 @@ const deviceApprove = createAuthEndpoint("/device/approve", {
+ 		}],
+ 		update: {
+ 			status: "approved",
+-			userId: session.user.id
++			userId: session.user.id,
++			approvalSessionId: session.session.id,
++			approvalAuthTime: session.session.createdAt
+ 		}
+ 	});
+ 	return ctx.json({ success: true });

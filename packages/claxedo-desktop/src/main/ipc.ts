@@ -1,0 +1,521 @@
+import { execFile } from "node:child_process"
+import { BrowserWindow, ClipboardItem, app, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron"
+import type { IpcMainEvent, IpcMainInvokeEvent, WebContents } from "electron"
+
+import type {
+  BrowserConsoleEntry,
+  BrowserConsoleQuery,
+  BrowserNodeSelectedPayload,
+  BrowserScreenshotClip,
+  InitStep,
+  ServerReadyData,
+  WslConfig,
+} from "../preload/types"
+import type { BrowserRegistry } from "./browser/registry"
+import { isOpenableLinkUrl } from "./navigation-guard"
+import { openIn } from "./open-in"
+import { readLocalFileContent } from "./local-file-content"
+import { persistedServerUrlVerdict } from "./server-url"
+import { clampZoomFactor } from "../shared/zoom-factor"
+import { getStore } from "./store"
+import { assertStoreKey, assertStoreValue } from "./store-policy"
+
+const PNG = "image/png"
+
+type Deps = {
+  awaitInitialization: (sendStep: (step: InitStep) => void) => Promise<ServerReadyData>
+  getDefaultServerUrl: () => Promise<string | null> | string | null
+  setDefaultServerUrl: (url: string | null) => Promise<void> | void
+  getWslConfig: () => Promise<WslConfig>
+  setWslConfig: (config: WslConfig) => Promise<void> | void
+  getDisplayBackend: () => Promise<string | null>
+  setDisplayBackend: (backend: string | null) => Promise<void> | void
+  checkAppExists: (appName: string) => Promise<boolean> | boolean
+  wslPath: (path: string, mode: "windows" | "linux" | null) => Promise<string>
+  resolveAppPath: (appName: string) => Promise<string | null>
+  loadingWindowComplete: () => void
+  runUpdater: (alertOnFail: boolean) => Promise<void> | void
+  checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string }>
+  installUpdate: () => Promise<void> | void
+  /** Restarts the app, or reloads `reload`'s window in development. */
+  restart: (reload: () => void) => void
+  getStartAtLogin: () => boolean
+  setStartAtLogin: (enabled: boolean) => void
+  renderMermaid?: (source: string, theme?: Record<string, string>) => Promise<string>
+  /** Optional; only provided when the browser-tab feature flag is set. */
+  browser?: BrowserRegistry
+}
+
+export function registerIpcHandlers(deps: Deps) {
+  ipcMain.handle("await-initialization", (event: IpcMainInvokeEvent) => {
+    const send = (step: InitStep) => event.sender.send("init-step", step)
+    return deps.awaitInitialization(send)
+  })
+  ipcMain.handle("get-default-server-url", () => deps.getDefaultServerUrl())
+  // `unknown`, then admitted: main dials this value before any window exists,
+  // so the renderer decides where the app's first request of the next launch
+  // goes. `server-url.ts` states what an origin has to be.
+  ipcMain.handle("set-default-server-url", (_event: IpcMainInvokeEvent, url: unknown) => {
+    const verdict = persistedServerUrlVerdict(url)
+    if (!verdict.allowed) throw new Error(`ipc "set-default-server-url" rejected: ${verdict.reason}`)
+    return deps.setDefaultServerUrl(verdict.url)
+  })
+  ipcMain.handle("get-wsl-config", () => deps.getWslConfig())
+  ipcMain.handle("set-wsl-config", (_event: IpcMainInvokeEvent, config: WslConfig) => deps.setWslConfig(config))
+  ipcMain.handle("get-display-backend", () => deps.getDisplayBackend())
+  ipcMain.handle("set-display-backend", (_event: IpcMainInvokeEvent, backend: string | null) =>
+    deps.setDisplayBackend(backend),
+  )
+  ipcMain.handle("check-app-exists", (_event: IpcMainInvokeEvent, appName: string) => deps.checkAppExists(appName))
+  ipcMain.handle("wsl-path", (_event: IpcMainInvokeEvent, path: string, mode: "windows" | "linux" | null) =>
+    deps.wslPath(path, mode),
+  )
+  ipcMain.handle("resolve-app-path", (_event: IpcMainInvokeEvent, appName: string) => deps.resolveAppPath(appName))
+  ipcMain.on("loading-window-complete", () => deps.loadingWindowComplete())
+  ipcMain.handle("run-updater", (_event: IpcMainInvokeEvent, alertOnFail: boolean) => deps.runUpdater(alertOnFail))
+  ipcMain.handle("check-update", () => deps.checkUpdate())
+  ipcMain.handle("install-update", () => deps.installUpdate())
+  ipcMain.handle("get-start-at-login", () => deps.getStartAtLogin())
+  // `unknown`, then coerced: the flag arrives from a renderer message, so
+  // declaring it `boolean` claimed a type the message never promised and made
+  // the coercion below look redundant.
+  ipcMain.handle("set-start-at-login", (_event: IpcMainInvokeEvent, enabled: unknown) =>
+    deps.setStartAtLogin(enabled === true),
+  )
+  const renderMermaid = deps.renderMermaid
+  if (renderMermaid) {
+    ipcMain.handle(
+      "render-mermaid",
+      (_event: IpcMainInvokeEvent, source: string, theme?: Record<string, string>) => renderMermaid(source, theme),
+    )
+  }
+  ipcMain.handle("store-get", (_event: IpcMainInvokeEvent, name: string, key: string) => {
+    assertStoreKey(key)
+    const store = getStore(name)
+    const value = store.get(key)
+    if (value === undefined || value === null) return null
+    return typeof value === "string" ? value : JSON.stringify(value)
+  })
+  ipcMain.handle("store-set", (_event: IpcMainInvokeEvent, name: string, key: string, value: string) => {
+    assertStoreKey(key)
+    assertStoreValue(value)
+    getStore(name).set(key, value)
+  })
+  ipcMain.handle("store-delete", (_event: IpcMainInvokeEvent, name: string, key: string) => {
+    assertStoreKey(key)
+    getStore(name).delete(key)
+  })
+  ipcMain.handle("store-clear", (_event: IpcMainInvokeEvent, name: string) => {
+    getStore(name).clear()
+  })
+  ipcMain.handle("store-keys", (_event: IpcMainInvokeEvent, name: string) => {
+    const store = getStore(name)
+    return Object.keys(store.store)
+  })
+  ipcMain.handle("store-length", (_event: IpcMainInvokeEvent, name: string) => {
+    const store = getStore(name)
+    return Object.keys(store.store).length
+  })
+
+  ipcMain.handle(
+    "open-directory-picker",
+    async (_event: IpcMainInvokeEvent, opts?: { multiple?: boolean; title?: string; defaultPath?: string }) => {
+      const result = await dialog.showOpenDialog({
+        properties: ["openDirectory", ...(opts?.multiple ? ["multiSelections" as const] : [])],
+        title: opts?.title ?? "Choose a folder",
+        defaultPath: opts?.defaultPath,
+      })
+      if (result.canceled) return null
+      return opts?.multiple ? result.filePaths : result.filePaths[0]
+    },
+  )
+
+  ipcMain.handle(
+    "open-file-picker",
+    async (_event: IpcMainInvokeEvent, opts?: { multiple?: boolean; title?: string; defaultPath?: string }) => {
+      const result = await dialog.showOpenDialog({
+        properties: ["openFile", ...(opts?.multiple ? ["multiSelections" as const] : [])],
+        title: opts?.title ?? "Choose a file",
+        defaultPath: opts?.defaultPath,
+      })
+      if (result.canceled) return null
+      return opts?.multiple ? result.filePaths : result.filePaths[0]
+    },
+  )
+
+  ipcMain.handle(
+    "save-file-picker",
+    async (_event: IpcMainInvokeEvent, opts?: { title?: string; defaultPath?: string }) => {
+      const result = await dialog.showSaveDialog({
+        title: opts?.title ?? "Save file",
+        defaultPath: opts?.defaultPath,
+      })
+      if (result.canceled) return null
+      return result.filePath ?? null
+    },
+  )
+
+  // Scheme-gated: `shell.openExternal` hands the URL to the OS handler, and the
+  // callers are untrusted content — rendered agent markdown and terminal
+  // output-detected links both reach here. Without this an agent could get
+  // `file:///…/Evil.app` (or any privileged platform scheme) launched by a click.
+  ipcMain.on("open-link", (_event: IpcMainEvent, url: string) => {
+    if (!isOpenableLinkUrl(url)) return
+    void shell.openExternal(url)
+  })
+
+  // `open-in.ts` decides which of these four the request is; this only binds
+  // each to its electron call.
+  ipcMain.handle("read-file-content", (_event: IpcMainInvokeEvent, path: string) => readLocalFileContent(path))
+  ipcMain.handle("open-path", (event: IpcMainInvokeEvent, path: string, app?: string) =>
+    openIn(
+      { path, app },
+      { platform: process.platform, resolveAppPath: deps.resolveAppPath },
+      {
+        reveal: (target) => shell.showItemInFolder(target),
+        openWithOsHandler: async (target) => {
+          const error = await shell.openPath(target)
+          if (error) throw new Error(error)
+        },
+        confirmOpenExecutable: (target) => confirmOpenExecutable(event.sender, target),
+        launch: (name, target) =>
+          new Promise<void>((resolve, reject) => {
+            const [cmd, args] =
+              process.platform === "darwin" ? (["open", ["-a", name, target]] as const) : ([name, [target]] as const)
+            execFile(cmd, args, (err) => (err ? reject(err) : resolve()))
+          }),
+      },
+    ),
+  )
+
+  ipcMain.handle("show-item-in-folder", async (_event: IpcMainInvokeEvent, path: string) => {
+    shell.showItemInFolder(path)
+  })
+
+  ipcMain.handle("read-clipboard-image", async () => {
+    const items = await clipboard.read()
+    const item = items.find((entry) => entry.types.includes(PNG))
+    if (!item) return null
+    const payload = await item.getType(PNG)
+    if (!(payload instanceof Blob)) return null
+    const buffer = await payload.arrayBuffer()
+    const size = nativeImage.createFromBuffer(Buffer.from(buffer)).getSize()
+    if (size.width === 0 || size.height === 0) return null
+    return { buffer, width: size.width, height: size.height }
+  })
+  ipcMain.handle("write-clipboard-image", async (_event: IpcMainInvokeEvent, buffer: ArrayBuffer) => {
+    const image = nativeImage.createFromBuffer(Buffer.from(buffer))
+    if (image.isEmpty()) return false
+    await clipboard.write([new ClipboardItem({ [PNG]: new Blob([new Uint8Array(image.toPNG())], { type: PNG }) })])
+    return true
+  })
+
+  ipcMain.handle("get-window-focused", (event: IpcMainInvokeEvent) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    return win?.isFocused() ?? false
+  })
+
+  ipcMain.handle("get-window-fullscreen", (event: IpcMainInvokeEvent) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    return win?.isFullScreen() ?? false
+  })
+
+  ipcMain.handle("set-window-focus", (event: IpcMainInvokeEvent) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    win?.focus()
+  })
+
+  ipcMain.handle("show-window", (event: IpcMainInvokeEvent) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    win?.show()
+  })
+
+  // The reload targets the window that asked, so a diagnostics window can't
+  // reload the main one.
+  ipcMain.on("relaunch", (event: IpcMainEvent) => {
+    deps.restart(() => event.sender.reloadIgnoringCache())
+  })
+
+  ipcMain.on("quit", () => {
+    app.quit()
+  })
+
+  ipcMain.handle("set-zoom-factor", (event: IpcMainInvokeEvent, factor: unknown) => {
+    if (typeof factor !== "number" || !Number.isFinite(factor)) {
+      throw new Error('ipc "set-zoom-factor" rejected: zoom factor must be a finite number')
+    }
+    event.sender.setZoomFactor(clampZoomFactor(factor))
+  })
+
+  ipcMain.on("set-native-theme", (_event: IpcMainEvent, theme: "light" | "dark" | "system") => {
+    nativeTheme.themeSource = theme
+  })
+
+  registerBrowserIpcHandlers(deps.browser)
+}
+
+/**
+ * Parented, because a `showMessageBox` without a parent window is not modal:
+ * it can drift behind the app and be answered later, against a request the
+ * user has stopped looking at.
+ */
+async function confirmOpenExecutable(sender: WebContents, target: string) {
+  const options = {
+    type: "warning" as const,
+    buttons: ["Cancel", "Open"],
+    defaultId: 0,
+    cancelId: 0,
+    title: "Open an executable?",
+    message: "Opening this will run it, not display it.",
+    detail: `${target}\n\nOpen it only if you know what it does.`,
+  }
+  const parent = BrowserWindow.fromWebContents(sender)
+  const { response } = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options)
+  return response === 1
+}
+
+function registerBrowserIpcHandlers(registry: BrowserRegistry | undefined) {
+  ipcMain.handle("browser:enabled", () => Boolean(registry))
+
+  if (!registry) return
+
+  // Subscribers can arrive before `browser:register` (the renderer's
+  // BrowserPaneProvider attaches stream listeners during mount, before the
+  // webview's dom-ready fires register). Queue them per-paneId here and
+  // drain inside the register handler so the first subscription doesn't
+  // get dropped on the floor.
+  const pendingAttach = new Map<string, Array<() => void>>()
+  const queueAttach = (paneId: string, attach: () => void) => {
+    if (!pendingAttach.has(paneId)) pendingAttach.set(paneId, [])
+    pendingAttach.get(paneId)!.push(attach)
+  }
+  const drainPending = (paneId: string) => {
+    const list = pendingAttach.get(paneId)
+    if (!list) return
+    pendingAttach.delete(paneId)
+    for (const fn of list) {
+      try {
+        fn()
+      } catch {
+        // best-effort
+      }
+    }
+  }
+
+  ipcMain.handle(
+    "browser:register",
+    (_event: IpcMainInvokeEvent, paneId: string, webContentsId: number) => {
+      try {
+        const handle = registry.register(paneId, webContentsId)
+        // Wire any subscribers that arrived before the register IPC.
+        drainPending(paneId)
+        return { ok: true as const, webContentsId: handle.webContentsId }
+      } catch (err) {
+        return { ok: false as const, error: String(err instanceof Error ? err.message : err) }
+      }
+    },
+  )
+
+  ipcMain.handle("browser:unregister", (_event: IpcMainInvokeEvent, paneId: string) => {
+    registry.unregister(paneId)
+    pendingAttach.delete(paneId)
+    return { ok: true as const }
+  })
+
+  ipcMain.handle(
+    "browser:navigate",
+    async (_event: IpcMainInvokeEvent, paneId: string, url: string) => {
+      const handle = registry.get(paneId)
+      if (!handle) {
+        return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+      }
+      try {
+        const parsed = new URL(url)
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          return { ok: false as const, error: `scheme ${parsed.protocol} not allowed` }
+        }
+      } catch {
+        return { ok: false as const, error: `invalid url: ${url}` }
+      }
+      try {
+        await handle.navigate(url)
+        return { ok: true as const }
+      } catch (err) {
+        return { ok: false as const, error: String(err instanceof Error ? err.message : err) }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "browser:getConsoleLogs",
+    (_event: IpcMainInvokeEvent, paneId: string, q: BrowserConsoleQuery | undefined) => {
+      const handle = registry.get(paneId)
+      if (!handle) return [] as BrowserConsoleEntry[]
+      return handle.getConsoleLogs(q ?? {}) as BrowserConsoleEntry[]
+    },
+  )
+
+  const consoleSubs = new Map<string, () => void>()
+  const subKey = (paneId: string, senderId: number) => `${senderId}:${paneId}`
+
+  const attachConsoleSubscriber = (event: IpcMainInvokeEvent, paneId: string) => {
+    const handle = registry.get(paneId)
+    if (!handle) return false
+    const key = subKey(paneId, event.sender.id)
+    if (consoleSubs.has(key)) return true
+    const unsubscribe = handle.onConsoleEntry((entry) => {
+      if (event.sender.isDestroyed()) return
+      event.sender.send(`browser:onConsoleEntry:${paneId}`, entry)
+    })
+    consoleSubs.set(key, unsubscribe)
+    const cleanup = () => {
+      const fn = consoleSubs.get(key)
+      if (fn) {
+        try {
+          fn()
+        } catch {}
+        consoleSubs.delete(key)
+      }
+    }
+    event.sender.once("destroyed", cleanup)
+    return true
+  }
+
+  ipcMain.handle("browser:subscribeConsole", (event: IpcMainInvokeEvent, paneId: string) => {
+    if (attachConsoleSubscriber(event, paneId)) return { ok: true as const }
+    // Handle isn't registered yet — defer until register IPC drains us.
+    queueAttach(paneId, () => attachConsoleSubscriber(event, paneId))
+    return { ok: true as const, deferred: true as const }
+  })
+
+  ipcMain.handle("browser:unsubscribeConsole", (event: IpcMainInvokeEvent, paneId: string) => {
+    const key = subKey(paneId, event.sender.id)
+    const fn = consoleSubs.get(key)
+    if (fn) {
+      try {
+        fn()
+      } catch {}
+      consoleSubs.delete(key)
+    }
+    return { ok: true as const }
+  })
+
+  ipcMain.handle(
+    "browser:captureScreenshot",
+    async (_event: IpcMainInvokeEvent, paneId: string, opts: { clip?: BrowserScreenshotClip } | undefined) => {
+      const handle = registry.get(paneId)
+      if (!handle) return { ok: false as const, error: { code: "no-pane" as const, message: `no browser pane registered for ${paneId}` } }
+      return handle.screenshot(opts ?? {})
+    },
+  )
+
+  ipcMain.handle("browser:setInspectMode", async (_event: IpcMainInvokeEvent, paneId: string, enabled: unknown) => {
+    const handle = registry.get(paneId)
+    if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+    return handle.setInspectMode(enabled === true)
+  })
+
+  const nodeSubs = new Map<string, () => void>()
+  const nodeKey = (paneId: string, senderId: number) => `${senderId}:${paneId}`
+
+  const attachNodeSelectedSubscriber = (event: IpcMainInvokeEvent, paneId: string) => {
+    const handle = registry.get(paneId)
+    if (!handle) return false
+    const key = nodeKey(paneId, event.sender.id)
+    if (nodeSubs.has(key)) return true
+    const unsubscribe = handle.onNodeSelected((payload) => {
+      if (event.sender.isDestroyed()) return
+      event.sender.send(`browser:onNodeSelected:${paneId}`, payload as BrowserNodeSelectedPayload)
+    })
+    nodeSubs.set(key, unsubscribe)
+    const cleanup = () => {
+      const fn = nodeSubs.get(key)
+      if (fn) {
+        try {
+          fn()
+        } catch {}
+        nodeSubs.delete(key)
+      }
+    }
+    event.sender.once("destroyed", cleanup)
+    return true
+  }
+
+  ipcMain.handle("browser:subscribeNodeSelected", (event: IpcMainInvokeEvent, paneId: string) => {
+    if (attachNodeSelectedSubscriber(event, paneId)) return { ok: true as const }
+    queueAttach(paneId, () => attachNodeSelectedSubscriber(event, paneId))
+    return { ok: true as const, deferred: true as const }
+  })
+
+  ipcMain.handle("browser:unsubscribeNodeSelected", (event: IpcMainInvokeEvent, paneId: string) => {
+    const key = nodeKey(paneId, event.sender.id)
+    const fn = nodeSubs.get(key)
+    if (fn) {
+      try {
+        fn()
+      } catch {}
+      nodeSubs.delete(key)
+    }
+    return { ok: true as const }
+  })
+
+  ipcMain.handle("browser:getNavigationState", (_event: IpcMainInvokeEvent, paneId: string) => {
+    const handle = registry.get(paneId)
+    if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+    const state = handle.getNavigationState()
+    return { ok: true as const, ...state }
+  })
+
+  ipcMain.handle("browser:goBack", (_event: IpcMainInvokeEvent, paneId: string) => {
+    const handle = registry.get(paneId)
+    if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+    return handle.goBack()
+  })
+
+  ipcMain.handle("browser:goForward", (_event: IpcMainInvokeEvent, paneId: string) => {
+    const handle = registry.get(paneId)
+    if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+    return handle.goForward()
+  })
+
+  ipcMain.handle("browser:reload", (_event: IpcMainInvokeEvent, paneId: string, hard?: boolean) => {
+    const handle = registry.get(paneId)
+    if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+    return handle.reload(Boolean(hard))
+  })
+
+  ipcMain.handle("browser:openDevTools", (_event: IpcMainInvokeEvent, paneId: string) => {
+    const handle = registry.get(paneId)
+    if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+    return handle.openDevTools("detach")
+  })
+
+  ipcMain.handle(
+    "browser:clearStorage",
+    async (
+      _event: IpcMainInvokeEvent,
+      paneId: string,
+      storages?: Array<"cookies" | "localstorage" | "indexdb" | "cachestorage" | "serviceworkers">,
+    ) => {
+      const handle = registry.get(paneId)
+      if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
+      return handle.clearStorage(storages)
+    },
+  )
+}
+
+export function sendMenuCommand(win: BrowserWindow, id: string) {
+  win.webContents.send("menu-command", id)
+}
+
+export function sendDeepLinks(win: BrowserWindow, urls: string[]) {
+  win.webContents.send("deep-link", urls)
+}
+
+export function wireFullscreenEvents(win: BrowserWindow) {
+  const send = (fs: boolean) => {
+    if (!win.isDestroyed()) win.webContents.send("fullscreen-change", fs)
+  }
+  win.on("enter-full-screen", () => send(true))
+  win.on("leave-full-screen", () => send(false))
+}

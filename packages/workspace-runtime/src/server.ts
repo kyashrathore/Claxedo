@@ -1,0 +1,799 @@
+import { withSessionCore } from "./session-context"
+import { isLoopbackHostname } from "@claxedo/helpers"
+import { FIRST_PARTY_MCP_PATH, type WorkspaceFirstPartyMcpLaunchOptions } from "./first-party-mcp/index"
+import { Hono, type MiddlewareHandler } from "hono"
+import { cors } from "hono/cors"
+import { createMiddleware } from "hono/factory"
+import { serve } from "@hono/node-server"
+import { createNodeWebSocket } from "@hono/node-ws"
+import type { UpgradeWebSocket } from "hono/ws"
+import { Pty } from "./pty/index"
+import { withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "./target"
+import { WorkspaceWorktreeManager } from "./worktree"
+import { createWorkspaceHost, type WorkspaceHostOptions } from "./workspace"
+import { createWorkspaceIdle, type WorkspaceIdle } from "./workspace/idle"
+import { terminalIo } from "./pty/io-clock"
+import { setupAgentHooks } from "./agent-hooks"
+import { createRelayHostAuthMiddleware, type RelayHostAuthOptions } from "@claxedo/session-core/relay-host"
+import { startWorkspaceRelayHostTunnel, type WorkspaceRelayHostTunnelOptions } from "./workspace-relay-host-tunnel"
+import { ConfigRoutes } from "./routes/config"
+import { RuntimeDocumentHydrationRoutes } from "./routes/document-hydration"
+import {
+  mountRouteContributions,
+  type WorkspaceRuntimeRouteContribution,
+} from "./route-contribution"
+import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER, type WorkspaceRuntimeManagementAuth, type WorkspaceRuntimeManagementTarget } from "./management-auth"
+import { createOwnerGrantInProcessMiddleware, type OwnerGrantIdentity } from "./owner-grant"
+import { WorkspaceRuntimeRoutes } from "./routes/manifest"
+import { WorktreeRoutes } from "./routes/worktree"
+import { workspaceRuntimeLivenessResponse, workspaceRuntimeProbeResponse } from "./routes/health"
+import { CheckpointRoutes } from "./routes/checkpoint"
+import { ExecutionEnvRoutes } from "./routes/execution-env"
+import {
+  assertWorkspaceRuntimeExposure,
+  createWorkspaceRuntimeExposureMiddleware,
+  exposureBoundaryName,
+  type WorkspaceRuntimeExposure,
+} from "./exposure"
+import { runtimeEnvText, workspaceRuntimeEpoch, workspaceRuntimeStoreDir } from "./env"
+import {
+  type WorkspaceEventParents,
+  managedWorkspaceSessionAccessPolicy,
+  sessionAccessContext,
+  sessionAccessDenied,
+  type SessionAccessPolicy,
+  remoteWorkspaceSessionAccessPolicyFromEnv,
+} from "@claxedo/session-core"
+
+type Host = ReturnType<typeof createWorkspaceHost>
+export type WorkspaceRuntimeApp = {
+  app: Hono
+  host: Host
+  dispose: () => Promise<void>
+  injectWebSocket: (server: Parameters<ReturnType<typeof createNodeWebSocket>["injectWebSocket"]>[0]) => void
+  upgradeWebSocket: UpgradeWebSocket
+}
+
+export type WorkspaceRuntimeRouteAuthBoundary =
+  | "relay-host-auth"
+  | "loopback-only"
+  | "private-network-host-guard"
+  | "private-network-dev-unsafe"
+export type WorkspaceRuntimeServiceExposure = {
+  source: "loopback" | "driver-service-url"
+  access: "private" | "public" | "driver-authenticated" | "unknown"
+  driver?: string
+  note?: string
+}
+
+export type WorkspaceRuntimeServerOptions = {
+  onTurnOutcome?: WorkspaceHostOptions["onTurnOutcome"]
+  onPresentationEvent?: WorkspaceHostOptions["onPresentationEvent"]
+  beforeStoreClose?: WorkspaceHostOptions["beforeStoreClose"]
+  onRuntimeEvent?: WorkspaceHostOptions["onRuntimeEvent"]
+  sessionParents?: WorkspaceEventParents
+  relayHostAuth?: RelayHostAuthOptions
+  hostTunnel?: WorkspaceRelayHostTunnelOptions
+  configToken?: string
+  managementAuth?: WorkspaceRuntimeManagementAuth
+  managementTarget?: WorkspaceRuntimeManagementTarget
+  /**
+   * How an in-process request's bearer becomes the workspace owner's verified
+   * identity. Only a relay-exposed runtime consults it: its session policy
+   * requires an actor, and the contribution seam supplies none of its own.
+   */
+  ownerGrantIdentity?: OwnerGrantIdentity
+  harness?: WorkspaceHostOptions["harness"]
+  placement: WorkspaceHostOptions["placement"]
+  connectionProviders?: WorkspaceHostOptions["connectionProviders"]
+  harnessStateRoot?: WorkspaceHostOptions["harnessStateRoot"]
+  env?: WorkspaceHostOptions["env"]
+  resolveConnectionSecrets?: WorkspaceHostOptions["resolveConnectionSecrets"]
+  refreshDirectCredential?: WorkspaceHostOptions["refreshDirectCredential"]
+  /** Persist host-owned session metadata before the created lifecycle event is published. */
+  afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
+  sessionIdWorkspace: WorkspaceHostOptions["sessionIdWorkspace"]
+  /** Explicit private-session authority. Relay-hosted runtimes default to the remote oracle. */
+  sessionAccessPolicy?: SessionAccessPolicy
+  target?: WorkspaceTarget
+  storeFactory?: WorkspaceHostOptions["storeFactory"]
+  storeRoot?: string
+  /** Host-owned directory for opt-in config apply receipts. See {@link WorkspaceHostOptions.configApplyReceiptDir}. */
+  configApplyReceiptDir?: string
+  beforeHarnessAcquire?: WorkspaceHostOptions["beforeHarnessAcquire"]
+  onActivityChange?: WorkspaceHostOptions["onActivityChange"]
+  /** The event stream's lease renewal cadence; a test shortens it to watch a revocation land. */
+  renewalIntervalMs?: number
+  serviceExposure?: WorkspaceRuntimeServiceExposure
+  exposure?: WorkspaceRuntimeExposure
+  /**
+   * Host-supplied CORS origin policy. When provided, it replaces the kit
+   * default (`workspaceRuntimeCorsOrigin`, loopback-only, no product domains).
+   * Hosts that need a product whitelist supply it here.
+   */
+  corsOrigin?: WorkspaceRuntimeCorsOrigin
+  /**
+   * Host-supplied route groups mounted into this runtime.
+   *
+   * The runtime core owns local execution and nothing else. A host that wants
+   * hosted tool brokers passes route contributions from its own adapter;
+   * the desktop-local runtime passes none, which is what makes a hosted
+   * capability's absence from an unsigned build a property of the composition
+   * rather than of a runtime flag.
+   */
+  routeContributions?: readonly WorkspaceRuntimeRouteContribution[]
+  /**
+   * The first-party MCP entry injected into every session this runtime
+   * launches: the loopback origin of the process serving
+   * {@link FIRST_PARTY_MCP_PATH} and the issuer whose `verify` that mount
+   * checks bearers with. The same issuer makes a bearer for that path a
+   * trusted direct caller here, so a harness on this box reaches the endpoint
+   * without a relay host token. Absent, no harness receives the entry.
+   */
+  firstPartyMcpLaunch?: WorkspaceFirstPartyMcpLaunchOptions
+  /**
+   * Receives this runtime's reader of a session's committed configuration once
+   * the host exists, for a composition that attributes a session's work to its
+   * harness and model from outside the runtime.
+   */
+  bindSessionConfig?: (read: Host["getSessionConfig"]) => void
+  /**
+   * Receives this runtime's reader of a session's parent — the session a
+   * subagent's child session is filed under — once the host exists. The parent
+   * is written only when the session is bound, never on an event.
+   */
+  bindSessionParents?: (read: Host["parentSessionIdFor"]) => void
+  /**
+   * Receives this runtime's own session reads once the host exists, unfiltered
+   * by any caller's access: for a composition that publishes every session's
+   * list row and status from outside the runtime.
+   */
+  bindSessionReads?: (reads: Pick<Host, "store" | "sessionStatus">) => void
+  /**
+   * Host-owned work the process drain awaits last, once the runtime's
+   * sessions, processes and PTYs are disposed: whatever a disposed turn left
+   * behind is still the host's to settle before the process exits.
+   */
+  onDrain?: () => Promise<void> | void
+}
+
+type ListenPolicyEnv = {
+  [key: string]: string | undefined
+  WORKSPACE_RUNTIME_HOST?: string | undefined
+  WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK?: string | undefined
+  WORKSPACE_RUNTIME_DISABLE_CORS?: string | undefined
+}
+
+export const DEFAULT_WORKSPACE_RUNTIME_HOSTNAME = "127.0.0.1"
+
+export function workspaceRuntimeListenHostname(env: ListenPolicyEnv = process.env) {
+  const hostname = runtimeEnvText(env, "WORKSPACE_RUNTIME_HOST")
+  return hostname ? hostname : DEFAULT_WORKSPACE_RUNTIME_HOSTNAME
+}
+
+export { isLoopbackHostname }
+
+export function assertWorkspaceRuntimeListenPolicy(
+  options: WorkspaceRuntimeServerOptions,
+  hostname: string,
+  env: ListenPolicyEnv = process.env,
+) {
+  if (isLoopbackHostname(hostname)) return
+  if (options.relayHostAuth || options.exposure?.kind === "relay") return
+  if (options.exposure?.kind === "private-network" && options.exposure.protection.kind === "host-guard") return
+  if (runtimeEnvText(env, "WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK") === "1") {
+    console.warn(
+      "[workspace-runtime] WARN  allowing unauthenticated non-loopback listen because WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK=1",
+    )
+    return
+  }
+  throw new Error(
+    `Refusing to listen on non-loopback host ${hostname} without relay-host auth. `
+    + "Set WORKSPACE_RUNTIME_HOST to a loopback host, configure relay-host auth, or set "
+    + "WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK=1 only behind trusted private-network controls.",
+  )
+}
+
+function enabled(input: string | undefined) {
+  return ["1", "true", "yes", "on"].includes(input?.trim().toLowerCase() ?? "")
+}
+
+function roundedMs(value: number) {
+  return Math.round(value * 100) / 100
+}
+
+function appendServerTiming(input: string | null, name: string, durationMs: number) {
+  const value = `${name};dur=${roundedMs(durationMs)}`
+  return input ? `${input}, ${value}` : value
+}
+
+/**
+ * A host-supplied CORS origin policy. Returns the origin to allow (echoed back
+ * as `access-control-allow-origin`) or `undefined` to deny. Product-specific
+ * origin whitelists (e.g. a host's own product-domain allowlist) are a host
+ * DECISION and live in the host, never in the kit.
+ */
+export type WorkspaceRuntimeCorsOrigin = (
+  origin: string,
+  exposure: WorkspaceRuntimeExposure,
+) => string | undefined
+
+function loopbackCorsOrigin(origin: string): string | undefined {
+  const loopback = origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:")
+  return loopback ? origin : undefined
+}
+
+/**
+ * Kit default CORS policy: loopback-only origins (`http://localhost:*`,
+ * `http://127.0.0.1:*`) on loopback exposure, nothing on any other exposure.
+ * Contains no product domains — hosts inject their own whitelist via
+ * `WorkspaceRuntimeServerOptions.corsOrigin`.
+ */
+export function workspaceRuntimeCorsOrigin(exposure: WorkspaceRuntimeExposure, origin: string | undefined) {
+  if (!origin) return undefined
+  if (exposure.kind === "loopback") return loopbackCorsOrigin(origin)
+  return undefined
+}
+
+export function workspaceRuntimeRouteAuthBoundary(
+  options: Pick<WorkspaceRuntimeServerOptions, "exposure" | "relayHostAuth">,
+  hostname = workspaceRuntimeListenHostname(),
+  env: ListenPolicyEnv = process.env,
+): WorkspaceRuntimeRouteAuthBoundary {
+  if (options.exposure?.kind === "relay") return "relay-host-auth"
+  if (options.exposure?.kind === "private-network") {
+    return options.exposure.protection.kind === "host-guard"
+      ? "private-network-host-guard"
+      : "private-network-dev-unsafe"
+  }
+  if (options.relayHostAuth) return "relay-host-auth"
+  if (
+    !isLoopbackHostname(hostname)
+    && enabled(runtimeEnvText(env, "WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK"))
+  ) return "private-network-dev-unsafe"
+  return "loopback-only"
+}
+
+type ServiceExposureEnv = {
+  [key: string]: string | undefined
+  WORKSPACE_RUNTIME_SERVICE_EXPOSURE_SOURCE?: string | undefined
+  WORKSPACE_RUNTIME_SERVICE_EXPOSURE_ACCESS?: string | undefined
+  WORKSPACE_RUNTIME_SERVICE_EXPOSURE_DRIVER?: string | undefined
+  WORKSPACE_RUNTIME_SERVICE_EXPOSURE_NOTE?: string | undefined
+}
+
+function serviceExposureAccess(input: string | undefined) {
+  const value = input?.trim()
+  return value === "private" || value === "public" || value === "driver-authenticated" || value === "unknown"
+    ? value
+    : undefined
+}
+
+export function workspaceRuntimeServiceExposureFromEnv(env: ServiceExposureEnv = process.env): WorkspaceRuntimeServiceExposure {
+  const access = serviceExposureAccess(runtimeEnvText(env, "WORKSPACE_RUNTIME_SERVICE_EXPOSURE_ACCESS"))
+  const driver = runtimeEnvText(env, "WORKSPACE_RUNTIME_SERVICE_EXPOSURE_DRIVER")
+  const note = runtimeEnvText(env, "WORKSPACE_RUNTIME_SERVICE_EXPOSURE_NOTE")
+  const source = runtimeEnvText(env, "WORKSPACE_RUNTIME_SERVICE_EXPOSURE_SOURCE") === "driver-service-url"
+    ? "driver-service-url"
+    : "loopback"
+  return {
+    source,
+    access: access ?? (source === "loopback" ? "private" : "unknown"),
+    ...(driver ? { driver } : {}),
+    ...(note ? { note } : {}),
+  }
+}
+
+export function workspaceRuntimeServerPort(server: { address?: () => unknown }, fallback: number) {
+  const address = server.address?.()
+  return address && typeof address === "object" && "port" in address && typeof address.port === "number"
+    ? address.port
+    : fallback
+}
+
+export async function waitForWorkspaceRuntimeServerPort(
+  server: { address?: () => unknown; once?: (event: "listening", listener: () => void) => unknown },
+  fallback: number,
+) {
+  const current = workspaceRuntimeServerPort(server, fallback)
+  if (current !== 0 || fallback !== 0) return current
+  if (!server.once) return current
+  await new Promise<void>((resolve) => {
+    server.once?.("listening", resolve)
+  })
+  return workspaceRuntimeServerPort(server, fallback)
+}
+
+type WorkspaceRuntimeDrainOptions = {
+  server: { close(): unknown }
+  runtime: { host: { dispose(): unknown } }
+  drainTimeoutMs: number
+  // Draining only closes the tunnel, so it asks for no more than that —
+  // matching `server` above. A full `WorkspaceRelayHostTunnel` satisfies it.
+  hostTunnel?: { close(): unknown }
+  ptyDispose?: () => Promise<void>
+  hostDrain?: () => Promise<void> | void
+}
+
+type WorkspaceRuntimeShutdownReason = NodeJS.Signals | "unhandledRejection" | "uncaughtException"
+
+async function drainStep(errors: unknown[], run: () => unknown) {
+  try {
+    await run()
+  } catch (err) {
+    errors.push(err)
+  }
+}
+
+export async function drainWorkspaceRuntime(options: WorkspaceRuntimeDrainOptions) {
+  options.server.close()
+  options.hostTunnel?.close()
+
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      (async () => {
+        const errors: unknown[] = []
+        await drainStep(errors, () => (options.ptyDispose ?? Pty.dispose)())
+        await drainStep(errors, () => options.runtime.host.dispose())
+        await drainStep(errors, () => options.hostDrain?.())
+        if (errors.length) {
+          throw new AggregateError(errors, "Workspace runtime drain failed")
+        }
+      })(),
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(resolve, options.drainTimeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
+}
+
+export function createWorkspaceRuntimeShutdownHandler(options: {
+  drainTimeoutMs: () => number
+  drain: (drainTimeoutMs: number) => Promise<void>
+  exit: (code: number) => void
+  log?: Pick<typeof console, "error" | "log">
+}) {
+  const log = options.log ?? console
+  let draining = false
+  let exitCode = 0
+
+  // Expected route/process failures should be handled at their owner boundary.
+  // These process-level handlers are last-resort fatal paths: drain the
+  // runtime-owned resources, then exit non-zero so a supervisor can restart.
+  return async (reason: WorkspaceRuntimeShutdownReason, cause?: unknown) => {
+    const fatal = reason === "unhandledRejection" || reason === "uncaughtException"
+    exitCode = Math.max(exitCode, fatal ? 1 : 0)
+    if (draining) return
+    draining = true
+
+    const drainTimeoutMs = options.drainTimeoutMs()
+    if (fatal) {
+      log.error(`[workspace-runtime] fatal ${reason}; draining for restart (timeout ${drainTimeoutMs}ms)`, cause)
+    } else {
+      log.log(`[workspace-runtime] received ${reason}, draining (timeout ${drainTimeoutMs}ms)`)
+    }
+
+    try {
+      await options.drain(drainTimeoutMs)
+    } catch (err) {
+      log.error("[workspace-runtime] drain error", err)
+    }
+    options.exit(exitCode)
+  }
+}
+
+/**
+ * The anonymous `GET /global/health` answer: liveness plus the workspace
+ * identity and lease epoch a control plane needs to trust that it reached the
+ * runtime it asked for. Anything beyond that — directory, capabilities,
+ * harness detail, process state — is diagnostics and stays on authenticated
+ * routes.
+ */
+function runtimeProbe(host: Host, options: WorkspaceRuntimeServerOptions) {
+  const detail = host.detail()
+  const epoch = workspaceRuntimeEpoch()
+  return workspaceRuntimeProbeResponse({
+    ok: detail.healthStatus === "ok",
+    status: detail.state,
+    workspaceId: options.target?.workspaceId ?? workspaceId(),
+    ...(epoch === undefined ? {} : { epoch }),
+  })
+}
+
+async function runtimeLiveness(host: Host, idle: WorkspaceIdle, options: WorkspaceRuntimeServerOptions, sessionId?: string) {
+  const detail = host.detail()
+  const harnessHealth = sessionId
+    ? await host.readHarnessHealth({
+        sessionId,
+        ...(options.target?.directory ? { directory: options.target.directory } : {}),
+      })
+    : detail.harnessHealth
+  return workspaceRuntimeLivenessResponse({
+    state: detail.state,
+    harness: detail.harness,
+    error: detail.error,
+    harnessHealth,
+    connectionState: sessionId ? host.readConnectionState({ sessionId, directory: options.target?.directory }) : detail.connectionState,
+    routeAuthBoundary: workspaceRuntimeRouteAuthBoundary(options),
+    serviceExposure: options.serviceExposure ?? workspaceRuntimeServiceExposureFromEnv(),
+    exposure: options.exposure ? { kind: exposureBoundaryName(options.exposure) } : undefined,
+    workspaceId: options.target?.workspaceId ?? workspaceId(),
+    ptyCount: Pty.list().length,
+    idleSince: idle.since(),
+    frozenSince: idle.frozenSince(),
+  })
+}
+
+function trustedAgentHookCallback(input: { token: string; path: string; method: string }, workspaceId: string) {
+  if (input.method !== "POST" || input.path !== `${WorkspaceRuntimeRoutes.hook}/agent-lifecycle`) return false
+  return Pty.agentHookAccessForToken(input.token)?.context.authority.workspaceId === workspaceId
+}
+
+export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions): WorkspaceRuntimeApp {
+  assertWorkspaceRuntimeExposure({
+    exposure: options.exposure,
+    hostname: workspaceRuntimeListenHostname(),
+    isLoopbackHostname,
+    env: process.env,
+  })
+  // One policy for every surface this app mounts. A loopback or embedded
+  // runtime is reached only through its own process boundary and carries the
+  // unbound local flavour; any other exposure answers a remote caller and
+  // must delegate to the control plane's session authority.
+  const sessionAccessPolicy = options.sessionAccessPolicy
+    ?? (options.exposure?.kind === "loopback" || options.exposure?.kind === "embedded"
+      ? managedWorkspaceSessionAccessPolicy()
+      : remoteWorkspaceSessionAccessPolicyFromEnv(process.env))
+  const idle = createWorkspaceIdle({
+    busy: () => {
+      const activity = host.activity()
+      return activity.activeTurns + activity.activeWrites + activity.backgroundWork > 0
+    },
+    frozen: () => host.activity().checkpointState !== "active",
+    terminalIoAt: terminalIo.lastAt,
+  })
+  const host = createWorkspaceHost({
+    placement: options.placement,
+    ...(options.connectionProviders ? { connectionProviders: options.connectionProviders } : {}),
+    ...(options.harnessStateRoot ? { harnessStateRoot: options.harnessStateRoot } : {}),
+    ...(options.env ? { env: options.env } : {}),
+    ...(options.resolveConnectionSecrets ? { resolveConnectionSecrets: options.resolveConnectionSecrets } : {}),
+    ...(options.refreshDirectCredential ? { refreshDirectCredential: options.refreshDirectCredential } : {}),
+    ...(options.harness ? { harness: options.harness } : {}),
+    ...(options.afterCreateSession ? { afterCreateSession: options.afterCreateSession } : {}),
+    sessionIdWorkspace: options.sessionIdWorkspace,
+    sessionAccessPolicy,
+    target: options.target ?? { workspaceId: workspaceId(), directory: workspaceDir() },
+    ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
+    ...(options.storeFactory ? { storeFactory: options.storeFactory } : {}),
+    ...(options.beforeHarnessAcquire ? { beforeHarnessAcquire: options.beforeHarnessAcquire } : {}),
+    onActivityChange: () => {
+      idle.changed()
+      options.onActivityChange?.()
+    },
+    ...(options.configApplyReceiptDir ? { configApplyReceiptDir: options.configApplyReceiptDir } : {}),
+    ...(options.onTurnOutcome ? { onTurnOutcome: options.onTurnOutcome } : {}),
+    ...(options.onPresentationEvent ? { onPresentationEvent: options.onPresentationEvent } : {}),
+    ...(options.beforeStoreClose ? { beforeStoreClose: options.beforeStoreClose } : {}),
+    ...(options.onRuntimeEvent ? { onRuntimeEvent: options.onRuntimeEvent } : {}),
+    ...(options.sessionParents ? { sessionParents: options.sessionParents } : {}),
+    ...(options.firstPartyMcpLaunch ? { firstPartyMcpLaunch: options.firstPartyMcpLaunch } : {}),
+  })
+  options.bindSessionConfig?.((sessionId) => host.getSessionConfig(sessionId))
+  options.bindSessionParents?.((sessionId) => host.parentSessionIdFor(sessionId))
+  options.bindSessionReads?.({ store: host.store, sessionStatus: host.sessionStatus })
+  const worktrees = options.target
+      ? new WorkspaceWorktreeManager({
+        workspaceId: options.target.workspaceId,
+        placement: host.sessionCore.placement,
+        sourceDirectory: options.target.directory,
+        store: () => host.store().worktrees,
+      })
+    : undefined
+  if (worktrees) host.whenStoreOpens(() => worktrees.serveActive())
+
+  const app = new Hono()
+  app.use("*", (_c, next) => withSessionCore(host.sessionCore, next))
+
+  // Kept on the object rather than destructured: both are closures over the
+  // app that `createNodeWebSocket` just built, and calling them through it
+  // keeps that ownership visible.
+  const nodeWebSocket = createNodeWebSocket({ app })
+
+  app.use("*", async (c, next) => {
+    const startedAt = performance.now()
+    await next()
+    c.header("server-timing", appendServerTiming(c.res.headers.get("server-timing"), "runtime-total", performance.now() - startedAt))
+    const traceId = c.req.header("x-claxedo-trace-id")
+    if (traceId) c.header("x-claxedo-trace-id", traceId)
+  })
+  app.use("*", createWorkspaceRuntimeExposureMiddleware(options.exposure!))
+
+  if (options.target) {
+    app.use("*", async (_c, next) => withWorkspaceTarget(options.target!, next))
+  }
+
+  const relayHostAuthOptions = options.relayHostAuth ?? (options.exposure?.kind === "relay" ? options.exposure.auth : undefined)
+  // Membership, not a header: a request reaches this set only by having been
+  // built inside this process and handed to the contribution seam, so it
+  // cannot be replayed, forwarded, or guessed the way a bearer could.
+  const inProcessRequests = new WeakSet<Request>()
+  const contributionFetch = (request: Request): Promise<Response> => {
+    inProcessRequests.add(request)
+    return Promise.resolve(app.fetch(request))
+  }
+  app.use("*", createMiddleware<{ Variables: { inProcessRequest?: true } }>(async (c, next) => {
+    if (inProcessRequests.has(c.req.raw)) c.set("inProcessRequest", true)
+    await next()
+  }) as MiddlewareHandler)
+
+  if (!enabled(runtimeEnvText(process.env, "WORKSPACE_RUNTIME_DISABLE_CORS"))) {
+    const corsOrigin = options.corsOrigin
+    app.use(
+      cors({
+        // The first-party MCP endpoint is reached by harness processes, never
+        // by a page. Reflecting an origin there would let a loopback page in a
+        // browser drive the session tools with the runtime's own credential.
+        origin: (origin, c) =>
+          c.req.path === FIRST_PARTY_MCP_PATH
+            ? undefined
+            : corsOrigin
+              ? (origin ? corsOrigin(origin, options.exposure!) : undefined)
+              : workspaceRuntimeCorsOrigin(options.exposure!, origin),
+      }),
+    )
+  }
+
+  app.get("/global/health", (c) => c.json(runtimeProbe(host, options)))
+  if (relayHostAuthOptions) {
+    const relayHostAuth = createRelayHostAuthMiddleware({
+      ...relayHostAuthOptions,
+      trustedDirectTokenForRequest: async (input) =>
+        // The harness this runtime launched reaches the first-party MCP mount
+        // over its own loopback with the credential this runtime minted; it
+        // holds no relay host token and must not be issued one.
+        (input.path === FIRST_PARTY_MCP_PATH && !!options.firstPartyMcpLaunch?.issuer.verify(input.token))
+        || (!!options.configToken
+          && input.token === options.configToken
+          && (
+            input.method === "GET" && input.path === WorkspaceRuntimeRoutes.health
+          ))
+        || trustedAgentHookCallback(input, relayHostAuthOptions.workspaceId)
+        || await relayHostAuthOptions.trustedDirectTokenForRequest?.(input)
+        || false,
+    }) as MiddlewareHandler
+    const inProcessOwner = options.ownerGrantIdentity
+      ? createOwnerGrantInProcessMiddleware(options.ownerGrantIdentity) as MiddlewareHandler
+      : undefined
+    app.use("*", async (c, next) => {
+      if (inProcessRequests.has(c.req.raw)) return inProcessOwner ? await inProcessOwner(c, next) : await next()
+      if (
+        ((["GET", "POST"].includes(c.req.method) && c.req.path === WorkspaceRuntimeRoutes.config)
+          || c.req.path === WorkspaceRuntimeRoutes.checkpoint
+          || c.req.path.startsWith(`${WorkspaceRuntimeRoutes.checkpoint}/`))
+        && c.req.header(WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER)?.trim()
+      ) {
+        return await next()
+      }
+      return await relayHostAuth(c, next)
+    })
+  }
+  app.use("*", async (c, next) => {
+    if (c.req.path.startsWith(WorkspaceRuntimeRoutes.checkpoint) || ["GET", "HEAD", "OPTIONS"].includes(c.req.method)) {
+      return await next()
+    }
+    const release = host.checkpoint.beginWrite()
+    if (!release) {
+      return c.json({
+        error: {
+          code: "workspace_checkpoint_frozen",
+          message: "Workspace writes are paused for a checkpoint",
+        },
+      }, 423)
+    }
+    try {
+      return await next()
+    } finally {
+      release()
+    }
+  })
+  app.route("/", ConfigRoutes({ apply: host.apply, configApply: () => host.detail().configApply }, {
+    ...(options.managementAuth ? { managementAuth: options.managementAuth } : {}),
+    ...(options.managementTarget ? { managementTarget: options.managementTarget } : {}),
+  }))
+  app.use(`${WorkspaceRuntimeRoutes.checkpoint}/*`, host.storeAdmission)
+  if (worktrees) app.use(`${WorkspaceRuntimeRoutes.worktrees}/*`, host.storeAdmission)
+  if (worktrees) {
+    app.route(
+      WorkspaceRuntimeRoutes.worktrees,
+      WorktreeRoutes(worktrees, { sessionAccessPolicy }),
+    )
+  }
+  app.route(WorkspaceRuntimeRoutes.checkpoint, CheckpointRoutes({
+    checkpoint: host.checkpoint,
+    idleSince: () => idle.since(),
+    worktrees,
+    sessionAccessPolicy,
+    ...(options.managementAuth ? { managementAuth: options.managementAuth } : {}),
+    ...(options.managementTarget ? { managementTarget: options.managementTarget } : {}),
+  }))
+  // Binding management inherits the workspace exposure/auth boundary. Tool
+  // execution itself is only reachable through each Session's nonce-bound
+  // loopback callback, which supplies the canonical Session identity.
+  app.route("/", RuntimeDocumentHydrationRoutes({
+    ...(options.exposure?.kind === "relay" ? { workspaceId: options.exposure.auth.workspaceId } : {}),
+    sessionAccessPolicy,
+    ...(process.env.CLAXEDO_CONTROL_PLANE_URL ? { controlPlaneOrigin: process.env.CLAXEDO_CONTROL_PLANE_URL } : {}),
+  }))
+  type SessionToolRegistration = Parameters<typeof host.registerSessionTools>[0]
+  const sessionToolGroups = new Map<string, Map<string, SessionToolRegistration>>()
+  const dispatchSessionTool = async (url: string, call: { sessionID: string; name: string; toolCallID: string; input: unknown }) => {
+    const response = await contributionFetch(new Request(url, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify(call) }))
+    const body = await response.text()
+    if (!response.ok) throw new Error(`Claxedo Session tool ${call.name} failed (${response.status}): ${body}`)
+    return body ? JSON.parse(body) : null
+  }
+  const registerSessionToolGroup = (group: string) => async (registration: SessionToolRegistration) => {
+    const groups = sessionToolGroups.get(registration.sessionId) ?? new Map<string, SessionToolRegistration>()
+    groups.set(group, registration)
+    sessionToolGroups.set(registration.sessionId, groups)
+    await host.registerSessionTools({
+      sessionId: registration.sessionId,
+      ...(registration.harness ? { harness: registration.harness } : {}),
+      callbackUrl: registration.callbackUrl,
+      dispatch: dispatchSessionTool,
+      tools: [...groups.values()].flatMap((value) => value.tools.map((tool) => ({
+        ...tool,
+        callbackUrl: value.callbackUrl,
+      }))),
+    })
+  }
+  const unregisterSessionToolGroup = (group: string) => async (sessionId: string) => {
+    const groups = sessionToolGroups.get(sessionId)
+    groups?.delete(group)
+    if (!groups?.size) {
+      sessionToolGroups.delete(sessionId)
+      await host.unregisterSessionTools(sessionId)
+      return
+    }
+    const registrations = [...groups.values()]
+    await host.registerSessionTools({
+      sessionId,
+      ...(registrations[0]?.harness ? { harness: registrations[0].harness } : {}),
+      callbackUrl: registrations[0].callbackUrl,
+      dispatch: dispatchSessionTool,
+      tools: registrations.flatMap((value) => value.tools.map((tool) => ({
+        ...tool,
+        callbackUrl: value.callbackUrl,
+      }))),
+    })
+  }
+  const routeContributions = mountRouteContributions({
+    app,
+    contributions: options.routeContributions ?? [],
+    context: {
+      workspaceId: options.target?.workspaceId ?? workspaceId(),
+      directory: options.target?.directory ?? workspaceDir(),
+      stateDirectory: options.storeRoot ?? workspaceRuntimeStoreDir(),
+      fetch: contributionFetch,
+      sessionDrivenOnlyBy: (sessionId, actorId) => host.drivenOnlyByMachineUser(sessionId, actorId),
+      registerSessionTools: registerSessionToolGroup,
+      unregisterSessionTools: unregisterSessionToolGroup,
+    },
+  })
+
+  app.get(WorkspaceRuntimeRoutes.health, async (c) => {
+    const sessionId = c.req.query("sessionId")
+    if (sessionId) {
+      const access = await sessionAccessPolicy.authorize({ ...sessionAccessContext(c), sessionId, operation: "session_meta_read", method: c.req.method, path: c.req.path })
+      if (!access.allowed) return sessionAccessDenied(access)
+    }
+    return c.json(await runtimeLiveness(host, idle, options, sessionId))
+  })
+
+  app.get(WorkspaceRuntimeRoutes.capabilities, (c) => c.json(host.capabilities()))
+  host.mount(app, {
+    core: { upgradeWebSocket: nodeWebSocket.upgradeWebSocket },
+    exposure: options.exposure!,
+    ...(options.renewalIntervalMs !== undefined ? { renewalIntervalMs: options.renewalIntervalMs } : {}),
+  })
+  const executionEnv = options.exposure?.kind === "relay"
+    ? ExecutionEnvRoutes({ directory: options.target?.directory ?? workspaceDir(), env: options.env ?? process.env,
+      services: host.shellServices, piProjection: host.piProjection, upgradeWebSocket: nodeWebSocket.upgradeWebSocket })
+    : undefined
+  if (executionEnv) app.route(WorkspaceRuntimeRoutes.executionEnv, executionEnv.routes)
+
+  let cleaned = false
+  const dispose = async () => {
+    if (!cleaned) {
+      cleaned = true
+      routeContributions.dispose()
+      worktrees?.close()
+    }
+    await executionEnv?.dispose()
+    return host.dispose()
+  }
+  return {
+    app,
+    host: { ...host, dispose },
+    dispose,
+    injectWebSocket: (server: Parameters<typeof nodeWebSocket.injectWebSocket>[0]) =>
+      nodeWebSocket.injectWebSocket(server),
+    upgradeWebSocket: nodeWebSocket.upgradeWebSocket,
+  }
+}
+
+export type WorkspaceRuntimeLifecycleOptions = {
+  /**
+   * Opt in to process-global signal/exit ownership. When false (the default),
+   * `startServer` registers ZERO process listeners and never calls
+   * `process.exit` — a library must not claim the host process. The drain
+   * handler + wiring are still constructed (the drain *ordering* is a kit
+   * mechanism); only the `process.on(...)`/`process.exit` registrations are
+   * conditional. Hosts that own their process (host-entry, the relay e2e
+   * fixture) pass `{ signals: true }`.
+   */
+  signals?: boolean
+}
+
+export function startServer(
+  port: number,
+  options: WorkspaceRuntimeServerOptions,
+  lifecycle: WorkspaceRuntimeLifecycleOptions = {},
+) {
+  const hostname = workspaceRuntimeListenHostname()
+  assertWorkspaceRuntimeExposure({
+    exposure: options.exposure,
+    hostname,
+    isLoopbackHostname,
+    env: process.env,
+  })
+  assertWorkspaceRuntimeListenPolicy(options, hostname)
+  const runtime = createWorkspaceRuntimeApp(options)
+
+  const server = serve({
+    fetch: runtime.app.fetch,
+    port,
+    hostname,
+  })
+  runtime.injectWebSocket(server)
+  const hostTunnel = options.hostTunnel ? startWorkspaceRelayHostTunnel(options.hostTunnel) : undefined
+
+  void waitForWorkspaceRuntimeServerPort(server, port).then((actualPort) =>
+    setupAgentHooks({ port: actualPort })
+  ).catch((cause: unknown) => {
+    console.error(`[workspace-runtime] WARN  failed to setup agent hooks`, cause)
+  })
+
+  const shutdown = createWorkspaceRuntimeShutdownHandler({
+    drainTimeoutMs: () => Number(runtimeEnvText(process.env, "WORKSPACE_RUNTIME_DRAIN_TIMEOUT_MS") ?? 10_000),
+    drain: (drainTimeoutMs) =>
+      // Stop accepting work, detach external routing, stop heartbeats,
+      // then clean up workspace-owned PTYs and adapter state.
+      // Race with the drain timeout so a hung cleanup cannot strand the
+      // process during supervisor shutdown or fatal-error restart.
+      drainWorkspaceRuntime({
+        server,
+        runtime,
+        drainTimeoutMs,
+        ...(hostTunnel ? { hostTunnel } : {}),
+        ...(options.onDrain ? { hostDrain: options.onDrain } : {}),
+      }),
+    exit: (code) => process.exit(code),
+  })
+
+  // Process-global claims are a host DECISION, not a kit mechanism. Only
+  // register signal/exit handlers when the host explicitly opts in.
+  if (lifecycle.signals) {
+    process.on("SIGTERM", () => { void shutdown("SIGTERM") })
+    process.on("SIGINT", () => { void shutdown("SIGINT") })
+    process.on("unhandledRejection", (reason) => { void shutdown("unhandledRejection", reason) })
+    process.on("uncaughtException", (err) => { void shutdown("uncaughtException", err) })
+  }
+
+  return server
+}

@@ -1,0 +1,182 @@
+import { describe, expect, test } from "bun:test"
+
+import { BrowserRegistry, type WebContentsFromId } from "./registry"
+
+/**
+ * Minimal `WebContents` stand-in — only the bits the registry touches. Tests
+ * must not require launching Electron.
+ */
+type FakeWc = {
+  id: number
+  destroyed: boolean
+}
+
+function makeFake(id: number): FakeWc {
+  return { id, destroyed: false }
+}
+
+function makeResolver(map: Map<number, FakeWc>): WebContentsFromId {
+  return ((id: number) => {
+    const wc = map.get(id)
+    if (!wc) return undefined
+    // Cast through unknown to satisfy the Electron WebContents type in the
+    // registry — BrowserHandle now subscribes to a handful of wc + debugger
+    // events in its constructor, so the fake needs no-op `on`/`off`/`debugger`
+    // shims. The registry itself still only reads `.id` and `.isDestroyed()`.
+    const noop = () => {}
+    return {
+      id: wc.id,
+      isDestroyed: () => wc.destroyed,
+      on: noop,
+      off: noop,
+      removeAllListeners: noop,
+      debugger: {
+        attach: noop,
+        detach: noop,
+        isAttached: () => false,
+        sendCommand: async () => ({}),
+        on: noop,
+        off: noop,
+      },
+    } as unknown as ReturnType<WebContentsFromId>
+  }) as WebContentsFromId
+}
+
+/** Registry + resolver where every fake is pre-admitted as a guest. */
+function admittedRegistry(...ids: number[]) {
+  const registry = new BrowserRegistry(makeResolver(new Map(ids.map((id) => [id, makeFake(id)]))))
+  for (const id of ids) registry.admitGuest(id)
+  return registry
+}
+
+describe("BrowserRegistry", () => {
+  test("register creates a handle keyed by paneId", () => {
+    const registry = admittedRegistry(42)
+
+    const handle = registry.register("pane-a", 42)
+
+    expect(handle.webContentsId).toBe(42)
+    expect(registry.get("pane-a")).toBe(handle)
+    expect(registry.paneIds()).toEqual(["pane-a"])
+  })
+
+  test("re-register with same paneId+wc returns the existing handle", () => {
+    const registry = admittedRegistry(42)
+
+    const first = registry.register("pane-a", 42)
+    const second = registry.register("pane-a", 42)
+
+    expect(second).toBe(first)
+  })
+
+  test("register throws when paneId is empty", () => {
+    const registry = new BrowserRegistry(makeResolver(new Map()))
+    expect(() => registry.register("", 1)).toThrow(/paneId is required/)
+  })
+
+  test("register throws when webContents id does not resolve", () => {
+    const registry = new BrowserRegistry(makeResolver(new Map()))
+    expect(() => registry.register("pane-a", 99)).toThrow(/not found/)
+  })
+
+  test("register throws when resolved webContents is destroyed", () => {
+    const wc: FakeWc = { id: 7, destroyed: true }
+    const registry = new BrowserRegistry(makeResolver(new Map([[7, wc]])))
+    registry.admitGuest(7)
+    expect(() => registry.register("pane-a", 7)).toThrow(/destroyed/)
+  })
+
+  test("register refuses a webContents that was never admitted as a guest", () => {
+    // The main window's own webContents resolves fine and is alive — what it
+    // lacks is guest admission, so the pane machinery (and its CDP debugger)
+    // can never be attached to the privileged host document.
+    const host = makeFake(1)
+    const guest = makeFake(2)
+    const registry = new BrowserRegistry(
+      makeResolver(
+        new Map([
+          [1, host],
+          [2, guest],
+        ]),
+      ),
+    )
+    registry.admitGuest(2)
+
+    expect(() => registry.register("pane-a", 1)).toThrow(/not an admitted guest/)
+    expect(() => registry.register("pane-a", 2)).not.toThrow()
+  })
+
+  test("a destroyed guest drops its admission and can no longer register", () => {
+    const wc = makeFake(5)
+    const registry = new BrowserRegistry(makeResolver(new Map([[5, wc]])))
+    registry.admitGuest(5)
+    registry.dropGuest(5)
+
+    expect(() => registry.register("pane-a", 5)).toThrow(/not an admitted guest/)
+  })
+
+  test("a destroyed guest releases its pane, so the reloaded pane can bind its new guest", () => {
+    const registry = admittedRegistry(5, 6)
+    registry.register("browser:placement-1", 5)
+
+    registry.dropGuest(5)
+
+    expect(registry.get("browser:placement-1")).toBeUndefined()
+    expect(registry.register("browser:placement-1", 6).webContentsId).toBe(6)
+  })
+
+  test("registering an admitted guest already bound to another pane is rejected", () => {
+    const registry = admittedRegistry(1, 2)
+
+    registry.register("pane-a", 1)
+    expect(() => registry.register("pane-b", 1)).toThrow(/already bound to pane pane-a/)
+    // The other guest is unaffected.
+    expect(() => registry.register("pane-b", 2)).not.toThrow()
+  })
+
+  test("registering same paneId to a different webContents is rejected", () => {
+    const registry = admittedRegistry(1, 2)
+
+    registry.register("pane-a", 1)
+    expect(() => registry.register("pane-a", 2)).toThrow(/already bound/)
+  })
+
+  test("unregister removes the entry and is idempotent", () => {
+    const registry = admittedRegistry(42)
+
+    registry.register("pane-a", 42)
+    expect(registry.get("pane-a")).toBeDefined()
+
+    registry.unregister("pane-a")
+    expect(registry.get("pane-a")).toBeUndefined()
+    // Idempotent.
+    registry.unregister("pane-a")
+    registry.unregister("never-registered")
+  })
+
+  test("get returns undefined for unknown paneId", () => {
+    const registry = new BrowserRegistry(makeResolver(new Map()))
+    expect(registry.get("missing")).toBeUndefined()
+  })
+
+  test("clear drops every handle", () => {
+    const registry = admittedRegistry(1, 2)
+
+    registry.register("pane-a", 1)
+    registry.register("pane-b", 2)
+    expect(registry.paneIds().length).toBe(2)
+
+    registry.clear()
+    expect(registry.paneIds()).toEqual([])
+  })
+
+  test("independent paneIds map to independent handles", () => {
+    const registry = admittedRegistry(1, 2)
+
+    const handleA = registry.register("pane-a", 1)
+    const handleB = registry.register("pane-b", 2)
+    expect(handleA).not.toBe(handleB)
+    expect(handleA.webContentsId).toBe(1)
+    expect(handleB.webContentsId).toBe(2)
+  })
+})

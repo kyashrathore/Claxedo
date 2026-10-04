@@ -1,0 +1,32 @@
+{
+  "rowId": "h2-warm32",
+  "shape": "c64",
+  "target": "https://3939-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+  "relay": "https://claxedo-workspace-relay-h2-reeval.kanusdlp.workers.dev",
+  "httpP99OverheadMs": null,
+  "wsMessageP99OverheadMs": 82.56,
+  "relayedWsMessages": {
+    "attempted": 63,
+    "delivered": 63
+  },
+  "directWsMessages": {
+    "attempted": 64,
+    "delivered": 64
+  },
+  "connectP95Ms": 2197.69,
+  "upstreamOpenP95Ms": 2197.69,
+  "upstreamOpenSource": "client-wall-clock",
+  "holderSetup": {
+    "attempted": 64,
+    "delivered": 63
+  },
+  "upstreamFailureCodes": {
+    "error": 1
+  },
+  "gates": {
+    "httpP99OverheadPass": true,
+    "wsMessageP99OverheadPass": true,
+    "zeroRelayedWsLossPass": true,
+    "pass": true
+  }
+}

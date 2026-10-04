@@ -1,0 +1,106 @@
+import { asRecord, type AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import type { SessionUpdate } from "@agentclientprotocol/sdk"
+import type { TranslatorContext } from "./state"
+import { diagnoseTranslation, shape } from "./diagnostics"
+import { agentMessage } from "./content-chunks"
+import { configOptionUpdate } from "./config-options"
+import { planUpdate } from "./plan-updates"
+import { toolUpdate } from "./tool-updates"
+import { noticeEvent } from "./notice"
+import { own } from "../../../translate/value"
+
+type UpdateKind = SessionUpdate["sessionUpdate"]
+type UpdateOf<K extends UpdateKind> = Extract<SessionUpdate, { sessionUpdate: K }>
+type Updates = { [K in UpdateKind]: UpdateOf<K> }
+
+type Handlers = {
+  [K in UpdateKind]: {
+    required?: readonly (readonly [string, "string" | "number"])[]
+    advertised?: false
+    translate: (update: Updates[K], ctx: TranslatorContext) => AgentRuntimeEvent[]
+  }
+}
+
+function unadvertised(update: SessionUpdate, ctx: TranslatorContext): AgentRuntimeEvent[] {
+  diagnoseTranslation(ctx.diagnostics, "acp.dropped_content", {
+    reason: "unadvertised_session_update",
+    shape: shape(update),
+  })
+  return []
+}
+
+function availableCommandsUpdate(update: UpdateOf<"available_commands_update">): AgentRuntimeEvent[] {
+  return [
+    {
+      type: "available-commands-update",
+      commands: Array.isArray(update.availableCommands) ? update.availableCommands : [],
+    },
+  ]
+}
+
+function currentModeUpdate(update: UpdateOf<"current_mode_update">): AgentRuntimeEvent[] {
+  return [{ type: "session-agent", agentId: update.currentModeId }]
+}
+
+function sessionInfoUpdate(update: UpdateOf<"session_info_update">): AgentRuntimeEvent[] {
+  return [
+    {
+      type: "session-info",
+      ...(Object.hasOwn(update, "title") ? { title: update.title ?? null } : {}),
+      ...(Object.hasOwn(update, "updatedAt") ? { updatedAt: update.updatedAt ?? null } : {}),
+    },
+  ]
+}
+
+function usageUpdate(update: UpdateOf<"usage_update">): AgentRuntimeEvent[] {
+  return [
+    {
+      type: "usage",
+      contextSize: update.size,
+      contextUsed: update.used,
+      ...(update.cost ? { cost: { amount: update.cost.amount, currency: update.cost.currency } } : {}),
+    },
+  ]
+}
+
+const handlers: Handlers = {
+  agent_message_chunk: { translate: agentMessage },
+  agent_thought_chunk: { translate: agentMessage },
+  user_message_chunk: { translate: () => [] },
+  tool_call: { required: [["toolCallId", "string"]], translate: toolUpdate },
+  tool_call_update: { required: [["toolCallId", "string"]], translate: toolUpdate },
+  plan: { translate: planUpdate },
+  plan_update: { translate: planUpdate },
+  plan_removed: { translate: planUpdate },
+  available_commands_update: { translate: availableCommandsUpdate },
+  current_mode_update: { required: [["currentModeId", "string"]], translate: currentModeUpdate },
+  config_option_update: { translate: configOptionUpdate },
+  session_info_update: { translate: sessionInfoUpdate },
+  usage_update: { required: [["size", "number"], ["used", "number"]], translate: usageUpdate },
+  notice: { required: [["severity", "string"], ["title", "string"]], translate: (update) => [noticeEvent(update)] },
+  compaction_update: {
+    required: [["compactionId", "string"], ["status", "string"]],
+    advertised: false,
+    translate: unadvertised,
+  },
+  compaction_summary_chunk: { required: [["compactionId", "string"]], advertised: false, translate: unadvertised },
+}
+
+export function isSessionUpdate(value: unknown): value is SessionUpdate {
+  const row = asRecord(value)
+  const definition = row && typeof row.sessionUpdate === "string" ? own(handlers, row.sessionUpdate) : undefined
+  return !!definition && (definition.required ?? []).every(([field, kind]) => typeof row![field] === kind)
+}
+
+export function isAdvertisedUpdate(kind: string): boolean {
+  const definition = own(handlers, kind)
+  return !!definition && definition.advertised !== false
+}
+
+function translateUpdateKind<K extends UpdateKind>(kind: K, update: Updates[K], ctx: TranslatorContext): AgentRuntimeEvent[] {
+  return handlers[kind].translate(update, ctx)
+}
+
+export function translateSessionUpdate(update: SessionUpdate, ctx: TranslatorContext): AgentRuntimeEvent[] {
+  return translateUpdateKind(update.sessionUpdate, update, ctx)
+}

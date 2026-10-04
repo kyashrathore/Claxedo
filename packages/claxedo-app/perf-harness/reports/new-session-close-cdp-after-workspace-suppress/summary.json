@@ -1,0 +1,39 @@
+{
+  "outDir": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/reports/new-session-close-cdp-after-workspace-suppress",
+  "closeCount": 1,
+  "beforeCloseTabs": [
+    {
+      "text": "c/mNew Session",
+      "closeAria": "Close New Session"
+    }
+  ],
+  "afterCloseUrl": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+  "afterCloseTabs": [
+    {
+      "text": "c/mNew Session",
+      "closeAria": "Close New Session"
+    }
+  ],
+  "afterReloadFastUrl": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+  "afterReloadFastTabs": [
+    {
+      "text": "c/mNew Session",
+      "closeAria": "Close New Session"
+    }
+  ],
+  "afterReloadAfterTtlUrl": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+  "afterReloadAfterTtlTabs": [
+    {
+      "text": "c/mNew Session",
+      "closeAria": "Close New Session"
+    }
+  ],
+  "newSessionVisibleAfterClose": true,
+  "newSessionVisibleAfterFastReload": true,
+  "newSessionVisibleAfterTtlReload": true,
+  "rangeErrors": 0,
+  "pageErrors": [],
+  "failedResponses": [],
+  "statusPermissionQuestionEvents": 24,
+  "browserUseFallback": true
+}

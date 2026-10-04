@@ -1,0 +1,70 @@
+import { NO_BACKGROUND_WORK, parseBackgroundWork, type AgentRuntimeStatus, type BackgroundWork } from "@claxedo/agent-runtime-contract"
+import { turnError } from "../errors"
+import type { RetryAction, SessionStatus } from "../status-types"
+import { isRecord } from "@claxedo/helpers/guards"
+import { unreachable } from "../../lib/machine"
+
+function retryActionFromWire(value: unknown): RetryAction | undefined {
+  if (!isRecord(value)) return undefined
+  const { reason, provider, title, message, label, link } = value
+  if (typeof reason !== "string" || typeof provider !== "string" || typeof title !== "string" || typeof message !== "string" || typeof label !== "string") return undefined
+  return { reason, provider, title, message, label, ...(typeof link === "string" ? { link } : {}) }
+}
+
+function runtimeStatusFromWire(value: unknown): AgentRuntimeStatus | undefined {
+  if (!isRecord(value)) return undefined
+  switch (value.type) {
+    case "idle":
+    case "busy":
+      return { type: value.type }
+    case "retry": {
+      const { attempt, message, next } = value
+      if (typeof message !== "string") return undefined
+      const action = retryActionFromWire(value.action)
+      return { type: "retry", message, ...(typeof attempt === "number" ? { attempt } : {}), ...(typeof next === "number" ? { next } : {}), ...(action ? { action } : {}) }
+    }
+    case "interrupted":
+      return typeof value.message === "string"
+        ? { type: "interrupted", message: value.message }
+        : undefined
+    default:
+      return undefined
+  }
+}
+
+function sessionStatusFromRuntime(status: AgentRuntimeStatus): SessionStatus {
+  switch (status.type) {
+    case "idle":
+      return { kind: "idle" }
+    case "busy":
+      return { kind: "working" }
+    case "retry":
+      return {
+        kind: "retrying",
+        message: status.message,
+        ...(status.attempt !== undefined ? { attempt: status.attempt } : {}),
+        ...(status.next !== undefined ? { nextAt: status.next } : {}),
+        ...(status.action ? { action: status.action } : {}),
+      }
+    case "interrupted":
+      return { kind: "interrupted", message: status.message }
+    default:
+      return unreachable(status)
+  }
+}
+
+export function backgroundWorkFromWire(value: unknown): BackgroundWork {
+  return (isRecord(value) && parseBackgroundWork(value.backgroundWork)) || NO_BACKGROUND_WORK
+}
+
+export function sessionStatusFromWire(value: unknown): SessionStatus | undefined {
+  const status = runtimeStatusFromWire(value)
+  return status ? sessionStatusFromRuntime(status) : undefined
+}
+
+const TURN_CANCELLED_ERROR = "MessageAbortedError"
+
+export function sessionStatusFromTurnError(value: unknown): SessionStatus {
+  const name = value && typeof value === "object" ? (value as { name?: unknown }).name : undefined
+  return name === TURN_CANCELLED_ERROR ? { kind: "idle" } : { kind: "failed", error: turnError(value) }
+}

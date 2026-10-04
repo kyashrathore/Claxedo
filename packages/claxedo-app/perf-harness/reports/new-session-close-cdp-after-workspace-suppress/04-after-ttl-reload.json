@@ -1,0 +1,15 @@
+{
+  "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+  "body": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nc/m\nNew Session\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain\nReview\nUncommitted\n409\n+23116\n-35791\n‪.agent-extensions/‬\nmaterialized.json\n+1\n-1\nbun.lock\n+28\n-0\n‪docs/plans/‬\ngoal.md\n+4061\n-331\nDiff too large to render\nLimit: 500 changed lines. Current: 4,392 changed lines.\nRender anyway\n‪docs/tech-docs/‬\nclaxedo-app-rewrite-plan.md\n+65\n-41\n‪packages/app/‬\npackage.json\n+1\n-0\n‪packages/app/src/components/‬\ndialog-connect-provider.tsx\n+25\n-19",
+  "tabs": [
+    {
+      "text": "c/mNew Session",
+      "closeAria": "Close New Session"
+    }
+  ],
+  "stateSummary": {
+    "metaCount": null,
+    "contentIds": null,
+    "panes": null
+  }
+}

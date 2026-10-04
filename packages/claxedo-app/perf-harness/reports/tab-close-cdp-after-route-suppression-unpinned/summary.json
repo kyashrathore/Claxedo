@@ -1,0 +1,53 @@
+{
+  "outDir": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/reports/tab-close-cdp-after-route-suppression-unpinned",
+  "initialUrl": "http://localhost:4445/s/ses_16214a525ffeZGDqylEvDKPmMh",
+  "afterSidebarToggleTabs": [
+    {
+      "text": "c/mPresident of India inquiry",
+      "current": true,
+      "rect": {
+        "x": 45,
+        "y": 5,
+        "w": 201,
+        "h": 28
+      },
+      "closeAria": "Close President of India inquiry"
+    }
+  ],
+  "afterCloseUrl": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+  "afterReloadUrl": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+  "afterCloseTabs": [
+    {
+      "text": "c/mNew Session",
+      "current": true,
+      "rect": {
+        "x": 45,
+        "y": 5,
+        "w": 132,
+        "h": 28
+      },
+      "closeAria": "Close New Session"
+    }
+  ],
+  "afterReloadTabs": [
+    {
+      "text": "c/mNew Session",
+      "current": true,
+      "rect": {
+        "x": 45,
+        "y": 5,
+        "w": 132,
+        "h": 28
+      },
+      "closeAria": "Close New Session"
+    }
+  ],
+  "closeCount": 1,
+  "sessionTextAfterClose": false,
+  "sessionTextAfterReload": false,
+  "rangeErrors": 0,
+  "pageErrors": [],
+  "failedResponses": [],
+  "statusPermissionQuestionEvents": 28,
+  "browserUseFallback": true
+}

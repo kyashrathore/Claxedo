@@ -1,0 +1,284 @@
+name: test
+
+on:
+  push:
+    branches:
+      - dev
+  pull_request:
+  workflow_dispatch:
+  # deploy-staging.yml calls this so a red suite blocks the release through
+  # `needs:`. `staging` stays out of `push.branches` above: a push trigger would
+  # run the whole suite a second time, in a run the deploy does not depend on.
+  workflow_call:
+    inputs:
+      linux-unit-only:
+        description: >-
+          Run the whole unit suite on Linux and nothing else: no Windows leg.
+          The Windows leg is still red in package suites after its embedded
+          OpenCode verification step, so a release gate that required it could
+          never open; the deploy gates on what this repository can prove.
+        type: boolean
+        default: false
+
+concurrency:
+  # Keep every run on dev so cancelled checks do not pollute the default branch
+  # commit history. PRs and other branches still share a group and cancel stale runs.
+  group: ${{ github.ref == 'refs/heads/dev' && format('{0}-{1}', github.workflow, github.run_id) || format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref) }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  checks: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  changes:
+    name: select affected CI surfaces
+    runs-on: ubuntu-latest
+    outputs:
+      full: ${{ inputs.linux-unit-only && 'true' || steps.changed.outputs.full }}
+      docs: ${{ steps.changed.outputs.docs }}
+      unit: ${{ inputs.linux-unit-only && 'true' || steps.changed.outputs.unit }}
+      unit_matrix: ${{ inputs.linux-unit-only && '[{"name":"linux","host":"ubuntu-latest"}]' || steps.changed.outputs.unit_matrix }}
+      boundary_local_server: ${{ steps.changed.outputs.boundary_local_server }}
+      boundary_host_connector: ${{ steps.changed.outputs.boundary_host_connector }}
+      boundary_server: ${{ steps.changed.outputs.boundary_server }}
+      app_checks: ${{ steps.changed.outputs.app_checks }}
+    steps:
+      - name: Checkout repository history
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - name: Select affected gates
+        id: changed
+        uses: ./.github/actions/detect-ci-changes
+        with:
+          base: ${{ github.event.pull_request.base.sha || github.event.before }}
+          head: ${{ github.event.pull_request.head.sha || github.sha }}
+          force-full: ${{ github.event_name == 'workflow_dispatch' }}
+
+  docs:
+    name: documentation links
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Check repository documentation links
+        run: bun run docs:check-links
+
+  app-checks:
+    name: app rule checks
+    needs: changes
+    if: needs.changes.outputs.app_checks == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Run the app's rule checks
+        run: bun run --cwd packages/claxedo-app check
+
+  unit:
+    name: unit (${{ matrix.settings.name }}, ${{ matrix.lane }})
+    needs: changes
+    if: needs.changes.outputs.unit == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        settings: ${{ fromJSON(needs.changes.outputs.unit_matrix) }}
+        # claxedo-server is 236 serialized files; beside the other 30 packages
+        # it took the whole suite past 35 minutes on a 2-core runner. The lanes
+        # share this job's setup and run as two jobs.
+        lane: [server-1, server-2, server-3, server-4, rest]
+    runs-on: ${{ matrix.settings.host }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+      - name: Cache Turbo
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: node_modules/.cache/turbo
+          key: turbo-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json') }}-
+            turbo-${{ runner.os }}-
+
+      # packages/*/dist is gitignored and several @claxedo packages resolve each
+      # other through their dist exports, so the suites that import them need
+      # these built first. turbo.json's generic `test` task deliberately does
+      # NOT use `dependsOn: ["^build"]` to get this (see the comment in
+      # turbo.json), so the build is scoped explicitly here instead. The root
+      # package.json `build:packages` script is the one list of dist-resolved
+      # packages; every workflow that needs them runs it.
+      - name: Build dist-resolved workspace packages
+        run: bun run build:packages
+
+      - name: Verify embedded OpenCode on the Node runtime
+        if: matrix.lane == 'rest'
+        run: bun run --cwd packages/workspace-runtime test:opencode-node
+
+      # Product boundaries are independent release artifacts. Keep each public
+      # command separately selectable so a change to one product does not build
+      # the others, and ordinary CI never invokes Desktop's production build.
+      # The release workflows retain Desktop's complete boundary gate.
+      - name: Verify local-server package boundary
+        if: runner.os == 'Linux' && matrix.lane == 'rest' && needs.changes.outputs.boundary_local_server == 'true'
+        run: bun run --cwd packages/claxedo-local-server verify:closure
+
+      - name: Verify Host Connector package boundary
+        if: runner.os == 'Linux' && matrix.lane == 'rest' && needs.changes.outputs.boundary_host_connector == 'true'
+        run: bun run --cwd packages/claxedo-host-connector verify:closure
+
+      - name: Verify server package boundary
+        if: runner.os == 'Linux' && matrix.lane == 'server-1' && needs.changes.outputs.boundary_server == 'true'
+        run: bun run --cwd packages/claxedo-server verify:closure
+
+      - name: Prepare Linux sandbox and test ports
+        if: runner.os == 'Linux' && matrix.lane == 'rest'
+        run: bash script/ci-linux-test-host.sh
+
+      # `bun turbo test` used to be a near-no-op: turbo.json declared only five
+      # package-scoped `#test` entries, and turbo runs nothing for a package it
+      # has no entry for, so 22 packages with real suites -- claxedo-server's
+      # 236 files / 2386 tests among them -- never gated a PR. turbo.json now
+      # declares ONE generic `test` task, so this command runs every package
+      # that has a `test` script, including ones added later.
+      #
+      # 35 min per lane. claxedo-server keeps `fileParallelism: false` (304
+      # files serialized): 22 min on a 2-core Linux runner and past 35 on
+      # Windows as one lane, so it runs as four vitest shards beside the other
+      # packages. The shard reaches the suite as CLAXEDO_SERVER_TEST_SHARD,
+      # which turbo hashes so one shard never replays another's cached pass.
+      #
+      # Linux runs two package tasks to match the runner's core count. Windows
+      # runs one package task at a time: its OpenCode suite contains wall-clock
+      # and child-process contracts that become unreliable when the 5,700-test
+      # app suite runs beside it. Turbo defaults to 10 parallel tasks;
+      # workspace-runtime's PTY byte forwarding asserts on wall-clock behaviour
+      # and fails its 5s timeouts when starved of CPU.
+      # At 21-way parallelism on a fast many-core dev machine the wall-clock
+      # suites went red; serialized on the same machine, they pass. A
+      # 2-core runner at concurrency 10 is strictly worse. Serial Windows adds
+      # only the app suite's roughly two-minute tail and keeps every test intact.
+      - name: Run unit tests
+        timeout-minutes: 35
+        run: |
+          concurrency=2
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            concurrency=1
+          fi
+          lane=--filter=@claxedo/server
+          if [[ "${{ matrix.lane }}" == "rest" ]]; then
+            lane=--filter=!@claxedo/server
+          else
+            export CLAXEDO_SERVER_TEST_SHARD="${LANE#server-}/4"
+          fi
+          if [[ "${{ needs.changes.outputs.full }}" == "true" ]]; then
+            bun turbo test "$lane" --concurrency="$concurrency" --continue
+          else
+            bun turbo test "$lane" --affected --concurrency="$concurrency" --continue
+          fi
+        env:
+          TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          TURBO_SCM_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          LANE: ${{ matrix.lane }}
+
+      - name: Publish unit reports
+        if: always()
+        uses: mikepenz/action-junit-report@bccf2e31636835cf0874589931c4116687171386 # v6.4.0
+        with:
+          # `junit*.xml`, not `junit.xml`: a package that runs more than one
+          # runner writes one report each -- @claxedo/workspace-relay emits
+          # `junit-bun-adapter.xml` / `junit-workerd.xml`. Those suites already
+          # gate the job through their exit code; the narrower glob only meant
+          # their results were missing from the published check.
+          report_paths: |
+            packages/*/.artifacts/unit/junit*.xml
+          check_name: "unit results (${{ matrix.settings.name }}, ${{ matrix.lane }})"
+          detailed_summary: true
+          include_time_in_summary: true
+          fail_on_failure: false
+
+      - name: Upload unit artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: unit-${{ matrix.settings.name }}-${{ matrix.lane }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            packages/*/.artifacts/unit/junit.xml
+            packages/*/*/.artifacts/unit/junit.xml
+
+  # Stable branch-protection target: optional jobs may be skipped by the change
+  # policy, while this one check still fails if any selected gate fails.
+  result:
+    name: CI result
+    if: always()
+    needs: [changes, docs, app-checks, unit]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every selected gate to pass
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          DOCS_RESULT: ${{ needs.docs.result }}
+          UNIT_RESULT: ${{ needs.unit.result }}
+          APP_CHECKS_RESULT: ${{ needs.app-checks.result }}
+          DOCS_SELECTED: ${{ needs.changes.outputs.docs }}
+          UNIT_SELECTED: ${{ needs.changes.outputs.unit }}
+          APP_CHECKS_SELECTED: ${{ needs.changes.outputs.app_checks }}
+        run: |
+          require_gate() {
+            label="$1"
+            selected="$2"
+            result="$3"
+            if [[ "$selected" == "true" && "$result" != "success" ]]; then
+              echo "$label was selected but concluded: $result" >&2
+              exit 1
+            fi
+            if [[ "$selected" != "true" && "$result" != "success" && "$result" != "skipped" ]]; then
+              echo "$label was not selected but concluded: $result" >&2
+              exit 1
+            fi
+          }
+
+          [[ "$CHANGES_RESULT" == "success" ]] || {
+            echo "Change selection concluded: $CHANGES_RESULT" >&2
+            exit 1
+          }
+          require_gate "Documentation" "$DOCS_SELECTED" "$DOCS_RESULT"
+          require_gate "Unit" "$UNIT_SELECTED" "$UNIT_RESULT"
+          require_gate "App rule checks" "$APP_CHECKS_SELECTED" "$APP_CHECKS_RESULT"

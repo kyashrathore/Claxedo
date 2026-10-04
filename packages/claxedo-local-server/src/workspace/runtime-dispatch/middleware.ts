@@ -1,0 +1,83 @@
+/**
+ * The global fall-through: any request whose path the ownership registry marks
+ * `SandboxRuntime` is dispatched to that workspace's runtime instead of being
+ * handled here. Every composition mounts it with `app.use` rather than as a
+ * route, so it sees every request and passes on the ones it does not own — no
+ * control-plane endpoint is ever dispatched.
+ *
+ * Two strategies, chosen by where the workspace runs:
+ *   - EMBEDDED  — a local workspace, handled in-process with no network hop
+ *   - FORWARD   — a cloud workspace, fetched over the relay or straight to the
+ *                 sandbox
+ *
+ * The sibling entrypoint (`shared-workspace-endpoint.ts`) is a mounted ROUTE
+ * with its own loopback gate. Keeping them apart is the point of the split:
+ * they share machinery but not a trust boundary.
+ */
+
+import type { Context, Next } from "hono"
+import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
+import {
+  embedded,
+  hostAggregateEvents,
+  ingressOptions,
+  noWr,
+  proxy,
+  requestWorkspace,
+  resolveWorkspaceHit,
+  runtimeOwned,
+  unnamedSessionWorkspace,
+  type RuntimeProxyOptions,
+} from "./internals"
+
+export function createWorkspaceRuntimeProxy(options: RuntimeProxyOptions = {}) {
+  return (c: Context, next: Next) => workspaceRuntimeProxyWithOptions(c, next, options)
+}
+
+export async function workspaceRuntimeProxy(c: Context, next: Next): Promise<Response | void> {
+  return workspaceRuntimeProxyWithOptions(c, next)
+}
+
+async function workspaceRuntimeProxyWithOptions(
+  c: Context,
+  next: Next,
+  options: RuntimeProxyOptions = {},
+): Promise<Response | void> {
+  const pathname = new URL(c.req.url).pathname
+
+  if (!runtimeOwned(pathname)) return next()
+
+  // Decided before the workspace lookup below and outside its catch: the host
+  // event stream names no workspace, so a failure on it is not "that
+  // workspace's runtime is unavailable".
+  const aggregate = hostAggregateEvents(c, pathname, options)
+  if (aggregate) return await aggregate
+  const unnamed = unnamedSessionWorkspace(c, pathname)
+  if (unnamed) return unnamed
+
+  try {
+    const input = requestWorkspace(c.req.raw)
+    const ws = await resolveWorkspace({
+      workspaceId: input.workspaceId,
+      directory: input.directory,
+    })
+    if (!ws) return next()
+    if (ws.kind !== "cloud") {
+      // Same identity stamp as `/workspaces/:id` — without `resolveRelayActor`
+      // (and the hop header it feeds), embedded prompts never get `claxedo.author`.
+      return await embedded(c, ws, undefined, ingressOptions(options))
+    }
+    const hit = await resolveWorkspaceHit(ws, options)
+    if (!hit) return next()
+    return await proxy(c, hit, {
+      sandboxManager: options.sandboxManager,
+      ...(options.relayProvider ? { relayProvider: options.relayProvider } : {}),
+      ...(options.mintLocalRelayHostToken ? { mintLocalRelayHostToken: options.mintLocalRelayHostToken } : {}),
+      ...(options.defaultHomeRegion ? { defaultHomeRegion: options.defaultHomeRegion } : {}),
+      ...(options.resolveRelayActor ? { resolveRelayActor: options.resolveRelayActor } : {}),
+      ...(options.requireRelayActor ? { requireRelayActor: true } : {}),
+    })
+  } catch (err) {
+    return noWr(c, err)
+  }
+}

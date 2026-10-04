@@ -1,0 +1,116 @@
+import type { SignedControlPlaneAuth } from "../platform/auth/auth"
+import type { ClaxedoRegion } from "../platform/runtime/region/index"
+import type { RelayBacking, RelayRole } from "@claxedo/workspace-relay"
+
+/**
+ * The Relay port, without its implementation.
+ *
+ * A local route producer forwards a relay provider when the composition has
+ * one; it never constructs one. Declared apart from the implementation so that
+ * forwarding takes no compile-time edge to the hosted wiring.
+ *
+ * The factory and its options stay in `@claxedo/server`, which is where the
+ * hosted wiring lives.
+ */
+export type RelayProvider = {
+  getRelayEndpoint: (workspaceId: string, homeRegion: ClaxedoRegion) => string | Promise<string>
+  mintHostTunnelToken: (input: HostTunnelTokenInput) => Promise<RelayToken>
+  mintRuntimeAccessToken: (input: RelayTokenInput) => Promise<RelayToken>
+  resolveTarget: (workspaceId: string, hostId: string) => Promise<RelayTarget | undefined>
+  drainWorkspace: (workspaceId: string) => Promise<void>
+}
+
+type RelayTokenBaseInput = {
+  workspaceId: string
+  hostId: string
+  subject: string
+  ttlMs: number
+}
+
+export type HostTunnelTokenInput = RelayTokenBaseInput & { enrollmentId: string; generation: number }
+
+export type RelayTokenInput = {
+  workspaceId: string
+  hostId: string
+  orgId: string
+  principalKind: "user" | "service"
+  actorId: string
+  userId?: string
+  actorKind: "human" | "agent"
+  role: RelayRole
+  actorPublicId?: string
+  actorName?: string
+  actorAvatarUrl?: string
+  ttlMs: number
+  /** Present for cloud workspaces; assigned atomically with the sandbox address. */
+  routingId?: string
+  /**
+   * The signed caller a USER-principal token is minted for.
+   *
+   * A composition records user tokens through the caller-scoped authority
+   * path (`recordRuntimeAccessToken(auth, …)`), which checks that the token's
+   * actor IS the authenticated actor. Without the caller, the only path left
+   * is the service one — and that refuses every actor but the control plane's
+   * own, so a user mint through the provider was denied on the hosted worker
+   * while the same user minted fine through the workspace connection route.
+   * Absent on service mints.
+   */
+  auth?: SignedControlPlaneAuth
+  channelIdentity?: import("../platform/auth/authority").AuthorizedChannelIdentity
+}
+
+export type RelayToken = {
+  token: string
+  expiresAt: number
+  jti: string
+}
+
+export type RelayTarget = {
+  workspaceId: string
+  hostId: string
+  baseUrl: string
+  backing: RelayBacking
+}
+
+/**
+ * How a composition answers "where does this workspace's runtime live".
+ *
+ * The Node/local server injects a workspace-store-backed lookup; the hosted
+ * Worker injects an authority-backed one. The TYPE belongs here so that naming it
+ * — as the relay provider's options do — does not reach either implementation.
+ */
+export type RelayTargetResult =
+  | {
+      found: true
+      baseUrl: string
+      backing: RelayBacking
+    }
+  | {
+      found: false
+      code: "runtime_access_token_invalid" | "relay_resolver_workspace_not_found" | "relay_resolver_workspace_target_unavailable"
+    }
+
+/**
+ * Which enrolled host currently serves a workspace, read on the
+ * service side with no end-user principal: the relay resolver asks it for a
+ * `(workspaceId, hostId)` pair. The concrete resolver is a storage adapter
+ * (D1 in `@claxedo/server`, SQLite in this package); the route module only
+ * depends on the shape.
+ */
+export type HostTunnelTargetResult =
+  | { active: true; hostId: string; backing: "local-worktree" | "cloud-vm" }
+  | { active: false }
+
+export type HostTunnelTargetResolver = (workspaceId: string) => Promise<HostTunnelTargetResult>
+
+export type RelayTargetLookup = (args: {
+  routingId?: string
+  workspaceId: string
+  hostId: string
+  /**
+   * When provided (Cloudflare Worker), background work spawned by the lookup
+   * (sandbox touch + its telemetry) should be scheduled through this so the
+   * runtime does not cancel it after the response is returned.
+   */
+  waitUntil?: (promise: Promise<unknown>) => void
+}) => Promise<RelayTargetResult>

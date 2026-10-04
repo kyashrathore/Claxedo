@@ -1,0 +1,21 @@
+{
+  "revision": 9,
+  "acceptedAt": "2026-07-15T05:10:17.048Z",
+  "snapshot": {
+    "version": 1,
+    "harness": {
+      "id": "opencode",
+      "access": "native"
+    },
+    "mcp": {
+      "keys": []
+    },
+    "auth": {
+      "keys": [
+        "claude-sdk",
+        "codex-app-server",
+        "openai"
+      ]
+    }
+  }
+}

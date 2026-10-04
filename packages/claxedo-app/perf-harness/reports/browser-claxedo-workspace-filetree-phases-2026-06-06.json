@@ -1,0 +1,197 @@
+{
+  "generated_at": "2026-06-05T21:03:50.113Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "workspace-switch",
+      "name": "Workspace Switch",
+      "started_at": "2026-06-05T21:03:49.936Z",
+      "duration_ms": 10439.300667000001,
+      "seed": {
+        "repos": 1,
+        "sessions": 10,
+        "messages": 1000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 5,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "workspace_bootstrap_ms",
+          "value": 22.07141700000102,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            22.07141700000102
+          ],
+          "p50": 22.07141700000102,
+          "p95": 22.07141700000102,
+          "min": 22.07141700000102,
+          "max": 22.07141700000102,
+          "mean": 22.07141700000102,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "workspace_switch_ms",
+          "value": 329.00041599999895,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            329.00041599999895
+          ],
+          "p50": 329.00041599999895,
+          "p95": 329.00041599999895,
+          "min": 329.00041599999895,
+          "max": 329.00041599999895,
+          "mean": 329.00041599999895,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "file_tree_load_ms",
+          "value": 241.30000001192093,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            241.30000001192093
+          ],
+          "p50": 241.30000001192093,
+          "p95": 241.30000001192093,
+          "min": 241.30000001192093,
+          "max": 241.30000001192093,
+          "mean": 241.30000001192093,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "file_tree_control_ms",
+          "value": 153.79999995231628,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            153.79999995231628
+          ],
+          "p50": 153.79999995231628,
+          "p95": 153.79999995231628,
+          "min": 153.79999995231628,
+          "max": 153.79999995231628,
+          "mean": 153.79999995231628,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "file_tree_state_ms",
+          "value": 85.90000003576279,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            85.90000003576279
+          ],
+          "p50": 85.90000003576279,
+          "p95": 85.90000003576279,
+          "min": 85.90000003576279,
+          "max": 85.90000003576279,
+          "mean": 85.90000003576279,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "file_tree_first_frame_ms",
+          "value": 1.5,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.5
+          ],
+          "p50": 1.5,
+          "p95": 1.5,
+          "min": 1.5,
+          "max": 1.5,
+          "mean": 1.5,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 26.39379100000042,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            26.39379100000042
+          ],
+          "p50": 26.39379100000042,
+          "p95": 26.39379100000042,
+          "min": 26.39379100000042,
+          "max": 26.39379100000042,
+          "mean": 26.39379100000042,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 1022.388,
+        "memory_rss_mb": 77.62908935546875,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-workspace-switch-1.webm"
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts browser --all --target claxedo --scenario workspace-switch --output browser-claxedo-workspace-filetree-phases-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:64312",
+          "mock_port": 64313,
+          "dev_command": "bun --cwd packages/claxedo-app dev"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "workspace-switch",
+        "metrics": {
+          "workspace_bootstrap_ms": 32,
+          "workspace_switch_ms": 709,
+          "file_tree_load_ms": 31,
+          "surface_switch_latency_ms": 7,
+          "file_tree_control_ms": 304,
+          "file_tree_state_ms": 236,
+          "file_tree_first_frame_ms": 7
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "file_tree_load_ms p95 241.30000001192093 > 31",
+        "surface_switch_latency_ms p95 26.39379100000042 > 7"
+      ]
+    }
+  ],
+  "comparisons": []
+}

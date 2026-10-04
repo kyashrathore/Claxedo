@@ -1,0 +1,690 @@
+import { describe, expect, test } from "bun:test"
+import { createIntegrationRegistry } from "./registry.js"
+import { createConnectionsService } from "./service.js"
+import { createIntegrationsRoutes } from "./routes.js"
+import { createAttempts } from "./attempts.js"
+import { createMemoryConnectionStore, createMemoryCredentialStore } from "./stores/memory.js"
+import { ConnectionsUnavailableError } from "./types.js"
+import { docsPort, workSourcePort } from "./ports/index.js"
+
+function harness(gates: {
+  gateDenies?: boolean
+  tokenGateDenies?: boolean
+  owner?: string
+  tokenOwner?: string
+  codeHost?: boolean
+  listUnavailable?: boolean
+  secretUnavailable?: boolean
+  omitKeyTokenType?: boolean
+} = {}) {
+  const registry = createIntegrationRegistry()
+  registry.register(
+    {
+      id: gates.codeHost ? "github" : "fake",
+      name: gates.codeHost ? "GitHub" : "Fake",
+      methods: ["key"],
+      ...(!gates.omitKeyTokenType ? { keyTokenType: gates.codeHost ? "bearer" as const : "basic" as const } : {}),
+      prompts: [
+        { id: "site_url", label: "Site" },
+        { id: "token", label: "Token", secret: true },
+      ],
+    },
+    {
+      // The capability set follows the ports, so the code-host gate now swaps
+      // the port itself rather than a declaration string beside it.
+      actions: gates.codeHost
+        ? {
+            "code-host": {
+              capability: "code-host" as const,
+              listRepositories: async () => [{
+                id: "1",
+                name: "app",
+                fullName: "acme/app",
+                cloneUrl: "https://github.com/acme/app.git",
+                private: true,
+                permissions: { read: true, write: false },
+              }],
+            },
+            "work-source": workSourcePort,
+          }
+        : { docs: docsPort },
+      auth: {
+        verify: async (_f, secret) => (secret === "good" ? { ok: true, accountLabel: "Acme" } : { ok: false, reason: "unauthorized" }),
+      },
+    },
+  )
+  const memoryCredentials = createMemoryCredentialStore()
+  // The record seam answers until `armOutage`: `connect` reads it too, to
+  // refuse a row whose credential the store did not keep, so a store that was
+  // never healthy could not produce the connection these tests then read.
+  let recordOutage = false
+  const credentials = {
+    ...memoryCredentials,
+    ...(gates.listUnavailable ? {
+      async get(providerId: string) {
+        if (recordOutage) throw new ConnectionsUnavailableError()
+        return memoryCredentials.get(providerId)
+      },
+    } : {}),
+    ...(gates.secretUnavailable ? {
+      async resolveSecret() {
+        throw new ConnectionsUnavailableError()
+      },
+    } : {}),
+  }
+  let nextId = 0
+  const service = createConnectionsService({
+    registry,
+    credentials,
+    connections: createMemoryConnectionStore(),
+    attempts: createAttempts({ sweepIntervalMs: 0 }),
+    newId: () => `connection-${++nextId}`,
+  })
+  const app = createIntegrationsRoutes(service, {
+    gate: () => (gates.gateDenies ? new Response("denied", { status: 403 }) : null),
+    tokenGate: () => (gates.tokenGateDenies ? new Response("token denied", { status: 403 }) : null),
+    owner: () => gates.owner,
+    tokenOwner: () => gates.tokenOwner,
+  })
+  return {
+    app,
+    service,
+    credentials,
+    armOutage: () => {
+      recordOutage = true
+    },
+  }
+}
+
+const connectBody = { fields: { site_url: "https://acme.example" }, secret: "good" }
+
+// Route-level OAuth harness: a real registry/service/routes stack over an
+// oauth-method integration whose provider boundary is a local fake.
+function oauthHarness(options: {
+  owner?: string
+  orgOwner?: string
+  ownerlessRows?: "org" | "refuse"
+  callback?: (code: string, verifier: string) => Promise<{ accessToken: string; refreshToken?: string; expiresAt?: number }>
+} = {}) {
+  const authorized: Array<{ state: string; verifier: string }> = []
+  const registry = createIntegrationRegistry()
+  registry.register(
+    { id: "oauthy", name: "OAuthy", methods: ["oauth"]  },
+    {
+      actions: { docs: docsPort },
+      auth: {
+        authorize: (state, verifier) => {
+          authorized.push({ state, verifier })
+          return new URL(`https://provider.example/auth?state=${state}`)
+        },
+        callback: options.callback ?? (async (code) => ({ accessToken: `at-${code}`, refreshToken: "rt-1" })),
+    
+      },
+    },
+  )
+  const credentials = createMemoryCredentialStore()
+  const connections = createMemoryConnectionStore()
+  let nextId = 0
+  const service = createConnectionsService({
+    registry,
+    credentials,
+    connections,
+    attempts: createAttempts({ sweepIntervalMs: 0 }),
+    newId: () => `connection-${++nextId}`,
+  })
+  const app = createIntegrationsRoutes(service, {
+    gate: () => null,
+    ...(options.owner !== undefined ? { owner: () => options.owner } : {}),
+    ...(options.orgOwner !== undefined ? { orgOwner: () => options.orgOwner } : {}),
+    ...(options.ownerlessRows !== undefined ? { ownerlessRows: options.ownerlessRows } : {}),
+  })
+  const startOAuth = async (body: Record<string, unknown> = {}) =>
+    app.request("/oauthy/connect", { method: "POST", body: JSON.stringify({ method: "oauth", ...body }) })
+  return { app, service, credentials, connections, authorized, startOAuth }
+}
+
+describe("integrations routes", () => {
+  test("composition without an explicit gate is refused, not silently open", () => {
+    const { service } = harness()
+    // The kit ships no implicit allow-all; a JS caller that skips the option
+    // hits the runtime fence instead of serving unauthenticated routes.
+    // @ts-expect-error — `gate` is a required route-policy statement
+    expect(() => createIntegrationsRoutes(service)).toThrow("explicit gate")
+    // @ts-expect-error — an options object without `gate` is the same refusal
+    expect(() => createIntegrationsRoutes(service, {})).toThrow("explicit gate")
+  })
+
+  test("gate runs on every gated route", async () => {
+    const { app } = harness({ gateDenies: true })
+    for (const [method, path] of [
+      ["GET", "/"],
+      ["POST", "/fake/connect"],
+      ["GET", "/attempts/x"],
+      ["DELETE", "/connections/fake"],
+      ["POST", "/connections/fake/reverify"],
+      ["GET", "/connections/fake/repositories"],
+      ["POST", "/connections/fake/auth-failure"],
+      ["GET", "/connections/fake/token?capability=docs"],
+    ] as const) {
+      const res = await app.request(path, { method, ...(method === "POST" ? { body: "{}" } : {}) })
+      expect(res.status).toBe(403)
+    }
+  })
+
+  test("every registered route states a policy, and the public one is the provider callback alone", async () => {
+    // The table is the policy statement this file asserts against: a route
+    // added without one cannot reach the app (the composition throws), and a
+    // route whose policy changes has to change here too.
+    const policies = {
+      "GET /": "authenticated",
+      "POST /:id/connect": "org-write",
+      "GET /callback": "public",
+      "GET /attempts/:state": "authenticated",
+      "DELETE /connections/:id": "org-write",
+      "POST /connections/:id/reverify": "org-write",
+      "GET /connections/:id/repositories": "authenticated",
+      "POST /connections/:id/auth-failure": "turn-credential",
+      "GET /connections/:id/token": "turn-credential",
+    } as const
+    const { app } = harness({ gateDenies: true })
+    expect(new Set(app.routes.map((entry) => `${entry.method} ${entry.path}`))).toEqual(new Set(Object.keys(policies)))
+
+    // The callback carries its own single-use `state` and is reached by a
+    // provider's browser redirect, so a denying gate must not touch it while
+    // it refuses everything else.
+    const callback = await app.request("/callback?state=unknown&code=x")
+    expect(callback.status).toBe(400)
+    expect(await callback.text()).toContain("Connection failed")
+  })
+
+  test("orgWriteGate guards an org-scoped write and leaves a personal one alone", async () => {
+    const { service } = harness()
+    const app = createIntegrationsRoutes(service, {
+      gate: () => null,
+      orgWriteGate: () => new Response("not an admin", { status: 403 }),
+      owner: () => "user:me",
+    })
+    const org = await app.request("/fake/connect", {
+      method: "POST",
+      body: JSON.stringify({ ...connectBody, scope: "org" }),
+    })
+    expect(org.status).toBe(403)
+
+    const personal = await app.request("/fake/connect", {
+      method: "POST",
+      body: JSON.stringify({ ...connectBody, scope: "personal" }),
+    })
+    expect(personal.status).toBe(200)
+  })
+
+  test("the webhook-secret surface is gone: both routes 404 and no signing credential is written", async () => {
+    const { app, credentials } = harness({ codeHost: true })
+    await app.request("/github/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    for (const method of ["PUT", "DELETE"] as const) {
+      const res = await app.request("/connections/connection-1/webhook-secret", {
+        method,
+        body: JSON.stringify({ secret: "s" }),
+      })
+      expect(res.status).toBe(404)
+    }
+    expect(await credentials.get("integration:connection-1:webhook-signing")).toBeUndefined()
+  })
+
+  test("tokenGate additionally guards token and auth-failure routes only", async () => {
+    const { app } = harness({ tokenGateDenies: true })
+    expect((await app.request("/", { method: "GET" })).status).toBe(200)
+    expect((await app.request("/connections/fake/token?capability=docs")).status).toBe(403)
+    expect((await app.request("/connections/fake/auth-failure", { method: "POST", body: "{}" })).status).toBe(403)
+  })
+
+  test("connect + list + token happy path with frozen response shape", async () => {
+    const { app } = harness()
+    const connect = await app.request("/fake/connect", {
+      method: "POST",
+      body: JSON.stringify(connectBody),
+    })
+    expect(connect.status).toBe(200)
+
+    const listing = (await (await app.request("/")).json()) as { integrations: unknown[]; connections: Array<{ id: string; status: string }> }
+    expect(listing.integrations).toHaveLength(1)
+    expect(listing.connections[0]).toMatchObject({ integrationId: "fake", status: "connected", accountLabel: "Acme" })
+
+    const token = await app.request(`/connections/${listing.connections[0].id}/token?capability=docs`)
+    expect(token.status).toBe(200)
+    expect(await token.json()).toEqual({
+      token: "good",
+      tokenType: "basic",
+      fields: { site_url: "https://acme.example" },
+    })
+  })
+
+  test("lists visible code-host repositories without exposing the connection token", async () => {
+    const { app } = harness({ codeHost: true })
+    await app.request("/github/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    const listing = await (await app.request("/")).json() as { connections: Array<{ id: string }> }
+
+    const response = await app.request(`/connections/${listing.connections[0].id}/repositories`)
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body).toEqual({ repositories: [{
+      id: "1",
+      name: "app",
+      fullName: "acme/app",
+      cloneUrl: "https://github.com/acme/app.git",
+      private: true,
+      permissions: { read: true, write: false },
+    }] })
+    expect(JSON.stringify(body)).not.toContain("good")
+  })
+
+  test("list returns 503 for credential-store outages while a missing credential remains broken", async () => {
+    const unavailable = harness({ listUnavailable: true })
+    await unavailable.app.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    unavailable.armOutage()
+    const outage = await unavailable.app.request("/")
+    expect(outage.status).toBe(503)
+    expect(await outage.json()).toEqual({ code: "connections_unavailable" })
+
+    const broken = harness()
+    await broken.app.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    await broken.credentials.deleteByProvider("integration:connection-1")
+    const listing = await broken.app.request("/")
+    expect(listing.status).toBe(200)
+    expect(((await listing.json()) as { connections: Array<{ status: string }> }).connections[0]).toMatchObject({ status: "broken" })
+  })
+
+  test("token endpoint requires declared key authorization metadata", async () => {
+    const secret = "good"
+    const { app } = harness({ omitKeyTokenType: true })
+    await app.request("/fake/connect", {
+      method: "POST",
+      body: JSON.stringify({ fields: {}, secret: "good" }),
+    })
+    const response = await app.request("/connections/connection-1/token?capability=docs")
+    const body = await response.text()
+    expect(response.status).toBe(409)
+    expect(JSON.parse(body)).toEqual({ code: "connection_not_available", status: "reconnect_required" })
+    expect(body).not.toContain(secret)
+  })
+
+  test("token endpoint error contract: 404 unknown, 403 ungranted, 409 non-available", async () => {
+    const { app, service } = harness()
+    expect((await app.request("/connections/nope/token?capability=docs")).status).toBe(404)
+
+    await app.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    expect((await app.request("/connections/connection-1/token?capability=channel")).status).toBe(403)
+    expect((await app.request("/connections/connection-1/token")).status).toBe(403)
+
+    await service.reportAuthFailure("connection-1", "x")
+    const res = await app.request("/connections/connection-1/token?capability=docs")
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ code: "connection_not_available", status: "error" })
+  })
+
+  test("connect conflicts and verify failures never echo the secret", async () => {
+    const { app } = harness()
+    const bad = await app.request("/fake/connect", {
+      method: "POST",
+      body: JSON.stringify({ fields: {}, secret: "sk-hidden-1234" }),
+    })
+    expect(bad.status).toBe(422)
+    expect(await bad.text()).not.toContain("sk-hidden-1234")
+
+    await app.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    const conflict = await app.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    expect(conflict.status).toBe(409)
+    expect(await conflict.json()).toEqual({ ok: false, code: "connection_exists" })
+  })
+
+  test("scopes connections by opaque owner and hides foreign personal rows", async () => {
+    const unsigned = harness()
+    const personalUnsigned = await unsigned.app.request("/fake/connect", {
+      method: "POST",
+      body: JSON.stringify({ ...connectBody, scope: "personal" }),
+    })
+    expect(personalUnsigned.status).toBe(422)
+    expect((await unsigned.app.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })).status).toBe(200)
+    const unsignedListing = await (await unsigned.app.request("/")).json() as {
+      connections: Array<{ scope: string }>
+      personalScopeEnabled: boolean
+    }
+    expect(unsignedListing.connections).toEqual([expect.objectContaining({ scope: "org" })])
+    expect(unsignedListing.personalScopeEnabled).toBe(false)
+
+    const { app, service } = harness({ owner: "user-a", tokenOwner: "user-a" })
+    await app.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    await app.request("/fake/connect", { method: "POST", body: JSON.stringify({ ...connectBody, scope: "personal" }) })
+    const ownerListing = await (await app.request("/")).json() as {
+      connections: Array<{ id: string; scope: string }>
+      personalScopeEnabled: boolean
+    }
+    expect(ownerListing.connections.map((connection) => connection.scope).sort()).toEqual(["org", "personal"])
+    expect(ownerListing.personalScopeEnabled).toBe(true)
+    const personal = ownerListing.connections.find((connection) => connection.scope === "personal")!
+    expect((await app.request(`/connections/${personal.id}/token?capability=docs`)).status).toBe(200)
+
+    const otherUser = createIntegrationsRoutes(service, {
+      gate: () => null,
+      owner: () => "user-b",
+      tokenOwner: () => "user-b",
+    })
+    const otherListing = await (await otherUser.request("/")).json() as { connections: Array<{ scope: string }> }
+    expect(otherListing.connections).toEqual([expect.objectContaining({ scope: "org" })])
+    expect((await otherUser.request(`/connections/${personal.id}`, { method: "DELETE" })).status).toBe(404)
+    expect((await otherUser.request(`/connections/${personal.id}/reverify`, { method: "POST" })).status).toBe(404)
+    expect((await otherUser.request(`/connections/${personal.id}/token?capability=docs`)).status).toBe(404)
+  })
+
+  test("reverify + auth-failure + delete flow", async () => {
+    const { app } = harness()
+    await app.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    expect((await app.request("/connections/connection-1/auth-failure", { method: "POST", body: JSON.stringify({ reason: "401" }) })).status).toBe(204)
+    expect((await app.request("/connections/connection-1/token?capability=docs")).status).toBe(409)
+    expect((await app.request("/connections/connection-1/reverify", { method: "POST" })).status).toBe(200)
+    expect((await app.request("/connections/connection-1/token?capability=docs")).status).toBe(200)
+    expect((await app.request("/connections/connection-1", { method: "DELETE" })).status).toBe(200)
+    expect((await app.request("/connections/nope", { method: "DELETE" })).status).toBe(404)
+  })
+
+  test("an auth-failure report for a row outside the caller's partitions is refused and degrades nothing", async () => {
+    // A caller-asserted report is a degradation channel: it must obey the
+    // same partition visibility as the token route, or any authenticated
+    // caller could break a connection it cannot even see.
+    const { app, service, credentials } = harness({ owner: "user-a", tokenOwner: "user-a" })
+    await app.request("/fake/connect", {
+      method: "POST",
+      body: JSON.stringify({ ...connectBody, scope: "personal" }),
+    })
+    const personal = (await service.list({ owner: "user-a", scope: "personal" }))[0]
+
+    const foreign = createIntegrationsRoutes(service, {
+      gate: () => null,
+      owner: () => "user-b",
+      tokenOwner: () => "user-b",
+    })
+    const denied = await foreign.request(`/connections/${personal.id}/auth-failure`, {
+      method: "POST",
+      body: JSON.stringify({ reason: "401" }),
+    })
+    expect(denied.status).toBe(404)
+    expect(credentials.inspect(`integration:${personal.id}`)).toMatchObject({ status: "available" })
+    // The owning caller's token path is untouched by the refused report.
+    expect((await app.request(`/connections/${personal.id}/token?capability=docs`)).status).toBe(200)
+  })
+
+  test("token endpoint never reflects the request Origin (no CORS headers from the kit)", async () => {
+    // The kit sets no CORS policy; reflecting arbitrary Origins on the token
+    // route would let any allowed-by-host origin read tokens. Pin that the
+    // published package emits no Access-Control-* headers itself — hosts own
+    // (and are responsible for scoping) any CORS middleware.
+    const { app } = harness()
+    await app.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    const res = await app.request("/connections/connection-1/token?capability=docs", {
+      headers: { Origin: "http://localhost:6666" },
+    })
+    expect(res.status).toBe(200)
+    for (const [name, value] of res.headers) {
+      expect(name.toLowerCase().startsWith("access-control-")).toBe(false)
+      expect(value).not.toContain("http://localhost:6666")
+    }
+  })
+
+  test("callback renders static pages and rejects unknown state", async () => {
+    const { app } = harness()
+    const res = await app.request("/callback?state=unknown&code=x")
+    expect(res.status).toBe(400)
+    const html = await res.text()
+    expect(html).toContain("Connection failed")
+    expect(html).not.toContain("unknown") // never echoes request params
+  })
+
+  test("oauth connect returns the provider url + attemptId and starts a real attempt", async () => {
+    const { app, startOAuth, authorized } = oauthHarness()
+    const res = await startOAuth()
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { ok: true; url: string; attemptId: string }
+    expect(body.ok).toBe(true)
+    expect(typeof body.attemptId).toBe("string")
+    expect(body.attemptId.length).toBeGreaterThan(0)
+    // The url is the one the real impl minted for this attempt's state.
+    expect(body.url).toBe(`https://provider.example/auth?state=${body.attemptId}`)
+    // The PKCE verifier stays server-side — it is never part of the response.
+    expect(authorized).toHaveLength(1)
+    expect(authorized[0].state).toBe(body.attemptId)
+    expect(JSON.stringify(body)).not.toContain(authorized[0].verifier)
+
+    // The attempt is live and readable through the status route.
+    const status = await app.request(`/attempts/${body.attemptId}`)
+    expect(status.status).toBe(200)
+    expect(await status.json()).toEqual({ status: "pending", integrationId: "oauthy", scope: "org" })
+  })
+
+  test("oauth connect 409s on an existing connection unless confirmReplace is set", async () => {
+    const { startOAuth, connections } = oauthHarness()
+    await connections.upsert({
+      id: "existing",
+      integrationId: "oauthy",
+      grantedCapabilities: ["docs"],
+      fields: {},
+      createdAt: 1,
+      updatedAt: 1,
+    })
+
+    const conflict = await startOAuth()
+    expect(conflict.status).toBe(409)
+    expect(await conflict.json()).toEqual({ ok: false, code: "connection_exists" })
+
+    const confirmed = await startOAuth({ confirmReplace: true })
+    expect(confirmed.status).toBe(200)
+    expect((await confirmed.json() as { ok: boolean }).ok).toBe(true)
+  })
+
+  test("oauth connect 404s an integration that does not offer the oauth method", async () => {
+    // `fake` is registered key-only: asking for oauth is an unknown method.
+    const { app } = harness()
+    const unknownMethod = await app.request("/fake/connect", {
+      method: "POST",
+      body: JSON.stringify({ method: "oauth" }),
+    })
+    expect(unknownMethod.status).toBe(404)
+    expect(await unknownMethod.json()).toEqual({ ok: false, code: "unknown_integration" })
+
+    // An id that is not registered at all takes the same branch.
+    const { app: oauthApp } = oauthHarness()
+    const missing = await oauthApp.request("/nope/connect", {
+      method: "POST",
+      body: JSON.stringify({ method: "oauth" }),
+    })
+    expect(missing.status).toBe(404)
+    expect(await missing.json()).toEqual({ ok: false, code: "unknown_integration" })
+  })
+
+  test("oauth connect propagates the resolved orgOwner so org attempts are not 'personal'", async () => {
+    // Partitioned host: the org write carries `org:org-a` as the owner AND
+    // the org key. Only when both reach connectOAuth does the attempt
+    // classify as org — dropping orgOwner would report "personal".
+    const partitioned = oauthHarness({ owner: "user:alice", orgOwner: "org:org-a", ownerlessRows: "refuse" })
+    const org = await partitioned.startOAuth()
+    expect(org.status).toBe(200)
+    const orgState = (await org.json() as { attemptId: string }).attemptId
+    expect(await (await partitioned.app.request(`/attempts/${orgState}`)).json()).toEqual({
+      status: "pending",
+      integrationId: "oauthy",
+      scope: "org",
+    })
+
+    // The personal write on the same partitioned host stays personal.
+    const personal = await partitioned.startOAuth({ scope: "personal" })
+    expect(personal.status).toBe(200)
+    const personalState = (await personal.json() as { attemptId: string }).attemptId
+    expect(await (await partitioned.app.request(`/attempts/${personalState}`)).json()).toEqual({
+      status: "pending",
+      integrationId: "oauthy",
+      scope: "personal",
+    })
+  })
+
+  test("attempt status route: 404 for unknown state, terminal status after the callback settles", async () => {
+    const { app, startOAuth } = oauthHarness()
+    const unknown = await app.request("/attempts/no-such-state")
+    expect(unknown.status).toBe(404)
+    expect(await unknown.json()).toEqual({ code: "attempt_not_found" })
+
+    const state = (await (await startOAuth()).json() as { attemptId: string }).attemptId
+    expect(await (await app.request(`/attempts/${state}`)).json()).toMatchObject({ status: "pending" })
+    expect((await app.request(`/callback?state=${state}&code=auth-code-1`)).status).toBe(200)
+    expect(await (await app.request(`/attempts/${state}`)).json()).toEqual({
+      status: "complete",
+      integrationId: "oauthy",
+      scope: "org",
+    })
+  })
+
+  test("attempt status reports a failed attempt without carrying provider detail", async () => {
+    const { app, startOAuth } = oauthHarness({
+      callback: async () => {
+        throw new Error("provider rejected code auth-code-1")
+      },
+    })
+    const state = (await (await startOAuth()).json() as { attemptId: string }).attemptId
+    const failed = await app.request(`/callback?state=${state}&code=auth-code-1`)
+    expect(failed.status).toBe(400)
+    expect(await failed.text()).toContain("Connection failed")
+
+    const status = await app.request(`/attempts/${state}`)
+    expect(status.status).toBe(200)
+    const body = await status.text()
+    expect(JSON.parse(body)).toEqual({
+      status: "failed",
+      integrationId: "oauthy",
+      scope: "org",
+      message: "callback_failed",
+    })
+    expect(body).not.toContain("auth-code-1")
+    expect(body).not.toContain("provider rejected")
+  })
+
+  test("callback success page persists the connection and echoes no query parameter", async () => {
+    const { app, startOAuth, credentials, connections } = oauthHarness()
+    const state = (await (await startOAuth()).json() as { attemptId: string }).attemptId
+
+    const res = await app.request(`/callback?state=${state}&code=auth-code-1`)
+    expect(res.status).toBe(200)
+    const html = await res.text()
+    expect(html).toContain("Connection complete")
+    expect(html).not.toContain("Connection failed")
+    // Static page: neither the state nor the authorization code is reflected.
+    expect(html).not.toContain(state)
+    expect(html).not.toContain("auth-code-1")
+    expect(html).not.toContain("at-auth-code-1")
+    expect(html).not.toContain("rt-1")
+
+    // The real service stored the oauth envelope behind the connection id.
+    expect(await connections.getById("connection-1")).toMatchObject({ integrationId: "oauthy" })
+    expect(await credentials.readSecret("integration:connection-1")).toBe(
+      JSON.stringify({ access: "at-auth-code-1", refresh: "rt-1" }),
+    )
+    // The listing surfaces the new connection and never the secret.
+    const listing = await app.request("/")
+    const listingBody = await listing.text()
+    expect(JSON.parse(listingBody)).toMatchObject({
+      connections: [expect.objectContaining({ integrationId: "oauthy", status: "connected" })],
+    })
+    expect(listingBody).not.toContain("at-auth-code-1")
+    expect(listingBody).not.toContain("rt-1")
+  })
+
+  test("token route maps credential-store outages to 503 on both secret seams", async () => {
+    // tokens.ts reads the credential record and then its secret through two
+    // separate seams; an outage on either must surface as 503, not 401/500.
+    const recordOutage = harness({ listUnavailable: true })
+    await recordOutage.app.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    recordOutage.armOutage()
+    const recordRes = await recordOutage.app.request("/connections/connection-1/token?capability=docs")
+    expect(recordRes.status).toBe(503)
+    const recordBody = await recordRes.text()
+    expect(JSON.parse(recordBody)).toEqual({ code: "connections_unavailable" })
+    expect(recordBody).not.toContain("good")
+
+    const secretOutage = harness({ secretUnavailable: true })
+    await secretOutage.app.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    const secretRes = await secretOutage.app.request("/connections/connection-1/token?capability=docs")
+    expect(secretRes.status).toBe(503)
+    const secretBody = await secretRes.text()
+    expect(JSON.parse(secretBody)).toEqual({ code: "connections_unavailable" })
+    expect(secretBody).not.toContain("good")
+  })
+
+  test("org-partitioned org scope: org writes carry the org key and stay invisible across partitions", async () => {
+    // One service/store shared by two partitioned apps — the hosted shape:
+    // same deployment, two orgs.
+    const { service } = harness()
+    const partitioned = (org: string, subject: string) =>
+      createIntegrationsRoutes(service, {
+        gate: () => null,
+        owner: () => `user:${subject}`,
+        tokenOwner: () => `user:${subject}`,
+        orgOwner: () => `org:${org}`,
+        tokenOrgOwner: () => `org:${org}`,
+        ownerlessRows: "refuse",
+      })
+    const orgA = partitioned("org-a", "alice")
+    const orgB = partitioned("org-b", "bob")
+
+    expect((await orgA.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })).status).toBe(200)
+    const aListing = (await (await orgA.request("/")).json()) as { connections: Array<{ id: string; scope: string }> }
+    expect(aListing.connections).toEqual([expect.objectContaining({ scope: "org" })])
+    const orgRow = aListing.connections[0]
+    expect((await service.getById(orgRow.id))?.owner).toBe("org:org-a")
+
+    // Every org B surface: list, delete, reverify, token, auth-failure.
+    const bListing = (await (await orgB.request("/")).json()) as { connections: unknown[] }
+    expect(bListing.connections).toEqual([])
+    expect((await orgB.request(`/connections/${orgRow.id}`, { method: "DELETE" })).status).toBe(404)
+    expect((await orgB.request(`/connections/${orgRow.id}/reverify`, { method: "POST" })).status).toBe(404)
+    expect((await orgB.request(`/connections/${orgRow.id}/token?capability=docs`)).status).toBe(404)
+    expect((await orgB.request(`/connections/${orgRow.id}/auth-failure`, { method: "POST", body: "{}" })).status).toBe(404)
+
+    // Org A keeps full access to its own partition.
+    expect((await orgA.request(`/connections/${orgRow.id}/token?capability=docs`)).status).toBe(200)
+    expect((await orgA.request(`/connections/${orgRow.id}`, { method: "DELETE" })).status).toBe(200)
+  })
+
+  test("ownerlessRows: 'refuse' makes owner-absent rows unreachable on every surface", async () => {
+    const { app: selfHost, service } = harness()
+    expect((await selfHost.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })).status).toBe(200)
+    const seeded = (await (await selfHost.request("/")).json()) as { connections: Array<{ id: string }> }
+    const ownerless = seeded.connections[0].id
+
+    const refusing = createIntegrationsRoutes(service, {
+      gate: () => null,
+      owner: () => "user:alice",
+      tokenOwner: () => "user:alice",
+      orgOwner: () => "org:org-a",
+      tokenOrgOwner: () => "org:org-a",
+      ownerlessRows: "refuse",
+    })
+    const listing = (await (await refusing.request("/")).json()) as { connections: unknown[] }
+    expect(listing.connections).toEqual([])
+    expect((await refusing.request(`/connections/${ownerless}`, { method: "DELETE" })).status).toBe(404)
+    expect((await refusing.request(`/connections/${ownerless}/reverify`, { method: "POST" })).status).toBe(404)
+    expect((await refusing.request(`/connections/${ownerless}/token?capability=docs`)).status).toBe(404)
+    expect((await refusing.request(`/connections/${ownerless}/auth-failure`, { method: "POST", body: "{}" })).status).toBe(404)
+
+    // A refusing app without a resolved org key cannot write org rows and
+    // never falls back to the owner-absent partition.
+    const noOrgKey = createIntegrationsRoutes(service, {
+      gate: () => null,
+      owner: () => "user:alice",
+      ownerlessRows: "refuse",
+    })
+    const denied = await noOrgKey.request("/fake/connect", { method: "POST", body: JSON.stringify(connectBody) })
+    expect(denied.status).toBe(422)
+    expect(await denied.json()).toEqual({ ok: false, code: "org_scope_requires_org_partition" })
+    const personalOnly = (await (await noOrgKey.request("/")).json()) as { connections: unknown[] }
+    expect(personalOnly.connections).toEqual([])
+
+    const still = (await (await selfHost.request("/")).json()) as { connections: Array<{ id: string; scope: string }> }
+    expect(still.connections).toEqual([expect.objectContaining({ id: ownerless, scope: "org" })])
+  })
+})

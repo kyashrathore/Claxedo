@@ -1,0 +1,39 @@
+---
+import { capabilityRows, claxedoCapabilities, type Competitor } from "../content/competitors"
+
+interface Props { competitor: Competitor }
+const { competitor } = Astro.props
+---
+
+<div class="table-frame">
+  <table class="table capabilities">
+    <thead>
+      <tr><th scope="col">Capability</th><th scope="col">{competitor.name}</th><th scope="col" class="us">Claxedo</th></tr>
+    </thead>
+    <tbody>
+      {capabilityRows.map(({ key, label }) => (
+        <tr>
+          <th scope="row">{label}</th>
+          <td data-col={competitor.name}>{competitor.capabilities[key]}</td>
+          <td class="us" data-col="Claxedo">{claxedoCapabilities[key]}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>
+
+<style>
+  .capabilities { table-layout: fixed; }
+  .capabilities th:first-child { width: 22%; }
+  .capabilities thead th:first-child { color: var(--ink-soft); }
+  .capabilities .us { background: #f7f7f7; color: var(--ink); }
+  .capabilities thead .us { font-weight: 500; }
+  @media (max-width: 47.99rem) {
+    .capabilities, .capabilities tbody, .capabilities tr, .capabilities th, .capabilities td { display: block; width: auto; }
+    .capabilities th:first-child { width: auto; }
+    .capabilities thead { display: none; }
+    .capabilities tbody th { padding-bottom: .25rem; border-bottom: 0; }
+    .capabilities td { padding-top: .5rem; }
+    .capabilities td::before { content: attr(data-col); display: block; margin-bottom: .2rem; color: var(--ink-soft); font-size: .8125rem; }
+  }
+</style>

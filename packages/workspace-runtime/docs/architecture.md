@@ -1,0 +1,106 @@
+# Architecture
+
+This is the map for `@claxedo/workspace-runtime`: the five deployment
+shapes, the two event systems, the harness transport seam, and the store. Each
+section links back to the README section or source file that has the
+authoritative detail — this doc is the overview, not a duplicate.
+
+## Five deployment/exposure shapes
+
+`workspace-runtime` mounts the same per-workspace `/api/wr/*` route surface
+in every shape. What changes is the trust boundary: how the socket is
+exposed and who is responsible for authenticating requests before they reach
+the host. All five shapes are constructed from [`src/exposure.ts`](../src/exposure.ts)
+and consumed by [`startServer`](../src/server.ts) or
+`createWorkspaceRuntimeApp`.
+
+| Shape | Constructor | Trust boundary |
+| --- | --- | --- |
+| Local loopback / trusted local | `loopbackWorkspaceRuntimeExposure()` | Socket is loopback-only (`127.0.0.1`/`localhost`); no host-level auth required. Local dev and app-owned desktop flows. |
+| Private VM runtime | `privateNetworkWorkspaceRuntimeExposure(...)` / `privateNetworkDevUnsafeWorkspaceRuntimeExposure(reason)` | Non-loopback listen inside an operator-controlled VM. Must pair with a host guard and runtime auth, or explicitly opt into the dev-unsafe path (self-managed deployments where the surrounding network is the auth boundary). |
+| Relay-attached runtime | `relayWorkspaceRuntimeExposure(auth)` + `relayHostAuthFromEnv()` / `hostTunnelFromEnv()` | Verifies Relay Host Tokens (RHTs) minted by `workspace-relay`; relay-issued requests must carry `x-forwarded-by: workspace-relay`. May also maintain an outbound host tunnel back to the relay. |
+| Embedded Hono app | `embeddedWorkspaceRuntimeExposure(guard)` via `createWorkspaceRuntimeApp()` | No socket of its own; mounted inside another trusted process, which owns the outer network/auth boundary and supplies the `guard`. |
+| Low-level host object | `createWorkspaceHost()` / `mountWorkspaceCore()`, no `startServer()` | No socket, no exposure check. The caller owns routing, auth, lifecycle, and disposal — use only behind an existing trusted API surface. |
+
+`startServer()` requires an explicit `exposure` and throws
+(`assertWorkspaceRuntimeExposure`) if it is missing, or if the exposure kind
+doesn't match the listen host (for example, a `loopback` exposure on a
+non-loopback hostname). See the README's
+[Supported runtime shapes](../README.md#supported-runtime-shapes) and
+[Standalone listen policy](../README.md#standalone-listen-policy) sections
+for the full auth/env matrix.
+
+## One event stream, two in-process sources
+
+`workspace-runtime` serves one event stream, `GET /api/wr/events`, fed by two
+in-process sources with different jobs:
+
+- **`RuntimeEventHub`** ([`runtime-event-hub.ts`](../../session-core/src/projection/runtime-event-hub.ts))
+  is the hub for session/runtime events. Session routes publish Claxedo
+  presentation events (`AgentEventEnvelope`) to its global channel after
+  `createSessionEventWriter` commits them, subagent revisions included; a goal
+  change is committed and published by the store's goal write. Raw runtime events stay
+  on the runtime channel for in-process subscribers. `GET /api/wr/events`
+  (SSE, `mountWorkspaceCore()`) serves only committed presentation events and
+  workspace control frames; it does not project the runtime channel.
+- **`sessionCore.bus`** ([`bus.ts`](../../session-core/src/bus.ts)) belongs
+  to one core instance. PTY callbacks retain their creating host's bus,
+  and agent hooks receive their host's bus. The same
+  `GET /api/wr/events` serves its `WorkspaceRuntimeEvent` values, wrapped
+  `{ directory, payload }`: PTY lifecycle, PTY stream summaries, process
+  status/config events, agent lifecycle and session lifecycle. Bus
+  subscribers are isolated — a throwing subscriber is reported but cannot
+  block later subscribers from receiving the same event.
+
+The session routes' `publishGlobal` (`bridgeLifecycleEvent` in
+[`session routes`](../../session-core/src/routes/session.ts)) forwards a session's
+lifecycle states onto `sessionCore.bus` as `agent.lifecycle` frames
+(busy `session.status` → `Busy`, permission/question asks →
+`UserActionRequired`, `session.idle` → `Idle`, `session.error` → `Error`) —
+one-directional and narrow, not a merge of the two sources. Who may read
+the stream is decided per connection: a principal the workspace authority
+admits reads it unscoped and the session authority decides per session what
+reaches it (the workspace's owner is not special); a principal it refuses
+reads one session under `?sessionID=` and a lease. The README's
+[Event contract](../README.md#event-contract) table has the full route list.
+
+## Harness transport seam
+
+`HarnessTransport` (from `@claxedo/harness/contract`) is the single seam
+between the runtime host and a specific harness: Claude, Codex, Cursor,
+OpenCode, Pi and every configured ACP or Pi RPC connection. The transports
+live in `@claxedo/harness`; [`src/workspace/transports.ts`](../src/workspace/transports.ts)
+composes them through its registry, one per native harness and one per
+connection descriptor, directory and secret lease. The host in
+[`src/host/`](../src/host/) owns admission, fencing, durable writes,
+recovery, goals, titles, handoffs and child sessions around whichever
+transport a session runs on, and one request broker per store answers every
+request a transport asks. The README's
+[Harness transports](../README.md#harness-transports) section has the
+lifecycle, failure and configuration rules.
+
+## The store: journal plus SQLite projection
+
+`RuntimeStore` ([`store.ts`](../../session-core/src/store.ts)) treats the append-only
+journal as the source of truth and the rest of its SQLite schema (`session`,
+`message`, `part`, `todo`, `pending_permission`, `pending_question`, …) as a
+derived projection rebuilt from it:
+
+- Every committed control/event mutation is appended as a row to the
+  `runtime_journal` table (keyed by `session_id, seq`) first. Only after that
+  insert succeeds does `apply()` update the projection tables and
+  `journal_checkpoint`, inside one transaction. If projection fails after the
+  journal append, that second transaction rolls back and a later runtime
+  start rebuilds the projection from the journal via `replay()` — the
+  journal row itself is never lost.
+- `exportJournalJsonl(sessionId?)` serializes journal rows as JSONL for
+  export and debugging.
+- Opening a store calls `replay()`, which applies, per session, the journal
+  rows past its `journal_checkpoint` through `apply()`.
+- The schema and its refusal rule are described under "Runtime store
+  durability" in the package README.
+- The workspace host closes the store it opened when it is disposed, including
+  one a `storeFactory` supplied.
+
+See the README's [Runtime store durability](../README.md#runtime-store-durability)
+section for the durability guarantee stated at the product level.

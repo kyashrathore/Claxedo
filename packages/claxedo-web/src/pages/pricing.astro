@@ -1,0 +1,49 @@
+---
+import Layout from "../layouts/Layout.astro"
+import Nav from "../components/Nav.astro"
+import Footer from "../components/Footer.astro"
+import DownloadCta from "../components/DownloadCta.astro"
+import PlatePanel from "../components/PlatePanel.astro"
+import SectionHead from "../components/SectionHead.astro"
+import { requireClaim } from "../content/claims"
+import { pricing } from "../content/site"
+
+for (const id of pricing.claims) requireClaim(id)
+---
+
+<Layout title="Pricing — Claxedo" description={`${pricing.title} ${pricing.subtitle}`}>
+  <Nav active="pricing" />
+  <main id="main-content" class="page">
+    <div class="page-head"><SectionHead as="h1" title={pricing.title}>{pricing.subtitle}</SectionHead></div>
+
+    <section class="section pricing">
+      <PlatePanel plate="comorin" x={0.5} y={0.6} class="price-panel">
+        <article class="card price-card">
+          <p class="plan">{pricing.plan}</p>
+          <p class="price">{pricing.price}</p>
+          <ul class="list">{pricing.included.map((item) => <li>{item}</li>)}</ul>
+          <DownloadCta placement="pricing" />
+        </article>
+      </PlatePanel>
+
+      <div class="bring">
+        <h2>What you bring</h2>
+        <dl class="list">{pricing.bring.map((item) => <div><dt>{item.title}</dt><dd>{item.text}</dd></div>)}</dl>
+      </div>
+    </section>
+  </main>
+  <Footer />
+</Layout>
+
+<style>
+  .pricing { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); gap: clamp(2rem, 5vw, 4.5rem); align-items: start; }
+  .pricing :global(.price-panel) { display: grid; place-items: center; padding: clamp(1.5rem, 5vw, 4rem); }
+  .price-card { width: min(100%, 26rem); padding: 1.75rem; }
+  .plan { margin: 0; color: var(--ink-soft); }
+  .price-card .price { margin: .25rem 0 1.5rem; color: var(--ink); font: 400 clamp(4rem, 7vw, 6rem)/.9 var(--font-display); letter-spacing: -.05em; }
+  .price-card .list { margin-bottom: 1.75rem; }
+  .bring h2 { margin: 0 0 1.25rem; font-size: 1.5rem; letter-spacing: -.015em; }
+  @media (max-width: 52rem) {
+    .pricing { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>

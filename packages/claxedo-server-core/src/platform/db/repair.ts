@@ -1,0 +1,586 @@
+import { columnInfo, hasColumn, hasIndex, hasTable, type SqliteSchemaReader } from "./schema-introspection"
+
+/**
+ * Bump when repair() learns a new fix. The boot gate in db.ts hashes this
+ * constant into the persisted schema fingerprint, so a bump invalidates every
+ * stored fingerprint and forces one full repair pass per database even when
+ * the schema itself has not changed.
+ */
+export const REPAIR_VERSION = 7
+
+type SqliteInstance = SqliteSchemaReader & {
+  exec(sql: string): unknown
+}
+
+const sqls = [
+  `CREATE TABLE IF NOT EXISTS \`claxedo_document_index\` (
+    \`id\` text PRIMARY KEY NOT NULL,
+    \`org_id\` text NOT NULL,
+    \`project_id\` text NOT NULL,
+    \`display_name\` text NOT NULL,
+    \`origin_kind\` text NOT NULL,
+    \`placement_kind\` text NOT NULL,
+    \`placement_id\` text NOT NULL,
+    \`managed_relative_path\` text,
+    \`repository_id\` text,
+    \`workspace_id\` text,
+    \`repository_relative_path\` text,
+    \`branch\` text,
+    \`status\` text NOT NULL DEFAULT 'draft',
+    \`session_id\` text,
+    \`archived_at\` text,
+    \`created_at\` text NOT NULL,
+    \`updated_at\` text NOT NULL,
+    \`last_opened_at\` text,
+    \`last_known_file_version\` text,
+    CONSTRAINT \`claxedo_document_index_origin_check\` CHECK (
+      (\`origin_kind\` = 'managed'
+        AND \`managed_relative_path\` IS NOT NULL
+        AND length(\`managed_relative_path\`) > 0
+        AND \`repository_id\` IS NULL
+        AND \`workspace_id\` IS NULL
+        AND \`repository_relative_path\` IS NULL
+        AND \`branch\` IS NULL)
+      OR
+      (\`origin_kind\` = 'repository'
+        AND \`managed_relative_path\` IS NULL
+        AND \`repository_id\` IS NOT NULL
+        AND length(\`repository_id\`) > 0
+        AND \`workspace_id\` IS NOT NULL
+        AND length(\`workspace_id\`) > 0
+        AND \`repository_relative_path\` IS NOT NULL
+        AND length(\`repository_relative_path\`) > 0
+        AND (\`branch\` IS NULL OR length(\`branch\`) > 0))
+    ),
+    CONSTRAINT \`claxedo_document_index_placement_check\` CHECK (\`placement_kind\` IN ('local', 'hosted')),
+    CONSTRAINT \`claxedo_document_index_common_nonempty_check\` CHECK (
+      length(\`id\`) > 0
+      AND length(\`org_id\`) > 0
+      AND length(\`project_id\`) > 0
+      AND length(\`display_name\`) > 0
+      AND length(\`placement_id\`) > 0
+      AND length(\`status\`) > 0
+      AND length(\`created_at\`) > 0
+      AND length(\`updated_at\`) > 0
+    ),
+    CONSTRAINT \`claxedo_document_index_optional_nonempty_check\` CHECK (
+      (\`session_id\` IS NULL OR length(\`session_id\`) > 0)
+      AND (\`archived_at\` IS NULL OR length(\`archived_at\`) > 0)
+      AND (\`last_opened_at\` IS NULL OR length(\`last_opened_at\`) > 0)
+      AND (\`last_known_file_version\` IS NULL OR length(\`last_known_file_version\`) > 0)
+    )
+  )`,
+  "CREATE INDEX IF NOT EXISTS `claxedo_document_index_project_idx` ON `claxedo_document_index` (`org_id`, `project_id`, `archived_at`, `updated_at`)",
+  "CREATE UNIQUE INDEX IF NOT EXISTS `claxedo_document_index_managed_path_unique` ON `claxedo_document_index` (`org_id`, `project_id`, `managed_relative_path`)",
+  "CREATE UNIQUE INDEX IF NOT EXISTS `claxedo_document_index_repository_path_unique` ON `claxedo_document_index` (`org_id`, `project_id`, `repository_id`, `repository_relative_path`)",
+  "CREATE TABLE IF NOT EXISTS `claxedo_local_project` (`directory` text PRIMARY KEY NOT NULL, `project_id` text NOT NULL, `created_at` text NOT NULL)",
+  "CREATE UNIQUE INDEX IF NOT EXISTS `claxedo_local_project_id_unique` ON `claxedo_local_project` (`project_id`)",
+  "CREATE TABLE IF NOT EXISTS `claxedo_page_status` (`id` text NOT NULL, `project_id` text NOT NULL, `name` text NOT NULL, `color` text NOT NULL DEFAULT '#6b7280', `position` integer NOT NULL DEFAULT 0, `transitions` text NOT NULL DEFAULT '[]', PRIMARY KEY(`project_id`, `id`))",
+  "CREATE INDEX IF NOT EXISTS `claxedo_page_status_project_idx` ON `claxedo_page_status` (`project_id`)",
+  "CREATE TABLE IF NOT EXISTS `claxedo_terminal_session` (`terminal_id` text PRIMARY KEY NOT NULL, `tab_id` text, `workspace_id` text, `driver` text, `session_id` text, `transcript_path` text, `ref_name` text, `prompt` text, `last_assistant_message` text, `event_type` text, `updated_at` integer NOT NULL)",
+  "CREATE INDEX IF NOT EXISTS `claxedo_terminal_session_tab_idx` ON `claxedo_terminal_session` (`tab_id`)",
+  "CREATE INDEX IF NOT EXISTS `claxedo_terminal_session_updated_idx` ON `claxedo_terminal_session` (`updated_at`)",
+  "CREATE TABLE IF NOT EXISTS `claxedo_channel_delivery` (`channel` text NOT NULL, `idempotency_key` text NOT NULL, `external_user_id` text NOT NULL, `received_at` integer NOT NULL, `first_seen_at` integer NOT NULL, `session_id` text, `session_create` integer NOT NULL DEFAULT 0, PRIMARY KEY (`channel`, `idempotency_key`))",
+  "CREATE INDEX IF NOT EXISTS `claxedo_channel_delivery_user_day_idx` ON `claxedo_channel_delivery` (`channel`, `external_user_id`, `first_seen_at`)",
+  "CREATE INDEX IF NOT EXISTS `claxedo_channel_delivery_session_idx` ON `claxedo_channel_delivery` (`session_id`)",
+  "CREATE TABLE IF NOT EXISTS `claxedo_channel_state` (`key` text PRIMARY KEY NOT NULL, `value` text NOT NULL, `updated_at` integer NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS `claxedo_channel_run_audit` (`session_id` text PRIMARY KEY NOT NULL, `channel` text NOT NULL, `external_user_id` text NOT NULL, `thread_key` text NOT NULL, `workspace_id` text, `cost` real, `created_at` integer NOT NULL)",
+  "CREATE INDEX IF NOT EXISTS `claxedo_channel_run_audit_channel_created_idx` ON `claxedo_channel_run_audit` (`channel`, `created_at`)",
+  "CREATE INDEX IF NOT EXISTS `claxedo_channel_run_audit_user_created_idx` ON `claxedo_channel_run_audit` (`channel`, `external_user_id`, `created_at`)",
+  "CREATE INDEX IF NOT EXISTS `claxedo_channel_run_audit_workspace_created_idx` ON `claxedo_channel_run_audit` (`workspace_id`, `created_at`)",
+  "CREATE TABLE IF NOT EXISTS `claxedo_channel_pairing` (`code` text PRIMARY KEY NOT NULL, `channel` text NOT NULL, `external_user_id` text NOT NULL, `created_at` integer NOT NULL, `expires_at` integer NOT NULL, `last_sent_at` integer NOT NULL, `identity_version` integer NOT NULL DEFAULT 0)",
+  "CREATE INDEX IF NOT EXISTS `claxedo_channel_pairing_sender_idx` ON `claxedo_channel_pairing` (`channel`, `external_user_id`)",
+  "CREATE INDEX IF NOT EXISTS `claxedo_channel_pairing_expires_idx` ON `claxedo_channel_pairing` (`expires_at`)",
+  "CREATE TABLE IF NOT EXISTS `claxedo_channel_allow` (`channel` text NOT NULL, `external_user_id` text NOT NULL, `approved_by` text, `approved_at` integer NOT NULL, `identity_version` integer NOT NULL DEFAULT 0, PRIMARY KEY (`channel`, `external_user_id`))",
+  "CREATE TABLE IF NOT EXISTS `claxedo_channel_identity` (`channel` text NOT NULL, `external_user_id` text NOT NULL, `account_id` text, `status` text NOT NULL, `bound_at` integer NOT NULL, `bound_by` text, `identity_version` integer NOT NULL DEFAULT 0, PRIMARY KEY (`channel`, `external_user_id`))",
+  "CREATE INDEX IF NOT EXISTS `claxedo_channel_identity_account_idx` ON `claxedo_channel_identity` (`account_id`)",
+  `CREATE TABLE IF NOT EXISTS \`claxedo_usage_turn_revision\` (
+    \`host_id\` text NOT NULL, \`session_ref\` text NOT NULL, \`session_id\` text NOT NULL,
+    \`message_id\` text NOT NULL, \`revision\` integer NOT NULL, \`payload_hash\` text NOT NULL,
+    \`observed_at\` integer NOT NULL, \`completed_at\` integer, \`settlement\` text NOT NULL,
+    \`status\` text NOT NULL, \`location\` text NOT NULL, \`harness\` text NOT NULL,
+    \`provider_id\` text NOT NULL, \`model_id\` text NOT NULL, \`native_session_id\` text, \`workspace_id\` text,
+    \`input_tokens\` integer, \`output_tokens\` integer, \`reasoning_tokens\` integer,
+    \`cache_read_tokens\` integer, \`cache_write_tokens\` integer, \`cache_write_1h_tokens\` integer,
+    \`quality_json\` text NOT NULL,
+    PRIMARY KEY (\`host_id\`, \`session_ref\`, \`message_id\`, \`revision\`)
+  )`,
+  "CREATE INDEX IF NOT EXISTS `claxedo_usage_turn_revision_observed_idx` ON `claxedo_usage_turn_revision` (`observed_at`)",
+  `CREATE TABLE IF NOT EXISTS \`claxedo_usage_turn_current\` (
+    \`host_id\` text NOT NULL, \`session_ref\` text NOT NULL, \`session_id\` text NOT NULL,
+    \`message_id\` text NOT NULL, \`revision\` integer NOT NULL, \`payload_hash\` text NOT NULL,
+    \`observed_at\` integer NOT NULL, \`completed_at\` integer, \`settlement\` text NOT NULL,
+    \`status\` text NOT NULL, \`location\` text NOT NULL, \`harness\` text NOT NULL,
+    \`provider_id\` text NOT NULL, \`model_id\` text NOT NULL, \`native_session_id\` text, \`workspace_id\` text,
+    \`input_tokens\` integer, \`output_tokens\` integer, \`reasoning_tokens\` integer,
+    \`cache_read_tokens\` integer, \`cache_write_tokens\` integer, \`cache_write_1h_tokens\` integer,
+    \`quality_json\` text NOT NULL,
+    PRIMARY KEY (\`host_id\`, \`session_ref\`, \`message_id\`)
+  )`,
+  "CREATE INDEX IF NOT EXISTS `claxedo_usage_turn_current_observed_idx` ON `claxedo_usage_turn_current` (`observed_at`)",
+  "CREATE INDEX IF NOT EXISTS `claxedo_usage_turn_current_workspace_idx` ON `claxedo_usage_turn_current` (`workspace_id`, `observed_at`)",
+  `CREATE TABLE IF NOT EXISTS \`claxedo_usage_turn_owner\` (
+    \`host_id\` text NOT NULL, \`session_ref\` text NOT NULL, \`message_id\` text NOT NULL,
+    \`org_id\` text NOT NULL, \`user_id\` text NOT NULL, \`turn_id\` text,
+    PRIMARY KEY (\`host_id\`, \`session_ref\`, \`message_id\`)
+  )`,
+  "CREATE INDEX IF NOT EXISTS `claxedo_usage_turn_owner_account_idx` ON `claxedo_usage_turn_owner` (`org_id`, `user_id`)",
+  "CREATE INDEX IF NOT EXISTS `claxedo_usage_turn_owner_turn_idx` ON `claxedo_usage_turn_owner` (`host_id`, `session_ref`, `turn_id`)",
+  `CREATE TABLE IF NOT EXISTS \`claxedo_usage_turn_meter_state\` (
+    \`session_id\` text NOT NULL, \`message_id\` text NOT NULL,
+    \`streams_json\` text NOT NULL, \`observation_keys_json\` text NOT NULL,
+    PRIMARY KEY (\`session_id\`, \`message_id\`)
+  )`,
+  "CREATE TABLE IF NOT EXISTS `claxedo_usage_source_coverage` (`source` text PRIMARY KEY NOT NULL, `started_at` integer NOT NULL)",
+  `CREATE TABLE IF NOT EXISTS \`claxedo_machine_login_usage\` (
+    \`harness\` text NOT NULL, \`account\` text NOT NULL,
+    \`usage_windows\` text NOT NULL, \`usage_at\` integer NOT NULL,
+    PRIMARY KEY (\`harness\`, \`account\`)
+  )`,
+] as const
+
+const tabs = [
+  "claxedo_document_index",
+  "claxedo_local_project",
+  "claxedo_page_status",
+  "claxedo_terminal_session",
+  "claxedo_channel_delivery",
+  "claxedo_channel_state",
+  "claxedo_channel_run_audit",
+  "claxedo_usage_turn_revision",
+  "claxedo_usage_turn_current",
+  "claxedo_usage_turn_owner",
+  "claxedo_usage_turn_meter_state",
+  "claxedo_usage_source_coverage",
+  "claxedo_machine_login_usage",
+] as const
+
+function rebuildSessionMeta(
+  db: SqliteInstance,
+  existing: { host: boolean; directory: boolean; toolSandbox: boolean; model: boolean; lastHumanTurn: boolean; runtimeUpdatedAt: boolean; lastTurn: boolean },
+) {
+  const host = existing.host ? "COALESCE(NULLIF(`host`, ''), 'workspace')" : "'workspace'"
+  const directory = existing.directory ? "NULLIF(`directory`, '')" : "NULL"
+  const toolSandbox = existing.toolSandbox ? "`tool_sandbox`" : "NULL"
+  const modelProviderID = existing.model ? "`model_provider_id`" : "NULL"
+  const modelID = existing.model ? "`model_id`" : "NULL"
+  // Repair rebuilds this table by copying named columns, so a column missing from the
+  // list is silently dropped along with its data. Read it when the old table has it.
+  const lastHumanTurnAt = existing.lastHumanTurn ? "`last_human_turn_at`" : "NULL"
+  const runtimeUpdatedAt = existing.runtimeUpdatedAt ? "`runtime_updated_at`" : "NULL"
+  const lastTurnStatus = existing.lastTurn ? "`last_turn_status`" : "NULL"
+  const lastTurnCompletedAt = existing.lastTurn ? "`last_turn_completed_at`" : "NULL"
+
+  db.exec("SAVEPOINT claxedo_session_meta_repair")
+  try {
+    db.exec("ALTER TABLE `claxedo_session_meta` RENAME TO `claxedo_session_meta_old_repair`")
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS \`claxedo_session_meta\` (
+        \`session_ref\` text PRIMARY KEY NOT NULL,
+        \`session_id\` text NOT NULL,
+        \`workspace_id\` text,
+        \`project_id\` text,
+        \`host\` text NOT NULL DEFAULT 'workspace',
+        \`directory\` text,
+        \`tool_sandbox\` text,
+        \`model_provider_id\` text,
+        \`model_id\` text,
+        \`title\` text,
+        \`parent_session_id\` text,
+        \`archived_at\` integer,
+        \`created_at\` integer NOT NULL,
+        \`updated_at\` integer NOT NULL,
+        \`last_human_turn_at\` integer,
+        \`runtime_updated_at\` integer,
+        \`last_turn_status\` text,
+        \`last_turn_completed_at\` integer
+      )
+    `)
+    db.exec(`
+      INSERT INTO \`claxedo_session_meta\` (
+        \`session_ref\`,
+        \`session_id\`,
+        \`workspace_id\`,
+        \`project_id\`,
+        \`host\`,
+        \`directory\`,
+        \`tool_sandbox\`,
+        \`model_provider_id\`,
+        \`model_id\`,
+        \`title\`,
+        \`parent_session_id\`,
+        \`archived_at\`,
+        \`created_at\`,
+        \`updated_at\`,
+        \`last_human_turn_at\`,
+        \`runtime_updated_at\`,
+        \`last_turn_status\`,
+        \`last_turn_completed_at\`
+      )
+      SELECT
+        CASE
+          WHEN \`workspace_id\` IS NOT NULL AND \`workspace_id\` <> '' THEN 'workspace:' || \`workspace_id\` || ':session:' || \`session_id\`
+          WHEN ${host} = 'central' THEN 'central:' || \`session_id\`
+          ELSE 'local:' || COALESCE(${directory}, 'global') || ':session:' || \`session_id\`
+        END,
+        \`session_id\`,
+        \`workspace_id\`,
+        \`project_id\`,
+        ${host},
+        ${directory},
+        ${toolSandbox},
+        ${modelProviderID},
+        ${modelID},
+        \`title\`,
+        \`parent_session_id\`,
+        \`archived_at\`,
+        \`created_at\`,
+        \`updated_at\`,
+        ${lastHumanTurnAt},
+        ${runtimeUpdatedAt},
+        ${lastTurnStatus},
+        ${lastTurnCompletedAt}
+      FROM \`claxedo_session_meta_old_repair\`
+    `)
+    db.exec("DROP TABLE `claxedo_session_meta_old_repair`")
+    ensureSessionMetaIndexes(db)
+    db.exec("RELEASE SAVEPOINT claxedo_session_meta_repair")
+  } catch (error) {
+    db.exec("ROLLBACK TO SAVEPOINT claxedo_session_meta_repair")
+    db.exec("RELEASE SAVEPOINT claxedo_session_meta_repair")
+    throw error
+  }
+}
+
+function ensureSessionMetaToolSandboxColumn(db: SqliteInstance, out: string[]) {
+  if (!hasTable(db, "claxedo_session_meta")) return
+  if (hasColumn(db, "claxedo_session_meta", "tool_sandbox")) return
+  db.exec("ALTER TABLE `claxedo_session_meta` ADD COLUMN `tool_sandbox` text")
+  out.push("claxedo_session_meta.tool_sandbox")
+}
+
+function ensureSessionMetaModelColumns(db: SqliteInstance, out: string[]) {
+  if (!hasTable(db, "claxedo_session_meta")) return
+  if (!hasColumn(db, "claxedo_session_meta", "model_provider_id")) {
+    db.exec("ALTER TABLE `claxedo_session_meta` ADD COLUMN `model_provider_id` text")
+    out.push("claxedo_session_meta.model_provider_id")
+  }
+  if (!hasColumn(db, "claxedo_session_meta", "model_id")) {
+    db.exec("ALTER TABLE `claxedo_session_meta` ADD COLUMN `model_id` text")
+    out.push("claxedo_session_meta.model_id")
+  }
+}
+
+function ensureSessionMetaIndexes(db: SqliteInstance) {
+  if (!hasTable(db, "claxedo_session_meta")) return
+  db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_meta_workspace_idx` ON `claxedo_session_meta` (`workspace_id`)")
+  db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_meta_session_idx` ON `claxedo_session_meta` (`session_id`)")
+  db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_meta_project_idx` ON `claxedo_session_meta` (`project_id`)")
+  db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_meta_parent_idx` ON `claxedo_session_meta` (`parent_session_id`)")
+  db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_meta_updated_idx` ON `claxedo_session_meta` (`updated_at`)")
+  db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_meta_workspace_archive_updated_idx` ON `claxedo_session_meta` (`workspace_id`, `archived_at`, `updated_at`, `session_ref`)")
+  db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_meta_directory_archive_updated_idx` ON `claxedo_session_meta` (`directory`, `archived_at`, `updated_at`, `session_ref`)")
+  db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_meta_project_archive_updated_idx` ON `claxedo_session_meta` (`project_id`, `archived_at`, `updated_at`, `session_ref`)")
+  db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_meta_workspace_archive_created_idx` ON `claxedo_session_meta` (`workspace_id`, `archived_at`, `created_at`, `session_ref`)")
+  db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_meta_directory_archive_created_idx` ON `claxedo_session_meta` (`directory`, `archived_at`, `created_at`, `session_ref`)")
+  db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_meta_project_archive_created_idx` ON `claxedo_session_meta` (`project_id`, `archived_at`, `created_at`, `session_ref`)")
+  db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_meta_workspace_archive_human_turn_idx` ON `claxedo_session_meta` (`workspace_id`, `archived_at`, `last_human_turn_at`, `created_at`, `session_ref`)")
+  db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_meta_directory_archive_human_turn_idx` ON `claxedo_session_meta` (`directory`, `archived_at`, `last_human_turn_at`, `created_at`, `session_ref`)")
+  db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_meta_project_archive_human_turn_idx` ON `claxedo_session_meta` (`project_id`, `archived_at`, `last_human_turn_at`, `created_at`, `session_ref`)")
+  db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_meta_archive_human_turn_idx` ON `claxedo_session_meta` (`archived_at`, `last_human_turn_at`, `created_at`, `session_ref`)")
+}
+
+function rebuildSessionAttachmentRefs(db: SqliteInstance) {
+  if (!hasTable(db, "claxedo_session_meta") || !hasColumn(db, "claxedo_session_meta", "session_ref")) return
+  if (!hasTable(db, "claxedo_session_attachment") || hasColumn(db, "claxedo_session_attachment", "session_ref")) return
+  db.exec("ALTER TABLE `claxedo_session_attachment` RENAME TO `claxedo_session_attachment_old_repair`")
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS \`claxedo_session_attachment\` (
+      \`session_ref\` text NOT NULL,
+      \`session_id\` text NOT NULL,
+      \`kind\` text NOT NULL,
+      \`target_id\` text NOT NULL,
+      \`created_at\` integer NOT NULL,
+      \`updated_at\` integer NOT NULL,
+      PRIMARY KEY(\`session_ref\`, \`kind\`, \`target_id\`)
+    )
+  `)
+  db.exec(`
+    INSERT OR REPLACE INTO \`claxedo_session_attachment\` (
+      \`session_ref\`,
+      \`session_id\`,
+      \`kind\`,
+      \`target_id\`,
+      \`created_at\`,
+      \`updated_at\`
+    )
+    SELECT
+      m.\`session_ref\`,
+      a.\`session_id\`,
+      a.\`kind\`,
+      a.\`target_id\`,
+      a.\`created_at\`,
+      a.\`updated_at\`
+    FROM \`claxedo_session_attachment_old_repair\` a
+    JOIN \`claxedo_session_meta\` m ON m.\`session_id\` = a.\`session_id\`
+  `)
+  db.exec("DROP TABLE `claxedo_session_attachment_old_repair`")
+}
+
+function rebuildSessionTagRefs(db: SqliteInstance) {
+  if (!hasTable(db, "claxedo_session_meta") || !hasColumn(db, "claxedo_session_meta", "session_ref")) return
+  if (!hasTable(db, "claxedo_session_tag") || hasColumn(db, "claxedo_session_tag", "session_ref")) return
+  db.exec("ALTER TABLE `claxedo_session_tag` RENAME TO `claxedo_session_tag_old_repair`")
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS \`claxedo_session_tag\` (
+      \`session_ref\` text NOT NULL,
+      \`session_id\` text NOT NULL,
+      \`tag\` text NOT NULL,
+      \`created_at\` integer NOT NULL,
+      \`updated_at\` integer NOT NULL,
+      PRIMARY KEY(\`session_ref\`, \`tag\`)
+    )
+  `)
+  db.exec(`
+    INSERT OR REPLACE INTO \`claxedo_session_tag\` (
+      \`session_ref\`,
+      \`session_id\`,
+      \`tag\`,
+      \`created_at\`,
+      \`updated_at\`
+    )
+    SELECT
+      m.\`session_ref\`,
+      t.\`session_id\`,
+      t.\`tag\`,
+      t.\`created_at\`,
+      t.\`updated_at\`
+    FROM \`claxedo_session_tag_old_repair\` t
+    JOIN \`claxedo_session_meta\` m ON m.\`session_id\` = t.\`session_id\`
+  `)
+  db.exec("DROP TABLE `claxedo_session_tag_old_repair`")
+}
+
+function ensureSessionAssociationIndexes(db: SqliteInstance) {
+  if (hasTable(db, "claxedo_session_attachment") && hasColumn(db, "claxedo_session_attachment", "session_ref")) {
+    db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_attachment_kind_idx` ON `claxedo_session_attachment` (`kind`, `target_id`)")
+    db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_attachment_ref_idx` ON `claxedo_session_attachment` (`session_ref`)")
+    db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_attachment_session_idx` ON `claxedo_session_attachment` (`session_id`)")
+  }
+  if (hasTable(db, "claxedo_session_tag") && hasColumn(db, "claxedo_session_tag", "session_ref")) {
+    db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_tag_ref_idx` ON `claxedo_session_tag` (`session_ref`)")
+    db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_tag_session_idx` ON `claxedo_session_tag` (`session_id`)")
+    db.exec("CREATE INDEX IF NOT EXISTS `claxedo_session_tag_tag_idx` ON `claxedo_session_tag` (`tag`)")
+  }
+}
+
+function ensureNetworkPolicyHarnessColumn(db: SqliteInstance, out: string[]) {
+  if (!hasTable(db, "claxedo_network_policy")) return
+  if (hasColumn(db, "claxedo_network_policy", "harness")) return
+  db.exec("ALTER TABLE `claxedo_network_policy` ADD COLUMN `harness` text")
+  if (hasColumn(db, "claxedo_network_policy", "runner")) {
+    db.exec("UPDATE `claxedo_network_policy` SET `harness` = `runner` WHERE `harness` IS NULL")
+  }
+  out.push("claxedo_network_policy.harness")
+}
+
+/**
+ * Give a provider-credential table the columns the registry selects.
+ *
+ * Migrations add them; this is the belt-and-braces path for a database whose
+ * migration ledger drifted, and a drizzle `select()` names every column, so one
+ * missing column fails every credential read rather than the feature that
+ * introduced it. Backfilling `org_id` to the named single-tenant partition
+ * keeps an existing local user's credentials reachable; it never widens one
+ * tenant's rows into another's, because `__local__` is only ever resolved for
+ * an unsigned/loopback request.
+ */
+function ensureProviderCredentialColumns(db: SqliteInstance, out: string[]) {
+  if (!hasTable(db, "claxedo_provider_credential")) return
+  if (!hasColumn(db, "claxedo_provider_credential", "org_id")) {
+    db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `org_id` text NOT NULL DEFAULT '__local__'")
+    out.push("claxedo_provider_credential.org_id")
+  }
+  if (!hasColumn(db, "claxedo_provider_credential", "revision")) {
+    db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `revision` integer NOT NULL DEFAULT 1")
+    out.push("claxedo_provider_credential.revision")
+  }
+  if (!hasColumn(db, "claxedo_provider_credential", "usage_windows")) {
+    db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `usage_windows` text")
+    out.push("claxedo_provider_credential.usage_windows")
+  }
+  if (!hasColumn(db, "claxedo_provider_credential", "usage_at")) {
+    db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `usage_at` integer")
+    out.push("claxedo_provider_credential.usage_at")
+  }
+  if (!hasColumn(db, "claxedo_provider_credential", "owner")) {
+    db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `owner` text")
+    out.push("claxedo_provider_credential.owner")
+  }
+  if (!hasColumn(db, "claxedo_provider_credential", "is_active")) {
+    db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `is_active` integer NOT NULL DEFAULT 0")
+    out.push("claxedo_provider_credential.is_active")
+  }
+  if (!hasColumn(db, "claxedo_provider_credential", "activated_at")) {
+    db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `activated_at` integer")
+    db.exec("UPDATE `claxedo_provider_credential` SET `activated_at` = `updated_at` WHERE `is_active` = 1")
+    out.push("claxedo_provider_credential.activated_at")
+  }
+  db.exec("UPDATE `claxedo_provider_credential` SET `org_id` = '__local__' WHERE `org_id` IS NULL OR trim(`org_id`) = ''")
+  db.exec("CREATE INDEX IF NOT EXISTS `claxedo_provider_credential_org_idx` ON `claxedo_provider_credential` (`org_id`)")
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS `claxedo_provider_credential_org_provider_idx` ON `claxedo_provider_credential` (`org_id`, `provider_id`)",
+  )
+  ensureProviderCredentialActiveIndex(db, out)
+}
+
+/**
+ * The partial unique index that holds "one active account per (org, owner,
+ * provider)".
+ *
+ * Created last and on its own, because it is the one repair statement that can
+ * be refused: a database that drifted while rows were being marked can hold two
+ * actives for a provider, and `CREATE UNIQUE INDEX` on that throws and takes
+ * the whole boot with it. The extra marks are dropped first, keeping the row
+ * marked most recently, which is the order `nativeProviderDeliveries` resolves
+ * a contested destination by; `updated_at` stands in only for a row marked
+ * before the column recording the mark existed.
+ */
+function ensureProviderCredentialActiveIndex(db: SqliteInstance, out: string[]) {
+  if (hasIndex(db, "claxedo_provider_credential_active_idx")) return
+  db.exec(`
+    UPDATE \`claxedo_provider_credential\` SET \`is_active\` = 0
+    WHERE \`is_active\` = 1 AND \`id\` NOT IN (
+      SELECT \`id\` FROM (
+        SELECT \`id\`, row_number() OVER (
+          PARTITION BY \`org_id\`, coalesce(\`owner\`, ''), \`provider_id\`
+          ORDER BY coalesce(\`activated_at\`, \`updated_at\`) DESC, \`created_at\` DESC, \`id\` ASC
+        ) AS \`rank\`
+        FROM \`claxedo_provider_credential\` WHERE \`is_active\` = 1
+      ) WHERE \`rank\` = 1
+    )
+  `)
+  db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS `claxedo_provider_credential_active_idx`"
+    + " ON `claxedo_provider_credential` (`org_id`, coalesce(`owner`, ''), `provider_id`) WHERE `is_active` = 1",
+  )
+  out.push("claxedo_provider_credential.active_idx")
+}
+
+function renameColumn(db: SqliteInstance, table: string, from: string, to: string, out: string[]) {
+  if (!hasTable(db, table)) return
+  if (!hasColumn(db, table, from) || hasColumn(db, table, to)) return
+  db.exec(`ALTER TABLE \`${table}\` RENAME COLUMN \`${from}\` TO \`${to}\``)
+  out.push(`${table}.${to}`)
+}
+
+function ensureWorkspaceLeaseDriverColumns(db: SqliteInstance, out: string[]) {
+  renameColumn(db, "claxedo_workspace_lease", "provider", "driver", out)
+  renameColumn(db, "claxedo_workspace_lease", "provider_object_id", "driver_resource_id", out)
+  renameColumn(db, "claxedo_workspace_lease", "provider_snapshot_id", "driver_snapshot_id", out)
+  renameColumn(db, "claxedo_runtime_snapshot", "provider_snapshot_id", "driver_snapshot_id", out)
+  renameColumn(db, "claxedo_cloud_session", "provider", "driver", out)
+  renameColumn(db, "claxedo_terminal_session", "provider", "driver", out)
+}
+
+/**
+ * Which generation of the sender-identity contract a channel projection row
+ * was written under. 0 is every row that already exists: it was keyed by
+ * whatever string a transport called a sender id, so it may name a handle
+ * rather than the platform account of the same spelling, and those are
+ * different people. Only the current version admits; the default keeps a
+ * writer that forgets the column on the non-authorizing side.
+ *
+ * A legacy row is not deleted, and it does not block anything either: these
+ * tables are keyed (channel, external_user_id) and upserted, so an explicit
+ * approval overwrites the row it collides with through the same
+ * bind-before-projection path every approval takes.
+ */
+function ensureChannelIdentityVersionColumns(db: SqliteInstance, out: string[]) {
+  for (const table of ["claxedo_channel_pairing", "claxedo_channel_allow", "claxedo_channel_identity"]) {
+    if (!hasTable(db, table) || hasColumn(db, table, "identity_version")) continue
+    db.exec(`ALTER TABLE \`${table}\` ADD COLUMN \`identity_version\` integer NOT NULL DEFAULT 0`)
+    out.push(`${table}.identity_version`)
+  }
+}
+
+function ensureUsageColumns(db: SqliteInstance, out: string[]) {
+  for (const table of ["claxedo_usage_turn_revision", "claxedo_usage_turn_current"] as const) {
+    if (!hasTable(db, table)) continue
+    for (const [column, type] of [["native_session_id", "text"], ["cache_write_1h_tokens", "integer"]] as const) {
+      if (hasColumn(db, table, column)) continue
+      db.exec(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${type}`)
+      out.push(`${table}.${column}`)
+    }
+  }
+}
+
+/**
+ * Carry the owners a surviving `claxedo_usage_outbox` stamped into
+ * `claxedo_usage_turn_owner`, then drop it, the way the migration that
+ * introduced the owner table does. Without this a database whose journal
+ * marked that migration applied while the old table lived on would read every
+ * signed member's turns as the machine's.
+ */
+function retireUsageOutbox(db: SqliteInstance, out: string[]) {
+  if (!hasTable(db, "claxedo_usage_outbox")) return
+  if (hasColumn(db, "claxedo_usage_outbox", "org_id") && hasColumn(db, "claxedo_usage_outbox", "user_id")) {
+    db.exec(`
+      INSERT OR IGNORE INTO \`claxedo_usage_turn_owner\` (\`host_id\`, \`session_ref\`, \`message_id\`, \`org_id\`, \`user_id\`)
+      SELECT \`host_id\`, \`session_ref\`, \`message_id\`, \`org_id\`, \`user_id\`
+      FROM \`claxedo_usage_outbox\` AS \`stamped\`
+      WHERE \`org_id\` IS NOT NULL AND \`user_id\` IS NOT NULL
+        AND \`revision\` = (
+          SELECT max(\`revision\`) FROM \`claxedo_usage_outbox\` AS \`later\`
+          WHERE \`later\`.\`host_id\` = \`stamped\`.\`host_id\`
+            AND \`later\`.\`session_ref\` = \`stamped\`.\`session_ref\`
+            AND \`later\`.\`message_id\` = \`stamped\`.\`message_id\`
+            AND \`later\`.\`org_id\` IS NOT NULL
+            AND \`later\`.\`user_id\` IS NOT NULL
+        )
+    `)
+  }
+  db.exec("DROP TABLE `claxedo_usage_outbox`")
+  out.push("claxedo_usage_outbox.retired")
+}
+
+export function repair(db: SqliteInstance) {
+  const out: string[] = tabs.filter((name) => !hasTable(db, name))
+  const sessionMetaHasHost = hasTable(db, "claxedo_session_meta") && hasColumn(db, "claxedo_session_meta", "host")
+  const sessionMetaHasDirectory = hasTable(db, "claxedo_session_meta") && hasColumn(db, "claxedo_session_meta", "directory")
+  const sessionMetaHasToolSandbox = hasTable(db, "claxedo_session_meta") && hasColumn(db, "claxedo_session_meta", "tool_sandbox")
+  const sessionMetaHasModel = hasTable(db, "claxedo_session_meta")
+    && hasColumn(db, "claxedo_session_meta", "model_provider_id")
+    && hasColumn(db, "claxedo_session_meta", "model_id")
+  const sessionMetaHasRef = hasTable(db, "claxedo_session_meta") && hasColumn(db, "claxedo_session_meta", "session_ref")
+  const sessionMetaNeedsPlacement = hasTable(db, "claxedo_session_meta")
+    && (!sessionMetaHasHost || !sessionMetaHasDirectory || !sessionMetaHasRef || columnInfo(db, "claxedo_session_meta", "directory")?.notnull === 1)
+
+  sqls.forEach((sql) => db.exec(sql))
+
+  if (sessionMetaNeedsPlacement) {
+    rebuildSessionMeta(db, {
+      host: sessionMetaHasHost,
+      directory: sessionMetaHasDirectory,
+      toolSandbox: sessionMetaHasToolSandbox,
+      model: sessionMetaHasModel,
+      lastHumanTurn: hasColumn(db, "claxedo_session_meta", "last_human_turn_at"),
+      runtimeUpdatedAt: hasColumn(db, "claxedo_session_meta", "runtime_updated_at"),
+      lastTurn: hasColumn(db, "claxedo_session_meta", "last_turn_status"),
+    })
+    out.push("claxedo_session_meta.placement")
+  }
+  ensureSessionMetaToolSandboxColumn(db, out)
+  ensureSessionMetaModelColumns(db, out)
+  rebuildSessionAttachmentRefs(db)
+  rebuildSessionTagRefs(db)
+  ensureSessionMetaIndexes(db)
+  ensureSessionAssociationIndexes(db)
+  ensureNetworkPolicyHarnessColumn(db, out)
+  ensureProviderCredentialColumns(db, out)
+  ensureWorkspaceLeaseDriverColumns(db, out)
+  ensureUsageColumns(db, out)
+  retireUsageOutbox(db, out)
+  ensureChannelIdentityVersionColumns(db, out)
+  return out
+}

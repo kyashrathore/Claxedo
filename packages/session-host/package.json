@@ -1,0 +1,39 @@
+{
+  "name": "@claxedo/session-host",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The Cloudflare Worker whose SessionDO runs one top-level Pi session's agent loop",
+  "license": "MIT",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node ../../script/test-deadline.mjs node --conditions=development --import tsx --test src/server-sent-events.node-test.ts src/session-do.node-test.ts"
+  },
+  "dependencies": {
+    "@claxedo/agent-runtime-contract": "workspace:*",
+    "@claxedo/harness": "workspace:*",
+    "@claxedo/helpers": "workspace:*",
+    "@claxedo/session-core": "workspace:*",
+    "@claxedo/workspace-relay-protocol": "workspace:*",
+    "@earendil-works/chord": "1.0.0",
+    "@earendil-works/pi-ai": "1.0.0",
+    "@earendil-works/pi-durable": "1.0.0",
+    "@earendil-works/pi-mcp": "1.0.0",
+    "agents": "0.26.0",
+    "hono": "catalog:"
+  },
+  "devDependencies": {
+    "@claxedo/process-ownership": "workspace:*",
+    "@claxedo/workspace-relay": "workspace:*",
+    "@claxedo/workspace-runtime": "workspace:*",
+    "@hono/node-server": "1.19.11",
+    "@hono/node-ws": "1.3.1",
+    "@tsconfig/node-lts": "22.0.4",
+    "@types/node": "24.12.2",
+    "esbuild": "0.25.12",
+    "jose": "6.0.11",
+    "miniflare": "4.20260722.0",
+    "tsx": "4.22.3",
+    "typescript": "catalog:"
+  }
+}

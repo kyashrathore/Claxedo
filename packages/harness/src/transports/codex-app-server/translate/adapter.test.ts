@@ -1,0 +1,1027 @@
+import { describe, expect, test } from "bun:test"
+import { translatorRuntime } from "../../../test-support/translator-runtime"
+import { codexAppServerAdapter } from "./adapter"
+import { codexCollabAgentCall, codexCollabAgentStatus, codexSubagentActivity } from "./subagent-items"
+
+function runtime() {
+  return translatorRuntime({
+    harness: "codex-app-server",
+    threadId: "thread-1",
+    adapter: codexAppServerAdapter(),
+    clock: () => 0,
+    createId: (prefix = "id") => `${prefix}-1`,
+  })
+}
+
+describe("codexAppServerAdapter", () => {
+  test("translates native plan progress into canonical task status", () => {
+    const agent = runtime()
+    const result = agent.ingest({
+      source: "codex.app-server",
+      method: "turn/plan/updated",
+      payload: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        plan: [
+          { step: "Inspect source", status: "completed" },
+          { step: "Verify behavior", status: "inProgress" },
+          { step: "Report result", status: "pending" },
+        ],
+      },
+    })
+    expect(result.events).toMatchObject([{
+      type: "todo-update",
+      todos: [
+        { id: "0", description: "Inspect source", status: "completed" },
+        { id: "1", description: "Verify behavior", status: "in_progress" },
+        { id: "2", description: "Report result", status: "pending" },
+      ],
+    }])
+  })
+
+  test("keeps native subagent activity bound to the spawn call without rendering a second completion tool", () => {
+    const agent = runtime()
+    const started = { type: "subAgentActivity", id: "spawn-call", kind: "started", agentThreadId: "child-thread", agentPath: "/root/child" }
+    expect(codexSubagentActivity(started)).toEqual({ id: "spawn-call", kind: "started", agentThreadId: "child-thread", agentPath: "/root/child" })
+    expect(agent.ingest({ source: "codex.app-server", method: "item/started", payload: { item: started } }).events)
+      .toContainEqual(expect.objectContaining({ type: "tool-start", toolCallId: "spawn-call", toolName: "subagent" }))
+    const completed = { ...started, id: "subagent-completed-event", kind: "completed" }
+    for (const method of ["item/started", "item/completed"]) {
+      expect(agent.ingest({ source: "codex.app-server", method, payload: { item: completed } }).events).toEqual([])
+    }
+    expect(codexSubagentActivity({ ...started, agentThreadId: undefined })).toBeUndefined()
+  })
+
+  test("maps assistant deltas and completed message snapshots without duplicating text", () => {
+    const agent = runtime()
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "item/agentMessage/delta",
+      payload: { itemId: "msg-1", delta: "hel" },
+    }).events).toMatchObject([{ type: "text-delta", delta: "hel" }])
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "item/completed",
+      payload: { item: { id: "msg-1", type: "agentMessage", text: "hello" } },
+    }).events).toMatchObject([{ type: "text-delta", delta: "lo" }])
+  })
+
+  test("keeps active assistant item text without duplicating completed snapshots", () => {
+    const first = runtime()
+    first.ingest({
+      source: "codex.app-server",
+      method: "item/agentMessage/delta",
+      payload: { itemId: "msg-1", delta: "hel" },
+    })
+
+    expect(first.ingest({
+      source: "codex.app-server",
+      method: "item/completed",
+      payload: { item: { id: "msg-1", type: "agentMessage", text: "hello" } },
+    }).events).toMatchObject([{ type: "text-delta", delta: "lo" }])
+    expect(first.state().assistantTextByItemId["msg-1"]).toBe("hello")
+  })
+
+  test("streams reasoning summary sections once, separated, and adds nothing when the item completes", () => {
+    const agent = runtime()
+    const thinking = (method: string, payload: Record<string, unknown>) =>
+      agent.ingest({ source: "codex.app-server", method, payload }).events.map((event) => event.type === "thinking-delta" ? event.delta : event.type)
+    expect(thinking("item/reasoning/summaryPartAdded", { itemId: "rs-1", summaryIndex: 0 })).toEqual([])
+    expect(thinking("item/reasoning/summaryTextDelta", { itemId: "rs-1", delta: "**Reading**", summaryIndex: 0 }))
+      .toEqual(["**Reading**"])
+    expect(thinking("item/reasoning/summaryPartAdded", { itemId: "rs-1", summaryIndex: 1 }))
+      .toEqual(["\n\n"])
+    expect(thinking("item/reasoning/summaryTextDelta", { itemId: "rs-1", delta: "**Checking**", summaryIndex: 1 }))
+      .toEqual(["**Checking**"])
+    expect(thinking("item/completed", { item: { id: "rs-1", type: "reasoning", summary: ["**Reading**", "**Checking**"], content: [] } }))
+      .toEqual([])
+    expect(thinking("item/completed", { item: { id: "rs-2", type: "reasoning", summary: ["Only at completion"], content: [] } }))
+      .toEqual(["\n\nOnly at completion"])
+  })
+
+  test("maps reasoning and proposed plan streams", () => {
+    const agent = runtime()
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "item/reasoning/textDelta",
+      payload: { delta: "Think" },
+    }).events).toMatchObject([{ type: "thinking-delta", delta: "Think" }])
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "item/plan/delta",
+      payload: { delta: "- inspect" },
+    }).events).toMatchObject([{ type: "proposed-plan-delta", delta: "- inspect" }])
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "item/completed",
+      payload: { item: { id: "plan-1", type: "plan", text: "## Plan" } },
+    }).events).toMatchObject([{ type: "proposed-plan-complete", planMarkdown: "## Plan" }])
+  })
+
+  test("completes tool-like items even when app-server only sends item/completed", () => {
+    const agent = runtime()
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "item/completed",
+      payload: {
+        item: {
+          id: "cmd-1",
+          type: "commandExecution",
+          command: "git status",
+          cwd: "/repo",
+          output: "clean",
+        },
+      },
+    }).events).toMatchObject([
+      { type: "tool-start", toolCallId: "cmd-1", toolName: "command", kind: "command_execution" },
+      { type: "tool-input", toolCallId: "cmd-1", input: { command: "git status", cwd: "/repo" } },
+      { type: "tool-output", toolCallId: "cmd-1", output: "clean" },
+    ])
+  })
+
+  for (const started of [false, true]) {
+    test(`nonzero command completion emits an error with native output (started=${started})`, () => {
+      const agent = runtime()
+      const item = { id: "failed-command", type: "commandExecution", command: "node fail.cjs", cwd: "/repo" }
+      if (started) agent.ingest({ source: "codex.app-server", method: "item/started", payload: { item } })
+      const events = agent.ingest({ source: "codex.app-server", method: "item/completed", payload: {
+        item: { ...item, status: "failed", exitCode: 23, aggregatedOutput: "EXPECTED_TOOL_FAILURE" },
+      } }).events
+      expect(events).toContainEqual(expect.objectContaining({ type: "tool-error", toolCallId: "failed-command", error: "EXPECTED_TOOL_FAILURE" }))
+      expect(events.some((event) => event.type === "tool-output")).toBe(false)
+    })
+  }
+
+  test("a completion carries Codex's exit code for the row to render", () => {
+    const agent = runtime()
+    const failed = agent.ingest({ source: "codex.app-server", method: "item/completed", payload: {
+      item: {
+        id: "missing-binary",
+        type: "commandExecution",
+        command: "grep needle haystack",
+        cwd: "/repo",
+        status: "failed",
+        exitCode: 127,
+        aggregatedOutput: "zsh: command not found: grep",
+      },
+    } }).events
+    expect(failed).toContainEqual(expect.objectContaining({
+      type: "tool-error",
+      toolCallId: "missing-binary",
+      error: "zsh: command not found: grep",
+      metadata: { exitCode: 127, codex: { itemType: "command_execution" } },
+    }))
+
+    const passed = agent.ingest({ source: "codex.app-server", method: "item/completed", payload: {
+      item: {
+        id: "matched",
+        type: "commandExecution",
+        command: "grep needle haystack",
+        cwd: "/repo",
+        status: "completed",
+        exitCode: 0,
+        aggregatedOutput: "needle",
+      },
+    } }).events
+    expect(passed).toContainEqual(expect.objectContaining({
+      type: "tool-output",
+      toolCallId: "matched",
+      metadata: { exitCode: 0, codex: { itemType: "command_execution" } },
+    }))
+  })
+
+  test("a declined command is an error naming the decline, not a silent success", () => {
+    const agent = runtime()
+    const events = agent.ingest({ source: "codex.app-server", method: "item/completed", payload: {
+      item: {
+        id: "declined-command",
+        type: "commandExecution",
+        command: "rm -rf /repo",
+        cwd: "/repo",
+        status: "declined",
+        aggregatedOutput: null,
+      },
+    } }).events
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "tool-error",
+      toolCallId: "declined-command",
+      error: "User declined the command",
+    }))
+    expect(events.some((event) => event.type === "tool-output")).toBe(false)
+  })
+
+  test("a command that produced no output yields empty output, not the raw envelope", () => {
+    const agent = runtime()
+
+    const events = agent.ingest({
+      source: "codex.app-server",
+      method: "item/completed",
+      payload: {
+        item: {
+          id: "call_9wdI50",
+          type: "commandExecution",
+          command: "/bin/zsh -lc ls",
+          cwd: "/tmp/workspace",
+          processId: "4512",
+          source: "unifiedExecStartup",
+          status: "completed",
+          commandActions: [{ type: "listFiles", command: "ls", path: null }],
+          aggregatedOutput: null,
+          exitCode: 0,
+          durationMs: 0,
+        },
+        threadId: "thread-1",
+        turnId: "turn-1",
+        completedAtMs: 1784357339346,
+      },
+    }).events
+
+    const event = events.find((item) => item.type === "tool-output")
+    expect(event).toBeDefined()
+    const output = event && "output" in event ? event.output : undefined
+    expect(output).toBe("")
+    expect(JSON.stringify(output)).not.toContain("commandExecution")
+    expect(JSON.stringify(output)).not.toContain("unifiedExecStartup")
+  })
+
+  test("completion preserves already-streamed output when aggregatedOutput is null", () => {
+    const agent = runtime()
+
+    agent.ingest({
+      source: "codex.app-server",
+      method: "item/started",
+      payload: {
+        item: { id: "cmd-1", type: "commandExecution", command: "ls -la", cwd: "/repo", status: "running" },
+        threadId: "thread-1",
+        turnId: "turn-1",
+      },
+    })
+    agent.ingest({
+      source: "codex.app-server",
+      method: "item/commandExecution/outputDelta",
+      payload: { threadId: "thread-1", turnId: "turn-1", itemId: "cmd-1", delta: "total 0\n.generated" },
+    })
+
+    const events = agent.ingest({
+      source: "codex.app-server",
+      method: "item/completed",
+      payload: {
+        item: {
+          id: "cmd-1",
+          type: "commandExecution",
+          command: "ls -la",
+          cwd: "/repo",
+          status: "completed",
+          aggregatedOutput: null,
+          exitCode: 0,
+        },
+        threadId: "thread-1",
+        turnId: "turn-1",
+      },
+    }).events
+
+    const event = events.find((item) => item.type === "tool-output")
+    const output = event && "output" in event ? event.output : undefined
+    expect(output).toBe("total 0\n.generated")
+  })
+
+  test("maps lower-level command output streams to running tool content", () => {
+    const agent = runtime()
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "item/started",
+      payload: {
+        item: {
+          id: "cmd-1",
+          type: "commandExecution",
+          command: "bun test",
+          cwd: "/repo",
+          processId: "pty-1",
+          source: "agent",
+          status: "running",
+          commandActions: [],
+          aggregatedOutput: null,
+          exitCode: null,
+          durationMs: null,
+        },
+        threadId: "thread-1",
+        turnId: "turn-1",
+        startedAtMs: 0,
+      },
+    }).events).toMatchObject([
+      { type: "tool-start", toolCallId: "cmd-1", toolName: "command" },
+      { type: "tool-input", toolCallId: "cmd-1", input: { command: "bun test", cwd: "/repo", processId: "pty-1" } },
+    ])
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "item/commandExecution/outputDelta",
+      payload: { threadId: "thread-1", turnId: "turn-1", itemId: "cmd-1", delta: "pass" },
+    }).events).toMatchObject([{
+      type: "tool-content",
+      toolCallId: "cmd-1",
+      content: { type: "content", content: { type: "text", text: "pass" } },
+    }])
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "item/commandExecution/outputDelta",
+      payload: { threadId: "thread-1", turnId: "turn-1", itemId: "cmd-1", delta: "ed" },
+    }).events).toMatchObject([{
+      type: "tool-content",
+      toolCallId: "cmd-1",
+      content: { type: "content", content: { type: "text", text: "passed" } },
+    }])
+  })
+
+  test("maps file patch stream updates to file diffs", () => {
+    const agent = runtime()
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "item/fileChange/patchUpdated",
+      payload: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        itemId: "patch-1",
+        changes: [{ path: "src/app.ts", kind: "update", diff: "@@ -1 +1 @@" }],
+      },
+    }).events).toMatchObject([
+      { type: "tool-start", toolCallId: "patch-1", toolName: "apply_patch", kind: "file_change" },
+      { type: "file-diff", toolCallId: "patch-1", path: "src/app.ts", newText: "@@ -1 +1 @@" },
+    ])
+  })
+
+  test("ignores user message item echoes", () => {
+    const agent = runtime()
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "item/started",
+      payload: {
+        item: {
+          id: "user-1",
+          type: "userMessage",
+          content: [{ type: "text", text: "Reply with exactly OK.", text_elements: [] }],
+        },
+      },
+    }).events).toEqual([])
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "item/completed",
+      payload: {
+        item: {
+          id: "user-1",
+          type: "userMessage",
+          content: [{ type: "text", text: "Reply with exactly OK.", text_elements: [] }],
+        },
+      },
+    }).events).toEqual([])
+  })
+
+  test("maps usage and terminal lifecycle events", () => {
+    const agent = runtime()
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "turn/started",
+      payload: { turn: { id: "turn-1", status: "inProgress" } },
+    }).events).toMatchObject([{ type: "session-status", status: "busy" }])
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "thread/tokenUsage/updated",
+      payload: {
+        tokenUsage: {
+          total: { totalTokens: 11839, inputTokens: 10000, cachedInputTokens: 7000, outputTokens: 1200, reasoningOutputTokens: 639 },
+          last: { totalTokens: 126, inputTokens: 100, cachedInputTokens: 60, outputTokens: 20, reasoningOutputTokens: 6 },
+          modelContextWindow: 258400,
+        },
+      },
+    }).events).toMatchObject([{
+      type: "usage",
+      contextSize: 258400,
+      contextUsed: 126,
+      observation: {
+        kind: "cumulative",
+        nativeSessionId: "thread-1",
+        tokens: {
+          input: 40,
+          output: 14,
+          reasoning: 6,
+          cache: { read: 60, write: null },
+        },
+      },
+    }])
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "turn/completed",
+      payload: { sessionId: "session-1", turn: { status: "completed" } },
+    }).events).toMatchObject([
+      { type: "session-status", status: "idle" },
+      { type: "finish", sessionId: "session-1" },
+    ])
+  })
+
+  test("ends a cancelled or interrupted turn as cancelled, never as finished", () => {
+    for (const status of ["cancelled", "interrupted"]) {
+      expect(runtime().ingest({
+        source: "codex.app-server",
+        method: "turn/completed",
+        payload: { sessionId: "session-1", turn: { status } },
+      }).events).toMatchObject([
+        { type: "session-status", status: "idle" },
+        { type: "cancelled", sessionId: "session-1" },
+      ])
+    }
+  })
+
+  test("accumulates usage across every request of a turn and resets on turn boundaries", () => {
+    const agent = runtime()
+    const tokenUsageEvent = (total: Record<string, number>, last: Record<string, number>) =>
+      agent.ingest({
+        source: "codex.app-server",
+        method: "thread/tokenUsage/updated",
+        payload: { tokenUsage: { total, last, modelContextWindow: 258400 } },
+      })
+
+    expect(tokenUsageEvent(
+      { totalTokens: 11839, inputTokens: 10000, cachedInputTokens: 7000, outputTokens: 1200, reasoningOutputTokens: 639 },
+      { totalTokens: 126, inputTokens: 100, cachedInputTokens: 60, outputTokens: 20, reasoningOutputTokens: 6 },
+    ).events).toMatchObject([{
+      type: "usage",
+      observation: { kind: "cumulative", tokens: { input: 40, output: 14, reasoning: 6, cache: { read: 60, write: null } } },
+    }])
+
+    expect(tokenUsageEvent(
+      { totalTokens: 12460, inputTokens: 10500, cachedInputTokens: 7400, outputTokens: 1300, reasoningOutputTokens: 660 },
+      { totalTokens: 398, inputTokens: 200, cachedInputTokens: 150, outputTokens: 40, reasoningOutputTokens: 8 },
+    ).events).toMatchObject([{
+      type: "usage",
+      observation: { kind: "cumulative", tokens: { input: 140, output: 93, reasoning: 27, cache: { read: 460, write: null } } },
+    }])
+
+    const duplicate = tokenUsageEvent(
+      { totalTokens: 12460, inputTokens: 10500, cachedInputTokens: 7400, outputTokens: 1300, reasoningOutputTokens: 660 },
+      { totalTokens: 398, inputTokens: 200, cachedInputTokens: 150, outputTokens: 40, reasoningOutputTokens: 8 },
+    ).events
+    expect(duplicate).toMatchObject([{ type: "usage", contextUsed: 398 }])
+    expect((duplicate[0] as { observation?: unknown }).observation).toBeUndefined()
+
+    agent.ingest({
+      source: "codex.app-server",
+      method: "turn/completed",
+      payload: { sessionId: "session-1", turn: { status: "completed" } },
+    })
+
+    expect(tokenUsageEvent(
+      { totalTokens: 12720, inputTokens: 10700, cachedInputTokens: 7600, outputTokens: 1400, reasoningOutputTokens: 670 },
+      { totalTokens: 160, inputTokens: 100, cachedInputTokens: 100, outputTokens: 50, reasoningOutputTokens: 10 },
+    ).events).toMatchObject([{
+      type: "usage",
+      observation: { kind: "cumulative", tokens: { input: 0, output: 40, reasoning: 10, cache: { read: 100, write: null } } },
+    }])
+  })
+
+  test("meters each thread against its own totals while another thread's usage and completion interleave", () => {
+    const agent = runtime()
+    const observed = (threadId: string, turnId: string, total: Record<string, number>, last: Record<string, number>) =>
+      agent.ingest({
+        source: "codex.app-server",
+        method: "thread/tokenUsage/updated",
+        payload: { threadId, turnId, tokenUsage: { total, last, modelContextWindow: 258400 } },
+      }).events.map((event) => event.type === "usage" ? event.observation : event)
+    const ownSecondTotal = { inputTokens: 10200, cachedInputTokens: 7150, outputTokens: 1250, reasoningOutputTokens: 612 }
+    const ownSecondLast = { inputTokens: 200, cachedInputTokens: 150, outputTokens: 50, reasoningOutputTokens: 12 }
+
+    expect(observed(
+      "thread-1",
+      "turn-1",
+      { inputTokens: 10000, cachedInputTokens: 7000, outputTokens: 1200, reasoningOutputTokens: 600 },
+      { inputTokens: 100, cachedInputTokens: 60, outputTokens: 20, reasoningOutputTokens: 6 },
+    )).toEqual([{
+      kind: "cumulative",
+      scope: "thread-1:turn-1",
+      nativeSessionId: "thread-1",
+      providerObservationId: "turn-1",
+      tokens: { input: 40, output: 14, reasoning: 6, cache: { read: 60, write: null } },
+    }])
+
+    expect(observed(
+      "thread-2",
+      "turn-2",
+      { inputTokens: 50, cachedInputTokens: 0, outputTokens: 10, reasoningOutputTokens: 0 },
+      { inputTokens: 50, cachedInputTokens: 0, outputTokens: 10, reasoningOutputTokens: 0 },
+    )).toEqual([{
+      kind: "cumulative",
+      scope: "thread-2:turn-2",
+      nativeSessionId: "thread-2",
+      providerObservationId: "turn-2",
+      tokens: { input: 50, output: 10, reasoning: 0, cache: { read: 0, write: null } },
+    }])
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "turn/completed",
+      payload: { threadId: "thread-2", turn: { id: "turn-2", status: "completed" } },
+    }).events).toMatchObject([
+      { type: "session-status", status: "idle" },
+      { type: "finish", sessionId: "thread-2" },
+    ])
+
+    expect(observed("thread-1", "turn-1", ownSecondTotal, ownSecondLast)).toEqual([{
+      kind: "cumulative",
+      scope: "thread-1:turn-1",
+      nativeSessionId: "thread-1",
+      providerObservationId: "turn-1",
+      tokens: { input: 90, output: 52, reasoning: 18, cache: { read: 210, write: null } },
+    }])
+
+    expect(observed(
+      "thread-2",
+      "turn-3",
+      { inputTokens: 130, cachedInputTokens: 40, outputTokens: 25, reasoningOutputTokens: 5 },
+      { inputTokens: 80, cachedInputTokens: 40, outputTokens: 15, reasoningOutputTokens: 5 },
+    )).toEqual([{
+      kind: "cumulative",
+      scope: "thread-2:turn-3",
+      nativeSessionId: "thread-2",
+      providerObservationId: "turn-3",
+      tokens: { input: 40, output: 10, reasoning: 5, cache: { read: 40, write: null } },
+    }])
+
+    expect(observed("thread-1", "turn-1", ownSecondTotal, ownSecondLast)).toEqual([undefined])
+  })
+
+  test("meters each Codex turn of a thread in its own scope, so a second turn neither replaces nor re-counts the first", () => {
+    const agent = runtime()
+    const observed = (turnId: string, total: Record<string, number>, last: Record<string, number>) =>
+      agent.ingest({
+        source: "codex.app-server",
+        method: "thread/tokenUsage/updated",
+        payload: { threadId: "thread-child", turnId, tokenUsage: { total, last, modelContextWindow: 258400 } },
+      }).events.map((event) => event.type === "usage" ? event.observation : event)
+    const firstTurn = { inputTokens: 100, cachedInputTokens: 0, outputTokens: 10, reasoningOutputTokens: 0 }
+
+    expect(observed("turn-a", firstTurn, firstTurn)).toEqual([{
+      kind: "cumulative",
+      scope: "thread-child:turn-a",
+      nativeSessionId: "thread-child",
+      providerObservationId: "turn-a",
+      tokens: { input: 100, output: 10, reasoning: 0, cache: { read: 0, write: null } },
+    }])
+    expect(observed(
+      "turn-b",
+      { inputTokens: 180, cachedInputTokens: 20, outputTokens: 25, reasoningOutputTokens: 5 },
+      { inputTokens: 80, cachedInputTokens: 20, outputTokens: 15, reasoningOutputTokens: 5 },
+    )).toEqual([{
+      kind: "cumulative",
+      scope: "thread-child:turn-b",
+      nativeSessionId: "thread-child",
+      providerObservationId: "turn-b",
+      tokens: { input: 60, output: 10, reasoning: 5, cache: { read: 20, write: null } },
+    }])
+  })
+
+  test("prunes turn-scoped resume state on terminal turn events", () => {
+    const agent = runtime()
+
+    agent.ingest({
+      source: "codex.app-server",
+      method: "item/agentMessage/delta",
+      payload: { itemId: "msg-1", delta: "hel" },
+    })
+    agent.ingest({
+      source: "codex.app-server",
+      method: "item/started",
+      payload: { item: { id: "cmd-1", type: "commandExecution", command: "bun test" } },
+    })
+    agent.ingest({
+      source: "codex.app-server",
+      method: "item/commandExecution/outputDelta",
+      payload: { itemId: "cmd-1", delta: "pass" },
+    })
+
+    expect(Object.keys(agent.state().assistantTextByItemId)).toEqual(["msg-1"])
+    expect(Object.keys(agent.state().toolsByItemId)).toEqual(["cmd-1"])
+    expect(Object.keys(agent.state().toolOutputByCallId)).toEqual(["cmd-1"])
+
+    agent.ingest({
+      source: "codex.app-server",
+      method: "turn/completed",
+      payload: { sessionId: "session-1", turn: { status: "completed" } },
+    })
+
+    expect(agent.state()).toEqual({
+      assistantTextByItemId: {},
+      toolOutputByCallId: {},
+      toolsByItemId: {},
+    })
+  })
+
+  test("maps retryable provider errors to the session retrying", () => {
+    const agent = runtime()
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "error",
+      payload: { error: { message: "Reconnecting... 2/5" }, willRetry: true },
+    }).events).toMatchObject([{ type: "session-retry", message: "Reconnecting... 2/5" }])
+  })
+
+  test("maps chat-adjacent app-server session/provider events first class", () => {
+    const agent = runtime()
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "thread/compacted",
+      payload: { threadId: "thread-1", turnId: "turn-1" },
+    }).events).toMatchObject([{
+      type: "session-compaction",
+      phase: "completed",
+    }])
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "account/rateLimits/updated",
+      payload: {
+        rateLimits: {
+          limitId: "primary",
+          limitName: "Primary",
+          primary: { usedPercent: 95, windowDurationMins: 300, resetsAt: 1234 },
+          rateLimitReachedType: "rate_limit_reached",
+        },
+      },
+    }).events).toMatchObject([{
+      type: "rate-limit",
+      status: "limited",
+      usedPercent: 95,
+      reason: "rate_limit_reached",
+    }])
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "mcpServer/startupStatus/updated",
+      payload: { name: "docs", status: "failed", error: "boom" },
+    }).events).toMatchObject([{
+      type: "mcp-server-status",
+      serverName: "docs",
+      status: "failed",
+      error: "boom",
+    }])
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "warning",
+      payload: { threadId: "thread-1", message: "Careful" },
+    }).events).toMatchObject([{
+      type: "harness-notice",
+      code: "codex_app_server.warning",
+      message: "Careful",
+      severity: "warn",
+    }])
+  })
+
+  test("retains rate-limit evidence without terminalizing an early systemError", () => {
+    const agent = runtime()
+
+    agent.ingest({
+      source: "codex.app-server",
+      method: "account/rateLimits/updated",
+      payload: {
+        rateLimits: {
+          limitId: "primary",
+          limitName: "Primary",
+          primary: { usedPercent: 100, windowDurationMins: 300, resetsAt: 1234 },
+          rateLimitReachedType: "rate_limit_reached",
+        },
+      },
+    })
+
+    expect(agent.state().lastLimitedRateLimitMessage)
+      .toBe("You've reached your Codex rate limit. It will reset in about 5 hours.")
+
+    expect(agent.ingest({
+      source: "codex.app-server", method: "thread/status/changed",
+      payload: { threadId: "thread-1", status: { type: "systemError" } },
+    }).events).toMatchObject([{ type: "harness-notice", code: "codex_app_server.thread_system_error" }])
+  })
+
+  test("waits for the authoritative error after an early systemError", () => {
+    const agent = runtime()
+    expect(agent.ingest({
+      source: "codex.app-server", method: "thread/status/changed",
+      payload: { threadId: "thread-1", status: { type: "systemError" } },
+    }).events).toMatchObject([{ type: "harness-notice", code: "codex_app_server.thread_system_error" }])
+    expect(agent.ingest({
+      source: "codex.app-server", method: "error",
+      payload: { threadId: "thread-1", turnId: "turn-1", willRetry: false,
+        error: { message: "Provider rejected this request. Choose another model." } },
+    }).events).toMatchObject([
+      { type: "session-status", status: "error" },
+      { type: "error", error: "Provider rejected this request. Choose another model." },
+    ])
+  })
+
+  test("maps a Codex usageLimitExceeded turn error instead of the generic session error", () => {
+    expect(runtime().ingest({
+      source: "codex.app-server",
+      method: "error",
+      payload: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        willRetry: false,
+        error: {
+          message: "session error",
+          codexErrorInfo: "usageLimitExceeded",
+          additionalDetails: "It will reset in about 5 hours.",
+        },
+      },
+    }).events).toMatchObject([
+      { type: "session-status", status: "error" },
+      { type: "error", error: "You've reached your Codex usage limit. It will reset in about 5 hours.", errorClass: "usage_limit" },
+    ])
+  })
+
+  test("a Codex HTTP failure that answered 429 is a temporary rate limit", () => {
+    expect(runtime().ingest({
+      source: "codex.app-server",
+      method: "error",
+      payload: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        willRetry: false,
+        error: {
+          message: "exceeded retry limit, last status: 429 Too Many Requests",
+          codexErrorInfo: { responseTooManyFailedAttempts: { httpStatusCode: 429 } },
+          additionalDetails: null,
+        },
+      },
+    }).events).toMatchObject([
+      { type: "session-status", status: "error" },
+      { type: "error", error: "exceeded retry limit, last status: 429 Too Many Requests", errorClass: "rate_limit" },
+    ])
+  })
+
+  test("a Codex sandbox failure is a workspace failure", () => {
+    const [, error] = runtime().ingest({
+      source: "codex.app-server",
+      method: "error",
+      payload: { threadId: "thread-1", turnId: "turn-1", willRetry: false, error: { message: "sandbox denied", codexErrorInfo: "sandboxError" } },
+    }).events
+    expect(error).toMatchObject({ type: "error", error: "sandbox denied", errorClass: "workspace" })
+  })
+
+  test("a Codex failure with no structured reason carries no class of its own", () => {
+    const [, error] = runtime().ingest({
+      source: "codex.app-server",
+      method: "error",
+      payload: { threadId: "thread-1", turnId: "turn-1", willRetry: false, error: { message: "sandbox denied" } },
+    }).events
+    expect(error).not.toHaveProperty("errorClass")
+  })
+
+  test("stamps the last Codex usage-limit sentence onto a failed turn after prune", () => {
+    const agent = runtime()
+
+    agent.ingest({
+      source: "codex.app-server",
+      method: "account/rateLimits/updated",
+      payload: {
+        rateLimits: {
+          limitId: "primary",
+          limitName: "Primary",
+          primary: { usedPercent: 100, windowDurationMins: 300 },
+          rateLimitReachedType: "workspace_owner_usage_limit_reached",
+        },
+      },
+    })
+    agent.ingest({
+      source: "codex.app-server",
+      method: "turn/completed",
+      payload: { turn: { id: "turn-1", status: "completed" } },
+    })
+
+    expect(agent.state().lastLimitedRateLimitMessage)
+      .toBe("You've reached your Codex usage limit. It will reset in about 5 hours.")
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "turn/completed",
+      payload: { turn: { id: "turn-2", status: "failed" } },
+    }).events).toMatchObject([
+      { type: "session-status", status: "error" },
+      { type: "error", error: "You've reached your Codex usage limit. It will reset in about 5 hours.", errorClass: "usage_limit" },
+    ])
+  })
+
+  test("classifies collab calls by their real tool and preserves every receiver edge", () => {
+    expect(codexCollabAgentCall({
+      id: "call-1",
+      type: "collabAgentToolCall",
+      tool: "sendInput",
+      status: "inProgress",
+      senderThreadId: "thread-parent",
+      receiverThreadIds: ["thread-child-1", "thread-child-2"],
+      prompt: "Continue",
+      agentsStates: {
+        "thread-child-1": { status: "running", message: null },
+        "thread-child-2": { status: "pendingInit", message: null },
+      },
+    })).toEqual({
+      id: "call-1",
+      tool: "sendInput",
+      toolCallRole: "interaction",
+      senderThreadId: "thread-parent",
+      receiverThreadIds: ["thread-child-1", "thread-child-2"],
+      prompt: "Continue",
+      statuses: {
+        "thread-child-1": "running",
+        "thread-child-2": "pending",
+      },
+    })
+
+    expect(codexCollabAgentCall({
+      id: "call-2",
+      type: "collabAgentToolCall",
+      tool: "spawnAgent",
+      senderThreadId: "thread-parent",
+      receiverThreadIds: ["thread-child-1"],
+      agentsStates: {},
+    })?.toolCallRole).toBe("spawn")
+  })
+
+  test("normalizes every Codex collab status without collapsing terminal states", () => {
+    expect([
+      "pendingInit",
+      "running",
+      "interrupted",
+      "completed",
+      "errored",
+      "shutdown",
+      "notFound",
+    ].map(codexCollabAgentStatus)).toEqual([
+      "pending",
+      "running",
+      "interrupted",
+      "completed",
+      "failed",
+      "killed",
+      "failed",
+    ])
+  })
+
+  test("maps thread/name/updated's threadName to a session title", () => {
+    const agent = runtime()
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "thread/name/updated",
+      payload: { threadId: "thread-1", threadName: "Fix terminal pane" },
+    }).events).toMatchObject([{ type: "session-title", title: "Fix terminal pane" }])
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "thread/name/updated",
+      payload: { threadId: "thread-1" },
+    }).events).toEqual([])
+  })
+
+  test("reports app-server methods that have no runtime mapping", () => {
+    const agent = runtime()
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "remoteControl/status/changed",
+      payload: { status: "disabled" },
+    }).events).toMatchObject([{
+      type: "diagnostic",
+      diagnostic: {
+        code: "codex_app_server.unmapped_event",
+        message: "remoteControl/status/changed: Codex app-server method has no AgentRuntimeEvent mapping",
+        severity: "info",
+      },
+    }])
+  })
+
+  test("reports unknown app-server methods without throwing", () => {
+    const agent = runtime()
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "future/newNotification",
+      payload: { ok: true },
+    }).events).toMatchObject([{
+      type: "diagnostic",
+      diagnostic: {
+        code: "codex_app_server.unmapped_event",
+        message: "future/newNotification: Codex app-server method has no AgentRuntimeEvent mapping",
+        severity: "info",
+      },
+    }])
+  })
+
+  for (const started of [false, true]) {
+    test(`MCP application error uses failed status and result content (started=${started})`, () => {
+      const agent = runtime()
+      const item = { id: "mcp-missing-session", type: "mcpToolCall", server: "claxedo", tool: "session_get", arguments: { session: "missing" }, pluginId: null }
+      if (started) agent.ingest({ source: "codex.app-server", method: "item/started", payload: { item: { ...item, status: "inProgress" } } })
+      const events = agent.ingest({ source: "codex.app-server", method: "item/completed", payload: { item: {
+        ...item, status: "failed", result: { content: [{ type: "text", text: "Session not found" }], structuredContent: null, _meta: null }, error: null,
+      } } }).events
+      expect(events).toContainEqual(expect.objectContaining({ type: "tool-error", toolCallId: item.id, error: "Session not found" }))
+      expect(events.some((event) => event.type === "tool-output")).toBe(false)
+    })
+
+    test(`MCP rejection remains a tool error (started=${started})`, () => {
+      const agent = runtime()
+      const item = { id: "mcp-rejected", type: "mcpToolCall", server: "composio", tool: "COMPOSIO_SEARCH_TOOLS", arguments: { queries: [] }, pluginId: null }
+      if (started) agent.ingest({ source: "codex.app-server", method: "item/started", payload: { item: { ...item, status: "inProgress" } } })
+      const events = agent.ingest({ source: "codex.app-server", method: "item/completed", payload: { item: {
+        ...item, status: "failed", result: null, error: { message: "MCP authorization expired" },
+      } } }).events
+      expect(events).toContainEqual(expect.objectContaining({ type: "tool-error", toolCallId: item.id, error: "MCP authorization expired" }))
+      expect(events.some((event) => event.type === "tool-output")).toBe(false)
+    })
+  }
+
+  test("preserves MCP server, plugin identity and nested arguments when completion arrives without start", () => {
+    const input = { server: "plugin:composio:composio", tool: "COMPOSIO_SEARCH_TOOLS", pluginId: "composio@claxedo-agent-plugins", arguments: { queries: [{ use_case: "Read profile" }], session: { id: "search-session" } } }
+    const events = runtime().ingest({ source: "codex.app-server", method: "item/completed", payload: { item: {
+      id: "composio-search", type: "mcpToolCall", ...input, status: "completed", result: { content: [{ type: "text", text: "discovered" }] }, error: null,
+    } } }).events
+    expect(events).toMatchObject([
+      { type: "tool-start", toolName: "COMPOSIO_SEARCH_TOOLS" },
+      { type: "tool-input", input },
+      { type: "tool-output" },
+    ])
+  })
+
+  test("carries MCP image content as attachments", () => {
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQ=="
+    const mcp = runtime().ingest({ source: "codex.app-server", method: "item/completed", payload: { item: {
+      id: "mcp-shot", type: "mcpToolCall", server: "browser", tool: "screenshot", pluginId: null, arguments: {}, status: "completed", error: null,
+      result: { content: [{ type: "text", text: "captured" }, { type: "image", data: png, mimeType: "image/png" }] },
+    } } }).events
+    expect(mcp.at(-1)).toMatchObject({
+      type: "tool-output",
+      toolCallId: "mcp-shot",
+      output: { content: [{ type: "text", text: "captured" }, { type: "image", data: png, mimeType: "image/png" }] },
+      attachments: [{ kind: "inline", mime: "image/png", url: `data:image/png;base64,${png}` }],
+    })
+  })
+
+  test("leaves a text-only MCP result attachment-free", () => {
+    const events = runtime().ingest({ source: "codex.app-server", method: "item/completed", payload: { item: {
+      id: "mcp-text", type: "mcpToolCall", server: "claxedo", tool: "session_list", pluginId: null, arguments: {}, status: "completed", error: null,
+      result: { content: [{ type: "text", text: "one session" }] },
+    } } }).events
+    expect(events.at(-1)).toMatchObject({ type: "tool-output", toolCallId: "mcp-text" })
+    expect(events.at(-1)).not.toHaveProperty("attachments")
+  })
+
+  test("classifies a create_subagent MCP item as task work by its tool name", () => {
+    const agent = runtime()
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "item/started",
+      payload: {
+        item: {
+          id: "mcp-spawn-1",
+          type: "mcpToolCall",
+          server: "claxedo",
+          tool: "create_subagent",
+          status: "inProgress",
+          arguments: { harness: "claude", prompt: "Consult on the plan" },
+        },
+      },
+    }).events).toMatchObject([
+      { type: "tool-start", toolCallId: "mcp-spawn-1", toolName: "create_subagent", kind: "mcp_tool_call", display: { intent: "task" } },
+      { type: "tool-input", toolCallId: "mcp-spawn-1", input: { server: "claxedo", tool: "create_subagent", arguments: { harness: "claude", prompt: "Consult on the plan" } } },
+    ])
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "item/started",
+      payload: {
+        item: { id: "mcp-other-1", type: "mcpToolCall", server: "claxedo", tool: "session_list", status: "inProgress", arguments: {} },
+      },
+    }).events).toMatchObject([
+      { type: "tool-start", toolCallId: "mcp-other-1", toolName: "session_list", display: { intent: "mcp" } },
+      { type: "tool-input", toolCallId: "mcp-other-1", input: { server: "claxedo", tool: "session_list", arguments: {} } },
+    ])
+  })
+})
+
+test("native imageView completion records the authoritative path without filesystem access", () => {
+  const events = runtime().ingest({ source: "codex.app-server", method: "item/completed", payload: { item: {
+    id: "view-1", type: "imageView", path: "/tmp/no-such-image.png",
+  } } }).events
+  expect(events.at(-1)).toMatchObject({ type: "tool-output", attachments: [{ kind: "tool-file", path: "/tmp/no-such-image.png", mime: "image/*", filename: "no-such-image.png" }] })
+})

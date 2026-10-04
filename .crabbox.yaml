@@ -1,0 +1,180 @@
+# Crabbox repo config (v0.40 schema — unknown keys are silently ignored).
+# Validate without spending capacity:
+#   ./script/cbx doctor
+#   ./script/cbx-ci.ts dry-run pr-linux
+#
+# AWS is the canonical manual pre-push provider. Hetzner remains available only
+# through the explicitly named fallback group in script/cbx-ci.ts.
+provider: aws
+target: linux
+architecture: amd64
+# Match GitHub's Ubuntu 24.04 Linux runner. This also keeps jobs off Crabbox's
+# Ubuntu 26.04 default, where Bun 1.3.14's baseline binary
+# cannot load this repository's native N-API SQLite dependency.
+os: ubuntu:24.04
+serverType: m7i.2xlarge
+market: on-demand
+keep: true
+ttl: 3h
+idleTimeout: 45m
+
+# Native Windows cannot recursively delete an installed worktree on every
+# incremental sync: loaded native modules and generated executables may still
+# hold file handles. Overlay the complete manifest instead; every named CI job
+# gets an isolated lease, and caller-supplied warm leases intentionally retain
+# dependency caches between focused reruns.
+sync:
+  delete: false
+  # Seed the canonical public default branch before overlaying the dirty local
+  # checkout. This preserves real Git metadata for CI policy checks while still
+  # exercising uncommitted edits through Crabbox's normal manifest sync.
+  gitSeed: true
+  baseRef: dev
+
+# Each entry is one GitHub check boundary. Run one failed lane by name, or use
+# script/cbx-ci.ts to run a group and persist the exact failed set for `retry`.
+# Linux and Windows use AWS. macOS remains separate because emulating it on
+# Linux would not exercise the platform contract GitHub gates.
+jobs:
+  # Explicit Hetzner fallback selected by `pr-linux-hetzner`.
+  pr-unit-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh unit-linux
+    stop: auto
+
+  pr-typecheck-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh typecheck-linux
+    stop: auto
+
+  pr-packages-dry-run-linux:
+    provider: hetzner
+    target: linux
+    architecture: amd64
+    serverType: cpx42
+    shell: true
+    command: bash script/cbx-ci-remote.sh packages-dry-run
+    stop: auto
+
+  # Canonical AWS Linux matrix selected by `script/cbx-ci.ts run pr-linux`.
+  # Pass `--id <linux-slug>` to reuse an existing compatible lease.
+  pr-release-gates-linux-x64-aws: &aws_linux_job
+    provider: aws
+    target: linux
+    architecture: amd64
+    serverType: m7i.2xlarge
+    market: on-demand
+    shell: true
+    command: bash script/cbx-ci-remote.sh release-gates-linux-x64
+    stop: auto
+
+  pr-unit-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh unit-linux
+
+  focus-workspace-files-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh workspace-files-linux
+
+  focus-codex-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh codex-conformance
+
+  pr-typecheck-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh typecheck-linux
+
+  pr-packages-dry-run-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh packages-dry-run
+
+  pr-unit-windows:
+    provider: aws
+    target: windows
+    architecture: amd64
+    # Keep the native target and instance type explicit at the job boundary.
+    serverType: m7i.2xlarge
+    market: on-demand
+    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane unit
+    stop: auto
+
+  # The unit job's "Verify embedded OpenCode on the Node runtime" step alone:
+  # tools, install, build:packages, then the two Node smokes.
+  focus-opencode-node-windows:
+    provider: aws
+    target: windows
+    architecture: amd64
+    serverType: m7i.2xlarge
+    market: on-demand
+    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane opencode-node
+    stop: auto
+
+  focus-harness-windows:
+    provider: aws
+    target: windows
+    architecture: amd64
+    serverType: m7i.2xlarge
+    market: on-demand
+    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane package -Package @claxedo/harness
+    stop: auto
+
+  focus-server-core-windows:
+    provider: aws
+    target: windows
+    architecture: amd64
+    serverType: m7i.2xlarge
+    market: on-demand
+    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane package-test -Package @claxedo/server-core
+    stop: auto
+
+  # `writeFileAtomic`'s private-file arm is Windows DACL code that Linux cannot
+  # execute at all. `CLAXEDO_WINDOWS_ACL_ACCEPTANCE` makes the native
+  # acceptance tests mandatory here, so this lane fails rather than skipping
+  # them; off the lane they are unavailable, not silently green.
+  focus-helpers-windows:
+    provider: aws
+    target: windows
+    architecture: amd64
+    serverType: m7i.2xlarge
+    market: on-demand
+    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane package -Package @claxedo/helpers -AclAcceptance
+    stop: auto
+
+  # The suites that prove Windows-only launch and read paths, run with bun
+  # directly: turbo gates each package's test task behind the app and server
+  # suites, which this lane does not need.
+  focus-native-acceptance-windows:
+    provider: aws
+    target: windows
+    architecture: amd64
+    serverType: m7i.2xlarge
+    market: on-demand
+    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-windows-native-acceptance.ps1 -AclAcceptance
+    stop: auto
+
+  pr-e2e-desktop-macos:
+    # A native Mac is required. Configure the `claxedo-macos` profile in the
+    # trusted user config with either an AWS Mac host or a static SSH target.
+    provider: ssh
+    profile: claxedo-macos
+    target: macos
+    shell: true
+    command: bash script/cbx-ci-macos.sh e2e-desktop
+    stop: auto
+
+  focus-server-windows:
+    provider: aws
+    target: windows
+    architecture: amd64
+    serverType: m7i.2xlarge
+    market: on-demand
+    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane package-test -Package @claxedo/server -BuildPackages
+    stop: auto

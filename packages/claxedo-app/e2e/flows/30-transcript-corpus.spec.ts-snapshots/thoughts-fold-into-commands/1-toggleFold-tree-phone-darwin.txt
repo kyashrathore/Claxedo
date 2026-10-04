@@ -1,0 +1,25 @@
+scrollTop: 0
+background subagents:
+(none)
+row 0:
+- text: What changed? acp-script:thoughts-fold-into-commands-0 Build · <time>
+- button "Copy message"
+row 1:
+- button "Worked for 0s" [expanded]
+row 2:
+- button "Ran 2 commands"
+row 3:
+- button "Thought for 0s"
+row 4:
+- paragraph: README.md changed.
+- button "Copy response"
+- text: Build · 0s
+row 5:
+- text: Count the TODOs. acp-script:thoughts-fold-into-commands-1 Build · <time>
+- button "Copy message"
+row 6:
+- button "Count TODO markers in the README"
+row 7:
+- paragraph: There are no TODOs.
+- button "Copy response"
+- text: Build · 0s

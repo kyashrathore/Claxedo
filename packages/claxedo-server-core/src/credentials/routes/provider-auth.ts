@@ -1,0 +1,116 @@
+import { Hono } from "hono"
+import { z } from "zod"
+import { ProviderAuthError, type ProviderAuthService } from "../provider-auth/service"
+import { controlPlaneRouteAuth, type ControlPlaneRouteAuthOptions } from "../../platform/http/control-plane-route-auth"
+import { requestActor, requestOrg } from "./credential"
+import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
+import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/partition"
+import { errorBody } from "@claxedo/server-core/platform/http/http"
+
+const authorizeBody = z.object({
+  method: z.number().optional(),
+  inputs: z.record(z.string(), z.string()).optional(),
+})
+
+const callbackBody = z.object({
+  method: z.number().optional(),
+  code: z.string().optional(),
+  attempt: z.string().max(4096).optional(),
+})
+
+type ProviderAuthRouteOptions = ControlPlaneRouteAuthOptions & {
+  service: ProviderAuthService
+  /**
+   * Test/composition override for tenant resolution, matching
+   * `CredentialRoutesOptions.resolveOrg`. Left unset, the OAuth routes resolve
+   * the caller's org through the credential router's `requestOrg` — the same
+   * function, not a second copy of the rules.
+   */
+  resolveOrg?: (request: Request) => Promise<string> | string
+}
+
+function invalidBody(error: z.ZodError) {
+  return errorBody("provider_auth_invalid_body", "Invalid provider auth request body", error.flatten())
+}
+
+function authError(error: unknown) {
+  if (error instanceof ProviderAuthError) return errorBody(error.code, error.message)
+  return errorBody("provider_auth_failed", error instanceof Error ? error.message : String(error))
+}
+
+
+/**
+ * Gated because a control-plane router with no per-route verification is open
+ * the moment signed auth is enabled — and here there is more at stake than a
+ * read surface. `route-ownership.ts` puts `/provider` in the AgentConfigRegistry domain next
+ * to `/api/claxedo/agent-config` and `/api/claxedo/credentials`, both of which
+ * are gated; this router was the one that was not. The OAuth callback below
+ * calls `deleteCredentialsByProvider` + `putCredential`, so in signed mode an
+ * unauthenticated caller could wipe a box's provider credentials and write its
+ * own in their place — pointing the box's LLM traffic at an attacker-controlled
+ * account. See `control-plane-route-auth.ts` for why the global guard does not
+ * cover this posture.
+ */
+export function ProviderAuthRoutes(options: ProviderAuthRouteOptions) {
+  const service = options.service
+
+  /**
+   * The tenant each OAuth request runs as, resolved once by the credential
+   * router's own `requestOrg` and read by both handlers, so a sign-in lands in
+   * exactly the partition the credential list reads back from and its attempt
+   * opens only there.
+   */
+  const orgs = new WeakMap<Request, string>()
+  const org = (request: Request) => orgs.get(request) ?? SINGLE_TENANT_ORG
+
+  return new Hono()
+    // Registered before the routes below, so every provider operation is
+    // authenticated by the Claxedo credential owner.
+    .use("/provider/*", controlPlaneRouteAuth(options))
+    // Tenant resolution is required only for the mutating OAuth paths.
+    .use("/provider/:providerId/oauth/*", async (c, next) => {
+      try {
+        orgs.set(c.req.raw, await requestOrg(c.req.raw, options))
+      } catch (error) {
+        if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
+        throw error
+      }
+      await next()
+      return undefined
+    })
+    .get("/provider/auth", (c) => c.json(service.methods()))
+    .post("/provider/:providerId/oauth/authorize", async (c) => {
+      const body = authorizeBody.safeParse(await c.req.json().catch(() => ({})))
+      if (!body.success) return c.json(invalidBody(body.error), 400)
+      try {
+        return c.json(await service.authorize({
+          providerId: c.req.param("providerId"),
+          method: body.data.method,
+          inputs: body.data.inputs,
+          org: org(c.req.raw),
+          owner: await requestActor(c.req.raw, options),
+        }))
+      } catch (error) {
+        return c.json(authError(error), 400)
+      }
+    })
+    .post("/provider/:providerId/oauth/callback", async (c) => {
+      const body = callbackBody.safeParse(await c.req.json().catch(() => ({})))
+      if (!body.success) return c.json(invalidBody(body.error), 400)
+      try {
+        return c.json(await service.callback({
+          providerId: c.req.param("providerId"),
+          method: body.data.method,
+          code: body.data.code,
+          attempt: body.data.attempt,
+          org: org(c.req.raw),
+          owner: await requestActor(c.req.raw, options),
+          // The callback long-polls upstream for device approval; a
+          // disconnected client must take the poll down with it.
+          signal: c.req.raw.signal,
+        }))
+      } catch (error) {
+        return c.json(authError(error), 400)
+      }
+    })
+}

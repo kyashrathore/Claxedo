@@ -1,0 +1,374 @@
+import { afterAll, beforeAll, describe, expect, test } from "vitest"
+import { createServer, type Server } from "node:http"
+import { connect } from "node:net"
+import fs from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
+import { exportJWK, generateKeyPair } from "jose"
+import { mintRelayHostToken } from "@claxedo/workspace-relay"
+import { projectRuntimeAuth } from "@claxedo/server-core/agent-config/index"
+import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
+
+import { adoptConnectedHostOwner, createHostRuntimeListener, HostRuntimeRetirementUnresolvedError, installHostProviderConfigAuthority, setHostProviderConfig, type HostRuntimeListener } from "./runtime"
+import { resetHostEnrolledOwner } from "./serving"
+
+const HOST_ID = "host_machine-1"
+const WS_A = "11111111-1111-4111-8111-111111111111"
+const WS_B = "22222222-2222-4222-8222-222222222222"
+const KID = "relay-host-current"
+
+type AuthorityCall = { authorization: string | undefined; body: Record<string, unknown> }
+
+/** The relay's published key set and the control plane's session authority, both faked on loopback. */
+function listen(server: Server) {
+  return new Promise<string>((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address()
+      if (!address || typeof address === "string") throw new Error("no port")
+      resolve(`http://127.0.0.1:${address.port}`)
+    })
+  })
+}
+
+describe("host workspace runtime behind the loopback listener", () => {
+  let key: Awaited<ReturnType<typeof generateKeyPair>>
+  let jwks: Server
+  let authority: Server
+  let jwksUrl: string
+  let sessionAuthorityUrl: string
+  let listener: HostRuntimeListener
+  let root: string
+  const previousDataDir = process.env.CLAXEDO_DATA_DIR
+  const authorityCalls: AuthorityCall[] = []
+  let authorityVerdict: { status: number; body: unknown } = { status: 200, body: {} }
+
+  beforeAll(async () => {
+    key = await generateKeyPair("EdDSA", { extractable: true })
+    const jwk = { ...(await exportJWK(key.publicKey)), kid: KID, alg: "EdDSA", use: "sig" }
+    jwks = createServer((_request, response) => {
+      response.setHeader("content-type", "application/json")
+      response.end(JSON.stringify({ keys: [jwk] }))
+    })
+    authority = createServer((request, response) => {
+      let raw = ""
+      request.on("data", (chunk) => { raw += chunk })
+      request.on("end", () => {
+        authorityCalls.push({ authorization: request.headers.authorization, body: JSON.parse(raw) })
+        response.statusCode = authorityVerdict.status
+        response.setHeader("content-type", "application/json")
+        response.end(JSON.stringify(authorityVerdict.body))
+      })
+    })
+    jwksUrl = `${await listen(jwks)}/.well-known/jwks.json`
+    sessionAuthorityUrl = `${await listen(authority)}/api/runtime-authority/session-authorize`
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "host-serving-runtime-"))
+    // The snapshot a runtime applies is resolved from this process's user
+    // agent config; a developer's own `~/.claxedo` must not be what it reads.
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+    installHostProviderConfigAuthority()
+    listener = await createHostRuntimeListener({ hostname: "127.0.0.1", port: 0, drainTimeoutMs: 2_000 })
+    for (const workspaceId of [WS_A, WS_B]) {
+      const directory = path.join(root, workspaceId)
+      await fs.mkdir(directory, { recursive: true })
+      await listener.ensure({
+        workspaceId,
+        directory,
+        hostId: HOST_ID,
+        relay: { jwksUrl },
+        sessionAuthorityUrl,
+        storeRoot: path.join(root, "state", workspaceId),
+      })
+    }
+  })
+
+  afterAll(async () => {
+    setHostProviderConfig(null)
+    if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
+    else process.env.CLAXEDO_DATA_DIR = previousDataDir
+    await listener?.close()
+    await new Promise<void>((resolve) => jwks?.close(() => resolve()))
+    await new Promise<void>((resolve) => authority?.close(() => resolve()))
+    await fs.rm(root, { recursive: true, force: true })
+  })
+
+  async function relayHostToken(input: { workspaceId: string; hostId?: string; kid?: string } ) {
+    return mintRelayHostToken({
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
+      actorPublicId: "public_1",
+      actorName: "Test User",
+      orgId: "org_1",
+      workspaceId: input.workspaceId,
+      hostId: input.hostId ?? HOST_ID,
+      role: "editor",
+      parentJti: "rat_jti_1",
+      backing: "local-worktree",
+      kid: input.kid ?? KID,
+    }, key.privateKey, "EdDSA")
+  }
+
+  /** What the tunnel hands the listener: the relay's forwarded headers plus the caller's token. */
+  function relayed(token: string, workspaceId: string) {
+    return {
+      authorization: `Bearer ${token}`,
+      "x-workspace-id": workspaceId,
+      "x-forwarded-by": "workspace-relay",
+    }
+  }
+
+  test("routes /workspaces/<id>/global/health to that workspace's runtime and 404s an unknown id", async () => {
+    expect(listener.owners()).toEqual([{ workspaceId: WS_A, state: "serving", attempt: 0 }, { workspaceId: WS_B, state: "serving", attempt: 0 }])
+    for (const workspaceId of [WS_A, WS_B]) {
+      const response = await fetch(`${listener.url}/workspaces/${workspaceId}/global/health`)
+      expect(response.status, workspaceId).toBe(200)
+      expect(await response.json()).toMatchObject({ healthy: true })
+    }
+    const unknown = await fetch(`${listener.url}/workspaces/33333333-3333-4333-8333-333333333333/global/health`)
+    expect(unknown.status).toBe(404)
+    expect(await unknown.json()).toMatchObject({ error: { code: "workspace_not_served" } })
+    const bare = await fetch(`${listener.url}/global/health`)
+    expect(bare.status).toBe(404)
+  })
+
+  test("a request without a Relay Host Token is refused at the relay-host boundary", async () => {
+    const response = await fetch(`${listener.url}/workspaces/${WS_A}/session`, {
+      headers: { "x-workspace-id": WS_A, "x-forwarded-by": "workspace-relay" },
+    })
+    expect(response.status).toBe(401)
+    expect(await response.json()).toMatchObject({ error: { code: "relay_host_token_required" } })
+    expect(authorityCalls).toEqual([])
+  })
+
+  test("a token signed by a key the relay never published is refused", async () => {
+    const other = await generateKeyPair("EdDSA", { extractable: true })
+    const token = await mintRelayHostToken({
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
+      orgId: "org_1",
+      workspaceId: WS_A,
+      hostId: HOST_ID,
+      role: "editor",
+      parentJti: "rat_jti_1",
+      backing: "local-worktree",
+      kid: KID,
+    }, other.privateKey, "EdDSA")
+    const response = await fetch(`${listener.url}/workspaces/${WS_A}/session`, { headers: relayed(token, WS_A) })
+    expect(response.status).toBe(401)
+    expect(authorityCalls).toEqual([])
+  })
+
+  test("a valid token for another workspace does not open this one", async () => {
+    const token = await relayHostToken({ workspaceId: WS_B })
+    const response = await fetch(`${listener.url}/workspaces/${WS_A}/session`, { headers: relayed(token, WS_A) })
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ error: { code: "relay_token_workspace_mismatch" } })
+    expect(authorityCalls).toEqual([])
+  })
+
+  test("a relayed request with a valid token reaches the runtime; a private-session read asks the authority URL with the caller's token", async () => {
+    const token = await relayHostToken({ workspaceId: WS_A })
+    const list = await fetch(`${listener.url}/workspaces/${WS_A}/session`, { headers: relayed(token, WS_A) })
+    expect(list.status).toBe(200)
+    expect(await list.json()).toEqual([])
+
+    authorityCalls.length = 0
+    const read = await fetch(`${listener.url}/workspaces/${WS_A}/session/ses_missing`, { headers: relayed(token, WS_A) })
+    // Admitted by the authority, then honestly absent: the runtime answered,
+    // not the auth boundary.
+    expect(read.status).toBe(404)
+    expect(authorityCalls).toEqual([
+      { authorization: `Bearer ${token}`, body: { sessionId: "ses_missing", action: "read" } },
+    ])
+  })
+
+  test("the authority's refusal is the runtime's refusal", async () => {
+    const token = await relayHostToken({ workspaceId: WS_A })
+    authorityVerdict = { status: 403, body: { error: { code: "session_private", message: "no" } } }
+    try {
+      const read = await fetch(`${listener.url}/workspaces/${WS_A}/session/ses_missing`, { headers: relayed(token, WS_A) })
+      expect(read.status).toBe(403)
+      expect(await read.json()).toMatchObject({ error: { code: "session_private" } })
+    } finally {
+      authorityVerdict = { status: 200, body: {} }
+    }
+  })
+
+  test("WebSocket upgrades are routed by workspace id and meet the same boundary", async () => {
+    const upgrade = (target: string) => new Promise<string>((resolve, reject) => {
+      const port = Number(new URL(listener.url).port)
+      const socket = connect(port, "127.0.0.1", () => {
+        socket.write(
+          `GET ${target} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n`
+          + `Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n`,
+        )
+      })
+      let head = ""
+      socket.on("data", (chunk) => {
+        head += chunk.toString()
+        if (head.includes("\r\n")) {
+          socket.destroy()
+          resolve(head.split("\r\n")[0])
+        }
+      })
+      socket.on("error", reject)
+    })
+    expect(await upgrade(`/workspaces/33333333-3333-4333-8333-333333333333/event`)).toBe("HTTP/1.1 404 Not Found")
+    expect(await upgrade(`/workspaces/${WS_A}/event`)).toBe("HTTP/1.1 401 Unauthorized")
+  })
+
+  test("dispose drains and removes one runtime while the other keeps serving", async () => {
+    await listener.dispose(WS_B)
+    expect(listener.owners()).toEqual([{ workspaceId: WS_A, state: "serving", attempt: 0 }])
+    const gone = await fetch(`${listener.url}/workspaces/${WS_B}/global/health`)
+    expect(gone.status).toBe(404)
+    const kept = await fetch(`${listener.url}/workspaces/${WS_A}/global/health`)
+    expect(kept.status).toBe(200)
+    await listener.dispose(WS_B)
+  })
+
+  test("ensure with a changed directory replaces the runtime for that id", async () => {
+    const before = await listener.ensure({
+      workspaceId: WS_A,
+      directory: path.join(root, WS_A),
+      hostId: HOST_ID,
+      relay: { jwksUrl },
+      sessionAuthorityUrl,
+      storeRoot: path.join(root, "state", WS_A),
+    })
+    const moved = path.join(root, `${WS_A}-moved`)
+    await fs.mkdir(moved, { recursive: true })
+    const after = await listener.ensure({
+      workspaceId: WS_A,
+      directory: moved,
+      hostId: HOST_ID,
+      relay: { jwksUrl },
+      sessionAuthorityUrl,
+      storeRoot: path.join(root, "state", WS_A),
+    })
+    expect(after).not.toBe(before)
+    expect(listener.owners()).toEqual([{ workspaceId: WS_A, state: "serving", attempt: 0 }])
+    const health = await fetch(`${listener.url}/workspaces/${WS_A}/global/health`)
+    expect(health.status).toBe(200)
+  })
+
+  test("a pushed provider is what a runtime resolves: at creation, on re-apply for the ones already live, and gone again once withdrawn", async () => {
+    const WS_C = "44444444-4444-4444-8444-444444444444"
+    const WS_D = "55555555-5555-4555-8555-555555555555"
+    const workspace = (workspaceId: string) => ({
+      workspaceId,
+      directory: path.join(root, workspaceId),
+      hostId: HOST_ID,
+      relay: { jwksUrl },
+      sessionAuthorityUrl,
+      storeRoot: path.join(root, "state", workspaceId),
+    })
+    await fs.mkdir(path.join(root, WS_C), { recursive: true })
+    await fs.mkdir(path.join(root, WS_D), { recursive: true })
+    const row = { baseUrl: "https://broker.example/b/1", placeholder: "sk-pushed-secret", authMode: "bearer" as const }
+
+    await adoptConnectedHostOwner("owner", { applyRuntimeConfig: async () => {} })
+    const live = await listener.ensure(workspace(WS_C))
+    expect(live.host.detail().configApply, "creation applied the snapshot once").toMatchObject({ state: "applied", revision: 1 })
+    expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C })).toEqual({ machineOwnerUserId: "owner", accounts: {} })
+
+    setHostProviderConfig(JSON.stringify({ version: 1, credentials: { machineOwnerUserId: "owner", accounts: { owner: { "claude-sdk": row } } } }))
+
+    expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C })).toEqual({ machineOwnerUserId: "owner", accounts: { owner: { "claude-sdk": row } } })
+    const created = await listener.ensure(workspace(WS_D))
+    expect(created.host.detail().configApply).toMatchObject({ state: "applied", revision: 1 })
+    expect((await createClaxedoAppliedRuntimeConfig({ workspaceDir: path.join(root, WS_D), workspaceId: WS_D })).auth, "the snapshot a new runtime applied").toEqual({ machineOwnerUserId: "owner", accounts: { owner: { "claude-sdk": row } } })
+    expect(live.host.detail().configApply.revision, "a live runtime holds its snapshot until re-applied").toBe(1)
+
+    await listener.applyRuntimeConfig()
+
+    expect(live.host.detail().configApply).toMatchObject({ state: "applied", revision: 2 })
+    expect(created.host.detail().configApply, "an identical snapshot is not re-applied").toMatchObject({ state: "applied", revision: 1 })
+
+    setHostProviderConfig(null)
+    await listener.applyRuntimeConfig()
+
+    expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C })).toEqual({ machineOwnerUserId: "owner", accounts: {} })
+    expect(live.host.detail().configApply).toMatchObject({ state: "applied", revision: 3 })
+    expect(created.host.detail().configApply).toMatchObject({ state: "applied", revision: 2 })
+
+    setHostProviderConfig(JSON.stringify({ version: 1, credentials: { machineOwnerUserId: "owner", accounts: { owner: { "claude-sdk": row } } } }))
+    expect(() => setHostProviderConfig(JSON.stringify({ version: 2, providers: {} }))).toThrow("version 2, not 1")
+    expect(() => setHostProviderConfig("{")).toThrow("not JSON")
+    expect(await projectRuntimeAuth({ scope: "local", workspaceId: WS_C }), "an unreadable payload leaves the rows in place").toEqual({ machineOwnerUserId: "owner", accounts: { owner: { "claude-sdk": row } } })
+    resetHostEnrolledOwner()
+  })
+
+  test("a failed retirement stays fenced and visible, and an explicit retry reruns only what is left", async () => {
+    const WS_E = "66666666-6666-4666-8666-666666666666"
+    const workspace = {
+      workspaceId: WS_E,
+      directory: path.join(root, WS_E),
+      hostId: HOST_ID,
+      relay: { jwksUrl },
+      sessionAuthorityUrl,
+      storeRoot: path.join(root, "state", WS_E),
+    }
+    await fs.mkdir(workspace.directory, { recursive: true })
+    const runtime = await listener.ensure(workspace)
+
+    const teardown = runtime.dispose.bind(runtime)
+    let refusals = 1
+    let drains = 0
+    const patched = runtime as unknown as { dispose: () => Promise<void>; host: { checkpoint: { freeze: (policy: "drain" | "interrupt") => Promise<unknown> } } }
+    const freeze = patched.host.checkpoint.freeze.bind(patched.host.checkpoint)
+    patched.host.checkpoint.freeze = (policy) => {
+      drains += 1
+      return freeze(policy)
+    }
+    patched.dispose = () => (refusals-- > 0 ? Promise.reject(new Error("teardown refused")) : teardown())
+
+    const failed = await listener.dispose(WS_E)
+    expect(failed).toMatchObject({ workspaceId: WS_E, state: "retire_failed", attempt: 1, timedOut: false })
+    expect(failed.error).toMatch(/teardown refused/)
+    expect(listener.owners()).toContainEqual(expect.objectContaining({ workspaceId: WS_E, state: "retire_failed", attempt: 1 }))
+    expect(await fetch(`${listener.url}/workspaces/${WS_E}/global/health`).then((response) => response.status)).toBe(404)
+
+    // Creation must not reinterpret itself as permission to replace an owner
+    // whose cleanup nothing verified.
+    await expect(listener.ensure(workspace)).rejects.toThrow(HostRuntimeRetirementUnresolvedError)
+    expect(await listener.dispose(WS_E)).toMatchObject({ state: "retire_failed", attempt: 1 })
+    expect(drains).toBe(1)
+
+    expect(await listener.dispose(WS_E, { retry: true })).toMatchObject({ workspaceId: WS_E, state: "retired", attempt: 2 })
+    expect(drains, "the drain already finished; the retry reran only the teardown").toBe(1)
+    expect(listener.owners().map((owner) => owner.workspaceId)).not.toContain(WS_E)
+    await listener.ensure(workspace)
+    expect(await fetch(`${listener.url}/workspaces/${WS_E}/global/health`).then((response) => response.status)).toBe(200)
+    await listener.dispose(WS_E)
+  })
+
+  test("close collects every owner's retirement result instead of losing the rest to one failure", async () => {
+    const WS_F = "77777777-7777-4777-8777-777777777777"
+    const WS_G = "88888888-8888-4888-8888-888888888888"
+    const closing = await createHostRuntimeListener({ hostname: "127.0.0.1", port: 0, drainTimeoutMs: 2_000 })
+    const runtimes = new Map<string, { dispose: () => Promise<void> }>()
+    for (const workspaceId of [WS_F, WS_G]) {
+      const directory = path.join(root, workspaceId)
+      await fs.mkdir(directory, { recursive: true })
+      runtimes.set(workspaceId, await closing.ensure({
+        workspaceId,
+        directory,
+        hostId: HOST_ID,
+        relay: { jwksUrl },
+        sessionAuthorityUrl,
+        storeRoot: path.join(root, "state", workspaceId),
+      }) as unknown as { dispose: () => Promise<void> })
+    }
+    const stuck = runtimes.get(WS_F)!
+    const teardown = stuck.dispose.bind(stuck)
+    stuck.dispose = () => Promise.reject(new Error("teardown refused"))
+
+    const result = await closing.close()
+    expect(result.ok).toBe(false)
+    expect(result.results.map((entry) => [entry.workspaceId, entry.state])).toEqual([[WS_F, "retire_failed"], [WS_G, "retired"]])
+    expect(result.results.find((entry) => entry.workspaceId === WS_F)?.error).toMatch(/teardown refused/)
+    await teardown()
+  })
+})

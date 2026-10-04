@@ -1,0 +1,375 @@
+import fs from "node:fs"
+import path from "node:path"
+import { describe, expect, test } from "vitest"
+import { architectureOwnershipEntries, OwnershipStatus } from "./architecture-ownership"
+import { routeOwnership, RouteHandler } from "@claxedo/server-core/platform/governance/route-ownership"
+import { importPattern, walk } from "../../test-support/guards"
+
+describe("architecture boundaries", () => {
+  test("classifies host primitive architecture modules with owners and removal conditions", () => {
+    const entries = architectureOwnershipEntries()
+    const areas = new Set(entries.map((entry) => entry.area))
+    expect([...areas].sort()).toEqual(["authority", "host", "lease", "projection", "registry", "route"])
+
+    const keys = entries.map((entry) => `${entry.area}:${entry.module}`)
+    expect(keys.filter((key, index) => keys.indexOf(key) !== index)).toEqual([])
+
+    for (const entry of entries) {
+      const target = path.resolve(import.meta.dirname, "../..", entry.module)
+      if (entry.status === OwnershipStatus.Deleted) {
+        expect(fs.existsSync(target), `${entry.module} should stay deleted`).toBe(false)
+        expect(entry.canonicalReplacement).toBeTruthy()
+        continue
+      }
+
+      expect(fs.existsSync(target), `${entry.module} should exist`).toBe(true)
+      expect(entry.owner, `${entry.module} needs an owner`).toBeTruthy()
+      expect(entry.tests?.length, `${entry.module} needs active test coverage`).toBeGreaterThan(0)
+      for (const testFile of entry.tests ?? []) {
+        expect(
+          fs.existsSync(path.resolve(import.meta.dirname, "../..", testFile)),
+          `${entry.module} test missing: ${testFile}`,
+        ).toBe(true)
+      }
+
+      if (entry.status === OwnershipStatus.Compatibility) {
+        expect(entry.reason, `${entry.module} compatibility reason missing`).toBeTruthy()
+        expect(entry.canonicalReplacement, `${entry.module} canonical replacement missing`).toBeTruthy()
+        expect(entry.removalCondition, `${entry.module} removal condition missing`).toBeTruthy()
+      }
+
+      for (const sample of entry.routeSamples ?? []) {
+        expect(routeOwnership(sample).handler, `${entry.module} route sample ${sample} is unclaimed`).not.toBe(
+          RouteHandler.Unclaimed,
+        )
+      }
+    }
+  })
+
+  test("POSITIVE CONTROL: a Deleted entry whose module came back is caught", () => {
+    // The live registry carries only a handful of `Deleted` entries, so the
+    // branch above runs rarely and could rot unnoticed. This runs the same
+    // rule over a synthetic entry to prove it still rejects: a module marked
+    // deleted that exists again must fail, so a revert cannot silently restore
+    // something the registry says is gone.
+    const check = (entry: { status: OwnershipStatus; module: string; canonicalReplacement?: string }) => {
+      if (entry.status !== OwnershipStatus.Deleted) return "not-deleted"
+      const target = path.resolve(import.meta.dirname, "../..", entry.module)
+      if (fs.existsSync(target)) return "module still exists"
+      if (!entry.canonicalReplacement) return "missing canonicalReplacement"
+      return "ok"
+    }
+
+    expect(
+      check({
+        status: OwnershipStatus.Deleted,
+        module: "tests/governance/architecture-ownership.ts",
+        canonicalReplacement: "n/a",
+      }),
+    ).toBe("module still exists")
+
+    expect(
+      check({ status: OwnershipStatus.Deleted, module: "platform/governance/never-existed.ts" }),
+    ).toBe("missing canonicalReplacement")
+
+    expect(
+      check({
+        status: OwnershipStatus.Deleted,
+        module: "platform/governance/never-existed.ts",
+        canonicalReplacement: "tests/governance/architecture-ownership.ts",
+      }),
+    ).toBe("ok")
+  })
+
+  test("keeps the server host bridge out of harness adapter execution", () => {
+    // The runtime-dispatch directory is walked rather than listed: naming
+    // individual files here risks silently exempting one of them — including
+    // whichever file mints owner-role tokens — from this ban.
+    const files = [
+      "../../claxedo-local-server/src/deployments/local/embedded-workspace-runtime.ts",
+      "../../claxedo-server-core/src/workspace/http/sandbox-target-fetch.ts",
+      "../../claxedo-local-server/src/agent-config/fanout.ts",
+      ...walk(path.resolve(import.meta.dirname, "../../workspace/runtime-dispatch"))
+        .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
+        .map((file) => path.relative(path.resolve(import.meta.dirname, "../.."), file)),
+    ]
+    const forbidden = [
+      "AcpHarnessAdapter",
+      "OpenCodeHarnessAdapter",
+      "ClaudeHarnessAdapter",
+      "CursorHarnessAdapter",
+      "CodexHarnessAdapter",
+    ]
+    const hits = files.flatMap((file) => {
+      // The boundary is about execution: the host bridge must not *run* harness
+      // adapters. `import type ... ` is erased at compile time and produces no
+      // runtime coupling, so a type-only import (e.g. a Pi backend resolver type
+      // used to shape a config field) is not a violation — strip those lines
+      // before scanning.
+      const text = fs
+        .readFileSync(path.resolve(import.meta.dirname, "../..", file), "utf-8")
+        .split("\n")
+        .filter((line) => !/^\s*import\s+type\b/.test(line))
+        .join("\n")
+      return forbidden.flatMap((term) => (text.includes(term) ? [`${file}:${term}`] : []))
+    })
+
+    expect(hits).toEqual([])
+  })
+
+  test("keeps workspace-runtime from importing claxedo-server", () => {
+    const workspaceRuntimeSrc = path.resolve(import.meta.dirname, "../../../../workspace-runtime/src")
+    const forbidden = ["@claxedo/server", "@opencode-ai/claxedo-server", "@claxedo/claxedo-server", "claxedo-server"]
+    const offenders = walk(workspaceRuntimeSrc)
+      .filter((file) => file.endsWith(".ts"))
+      .filter((file) => !file.endsWith(".test.ts"))
+      .flatMap((file) => {
+        const text = fs.readFileSync(file, "utf8")
+        return forbidden.flatMap((term) =>
+          importPattern(term).test(text) ? [`${path.relative(workspaceRuntimeSrc, file)}:${term}`] : [],
+        )
+      })
+
+    expect(offenders).toEqual([])
+  })
+
+  test("keeps product strings and ambient policy env reads out of the workspace-runtime kit", () => {
+    const workspaceRuntimeSrc = path.resolve(import.meta.dirname, "../../../../workspace-runtime/src")
+    // Product domains and host-policy env flags are host decisions. The kit
+    // must not embed them: CORS whitelists arrive via options.corsOrigin,
+    // compat via options.opencodeCompat.
+    const forbidden = ["opencode.ai", "DISABLE_OPENCODE_COMPAT"]
+    const offenders = walk(workspaceRuntimeSrc)
+      .filter((file) => file.endsWith(".ts"))
+      .filter((file) => !file.endsWith(".test.ts"))
+      .flatMap((file) => {
+        const text = fs.readFileSync(file, "utf8")
+        return forbidden.flatMap((term) =>
+          text.includes(term) ? [`${path.relative(workspaceRuntimeSrc, file)}:${term}`] : [],
+        )
+      })
+
+    expect(offenders).toEqual([])
+  })
+
+  test("keeps backend products free of OpenCode runtime and generated-client coupling", () => {
+    const packageRoot = path.resolve(import.meta.dirname, "../../../..")
+    // The one place the public embedded SDK may be imported: the SDK owner
+    // behind the native `opencode` harness. Every other backend product reaches
+    // OpenCode only through `@claxedo/harness/opencode-sdk`'s typed ports.
+    const sdkOwner = path.join(packageRoot, "harness/src/transports/opencode-sdk") + path.sep
+    const sourceRoots = [
+      "harness/src",
+      "workspace-runtime/src",
+      "claxedo-server-core/src",
+      "claxedo-server/src",
+      "claxedo-local-server/src",
+      "claxedo-mcp/src",
+    ]
+    const forbidden = [
+      /from\s+["']@opencode-ai\/sdk(?:\/[^"']*)?["']/,
+      /from\s+["']opencode(?:\/[^"']*)?["']/,
+      /import\(\s*["']opencode(?:\/[^"']*)?["']\s*\)/,
+      /\bcreateOpencodeClient\b/,
+      /\bOpenCodeHarnessAdapter\b/,
+      /\bOpenCodeRequestFn\b/,
+      /\bopencodeRequest\b/,
+      /\bOPENCODE_INTERNAL_BASE\b/,
+    ]
+    const offenders = sourceRoots.flatMap((relativeRoot) => {
+      const root = path.join(packageRoot, relativeRoot)
+      return walk(root)
+        .filter((file) => /\.(?:ts|tsx|mts|cts|mjs)$/.test(file))
+        .filter((file) => !file.endsWith(".test.ts") && !file.endsWith(".test.tsx"))
+        .filter((file) => !file.startsWith(sdkOwner))
+        .flatMap((file) => {
+          const source = fs.readFileSync(file, "utf8")
+          return forbidden.flatMap((pattern) => pattern.test(source)
+            ? [`${path.relative(packageRoot, file)}:${pattern.source}`]
+            : [])
+        })
+    })
+
+    expect(offenders).toEqual([])
+    // Positive control: the owner really is where the SDK lives, so an empty
+    // offender list means the boundary held rather than the import vanished.
+    expect(fs.readFileSync(path.join(sdkOwner, "host.ts"), "utf8")).toMatch(/from\s+["']@opencode-ai\/sdk/)
+  })
+
+  test("keeps production source from importing legacy host-control modules", () => {
+    const serverSrc = path.resolve(import.meta.dirname, "../..")
+    const forbiddenModules = [
+      "cloud/authority",
+      "cloud/lifecycle",
+      "cloud/sandbox",
+      "../../sandbox-manager/src/sandbox-pool",
+      "../../sandbox-manager/src/drivers/sandbox-bridge",
+      "../../sandbox-manager/src/handle-providers",
+      "../../sandbox-manager/src/sandbox-bridge-contract",
+      "../../sandbox-manager/src/sandbox-bridge-provider",
+      "../../sandbox-manager/src/workspace-runtime-process",
+    ]
+    const offenders = walk(serverSrc)
+      .filter((file) => file.endsWith(".ts") || file.endsWith(".mjs"))
+      .filter((file) => !file.endsWith(".test.ts"))
+      .filter((file) => !file.startsWith(path.join(serverSrc, "cloud", "sandbox") + path.sep))
+      .filter((file) => !path.basename(file).startsWith("live-"))
+      .flatMap((file) => {
+        const text = fs.readFileSync(file, "utf8")
+        return forbiddenModules.flatMap((forbidden) =>
+          importPattern(forbidden).test(text) ? [`${path.relative(serverSrc, file)}:${forbidden}`] : [],
+        )
+      })
+
+    expect(offenders).toEqual([])
+  })
+
+  test("keeps SandboxDriver focused on host lifecycle", () => {
+    const text = fs.readFileSync(path.resolve(import.meta.dirname, "../../../../sandbox-manager/src/contract.ts"), "utf8")
+    const start = text.indexOf("export type SandboxDriver = {")
+    const end = text.indexOf("\n\nexport type SandboxManager =", start)
+    expect(start).toBeGreaterThanOrEqual(0)
+    expect(end).toBeGreaterThan(start)
+
+    const driverContract = text.slice(start, end)
+    const forbidden = [
+      "executeCommand",
+      "uploadFile",
+      "createSession",
+      "executeSessionCommand",
+      "deleteSession",
+      "launch",
+      "restart",
+      "recoverHost",
+      "pty",
+    ]
+
+    expect(forbidden.filter((term) => new RegExp(`\\b${term}\\b`).test(driverContract))).toEqual([])
+  })
+
+  test("keeps sandbox-manager public types from becoming sandbox handles", () => {
+    const text = fs.readFileSync(path.resolve(import.meta.dirname, "../../../../sandbox-manager/src/contract.ts"), "utf8")
+    const forbidden = [
+      "executeCommand",
+      "uploadFile",
+      "downloadFile",
+      "readFile",
+      "writeFile",
+      "createSession",
+      "executeSessionCommand",
+      "deleteSession",
+      "SandboxHandle",
+      "SandboxProvider",
+    ]
+
+    expect(forbidden.filter((term) => text.includes(term))).toEqual([])
+  })
+
+  test("keeps SandboxManager wired to a driver, not a provider object", () => {
+    const text = fs.readFileSync(path.resolve(import.meta.dirname, "../../../../sandbox-manager/src/contract.ts"), "utf8")
+    const start = text.indexOf("export type SandboxManagerOptions = {")
+    const end = text.indexOf("\n}\n", start)
+    expect(start).toBeGreaterThanOrEqual(0)
+    expect(end).toBeGreaterThan(start)
+
+    const optionsContract = text.slice(start, end)
+    expect(optionsContract).toContain("driver: SandboxDriver")
+    expect(optionsContract).not.toContain("provider: SandboxDriver")
+  })
+
+  test("keeps SandboxManager storage/auth pluggable", () => {
+    const serverSrc = path.resolve(import.meta.dirname, "../..")
+    const genericRuntimeHostFiles = [
+      "../../sandbox-manager/src/contract.ts",
+      "../../sandbox-manager/src/manager.ts",
+      "../../sandbox-manager/src/stores/memory.ts",
+    ]
+    const forbiddenTerms = [
+      "HostedAuthorityClient",
+      "service_token",
+      "CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN",
+      "storage/workspace-lease.sql",
+      "better-sqlite",
+      "workspace/store",
+      "workspaceStore",
+      "process.env",
+      "Bun.file",
+      "ControlPlaneAuthAdapter",
+      "usersMe",
+    ]
+
+    const offenders = genericRuntimeHostFiles.flatMap((file) => {
+      const text = fs.readFileSync(path.resolve(serverSrc, file), "utf8")
+      return forbiddenTerms
+        .filter((term) => text.includes(term))
+        .map((term) => `${file}:${term}`)
+    })
+
+    expect(offenders).toEqual([])
+  })
+
+  test("keeps API error response bodies structured", () => {
+    const files = [
+      // Whole directory, not one file: the entrypoints hold the `errorBody`
+      // responses this guard pins, and they moved out of proxy.ts in W11.2b.
+      ...walk(path.resolve(import.meta.dirname, "../../workspace/runtime-dispatch")).filter((file) =>
+        file.endsWith(".ts"),
+      ),
+      ...walk(path.resolve(import.meta.dirname, "../../routes")).filter((file) => file.endsWith(".ts")),
+    ]
+    const rawScalarErrorBodies = files.flatMap((file) => {
+      const text = fs.readFileSync(file, "utf-8")
+      return [...text.matchAll(/(?:c\.json|Response\.json)\(\s*\{\s*(?:error|message):\s*["'`]/g)].map(
+        (match) => `${path.relative(import.meta.dirname, file)}:${match.index}`,
+      )
+    })
+
+    expect(rawScalarErrorBodies).toEqual([])
+  })
+
+  test("keeps test-support/ out of production modules", () => {
+    // test-support/ is the one home for test-only in-process helpers. A
+    // production module importing it would drag test doubles into runtime
+    // bundles — and, worse, invert the dependency direction the directory
+    // exists to make legible.
+    const serverSrc = path.resolve(import.meta.dirname, "../..")
+    const offenders = walk(serverSrc)
+      .filter((file) => file.endsWith(".ts"))
+      .filter((file) => !/\.(test|workerd\.test|miniflare\.test)\.ts$/.test(file))
+      .filter((file) => !file.includes(`${path.sep}test-support${path.sep}`))
+      .filter((file) => !path.basename(file).includes("test-helper"))
+      .filter((file) => !path.basename(file).includes(".fixture."))
+      .flatMap((file) => {
+        const text = fs.readFileSync(file, "utf-8")
+        return /from ["'][^"']*test-support\//.test(text) ? [path.relative(serverSrc, file)] : []
+      })
+
+    expect(offenders).toEqual([])
+  })
+
+  test("keeps hand-written SQL out of feature code — drizzle tables are the only query surface", () => {
+    // adapters/storage owns the schema; everything else queries through the
+    // typed tables so a column rename is a compile error rather than a
+    // runtime surprise.
+    //
+    // `ClaxedoDB.raw()` on its own is not the violation — server.ts calls it
+    // with no statement to eagerly open SQLite before serving. Executing a
+    // hand-written statement is.
+    const serverSrc = path.resolve(import.meta.dirname, "../..")
+    const allowed = new Set([
+      // The one documented escape hatch: a dynamic cursor-paginated query
+      // whose shape drizzle's builder cannot express.
+      path.join("session", "meta", "index.ts"),
+    ])
+    const offenders = walk(serverSrc)
+      .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
+      .map((file) => path.relative(serverSrc, file))
+      .filter((rel) => !allowed.has(rel) && !rel.startsWith(`adapters${path.sep}storage${path.sep}`))
+      .filter((rel) => {
+        const text = fs.readFileSync(path.join(serverSrc, rel), "utf-8")
+        return /ClaxedoDB\.raw\(\)[\s\S]{0,40}?\.(prepare|exec)\(/.test(text)
+      })
+
+    expect(offenders).toEqual([])
+  })
+})

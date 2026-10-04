@@ -1,0 +1,45 @@
+#!/usr/bin/env bun
+
+import * as path from "node:path"
+
+import { requireLocalServerBundle } from "./local-server"
+
+const root = path.resolve(import.meta.dir, "..")
+
+// The local-server bundle is `prebuild`'s output and this build's input. The
+// vite plugin that copies it into `out/main/` skips silently when it is absent,
+// which produced an app whose server was simply missing; the contract then
+// failed with a bare "missing path". Fail here instead, naming the artifact and
+// the command that produces it. Nothing is started in its place.
+console.log(`[build] local server bundle at ${requireLocalServerBundle(root)}`)
+
+// Keep the missing-bundle gate dependency-light and first. Besides making the
+// error actionable, this prevents build/manifest modules from doing any work
+// before the one production input they consume has been proven to exist.
+const [contract, manifests] = await Promise.all([
+  import("./contract"),
+  import("./product-boundary-manifests"),
+])
+const { write, verify } = contract
+const { clearDesktopBoundaryManifests, verifyDesktopBoundaryManifestSet } = manifests
+clearDesktopBoundaryManifests(root)
+
+const proc = Bun.spawn({
+  cmd: ["bun", "run", "build:inner"],
+  cwd: root,
+  env: Bun.env,
+  stdin: "inherit",
+  stdout: "inherit",
+  stderr: "inherit",
+})
+
+if (await proc.exited !== 0) {
+  process.exit(1)
+}
+
+const boundaryManifests = verifyDesktopBoundaryManifestSet(root)
+console.log(`[build] product boundary manifests: ${boundaryManifests.join(", ")}`)
+
+write()
+const saved = verify()
+console.log(`[build] contract locked at ${saved.built_at}`)

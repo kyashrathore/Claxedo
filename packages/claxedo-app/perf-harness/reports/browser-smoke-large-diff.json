@@ -1,0 +1,333 @@
+{
+  "generated_at": "2026-05-23T10:06:19.108Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo",
+    "upstream"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "large-diff-toggle",
+      "name": "Large Diff Toggle",
+      "started_at": "2026-05-23T10:06:07.746Z",
+      "duration_ms": 14170.165917,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 500,
+        "terminals": 0,
+        "changed_files": 500,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "vcs_load_ms",
+          "value": 1057.0116669999989,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1057.0116669999989
+          ],
+          "p50": 1057.0116669999989,
+          "p95": 1057.0116669999989,
+          "min": 1057.0116669999989,
+          "max": 1057.0116669999989,
+          "mean": 1057.0116669999989,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "hunk_render_ms",
+          "value": 937.5577079999985,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            937.5577079999985
+          ],
+          "p50": 937.5577079999985,
+          "p95": 937.5577079999985,
+          "min": 937.5577079999985,
+          "max": 937.5577079999985,
+          "mean": 937.5577079999985,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "diff_toggle_latency_ms",
+          "value": 727.7215419999993,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            727.7215419999993
+          ],
+          "p50": 727.7215419999993,
+          "p95": 727.7215419999993,
+          "min": 727.7215419999993,
+          "max": 727.7215419999993,
+          "mean": 727.7215419999993,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "line_comment_latency_ms",
+          "value": 392.13929199999984,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            392.13929199999984
+          ],
+          "p50": 392.13929199999984,
+          "p95": 392.13929199999984,
+          "min": 392.13929199999984,
+          "max": 392.13929199999984,
+          "mean": 392.13929199999984,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "changed_file_navigation_ms",
+          "value": 281.9229579999992,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            281.9229579999992
+          ],
+          "p50": 281.9229579999992,
+          "p95": 281.9229579999992,
+          "min": 281.9229579999992,
+          "max": 281.9229579999992,
+          "mean": 281.9229579999992,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 1344.369,
+        "memory_rss_mb": 168.80035400390625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-large-diff-toggle-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "large-diff-toggle",
+        "metrics": {
+          "vcs_load_ms": 36,
+          "hunk_render_ms": 41,
+          "diff_toggle_latency_ms": 37,
+          "line_comment_latency_ms": 33,
+          "changed_file_navigation_ms": 7
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "vcs_load_ms p95 1057.0116669999989 > 36",
+        "hunk_render_ms p95 937.5577079999985 > 41",
+        "diff_toggle_latency_ms p95 727.7215419999993 > 37",
+        "line_comment_latency_ms p95 392.13929199999984 > 33",
+        "changed_file_navigation_ms p95 281.9229579999992 > 7"
+      ]
+    },
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "large-diff-toggle",
+      "name": "Large Diff Toggle",
+      "started_at": "2026-05-23T10:06:19.056Z",
+      "duration_ms": 10420.943499999998,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 500,
+        "terminals": 0,
+        "changed_files": 500,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "vcs_load_ms",
+          "value": 367.32395800000086,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            367.32395800000086
+          ],
+          "p50": 367.32395800000086,
+          "p95": 367.32395800000086,
+          "min": 367.32395800000086,
+          "max": 367.32395800000086,
+          "mean": 367.32395800000086,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "hunk_render_ms",
+          "value": 66.28399999999965,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            66.28399999999965
+          ],
+          "p50": 66.28399999999965,
+          "p95": 66.28399999999965,
+          "min": 66.28399999999965,
+          "max": 66.28399999999965,
+          "mean": 66.28399999999965,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "diff_toggle_latency_ms",
+          "value": 276.95887500000026,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            276.95887500000026
+          ],
+          "p50": 276.95887500000026,
+          "p95": 276.95887500000026,
+          "min": 276.95887500000026,
+          "max": 276.95887500000026,
+          "mean": 276.95887500000026,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "line_comment_latency_ms",
+          "value": 791.7815420000006,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            791.7815420000006
+          ],
+          "p50": 791.7815420000006,
+          "p95": 791.7815420000006,
+          "min": 791.7815420000006,
+          "max": 791.7815420000006,
+          "mean": 791.7815420000006,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "changed_file_navigation_ms",
+          "value": 291.1937079999989,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            291.1937079999989
+          ],
+          "p50": 291.1937079999989,
+          "p95": 291.1937079999989,
+          "min": 291.1937079999989,
+          "max": 291.1937079999989,
+          "mean": 291.1937079999989,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 2128.557,
+        "memory_rss_mb": 48.065185546875,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/upstream-large-diff-toggle-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "large-diff-toggle",
+        "metrics": {
+          "vcs_load_ms": 9,
+          "hunk_render_ms": 48,
+          "diff_toggle_latency_ms": 8,
+          "line_comment_latency_ms": 56,
+          "changed_file_navigation_ms": 70
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "vcs_load_ms p95 367.32395800000086 > 9",
+        "hunk_render_ms p95 66.28399999999965 > 48",
+        "diff_toggle_latency_ms p95 276.95887500000026 > 8",
+        "line_comment_latency_ms p95 791.7815420000006 > 56",
+        "changed_file_navigation_ms p95 291.1937079999989 > 70"
+      ]
+    }
+  ],
+  "comparisons": [
+    {
+      "scenario": "large-diff-toggle",
+      "adapter": "browser",
+      "metric": "vcs_load_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 1057.0116669999989,
+      "upstream_p95": 367.32395800000086,
+      "winner_delta_percent": 65.24882652974527
+    },
+    {
+      "scenario": "large-diff-toggle",
+      "adapter": "browser",
+      "metric": "hunk_render_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 937.5577079999985,
+      "upstream_p95": 66.28399999999965,
+      "winner_delta_percent": 92.93014185319889
+    },
+    {
+      "scenario": "large-diff-toggle",
+      "adapter": "browser",
+      "metric": "diff_toggle_latency_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 727.7215419999993,
+      "upstream_p95": 276.95887500000026,
+      "winner_delta_percent": 61.94164127135314
+    },
+    {
+      "scenario": "large-diff-toggle",
+      "adapter": "browser",
+      "metric": "line_comment_latency_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 392.13929199999984,
+      "upstream_p95": 791.7815420000006,
+      "winner_delta_percent": 50.473802280174965
+    },
+    {
+      "scenario": "large-diff-toggle",
+      "adapter": "browser",
+      "metric": "changed_file_navigation_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 281.9229579999992,
+      "upstream_p95": 291.1937079999989,
+      "winner_delta_percent": 3.1837054666029103
+    }
+  ]
+}

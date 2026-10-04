@@ -1,0 +1,2992 @@
+Subject: v2 components: class style hooks, theme tokens, typed props
+
+What: the v2 components the app renders carry `ui-*-v2` class hooks, take type,
+radius and weight from the theme's tokens (so a theme restyles them), use logical
+properties, and read item labels without casts (select-v2 through select-item).
+Why: as for the original generation, class-keyed rules stay out of the shared
+attribute bucket; tokens let the codex theme apply its type scale to v2.
+
+diff --git a/src/v2/components/accordion-v2.css b/src/v2/components/accordion-v2.css
+index 281a031c36e1af50eec9efd216605eb8a8f89870..8cd48dbbf49a96b928a2e04aa759071292eea837 100644
+--- a/src/v2/components/accordion-v2.css
++++ b/src/v2/components/accordion-v2.css
+@@ -11,7 +11,7 @@
+ 
+   width: 100%;
+   background: var(--accordion-v2-bg);
+-  border-radius: 6px;
++  border-radius: var(--radius-md);
+   box-shadow: 0 0 0 0.5px var(--accordion-v2-border);
+   overflow: hidden;
+ 
+@@ -22,7 +22,7 @@
+   text-rendering: geometricPrecision;
+ }
+ 
+-[data-component="accordion-v2-item"] {
++.ui-accordion-v2-item {
+   box-sizing: border-box;
+   display: flex;
+   flex-direction: column;
+@@ -32,7 +32,7 @@
+   box-shadow: inset 0 -0.5px 0 var(--accordion-v2-border);
+ }
+ 
+-[data-component="accordion-v2-item"]:last-child {
++.ui-accordion-v2-item:last-child {
+   box-shadow: none;
+ }
+ 
+@@ -41,7 +41,7 @@
+   margin: 0;
+ }
+ 
+-[data-component="accordion-v2-trigger"] {
++.ui-accordion-v2-trigger {
+   box-sizing: border-box;
+   display: flex;
+   flex-direction: row;
+@@ -58,10 +58,10 @@
+   cursor: default;
+   user-select: none;
+ 
+-  font-size: 13px;
+-  font-weight: 440;
+-  line-height: 100%;
+-  letter-spacing: -0.04px;
++  font-size: var(--font-size-compact);
++  font-weight: var(--font-weight-body);
++  line-height: var(--line-height-none);
++  letter-spacing: var(--letter-spacing-ui);
+   color: var(--accordion-v2-fg);
+   text-align: left;
+ }
+@@ -76,7 +76,7 @@
+   height: 30px;
+ }
+ 
+-[data-component="accordion-v2-trigger"] [data-slot="accordion-v2-chevron"] {
++[data-component="accordion-v2-trigger"] .ui-accordion-v2-chevron {
+   flex: none;
+   width: 14px;
+   height: 14px;
+@@ -84,31 +84,31 @@
+   transition: transform 150ms ease;
+ }
+ 
+-[data-component="accordion-v2-trigger"][data-expanded] [data-slot="accordion-v2-chevron"] {
++[data-component="accordion-v2-trigger"][data-expanded] .ui-accordion-v2-chevron {
+   transform: rotate(180deg);
+ }
+ 
+-[data-component="accordion-v2-item"][data-expanded] [data-component="accordion-v2-trigger"] {
++[data-component="accordion-v2-item"][data-expanded] .ui-accordion-v2-trigger {
+   box-shadow: inset 0 -0.5px 0 var(--accordion-v2-border);
+ }
+ 
+-[data-component="accordion-v2-trigger"][data-disabled] {
++.ui-accordion-v2-trigger[data-disabled] {
+   pointer-events: none;
+   opacity: 0.5;
+ }
+ 
+-[data-component="accordion-v2-content"] {
++.ui-accordion-v2-content {
+   overflow: hidden;
+-  font-size: 13px;
+-  line-height: 140%;
++  font-size: var(--font-size-compact);
++  line-height: var(--line-height-prose-tight);
+   color: var(--accordion-v2-fg);
+ }
+ 
+-[data-component="accordion-v2-content"][data-expanded] {
++.ui-accordion-v2-content[data-expanded] {
+   animation: accordion-v2-down 180ms ease-out;
+ }
+ 
+-[data-component="accordion-v2-content"][data-closed] {
++.ui-accordion-v2-content[data-closed] {
+   animation: accordion-v2-up 180ms ease-out;
+ }
+ 
+diff --git a/src/v2/components/accordion-v2.tsx b/src/v2/components/accordion-v2.tsx
+index 5a996a02a21ab9339c07900c86355e9dc798ceed..c2d7d78b6cdf9927b6d27632283ca437ed59a20e 100644
+--- a/src/v2/components/accordion-v2.tsx
++++ b/src/v2/components/accordion-v2.tsx
+@@ -4,7 +4,7 @@ import "./accordion-v2.css"
+ 
+ const ChevronDown: Component = () => (
+   <svg
+-    data-slot="accordion-v2-chevron"
++    data-slot="accordion-v2-chevron" class="ui-accordion-v2-chevron"
+     width="14"
+     height="14"
+     viewBox="0 0 14 14"
+@@ -35,7 +35,7 @@ function AccordionV2Item(props: ParentProps<AccordionV2ItemProps>) {
+     <Kobalte.Item
+       {...r}
+       data-component="accordion-v2-item"
+-      classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
++      classList={{ "ui-accordion-v2-item": true, ...s.classList, [s.class ?? ""]: !!s.class }}
+     />
+   )
+ }
+@@ -55,7 +55,7 @@ function AccordionV2Trigger(props: ParentProps<AccordionV2TriggerProps>) {
+     <Kobalte.Trigger
+       {...r}
+       data-component="accordion-v2-trigger"
+-      classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
++      classList={{ "ui-accordion-v2-trigger": true, ...s.classList, [s.class ?? ""]: !!s.class }}
+     >
+       <span data-slot="accordion-v2-trigger-content">{s.children}</span>
+       <Show when={!s.hideChevron}>
+@@ -71,7 +71,7 @@ function AccordionV2Content(props: ParentProps<AccordionV2ContentProps>) {
+     <Kobalte.Content
+       {...r}
+       data-component="accordion-v2-content"
+-      classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}
++      classList={{ "ui-accordion-v2-content": true, ...s.classList, [s.class ?? ""]: !!s.class }}
+     >
+       <div data-slot="accordion-v2-content-inner">{s.children}</div>
+     </Kobalte.Content>
+diff --git a/src/v2/components/avatar-v2.css b/src/v2/components/avatar-v2.css
+index 8d717afbe1ef6ac5138fbb9ae2f461ca328cde74..91f2adc80f8dc42c9bb000873199f9a9d09f361f 100644
+--- a/src/v2/components/avatar-v2.css
++++ b/src/v2/components/avatar-v2.css
+@@ -1,4 +1,4 @@
+-[data-component="avatar-v2"] {
++.ui-avatar-v2 {
+   --avatar-bg: var(--v2-background-bg-layer-02);
+   --avatar-fg: var(--v2-text-text-muted);
+   --avatar-radius: 9999px;
+@@ -14,9 +14,9 @@
+   height: 28px;
+   border-radius: var(--avatar-radius);
+   border: 0.5px solid var(--v2-border-border-base);
+-  font-weight: 530;
++  font-weight: var(--font-weight-medium);
+   font-size: var(--avatar-font-size);
+-  line-height: 1;
++  line-height: var(--line-height-none);
+   letter-spacing: var(--avatar-tracking);
+   text-transform: uppercase;
+   background-color: var(--avatar-bg);
+@@ -25,7 +25,7 @@
+   -webkit-user-select: none;
+ }
+ 
+-[data-component="avatar-v2"]::before {
++.ui-avatar-v2::before {
+   content: "";
+   position: absolute;
+   inset: 0;
+@@ -33,25 +33,25 @@
+   pointer-events: none;
+ }
+ 
+-[data-component="avatar-v2"][data-has-image]::before {
++.ui-avatar-v2[data-has-image]::before {
+   display: none;
+ }
+ 
+-[data-component="avatar-v2"][data-kind="org"] {
++.ui-avatar-v2[data-kind="org"] {
+   --avatar-radius: 6px;
+ }
+ 
+-[data-component="avatar-v2"][data-kind="org"][data-size="normal"],
+-[data-component="avatar-v2"][data-kind="org"][data-size="small"] {
++.ui-avatar-v2[data-kind="org"][data-size="normal"],
++.ui-avatar-v2[data-kind="org"][data-size="small"] {
+   --avatar-radius: 4px;
+ }
+ 
+-[data-component="avatar-v2"][data-size="normal"] {
++.ui-avatar-v2[data-size="normal"] {
+   width: 20px;
+   height: 20px;
+ }
+ 
+-[data-component="avatar-v2"][data-size="small"] {
++.ui-avatar-v2[data-size="small"] {
+   width: 16px;
+   height: 16px;
+ }
+diff --git a/src/v2/components/avatar-v2.tsx b/src/v2/components/avatar-v2.tsx
+index 37b223772f2ca965006fa71fa378b5f6ebf9fb96..8f5aa0523774314ed6287b21f2c07ba565e5cce7 100644
+--- a/src/v2/components/avatar-v2.tsx
++++ b/src/v2/components/avatar-v2.tsx
+@@ -41,7 +41,7 @@ export function Avatar(props: AvatarProps) {
+       data-size={split.size || "large"}
+       data-kind={split.kind || "user"}
+       data-has-image={src ? "" : undefined}
+-      classList={{
++      classList={{ "ui-avatar-v2": true,
+         ...split.classList,
+         [split.class ?? ""]: !!split.class,
+       }}
+diff --git a/src/v2/components/badge-v2.css b/src/v2/components/badge-v2.css
+index 5c7a59e0aae56f6917d4ddb4d6b903a56ac6540b..b283f00a78ff02d6b635db4e431204f7aa1afc0c 100644
+--- a/src/v2/components/badge-v2.css
++++ b/src/v2/components/badge-v2.css
+@@ -1,4 +1,4 @@
+-[data-component="tag"] {
++.ui-tag {
+   box-sizing: border-box;
+   display: inline-flex;
+   flex-direction: row;
+@@ -9,24 +9,24 @@
+   padding: 0 4px;
+   user-select: none;
+ 
+-  border-radius: 2px;
++  border-radius: var(--radius-xs);
+   border: 0.5px solid var(--v2-border-border-base);
+   background: var(--v2-background-bg-layer-02);
+ 
+   font-style: normal;
+-  font-weight: 530;
+-  font-size: 11px;
+-  line-height: 1;
+-  letter-spacing: 0.05px;
++  font-weight: var(--font-weight-medium);
++  font-size: var(--font-size-x-small);
++  line-height: var(--line-height-none);
++  letter-spacing: var(--letter-spacing-micro-wide);
+   color: var(--v2-text-text-muted);
+   font-variant-numeric: tabular-nums;
+ }
+ 
+-[data-component="tag"][data-high-contrast] {
++.ui-tag[data-high-contrast] {
+   border-color: var(--v2-border-border-strong);
+ }
+ 
+-[data-component="tag"][data-variant="accent"] {
++.ui-tag[data-variant="accent"] {
+   border: 0;
+   background: var(--v2-background-bg-accent);
+   color: var(--v2-text-text-contrast);
+diff --git a/src/v2/components/badge-v2.tsx b/src/v2/components/badge-v2.tsx
+index 8583d46da9fbb569f173e8ea5f1560323e9f1aa3..7ef60db51ba5bfc88ccbdeb39425dd9e73cdc56c 100644
+--- a/src/v2/components/badge-v2.tsx
++++ b/src/v2/components/badge-v2.tsx
+@@ -13,6 +13,7 @@ export function Tag(props: TagProps) {
+       data-component="tag"
+       data-variant={split.variant ?? "neutral"}
+       classList={{
++        "ui-tag": true,
+         ...split.classList,
+         [split.class ?? ""]: !!split.class,
+       }}
+diff --git a/src/v2/components/button-v2.css b/src/v2/components/button-v2.css
+index 20a8855503f2377d2b3d11e70105848fa1313314..9d81e6dedb1601191e64e5d3960ccec752ce75a1 100644
+--- a/src/v2/components/button-v2.css
++++ b/src/v2/components/button-v2.css
+@@ -4,169 +4,169 @@
+   text-rendering: geometricPrecision;
+ }
+ 
+-[data-component="button-v2"] {
++.ui-button-v2 {
+   position: relative;
+   display: inline-flex;
+   align-items: center;
+   justify-content: center;
+   gap: 6px;
+-  border-radius: 6px;
++  border-radius: var(--radius-md);
+   font-style: normal;
+-  font-weight: 530;
+-  font-size: 13px;
+-  line-height: 20px;
++  font-weight: var(--font-weight-medium);
++  font-size: var(--font-size-compact);
++  line-height: var(--line-height-20);
+   color: var(--v2-text-text-base);
+   text-shadow: none;
+   font-variant-numeric: tabular-nums;
+-  letter-spacing: -0.04px;
++  letter-spacing: var(--letter-spacing-ui);
+   user-select: none;
+   cursor: pointer;
+   outline: none;
+ }
+ 
+-[data-component="button-v2"]:focus {
++.ui-button-v2:focus {
+   outline: none;
+ }
+ 
+-[data-component="button-v2"]:is(:focus-visible, [data-state="focus"]):not(:disabled):not([data-variant="loading"]) {
++.ui-button-v2:is(:focus-visible, [data-state="focus"]):not(:disabled):not([data-variant="loading"]) {
+   outline: 2px solid var(--v2-border-border-focus);
+   outline-offset: 2.5px;
+ }
+ 
+-[data-component="button-v2"][data-size="normal"] {
++.ui-button-v2[data-size="normal"] {
+   height: 28px;
+   padding: 0 11px;
+ }
+ 
+-[data-component="button-v2"][data-size="small"] {
++.ui-button-v2[data-size="small"] {
+   height: 24px;
+   padding: 0 9px;
+-  border-radius: 4px;
++  border-radius: var(--radius-sm);
+ }
+ 
+-[data-component="button-v2"][data-size="large"] {
++.ui-button-v2[data-size="large"] {
+   height: 32px;
+   padding: 0 15px;
+ }
+ 
+-[data-component="button-v2"][data-icon][data-size="small"] {
++.ui-button-v2[data-icon][data-size="small"] {
+   padding-left: 9px;
+ }
+ 
+-[data-component="button-v2"][data-icon][data-size="normal"] {
++.ui-button-v2[data-icon][data-size="normal"] {
+   padding-left: 11px;
+ }
+ 
+-[data-component="button-v2"][data-icon][data-size="large"] {
++.ui-button-v2[data-icon][data-size="large"] {
+   padding-left: 15px;
+ }
+ 
+-[data-component="button-v2"] [data-slot="icon-svg"] {
++[data-component="button-v2"] .ui-icon-svg {
+   color: currentColor;
+ }
+ 
+ /* Neutral */
+-[data-component="button-v2"][data-variant="neutral"] {
++.ui-button-v2[data-variant="neutral"] {
+   background-color: var(--v2-background-bg-button-neutral);
+   color: var(--v2-text-text-base);
+   box-shadow: var(--v2-elevation-button-neutral);
+ }
+ 
+-[data-component="button-v2"][data-variant="neutral"]:is(:hover, [data-state="hover"]):not(:disabled) {
++.ui-button-v2[data-variant="neutral"]:is(:hover, [data-state="hover"]):not(:disabled) {
+   background-image:
+     linear-gradient(90deg, var(--v2-overlay-simple-overlay-hover) 0%, var(--v2-overlay-simple-overlay-hover) 100%),
+     linear-gradient(90deg, var(--v2-background-bg-button-neutral) 0%, var(--v2-background-bg-button-neutral) 100%);
+ }
+ 
+-[data-component="button-v2"][data-variant="neutral"]:is(:active, [data-state="pressed"]):not(:disabled) {
++.ui-button-v2[data-variant="neutral"]:is(:active, [data-state="pressed"]):not(:disabled) {
+   background-image:
+     linear-gradient(90deg, var(--v2-overlay-simple-overlay-pressed) 0%, var(--v2-overlay-simple-overlay-pressed) 100%),
+     linear-gradient(90deg, var(--v2-background-bg-button-neutral) 0%, var(--v2-background-bg-button-neutral) 100%);
+ }
+ 
+-[data-component="button-v2"][data-variant="neutral"]:is(:disabled, [data-state="disabled"]) {
++.ui-button-v2[data-variant="neutral"]:is(:disabled, [data-state="disabled"]) {
+   opacity: 0.5;
+   cursor: not-allowed;
+ }
+ 
+ /* Danger */
+-[data-component="button-v2"][data-variant="danger"] {
++.ui-button-v2[data-variant="danger"] {
+   background-color: var(--v2-background-bg-button-neutral);
+   color: var(--v2-state-fg-danger);
+   box-shadow: var(--v2-elevation-button-neutral);
+ }
+ 
+-[data-component="button-v2"][data-variant="danger"]:is(:hover, [data-state="hover"]):not(:disabled) {
++.ui-button-v2[data-variant="danger"]:is(:hover, [data-state="hover"]):not(:disabled) {
+   background-image:
+     linear-gradient(90deg, var(--v2-overlay-simple-overlay-hover) 0%, var(--v2-overlay-simple-overlay-hover) 100%),
+     linear-gradient(90deg, var(--v2-background-bg-button-neutral) 0%, var(--v2-background-bg-button-neutral) 100%);
+ }
+ 
+-[data-component="button-v2"][data-variant="danger"]:is(:active, [data-state="pressed"]):not(:disabled) {
++.ui-button-v2[data-variant="danger"]:is(:active, [data-state="pressed"]):not(:disabled) {
+   background-image:
+     linear-gradient(90deg, var(--v2-overlay-simple-overlay-pressed) 0%, var(--v2-overlay-simple-overlay-pressed) 100%),
+     linear-gradient(90deg, var(--v2-background-bg-button-neutral) 0%, var(--v2-background-bg-button-neutral) 100%);
+ }
+ 
+-[data-component="button-v2"][data-variant="danger"]:is(:disabled, [data-state="disabled"]) {
++.ui-button-v2[data-variant="danger"]:is(:disabled, [data-state="disabled"]) {
+   opacity: 0.5;
+   cursor: not-allowed;
+ }
+ 
+-[data-component="button-v2"][data-variant="warning"] {
++.ui-button-v2[data-variant="warning"] {
+   background-color: var(--v2-background-bg-button-neutral);
+   color: var(--v2-state-fg-warning);
+   box-shadow: var(--v2-elevation-button-neutral);
+ }
+ 
+-[data-component="button-v2"][data-variant="warning"]:is(:hover, [data-state="hover"]):not(:disabled) {
++.ui-button-v2[data-variant="warning"]:is(:hover, [data-state="hover"]):not(:disabled) {
+   background-image:
+     linear-gradient(90deg, var(--v2-overlay-simple-overlay-hover) 0%, var(--v2-overlay-simple-overlay-hover) 100%),
+     linear-gradient(90deg, var(--v2-background-bg-button-neutral) 0%, var(--v2-background-bg-button-neutral) 100%);
+ }
+ 
+-[data-component="button-v2"][data-variant="warning"]:is(:active, [data-state="pressed"]):not(:disabled) {
++.ui-button-v2[data-variant="warning"]:is(:active, [data-state="pressed"]):not(:disabled) {
+   background-image:
+     linear-gradient(90deg, var(--v2-overlay-simple-overlay-pressed) 0%, var(--v2-overlay-simple-overlay-pressed) 100%),
+     linear-gradient(90deg, var(--v2-background-bg-button-neutral) 0%, var(--v2-background-bg-button-neutral) 100%);
+ }
+ 
+-[data-component="button-v2"][data-variant="warning"]:is(:disabled, [data-state="disabled"]) {
++.ui-button-v2[data-variant="warning"]:is(:disabled, [data-state="disabled"]) {
+   opacity: 0.5;
+   cursor: not-allowed;
+ }
+ 
+ /* Outline */
+-[data-component="button-v2"][data-variant="outline"] {
++.ui-button-v2[data-variant="outline"] {
+   background-color: transparent;
+   color: var(--v2-text-text-base);
+   box-shadow: inset 0 0 0 1px var(--v2-border-border-muted);
+ }
+ 
+-[data-component="button-v2"][data-variant="outline"]:is(:hover, [data-state="hover"]):not(:disabled) {
++.ui-button-v2[data-variant="outline"]:is(:hover, [data-state="hover"]):not(:disabled) {
+   background-color: var(--v2-overlay-simple-overlay-hover);
+ }
+ 
+-[data-component="button-v2"][data-variant="outline"]:is(:active, [data-state="pressed"]):not(:disabled) {
++.ui-button-v2[data-variant="outline"]:is(:active, [data-state="pressed"]):not(:disabled) {
+   background-color: var(--v2-overlay-simple-overlay-pressed);
+ }
+ 
+-[data-component="button-v2"][data-variant="outline"]:is(:disabled, [data-state="disabled"]) {
++.ui-button-v2[data-variant="outline"]:is(:disabled, [data-state="disabled"]) {
+   opacity: 0.5;
+   cursor: not-allowed;
+ }
+ 
+ /* Contrast */
+-[data-component="button-v2"][data-variant="contrast"] {
++.ui-button-v2[data-variant="contrast"] {
+   background-image:
+     linear-gradient(180deg, var(--v2-alpha-light-20) 0%, var(--v2-alpha-light-0) 100%),
+     linear-gradient(90deg, var(--v2-background-bg-contrast) 0%, var(--v2-background-bg-contrast) 100%);
+   color: var(--v2-text-text-contrast);
+-  text-shadow: 0 0.5px 0.5px rgba(0, 0, 0, 0.3);
++  text-shadow: var(--text-shadow-raised);
+   box-shadow: var(--v2-elevation-button-contrast);
+ }
+ 
+-[data-component="button-v2"][data-variant="contrast"]:is(:hover, [data-state="hover"]):not(:disabled) {
++.ui-button-v2[data-variant="contrast"]:is(:hover, [data-state="hover"]):not(:disabled) {
+   background-image:
+     linear-gradient(
+       90deg,
+@@ -177,7 +177,7 @@
+     linear-gradient(90deg, var(--v2-background-bg-contrast) 0%, var(--v2-background-bg-contrast) 100%);
+ }
+ 
+-[data-component="button-v2"][data-variant="contrast"]:is(:active, [data-state="pressed"]):not(:disabled) {
++.ui-button-v2[data-variant="contrast"]:is(:active, [data-state="pressed"]):not(:disabled) {
+   background-image:
+     linear-gradient(
+       90deg,
+@@ -188,13 +188,13 @@
+     linear-gradient(90deg, var(--v2-background-bg-contrast) 0%, var(--v2-background-bg-contrast) 100%);
+ }
+ 
+-[data-component="button-v2"][data-variant="contrast"]:is(:disabled, [data-state="disabled"]) {
++.ui-button-v2[data-variant="contrast"]:is(:disabled, [data-state="disabled"]) {
+   opacity: 0.4;
+   cursor: not-allowed;
+ }
+ 
+ /* Loading */
+-[data-component="button-v2"][data-variant="loading"] {
++.ui-button-v2[data-variant="loading"] {
+   background: var(--v2-background-bg-layer-02);
+   color: var(--v2-text-text-base);
+   box-shadow: inset 0 0 0 0.5px var(--v2-border-border-muted);
+@@ -203,60 +203,60 @@
+ }
+ 
+ /* Ghost */
+-[data-component="button-v2"][data-variant="ghost"] {
++.ui-button-v2[data-variant="ghost"] {
+   background-color: transparent;
+   color: var(--v2-text-text-base);
+ }
+ 
+-[data-component="button-v2"][data-variant="ghost"]:is(:hover, [data-state="hover"]):not(:disabled):not(
++.ui-button-v2[data-variant="ghost"]:is(:hover, [data-state="hover"]):not(:disabled):not(
+     [data-expanded]
+   ) {
+   background-color: var(--v2-overlay-simple-overlay-hover);
+ }
+ 
+-[data-component="button-v2"][data-variant="ghost"]:is(:active, [data-state="pressed"]):not(:disabled) {
++.ui-button-v2[data-variant="ghost"]:is(:active, [data-state="pressed"]):not(:disabled) {
+   background-color: var(--v2-overlay-simple-overlay-pressed);
+ }
+ 
+-[data-component="button-v2"][data-variant="ghost"]:where([data-expanded]):not(:disabled) {
++.ui-button-v2[data-variant="ghost"]:where([data-expanded]):not(:disabled) {
+   background-color: var(--v2-overlay-simple-overlay-pressed);
+ }
+ 
+-[data-component="button-v2"][data-variant="ghost"]:is(:disabled, [data-state="disabled"]) {
++.ui-button-v2[data-variant="ghost"]:is(:disabled, [data-state="disabled"]) {
+   opacity: 0.5;
+   cursor: not-allowed;
+ }
+ 
+ /* Ghost muted */
+-[data-component="button-v2"][data-variant="ghost-muted"] {
++.ui-button-v2[data-variant="ghost-muted"] {
+   background-color: transparent;
+   color: var(--v2-text-text-muted);
+ }
+ 
+-[data-component="button-v2"][data-variant="ghost-muted"] [data-slot="icon-svg"] {
++[data-component="button-v2"][data-variant="ghost-muted"] .ui-icon-svg {
+   color: var(--v2-icon-icon-muted);
+ }
+ 
+-[data-component="button-v2"][data-variant="ghost-muted"]:is(:hover, [data-state="hover"]):not(:disabled):not(
++.ui-button-v2[data-variant="ghost-muted"]:is(:hover, [data-state="hover"]):not(:disabled):not(
+     [data-expanded]
+   ) {
+   background-color: var(--v2-overlay-simple-overlay-hover);
+ }
+ 
+-[data-component="button-v2"][data-variant="ghost-muted"]:is(:active, [data-state="pressed"]):not(:disabled) {
++.ui-button-v2[data-variant="ghost-muted"]:is(:active, [data-state="pressed"]):not(:disabled) {
+   background-color: var(--v2-overlay-simple-overlay-pressed);
+ }
+ 
+-[data-component="button-v2"][data-variant="ghost-muted"]:where([data-expanded]):not(:disabled) {
++.ui-button-v2[data-variant="ghost-muted"]:where([data-expanded]):not(:disabled) {
+   background-color: var(--v2-overlay-simple-overlay-pressed);
+   color: var(--v2-text-text-base);
+ }
+ 
+-[data-component="button-v2"][data-variant="ghost-muted"]:where([data-expanded]):not(:disabled) [data-slot="icon-svg"] {
++[data-component="button-v2"][data-variant="ghost-muted"]:where([data-expanded]):not(:disabled) .ui-icon-svg {
+   color: var(--v2-icon-icon-base);
+ }
+ 
+-[data-component="button-v2"][data-variant="ghost-muted"]:is(:disabled, [data-state="disabled"]) {
++.ui-button-v2[data-variant="ghost-muted"]:is(:disabled, [data-state="disabled"]) {
+   opacity: 0.5;
+   cursor: not-allowed;
+ }
+diff --git a/src/v2/components/button-v2.tsx b/src/v2/components/button-v2.tsx
+index 14b793ba11a957d28bb22b82e078d36d2e618f87..8df8a56e8e9e352b1301e9190757c9bbe32055fb 100644
+--- a/src/v2/components/button-v2.tsx
++++ b/src/v2/components/button-v2.tsx
+@@ -21,7 +21,7 @@ export function ButtonV2(props: ButtonV2Props) {
+       data-size={split.size || "normal"}
+       data-variant={split.variant || "neutral"}
+       data-icon={resolvedIcon()}
+-      classList={{
++      classList={{ "ui-button-v2": true,
+         ...split.classList,
+         [split.class ?? ""]: !!split.class,
+       }}
+diff --git a/src/v2/components/checkbox-v2.css b/src/v2/components/checkbox-v2.css
+index 47e3de9f5e7fcb483133255ee1d27d208f39cd1f..1be44408ae2af90bd11bea1953f2727f675317b5 100644
+--- a/src/v2/components/checkbox-v2.css
++++ b/src/v2/components/checkbox-v2.css
+@@ -8,15 +8,15 @@
+     cursor: not-allowed;
+   }
+ 
+-  [data-slot="checkbox-v2-error"] {
++  .ui-checkbox-v2-error {
+     color: var(--v2-state-fg-danger);
+-    font-size: 12px;
++    font-size: var(--font-size-small);
+     font-weight: var(--font-weight-regular);
+     line-height: var(--line-height-normal);
+     letter-spacing: var(--letter-spacing-normal);
+   }
+ 
+-  [data-slot="checkbox-v2-error"]:empty {
++  .ui-checkbox-v2-error:empty {
+     display: none;
+   }
+ }
+@@ -48,7 +48,7 @@
+     flex: none;
+   }
+ 
+-  [data-slot="checkbox-v2-control"] {
++  .ui-checkbox-v2-control {
+     box-sizing: border-box;
+     position: absolute;
+     width: 16px;
+@@ -57,7 +57,7 @@
+     flex-shrink: 0;
+     left: 0;
+     top: calc(50% - 16px / 2);
+-    border-radius: 4px;
++    border-radius: var(--radius-sm);
+     border: none;
+     box-shadow: inset 0 0 0 0.5px var(--v2-border-border-strong);
+ 
+@@ -86,12 +86,12 @@
+     gap: 6px;
+   }
+ 
+-  [data-slot="checkbox-v2-label"] {
++  .ui-checkbox-v2-label {
+     display: inline-flex;
+     user-select: none;
+     color: inherit;
+     font-style: normal;
+-    font-weight: 440;
++    font-weight: var(--font-weight-body);
+     font-variant-numeric: tabular-nums;
+     font-variation-settings: "slnt" 0;
+   }
+@@ -101,17 +101,17 @@
+     align-items: center;
+     user-select: none;
+     color: var(--v2-text-text-base);
+-    font-size: 13px;
+-    line-height: 20px;
+-    letter-spacing: -0.04px;
++    font-size: var(--font-size-compact);
++    line-height: var(--line-height-20);
++    letter-spacing: var(--letter-spacing-ui);
+   }
+ 
+-  [data-slot="checkbox-v2-description"] {
++  .ui-checkbox-v2-description {
+     color: var(--v2-text-text-muted);
+-    font-size: 11px;
+-    font-weight: 440;
+-    line-height: 1;
+-    letter-spacing: 0.05px;
++    font-size: var(--font-size-x-small);
++    font-weight: var(--font-weight-body);
++    line-height: var(--line-height-none);
++    letter-spacing: var(--letter-spacing-micro-wide);
+     font-variant-numeric: tabular-nums;
+     user-select: none;
+   }
+@@ -120,7 +120,7 @@
+ [data-slot="checkbox-v2"]:where(:not([data-readonly]))
+   [data-slot="checkbox-v2-input"]:focus-visible
+   ~ [data-slot="checkbox-v2-control-stack"]
+-  [data-slot="checkbox-v2-control"] {
++  .ui-checkbox-v2-control {
+   outline: 2px solid var(--v2-border-border-focus);
+   outline-offset: 1px;
+ }
+@@ -128,17 +128,17 @@
+ [data-slot="checkbox-v2"]:where(:hover):where(:not([data-disabled], [data-readonly], [data-invalid])):where(
+     :not([data-checked], [data-indeterminate])
+   )
+-  [data-slot="checkbox-v2-control"] {
++  .ui-checkbox-v2-control {
+   background:
+     linear-gradient(0deg, var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)),
+     linear-gradient(180deg, var(--v2-alpha-light-6) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-base);
+ }
+ 
+-[data-slot="checkbox-v2"]:where([data-disabled]) [data-slot="checkbox-v2-control"] {
++[data-slot="checkbox-v2"]:where([data-disabled]) .ui-checkbox-v2-control {
+   opacity: 0.5;
+ }
+ 
+-[data-slot="checkbox-v2"]:where([data-checked], [data-indeterminate]) [data-slot="checkbox-v2-control"] {
++[data-slot="checkbox-v2"]:where([data-checked], [data-indeterminate]) .ui-checkbox-v2-control {
+   background:
+     linear-gradient(180deg, var(--v2-alpha-light-20) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-accent);
+ }
+@@ -146,7 +146,7 @@
+ [data-slot="checkbox-v2"]:where([data-checked], [data-indeterminate]):where(:hover):where(
+     :not([data-disabled], [data-readonly])
+   )
+-  [data-slot="checkbox-v2-control"] {
++  .ui-checkbox-v2-control {
+   background:
+     linear-gradient(
+       0deg,
+@@ -157,7 +157,7 @@
+ }
+ 
+ [data-slot="checkbox-v2"]:where([data-invalid]):where(:not([data-checked], [data-indeterminate]))
+-  [data-slot="checkbox-v2-control"] {
++  .ui-checkbox-v2-control {
+   background: var(--v2-state-bg-danger);
+   box-shadow: inset 0 0 0 0.5px var(--v2-state-border-danger);
+ }
+@@ -178,7 +178,7 @@
+   display: block;
+ }
+ 
+-[data-slot="checkbox-v2"]:where([data-disabled]) [data-slot="checkbox-v2-label"],
+-[data-slot="checkbox-v2"]:where([data-disabled]) [data-slot="checkbox-v2-description"] {
++[data-slot="checkbox-v2"]:where([data-disabled]) .ui-checkbox-v2-label,
++[data-slot="checkbox-v2"]:where([data-disabled]) .ui-checkbox-v2-description {
+   opacity: 0.5;
+ }
+diff --git a/src/v2/components/checkbox-v2.tsx b/src/v2/components/checkbox-v2.tsx
+index b66a99f65621581b6198c512334ec975dbf9d163..3c9389f4f2774c3ff626d86d25fcf8f81f7a1f98 100644
+--- a/src/v2/components/checkbox-v2.tsx
++++ b/src/v2/components/checkbox-v2.tsx
+@@ -23,7 +23,7 @@ export function CheckboxV2(props: CheckboxV2Props) {
+       <div data-slot="checkbox-v2-row">
+         <Kobalte.Input data-slot="checkbox-v2-input" />
+         <div data-slot="checkbox-v2-control-stack">
+-          <Kobalte.Control data-slot="checkbox-v2-control">
++          <Kobalte.Control data-slot="checkbox-v2-control" class="ui-checkbox-v2-control">
+             <Kobalte.Indicator data-slot="checkbox-v2-indicator">
+               <svg
+                 class="checkbox-v2-icon checkbox-v2-icon--check"
+@@ -50,16 +50,16 @@ export function CheckboxV2(props: CheckboxV2Props) {
+             </Kobalte.Indicator>
+           </Kobalte.Control>
+         </div>
+-        <Kobalte.Label data-slot="checkbox-v2-label" classList={{ "sr-only": local.hideLabel }}>
++        <Kobalte.Label data-slot="checkbox-v2-label" classList={{ "ui-checkbox-v2-label": true, "sr-only": local.hideLabel }}>
+           <div data-slot="checkbox-v2-text">
+             <span data-slot="checkbox-v2-label-text">{local.label}</span>
+             <Show when={local.description}>
+-              {(description) => <span data-slot="checkbox-v2-description">{description()}</span>}
++              {(description) => <span data-slot="checkbox-v2-description" class="ui-checkbox-v2-description">{description()}</span>}
+             </Show>
+           </div>
+         </Kobalte.Label>
+       </div>
+-      <Kobalte.ErrorMessage data-slot="checkbox-v2-error" />
++      <Kobalte.ErrorMessage data-slot="checkbox-v2-error" class="ui-checkbox-v2-error" />
+     </Kobalte>
+   )
+ }
+diff --git a/src/v2/components/dialog-v2.css b/src/v2/components/dialog-v2.css
+index 132d7fae27aa40aedacadcd73d80f1538d4745cd..d9e4ddcdf9b75a763f0391c9ffe7313cfcb74839 100644
+--- a/src/v2/components/dialog-v2.css
++++ b/src/v2/components/dialog-v2.css
+@@ -1,6 +1,6 @@
+ /* [data-component="dialog-trigger"] { } */
+ 
+-[data-component="dialog-overlay"] {
++.ui-dialog-overlay {
+   position: fixed;
+   inset: 0;
+   z-index: 50;
+@@ -16,7 +16,7 @@
+   justify-content: center;
+   pointer-events: none;
+ 
+-  [data-slot="dialog-container"] {
++  .ui-dialog-container {
+     display: flex;
+     flex-direction: column;
+     align-items: flex-start;
+@@ -24,11 +24,11 @@
+     height: 368px;
+     background: var(--v2-background-bg-layer-01);
+     box-shadow: var(--v2-elevation-overlay);
+-    border-radius: 6px;
++    border-radius: var(--radius-md);
+     overflow: hidden;
+     pointer-events: auto;
+ 
+-    [data-slot="dialog-content"] {
++    .ui-dialog-content {
+       display: flex;
+       flex-direction: column;
+       align-items: flex-start;
+@@ -60,10 +60,10 @@
+           flex: 1;
+           min-width: 0;
+           user-select: none;
+-          font-weight: 530;
+-          font-size: 13px;
+-          line-height: 16px;
+-          letter-spacing: -0.04px;
++          font-weight: var(--font-weight-medium);
++          font-size: var(--font-size-compact);
++          line-height: var(--line-height-16);
++          letter-spacing: var(--letter-spacing-ui);
+           color: var(--v2-text-text-base);
+           font-variation-settings: "slnt" 0;
+         }
+@@ -82,10 +82,10 @@
+           flex: none;
+           flex-grow: 0;
+           user-select: none;
+-          font-weight: 530;
+-          font-size: 15px;
+-          line-height: 20px;
+-          letter-spacing: -0.13px;
++          font-weight: var(--font-weight-medium);
++          font-size: var(--font-size-intermediate);
++          line-height: var(--line-height-20);
++          letter-spacing: var(--letter-spacing-chat);
+           color: var(--v2-text-text-base);
+           font-variation-settings: "slnt" 0;
+         }
+@@ -94,10 +94,10 @@
+           flex: none;
+           flex-grow: 0;
+           user-select: none;
+-          font-weight: 440;
+-          font-size: 13px;
+-          line-height: 20px;
+-          letter-spacing: -0.04px;
++          font-weight: var(--font-weight-body);
++          font-size: var(--font-size-compact);
++          line-height: var(--line-height-20);
++          letter-spacing: var(--letter-spacing-ui);
+           color: var(--v2-text-text-muted);
+           font-variation-settings: "slnt" 0;
+         }
+@@ -111,7 +111,7 @@
+           margin-top: -2px;
+           margin-inline-end: -2px;
+           margin-inline-start: auto;
+-          border-radius: 4px;
++          border-radius: var(--radius-sm);
+           flex-shrink: 0;
+           cursor: pointer;
+           color: var(--v2-icon-icon-muted);
+@@ -137,7 +137,7 @@
+         flex-shrink: 0;
+       }
+ 
+-      [data-slot="dialog-body"] {
++      .ui-dialog-body {
+         width: 100%;
+         position: relative;
+         display: flex;
+@@ -156,21 +156,21 @@
+   }
+ 
+   &[data-fit] {
+-    [data-slot="dialog-container"] {
++    .ui-dialog-container {
+       height: auto;
+ 
+-      [data-slot="dialog-content"] {
++      .ui-dialog-content {
+         min-height: 0;
+       }
+     }
+   }
+ 
+-  &[data-size="large"] [data-slot="dialog-container"] {
++  &[data-size="large"] .ui-dialog-container {
+     width: 640px;
+     height: 480px;
+   }
+ 
+-  &[data-size="x-large"] [data-slot="dialog-container"] {
++  &[data-size="x-large"] .ui-dialog-container {
+     width: min(calc(100vw - 32px), 980px);
+     height: min(calc(100vh - 92px), 600px);
+   }
+diff --git a/src/v2/components/dialog-v2.tsx b/src/v2/components/dialog-v2.tsx
+index 8f083f9296896d42e09f4acaa580163b5a5775de..bfddb1df6757bdb7f8d4f35c7132cc1d73a2c3c4 100644
+--- a/src/v2/components/dialog-v2.tsx
++++ b/src/v2/components/dialog-v2.tsx
+@@ -29,7 +29,7 @@ export function DialogFooter(props: ParentProps) {
+ export function DialogBody(props: ParentProps & { class?: ComponentProps<"div">["class"] }) {
+   const [local] = splitProps(props, ["class", "children"])
+   return (
+-    <div data-slot="dialog-body" class={local.class}>
++    <div data-slot="dialog-body" class={local.class} classList={{ "ui-dialog-body": true }}>
+       {local.children}
+     </div>
+   )
+@@ -91,20 +91,21 @@ export function Dialog(props: DialogProps) {
+       data-fit={local.fit ? true : undefined}
+       data-size={local.size || "normal"}
+     >
+-      <div data-slot="dialog-container" class={local.containerClass}>
++      <div data-slot="dialog-container" classList={{ "ui-dialog-container": true, [local.containerClass ?? ""]: !!local.containerClass }}>
+         <Kobalte.Content
+           data-slot="dialog-content"
+           classList={{
++            "ui-dialog-content": true,
+             ...local.classList,
+             [local.class ?? ""]: !!local.class,
+           }}
+           onOpenAutoFocus={(e) => {
+-            const target = e.currentTarget as HTMLElement | null
+-            const autofocusEl = target?.querySelector("[autofocus]") as HTMLElement | null
+-            if (autofocusEl) {
+-              e.preventDefault()
+-              autofocusEl.focus({ preventScroll: true })
+-            }
++            const target = e.currentTarget
++            if (!(target instanceof Element)) return
++            const autofocusEl = target.querySelector("[autofocus]")
++            if (!(autofocusEl instanceof HTMLElement)) return
++            e.preventDefault()
++            autofocusEl.focus({ preventScroll: true })
+           }}
+         >
+           {local.children}
+diff --git a/src/v2/components/diff-changes-v2.css b/src/v2/components/diff-changes-v2.css
+index 0f6f260521c93d339bcb7078f5d1aff8b612f676..8bb68e6a1f8921fd3d740bd5c8977ed1492f6046 100644
+--- a/src/v2/components/diff-changes-v2.css
++++ b/src/v2/components/diff-changes-v2.css
+@@ -1,4 +1,4 @@
+-[data-component="diff-changes"] {
++.ui-diff-changes {
+   display: flex;
+   direction: ltr;
+   unicode-bidi: isolate;
+@@ -6,21 +6,21 @@
+   justify-content: flex-end;
+   align-items: center;
+ 
+-  [data-slot="diff-changes-additions"],
+-  [data-slot="diff-changes-deletions"] {
+-    font-size: 11px;
++  .ui-diff-changes-additions,
++  .ui-diff-changes-deletions {
++    font-size: var(--font-size-x-small);
+     font-style: normal;
+-    font-weight: 440;
+-    line-height: 1;
+-    letter-spacing: 0.05px;
++    font-weight: var(--font-weight-body);
++    line-height: var(--line-height-none);
++    letter-spacing: var(--letter-spacing-micro-wide);
+     text-align: right;
+   }
+ 
+-  [data-slot="diff-changes-additions"] {
++  .ui-diff-changes-additions {
+     color: var(--v2-state-fg-success);
+   }
+ 
+-  [data-slot="diff-changes-deletions"] {
++  .ui-diff-changes-deletions {
+     color: var(--v2-state-fg-danger);
+   }
+ }
+diff --git a/src/v2/components/diff-changes-v2.tsx b/src/v2/components/diff-changes-v2.tsx
+index 9413d2e9c246319bea848328377f0e8227f52161..e09ce490813b0dc88be6d4f8e44800c92e34c5c7 100644
+--- a/src/v2/components/diff-changes-v2.tsx
++++ b/src/v2/components/diff-changes-v2.tsx
+@@ -19,9 +19,9 @@ export function DiffChanges(props: {
+ 
+   return (
+     <Show when={total() > 0}>
+-      <div data-component="diff-changes" classList={{ [props.class ?? ""]: true }}>
+-        <span data-slot="diff-changes-additions">{`+${additions()}`}</span>
+-        <span data-slot="diff-changes-deletions">{`-${deletions()}`}</span>
++      <div data-component="diff-changes" classList={{ "ui-diff-changes": true, [props.class ?? ""]: true }}>
++        <span data-slot="diff-changes-additions" class="ui-diff-changes-additions">{`+${additions()}`}</span>
++        <span data-slot="diff-changes-deletions" class="ui-diff-changes-deletions">{`-${deletions()}`}</span>
+       </div>
+     </Show>
+   )
+diff --git a/src/v2/components/field-v2.css b/src/v2/components/field-v2.css
+index ae64c89b31e27b93f2371add5007524bba7c68d0..22b7698062d4a29fe7c3f7de8193b1df40fb8437 100644
+--- a/src/v2/components/field-v2.css
++++ b/src/v2/components/field-v2.css
+@@ -18,10 +18,10 @@
+   padding: 0;
+   border: 0;
+   font-style: normal;
+-  font-weight: 530;
+-  font-size: 13px;
+-  line-height: 1;
+-  letter-spacing: -0.04px;
++  font-weight: var(--font-weight-medium);
++  font-size: var(--font-size-compact);
++  line-height: var(--line-height-none);
++  letter-spacing: var(--letter-spacing-ui);
+   color: var(--v2-text-text-base);
+   font-variation-settings: "slnt" 0;
+   cursor: default;
+@@ -33,14 +33,14 @@
+   align-items: center;
+ }
+ 
+-[data-component="field-v2"] [data-slot="field-v2-label"] [data-component="tooltip-v2-trigger"] {
++[data-component="field-v2"] [data-slot="field-v2-label"] .ui-tooltip-v2-trigger {
+   display: inline-flex;
+   flex: none;
+   width: 16px;
+   height: 16px;
+ }
+ 
+-[data-component="field-v2"] [data-slot="field-v2-label-info"] {
++[data-component="field-v2"] .ui-field-v2-label-info {
+   display: inline-flex;
+   align-items: center;
+   justify-content: center;
+@@ -56,18 +56,18 @@
+   outline: none;
+ }
+ 
+-[data-component="field-v2"] [data-slot="field-v2-label-info"]:is(:hover, [data-state="hover"]) {
++[data-component="field-v2"] .ui-field-v2-label-info:is(:hover, [data-state="hover"]) {
+   color: var(--v2-text-text-base);
+ }
+ 
+-[data-component="field-v2"] [data-slot="field-v2-label-info"]:focus {
++[data-component="field-v2"] .ui-field-v2-label-info:focus {
+   outline: none;
+ }
+ 
+-[data-component="field-v2"] [data-slot="field-v2-label-info"]:focus-visible {
++[data-component="field-v2"] .ui-field-v2-label-info:focus-visible {
+   outline: 2px solid var(--v2-border-border-focus);
+   outline-offset: 1px;
+-  border-radius: 2px;
++  border-radius: var(--radius-xs);
+ }
+ 
+ [data-component="field-v2"] [data-slot="field-v2-prefix"],
+@@ -76,10 +76,10 @@
+   width: 100%;
+   min-height: 11px;
+   font-style: normal;
+-  font-weight: 440;
+-  font-size: 11px;
+-  line-height: 1;
+-  letter-spacing: 0.05px;
++  font-weight: var(--font-weight-body);
++  font-size: var(--font-size-x-small);
++  line-height: var(--line-height-none);
++  letter-spacing: var(--letter-spacing-micro-wide);
+   color: var(--v2-text-text-muted);
+   font-variation-settings: "slnt" 0;
+   user-select: none;
+diff --git a/src/v2/components/field-v2.tsx b/src/v2/components/field-v2.tsx
+index 45b5a70b2efb0ae179d41b70e1dd39f4b0ba53cb..a1be7a28a0db173dcc3f98c9a8486b2cc8c1c685 100644
+--- a/src/v2/components/field-v2.tsx
++++ b/src/v2/components/field-v2.tsx
+@@ -82,12 +82,13 @@ function FieldV2Root(props: ParentProps<FieldV2Props>) {
+     const root = rootRef
+     if (!root) return
+ 
+-    const control = root.querySelector(CONTROL_SELECTOR) as HTMLInputElement | HTMLTextAreaElement | null
+-    if (!control) return
++    const control = root.querySelector(CONTROL_SELECTOR)
++    if (!(control instanceof HTMLInputElement) && !(control instanceof HTMLTextAreaElement)) return
+ 
+-    const shell = control.closest(
++    const shellNode = control.closest(
+       "[data-component='text-input-v2'], [data-component='textarea-v2'], [data-component='inline-input-v2']",
+-    ) as HTMLElement | null
++    )
++    const shell = shellNode instanceof HTMLElement ? shellNode : null
+ 
+     control.id = controlId
+     control.setAttribute("aria-labelledby", labelId)
+@@ -176,7 +177,7 @@ function FieldLabel(props: ParentProps<FieldLabelProps>) {
+           <TooltipV2 value={tooltip()}>
+             <button
+               type="button"
+-              data-slot="field-v2-label-info"
++              data-slot="field-v2-label-info" class="ui-field-v2-label-info"
+               aria-label={tooltip()}
+               onClick={(e) => e.stopPropagation()}
+             >
+diff --git a/src/v2/components/icon-button-v2.css b/src/v2/components/icon-button-v2.css
+index a90a101a081de2aa9e154cce23c58316acefd7e1..c9c7a809bde341ab0efeb164050dd6b65c1a3249 100644
+--- a/src/v2/components/icon-button-v2.css
++++ b/src/v2/components/icon-button-v2.css
+@@ -4,11 +4,11 @@
+   text-rendering: geometricPrecision;
+ }
+ 
+-[data-component="icon-button-v2"] {
++.ui-icon-button-v2 {
+   display: inline-flex;
+   align-items: center;
+   justify-content: center;
+-  border-radius: 6px;
++  border-radius: var(--radius-md);
+   color: var(--v2-text-text-base);
+   user-select: none;
+   outline: none;
+@@ -16,70 +16,70 @@
+   cursor: default;
+ }
+ 
+-[data-component="icon-button-v2"]:focus {
++.ui-icon-button-v2:focus {
+   outline: none;
+ }
+ 
+-[data-component="icon-button-v2"]:is(:focus-visible, [data-state="focus"]):not(:disabled) {
++.ui-icon-button-v2:is(:focus-visible, [data-state="focus"]):not(:disabled) {
+   outline: 2px solid var(--v2-border-border-focus);
+   outline-offset: 2.5px;
+ }
+ 
+-[data-component="icon-button-v2"][data-size="small"] {
++.ui-icon-button-v2[data-size="small"] {
+   width: 20px;
+   height: 20px;
+-  border-radius: 4px;
++  border-radius: var(--radius-sm);
+ }
+ 
+-[data-component="icon-button-v2"][data-size="normal"] {
++.ui-icon-button-v2[data-size="normal"] {
+   width: 24px;
+   height: 24px;
+ }
+ 
+-[data-component="icon-button-v2"][data-size="large"] {
++.ui-icon-button-v2[data-size="large"] {
+   width: 28px;
+   height: 28px;
+ }
+ 
+-[data-component="icon-button-v2"] [data-slot="icon-svg"] {
++[data-component="icon-button-v2"] .ui-icon-svg {
+   color: currentColor;
+ }
+ 
+ /* Neutral */
+-[data-component="icon-button-v2"][data-variant="neutral"] {
++.ui-icon-button-v2[data-variant="neutral"] {
+   background-color: var(--v2-background-bg-button-neutral);
+   color: var(--v2-text-text-base);
+   box-shadow: var(--v2-elevation-button-neutral);
+ }
+ 
+-[data-component="icon-button-v2"][data-variant="neutral"]:is(:hover, [data-state="hover"]):not(:disabled) {
++.ui-icon-button-v2[data-variant="neutral"]:is(:hover, [data-state="hover"]):not(:disabled) {
+   background-image:
+     linear-gradient(90deg, var(--v2-overlay-simple-overlay-hover) 0%, var(--v2-overlay-simple-overlay-hover) 100%),
+     linear-gradient(90deg, var(--v2-background-bg-button-neutral) 0%, var(--v2-background-bg-button-neutral) 100%);
+ }
+ 
+-[data-component="icon-button-v2"][data-variant="neutral"]:is(:active, [data-state="pressed"]):not(:disabled) {
++.ui-icon-button-v2[data-variant="neutral"]:is(:active, [data-state="pressed"]):not(:disabled) {
+   background-image:
+     linear-gradient(90deg, var(--v2-overlay-simple-overlay-pressed) 0%, var(--v2-overlay-simple-overlay-pressed) 100%),
+     linear-gradient(90deg, var(--v2-background-bg-button-neutral) 0%, var(--v2-background-bg-button-neutral) 100%);
+ }
+ 
+-[data-component="icon-button-v2"][data-variant="neutral"]:is(:disabled, [data-state="disabled"]) {
++.ui-icon-button-v2[data-variant="neutral"]:is(:disabled, [data-state="disabled"]) {
+   opacity: 0.5;
+   cursor: not-allowed;
+ }
+ 
+ /* Contrast */
+-[data-component="icon-button-v2"][data-variant="contrast"] {
++.ui-icon-button-v2[data-variant="contrast"] {
+   background-image:
+     linear-gradient(180deg, var(--v2-alpha-light-20) 0%, var(--v2-alpha-light-0) 100%),
+     linear-gradient(90deg, var(--v2-background-bg-contrast) 0%, var(--v2-background-bg-contrast) 100%);
+   color: var(--v2-text-text-contrast);
+-  text-shadow: 0 0.5px 0.5px rgba(0, 0, 0, 0.3);
++  text-shadow: var(--text-shadow-raised);
+   box-shadow: var(--v2-elevation-button-contrast);
+ }
+ 
+-[data-component="icon-button-v2"][data-variant="contrast"]:is(:hover, [data-state="hover"]):not(:disabled) {
++.ui-icon-button-v2[data-variant="contrast"]:is(:hover, [data-state="hover"]):not(:disabled) {
+   background-image:
+     linear-gradient(
+       90deg,
+@@ -90,7 +90,7 @@
+     linear-gradient(90deg, var(--v2-background-bg-contrast) 0%, var(--v2-background-bg-contrast) 100%);
+ }
+ 
+-[data-component="icon-button-v2"][data-variant="contrast"]:is(:active, [data-state="pressed"]):not(:disabled) {
++.ui-icon-button-v2[data-variant="contrast"]:is(:active, [data-state="pressed"]):not(:disabled) {
+   background-image:
+     linear-gradient(
+       90deg,
+@@ -101,59 +101,59 @@
+     linear-gradient(90deg, var(--v2-background-bg-contrast) 0%, var(--v2-background-bg-contrast) 100%);
+ }
+ 
+-[data-component="icon-button-v2"][data-variant="contrast"]:is(:disabled, [data-state="disabled"]) {
++.ui-icon-button-v2[data-variant="contrast"]:is(:disabled, [data-state="disabled"]) {
+   opacity: 0.4;
+   cursor: not-allowed;
+ }
+ 
+ /* Ghost */
+-[data-component="icon-button-v2"][data-variant="ghost"] {
++.ui-icon-button-v2[data-variant="ghost"] {
+   background-color: transparent;
+   color: var(--v2-text-text-base);
+ }
+ 
+-[data-component="icon-button-v2"][data-variant="ghost"]:is(:hover, [data-state="hover"]):not(:disabled):not(
++.ui-icon-button-v2[data-variant="ghost"]:is(:hover, [data-state="hover"]):not(:disabled):not(
+     [data-expanded]
+   ) {
+   background-color: var(--v2-overlay-simple-overlay-hover);
+ }
+ 
+-[data-component="icon-button-v2"][data-variant="ghost"]:is(:active, [data-state="pressed"]):not(:disabled) {
++.ui-icon-button-v2[data-variant="ghost"]:is(:active, [data-state="pressed"]):not(:disabled) {
+   background-color: var(--v2-overlay-simple-overlay-pressed);
+ }
+ 
+-[data-component="icon-button-v2"][data-variant="ghost"]:where([data-expanded]):not(:disabled) {
++.ui-icon-button-v2[data-variant="ghost"]:where([data-expanded]):not(:disabled) {
+   background-color: var(--v2-overlay-simple-overlay-pressed);
+ }
+ 
+-[data-component="icon-button-v2"][data-variant="ghost"]:is(:disabled, [data-state="disabled"]) {
++.ui-icon-button-v2[data-variant="ghost"]:is(:disabled, [data-state="disabled"]) {
+   opacity: 0.5;
+   cursor: not-allowed;
+ }
+ 
+ /* Ghost */
+-[data-component="icon-button-v2"][data-variant="ghost-muted"] {
++.ui-icon-button-v2[data-variant="ghost-muted"] {
+   background-color: transparent;
+   color: var(--v2-icon-icon-muted);
+ }
+ 
+-[data-component="icon-button-v2"][data-variant="ghost-muted"]:is(:hover, [data-state="hover"]):not(:disabled):not(
++.ui-icon-button-v2[data-variant="ghost-muted"]:is(:hover, [data-state="hover"]):not(:disabled):not(
+     [data-expanded]
+   ) {
+   background-color: var(--v2-overlay-simple-overlay-hover);
+ }
+ 
+-[data-component="icon-button-v2"][data-variant="ghost-muted"]:is(:active, [data-state="pressed"]):not(:disabled) {
++.ui-icon-button-v2[data-variant="ghost-muted"]:is(:active, [data-state="pressed"]):not(:disabled) {
+   background-color: var(--v2-overlay-simple-overlay-pressed);
+   color: var(--v2-icon-icon-base);
+ }
+ 
+-[data-component="icon-button-v2"][data-variant="ghost-muted"]:where([data-expanded]):not(:disabled) {
++.ui-icon-button-v2[data-variant="ghost-muted"]:where([data-expanded]):not(:disabled) {
+   background-color: var(--v2-overlay-simple-overlay-pressed);
+   color: var(--v2-icon-icon-base);
+ }
+ 
+-[data-component="icon-button-v2"][data-variant="ghost-muted"]:is(:disabled, [data-state="disabled"]) {
++.ui-icon-button-v2[data-variant="ghost-muted"]:is(:disabled, [data-state="disabled"]) {
+   opacity: 0.5;
+   cursor: not-allowed;
+ }
+diff --git a/src/v2/components/icon-button-v2.tsx b/src/v2/components/icon-button-v2.tsx
+index 1f7ce3efabf2df3c1281db470cf38d11fa9d162e..c6ea206a0a2d1b89b414a14bbac7ca9fbdeaac68 100644
+--- a/src/v2/components/icon-button-v2.tsx
++++ b/src/v2/components/icon-button-v2.tsx
+@@ -25,7 +25,7 @@ export function IconButtonV2(props: ComponentProps<"button"> & IconButtonV2Props
+       data-size={split.size || "normal"}
+       data-variant={split.variant || "neutral"}
+       data-state={split.state}
+-      classList={{
++      classList={{ "ui-icon-button-v2": true,
+         ...split.classList,
+         [split.class ?? ""]: !!split.class,
+       }}
+diff --git a/src/v2/components/keybind-v2.css b/src/v2/components/keybind-v2.css
+index ccd6dcee3efbd76f728ddf760c49cec173a57ba7..5248476f734f77c35aaf9fc46dfc62e245b60d18 100644
+--- a/src/v2/components/keybind-v2.css
++++ b/src/v2/components/keybind-v2.css
+@@ -21,7 +21,7 @@
+   box-sizing: border-box;
+ }
+ 
+-[data-component="keybind-v2"] [data-slot="keybind-v2-key"] {
++[data-component="keybind-v2"] .ui-keybind-v2-key {
+   display: flex;
+   flex-direction: row;
+   justify-content: center;
+@@ -30,20 +30,20 @@
+   gap: 4px;
+   min-width: 14px;
+   height: 14px;
+-  border-radius: 2px;
++  border-radius: var(--radius-xs);
+   flex: none;
+   flex-grow: 0;
+ }
+ 
+-[data-component="keybind-v2"][data-variant="neutral"] [data-slot="keybind-v2-key"] {
++[data-component="keybind-v2"][data-variant="neutral"] .ui-keybind-v2-key {
+   background: var(--v2-background-bg-layer-03);
+ }
+ 
+-[data-component="keybind-v2"][data-variant="ghost"] [data-slot="keybind-v2-key"] {
++[data-component="keybind-v2"][data-variant="ghost"] .ui-keybind-v2-key {
+   background: transparent;
+ }
+ 
+-[data-component="keybind-v2"] [data-slot="keybind-v2-label"] {
++[data-component="keybind-v2"] .ui-keybind-v2-label {
+   display: flex;
+   flex-direction: row;
+   justify-content: center;
+@@ -53,11 +53,11 @@
+   padding: 0;
+   flex: none;
+   font-style: normal;
+-  font-weight: 530;
+-  font-size: 11px;
+-  line-height: 1;
++  font-weight: var(--font-weight-medium);
++  font-size: var(--font-size-x-small);
++  line-height: var(--line-height-none);
+   text-align: center;
+-  letter-spacing: 0.05px;
++  letter-spacing: var(--letter-spacing-micro-wide);
+   text-transform: uppercase;
+   font-variant-numeric: tabular-nums;
+   font-feature-settings:
+@@ -67,10 +67,10 @@
+   user-select: none;
+ }
+ 
+-[data-component="keybind-v2"][data-variant="neutral"] [data-slot="keybind-v2-label"] {
++[data-component="keybind-v2"][data-variant="neutral"] .ui-keybind-v2-label {
+   color: var(--v2-text-text-muted);
+ }
+ 
+-[data-component="keybind-v2"][data-variant="ghost"] [data-slot="keybind-v2-label"] {
++[data-component="keybind-v2"][data-variant="ghost"] .ui-keybind-v2-label {
+   color: var(--v2-text-text-faint);
+ }
+diff --git a/src/v2/components/keybind-v2.tsx b/src/v2/components/keybind-v2.tsx
+index 4286465613adfff33b0e15a58c6d1c49f56cd1b6..d3d5b0bb3b0ec486c9ed5a4aee448bd5bfe5eafc 100644
+--- a/src/v2/components/keybind-v2.tsx
++++ b/src/v2/components/keybind-v2.tsx
+@@ -20,8 +20,8 @@ export function KeybindV2(props: KeybindV2Props) {
+     >
+       <For each={local.keys}>
+         {(key) => (
+-          <div data-slot="keybind-v2-key">
+-            <span data-slot="keybind-v2-label">{key}</span>
++          <div data-slot="keybind-v2-key" class="ui-keybind-v2-key">
++            <span data-slot="keybind-v2-label" class="ui-keybind-v2-label">{key}</span>
+           </div>
+         )}
+       </For>
+diff --git a/src/v2/components/loader-v2.css b/src/v2/components/loader-v2.css
+index 5d7e10bb97ef0f2d2dfacfcee2702a49b0cfc1fe..f9424e6ebcaee42878c8fbcbd8d2c72da8084a97 100644
+--- a/src/v2/components/loader-v2.css
++++ b/src/v2/components/loader-v2.css
+@@ -1,8 +1,8 @@
+-[data-component="loader-v2"] {
++.ui-loader-v2 {
+   --_duration: 900ms;
+   display: block;
+   flex-shrink: 0;
+-  color: var(--v2-icon-icon-muted, #808080);
++  color: var(--v2-icon-icon-muted);
+   animation: loader-v2-spin var(--_duration) linear infinite;
+   transform-origin: center;
+ }
+@@ -26,7 +26,7 @@
+ }
+ 
+ @media (prefers-reduced-motion: reduce) {
+-  [data-component="loader-v2"] {
++  .ui-loader-v2 {
+     animation: none;
+   }
+ }
+diff --git a/src/v2/components/loader-v2.tsx b/src/v2/components/loader-v2.tsx
+index eb3697ad74d63b341e5e19ee43984aca6f45821e..34fecf8c482b6d4bc2faf7e75efaeaa13996a46c 100644
+--- a/src/v2/components/loader-v2.tsx
++++ b/src/v2/components/loader-v2.tsx
+@@ -7,7 +7,7 @@ export function LoaderV2(props: ComponentProps<"svg">) {
+     <svg
+       {...rest}
+       class={local.class}
+-      classList={local.classList}
++      classList={{ "ui-loader-v2": true, ...(local.classList) }}
+       width={local.width ?? 16}
+       height={local.height ?? 16}
+       viewBox="0 0 16 16"
+diff --git a/src/v2/components/menu-v2.css b/src/v2/components/menu-v2.css
+index 5fb669a3c3454226f2e280d7ef2bf189fe6f5f01..8d4622aa19abf40a38c80eddf2ae4b1f7a52f4f5 100644
+--- a/src/v2/components/menu-v2.css
++++ b/src/v2/components/menu-v2.css
+@@ -14,8 +14,9 @@
+   pointer-events: auto;
+ 
+   background: var(--v2-background-bg-layer-01);
+-  border-radius: 6px;
+-  box-shadow: var(--v2-elevation-floating);
++  background-clip: padding-box;
++  border-radius: var(--surface-overlay-radius, 6px);
++  box-shadow: var(--surface-overlay-shadow, var(--v2-elevation-floating));
+ 
+   outline: none;
+ 
+@@ -53,7 +54,7 @@
+   height: 28px;
+   padding: 0 12px;
+   background: transparent;
+-  border-radius: 4px;
++  border-radius: var(--radius-sm);
+   outline: none;
+   cursor: default;
+   user-select: none;
+@@ -70,10 +71,10 @@
+     gap: 8px;
+     min-width: 0;
+ 
+-    font-size: 13px;
+-    font-weight: 440;
+-    line-height: 100%;
+-    letter-spacing: -0.04px;
++    font-size: var(--font-size-compact);
++    font-weight: var(--font-weight-body);
++    line-height: var(--line-height-none);
++    letter-spacing: var(--letter-spacing-ui);
+     color: var(--menu-v2-fg);
+   }
+ 
+@@ -83,10 +84,10 @@
+     flex: none;
+     height: 11px;
+ 
+-    font-size: 11px;
+-    font-weight: 530;
+-    line-height: 100%;
+-    letter-spacing: 0.05px;
++    font-size: var(--font-size-x-small);
++    font-weight: var(--font-weight-medium);
++    line-height: var(--line-height-none);
++    letter-spacing: var(--letter-spacing-micro-wide);
+     color: var(--menu-v2-fg-muted);
+     white-space: nowrap;
+   }
+@@ -104,12 +105,12 @@
+ 
+     background: var(--menu-v2-badge-bg);
+     border: 0.5px solid var(--menu-v2-badge-border);
+-    border-radius: 2px;
++    border-radius: var(--radius-xs);
+ 
+-    font-size: 11px;
+-    font-weight: 530;
+-    line-height: 100%;
+-    letter-spacing: 0.05px;
++    font-size: var(--font-size-x-small);
++    font-weight: var(--font-weight-medium);
++    line-height: var(--line-height-none);
++    letter-spacing: var(--letter-spacing-micro-wide);
+     color: var(--menu-v2-fg-subtle);
+     white-space: nowrap;
+   }
+@@ -124,8 +125,35 @@
+     color: var(--menu-v2-icon);
+   }
+ 
+-  [data-slot="menu-v2-item-indicator"]:not([data-checked]) > svg {
+-    visibility: hidden;
++  /*
++   * The check animates in rather than blinking, and the slot keeps its 16px
++   * either way so rows never reflow between states.
++   *
++   * `opacity + scale + blur` rather than `visibility`, because visibility gives
++   * no interpolation — the mark simply appeared. Checked is driven from either
++   * the indicator itself or the item, since both spellings are in use.
++   */
++  [data-slot="menu-v2-item-indicator"] > svg {
++    opacity: 0;
++    scale: 0.25;
++    filter: blur(4px);
++    transition-property: opacity, scale, filter;
++    transition-duration: 160ms;
++    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
++  }
++
++  [data-slot="menu-v2-item-indicator"][data-checked] > svg,
++  &[data-checked] [data-slot="menu-v2-item-indicator"] > svg {
++    opacity: 1;
++    scale: 1;
++    filter: blur(0px);
++  }
++
++  @media (prefers-reduced-motion: reduce) {
++    [data-slot="menu-v2-item-indicator"] > svg {
++      transition-duration: 0ms;
++      filter: none;
++    }
+   }
+ 
+   [data-slot="menu-v2-item-chevron"] {
+@@ -140,7 +168,7 @@
+   }
+ 
+   &[data-checked] [data-slot="menu-v2-item-content"] {
+-    font-weight: 530;
++    font-weight: var(--font-weight-medium);
+     color: var(--menu-v2-accent);
+   }
+ 
+@@ -169,10 +197,10 @@
+   height: 28px;
+   padding: 0 12px;
+ 
+-  font-size: 11px;
+-  font-weight: 530;
+-  line-height: 100%;
+-  letter-spacing: 0.05px;
++  font-size: var(--font-size-x-small);
++  font-weight: var(--font-weight-medium);
++  line-height: var(--line-height-none);
++  letter-spacing: var(--letter-spacing-micro-wide);
+   color: var(--v2-text-text-faint);
+   user-select: none;
+   font-variant-numeric: tabular-nums;
+diff --git a/src/v2/components/project-avatar-v2.css b/src/v2/components/project-avatar-v2.css
+index e8c2149b5dc1b34045c15756bd5dbdff6eaa8061..a9414595cb6572db57510e5cb0f258aeff7d34f6 100644
+--- a/src/v2/components/project-avatar-v2.css
++++ b/src/v2/components/project-avatar-v2.css
+@@ -1,15 +1,15 @@
+-[data-component="project-avatar-v2"] {
++.ui-project-avatar-v2 {
+   position: relative;
+   flex-shrink: 0;
+   width: 16px;
+   height: 16px;
+ }
+ 
+-[data-component="project-avatar-v2"][data-unread] {
++.ui-project-avatar-v2[data-unread] {
+   overflow: visible;
+ }
+ 
+-[data-slot="project-avatar-surface"] {
++.ui-project-avatar-surface {
+   --project-avatar-bg: var(--v2-avatar-bg-gray);
+   --project-avatar-border: var(--v2-avatar-border-gray);
+   position: relative;
+@@ -20,14 +20,14 @@
+   align-items: center;
+   justify-content: center;
+   overflow: hidden;
+-  border-radius: 4px;
++  border-radius: var(--radius-sm);
+   background:
+     linear-gradient(180deg, var(--v2-alpha-light-16) 0%, var(--v2-alpha-light-0) 100%), var(--project-avatar-bg);
+   box-shadow: inset 0 0 0 0.5px var(--project-avatar-border);
+-  font-weight: 530;
+-  font-size: 11px;
+-  line-height: 1;
+-  letter-spacing: 0.05px;
++  font-weight: var(--font-weight-medium);
++  font-size: var(--font-size-x-small);
++  line-height: var(--line-height-none);
++  letter-spacing: var(--letter-spacing-micro-wide);
+   font-variant-numeric: tabular-nums;
+   text-transform: uppercase;
+   color: var(--v2-avatar-fg);
+@@ -36,59 +36,59 @@
+   -webkit-user-select: none;
+ }
+ 
+-[data-slot="project-avatar-surface"][data-variant="orange"] {
++.ui-project-avatar-surface[data-variant="orange"] {
+   --project-avatar-bg: var(--v2-avatar-bg-orange);
+   --project-avatar-border: var(--v2-avatar-border-orange);
+ }
+ 
+-[data-slot="project-avatar-surface"][data-variant="yellow"] {
++.ui-project-avatar-surface[data-variant="yellow"] {
+   --project-avatar-bg: var(--v2-avatar-bg-yellow);
+   --project-avatar-border: var(--v2-avatar-border-yellow);
+ }
+ 
+-[data-slot="project-avatar-surface"][data-variant="cyan"] {
++.ui-project-avatar-surface[data-variant="cyan"] {
+   --project-avatar-bg: var(--v2-avatar-bg-cyan);
+   --project-avatar-border: var(--v2-avatar-border-cyan);
+ }
+ 
+-[data-slot="project-avatar-surface"][data-variant="green"] {
++.ui-project-avatar-surface[data-variant="green"] {
+   --project-avatar-bg: var(--v2-avatar-bg-green);
+   --project-avatar-border: var(--v2-avatar-border-green);
+ }
+ 
+-[data-slot="project-avatar-surface"][data-variant="red"] {
++.ui-project-avatar-surface[data-variant="red"] {
+   --project-avatar-bg: var(--v2-avatar-bg-red);
+   --project-avatar-border: var(--v2-avatar-border-red);
+ }
+ 
+-[data-slot="project-avatar-surface"][data-variant="pink"] {
++.ui-project-avatar-surface[data-variant="pink"] {
+   --project-avatar-bg: var(--v2-avatar-bg-pink);
+   --project-avatar-border: var(--v2-avatar-border-pink);
+ }
+ 
+-[data-slot="project-avatar-surface"][data-variant="blue"] {
++.ui-project-avatar-surface[data-variant="blue"] {
+   --project-avatar-bg: var(--v2-avatar-bg-blue);
+   --project-avatar-border: var(--v2-avatar-border-blue);
+ }
+ 
+-[data-slot="project-avatar-surface"][data-variant="purple"] {
++.ui-project-avatar-surface[data-variant="purple"] {
+   --project-avatar-bg: var(--v2-avatar-bg-purple);
+   --project-avatar-border: var(--v2-avatar-border-purple);
+ }
+ 
+-[data-slot="project-avatar-surface"][data-variant="gray"] {
++.ui-project-avatar-surface[data-variant="gray"] {
+   --project-avatar-bg: var(--v2-avatar-bg-gray);
+   --project-avatar-border: var(--v2-avatar-border-gray);
+ }
+ 
+-[data-slot="project-avatar-surface"][data-variant="outline"] {
++.ui-project-avatar-surface[data-variant="outline"] {
+   --project-avatar-bg: var(--v2-background-bg-base);
+   --project-avatar-border: var(--v2-border-border-strong);
+   color: var(--v2-text-text-muted);
+   text-shadow: none;
+ }
+ 
+-[data-slot="project-avatar-surface"][data-has-image] {
++.ui-project-avatar-surface[data-has-image] {
+   background: var(--project-avatar-bg);
+ }
+ 
+@@ -104,7 +104,7 @@
+   -webkit-user-drag: none;
+ }
+ 
+-[data-component="project-avatar-v2"][data-unread] [data-slot="project-avatar-surface"] {
++[data-component="project-avatar-v2"][data-unread] .ui-project-avatar-surface {
+   -webkit-mask-image: radial-gradient(circle 4.5px at calc(100% - 1px) 1px, transparent 4.5px, black 4.5px);
+   mask-image: radial-gradient(circle 4.5px at calc(100% - 1px) 1px, transparent 4.5px, black 4.5px);
+ }
+@@ -116,7 +116,7 @@
+   height: 6px;
+   right: -2px;
+   top: -2px;
+-  border-radius: 9999px;
++  border-radius: var(--radius-pill);
+   background: var(--v2-background-bg-accent);
+   pointer-events: none;
+ }
+diff --git a/src/v2/components/project-avatar-v2.tsx b/src/v2/components/project-avatar-v2.tsx
+index cbc571ab53384d5f277172262d7aad5ff699b53e..3f6ba17a05d6f3e481b70db5166d377663ed8b73 100644
+--- a/src/v2/components/project-avatar-v2.tsx
++++ b/src/v2/components/project-avatar-v2.tsx
+@@ -44,6 +44,7 @@ export function ProjectAvatar(props: ProjectAvatarProps) {
+       data-component="project-avatar-v2"
+       data-unread={split.unread ? "" : undefined}
+       classList={{
++        "ui-project-avatar-v2": true,
+         ...split.classList,
+         [split.class ?? ""]: !!split.class,
+       }}
+@@ -51,6 +52,7 @@ export function ProjectAvatar(props: ProjectAvatarProps) {
+     >
+       <div
+         data-slot="project-avatar-surface"
++        class="ui-project-avatar-surface"
+         data-variant={split.variant ?? "gray"}
+         data-has-image={split.src ? "" : undefined}
+       >
+diff --git a/src/v2/components/radio-v2.css b/src/v2/components/radio-v2.css
+index 5177af4330c607af657250f30adbae16fd486d82..50033f46c9933b49ca61353126cd32ec66d981f5 100644
+--- a/src/v2/components/radio-v2.css
++++ b/src/v2/components/radio-v2.css
+@@ -9,20 +9,20 @@
+     align-items: center;
+     user-select: none;
+     color: var(--v2-text-text-faint);
+-    font-size: 11px;
++    font-size: var(--font-size-x-small);
+     font-style: normal;
+-    font-weight: 440;
+-    line-height: 1;
+-    letter-spacing: 0.05px;
++    font-weight: var(--font-weight-body);
++    line-height: var(--line-height-none);
++    letter-spacing: var(--letter-spacing-micro-wide);
+     font-variation-settings: "slnt" 0;
+   }
+ 
+   [data-slot="radio-v2-description"] {
+     color: var(--v2-text-text-faint);
+-    font-size: 11px;
+-    font-weight: 440;
+-    line-height: 1.2;
+-    letter-spacing: 0.05px;
++    font-size: var(--font-size-x-small);
++    font-weight: var(--font-weight-body);
++    line-height: var(--line-height-heading);
++    letter-spacing: var(--letter-spacing-micro-wide);
+   }
+ 
+   [data-slot="radio-v2-items"] {
+@@ -31,15 +31,15 @@
+     gap: 12px;
+   }
+ 
+-  [data-slot="radio-v2-error"] {
++  .ui-radio-v2-error {
+     color: var(--v2-state-fg-danger);
+-    font-size: 12px;
++    font-size: var(--font-size-small);
+     font-weight: var(--font-weight-regular);
+     line-height: var(--line-height-normal);
+     letter-spacing: var(--letter-spacing-normal);
+   }
+ 
+-  [data-slot="radio-v2-error"]:empty {
++  .ui-radio-v2-error:empty {
+     display: none;
+   }
+ }
+@@ -75,7 +75,7 @@
+     flex: none;
+   }
+ 
+-  [data-slot="radio-v2-item-control"] {
++  .ui-radio-v2-item-control {
+     box-sizing: border-box;
+     position: absolute;
+     width: 16px;
+@@ -85,7 +85,7 @@
+     left: 0;
+     top: calc(50% - 16px / 2);
+ 
+-    border-radius: 9999px;
++    border-radius: var(--radius-pill);
+     border: none;
+     box-shadow: inset 0 0 0 0.5px var(--v2-border-border-strong);
+ 
+@@ -100,29 +100,29 @@
+   &:where(:not([data-readonly]))
+     [data-slot="radio-v2-item-input"]:focus-visible
+     ~ [data-slot="radio-v2-item-control-stack"]
+-    [data-slot="radio-v2-item-control"] {
++    .ui-radio-v2-item-control {
+     outline: 2px solid var(--v2-border-border-focus);
+     outline-offset: 1px;
+   }
+ 
+   &:where(:hover):where(:not([data-disabled], [data-readonly])):where(:not([data-checked]))
+-    [data-slot="radio-v2-item-control"] {
++    .ui-radio-v2-item-control {
+     background:
+       linear-gradient(0deg, var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)),
+       linear-gradient(180deg, var(--v2-alpha-light-6) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-base);
+   }
+ 
+-  &:where([data-disabled]) [data-slot="radio-v2-item-control"] {
++  &:where([data-disabled]) .ui-radio-v2-item-control {
+     opacity: 0.5;
+   }
+ 
+-  &:where([data-checked]) [data-slot="radio-v2-item-control"] {
++  &:where([data-checked]) .ui-radio-v2-item-control {
+     background:
+       linear-gradient(180deg, var(--v2-alpha-light-20) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-accent);
+   }
+ 
+   &:where([data-checked]):where(:hover):where(:not([data-disabled], [data-readonly]))
+-    [data-slot="radio-v2-item-control"] {
++    .ui-radio-v2-item-control {
+     background:
+       linear-gradient(
+         0deg,
+@@ -132,7 +132,7 @@
+       linear-gradient(180deg, var(--v2-alpha-light-20) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-accent);
+   }
+ 
+-  &:where([data-invalid]):where(:not([data-checked])) [data-slot="radio-v2-item-control"] {
++  &:where([data-invalid]):where(:not([data-checked])) .ui-radio-v2-item-control {
+     background: var(--v2-state-bg-danger);
+     box-shadow: inset 0 0 0 0.5px var(--v2-state-border-danger);
+   }
+@@ -144,13 +144,11 @@
+     height: 6px;
+     left: calc(50% - 6px / 2);
+     top: calc(50% - 6px / 2);
+-    border-radius: 9999px;
++    border-radius: var(--radius-pill);
+ 
+     background: var(--v2-grey-300);
+     border: none;
+-    box-shadow:
+-      inset 0 0 0 0.5px var(--v2-overlay-gradient-depth-overlay-depth-top),
+-      0px 0.5px 0.5px rgba(0, 0, 0, 0.4);
++    box-shadow: var(--shadow-radio-indicator);
+   }
+ 
+   [data-slot="radio-v2-item-text"] {
+@@ -167,36 +165,36 @@
+     user-select: none;
+     color: inherit;
+     font-style: normal;
+-    font-weight: 440;
++    font-weight: var(--font-weight-body);
+     font-variant-numeric: tabular-nums;
+     font-variation-settings: "slnt" 0;
+   }
+ 
+-  [data-slot="radio-v2-item-label-text"] {
++  .ui-radio-v2-item-label-text {
+     display: inline-flex;
+     align-items: center;
+     user-select: none;
+     color: var(--v2-text-text-base);
+-    font-size: 13px;
+-    line-height: 20px;
+-    letter-spacing: -0.04px;
++    font-size: var(--font-size-compact);
++    line-height: var(--line-height-20);
++    letter-spacing: var(--letter-spacing-ui);
+   }
+ 
+-  [data-slot="radio-v2-item-description"] {
++  .ui-radio-v2-item-description {
+     color: var(--v2-text-text-muted);
+-    font-size: 11px;
+-    font-weight: 440;
+-    line-height: 1;
+-    letter-spacing: 0.05px;
++    font-size: var(--font-size-x-small);
++    font-weight: var(--font-weight-body);
++    line-height: var(--line-height-none);
++    letter-spacing: var(--letter-spacing-micro-wide);
+     font-variant-numeric: tabular-nums;
+     user-select: none;
+   }
+ 
+-  &:where([data-disabled]) [data-slot="radio-v2-item-label-text"] {
++  &:where([data-disabled]) .ui-radio-v2-item-label-text {
+     color: var(--v2-text-text-muted);
+   }
+ 
+-  &:where([data-disabled]) [data-slot="radio-v2-item-description"] {
++  &:where([data-disabled]) .ui-radio-v2-item-description {
+     color: var(--v2-text-text-faint);
+   }
+ }
+diff --git a/src/v2/components/radio-v2.tsx b/src/v2/components/radio-v2.tsx
+index 6035ffd30b753f3e00b51eccd6d325d5212123f6..065eedda9f735f6485c1b83d23a001e2fe2ccbe3 100644
+--- a/src/v2/components/radio-v2.tsx
++++ b/src/v2/components/radio-v2.tsx
+@@ -31,7 +31,7 @@ export function RadioGroupV2(props: RadioGroupV2Props) {
+         {(description) => <Kobalte.Description data-slot="radio-v2-description">{description()}</Kobalte.Description>}
+       </Show>
+       <div data-slot="radio-v2-items">{local.children}</div>
+-      <Kobalte.ErrorMessage data-slot="radio-v2-error" />
++      <Kobalte.ErrorMessage data-slot="radio-v2-error" class="ui-radio-v2-error" />
+     </Kobalte>
+   )
+ }
+@@ -55,15 +55,15 @@ export function RadioItemV2(props: RadioItemV2Props) {
+     >
+       <Kobalte.ItemInput data-slot="radio-v2-item-input" />
+       <div data-slot="radio-v2-item-control-stack">
+-        <Kobalte.ItemControl data-slot="radio-v2-item-control">
++        <Kobalte.ItemControl data-slot="radio-v2-item-control" class="ui-radio-v2-item-control">
+           <Kobalte.ItemIndicator data-slot="radio-v2-item-indicator" />
+         </Kobalte.ItemControl>
+       </div>
+       <Kobalte.ItemLabel data-slot="radio-v2-item-label" classList={{ "sr-only": local.hideLabel }}>
+         <div data-slot="radio-v2-item-text">
+-          <span data-slot="radio-v2-item-label-text">{local.label}</span>
++          <span data-slot="radio-v2-item-label-text" class="ui-radio-v2-item-label-text">{local.label}</span>
+           <Show when={local.description}>
+-            {(description) => <span data-slot="radio-v2-item-description">{description()}</span>}
++            {(description) => <span data-slot="radio-v2-item-description" class="ui-radio-v2-item-description">{description()}</span>}
+           </Show>
+         </div>
+       </Kobalte.ItemLabel>
+diff --git a/src/v2/components/segmented-control-v2.css b/src/v2/components/segmented-control-v2.css
+index 61846cd3b30c69605d1ab463bd88f37b7f8812ba..42f59e9e3b87f09fcdd291e3fffa2d372b63e0f7 100644
+--- a/src/v2/components/segmented-control-v2.css
++++ b/src/v2/components/segmented-control-v2.css
+@@ -1,8 +1,8 @@
+-[data-slot="segmented-control-v2"].segmented-control-v2--full-width {
++.ui-segmented-control-v2.segmented-control-v2--full-width {
+   width: 100%;
+ }
+ 
+-[data-slot="segmented-control-v2"] {
++.ui-segmented-control-v2 {
+   box-sizing: border-box;
+   display: flex;
+   flex-direction: row;
+@@ -13,12 +13,12 @@
+   height: 28px;
+   background: var(--v2-background-bg-layer-01);
+   border: none;
+-  border-radius: 6px;
++  border-radius: var(--radius-md);
+   box-shadow: 0 0 0 0.5px var(--v2-border-border-base);
+   flex: none;
+ }
+ 
+-[data-slot="segmented-control-v2-item"] {
++.ui-segmented-control-v2-item {
+   box-sizing: border-box;
+   display: flex;
+   flex-direction: column;
+@@ -30,15 +30,15 @@
+   height: 28px;
+   margin: 0;
+   border: none;
+-  border-radius: 6px;
++  border-radius: var(--radius-md);
+   background: transparent;
+   box-shadow: none;
+   cursor: pointer;
+   font-style: normal;
+-  font-weight: 440;
+-  font-size: 13px;
+-  line-height: 100%;
+-  letter-spacing: -0.04px;
++  font-weight: var(--font-weight-body);
++  font-size: var(--font-size-compact);
++  line-height: var(--line-height-none);
++  letter-spacing: var(--letter-spacing-ui);
+   font-variant-numeric: tabular-nums;
+   font-variation-settings: "slnt" 0;
+   color: var(--v2-text-text-muted);
+@@ -48,18 +48,18 @@
+     box-shadow 0.12s ease;
+ }
+ 
+-[data-slot="segmented-control-v2-item"]:where(:disabled) {
++.ui-segmented-control-v2-item:where(:disabled) {
+   cursor: not-allowed;
+   opacity: 0.45;
+ }
+ 
+-[data-slot="segmented-control-v2-item"]:where(:focus-visible) {
++.ui-segmented-control-v2-item:where(:focus-visible) {
+   outline: 2px solid var(--v2-border-border-focus);
+   outline-offset: 1px;
+   z-index: 2;
+ }
+ 
+-[data-slot="segmented-control-v2-item"]:where([data-pressed]) {
++.ui-segmented-control-v2-item:where([data-pressed]) {
+   background: var(--v2-background-bg-base);
+   color: var(--v2-text-text-base);
+   box-shadow: 0 0 0 0.5px var(--v2-border-border-strong);
+diff --git a/src/v2/components/segmented-control-v2.tsx b/src/v2/components/segmented-control-v2.tsx
+index 006b28394f3e611c52746ddf26e88b7a8288a1d5..f672b29846fb63723966005c00d008acdfa52829 100644
+--- a/src/v2/components/segmented-control-v2.tsx
++++ b/src/v2/components/segmented-control-v2.tsx
+@@ -57,7 +57,7 @@ export function SegmentedControlV2(props: SegmentedControlV2Props) {
+     "ref",
+   ])
+ 
+-  const [internal, setInternal] = createSignal<string | null>(local.defaultValue ?? null)
++  const [internal, setInternal] = createSignal(local.defaultValue ?? null)
+ 
+   const selected = createMemo(() => (isControlled() ? (local.value ?? null) : internal()))
+ 
+@@ -88,16 +88,17 @@ export function SegmentedControlV2(props: SegmentedControlV2Props) {
+ 
+   const ctx: SegmentedControlContextValue = {
+     selected,
+-    groupDisabled: () => !!local.disabled,
++    groupDisabled: () => local.disabled,
+     select,
+     clearIfAllowed,
+     focusNext,
+   }
+ 
+-  const assignRef = (el: HTMLDivElement | undefined) => {
++  const assignRef = (el: HTMLDivElement) => {
++    // A component `ref` reaches the component as a callback; the `ref={variable}` form is
++    // resolved by Solid's compiler before it gets here, so there is no other shape to handle.
+     const r = local.ref
+-    if (typeof r === "function") (r as (el: HTMLDivElement | undefined) => void)(el)
+-    else if (r != null && typeof r === "object" && "value" in r) (r as { value: HTMLDivElement | undefined }).value = el
++    if (typeof r === "function") r(el)
+   }
+ 
+   return (
+@@ -109,6 +110,7 @@ export function SegmentedControlV2(props: SegmentedControlV2Props) {
+         data-component="segmented-control-v2"
+         data-slot="segmented-control-v2"
+         classList={{
++          "ui-segmented-control-v2": true,
+           ...local.classList,
+           [local.class ?? ""]: !!local.class,
+         }}
+@@ -127,9 +129,13 @@ export type SegmentedControlItemV2Props = Omit<ComponentProps<"button">, "type"
+ 
+ function invokeButtonHandler<E extends Event>(
+   handler: JSX.EventHandlerUnion<HTMLButtonElement, E> | undefined,
+-  e: E & { currentTarget: HTMLButtonElement },
++  e: Parameters<JSX.EventHandler<HTMLButtonElement, E>>[0],
+ ) {
+-  if (typeof handler === "function") (handler as (ev: typeof e) => void)(e)
++  if (!handler) return
++  // Solid accepts a plain handler or its bound `[handler, data]` form, which is typed as an
++  // interface with numeric keys rather than a tuple. Both are forwarded.
++  if (typeof handler === "function") handler(e)
++  else handler[0](handler[1], e)
+ }
+ 
+ export function SegmentedControlItemV2(props: SegmentedControlItemV2Props) {
+@@ -146,7 +152,7 @@ export function SegmentedControlItemV2(props: SegmentedControlItemV2Props) {
+   const ctx = useSegmentedControlContext()
+ 
+   const pressed = createMemo(() => ctx.selected() === local.value)
+-  const disabled = createMemo(() => ctx.groupDisabled() || !!local.disabled)
++  const disabled = createMemo(() => ctx.groupDisabled() || local.disabled)
+ 
+   const onClick: JSX.EventHandlerUnion<HTMLButtonElement, MouseEvent> = (e) => {
+     invokeButtonHandler(local.onClick, e)
+@@ -196,6 +202,7 @@ export function SegmentedControlItemV2(props: SegmentedControlItemV2Props) {
+       aria-pressed={pressed()}
+       disabled={disabled()}
+       classList={{
++        "ui-segmented-control-v2-item": true,
+         ...local.classList,
+         [local.class ?? ""]: !!local.class,
+       }}
+diff --git a/src/v2/components/select-v2.css b/src/v2/components/select-v2.css
+index faed53b9f78e8d6ad2376e1ee967d2335fa8613b..5e1afec380b823b6b9014683f0686e352b6caa56 100644
+--- a/src/v2/components/select-v2.css
++++ b/src/v2/components/select-v2.css
+@@ -14,8 +14,8 @@
+   z-index: 60;
+   pointer-events: auto;
+   background: var(--v2-background-bg-layer-01);
+-  border-radius: 6px;
+-  box-shadow: var(--v2-elevation-floating);
++  border-radius: var(--surface-overlay-radius, 6px);
++  box-shadow: var(--surface-overlay-shadow, var(--v2-elevation-floating));
+   transform-origin: top center;
+   animation: select-v2-content-in 120ms ease-out;
+ }
+@@ -47,7 +47,7 @@
+ }
+ 
+ /* Trigger shell — aligned with text-input-v2 */
+-[data-component="select-v2"] {
++.ui-select-v2 {
+   box-sizing: border-box;
+   display: flex;
+   flex-direction: row;
+@@ -58,7 +58,7 @@
+   width: 280px;
+   height: 28px;
+   border: 0;
+-  border-radius: 6px;
++  border-radius: var(--radius-md);
+   outline: 1px solid transparent;
+   outline-offset: 0;
+   background:
+@@ -73,13 +73,13 @@
+     box-shadow 85ms ease-out;
+ }
+ 
+-[data-component="select-v2"][data-appearance="large"] {
++.ui-select-v2[data-appearance="large"] {
+   height: 32px;
+   padding-block: 0;
+   padding-inline: 0 8px;
+ }
+ 
+-[data-component="select-v2"]:where(:hover):not([data-disabled], [data-invalid]):not(:focus-within):not(
++.ui-select-v2:where(:hover):not([data-disabled], [data-invalid]):not(:focus-within):not(
+     [data-expanded]
+   ) {
+   background:
+@@ -87,24 +87,24 @@
+     linear-gradient(180deg, var(--v2-alpha-light-2) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-base);
+ }
+ 
+-[data-component="select-v2"]:where([data-expanded]):not([data-disabled], [data-invalid]) {
++.ui-select-v2:where([data-expanded]):not([data-disabled], [data-invalid]) {
+   background:
+     linear-gradient(0deg, var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)),
+     linear-gradient(180deg, var(--v2-alpha-light-2) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-base);
+   outline-color: transparent;
+ }
+ 
+-[data-component="select-v2"]:where(:focus-within):not([data-disabled], [data-invalid]):not([data-expanded]) {
++.ui-select-v2:where(:focus-within):not([data-disabled], [data-invalid]):not([data-expanded]) {
+   outline-color: var(--v2-border-border-focus);
+   box-shadow: none;
+ }
+ 
+-[data-component="select-v2"]:where([data-invalid]):not([data-disabled]) {
++.ui-select-v2:where([data-invalid]):not([data-disabled]) {
+   outline-color: var(--v2-state-fg-danger);
+   box-shadow: none;
+ }
+ 
+-[data-component="select-v2"]:where([data-disabled]) {
++.ui-select-v2:where([data-disabled]) {
+   opacity: 0.5;
+   cursor: not-allowed;
+ }
+@@ -121,7 +121,7 @@
+   cursor: default;
+ }
+ 
+-[data-component="select-v2"] [data-slot="select-v2-value-text"] {
++[data-component="select-v2"] .ui-select-v2-value-text {
+   display: block;
+   width: 100%;
+   min-width: 0;
+@@ -136,28 +136,28 @@
+   outline: none;
+   text-align: start;
+   font-style: normal;
+-  font-weight: 440;
+-  font-size: 13px;
+-  line-height: 16px;
+-  letter-spacing: -0.04px;
++  font-weight: var(--font-weight-body);
++  font-size: var(--font-size-compact);
++  line-height: var(--line-height-16);
++  letter-spacing: var(--letter-spacing-ui);
+   color: var(--v2-text-text-base);
+   font-variation-settings: "slnt" 0;
+   cursor: default;
+ }
+ 
+-[data-component="select-v2"] [data-slot="select-v2-value-text"][data-placeholder-shown] {
++[data-component="select-v2"] .ui-select-v2-value-text[data-placeholder-shown] {
+   color: var(--v2-text-text-faint);
+ }
+ 
+-[data-component="select-v2"][data-numeric] [data-slot="select-v2-value-text"] {
++[data-component="select-v2"][data-numeric] .ui-select-v2-value-text {
+   font-variant-numeric: tabular-nums;
+ }
+ 
+-[data-component="select-v2"]:where([data-invalid]):not([data-disabled]) [data-slot="select-v2-value-text"] {
++[data-component="select-v2"]:where([data-invalid]):not([data-disabled]) .ui-select-v2-value-text {
+   color: var(--v2-state-fg-danger);
+ }
+ 
+-[data-component="select-v2"] [data-slot="select-v2-chevron"] {
++[data-component="select-v2"] .ui-select-v2-chevron {
+   display: flex;
+   flex-direction: row;
+   justify-content: center;
+@@ -169,7 +169,7 @@
+   padding: 2px;
+   gap: 3px;
+   border: 0;
+-  border-radius: 4px;
++  border-radius: var(--radius-sm);
+   background: transparent;
+   color: var(--v2-icon-icon-muted);
+   pointer-events: none;
+@@ -187,44 +187,44 @@
+ }
+ 
+ /* Compact trigger for settings rows and similar inline contexts. */
+-[data-component="select-v2"][data-appearance="inline"] {
++.ui-select-v2[data-appearance="inline"] {
+   width: fit-content;
+   max-width: 100%;
+   height: 24px;
+   padding-block: 4px;
+   padding-inline: 8px 4px;
+   gap: 4px;
+-  border-radius: 4px;
++  border-radius: var(--radius-sm);
+   background: transparent;
+   box-shadow: none;
+   outline: none;
+   align-self: auto;
+ }
+ 
+-[data-component="select-v2"][data-appearance="inline"]:where(:hover):not([data-disabled], [data-invalid]):not(
++.ui-select-v2[data-appearance="inline"]:where(:hover):not([data-disabled], [data-invalid]):not(
+     :focus-within
+   ):not([data-expanded]) {
+   background: var(--v2-overlay-simple-overlay-hover);
+ }
+ 
+-[data-component="select-v2"][data-appearance="inline"]:where([data-expanded]):not([data-disabled], [data-invalid]) {
++.ui-select-v2[data-appearance="inline"]:where([data-expanded]):not([data-disabled], [data-invalid]) {
+   background: var(--v2-overlay-simple-overlay-hover);
+   outline: none;
+   box-shadow: none;
+ }
+ 
+-[data-component="select-v2"][data-appearance="inline"]:where(:active):not([data-disabled], [data-invalid]):not(
++.ui-select-v2[data-appearance="inline"]:where(:active):not([data-disabled], [data-invalid]):not(
+     [data-expanded]
+   ) {
+   background: var(--v2-overlay-simple-overlay-pressed);
+ }
+ 
+-[data-component="select-v2"][data-appearance="inline"] [data-slot="select-v2-value-text"] {
++[data-component="select-v2"][data-appearance="inline"] .ui-select-v2-value-text {
+   padding: 0;
+-  font-weight: 530;
++  font-weight: var(--font-weight-medium);
+ }
+ 
+-[data-component="select-v2"][data-appearance="inline"] [data-slot="select-v2-chevron"] {
++[data-component="select-v2"][data-appearance="inline"] .ui-select-v2-chevron {
+   width: 16px;
+   height: 16px;
+   padding: 0;
+@@ -274,7 +274,7 @@
+ 
+ /* Listbox uses data-selected; menu item CSS uses data-checked — mirror accent */
+ [data-slot="select-v2-listbox"] [data-component="menu-v2-item"][data-selected] [data-slot="menu-v2-item-content"] {
+-  font-weight: 530;
++  font-weight: var(--font-weight-medium);
+   color: var(--menu-v2-accent);
+ }
+ 
+diff --git a/src/v2/components/select-v2.tsx b/src/v2/components/select-v2.tsx
+index 57348ed392092dfa64a6e2ee99375e3fa18f1374..2971a5ba3164577f200f7907bfd5eb99465305d6 100644
+--- a/src/v2/components/select-v2.tsx
++++ b/src/v2/components/select-v2.tsx
+@@ -1,5 +1,6 @@
+ import { Select as Kobalte } from "@kobalte/core/select"
+ import { Show, createMemo, onCleanup, splitProps, type ComponentProps, type JSX } from "solid-js"
++import { selectItemText } from "../../utils/select-item"
+ import "./select-v2.css"
+ 
+ function groupOptions<T>(options: T[], groupBy?: (x: T) => string): { category: string; options: T[] }[] {
+@@ -98,7 +99,8 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
+     state.key = undefined
+   }
+ 
+-  const keyFor = (item: T) => (local.value ? local.value(item) : String(item as string))
++  const keyFor = (item: T) => (local.value ? local.value(item) : selectItemText(item))
++  const labelFor = (item: T) => (local.label ? local.label(item) : selectItemText(item))
+ 
+   const move = (item: T | undefined) => {
+     if (!local.onHighlight) return
+@@ -132,8 +134,8 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
+       fitViewport={local.fitViewport ?? false}
+       value={local.current}
+       options={grouped()}
+-      optionValue={(x) => (local.value ? local.value(x) : String(x as string))}
+-      optionTextValue={(x) => (local.label ? local.label(x) : String(x as string))}
++      optionValue={keyFor}
++      optionTextValue={labelFor}
+       optionGroupChildren="options"
+       placeholder={local.placeholder}
+       sectionComponent={(sectionProps) => (
+@@ -154,9 +156,7 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
+           <Kobalte.ItemLabel data-slot="menu-v2-item-content" as="span">
+             {local.children
+               ? local.children(itemProps.item.rawValue)
+-              : local.label
+-                ? local.label(itemProps.item.rawValue)
+-                : String(itemProps.item.rawValue as string)}
++              : labelFor(itemProps.item.rawValue)}
+           </Kobalte.ItemLabel>
+           <Kobalte.ItemIndicator data-slot="menu-v2-item-indicator" forceMount>
+             <CheckSmall />
+@@ -164,14 +164,14 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
+         </Kobalte.Item>
+       )}
+       onChange={(next) => {
+-        const v = next == null ? null : Array.isArray(next) ? ((next[0] as T) ?? null) : (next as T)
+-        local.onSelect?.(v)
++        // `multiple={false}` above, so Kobalte only ever reports a single option or null.
++        local.onSelect?.(next ?? null)
+         stop()
+       }}
+       onOpenChange={(open) => {
+         local.onOpenChange?.(open)
+         if (!open) stop()
+-      }}
++      }} classList={{ "ui-select-v2-root": true }}
+     >
+       <Kobalte.Trigger
+         as="div"
+@@ -181,21 +181,21 @@ export function SelectV2<T>(props: SelectV2Props<T>) {
+         data-numeric={local.numeric ? "" : undefined}
+         disabled={local.disabled}
+         data-disabled={local.disabled ? "" : undefined}
+-        classList={{
++        classList={{ "ui-select-v2": true,
+           ...local.classList,
+           [local.class ?? ""]: !!local.class,
+         }}
+       >
+         <div data-slot="select-v2-value">
+-          <Kobalte.Value<T> data-slot="select-v2-value-text" class={local.valueClass}>
++          <Kobalte.Value<T> data-slot="select-v2-value-text" class={local.valueClass} classList={{ "ui-select-v2-value-text": true }}>
+             {(st) => {
+               const selected = st.selectedOption()
+-              if (local.label && selected != null) return local.label(selected)
+-              return selected != null ? (selected as string) : ""
++              if (selected == null) return ""
++              return labelFor(selected)
+             }}
+           </Kobalte.Value>
+         </div>
+-        <span data-slot="select-v2-chevron" aria-hidden="true">
++        <span data-slot="select-v2-chevron" class="ui-select-v2-chevron" aria-hidden="true">
+           <ChevronDown />
+         </span>
+       </Kobalte.Trigger>
+diff --git a/src/v2/components/switch-v2.css b/src/v2/components/switch-v2.css
+index d16f259bfef67e41cc01c98b5bedcddd760f1eed..d04be07f529951a6a4932b3172448a7a340a216b 100644
+--- a/src/v2/components/switch-v2.css
++++ b/src/v2/components/switch-v2.css
+@@ -17,7 +17,7 @@
+     border-width: 0;
+   }
+ 
+-  [data-slot="switch-control"] {
++  .ui-switch-control {
+     box-sizing: border-box;
+     display: inline-flex;
+     justify-content: flex-start;
+@@ -26,7 +26,7 @@
+     width: 24px;
+     height: 16px;
+     flex-shrink: 0;
+-    border-radius: 4px;
++    border-radius: var(--radius-sm);
+     border: none;
+     background:
+       linear-gradient(180deg, var(--v2-alpha-light-0) 0%, var(--v2-alpha-light-20) 100%),
+@@ -38,12 +38,12 @@
+       outline-color 90ms ease-out;
+   }
+ 
+-  [data-slot="switch-thumb"] {
++  .ui-switch-thumb {
+     box-sizing: border-box;
+     width: 12px;
+     height: 12px;
+     transform: translateX(0);
+-    border-radius: 2px;
++    border-radius: var(--radius-xs);
+     border: 0.5px solid var(--v2-overlay-gradient-depth-overlay-depth-top);
+     background:
+       linear-gradient(
+@@ -66,17 +66,17 @@
+     height: 16px;
+     user-select: none;
+     color: var(--v2-text-text-faint);
+-    font-size: 11px;
++    font-size: var(--font-size-x-small);
+     font-style: normal;
+-    font-weight: 440;
+-    line-height: 16px;
+-    letter-spacing: 0.05px;
++    font-weight: var(--font-weight-body);
++    line-height: var(--line-height-16);
++    letter-spacing: var(--letter-spacing-micro-wide);
+     font-variation-settings: "slnt" 0;
+   }
+ 
+   [data-slot="switch-error"] {
+     color: var(--v2-state-fg-danger);
+-    font-size: 12px;
++    font-size: var(--font-size-small);
+     font-weight: var(--font-weight-regular);
+     line-height: var(--line-height-normal);
+     letter-spacing: var(--letter-spacing-normal);
+@@ -86,32 +86,32 @@
+     display: none;
+   }
+ 
+-  &:hover:not([data-disabled], [data-readonly]) [data-slot="switch-control"] {
++  &:hover:not([data-disabled], [data-readonly]) .ui-switch-control {
+     background:
+       linear-gradient(0deg, var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)),
+       linear-gradient(180deg, var(--v2-alpha-light-0) 0%, var(--v2-alpha-light-20) 100%),
+       var(--v2-background-bg-layer-04);
+   }
+ 
+-  &:hover:not([data-disabled], [data-readonly]) [data-slot="switch-thumb"] {
++  &:hover:not([data-disabled], [data-readonly]) .ui-switch-thumb {
+     width: 13px;
+-    border-radius: 3px;
++    border-radius: var(--radius-3);
+   }
+ 
+-  &:not([data-readonly]) [data-slot="switch-input"]:focus-visible ~ [data-slot="switch-control"] {
++  &:not([data-readonly]) [data-slot="switch-input"]:focus-visible ~ .ui-switch-control {
+     outline: 2px solid var(--v2-border-border-focus);
+     outline-offset: 1px;
+   }
+ 
+-  &[data-checked] [data-slot="switch-control"] {
++  &[data-checked] .ui-switch-control {
+     background:
+       linear-gradient(180deg, var(--v2-alpha-light-0) 0%, var(--v2-alpha-light-10) 100%), var(--v2-background-bg-accent);
+     box-shadow: var(--v2-elevation-switch-on);
+   }
+ 
+-  &[data-checked] [data-slot="switch-thumb"] {
++  &[data-checked] .ui-switch-thumb {
+     transform: translateX(8px);
+-    border-radius: 2px;
++    border-radius: var(--radius-xs);
+     background:
+       linear-gradient(
+         180deg,
+@@ -121,11 +121,11 @@
+       var(--v2-grey-300);
+   }
+ 
+-  &:dir(rtl)[data-checked] [data-slot="switch-thumb"] {
++  &:dir(rtl)[data-checked] .ui-switch-thumb {
+     transform: translateX(-8px);
+   }
+ 
+-  &[data-checked]:hover:not([data-disabled], [data-readonly]) [data-slot="switch-control"] {
++  &[data-checked]:hover:not([data-disabled], [data-readonly]) .ui-switch-control {
+     background:
+       linear-gradient(
+         0deg,
+@@ -135,7 +135,7 @@
+       linear-gradient(180deg, var(--v2-alpha-light-0) 0%, var(--v2-alpha-light-10) 100%), var(--v2-background-bg-accent);
+   }
+ 
+-  &[data-checked]:hover:not([data-disabled], [data-readonly]) [data-slot="switch-thumb"] {
++  &[data-checked]:hover:not([data-disabled], [data-readonly]) .ui-switch-thumb {
+     transform: translateX(7px);
+   }
+ 
+@@ -147,11 +147,11 @@
+     cursor: not-allowed;
+   }
+ 
+-  &[data-disabled] [data-slot="switch-control"] {
++  &[data-disabled] .ui-switch-control {
+     opacity: 0.5;
+   }
+ 
+-  &[data-invalid] [data-slot="switch-control"] {
++  &[data-invalid] .ui-switch-control {
+     border-color: var(--v2-state-border-danger);
+   }
+ 
+diff --git a/src/v2/components/switch-v2.tsx b/src/v2/components/switch-v2.tsx
+index 26b085fda48b4279d54007c3e4f24d441b41fa24..2938a69b9378ad7e839e2ea9fb98718344673812 100644
+--- a/src/v2/components/switch-v2.tsx
++++ b/src/v2/components/switch-v2.tsx
+@@ -19,8 +19,8 @@ export function Switch(props: SwitchProps) {
+           </Kobalte.Label>
+         )}
+       </Show>
+-      <Kobalte.Control data-slot="switch-control">
+-        <Kobalte.Thumb data-slot="switch-thumb" />
++      <Kobalte.Control data-slot="switch-control" class="ui-switch-control">
++        <Kobalte.Thumb data-slot="switch-thumb" class="ui-switch-thumb" />
+       </Kobalte.Control>
+       <Kobalte.ErrorMessage data-slot="switch-error" />
+     </Kobalte>
+diff --git a/src/v2/components/text-input-v2.css b/src/v2/components/text-input-v2.css
+index d503830b44914102c531c092d4268b3fe4f9db77..1bdf3c3b393e21bdc7384bef81eed1dc9f9d3c21 100644
+--- a/src/v2/components/text-input-v2.css
++++ b/src/v2/components/text-input-v2.css
+@@ -1,4 +1,4 @@
+-[data-component="text-input-v2"] {
++.ui-text-input-v2 {
+   box-sizing: border-box;
+   display: flex;
+   flex-direction: row;
+@@ -9,7 +9,7 @@
+   width: 280px;
+   height: 28px;
+   border: 0;
+-  border-radius: 6px;
++  border-radius: var(--radius-md);
+   outline: 1px solid transparent;
+   outline-offset: 0;
+   background:
+@@ -23,27 +23,27 @@
+     box-shadow 85ms ease-out;
+ }
+ 
+-[data-component="text-input-v2"][data-appearance="large"] {
++.ui-text-input-v2[data-appearance="large"] {
+   height: 32px;
+ }
+ 
+-[data-component="text-input-v2"]:where(:hover):not([data-disabled], [data-invalid]):not(:focus-within) {
++.ui-text-input-v2:where(:hover):not([data-disabled], [data-invalid]):not(:focus-within) {
+   background:
+     linear-gradient(0deg, var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)),
+     linear-gradient(180deg, var(--v2-alpha-light-2) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-base);
+ }
+ 
+-[data-component="text-input-v2"]:where(:focus-within):not([data-disabled], [data-invalid]) {
++.ui-text-input-v2:where(:focus-within):not([data-disabled], [data-invalid]) {
+   outline-color: var(--v2-border-border-focus);
+   box-shadow: none;
+ }
+ 
+-[data-component="text-input-v2"]:where([data-invalid]):not([data-disabled]) {
++.ui-text-input-v2:where([data-invalid]):not([data-disabled]) {
+   outline-color: var(--v2-state-fg-danger);
+   box-shadow: none;
+ }
+ 
+-[data-component="text-input-v2"]:where([data-disabled]) {
++.ui-text-input-v2:where([data-disabled]) {
+   opacity: 0.5;
+   cursor: not-allowed;
+ }
+@@ -74,11 +74,11 @@
+   flex: none;
+ }
+ 
+-[data-component="text-input-v2"][data-leading-icon] [data-slot="text-input-v2-input"] {
++[data-component="text-input-v2"][data-leading-icon] .ui-text-input-v2-input {
+   padding-inline-start: 0;
+ }
+ 
+-[data-component="text-input-v2"] [data-slot="text-input-v2-input"] {
++[data-component="text-input-v2"] .ui-text-input-v2-input {
+   display: block;
+   width: 100%;
+   min-width: 0;
+@@ -90,30 +90,30 @@
+   background: transparent;
+   outline: none;
+   font-style: normal;
+-  font-weight: 440;
+-  font-size: 13px;
+-  line-height: 1;
+-  letter-spacing: -0.04px;
++  font-weight: var(--font-weight-body);
++  font-size: var(--font-size-compact);
++  line-height: var(--line-height-none);
++  letter-spacing: var(--letter-spacing-ui);
+   color: var(--v2-text-text-base);
+   font-variation-settings: "slnt" 0;
+ }
+ 
+-[data-component="text-input-v2"] [data-slot="text-input-v2-input"]::placeholder {
++[data-component="text-input-v2"] .ui-text-input-v2-input::placeholder {
+   color: var(--v2-text-text-faint);
+   user-select: none;
+ }
+ 
+-[data-component="text-input-v2"] [data-slot="text-input-v2-input"][type="search"]::-webkit-search-cancel-button {
++[data-component="text-input-v2"] .ui-text-input-v2-input[type="search"]::-webkit-search-cancel-button {
+   -webkit-appearance: none;
+   appearance: none;
+   display: none;
+ }
+ 
+-[data-component="text-input-v2"][data-numeric] [data-slot="text-input-v2-input"] {
++[data-component="text-input-v2"][data-numeric] .ui-text-input-v2-input {
+   font-variant-numeric: tabular-nums;
+ }
+ 
+-[data-component="text-input-v2"] [data-slot="text-input-v2-icon-button"] {
++[data-component="text-input-v2"] .ui-text-input-v2-icon-button {
+   display: flex;
+   flex-direction: row;
+   justify-content: center;
+@@ -125,7 +125,7 @@
+   padding: 2px;
+   gap: 3px;
+   border: 0;
+-  border-radius: 4px;
++  border-radius: var(--radius-sm);
+   background: transparent;
+   color: var(--v2-icon-icon-muted);
+   cursor: pointer;
+@@ -133,49 +133,49 @@
+ }
+ 
+ [data-component="text-input-v2"]
+-  [data-slot="text-input-v2-icon-button"]:is(:hover, [data-state="hover"]):not(:disabled) {
++  .ui-text-input-v2-icon-button:is(:hover, [data-state="hover"]):not(:disabled) {
+   background-color: var(--v2-overlay-simple-overlay-hover);
+ }
+ 
+ [data-component="text-input-v2"]
+-  [data-slot="text-input-v2-icon-button"]:is(:active, [data-state="pressed"]):not(:disabled) {
++  .ui-text-input-v2-icon-button:is(:active, [data-state="pressed"]):not(:disabled) {
+   background-color: var(--v2-overlay-simple-overlay-pressed);
+ }
+ 
+-[data-component="text-input-v2"] [data-slot="text-input-v2-icon-button"]:focus {
++[data-component="text-input-v2"] .ui-text-input-v2-icon-button:focus {
+   outline: none;
+ }
+ 
+-[data-component="text-input-v2"] [data-slot="text-input-v2-icon-button"]:focus-visible {
++[data-component="text-input-v2"] .ui-text-input-v2-icon-button:focus-visible {
+   outline: 2px solid var(--v2-border-border-focus);
+   outline-offset: 1px;
+ }
+ 
+-[data-component="text-input-v2"]:where([data-disabled]) [data-slot="text-input-v2-icon-button"] {
++[data-component="text-input-v2"]:where([data-disabled]) .ui-text-input-v2-icon-button {
+   cursor: not-allowed;
+   pointer-events: none;
+ }
+ 
+-[data-component="text-input-v2"] [data-slot="text-input-v2-icon-button"] [data-slot="icon-svg"] {
++[data-component="text-input-v2"] [data-slot="text-input-v2-icon-button"] .ui-icon-svg {
+   display: block;
+   flex: none;
+   color: currentColor;
+ }
+ 
+-[data-component="text-input-v2"] [data-slot="text-input-v2-icon-button"][data-variant="clear"] {
++[data-component="text-input-v2"] .ui-text-input-v2-icon-button[data-variant="clear"] {
+   width: 28px;
+   height: 28px;
+   padding: 0;
+-  border-radius: 6px;
++  border-radius: var(--radius-md);
+   margin-inline-end: -8px;
+ }
+ 
+-[data-component="text-input-v2"][data-invalid]:not([data-disabled]) [data-slot="text-input-v2-input"] {
++[data-component="text-input-v2"][data-invalid]:not([data-disabled]) .ui-text-input-v2-input {
+   color: var(--v2-state-fg-danger);
+   caret-color: var(--v2-state-fg-danger);
+ }
+ 
+-[data-component="text-input-v2"][data-invalid]:not([data-disabled]) [data-slot="text-input-v2-input"]::placeholder {
++[data-component="text-input-v2"][data-invalid]:not([data-disabled]) .ui-text-input-v2-input::placeholder {
+   color: var(--v2-state-fg-danger);
+   opacity: 1;
+ }
+diff --git a/src/v2/components/text-input-v2.tsx b/src/v2/components/text-input-v2.tsx
+index 8b1e748a3bf70b11548398ecb352521e2c8bb566..84aaac448aad2f0859293c7d56b65fffd862fa2f 100644
+--- a/src/v2/components/text-input-v2.tsx
++++ b/src/v2/components/text-input-v2.tsx
+@@ -52,6 +52,7 @@ export function TextInputV2(props: TextInputV2Props) {
+       data-appearance={local.appearance ?? "base"}
+       data-leading-icon={local.leadingIcon ? "" : undefined}
+       classList={{
++        "ui-text-input-v2": true,
+         ...local.classList,
+         [local.class ?? ""]: !!local.class,
+       }}
+@@ -65,13 +66,13 @@ export function TextInputV2(props: TextInputV2Props) {
+           type={inputProps.type ?? "text"}
+           disabled={local.disabled}
+           aria-invalid={local.invalid ? true : undefined}
+-          data-slot="text-input-v2-input"
++          data-slot="text-input-v2-input" classList={{ "ui-text-input-v2-input": true }}
+         />
+       </div>
+       <Show when={local.showClearButton || local.showCopyButton}>
+         <button
+           type="button"
+-          data-slot="text-input-v2-icon-button"
++          data-slot="text-input-v2-icon-button" class="ui-text-input-v2-icon-button"
+           data-variant={local.showClearButton ? "clear" : "copy"}
+           aria-label={
+             local.showClearButton
+diff --git a/src/v2/components/text-shimmer-v2.css b/src/v2/components/text-shimmer-v2.css
+index d10d53581b8883eb22b1a404bbd8d12368f0caa8..eaaeda4241ccbe2392e0e96340c887f44f8dabf9 100644
+--- a/src/v2/components/text-shimmer-v2.css
++++ b/src/v2/components/text-shimmer-v2.css
+@@ -38,8 +38,8 @@
+   line-height: inherit;
+ }
+ 
+-[data-component="text-shimmer-v2"] [data-slot="text-shimmer-v2-base"],
+-[data-component="text-shimmer-v2"] [data-slot="text-shimmer-v2-shimmer"] {
++[data-component="text-shimmer-v2"] .ui-text-shimmer-v2-base,
++[data-component="text-shimmer-v2"] .ui-text-shimmer-v2-shimmer {
+   grid-area: 1 / 1;
+   white-space: pre;
+   transition: opacity var(--_swap) ease-out;
+@@ -48,21 +48,21 @@
+   line-height: inherit;
+ }
+ 
+-[data-component="text-shimmer-v2"] [data-slot="text-shimmer-v2-base"] {
++[data-component="text-shimmer-v2"] .ui-text-shimmer-v2-base {
+   color: inherit;
+   opacity: 1;
+ }
+ 
+-[data-component="text-shimmer-v2"] [data-slot="text-shimmer-v2-shimmer"] {
++[data-component="text-shimmer-v2"] .ui-text-shimmer-v2-shimmer {
+   color: var(--_base-color);
+   opacity: 0;
+ }
+ 
+-[data-component="text-shimmer-v2"][data-active="true"] [data-slot="text-shimmer-v2-shimmer"] {
++[data-component="text-shimmer-v2"][data-active="true"] .ui-text-shimmer-v2-shimmer {
+   opacity: 1;
+ }
+ 
+-[data-component="text-shimmer-v2"] [data-slot="text-shimmer-v2-shimmer"][data-run="true"] {
++[data-component="text-shimmer-v2"] .ui-text-shimmer-v2-shimmer[data-run="true"] {
+   animation-name: text-shimmer-v2-sweep;
+   animation-duration: var(--_duration);
+   animation-iteration-count: infinite;
+@@ -86,7 +86,7 @@
+ }
+ 
+ @supports ((-webkit-background-clip: text) or (background-clip: text)) {
+-  [data-component="text-shimmer-v2"] [data-slot="text-shimmer-v2-shimmer"] {
++  [data-component="text-shimmer-v2"] .ui-text-shimmer-v2-shimmer {
+     color: transparent;
+     -webkit-text-fill-color: transparent;
+     background-image: var(--_sweep), var(--_base);
+@@ -101,25 +101,25 @@
+     background-clip: text;
+   }
+ 
+-  [data-component="text-shimmer-v2"][data-active="true"] [data-slot="text-shimmer-v2-base"] {
++  [data-component="text-shimmer-v2"][data-active="true"] .ui-text-shimmer-v2-base {
+     opacity: 0;
+   }
+ }
+ 
+ @media (prefers-reduced-motion: reduce) {
+-  [data-component="text-shimmer-v2"] [data-slot="text-shimmer-v2-base"],
+-  [data-component="text-shimmer-v2"] [data-slot="text-shimmer-v2-shimmer"] {
++  [data-component="text-shimmer-v2"] .ui-text-shimmer-v2-base,
++  [data-component="text-shimmer-v2"] .ui-text-shimmer-v2-shimmer {
+     transition-duration: 0ms;
+   }
+ 
+-  [data-component="text-shimmer-v2"] [data-slot="text-shimmer-v2-shimmer"] {
++  [data-component="text-shimmer-v2"] .ui-text-shimmer-v2-shimmer {
+     animation: none !important;
+     color: inherit;
+     -webkit-text-fill-color: currentColor;
+     background-image: none;
+   }
+ 
+-  [data-component="text-shimmer-v2"] [data-slot="text-shimmer-v2-base"] {
++  [data-component="text-shimmer-v2"] .ui-text-shimmer-v2-base {
+     opacity: 1 !important;
+   }
+ }
+diff --git a/src/v2/components/text-shimmer-v2.tsx b/src/v2/components/text-shimmer-v2.tsx
+index d18604773cfd6ed9f0c21ecec16c38c8f8d02a9a..3d9e95ce9e992c6b55a159a42f3f29adf3e2c8ce 100644
+--- a/src/v2/components/text-shimmer-v2.tsx
++++ b/src/v2/components/text-shimmer-v2.tsx
+@@ -2,10 +2,10 @@ import { createEffect, createMemo, createSignal, onCleanup, type ValidComponent
+ import { Dynamic } from "solid-js/web"
+ import "./text-shimmer-v2.css"
+ 
+-export const TextShimmerV2 = <T extends ValidComponent = "span">(props: {
++export const TextShimmerV2 = (props: {
+   text: string
+   class?: string
+-  as?: T
++  as?: ValidComponent
+   active?: boolean
+   offset?: number
+ }) => {
+@@ -51,10 +51,10 @@ export const TextShimmerV2 = <T extends ValidComponent = "span">(props: {
+       }}
+     >
+       <span data-slot="text-shimmer-v2-char">
+-        <span data-slot="text-shimmer-v2-base" aria-hidden="true">
++        <span data-slot="text-shimmer-v2-base" class="ui-text-shimmer-v2-base" aria-hidden="true">
+           {text()}
+         </span>
+-        <span data-slot="text-shimmer-v2-shimmer" data-run={run() ? "true" : "false"} aria-hidden="true">
++        <span data-slot="text-shimmer-v2-shimmer" class="ui-text-shimmer-v2-shimmer" data-run={run() ? "true" : "false"} aria-hidden="true">
+           {text()}
+         </span>
+       </span>
+diff --git a/src/v2/components/textarea-v2.css b/src/v2/components/textarea-v2.css
+index 7c350ea4329d27a28c48e4f5c96bfbbb314294d0..0e2446b9666fae880603586c37db8d67839cc995 100644
+--- a/src/v2/components/textarea-v2.css
++++ b/src/v2/components/textarea-v2.css
+@@ -1,4 +1,4 @@
+-[data-component="textarea-v2"] {
++.ui-textarea-v2 {
+   box-sizing: border-box;
+   display: flex;
+   flex-direction: column;
+@@ -7,7 +7,7 @@
+   width: 280px;
+   min-height: 80px;
+   border: 0;
+-  border-radius: 6px;
++  border-radius: var(--radius-md);
+   outline: 1px solid transparent;
+   outline-offset: 0;
+   background:
+@@ -21,28 +21,28 @@
+     box-shadow 85ms ease-out;
+ }
+ 
+-[data-component="textarea-v2"]:where(:hover):not([data-disabled], [data-invalid]):not(:focus-within) {
++.ui-textarea-v2:where(:hover):not([data-disabled], [data-invalid]):not(:focus-within) {
+   background:
+     linear-gradient(0deg, var(--v2-overlay-simple-overlay-hover), var(--v2-overlay-simple-overlay-hover)),
+     linear-gradient(180deg, var(--v2-alpha-light-2) 0%, var(--v2-alpha-light-0) 100%), var(--v2-background-bg-base);
+ }
+ 
+-[data-component="textarea-v2"]:where(:focus-within):not([data-disabled], [data-invalid]) {
++.ui-textarea-v2:where(:focus-within):not([data-disabled], [data-invalid]) {
+   outline-color: var(--v2-border-border-focus);
+   box-shadow: none;
+ }
+ 
+-[data-component="textarea-v2"]:where([data-invalid]):not([data-disabled]) {
++.ui-textarea-v2:where([data-invalid]):not([data-disabled]) {
+   outline-color: var(--v2-state-fg-danger);
+   box-shadow: none;
+ }
+ 
+-[data-component="textarea-v2"]:where([data-disabled]) {
++.ui-textarea-v2:where([data-disabled]) {
+   opacity: 0.5;
+   cursor: not-allowed;
+ }
+ 
+-[data-component="textarea-v2"] [data-slot="textarea-v2-textarea"] {
++[data-component="textarea-v2"] .ui-textarea-v2-textarea {
+   display: block;
+   width: 100%;
+   min-width: 0;
+@@ -55,24 +55,24 @@
+   outline: none;
+   resize: vertical;
+   font-style: normal;
+-  font-weight: 440;
+-  font-size: 13px;
+-  line-height: 1.35;
+-  letter-spacing: -0.04px;
++  font-weight: var(--font-weight-body);
++  font-size: var(--font-size-compact);
++  line-height: var(--line-height-compact-relaxed);
++  letter-spacing: var(--letter-spacing-ui);
+   color: var(--v2-text-text-base);
+   font-variation-settings: "slnt" 0;
+ }
+ 
+-[data-component="textarea-v2"] [data-slot="textarea-v2-textarea"]::placeholder {
++[data-component="textarea-v2"] .ui-textarea-v2-textarea::placeholder {
+   color: var(--v2-text-text-faint);
+ }
+ 
+-[data-component="textarea-v2"][data-invalid]:not([data-disabled]) [data-slot="textarea-v2-textarea"] {
++[data-component="textarea-v2"][data-invalid]:not([data-disabled]) .ui-textarea-v2-textarea {
+   color: var(--v2-state-fg-danger);
+   caret-color: var(--v2-state-fg-danger);
+ }
+ 
+-[data-component="textarea-v2"][data-invalid]:not([data-disabled]) [data-slot="textarea-v2-textarea"]::placeholder {
++[data-component="textarea-v2"][data-invalid]:not([data-disabled]) .ui-textarea-v2-textarea::placeholder {
+   color: var(--v2-state-fg-danger);
+   opacity: 1;
+ }
+diff --git a/src/v2/components/textarea-v2.tsx b/src/v2/components/textarea-v2.tsx
+index 3d01499f3c8e769c9ddf8a979975f7c07f7e82f7..6502a70d7676240037731ae9761cc986a22d7862 100644
+--- a/src/v2/components/textarea-v2.tsx
++++ b/src/v2/components/textarea-v2.tsx
+@@ -15,6 +15,7 @@ export function TextareaV2(props: TextareaV2Props) {
+       data-disabled={local.disabled ? "" : undefined}
+       data-invalid={local.invalid ? "" : undefined}
+       classList={{
++        "ui-textarea-v2": true,
+         ...local.classList,
+         [local.class ?? ""]: !!local.class,
+       }}
+@@ -24,7 +25,7 @@ export function TextareaV2(props: TextareaV2Props) {
+         rows={local.rows ?? 3}
+         disabled={local.disabled}
+         aria-invalid={local.invalid ? true : undefined}
+-        data-slot="textarea-v2-textarea"
++        data-slot="textarea-v2-textarea" classList={{ "ui-textarea-v2-textarea": true }}
+       />
+     </div>
+   )
+diff --git a/src/v2/components/tooltip-v2.css b/src/v2/components/tooltip-v2.css
+index 315d1f7cdbc9e5b8287bb0cb6d566f7b7f1731ec..4b76e58f94076f011378576f6a18a925e941bf5c 100644
+--- a/src/v2/components/tooltip-v2.css
++++ b/src/v2/components/tooltip-v2.css
+@@ -1,4 +1,4 @@
+-[data-component="tooltip-v2-trigger"] {
++.ui-tooltip-v2-trigger {
+   display: flex;
+ }
+ 
+@@ -6,7 +6,7 @@
+   z-index: 1000;
+ }
+ 
+-[data-component="tooltip-v2"] {
++.ui-tooltip-v2 {
+   z-index: 1000;
+   box-sizing: border-box;
+   display: inline-flex;
+@@ -16,14 +16,14 @@
+   gap: 6px;
+ 
+   background: var(--v2-background-bg-layer-01);
+-  box-shadow: var(--v2-elevation-floating);
+-  border-radius: 4px;
++  box-shadow: var(--surface-overlay-shadow, var(--v2-elevation-floating));
++  border-radius: var(--surface-overlay-radius, 4px);
+ 
+   font-style: normal;
+-  font-weight: 530;
+-  font-size: 11px;
+-  line-height: 12px;
+-  letter-spacing: 0.05px;
++  font-weight: var(--font-weight-medium);
++  font-size: var(--font-size-x-small);
++  line-height: var(--line-height-12);
++  letter-spacing: var(--letter-spacing-micro-wide);
+   color: var(--v2-text-text-base);
+   font-variant-numeric: tabular-nums;
+   font-variation-settings: "slnt" 0;
+@@ -62,8 +62,8 @@
+ }
+ 
+ @media (prefers-reduced-motion: reduce) {
+-  [data-component="tooltip-v2"],
+-  [data-component="tooltip-v2"][data-closed] {
++  .ui-tooltip-v2,
++  .ui-tooltip-v2[data-closed] {
+     animation: none;
+   }
+ }
+diff --git a/src/v2/components/tooltip-v2.tsx b/src/v2/components/tooltip-v2.tsx
+index 911307b6817053892851e3c493ba4350f1b653f8..f7e4662f9befde659d91344a698e1ee1a361e099 100644
+--- a/src/v2/components/tooltip-v2.tsx
++++ b/src/v2/components/tooltip-v2.tsx
+@@ -115,7 +115,7 @@ export function TooltipV2(props: TooltipV2Props) {
+               arm()
+             }}
+             onPointerLeave={leave}
+-            onFocusOut={() => requestAnimationFrame(() => drop())}
++            onFocusOut={() => requestAnimationFrame(() => drop())} classList={{ "ui-tooltip-v2-trigger": true }}
+           >
+             {local.children}
+           </KobalteTooltip.Trigger>
+@@ -135,7 +135,7 @@ export function TooltipV2(props: TooltipV2Props) {
+                   justClickedTrigger = true
+                 }
+                 e.preventDefault()
+-              }}
++              }} classList={{ "ui-tooltip-v2": true }}
+             >
+               {local.value}
+             </KobalteTooltip.Content>

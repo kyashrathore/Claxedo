@@ -1,0 +1,96 @@
+{
+  "url": "http://localhost:4445/s/ses_16214a525ffeZGDqylEvDKPmMh",
+  "title": "Claxedo",
+  "bodyText": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n12h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nC\nX\nwho is president of india ?\nBuild · nemotron-3-ultra-free\n · \n10:41 PM\n\nAs of June 2026, the President of India is Droupadi Murmu, who has held the office since July 25, 2022.\n\nBuild · nemotron-3-ultra-free · 18s\n1 Changed file\n+1\n-1\n‪.agent-extensions/‬\nmaterialized.json\n+1\n-1\nAsk anything, / for commands, @ for context...\nOpenCode\nSelect model",
+  "tabs": [],
+  "closeButtons": [],
+  "storageKeys": [
+    "claxedo:runner-map",
+    "claxedo.session-view.v1",
+    "claxedo.state.v5",
+    "opencode.global.dat:notification",
+    "opencode.global.dat:globalSync.project",
+    "__clerk_environment",
+    "highlights.v1",
+    "opencode.workspace.-Users-yashv.1r3b23u.dat:workspace:model-selection",
+    "claxedo:acp-model-map",
+    "claxedo-query-v1",
+    "opencode.global.dat:command.catalog.v1"
+  ],
+  "state": {
+    "workbench": {
+      "panes": [
+        {
+          "id": "p_1_hb0t6",
+          "contentId": "session-1780816590634-o4eevrp"
+        }
+      ],
+      "split": {
+        "direction": "h",
+        "sizes": [
+          1
+        ],
+        "root": {
+          "t": "leaf",
+          "id": "p_1_hb0t6"
+        }
+      },
+      "contentIds": [
+        "session-1780816590634-o4eevrp"
+      ],
+      "contentRecency": [
+        "session-1780816590634-o4eevrp"
+      ],
+      "focusedPaneId": "p_1_hb0t6",
+      "layoutSnapshots": {}
+    },
+    "meta": {
+      "session-1780816590634-o4eevrp": {
+        "id": "session-1780816590634-o4eevrp",
+        "type": "session",
+        "scope": "directory",
+        "directory": "/Users/yashvardhansingh/test/opencode",
+        "sessionId": "ses_16214a525ffeZGDqylEvDKPmMh",
+        "content": {
+          "type": "session",
+          "directory": "/Users/yashvardhansingh/test/opencode",
+          "sessionId": "ses_16214a525ffeZGDqylEvDKPmMh",
+          "title": "President of India inquiry",
+          "sessionRef": {
+            "sessionId": "ses_16214a525ffeZGDqylEvDKPmMh",
+            "host": "workspace",
+            "cwd": "/Users/yashvardhansingh/test/opencode",
+            "toolSandbox": {
+              "kind": "local",
+              "cwd": "/Users/yashvardhansingh/test/opencode"
+            }
+          }
+        }
+      }
+    },
+    "rail": {
+      "collapsed": false,
+      "hovered": false,
+      "pinned": true,
+      "locked": false
+    },
+    "workspace": {
+      "paneWorktree": {},
+      "recency": {},
+      "worktreeColor": {}
+    },
+    "workspacePanel": {
+      "open": false
+    },
+    "terminal": {
+      "owner": {},
+      "agentStatus": {},
+      "agentSeen": {},
+      "lifecycle": {}
+    },
+    "processPane": {
+      "crashedWhileClosed": false,
+      "pendingAction": null
+    }
+  }
+}

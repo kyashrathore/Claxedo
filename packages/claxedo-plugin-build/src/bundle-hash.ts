@@ -1,0 +1,1 @@
+export const PLUGIN_BUNDLE_HASH_LENGTH = 16

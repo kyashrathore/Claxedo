@@ -1,0 +1,39 @@
+---
+import HarnessMark from "../HarnessMark.astro"
+import Icon from "../Icon.astro"
+import "../../styles/app-theme.css"
+
+const agents = [
+  { mark: "claude", name: "Claude Code" },
+  { mark: "codex", name: "Codex" },
+  { mark: "cursor", name: "Cursor" },
+  { mark: "opencode", name: "OpenCode" },
+] as const
+const machines = ["This Mac", "studio-mac", "team-sandbox"]
+---
+
+<div class="app-card grid app-theme" role="img" aria-label="The same plugins in Claude Code, Codex, Cursor and OpenCode, on this Mac, studio-mac and team-sandbox">
+  <table>
+    <thead><tr><th></th>{machines.map((machine) => <th>{machine}</th>)}</tr></thead>
+    <tbody>
+      {agents.map((agent) => (
+        <tr>
+          <th><span class="agent"><span class="mark"><HarnessMark name={agent.mark} /></span>{agent.name}</span></th>
+          {machines.map(() => <td><Icon name="check" /></td>)}
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>
+
+<style>
+  .grid { width: 100%; padding: 8px 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  thead th { padding: 8px 4px 10px; color: var(--text-weak); font-weight: 400; font-size: 11.5px; text-align: center; white-space: nowrap; }
+  tbody tr { border-top: 1px solid var(--border); }
+  tbody th { padding: 10px 4px; font-weight: 400; text-align: left; white-space: nowrap; }
+  .agent { display: flex; align-items: center; gap: 8px; color: var(--text-strong); }
+  .mark { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: var(--surface-base-hover); font-size: 13px; }
+  td { text-align: center; color: var(--success); }
+  td :global(svg) { display: inline-block; vertical-align: middle; }
+</style>

@@ -1,0 +1,18 @@
+[data-component="keybind"] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-base);
+  box-shadow: var(--shadow-xxs-border);
+
+  /* text-12-regular */
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-none);
+  color: var(--text-weak);
+}

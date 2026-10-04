@@ -1,0 +1,90 @@
+{
+  "name": "@claxedo/host-connector",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "The host side of machine-wide remote access: a signing identity, invitation redeem, durable host state, a machine-signed heartbeat and assignment discovery \u2014 with no server, no routes, and no account credential",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyashrathore/Claxedo.git",
+    "directory": "packages/claxedo-host-connector"
+  },
+  "exports": {
+    "./bootstrap": {
+      "types": "./src/bootstrap.ts",
+      "bun": "./src/bootstrap.ts",
+      "development": "./src/bootstrap.ts",
+      "import": "./dist/bootstrap.mjs",
+      "default": "./dist/bootstrap.mjs"
+    },
+    "./connector": {
+      "types": "./src/connector.ts",
+      "bun": "./src/connector.ts",
+      "development": "./src/connector.ts",
+      "import": "./dist/connector.mjs",
+      "default": "./dist/connector.mjs"
+    },
+    "./host-identity": {
+      "types": "./src/host-identity.ts",
+      "bun": "./src/host-identity.ts",
+      "development": "./src/host-identity.ts",
+      "import": "./dist/host-identity.mjs",
+      "default": "./dist/host-identity.mjs"
+    },
+    "./host-state": {
+      "types": "./src/host-state.ts",
+      "bun": "./src/host-state.ts",
+      "development": "./src/host-state.ts",
+      "import": "./dist/host-state.mjs",
+      "default": "./dist/host-state.mjs"
+    },
+    "./host-state-node": {
+      "types": "./src/host-state-node.ts",
+      "bun": "./src/host-state-node.ts",
+      "development": "./src/host-state-node.ts",
+      "import": "./dist/host-state-node.mjs",
+      "default": "./dist/host-state-node.mjs"
+    },
+    "./machine-seal": {
+      "types": "./src/machine-seal.ts",
+      "bun": "./src/machine-seal.ts",
+      "development": "./src/machine-seal.ts",
+      "import": "./dist/machine-seal.mjs",
+      "default": "./dist/machine-seal.mjs"
+    },
+    "./machine-transport": {
+      "types": "./src/machine-transport.ts",
+      "bun": "./src/machine-transport.ts",
+      "development": "./src/machine-transport.ts",
+      "import": "./dist/machine-transport.mjs",
+      "default": "./dist/machine-transport.mjs"
+    },
+    "./test-support": {
+      "types": "./src/fake-control-plane.test-support.ts",
+      "bun": "./src/fake-control-plane.test-support.ts",
+      "development": "./src/fake-control-plane.test-support.ts",
+      "import": "./src/fake-control-plane.test-support.ts",
+      "default": "./src/fake-control-plane.test-support.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bun ./scripts/build.ts",
+    "smoke:build": "bun ./scripts/smoke-build.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml",
+    "verify:closure": "bun ../../script/product-boundary/verify.ts"
+  },
+  "devDependencies": {
+    "@tsconfig/node-lts": "22.0.4",
+    "@types/bun": "1.3.13",
+    "typescript": "catalog:",
+    "vitest": "2.1.9"
+  },
+  "dependencies": {
+    "@claxedo/account-contract": "workspace:*"
+  }
+}

@@ -1,0 +1,22 @@
+# The control plane (the API) lives on the Cloudflare WORKER, not on Pages.
+# Pages serves only the static SPA. Without these rules, Cloudflare Pages answers
+# ANY unmatched path with the SPA index.html (HTTP 200) — so a misrouted
+# same-origin API call (e.g. /api/workspace/resolve) receives index.html and the
+# app then chokes parsing HTML as JSON ("Unexpected token '<'"), which silently
+# breaks session creation. Force control-plane paths to 404 here so a stray
+# same-origin call fails cleanly (the app treats 404 as "no runtime") instead of
+# masquerading as a successful JSON response. Real API traffic goes to the Worker
+# via its absolute origin and never touches these rules.
+/api/*         /index.html   404
+/global/*      /index.html   404
+/workspaces/*  /index.html   404
+/provider      /index.html   404
+/provider/*    /index.html   404
+/path          /index.html   404
+/project       /index.html   404
+/project/*     /index.html   404
+/internal/*    /index.html   404
+/.well-known/* /index.html   404
+
+# SPA fallback for genuine app routes.
+/*             /index.html   200

@@ -1,0 +1,344 @@
+/**
+ * Packaging invariants, checked against an already-packaged app (the app.asar
+ * under dist, any platform). Wire in after electron-builder (package.ts).
+ *
+ * 1. Application JavaScript is bundled from entry points at build time.
+ *    The public SDK closure lives outside asar and is verified separately;
+ *    the packaged asar must contain no node_modules beyond the native
+ *    modules that cannot be bundled (better-sqlite3, @lydell/node-pty and its
+ *    per-target platform package).
+ *
+ * 1b. And nothing else structural: every remaining asar entry must fall under
+ *    a root `electron-builder.config.ts` declares. Both files read that
+ *    declaration from `package-structure.ts`, so a `files` glob added without
+ *    a declaration fails here rather than quietly enlarging the installer.
+ *
+ * 2. Artifact sizes stay within a ratchet. Each artifact kind carries an
+ *    expected byte count below; a packaged artifact more than
+ *    SIZE_REGRESSION_TOLERANCE above its expectation fails the check. Kinds
+ *    that were not packaged on this run are skipped, so any single-platform
+ *    packaging job can still verify. The constants are deliberately generous
+ *    starting points — tighten them in CI as real release measurements
+ *    accumulate.
+ *
+ * 3. The English Chromium locale ships. `electronLanguages` DELETES every
+ *    locale it does not name exactly, and the mac (`.lproj`, underscores) and
+ *    win/linux (`.pak`, hyphens) spellings differ — so a plausible-looking
+ *    name is a silent delete with no build error. Shipping without English
+ *    left Chromium falling back to another bundled locale, which made
+ *    `navigator.language` report that locale and the renderer render its
+ *    dictionary: v0.0.64 showed a German UI on an English machine.
+ */
+
+import * as fs from "node:fs"
+import * as path from "node:path"
+import { spawnSync } from "node:child_process"
+
+import { readRecord } from "@claxedo/helpers/readers"
+
+import { ALL_NATIVE_MODULES, isDeclaredStructuralEntry, requiredPackagedBoundaryEntries } from "./package-structure"
+import { verifyHostConnectorChildArtifact } from "../src/main/host-connector/child-artifact"
+import { embeddedSdkPins, verifyOpenCodeSdkResources } from "./opencode-sdk-resources"
+import { verifyPackagedStartupArtifacts } from "./packaged-startup-artifacts"
+
+const ALLOWED_NATIVE_MODULES = new Set(ALL_NATIVE_MODULES)
+
+// ── Size ratchet ──
+
+const MB = 1024 * 1024
+
+/**
+ * Expected total bytes per artifact kind. TODO(size-ratchet): these are
+ * generous first-pass ceilings, not measurements — replace each with the real
+ * number from a green release run, then keep ratcheting down as size work
+ * lands. The check only fails on gross regressions: actual size must exceed
+ * expected × {@link SIZE_REGRESSION_TOLERANCE}.
+ */
+const ARTIFACT_SIZE_EXPECTATIONS: ReadonlyArray<{
+  kind: string
+  matches: (fileName: string) => boolean
+  expectedBytes: number
+}> = [
+  { kind: "app.asar", matches: (name) => name === "app.asar", expectedBytes: 150 * MB },
+  { kind: "dmg", matches: (name) => name.endsWith(".dmg"), expectedBytes: 250 * MB },
+  { kind: "mac zip", matches: (name) => name.endsWith(".zip"), expectedBytes: 250 * MB },
+  { kind: "nsis installer", matches: (name) => name.endsWith(".exe"), expectedBytes: 250 * MB },
+  { kind: "AppImage", matches: (name) => name.endsWith(".AppImage"), expectedBytes: 300 * MB },
+  { kind: "deb", matches: (name) => name.endsWith(".deb"), expectedBytes: 250 * MB },
+  { kind: "rpm", matches: (name) => name.endsWith(".rpm"), expectedBytes: 250 * MB },
+]
+
+/** Fail only on gross regressions: 20% above the expectation. */
+const SIZE_REGRESSION_TOLERANCE = 1.2
+
+/**
+ * Every packaged artifact the size ratchet can judge: the asars found inside
+ * unpacked app directories plus the top-level installer outputs under dist/.
+ * Only real files count; electron-builder's *.blockmap siblings never match a
+ * kind above and are ignored.
+ */
+function checkArtifactSizes(root: string, asars: readonly string[]): string[] {
+  const dist = path.resolve(root, "dist")
+  const candidates = [...asars]
+  if (fs.existsSync(dist)) {
+    for (const entry of fs.readdirSync(dist, { withFileTypes: true })) {
+      if (entry.isFile()) candidates.push(path.join(dist, entry.name))
+    }
+  }
+  const failures: string[] = []
+  for (const file of candidates) {
+    const expectation = ARTIFACT_SIZE_EXPECTATIONS.find((item) => item.matches(path.basename(file)))
+    if (!expectation) continue
+    const actual = fs.statSync(file).size
+    const limit = Math.floor(expectation.expectedBytes * SIZE_REGRESSION_TOLERANCE)
+    if (actual <= limit) continue
+    failures.push(
+      `${file}: ${expectation.kind} is ${(actual / MB).toFixed(1)} MB — more than ` +
+        `${Math.round((SIZE_REGRESSION_TOLERANCE - 1) * 100)}% over its ${(
+          expectation.expectedBytes / MB
+        ).toFixed(0)} MB expectation. If the growth is intentional, raise ` +
+        `ARTIFACT_SIZE_EXPECTATIONS in scripts/verify-package-contents.ts; otherwise find what ballooned.`,
+    )
+  }
+  return failures
+}
+
+function findAsars(root: string): string[] {
+  const dist = path.resolve(root, "dist")
+  if (!fs.existsSync(dist)) return []
+  const found: string[] = []
+  const walk = (dir: string, depth: number) => {
+    if (depth > 4) return
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, entry.name)
+      if (entry.isDirectory()) walk(p, depth + 1)
+      else if (entry.name === "app.asar") found.push(p)
+    }
+  }
+  walk(dist, 0)
+  return found
+}
+
+function asarHeaderFiles(archive: string): string[] {
+  const fd = fs.openSync(archive, "r")
+  try {
+    const head = Buffer.alloc(16)
+    fs.readSync(fd, head, 0, 16, 0)
+    const jsonLen = head.readUInt32LE(12)
+    const jsonBuf = Buffer.alloc(jsonLen)
+    fs.readSync(fd, jsonBuf, 0, jsonLen, 16)
+    const header: unknown = JSON.parse(jsonBuf.toString())
+    const files: string[] = []
+    const walk = (node: unknown, prefix: string) => {
+      for (const [name, child] of Object.entries(readRecord(node, "files") ?? {})) {
+        const p = prefix ? `${prefix}/${name}` : name
+        if (readRecord(child, "files")) {
+          walk(child, p)
+          continue
+        }
+        // File entries carry content (size/offset); directory entries do not.
+        // electron-builder leaves empty package-dir stubs for excluded
+        // dependencies — harmless, and not a packaging-invariant violation.
+        files.push(p)
+      }
+    }
+    walk(header, "")
+    return files
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
+/**
+ * The directory holding Chromium's locale resources, for whichever platform
+ * this app was packaged for: `<App>.app/Contents/Frameworks/Electron
+ * Framework.framework/Resources/*.lproj` on mac, `resources/../locales/*.pak`
+ * on win/linux. Returns the English entries found alongside the total count.
+ */
+function inspectLocales(archive: string) {
+  // archive is <...>/<App>.app/Contents/Resources/app.asar (mac) or
+  // <...>/resources/app.asar (win/linux); Chromium's locales are siblings.
+  const resources = path.dirname(archive)
+  const macDir = path.join(
+    path.dirname(resources),
+    "Frameworks",
+    "Electron Framework.framework",
+    "Resources",
+  )
+  const pakDir = path.join(path.dirname(resources), "locales")
+
+  const read = (dir: string, ext: string) => {
+    if (!fs.existsSync(dir)) return null
+    const names = fs
+      .readdirSync(dir)
+      .filter((name) => name.endsWith(ext))
+      .map((name) => path.basename(name, ext))
+    return names.length > 0 ? names : null
+  }
+
+  const mac = read(macDir, ".lproj")
+  if (mac) return { dir: macDir, locales: mac, english: mac.filter((n) => n === "en" || n.startsWith("en_")) }
+
+  const pak = read(pakDir, ".pak")
+  if (pak) return { dir: pakDir, locales: pak, english: pak.filter((n) => n === "en" || n.startsWith("en-")) }
+
+  return null
+}
+
+export type PackageTarget = { platform: NodeJS.Platform; arch: string }
+
+export function canSmokePackagedBinary(target: PackageTarget) {
+  return target.platform === process.platform && target.arch === process.arch
+}
+
+export function verifyPackageContents(
+  root = path.resolve(import.meta.dir, ".."),
+  target: PackageTarget = { platform: process.platform, arch: process.arch },
+) {
+  const asars = findAsars(root)
+  if (asars.length === 0) {
+    throw new Error(`no packaged app.asar found under ${path.resolve(root, "dist")} — run packaging first`)
+  }
+  const failures: string[] = [...checkArtifactSizes(root, asars)]
+  for (const archive of asars) {
+    try {
+      verifyOpenCodeSdkResources(path.dirname(archive), embeddedSdkPins())
+    } catch (error) {
+      failures.push(`${archive}: embedded SDK resources: ${String(error)}`)
+    }
+    const resourceDir = path.join(path.dirname(archive), "host-connector")
+    try {
+      verifyHostConnectorChildArtifact(resourceDir)
+    } catch (error) {
+      failures.push(`${archive}: ${String(error)}`)
+    }
+    const mermaidDir = path.join(path.dirname(archive), "mermaid")
+    const binaries = [
+      path.join(mermaidDir, "claxedo-mermaid-renderer"),
+      path.join(mermaidDir, "claxedo-mermaid-renderer.exe"),
+    ].filter((entry) => fs.existsSync(entry) && fs.statSync(entry).isFile())
+    if (binaries.length !== 1) {
+      failures.push(`${archive}: expected one packaged Mermaid renderer in ${mermaidDir}`)
+      continue
+    }
+    if (!binaries[0].endsWith(".exe") && (fs.statSync(binaries[0]).mode & 0o111) === 0) {
+      failures.push(`${archive}: packaged Mermaid renderer is not executable: ${binaries[0]}`)
+      continue
+    }
+    // Cross-packaging creates binaries the host cannot execute (for example a
+    // win32 .exe produced on macOS, or an x64 helper on arm64). Presence and
+    // permissions remain packaging invariants; the functional smoke belongs to
+    // a host with the same OS and architecture as the target.
+    if (!canSmokePackagedBinary(target)) continue
+    const mermaid = spawnSync(binaries[0], ["mermaid"], {
+      input: JSON.stringify({ source: "flowchart LR\nA --> B", theme: { primaryColor: "#123456" } }),
+      encoding: "utf8",
+    })
+    const svg = mermaid.stdout
+    if (mermaid.status !== 0 || !svg.startsWith("<svg") || !svg.includes("#123456")) {
+      failures.push(`${archive}: packaged Mermaid renderer failed its Mermaid smoke`)
+    }
+  }
+  for (const archive of asars) {
+    // The launch gate child is spawned by its unpacked path and resolves its
+    // imports from there, where nothing else from the asar exists. Only a run
+    // proves the copy is self-contained; presence proved nothing when the
+    // child shared a chunk with the runtime bundle.
+    const gateChild = path.join(`${archive}.unpacked`, "out/main/launch-gate-child.mjs")
+    if (!fs.existsSync(gateChild)) {
+      failures.push(`${archive}: launch gate child is not unpacked at ${gateChild}`)
+      continue
+    }
+    if (!canSmokePackagedBinary(target)) continue
+    const executable = packagedExecutable(archive)
+    if (!executable) {
+      failures.push(`${archive}: cannot locate the packaged executable to run the launch gate child`)
+      continue
+    }
+    const gate = spawnSync(executable, [gateChild], {
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+      encoding: "utf8",
+      timeout: 30_000,
+    })
+    if (gate.status !== 23) {
+      failures.push(
+        `${archive}: launch gate child exited ${gate.status} instead of 23 (no parent channel) when run from its unpacked path:\n${gate.stderr.trim().split("\n").slice(0, 4).join("\n")}`,
+      )
+    }
+  }
+  for (const archive of asars) {
+    const found = inspectLocales(archive)
+    // Only assert when a locale directory is actually present: some targets
+    // (and the asar-only fixtures in tests) have no Chromium resources beside
+    // them, and a missing directory is not evidence of a dropped locale.
+    if (!found) continue
+    if (found.english.length === 0) {
+      failures.push(
+        `${archive}: no English Chromium locale in ${found.dir} — electronLanguages deleted it. ` +
+          `Locale names differ per platform (mac .lproj uses "en"/"en_GB"; win/linux .pak uses ` +
+          `"en-US"/"en-GB"); fix the list in electron-builder.config.ts. ` +
+          `Shipped locales: ${found.locales.sort().join(", ") || "(none)"}`,
+      )
+    }
+  }
+  for (const archive of asars) {
+    failures.push(...verifyPackagedStartupArtifacts(archive))
+    const entries = asarHeaderFiles(archive)
+    for (const required of requiredPackagedBoundaryEntries(entries)) {
+      if (!entries.includes(required)) {
+        failures.push(`${archive}: required product-boundary manifest is missing: ${required}`)
+      }
+    }
+    const offenders = entries
+      .filter((entry) => entry.startsWith("node_modules/"))
+      .map((entry) => {
+        const parts = entry.split("/")
+        return parts[1].startsWith("@") ? parts.slice(1, 3).join("/") : parts[1]
+      })
+      .filter((top) => !ALLOWED_NATIVE_MODULES.has(top))
+    for (const offender of new Set(offenders)) {
+      failures.push(
+        `${archive}: node_modules/${offender} ships but is not a declared native module — ` +
+          `bundle it from an entry point instead (electron.vite.config.ts / bundle-claxedo-server.ts)`,
+      )
+    }
+
+    // Everything that is not a native module must be declared build output.
+    // Reported by ROOT rather than per file: an undeclared directory is one
+    // decision, and listing its thousands of members would bury it.
+    const undeclared = new Set(
+      entries
+        .filter((entry) => !entry.startsWith("node_modules/") && !isDeclaredStructuralEntry(entry))
+        .map((entry) => entry.split("/")[0]),
+    )
+    for (const root of undeclared) {
+      failures.push(
+        `${archive}: ${root} ships but is not a declared structural resource — ` +
+          `add it to ASAR_STRUCTURAL_ROOTS in scripts/package-structure.ts, or remove the ` +
+          `\`files\` glob in electron-builder.config.ts that admitted it`,
+      )
+    }
+  }
+  return { asars, failures }
+}
+
+/**
+ * The app binary next to a packaged `app.asar`, by electron-builder's layout:
+ * `<name>.app/Contents/MacOS/<name>` on macOS, the single `.exe` beside
+ * `resources/` on Windows, the pinned `claxedo` on Linux.
+ */
+function packagedExecutable(archive: string): string | undefined {
+  const resources = path.dirname(archive)
+  if (process.platform === "darwin") {
+    const macos = path.join(resources, "..", "MacOS")
+    const entries = fs.existsSync(macos) ? fs.readdirSync(macos) : []
+    return entries.length === 1 ? path.join(macos, entries[0]) : undefined
+  }
+  const appDir = path.dirname(resources)
+  if (process.platform === "win32") {
+    const exes = fs.readdirSync(appDir).filter((entry) => entry.endsWith(".exe"))
+    return exes.length === 1 ? path.join(appDir, exes[0]) : undefined
+  }
+  const linux = path.join(appDir, "claxedo")
+  return fs.existsSync(linux) ? linux : undefined
+}

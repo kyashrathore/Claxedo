@@ -1,0 +1,26 @@
+Subject: segmented control v2: a fit-to-labels modifier
+
+What: `segmented-control-v2--fit` sizes the control to its labels (width auto,
+items flex 1 1 auto) beside the existing `--full-width` modifier.
+Why: the 232px design width is wrong wherever the choices are two short words; the
+Usage section showed each view name with 60px of empty track on both sides.
+
+diff --git a/src/v2/components/segmented-control-v2.css b/src/v2/components/segmented-control-v2.css
+index 42f59e9e3b87f09fcdd291e3fffa2d372b63e0f7..513899f3c8e45f4947c590a86acc9381c387dbf0 100644
+--- a/src/v2/components/segmented-control-v2.css
++++ b/src/v2/components/segmented-control-v2.css
+@@ -2,6 +2,14 @@
+   width: 100%;
+ }
+ 
++.ui-segmented-control-v2.segmented-control-v2--fit {
++  width: auto;
++}
++
++.segmented-control-v2--fit .ui-segmented-control-v2-item {
++  flex: 1 1 auto;
++}
++
+ .ui-segmented-control-v2 {
+   box-sizing: border-box;
+   display: flex;

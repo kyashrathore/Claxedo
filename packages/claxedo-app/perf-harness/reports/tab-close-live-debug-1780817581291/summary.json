@@ -1,0 +1,792 @@
+{
+  "reportDir": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/reports/tab-close-live-debug-1780817581291",
+  "initial": {
+    "label": "initial",
+    "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+    "title": "Claxedo",
+    "bodySnippet": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain",
+    "hasNewSessionText": false,
+    "buttons": [
+      {
+        "text": "",
+        "aria": "New session in main",
+        "title": "",
+        "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+      },
+      {
+        "text": "",
+        "aria": "New session in wt-475c3b35",
+        "title": "",
+        "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+      },
+      {
+        "text": "",
+        "aria": "New session in main",
+        "title": "",
+        "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+      },
+      {
+        "text": "Marketplace",
+        "aria": "Open Marketplace",
+        "title": "",
+        "cls": "w-full flex items-center justify-center gap-1.5 h-8 rounded-lg text-[13px] font-medium text-text-base bg-surface-base-hover/50 hover:bg-surface-base-hover border border-border-weak-base/40 hover:border-border-weak-base/60 transition-[background-color,border-color,color,scale] duration-150 active:scale-[0.96]"
+      },
+      {
+        "text": "",
+        "aria": "New Session",
+        "title": "",
+        "cls": "flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0 rounded max-md:rounded-lg active:scale-[0.94]"
+      }
+    ],
+    "localStorageKeys": [
+      "claxedo:runner-map",
+      "claxedo.session-view.v1",
+      "claxedo.state.v5",
+      "opencode.global.dat:notification",
+      "opencode.global.dat:globalSync.project",
+      "__clerk_environment",
+      "highlights.v1",
+      "claxedo-query-v1",
+      "opencode.global.dat:command.catalog.v1"
+    ],
+    "sessionStorageKeys": []
+  },
+  "afterClose": {
+    "label": "after-close",
+    "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+    "title": "Claxedo",
+    "bodySnippet": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain",
+    "hasNewSessionText": false,
+    "buttons": [
+      {
+        "text": "",
+        "aria": "New session in main",
+        "title": "",
+        "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+      },
+      {
+        "text": "",
+        "aria": "New session in wt-475c3b35",
+        "title": "",
+        "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+      },
+      {
+        "text": "",
+        "aria": "New session in main",
+        "title": "",
+        "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+      },
+      {
+        "text": "Marketplace",
+        "aria": "Open Marketplace",
+        "title": "",
+        "cls": "w-full flex items-center justify-center gap-1.5 h-8 rounded-lg text-[13px] font-medium text-text-base bg-surface-base-hover/50 hover:bg-surface-base-hover border border-border-weak-base/40 hover:border-border-weak-base/60 transition-[background-color,border-color,color,scale] duration-150 active:scale-[0.96]"
+      },
+      {
+        "text": "",
+        "aria": "New Session",
+        "title": "",
+        "cls": "flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0 rounded max-md:rounded-lg active:scale-[0.94]"
+      }
+    ],
+    "localStorageKeys": [
+      "claxedo:runner-map",
+      "claxedo.session-view.v1",
+      "claxedo.state.v5",
+      "opencode.global.dat:notification",
+      "opencode.global.dat:globalSync.project",
+      "__clerk_environment",
+      "highlights.v1",
+      "claxedo-query-v1",
+      "opencode.global.dat:command.catalog.v1"
+    ],
+    "sessionStorageKeys": []
+  },
+  "afterReload": {
+    "label": "after-reload",
+    "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+    "title": "Claxedo",
+    "bodySnippet": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain",
+    "hasNewSessionText": false,
+    "buttons": [
+      {
+        "text": "",
+        "aria": "New session in main",
+        "title": "",
+        "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+      },
+      {
+        "text": "",
+        "aria": "New session in wt-475c3b35",
+        "title": "",
+        "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+      },
+      {
+        "text": "",
+        "aria": "New session in main",
+        "title": "",
+        "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+      },
+      {
+        "text": "Marketplace",
+        "aria": "Open Marketplace",
+        "title": "",
+        "cls": "w-full flex items-center justify-center gap-1.5 h-8 rounded-lg text-[13px] font-medium text-text-base bg-surface-base-hover/50 hover:bg-surface-base-hover border border-border-weak-base/40 hover:border-border-weak-base/60 transition-[background-color,border-color,color,scale] duration-150 active:scale-[0.96]"
+      },
+      {
+        "text": "",
+        "aria": "New Session",
+        "title": "",
+        "cls": "flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0 rounded max-md:rounded-lg active:scale-[0.94]"
+      }
+    ],
+    "localStorageKeys": [
+      "claxedo:runner-map",
+      "claxedo.session-view.v1",
+      "claxedo.state.v5",
+      "opencode.global.dat:notification",
+      "opencode.global.dat:globalSync.project",
+      "__clerk_environment",
+      "highlights.v1",
+      "claxedo-query-v1",
+      "opencode.global.dat:command.catalog.v1"
+    ],
+    "sessionStorageKeys": []
+  },
+  "afterCreate": {
+    "label": "after-create",
+    "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+    "title": "Claxedo",
+    "bodySnippet": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain\nNew session",
+    "hasNewSessionText": false,
+    "buttons": [
+      {
+        "text": "",
+        "aria": "New session in main",
+        "title": "",
+        "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+      },
+      {
+        "text": "",
+        "aria": "New session in wt-475c3b35",
+        "title": "",
+        "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+      },
+      {
+        "text": "",
+        "aria": "New session in main",
+        "title": "",
+        "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+      },
+      {
+        "text": "Marketplace",
+        "aria": "Open Marketplace",
+        "title": "",
+        "cls": "w-full flex items-center justify-center gap-1.5 h-8 rounded-lg text-[13px] font-medium text-text-base bg-surface-base-hover/50 hover:bg-surface-base-hover border border-border-weak-base/40 hover:border-border-weak-base/60 transition-[background-color,border-color,color,scale] duration-150 active:scale-[0.96]"
+      },
+      {
+        "text": "",
+        "aria": "New Session",
+        "title": "",
+        "cls": "flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0 rounded max-md:rounded-lg active:scale-[0.94]"
+      }
+    ],
+    "localStorageKeys": [
+      "opencode.global.dat:server",
+      "claxedo:runner-map",
+      "claxedo.session-view.v1",
+      "claxedo.state.v5",
+      "opencode.global.dat:notification",
+      "opencode.global.dat:globalSync.project",
+      "__clerk_environment",
+      "highlights.v1",
+      "claxedo-query-v1",
+      "opencode.global.dat:command.catalog.v1"
+    ],
+    "sessionStorageKeys": []
+  },
+  "afterStorageClearReload": {
+    "label": "after-storage-clear-reload",
+    "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+    "title": "Claxedo",
+    "bodySnippet": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain\nNew session",
+    "hasNewSessionText": false,
+    "buttons": [
+      {
+        "text": "",
+        "aria": "New session in main",
+        "title": "",
+        "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+      },
+      {
+        "text": "",
+        "aria": "New session in wt-475c3b35",
+        "title": "",
+        "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+      },
+      {
+        "text": "",
+        "aria": "New session in main",
+        "title": "",
+        "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+      },
+      {
+        "text": "Marketplace",
+        "aria": "Open Marketplace",
+        "title": "",
+        "cls": "w-full flex items-center justify-center gap-1.5 h-8 rounded-lg text-[13px] font-medium text-text-base bg-surface-base-hover/50 hover:bg-surface-base-hover border border-border-weak-base/40 hover:border-border-weak-base/60 transition-[background-color,border-color,color,scale] duration-150 active:scale-[0.96]"
+      },
+      {
+        "text": "",
+        "aria": "New Session",
+        "title": "",
+        "cls": "flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0 rounded max-md:rounded-lg active:scale-[0.94]"
+      }
+    ],
+    "localStorageKeys": [
+      "claxedo:runner-map",
+      "claxedo.session-view.v1",
+      "claxedo.state.v5",
+      "opencode.global.dat:notification",
+      "opencode.global.dat:globalSync.project",
+      "__clerk_environment",
+      "highlights.v1",
+      "claxedo-query-v1",
+      "opencode.global.dat:command.catalog.v1"
+    ],
+    "sessionStorageKeys": []
+  },
+  "closeClicked": false,
+  "createClicked": true,
+  "rangeErrors": 0,
+  "failedResponses": [],
+  "interestingLogs": [
+    {
+      "t": 323,
+      "type": "console",
+      "level": "log",
+      "text": "[claxedo:boot] start http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+      "location": {
+        "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+        "lineNumber": 67,
+        "columnNumber": 35
+      }
+    },
+    {
+      "t": 323,
+      "type": "console",
+      "level": "log",
+      "text": "[claxedo:boot] before-render {hasRoot: true}",
+      "location": {
+        "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+        "lineNumber": 249,
+        "columnNumber": 35
+      }
+    },
+    {
+      "t": 335,
+      "type": "console",
+      "level": "log",
+      "text": "[claxedo:boot] after-render {rootChildren: 2}",
+      "location": {
+        "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+        "lineNumber": 272,
+        "columnNumber": 35
+      }
+    },
+    {
+      "t": 392,
+      "type": "console",
+      "level": "debug",
+      "text": "[claxedo:empty-draft] {shouldOpen: false, suppress: false, directory: /Users/yashvardhansingh/test/opencode, visible: Array(1), focused: session-1780817581975-rt0qufc}",
+      "location": {
+        "url": "http://localhost:4445/src/claxedo-ui/layouts/rail-layout.tsx?t=1780817172231",
+        "lineNumber": 91,
+        "columnNumber": 14
+      }
+    },
+    {
+      "t": 421,
+      "type": "console",
+      "level": "debug",
+      "text": "[claxedo:session-hydrate] gate {directory: /Users/yashvardhansingh/test/opencode, sessionID: new, healthy: true, paneActive: true, signedControlPlane: false}",
+      "location": {
+        "url": "http://localhost:4445/src/session/store/session-controller.ts?t=1780814377380",
+        "lineNumber": 228,
+        "columnNumber": 10
+      }
+    },
+    {
+      "t": 2891,
+      "type": "state",
+      "label": "initial",
+      "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+      "title": "Claxedo",
+      "bodySnippet": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain",
+      "hasNewSessionText": false,
+      "buttons": [
+        {
+          "text": "",
+          "aria": "New session in main",
+          "title": "",
+          "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+        },
+        {
+          "text": "",
+          "aria": "New session in wt-475c3b35",
+          "title": "",
+          "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+        },
+        {
+          "text": "",
+          "aria": "New session in main",
+          "title": "",
+          "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+        },
+        {
+          "text": "Marketplace",
+          "aria": "Open Marketplace",
+          "title": "",
+          "cls": "w-full flex items-center justify-center gap-1.5 h-8 rounded-lg text-[13px] font-medium text-text-base bg-surface-base-hover/50 hover:bg-surface-base-hover border border-border-weak-base/40 hover:border-border-weak-base/60 transition-[background-color,border-color,color,scale] duration-150 active:scale-[0.96]"
+        },
+        {
+          "text": "",
+          "aria": "New Session",
+          "title": "",
+          "cls": "flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0 rounded max-md:rounded-lg active:scale-[0.94]"
+        }
+      ],
+      "localStorageKeys": [
+        "claxedo:runner-map",
+        "claxedo.session-view.v1",
+        "claxedo.state.v5",
+        "opencode.global.dat:notification",
+        "opencode.global.dat:globalSync.project",
+        "__clerk_environment",
+        "highlights.v1",
+        "claxedo-query-v1",
+        "opencode.global.dat:command.catalog.v1"
+      ],
+      "sessionStorageKeys": []
+    },
+    {
+      "t": 6168,
+      "type": "action",
+      "name": "close-new-session",
+      "closeClicked": false
+    },
+    {
+      "t": 7400,
+      "type": "state",
+      "label": "after-close",
+      "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+      "title": "Claxedo",
+      "bodySnippet": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain",
+      "hasNewSessionText": false,
+      "buttons": [
+        {
+          "text": "",
+          "aria": "New session in main",
+          "title": "",
+          "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+        },
+        {
+          "text": "",
+          "aria": "New session in wt-475c3b35",
+          "title": "",
+          "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+        },
+        {
+          "text": "",
+          "aria": "New session in main",
+          "title": "",
+          "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+        },
+        {
+          "text": "Marketplace",
+          "aria": "Open Marketplace",
+          "title": "",
+          "cls": "w-full flex items-center justify-center gap-1.5 h-8 rounded-lg text-[13px] font-medium text-text-base bg-surface-base-hover/50 hover:bg-surface-base-hover border border-border-weak-base/40 hover:border-border-weak-base/60 transition-[background-color,border-color,color,scale] duration-150 active:scale-[0.96]"
+        },
+        {
+          "text": "",
+          "aria": "New Session",
+          "title": "",
+          "cls": "flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0 rounded max-md:rounded-lg active:scale-[0.94]"
+        }
+      ],
+      "localStorageKeys": [
+        "claxedo:runner-map",
+        "claxedo.session-view.v1",
+        "claxedo.state.v5",
+        "opencode.global.dat:notification",
+        "opencode.global.dat:globalSync.project",
+        "__clerk_environment",
+        "highlights.v1",
+        "claxedo-query-v1",
+        "opencode.global.dat:command.catalog.v1"
+      ],
+      "sessionStorageKeys": []
+    },
+    {
+      "t": 7408,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/global/event",
+      "method": "GET",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 7408,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "method": "GET",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 7408,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/api/claxedo/agent-config/runner/options?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode&type=codex-acp",
+      "method": "GET",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 7408,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/api/claxedo/agent-config/agents?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+      "method": "GET",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 7409,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/api/claxedo/agent-config/agents?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode&type=codex-acp",
+      "method": "GET",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 7409,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/api/claxedo/agent-config/agents?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode&type=opencode",
+      "method": "GET",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 7409,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/provider?runner=codex-acp",
+      "method": "GET",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 7565,
+      "type": "console",
+      "level": "log",
+      "text": "[claxedo:boot] start http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+      "location": {
+        "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+        "lineNumber": 67,
+        "columnNumber": 35
+      }
+    },
+    {
+      "t": 7565,
+      "type": "console",
+      "level": "log",
+      "text": "[claxedo:boot] before-render {hasRoot: true}",
+      "location": {
+        "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+        "lineNumber": 249,
+        "columnNumber": 35
+      }
+    },
+    {
+      "t": 7567,
+      "type": "console",
+      "level": "log",
+      "text": "[claxedo:boot] after-render {rootChildren: 2}",
+      "location": {
+        "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+        "lineNumber": 272,
+        "columnNumber": 35
+      }
+    },
+    {
+      "t": 7625,
+      "type": "console",
+      "level": "debug",
+      "text": "[claxedo:empty-draft] {shouldOpen: false, suppress: false, directory: /Users/yashvardhansingh/test/opencode, visible: Array(1), focused: session-1780817581975-rt0qufc}",
+      "location": {
+        "url": "http://localhost:4445/src/claxedo-ui/layouts/rail-layout.tsx?t=1780817172231",
+        "lineNumber": 91,
+        "columnNumber": 14
+      }
+    },
+    {
+      "t": 7632,
+      "type": "console",
+      "level": "debug",
+      "text": "[claxedo:session-hydrate] gate {directory: /Users/yashvardhansingh/test/opencode, sessionID: new, healthy: true, paneActive: true, signedControlPlane: false}",
+      "location": {
+        "url": "http://localhost:4445/src/session/store/session-controller.ts?t=1780814377380",
+        "lineNumber": 228,
+        "columnNumber": 10
+      }
+    },
+    {
+      "t": 10118,
+      "type": "state",
+      "label": "after-reload",
+      "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+      "title": "Claxedo",
+      "bodySnippet": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain",
+      "hasNewSessionText": false,
+      "buttons": [
+        {
+          "text": "",
+          "aria": "New session in main",
+          "title": "",
+          "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+        },
+        {
+          "text": "",
+          "aria": "New session in wt-475c3b35",
+          "title": "",
+          "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+        },
+        {
+          "text": "",
+          "aria": "New session in main",
+          "title": "",
+          "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+        },
+        {
+          "text": "Marketplace",
+          "aria": "Open Marketplace",
+          "title": "",
+          "cls": "w-full flex items-center justify-center gap-1.5 h-8 rounded-lg text-[13px] font-medium text-text-base bg-surface-base-hover/50 hover:bg-surface-base-hover border border-border-weak-base/40 hover:border-border-weak-base/60 transition-[background-color,border-color,color,scale] duration-150 active:scale-[0.96]"
+        },
+        {
+          "text": "",
+          "aria": "New Session",
+          "title": "",
+          "cls": "flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0 rounded max-md:rounded-lg active:scale-[0.94]"
+        }
+      ],
+      "localStorageKeys": [
+        "claxedo:runner-map",
+        "claxedo.session-view.v1",
+        "claxedo.state.v5",
+        "opencode.global.dat:notification",
+        "opencode.global.dat:globalSync.project",
+        "__clerk_environment",
+        "highlights.v1",
+        "claxedo-query-v1",
+        "opencode.global.dat:command.catalog.v1"
+      ],
+      "sessionStorageKeys": []
+    },
+    {
+      "t": 10154,
+      "type": "action",
+      "name": "create-new-session",
+      "createClicked": true
+    },
+    {
+      "t": 11201,
+      "type": "state",
+      "label": "after-create",
+      "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+      "title": "Claxedo",
+      "bodySnippet": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain\nNew session",
+      "hasNewSessionText": false,
+      "buttons": [
+        {
+          "text": "",
+          "aria": "New session in main",
+          "title": "",
+          "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+        },
+        {
+          "text": "",
+          "aria": "New session in wt-475c3b35",
+          "title": "",
+          "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+        },
+        {
+          "text": "",
+          "aria": "New session in main",
+          "title": "",
+          "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+        },
+        {
+          "text": "Marketplace",
+          "aria": "Open Marketplace",
+          "title": "",
+          "cls": "w-full flex items-center justify-center gap-1.5 h-8 rounded-lg text-[13px] font-medium text-text-base bg-surface-base-hover/50 hover:bg-surface-base-hover border border-border-weak-base/40 hover:border-border-weak-base/60 transition-[background-color,border-color,color,scale] duration-150 active:scale-[0.96]"
+        },
+        {
+          "text": "",
+          "aria": "New Session",
+          "title": "",
+          "cls": "flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0 rounded max-md:rounded-lg active:scale-[0.94]"
+        }
+      ],
+      "localStorageKeys": [
+        "opencode.global.dat:server",
+        "claxedo:runner-map",
+        "claxedo.session-view.v1",
+        "claxedo.state.v5",
+        "opencode.global.dat:notification",
+        "opencode.global.dat:globalSync.project",
+        "__clerk_environment",
+        "highlights.v1",
+        "claxedo-query-v1",
+        "opencode.global.dat:command.catalog.v1"
+      ],
+      "sessionStorageKeys": []
+    },
+    {
+      "t": 11209,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/global/event",
+      "method": "GET",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 11209,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/api/claxedo/agent-config/agents?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode",
+      "method": "GET",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 11209,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "method": "GET",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 11209,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/api/claxedo/agent-config/runner/options?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode&type=codex-acp",
+      "method": "GET",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 11210,
+      "type": "requestfailed",
+      "url": "http://127.0.0.1:3001/api/claxedo/agent-config/agents?directory=%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode&type=codex-acp",
+      "method": "GET",
+      "failure": "net::ERR_ABORTED"
+    },
+    {
+      "t": 11359,
+      "type": "console",
+      "level": "log",
+      "text": "[claxedo:boot] start http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+      "location": {
+        "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+        "lineNumber": 67,
+        "columnNumber": 35
+      }
+    },
+    {
+      "t": 11359,
+      "type": "console",
+      "level": "log",
+      "text": "[claxedo:boot] before-render {hasRoot: true}",
+      "location": {
+        "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+        "lineNumber": 249,
+        "columnNumber": 35
+      }
+    },
+    {
+      "t": 11362,
+      "type": "console",
+      "level": "log",
+      "text": "[claxedo:boot] after-render {rootChildren: 2}",
+      "location": {
+        "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+        "lineNumber": 272,
+        "columnNumber": 35
+      }
+    },
+    {
+      "t": 11388,
+      "type": "console",
+      "level": "debug",
+      "text": "[claxedo:empty-draft] {shouldOpen: false, suppress: false, directory: /Users/yashvardhansingh/test/opencode, visible: Array(1), focused: session-1780817581975-rt0qufc}",
+      "location": {
+        "url": "http://localhost:4445/src/claxedo-ui/layouts/rail-layout.tsx?t=1780817172231",
+        "lineNumber": 91,
+        "columnNumber": 14
+      }
+    },
+    {
+      "t": 11394,
+      "type": "console",
+      "level": "debug",
+      "text": "[claxedo:session-hydrate] gate {directory: /Users/yashvardhansingh/test/opencode, sessionID: new, healthy: true, paneActive: true, signedControlPlane: false}",
+      "location": {
+        "url": "http://localhost:4445/src/session/store/session-controller.ts?t=1780814377380",
+        "lineNumber": 228,
+        "columnNumber": 10
+      }
+    },
+    {
+      "t": 13916,
+      "type": "state",
+      "label": "after-storage-clear-reload",
+      "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+      "title": "Claxedo",
+      "bodySnippet": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain\nNew session",
+      "hasNewSessionText": false,
+      "buttons": [
+        {
+          "text": "",
+          "aria": "New session in main",
+          "title": "",
+          "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+        },
+        {
+          "text": "",
+          "aria": "New session in wt-475c3b35",
+          "title": "",
+          "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+        },
+        {
+          "text": "",
+          "aria": "New session in main",
+          "title": "",
+          "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
+        },
+        {
+          "text": "Marketplace",
+          "aria": "Open Marketplace",
+          "title": "",
+          "cls": "w-full flex items-center justify-center gap-1.5 h-8 rounded-lg text-[13px] font-medium text-text-base bg-surface-base-hover/50 hover:bg-surface-base-hover border border-border-weak-base/40 hover:border-border-weak-base/60 transition-[background-color,border-color,color,scale] duration-150 active:scale-[0.96]"
+        },
+        {
+          "text": "",
+          "aria": "New Session",
+          "title": "",
+          "cls": "flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0 rounded max-md:rounded-lg active:scale-[0.94]"
+        }
+      ],
+      "localStorageKeys": [
+        "claxedo:runner-map",
+        "claxedo.session-view.v1",
+        "claxedo.state.v5",
+        "opencode.global.dat:notification",
+        "opencode.global.dat:globalSync.project",
+        "__clerk_environment",
+        "highlights.v1",
+        "claxedo-query-v1",
+        "opencode.global.dat:command.catalog.v1"
+      ],
+      "sessionStorageKeys": []
+    }
+  ]
+}

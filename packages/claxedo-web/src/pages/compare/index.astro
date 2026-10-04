@@ -1,0 +1,136 @@
+---
+import Layout from "../../layouts/Layout.astro"
+import Nav from "../../components/Nav.astro"
+import Footer from "../../components/Footer.astro"
+import DownloadCta from "../../components/DownloadCta.astro"
+import PlatePanel from "../../components/PlatePanel.astro"
+import SectionHead from "../../components/SectionHead.astro"
+import {
+  claxedoFeatures,
+  currentComparisons,
+  featureRows,
+  trackedAlternatives,
+  type FeatureKey,
+  type FeatureState,
+} from "../../content/competitors"
+import { comparePage } from "../../content/site"
+
+const rows = [...currentComparisons].sort((a, b) => a.priority - b.priority)
+
+const columns = [
+  { name: "Claxedo", href: null as string | null, us: true, features: claxedoFeatures as Record<FeatureKey, FeatureState> },
+  ...rows.map((c) => ({ name: c.name, href: `/compare/${c.slug}` as string | null, us: false, features: c.features })),
+]
+
+// One footnote per "partial" cell, in reading order (row by row).
+const partials: { product: string; feature: string; note: string }[] = []
+for (const { key, label } of featureRows) {
+  for (const c of rows) {
+    if (c.features[key] === "partial") {
+      partials.push({ product: c.name, feature: label, note: c.featureNotes?.[key] ?? "Partial or limited. See the full comparison." })
+    }
+  }
+}
+---
+
+<Layout title="Claxedo vs. the alternatives" description="How Claxedo compares to Paseo, Synara, Conductor, Superset, T3 Code and OpenCode, feature by feature, with a first-party source for every claim.">
+  <Nav active="compare" />
+  <main id="main-content" class="page">
+    <div class="page-head">
+      <SectionHead as="h1" title={comparePage.title}>{comparePage.lead}</SectionHead>
+    </div>
+
+    <section class="section">
+      <SectionHead title="Every capability, one table." />
+      <div class="table-frame">
+        <table class="table matrix">
+          <thead>
+            <tr>
+              <th scope="col">Feature</th>
+              {columns.map((col) => (
+                <th scope="col" class={col.us ? "matrix-us" : undefined}>{col.href ? <a href={col.href}>{col.name}</a> : col.name}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {featureRows.map(({ key, label, description }) => (
+              <tr>
+                <th scope="row"><span class="feature-label">{label}</span><span class="feature-desc">{description}</span></th>
+                {columns.map((col) => (
+                  <td class={col.us ? "matrix-us" : undefined}>
+                    {col.features[key] === "yes" && <span class="tick" title="Yes" aria-label="Yes">✓</span>}
+                    {col.features[key] === "partial" && <span class="tick" title="Partial, see notes below" aria-label="Partial, see notes">✓<sup aria-hidden="true">*</sup></span>}
+                    {col.features[key] === "no" && <span class="tick tick-no" title="No" aria-label="No">—</span>}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p class="legend">✓ Yes · ✓* Partial, see notes · — No</p>
+      <ul class="notes">{partials.map((p) => <li><strong>{p.product}</strong>, {p.feature.toLowerCase()}: {p.note}</li>)}</ul>
+      <p class="takeaway">Most tools are either closed or built for one person. Claxedo is open, self-hostable and made for teams.</p>
+    </section>
+
+    {rows.length > 0 && <section class="section">
+      <SectionHead title="Read the full comparison." />
+      <PlatePanel plate="jama" x={0.5} y={0.4} class="deep-panel">
+        <div class="deep-cards">
+          {rows.map((c) => (
+            <a class="card deep" href={`/compare/${c.slug}`}>
+              <h3>Claxedo vs. {c.name}</h3>
+              <p>{c.tagline}</p>
+              <span class="quiet-link">Read the comparison</span>
+            </a>
+          ))}
+        </div>
+      </PlatePanel>
+    </section>}
+
+    <section class="section">
+      <SectionHead title="On the radar.">We watch the wider field and publish only maintained, sourced pages. These aren't full comparisons yet.</SectionHead>
+      <dl class="list tracked">{Object.entries(trackedAlternatives).map(([group, names]) => <div><dt>{group}</dt><dd>{names.join(", ")}</dd></div>)}</dl>
+    </section>
+
+    <section class="closing">
+      <h2>The fastest comparison is running both.</h2>
+      <DownloadCta placement="compare-index" />
+    </section>
+  </main>
+  <Footer />
+</Layout>
+
+<style>
+  .matrix { min-width: 50rem; }
+  .matrix thead th { text-align: center; vertical-align: bottom; }
+  .matrix thead th:first-child { color: var(--ink-soft); text-align: left; }
+  .matrix thead th a { color: inherit; text-decoration: none; }
+  .matrix thead th a:hover { text-decoration: underline; }
+  .matrix tbody th { min-width: 17rem; }
+  .feature-label { display: block; }
+  .feature-desc { display: block; margin-top: .25rem; color: var(--ink-soft); font-size: .8125rem; line-height: 1.45; text-wrap: pretty; }
+  .matrix td { text-align: center; vertical-align: middle; }
+  .matrix td, .matrix thead th:not(:first-child) { padding-inline: .7rem; }
+  .matrix .matrix-us { background: #f7f7f7; }
+  .matrix thead .matrix-us { font-weight: 500; }
+  .tick { color: var(--ink); }
+  .tick-no { color: #b0b0b0; }
+  .tick sup { margin-left: .1rem; }
+  .legend { margin: 1.25rem 0 0; color: var(--ink-soft); font-size: .875rem; }
+  .notes { display: grid; gap: .4rem; max-width: 60rem; margin: 1rem 0 0; padding: 0; list-style: none; }
+  .notes li { color: var(--ink-soft); font-size: .875rem; line-height: 1.5; }
+  .notes li::before { content: "* "; }
+  .notes strong { color: var(--ink); font-weight: 500; }
+  .takeaway { max-width: 52rem; margin: 1.5rem 0 0; color: var(--ink-body); font-size: 1.0625rem; line-height: 1.55; }
+  .deep-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; padding: clamp(1.5rem, 4vw, 3rem); }
+  .deep { display: flex; flex-direction: column; min-height: 12rem; text-decoration: none; transition: box-shadow .15s ease; }
+  .deep:hover { box-shadow: 0 0 0 1px #cfcfcf, 0 1px 2px rgb(15 20 30 / .06), 0 22px 44px -18px rgb(15 20 30 / .38); }
+  .deep .quiet-link { margin-top: auto; padding-top: 1.25rem; font-size: .875rem; }
+  .tracked dd { line-height: 1.6; }
+  @media (max-width: 47.99rem) {
+    .deep-cards { grid-template-columns: minmax(0, 1fr); }
+    .matrix { min-width: 0; }
+    .matrix tbody th { min-width: 11rem; }
+  }
+</style>

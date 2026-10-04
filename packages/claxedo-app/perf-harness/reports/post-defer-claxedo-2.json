@@ -1,0 +1,151 @@
+{
+  "generated_at": "2026-05-25T05:47:40.382Z",
+  "status": "pass",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "launch-empty-home",
+      "name": "Launch Empty Home",
+      "started_at": "2026-05-25T05:47:28.717Z",
+      "duration_ms": 20392.111040999996,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 0,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "launch_first_window_ms",
+          "value": 3340.916,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            3340.916,
+            291.24166700000023,
+            293.05454199999986
+          ],
+          "p50": 293.05454199999986,
+          "p95": 3340.916,
+          "min": 291.24166700000023,
+          "max": 3340.916,
+          "mean": 1308.4040696666668,
+          "relative_stddev": 1.0984398418367978
+        },
+        {
+          "metric": "launch_first_useful_screen_ms",
+          "value": 3389.9939999999997,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            3389.9939999999997,
+            333.01179200000115,
+            336.1772499999988
+          ],
+          "p50": 336.1772499999988,
+          "p95": 3389.9939999999997,
+          "min": 333.01179200000115,
+          "max": 3389.9939999999997,
+          "mean": 1353.061014,
+          "relative_stddev": 1.0644972340906194
+        },
+        {
+          "metric": "launch_workspace_ready_ms",
+          "value": 8394.391708,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            8394.391708,
+            5336.772084,
+            5340.9232090000005
+          ],
+          "p50": 5340.9232090000005,
+          "p95": 8394.391708,
+          "min": 5336.772084,
+          "max": 8394.391708,
+          "mean": 6357.362333666667,
+          "relative_stddev": 0.22657168262643704
+        },
+        {
+          "metric": "launch_first_input_ms",
+          "value": 36.55183299999953,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            36.55183299999953,
+            20.69287500000064,
+            27.407500000001164
+          ],
+          "p50": 27.407500000001164,
+          "p95": 36.55183299999953,
+          "min": 20.69287500000064,
+          "max": 36.55183299999953,
+          "mean": 28.217402666667112,
+          "relative_stddev": 0.23034265603860954
+        },
+        {
+          "metric": "memory_rss_mb",
+          "value": 61.03515625,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            61.03515625,
+            61.03515625,
+            61.03515625
+          ],
+          "p50": 61.03515625,
+          "p95": 61.03515625,
+          "min": 61.03515625,
+          "max": 61.03515625,
+          "mean": 61.03515625,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 789.619,
+        "memory_rss_mb": 61.03515625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-launch-empty-home-3.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "launch-empty-home",
+        "metrics": {
+          "launch_first_window_ms": 5664,
+          "launch_first_useful_screen_ms": 5720,
+          "launch_workspace_ready_ms": 14390,
+          "launch_first_input_ms": 62,
+          "memory_rss_mb": 92
+        }
+      },
+      "status": "pass",
+      "failures": []
+    }
+  ],
+  "comparisons": []
+}

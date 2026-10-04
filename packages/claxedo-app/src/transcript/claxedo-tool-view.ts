@@ -1,0 +1,361 @@
+import type { TranscriptI18n, TranscriptTextKey } from "./i18n"
+import { asArray, asFiniteNumber, asRecord, nonEmptyString } from "@claxedo/helpers/guards"
+import { jsonRecord } from "@claxedo/helpers"
+import { readRecoveryPayloadLine, isRecoveryOutcome, isClaxedoToolName, parseRecoveryOutcome, turnStopped, type ClaxedoToolName } from "@claxedo/agent-runtime-contract"
+import { clampLabel } from "./message-part-text"
+
+export const CLAXEDO_TOOL_TITLE_KEYS = {
+  task_list: "transcript.claxedoTool.task_list",
+  task_get: "transcript.claxedoTool.task_get",
+  task_create: "transcript.claxedoTool.task_create",
+  task_edit: "transcript.claxedoTool.task_edit",
+  task_start: "transcript.claxedoTool.task_start",
+  session_create: "transcript.claxedoTool.session_create",
+  sessions_list: "transcript.claxedoTool.sessions_list",
+  session_get: "transcript.claxedoTool.session_get",
+  session_transcript: "transcript.claxedoTool.session_transcript",
+  session_send: "transcript.claxedoTool.session_send",
+  session_cancel_turn: "transcript.claxedoTool.session_cancel_turn",
+  session_handoff: "transcript.claxedoTool.session_handoff",
+  session_rename: "transcript.claxedoTool.session_rename",
+  session_delete: "transcript.claxedoTool.session_delete",
+  session_changes: "transcript.claxedoTool.session_changes",
+  documents_list: "transcript.claxedoTool.documents_list",
+  documents_open: "transcript.claxedoTool.documents_open",
+  subagent_capabilities: "transcript.claxedoTool.subagent_capabilities",
+  create_subagent: "transcript.claxedoTool.create_subagent",
+  subagent_status: "transcript.claxedoTool.subagent_status",
+  subagent_list: "transcript.claxedoTool.subagent_list",
+  subagent_cancel: "transcript.claxedoTool.subagent_cancel",
+  sessions_board: "transcript.claxedoTool.sessions_board",
+  permission_reply: "transcript.claxedoTool.permission_reply",
+  question_reply: "transcript.claxedoTool.question_reply",
+  question_reject: "transcript.claxedoTool.question_reject",
+  wait_for_attention: "transcript.claxedoTool.wait_for_attention",
+  workspaces_list: "transcript.claxedoTool.workspaces_list",
+  workspace_status: "transcript.claxedoTool.workspace_status",
+  workspace_checkpoint: "transcript.claxedoTool.workspace_checkpoint",
+  workspace_restore: "transcript.claxedoTool.workspace_restore",
+  workspace_lifecycle: "transcript.claxedoTool.workspace_lifecycle",
+  app_plugin_create: "transcript.claxedoTool.app_plugin_create",
+  app_plugin_check: "transcript.claxedoTool.app_plugin_check",
+  app_plugin_add: "transcript.claxedoTool.app_plugin_add",
+  app_plugin_guide: "transcript.claxedoTool.app_plugin_guide",
+} as const satisfies Record<ClaxedoToolName, TranscriptTextKey>
+
+export function claxedoToolArguments(input: Record<string, unknown> | undefined): Record<string, unknown> {
+  const nested = input?.arguments
+  if (typeof nested === "string") return jsonRecord(nested) ?? {}
+  return asRecord(nested) ?? input ?? {}
+}
+
+export function claxedoToolResult(output: string | undefined): Record<string, unknown> | undefined {
+  const text = output?.trim()
+  if (!text) return undefined
+  const whole = jsonRecord(text)
+  if (whole) return whole
+  const marked = readRecoveryPayloadLine(text)
+  return marked === undefined ? undefined : jsonRecord(marked)
+}
+
+export type ClaxedoLink = { kind: "task" | "session"; id: string; label: string }
+
+export type ClaxedoFact = { label: string; value: string; link?: ClaxedoLink; mono?: boolean }
+
+export type ClaxedoTaskRow = { link: ClaxedoLink; status?: string }
+
+export type ClaxedoToolView = {
+  name: string
+  title: string
+  subject?: string
+  link?: ClaxedoLink
+  status?: string
+  note?: string
+  facts: ClaxedoFact[]
+  rows: ClaxedoTaskRow[]
+  more?: string
+  text?: string
+}
+
+export type ClaxedoToolViewInput = {
+  name: string
+  input: Record<string, unknown> | undefined
+  output: string | undefined
+  i18n: TranscriptI18n
+}
+
+const TASK_STATUS_KEYS: Record<string, TranscriptTextKey> = {
+  backlog: "transcript.claxedoTool.status.backlog",
+  todo: "transcript.claxedoTool.status.todo",
+  doing: "transcript.claxedoTool.status.doing",
+  needs_you: "transcript.claxedoTool.status.needs_you",
+  done: "transcript.claxedoTool.status.done",
+}
+
+export function taskStatusLabel(status: string, i18n: TranscriptI18n) {
+  const key = TASK_STATUS_KEYS[status]
+  return key ? i18n.t(key) : status.replaceAll("_", " ")
+}
+
+export const TASK_LIST_ROW_CAP = 8
+
+export function claxedoToolTitle(name: string, i18n: TranscriptI18n) {
+  if (isClaxedoToolName(name)) return i18n.t(CLAXEDO_TOOL_TITLE_KEYS[name])
+  return sentence(name)
+}
+
+export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
+  const { name, i18n } = view
+  const args = claxedoToolArguments(view.input)
+  const result = claxedoToolResult(view.output)
+  const base: ClaxedoToolView = { name, title: claxedoToolTitle(name, i18n), facts: [], rows: [] }
+  const session = (id: string | undefined, label?: string): ClaxedoLink | undefined =>
+    id ? { kind: "session", id, label: label ?? clampLabel(id, 28) } : undefined
+  const count = (n: number, one: TranscriptTextKey, other: TranscriptTextKey) => `${n} ${i18n.t(n === 1 ? one : other)}`
+
+  switch (name) {
+    case "task_create": {
+      const task = asRecord(result?.task)
+      const status = nonEmptyString(task?.status) ?? nonEmptyString(args.status) ?? "todo"
+      const parent = nonEmptyString(task?.parent) ?? nonEmptyString(args.parent)
+      const from = asRecord(task?.createdFrom)
+      const link = task
+        ? taskLink(nonEmptyString(task.id), nonEmptyString(task.key), nonEmptyString(task.title))
+        : undefined
+      return {
+        ...base,
+        ...(link ? { link } : { subject: nonEmptyString(args.title) }),
+        status,
+        ...(result?.replayed === true ? { note: i18n.t("transcript.claxedoTool.note.replayed") } : {}),
+        facts: [
+          ...(parent ? [cardFact(i18n.t("transcript.claxedoTool.fact.parent"), taskLink(parent))] : []),
+          ...linkFact(i18n.t("transcript.claxedoTool.fact.createdFrom"), session(nonEmptyString(from?.sessionId))),
+        ],
+      }
+    }
+    case "task_edit": {
+      const task = asRecord(result?.task)
+      const link = task
+        ? taskLink(nonEmptyString(task.id), nonEmptyString(task.key), nonEmptyString(task.title))
+        : taskLink(nonEmptyString(args.task))
+      return {
+        ...base,
+        ...(link ? { link } : { subject: nonEmptyString(args.title) }),
+        ...(nonEmptyString(task?.status) ? { status: nonEmptyString(task?.status) } : {}),
+        ...(result?.replayed === true ? { note: i18n.t("transcript.claxedoTool.note.replayed") } : {}),
+        facts: [],
+      }
+    }
+    case "task_start": {
+      const task = asRecord(result?.task)
+      const preset = nonEmptyString(asRecord(result?.preset)?.name) ?? nonEmptyString(args.preset)
+      const started = session(nonEmptyString(asRecord(result?.session)?.sessionId))
+      const slot = nonEmptyString(result?.slot) ?? nonEmptyString(args.slot)
+      const attempt = asFiniteNumber(result?.attempt)
+      const placement = nonEmptyString(result?.placement)
+      const destination = nonEmptyString(result?.destination)
+      return {
+        ...base,
+        link: taskLink(nonEmptyString(task?.id) ?? nonEmptyString(args.task), nonEmptyString(task?.key), nonEmptyString(task?.title)),
+        ...(preset ? { subject: preset } : {}),
+        ...(result?.created === false
+          ? { note: i18n.t("transcript.claxedoTool.note.alreadyRunning") }
+          : args.continue === true
+            ? { note: i18n.t("transcript.claxedoTool.note.continued") }
+            : {}),
+        facts: [
+          ...linkFact(i18n.t("transcript.claxedoTool.fact.session"), started),
+          ...(preset ? [cardFact(i18n.t("transcript.claxedoTool.fact.preset"), preset)] : []),
+          ...(slot ? [cardFact(i18n.t("transcript.claxedoTool.fact.slot"), slot)] : []),
+          ...(attempt !== undefined ? [cardFact(i18n.t("transcript.claxedoTool.fact.attempt"), String(attempt))] : []),
+          ...(placement ? [cardFact(i18n.t("transcript.claxedoTool.fact.placement"), placement)] : []),
+          ...(destination ? [cardFact(i18n.t("transcript.claxedoTool.fact.destination"), destination, { mono: true })] : []),
+        ],
+      }
+    }
+    case "task_get": {
+      const task = asRecord(result?.task)
+      const links = asArray(result?.links)
+      const parent = nonEmptyString(task?.parentTaskId) ?? nonEmptyString(task?.parent)
+      const children = asRecord(task?.children)
+      return {
+        ...base,
+        link: taskLink(nonEmptyString(task?.id) ?? nonEmptyString(args.task), nonEmptyString(task?.key), nonEmptyString(task?.title)),
+        ...(nonEmptyString(task?.status) ? { status: nonEmptyString(task?.status) } : {}),
+        facts: [
+          ...(parent ? [cardFact(i18n.t("transcript.claxedoTool.fact.parent"), taskLink(parent))] : []),
+          ...(children
+            ? [cardFact(i18n.t("transcript.claxedoTool.fact.subtasks"), count(asFiniteNumber(children.total) ?? 0, "transcript.common.subtask.one", "transcript.common.subtask.other"))]
+            : []),
+          ...(result ? [cardFact(i18n.t("transcript.claxedoTool.fact.sessions"), count(links.length, "transcript.common.session.one", "transcript.common.session.other"))] : []),
+        ],
+      }
+    }
+    case "task_list": {
+      const tasks = asArray(result?.tasks).flatMap((row) => {
+        const task = asRecord(row)
+        const id = nonEmptyString(task?.id)
+        if (!task || !id) return []
+        return [{ link: taskLink(id, nonEmptyString(task.key), nonEmptyString(task.title)), ...(nonEmptyString(task.status) ? { status: nonEmptyString(task.status) } : {}) }]
+      })
+      const filter = nonEmptyString(args.status)
+      const hidden = Math.max(0, tasks.length - TASK_LIST_ROW_CAP)
+      return {
+        ...base,
+        ...(result ? { subject: count(tasks.length, "transcript.common.task.one", "transcript.common.task.other") } : {}),
+        ...(filter ? { status: filter } : {}),
+        rows: tasks.slice(0, TASK_LIST_ROW_CAP),
+        ...(hidden > 0
+          ? { more: i18n.t("transcript.claxedoTool.more", { count: hidden }) }
+          : nonEmptyString(result?.nextCursor)
+            ? { more: i18n.t("transcript.claxedoTool.moreAvailable") }
+            : {}),
+      }
+    }
+    case "session_create": {
+      const id = nonEmptyString(result?.id)
+      const title = nonEmptyString(args.title)
+      const worktree = asRecord(result?.worktree)
+      return {
+        ...base,
+        ...(id ? { link: session(id, title) } : title ? { subject: title } : {}),
+        ...(result?.prompted === true ? { note: i18n.t("transcript.claxedoTool.note.prompted") } : {}),
+        facts: [
+          ...(nonEmptyString(worktree?.name) ? [cardFact(i18n.t("transcript.claxedoTool.fact.worktree"), nonEmptyString(worktree?.name)!)] : []),
+          ...(nonEmptyString(worktree?.directory) ? [cardFact(i18n.t("transcript.claxedoTool.fact.path"), nonEmptyString(worktree?.directory)!, { mono: true })] : []),
+        ],
+      }
+    }
+    case "session_send": {
+      const message = nonEmptyString(args.text)
+      return {
+        ...base,
+        link: session(nonEmptyString(args.session)),
+        ...(result
+          ? { note: i18n.t(result.admitted === false ? "transcript.claxedoTool.note.notAdmitted" : "transcript.claxedoTool.note.admitted") }
+          : {}),
+        facts: message ? [cardFact(i18n.t("transcript.claxedoTool.fact.message"), clampLabel(message, 160))] : [],
+      }
+    }
+    case "session_rename":
+      return { ...base, link: session(nonEmptyString(args.session)), ...(nonEmptyString(args.title) ? { subject: nonEmptyString(args.title) } : {}) }
+    case "session_cancel_turn":
+      return {
+        ...base,
+        link: session(nonEmptyString(args.session)),
+        ...noteOf(i18n, cancellationNote(result?.cancellation)),
+      }
+    case "session_get":
+    case "session_transcript":
+    case "session_handoff":
+    case "session_delete":
+      return { ...base, link: session(nonEmptyString(args.session)) }
+    case "session_changes":
+      return { ...base, link: session(nonEmptyString(args.session)), ...prose(view.output) }
+    case "sessions_list": {
+      const sessions = asArray(result?.workspaces).flatMap((row) => asArray(asRecord(row)?.sessions))
+      return { ...base, ...(result ? { subject: count(sessions.length, "transcript.common.session.one", "transcript.common.session.other") } : {}) }
+    }
+    case "documents_list": {
+      const documents = asArray(result?.documents)
+      return { ...base, ...(result ? { subject: count(documents.length, "transcript.common.document.one", "transcript.common.document.other") } : {}) }
+    }
+    case "documents_open": {
+      const path = nonEmptyString(result?.path)
+      return {
+        ...base,
+        subject: nonEmptyString(result?.name) ?? nonEmptyString(args.document),
+        facts: [
+          ...(path ? [cardFact(i18n.t("transcript.claxedoTool.fact.path"), path, { mono: true })] : []),
+          ...linkFact(i18n.t("transcript.claxedoTool.fact.session"), session(nonEmptyString(result?.session))),
+        ],
+      }
+    }
+    case "create_subagent":
+    case "subagent_status":
+    case "subagent_cancel": {
+      const id = nonEmptyString(result?.sessionId) ?? nonEmptyString(args.sessionId)
+      return {
+        ...base,
+        ...(id ? { link: session(id) } : nonEmptyString(args.subagentKey) ? { subject: nonEmptyString(args.subagentKey) } : {}),
+        ...(nonEmptyString(result?.status) ? { note: nonEmptyString(result?.status) } : {}),
+      }
+    }
+    case "permission_reply":
+      return { ...base, subject: nonEmptyString(args.response), link: session(nonEmptyString(args.session)) }
+    case "question_reply":
+    case "question_reject":
+      return { ...base, link: session(nonEmptyString(args.session)), ...prose(view.output) }
+    case "workspace_lifecycle":
+      return { ...base, subject: nonEmptyString(args.action) ?? nonEmptyString(args.state), ...prose(view.output) }
+    case "sessions_board":
+    case "wait_for_attention":
+    case "workspaces_list":
+    case "workspace_status":
+    case "workspace_checkpoint":
+    case "workspace_restore":
+    case "subagent_capabilities":
+    case "subagent_list":
+      return { ...base, ...prose(view.output) }
+    default:
+      return { ...base, subject: firstLabel(args), ...prose(view.output) }
+  }
+}
+
+function noteOf(i18n: TranscriptI18n, key: TranscriptTextKey | undefined) {
+  return key ? { note: i18n.t(key) } : {}
+}
+
+function cancellationNote(answer: unknown) {
+  if (!isRecoveryOutcome(answer)) return undefined
+  const outcome = parseRecoveryOutcome(answer)
+  if (outcome.kind === "refused") {
+    return outcome.refusal.kind === "generation_conflict"
+      ? ("transcript.claxedoTool.note.notRunning" as const)
+      : ("transcript.claxedoTool.note.notStopped" as const)
+  }
+  if (!turnStopped(outcome)) return "transcript.claxedoTool.note.notStopped" as const
+  return outcome.operation.facts.cleanup.value === "verified_clear"
+    ? ("transcript.claxedoTool.note.stopped" as const)
+    : ("transcript.claxedoTool.note.cleanupUnverified" as const)
+}
+
+function taskLink(id: string | undefined, key?: string, title?: string): ClaxedoLink {
+  const label = key && title
+    ? `#${key} ${title}`
+    : key
+      ? `#${key}`
+      : title ?? (id && /^\d+$/.test(id) ? `#${id}` : clampLabel(id ?? "", 13))
+  return { kind: "task", id: id ?? "", label }
+}
+
+function cardFact(label: string, value: string | ClaxedoLink, options?: { mono?: boolean }): ClaxedoFact {
+  if (typeof value === "string") return { label, value, ...(options?.mono ? { mono: true } : {}) }
+  return { label, value: value.label, link: value }
+}
+
+function linkFact(label: string, link: ClaxedoLink | undefined): ClaxedoFact[] {
+  return link ? [cardFact(label, link)] : []
+}
+
+function prose(output: string | undefined): { text?: string } {
+  const trimmed = output?.trim()
+  return trimmed ? { text: trimmed } : {}
+}
+
+const LABEL_KEYS = ["title", "name", "session", "task", "document", "workspace", "query", "text", "prompt"]
+
+function firstLabel(args: Record<string, unknown>) {
+  for (const key of LABEL_KEYS) {
+    const value = nonEmptyString(args[key])
+    if (value) return clampLabel(value)
+  }
+  return undefined
+}
+
+function sentence(name: string) {
+  const words = name.split(/[_\s-]+/).filter((word) => word.length > 0)
+  if (words.length === 0) return name
+  return words.map((word, index) => (index === 0 ? word[0].toUpperCase() + word.slice(1) : word)).join(" ")
+}
+

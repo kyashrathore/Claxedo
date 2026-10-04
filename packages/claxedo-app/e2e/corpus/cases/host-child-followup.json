@@ -1,0 +1,14 @@
+{
+  "id": "host-child-followup",
+  "title": "A host child can finish twice and preserve both attributed results",
+  "source": {
+    "kind": "test",
+    "file": "packages/session-core/src/routes/session-children.routes.test.ts",
+    "name": "a completed child's follow-up becomes active and delivers its own result without losing the first"
+  },
+  "partKinds": ["text"],
+  "replay": { "agent": "claude", "scenario": "host-child-followup" },
+  "ready": "Message from Reviewer",
+  "interactions": [{ "kind": "reload" }],
+  "invariant": "Two real child prompt routes produce distinct parent wakes with the original result text. Both remain attributed to the child after reload, and the completed child remains one subagent."
+}

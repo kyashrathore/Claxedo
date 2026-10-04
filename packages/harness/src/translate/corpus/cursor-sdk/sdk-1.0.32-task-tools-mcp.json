@@ -1,0 +1,2162 @@
+{
+  "adapter": "cursor-sdk",
+  "initialState": {
+    "toolsByCallId": {},
+    "usageByRunId": {},
+    "openShells": [],
+    "shellOutputByCallId": {},
+    "notedKinds": []
+  },
+  "calls": [
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/status",
+        "payload": {
+          "type": "status",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "status": "RUNNING"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "session-status",
+            "status": "busy"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/tool_call",
+        "payload": {
+          "type": "tool_call",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "call_id": "t1",
+          "name": "task",
+          "status": "running",
+          "args": {
+            "description": "Explore",
+            "prompt": "look",
+            "subagentType": {
+              "kind": "explore"
+            },
+            "mode": "unspecified"
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "t1": {
+              "toolName": "task",
+              "kind": "collab_agent_tool_call",
+              "input": {
+                "description": "Explore",
+                "prompt": "look",
+                "subagentType": {
+                  "kind": "explore"
+                },
+                "mode": "unspecified"
+              }
+            }
+          },
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "tool-start",
+            "toolCallId": "t1",
+            "toolName": "task",
+            "kind": "collab_agent_tool_call",
+            "display": {
+              "kind": "collab_agent_tool_call",
+              "intent": "task",
+              "description": "Explore",
+              "input": {
+                "description": "Explore",
+                "prompt": "look",
+                "subagentType": {
+                  "kind": "explore"
+                },
+                "mode": "unspecified"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "collab_agent_tool_call"
+              }
+            }
+          },
+          {
+            "type": "tool-input",
+            "toolCallId": "t1",
+            "input": {
+              "description": "Explore",
+              "prompt": "look",
+              "subagentType": {
+                "kind": "explore"
+              },
+              "mode": "unspecified"
+            },
+            "display": {
+              "kind": "collab_agent_tool_call",
+              "intent": "task",
+              "description": "Explore",
+              "input": {
+                "description": "Explore",
+                "prompt": "look",
+                "subagentType": {
+                  "kind": "explore"
+                },
+                "mode": "unspecified"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "collab_agent_tool_call"
+              }
+            }
+          },
+          {
+            "type": "tool-status",
+            "toolCallId": "t1",
+            "status": "running",
+            "display": {
+              "kind": "collab_agent_tool_call",
+              "intent": "task",
+              "description": "Explore",
+              "input": {
+                "description": "Explore",
+                "prompt": "look",
+                "subagentType": {
+                  "kind": "explore"
+                },
+                "mode": "unspecified"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "collab_agent_tool_call"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "t1": {
+            "toolName": "task",
+            "kind": "collab_agent_tool_call",
+            "input": {
+              "description": "Explore",
+              "prompt": "look",
+              "subagentType": {
+                "kind": "explore"
+              },
+              "mode": "unspecified"
+            }
+          }
+        },
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/tool_call",
+        "payload": {
+          "type": "tool_call",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "call_id": "t1",
+          "name": "task",
+          "status": "completed",
+          "args": {
+            "description": "Explore",
+            "prompt": "look",
+            "mode": "unspecified"
+          },
+          "result": {
+            "status": "success",
+            "value": {
+              "agentId": "agent-child",
+              "isBackground": true,
+              "durationMs": 5,
+              "backgroundReason": "agentRequest"
+            }
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "t1": {
+              "toolName": "task",
+              "kind": "collab_agent_tool_call",
+              "input": {
+                "description": "Explore",
+                "prompt": "look",
+                "subagentType": {
+                  "kind": "explore"
+                },
+                "mode": "unspecified"
+              }
+            }
+          },
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "tool-output",
+            "toolCallId": "t1",
+            "output": {
+              "agentId": "agent-child",
+              "isBackground": true,
+              "durationMs": 5,
+              "backgroundReason": "agentRequest"
+            },
+            "display": {
+              "kind": "collab_agent_tool_call",
+              "intent": "task",
+              "description": "Explore",
+              "input": {
+                "description": "Explore",
+                "prompt": "look",
+                "subagentType": {
+                  "kind": "explore"
+                },
+                "mode": "unspecified"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "collab_agent_tool_call",
+                "subagent": {
+                  "agentId": "agent-child",
+                  "isBackground": true,
+                  "durationMs": 5,
+                  "backgroundReason": "agentRequest"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "t1": {
+            "toolName": "task",
+            "kind": "collab_agent_tool_call",
+            "input": {
+              "description": "Explore",
+              "prompt": "look",
+              "subagentType": {
+                "kind": "explore"
+              },
+              "mode": "unspecified"
+            }
+          }
+        },
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/usage",
+        "payload": {
+          "type": "usage",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "usage": {
+            "inputTokens": 2,
+            "outputTokens": 3,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "totalTokens": 5
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "t1": {
+              "toolName": "task",
+              "kind": "collab_agent_tool_call",
+              "input": {
+                "description": "Explore",
+                "prompt": "look",
+                "subagentType": {
+                  "kind": "explore"
+                },
+                "mode": "unspecified"
+              }
+            }
+          },
+          "usageByRunId": {
+            "run-1": {
+              "input": 2,
+              "output": 3,
+              "reasoning": null,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "usage",
+            "contextSize": 0,
+            "contextUsed": 0,
+            "observation": {
+              "kind": "cumulative",
+              "providerObservationId": "run-1",
+              "tokens": {
+                "input": 2,
+                "output": 3,
+                "reasoning": null,
+                "cache": {
+                  "read": 0,
+                  "write": 0
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "t1": {
+            "toolName": "task",
+            "kind": "collab_agent_tool_call",
+            "input": {
+              "description": "Explore",
+              "prompt": "look",
+              "subagentType": {
+                "kind": "explore"
+              },
+              "mode": "unspecified"
+            }
+          }
+        },
+        "usageByRunId": {
+          "run-1": {
+            "input": 2,
+            "output": 3,
+            "reasoning": null,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        },
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/status",
+        "payload": {
+          "type": "status",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "status": "FINISHED"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "t1": {
+              "toolName": "task",
+              "kind": "collab_agent_tool_call",
+              "input": {
+                "description": "Explore",
+                "prompt": "look",
+                "subagentType": {
+                  "kind": "explore"
+                },
+                "mode": "unspecified"
+              }
+            }
+          },
+          "usageByRunId": {
+            "run-1": {
+              "input": 2,
+              "output": 3,
+              "reasoning": null,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "t1": {
+            "toolName": "task",
+            "kind": "collab_agent_tool_call",
+            "input": {
+              "description": "Explore",
+              "prompt": "look",
+              "subagentType": {
+                "kind": "explore"
+              },
+              "mode": "unspecified"
+            }
+          }
+        },
+        "usageByRunId": {
+          "run-1": {
+            "input": 2,
+            "output": 3,
+            "reasoning": null,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        },
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.local-run-stream",
+        "method": "result",
+        "payload": {
+          "schemaVersion": 1,
+          "type": "result",
+          "agentId": "agent-1",
+          "runId": "run-1",
+          "status": "finished"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "session-status",
+            "status": "idle"
+          },
+          {
+            "type": "finish",
+            "sessionId": "run-1"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/status",
+        "payload": {
+          "type": "status",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "status": "RUNNING"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "session-status",
+            "status": "busy"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/tool_call",
+        "payload": {
+          "type": "tool_call",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "call_id": "g1",
+          "name": "generateImage",
+          "status": "running",
+          "args": {
+            "description": "cat"
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "g1": {
+              "toolName": "generateImage",
+              "kind": "image_view",
+              "input": {
+                "description": "cat"
+              }
+            }
+          },
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "tool-start",
+            "toolCallId": "g1",
+            "toolName": "generateImage",
+            "kind": "image_view",
+            "display": {
+              "kind": "image_view",
+              "intent": "generic",
+              "description": "cat",
+              "input": {
+                "description": "cat"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "image_view"
+              }
+            }
+          },
+          {
+            "type": "tool-input",
+            "toolCallId": "g1",
+            "input": {
+              "description": "cat"
+            },
+            "display": {
+              "kind": "image_view",
+              "intent": "generic",
+              "description": "cat",
+              "input": {
+                "description": "cat"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "image_view"
+              }
+            }
+          },
+          {
+            "type": "tool-status",
+            "toolCallId": "g1",
+            "status": "running",
+            "display": {
+              "kind": "image_view",
+              "intent": "generic",
+              "description": "cat",
+              "input": {
+                "description": "cat"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "image_view"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "g1": {
+            "toolName": "generateImage",
+            "kind": "image_view",
+            "input": {
+              "description": "cat"
+            }
+          }
+        },
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/tool_call",
+        "payload": {
+          "type": "tool_call",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "call_id": "g1",
+          "name": "generateImage",
+          "status": "completed",
+          "args": {
+            "description": "cat"
+          },
+          "result": {
+            "status": "success",
+            "value": {
+              "filePath": "/tmp/cat.png"
+            }
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "g1": {
+              "toolName": "generateImage",
+              "kind": "image_view",
+              "input": {
+                "description": "cat"
+              }
+            }
+          },
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "tool-output",
+            "toolCallId": "g1",
+            "output": {
+              "filePath": "/tmp/cat.png"
+            },
+            "attachments": [
+              {
+                "kind": "tool-file",
+                "mime": "image/*",
+                "path": "/tmp/cat.png",
+                "filename": "cat.png"
+              }
+            ],
+            "display": {
+              "kind": "image_view",
+              "intent": "generic",
+              "description": "cat",
+              "input": {
+                "description": "cat"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "image_view"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "g1": {
+            "toolName": "generateImage",
+            "kind": "image_view",
+            "input": {
+              "description": "cat"
+            }
+          }
+        },
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/tool_call",
+        "payload": {
+          "type": "tool_call",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "call_id": "l1",
+          "name": "ls",
+          "status": "running",
+          "args": {
+            "path": "/repo"
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "g1": {
+              "toolName": "generateImage",
+              "kind": "image_view",
+              "input": {
+                "description": "cat"
+              }
+            },
+            "l1": {
+              "toolName": "ls",
+              "kind": "dynamic_tool_call",
+              "input": {
+                "path": "/repo"
+              }
+            }
+          },
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "tool-start",
+            "toolCallId": "l1",
+            "toolName": "ls",
+            "kind": "dynamic_tool_call",
+            "display": {
+              "kind": "dynamic_tool_call",
+              "intent": "generic",
+              "path": "/repo",
+              "input": {
+                "path": "/repo"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "dynamic_tool_call"
+              }
+            }
+          },
+          {
+            "type": "tool-input",
+            "toolCallId": "l1",
+            "input": {
+              "path": "/repo"
+            },
+            "display": {
+              "kind": "dynamic_tool_call",
+              "intent": "generic",
+              "path": "/repo",
+              "input": {
+                "path": "/repo"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "dynamic_tool_call"
+              }
+            }
+          },
+          {
+            "type": "tool-status",
+            "toolCallId": "l1",
+            "status": "running",
+            "display": {
+              "kind": "dynamic_tool_call",
+              "intent": "generic",
+              "path": "/repo",
+              "input": {
+                "path": "/repo"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "dynamic_tool_call"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "g1": {
+            "toolName": "generateImage",
+            "kind": "image_view",
+            "input": {
+              "description": "cat"
+            }
+          },
+          "l1": {
+            "toolName": "ls",
+            "kind": "dynamic_tool_call",
+            "input": {
+              "path": "/repo"
+            }
+          }
+        },
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/tool_call",
+        "payload": {
+          "type": "tool_call",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "call_id": "td",
+          "name": "updateTodos",
+          "status": "completed",
+          "args": {
+            "todos": [
+              {
+                "content": "a",
+                "status": "cancelled"
+              },
+              {
+                "content": "b",
+                "status": "inProgress"
+              }
+            ]
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "g1": {
+              "toolName": "generateImage",
+              "kind": "image_view",
+              "input": {
+                "description": "cat"
+              }
+            },
+            "l1": {
+              "toolName": "ls",
+              "kind": "dynamic_tool_call",
+              "input": {
+                "path": "/repo"
+              }
+            }
+          },
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "todo-update",
+            "todos": [
+              {
+                "id": "0",
+                "description": "a",
+                "status": "cancelled"
+              },
+              {
+                "id": "1",
+                "description": "b",
+                "status": "in_progress"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "g1": {
+            "toolName": "generateImage",
+            "kind": "image_view",
+            "input": {
+              "description": "cat"
+            }
+          },
+          "l1": {
+            "toolName": "ls",
+            "kind": "dynamic_tool_call",
+            "input": {
+              "path": "/repo"
+            }
+          }
+        },
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/tool_call",
+        "payload": {
+          "type": "tool_call",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "call_id": "s2",
+          "name": "shell",
+          "status": "completed",
+          "args": {
+            "command": "echo hi",
+            "workingDirectory": "/repo"
+          },
+          "result": {
+            "status": "error",
+            "error": {
+              "message": "Command timed out after 5ms",
+              "command": "echo hi",
+              "workingDirectory": ""
+            }
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "g1": {
+              "toolName": "generateImage",
+              "kind": "image_view",
+              "input": {
+                "description": "cat"
+              }
+            },
+            "l1": {
+              "toolName": "ls",
+              "kind": "dynamic_tool_call",
+              "input": {
+                "path": "/repo"
+              }
+            },
+            "s2": {
+              "toolName": "shell",
+              "kind": "command_execution",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            }
+          },
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "tool-start",
+            "toolCallId": "s2",
+            "toolName": "shell",
+            "kind": "command_execution",
+            "display": {
+              "kind": "command_execution",
+              "intent": "shell",
+              "command": "echo hi",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "command_execution"
+              }
+            }
+          },
+          {
+            "type": "tool-input",
+            "toolCallId": "s2",
+            "input": {
+              "command": "echo hi",
+              "workingDirectory": "/repo",
+              "cwd": "/repo"
+            },
+            "display": {
+              "kind": "command_execution",
+              "intent": "shell",
+              "command": "echo hi",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "command_execution"
+              }
+            }
+          },
+          {
+            "type": "tool-error",
+            "toolCallId": "s2",
+            "error": "Command timed out after 5ms",
+            "display": {
+              "kind": "command_execution",
+              "intent": "shell",
+              "command": "echo hi",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "command_execution"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "g1": {
+            "toolName": "generateImage",
+            "kind": "image_view",
+            "input": {
+              "description": "cat"
+            }
+          },
+          "l1": {
+            "toolName": "ls",
+            "kind": "dynamic_tool_call",
+            "input": {
+              "path": "/repo"
+            }
+          },
+          "s2": {
+            "toolName": "shell",
+            "kind": "command_execution",
+            "input": {
+              "command": "echo hi",
+              "workingDirectory": "/repo",
+              "cwd": "/repo"
+            }
+          }
+        },
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/usage",
+        "payload": {
+          "type": "usage",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "usage": {
+            "inputTokens": 2,
+            "outputTokens": 3,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "totalTokens": 5
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "g1": {
+              "toolName": "generateImage",
+              "kind": "image_view",
+              "input": {
+                "description": "cat"
+              }
+            },
+            "l1": {
+              "toolName": "ls",
+              "kind": "dynamic_tool_call",
+              "input": {
+                "path": "/repo"
+              }
+            },
+            "s2": {
+              "toolName": "shell",
+              "kind": "command_execution",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            }
+          },
+          "usageByRunId": {
+            "run-1": {
+              "input": 2,
+              "output": 3,
+              "reasoning": null,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "usage",
+            "contextSize": 0,
+            "contextUsed": 0,
+            "observation": {
+              "kind": "cumulative",
+              "providerObservationId": "run-1",
+              "tokens": {
+                "input": 2,
+                "output": 3,
+                "reasoning": null,
+                "cache": {
+                  "read": 0,
+                  "write": 0
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "g1": {
+            "toolName": "generateImage",
+            "kind": "image_view",
+            "input": {
+              "description": "cat"
+            }
+          },
+          "l1": {
+            "toolName": "ls",
+            "kind": "dynamic_tool_call",
+            "input": {
+              "path": "/repo"
+            }
+          },
+          "s2": {
+            "toolName": "shell",
+            "kind": "command_execution",
+            "input": {
+              "command": "echo hi",
+              "workingDirectory": "/repo",
+              "cwd": "/repo"
+            }
+          }
+        },
+        "usageByRunId": {
+          "run-1": {
+            "input": 2,
+            "output": 3,
+            "reasoning": null,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        },
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/status",
+        "payload": {
+          "type": "status",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "status": "FINISHED"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "g1": {
+              "toolName": "generateImage",
+              "kind": "image_view",
+              "input": {
+                "description": "cat"
+              }
+            },
+            "l1": {
+              "toolName": "ls",
+              "kind": "dynamic_tool_call",
+              "input": {
+                "path": "/repo"
+              }
+            },
+            "s2": {
+              "toolName": "shell",
+              "kind": "command_execution",
+              "input": {
+                "command": "echo hi",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              }
+            }
+          },
+          "usageByRunId": {
+            "run-1": {
+              "input": 2,
+              "output": 3,
+              "reasoning": null,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "g1": {
+            "toolName": "generateImage",
+            "kind": "image_view",
+            "input": {
+              "description": "cat"
+            }
+          },
+          "l1": {
+            "toolName": "ls",
+            "kind": "dynamic_tool_call",
+            "input": {
+              "path": "/repo"
+            }
+          },
+          "s2": {
+            "toolName": "shell",
+            "kind": "command_execution",
+            "input": {
+              "command": "echo hi",
+              "workingDirectory": "/repo",
+              "cwd": "/repo"
+            }
+          }
+        },
+        "usageByRunId": {
+          "run-1": {
+            "input": 2,
+            "output": 3,
+            "reasoning": null,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        },
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.local-run-stream",
+        "method": "result",
+        "payload": {
+          "schemaVersion": 1,
+          "type": "result",
+          "agentId": "agent-1",
+          "runId": "run-1",
+          "status": "finished"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "session-status",
+            "status": "idle"
+          },
+          {
+            "type": "finish",
+            "sessionId": "run-1"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/status",
+        "payload": {
+          "type": "status",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "status": "RUNNING"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "session-status",
+            "status": "busy"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {},
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/tool_call",
+        "payload": {
+          "type": "tool_call",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "call_id": "m1",
+          "name": "mcp",
+          "status": "running",
+          "args": {
+            "providerIdentifier": "claxedo",
+            "toolName": "create_subagent",
+            "args": {
+              "harness": "codex",
+              "prompt": "Consult"
+            }
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "m1": {
+              "toolName": "mcp__claxedo__create_subagent",
+              "kind": "collab_agent_tool_call",
+              "input": {
+                "providerIdentifier": "claxedo",
+                "toolName": "create_subagent",
+                "args": {
+                  "harness": "codex",
+                  "prompt": "Consult"
+                }
+              }
+            }
+          },
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "tool-start",
+            "toolCallId": "m1",
+            "toolName": "mcp__claxedo__create_subagent",
+            "kind": "collab_agent_tool_call",
+            "display": {
+              "kind": "collab_agent_tool_call",
+              "intent": "task",
+              "input": {
+                "providerIdentifier": "claxedo",
+                "toolName": "create_subagent",
+                "args": {
+                  "harness": "codex",
+                  "prompt": "Consult"
+                }
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "collab_agent_tool_call"
+              }
+            }
+          },
+          {
+            "type": "tool-input",
+            "toolCallId": "m1",
+            "input": {
+              "providerIdentifier": "claxedo",
+              "toolName": "create_subagent",
+              "args": {
+                "harness": "codex",
+                "prompt": "Consult"
+              }
+            },
+            "display": {
+              "kind": "collab_agent_tool_call",
+              "intent": "task",
+              "input": {
+                "providerIdentifier": "claxedo",
+                "toolName": "create_subagent",
+                "args": {
+                  "harness": "codex",
+                  "prompt": "Consult"
+                }
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "collab_agent_tool_call"
+              }
+            }
+          },
+          {
+            "type": "tool-status",
+            "toolCallId": "m1",
+            "status": "running",
+            "display": {
+              "kind": "collab_agent_tool_call",
+              "intent": "task",
+              "input": {
+                "providerIdentifier": "claxedo",
+                "toolName": "create_subagent",
+                "args": {
+                  "harness": "codex",
+                  "prompt": "Consult"
+                }
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "collab_agent_tool_call"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "m1": {
+            "toolName": "mcp__claxedo__create_subagent",
+            "kind": "collab_agent_tool_call",
+            "input": {
+              "providerIdentifier": "claxedo",
+              "toolName": "create_subagent",
+              "args": {
+                "harness": "codex",
+                "prompt": "Consult"
+              }
+            }
+          }
+        },
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/tool_call",
+        "payload": {
+          "type": "tool_call",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "call_id": "m1",
+          "name": "mcp",
+          "status": "completed",
+          "args": {
+            "providerIdentifier": "claxedo",
+            "toolName": "create_subagent",
+            "args": {
+              "harness": "codex",
+              "prompt": "Consult"
+            }
+          },
+          "result": {
+            "status": "success",
+            "value": {
+              "content": [
+                {
+                  "text": {
+                    "text": "{\"kind\":\"claxedo.subagent\",\"subagentKey\":\"subagent_host\",\"sessionId\":\"child-9\"}"
+                  }
+                }
+              ],
+              "isError": false
+            }
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "m1": {
+              "toolName": "mcp__claxedo__create_subagent",
+              "kind": "collab_agent_tool_call",
+              "input": {
+                "providerIdentifier": "claxedo",
+                "toolName": "create_subagent",
+                "args": {
+                  "harness": "codex",
+                  "prompt": "Consult"
+                }
+              }
+            }
+          },
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "tool-output",
+            "toolCallId": "m1",
+            "output": {
+              "content": [
+                {
+                  "text": {
+                    "text": "{\"kind\":\"claxedo.subagent\",\"subagentKey\":\"subagent_host\",\"sessionId\":\"child-9\"}"
+                  }
+                }
+              ],
+              "isError": false
+            },
+            "display": {
+              "kind": "collab_agent_tool_call",
+              "intent": "task",
+              "input": {
+                "providerIdentifier": "claxedo",
+                "toolName": "create_subagent",
+                "args": {
+                  "harness": "codex",
+                  "prompt": "Consult"
+                }
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "collab_agent_tool_call"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "m1": {
+            "toolName": "mcp__claxedo__create_subagent",
+            "kind": "collab_agent_tool_call",
+            "input": {
+              "providerIdentifier": "claxedo",
+              "toolName": "create_subagent",
+              "args": {
+                "harness": "codex",
+                "prompt": "Consult"
+              }
+            }
+          }
+        },
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/tool_call",
+        "payload": {
+          "type": "tool_call",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "call_id": "m2",
+          "name": "mcp",
+          "status": "completed",
+          "args": {
+            "providerIdentifier": "github",
+            "toolName": "search",
+            "args": {}
+          },
+          "result": {
+            "status": "success",
+            "value": {
+              "content": [
+                {
+                  "text": {
+                    "text": "boom"
+                  }
+                }
+              ],
+              "isError": true
+            }
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "m1": {
+              "toolName": "mcp__claxedo__create_subagent",
+              "kind": "collab_agent_tool_call",
+              "input": {
+                "providerIdentifier": "claxedo",
+                "toolName": "create_subagent",
+                "args": {
+                  "harness": "codex",
+                  "prompt": "Consult"
+                }
+              }
+            },
+            "m2": {
+              "toolName": "mcp__github__search",
+              "kind": "mcp_tool_call",
+              "input": {
+                "providerIdentifier": "github",
+                "toolName": "search",
+                "args": {}
+              }
+            }
+          },
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "tool-start",
+            "toolCallId": "m2",
+            "toolName": "mcp__github__search",
+            "kind": "mcp_tool_call",
+            "display": {
+              "kind": "mcp_tool_call",
+              "intent": "mcp",
+              "input": {
+                "providerIdentifier": "github",
+                "toolName": "search",
+                "args": {}
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "mcp_tool_call"
+              }
+            }
+          },
+          {
+            "type": "tool-input",
+            "toolCallId": "m2",
+            "input": {
+              "providerIdentifier": "github",
+              "toolName": "search",
+              "args": {}
+            },
+            "display": {
+              "kind": "mcp_tool_call",
+              "intent": "mcp",
+              "input": {
+                "providerIdentifier": "github",
+                "toolName": "search",
+                "args": {}
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "mcp_tool_call"
+              }
+            }
+          },
+          {
+            "type": "tool-error",
+            "toolCallId": "m2",
+            "error": "boom",
+            "display": {
+              "kind": "mcp_tool_call",
+              "intent": "mcp",
+              "input": {
+                "providerIdentifier": "github",
+                "toolName": "search",
+                "args": {}
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "mcp_tool_call"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "m1": {
+            "toolName": "mcp__claxedo__create_subagent",
+            "kind": "collab_agent_tool_call",
+            "input": {
+              "providerIdentifier": "claxedo",
+              "toolName": "create_subagent",
+              "args": {
+                "harness": "codex",
+                "prompt": "Consult"
+              }
+            }
+          },
+          "m2": {
+            "toolName": "mcp__github__search",
+            "kind": "mcp_tool_call",
+            "input": {
+              "providerIdentifier": "github",
+              "toolName": "search",
+              "args": {}
+            }
+          }
+        },
+        "usageByRunId": {},
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/usage",
+        "payload": {
+          "type": "usage",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "usage": {
+            "inputTokens": 2,
+            "outputTokens": 3,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "totalTokens": 5
+          }
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "m1": {
+              "toolName": "mcp__claxedo__create_subagent",
+              "kind": "collab_agent_tool_call",
+              "input": {
+                "providerIdentifier": "claxedo",
+                "toolName": "create_subagent",
+                "args": {
+                  "harness": "codex",
+                  "prompt": "Consult"
+                }
+              }
+            },
+            "m2": {
+              "toolName": "mcp__github__search",
+              "kind": "mcp_tool_call",
+              "input": {
+                "providerIdentifier": "github",
+                "toolName": "search",
+                "args": {}
+              }
+            }
+          },
+          "usageByRunId": {
+            "run-1": {
+              "input": 2,
+              "output": 3,
+              "reasoning": null,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "usage",
+            "contextSize": 0,
+            "contextUsed": 0,
+            "observation": {
+              "kind": "cumulative",
+              "providerObservationId": "run-1",
+              "tokens": {
+                "input": 2,
+                "output": 3,
+                "reasoning": null,
+                "cache": {
+                  "read": 0,
+                  "write": 0
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "m1": {
+            "toolName": "mcp__claxedo__create_subagent",
+            "kind": "collab_agent_tool_call",
+            "input": {
+              "providerIdentifier": "claxedo",
+              "toolName": "create_subagent",
+              "args": {
+                "harness": "codex",
+                "prompt": "Consult"
+              }
+            }
+          },
+          "m2": {
+            "toolName": "mcp__github__search",
+            "kind": "mcp_tool_call",
+            "input": {
+              "providerIdentifier": "github",
+              "toolName": "search",
+              "args": {}
+            }
+          }
+        },
+        "usageByRunId": {
+          "run-1": {
+            "input": 2,
+            "output": 3,
+            "reasoning": null,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        },
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.sdk.message",
+        "method": "cursor/status",
+        "payload": {
+          "type": "status",
+          "agent_id": "agent-1",
+          "run_id": "run-1",
+          "status": "FINISHED"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {
+            "m1": {
+              "toolName": "mcp__claxedo__create_subagent",
+              "kind": "collab_agent_tool_call",
+              "input": {
+                "providerIdentifier": "claxedo",
+                "toolName": "create_subagent",
+                "args": {
+                  "harness": "codex",
+                  "prompt": "Consult"
+                }
+              }
+            },
+            "m2": {
+              "toolName": "mcp__github__search",
+              "kind": "mcp_tool_call",
+              "input": {
+                "providerIdentifier": "github",
+                "toolName": "search",
+                "args": {}
+              }
+            }
+          },
+          "usageByRunId": {
+            "run-1": {
+              "input": 2,
+              "output": 3,
+              "reasoning": null,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            }
+          },
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "toolsByCallId": {
+          "m1": {
+            "toolName": "mcp__claxedo__create_subagent",
+            "kind": "collab_agent_tool_call",
+            "input": {
+              "providerIdentifier": "claxedo",
+              "toolName": "create_subagent",
+              "args": {
+                "harness": "codex",
+                "prompt": "Consult"
+              }
+            }
+          },
+          "m2": {
+            "toolName": "mcp__github__search",
+            "kind": "mcp_tool_call",
+            "input": {
+              "providerIdentifier": "github",
+              "toolName": "search",
+              "args": {}
+            }
+          }
+        },
+        "usageByRunId": {
+          "run-1": {
+            "input": 2,
+            "output": 3,
+            "reasoning": null,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        },
+        "openShells": [],
+        "shellOutputByCallId": {},
+        "notedKinds": []
+      },
+      "event": {
+        "source": "cursor.local-run-stream",
+        "method": "result",
+        "payload": {
+          "schemaVersion": 1,
+          "type": "result",
+          "agentId": "agent-1",
+          "runId": "run-1",
+          "status": "finished"
+        }
+      },
+      "context": {
+        "harness": "cursor-sdk",
+        "threadId": "thread-1"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "toolsByCallId": {},
+          "usageByRunId": {},
+          "openShells": [],
+          "shellOutputByCallId": {},
+          "notedKinds": []
+        },
+        "events": [
+          {
+            "type": "session-status",
+            "status": "idle"
+          },
+          {
+            "type": "finish",
+            "sessionId": "run-1"
+          }
+        ]
+      }
+    }
+  ]
+}

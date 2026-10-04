@@ -1,0 +1,34 @@
+---
+import { benchmark, contact, featured, github } from "../config"
+import { routes } from "../content/routes"
+
+const columns = [
+  { title: "Product", links: [["Download", routes.download], ["Pricing", routes.pricing], ["Compare", routes.compare], ["Agent App Benchmark", benchmark], ["Agent runtime study", routes.agentRuntimeStudy]] },
+  { title: "Company", links: [["About", routes.about], ["Contact", routes.contact], ["GitHub", github], ["Discord", contact]] },
+  { title: "Legal", links: [["Privacy", routes.privacy], ["Terms", routes.terms]] },
+] as const
+---
+
+<footer class="footer">
+  <div class="footer-card">
+    <div class="footer-top">
+      <a href="/" class="footer-brand" aria-label="Claxedo home"><span class="brand-mark" aria-hidden="true"></span></a>
+      {columns.map((column) => (
+        <div class="footer-col">
+          <h2>{column.title}</h2>
+          {column.links.map(([label, href]) => href === benchmark ? <a href={href} target="_blank" rel="noopener noreferrer">{label}</a> : <a href={href}>{label}</a>)}
+        </div>
+      ))}
+    </div>
+    <div class="footer-bottom">
+      <span>© {new Date().getFullYear()} Claxedo. Open source under the MIT license.</span>
+      <div class="footer-featured">
+        {featured.map((item) => (
+          <a href={item.href} title={`Featured on ${item.name}`} target="_blank" rel="noopener">
+            <img src={item.badge} alt={`Featured on ${item.name}`} width={item.width} height={item.height} loading="lazy" />
+          </a>
+        ))}
+      </div>
+    </div>
+  </div>
+</footer>

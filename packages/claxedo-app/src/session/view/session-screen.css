@@ -1,0 +1,56 @@
+[data-component="session-screen"] {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--background-base);
+}
+
+[data-slot="session-screen-body"] {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+[data-slot="session-screen-timeline"] {
+  --timeline-dock-inset: var(--session-dock-overhang, 0px);
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+[data-slot="session-docks"] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+[data-slot="session-docks"]:empty {
+  display: none;
+}
+
+[data-slot="session-screen-transcript"] {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+[data-component="session-prompt-dock"] {
+  position: relative;
+  z-index: 1;
+}
+
+[data-component="session-prompt-dock"] [data-component="session-todo-dock"] {
+  margin-bottom: -36px;
+}
+
+[data-component="session-prompt-dock"].session-floating-dock [data-component="session-todo-dock"] {
+  margin-bottom: 0;
+}

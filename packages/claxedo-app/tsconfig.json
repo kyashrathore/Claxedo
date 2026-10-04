@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    // Workspace packages export `development` -> src/*.ts ahead of `types` ->
+    // dist/*.d.ts, so typecheck reads sibling SOURCE and never needs a build.
+    "customConditions": ["development"],
+    "types": ["vite/client", "node"],
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "strict": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "paths": {
+      "#terminal-backend": ["./src/terminal/backend/xterm.ts"],
+      "@/*": ["./src/*"],
+      "@claxedo/app/ui": ["./src/ui/index.ts"]
+    }
+  },
+  "include": ["src"],
+  "exclude": ["dist", "node_modules"]
+
+}

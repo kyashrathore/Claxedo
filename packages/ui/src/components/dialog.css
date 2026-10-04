@@ -1,0 +1,220 @@
+/* [data-component="dialog-trigger"] { } */
+
+.ui-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background-color: hsl(from var(--background-base) h s l / 0.2);
+}
+
+/* The overlay is rendered by the dialog host as the previous sibling of the
+   layer that holds the dialog, so the dialog can only reach it through `:has`. */
+.ui-dialog-overlay:has(+ [data-dialog-layer] [data-component="dialog"][data-scrim="strong"]) {
+  background-color: var(--overlay-scrim-strong);
+}
+
+[data-component="dialog"] {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+
+  .ui-dialog-container {
+    position: relative;
+    z-index: 50;
+    width: min(calc(100vw - 16px), 640px);
+    height: min(calc(100vh - 16px), 512px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-items: start;
+    overflow: visible;
+
+    .ui-dialog-content {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      align-self: stretch;
+      width: 100%;
+      max-height: 100%;
+      min-height: 280px;
+      overflow: auto;
+      pointer-events: auto;
+
+      /* Hide scrollbar */
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      &::-webkit-scrollbar {
+        display: none;
+      }
+
+      /* padding: 8px; */
+      /* padding: 8px 8px 0 8px; */
+      border-radius: var(--surface-overlay-radius, var(--radius-xl));
+      background: var(--surface-raised-stronger-non-alpha);
+      background-clip: padding-box;
+      border: var(--surface-overlay-border, none);
+      box-shadow: var(--surface-overlay-shadow, var(--shadow-lg-border-base));
+
+      [data-slot="dialog-header"] {
+        display: flex;
+        padding: 16px var(--dialog-inset);
+        justify-content: space-between;
+        align-items: center;
+        flex-shrink: 0;
+        align-self: stretch;
+
+        [data-slot="dialog-title"] {
+          color: var(--text-strong);
+
+          /* text-16-medium */
+          font-family: var(--font-family-sans);
+          font-size: var(--font-size-large);
+          font-style: normal;
+          font-weight: var(--font-weight-medium);
+          line-height: var(--line-height-x-large); /* 150% */
+          letter-spacing: var(--letter-spacing-tight);
+        }
+        /* [data-slot="dialog-close-button"] {} */
+      }
+
+      /* ── Dialog inset ──────────────────────────────────────────────
+         All three slots share ONE horizontal inset, `--dialog-inset`, so the
+         title, the description and the body content sit on a single left edge.
+         They used to disagree: the header had 20px, the description 24px left /
+         16px right (clawed back to 20 by an inline `margin-left: -4px` in
+         dialog.tsx), and the body had NO padding at all — see the commented-out
+         `padding: 8px` on dialog-content above, which is where this used to
+         live. With the body at zero, all ~46 callers either re-implemented the
+         inset by hand (10px, 16px, 24px, and 24/10 were all in use) or got none
+         and rendered flush to the card edge. Change the token, not the slots. */
+      --dialog-inset: 20px;
+
+      [data-slot="dialog-description"] {
+        display: flex;
+        padding: 0 var(--dialog-inset) 16px;
+        margin-top: -8px;
+        justify-content: space-between;
+        align-items: center;
+        flex-shrink: 0;
+        align-self: stretch;
+
+        color: var(--text-base);
+
+        /* text-14-regular */
+        font-family: var(--font-family-sans);
+        font-size: var(--font-size-base);
+        font-style: normal;
+        font-weight: var(--font-weight-regular);
+        line-height: var(--line-height-large); /* 142.857% */
+        letter-spacing: var(--letter-spacing-normal);
+      }
+
+      .ui-dialog-body {
+        width: 100%;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        overflow: hidden;
+        padding: 0 var(--dialog-inset) var(--dialog-inset);
+
+        &:focus-visible {
+          outline: none;
+        }
+      }
+      &:focus-visible {
+        outline: none;
+      }
+    }
+  }
+
+  /* Full-bleed bodies: the surface owns its own chrome out to the card edge
+     (palette, `<List>` rows with full-width hover, settings section rules), so
+     the shared inset would double up on padding those rows already carry. The
+     header and description keep theirs — only the body goes flush.
+
+     The selector is written out to the body's full depth on purpose: the base
+     rule above is nested four levels deep, so a shorter `&[data-flush]
+     [data-slot="dialog-body"]` loses on specificity and silently does nothing. */
+  &[data-flush]
+    [data-slot="dialog-container"]
+    [data-slot="dialog-content"]
+    [data-slot="dialog-body"] {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  &[data-fit] {
+    .ui-dialog-container {
+      height: auto;
+
+      .ui-dialog-content {
+        min-height: 0;
+      }
+    }
+  }
+
+  &[data-size="large"] .ui-dialog-container {
+    width: min(calc(100vw - 32px), 800px);
+    height: min(calc(100vh - 32px), 600px);
+  }
+
+  &[data-size="x-large"] .ui-dialog-container {
+    width: min(calc(100vw - 32px), 980px);
+    height: min(calc(100vh - 92px), 600px);
+  }
+
+  &[data-size="viewport"] .ui-dialog-container {
+    width: min(calc(100vw - 64px), 1400px);
+    height: calc(100vh - 64px);
+  }
+}
+
+[data-component="dialog"][data-transition] .ui-dialog-content {
+  animation: contentHide 100ms ease-in forwards;
+
+  &[data-expanded] {
+    animation: contentShow 150ms ease-out;
+  }
+}
+
+@keyframes overlayShow {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes overlayHide {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes contentShow {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes contentHide {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}

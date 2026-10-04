@@ -1,0 +1,67 @@
+{
+  "name": "@claxedo/agent-runtime-contract",
+  "version": "0.10.0",
+  "type": "module",
+  "description": "Dependency-free canonical contracts for Claxedo agent sessions, content, execution, errors, and events",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyashrathore/Claxedo.git",
+    "directory": "packages/agent-runtime-contract"
+  },
+  "keywords": [
+    "claxedo",
+    "agents",
+    "contracts",
+    "sessions",
+    "events"
+  ],
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    },
+    "./turn-fold": {
+      "development": "./src/turn-fold.ts",
+      "bun": "./src/turn-fold.ts",
+      "types": "./dist/turn-fold.d.ts",
+      "import": "./dist/turn-fold.mjs",
+      "default": "./dist/turn-fold.mjs"
+    },
+    "./elicitation-pattern-worker": {
+      "development": "./src/elicitation-pattern-worker.ts",
+      "bun": "./src/elicitation-pattern-worker.ts",
+      "types": "./dist/elicitation-pattern-worker.d.ts",
+      "import": "./dist/elicitation-pattern-worker.mjs",
+      "default": "./dist/elicitation-pattern-worker.mjs"
+    }
+  },
+  "files": [
+    "README.md",
+    "LICENSE",
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bun build src/index.ts --target=browser --format=esm --outfile=dist/index.mjs && bun build src/elicitation-pattern-worker.ts --target=browser --format=esm --outfile=dist/elicitation-pattern-worker.mjs && bun build src/turn-fold.ts --target=browser --format=esm --outfile=dist/turn-fold.mjs && tsc -p tsconfig.build.json",
+    "test:node": "node --test scripts/package.test.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test src",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@tsconfig/bun": "1.0.9",
+    "@types/bun": "1.3.13",
+    "typescript": "catalog:"
+  },
+  "dependencies": {
+    "@claxedo/helpers": "workspace:*"
+  }
+}

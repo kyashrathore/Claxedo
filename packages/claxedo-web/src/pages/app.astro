@@ -1,0 +1,23 @@
+---
+import Layout from "../layouts/Layout.astro"
+import Nav from "../components/Nav.astro"
+import Footer from "../components/Footer.astro"
+import DownloadCta from "../components/DownloadCta.astro"
+import SectionHead from "../components/SectionHead.astro"
+---
+
+<Layout title="Claxedo is one product" description="Claxedo Cloud is the hosted form of the open cloud workspace for coding agents." noindex={true} canonicalPath="/">
+  <Nav />
+  <main id="main-content" class="page">
+    <div class="page-head">
+      <SectionHead as="h1" title="The app is Claxedo.">Claxedo Cloud, Desktop and Web are one product. Everything about it lives on the Claxedo home page.</SectionHead>
+      <DownloadCta placement="app-transition" />
+      <a class="quiet-link overview" href="/">See the product</a>
+    </div>
+  </main>
+  <Footer />
+</Layout>
+
+<style>
+  .overview { display: inline-block; margin-top: 1.5rem; }
+</style>

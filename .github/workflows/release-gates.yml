@@ -1,0 +1,152 @@
+name: Release Gates (fast)
+
+# The release workflow's own quality gates, on all five platform legs, WITHOUT
+# packaging, signing, or notarization.
+#
+# Why this exists: cutting v0.0.64 took ten `Release Claxedo` dispatches because
+# every gate defect is platform-specific and only reproduces on its own runner —
+# but each round cost ~35 minutes, nearly all of it spent packaging (dmg/nsis/
+# AppImage/deb/rpm) and notarizing artifacts that a failing gate throws away.
+# The gates themselves finish ~11 minutes in. This workflow runs just those, so
+# a gate fix is validated on every platform in roughly a third of the time; the
+# full release runs once, at the end, when the gates are already known green.
+#
+# It is deliberately NOT a release: it uploads nothing, tags nothing, and needs
+# no Apple secrets. `Release Claxedo` remains the only thing that ships.
+
+on:
+  workflow_dispatch:
+    inputs:
+      leg:
+        # Individual legs, not just platform families: when one runner is
+        # failing, gating the other four buys nothing and costs a full round.
+        description: "Which leg(s) to gate"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - macos-arm64
+          - macos-x64
+          - windows-x64
+          - linux-x64
+          - linux-arm64
+          - macos
+          - linux
+      only:
+        description: "Stop after the build (skip packaging)"
+        required: false
+        default: false
+        type: boolean
+
+env:
+  CLAXEDO_CHANNEL: prod
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    name: gates (${{ matrix.leg }})
+    runs-on: ${{ matrix.host }}
+    strategy:
+      # Every leg reports independently: the point is to see ALL platform
+      # failures in one round instead of discovering them one release at a time.
+      fail-fast: false
+      matrix:
+        include:
+          - leg: macos-arm64
+            platform: macos
+            host: macos-15
+            target: aarch64-apple-darwin
+            arch: arm64
+            cmd: package:mac
+          - leg: macos-x64
+            platform: macos
+            host: macos-15-intel
+            target: x86_64-apple-darwin
+            arch: x64
+            cmd: package:mac
+          - leg: windows-x64
+            platform: windows
+            host: windows-latest
+            target: x86_64-pc-windows-msvc
+            arch: x64
+            cmd: package:win
+          - leg: linux-x64
+            platform: linux
+            host: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            arch: x64
+            cmd: package:linux
+          - leg: linux-arm64
+            platform: linux
+            host: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            arch: arm64
+            cmd: package:linux
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Skip unselected platform
+        if: inputs.leg != 'all' && inputs.leg != matrix.leg && inputs.leg != matrix.platform
+        run: echo "Skipping ${{ matrix.leg }}"
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux' && (inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libnotify-dev \
+            libxtst-dev \
+            libnss3-dev \
+            libgdk-pixbuf2.0-dev \
+            libgtk-3-dev \
+            libxss-dev
+
+      - name: Setup Bun
+        if: inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+
+      - name: Setup Node.js
+        if: inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Ensure node-gyp can build (macOS)
+        if: runner.os == 'macOS' && (inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform)
+        run: python3 -m pip install --break-system-packages setuptools || python3 -m pip install setuptools
+
+      - name: Install dependencies
+        if: inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform
+        run: bun install --frozen-lockfile --minimum-release-age=0
+
+      - name: Build dist-resolved workspace packages
+        if: inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform
+        run: bun run build:packages
+
+      - name: Build desktop
+        if: inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform
+        env:
+          CLAXEDO_CHANNEL: prod
+          RUST_TARGET: ${{ matrix.target }}
+          VITE_CLAXEDO_HOSTED_ACTIVATION: "true"
+          CLAXEDO_CORE_ORIGIN: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+          CLAXEDO_RELAY_ORIGINS: ${{ vars.CLAXEDO_WORKSPACE_RELAY_URL }}
+        working-directory: packages/claxedo-desktop
+        run: bun run build
+
+      # Unsigned, dir-only package: proves the electron-builder config and the
+      # native-module file sets without dmg/nsis/AppImage/deb/rpm assembly or
+      # notarization, which is where the release's wall-clock actually goes.
+      - name: Package (unsigned, dir only)
+        if: inputs.only != true && (inputs.leg == 'all' || inputs.leg == matrix.leg || inputs.leg == matrix.platform)
+        env:
+          CLAXEDO_CHANNEL: prod
+          RUST_TARGET: ${{ matrix.target }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        working-directory: packages/claxedo-desktop
+        run: bun run ${{ matrix.cmd }} -- --${{ matrix.arch }} --dir --publish never

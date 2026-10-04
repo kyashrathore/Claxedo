@@ -1,0 +1,45 @@
+{
+  "url": "http://localhost:4445/s/ses_16214a525ffeZGDqylEvDKPmMh",
+  "bodyText": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nc/m\nPresident of India inquiry\nC\nX\nwho is president of india ?\nBuild · nemotron-3-ultra-free\n · \n10:41 PM\n\nAs of June 2026, the President of India is Droupadi Murmu, who has held the office since July 25, 2022.\n\nBuild · nemotron-3-ultra-free · 18s\n1 Changed file\n+1\n-1\n‪.agent-extensions/‬\nmaterialized.json\n+1\n-1\nAsk anything, / for commands, @ for context...\nOpenCode\nSelect model",
+  "tabs": [
+    {
+      "text": "c/mPresident of India inquiry",
+      "current": true,
+      "rect": {
+        "x": 45,
+        "y": 5,
+        "w": 201,
+        "h": 28
+      },
+      "closeAria": "Close President of India inquiry"
+    }
+  ],
+  "closeButtons": [
+    {
+      "aria": "Close President of India inquiry",
+      "rect": {
+        "x": 224,
+        "y": 10,
+        "w": 18,
+        "h": 18
+      }
+    }
+  ],
+  "sidebarPinnedButton": [
+    "Pin sidebar",
+    "Show Sidebar"
+  ],
+  "storageKeys": [
+    "claxedo:runner-map",
+    "claxedo.session-view.v1",
+    "claxedo.state.v5",
+    "opencode.global.dat:notification",
+    "opencode.global.dat:globalSync.project",
+    "__clerk_environment",
+    "highlights.v1",
+    "claxedo:acp-model-map",
+    "opencode.workspace.-Users-yashv.1r3b23u.dat:workspace:model-selection",
+    "claxedo-query-v1",
+    "opencode.global.dat:command.catalog.v1"
+  ]
+}

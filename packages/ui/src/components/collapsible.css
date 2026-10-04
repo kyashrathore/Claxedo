@@ -1,0 +1,168 @@
+.ui-collapsible {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: transparent;
+  border: none;
+  transition: background-color 0.15s ease;
+  border-radius: var(--radius-md);
+  overflow: visible;
+
+  &.tool-collapsible {
+    --tool-content-gap: 4px;
+    gap: var(--tool-content-gap);
+  }
+
+  .ui-collapsible-trigger {
+    width: 100%;
+    display: flex;
+    height: 32px;
+    padding: 0;
+    align-items: center;
+    align-self: stretch;
+    cursor: default;
+    user-select: none;
+    color: var(--text-base);
+
+    .ui-collapsible-arrow {
+      opacity: 0;
+      transition: opacity 0.15s ease;
+      transform: translateZ(0);
+    }
+
+    .ui-collapsible-arrow-icon {
+      display: inline-flex;
+      color: var(--icon-weaker);
+      transform: translateZ(0) rotate(-90deg);
+      transition: transform 0.15s ease;
+    }
+
+    &:hover .ui-collapsible-arrow {
+      opacity: 1;
+    }
+
+    /* text-12-medium */
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-small);
+    font-style: normal;
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-large); /* 166.667% */
+    letter-spacing: var(--letter-spacing-normal);
+
+    /* &:hover { */
+    /*   background-color: var(--surface-base); */
+    /* } */
+    &:focus-visible {
+      outline: none;
+      background-color: var(--surface-raised-base-hover);
+    }
+    &[data-disabled] {
+      cursor: not-allowed;
+    }
+
+    &[data-hide-details="true"] {
+      height: auto;
+      align-items: stretch;
+    }
+
+    .ui-collapsible-arrow {
+      flex-shrink: 0;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+  }
+
+  .ui-collapsible-trigger[aria-expanded="true"] {
+    .ui-collapsible-arrow {
+      opacity: 1;
+    }
+
+    .ui-collapsible-arrow-icon {
+      transform: translateZ(0) rotate(0deg);
+    }
+  }
+
+  [data-slot="collapsible-content"] {
+    overflow: hidden;
+    /* animation: slideUp 250ms ease-out; */
+
+    &[data-expanded] {
+      overflow: visible;
+    }
+
+    /* &[data-expanded] { */
+    /*   animation: slideDown 250ms ease-out; */
+    /* } */
+  }
+
+  &[data-variant="ghost"] {
+    background-color: transparent;
+    border: none;
+
+    > .ui-collapsible-trigger {
+      background-color: transparent;
+      border: none;
+      padding: 0;
+
+      /* &:hover { */
+      /*   color: var(--text-strong); */
+      /* } */
+      &:focus-visible {
+        outline: none;
+        background-color: var(--surface-raised-base-hover);
+      }
+      &[data-disabled] {
+        cursor: not-allowed;
+      }
+    }
+  }
+
+  &[data-variant="ghost"][data-scope="filetree"] {
+    > .ui-collapsible-trigger {
+      height: 24px;
+    }
+  }
+
+  &[data-variant="ghost"][data-scope="file-tree-v2"] {
+    > .ui-collapsible-trigger {
+      height: 28px;
+    }
+  }
+}
+
+/* Non-inheriting for the same reason as the accordion pair in accordion.css:
+   Kobalte writes the measured content box on the collapsible content element,
+   and only that element's own animation reads it. Left unregistered, every
+   write invalidated the inherited style of the whole content subtree. */
+@property --kb-collapsible-content-height {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --kb-collapsible-content-width {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes slideDown {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--kb-collapsible-content-height);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    height: var(--kb-collapsible-content-height);
+  }
+  to {
+    height: 0;
+  }
+}

@@ -1,0 +1,31 @@
+---
+import Layout from "./Layout.astro"
+import Nav from "../components/Nav.astro"
+import Footer from "../components/Footer.astro"
+
+interface Props {
+  frontmatter: {
+    title: string
+    description?: string
+    noindex?: boolean
+  }
+}
+
+const { frontmatter } = Astro.props
+const { title, description, noindex } = frontmatter
+---
+
+<Layout title={title} description={description} noindex={noindex}>
+  <Nav />
+  <main id="main-content" class="page">
+    <article class="prose legal">
+      <slot />
+    </article>
+  </main>
+  <Footer />
+</Layout>
+
+<style is:global>
+  .legal { margin-top: clamp(3rem, 7vw, 5.5rem); }
+  .legal h1 { margin-bottom: 1.5rem; }
+</style>

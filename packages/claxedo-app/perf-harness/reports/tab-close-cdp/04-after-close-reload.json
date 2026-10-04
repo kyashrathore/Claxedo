@@ -1,0 +1,1332 @@
+{
+  "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/terminal/pty_3cf660ef59fa416582c8273a3e6a45ee",
+  "title": "Claxedo",
+  "bodyText": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n›\nCodex\n12h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nC\nX",
+  "buttons": [
+    {
+      "i": 0,
+      "tag": "BUTTON",
+      "text": "",
+      "aria": "Pin sidebar",
+      "title": null,
+      "testid": null,
+      "cls": "rounded",
+      "rect": {
+        "x": 13,
+        "y": 7,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "i": 1,
+      "tag": "SPAN",
+      "text": "",
+      "aria": "Collapse workspace",
+      "title": null,
+      "testid": null,
+      "cls": "size-4 shrink-0 flex items-center justify-center relative",
+      "rect": {
+        "x": 13,
+        "y": 51,
+        "w": 16,
+        "h": 16
+      }
+    },
+    {
+      "i": 2,
+      "tag": "BUTTON",
+      "text": "",
+      "aria": "New session in main",
+      "title": null,
+      "testid": null,
+      "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 122,
+        "y": 49,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "i": 3,
+      "tag": "BUTTON",
+      "text": "›",
+      "aria": "New terminal in main",
+      "title": null,
+      "testid": null,
+      "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 148,
+        "y": 49,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "i": 4,
+      "tag": "BUTTON",
+      "text": "C",
+      "aria": "New Claude terminal in main",
+      "title": null,
+      "testid": null,
+      "cls": "flex items-center justify-center size-6 rounded text-[10px] font-semibold text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 174,
+        "y": 49,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "i": 5,
+      "tag": "BUTTON",
+      "text": "X",
+      "aria": "New Codex terminal in main",
+      "title": null,
+      "testid": null,
+      "cls": "flex items-center justify-center size-6 rounded text-[10px] font-semibold text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 200,
+        "y": 49,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "i": 6,
+      "tag": "BUTTON",
+      "text": "",
+      "aria": "More options for main",
+      "title": null,
+      "testid": null,
+      "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors cursor-pointer border-none bg-transparent",
+      "rect": {
+        "x": 226,
+        "y": 49,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "i": 7,
+      "tag": "DIV",
+      "text": "›Codex",
+      "aria": null,
+      "title": null,
+      "testid": null,
+      "cls": "group/terminal relative flex items-center gap-2 py-1.5 pl-3 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40 transition-[background-color,box-shadow,col",
+      "rect": {
+        "x": 5,
+        "y": 94,
+        "w": 251,
+        "h": 33
+      }
+    },
+    {
+      "i": 8,
+      "tag": "SPAN",
+      "text": "",
+      "aria": "Close terminal: Codex",
+      "title": null,
+      "testid": null,
+      "cls": "shrink-0 text-icon-base hover:text-icon-strong-base transition-colors cursor-pointer opacity-0 group-hover/terminal:opacity-100 focus:opacity-100",
+      "rect": {
+        "x": 230,
+        "y": 100,
+        "w": 16,
+        "h": 21
+      }
+    },
+    {
+      "i": 9,
+      "tag": "DIV",
+      "text": "12h",
+      "aria": null,
+      "title": null,
+      "testid": "rail-sidebar-session-row",
+      "cls": "relative flex items-center gap-2 py-1.5 pl-3 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40 transition-[background-color,box-shadow,color] duration-10",
+      "rect": {
+        "x": 5,
+        "y": 127,
+        "w": 251,
+        "h": 32
+      }
+    },
+    {
+      "i": 10,
+      "tag": "DIV",
+      "text": "13h",
+      "aria": null,
+      "title": null,
+      "testid": "rail-sidebar-session-row",
+      "cls": "relative flex items-center gap-2 py-1.5 pl-3 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40 transition-[background-color,box-shadow,color] duration-10",
+      "rect": {
+        "x": 5,
+        "y": 159,
+        "w": 251,
+        "h": 32
+      }
+    },
+    {
+      "i": 11,
+      "tag": "DIV",
+      "text": "14h",
+      "aria": null,
+      "title": null,
+      "testid": "rail-sidebar-session-row",
+      "cls": "relative flex items-center gap-2 py-1.5 pl-3 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40 transition-[background-color,box-shadow,color] duration-10",
+      "rect": {
+        "x": 5,
+        "y": 190,
+        "w": 251,
+        "h": 32
+      }
+    },
+    {
+      "i": 12,
+      "tag": "DIV",
+      "text": "Greeting1d",
+      "aria": null,
+      "title": null,
+      "testid": "rail-sidebar-session-row",
+      "cls": "relative flex items-center gap-2 py-1.5 pl-3 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40 transition-[background-color,box-shadow,color] duration-10",
+      "rect": {
+        "x": 5,
+        "y": 222,
+        "w": 251,
+        "h": 32
+      }
+    },
+    {
+      "i": 13,
+      "tag": "DIV",
+      "text": "Live browser happy-flow: reply OK.Live browser happy-flow: reply OK.2d",
+      "aria": null,
+      "title": null,
+      "testid": "rail-sidebar-session-row",
+      "cls": "relative flex items-center gap-2 py-1.5 pl-3 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40 transition-[background-color,box-shadow,color] duration-10",
+      "rect": {
+        "x": 5,
+        "y": 253,
+        "w": 251,
+        "h": 32
+      }
+    },
+    {
+      "i": 14,
+      "tag": "SPAN",
+      "text": "",
+      "aria": "Expand workspace",
+      "title": null,
+      "testid": null,
+      "cls": "size-4 shrink-0 flex items-center justify-center relative",
+      "rect": {
+        "x": 13,
+        "y": 298,
+        "w": 16,
+        "h": 16
+      }
+    },
+    {
+      "i": 15,
+      "tag": "BUTTON",
+      "text": "",
+      "aria": "New session in wt-475c3b35",
+      "title": null,
+      "testid": null,
+      "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 122,
+        "y": 297,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "i": 16,
+      "tag": "BUTTON",
+      "text": "›",
+      "aria": "New terminal in wt-475c3b35",
+      "title": null,
+      "testid": null,
+      "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 148,
+        "y": 297,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "i": 17,
+      "tag": "BUTTON",
+      "text": "C",
+      "aria": "New Claude terminal in wt-475c3b35",
+      "title": null,
+      "testid": null,
+      "cls": "flex items-center justify-center size-6 rounded text-[10px] font-semibold text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 174,
+        "y": 297,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "i": 18,
+      "tag": "BUTTON",
+      "text": "X",
+      "aria": "New Codex terminal in wt-475c3b35",
+      "title": null,
+      "testid": null,
+      "cls": "flex items-center justify-center size-6 rounded text-[10px] font-semibold text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 200,
+        "y": 297,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "i": 19,
+      "tag": "BUTTON",
+      "text": "",
+      "aria": "More options for wt-475c3b35",
+      "title": null,
+      "testid": null,
+      "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors cursor-pointer border-none bg-transparent",
+      "rect": {
+        "x": 226,
+        "y": 297,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "i": 20,
+      "tag": "SPAN",
+      "text": "",
+      "aria": "Expand workspace",
+      "title": null,
+      "testid": null,
+      "cls": "size-4 shrink-0 flex items-center justify-center relative",
+      "rect": {
+        "x": 13,
+        "y": 351,
+        "w": 16,
+        "h": 16
+      }
+    },
+    {
+      "i": 21,
+      "tag": "BUTTON",
+      "text": "",
+      "aria": "New session in main",
+      "title": null,
+      "testid": null,
+      "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 122,
+        "y": 350,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "i": 22,
+      "tag": "BUTTON",
+      "text": "›",
+      "aria": "New terminal in main",
+      "title": null,
+      "testid": null,
+      "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 148,
+        "y": 350,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "i": 23,
+      "tag": "BUTTON",
+      "text": "C",
+      "aria": "New Claude terminal in main",
+      "title": null,
+      "testid": null,
+      "cls": "flex items-center justify-center size-6 rounded text-[10px] font-semibold text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 174,
+        "y": 350,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "i": 24,
+      "tag": "BUTTON",
+      "text": "X",
+      "aria": "New Codex terminal in main",
+      "title": null,
+      "testid": null,
+      "cls": "flex items-center justify-center size-6 rounded text-[10px] font-semibold text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 200,
+        "y": 350,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "i": 25,
+      "tag": "BUTTON",
+      "text": "",
+      "aria": "More options for main",
+      "title": null,
+      "testid": null,
+      "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors cursor-pointer border-none bg-transparent",
+      "rect": {
+        "x": 226,
+        "y": 350,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "i": 26,
+      "tag": "BUTTON",
+      "text": "New Project",
+      "aria": null,
+      "title": null,
+      "testid": null,
+      "cls": "w-full flex items-center justify-center gap-1.5 h-8 rounded-lg text-[13px] font-medium text-text-base bg-surface-base-hover/50 hover:bg-surface-base-hover border border-border-weak",
+      "rect": {
+        "x": 11,
+        "y": 864,
+        "w": 239,
+        "h": 32
+      }
+    },
+    {
+      "i": 27,
+      "tag": "BUTTON",
+      "text": "Marketplace",
+      "aria": "Open Marketplace",
+      "title": null,
+      "testid": "sidebar-marketplace-entry",
+      "cls": "w-full flex items-center justify-center gap-1.5 h-8 rounded-lg text-[13px] font-medium text-text-base bg-surface-base-hover/50 hover:bg-surface-base-hover border border-border-weak",
+      "rect": {
+        "x": 11,
+        "y": 902,
+        "w": 239,
+        "h": 32
+      }
+    },
+    {
+      "i": 28,
+      "tag": "BUTTON",
+      "text": "",
+      "aria": "Diagnostics",
+      "title": null,
+      "testid": null,
+      "cls": "h-7 w-7 rounded-md text-icon-base hover:text-text-base",
+      "rect": {
+        "x": 19,
+        "y": 957,
+        "w": 28,
+        "h": 28
+      }
+    },
+    {
+      "i": 29,
+      "tag": "BUTTON",
+      "text": "",
+      "aria": null,
+      "title": null,
+      "testid": null,
+      "cls": "flex items-center justify-center h-7 w-7 rounded-md text-icon-base hover:text-text-base transition-colors cursor-pointer border-none bg-transparent",
+      "rect": {
+        "x": 49,
+        "y": 957,
+        "w": 28,
+        "h": 28
+      }
+    },
+    {
+      "i": 30,
+      "tag": "BUTTON",
+      "text": "",
+      "aria": "Settings",
+      "title": null,
+      "testid": null,
+      "cls": "h-7 w-7 rounded-md text-icon-base hover:text-text-base",
+      "rect": {
+        "x": 79,
+        "y": 957,
+        "w": 28,
+        "h": 28
+      }
+    },
+    {
+      "i": 31,
+      "tag": "BUTTON",
+      "text": "",
+      "aria": "Help",
+      "title": null,
+      "testid": null,
+      "cls": "h-7 w-7 rounded-md text-icon-base hover:text-text-base",
+      "rect": {
+        "x": 109,
+        "y": 957,
+        "w": 28,
+        "h": 28
+      }
+    },
+    {
+      "i": 32,
+      "tag": "BUTTON",
+      "text": "",
+      "aria": "New Session",
+      "title": null,
+      "testid": null,
+      "cls": "flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0 rounded max-md:rounded-lg active:",
+      "rect": {
+        "x": 1271,
+        "y": 3,
+        "w": 32,
+        "h": 32
+      }
+    },
+    {
+      "i": 33,
+      "tag": "BUTTON",
+      "text": "C",
+      "aria": "New Claude Terminal",
+      "title": null,
+      "testid": null,
+      "cls": "flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0 rounded max-md:rounded-lg active:",
+      "rect": {
+        "x": 1303,
+        "y": 3,
+        "w": 32,
+        "h": 32
+      }
+    },
+    {
+      "i": 34,
+      "tag": "BUTTON",
+      "text": "X",
+      "aria": "New Codex Terminal",
+      "title": null,
+      "testid": null,
+      "cls": "flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0 rounded max-md:rounded-lg active:",
+      "rect": {
+        "x": 1335,
+        "y": 3,
+        "w": 32,
+        "h": 32
+      }
+    },
+    {
+      "i": 35,
+      "tag": "BUTTON",
+      "text": "",
+      "aria": null,
+      "title": null,
+      "testid": null,
+      "cls": "flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors cursor-pointer border-none bg-transparent ",
+      "rect": {
+        "x": 1367,
+        "y": 3,
+        "w": 32,
+        "h": 32
+      }
+    },
+    {
+      "i": 36,
+      "tag": "BUTTON",
+      "text": "",
+      "aria": "Open workspace panel",
+      "title": "Open workspace panel",
+      "testid": "workspace-panel-toggle",
+      "cls": "flex size-7 items-center justify-center rounded-md text-icon-weak-base transition-[background-color,color,scale] duration-100 hover:bg-surface-base-hover hover:text-icon-base activ",
+      "rect": {
+        "x": 1407,
+        "y": 5,
+        "w": 28,
+        "h": 28
+      }
+    }
+  ],
+  "storage": {
+    "localStorage": {
+      "claxedo:runner-map": "{\"session:ses_16214a525ffeZGDqylEvDKPmMh\":\"opencode\"}",
+      "claxedo.session-view.v1": "{\"group\":\"project\",\"status\":[],\"environment\":[],\"git\":[],\"archived\":\"active\"}",
+      "claxedo.state.v5": "{\"workbench\":{\"panes\":[{\"id\":\"p_1_uoejf\",\"contentId\":\"terminal-1780816284631-o9auihp\"}],\"split\":{\"direction\":\"h\",\"sizes\":[1],\"root\":{\"t\":\"leaf\",\"id\":\"p_1_uoejf\"}},\"contentIds\":[\"session-1780816279129-8z3xv94\",\"terminal-1780816284631-o9auihp\"],\"contentRecency\":[\"terminal-1780816284631-o9auihp\",\"session-1780816279129-8z3xv94\"],\"focusedPaneId\":\"p_1_uoejf\",\"layoutSnapshots\":{}},\"meta\":{\"session-1780816279129-8z3xv94\":{\"id\":\"session-1780816279129-8z3xv94\",\"type\":\"session\",\"scope\":\"directory\",\"directory\":\"/Users/yashvardhansingh/test/opencode\",\"sessionId\":\"ses_16214a525ffeZGDqylEvDKPmMh\",\"content\":{\"type\":\"session\",\"directory\":\"/Users/yashvardhansingh/test/opencode\",\"sessionId\":\"ses_16214a525ffeZGDqylEvDKPmMh\",\"title\":\"Session\",\"sessionRef\":{\"sessionId\":\"ses_16214a525ffeZGDqylEvDKPmMh\",\"host\":\"workspace\",\"cwd\":\"/Users/yashvardhansingh/test/opencode\",\"toolSandbox\":{\"kind\":\"local\",\"cwd\":\"/Users/yashvardhansingh/test/opencode\"}},\"preload\":false}},\"terminal-1780816284631-o9auihp\":{\"id\":\"terminal-1780816284631-o9auihp\",\"type\":\"terminal\",\"scope\":\"directory\",\"directory\":\"/Users/yashvardhansingh/test/opencode\",\"terminalId\":\"pty_3cf660ef59fa416582c8273a3e6a45ee\",\"content\":{\"type\":\"terminal\",\"directory\":\"/Users/yashvardhansingh/test/opencode\",\"terminalId\":\"pty_3cf660ef59fa416582c8273a3e6a45ee\",\"title\":\"Codex\",\"command\":\"codex -c model_reasoning_effort=\\\"high\\\" --ask-for-approval never --sandbox danger-full-access\"}}},\"rail\":{\"collapsed\":false,\"hovered\":false,\"pinned\":true,\"locked\":false},\"workspace\":{\"paneWorktree\":{},\"recency\":{},\"worktreeColor\":{}},\"workspacePanel\":{\"open\":false},\"terminal\":{\"owner\":{\"pty_3cf660ef59fa416582c8273a3e6a45ee\":\"terminal-1780816284631-o9auihp\"},\"agentStatus\":{},\"agentSeen\":{},\"lifecycle\":{}},\"processPane\":{\"crashedWhileClosed\":false,\"pendingAction\":null}}",
+      "opencode.global.dat:notification": "{\"list\":[]}",
+      "opencode.global.dat:globalSync.project": "{\"value\":[{\"id\":\"608c72e3-405a-4d2a-bf7f-883b8c76ea8e\",\"worktree\":\"/Users/yashvardhansingh/test/opencode\",\"name\":\"Claxedo\",\"kind\":\"local\",\"provider\":null,\"git\":{\"repo\":\"Claxedo\",\"branch\":\"codex/app-shell-identity-seam\",\"remote\":\"https://github.com/kyashrathore/Claxedo.git\"},\"sandboxes\":[\"1be2f8be-50c7-47a9-96b5-c0a368a3d8e2\"],\"workspaces\":{\"608c72e3-405a-4d2a-bf7f-883b8c76ea8e\":{\"id\":\"608c72e3-405a-4d2a-bf7f-883b8c76ea8e\",\"project_id\":\"608c72e3-405a-4d2a-bf7f-883b8c76ea8e\",\"directory\":\"/Users/yashvardhansingh/test/opencode\",\"kind\":\"local\",\"repo_key\":\"/Users/yashvardhansingh/test/opencode/.git\",\"repo_root\":\"/Users/yashvardhansingh/test/opencode\",\"repo_name\":\"Claxedo\",\"git_branch\":\"codex/app-shell-identity-seam\",\"git_remote\":\"https://github.com/kyashrathore/Claxedo.git\",\"created_at\":1780383287091,\"updated_at\":1780816282135,\"available\":true},\"1be2f8be-50c7-47a9-96b5-c0a368a3d8e2\":{\"id\":\"1be2f8be-50c7-47a9-96b5-c0a368a3d8e2\",\"project_id\":\"608c72e3-405a-4d2a-bf7f-883b8c76ea8e\",\"workspace_name\":\"wt-475c3b35\",\"directory\":\"/Users/yashvardhansingh/.claxedo/worktree/608c72e3-405a-4d2a-bf7f-883b8c76ea8e/wt-475c3b35\",\"kind\":\"local\",\"repo_key\":\"/Users/yashvardhansingh/test/opencode/.git\",\"repo_root\":\"/Users/yashvardhansingh/.claxedo/worktree/608c72e3-405a-4d2a-bf7f-883b8c76ea8e/wt-475c3b35\",\"repo_name\":\"Claxedo\",\"git_branch\":\"opencode/wt-475c3b35\",\"git_remote\":\"https://github.com/kyashrathore/Claxedo.git\",\"created_at\":1780635750224,\"updated_at\":1780816069730,\"available\":true}},\"time\":{\"created\":1780383287091,\"updated\":1780816282135}},{\"id\":\"0a2e65d6-7906-44a8-8359-7726b5a8c4b5\",\"worktree\":\"/Users/yashvardhansingh/test/formlink\",\"name\":\"formlink\",\"kind\":\"local\",\"provider\":null,\"git\":{\"repo\":\"formlink\",\"branch\":\"main\",\"remote\":\"https://github.com/kyashrathore/formlink.git\"},\"sandboxes\":[],\"workspaces\":{\"0a2e65d6-7906-44a8-8359-7726b5a8c4b5\":{\"id\":\"0a2e65d6-7906-44a8-8359-7726b5a8c4b5\",\"project_id\":\"0a2e65d6-7906-44a8-8359-7726b5a8c4b5\",\"directory\":\"/Users/yashvardhansingh/test/formlink\",\"kind\":\"local\",\"repo_key\":\"/Users/yashvardhansingh/test/formlink/.git\",\"repo_root\":\"/Users/yashvardhansingh/test/formlink\",\"repo_name\":\"formlink\",\"git_branch\":\"main\",\"git_remote\":\"https://github.com/kyashrathore/formlink.git\",\"created_at\":1780635764854,\"updated_at\":1780808810107,\"available\":true}},\"time\":{\"created\":1780635764854,\"updated\":1780808810107}}]}",
+      "__clerk_environment": "{\"value\":{\"object\":\"environment\",\"auth_config\":{\"claimed_at\":null,\"id\":\"\",\"object\":\"auth_config\",\"reverification\":true,\"single_session_mode\":true},\"display_config\":{\"object\":\"display_config\",\"after_create_organization_url\":\"http://localhost:4445\",\"after_join_waitlist_url\":\"http://localhost:4445\",\"after_leave_organization_url\":\"http://localhost:4445\",\"after_sign_in_url\":\"http://localhost:4445\",\"after_sign_out_all_url\":\"https://suitable-elf-22.accounts.dev/sign-in\",\"after_sign_out_one_url\":\"https://suitable-elf-22.accounts.dev/sign-in/choose\",\"after_sign_up_url\":\"http://localhost:4445\",\"after_switch_session_url\":\"http://localhost:4445\",\"application_name\":\"My Application\",\"branded\":true,\"captcha_heartbeat\":false,\"captcha_oauth_bypass\":[],\"captcha_provider\":\"turnstile\",\"captcha_public_key_invisible\":\"0x4AAAAAAAFV93qQdS0ycilX\",\"captcha_public_key\":\"0x4AAAAAAAWXJGBD7bONzLBd\",\"captcha_widget_type\":\"smart\",\"clerk_js_version\":\"5\",\"create_organization_url\":\"https://suitable-elf-22.accounts.dev/create-organization\",\"favicon_image_url\":\"\",\"home_url\":\"http://localhost:4445\",\"id\":\"display_config_2wnfeerKrhwOo5rnBTSpSzIwVjj\",\"instance_environment_type\":\"development\",\"logo_image_url\":\"\",\"organization_profile_url\":\"https://suitable-elf-22.accounts.dev/organization\",\"preferred_sign_in_strategy\":\"password\",\"privacy_policy_url\":\"\",\"show_devmode_warning\":true,\"sign_in_url\":\"https://suitable-elf-22.accounts.dev/sign-in\",\"sign_up_url\":\"https://suitable-elf-22.accounts.dev/sign-up\",\"support_email\":\"\",\"terms_url\":\"\",\"theme\":{\"buttons\":{\"font_color\":\"#ffffff\",\"font_family\":\"\\\"Source Sans Pro\\\", sans-serif\",\"font_weight\":\"600\"},\"general\":{\"color\":\"#6c47ff\",\"padding\":\"1em\",\"box_shadow\":\"0 2px 8px rgba(0, 0, 0, 0.2)\",\"font_color\":\"#151515\",\"font_family\":\"\\\"Source Sans Pro\\\", sans-serif\",\"border_radius\":\"0.5em\",\"background_color\":\"#ffffff\",\"label_font_weight\":\"600\"},\"accounts\":{\"background_color\":\"#ffffff\"}},\"user_profile_url\":\"https://suitable-elf-22.accounts.dev/user\",\"waitlist_url\":\"https://suitable-elf-22.accounts.dev/waitlist\"},\"id\":\"\",\"maintenance_mode\":false,\"client_debug_mode\":false,\"partitioned_cookies\":false,\"organization_settings\":{\"actions\":{\"admin_delete\":true},\"domains\":{\"enabled\":false,\"enrollment_modes\":[],\"default_role\":\"org:member\"},\"enabled\":true,\"max_allowed_memberships\":5},\"user_settings\":{\"actions\":{\"delete_self\":true,\"create_organization\":false,\"create_organizations_limit\":null},\"attributes\":{\"email_address\":{\"enabled\":true,\"required\":true,\"used_for_first_factor\":true,\"first_factors\":[\"email_code\"],\"used_for_second_factor\":false,\"second_factors\":[],\"verifications\":[\"email_code\"],\"verify_at_sign_up\":true,\"immutable\":false,\"name\":\"email_address\"},\"phone_number\":{\"enabled\":false,\"required\":false,\"used_for_first_factor\":false,\"first_factors\":[],\"used_for_second_factor\":false,\"second_factors\":[],\"verifications\":[],\"verify_at_sign_up\":false,\"immutable\":false,\"name\":\"phone_number\"},\"username\":{\"enabled\":false,\"required\":false,\"used_for_first_factor\":false,\"first_factors\":[],\"used_for_second_factor\":false,\"second_factors\":[],\"verifications\":[],\"verify_at_sign_up\":false,\"immutable\":false,\"name\":\"username\"},\"web3_wallet\":{\"enabled\":false,\"required\":false,\"used_for_first_factor\":false,\"first_factors\":[],\"used_for_second_factor\":false,\"second_factors\":[],\"verifications\":[],\"verify_at_sign_up\":false,\"immutable\":false,\"name\":\"web3_wallet\"},\"first_name\":{\"enabled\":false,\"required\":false,\"used_for_first_factor\":false,\"first_factors\":[],\"used_for_second_factor\":false,\"second_factors\":[],\"verifications\":[],\"verify_at_sign_up\":false,\"immutable\":false,\"name\":\"first_name\"},\"last_name\":{\"enabled\":false,\"required\":false,\"used_for_first_factor\":false,\"first_factors\":[],\"used_for_second_factor\":false,\"second_factors\":[],\"verifications\":[],\"verify_at_sign_up\":false,\"immutable\":false,\"name\":\"last_name\"},\"password\":{\"enabled\":true,\"required\":true,\"used_for_first_factor\":false,\"first_factors\":[],\"used_for_second_factor\":false,\"second_factors\":[],\"verifications\":[],\"verify_at_sign_up\":false,\"immutable\":false,\"name\":\"password\"},\"authenticator_app\":{\"enabled\":false,\"required\":false,\"used_for_first_factor\":false,\"first_factors\":[],\"used_for_second_factor\":false,\"second_factors\":[],\"verifications\":[],\"verify_at_sign_up\":false,\"immutable\":false,\"name\":\"authenticator_app\"},\"ticket\":{\"enabled\":true,\"required\":false,\"used_for_first_factor\":false,\"first_factors\":[],\"used_for_second_factor\":false,\"second_factors\":[],\"verifications\":[],\"verify_at_sign_up\":false,\"immutable\":false,\"name\":\"ticket\"},\"backup_code\":{\"enabled\":false,\"required\":false,\"used_for_first_factor\":false,\"first_factors\":[],\"used_for_second_factor\":false,\"second_factors\":[],\"verifications\":[],\"verify_at_sign_up\":false,\"immutable\":false,\"name\":\"backup_code\"},\"passkey\":{\"enabled\":false,\"required\":false,\"used_for_first_factor\":false,\"first_factors\":[],\"used_for_second_factor\":false,\"second_factors\":[],\"verifications\":[],\"verify_at_sign_up\":false,\"immutable\":false,\"name\":\"passkey\"}},\"passkey_settings\":{\"allow_autofill\":true,\"show_sign_in_button\":true},\"password_settings\":{\"disable_hibp\":false,\"min_length\":8,\"max_length\":72,\"require_special_char\":false,\"require_numbers\":false,\"require_uppercase\":false,\"require_lowercase\":false,\"show_zxcvbn\":false,\"min_zxcvbn_strength\":0,\"enforce_hibp_on_sign_in\":true,\"allowed_special_characters\":\"!\\\"#$%&'()*+,-./:;<=>?@[]^_`{|}~\"},\"saml\":{\"enabled\":false},\"sign_in\":{\"second_factor\":{\"required\":false}},\"sign_up\":{\"captcha_enabled\":true,\"captcha_widget_type\":\"smart\",\"custom_action_required\":false,\"progressive\":true,\"mode\":\"public\",\"legal_consent_enabled\":false,\"mfa\":{\"required\":false}},\"social\":{\"oauth_github\":{\"enabled\":false,\"required\":false,\"authenticatable\":true,\"block_email_subaddresses\":false,\"strategy\":\"oauth_github\",\"not_selectable\":false,\"deprecated\":false,\"name\":\"GitHub\",\"logo_url\":\"https://img.clerk.com/static/github.png\"},\"oauth_google\":{\"enabled\":true,\"required\":false,\"authenticatable\":true,\"block_email_subaddresses\":true,\"strategy\":\"oauth_google\",\"not_selectable\":false,\"deprecated\":false,\"name\":\"Google\",\"logo_url\":\"https://img.clerk.com/static/google.png\"}}},\"commerce_settings\":{\"billing\":{\"stripe_publishable_key\":null,\"organization\":{\"enabled\":false,\"has_paid_plans\":false},\"user\":{\"enabled\":false,\"has_paid_plans\":false}}},\"api_keys_settings\":{\"user_api_keys_enabled\":false,\"orgs_api_keys_enabled\":false},\"protect_config\":{\"object\":\"protect_config\",\"id\":\"\"}},\"exp\":1780902686979}",
+      "highlights.v1": "{\"version\":\"cloud\"}",
+      "opencode.workspace.-Users-yashv.1r3b23u.dat:workspace:model-selection": "{\"session\":{\"ses_16214a525ffeZGDqylEvDKPmMh\":{\"agent\":\"build\",\"model\":{\"providerID\":\"opencode\",\"modelID\":\"nemotron-3-ultra-free\"},\"variant\":null}},\"dirty\":{}}",
+      "claxedo:acp-model-map": "{\"session:ses_16214a525ffeZGDqylEvDKPmMh\":\"big-pickle\"}",
+      "claxedo-query-v1": "{\"buster\":\"dev\",\"timestamp\":1780816286645,\"clientState\":{\"mutations\":[],\"queries\":[{\"dehydratedAt\":1780816286645,\"state\":{\"data\":[{\"id\":\"608c72e3-405a-4d2a-bf7f-883b8c76ea8e\",\"worktree\":\"/Users/yashvardhansingh/test/opencode\",\"name\":\"Claxedo\",\"kind\":\"local\",\"provider\":null,\"git\":{\"repo\":\"Claxedo\",\"branch\":\"codex/app-shell-identity-seam\",\"remote\":\"https://github.com/kyashrathore/Claxedo.git\"},\"sandboxes\":[\"1be2f8be-50c7-47a9-96b5-c0a368a3d8e2\"],\"workspaces\":{\"608c72e3-405a-4d2a-bf7f-883b8c76ea8e\":{\"id\":\"608c72e3-405a-4d2a-bf7f-883b8c76ea8e\",\"project_id\":\"608c72e3-405a-4d2a-bf7f-883b8c76ea8e\",\"directory\":\"/Users/yashvardhansingh/test/opencode\",\"kind\":\"local\",\"repo_key\":\"/Users/yashvardhansingh/test/opencode/.git\",\"repo_root\":\"/Users/yashvardhansingh/test/opencode\",\"repo_name\":\"Claxedo\",\"git_branch\":\"codex/app-shell-identity-seam\",\"git_remote\":\"https://github.com/kyashrathore/Claxedo.git\",\"created_at\":1780383287091,\"updated_at\":1780816282135,\"available\":true},\"1be2f8be-50c7-47a9-96b5-c0a368a3d8e2\":{\"id\":\"1be2f8be-50c7-47a9-96b5-c0a368a3d8e2\",\"project_id\":\"608c72e3-405a-4d2a-bf7f-883b8c76ea8e\",\"workspace_name\":\"wt-475c3b35\",\"directory\":\"/Users/yashvardhansingh/.claxedo/worktree/608c72e3-405a-4d2a-bf7f-883b8c76ea8e/wt-475c3b35\",\"kind\":\"local\",\"repo_key\":\"/Users/yashvardhansingh/test/opencode/.git\",\"repo_root\":\"/Users/yashvardhansingh/.claxedo/worktree/608c72e3-405a-4d2a-bf7f-883b8c76ea8e/wt-475c3b35\",\"repo_name\":\"Claxedo\",\"git_branch\":\"opencode/wt-475c3b35\",\"git_remote\":\"https://github.com/kyashrathore/Claxedo.git\",\"created_at\":1780635750224,\"updated_at\":1780816069730,\"available\":true}},\"time\":{\"created\":1780383287091,\"updated\":1780816282135}},{\"id\":\"0a2e65d6-7906-44a8-8359-7726b5a8c4b5\",\"worktree\":\"/Users/yashvardhansingh/test/formlink\",\"name\":\"formlink\",\"kind\":\"local\",\"provider\":null,\"git\":{\"repo\":\"formlink\",\"branch\":\"main\",\"remote\":\"https://github.com/kyashrathore/formlink.git\"},\"sandboxes\":[],\"workspaces\":{\"0a2e65d6-7906-44a8-8359-7726b5a8c4b5\":{\"id\":\"0a2e65d6-7906-44a8-8359-7726b5a8c4b5\",\"project_id\":\"0a2e65d6-7906-44a8-8359-7726b5a8c4b5\",\"directory\":\"/Users/yashvardhansingh/test/formlink\",\"kind\":\"local\",\"repo_key\":\"/Users/yashvardhansingh/test/formlink/.git\",\"repo_root\":\"/Users/yashvardhansingh/test/formlink\",\"repo_name\":\"formlink\",\"git_branch\":\"main\",\"git_remote\":\"https://github.com/kyashrathore/formlink.git\",\"created_at\":1780635764854,\"updated_at\":1780808810107,\"available\":true}},\"time\":{\"created\":1780635764854,\"updated\":1780808810107}}],\"dataUpdateCount\":3,\"dataUpdatedAt\":1780816286596,\"error\":null,\"errorUpdateCount\":0,\"errorUpdatedAt\":0,\"fetchFailureCount\":0,\"fetchFailureReason\":null,\"fetchMeta\":null,\"isInvalidated\":false,\"status\":\"success\",\"fetchStatus\":\"idle\"},\"queryKey\":[\"controlPlane\",\"http://127.0.0.1:3001\",\"projects\"],\"queryHash\":\"[\\\"controlPlane\\\",\\\"http://127.0.0.1:3001\\\",\\\"projects\\\"]\"},{\"dehydratedAt\":1780816286645,\"state\":{\"data\":{\"home\":\"/Users/yashvardhansingh\",\"state\":\"/Users/yashvardhansingh/.claxedo/state\",\"config\":\"/Users/yashvardhansingh/.claxedo\",\"worktree\":\"\",\"directory\":\"\"},\"dataUpdateCount\":6,\"dataUpdatedAt\":1780816286596,\"error\":null,\"errorUpdateCount\":0,\"errorUpdatedAt\":0,\"fetchFailureCount\":0,\"fetchFailureReason\":null,\"fetchMeta\":null,\"isInvalidated\":false,\"status\":\"success\",\"fetchStatus\":\"idle\"},\"queryKey\":[\"directory\",\"http://127.0.0.1:3001\",\"path\",\"\"],\"queryHash\":\"[\\\"directory\\\",\\\"http://127.0.0.1:3001\\\",\\\"path\\\",\\\"\\\"]\"},{\"dehydratedAt\":1780816286645,\"state\":{\"data\":{\"all\":{},\"default\":{\"claude-acp\":\"claude-sonnet-4-6\",\"codex-acp\":\"\",\"cursor-acp\":\"\",\"claude-sdk\":\"claude-sonnet-4-6\",\"codex-app-server\":\"default\"},\"connected\":[]},\"dataUpdateCount\":7,\"dataUpdatedAt\":1780816286596,\"error\":null,\"errorUpdateCount\":0,\"errorUpdatedAt\":0,\"fetchFailureCount\":0,\"fetchFailureReason\":null,\"fetchMeta\":null,\"isInvalidated\":false,\"status\":\"success\",\"fetchStatus\":\"idle\"},\"queryKey\":[\"controlPlane\",\"http://127.0.0.1:3001\",\"providers\"],\"queryHash\":\"[\\\"controlPlane\\\",\\\"http://127.0.0.1:3001\\\",\\\"providers\\\"]\"},{\"dehydratedAt\":1780816286645,\"state\":{\"data\":{\"limit\":5,\"total\":10,\"session\":[{\"id\":\"32c205ae-89d5-4545-a2d2-742896ee5909\",\"title\":\"Greeting\",\"directory\":\"/Users/yashvardhansingh/test/opencode\",\"time\":{\"created\":1780646359342,\"updated\":1780646669072},\"status\":\"recovering\",\"recovery_error\":\"ACP process restarted; pending interactive state must be rerun\",\"agent_session_id\":\"ca957453-2ab4-4c93-9d95-f0142692f12c\"},{\"id\":\"eb9484de-4bda-4029-9320-7c02f58a5d5f\",\"title\":\"Live browser happy-flow: reply OK.Live browser happy-flow: reply OK.\",\"directory\":\"/Users/yashvardhansingh/test/opencode\",\"time\":{\"created\":1780637555815,\"updated\":1780637854641},\"status\":\"recovering\",\"recovery_error\":\"ACP process restarted; pending interactive state must be rerun\",\"agent_session_id\":\"8fb2aaa1-ac41-4846-a5f7-780676b53542\"},{\"id\":\"ses_161e857c9ffeJ0afuAAtpPix5j\",\"title\":null,\"directory\":\"/Users/yashvardhansingh/test/opencode\",\"time\":{\"created\":1780769170259,\"updated\":1780769170259}},{\"id\":\"ses_16214a525ffeZGDqylEvDKPmMh\",\"title\":null,\"directory\":\"/Users/yashvardhansingh/test/opencode\",\"time\":{\"created\":1780765909241,\"updated\":1780769825560}},{\"id\":\"ses_16974084bffeLiun7HMh5M1382\",\"title\":null,\"directory\":\"/Users/yashvardhansingh/test/opencode\",\"time\":{\"created\":1780660528637,\"updated\":1780765650485}}],\"at\":1780816279182},\"dataUpdateCount\":1,\"dataUpdatedAt\":1780816279182,\"error\":null,\"errorUpdateCount\":0,\"errorUpdatedAt\":0,\"fetchFailureCount\":0,\"fetchFailureReason\":null,\"fetchMeta\":null,\"isInvalidated\":false,\"status\":\"success\",\"fetchStatus\":\"idle\"},\"queryKey\":[\"directory\",\"local\",\"sessionCache\",\"/Users/yashvardhansingh/test/opencode\"],\"queryHash\":\"[\\\"directory\\\",\\\"local\\\",\\\"sessionCache\\\",\\\"/Users/yashvardhansingh/test/opencode\\\"]\"},{\"dehydratedAt\":1780816286645,\"state\":{\"data\":{\"model\":\"\",\"provider\":{},\"mcp\":{}},\"dataUpdateCount\":1,\"dataUpdatedAt\":1780816279177,\"error\":null,\"errorUpdateCount\":0,\"errorUpdatedAt\":0,\"fetchFailureCount\":0,\"fetchFailureReason\":null,\"fetchMeta\":null,\"isInvalidated\":false,\"status\":\"success\",\"fetchStatus\":\"idle\"},\"queryKey\":[\"directory\",\"http://127.0.0.1:3001\",\"config\",\"/Users/yashvardhansingh/test/opencode\"],\"queryHash\":\"[\\\"directory\\\",\\\"http://127.0.0.1:3001\\\",\\\"config\\\",\\\"/Users/yashvardhansingh/test/opencode\\\"]\"},{\"dehydratedAt\":1780816286645,\"state\":{\"data\":[{\"name\":\"runtime-pushed-1778375402890\",\"content\":\"This legacy payload must be ignored.\"}],\"dataUpdateCount\":1,\"dataUpdatedAt\":1780816279205,\"error\":null,\"errorUpdateCount\":0,\"errorUpdatedAt\":0,\"fetchFailureCount\":0,\"fetchFailureReason\":null,\"fetchMeta\":null,\"isInvalidated\":false,\"status\":\"success\",\"fetchStatus\":\"idle\"},\"queryKey\":[\"shell\",\"http://127.0.0.1:3001\",\"commands\",\"/Users/yashvardhansingh/test/opencode\"],\"queryHash\":\"[\\\"shell\\\",\\\"http://127.0.0.1:3001\\\",\\\"commands\\\",\\\"/Users/yashvardhansingh/test/opencode\\\"]\"},{\"dehydratedAt\":1780816286645,\"state\":{\"data\":\"608c72e3-405a-4d2a-bf7f-883b8c76ea8e\",\"dataUpdateCount\":1,\"dataUpdatedAt\":1780816279298,\"error\":null,\"errorUpdateCount\":0,\"errorUpdatedAt\":0,\"fetchFailureCount\":0,\"fetchFailureReason\":null,\"fetchMeta\":null,\"isInvalidated\":false,\"status\":\"success\",\"fetchStatus\":\"idle\"},\"queryKey\":[\"directory\",\"http://127.0.0.1:3001\",\"project\",\"/Users/yashvardhansingh/test/opencode\"],\"queryHash\":\"[\\\"directory\\\",\\\"http://127.0.0.1:3001\\\",\\\"project\\\",\\\"/Users/yashvardhansingh/test/opencode\\\"]\"},{\"dehydratedAt\":1780816286645,\"state\":{\"data\":{\"branch\":\"codex/app-shell-identity-seam\",\"default_branch\":\"dev\"},\"dataUpdateCount\":1,\"dataUpdatedAt\":1780816279265,\"error\":null,\"errorUpdateCount\":0,\"errorUpdatedAt\":0,\"fetchFailureCount\":0,\"fetchFailureReason\":null,\"fetchMeta\":null,\"isInvalidated\":false,\"status\":\"success\",\"fetchStatus\":\"idle\"},\"queryKey\":[\"runtime\",\"http://127.0.0.1:3001\",\"vcs\",\"\",\"/Users/yashvardhansingh/test/opencode\"],\"queryHash\":\"[\\\"runtime\\\",\\\"http://127.0.0.1:3001\\\",\\\"vcs\\\",\\\"\\\",\\\"/Users/yashvardhansingh/test/opencode\\\"]\"},{\"dehydratedAt\":1780816286645,\"state\":{\"data\":{\"home\":\"/Users/yashvardhansingh\",\"state\":\"/Users/yashvardhansingh/.claxedo/state\",\"config\":\"/Users/yashvardhansingh/.claxedo\",\"worktree\":\"/Users/yashvardhansingh/test/opencode\",\"directory\":\"/Users/yashvardhansingh/test/opencode\"},\"dataUpdateCount\":1,\"dataUpdatedAt\":1780816279249,\"error\":null,\"errorUpdateCount\":0,\"errorUpdatedAt\":0,\"fetchFailureCount\":0,\"fetchFailureReason\":null,\"fetchMeta\":null,\"isInvalidated\":false,\"status\":\"success\",\"fetchStatus\":\"idle\"},\"queryKey\":[\"directory\",\"http://127.0.0.1:3001\",\"path\",\"/Users/yashvardhansingh/test/opencode\"],\"queryHash\":\"[\\\"directory\\\",\\\"http://127.0.0.1:3001\\\",\\\"path\\\",\\\"/Users/yashvardhansingh/test/opencode\\\"]\"},{\"dehydratedAt\":1780816286645,\"state\":{\"data\":{\"workspaceId\":\"608c72e3-405a-4d2a-bf7f-883b8c76ea8e\",\"projectId\":\"608c72e3-405a-4d2a-bf7f-883b8c76ea8e\",\"directory\":\"/Users/yashvardhansingh/test/opencode\",\"workspaceName\":null,\"access\":\"local\",\"backing\":{\"kind\":\"local-worktree\",\"directory\":\"/Users/yashvardhansingh/test/opencode\",\"repoName\":\"Claxedo\",\"branch\":\"codex/app-shell-identity-seam\"},\"kind\":\"local\",\"provider\":null,\"sandboxId\":null,\"status\":null,\"git\":{\"repo\":\"Claxedo\",\"branch\":\"codex/app-shell-identity-seam\",\"remote\":\"https://github.com/kyashrathore/Claxedo.git\"}},\"dataUpdateCount\":1,\"dataUpdatedAt\":1780816284642,\"error\":null,\"errorUpdateCount\":0,\"errorUpdatedAt\":0,\"fetchFailureCount\":0,\"fetchFailureReason\":null,\"fetchMeta\":null,\"isInvalidated\":false,\"status\":\"success\",\"fetchStatus\":\"idle\"},\"queryKey\":[\"runtime\",\"http://127.0.0.1:3001\",\"workspace\",\"\",\"/Users/yashvardhansingh/test/opencode\",\"read\"],\"queryHash\":\"[\\\"runtime\\\",\\\"http://127.0.0.1:3001\\\",\\\"workspace\\\",\\\"\\\",\\\"/Users/yashvardhansingh/test/opencode\\\",\\\"read\\\"]\"}]}}",
+      "opencode.workspace.L1VzZXJzL3lh.1n5jtf4.dat:workspace:terminal.v2": "{\"all\":[{\"id\":\"pty_3cf660ef59fa416582c8273a3e6a45ee\",\"title\":\"Codex\",\"titleNumber\":1,\"cwd\":\"/Users/yashvardhansingh/test/opencode\",\"rows\":60,\"cols\":145,\"buffer\":\"\\r\\n⚠\\r\\n\\u001b[2m╭─────────────────────────────────────────╮\\r\\n│ >_ \\u001b[1;22mOpenAI Codex\\u001b[22;2m (v0.137.0)              │\\r\\n│                                         │\\r\\n│ model:       \\u001b[3mloading\\u001b[23m   \\u001b[0m/model to change │\\r\\n│ directory:   ~/test/opencode\\u001b[2m            │\\r\\n│ permissions: \\u001b[0mYOLO mode                  │\\r\\n╰─────────────────────────────────────────╯\\r\\n\\r\\n\\r\\n\\u001b[1m›\\u001b[1C\\u001b[22;2mImprove documentation in @filename\\r\\n\\r\\n\\u001b[2C\\u001b[0mgpt-5.5 default · ~/test/opencode\\u001b[2A\\u001b[33D\",\"modeSequences\":\"\\u001b[?1004h\\u001b[?2004h\",\"wasAltScreen\":false,\"wasAtBottom\":true,\"scrollY\":0,\"cursor\":2325}],\"active\":\"pty_3cf660ef59fa416582c8273a3e6a45ee\"}",
+      "opencode.global.dat:command.catalog.v1": "{\"file.attach\":{\"title\":\"Add files\",\"category\":\"File\",\"keybind\":\"mod+u\"},\"prompt.mode.shell\":{\"title\":\"Shell\",\"category\":\"Session\",\"keybind\":\"mod+shift+x\"},\"prompt.mode.normal\":{\"title\":\"Prompt\",\"category\":\"Session\",\"keybind\":\"mod+shift+e\"},\"session.new\":{\"title\":\"New session\",\"category\":\"Session\",\"keybind\":\"mod+shift+s\",\"slash\":\"new\"},\"file.open\":{\"title\":\"Open file\",\"description\":\"Search files, commands, and sessions\",\"category\":\"File\",\"keybind\":\"mod+p\",\"slash\":\"open\"},\"tab.close\":{\"title\":\"Close tab\",\"category\":\"File\",\"keybind\":\"mod+w\"},\"context.addSelection\":{\"title\":\"Add selection to context\",\"description\":\"Add selected lines from the current file\",\"category\":\"Context\",\"keybind\":\"mod+shift+l\"},\"review.toggle\":{\"title\":\"Toggle review\",\"category\":\"View\",\"keybind\":\"mod+shift+r\"},\"fileTree.toggle\":{\"title\":\"Toggle file tree\",\"category\":\"View\",\"keybind\":\"mod+shift+e\"},\"input.focus\":{\"title\":\"Focus input\",\"category\":\"View\",\"keybind\":\"ctrl+l\"},\"terminal.new\":{\"title\":\"New terminal\",\"description\":\"Create a new terminal tab\",\"category\":\"Terminal\",\"keybind\":\"ctrl+alt+t\"},\"steps.toggle\":{\"title\":\"Toggle steps\",\"description\":\"Show or hide steps for the current message\",\"category\":\"Session\",\"keybind\":\"mod+e\",\"slash\":\"steps\"},\"message.previous\":{\"title\":\"Previous message\",\"description\":\"Go to the previous user message\",\"category\":\"Session\",\"keybind\":\"mod+arrowup\"},\"message.next\":{\"title\":\"Next message\",\"description\":\"Go to the next user message\",\"category\":\"Session\",\"keybind\":\"mod+arrowdown\"},\"model.choose\":{\"title\":\"Choose model\",\"description\":\"Select a different model\",\"category\":\"Model\",\"keybind\":\"mod+'\",\"slash\":\"model\"},\"mcp.toggle\":{\"title\":\"Toggle MCPs\",\"description\":\"Toggle MCPs\",\"category\":\"MCP\",\"keybind\":\"mod+;\",\"slash\":\"mcp\"},\"agent.cycle\":{\"title\":\"Cycle agent\",\"description\":\"Switch to the next agent\",\"category\":\"Agent\",\"keybind\":\"mod+.\",\"slash\":\"agent\"},\"agent.cycle.reverse\":{\"title\":\"Cycle agent backwards\",\"description\":\"Switch to the previous agent\",\"category\":\"Agent\",\"keybind\":\"shift+mod+.\"},\"model.variant.cycle\":{\"title\":\"Cycle thinking effort\",\"description\":\"Switch to the next effort level\",\"category\":\"Model\",\"keybind\":\"shift+mod+d\"},\"permissions.autoaccept\":{\"title\":\"Auto-accept permissions\",\"category\":\"Permissions\",\"keybind\":\"mod+shift+a\"},\"session.share\":{\"title\":\"Share session\",\"description\":\"Share this session and copy the URL to clipboard\",\"category\":\"Session\",\"slash\":\"share\"},\"session.unshare\":{\"title\":\"Unshare session\",\"description\":\"Stop sharing this session\",\"category\":\"Session\",\"slash\":\"unshare\"},\"session.undo\":{\"title\":\"Undo\",\"description\":\"Undo the last message\",\"category\":\"Session\",\"slash\":\"undo\"},\"session.redo\":{\"title\":\"Redo\",\"description\":\"Redo the last undone message\",\"category\":\"Session\",\"slash\":\"redo\"},\"session.compact\":{\"title\":\"Compact session\",\"description\":\"Summarize the session to reduce context size\",\"category\":\"Session\",\"slash\":\"compact\"},\"session.fork\":{\"title\":\"Fork from message\",\"description\":\"Create a new session from a previous message\",\"category\":\"Session\",\"slash\":\"fork\"},\"claxedo.pane.close\":{\"title\":\"Close Pane\",\"category\":\"View\",\"keybind\":\"mod+w\"},\"claxedo.surface.next\":{\"title\":\"Next Surface\",\"category\":\"View\",\"keybind\":\"mod+tab\"},\"claxedo.surface.previous\":{\"title\":\"Previous Surface\",\"category\":\"View\",\"keybind\":\"mod+shift+tab\"},\"claxedo.surface.reopen\":{\"title\":\"Reopen Closed Surface\",\"category\":\"View\",\"keybind\":\"mod+shift+t\"},\"claxedo.sidebar.toggle\":{\"title\":\"Toggle Sidebar\",\"category\":\"View\",\"keybind\":\"mod+b\"},\"claxedo.surface.1\":{\"title\":\"Switch to Surface 1\",\"category\":\"View\",\"keybind\":\"mod+1\"},\"claxedo.surface.2\":{\"title\":\"Switch to Surface 2\",\"category\":\"View\",\"keybind\":\"mod+2\"},\"claxedo.surface.3\":{\"title\":\"Switch to Surface 3\",\"category\":\"View\",\"keybind\":\"mod+3\"},\"claxedo.surface.4\":{\"title\":\"Switch to Surface 4\",\"category\":\"View\",\"keybind\":\"mod+4\"},\"claxedo.surface.5\":{\"title\":\"Switch to Surface 5\",\"category\":\"View\",\"keybind\":\"mod+5\"},\"claxedo.surface.6\":{\"title\":\"Switch to Surface 6\",\"category\":\"View\",\"keybind\":\"mod+6\"},\"claxedo.surface.7\":{\"title\":\"Switch to Surface 7\",\"category\":\"View\",\"keybind\":\"mod+7\"},\"claxedo.surface.8\":{\"title\":\"Switch to Surface 8\",\"category\":\"View\",\"keybind\":\"mod+8\"},\"claxedo.surface.9\":{\"title\":\"Switch to Surface 9\",\"category\":\"View\",\"keybind\":\"mod+9\"},\"claxedo.split.focusLeft\":{\"title\":\"Focus Left/Top Panel\",\"category\":\"View\",\"keybind\":\"mod+alt+ArrowLeft\"},\"claxedo.split.focusRight\":{\"title\":\"Focus Right/Bottom Panel\",\"category\":\"View\",\"keybind\":\"mod+alt+ArrowRight\"},\"processPane.toggle\":{\"title\":\"Toggle Process Pane\",\"category\":\"View\",\"keybind\":\"mod+shift+;\"},\"theme.cycle\":{\"title\":\"Cycle theme\",\"category\":\"Theme\",\"keybind\":\"mod+shift+t\"},\"theme.set.amoled\":{\"title\":\"Set theme: amoled\",\"category\":\"Theme\"},\"theme.set.aura\":{\"title\":\"Set theme: aura\",\"category\":\"Theme\"},\"theme.set.ayu\":{\"title\":\"Set theme: ayu\",\"category\":\"Theme\"},\"theme.set.carbonfox\":{\"title\":\"Set theme: carbonfox\",\"category\":\"Theme\"},\"theme.set.catppuccin\":{\"title\":\"Set theme: catppuccin\",\"category\":\"Theme\"},\"theme.set.catppuccin-frappe\":{\"title\":\"Set theme: catppuccin-frappe\",\"category\":\"Theme\"},\"theme.set.catppuccin-macchiato\":{\"title\":\"Set theme: catppuccin-macchiato\",\"category\":\"Theme\"},\"theme.set.cobalt2\":{\"title\":\"Set theme: cobalt2\",\"category\":\"Theme\"},\"theme.set.cursor\":{\"title\":\"Set theme: cursor\",\"category\":\"Theme\"},\"theme.set.dracula\":{\"title\":\"Set theme: dracula\",\"category\":\"Theme\"},\"theme.set.everforest\":{\"title\":\"Set theme: everforest\",\"category\":\"Theme\"},\"theme.set.flexoki\":{\"title\":\"Set theme: flexoki\",\"category\":\"Theme\"},\"theme.set.github\":{\"title\":\"Set theme: github\",\"category\":\"Theme\"},\"theme.set.gruvbox\":{\"title\":\"Set theme: gruvbox\",\"category\":\"Theme\"},\"theme.set.kanagawa\":{\"title\":\"Set theme: kanagawa\",\"category\":\"Theme\"},\"theme.set.lucent-orng\":{\"title\":\"Set theme: lucent-orng\",\"category\":\"Theme\"},\"theme.set.material\":{\"title\":\"Set theme: material\",\"category\":\"Theme\"},\"theme.set.matrix\":{\"title\":\"Set theme: matrix\",\"category\":\"Theme\"},\"theme.set.mercury\":{\"title\":\"Set theme: mercury\",\"category\":\"Theme\"},\"theme.set.monokai\":{\"title\":\"Set theme: monokai\",\"category\":\"Theme\"},\"theme.set.nightowl\":{\"title\":\"Set theme: nightowl\",\"category\":\"Theme\"},\"theme.set.nord\":{\"title\":\"Set theme: nord\",\"category\":\"Theme\"},\"theme.set.oc-2\":{\"title\":\"Set theme: OC-2\",\"category\":\"Theme\"},\"theme.set.one-dark\":{\"title\":\"Set theme: one-dark\",\"category\":\"Theme\"},\"theme.set.onedarkpro\":{\"title\":\"Set theme: onedarkpro\",\"category\":\"Theme\"},\"theme.set.opencode\":{\"title\":\"Set theme: opencode\",\"category\":\"Theme\"},\"theme.set.orng\":{\"title\":\"Set theme: orng\",\"category\":\"Theme\"},\"theme.set.osaka-jade\":{\"title\":\"Set theme: osaka-jade\",\"category\":\"Theme\"},\"theme.set.palenight\":{\"title\":\"Set theme: palenight\",\"category\":\"Theme\"},\"theme.set.rosepine\":{\"title\":\"Set theme: rosepine\",\"category\":\"Theme\"},\"theme.set.shadesofpurple\":{\"title\":\"Set theme: shadesofpurple\",\"category\":\"Theme\"},\"theme.set.solarized\":{\"title\":\"Set theme: solarized\",\"category\":\"Theme\"},\"theme.set.synthwave84\":{\"title\":\"Set theme: synthwave84\",\"category\":\"Theme\"},\"theme.set.tokyonight\":{\"title\":\"Set theme: tokyonight\",\"category\":\"Theme\"},\"theme.set.vercel\":{\"title\":\"Set theme: vercel\",\"category\":\"Theme\"},\"theme.set.vesper\":{\"title\":\"Set theme: vesper\",\"category\":\"Theme\"},\"theme.set.zenburn\":{\"title\":\"Set theme: zenburn\",\"category\":\"Theme\"},\"theme.scheme.cycle\":{\"title\":\"Cycle color scheme\",\"category\":\"Theme\",\"keybind\":\"mod+shift+s\"},\"theme.scheme.system\":{\"title\":\"Set color scheme: System\",\"category\":\"Theme\"},\"theme.scheme.light\":{\"title\":\"Set color scheme: Light\",\"category\":\"Theme\"},\"theme.scheme.dark\":{\"title\":\"Set color scheme: Dark\",\"category\":\"Theme\"}}"
+    },
+    "sessionStorage": {}
+  },
+  "indexedDB": [],
+  "tabLike": [
+    {
+      "tag": "HTML",
+      "text": "Claxedo html, body, #root { min-height: 100%; background-color: #101010; color: #a0a0a0; } body { margin: 0; } #root:empty { display: grid; min-height: 100dvh; ",
+      "role": null,
+      "aria": null,
+      "testid": null,
+      "selected": null,
+      "cls": "",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 1000
+      }
+    },
+    {
+      "tag": "NAV",
+      "text": "main·Claxedo · opencodemainClaxedo · opencode›CX›Codex12h13h14hGreeting1dLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.2dwt-475c3b35Claxed",
+      "role": null,
+      "aria": "Projects and sessions",
+      "testid": "rail-sidebar",
+      "selected": null,
+      "cls": "h-full flex flex-col bg-background-base overflow-hidden z-[50] pointer-events-auto\n        claxedo-rail-sidebar-panel transition-[opacity,transform] duration-[1",
+      "rect": {
+        "x": 1,
+        "y": 1,
+        "w": 260,
+        "h": 998
+      }
+    },
+    {
+      "tag": "DIV",
+      "text": "mainClaxedo · opencode›CX",
+      "role": null,
+      "aria": null,
+      "testid": "workspace-header",
+      "selected": null,
+      "cls": "flex items-start gap-2 pl-3 pr-2.5 py-1.5 group/header cursor-pointer hover:bg-surface-base-hover/30 rounded-md transition-[background-color,box-shadow,color] d",
+      "rect": {
+        "x": 1,
+        "y": 43,
+        "w": 259,
+        "h": 51
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "",
+      "role": null,
+      "aria": "New session in main",
+      "testid": null,
+      "selected": null,
+      "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 122,
+        "y": 49,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "›",
+      "role": null,
+      "aria": "New terminal in main",
+      "testid": null,
+      "selected": null,
+      "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 148,
+        "y": 49,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "C",
+      "role": null,
+      "aria": "New Claude terminal in main",
+      "testid": null,
+      "selected": null,
+      "cls": "flex items-center justify-center size-6 rounded text-[10px] font-semibold text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 174,
+        "y": 49,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "X",
+      "role": null,
+      "aria": "New Codex terminal in main",
+      "testid": null,
+      "selected": null,
+      "cls": "flex items-center justify-center size-6 rounded text-[10px] font-semibold text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 200,
+        "y": 49,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "",
+      "role": null,
+      "aria": "More options for main",
+      "testid": null,
+      "selected": null,
+      "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors cursor-pointer border-none bg",
+      "rect": {
+        "x": 226,
+        "y": 49,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "tag": "DIV",
+      "text": "›Codex",
+      "role": "button",
+      "aria": null,
+      "testid": null,
+      "selected": null,
+      "cls": "group/terminal relative flex items-center gap-2 py-1.5 pl-3 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40 transition-[background-",
+      "rect": {
+        "x": 5,
+        "y": 94,
+        "w": 251,
+        "h": 33
+      }
+    },
+    {
+      "tag": "DIV",
+      "text": "12h",
+      "role": null,
+      "aria": null,
+      "testid": null,
+      "selected": null,
+      "cls": "group/session",
+      "rect": {
+        "x": 1,
+        "y": 127,
+        "w": 259,
+        "h": 32
+      }
+    },
+    {
+      "tag": "DIV",
+      "text": "12h",
+      "role": "button",
+      "aria": null,
+      "testid": "rail-sidebar-session-row",
+      "selected": null,
+      "cls": "relative flex items-center gap-2 py-1.5 pl-3 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40 transition-[background-color,box-shado",
+      "rect": {
+        "x": 5,
+        "y": 127,
+        "w": 251,
+        "h": 32
+      }
+    },
+    {
+      "tag": "SPAN",
+      "text": "12h",
+      "role": null,
+      "aria": null,
+      "testid": null,
+      "selected": null,
+      "cls": "text-[11px] tabular-nums group-hover/session:opacity-0 transition-opacity duration-100 text-text-weaker",
+      "rect": {
+        "x": 225,
+        "y": 133,
+        "w": 21,
+        "h": 20
+      }
+    },
+    {
+      "tag": "SPAN",
+      "text": "",
+      "role": null,
+      "aria": null,
+      "testid": null,
+      "selected": null,
+      "cls": "absolute inset-0 flex items-center justify-end opacity-0 group-hover/session:opacity-100 transition-opacity duration-100",
+      "rect": {
+        "x": 218,
+        "y": 133,
+        "w": 28,
+        "h": 20
+      }
+    },
+    {
+      "tag": "DIV",
+      "text": "13h",
+      "role": null,
+      "aria": null,
+      "testid": null,
+      "selected": null,
+      "cls": "group/session",
+      "rect": {
+        "x": 1,
+        "y": 159,
+        "w": 259,
+        "h": 32
+      }
+    },
+    {
+      "tag": "DIV",
+      "text": "13h",
+      "role": "button",
+      "aria": null,
+      "testid": "rail-sidebar-session-row",
+      "selected": null,
+      "cls": "relative flex items-center gap-2 py-1.5 pl-3 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40 transition-[background-color,box-shado",
+      "rect": {
+        "x": 5,
+        "y": 159,
+        "w": 251,
+        "h": 32
+      }
+    },
+    {
+      "tag": "SPAN",
+      "text": "13h",
+      "role": null,
+      "aria": null,
+      "testid": null,
+      "selected": null,
+      "cls": "text-[11px] tabular-nums group-hover/session:opacity-0 transition-opacity duration-100 text-text-weaker",
+      "rect": {
+        "x": 225,
+        "y": 165,
+        "w": 21,
+        "h": 20
+      }
+    },
+    {
+      "tag": "SPAN",
+      "text": "",
+      "role": null,
+      "aria": null,
+      "testid": null,
+      "selected": null,
+      "cls": "absolute inset-0 flex items-center justify-end opacity-0 group-hover/session:opacity-100 transition-opacity duration-100",
+      "rect": {
+        "x": 218,
+        "y": 165,
+        "w": 28,
+        "h": 20
+      }
+    },
+    {
+      "tag": "DIV",
+      "text": "14h",
+      "role": null,
+      "aria": null,
+      "testid": null,
+      "selected": null,
+      "cls": "group/session",
+      "rect": {
+        "x": 1,
+        "y": 190,
+        "w": 259,
+        "h": 32
+      }
+    },
+    {
+      "tag": "DIV",
+      "text": "14h",
+      "role": "button",
+      "aria": null,
+      "testid": "rail-sidebar-session-row",
+      "selected": null,
+      "cls": "relative flex items-center gap-2 py-1.5 pl-3 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40 transition-[background-color,box-shado",
+      "rect": {
+        "x": 5,
+        "y": 190,
+        "w": 251,
+        "h": 32
+      }
+    },
+    {
+      "tag": "SPAN",
+      "text": "14h",
+      "role": null,
+      "aria": null,
+      "testid": null,
+      "selected": null,
+      "cls": "text-[11px] tabular-nums group-hover/session:opacity-0 transition-opacity duration-100 text-text-weaker",
+      "rect": {
+        "x": 225,
+        "y": 196,
+        "w": 21,
+        "h": 20
+      }
+    },
+    {
+      "tag": "SPAN",
+      "text": "",
+      "role": null,
+      "aria": null,
+      "testid": null,
+      "selected": null,
+      "cls": "absolute inset-0 flex items-center justify-end opacity-0 group-hover/session:opacity-100 transition-opacity duration-100",
+      "rect": {
+        "x": 218,
+        "y": 196,
+        "w": 28,
+        "h": 20
+      }
+    },
+    {
+      "tag": "DIV",
+      "text": "Greeting1d",
+      "role": null,
+      "aria": null,
+      "testid": null,
+      "selected": null,
+      "cls": "group/session",
+      "rect": {
+        "x": 1,
+        "y": 222,
+        "w": 259,
+        "h": 32
+      }
+    },
+    {
+      "tag": "DIV",
+      "text": "Greeting1d",
+      "role": "button",
+      "aria": null,
+      "testid": "rail-sidebar-session-row",
+      "selected": null,
+      "cls": "relative flex items-center gap-2 py-1.5 pl-3 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40 transition-[background-color,box-shado",
+      "rect": {
+        "x": 5,
+        "y": 222,
+        "w": 251,
+        "h": 32
+      }
+    },
+    {
+      "tag": "SPAN",
+      "text": "1d",
+      "role": null,
+      "aria": null,
+      "testid": null,
+      "selected": null,
+      "cls": "text-[11px] tabular-nums group-hover/session:opacity-0 transition-opacity duration-100 text-text-weaker",
+      "rect": {
+        "x": 232,
+        "y": 228,
+        "w": 14,
+        "h": 20
+      }
+    },
+    {
+      "tag": "SPAN",
+      "text": "",
+      "role": null,
+      "aria": null,
+      "testid": null,
+      "selected": null,
+      "cls": "absolute inset-0 flex items-center justify-end opacity-0 group-hover/session:opacity-100 transition-opacity duration-100",
+      "rect": {
+        "x": 218,
+        "y": 228,
+        "w": 28,
+        "h": 20
+      }
+    },
+    {
+      "tag": "DIV",
+      "text": "Live browser happy-flow: reply OK.Live browser happy-flow: reply OK.2d",
+      "role": null,
+      "aria": null,
+      "testid": null,
+      "selected": null,
+      "cls": "group/session",
+      "rect": {
+        "x": 1,
+        "y": 253,
+        "w": 259,
+        "h": 32
+      }
+    },
+    {
+      "tag": "DIV",
+      "text": "Live browser happy-flow: reply OK.Live browser happy-flow: reply OK.2d",
+      "role": "button",
+      "aria": null,
+      "testid": "rail-sidebar-session-row",
+      "selected": null,
+      "cls": "relative flex items-center gap-2 py-1.5 pl-3 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40 transition-[background-color,box-shado",
+      "rect": {
+        "x": 5,
+        "y": 253,
+        "w": 251,
+        "h": 32
+      }
+    },
+    {
+      "tag": "SPAN",
+      "text": "2d",
+      "role": null,
+      "aria": null,
+      "testid": null,
+      "selected": null,
+      "cls": "text-[11px] tabular-nums group-hover/session:opacity-0 transition-opacity duration-100 text-text-weaker",
+      "rect": {
+        "x": 232,
+        "y": 259,
+        "w": 14,
+        "h": 20
+      }
+    },
+    {
+      "tag": "SPAN",
+      "text": "",
+      "role": null,
+      "aria": null,
+      "testid": null,
+      "selected": null,
+      "cls": "absolute inset-0 flex items-center justify-end opacity-0 group-hover/session:opacity-100 transition-opacity duration-100",
+      "rect": {
+        "x": 218,
+        "y": 259,
+        "w": 28,
+        "h": 20
+      }
+    },
+    {
+      "tag": "DIV",
+      "text": "wt-475c3b35Claxedo · opencode›CX",
+      "role": null,
+      "aria": null,
+      "testid": "workspace-header",
+      "selected": null,
+      "cls": "flex items-start gap-2 pl-3 pr-2.5 py-1.5 group/header cursor-pointer hover:bg-surface-base-hover/30 rounded-md transition-[background-color,box-shadow,color] d",
+      "rect": {
+        "x": 1,
+        "y": 291,
+        "w": 259,
+        "h": 51
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "",
+      "role": null,
+      "aria": "New session in wt-475c3b35",
+      "testid": null,
+      "selected": null,
+      "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 122,
+        "y": 297,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "›",
+      "role": null,
+      "aria": "New terminal in wt-475c3b35",
+      "testid": null,
+      "selected": null,
+      "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 148,
+        "y": 297,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "C",
+      "role": null,
+      "aria": "New Claude terminal in wt-475c3b35",
+      "testid": null,
+      "selected": null,
+      "cls": "flex items-center justify-center size-6 rounded text-[10px] font-semibold text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 174,
+        "y": 297,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "X",
+      "role": null,
+      "aria": "New Codex terminal in wt-475c3b35",
+      "testid": null,
+      "selected": null,
+      "cls": "flex items-center justify-center size-6 rounded text-[10px] font-semibold text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 200,
+        "y": 297,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "",
+      "role": null,
+      "aria": "More options for wt-475c3b35",
+      "testid": null,
+      "selected": null,
+      "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors cursor-pointer border-none bg",
+      "rect": {
+        "x": 226,
+        "y": 297,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "tag": "DIV",
+      "text": "mainformlink›CX",
+      "role": null,
+      "aria": null,
+      "testid": "workspace-header",
+      "selected": null,
+      "cls": "flex items-start gap-2 pl-3 pr-2.5 py-1.5 group/header cursor-pointer hover:bg-surface-base-hover/30 rounded-md transition-[background-color,box-shadow,color] d",
+      "rect": {
+        "x": 1,
+        "y": 344,
+        "w": 259,
+        "h": 51
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "",
+      "role": null,
+      "aria": "New session in main",
+      "testid": null,
+      "selected": null,
+      "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 122,
+        "y": 350,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "›",
+      "role": null,
+      "aria": "New terminal in main",
+      "testid": null,
+      "selected": null,
+      "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 148,
+        "y": 350,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "C",
+      "role": null,
+      "aria": "New Claude terminal in main",
+      "testid": null,
+      "selected": null,
+      "cls": "flex items-center justify-center size-6 rounded text-[10px] font-semibold text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 174,
+        "y": 350,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "X",
+      "role": null,
+      "aria": "New Codex terminal in main",
+      "testid": null,
+      "selected": null,
+      "cls": "flex items-center justify-center size-6 rounded text-[10px] font-semibold text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors",
+      "rect": {
+        "x": 200,
+        "y": 350,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "",
+      "role": null,
+      "aria": "More options for main",
+      "testid": null,
+      "selected": null,
+      "cls": "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors cursor-pointer border-none bg",
+      "rect": {
+        "x": 226,
+        "y": 350,
+        "w": 24,
+        "h": 24
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "New Project",
+      "role": null,
+      "aria": null,
+      "testid": null,
+      "selected": null,
+      "cls": "w-full flex items-center justify-center gap-1.5 h-8 rounded-lg text-[13px] font-medium text-text-base bg-surface-base-hover/50 hover:bg-surface-base-hover borde",
+      "rect": {
+        "x": 11,
+        "y": 864,
+        "w": 239,
+        "h": 32
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "Marketplace",
+      "role": null,
+      "aria": "Open Marketplace",
+      "testid": "sidebar-marketplace-entry",
+      "selected": null,
+      "cls": "w-full flex items-center justify-center gap-1.5 h-8 rounded-lg text-[13px] font-medium text-text-base bg-surface-base-hover/50 hover:bg-surface-base-hover borde",
+      "rect": {
+        "x": 11,
+        "y": 902,
+        "w": 239,
+        "h": 32
+      }
+    },
+    {
+      "tag": "DIV",
+      "text": "CX.xterm .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider { background: #17171733; } .xterm .xterm-scrollable-element > .xterm-scrollbar > .xterm-sl",
+      "role": null,
+      "aria": null,
+      "testid": "workbench-column",
+      "selected": null,
+      "cls": "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden transition-[margin-right] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] will-change-[margin-right]",
+      "rect": {
+        "x": 261,
+        "y": 1,
+        "w": 1178,
+        "h": 998
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "",
+      "role": null,
+      "aria": "New Session",
+      "testid": null,
+      "selected": null,
+      "cls": "flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0 rounded max-m",
+      "rect": {
+        "x": 1271,
+        "y": 3,
+        "w": 32,
+        "h": 32
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "C",
+      "role": null,
+      "aria": "New Claude Terminal",
+      "testid": null,
+      "selected": null,
+      "cls": "flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0 rounded max-m",
+      "rect": {
+        "x": 1303,
+        "y": 3,
+        "w": 32,
+        "h": 32
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "X",
+      "role": null,
+      "aria": "New Codex Terminal",
+      "testid": null,
+      "selected": null,
+      "cls": "flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors shrink-0 rounded max-m",
+      "rect": {
+        "x": 1335,
+        "y": 3,
+        "w": 32,
+        "h": 32
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "",
+      "role": null,
+      "aria": null,
+      "testid": null,
+      "selected": null,
+      "cls": "flex items-center justify-center w-8 h-8 max-md:size-10 hover:bg-surface-base-hover text-text-weak hover:text-text-base transition-colors cursor-pointer border-",
+      "rect": {
+        "x": 1367,
+        "y": 3,
+        "w": 32,
+        "h": 32
+      }
+    },
+    {
+      "tag": "BUTTON",
+      "text": "",
+      "role": null,
+      "aria": "Open workspace panel",
+      "testid": "workspace-panel-toggle",
+      "selected": null,
+      "cls": "flex size-7 items-center justify-center rounded-md text-icon-weak-base transition-[background-color,color,scale] duration-100 hover:bg-surface-base-hover hover:",
+      "rect": {
+        "x": 1407,
+        "y": 5,
+        "w": 28,
+        "h": 28
+      }
+    },
+    {
+      "tag": "DIV",
+      "text": ".xterm .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider { background: #17171733; } .xterm .xterm-scrollable-element > .xterm-scrollbar > .xterm-slid",
+      "role": null,
+      "aria": null,
+      "testid": "workbench-root",
+      "selected": null,
+      "cls": "",
+      "rect": {
+        "x": 261,
+        "y": 37,
+        "w": 1178,
+        "h": 962
+      }
+    }
+  ]
+}

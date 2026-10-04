@@ -1,0 +1,197 @@
+import type { D1Database } from "@cloudflare/workers-types"
+import { listD1SharedSessions, readD1SessionHostPlacement, readD1TurnLeaseLive } from "./session-read-store"
+import type { SessionHostAuthority } from "../../session-hosts"
+import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { OrgInvitationDelivery } from "@claxedo/server-core/platform/auth/org-access-authority"
+import {
+  PRIVATE_SESSION_AUTHORITY_METHODS,
+  type PrivateSessionAuthority,
+} from "@claxedo/server-core/platform/auth/private-session-authority"
+import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
+import type { SessionReaderAuthority } from "@claxedo/server-core/platform/auth/session-reader-authority"
+import {
+  D1WorkspaceAuthority,
+  D1_WORKSPACE_AUTHORITY_METHODS,
+  type D1AuthorityProductPolicy,
+  type D1WorkspaceAuthorityCore,
+  type D1ActorProfile,
+} from "./workspace-authority"
+import {
+  D1SessionAuthority,
+  D1_SESSION_AUTHORITY_METHODS,
+  D1_SESSION_TURN_AUTHORITY_METHODS,
+  type D1SessionAuthorityPort,
+} from "./session-authority"
+import {
+  D1HostAccessAuthority,
+  D1_HOST_ACCESS_AUTHORITY_METHODS,
+  type D1HostAccessAuthorityPort,
+} from "./host-access-authority"
+import { D1AuditAuthority, D1_AUDIT_AUTHORITY_METHODS, type D1AuditAuthorityPort } from "./audit-authority"
+import {
+  D1ChannelRuntimeAuthority,
+  D1_CHANNEL_RUNTIME_AUTHORITY_METHODS,
+  type D1ChannelRuntimeAuthorityPort,
+} from "./channel-runtime-authority"
+import { D1OrgInvitationAuthority, D1_ORG_INVITATION_AUTHORITY_METHODS, type D1OrgInvitationAuthorityPort } from "./org-invitation-authority"
+import { publishD1HostSessionRows } from "./host-session-rows"
+import { deleteD1HostedSession } from "./hosted-session-delete"
+import { recordD1SessionReader } from "./session-reader-store"
+import { D1TeamAuthority, D1_TEAM_AUTHORITY_METHODS, type D1TeamAuthorityPort } from "./team-authority"
+import {
+  D1OrgMemberAuthority,
+  D1_ORG_MEMBER_AUTHORITY_METHODS,
+  type D1OrgMemberAuthorityPort,
+} from "./org-member-authority"
+import {
+  D1ProjectMemberAuthority,
+  D1_PROJECT_MEMBER_AUTHORITY_METHODS,
+  type D1ProjectMemberAuthorityPort,
+} from "./project-member-authority"
+
+/** The shared authority surface already backed by D1. */
+export type D1CoreAuthorityPort = D1WorkspaceAuthorityCore &
+  { listSharedSessions: NonNullable<WorkspaceAuthority["listSharedSessions"]> } &
+  D1TeamAuthorityPort &
+  D1OrgMemberAuthorityPort &
+  D1OrgInvitationAuthorityPort &
+  D1ProjectMemberAuthorityPort &
+  D1SessionAuthorityPort &
+  PrivateSessionAuthority &
+  SessionTurnAuthority &
+  D1HostAccessAuthorityPort &
+  D1AuditAuthorityPort &
+  D1ChannelRuntimeAuthorityPort
+
+const WORKSPACE_LIFECYCLE_METHODS = [
+  "ensureApplicationIdentity",
+  "linkApplicationIdentity",
+  "createHostedOrganization",
+  "createWorkspace",
+  "claimUserDeployedOwner",
+  "admitInvitedIdentity",
+] as const satisfies readonly (keyof D1WorkspaceAuthority)[]
+
+const HOST_LIFECYCLE_METHODS = [
+  "revokeHostEnrollment",
+] as const satisfies readonly (keyof D1HostAccessAuthority)[]
+
+export type D1CoreAuthorityBoundary = WorkspaceAuthority &
+  Pick<D1WorkspaceAuthority, (typeof WORKSPACE_LIFECYCLE_METHODS)[number]> &
+  PrivateSessionAuthority &
+  SessionTurnAuthority &
+  SessionHostAuthority &
+  SessionReaderAuthority &
+  Pick<D1HostAccessAuthority, (typeof HOST_LIFECYCLE_METHODS)[number]>
+
+type RequiredWorkspaceAuthorityCapability = {
+  [K in keyof WorkspaceAuthority]-?: object extends Pick<WorkspaceAuthority, K> ? never : K
+}[keyof WorkspaceAuthority]
+
+export type D1AuthorityMissingCapability = Exclude<RequiredWorkspaceAuthorityCapability, keyof D1CoreAuthorityPort>
+
+/**
+ * Deliberately compile-time checked. The empty inventory is the proof that
+ * the composed D1 authority implements every shared authority method; adding
+ * a method to the port cannot silently turn this boundary partial again.
+ */
+export const D1_AUTHORITY_MISSING_CAPABILITIES = [] as const satisfies readonly D1AuthorityMissingCapability[]
+
+type UnlistedD1Capability = Exclude<D1AuthorityMissingCapability, (typeof D1_AUTHORITY_MISSING_CAPABILITIES)[number]>
+type IncorrectlyListedD1Capability = Exclude<
+  (typeof D1_AUTHORITY_MISSING_CAPABILITIES)[number],
+  D1AuthorityMissingCapability
+>
+const D1_CAPABILITY_INVENTORY_IS_EXACT: [UnlistedD1Capability, IncorrectlyListedD1Capability] extends [never, never]
+  ? true
+  : never = true
+void D1_CAPABILITY_INVENTORY_IS_EXACT
+
+export type D1CoreAuthorityOptions = {
+  deploymentId: string
+  product: D1AuthorityProductPolicy
+  now?: () => number
+  invitations?: OrgInvitationDelivery
+  actorProfile?: D1ActorProfile
+}
+
+/**
+ * One Worker-safe authority object over one D1 binding and one deployment
+ * scope. Module instances are private so callers cannot accidentally compose
+ * workspace identity from one database with sessions or host state from
+ * another.
+ */
+export function createD1CoreAuthority(database: D1Database, options: D1CoreAuthorityOptions): D1CoreAuthorityBoundary {
+  const shared = { deploymentId: options.deploymentId, ...(options.now ? { now: options.now } : {}) }
+  const workspace = new D1WorkspaceAuthority(database, {
+    ...shared,
+    product: options.product,
+    ...(options.actorProfile ? { actorProfile: options.actorProfile } : {}),
+  })
+  const access = workspace.accessContext()
+  const sessions = new D1SessionAuthority(database, shared)
+  const hosts = new D1HostAccessAuthority(database, {
+    ...shared,
+    localWorkspaceRegistration: (auth, input) => workspace.localWorkspaceRegistration(auth, input),
+    authorizeLocalWorkspaceRegistration: (auth, args) => workspace.authorizeLocalWorkspaceRegistration(auth, args),
+    resolveOrgId: (auth) => workspace.resolveOrgId(auth),
+  })
+  const audit = new D1AuditAuthority(database, shared)
+  const channelsAndRuntime = new D1ChannelRuntimeAuthority(database, shared)
+
+  return {
+    listSharedSessions: (auth) => listD1SharedSessions(database, options.deploymentId, options.actorProfile, auth),
+    ...bindMethods(workspace, D1_WORKSPACE_AUTHORITY_METHODS),
+    ...bindMethods(new D1TeamAuthority(access), D1_TEAM_AUTHORITY_METHODS),
+    ...bindMethods(new D1OrgMemberAuthority(access), D1_ORG_MEMBER_AUTHORITY_METHODS),
+    ...bindMethods(new D1OrgInvitationAuthority(access, options.invitations), D1_ORG_INVITATION_AUTHORITY_METHODS),
+    ...bindMethods(new D1ProjectMemberAuthority(access), D1_PROJECT_MEMBER_AUTHORITY_METHODS),
+    ...bindMethods(sessions, D1_SESSION_AUTHORITY_METHODS),
+    ...bindMethods(hosts, D1_HOST_ACCESS_AUTHORITY_METHODS),
+    ...bindMethods(audit, D1_AUDIT_AUTHORITY_METHODS),
+    ...bindMethods(channelsAndRuntime, D1_CHANNEL_RUNTIME_AUTHORITY_METHODS),
+    ...bindMethods(workspace, WORKSPACE_LIFECYCLE_METHODS),
+    ...bindMethods(sessions, PRIVATE_SESSION_AUTHORITY_METHODS),
+    ...bindMethods(sessions, D1_SESSION_TURN_AUTHORITY_METHODS),
+    ...bindMethods(hosts, HOST_LIFECYCLE_METHODS),
+    machineAuth: hosts.machineAuth,
+    readSessionHostPlacement: (input) => readD1SessionHostPlacement(database, input),
+    recordTurnRuntimeAccessToken: (actorId, token) => channelsAndRuntime.recordTurnRuntimeAccessToken(actorId, token),
+    turnLeaseLive: (input) => readD1TurnLeaseLive(database, input, (options.now ?? Date.now)()),
+    deleteHostedSession: (input) => deleteD1HostedSession(database, input, (options.now ?? Date.now)()),
+    recordSessionReader: (auth, input) => recordD1SessionReader(database, options.deploymentId, auth, input, (options.now ?? Date.now)()),
+    publishHostSessionRows: (publisher, publication) =>
+      publishD1HostSessionRows(database, (options.now ?? Date.now)(), publisher, publication),
+  }
+}
+
+/**
+ * The named methods of `source`, bound to it, as a value the compiler accepts
+ * as `Pick<T, K>`.
+ *
+ * `Object.fromEntries` is typed `{ [k: string]: V }` — TypeScript cannot carry
+ * "these entries are exactly these keys" through it — so the record is built
+ * loosely and then CHECKED: `carriesBoundMethods` confirms every requested name
+ * resolved to a callable, which is the whole of what `Pick<T, K>` claims here,
+ * and composition fails at the composition site rather than at the first call.
+ */
+function bindMethods<T extends object, K extends keyof T & string>(source: T, names: readonly K[]): Pick<T, K> {
+  const bound: Record<string, unknown> = {}
+  for (const name of names) {
+    const method: unknown = source[name]
+    if (typeof method === "function") bound[name] = method.bind(source)
+  }
+  if (!carriesBoundMethods<T, K>(bound, names)) {
+    const missing = names.filter((name) => typeof bound[name] !== "function")
+    throw new TypeError(`Authority capability is not callable: ${missing.join(", ")}`)
+  }
+  return bound
+}
+
+/** Every requested name resolved to a callable, so the record IS that capability set. */
+function carriesBoundMethods<T extends object, K extends keyof T & string>(
+  value: Record<string, unknown>,
+  names: readonly K[],
+): value is Record<string, unknown> & Pick<T, K> {
+  return names.every((name) => typeof value[name] === "function")
+}

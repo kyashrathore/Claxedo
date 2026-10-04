@@ -1,0 +1,2718 @@
+import { inviteOrgMember } from "../../../test-support/invite-org-member"
+import { afterEach, describe, expect, test } from "vitest"
+import { Miniflare } from "miniflare"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
+
+import type { D1PreparedStatement } from "@cloudflare/workers-types"
+import type { MachinePrincipal } from "@claxedo/server-core/platform/auth/authority"
+import {
+  invitationRedeemPayload,
+  decodeInvitationToken,
+  publicKeyFingerprint,
+  enrollmentPayload,
+} from "@claxedo/account-contract/machine"
+import { sha256Hex } from "@claxedo/helpers/crypto"
+
+import { D1WorkspaceAuthority } from "./workspace-authority"
+import { createD1HostTunnelTargetResolver } from "./host-tunnel-relay-target"
+import { D1HostAccessAuthority } from "./host-access-authority"
+
+import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
+import { D1SessionAuthority } from "./session-authority"
+import { publishD1HostSessionRows } from "./host-session-rows"
+import { LiveSyncRoom, liveSyncRoomConnectHeaders } from "../../../deployments/hosted-workerd/live-sync-room.cf"
+import { controlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
+import type { HostSessionRow, HostSessionRowsPublication } from "@claxedo/server-core/platform/auth/host-session-rows"
+import { buildSessionListResponse, parseSessionListQuery } from "@claxedo/server-core/session/navigation-list"
+import { applyControlPlaneBaseline } from "../../../test-support/control-plane-migrations"
+
+
+const active: Miniflare[] = []
+
+afterEach(async () => {
+  await Promise.all(active.splice(0).map((instance) => instance.dispose()))
+})
+
+async function setup() {
+  const { database: raw } = await emptyDatabase()
+  await applyControlPlaneBaseline(raw)
+  // A step run between a method's reads and its batch, which is where a
+  // concurrent writer lands in production. Miniflare's D1 handle is a Proxy
+  // that drops property sets, so the interception lives in a wrapper.
+  let beforeBatch: (() => Promise<void>) | undefined
+  const database = new Proxy(raw, {
+    get(target, property, receiver) {
+      if (property === "batch") {
+        return async (statements: D1PreparedStatement[]) => {
+          const step = beforeBatch
+          beforeBatch = undefined
+          if (step) await step()
+          return await target.batch(statements)
+        }
+      }
+      const value = Reflect.get(target, property, receiver)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
+  let clock = 1_800_000_000_000
+  let sequence = 0
+  const now = () => clock
+  const workspace = new D1WorkspaceAuthority(database, {
+    deploymentId: "deployment-a",
+    product: { kind: "claxedo-hosted" },
+    now,
+    randomId: (prefix) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
+  })
+  const hostAccess = new D1HostAccessAuthority(database, {
+    deploymentId: "deployment-a",
+    now,
+    randomId: (prefix) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
+    randomNonce: () => `nonce_${String(++sequence).padStart(4, "0")}`,
+    localWorkspaceRegistration: (auth, input) => workspace.localWorkspaceRegistration(auth, input),
+    authorizeLocalWorkspaceRegistration: (auth, args) => workspace.authorizeLocalWorkspaceRegistration(auth, args),
+    resolveOrgId: (auth) => workspace.resolveOrgId(auth),
+  })
+  const runtimeTokens = new D1ChannelRuntimeAuthority(database, { deploymentId: "deployment-a", now })
+  // No deployment pin: the fixture's organizations are team orgs, which carry
+  // no deployment id, and the predicate under test is the serving one.
+  const relayTarget = createD1HostTunnelTargetResolver(database, { now })
+  return {
+    database,
+    workspace,
+    hostAccess,
+    runtimeTokens,
+    relayTarget,
+    now,
+    advance(milliseconds: number) {
+      clock += milliseconds
+    },
+    beforeNextBatch(step: () => Promise<void>) {
+      beforeBatch = step
+    },
+  }
+}
+
+async function emptyDatabase() {
+  const instance = new Miniflare({
+    modules: true,
+    script: "export default { fetch() { return new Response('ok') } }",
+    compatibilityDate: "2025-05-01",
+    d1Databases: ["CONTROL_PLANE_DB"],
+  })
+  active.push(instance)
+  const database = await instance.getD1Database("CONTROL_PLANE_DB")
+  return { database }
+}
+
+
+function identity(subject: string): AuthIdentity {
+  return { adapter: "better-auth", issuer: "https://auth.example.test", subject }
+}
+
+async function signed(
+  authority: D1WorkspaceAuthority,
+  subject: string,
+  orgId?: string,
+): Promise<SignedControlPlaneAuth> {
+  const applicationIdentity = identity(subject)
+  const result = await authority.ensureApplicationIdentity(applicationIdentity)
+  if (result.state !== "active") throw new Error(`identity did not become active: ${result.state}`)
+  const principal: ControlPlanePrincipal = {
+    userId: result.userId,
+    actorId: result.actorId,
+    actorKind: "human",
+    deploymentId: "deployment-a",
+    sessionId: `auth:${subject}`,
+    authenticatedAt: 1_800_000_000_000,
+    methods: ["oauth:github"],
+    assurance: "single-factor",
+    client: {
+      kind: "browser",
+      tokenKind: "browser-session",
+      id: "browser",
+      resource: "https://api.example.test",
+      scopes: ["openid"],
+      origin: "https://app.example.test",
+    },
+    identity: applicationIdentity,
+  }
+  return {
+    mode: "signed",
+    principal,
+    user: {
+      subject,
+      tokenIdentifier: `${applicationIdentity.issuer}|${subject}`,
+      issuer: applicationIdentity.issuer,
+      ...(orgId ? { orgId } : {}),
+    },
+  }
+}
+
+async function fixture(input: Awaited<ReturnType<typeof setup>>) {
+  const alice = await signed(input.workspace, "alice")
+  const bob = await signed(input.workspace, "bob")
+  const admin = await signed(input.workspace, "admin")
+  const outsider = await signed(input.workspace, "outsider")
+  await input.workspace.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
+  await inviteOrgMember(input.database, alice, {
+    orgId: "org_acme",
+    userPublicId: bob.principal!.userId,
+    role: "member",
+  })
+  await inviteOrgMember(input.database, alice, {
+    orgId: "org_acme",
+    userPublicId: admin.principal!.userId,
+    role: "admin",
+  })
+  const local = await input.workspace.createWorkspace(alice, {
+    workspaceId: "ws_local",
+    orgId: "org_acme",
+    displayName: "local",
+    repoUrl: "https://github.com/acme/local.git",
+    backing: "local-worktree",
+  })
+  await input.workspace.createWorkspace(alice, {
+    workspaceId: "ws_cloud",
+    orgId: "org_acme",
+    displayName: "cloud",
+    repoUrl: "https://github.com/acme/cloud.git",
+    backing: "cloud-vm",
+  })
+  return { alice, bob, admin, outsider, local }
+}
+
+async function hostKey() {
+  const keyPair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"])
+  const jwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey)
+  return {
+    publicKey: JSON.stringify(jwk),
+    fingerprint: await publicKeyFingerprint(jwk),
+    async sign(payload: string) {
+      const signature = await crypto.subtle.sign(
+        { name: "ECDSA", hash: "SHA-256" },
+        keyPair.privateKey,
+        new TextEncoder().encode(payload),
+      )
+      return base64Url(new Uint8Array(signature))
+    },
+  }
+}
+
+function base64Url(value: Uint8Array) {
+  return Buffer.from(value).toString("base64url")
+}
+
+type Input = Awaited<ReturnType<typeof setup>>
+
+async function enrollAccountMachine(
+  input: Input,
+  owner: SignedControlPlaneAuth,
+  hostId: string,
+  options: { ttlMs?: number; displayName?: string } = {},
+) {
+  const key = await hostKey()
+  const request = await input.hostAccess.createHostEnrollmentRequest(owner, { hostId })
+  const enrollment = await input.hostAccess.enrollHost(owner, {
+    hostId,
+    publicKey: key.publicKey,
+    requestId: request.request_id,
+    signature: await key.sign(enrollmentPayload({ hostId, requestId: request.request_id, nonce: request.nonce })),
+    ttlMs: options.ttlMs ?? 8_000,
+    ...(options.displayName ? { displayName: options.displayName } : {}),
+  })
+  return { key, enrollmentId: enrollment.enrollment_id, enrollment }
+}
+
+/** What the verifier hands the authority after admitting a signed request. */
+async function principal(input: Input, enrollmentId: string): Promise<MachinePrincipal> {
+  const row = await input.hostAccess.machineAuth.lookupEnrollment(enrollmentId)
+  if (!row) throw new Error(`no enrollment ${enrollmentId}`)
+  return {
+    enrollmentId: row.enrollment_id,
+    hostId: row.host_id,
+    ownerUserId: row.owner_user_id,
+    ownerActorId: row.owner_actor_id,
+    scope: row.scope,
+    keyVersion: row.key_version,
+    generation: row.serving_generation,
+  }
+}
+
+async function machineBeat(
+  input: Input,
+  enrollmentId: string,
+  acks: Array<{ workspaceId: string; revision: number }>,
+  overrides: Partial<MachinePrincipal> & {
+    generation?: number
+    sessionAuthority?: "local" | "managed-private"
+    sealingPublicKey?: string
+    providerConfigRevision?: number
+  } = {},
+) {
+  const { sessionAuthority, sealingPublicKey, providerConfigRevision, ...principalOverrides } = overrides
+  const machine = { ...(await principal(input, enrollmentId)), ...principalOverrides }
+  return await input.hostAccess.heartbeatHostEnrollmentByMachine(machine, {
+    enrollmentId: machine.enrollmentId,
+    hostId: machine.hostId,
+    generation: overrides.generation ?? machine.generation,
+    acks,
+    ttlMs: 8_000,
+    ...(sessionAuthority ? { sessionAuthority } : {}),
+    ...(sealingPublicKey ? { sealingPublicKey } : {}),
+    ...(providerConfigRevision === undefined ? {} : { providerConfigAckedRevision: providerConfigRevision }),
+  })
+}
+
+/** The ECDH key a machine declares on its beat, and the four-member text the row stores it as. */
+async function sealingKey() {
+  const pair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"])
+  const jwk = await crypto.subtle.exportKey("jwk", pair.publicKey)
+  return {
+    publicKey: JSON.stringify(jwk),
+    stored: JSON.stringify({ kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y }),
+  }
+}
+
+describe("D1 host access authority", () => {
+  test("cold-registers a machine-placed workspace the first time an owner assigns it to an enrolled host", async () => {
+    const input = await setup()
+    const alice = await signed(input.workspace, "cold-owner")
+    const key = await hostKey()
+    const request = await input.hostAccess.createHostEnrollmentRequest(alice, { hostId: "host-cold" })
+    await input.hostAccess.enrollHost(alice, {
+      hostId: "host-cold",
+      publicKey: key.publicKey,
+      requestId: request.request_id,
+      signature: await key.sign(
+        enrollmentPayload({
+          hostId: "host-cold",
+          requestId: request.request_id,
+          nonce: request.nonce,
+        }),
+      ),
+    })
+
+    // Enrolling a machine creates nothing to own: the workspace row appears
+    // only when the owner assigns the workspace to it.
+    expect(await input.database.prepare("select 1 from workspaces where workspace_id = 'ws_cold'").first()).toBeNull()
+
+    await expect(
+      input.hostAccess.assignWorkspaceHost(alice, {
+        workspaceId: "ws_cold",
+        hostId: "host-cold",
+        displayName: "Cold workspace",
+        repoUrl: "https://github.com/acme/cold.git",
+        remoteDirectory: "/workspace/cold",
+        homeRegion: "apac-south",
+      }),
+    ).resolves.toMatchObject({ assigned: true, workspace_id: "ws_cold", host_id: "host-cold" })
+
+    await expect(input.workspace.openWorkspace(alice, { workspaceId: "ws_cold" })).resolves.toMatchObject({
+      workspace: {
+        backing: "local-worktree",
+        placement: { directory: "/workspace/cold" },
+        display_name: "Cold workspace",
+        repo_url: "https://github.com/acme/cold.git",
+        remote_directory: "/workspace/cold",
+        home_region: "apac-south",
+      },
+    })
+
+    // An assignment against a machine this owner never enrolled is refused,
+    // which is what keeps the cold-registration path from minting workspaces
+    // for an unattested host id.
+    await expect(
+      input.hostAccess.assignWorkspaceHost(alice, {
+        workspaceId: "ws_colder",
+        hostId: "host-unknown",
+      }),
+    ).rejects.toMatchObject({ code: "host_attestation_denied" })
+    expect(await input.database.prepare("select 1 from workspaces where workspace_id = 'ws_colder'").first()).toBeNull()
+  })
+
+  /**
+   * A machine assigns a workspace it serves and says what it is — name,
+   * repository, branch, directory — and every client reads that description.
+   */
+  test("assigning an existing workspace records the machine's description of it", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const key = await hostKey()
+    const request = await input.hostAccess.createHostEnrollmentRequest(alice, { hostId: "machine-d" })
+    await input.hostAccess.enrollHost(alice, {
+      hostId: "machine-d",
+      publicKey: key.publicKey,
+      requestId: request.request_id,
+      signature: await key.sign(
+        enrollmentPayload({
+          hostId: "machine-d",
+          requestId: request.request_id,
+          nonce: request.nonce,
+        }),
+      ),
+      ttlMs: 8_000,
+    })
+    await input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_local",
+      hostId: "machine-d",
+      displayName: "Claxedo",
+      repoName: "Claxedo",
+      gitBranch: "dev",
+      remoteDirectory: "/Users/me/test/opencode",
+    })
+    expect(
+      await input.database
+        .prepare(
+          "select display_name, repo_name, git_branch, remote_directory from workspaces where workspace_id = 'ws_local'",
+        )
+        .first(),
+    ).toEqual({
+      display_name: "Claxedo",
+      repo_name: "Claxedo",
+      git_branch: "dev",
+      remote_directory: "/Users/me/test/opencode",
+    })
+    // A later assignment that says nothing leaves the description alone.
+    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local", hostId: "machine-d" })
+    expect(
+      await input.database
+        .prepare("select display_name, remote_directory from workspaces where workspace_id = 'ws_local'")
+        .first(),
+    ).toEqual({ display_name: "Claxedo", remote_directory: "/Users/me/test/opencode" })
+  })
+
+  /**
+   * A machine-placed workspace is the share itself: unsharing retires it from the
+   * inventory, revoking the machine retires everything it served, and sharing
+   * again revives the same record instead of colliding with it.
+   */
+  test("a machine-placed workspace lives exactly as long as its host assignment", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const key = await hostKey()
+    const request = await input.hostAccess.createHostEnrollmentRequest(alice, { hostId: "machine-l" })
+    await input.hostAccess.enrollHost(alice, {
+      hostId: "machine-l",
+      publicKey: key.publicKey,
+      requestId: request.request_id,
+      signature: await key.sign(
+        enrollmentPayload({
+          hostId: "machine-l",
+          requestId: request.request_id,
+          nonce: request.nonce,
+        }),
+      ),
+    })
+    const listed = async () =>
+      ((await input.workspace.listWorkspaces(alice)) as Array<{ workspace_id: string }>)
+        .map((row) => row.workspace_id)
+        .sort()
+
+    await input.workspace.createWorkspace(alice, {
+      workspaceId: "ws_shared",
+      orgId: "org_acme",
+      displayName: "Shared",
+      backing: "local-worktree",
+    })
+    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_shared", hostId: "machine-l" })
+    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local", hostId: "machine-l" })
+    expect(await listed()).toEqual(["ws_cloud", "ws_local", "ws_shared"])
+
+    await expect(input.hostAccess.unassignWorkspaceHost(alice, { workspaceId: "ws_shared" })).resolves.toEqual({
+      unassigned: true,
+    })
+    expect(await listed()).toEqual(["ws_cloud", "ws_local"])
+    await expect(input.workspace.openWorkspace(alice, { workspaceId: "ws_shared" })).rejects.toBeDefined()
+
+    // Sharing it again revives the same record, description intact.
+    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_shared", hostId: "machine-l" })
+    expect(await listed()).toEqual(["ws_cloud", "ws_local", "ws_shared"])
+    await expect(input.workspace.openWorkspace(alice, { workspaceId: "ws_shared" })).resolves.toMatchObject({
+      workspace: { backing: "local-worktree", display_name: "Shared" },
+    })
+
+    // Revoking the machine retires everything it served; the fixture's cloud row is untouched.
+    await input.hostAccess.revokeHostEnrollment(alice, { hostId: "machine-l" })
+    expect(await listed()).toEqual(["ws_cloud"])
+  })
+
+  test("routes a workspace through owner assignment AND the machine's acked set on a live lease", async () => {
+    const input = await setup()
+    const { alice, outsider } = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-b", { displayName: "Laptop B" })
+
+    // Owner intent alone is not routable: no ack yet.
+    await input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_local",
+      hostId: "machine-b",
+      remoteDirectory: "/srv/local",
+    })
+    expect(await input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local" })).toEqual({ active: false })
+
+    // An ack at a revision the assignment does not hold is consent to
+    // something the owner has moved on from, and earns no readiness.
+    await machineBeat(input, enrollmentId, [{ workspaceId: "ws_local", revision: 99 }])
+    expect(await input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local" })).toEqual({ active: false })
+
+    // Ack the set: now routable, and the response reconciles owner intent.
+    const beat = await machineBeat(input, enrollmentId, [{ workspaceId: "ws_local", revision: 1 }])
+    expect(beat.assigned_workspace_ids).toEqual(["ws_local"])
+    expect(await input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local" })).toMatchObject({
+      active: true,
+      host_id: "machine-b",
+      workspace_id: "ws_local",
+      display_name: "Laptop B",
+    })
+    expect(await input.hostAccess.listHostAssignments(alice)).toMatchObject([
+      {
+        host_id: "machine-b",
+        display_name: "Laptop B",
+        workspace_ids: ["ws_local"],
+        acked_workspace_ids: ["ws_local"],
+      },
+    ])
+
+    // A second local workspace on the same host groups into one device row.
+    await input.workspace.createWorkspace(alice, {
+      workspaceId: "ws_local_2",
+      orgId: "org_acme",
+      displayName: "local-2",
+      backing: "local-worktree",
+    })
+    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local_2", hostId: "machine-b" })
+    expect(await input.hostAccess.listHostAssignments(alice)).toMatchObject([
+      { host_id: "machine-b", workspace_ids: ["ws_local", "ws_local_2"] },
+    ])
+
+    await expect(
+      input.hostAccess.assignWorkspaceHost(outsider, { workspaceId: "ws_local", hostId: "machine-b" }),
+    ).rejects.toMatchObject({ code: "host_attestation_denied" })
+
+    // Unsharing retires the workspace: nothing is routable because nothing is listed.
+    await input.hostAccess.unassignWorkspaceHost(alice, { workspaceId: "ws_local" })
+    await expect(input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local" })).rejects.toMatchObject({
+      code: "workspace_authorization_denied",
+    })
+
+    // The lease expiring makes everything inert without touching assignments.
+    input.advance(8_001)
+    expect(await input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local_2" })).toEqual({ active: false })
+    expect(await input.hostAccess.listHostAssignments(alice)).toEqual([])
+
+    await input.hostAccess.revokeHostEnrollment(alice, { hostId: "machine-b" })
+    const dangling = await input.database
+      .prepare("select count(*) as n from host_workspace_assignments")
+      .first<{ n: number }>()
+    expect(dangling?.n).toBe(0)
+    // The machine's workspaces go with it; the fixture's cloud row stays.
+    expect(
+      ((await input.workspace.listWorkspaces(alice)) as Array<{ workspace_id: string }>).map((row) => row.workspace_id),
+    ).toEqual(["ws_cloud"])
+  })
+
+  /**
+   * The rail must be able to say "host offline" for a shared workspace before
+   * any pane opens it, so reachability rides the workspace LIST rather than a
+   * per-workspace probe. It is the same lease `activeWorkspaceHost` routes on.
+   */
+  test("routes with the session composition the machine declared, and with none when it declared none", async () => {
+    // The control plane does not know how a host composed its runtime and must
+    // not derive it: the same product builds either flavour depending on
+    // whether a session authority was injected. So the machine declares on the
+    // beat and the routing answer carries that back verbatim — both values,
+    // because a passthrough hard-coding one would still pass a single-value
+    // test — while a beat that declared nothing leaves the answer with no
+    // composition at all rather than a default.
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-d")
+    await input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_local",
+      hostId: "machine-d",
+      remoteDirectory: "/srv/local",
+    })
+
+    const beat = async (sessionAuthority?: "local" | "managed-private") => {
+      input.advance(1)
+      await machineBeat(
+        input,
+        enrollmentId,
+        [{ workspaceId: "ws_local", revision: 1 }],
+        sessionAuthority ? { sessionAuthority } : {},
+      )
+      return await input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local" })
+    }
+
+    expect(await beat("managed-private")).toMatchObject({ active: true, session_authority: "managed-private" })
+    // A restart into a different composition replaces the declaration; it does
+    // not accumulate one.
+    expect(await beat("local")).toMatchObject({ active: true, session_authority: "local" })
+    const undeclared = await beat()
+    expect(undeclared).toMatchObject({ active: true })
+    expect(undeclared).not.toHaveProperty("session_authority")
+  })
+
+  test("stamps host reachability on every machine-placed row of the workspace list", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-c")
+    const listed = async () =>
+      Object.fromEntries(
+        ((await input.workspace.listWorkspaces(alice)) as Array<{ workspace_id: string; host_online?: boolean }>).map(
+          (row) => [row.workspace_id, row.host_online],
+        ),
+      )
+
+    // Assigned but never acked: listed, and honestly offline.
+    await input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_local",
+      hostId: "machine-c",
+      remoteDirectory: "/srv/local",
+    })
+    expect(await listed()).toEqual({ ws_cloud: undefined, ws_local: false })
+
+    await machineBeat(input, enrollmentId, [{ workspaceId: "ws_local", revision: 1 }])
+    expect(await listed()).toEqual({ ws_cloud: undefined, ws_local: true })
+
+    // The lease expiring is what makes it unreachable — no revoke, no unassign.
+    input.advance(8_001)
+    expect(await listed()).toEqual({ ws_cloud: undefined, ws_local: false })
+    expect(await input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local" })).toEqual({ active: false })
+  })
+
+  test("enrolls a machine once per canonical owner with expiry, pause, revoke, and replay resistance", async () => {
+    const input = await setup()
+    const { alice, outsider } = await fixture(input)
+    const key = await hostKey()
+    const request = await input.hostAccess.createHostEnrollmentRequest(alice, { hostId: "machine-a" })
+    const signature = await key.sign(
+      enrollmentPayload({
+        hostId: "machine-a",
+        requestId: request.request_id,
+        nonce: request.nonce,
+      }),
+    )
+    await expect(
+      input.hostAccess.enrollHost(outsider, {
+        hostId: "machine-a",
+        publicKey: key.publicKey,
+        requestId: request.request_id,
+        signature,
+      }),
+    ).rejects.toMatchObject({ code: "host_attestation_denied" })
+    const enrolled = await input.hostAccess.enrollHost(alice, {
+      hostId: "machine-a",
+      publicKey: key.publicKey,
+      requestId: request.request_id,
+      signature,
+      displayName: "Laptop",
+      ttlMs: 8_000,
+    })
+    expect(enrolled).toMatchObject({ host_id: "machine-a", display_name: "Laptop" })
+    await expect(
+      input.hostAccess.enrollHost(alice, {
+        hostId: "machine-a",
+        publicKey: key.publicKey,
+        requestId: request.request_id,
+        signature,
+      }),
+    ).rejects.toMatchObject({ code: "host_attestation_denied" })
+    expect(await input.hostAccess.activeHostEnrollment(alice)).toMatchObject({ active: true, host_id: "machine-a" })
+
+    const enrolledMachine = await principal(input, enrolled.enrollment_id)
+    await input.hostAccess.heartbeatHostEnrollmentByMachine(enrolledMachine, {
+      enrollmentId: enrolled.enrollment_id,
+      hostId: "machine-a",
+      generation: enrolledMachine.generation,
+      acks: [],
+      ttlMs: 8_000,
+    })
+
+    await input.hostAccess.pauseHostEnrollment(alice, { hostId: "machine-a", paused: true })
+    expect(await input.hostAccess.activeHostEnrollment(alice)).toEqual({ active: false, reason: "paused" })
+    await input.hostAccess.pauseHostEnrollment(alice, { hostId: "machine-a", paused: false })
+    input.advance(8_001)
+    expect(await input.hostAccess.activeHostEnrollment(alice)).toEqual({ active: false, reason: "expired" })
+    await input.runtimeTokens.recordRuntimeAccessToken(alice, {
+      jti: "jti-machine",
+      workspaceId: "ws_local",
+      hostId: "machine-a",
+      actorId: alice.principal!.actorId,
+      actorKind: "human",
+      role: "owner",
+      expiresAt: 1_800_000_100_000,
+    })
+    expect(
+      await input.hostAccess.revokeHostEnrollment(alice, {
+        hostId: "machine-a",
+      }),
+    ).toMatchObject({ revoked: 1, runtime_tokens_revoked: 1 })
+    expect(await input.hostAccess.activeHostEnrollment(alice)).toEqual({ active: false, reason: "revoked" })
+    expect(
+      await input.runtimeTokens.runtimeAccessTokenActive({
+        jti: "jti-machine",
+        workspaceId: "ws_local",
+        hostId: "machine-a",
+      }),
+    ).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
+    input.advance(10 * 60_000)
+    await input.hostAccess.createHostEnrollmentRequest(alice, { hostId: "machine-next" })
+    expect(
+      await input.database
+        .prepare(
+          `
+      select 1 from host_enrollment_requests where request_id = ?
+    `,
+        )
+        .bind(request.request_id)
+        .first(),
+    ).toBeNull()
+  })
+
+  test("runtime workspace admission answers the workspace owner only, and rechecks their membership", async () => {
+    const input = await setup()
+    const { alice, bob, admin, outsider } = await fixture(input)
+    await input.workspace.createWorkspace(admin, {
+      workspaceId: "ws_admin",
+      orgId: "org_acme",
+      displayName: "admin",
+      backing: "local-worktree",
+    })
+    const owner = admin.principal!.actorId
+    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(owner, "ws_admin")).resolves.toMatchObject({ role: "owner" })
+    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(bob.principal!.actorId, "ws_admin")).rejects.toMatchObject({ status: 403 })
+    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(alice.principal!.actorId, "ws_admin")).rejects.toMatchObject({ status: 403 })
+    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(outsider.principal!.actorId, "ws_admin")).rejects.toMatchObject({ status: 403 })
+    await input.database.prepare("UPDATE org_memberships SET revoked_at = ? WHERE user_id = ?").bind(input.now(), admin.principal!.userId).run()
+    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(owner, "ws_admin")).rejects.toMatchObject({ status: 403 })
+  })
+
+  test("records runtime tokens for canonical actors only and revokes them without crossing tenants", async () => {
+    const input = await setup()
+    const { alice, admin, outsider } = await fixture(input)
+    await input.workspace.createWorkspace(admin, {
+      workspaceId: "ws_admin",
+      orgId: "org_acme",
+      displayName: "admin",
+      backing: "local-worktree",
+    })
+    expect(await input.workspace.openWorkspace(admin, { workspaceId: "ws_admin" })).toMatchObject({ role: "owner" })
+
+    await input.runtimeTokens.recordRuntimeAccessToken(admin, {
+      jti: "jti-admin",
+      workspaceId: "ws_admin",
+      hostId: "host-a",
+      actorId: admin.principal!.actorId,
+      actorKind: "human",
+      role: "viewer",
+      expiresAt: 1_800_000_100_000,
+    })
+    expect(
+      await input.runtimeTokens.runtimeAccessTokenActive({
+        jti: "jti-admin",
+        workspaceId: "ws_admin",
+        hostId: "host-a",
+      }),
+    ).toEqual({ active: true })
+    await expect(
+      input.runtimeTokens.recordRuntimeAccessToken(admin, {
+        jti: "jti-admin",
+        workspaceId: "ws_admin",
+        hostId: "host-other",
+        actorId: admin.principal!.actorId,
+        actorKind: "human",
+        role: "viewer",
+        expiresAt: 1_800_000_100_000,
+      }),
+    ).rejects.toMatchObject({ code: "resource_conflict" })
+
+    await input.runtimeTokens.recordRuntimeAccessToken(admin, {
+      jti: "jti-current-authority",
+      workspaceId: "ws_admin",
+      hostId: "host-a",
+      actorId: admin.principal!.actorId,
+      actorKind: "human",
+      role: "viewer",
+      expiresAt: 1_800_000_100_000,
+    })
+    await input.database
+      .prepare(
+        `
+      update org_memberships set revoked_at = ?, updated_at = ?
+      where org_id = 'org_acme' and user_id = ?
+    `,
+      )
+      .bind(1_800_000_000_001, 1_800_000_000_001, admin.principal!.userId)
+      .run()
+    expect(
+      await input.runtimeTokens.runtimeAccessTokenActive({
+        jti: "jti-current-authority",
+        workspaceId: "ws_admin",
+        hostId: "host-a",
+      }),
+    ).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
+
+    await input.runtimeTokens.recordRuntimeAccessToken(alice, {
+      jti: "jti-alice",
+      workspaceId: "ws_local",
+      hostId: "host-a",
+      actorId: alice.principal!.actorId,
+      actorKind: "human",
+      role: "owner",
+      expiresAt: 1_800_000_100_000,
+    })
+    expect(
+      await input.runtimeTokens.runtimeAccessTokenActive({
+        jti: "jti-alice",
+        workspaceId: "ws_cloud",
+        hostId: "host-a",
+      }),
+    ).toMatchObject({ active: false, code: "runtime_access_token_mismatch" })
+    await expect(
+      input.runtimeTokens.revokeRuntimeAccessToken(outsider, {
+        jti: "jti-alice",
+        workspaceId: "ws_local",
+      }),
+    ).rejects.toMatchObject({ status: 403 })
+    expect(
+      await input.runtimeTokens.runtimeAccessTokenActive({
+        jti: "jti-alice",
+        workspaceId: "ws_local",
+        hostId: "host-a",
+      }),
+    ).toEqual({ active: true })
+    await input.runtimeTokens.revokeRuntimeAccessToken(alice, { jti: "jti-alice", workspaceId: "ws_local" })
+    expect(
+      await input.runtimeTokens.runtimeAccessTokenActive({
+        jti: "jti-alice",
+        workspaceId: "ws_local",
+        hostId: "host-a",
+      }),
+    ).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
+
+    await input.runtimeTokens.recordRuntimeAccessToken(alice, {
+      jti: "jti-expiring",
+      workspaceId: "ws_local",
+      hostId: "host-a",
+      actorId: alice.principal!.actorId,
+      actorKind: "human",
+      role: "owner",
+      expiresAt: 1_800_000_000_100,
+    })
+    input.advance(101)
+    expect(
+      await input.runtimeTokens.runtimeAccessTokenActive({
+        jti: "jti-expiring",
+        workspaceId: "ws_local",
+        hostId: "host-a",
+      }),
+    ).toMatchObject({ active: false, code: "runtime_access_token_expired" })
+
+    await expect(
+      input.database
+        .prepare(
+          `
+      update runtime_access_tokens set workspace_id = 'ws_cloud' where jti = 'jti-alice'
+    `,
+        )
+        .run(),
+    ).rejects.toThrow(/runtime access token intent is immutable/)
+  })
+})
+
+/**
+ * Host-connect scenarios (P1.1–P1.6). The SQLite adapter mirrors this list
+ * one for one; keep the test names stable and the shapes plain so the mirror
+ * stays a mirror.
+ */
+describe("host-connect: machine heartbeat, readiness, invitations, scope", () => {
+  async function invite(input: Input, owner: SignedControlPlaneAuth, roots: string[]) {
+    const created = await input.hostAccess.createHostInvitation(owner, { scope: { allowed_roots: roots } })
+    const parts = decodeInvitationToken(created.token)
+    if (!parts) throw new Error(`token not parseable: ${created.token}`)
+    return { ...created, ...parts }
+  }
+
+  async function redeem(
+    input: Input,
+    invitation: { invitationId: string; secret: string },
+    hostId: string,
+    key: Awaited<ReturnType<typeof hostKey>>,
+  ) {
+    return await input.hostAccess.redeemHostInvitation({
+      invitationId: invitation.invitationId,
+      secret: invitation.secret,
+      hostId,
+      publicKey: key.publicKey,
+      signature: await key.sign(
+        invitationRedeemPayload({ invitationId: invitation.invitationId, hostId, publicKeySha256: key.fingerprint }),
+      ),
+    })
+  }
+
+  /** The four routability readers, which must always agree. */
+  async function routable(input: Input, owner: SignedControlPlaneAuth, workspaceId: string) {
+    const active = await input.hostAccess.activeWorkspaceHost(owner, { workspaceId })
+    const listed = (
+      (await input.workspace.listWorkspaces(owner)) as Array<{ workspace_id: string; host_online?: boolean }>
+    ).find((row) => row.workspace_id === workspaceId)
+    const target = await input.relayTarget(workspaceId)
+    return { active: active.active, host_online: listed?.host_online, relay: target.active }
+  }
+
+  async function readiness(input: Input, workspaceId: string) {
+    return await input.database
+      .prepare("select enrollment_id, generation, revision from host_assignment_readiness where workspace_id = ?")
+      .bind(workspaceId)
+      .first<{ enrollment_id: string; generation: number; revision: number }>()
+  }
+
+  test("machine beat renews the lease with the owner from the row and returns descriptions with revisions and the versioned scope", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-m")
+    await input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_local",
+      hostId: "machine-m",
+      displayName: "Local",
+      remoteDirectory: "/srv/local",
+    })
+    input.advance(1_000)
+    const beat = await machineBeat(input, enrollmentId, [])
+    expect(beat).toEqual({
+      expires_at: input.now() + 8_000,
+      last_seen_at: input.now(),
+      assignments: [{ workspace_id: "ws_local", remote_directory: "/srv/local", display_name: "Local", revision: 1 }],
+      scope: undefined,
+      assigned_workspace_ids: ["ws_local"],
+    })
+    expect(await input.hostAccess.activeHostEnrollment(alice)).toMatchObject({
+      active: true,
+      expires_at: input.now() + 8_000,
+    })
+    // No account beat ever happened, so nothing is ready yet.
+    expect(await routable(input, alice, "ws_local")).toEqual({ active: false, host_online: false, relay: false })
+
+    const acked = await machineBeat(input, enrollmentId, [{ workspaceId: "ws_local", revision: 1 }])
+    expect(acked.assigned_workspace_ids).toEqual(["ws_local"])
+    expect(await routable(input, alice, "ws_local")).toEqual({ active: true, host_online: true, relay: true })
+    expect(await readiness(input, "ws_local")).toEqual({ enrollment_id: enrollmentId, generation: 0, revision: 1 })
+
+    await machineBeat(input, enrollmentId, [])
+    expect(await readiness(input, "ws_local")).toBeNull()
+    expect(await routable(input, alice, "ws_local")).toEqual({ active: false, host_online: false, relay: false })
+  })
+
+  test("descriptions and scope are returned only for this enrollment", async () => {
+    const input = await setup()
+    const { alice, bob } = await fixture(input)
+    const mine = await enrollAccountMachine(input, alice, "machine-mine")
+    const other = await enrollAccountMachine(input, alice, "machine-other")
+    await input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_local",
+      hostId: "machine-mine",
+      remoteDirectory: "/srv/a",
+    })
+    await input.workspace.createWorkspace(alice, {
+      workspaceId: "ws_other",
+      orgId: "org_acme",
+      displayName: "other",
+      backing: "local-worktree",
+    })
+    await input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_other",
+      hostId: "machine-other",
+      remoteDirectory: "/srv/b",
+    })
+    // Bob enrolls a machine with the SAME host id: host ids are per owner.
+    const bobs = await enrollAccountMachine(input, bob, "machine-mine")
+
+    expect((await machineBeat(input, mine.enrollmentId, [])).assignments.map((a) => a.workspace_id)).toEqual([
+      "ws_local",
+    ])
+    expect((await machineBeat(input, other.enrollmentId, [])).assignments.map((a) => a.workspace_id)).toEqual([
+      "ws_other",
+    ])
+    expect((await machineBeat(input, bobs.enrollmentId, [])).assignments).toEqual([])
+    // An assignment without a directory is not a description a machine can serve.
+    await input.workspace.createWorkspace(alice, {
+      workspaceId: "ws_nodir",
+      orgId: "org_acme",
+      displayName: "nodir",
+      backing: "local-worktree",
+    })
+    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_nodir", hostId: "machine-mine" })
+    const beat = await machineBeat(input, mine.enrollmentId, [])
+    expect(beat.assignments.map((a) => a.workspace_id)).toEqual(["ws_local"])
+    expect(beat.assigned_workspace_ids).toEqual(["ws_local", "ws_nodir"])
+  })
+
+  test("re-pointing a directory bumps the revision atomically with the directory, and the predicate is false until the new revision is acked", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-r")
+    await input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_local",
+      hostId: "machine-r",
+      remoteDirectory: "/srv/one",
+    })
+    await machineBeat(input, enrollmentId, [{ workspaceId: "ws_local", revision: 1 }])
+    expect(await routable(input, alice, "ws_local")).toEqual({ active: true, host_online: true, relay: true })
+
+    await input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_local",
+      hostId: "machine-r",
+      remoteDirectory: "/srv/two",
+    })
+    expect(
+      await input.database
+        .prepare(
+          "select w.remote_directory, a.revision from workspaces w join host_workspace_assignments a using (workspace_id) where w.workspace_id = 'ws_local'",
+        )
+        .first(),
+    ).toEqual({ remote_directory: "/srv/two", revision: 2 })
+    // Every reader turns false on the next read, before any new beat.
+    expect(await routable(input, alice, "ws_local")).toEqual({ active: false, host_online: false, relay: false })
+    // The machines list still shows what the host last said — revision 1 —
+    // which is how the panel can tell a stale ack from a fresh one.
+    expect((await input.hostAccess.listHostEnrollments(alice))[0]?.acked).toEqual([
+      { workspaceId: "ws_local", revision: 1 },
+    ])
+
+    // A stale ack (old revision) renews the lease but does not make it ready.
+    const stale = await machineBeat(input, enrollmentId, [{ workspaceId: "ws_local", revision: 1 }])
+    expect(stale.assignments).toEqual([
+      { workspace_id: "ws_local", remote_directory: "/srv/two", display_name: "local", revision: 2 },
+    ])
+    expect(await routable(input, alice, "ws_local")).toEqual({ active: false, host_online: false, relay: false })
+
+    await machineBeat(input, enrollmentId, [{ workspaceId: "ws_local", revision: 2 }])
+    expect(await routable(input, alice, "ws_local")).toEqual({ active: true, host_online: true, relay: true })
+    expect((await input.hostAccess.listHostEnrollments(alice))[0]?.acked).toEqual([
+      { workspaceId: "ws_local", revision: 2 },
+    ])
+  })
+
+  test("acquire increments the generation, deletes prior readiness, records an audit row and refuses the older generation's beat as superseded", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-g")
+    await input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_local",
+      hostId: "machine-g",
+      remoteDirectory: "/srv/g",
+    })
+    const first = await principal(input, enrollmentId)
+    expect(await input.hostAccess.acquireHostServingGeneration(first)).toEqual({
+      generation: 1,
+      generation_acquired_at: input.now(),
+    })
+    await machineBeat(input, enrollmentId, [{ workspaceId: "ws_local", revision: 1 }])
+    expect(await routable(input, alice, "ws_local")).toEqual({ active: true, host_online: true, relay: true })
+
+    // A second instance of the same key acquires: readiness of generation 1 is gone.
+    const second = await principal(input, enrollmentId)
+    expect(second.generation).toBe(1)
+    expect(await input.hostAccess.acquireHostServingGeneration(second)).toMatchObject({ generation: 2 })
+    expect(await readiness(input, "ws_local")).toBeNull()
+    expect(await routable(input, alice, "ws_local")).toEqual({ active: false, host_online: false, relay: false })
+    expect((await input.hostAccess.listHostEnrollments(alice))[0]).toMatchObject({
+      serving_generation: 2,
+      generation_acquired_at: input.now(),
+    })
+    const audit = await input.database
+      .prepare(
+        "select action, user_id, metadata_json from authority_audit_events where action = 'host_enrollment.generation_acquired' order by created_at",
+      )
+      .all<{ action: string; user_id: string; metadata_json: string }>()
+    expect(audit.results.map((row) => JSON.parse(row.metadata_json).generation)).toEqual([1, 2])
+    expect(audit.results[0]?.user_id).toBe(alice.principal!.userId)
+
+    // The first instance's beat carries generation 1: refused, lease untouched.
+    const before = await input.hostAccess.activeHostEnrollment(alice)
+    input.advance(1_000)
+    await expect(
+      machineBeat(input, enrollmentId, [{ workspaceId: "ws_local", revision: 1 }], { generation: 1 }),
+    ).rejects.toMatchObject({
+      code: "enrollment_generation_superseded",
+      status: 409,
+      details: { serving_generation: 2 },
+    })
+    expect(await input.hostAccess.activeHostEnrollment(alice)).toEqual(before)
+    // A stale principal (verified before the second acquire) is refused inside the batch too.
+    await expect(input.hostAccess.acquireHostServingGeneration(second)).rejects.toMatchObject({
+      code: "enrollment_generation_superseded",
+      status: 409,
+    })
+    await machineBeat(input, enrollmentId, [{ workspaceId: "ws_local", revision: 1 }])
+    expect(await routable(input, alice, "ws_local")).toEqual({ active: true, host_online: true, relay: true })
+  })
+
+  test("a beat verified against a replaced key or an ineligible owner writes nothing", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-k")
+    await input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_local",
+      hostId: "machine-k",
+      remoteDirectory: "/srv/k",
+    })
+    const stale = await principal(input, enrollmentId)
+
+    const replaced = await enrollAccountMachine(input, alice, "machine-k")
+    expect(replaced.enrollmentId).toBe(enrollmentId)
+    expect((await input.hostAccess.machineAuth.lookupEnrollment(enrollmentId))?.key_version).toBe(2)
+    const before = await input.hostAccess.activeHostEnrollment(alice)
+    input.advance(1_000)
+    await expect(
+      input.hostAccess.heartbeatHostEnrollmentByMachine(stale, {
+        enrollmentId,
+        hostId: "machine-k",
+        generation: 0,
+        acks: [{ workspaceId: "ws_local", revision: 1 }],
+        ttlMs: 8_000,
+      }),
+    ).rejects.toMatchObject({ code: "enrollment_key_version_mismatch", status: 403 })
+    expect(await input.hostAccess.activeHostEnrollment(alice)).toEqual(before)
+    expect(await readiness(input, "ws_local")).toBeNull()
+    await expect(input.hostAccess.acquireHostServingGeneration(stale)).rejects.toMatchObject({
+      code: "enrollment_key_version_mismatch",
+    })
+
+    // Re-enrolling with the SAME key does not bump the version.
+    const current = await principal(input, enrollmentId)
+    expect(current.keyVersion).toBe(2)
+
+    // The owner is suspended between verification and the write.
+    await input.database
+      .prepare("update users set state = 'suspended', suspended_at = ? where user_id = ?")
+      .bind(input.now(), alice.principal!.userId)
+      .run()
+    await expect(
+      input.hostAccess.heartbeatHostEnrollmentByMachine(current, {
+        enrollmentId,
+        hostId: "machine-k",
+        generation: 0,
+        acks: [],
+        ttlMs: 8_000,
+      }),
+    ).rejects.toMatchObject({ code: "enrollment_owner_ineligible", status: 403 })
+    expect((await input.hostAccess.machineAuth.lookupEnrollment(enrollmentId))?.ownerEligible).toBe(false)
+  })
+
+  test("nonces are consumed insert-or-fail and the heartbeat sweeps expired ones by exact row", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-n")
+    const other = await enrollAccountMachine(input, alice, "machine-n2")
+    const consume = (id: string, nonce: string, expiresAt: number) =>
+      input.hostAccess.machineAuth.consumeNonce({ enrollmentId: id, nonce, expiresAt })
+    expect(await consume(enrollmentId, "nonce-a", input.now() + 120_000)).toBe(true)
+    expect(await consume(enrollmentId, "nonce-a", input.now() + 120_000)).toBe(false)
+    // The same nonce under another enrollment is a different key.
+    expect(await consume(other.enrollmentId, "nonce-a", input.now() + 120_000)).toBe(true)
+    expect(await consume(enrollmentId, "nonce-old", input.now() - 1)).toBe(true)
+    expect(await consume(enrollmentId, "nonce-live", input.now() + 60_000)).toBe(true)
+
+    await machineBeat(input, enrollmentId, [])
+    const rows = await input.database
+      .prepare("select enrollment_id, nonce from host_request_nonces order by enrollment_id, nonce")
+      .all<{ enrollment_id: string; nonce: string }>()
+    // Only the expired row went; the other enrollment's rows are untouched.
+    expect(rows.results).toEqual([
+      { enrollment_id: enrollmentId, nonce: "nonce-a" },
+      { enrollment_id: enrollmentId, nonce: "nonce-live" },
+      { enrollment_id: other.enrollmentId, nonce: "nonce-a" },
+    ])
+  })
+
+  test("a fresh redeem creates an enrollment owned by the inviter with the invitation's scope and org, and stores only the secret's hash", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const invitation = await invite(input, owner, ["/srv"])
+    expect(invitation.token.startsWith(`chx_inv_1.${invitation.invitationId}.`)).toBe(true)
+    expect(invitation.expiresAt).toBe(input.now() + 60 * 60_000)
+    const stored = await input.database
+      .prepare("select secret_hash, org_id from host_invitations where invitation_id = ?")
+      .bind(invitation.invitationId)
+      .first<{ secret_hash: string; org_id: string }>()
+    expect(stored).toEqual({ secret_hash: await sha256Hex(invitation.secret), org_id: "org_acme" })
+    expect(JSON.stringify(await input.database.prepare("select * from host_invitations").all())).not.toContain(
+      invitation.secret,
+    )
+
+    const key = await hostKey()
+    const result = await redeem(input, invitation, "vps-1", key)
+    expect(result).toMatchObject({
+      resumed: false,
+      enrollment: { host_id: "vps-1" },
+      owner_user_id: alice.principal!.userId,
+      owner_actor_id: alice.principal!.actorId,
+      org_id: "org_acme",
+      key_version: 1,
+      serving_generation: 0,
+      scope: { allowed_roots: ["/srv"], revision: 1 },
+    })
+    const machine = await principal(input, result.enrollment.enrollment_id)
+    expect(machine).toMatchObject({
+      hostId: "vps-1",
+      ownerUserId: alice.principal!.userId,
+      keyVersion: 1,
+      generation: 0,
+    })
+    expect(
+      (await input.hostAccess.listHostEnrollments(owner)).map((row) => [
+        row.host_id,
+        row.enrolled_via,
+        row.public_key_fingerprint,
+      ]),
+    ).toEqual([["vps-1", "invitation", key.fingerprint]])
+    expect(await input.hostAccess.listHostInvitations(owner)).toMatchObject([
+      {
+        invitation_id: invitation.invitationId,
+        redeemed_host_id: "vps-1",
+        redeemed_enrollment_id: result.enrollment.enrollment_id,
+      },
+    ])
+    // The redeemed machine can beat by itself; the owner is the inviter.
+    expect(await machineBeat(input, result.enrollment.enrollment_id, [])).toMatchObject({
+      assignments: [],
+      scope: { allowed_roots: ["/srv"], revision: 1 },
+    })
+  })
+
+  test("a wrong secret or an unknown id is invitation_invalid with no redeemed-by detail", async () => {
+    const input = await setup()
+    await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const invitation = await invite(input, owner, ["/srv"])
+    const key = await hostKey()
+    await redeem(input, invitation, "vps-1", key)
+    for (const attempt of [
+      { invitationId: invitation.invitationId, secret: "not-the-secret" },
+      { invitationId: "invitation_nope", secret: invitation.secret },
+    ]) {
+      await expect(redeem(input, attempt, "vps-2", await hostKey())).rejects.toSatisfy((error: unknown) => {
+        const err = error as { code: string; status: number; details?: unknown }
+        return err.code === "invitation_invalid" && err.status === 403 && err.details === undefined
+      })
+    }
+    // A bad signature over the right secret is an attestation failure, not a hint about the invitation.
+    const forger = await hostKey()
+    await expect(
+      input.hostAccess.redeemHostInvitation({
+        invitationId: invitation.invitationId,
+        secret: invitation.secret,
+        hostId: "vps-2",
+        publicKey: forger.publicKey,
+        signature: await forger.sign("something else"),
+      }),
+    ).rejects.toMatchObject({ code: "host_attestation_denied" })
+  })
+
+  test("redeeming again with the same key and host id resumes the same enrollment; a different key or host id is invitation_redeemed", async () => {
+    const input = await setup()
+    await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const invitation = await invite(input, owner, ["/srv"])
+    const key = await hostKey()
+    const first = await redeem(input, invitation, "vps-1", key)
+    input.advance(2 * 60 * 60_000)
+    // Past the invitation's own expiry: recovery of a lost response still works.
+    const again = await redeem(input, invitation, "vps-1", key)
+    expect(again).toMatchObject({ resumed: true, enrollment: { enrollment_id: first.enrollment.enrollment_id } })
+    expect(await input.database.prepare("select count(*) as n from host_enrollments").first<{ n: number }>()).toEqual({
+      n: 1,
+    })
+
+    await expect(redeem(input, invitation, "vps-1", await hostKey())).rejects.toMatchObject({
+      code: "invitation_redeemed",
+      status: 409,
+      details: { redeemed_host_id: "vps-1", redeemed_at: first.enrollment.created_at },
+    })
+    await expect(redeem(input, invitation, "vps-other", key)).rejects.toMatchObject({ code: "invitation_redeemed" })
+    // Once the owner revokes the machine, the invitation cannot resurrect it.
+    await input.hostAccess.revokeHostEnrollment(owner, { hostId: "vps-1" })
+    await expect(redeem(input, invitation, "vps-1", key)).rejects.toMatchObject({ code: "invitation_redeemed" })
+  })
+
+  test("two concurrent redeems with distinct keys produce exactly one enrollment", async () => {
+    const input = await setup()
+    await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const invitation = await invite(input, owner, ["/srv"])
+    const outcomes = await Promise.allSettled([
+      redeem(input, invitation, "vps-a", await hostKey()),
+      redeem(input, invitation, "vps-b", await hostKey()),
+    ])
+    const fulfilled = outcomes.filter((outcome) => outcome.status === "fulfilled")
+    const rejected = outcomes.filter((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected")
+    expect(fulfilled).toHaveLength(1)
+    expect(rejected).toHaveLength(1)
+    expect(rejected[0]?.reason).toMatchObject({ code: "invitation_redeemed" })
+    expect(await input.database.prepare("select count(*) as n from host_enrollments").first<{ n: number }>()).toEqual({
+      n: 1,
+    })
+  })
+
+  test("revoke racing redeem: at most one wins, and the loser is told which", async () => {
+    const input = await setup()
+    await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const invitation = await invite(input, owner, ["/srv"])
+    const [redeemed, revoked] = await Promise.allSettled([
+      redeem(input, invitation, "vps-a", await hostKey()),
+      input.hostAccess.revokeHostInvitation(owner, { invitationId: invitation.invitationId }),
+    ])
+    const enrollments = await input.database
+      .prepare("select count(*) as n from host_enrollments")
+      .first<{ n: number }>()
+    if (redeemed.status === "fulfilled") {
+      expect(revoked).toMatchObject({ status: "fulfilled", value: { revoked: false } })
+      expect(enrollments).toEqual({ n: 1 })
+    } else {
+      expect(redeemed.reason).toMatchObject({ code: "invitation_revoked", status: 410 })
+      expect(revoked).toMatchObject({ status: "fulfilled", value: { revoked: true } })
+      expect(enrollments).toEqual({ n: 0 })
+    }
+    const expired = await invite(input, owner, ["/srv"])
+    input.advance(60 * 60_000 + 1)
+    await expect(redeem(input, expired, "vps-c", await hostKey())).rejects.toMatchObject({
+      code: "invitation_expired",
+      status: 410,
+    })
+  })
+
+  test("host id collision with a live or revoked enrollment is invitation_host_conflict and writes nothing", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    await enrollAccountMachine(input, alice, "laptop")
+    const live = await invite(input, owner, ["/srv"])
+    await expect(redeem(input, live, "laptop", await hostKey())).rejects.toMatchObject({
+      code: "invitation_host_conflict",
+      status: 409,
+    })
+    expect((await input.hostAccess.listHostInvitations(owner))[0]).not.toHaveProperty("redeemed_at")
+
+    await input.hostAccess.revokeHostEnrollment(owner, { hostId: "laptop" })
+    await expect(redeem(input, live, "laptop", await hostKey())).rejects.toMatchObject({
+      code: "invitation_host_conflict",
+    })
+    expect(await input.database.prepare("select count(*) as n from host_enrollments").first<{ n: number }>()).toEqual({
+      n: 1,
+    })
+
+    // The same key redeeming a DIFFERENT invitation while the pair is occupied is a conflict, not a resume.
+    const key = await hostKey()
+    const first = await invite(input, owner, ["/srv"])
+    await redeem(input, first, "vps-1", key)
+    const second = await invite(input, owner, ["/srv"])
+    await expect(redeem(input, second, "vps-1", key)).rejects.toMatchObject({ code: "invitation_host_conflict" })
+    expect(
+      (await input.hostAccess.listHostInvitations(owner)).find((row) => row.invitation_id === second.invitationId),
+    ).not.toHaveProperty("redeemed_at")
+  })
+
+  test("invitation expiry is clamped to [5 min, 24 h] and revoke only touches an unredeemed, unrevoked row of the caller", async () => {
+    const input = await setup()
+    const { bob } = await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const short = await input.hostAccess.createHostInvitation(owner, { scope: { allowed_roots: ["/srv"] }, expiresInMs: 1_000 })
+    input.advance(1)
+    const long = await input.hostAccess.createHostInvitation(owner, { scope: { allowed_roots: ["/srv"] }, expiresInMs: 7 * 24 * 60 * 60_000 })
+    expect(long.expiresAt).toBe(input.now() + 24 * 60 * 60_000)
+    expect(short.expiresAt).toBe(input.now() - 1 + 5 * 60_000)
+    await expect(input.hostAccess.createHostInvitation(owner, { scope: { allowed_roots: ["relative"] } }))
+      .rejects.toMatchObject({ code: "invalid_input" })
+    // Another member of the org cannot revoke the owner's invitation.
+    expect(await input.hostAccess.revokeHostInvitation(bob, { invitationId: short.invitationId })).toEqual({
+      revoked: false,
+    })
+    expect(await input.hostAccess.revokeHostInvitation(owner, { invitationId: short.invitationId })).toEqual({
+      revoked: true,
+    })
+    expect(await input.hostAccess.revokeHostInvitation(owner, { invitationId: short.invitationId })).toEqual({
+      revoked: false,
+    })
+    expect(
+      (await input.hostAccess.listHostInvitations(owner)).map((row) => [
+        row.invitation_id,
+        row.revoked_at !== undefined,
+      ]),
+    ).toEqual([
+      [long.invitationId, false],
+      [short.invitationId, true],
+    ])
+    // An org the caller does not belong to cannot be claimed.
+    const outsider = await signed(input.workspace, "outsider", "org_acme")
+    await expect(input.hostAccess.createHostInvitation(outsider, { scope: { allowed_roots: ["/srv"] } }))
+      .rejects.toMatchObject({ status: 403 })
+  })
+
+  test("assignment outside the roots is refused and inside accepted, segment-aware with .. and trailing slashes", async () => {
+    const input = await setup()
+    await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const key = await hostKey()
+    const { enrollment } = await redeem(input, await invite(input, owner, ["/srv/", "/home/deploy/apps"]), "vps-s", key)
+    const assign = (workspaceId: string, remoteDirectory: string) =>
+      input.hostAccess.assignWorkspaceHost(owner, { workspaceId, hostId: enrollment.host_id, remoteDirectory })
+    await expect(assign("ws_a", "/srv/api")).resolves.toMatchObject({ assigned: true })
+    await expect(assign("ws_b", "/srv")).resolves.toMatchObject({ assigned: true })
+    await expect(assign("ws_c", "/home/deploy/apps/../apps/one/")).resolves.toMatchObject({ assigned: true })
+    for (const outside of ["/srvx", "/srv/../etc", "/home/deploy", "srv/api", "/"]) {
+      await expect(assign(`ws_${outside}`, outside)).rejects.toMatchObject({
+        code: "host_assignment_outside_scope",
+        status: 400,
+      })
+    }
+    // A scoped machine cannot be pointed at a workspace with no directory at all.
+    await expect(
+      input.hostAccess.assignWorkspaceHost(owner, { workspaceId: "ws_none", hostId: enrollment.host_id }),
+    ).rejects.toMatchObject({ code: "host_assignment_outside_scope" })
+    // Empty roots admit nothing; an account machine (no scope) is unrestricted.
+    const denyAll = await redeem(input, await invite(input, owner, []), "vps-none", await hostKey())
+    await expect(
+      input.hostAccess.assignWorkspaceHost(owner, {
+        workspaceId: "ws_d",
+        hostId: denyAll.enrollment.host_id,
+        remoteDirectory: "/srv",
+      }),
+    ).rejects.toMatchObject({ code: "host_assignment_outside_scope" })
+    expect(
+      ((await input.workspace.listWorkspaces(owner)) as Array<{ workspace_id: string }>)
+        .map((row) => row.workspace_id)
+        .sort(),
+    ).toEqual(["ws_a", "ws_b", "ws_c", "ws_cloud", "ws_local"])
+  })
+
+  test("an invitation enrollment refuses assignment of a workspace in another organization", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    await input.workspace.createHostedOrganization(alice, { name: "Beta", orgId: "org_beta" })
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const { enrollment } = await redeem(input, await invite(input, owner, ["/srv"]), "vps-o", await hostKey())
+    await input.workspace.createWorkspace(alice, {
+      workspaceId: "ws_beta",
+      orgId: "org_beta",
+      displayName: "beta",
+      backing: "local-worktree",
+    })
+    await expect(
+      input.hostAccess.assignWorkspaceHost(owner, {
+        workspaceId: "ws_beta",
+        hostId: enrollment.host_id,
+        remoteDirectory: "/srv/beta",
+      }),
+    ).rejects.toMatchObject({ code: "host_assignment_outside_scope" })
+    await expect(
+      input.hostAccess.assignWorkspaceHost(owner, {
+        workspaceId: "ws_cold",
+        hostId: enrollment.host_id,
+        orgId: "org_beta",
+        remoteDirectory: "/srv/cold",
+      }),
+    ).rejects.toMatchObject({ code: "host_assignment_outside_scope" })
+    // Cold registration with no org named lands in the invitation's org even when the caller's token names another.
+    const betaCaller = await signed(input.workspace, "alice", "org_beta")
+    await input.hostAccess.assignWorkspaceHost(betaCaller, {
+      workspaceId: "ws_cold",
+      hostId: enrollment.host_id,
+      remoteDirectory: "/srv/cold",
+    })
+    expect(
+      await input.database.prepare("select org_id from workspaces where workspace_id = 'ws_cold'").first(),
+    ).toEqual({ org_id: "org_acme" })
+  })
+
+  test("a machine-placed workspace admits its owner only, whatever org roles or project grants", async () => {
+    const input = await setup()
+    const { alice, bob, admin } = await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const { enrollment } = await redeem(input, await invite(input, owner, ["/srv"]), "vps-v", await hostKey())
+    await input.hostAccess.assignWorkspaceHost(owner, { workspaceId: "ws_local", hostId: enrollment.host_id, remoteDirectory: "/srv/local" })
+    const localProject = await input.database
+      .prepare("select project_id from workspaces where workspace_id = 'ws_local'")
+      .first<{ project_id: string }>()
+    await input.database
+      .prepare(
+        "insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at) values (?, ?, 'admin', 1, 1, null)",
+      )
+      .bind(localProject!.project_id, bob.principal!.userId)
+      .run()
+    const listed = async (who: SignedControlPlaneAuth) =>
+      ((await input.workspace.listWorkspaces(who)) as Array<{ workspace_id: string }>).map((row) => row.workspace_id)
+
+    for (const other of [bob, admin]) {
+      await expect(input.workspace.openWorkspace(other, { workspaceId: "ws_local" })).rejects.toMatchObject({ status: 403 })
+      await expect(input.hostAccess.activeWorkspaceHost(other, { workspaceId: "ws_local" })).rejects.toMatchObject({ status: 403 })
+      await expect(input.hostAccess.unassignWorkspaceHost(other, { workspaceId: "ws_local" })).rejects.toMatchObject({ status: 403 })
+      expect(await listed(other)).toEqual([])
+    }
+    expect(await input.workspace.openWorkspace(alice, { workspaceId: "ws_local" })).toMatchObject({ role: "owner" })
+    expect(await input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local" })).toEqual({ active: false })
+  })
+
+  test("the owner renames a machine, the name reaches the fleet listing, and nobody else can rename it", async () => {
+    const input = await setup()
+    const { bob } = await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const { enrollment } = await redeem(input, await invite(input, owner, ["/srv"]), "vps-t", await hostKey())
+
+    await expect(
+      input.hostAccess.renameHostEnrollment(bob, {
+        enrollmentId: enrollment.enrollment_id,
+        displayName: "bob's box",
+      }),
+    ).rejects.toMatchObject({ code: "host_enrollment_not_found", status: 404 })
+
+    expect(
+      await input.hostAccess.renameHostEnrollment(owner, {
+        enrollmentId: enrollment.enrollment_id,
+        displayName: "  Build box  ",
+      }),
+    ).toEqual({ enrollment_id: enrollment.enrollment_id, display_name: "Build box" })
+
+    const machines = await input.hostAccess.listHostEnrollments(owner)
+    expect(machines.map((machine) => machine.display_name)).toEqual(["Build box"])
+    expect(
+      await input.database
+        .prepare("select count(*) as n from authority_audit_events where action = 'host_enrollment.renamed'")
+        .first(),
+    ).toEqual({ n: 1 })
+
+    await expect(
+      input.hostAccess.renameHostEnrollment(owner, {
+        enrollmentId: enrollment.enrollment_id,
+        displayName: "   ",
+      }),
+    ).rejects.toMatchObject({ code: "invalid_input", status: 400 })
+  })
+
+  test("tightening the roots retires the outside assignment transactionally and the catalog drops it", async () => {
+    const input = await setup()
+    const { bob } = await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const { enrollment } = await redeem(input, await invite(input, owner, ["/srv"]), "vps-t", await hostKey())
+    await input.hostAccess.assignWorkspaceHost(owner, { workspaceId: "ws_api", hostId: enrollment.host_id, remoteDirectory: "/srv/api" })
+    await input.hostAccess.assignWorkspaceHost(owner, { workspaceId: "ws_web", hostId: enrollment.host_id, remoteDirectory: "/srv/web" })
+    await machineBeat(input, enrollment.enrollment_id, [{ workspaceId: "ws_api", revision: 1 }, { workspaceId: "ws_web", revision: 1 }])
+    expect(await routable(input, owner, "ws_api")).toEqual({ active: true, host_online: true, relay: true })
+
+    await expect(input.hostAccess.updateHostEnrollmentScope(bob, {
+      enrollmentId: enrollment.enrollment_id,
+      scope: { allowed_roots: ["/srv/web"] },
+    })).rejects.toMatchObject({ code: "host_enrollment_not_found", status: 404 })
+
+    const updated = await input.hostAccess.updateHostEnrollmentScope(owner, {
+      enrollmentId: enrollment.enrollment_id,
+      scope: { allowed_roots: ["/srv/web/"] },
+    })
+    expect(updated).toEqual({ scope: { allowed_roots: ["/srv/web"], revision: 2 }, retired_workspace_ids: ["ws_api"] })
+    expect(await input.database.prepare("select count(*) as n from host_workspace_assignments where workspace_id = 'ws_api'").first())
+      .toEqual({ n: 0 })
+    expect(await readiness(input, "ws_api")).toBeNull()
+    expect(
+      await input.database
+        .prepare("select deleted_at is not null as retired from workspaces where workspace_id = 'ws_api'")
+        .first(),
+    ).toEqual({ retired: 1 })
+    expect(
+      ((await input.workspace.listWorkspaces(owner)) as Array<{ workspace_id: string }>)
+        .map((row) => row.workspace_id)
+        .sort(),
+    ).toEqual(["ws_cloud", "ws_local", "ws_web"])
+    await expect(input.relayTarget("ws_api")).resolves.toEqual({ active: false })
+    expect(await routable(input, owner, "ws_web")).toEqual({ active: true, host_online: true, relay: true })
+    // The next beat carries the new scope revision and omits the retired row.
+    const beat = await machineBeat(input, enrollment.enrollment_id, [{ workspaceId: "ws_web", revision: 1 }])
+    expect(beat.scope).toEqual({ allowed_roots: ["/srv/web"], revision: 2 })
+    expect(beat.assignments.map((a) => a.workspace_id)).toEqual(["ws_web"])
+    expect(
+      await input.database
+        .prepare("select metadata_json from authority_audit_events where action = 'host_enrollment.scope_updated'")
+        .first<{ metadata_json: string }>(),
+    ).toMatchObject({ metadata_json: expect.stringContaining('"retiredWorkspaceIds":["ws_api"]') })
+    await expect(
+      input.hostAccess.assignWorkspaceHost(owner, {
+        workspaceId: "ws_api",
+        hostId: enrollment.host_id,
+        remoteDirectory: "/srv/api",
+      }),
+    ).rejects.toMatchObject({ code: "host_assignment_outside_scope" })
+  })
+
+  test("listHostEnrollments lists every non-revoked enrollment of the owner with fingerprint, key version, enrolled_via, generation and acked", async () => {
+    const input = await setup()
+    const { alice, bob } = await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const laptop = await enrollAccountMachine(input, alice, "laptop")
+    const vpsKey = await hostKey()
+    const vps = await redeem(input, await invite(input, owner, ["/srv"]), "vps", vpsKey)
+    await enrollAccountMachine(input, alice, "gone")
+    await input.hostAccess.revokeHostEnrollment(alice, { hostId: "gone" })
+    await enrollAccountMachine(input, bob, "bobs")
+    await input.hostAccess.acquireHostServingGeneration(await principal(input, vps.enrollment.enrollment_id))
+    await input.hostAccess.assignWorkspaceHost(owner, {
+      workspaceId: "ws_api",
+      hostId: "vps",
+      remoteDirectory: "/srv/api",
+    })
+    // The owner's declaration is listed before the machine has acked anything.
+    expect((await input.hostAccess.listHostEnrollments(alice)).find((row) => row.host_id === "vps")).toMatchObject({
+      assignments: [{ workspace_id: "ws_api", remote_directory: "/srv/api", revision: 1 }],
+      acked: [],
+    })
+    await machineBeat(input, vps.enrollment.enrollment_id, [{ workspaceId: "ws_api", revision: 1 }])
+
+    const machines = await input.hostAccess.listHostEnrollments(alice)
+    expect(machines.map((row) => row.host_id).sort()).toEqual(["laptop", "vps"])
+    expect(machines.find((row) => row.host_id === "vps")).toEqual({
+      enrollment_id: vps.enrollment.enrollment_id,
+      host_id: "vps",
+      public_key_fingerprint: vpsKey.fingerprint,
+      key_version: 1,
+      enrolled_via: "invitation",
+      last_seen_at: input.now(),
+      expires_at: input.now() + 8_000,
+      serving_generation: 1,
+      generation_acquired_at: input.now(),
+      assignments: [{ workspace_id: "ws_api", remote_directory: "/srv/api", display_name: "ws_api", revision: 1 }],
+      acked: [{ workspaceId: "ws_api", revision: 1 }],
+      scope: { allowed_roots: ["/srv"], revision: 1 },
+      provider_config_revision: 0,
+      provider_config_acked_revision: 0,
+      sealing_key_declared: false,
+      provider_config_providers: [],
+      provider_config_rekeyed: false,
+    })
+    expect(machines.find((row) => row.host_id === "laptop")).toMatchObject({
+      enrollment_id: laptop.enrollmentId,
+      enrolled_via: "account",
+      key_version: 1,
+      serving_generation: 0,
+      assignments: [],
+      acked: [],
+      scope: undefined,
+    })
+    expect(await input.hostAccess.activeHostEnrollment(alice)).toMatchObject({ active: true })
+    // A paused machine says so; an unpaused one carries no paused_at at all.
+    await input.hostAccess.pauseHostEnrollment(alice, { hostId: "laptop", paused: true })
+    const paused = await input.hostAccess.listHostEnrollments(alice)
+    expect(paused.find((row) => row.host_id === "laptop")).toMatchObject({ paused_at: input.now() })
+    expect(paused.find((row) => row.host_id === "vps")).not.toHaveProperty("paused_at")
+  })
+
+  test("a refused assignment of a retired workspace leaves it retired", async () => {
+    const input = await setup()
+    const { alice, bob } = await fixture(input)
+    await enrollAccountMachine(input, alice, "laptop")
+    await enrollAccountMachine(input, bob, "bobs")
+    await input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_local",
+      hostId: "laptop",
+      remoteDirectory: "/srv/local",
+    })
+    await input.hostAccess.unassignWorkspaceHost(alice, { workspaceId: "ws_local" })
+    const retired = async () =>
+      (await input.database
+        .prepare("select deleted_at is not null as retired from workspaces where workspace_id = 'ws_local'")
+        .first<{ retired: number }>())!.retired === 1
+    expect(await retired()).toBe(true)
+
+    // Bob is an org member with his own machine, not an admin of the workspace.
+    await expect(
+      input.hostAccess.assignWorkspaceHost(bob, { workspaceId: "ws_local", hostId: "bobs" }),
+    ).rejects.toMatchObject({ status: 403 })
+    expect(await retired()).toBe(true)
+    expect(
+      await input.database
+        .prepare("select count(*) as n from host_workspace_assignments where workspace_id = 'ws_local'")
+        .first(),
+    ).toEqual({ n: 0 })
+
+    // The owner's scoped machine may not serve the retired row's directory either.
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const { enrollment } = await redeem(input, await invite(input, owner, ["/srv/api"]), "vps-r", await hostKey())
+    await expect(
+      input.hostAccess.assignWorkspaceHost(owner, { workspaceId: "ws_local", hostId: enrollment.host_id }),
+    ).rejects.toMatchObject({ code: "host_assignment_outside_scope" })
+    expect(await retired()).toBe(true)
+
+    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local", hostId: "laptop" })
+    expect(await retired()).toBe(false)
+  })
+
+  test("assignment revisions never restart: unassign, reassign and a move to another host continue the counter", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-one")
+    await enrollAccountMachine(input, alice, "machine-two")
+    const revision = async () =>
+      await input.database
+        .prepare(
+          "select a.revision, w.host_assignment_revision as counter from host_workspace_assignments a join workspaces w using (workspace_id) where w.workspace_id = 'ws_local'",
+        )
+        .first<{ revision: number; counter: number }>()
+    await input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_local",
+      hostId: "machine-one",
+      remoteDirectory: "/srv/one",
+    })
+    expect(await revision()).toEqual({ revision: 1, counter: 1 })
+    await input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_local",
+      hostId: "machine-one",
+      remoteDirectory: "/srv/two",
+    })
+    expect(await revision()).toEqual({ revision: 2, counter: 2 })
+    await machineBeat(input, enrollmentId, [{ workspaceId: "ws_local", revision: 2 }])
+    expect(await routable(input, alice, "ws_local")).toEqual({ active: true, host_online: true, relay: true })
+
+    await input.hostAccess.unassignWorkspaceHost(alice, { workspaceId: "ws_local" })
+    expect(
+      await input.database
+        .prepare("select host_assignment_revision from workspaces where workspace_id = 'ws_local'")
+        .first(),
+    ).toEqual({ host_assignment_revision: 2 })
+    await input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_local",
+      hostId: "machine-one",
+      remoteDirectory: "/srv/two",
+    })
+    expect(await revision()).toEqual({ revision: 3, counter: 3 })
+    // The machine's last ack named revision 2, which no longer routes anything.
+    await machineBeat(input, enrollmentId, [{ workspaceId: "ws_local", revision: 2 }])
+    expect(await routable(input, alice, "ws_local")).toEqual({ active: false, host_online: false, relay: false })
+    await machineBeat(input, enrollmentId, [{ workspaceId: "ws_local", revision: 3 }])
+    expect(await routable(input, alice, "ws_local")).toEqual({ active: true, host_online: true, relay: true })
+
+    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local", hostId: "machine-two" })
+    expect(await revision()).toEqual({ revision: 4, counter: 4 })
+  })
+
+  test("two acquires of the same generation in one millisecond hand it to exactly one instance", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-race")
+    const stale = await principal(input, enrollmentId)
+    const settled = await Promise.allSettled([
+      input.hostAccess.acquireHostServingGeneration(stale),
+      input.hostAccess.acquireHostServingGeneration(stale),
+    ])
+    const won = settled.filter((entry) => entry.status === "fulfilled")
+    const lost = settled.filter((entry) => entry.status === "rejected")
+    expect(won.map((entry) => entry.value.generation)).toEqual([1])
+    expect(lost).toHaveLength(1)
+    expect(lost[0]?.reason).toMatchObject({
+      code: "enrollment_generation_superseded",
+      details: { serving_generation: 1 },
+    })
+    expect((await input.hostAccess.listHostEnrollments(alice))[0]).toMatchObject({ serving_generation: 1 })
+    const audit = await input.database
+      .prepare("select count(*) as n from authority_audit_events where action = 'host_enrollment.generation_acquired'")
+      .first()
+    expect(audit).toEqual({ n: 1 })
+  })
+
+  test("scope tightening retires exactly the assignments this host holds outside the new roots when the batch commits", async () => {
+    const input = await setup()
+    await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    await enrollAccountMachine(input, owner, "laptop")
+    const { enrollment } = await redeem(input, await invite(input, owner, ["/srv"]), "vps-m", await hostKey())
+    await input.hostAccess.assignWorkspaceHost(owner, { workspaceId: "ws_api", hostId: enrollment.host_id, remoteDirectory: "/srv/api" })
+    await input.hostAccess.assignWorkspaceHost(owner, { workspaceId: "ws_web", hostId: enrollment.host_id, remoteDirectory: "/srv/web" })
+
+    // Between the PATCH's read and its batch, ws_api moves to the laptop and
+    // ws_new is assigned to the vps outside the roots the PATCH is about to set.
+    input.beforeNextBatch(async () => {
+      await input.hostAccess.assignWorkspaceHost(owner, {
+        workspaceId: "ws_api",
+        hostId: "laptop",
+        remoteDirectory: "/srv/api",
+      })
+      await input.hostAccess.assignWorkspaceHost(owner, {
+        workspaceId: "ws_new",
+        hostId: enrollment.host_id,
+        remoteDirectory: "/srv/new",
+      })
+    })
+    const updated = await input.hostAccess.updateHostEnrollmentScope(owner, {
+      enrollmentId: enrollment.enrollment_id,
+      scope: { allowed_roots: ["/srv/web"] },
+    })
+    expect(updated.retired_workspace_ids).toEqual(["ws_new"])
+    const assignments = await input.database
+      .prepare("select workspace_id, host_id from host_workspace_assignments order by workspace_id")
+      .all<{ workspace_id: string; host_id: string }>()
+    expect(assignments.results).toEqual([
+      { workspace_id: "ws_api", host_id: "laptop" },
+      { workspace_id: "ws_web", host_id: enrollment.host_id },
+    ])
+    expect(
+      await input.database
+        .prepare("select workspace_id from workspaces where deleted_at is not null order by workspace_id")
+        .all(),
+    ).toMatchObject({ results: [{ workspace_id: "ws_new" }] })
+  })
+
+  test("of two scope PATCHes from the same revision exactly one wins, and an assignment validated against a scope that moved writes nothing", async () => {
+    const input = await setup()
+    await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const { enrollment } = await redeem(input, await invite(input, owner, ["/srv"]), "vps-c", await hostKey())
+    const patch = (root: string) => input.hostAccess.updateHostEnrollmentScope(owner, {
+      enrollmentId: enrollment.enrollment_id,
+      scope: { allowed_roots: [root] },
+    })
+    const settled = await Promise.allSettled([patch("/srv/a"), patch("/srv/b")])
+    const won = settled.filter((entry) => entry.status === "fulfilled")
+    const lost = settled.filter((entry) => entry.status === "rejected")
+    expect(won).toHaveLength(1)
+    expect(lost[0]?.reason).toMatchObject({ code: "resource_conflict" })
+    const stored = await input.database.prepare("select scope_json, scope_revision from host_enrollments where enrollment_id = ?")
+      .bind(enrollment.enrollment_id).first<{ scope_json: string; scope_revision: number }>()
+    const { revision: _, ...winner } = won[0]?.value.scope ?? { allowed_roots: [], revision: 0 }
+    expect(stored).toEqual({ scope_json: JSON.stringify(winner), scope_revision: 2 })
+
+    // An assignment that validated /srv/x against the current scope, then
+    // loses the race to a PATCH that excludes it, lands nothing.
+    input.beforeNextBatch(async () => {
+      await patch("/srv/elsewhere")
+    })
+    const root = winner.allowed_roots[0] ?? ""
+    const projectsBefore = await input.database.prepare("select count(*) as n from projects").first()
+    await expect(input.hostAccess.assignWorkspaceHost(owner, { workspaceId: "ws_x", hostId: enrollment.host_id, remoteDirectory: `${root}/x` }))
+      .rejects.toMatchObject({ code: "resource_conflict" })
+    expect(await input.database.prepare("select count(*) as n from host_workspace_assignments where workspace_id = 'ws_x'").first())
+      .toEqual({ n: 0 })
+    // The cold registration rode in the same batch: no workspace row and no project.
+    expect(await input.database.prepare("select count(*) as n from workspaces where workspace_id = 'ws_x'").first())
+      .toEqual({ n: 0 })
+    expect(await input.database.prepare("select count(*) as n from projects").first()).toEqual(projectsBefore)
+  })
+
+  test("a trailing slash an un-normalized writer leaves behind is still classified by the prefix clause", async () => {
+    const input = await setup()
+    await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const { enrollment } = await redeem(input, await invite(input, owner, ["/srv"]), "vps-ts", await hostKey())
+    const assign = (workspaceId: string, remoteDirectory: string) =>
+      input.hostAccess.assignWorkspaceHost(owner, { workspaceId, hostId: enrollment.host_id, remoteDirectory })
+    await assign("ws_in", "/srv/allowed/web")
+    await assign("ws_exact", "/srv/allowed")
+    await assign("ws_out", "/srv/allowedx")
+    for (const workspaceId of ["ws_in", "ws_exact", "ws_out"]) {
+      await input.database
+        .prepare("update workspaces set remote_directory = remote_directory || '/' where workspace_id = ?")
+        .bind(workspaceId)
+        .run()
+    }
+    const updated = await input.hostAccess.updateHostEnrollmentScope(owner, {
+      enrollmentId: enrollment.enrollment_id,
+      scope: { allowed_roots: ["/srv/allowed"] },
+    })
+    expect(updated.retired_workspace_ids).toEqual(["ws_out"])
+  })
+
+  test("every write of a directory records it normalized, and a re-point without one repairs the stored value", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const { enrollment } = await redeem(input, await invite(input, owner, ["/srv"]), "vps-n", await hostKey())
+    const directory = async (workspaceId: string) =>
+      (
+        await input.database
+          .prepare("select remote_directory from workspaces where workspace_id = ?")
+          .bind(workspaceId)
+          .first<{ remote_directory: string }>()
+      )?.remote_directory
+    await input.hostAccess.assignWorkspaceHost(owner, {
+      workspaceId: "ws_cold",
+      hostId: enrollment.host_id,
+      remoteDirectory: "/srv/./api/../api/",
+    })
+    expect(await directory("ws_cold")).toBe("/srv/api")
+    await input.workspace.createWorkspace(alice, {
+      workspaceId: "ws_reg",
+      displayName: "reg",
+      orgId: "org_acme",
+      backing: "local-worktree",
+      remoteDirectory: "/srv/reg//",
+    })
+    expect(await directory("ws_reg")).toBe("/srv/reg")
+    await input.hostAccess.assignWorkspaceHost(owner, {
+      workspaceId: "ws_reg",
+      hostId: enrollment.host_id,
+      remoteDirectory: "/srv/reg/../reg2/",
+    })
+    expect(await directory("ws_reg")).toBe("/srv/reg2")
+    // Re-assignment without one: the stale stored value is written back normalized, not kept.
+    await input.database
+      .prepare("update workspaces set remote_directory = '/srv/reg2/../reg3/' where workspace_id = 'ws_reg'")
+      .run()
+    await input.hostAccess.assignWorkspaceHost(owner, { workspaceId: "ws_reg", hostId: enrollment.host_id })
+    expect(await directory("ws_reg")).toBe("/srv/reg3")
+    await enrollAccountMachine(input, alice, "laptop-n")
+    await input.hostAccess.assignWorkspaceHost(owner, {
+      workspaceId: "ws_win",
+      hostId: "laptop-n",
+      orgId: "org_acme",
+      remoteDirectory: "C:\\Users\\dev\\app\\",
+    })
+    expect(await directory("ws_win")).toBe("C:\\Users\\dev\\app\\")
+  })
+
+  test("hostEnrollmentByHost answers the caller's live machine by host id and nothing for a revoked, foreign or unknown one", async () => {
+    const input = await setup()
+    const { alice, bob } = await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const laptop = await enrollAccountMachine(input, alice, "laptop")
+    const vps = await redeem(input, await invite(input, owner, ["/srv"]), "vps", await hostKey())
+    await enrollAccountMachine(input, alice, "gone")
+    await input.hostAccess.revokeHostEnrollment(alice, { hostId: "gone" })
+    await enrollAccountMachine(input, bob, "bobs")
+    expect(await input.hostAccess.hostEnrollmentByHost(alice, { hostId: "laptop" })).toEqual({
+      enrollment_id: laptop.enrollmentId,
+      host_id: "laptop",
+      enrolled_via: "account",
+    })
+    expect(await input.hostAccess.hostEnrollmentByHost(alice, { hostId: "vps" })).toEqual({
+      enrollment_id: vps.enrollment.enrollment_id,
+      host_id: "vps",
+      enrolled_via: "invitation",
+    })
+    for (const hostId of ["gone", "bobs", "nope"]) {
+      expect(await input.hostAccess.hostEnrollmentByHost(alice, { hostId })).toBeUndefined()
+    }
+  })
+
+  async function storedProviderConfig(input: Input, enrollmentId: string) {
+    return await input.database
+      .prepare(
+        `select sealing_public_key_json, provider_config_sealed, provider_config_sealed_key_json,
+              provider_config_provider_ids, provider_config_revision, provider_config_acked_revision
+       from host_enrollments where enrollment_id = ?`,
+      )
+      .bind(enrollmentId)
+      .first()
+  }
+
+  test("an owner suspended between sealing and the push stores nothing: the write re-asks who is writing", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-s", { displayName: "Suspended box" })
+    const key = await sealingKey()
+    await machineBeat(input, enrollmentId, [], { sealingPublicKey: key.publicKey })
+    const target = await input.hostAccess.hostProviderConfigTarget(alice, { enrollmentId })
+
+    input.beforeNextBatch(async () => {
+      await input.database.prepare("update users set state = 'suspended', suspended_at = ? where user_id = ?")
+        .bind(input.now(), alice.principal!.userId).run()
+    })
+    await expect(input.hostAccess.pushHostProviderConfig(alice, {
+      enrollmentId,
+      sealed: "mseal1.e.i.c",
+      revision: target.next_revision,
+      sealingPublicKey: key.stored,
+      providerIds: ["openai"],
+    })).rejects.toMatchObject({ status: 403 })
+    expect(await storedProviderConfig(input, enrollmentId)).toMatchObject({ provider_config_sealed: null, provider_config_revision: 0 })
+  })
+
+  test("the owner pushes ciphertext sealed to the key the machine declared, the beat carries it until the machine acks, and no other account can read the target or push", async () => {
+    const input = await setup()
+    const { alice, bob } = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-p", { displayName: "Push box" })
+    const key = await sealingKey()
+
+    // Nothing pushable before a beat declares a key: the target says so and the write refuses a null key outright.
+    expect(await input.hostAccess.hostProviderConfigTarget(alice, { enrollmentId })).toEqual({
+      enrollment_id: enrollmentId,
+      host_id: "machine-p",
+      display_name: "Push box",
+      sealing_public_key: null,
+      next_revision: 1,
+    })
+    await expect(
+      input.hostAccess.pushHostProviderConfig(alice, {
+        enrollmentId,
+        sealed: "mseal1.e.i.c",
+        revision: 1,
+        sealingPublicKey: null,
+        providerIds: ["openai"],
+      }),
+    ).rejects.toMatchObject({ code: "host_sealing_key_undeclared", status: 409 })
+
+    expect(await machineBeat(input, enrollmentId, [], { sealingPublicKey: key.publicKey })).not.toHaveProperty(
+      "provider_config",
+    )
+    const target = await input.hostAccess.hostProviderConfigTarget(alice, { enrollmentId })
+    expect(target.sealing_public_key).toBe(key.stored)
+    expect(target.next_revision).toBe(1)
+
+    // The grant is the owner's alone. Bob is a member of the same organization and learns nothing.
+    await expect(input.hostAccess.hostProviderConfigTarget(bob, { enrollmentId })).rejects.toMatchObject({
+      code: "host_enrollment_not_found",
+      status: 404,
+    })
+    await expect(
+      input.hostAccess.pushHostProviderConfig(bob, {
+        enrollmentId,
+        sealed: "mseal1.e.i.c",
+        revision: 1,
+        sealingPublicKey: key.stored,
+        providerIds: ["openai"],
+      }),
+    ).rejects.toMatchObject({ code: "host_enrollment_not_found", status: 404 })
+    expect(await storedProviderConfig(input, enrollmentId)).toMatchObject({
+      provider_config_sealed: null,
+      provider_config_revision: 0,
+    })
+
+    expect(
+      await input.hostAccess.pushHostProviderConfig(alice, {
+        enrollmentId,
+        sealed: "mseal1.e.i.c1",
+        revision: 1,
+        sealingPublicKey: key.stored,
+        providerIds: ["openai", "anthropic"],
+      }),
+    ).toEqual({ enrollment_id: enrollmentId, revision: 1, sealed: true })
+    expect(await storedProviderConfig(input, enrollmentId)).toEqual({
+      sealing_public_key_json: key.stored,
+      provider_config_sealed: "mseal1.e.i.c1",
+      provider_config_sealed_key_json: key.stored,
+      provider_config_provider_ids: '["anthropic","openai"]',
+      provider_config_revision: 1,
+      provider_config_acked_revision: 0,
+    })
+
+    // Carried on every beat that declares no ack or a stale one.
+    expect((await machineBeat(input, enrollmentId, [])).provider_config).toEqual({
+      revision: 1,
+      sealed: "mseal1.e.i.c1",
+    })
+    expect((await machineBeat(input, enrollmentId, [], { providerConfigRevision: 0 })).provider_config).toEqual({
+      revision: 1,
+      sealed: "mseal1.e.i.c1",
+    })
+    // The ack lands in the beat's own batch, so the beat that carries it already answers nothing.
+    expect(await machineBeat(input, enrollmentId, [], { providerConfigRevision: 1 })).not.toHaveProperty(
+      "provider_config",
+    )
+    expect(await machineBeat(input, enrollmentId, [])).not.toHaveProperty("provider_config")
+    expect(await storedProviderConfig(input, enrollmentId)).toMatchObject({ provider_config_acked_revision: 1 })
+    expect((await input.hostAccess.hostProviderConfigTarget(alice, { enrollmentId })).next_revision).toBe(2)
+  })
+
+  test("a push at a stale revision or against a key the machine no longer holds writes nothing, including a re-key that lands between the read and the write", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-r")
+    const key = await sealingKey()
+    const other = await sealingKey()
+    await machineBeat(input, enrollmentId, [], { sealingPublicKey: key.publicKey })
+    const push = (args: { sealed: string | null; revision: number; sealingPublicKey: string }) =>
+      input.hostAccess.pushHostProviderConfig(alice, { enrollmentId, providerIds: ["openai"], ...args })
+    await push({ sealed: "mseal1.e.i.c1", revision: 1, sealingPublicKey: key.stored })
+
+    // Two owners' devices read next_revision 2 and both push: the second is refused with where the row is.
+    await expect(push({ sealed: "mseal1.e.i.stale", revision: 1, sealingPublicKey: key.stored })).rejects.toMatchObject(
+      { code: "host_provider_config_revision_stale", status: 409, details: { provider_config_revision: 1 } },
+    )
+    await expect(push({ sealed: "mseal1.e.i.ahead", revision: 3, sealingPublicKey: key.stored })).rejects.toMatchObject(
+      { code: "host_provider_config_revision_stale", status: 409 },
+    )
+    await expect(
+      push({ sealed: "mseal1.e.i.wrong", revision: 2, sealingPublicKey: other.stored }),
+    ).rejects.toMatchObject({ code: "host_sealing_key_undeclared", status: 409 })
+    // The machine re-keys after the owner read the target and before the write lands.
+    input.beforeNextBatch(async () => {
+      await machineBeat(input, enrollmentId, [], { sealingPublicKey: other.publicKey })
+    })
+    await expect(
+      push({ sealed: "mseal1.e.i.rekeyed", revision: 2, sealingPublicKey: key.stored }),
+    ).rejects.toMatchObject({ code: "host_sealing_key_undeclared", status: 409 })
+    expect(await storedProviderConfig(input, enrollmentId)).toEqual({
+      sealing_public_key_json: other.stored,
+      provider_config_sealed: "mseal1.e.i.c1",
+      provider_config_sealed_key_json: key.stored,
+      provider_config_provider_ids: '["openai"]',
+      provider_config_revision: 1,
+      provider_config_acked_revision: 0,
+    })
+    // The blob is sealed to a key the machine has replaced: it is carried on no
+    // further beat, and the listing names the cause rather than leaving the
+    // owner reading a counter that will never move.
+    expect(await machineBeat(input, enrollmentId, [])).not.toHaveProperty("provider_config")
+    expect(
+      (await input.hostAccess.listHostEnrollments(alice)).find((row) => row.host_id === "machine-r"),
+    ).toMatchObject({ provider_config_rekeyed: true, provider_config_providers: ["openai"] })
+
+    // Malformed input is refused before any batch: a blob of another format, a revision below 1.
+    await expect(push({ sealed: "not-a-seal", revision: 2, sealingPublicKey: other.stored })).rejects.toMatchObject({
+      code: "invalid_input",
+      status: 400,
+    })
+    await expect(push({ sealed: "mseal1.e.i.c2", revision: 0, sealingPublicKey: other.stored })).rejects.toMatchObject({
+      code: "invalid_input",
+      status: 400,
+    })
+    // A beat declaring a key the sealer cannot use is refused and renews nothing.
+    const before = await input.hostAccess.activeHostEnrollment(alice)
+    input.advance(1_000)
+    await expect(
+      machineBeat(input, enrollmentId, [], { sealingPublicKey: '{"kty":"EC","crv":"P-384","x":"a","y":"b"}' }),
+    ).rejects.toMatchObject({ code: "invalid_input", status: 400 })
+    expect(await input.hostAccess.activeHostEnrollment(alice)).toEqual(before)
+    await input.hostAccess.revokeHostEnrollment(alice, { hostId: "machine-r" })
+    await expect(input.hostAccess.hostProviderConfigTarget(alice, { enrollmentId })).rejects.toMatchObject({
+      code: "host_enrollment_not_found",
+      status: 404,
+    })
+  })
+
+  test("the next revision is one above whichever counter is higher, so a control plane restored below the machine still outruns it", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-b")
+    const key = await sealingKey()
+    await machineBeat(input, enrollmentId, [], { sealingPublicKey: key.publicKey })
+    const push = (args: { sealed: string | null; revision: number }) =>
+      input.hostAccess.pushHostProviderConfig(alice, {
+        enrollmentId,
+        sealingPublicKey: key.stored,
+        providerIds: ["openai"],
+        ...args,
+      })
+    await push({ sealed: "mseal1.e.i.c1", revision: 1 })
+    await push({ sealed: "mseal1.e.i.c2", revision: 2 })
+    await machineBeat(input, enrollmentId, [], { providerConfigRevision: 2 })
+
+    // The stored row goes back to revision 1 while the machine keeps declaring
+    // the 2 it holds. The machine applies only a strictly newer revision, so a
+    // mint against the stored counter alone would be ignored forever.
+    await input.database
+      .prepare(
+        `update host_enrollments set provider_config_revision = 1, provider_config_sealed = 'mseal1.e.i.c1' where enrollment_id = ?`,
+      )
+      .bind(enrollmentId)
+      .run()
+    await machineBeat(input, enrollmentId, [], { providerConfigRevision: 2 })
+    expect((await input.hostAccess.hostProviderConfigTarget(alice, { enrollmentId })).next_revision).toBe(3)
+    await expect(push({ sealed: "mseal1.e.i.replay", revision: 2 })).rejects.toMatchObject({
+      code: "host_provider_config_revision_stale",
+      status: 409,
+    })
+    expect(await push({ sealed: "mseal1.e.i.c3", revision: 3 })).toEqual({
+      enrollment_id: enrollmentId,
+      revision: 3,
+      sealed: true,
+    })
+    expect((await machineBeat(input, enrollmentId, [], { providerConfigRevision: 2 })).provider_config).toEqual({
+      revision: 3,
+      sealed: "mseal1.e.i.c3",
+    })
+  })
+
+  test("an empty push is the withdrawal: a new revision holding null that the beat carries, and the fleet listing reports the three counters", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, alice, "machine-w")
+    const { enrollmentId: bare } = await enrollAccountMachine(input, alice, "machine-bare")
+    const key = await sealingKey()
+    await machineBeat(input, enrollmentId, [], { sealingPublicKey: key.publicKey })
+    await input.hostAccess.pushHostProviderConfig(alice, {
+      enrollmentId,
+      sealed: "mseal1.e.i.c1",
+      revision: 1,
+      sealingPublicKey: key.stored,
+      providerIds: ["openai"],
+    })
+    await machineBeat(input, enrollmentId, [], { providerConfigRevision: 1 })
+
+    expect(
+      await input.hostAccess.pushHostProviderConfig(alice, {
+        enrollmentId,
+        sealed: null,
+        revision: 2,
+        sealingPublicKey: key.stored,
+        providerIds: [],
+      }),
+    ).toEqual({ enrollment_id: enrollmentId, revision: 2, sealed: false })
+    expect(await storedProviderConfig(input, enrollmentId)).toEqual({
+      sealing_public_key_json: key.stored,
+      provider_config_sealed: null,
+      provider_config_sealed_key_json: null,
+      provider_config_provider_ids: null,
+      provider_config_revision: 2,
+      provider_config_acked_revision: 0,
+    })
+    expect((await machineBeat(input, enrollmentId, [])).provider_config).toEqual({ revision: 2, sealed: null })
+
+    const listed = (hostId: string) =>
+      input.hostAccess.listHostEnrollments(alice).then((rows) => rows.find((row) => row.host_id === hostId))
+    expect(await listed("machine-w")).toMatchObject({
+      provider_config_revision: 2,
+      provider_config_acked_revision: 0,
+      sealing_key_declared: true,
+      provider_config_providers: [],
+      provider_config_rekeyed: false,
+    })
+    await machineBeat(input, enrollmentId, [], { providerConfigRevision: 2 })
+    expect(await listed("machine-w")).toMatchObject({ provider_config_revision: 2, provider_config_acked_revision: 2 })
+    expect(await machineBeat(input, enrollmentId, [])).not.toHaveProperty("provider_config")
+    expect(await listed("machine-bare")).toMatchObject({
+      enrollment_id: bare,
+      provider_config_revision: 0,
+      provider_config_acked_revision: 0,
+      sealing_key_declared: false,
+      provider_config_providers: [],
+      provider_config_rekeyed: false,
+    })
+  })
+})
+
+describe("machine share admission", () => {
+  test("answers who may serve a workspace from a machine, before any machine is enrolled", async () => {
+    const input = await setup()
+    const { alice, bob, admin, outsider } = await fixture(input)
+
+    // A live row: its owner, and nobody else. No enrollment exists yet,
+    // which is the point — the answer must not depend on one.
+    await expect(
+      input.hostAccess.authorizeWorkspaceHostAssignment(alice, { workspaceId: "ws_local" }),
+    ).resolves.toEqual({ registration: "existing" })
+    await expect(
+      input.hostAccess.authorizeWorkspaceHostAssignment(admin, { workspaceId: "ws_local" }),
+    ).rejects.toMatchObject({ status: 403 })
+    await expect(
+      input.hostAccess.authorizeWorkspaceHostAssignment(bob, { workspaceId: "ws_local" }),
+    ).rejects.toMatchObject({ status: 403 })
+    await expect(
+      input.hostAccess.authorizeWorkspaceHostAssignment(outsider, { workspaceId: "ws_local" }),
+    ).rejects.toMatchObject({ status: 403 })
+
+    // A machine serves a directory, so a provisioned workspace is refused.
+    await expect(
+      input.hostAccess.authorizeWorkspaceHostAssignment(alice, { workspaceId: "ws_cloud" }),
+    ).rejects.toMatchObject({ code: "resource_conflict" })
+
+    // Nothing filed under that id yet: the share would create the row, so the
+    // answer is the admission its creation takes.
+    await expect(
+      input.hostAccess.authorizeWorkspaceHostAssignment(alice, { workspaceId: "ws_unfiled", orgId: "org_acme" }),
+    ).resolves.toEqual({ registration: "cold" })
+    await expect(
+      input.hostAccess.authorizeWorkspaceHostAssignment(bob, { workspaceId: "ws_unfiled", orgId: "org_acme" }),
+    ).rejects.toMatchObject({ status: 403 })
+  })
+
+  test("a live row whose owner is no longer active still refuses a caller with no role", async () => {
+    const input = await setup()
+    const { alice, bob } = await fixture(input)
+    // The state `resolveWorkspaceOwner` answers `undefined` for. The row is
+    // still Acme's, so the machine-share answer comes from the caller's role
+    // on it, never from whether an owner can be named.
+    await input.database
+      .prepare(`update users set state = 'suspended', suspended_at = ? where user_id = ?`)
+      .bind(1_800_000_000_000, alice.principal!.userId)
+      .run()
+
+    await expect(
+      input.hostAccess.authorizeWorkspaceHostAssignment(bob, { workspaceId: "ws_local" }),
+    ).rejects.toMatchObject({ status: 403 })
+  })
+
+  test("a membership revoked between two shares stops the second", async () => {
+    const input = await setup()
+    const { admin } = await fixture(input)
+    await input.workspace.createWorkspace(admin, {
+      workspaceId: "ws_admin",
+      orgId: "org_acme",
+      displayName: "admin",
+      backing: "local-worktree",
+    })
+    await expect(
+      input.hostAccess.authorizeWorkspaceHostAssignment(admin, { workspaceId: "ws_admin" }),
+    ).resolves.toEqual({ registration: "existing" })
+
+    await input.database
+      .prepare(
+        `
+      update org_memberships set revoked_at = ? where org_id = ? and user_id = ? and revoked_at is null
+    `,
+      )
+      .bind(1_800_000_000_000, "org_acme", admin.principal!.userId)
+      .run()
+
+    await expect(
+      input.hostAccess.authorizeWorkspaceHostAssignment(admin, { workspaceId: "ws_admin" }),
+    ).rejects.toMatchObject({ status: 403 })
+  })
+})
+
+describe("machine session rows", () => {
+  async function served() {
+    const input = await setup()
+    const people = await fixture(input)
+    const { enrollmentId } = await enrollAccountMachine(input, people.alice, "machine-r")
+    await input.hostAccess.assignWorkspaceHost(people.alice, {
+      workspaceId: "ws_local",
+      hostId: "machine-r",
+      remoteDirectory: "/srv/local",
+    })
+    await machineBeat(input, enrollmentId, [{ workspaceId: "ws_local", revision: 1 }])
+    const sessions = new D1SessionAuthority(input.database, { deploymentId: "deployment-a", now: input.now })
+    const machine = await principal(input, enrollmentId)
+    const publisher = {
+      hostId: "machine-r",
+      ownerUserId: people.alice.principal!.userId,
+      workspaceIds: ["ws_local"],
+      enrollmentId,
+      generation: machine.generation,
+    }
+    const publish = (publication: Partial<HostSessionRowsPublication>, as = publisher) =>
+      publishD1HostSessionRows(input.database, input.now(), as, { rows: [], removed: [], ...publication })
+    const page = async (auth: SignedControlPlaneAuth, archived: "active" | "all" = "active", settled: "active" | "all" = "active") =>
+      await sessions.listSessionPage(auth, {
+        projectId: people.local.project_id,
+        sort: "human_turn_desc",
+        archived,
+        settled,
+        limit: 50,
+      })
+    return { input, ...people, sessions, publisher, publish, page }
+  }
+
+  function row(sessionId: string, overrides: Partial<HostSessionRow> = {}): HostSessionRow {
+    return {
+      workspaceId: "ws_local",
+      sessionId,
+      title: sessionId,
+      createdAt: 100,
+      updatedAt: 200,
+      status: { kind: "idle", awaitingInput: false, at: 300 },
+      ...overrides,
+    }
+  }
+
+  test("adopts a machine's sessions for the enrollment owner, visible to nobody else", async () => {
+    const { publish, page, alice, bob, outsider } = await served()
+
+    await expect(
+      publish({
+        rows: [
+          row("ses_quiet", { createdAt: 50 }),
+          row("ses_spoken", { lastHumanTurnAt: 400, status: { kind: "busy", awaitingInput: true, at: 410 } }),
+        ],
+      }),
+    ).resolves.toMatchObject({ accepted: 2, refused: [] })
+
+    expect(await page(alice)).toEqual([
+      expect.objectContaining({
+        session_id: "ses_spoken",
+        workspace_id: "ws_local",
+        last_human_turn_at: 400,
+        status: "busy",
+        status_at: 410,
+        awaiting_input: true,
+      }),
+      expect.objectContaining({ session_id: "ses_quiet", created_at: 50, status: "idle" }),
+    ])
+    expect(await page(bob)).toEqual([])
+    expect(await page(outsider)).toEqual([])
+  })
+
+  test("lands an interrupted session's status alongside the rest of its batch", async () => {
+    const { publish, page, alice } = await served()
+
+    await expect(
+      publish({
+        rows: [
+          row("ses_interrupted", { status: { kind: "interrupted", awaitingInput: false, at: 310 } }),
+          row("ses_idle"),
+        ],
+      }),
+    ).resolves.toMatchObject({ accepted: 2, refused: [] })
+
+    expect(await page(alice)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ session_id: "ses_interrupted", status: "interrupted", status_at: 310 }),
+      expect.objectContaining({ session_id: "ses_idle", status: "idle" }),
+    ]))
+  })
+
+  test("republishing is idempotent and never moves a turn or a status backwards", async () => {
+    const { publish, page, alice } = await served()
+    const publication = {
+      rows: [row("ses_a", { lastHumanTurnAt: 400, status: { kind: "busy", awaitingInput: false, at: 500 } })],
+    }
+    await publish(publication)
+    const first = await page(alice)
+    await publish(publication)
+    expect(await page(alice)).toEqual(first)
+
+    await publish({
+      rows: [
+        row("ses_a", {
+          title: "Renamed",
+          lastHumanTurnAt: 300,
+          status: { kind: "idle", awaitingInput: false, at: 450 },
+        }),
+      ],
+    })
+    expect(await page(alice)).toEqual([
+      expect.objectContaining({
+        session_id: "ses_a",
+        title: "Renamed",
+        last_human_turn_at: 400,
+        status: "busy",
+        status_at: 500,
+      }),
+    ])
+  })
+
+  test("carries each session's last turn to the list; an older one, or one ending at the same time, never replaces it", async () => {
+    const { publish, page, alice, local } = await served()
+
+    await publish({
+      rows: [
+        row("ses_done", { lastTurn: { status: "completed", completedAt: 310 } }),
+        row("ses_broke", { lastTurn: { status: "failed", completedAt: 320 } }),
+        row("ses_stopped", { lastTurn: { status: "cancelled", completedAt: 330 } }),
+        row("ses_fresh"),
+      ],
+    })
+    await publish({
+      rows: [
+        row("ses_done", { lastTurn: { status: "failed", completedAt: 305 } }),
+        row("ses_broke", { lastTurn: { status: "completed", completedAt: 320 } }),
+        row("ses_fresh"),
+      ],
+    })
+
+    const query = parseSessionListQuery(new URL(`http://plane.test/api/control/session-list?scope=project&projectId=${local.project_id}&sort=human_turn_desc`))
+    const items = buildSessionListResponse({ query, sessions: await page(alice), cursorApplied: true }).items
+    expect(Object.fromEntries(items.map((item) => [item.sessionId, item.lastTurn ?? null]))).toEqual({
+      ses_done: { status: "completed", completedAt: 310 },
+      ses_broke: { status: "failed", completedAt: 320 },
+      ses_stopped: { status: "cancelled", completedAt: 330 },
+      ses_fresh: null,
+    })
+  })
+
+  test("the list read finds its rows through an index, never a scan of sessions", async () => {
+    const { input, publish, alice, local } = await served()
+    await publish({ rows: [row("ses_planned", { lastTurn: { status: "completed", completedAt: 310 } })] })
+    const reads: Array<{ sql: string; binds: unknown[] }> = []
+    const recording = new Proxy(input.database, {
+      get(target, property) {
+        if (property !== "prepare") return Reflect.get(target, property).bind(target)
+        return (sql: string) => {
+          const statement = target.prepare(sql)
+          return { bind: (...binds: unknown[]) => (reads.push({ sql, binds }), statement.bind(...binds)) }
+        }
+      },
+    })
+    const sessions = new D1SessionAuthority(recording, { deploymentId: "deployment-a", now: input.now })
+
+    await sessions.listSessionPage(alice, { projectId: local.project_id, sort: "human_turn_desc", archived: "active", settled: "active", limit: 50 })
+
+    const listRead = reads.find((read) => /from sessions s\b/.test(read.sql) && read.sql.includes("last_turn_status"))
+    if (!listRead) throw new Error("the list read was not observed")
+    const plan = await input.database.prepare(`explain query plan ${listRead.sql}`).bind(...listRead.binds).all<{ detail: string }>()
+    const details = plan.results.map((step) => step.detail)
+    expect(details).toContainEqual(expect.stringMatching(/^SEARCH s USING INDEX sessions_by_project_human_turn/))
+    expect(details.filter((detail) => /^SCAN s\b/.test(detail))).toEqual([])
+  })
+
+  test("notifies only rows whose status, wait, background work or last turn changed", async () => {
+    const { publish, alice } = await served()
+    const notified = async (publication: Partial<HostSessionRowsPublication>) =>
+      (await publish(publication)).statusNotices.map((notice) => notice.sessionId)
+
+    expect(await notified({ rows: [row("ses_a", { status: { kind: "busy", awaitingInput: false, at: 300 } }), row("ses_b")] }))
+      .toEqual(["ses_a", "ses_b"])
+    expect(await notified({
+      rows: [
+        row("ses_a", { title: "Renamed", updatedAt: 900, status: { kind: "busy", awaitingInput: false, at: 350 } }),
+        row("ses_b", { status: { kind: "idle", awaitingInput: false, at: 360 } }),
+      ],
+    })).toEqual([])
+    expect(await notified({ rows: [row("ses_a", { status: { kind: "busy", awaitingInput: false, at: 340 } }), row("ses_b")] }))
+      .toEqual([])
+    expect(await notified({ rows: [row("ses_a", { status: { kind: "busy", awaitingInput: true, at: 400 } }), row("ses_b")] }))
+      .toEqual(["ses_a"])
+    expect(await notified({
+      rows: [row("ses_b", { status: { kind: "idle", awaitingInput: false, backgroundWork: { agents: 1, shells: 0, other: 0 }, at: 410 } })],
+    })).toEqual(["ses_b"])
+
+    const ended = await publish({
+      rows: [row("ses_a", { status: { kind: "idle", awaitingInput: false, at: 500 }, lastTurn: { status: "failed", completedAt: 490 } })],
+    })
+    expect(ended.statusNotices).toEqual([{
+      type: "session.status.changed",
+      ownerUserId: alice.principal!.userId,
+      orgId: "org_acme",
+      sessionId: "ses_a",
+      workspaceId: "ws_local",
+      status: "idle",
+      awaitingInput: false,
+      lastTurn: { status: "failed", completedAt: 490 },
+      ts: 500,
+    }])
+    expect((await publish({ rows: [row("ses_a", { status: { kind: "idle", awaitingInput: false, at: 510 }, lastTurn: { status: "failed", completedAt: 490 } })] })).statusNotices)
+      .toEqual([])
+  })
+
+  test("a status notice goes to the session's owner and the people it is shared with, and to nobody else in the org", async () => {
+    const { publish, sessions, alice, bob } = await served()
+    await publish({ rows: [row("ses_shared"), row("ses_private")] })
+    await sessions.grantSessionShare(alice, { sessionId: "ses_shared", workspaceId: "ws_local", grantedToUserId: bob.principal!.userId, level: "follow" })
+
+    const { statusNotices } = await publish({
+      rows: [
+        row("ses_shared", { status: { kind: "busy", awaitingInput: false, at: 400 } }),
+        row("ses_private", { status: { kind: "busy", awaitingInput: false, at: 400 } }),
+      ],
+    })
+
+    const byPair = (a: readonly string[], b: readonly string[]) => a.join("\u0000").localeCompare(b.join("\u0000"))
+    expect(statusNotices.map((notice) => [notice.sessionId, notice.ownerUserId]).sort(byPair)).toEqual([
+      ["ses_private", alice.principal!.userId],
+      ["ses_shared", alice.principal!.userId],
+      ["ses_shared", bob.principal!.userId],
+    ].sort(byPair))
+  })
+
+  test("a share recipient hears nothing once the session read rule no longer admits them", async () => {
+    const { input, publish, sessions, alice, bob } = await served()
+    await publish({ rows: [row("ses_orphan")] })
+    await sessions.grantSessionShare(alice, { sessionId: "ses_orphan", workspaceId: "ws_local", grantedToUserId: bob.principal!.userId, level: "follow" })
+    await input.database.prepare("update users set state = 'suspended', suspended_at = ? where user_id = ?").bind(input.now(), alice.principal!.userId).run()
+
+    const { statusNotices } = await publish({ rows: [row("ses_orphan", { status: { kind: "busy", awaitingInput: false, at: 400 } })] })
+
+    expect(statusNotices).toEqual([])
+  })
+
+  test("a publish racing another one reports each change once, a status the guard kept included", async () => {
+    const { input, publish } = await served()
+    await publish({ rows: [row("ses_race")] })
+    const land = (status: string, at: number) => input.beforeNextBatch(async () => {
+      await input.database.prepare("update sessions set status = ?, status_at = ? where session_id = 'ses_race'").bind(status, at).run()
+    })
+
+    land("busy", 400)
+    expect((await publish({ rows: [row("ses_race", { status: { kind: "busy", awaitingInput: false, at: 400 } })] })).statusNotices).toEqual([])
+
+    land("retry", 600)
+    expect((await publish({ rows: [row("ses_race", { status: { kind: "idle", awaitingInput: false, at: 500 } })] })).statusNotices).toEqual([])
+  })
+
+  test("a notice reaches the live-sync room of the person an authenticated request names, and nobody else's", async () => {
+    const { publish, sessions, alice, bob, admin } = await served()
+    await publish({ rows: [row("ses_live")] })
+    await sessions.grantSessionShare(alice, { sessionId: "ses_live", workspaceId: "ws_local", grantedToUserId: bob.principal!.userId, level: "follow" })
+    const { statusNotices } = await publish({ rows: [row("ses_live", { status: { kind: "busy", awaitingInput: false, at: 400 } })] })
+    const room = new LiveSyncRoom({}, {})
+    await room.fetch(new Request("https://live-sync-room.internal/nudge", { method: "POST", body: JSON.stringify(statusNotices) }))
+
+    const heard = async (who: SignedControlPlaneAuth) => {
+      const auth = await controlPlaneAuthContext(new Request("https://api.example.test/api/cp/events", { headers: { authorization: "Bearer t" } }), {
+        authentication: { descriptor: {} as never, authenticate: async () => who.principal!, introspect: async () => ({}) } as never,
+      })
+      const response = await room.fetch(new Request("https://live-sync-room.internal/connect", {
+        headers: liveSyncRoomConnectHeaders({ auth, orgId: "org_acme" }, undefined, "0"),
+      }))
+      const reader = response.body!.getReader()
+      let text = ""
+      for (let reads = 0; reads < 8; reads += 1) {
+        const next = await Promise.race([reader.read(), new Promise<undefined>((resolve) => setTimeout(resolve, 0))])
+        if (!next || next.done) break
+        text += new TextDecoder().decode(next.value)
+      }
+      await reader.cancel()
+      return text.includes("ses_live")
+    }
+
+    expect(await heard(alice)).toBe(true)
+    expect(await heard(bob)).toBe(true)
+    expect(await heard(admin)).toBe(false)
+  })
+
+  test("the readers of a changed session are found through indexes, never a scan", async () => {
+    const { input, sessions, alice, bob, publisher } = await served()
+    await publishD1HostSessionRows(input.database, input.now(), publisher, { rows: [row("ses_planned")], removed: [] })
+    await sessions.grantSessionShare(alice, { sessionId: "ses_planned", workspaceId: "ws_local", grantedToUserId: bob.principal!.userId, level: "follow" })
+    const reads: Array<{ sql: string; binds: unknown[] }> = []
+    const recording = new Proxy(input.database, {
+      get(target, property) {
+        if (property !== "prepare") return Reflect.get(target, property).bind(target)
+        return (sql: string) => {
+          const statement = target.prepare(sql)
+          return { bind: (...binds: unknown[]) => (reads.push({ sql, binds }), statement.bind(...binds)) }
+        }
+      },
+    })
+
+    await publishD1HostSessionRows(recording, input.now(), publisher, {
+      rows: [row("ses_planned", { status: { kind: "busy", awaitingInput: false, at: 400 } })],
+      removed: [],
+    })
+
+    const plans = await Promise.all(
+      reads
+        .filter((read) => read.sql.trimStart().startsWith("select") || read.sql.trimStart().startsWith("with"))
+        .map(async (read) => (await input.database.prepare(`explain query plan ${read.sql}`).bind(...read.binds).all<{ detail: string }>())
+          .results.map((step) => step.detail)),
+    )
+    const readersPlan = plans.find((plan) => plan.some((detail) => detail.includes("session_share_grants")))
+    expect(readersPlan).toContainEqual(expect.stringMatching(/^SEARCH g USING INDEX session_share_grants_/))
+    expect(plans.flat().filter((detail) => /^SCAN (?!r$)/.test(detail))).toEqual([])
+  })
+
+  test("refuses rows for a workspace the enrollment does not serve at this generation", async () => {
+    const { publish, page, alice, publisher } = await served()
+
+    await expect(
+      publish(
+        { rows: [row("ses_cloud", { workspaceId: "ws_cloud" })] },
+        { ...publisher, workspaceIds: ["ws_local", "ws_cloud"] },
+      ),
+    ).resolves.toMatchObject({
+      accepted: 0,
+      refused: [{ workspaceId: "ws_cloud", sessionId: "ses_cloud", reason: "workspace_not_served" }],
+    })
+    await expect(
+      publish({ rows: [row("ses_old")] }, { ...publisher, generation: publisher.generation + 1 }),
+    ).resolves.toMatchObject({ refused: [{ reason: "workspace_not_served" }] })
+    await expect(publish({ rows: [row("ses_unclaimed")] }, { ...publisher, workspaceIds: [] })).resolves.toMatchObject({
+      refused: [{ reason: "workspace_not_served" }],
+    })
+    await expect(
+      publish({ rows: [row("ses_other_owner")] }, { ...publisher, ownerUserId: "user_someone_else" }),
+    ).resolves.toMatchObject({ refused: [{ reason: "workspace_not_served" }] })
+    expect(await page(alice)).toEqual([])
+  })
+
+  test("a superseded serving generation's token publishes nothing", async () => {
+    const { input, publish, page, alice, publisher } = await served()
+    await expect(publish({ rows: [row("ses_before")] })).resolves.toMatchObject({ accepted: 1, refused: [] })
+
+    const next = await input.hostAccess.acquireHostServingGeneration(await principal(input, publisher.enrollmentId))
+    await machineBeat(input, publisher.enrollmentId, [{ workspaceId: "ws_local", revision: 1 }], {
+      generation: next.generation,
+    })
+
+    await expect(publish({ rows: [row("ses_after")] })).resolves.toMatchObject({
+      refused: [{ sessionId: "ses_after", reason: "workspace_not_served" }],
+    })
+    await expect(publish({ rows: [row("ses_after")] }, { ...publisher, generation: next.generation })).resolves.toMatchObject(
+      { accepted: 1, refused: [] },
+    )
+    expect((await page(alice)).map((item) => item.session_id).sort()).toEqual(["ses_after", "ses_before"])
+  })
+
+  test("a workspace reassigned to another host takes no rows from the first host's token", async () => {
+    const { input, publish, alice } = await served()
+    const other = await enrollAccountMachine(input, alice, "machine-other")
+    await input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_local",
+      hostId: "machine-other",
+      remoteDirectory: "/srv/other",
+    })
+    const otherMachine = await principal(input, other.enrollmentId)
+    await machineBeat(input, other.enrollmentId, [{ workspaceId: "ws_local", revision: 2 }])
+
+    await expect(publish({ rows: [row("ses_stale_host")] })).resolves.toMatchObject({
+      refused: [{ sessionId: "ses_stale_host", reason: "workspace_not_served" }],
+    })
+    await expect(
+      publish(
+        { rows: [row("ses_new_host")] },
+        {
+          hostId: "machine-other",
+          ownerUserId: alice.principal!.userId,
+          workspaceIds: ["ws_local"],
+          enrollmentId: other.enrollmentId,
+          generation: otherMachine.generation,
+        },
+      ),
+    ).resolves.toMatchObject({ accepted: 1, refused: [] })
+  })
+
+  test("refuses a session id registered in another workspace", async () => {
+    const { publish, sessions, alice } = await served()
+    await sessions.reserveSession(alice, {
+      operationId: "op_cloud",
+      sessionId: "ses_taken",
+      workspaceId: "ws_cloud",
+      kind: "create",
+    })
+    await sessions.registerRuntimeSession({
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      principalKind: "user",
+      actorId: alice.principal!.actorId,
+      actorKind: "human",
+      operationId: "op_cloud",
+      sessionId: "ses_taken",
+      workspaceId: "ws_cloud",
+    })
+
+    await expect(publish({ rows: [row("ses_taken")] })).resolves.toMatchObject({
+      accepted: 0,
+      refused: [{ workspaceId: "ws_local", sessionId: "ses_taken", reason: "session_elsewhere" }],
+    })
+  })
+
+  test("a removal deletes the row, an archive hides it, and a deleted session is not republished", async () => {
+    const { publish, page, alice, input } = await served()
+    await publish({ rows: [row("ses_gone"), row("ses_archived", { archivedAt: 900 })] })
+    expect((await page(alice)).map((item) => item.session_id)).toEqual(["ses_gone"])
+    expect((await page(alice, "all")).map((item) => item.session_id).sort()).toEqual(["ses_archived", "ses_gone"])
+
+    await expect(publish({ removed: [{ workspaceId: "ws_local", sessionId: "ses_gone" }] })).resolves.toMatchObject({
+      accepted: 1,
+      refused: [],
+    })
+    expect(await page(alice)).toEqual([])
+    expect(
+      await input.database.prepare("select updated_at, deleted_at from sessions where session_id = 'ses_gone'").first(),
+    ).toEqual({ updated_at: 200, deleted_at: expect.any(Number) })
+    await expect(publish({ rows: [row("ses_gone")] })).resolves.toMatchObject({
+      refused: [{ sessionId: "ses_gone", reason: "session_deleted" }],
+    })
+  })
+})
+
+describe("destructive writes re-ask their authorization inside their own batch", () => {
+  const suspendBeforeTheWrite = (input: Input, who: SignedControlPlaneAuth) => input.beforeNextBatch(async () => {
+    await input.database.prepare("update users set state = 'suspended', suspended_at = ? where user_id = ?")
+      .bind(input.now(), who.principal!.userId).run()
+  })
+
+  test("an owner suspended between the check and the batch neither deletes the workspace nor unassigns its host", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    await enrollAccountMachine(input, alice, "machine-d")
+    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local", hostId: "machine-d" })
+
+    suspendBeforeTheWrite(input, alice)
+    await expect(input.hostAccess.unassignWorkspaceHost(alice, { workspaceId: "ws_local" })).rejects.toMatchObject({ status: 403 })
+    expect(await input.database.prepare(`select host_id from host_workspace_assignments where workspace_id = 'ws_local'`).first())
+      .toEqual({ host_id: "machine-d" })
+
+    await input.database.prepare("update users set state = 'active', suspended_at = null where user_id = ?").bind(alice.principal!.userId).run()
+    suspendBeforeTheWrite(input, alice)
+    await expect(input.workspace.deleteWorkspace(alice, { workspaceId: "ws_cloud" })).rejects.toMatchObject({ status: 403 })
+    expect(await input.database.prepare(`select deleted_at from workspaces where workspace_id = 'ws_cloud'`).first())
+      .toEqual({ deleted_at: null })
+  })
+})

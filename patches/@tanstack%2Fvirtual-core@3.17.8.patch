@@ -1,0 +1,213 @@
+diff --git a/dist/cjs/index.cjs b/dist/cjs/index.cjs
+index e470032..892eaf8 100644
+--- a/dist/cjs/index.cjs
++++ b/dist/cjs/index.cjs
+@@ -725,17 +725,20 @@ class Virtualizer {
+         this.getMeasurements(),
+         this.getSize(),
+         this.getScrollOffset(),
+-        this.options.lanes
++        this.options.lanes,
++        this.options.paddingEnd
+       ],
+-      (measurements, outerSize, scrollOffset, lanes) => {
++      (measurements, outerSize, scrollOffset, lanes, _paddingEnd) => {
+         if (measurements.length === 0 || outerSize === 0) {
+           this.range = null;
+           return null;
+         }
++        const maxScrollOffset = Math.max(this.options.scrollMargin + this.getTotalSize() - outerSize, 0);
++        const effectiveScrollOffset = Math.min(Math.max(scrollOffset, 0), maxScrollOffset);
+         this.range = calculateRangeImpl(
+           measurements,
+           outerSize,
+-          scrollOffset,
++          effectiveScrollOffset,
+           lanes,
+           // Pass the typed array so binary search + forward-walk can read
+           // start/end directly from Float64Array, skipping the Proxy traps.
+@@ -1174,10 +1177,21 @@ class Virtualizer {
+     const targetOffset = offsetInfo ? offsetInfo[0] : this.scrollState.lastTargetOffset;
+     const STABLE_FRAMES = 1;
+     const targetChanged = targetOffset !== this.scrollState.lastTargetOffset;
+-    if (!targetChanged && utils.approxEqual(targetOffset, this.getScrollOffset())) {
++    // The cached scroll offset is seeded from `options.initialOffset`, which
++    // consumers use as an "open at the end" SENTINEL (Number.MAX_SAFE_INTEGER),
++    // and only a scroll EVENT replaces it. A scroll write that does not move the
++    // element fires no such event, so comparing the target against the raw cache
++    // can never converge and this loop reschedules itself every frame until the
++    // safety valve. Compare against the element's real scrollable range — the
++    // same clamp getVirtualIndexes already applies.
++    const observedOffset = Math.min(
++      Math.max(this.getScrollOffset(), 0),
++      this.getMaxScrollOffset()
++    );
++    if (!targetChanged && utils.approxEqual(targetOffset, observedOffset)) {
+       this.scrollState.stableFrames++;
+       if (this.scrollState.stableFrames >= STABLE_FRAMES) {
+-        if (this.getScrollOffset() !== targetOffset) {
++        if (observedOffset !== targetOffset) {
+           this._scrollToOffset(targetOffset, {
+             adjustments: void 0,
+             behavior: "auto"
+@@ -1190,7 +1204,7 @@ class Virtualizer {
+       this.scrollState.stableFrames = 0;
+       if (targetChanged) {
+         const viewport = this.getSize() || 600;
+-        const distance = Math.abs(targetOffset - this.getScrollOffset());
++        const distance = Math.abs(targetOffset - observedOffset);
+         const keepSmooth = this.scrollState.behavior === "smooth" && distance > viewport;
+         this.scrollState.lastTargetOffset = targetOffset;
+         if (!keepSmooth) {
+diff --git a/dist/cjs/index.d.cts b/dist/cjs/index.d.cts
+index cc1001b..70b202e 100644
+--- a/dist/cjs/index.d.cts
++++ b/dist/cjs/index.d.cts
+@@ -144,7 +144,7 @@ export declare class Virtualizer<TScrollElement extends Element | Window, TItemE
+             startIndex: number;
+             endIndex: number;
+         } | null;
+-        updateDeps(newDeps: [VirtualItem[], number, number, number]): void;
++        updateDeps(newDeps: [VirtualItem[], number, number, number, number]): void;
+     };
+     getVirtualIndexes: {
+         (): number[];
+diff --git a/dist/esm/index.d.ts b/dist/esm/index.d.ts
+index 6b43c0a..7be2680 100644
+--- a/dist/esm/index.d.ts
++++ b/dist/esm/index.d.ts
+@@ -144,7 +144,7 @@ export declare class Virtualizer<TScrollElement extends Element | Window, TItemE
+             startIndex: number;
+             endIndex: number;
+         } | null;
+-        updateDeps(newDeps: [VirtualItem[], number, number, number]): void;
++        updateDeps(newDeps: [VirtualItem[], number, number, number, number]): void;
+     };
+     getVirtualIndexes: {
+         (): number[];
+diff --git a/dist/esm/index.js b/dist/esm/index.js
+index 2495b26..404e096 100644
+--- a/dist/esm/index.js
++++ b/dist/esm/index.js
+@@ -723,17 +723,20 @@ class Virtualizer {
+         this.getMeasurements(),
+         this.getSize(),
+         this.getScrollOffset(),
+-        this.options.lanes
++        this.options.lanes,
++        this.options.paddingEnd
+       ],
+-      (measurements, outerSize, scrollOffset, lanes) => {
++      (measurements, outerSize, scrollOffset, lanes, _paddingEnd) => {
+         if (measurements.length === 0 || outerSize === 0) {
+           this.range = null;
+           return null;
+         }
++        const maxScrollOffset = Math.max(this.options.scrollMargin + this.getTotalSize() - outerSize, 0);
++        const effectiveScrollOffset = Math.min(Math.max(scrollOffset, 0), maxScrollOffset);
+         this.range = calculateRangeImpl(
+           measurements,
+           outerSize,
+-          scrollOffset,
++          effectiveScrollOffset,
+           lanes,
+           // Pass the typed array so binary search + forward-walk can read
+           // start/end directly from Float64Array, skipping the Proxy traps.
+@@ -1172,10 +1175,21 @@ class Virtualizer {
+     const targetOffset = offsetInfo ? offsetInfo[0] : this.scrollState.lastTargetOffset;
+     const STABLE_FRAMES = 1;
+     const targetChanged = targetOffset !== this.scrollState.lastTargetOffset;
+-    if (!targetChanged && approxEqual(targetOffset, this.getScrollOffset())) {
++    // The cached scroll offset is seeded from `options.initialOffset`, which
++    // consumers use as an "open at the end" SENTINEL (Number.MAX_SAFE_INTEGER),
++    // and only a scroll EVENT replaces it. A scroll write that does not move the
++    // element fires no such event, so comparing the target against the raw cache
++    // can never converge and this loop reschedules itself every frame until the
++    // safety valve. Compare against the element's real scrollable range — the
++    // same clamp getVirtualIndexes already applies.
++    const observedOffset = Math.min(
++      Math.max(this.getScrollOffset(), 0),
++      this.getMaxScrollOffset()
++    );
++    if (!targetChanged && approxEqual(targetOffset, observedOffset)) {
+       this.scrollState.stableFrames++;
+       if (this.scrollState.stableFrames >= STABLE_FRAMES) {
+-        if (this.getScrollOffset() !== targetOffset) {
++        if (observedOffset !== targetOffset) {
+           this._scrollToOffset(targetOffset, {
+             adjustments: void 0,
+             behavior: "auto"
+@@ -1188,7 +1202,7 @@ class Virtualizer {
+       this.scrollState.stableFrames = 0;
+       if (targetChanged) {
+         const viewport = this.getSize() || 600;
+-        const distance = Math.abs(targetOffset - this.getScrollOffset());
++        const distance = Math.abs(targetOffset - observedOffset);
+         const keepSmooth = this.scrollState.behavior === "smooth" && distance > viewport;
+         this.scrollState.lastTargetOffset = targetOffset;
+         if (!keepSmooth) {
+diff --git a/src/index.ts b/src/index.ts
+index dc6f101..14b8267 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1058,7 +1058,19 @@ export class Virtualizer<
+ 
+     const targetChanged = targetOffset !== this.scrollState.lastTargetOffset
+ 
+-    if (!targetChanged && approxEqual(targetOffset, this.getScrollOffset())) {
++    // The cached scroll offset is seeded from `options.initialOffset`, which
++    // consumers use as an "open at the end" SENTINEL (Number.MAX_SAFE_INTEGER),
++    // and only a scroll EVENT replaces it. A scroll write that does not move the
++    // element fires no such event, so comparing the target against the raw cache
++    // can never converge and this loop reschedules itself every frame until the
++    // safety valve. Compare against the element's real scrollable range — the
++    // same clamp getVirtualIndexes already applies.
++    const observedOffset = Math.min(
++      Math.max(this.getScrollOffset(), 0),
++      this.getMaxScrollOffset(),
++    )
++
++    if (!targetChanged && approxEqual(targetOffset, observedOffset)) {
+       this.scrollState.stableFrames++
+       if (this.scrollState.stableFrames >= STABLE_FRAMES) {
+         // Final-pass exact landing. The reconcile-stable check uses a 1.01px
+@@ -1067,7 +1079,7 @@ export class Virtualizer<
+         // commit the exact target so consumers calling scrollToIndex(N)
+         // end up at the EXACT computed position of item N — matching
+         // virtuoso's 0px landing accuracy rather than our prior 0.5-1px.
+-        if (this.getScrollOffset() !== targetOffset) {
++        if (observedOffset !== targetOffset) {
+           this._scrollToOffset(targetOffset, {
+             adjustments: undefined,
+             behavior: 'auto',
+@@ -1088,7 +1100,7 @@ export class Virtualizer<
+         // 'auto' for the final approach, so the user sees one continuous
+         // motion that smoothly adjusts its endpoint as measurements arrive.
+         const viewport = this.getSize() || 600
+-        const distance = Math.abs(targetOffset - this.getScrollOffset())
++        const distance = Math.abs(targetOffset - observedOffset)
+         const keepSmooth =
+           this.scrollState.behavior === 'smooth' && distance > viewport
+ 
+@@ -1410,16 +1422,19 @@ export class Virtualizer<
+       this.getSize(),
+       this.getScrollOffset(),
+       this.options.lanes,
++      this.options.paddingEnd,
+     ],
+-    (measurements, outerSize, scrollOffset, lanes) => {
++    (measurements, outerSize, scrollOffset, lanes, _paddingEnd) => {
+       if (measurements.length === 0 || outerSize === 0) {
+         this.range = null
+         return null
+       }
++      const maxScrollOffset = Math.max(this.options.scrollMargin + this.getTotalSize() - outerSize, 0)
++      const effectiveScrollOffset = Math.min(Math.max(scrollOffset, 0), maxScrollOffset)
+       this.range = calculateRangeImpl(
+         measurements,
+         outerSize,
+-        scrollOffset,
++        effectiveScrollOffset,
+         lanes,
+         // Pass the typed array so binary search + forward-walk can read
+         // start/end directly from Float64Array, skipping the Proxy traps.

@@ -1,0 +1,183 @@
+import fs from "node:fs/promises"
+import path from "node:path"
+import { inside } from "@claxedo/helpers/path"
+import { runGit } from "./git"
+import { workspaceRuntimeWorkspacesDir } from "./env"
+import { type WorkspaceWorktreeRecord, type WorktreeRecords, WorkspaceTargetError, type SessionPlacement } from "@claxedo/session-core"
+
+const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
+
+export function workspaceStorageRoot(workspaceId: string, env: NodeJS.ProcessEnv = process.env) {
+  if (!SEGMENT.test(workspaceId)) throw new WorkspaceTargetError("workspace id is not path-safe")
+  return path.join(workspaceRuntimeWorkspacesDir(env), workspaceId)
+}
+
+function requireSessionId(sessionId: string) {
+  if (!SEGMENT.test(sessionId)) throw new WorkspaceTargetError("session id is not path-safe")
+  return sessionId
+}
+
+export class WorkspaceWorktreeManager {
+  readonly root: string
+  readonly repo: string
+  readonly worktrees: string
+  private readonly served = new Map<string, WorkspaceWorktreeRecord>()
+  private maintenance = Promise.resolve()
+
+  /** `store` is read on each use, so a store the host has not opened yet is opened by the first worktree request. */
+  constructor(private readonly options: {
+    workspaceId: string
+    placement: SessionPlacement
+    sourceDirectory: string
+    root?: string
+    store: () => WorktreeRecords
+  }) {
+    this.root = path.resolve(options.root ?? workspaceStorageRoot(options.workspaceId))
+    this.repo = path.join(this.root, "repo.git")
+    this.worktrees = path.join(this.root, "worktrees")
+  }
+
+  private get store() {
+    return this.options.store()
+  }
+
+  /** Serves every active worktree the store records; the host calls it when the store opens. */
+  serveActive() {
+    for (const record of this.list()) if (record.state === "active") this.serve(record)
+  }
+
+  close() {
+    for (const record of this.served.values()) this.options.placement.unregister(record.sessionId)
+    this.served.clear()
+  }
+
+  list() {
+    return this.store.list(this.options.workspaceId)
+  }
+
+  get(sessionId: string) {
+    return this.store.get(this.options.workspaceId, requireSessionId(sessionId))
+  }
+
+  private serve(record: WorkspaceWorktreeRecord) {
+    this.options.placement.register({ sessionId: record.sessionId, directory: record.path })
+    this.served.set(record.sessionId, record)
+  }
+
+  async flush() {
+    await this.maintenance
+    await Promise.all(this.list()
+      .filter((record) => record.state === "active")
+      .map((record) => runGit(["status", "--porcelain=v1"], record.path).then(() => undefined)))
+  }
+
+  async reconcile() {
+    await this.maintenance
+    return await Promise.all(this.list()
+      .filter((record) => record.state !== "failed")
+      .map((record) => this.ensure({ sessionId: record.sessionId, baseCommit: record.baseCommit })))
+  }
+
+  ensure(input: { sessionId: string; baseCommit?: string }) {
+    const run = this.maintenance.then(() => this.ensureSerialized({
+      sessionId: requireSessionId(input.sessionId),
+      ...(input.baseCommit ? { baseCommit: input.baseCommit } : {}),
+    }))
+    this.maintenance = run.then(() => undefined, () => undefined)
+    return run
+  }
+
+  private async ensureSerialized(input: { sessionId: string; baseCommit?: string }) {
+    await fs.mkdir(this.worktrees, { recursive: true, mode: 0o755 })
+    await this.ensureBareRepository()
+    const existing = this.store.get(this.options.workspaceId, input.sessionId)
+    if (existing) {
+      if (existing.workspaceId !== this.options.workspaceId) {
+        throw new Error(`Session ${input.sessionId} is registered to another workspace`)
+      }
+      if (input.baseCommit && input.baseCommit !== existing.baseCommit) {
+        throw new Error(`Session ${input.sessionId} is pinned to ${existing.baseCommit}`)
+      }
+      if (await this.validWorktree(existing)) return this.activate(existing)
+      return await this.repair(existing)
+    }
+
+    const branch = `claxedo/session/${input.sessionId}`
+    const baseCommit = await this.resolveCommit(input.baseCommit ?? "HEAD")
+    const target = path.resolve(this.worktrees, input.sessionId)
+    if (target === this.worktrees || !inside(this.worktrees, target)) {
+      throw new WorkspaceTargetError("worktree path escapes workspace root")
+    }
+    const now = Date.now()
+    const record: WorkspaceWorktreeRecord = {
+      workspaceId: this.options.workspaceId,
+      sessionId: input.sessionId,
+      branch,
+      baseCommit,
+      path: target,
+      state: "creating",
+      createdAt: now,
+      updatedAt: now,
+      lastActivityAt: now,
+    }
+    this.store.put(record)
+    try {
+      await runGit(["worktree", "add", "-b", branch, target, baseCommit], this.repo)
+      return this.activate(record)
+    } catch (error) {
+      this.store.put({ ...record, state: "failed", updatedAt: Date.now() })
+      throw error
+    }
+  }
+
+  private async ensureBareRepository() {
+    if (await fs.stat(this.repo).then((value) => value.isDirectory(), () => false)) return
+    await fs.mkdir(this.root, { recursive: true, mode: 0o755 })
+    await runGit(["clone", "--bare", "--no-local", path.resolve(this.options.sourceDirectory), this.repo], this.root)
+  }
+
+  private async resolveCommit(reference: string) {
+    const commit = (await runGit(["rev-parse", "--verify", `${reference}^{commit}`], this.repo)).trim()
+    if (!/^[0-9a-f]{40,64}$/.test(commit)) throw new Error(`Invalid Git commit: ${reference}`)
+    return commit
+  }
+
+  private async validWorktree(record: WorkspaceWorktreeRecord) {
+    if (path.resolve(record.path) !== path.resolve(this.worktrees, record.sessionId)) return false
+    const git = await fs.stat(path.join(record.path, ".git")).then(() => true, () => false)
+    if (!git) return false
+    return (await runGit(["rev-parse", "--abbrev-ref", "HEAD"], record.path).catch(() => "")).trim() === record.branch
+  }
+
+  private activate(record: WorkspaceWorktreeRecord) {
+    const active = {
+      ...record,
+      state: "active" as const,
+      updatedAt: Date.now(),
+      lastActivityAt: Date.now(),
+    }
+    this.store.put(active)
+    this.serve(active)
+    return active
+  }
+
+  private async repair(record: WorkspaceWorktreeRecord) {
+    const expected = path.resolve(this.worktrees, record.sessionId)
+    if (path.resolve(record.path) !== expected) {
+      throw new WorkspaceTargetError("stored worktree path escapes workspace root")
+    }
+    const repairing = { ...record, state: "repairing" as const, updatedAt: Date.now() }
+    this.store.put(repairing)
+    this.options.placement.unregister(repairing.sessionId)
+    this.served.delete(repairing.sessionId)
+    await runGit(["worktree", "prune"], this.repo)
+    await fs.rm(record.path, { recursive: true, force: true })
+    try {
+      await runGit(["worktree", "add", record.path, record.branch], this.repo)
+      return this.activate(repairing)
+    } catch (error) {
+      this.store.put({ ...repairing, state: "failed", updatedAt: Date.now() })
+      throw error
+    }
+  }
+}

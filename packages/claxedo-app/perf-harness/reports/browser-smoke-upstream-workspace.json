@@ -1,0 +1,127 @@
+{
+  "generated_at": "2026-05-23T09:08:52.532Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "upstream"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "workspace-switch",
+      "name": "Workspace Switch",
+      "started_at": "2026-05-23T09:08:52.478Z",
+      "duration_ms": 9979.628958000001,
+      "seed": {
+        "repos": 1,
+        "sessions": 10,
+        "messages": 1000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 5,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "workspace_bootstrap_ms",
+          "value": 4.090958000000683,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            4.090958000000683
+          ],
+          "p50": 4.090958000000683,
+          "p95": 4.090958000000683,
+          "min": 4.090958000000683,
+          "max": 4.090958000000683,
+          "mean": 4.090958000000683,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "workspace_switch_ms",
+          "value": 367.20991700000013,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            367.20991700000013
+          ],
+          "p50": 367.20991700000013,
+          "p95": 367.20991700000013,
+          "min": 367.20991700000013,
+          "max": 367.20991700000013,
+          "mean": 367.20991700000013,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "file_tree_load_ms",
+          "value": 35.20999999999913,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            35.20999999999913
+          ],
+          "p50": 35.20999999999913,
+          "p95": 35.20999999999913,
+          "min": 35.20999999999913,
+          "max": 35.20999999999913,
+          "mean": 35.20999999999913,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 27.640665999999328,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            27.640665999999328
+          ],
+          "p50": 27.640665999999328,
+          "p95": 27.640665999999328,
+          "min": 27.640665999999328,
+          "max": 27.640665999999328,
+          "mean": 27.640665999999328,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 1156.569,
+        "memory_rss_mb": 48.065185546875,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/upstream-workspace-switch-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "workspace-switch",
+        "metrics": {
+          "workspace_bootstrap_ms": 8,
+          "workspace_switch_ms": 292,
+          "file_tree_load_ms": 40,
+          "surface_switch_latency_ms": 31
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "workspace_switch_ms p95 367.20991700000013 > 292"
+      ]
+    }
+  ],
+  "comparisons": []
+}

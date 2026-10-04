@@ -1,0 +1,171 @@
+import { mkdirSync, realpathSync } from "node:fs"
+import fs from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
+import { randomUUID } from "node:crypto"
+import { afterAll, describe, expect, test, vi } from "vitest"
+import { fetchUrl } from "../../test-support/fetch-calls"
+
+const root = path.join(realpathSync(os.tmpdir()), `credential-verification-${randomUUID().slice(0, 8)}`)
+mkdirSync(root, { recursive: true })
+const previous = process.env.CLAXEDO_DATA_DIR
+process.env.CLAXEDO_DATA_DIR = root
+
+const { createTestBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
+const { putCredential, credentialById, resolveSecretById } = await import("@claxedo/server-core/credentials/registry")
+const { defaultControlPlaneCredentials } = await import("../../authority/services")
+const { CredentialRoutes } = await import("@claxedo/server-core/credentials/routes/credential")
+const { ClaxedoDB } = await import("../../platform/db")
+
+const TOKEN_URL = "https://auth.openai.com/oauth/token"
+const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
+
+describe("credential verification integration", () => {
+  afterAll(async () => {
+    setBackendOverride(undefined)
+    ClaxedoDB.close()
+    await fs.rm(root, { recursive: true, force: true })
+    if (previous === undefined) delete process.env.CLAXEDO_DATA_DIR
+    else process.env.CLAXEDO_DATA_DIR = previous
+  })
+
+  test("persists the route result and returns that same redacted health from listing", async () => {
+    setBackendOverride(createTestBackend())
+    const credential = await putCredential({ owner: "local",
+      provider_id: "openai",
+      kind: "api_key",
+      source: "managed",
+      secret: "sk-integration-secret",
+    })
+    const request = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      Response.json({ id: "response_1" }))
+    const app = CredentialRoutes(defaultControlPlaneCredentials(), {
+      fetch: request as unknown as typeof fetch,
+      now: () => 2_000,
+    })
+
+    const verified = await app.request(`http://localhost/${credential.id}/verify`, { method: "POST" })
+    const listed = await app.request("http://localhost/")
+    const verifiedBody = await verified.json()
+    const listedBody = await listed.json() as { credentials: Array<Record<string, unknown>> }
+
+    expect(verifiedBody).toEqual({ result: "ok", health: "ok", verified_at: 2_000 })
+    expect(listedBody.credentials.find((item) => item.id === credential.id)).toMatchObject({
+      health: "ok",
+      status: "available",
+      last_validated_at: 2_000,
+      has_secret: true,
+    })
+    expect(JSON.stringify({ verifiedBody, listedBody })).not.toContain("sk-integration-secret")
+    expect(JSON.stringify({ verifiedBody, listedBody })).not.toContain(credential.secure_ref)
+  })
+
+  // Regression for the reproduced onboarding failure: an imported Codex login
+  // whose access token expired hours ago, but whose refresh token is still good,
+  // must verify ok — and the renewed token must be the one left in storage.
+  test("refreshes a stale Codex credential through the route and persists the renewed secret", async () => {
+    setBackendOverride(createTestBackend())
+    const credential = await putCredential({ owner: "local",
+      provider_id: "codex-app-server",
+      kind: "oauth_token",
+      source: "local_only",
+      label: "Synced from local Codex auth",
+      account_id: "acct_stale",
+      expires_at: 1_000,
+      secret: JSON.stringify({
+        type: "codex_auth",
+        tokens: { access_token: "access_stale", refresh_token: "refresh_stale", account_id: "acct_stale" },
+        refresh: "refresh_stale",
+        access: "access_stale",
+        expires: 1_000,
+        account_id: "acct_stale",
+      }),
+    })
+
+    const request = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      if (fetchUrl(input) === TOKEN_URL) {
+        return Response.json({ access_token: "access_renewed", refresh_token: "refresh_renewed" })
+      }
+      return Response.json({
+        rate_limit: {
+          primary_window: { used_percent: 12, limit_window_seconds: 18_000, reset_at: 1_757_600_000 },
+          secondary_window: { used_percent: 41, limit_window_seconds: 604_800, reset_at: 1_757_700_000 },
+        },
+      })
+    })
+    const app = CredentialRoutes(defaultControlPlaneCredentials(), {
+      fetch: request as unknown as typeof fetch,
+      now: () => 2_000,
+    })
+
+    const verified = await app.request(`http://localhost/${credential.id}/verify`, { method: "POST" })
+
+    // A subscription token's check is the vendor's usage read, so the route
+    // answers with the plan's windows as well as the verdict — the settings row
+    // reads both from this one response.
+    expect(await verified.json()).toEqual({
+      result: "ok",
+      health: "ok",
+      verified_at: 2_000,
+      usage: [
+        { window: "session", usedPercent: 12, resetsAt: 1_757_600_000_000 },
+        { window: "weekly", usedPercent: 41, resetsAt: 1_757_700_000_000 },
+      ],
+    })
+    // The provider was actually probed, with the renewed token.
+    const probe = request.mock.calls.find(([url]) => fetchUrl(url) !== TOKEN_URL)
+    expect(probe).toBeDefined()
+    expect(fetchUrl(probe![0])).toBe(USAGE_URL)
+    expect(new Headers(probe![1]?.headers).get("authorization")).toBe("Bearer access_renewed")
+
+    const stored = JSON.parse((await resolveSecretById(credential.id))!) as Record<string, any>
+    expect(stored.access).toBe("access_renewed")
+    expect(stored.tokens.access_token).toBe("access_renewed")
+    expect(stored.tokens.refresh_token).toBe("refresh_renewed")
+    // Expiry moved forward, so the next verify does not refresh again.
+    expect(credentialById(credential.id, { onOutage: "throw" })?.expires_at).toBe(2_000 + 55 * 60 * 1000)
+    expect(credentialById(credential.id, { onOutage: "throw" })?.health).toBe("ok")
+  })
+
+  test("a Codex credential whose refresh token is rejected stays expired", async () => {
+    setBackendOverride(createTestBackend())
+    const credential = await putCredential({ owner: "local",
+      provider_id: "codex-app-server",
+      kind: "oauth_token",
+      source: "local_only",
+      account_id: "acct_revoked",
+      expires_at: 1_000,
+      secret: JSON.stringify({
+        type: "codex_auth",
+        tokens: { access_token: "access_dead", refresh_token: "refresh_dead", account_id: "acct_revoked" },
+        refresh: "refresh_dead",
+        access: "access_dead",
+        expires: 1_000,
+      }),
+    })
+
+    const request = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      // Raw provider response, deliberately not `Response.json({ error: ... })`:
+      // that construct is reserved for our own route bodies and is guarded.
+      if (fetchUrl(input) === TOKEN_URL) {
+        return new Response(JSON.stringify({ error: "invalid_grant" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      return Response.json({ id: "response_1" })
+    })
+    const app = CredentialRoutes(defaultControlPlaneCredentials(), {
+      fetch: request as unknown as typeof fetch,
+      now: () => 2_000,
+    })
+
+    const verified = await app.request(`http://localhost/${credential.id}/verify`, { method: "POST" })
+
+    expect(await verified.json()).toEqual({ result: "expired", health: "expired", verified_at: 2_000 })
+    expect(request.mock.calls.every(([url]) => fetchUrl(url) === TOKEN_URL)).toBe(true)
+    const stored = JSON.parse((await resolveSecretById(credential.id))!) as Record<string, any>
+    expect(stored.access).toBe("access_dead")
+    expect(credentialById(credential.id, { onOutage: "throw" })?.expires_at).toBe(1_000)
+  })
+})

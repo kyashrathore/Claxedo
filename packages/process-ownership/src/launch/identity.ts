@@ -1,0 +1,327 @@
+import { execFile } from "node:child_process"
+import { promises as fs } from "node:fs"
+import path from "node:path"
+import { promisify } from "node:util"
+import { isRecord } from "@claxedo/helpers/guards"
+
+const execFileAsync = promisify(execFile)
+
+/**
+ * `ps`, `sysctl`, procfs and `reg.exe` are all reachable from a wedged machine,
+ * and a probe that never returns makes every signal wait on it. A timed-out
+ * probe is an unknown identity, which refuses to signal — never an assumed exit.
+ */
+const PROBE_TIMEOUT_MS = 2_000
+
+/**
+ * PowerShell answers in 250 ms on an 8-core box and took over 2 s to start on
+ * GitHub's 2-core windows-latest runner (unit run 35787260714), so its budget
+ * is its own.
+ */
+const POWERSHELL_PROBE_TIMEOUT_MS = 15_000
+
+/** Absolute, so the caller's `PATH` cannot decide which program reads or signals the process table. */
+export function windowsSystemTool(name: string) {
+  return path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", name)
+}
+
+function windowsPowerShell() {
+  return path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+}
+
+const CREATION_IDENTITY_SOURCES = ["darwin-ps", "linux-procfs", "win32-cim"] as const
+export type CreationIdentitySource = (typeof CREATION_IDENTITY_SOURCES)[number]
+
+/**
+ * What makes a pid answerable for a specific launch. `startSecond` has
+ * one-second resolution on every platform reachable without a native addon, so
+ * `bootTime` carries the rest: pids restart low after a reboot and the wrap
+ * argument that makes a same-second collision impossible within one boot says
+ * nothing across two.
+ */
+export type CreationIdentity = {
+  pid: number
+  processGroupId: number
+  startSecond: string
+  bootTime: string
+  /**
+   * Who the process answered to when it was read. Never compared during
+   * verification: an orphan is reparented to init, and a PTY child's parent is
+   * the library's own spawn helper rather than the runtime.
+   */
+  parentPid: number
+  /**
+   * `startSecond` as epoch milliseconds, floored to the second. It is how a
+   * launcher rejects a pid that already existed before it called spawn; the
+   * string remains the verification key, because it is what the platform
+   * actually reports.
+   */
+  startedAtMs: number
+  source: CreationIdentitySource
+}
+
+/**
+ * Whether any launch could own this pid. Pid 1 is init: a signal to its group
+ * is `kill(-1)`, which reaches every process this user owns, and every process
+ * descends from it. Pid 0 addresses the caller's own group.
+ */
+export function ownablePid(pid: number) {
+  return Number.isSafeInteger(pid) && pid > 1
+}
+
+/**
+ * A `CreationIdentity` read back out of a record something else wrote — a
+ * durable ownership row, a daemon discovery file.
+ *
+ * `source` is checked against the sources that exist rather than "some
+ * string", because the return type claims the union: a row carrying a source
+ * this build cannot produce is not an identity it may verify against.
+ */
+export function isCreationIdentity(value: unknown): value is CreationIdentity {
+  if (!isRecord(value)) return false
+  const { pid, processGroupId, parentPid, startedAtMs, startSecond, bootTime, source } = value
+  return typeof pid === "number" && ownablePid(pid)
+    && typeof processGroupId === "number" && Number.isSafeInteger(processGroupId)
+    && typeof parentPid === "number" && Number.isSafeInteger(parentPid)
+    && typeof startedAtMs === "number" && Number.isFinite(startedAtMs)
+    && typeof startSecond === "string" && startSecond.length > 0
+    && typeof bootTime === "string" && bootTime.length > 0
+    && CREATION_IDENTITY_SOURCES.some((candidate) => candidate === source)
+}
+
+export type IdentityVerdict =
+  | { state: "live"; identity: CreationIdentity }
+  | { state: "exited" }
+  | { state: "identity_mismatch"; observed: CreationIdentity }
+  | { state: "unknown"; reason: string }
+
+/**
+ * A read that passes `probeTimeout: false` runs its probes with no kill timer.
+ * It is for a caller whose own deadline already ends the process doing the
+ * read, where a killed probe would turn a slow machine into a failed one.
+ */
+export type IdentityReadOptions = { probeTimeout?: false }
+
+function identityProbeTimeout(options: IdentityReadOptions, bounded: number) {
+  return options.probeTimeout === false ? 0 : bounded
+}
+
+let bootTime: Promise<string> | undefined
+
+export function readBootTime(): Promise<string> {
+  return memoizedBootTime({})
+}
+
+/**
+ * Reads share a probe while it runs and keep its value once it succeeds. A
+ * failed probe is dropped, so the next read probes again. The read that starts
+ * a probe decides whether it has a kill timer.
+ */
+function memoizedBootTime(options: IdentityReadOptions) {
+  bootTime ??= probeBootTime(identityProbeTimeout(options, PROBE_TIMEOUT_MS)).catch((error: unknown) => {
+    bootTime = undefined
+    throw error
+  })
+  return bootTime
+}
+
+async function probeBootTime(timeout: number): Promise<string> {
+  if (process.platform === "darwin") {
+    const { stdout } = await execFileAsync("sysctl", ["-n", "kern.boottime"], { timeout })
+    const seconds = /sec\s*=\s*(\d+)/.exec(stdout)?.[1]
+    if (seconds === undefined) throw new Error(`kern.boottime is not in the expected form: ${stdout.trim()}`)
+    return seconds
+  }
+  if (process.platform === "linux") {
+    const stat = await fs.readFile("/proc/stat", "utf8")
+    const btime = /^btime\s+(\d+)$/m.exec(stat)?.[1]
+    if (btime === undefined) throw new Error("/proc/stat carries no btime line")
+    return btime
+  }
+  // The kernel counts boots in this value; `reg.exe` reads it in 23 ms with no
+  // interpreter and no WMI service in the way, which is what makes it usable
+  // from the gate child of every launch.
+  const { stdout } = await execFileAsync(windowsSystemTool("reg.exe"), [
+    "query", "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\PrefetchParameters", "/v", "BootId",
+  ], { timeout })
+  return windowsBootId(stdout)
+}
+
+/** The `BootId` value out of `reg query` output, as a decimal string. */
+export function windowsBootId(registryQuery: string): string {
+  const hex = /\bBootId\s+REG_DWORD\s+0x([0-9A-Fa-f]+)/.exec(registryQuery)?.[1]
+  if (hex === undefined) throw new Error(`PrefetchParameters carries no BootId: ${registryQuery.trim()}`)
+  return String(parseInt(hex, 16))
+}
+
+export async function readCreationIdentity(pid: number, options: IdentityReadOptions = {}): Promise<CreationIdentity | undefined> {
+  if (!Number.isInteger(pid) || pid <= 0) throw new Error(`readCreationIdentity needs a positive integer pid, got ${String(pid)}`)
+  const boot = await memoizedBootTime(options)
+  if (process.platform === "linux") return readLinuxCreationIdentity(pid, boot)
+  if (process.platform === "win32") return readWindowsCreationIdentity(pid, boot, identityProbeTimeout(options, POWERSHELL_PROBE_TIMEOUT_MS))
+  return readDarwinCreationIdentity(pid, boot, identityProbeTimeout(options, PROBE_TIMEOUT_MS))
+}
+
+const DARWIN_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+/** `lstart` as `ps` prints it under `TZ=UTC0 LC_ALL=C`, for example `Fri Sep 25 05:29:17 2026`. */
+export function darwinStartMs(lstart: string) {
+  const match = /^[A-Z][a-z]{2} ([A-Z][a-z]{2}) +(\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/.exec(lstart)
+  const month = match ? DARWIN_MONTHS.findIndex((name) => name === match[1]) : -1
+  if (!match || month < 0) return undefined
+  return Date.UTC(Number(match[6]), month, Number(match[2]), Number(match[3]), Number(match[4]), Number(match[5]))
+}
+
+async function readDarwinCreationIdentity(pid: number, boot: string, timeout: number): Promise<CreationIdentity | undefined> {
+  let stdout: string
+  try {
+    // `lstart` carries no zone and prints in the zone of the `ps` process, while
+    // the runtime parsing it may use another: `bun test` parses in UTC without
+    // exporting TZ. A start read in the wrong zone lands hours late east of
+    // UTC, where a process that existed before a spawn then passes for the one
+    // it started.
+    ;({ stdout } = await execFileAsync("ps", ["-o", "pgid=,ppid=,lstart=", "-p", String(pid)], {
+      timeout,
+      env: { ...process.env, TZ: "UTC0", LC_ALL: "C" },
+    }))
+  } catch (error) {
+    // `ps` exits 1 for "no such process"; a probe this owner killed on its
+    // timeout carries a signal instead, and that is not evidence of an exit.
+    if (isRecord(error) && error.code === 1 && !error.killed) return undefined
+    throw new Error(`Could not read creation identity for pid ${pid}: ${launchErrorText(error)}`, { cause: error })
+  }
+  const row = /^\s*(\d+)\s+(\d+)\s+(\S.*)$/.exec(stdout.trim())
+  const startSecond = row?.[3]?.trim()
+  if (!row || startSecond === undefined) return undefined
+  const startedAtMs = darwinStartMs(startSecond)
+  if (startedAtMs === undefined) throw new Error(`ps printed a start time for pid ${pid} in an unexpected form: ${startSecond}`)
+  return {
+    pid,
+    processGroupId: Number(row[1]),
+    parentPid: Number(row[2]),
+    startSecond,
+    startedAtMs,
+    bootTime: boot,
+    source: "darwin-ps",
+  }
+}
+
+/** Linux `starttime` is in USER_HZ, which is 100 on every architecture Node builds for. */
+const LINUX_CLOCK_TICKS = 100
+
+async function readLinuxCreationIdentity(pid: number, boot: string): Promise<CreationIdentity | undefined> {
+  let stat: string
+  try {
+    stat = await fs.readFile(`/proc/${pid}/stat`, "utf8")
+  } catch (error) {
+    if (isRecord(error) && (error.code === "ENOENT" || error.code === "ESRCH")) return undefined
+    throw new Error(`Could not read /proc/${pid}/stat: ${launchErrorText(error)}`, { cause: error })
+  }
+  // The comm field is parenthesised and may itself contain spaces and ')'.
+  const tail = stat.slice(stat.lastIndexOf(")") + 2).split(/\s+/)
+  const parentPid = Number(tail[1])
+  const processGroupId = Number(tail[2])
+  const startTicks = Number(tail[19])
+  if (!Number.isFinite(processGroupId) || !Number.isFinite(startTicks)) return undefined
+  const secondsSinceBoot = Math.floor(startTicks / LINUX_CLOCK_TICKS)
+  return {
+    pid,
+    processGroupId,
+    parentPid,
+    startSecond: String(secondsSinceBoot),
+    startedAtMs: (Number(boot) + secondsSinceBoot) * 1000,
+    bootTime: boot,
+    source: "linux-procfs",
+  }
+}
+
+/**
+ * Windows has no process groups, so `processGroupId` repeats the pid and the
+ * group-leader check in `retirement.ts` is satisfied vacuously; containment
+ * there is the `taskkill /T` tree, not a group signal. `CreationDate` has 100 ns
+ * resolution, so `startSecond` alone already tells two holders of one pid apart.
+ */
+async function readWindowsCreationIdentity(pid: number, boot: string, timeout: number): Promise<CreationIdentity | undefined> {
+  let stdout: string
+  try {
+    ;({ stdout } = await execFileAsync(windowsPowerShell(), [
+      "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
+      `$p = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}"; if ($p) { $p.CreationDate.ToString('o') + ' ' + $p.ParentProcessId }`,
+    ], { timeout, windowsHide: true }))
+  } catch (error) {
+    throw new Error(`Could not read creation identity for pid ${pid}: ${launchErrorText(error)}`, { cause: error })
+  }
+  const value = stdout.trim()
+  if (!value) return undefined
+  const split = value.lastIndexOf(" ")
+  const startSecond = value.slice(0, split)
+  return {
+    pid,
+    processGroupId: pid,
+    parentPid: Number(value.slice(split + 1)),
+    startSecond,
+    startedAtMs: Date.parse(startSecond),
+    bootTime: boot,
+    source: "win32-cim",
+  }
+}
+
+/**
+ * How much earlier than the spawn clock a process this launcher started may
+ * read. darwin `lstart` is whole seconds (up to 1s early). Linux `btime` is
+ * whole seconds and `starttime` is floored to whole seconds on top of it, so
+ * the sum reads up to 2s early: a shell spawned at 42.076 read as 41.000.
+ */
+export const IDENTITY_START_TOLERANCE_MS = 2_000
+
+/**
+ * Whether an identity read after a spawn describes the process that spawn
+ * started.
+ *
+ * A pid is free for reuse the moment its previous holder exits, so this read
+ * can land on a stranger. A process that began before this launcher called
+ * spawn is one, and retiring it would signal it.
+ */
+export function identityFromSpawn(observed: CreationIdentity | undefined, spawnedAt: number) {
+  if (!observed || !ownablePid(observed.pid)) return undefined
+  return observed.startedAtMs >= spawnedAt - IDENTITY_START_TOLERANCE_MS ? observed : undefined
+}
+
+/**
+ * Whether a recorded identity and one REPORTED by something else describe the
+ * same launch — a daemon answering about itself over HTTP, a child over IPC.
+ *
+ * `parentPid` is excluded deliberately: an orphan is reparented to init, so
+ * comparing it would call a live process a stranger. `startedAtMs` is included
+ * because a reported identity is a value someone else computed, and a field a
+ * record requires but never checks is a weaker guarantee than it advertises.
+ * `verifyCreationIdentity` re-reads the process itself and derives that field
+ * from `startSecond`, so it compares the four it actually observes.
+ */
+export function sameCreationIdentity(recorded: CreationIdentity, observed: CreationIdentity): boolean {
+  return observed.pid === recorded.pid
+    && observed.processGroupId === recorded.processGroupId
+    && observed.startSecond === recorded.startSecond
+    && observed.startedAtMs === recorded.startedAtMs
+    && observed.bootTime === recorded.bootTime
+}
+
+export async function verifyCreationIdentity(recorded: CreationIdentity): Promise<IdentityVerdict> {
+  let observed: CreationIdentity | undefined
+  try {
+    observed = await readCreationIdentity(recorded.pid)
+  } catch (error) {
+    return { state: "unknown", reason: launchErrorText(error) }
+  }
+  if (!observed) return { state: "exited" }
+  if (
+    observed.startSecond !== recorded.startSecond ||
+    observed.processGroupId !== recorded.processGroupId ||
+    observed.bootTime !== recorded.bootTime
+  ) return { state: "identity_mismatch", observed }
+  return { state: "live", identity: observed }
+}
+
+export function launchErrorText(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
+}

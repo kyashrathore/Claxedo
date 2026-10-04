@@ -1,0 +1,15 @@
+---
+import TrackedLink from "./TrackedLink.astro"
+import { version } from "../config"
+import { macDownload } from "../content/site"
+
+interface Props {
+  placement: string
+}
+
+const { placement } = Astro.props
+---
+
+<TrackedLink class="btn-primary" href={macDownload.href} event="download_app" placement={placement} platform={macDownload.platform} version={version}>
+  Download for macOS
+</TrackedLink>

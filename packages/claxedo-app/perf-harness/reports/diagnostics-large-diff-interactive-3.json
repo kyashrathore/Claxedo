@@ -1,0 +1,183 @@
+{
+  "generated_at": "2026-07-24T00:47:11.294Z",
+  "status": "fail",
+  "targets": {
+    "rate_target_hz": 120,
+    "rate_floor_hz": 60
+  },
+  "flows": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "large-diff-toggle",
+      "name": "Open a 500-file diff and toggle split/unified",
+      "started_at": "2026-07-24T00:47:08.831Z",
+      "duration_ms": 2722.6796249999998,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 500,
+        "terminals": 0,
+        "changed_files": 500,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "headline": {
+        "label": "large-diff-toggle",
+        "worstFrameMs": 397.3,
+        "p95FrameMs": 0.8,
+        "framesOver833": 5,
+        "framesOver1667": 3,
+        "sampleCount": 1296,
+        "completionMs": 549.18,
+        "verdict": "red"
+      },
+      "metrics": [
+        {
+          "metric": "review_panel_open_ms",
+          "value": 10.200000002980232,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            10.200000002980232
+          ],
+          "p50": 10.200000002980232,
+          "p95": 10.200000002980232,
+          "min": 10.200000002980232,
+          "max": 10.200000002980232,
+          "mean": 10.200000002980232,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "vcs_load_ms",
+          "value": 592.4000000059605,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            592.4000000059605
+          ],
+          "p50": 592.4000000059605,
+          "p95": 592.4000000059605,
+          "min": 592.4000000059605,
+          "max": 592.4000000059605,
+          "mean": 592.4000000059605,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "hunk_render_ms",
+          "value": 27.799999997019768,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            27.799999997019768
+          ],
+          "p50": 27.799999997019768,
+          "p95": 27.799999997019768,
+          "min": 27.799999997019768,
+          "max": 27.799999997019768,
+          "mean": 27.799999997019768,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "line_comment_ms",
+          "value": 22.799999997019768,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            22.799999997019768
+          ],
+          "p50": 22.799999997019768,
+          "p95": 22.799999997019768,
+          "min": 22.799999997019768,
+          "max": 22.799999997019768,
+          "mean": 22.799999997019768,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "changed_file_navigation_ms",
+          "value": 5000,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            5000
+          ],
+          "p50": 5000,
+          "p95": 5000,
+          "min": 5000,
+          "max": 5000,
+          "mean": 5000,
+          "relative_stddev": 0
+        }
+      ],
+      "validation_failures": [],
+      "diagnostics": {
+        "retainedBytes": 7230,
+        "retainedProcesses": 4,
+        "droppedTicks": 0,
+        "maxSourceDurationMs": 0,
+        "maxReconciliationDurationMs": 0,
+        "collections": 5,
+        "sampleCount": 15,
+        "controlHeadline": {
+          "label": "large-diff-toggle",
+          "worstFrameMs": 341.9,
+          "p95FrameMs": 0.9,
+          "framesOver833": 3,
+          "framesOver1667": 3,
+          "sampleCount": 1301,
+          "completionMs": 554.14,
+          "verdict": "red"
+        },
+        "enabledHeadline": {
+          "label": "large-diff-toggle",
+          "worstFrameMs": 397.3,
+          "p95FrameMs": 0.8,
+          "framesOver833": 5,
+          "framesOver1667": 3,
+          "sampleCount": 1296,
+          "completionMs": 549.18,
+          "verdict": "red"
+        }
+      },
+      "attribution": {
+        "git_sha": "9eaf26280438f1d8020b95dd864100695a5e34b4",
+        "git_branch": "codex/fix-codex-acp-live-models",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/packages/claxedo-app/perf-harness/src/cli.ts run --scenario large-diff-toggle --iterations 1 --no-trend --output diagnostics-large-diff-interactive-3.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/packages/claxedo-app/perf-harness",
+        "bun_version": "1.3.14",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:56641",
+          "mock_port": 56642,
+          "dev_command": "node ./node_modules/vite/bin/vite.js preview --config vite.cloud.config.ts --host 127.0.0.1 --port 56641"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/fix-codex-acp-live-models:9eaf26280438f1d8020b95dd864100695a5e34b4"
+      },
+      "budget": {
+        "scenario": "large-diff-toggle",
+        "worst_frame_ms": 165
+      },
+      "status": "fail",
+      "failures": [
+        "diagnostics moved worst frame from 341.90ms to 397.30ms",
+        "worst frame 397.30ms regressed past budget 165ms"
+      ],
+      "warnings": []
+    }
+  ]
+}

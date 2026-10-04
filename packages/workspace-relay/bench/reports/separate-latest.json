@@ -1,0 +1,36 @@
+{
+  "relay": "wss://claxedo-workspace-relay-reeval.kanusdlp.workers.dev",
+  "count": 3,
+  "manifest": [
+    {
+      "workspaceId": "ws_sep_0",
+      "hostId": "host_bench",
+      "port": 3939,
+      "sandboxId": "37752007-5668-489f-9e9d-aa3d4fbc4298",
+      "directHttpUrl": "https://3939-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "directWsUrl": "wss://3939-37752007-5668-489f-9e9d-aa3d4fbc4298.daytonaproxy01.net",
+      "previewToken": "aixxzugpbrcuoozuiewggid3s6zjjcfj",
+      "registered": true
+    },
+    {
+      "workspaceId": "ws_sep_1",
+      "hostId": "host_bench",
+      "port": 3939,
+      "sandboxId": "877b221a-3946-4718-aacd-71ecf1da90d0",
+      "directHttpUrl": "https://3939-877b221a-3946-4718-aacd-71ecf1da90d0.daytonaproxy01.net",
+      "directWsUrl": "wss://3939-877b221a-3946-4718-aacd-71ecf1da90d0.daytonaproxy01.net",
+      "previewToken": "9bjgbiony-t9boruk1hpn0ffr_lsxaov",
+      "registered": true
+    },
+    {
+      "workspaceId": "ws_sep_2",
+      "hostId": "host_bench",
+      "port": 3939,
+      "sandboxId": "94723844-0608-49f1-9e6b-ce1a44abb206",
+      "directHttpUrl": "https://3939-94723844-0608-49f1-9e6b-ce1a44abb206.daytonaproxy01.net",
+      "directWsUrl": "wss://3939-94723844-0608-49f1-9e6b-ce1a44abb206.daytonaproxy01.net",
+      "previewToken": "lptablc0govkuycdswv_ih0pfddlyk5g",
+      "registered": true
+    }
+  ]
+}

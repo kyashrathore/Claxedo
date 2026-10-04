@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [],
+  "files": [
+    "scripts/deploy/deploy-user-cloudflare.ts",
+    "scripts/deploy/deploy-user-cloudflare.test.ts",
+    "scripts/deploy/claim-owner.ts",
+    "scripts/deploy/claim-owner.test.ts",
+    "scripts/deploy/user-cloudflare-config.ts",
+    "scripts/deploy/user-cloudflare-config.test.ts",
+    "src/deployments/hosted-workerd/better-auth-d1-worker.cf.ts",
+    "src/deployments/hosted-workerd/better-auth-d1-worker.test.ts",
+    "src/platform/auth/better-auth-configuration.ts",
+    "src/platform/auth/better-auth-configuration.test.ts",
+    "src/platform/auth/better-auth-d1-adapter.ts",
+    "src/platform/auth/better-auth-d1-adapter.test.ts",
+    "src/platform/auth/better-auth-d1-foundation.ts",
+    "src/platform/auth/better-auth-d1-foundation.test.ts",
+    "src/platform/auth/better-auth-d1-migration.ts",
+    "src/platform/auth/better-auth-native-clients.ts",
+    "src/platform/auth/better-auth-token-hash.ts"
+  ]
+}

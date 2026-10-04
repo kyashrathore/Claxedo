@@ -1,0 +1,62 @@
+import { createHash } from "node:crypto"
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { join, resolve } from "node:path"
+import { publishedExportsPlugin } from "../../../script/published-exports-plugin"
+
+import { runBunBuild } from "../../../script/bun-build"
+
+export const HOST_CONNECTOR_CHILD_MANIFEST_SCHEMA = "claxedo.host-connector-child/v1"
+
+const PACKAGE_DIR = resolve(import.meta.dir, "..")
+const DEFAULT_ENTRY = resolve(PACKAGE_DIR, "src/host-connector-child/entry.ts")
+const DEFAULT_OUTPUT_DIR = resolve(PACKAGE_DIR, "resources/host-connector")
+
+export type HostConnectorChildManifest = {
+  schema: typeof HOST_CONNECTOR_CHILD_MANIFEST_SCHEMA
+  entry: "index.js"
+  sha256: string
+}
+
+function sha256(file: string): string {
+  return createHash("sha256").update(readFileSync(file)).digest("hex")
+}
+
+/** Build the optional child as one self-contained, independently hashed file. */
+export async function bundleHostConnector(input: { entry?: string; outputDir?: string } = {}) {
+  const entry = input.entry ?? DEFAULT_ENTRY
+  const outputDir = input.outputDir ?? DEFAULT_OUTPUT_DIR
+  const output = join(outputDir, "index.js")
+  const manifestPath = join(outputDir, "manifest.json")
+
+  if (!existsSync(entry)) throw new Error(`Host Connector child entry was not found at ${entry}`)
+  rmSync(outputDir, { recursive: true, force: true })
+  mkdirSync(outputDir, { recursive: true })
+
+  await runBunBuild("Host Connector child bundle failed", {
+    entrypoints: [entry],
+    outdir: outputDir,
+    naming: "index.js",
+    target: "node",
+    format: "esm",
+    splitting: false,
+    sourcemap: "none",
+    // Safe to flip: the sha256 manifest below is computed from the emitted
+    // file, so it self-heals, and no test pins a literal digest.
+    minify: true,
+    plugins: [publishedExportsPlugin()],
+  })
+  if (!existsSync(output)) throw new Error(`Host Connector child bundle emitted no ${output}`)
+
+  const manifest: HostConnectorChildManifest = {
+    schema: HOST_CONNECTOR_CHILD_MANIFEST_SCHEMA,
+    entry: "index.js",
+    sha256: sha256(output),
+  }
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+  return { output, manifestPath, manifest }
+}
+
+if (import.meta.main) {
+  const bundled = await bundleHostConnector()
+  console.log(`[host-connector] bundled ${bundled.output} (${bundled.manifest.sha256})`)
+}

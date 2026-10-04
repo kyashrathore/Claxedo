@@ -1,0 +1,259 @@
+import {
+  RUNTIME_NATIVE_HARNESS_IDS,
+  boundedJsonBody,
+  errorBody,
+  isRequestBodyTooLarge,
+  requestBodyTooLargeBody,
+} from "@claxedo/session-core"
+import { readProviderDefinitions, type CustomProviderDefinition } from "@claxedo/harness/contract"
+import type { CredentialSnapshot, PlaceholderEnvironment, ProviderProjection, ProviderProjectionSource, SavedCommand } from "@claxedo/agent-runtime-contract"
+import { Hono } from "hono"
+import { Log } from "../log"
+import { isAgentHarnessId, credentialSnapshot, type HarnessConnectionDescriptor } from "@claxedo/agent-runtime-contract"
+import { isRecord, asString } from "@claxedo/helpers/guards"
+import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
+import { authorizeManagementAccess, type ManagementAccessOptions } from "./management-access"
+import { WorkspaceRuntimeRoutes } from "./manifest"
+import type { RuntimeConfigApplyStatus } from "../workspace/host"
+
+const log = Log.create({ service: "config-route" })
+
+export type RuntimeNativeHarnessId = (typeof RUNTIME_NATIVE_HARNESS_IDS)[number]
+export type RuntimeHarnessSelection =
+  | { kind: "native"; harnessId: RuntimeNativeHarnessId }
+  | { kind: "connection"; connectionId: string }
+
+export type RuntimeConnectionDescriptor = HarnessConnectionDescriptor
+
+
+export type { ProviderProjection, ProviderProjectionSource }
+
+export type RuntimeSnapshot = {
+  providerDefinitions?: readonly CustomProviderDefinition[]
+  version: 4
+  mcp: Record<string, unknown>
+  connections: RuntimeConnectionDescriptor[]
+  defaultHarness?: RuntimeHarnessSelection
+  /**
+   * What each provider's harness gets in place of a credential. The value stays
+   * with the authority that minted the binding; this carries only the broker
+   * endpoint and a placeholder scoped to it.
+   */
+  auth: CredentialSnapshot
+  /**
+   * Opaque per-harness launch options a containing product projects (Claxedo's
+   * Agent Plugins module contributes plugin roots this way). Keyed by agent
+   * harness id; the kit validates the shape and hands the row to the adapter's
+   * `applyConfig` untouched.
+   */
+  harnessLaunch?: Record<string, Record<string, unknown>>
+  workspaceHarnessEnabled?: boolean
+  commands: SavedCommand[]
+}
+/**
+ * The snapshot after this runtime resolved it: every projection carries the
+ * placeholder the harness sends, including the ones the producer could only
+ * name as an environment variable its sandbox provider fills.
+ */
+export type AppliedRuntimeSnapshot = Omit<RuntimeSnapshot, "auth"> & {
+  auth: CredentialSnapshot<ProviderProjection>
+}
+
+export class RuntimeConfigApplyError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly status: 409 | 500 = 409,
+    readonly details?: Record<string, unknown>,
+  ) {
+    super(message)
+    this.name = "RuntimeConfigApplyError"
+  }
+}
+
+/**
+ * A harness refused a session's configuration. The runtime records it against
+ * the revision that asked, so a caller re-configuring many runtimes carries on
+ * rather than failing the change that triggered it.
+ */
+export function isSessionConfigRefusal(error: unknown): boolean {
+  return error instanceof RuntimeConfigApplyError && error.code === "runtime_config_refused"
+}
+
+export type ConfigRouteOptions = ManagementAccessOptions
+
+function stringRecord(input: unknown): input is Record<string, string> {
+  return isRecord(input) && Object.values(input).every((item) => typeof item === "string")
+}
+
+function normalizeSelection(input: unknown): RuntimeHarnessSelection | undefined {
+  if (!isRecord(input)) return undefined
+  if (input.kind === "native" && Object.keys(input).every((key) => key === "kind" || key === "harnessId")) {
+    // `find` over the canonical list yields the literal type; a membership test
+    // would leave a bare `string` and force an assertion.
+    const harnessId = RUNTIME_NATIVE_HARNESS_IDS.find((id) => id === input.harnessId)
+    if (harnessId) return { kind: "native", harnessId }
+  }
+  if (
+    input.kind === "connection"
+    && typeof input.connectionId === "string"
+    && input.connectionId.trim().length > 0
+    && Object.keys(input).every((key) => key === "kind" || key === "connectionId")
+  ) return { kind: "connection", connectionId: input.connectionId }
+  return undefined
+}
+
+function normalizeDescriptor(input: unknown): RuntimeConnectionDescriptor | undefined {
+  if (!isRecord(input)) return undefined
+  if (typeof input.connectionId !== "string" || !input.connectionId.trim()) return undefined
+  if (typeof input.providerKey !== "string" || !input.providerKey.trim()) return undefined
+  if (typeof input.configRevision !== "number" || !Number.isSafeInteger(input.configRevision) || input.configRevision < 1) return undefined
+  if (typeof input.enabled !== "boolean" || !isRecord(input.config)) return undefined
+  if (input.secretRefs !== undefined && !stringRecord(input.secretRefs)) return undefined
+  const allowed = new Set(["connectionId", "providerKey", "configRevision", "enabled", "config", "secretRefs"])
+  if (Object.keys(input).some((key) => !allowed.has(key))) return undefined
+  return {
+    connectionId: input.connectionId,
+    providerKey: input.providerKey,
+    configRevision: input.configRevision,
+    enabled: input.enabled,
+    config: input.config,
+    ...(stringRecord(input.secretRefs) ? { secretRefs: input.secretRefs } : {}),
+  }
+}
+
+function normalizeHarnessLaunch(input: unknown): Record<string, Record<string, unknown>> | undefined {
+  if (input === undefined) return {}
+  if (!isRecord(input)) return undefined
+  const rows: Record<string, Record<string, unknown>> = {}
+  for (const [harnessId, value] of Object.entries(input)) {
+    if ((!isAgentHarnessId(harnessId) && harnessId !== "acp") || !isRecord(value)) return undefined
+    rows[harnessId] = value
+  }
+  return rows
+}
+
+/** One command entry as the wire may carry it, or `undefined` when malformed. */
+function normalizeCommand(input: unknown): SavedCommand | undefined {
+  if (!isRecord(input)) return undefined
+  const name = asString(input.name)
+  const content = asString(input.content)
+  return name !== undefined && content !== undefined ? { name, content } : undefined
+}
+
+const RUNTIME_SNAPSHOT_KEYS = new Set([
+  "version",
+  "mcp",
+  "connections",
+  "defaultHarness",
+  "auth",
+  "harnessLaunch",
+  "providerDefinitions",
+  "workspaceHarnessEnabled",
+  "commands",
+])
+
+/**
+ * `env` is this process's own environment because a `placeholderEnv` row names
+ * a variable the sandbox provider filled inside this sandbox, and nothing
+ * outside it can read that value.
+ */
+export function normalizeRuntimeSnapshot(
+  input: unknown,
+  env: PlaceholderEnvironment = process.env,
+): AppliedRuntimeSnapshot | undefined {
+  if (
+    !isRecord(input)
+    || input.version !== 4
+    || !isRecord(input.mcp)
+    || !Array.isArray(input.connections)
+  ) return undefined
+  const auth = credentialSnapshot(input.auth, env)
+  if (!auth) return undefined
+  // Unknown fields are rejected rather than silently dropped: a producer that
+  // sends a field this runtime does not model would otherwise believe it took.
+  if (Object.keys(input).some((key) => !RUNTIME_SNAPSHOT_KEYS.has(key))) return undefined
+  // Collected instead of mapped-then-asserted, so the array's element type comes
+  // from the validator rather than from a claim about it.
+  const connections: RuntimeConnectionDescriptor[] = []
+  for (const row of input.connections) {
+    const descriptor = normalizeDescriptor(row)
+    if (!descriptor) return undefined
+    connections.push(descriptor)
+  }
+  const ids = connections.map((row) => row.connectionId)
+  if (new Set(ids).size !== ids.length) return undefined
+  const defaultHarness = input.defaultHarness === undefined ? undefined : normalizeSelection(input.defaultHarness)
+  if (input.defaultHarness !== undefined && !defaultHarness) return undefined
+  if (defaultHarness?.kind === "connection" && !connections.some((row) => row.connectionId === defaultHarness.connectionId)) return undefined
+  const providerDefinitions = readProviderDefinitions(input.providerDefinitions)
+  if (!providerDefinitions) return undefined
+  const harnessLaunch = normalizeHarnessLaunch(input.harnessLaunch)
+  if (!harnessLaunch) return undefined
+  if (input.workspaceHarnessEnabled !== undefined && typeof input.workspaceHarnessEnabled !== "boolean") return undefined
+  if (!Array.isArray(input.commands)) return undefined
+  const commands: SavedCommand[] = []
+  for (const row of input.commands) {
+    const command = normalizeCommand(row)
+    if (!command) return undefined
+    commands.push(command)
+  }
+  return {
+    version: 4,
+    mcp: input.mcp,
+    connections,
+    ...(defaultHarness ? { defaultHarness } : {}),
+    auth,
+    ...(input.providerDefinitions !== undefined ? { providerDefinitions } : {}),
+    ...(Object.keys(harnessLaunch).length ? { harnessLaunch } : {}),
+    ...(typeof input.workspaceHarnessEnabled === "boolean" ? { workspaceHarnessEnabled: input.workspaceHarnessEnabled } : {}),
+    commands,
+  }
+}
+
+export const ConfigRoutes = (host: {
+  apply: (snapshot: AppliedRuntimeSnapshot) => Promise<void>
+  configApply: () => RuntimeConfigApplyStatus
+}, options: ConfigRouteOptions = {}) =>
+  new Hono<{ Variables: RelayHostAuthContext }>()
+    .onError((err, c) => {
+      if (isRequestBodyTooLarge(err)) return c.json(requestBodyTooLargeBody(), 413)
+      throw err
+    })
+    .get(WorkspaceRuntimeRoutes.config, async (c) => {
+      const verdict = await authorizeManagementAccess(c, options, "runtime.config.apply")
+      if (!verdict.ok) return c.json({ error: { code: verdict.code, message: verdict.message } }, verdict.status)
+      return c.json(host.configApply())
+    })
+    .post(WorkspaceRuntimeRoutes.config, async (c) => {
+      const verdict = await authorizeManagementAccess(c, options, "runtime.config.apply")
+      if (!verdict.ok) {
+        return c.json({
+          error: {
+            code: verdict.code,
+            message: verdict.message,
+          },
+        }, verdict.status)
+      }
+      const raw = await boundedJsonBody(c)
+      const body = normalizeRuntimeSnapshot(raw)
+      if (!body) {
+        return c.json(errorBody("invalid_runtime_snapshot", "Invalid runtime snapshot"), 400)
+      }
+      try {
+        await host.apply(body)
+        log.info("Applied runtime snapshot", {
+          connectionCount: body.connections.length,
+          selection: body.defaultHarness,
+        })
+        return c.json({ ok: true })
+      } catch (err) {
+        log.error("Failed to apply runtime snapshot", {
+          error: err instanceof Error ? err.message : String(err),
+        })
+        if (err instanceof RuntimeConfigApplyError) {
+          return c.json(errorBody(err.code, err.message, err.details), err.status)
+        }
+        return c.json(errorBody("runtime_snapshot_apply_failed", "Runtime config apply failed"), 500)
+      }
+    })

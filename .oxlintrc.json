@@ -1,0 +1,266 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicolo-ribaudo/oxc-project.github.io/refs/heads/json-schema/src/public/.oxlintrc.schema.json",
+  "categories": {
+    // Every enabled rule is a hard error: `bun run lint` (prepush + CI) fails on any finding.
+    // Editor squiggles and the gate therefore agree. Test globs relax two type rules in
+    // `overrides` below; nothing else is exempt.
+    "correctness": "error",
+    "suspicious": "error"
+  },
+  "rules": {
+    "typescript/no-base-to-string": "error",
+    // Effect uses `function*` with Effect.gen/Effect.fnUntraced that don't always yield
+    "require-yield": "off",
+    // SolidJS uses `let ref: T | undefined` for JSX ref bindings assigned at runtime
+    "no-unassigned-vars": "off",
+    // SolidJS tracks reactive deps by reading properties inside createEffect
+    "no-unused-expressions": "off",
+    // Intentional control char matching (ANSI escapes, null byte sanitization)
+    "no-control-regex": "off",
+    // SST and plugin tools require triple-slash references
+    "triple-slash-reference": "off",
+
+    // Suspicious category: suppress noisy rules
+    // Effect's nested function* closures inherently shadow outer scope
+    "no-shadow": "off",
+    // Namespace-heavy codebase makes this too noisy
+    "unicorn/consistent-function-scoping": "off",
+    // Opinionated — .sort()/.reverse() mutation is fine in this codebase
+    "unicorn/no-array-sort": "off",
+    "unicorn/no-array-reverse": "off",
+    // Not relevant — this isn't a DOM event handler codebase
+    "unicorn/prefer-add-event-listener": "off",
+    // Bundler handles module resolution
+    "unicorn/require-module-specifiers": "off",
+    // postMessage target origin not relevant for this codebase
+    "unicorn/require-post-message-target-origin": "off",
+    // Side-effectful constructors are intentional in some places
+    "no-new": "off",
+
+    // Type-aware: catch unhandled promises
+    "typescript/no-floating-promises": "error",
+    // Warn when spreading non-plain objects (Headers, class instances, etc.)
+    "typescript/no-misused-spread": "error"
+  },
+  "options": {
+    "typeAware": true
+  },
+  "overrides": [
+    {
+      // Test code: type narrowing at fixture/JSON boundaries is deliberate, and
+      // bun:test types `expect(...).rejects.*` as non-thenable although awaiting
+      // it is required at runtime. Everything else stays enforced in tests.
+      "files": [
+        "**/*.test.ts", "**/*.test.tsx", "**/*.test.mjs",
+        "**/*.vitest.ts", "**/*.vitest.tsx", "**/*.spec.ts",
+        "**/e2e/**", "**/test-support/**", "**/__tests__/**", "**/tests/**"
+      ],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off",
+        "typescript/await-thenable": "off"
+      }
+    },
+    {
+      // claxedo-app tests only. The type-aware pass cannot see these files:
+      // claxedo-app/tsconfig.json excludes every test glob, so an `@/...` import
+      // inside a test resolves to an error type and this rule reports
+      // "is an 'error' type that acts as 'any'" about working code. Scoped to
+      // this package so the rule keeps catching genuine redundancy in every
+      // other package's tests.
+      "files": [
+        "packages/claxedo-app/**/*.test.ts", "packages/claxedo-app/**/*.test.tsx",
+        "packages/claxedo-app/e2e/**"
+      ],
+      "rules": {
+        "typescript/no-redundant-type-constituents": "off"
+      }
+    },
+    {
+      // The branded-identifier mints, and nothing else. A brand
+      // (`string & { readonly __brand: T }`) exists only in the type system, so
+      // turning a stored `TEXT` column into one is an assertion by construction
+      // — there is no runtime shape a predicate could check, and a predicate
+      // that returned `true` would only hide the same claim from this rule.
+      //
+      // Scoped to the exact file whose entire job is minting, so nothing else
+      // can shelter behind it: it declares the brands and the two `as` lines
+      // that produce them. Every other module reaches for a mint instead of
+      // asserting, and stays fully enforced.
+      "files": ["packages/claxedo-server-core/src/platform/auth/branded-id.ts"],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      // The relay's upstream WebSocket constructor, and nothing else. Bun's
+      // global `WebSocket` accepts `(url, { headers })`, but `bun-types` yields
+      // its declaration to `lib.dom` whenever `lib.dom` is loaded
+      // (`Bun.__internal.UseLibDomIfAvailable`), and `lib.dom` declares only the
+      // `(url, protocols)` overload on a `declare var` that cannot be augmented.
+      // Dropping `lib.dom` removes `Request`'s `URL` input, which this package
+      // and its tests rely on — so the real constructor shape is genuinely
+      // inexpressible, not lazily typed.
+      //
+      // Scoped to the exact file that exists to own that one assertion, so the
+      // 4,000-line `bun.ts` consuming it stays fully enforced.
+      "files": ["packages/workspace-relay/src/upstream-websocket.ts"],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      // The workspace-runtime client's single HTTP trust boundary, and nothing
+      // else. `call<T>` hands back a parsed JSON body as the type its operation
+      // declares. `T` is pinned by the client contracts that name it, so no call
+      // site invents a shape, but nothing checks that the server sent one, and
+      // at an HTTP boundary nothing can without a validator.
+      //
+      // This exception is WEAKER than the brand and constructor ones above and
+      // is admitted on different grounds. A brand has no runtime shadow and the
+      // relay's constructor is genuinely inexpressible; this claim IS checkable
+      // — it needs a per-operation decoder, the way
+      // `claxedo-desktop/src/main/account/hosted-operations.ts` already writes
+      // them. That is real work with real safety value, not a lint concern, and
+      // it is the recorded follow-up.
+      //
+      // What was rejected: widening the read to `unknown` and narrowing at each
+      // call site. It satisfies the rule while adding zero validation and
+      // collapses the concrete types every reader depends on. Keeping it on one
+      // named line is honest about where untrusted data enters.
+      //
+      // Scoped to the exact file so every other module stays fully enforced.
+      "files": ["packages/workspace-runtime/src/client/request.ts"],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      // The in-memory Chat SDK state adapter, and nothing else. The vendor
+      // `StateAdapter` interface puts an unconstrained type parameter on the
+      // READER — `get<T = unknown>(key): Promise<T | null>` — over a store
+      // every writer fills through `set(key, value: unknown)`. No implementation
+      // of that interface can prove what comes back out, so the unsoundness is
+      // the vendor's shape, not this adapter's, and `T` is not known at runtime
+      // for a check to substitute.
+      //
+      // The file states the three exits that were measured and rejected: typing
+      // the map once as `Map<string, T>` (T belongs to each call, not the
+      // adapter), implementing `get` non-generically (TypeScript checks the
+      // target against a fresh `T`), and hoisting the reads into a shared
+      // `storedValue<T>` (a reusable unsound cast anything can import, which
+      // this rule and `no-unnecessary-type-parameters` both flag again).
+      //
+      // Scoped to the exact file whose only export is that vendor interface's
+      // implementation, so the override cannot widen without the file becoming
+      // more of the same adapter.
+      "files": ["packages/claxedo-channels/src/transport/chat-sdk-memory-state.ts"],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      // The app's branded-identifier mints, and nothing else. Same grounds as
+      // `branded-id.ts` above: a brand exists only in the type system, so
+      // minting one is an assertion by construction, and the app cannot import
+      // server-core's mints (it does not depend on server-core, whose brands
+      // cover a different set of identifiers).
+      //
+      // Scoped to the exact file that declares the app's brands and their six
+      // `as` lines; every other app module calls a mint instead of asserting.
+      "files": ["packages/claxedo-app/src/server/ids.ts"],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      // Worker entrypoints, and nothing else. `WorkerEntrypoint.fetch` and a
+      // `Fetcher` are typed with workers-types' own `Request` and `Response`,
+      // while these packages compile against the DOM lib's; in the Workers
+      // runtime they are one class, so the hand-off between the two
+      // declarations is an assertion no runtime check could replace.
+      //
+      // Scoped to the exact files whose job is that hand-off, so the brokers and
+      // dispatchers they call stay fully enforced.
+      "files": [
+        "packages/claxedo-server/src/plugin-backends/entrypoints.cf.ts",
+        "packages/claxedo-server/src/plugin-backends/supervisor.cf.ts",
+        "packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/index.ts"
+      ],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      // The Pi storage adapter over `bun:sqlite`, and nothing else. pi-durable's
+      // `SqliteExecutor` puts an unconstrained type parameter on the READERS —
+      // `get<T extends object>(sql, ...params): Promise<T | undefined>` and
+      // `all<T>` — over rows the driver returns untyped, so no implementation
+      // can prove what comes back; the unsoundness is the vendor's shape. The
+      // file also loads `bun:sqlite` through a computed specifier so Node
+      // bundles never resolve it, which returns `any`.
+      //
+      // Scoped to the exact file whose only job is that adapter, so the rest of
+      // the pi-durable transport stays fully enforced.
+      "files": ["packages/harness/src/transports/pi-durable/storage.ts"],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      // The hosted operations' input decoder, and nothing else. `operationInput`
+      // runs every field's decoder, so each value it returns has been decoded,
+      // but its result type is a key-remapped mapped type that splits required
+      // from optional fields: TypeScript resolves neither `infer` through a
+      // generic indexed decoder nor indexing that remapped type by `keyof S`,
+      // so a value assembled key by key cannot be typed as it. A helper typed
+      // per key was compiled and refused on both counts.
+      //
+      // Scoped to the exact file that holds only `operationInput` and its two
+      // result types, so the rest of the account contract stays fully enforced.
+      "files": ["packages/account-contract/src/operation-input.ts"],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      // Playwright fixtures that depend on no other fixture. Playwright reads a
+      // fixture's dependencies from the destructuring pattern of its first
+      // parameter, refuses any other first parameter, and documents `{}` as the
+      // form for a fixture with none; naming an unused fixture instead would
+      // misstate what the fixture needs.
+      //
+      // Scoped to the exact files that define such fixtures.
+      "files": [
+        "packages/claxedo-app/e2e/harness/fixtures.ts",
+        "packages/claxedo-app/e2e/flows/31-session-list-races.controls.ts"
+      ],
+      "rules": {
+        "no-empty-pattern": "off"
+      }
+    },
+    {
+      // The browser-delivered packages write nothing to the devtools console.
+      // `@opencode-ai/ui/utils/report-error` forwards the leaf packages'
+      // failures to the host app's error tracking. The exemptions are inline,
+      // each naming the opt-in localStorage flag that has to be set before the
+      // line prints.
+      "files": [
+        "packages/claxedo-web/src/**",
+        "packages/ui/src/**"
+      ],
+      "rules": {
+        "no-console": "error"
+      }
+    },
+    {
+      "files": [
+        "packages/claxedo-web/src/**/*.test.ts",
+        "packages/ui/src/**/*.test.ts", "packages/ui/src/**/*.test.tsx"
+      ],
+      "rules": {
+        "no-console": "off"
+      }
+    }
+  ],
+  "ignorePatterns": ["**/node_modules", "**/dist", "**/.build", "**/*.astro", "**/*.d.ts", "**/sdk.gen.ts"]
+}

@@ -1,0 +1,18 @@
+scrollTop: 0
+background subagents:
+(none)
+row 0:
+- text: Say hello first. acp-script:stream-markdown-edges-0 Build · <time>
+- button "Copy message"
+row 1:
+- heading "Heading first" [level=1]
+- paragraph: Hello, ready to stream.
+- button "Copy response"
+- text: Build · <duration>
+row 2:
+- text: Stream a mixed reply. acp-script:stream-markdown-edges-1 Build · <time>
+- button "Copy message"
+row 3:
+
+row 4:
+

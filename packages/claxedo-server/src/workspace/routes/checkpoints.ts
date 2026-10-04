@@ -1,0 +1,265 @@
+import { Hono } from "hono"
+import { encodeApiError } from "@claxedo/helpers/api-error"
+import { PublicApiError } from "@claxedo/server-core/platform/errors/public-api-error"
+import { statusOf } from "@claxedo/server-core/platform/errors/base"
+import { bodyLimit } from "hono/body-limit"
+import type { ControlPlaneServices } from "../../authority/services"
+import type { ControlPlaneTokenVerifier, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
+import { createWorkspaceCheckpointService } from "../../workspace/checkpoints"
+import { signedOrError } from "../route-support"
+import { relayRole } from "../../authority/pulled-session"
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
+import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import type { RelayRole } from "@claxedo/workspace-relay"
+import { asRecord, readJsonRecord } from "@claxedo/server-core/platform/json/index"
+
+type CheckpointRouteOptions = {
+  loopbackRelayUrl?: string
+  defaultHomeRegion?: string
+  allowUnsignedLocal?: boolean
+  authentication?: RequestAuthenticationAdapter
+  verifier?: ControlPlaneTokenVerifier
+}
+
+/** Lifecycle payloads carry a policy word and at most a checkpoint id — the control-plane JSON bound. */
+const CHECKPOINT_BODY_LIMIT_BYTES = 16 * 1024
+
+export function WorkspaceCheckpointRoutes(
+  services?: ControlPlaneServices,
+  options: CheckpointRouteOptions = {},
+) {
+  const limitedBody = bodyLimit({
+    maxSize: CHECKPOINT_BODY_LIMIT_BYTES,
+    onError: (c) => c.json(
+      { error: { code: "request_body_too_large", message: `Request body exceeds the ${CHECKPOINT_BODY_LIMIT_BYTES}-byte limit` } },
+      413,
+    ),
+  })
+  return new Hono()
+    .get("/:id/checkpoints", async (c) => {
+      const access = await authorized(c.req.raw, c.req.param("id"), services, options)
+      if ("response" in access) return access.response
+      const workspaceId = c.req.param("id")
+      const inspected = await workspaceCheckpointService(access.auth, access.role, access.orgId, services!, options).inspect(workspaceId)
+      if (!access.auth) return c.json(inspected)
+      const visible = await requireAuthority(services).listSessions(access.auth, { workspaceId })
+      return c.json(filterCheckpointSessions(inspected, visible))
+    })
+    .post("/:id/checkpoints", limitedBody, async (c) => {
+      const access = await authorized(c.req.raw, c.req.param("id"), services, options, true)
+      if ("response" in access) return access.response
+      const body = (await readJsonRecord(c.req.raw)) ?? {}
+      if (body.policy !== undefined && body.policy !== "drain" && body.policy !== "interrupt") {
+        return c.json({ error: { code: "workspace_checkpoint_policy_invalid", message: "policy must be drain or interrupt" } }, 400)
+      }
+      try {
+        const result = await workspaceCheckpointService(access.auth, access.role, access.orgId, services!, options)
+          .capture(c.req.param("id"), body.policy ? { policy: body.policy } : {})
+        return c.json(result, 201)
+      } catch (error) {
+        return lifecycleError(c, error)
+      }
+    })
+    .post("/:id/checkpoints/:checkpointId/restore", limitedBody, async (c) => {
+      const access = await authorized(c.req.raw, c.req.param("id"), services, options, true)
+      if ("response" in access) return access.response
+      const body = (await readJsonRecord(c.req.raw)) ?? {}
+      if (body.approved !== true) {
+        return c.json({
+          error: {
+            code: "workspace_lifecycle_approval_required",
+            message: "Restore requires explicit approval",
+          },
+        }, 409)
+      }
+      try {
+        return c.json(await workspaceCheckpointService(access.auth, access.role, access.orgId, services!, options).restore(c.req.param("id"), {
+          checkpointId: c.req.param("checkpointId"),
+        }))
+      } catch (error) {
+        return lifecycleError(c, error)
+      }
+    })
+    .post("/:id/lifecycle/:operation", limitedBody, async (c) => {
+      const access = await authorized(c.req.raw, c.req.param("id"), services, options, true)
+      if ("response" in access) return access.response
+      const operation = c.req.param("operation")
+      const body = (await readJsonRecord(c.req.raw)) ?? {}
+      if (!["stop", "replace", "cleanup", "destroy"].includes(operation)) {
+        return c.json({ error: { code: "workspace_lifecycle_operation_invalid", message: "Unknown lifecycle operation" } }, 404)
+      }
+      if (operation !== "stop" && body.approved !== true) {
+        return c.json({
+          error: {
+            code: "workspace_lifecycle_approval_required",
+            message: `${operation} requires explicit approval`,
+          },
+        }, 409)
+      }
+      try {
+        const lifecycle = workspaceCheckpointService(access.auth, access.role, access.orgId, services!, options)
+        if (operation === "stop") return c.json(await lifecycle.stop(c.req.param("id")))
+        if (operation === "replace") {
+          return c.json(await lifecycle.replace(c.req.param("id"), (typeof body.checkpointId === "string" ? { checkpointId: body.checkpointId } : {})))
+        }
+        if (operation === "cleanup") return c.json(await lifecycle.cleanup(c.req.param("id")))
+        return c.json(await lifecycle.destroy(c.req.param("id")))
+      } catch (error) {
+        return lifecycleError(c, error)
+      }
+    })
+}
+
+export function filterCheckpointSessions<T extends { worktrees?: unknown }>(input: T, visible: unknown): T {
+  if (!Array.isArray(input.worktrees)) return input
+  const sessions = Array.isArray(visible) ? visible : asRecord(visible)?.sessions
+  const sessionIds = new Set(
+    (Array.isArray(sessions) ? sessions : []).flatMap((item) => {
+      const row = asRecord(item)
+      if (!row) return []
+      const id = row.session_id ?? row.sessionId ?? row.id
+      return typeof id === "string" ? [id] : []
+    }),
+  )
+  return {
+    ...input,
+    worktrees: input.worktrees.filter((item) => {
+      const row = asRecord(item)
+      if (!row) return false
+      const sessionId = row.sessionId ?? row.session_id
+      return typeof sessionId !== "string" || sessionIds.has(sessionId)
+    }),
+  }
+}
+
+async function authorized(
+  request: Request,
+  workspaceId: string,
+  services: ControlPlaneServices | undefined,
+  options: Pick<CheckpointRouteOptions, "allowUnsignedLocal" | "authentication" | "verifier">,
+  write = false,
+) {
+  if (options.allowUnsignedLocal && services && !services.auth.config.enabled) {
+    return { auth: undefined, role: "owner" as const, orgId: undefined }
+  }
+  const auth = await signedOrError(request, {
+    authentication: options.authentication,
+    authConfig: services?.auth.config,
+    verifier: options.verifier ?? services?.auth.verifier,
+    requireSigned: true,
+  }, services)
+  if ("error" in auth) {
+    return { response: Response.json(auth.error, { status: auth.status }) }
+  }
+  if (!auth.auth) {
+    return { response: Response.json({ error: { code: "missing_bearer_token", message: "Authorization is required" } }, { status: 401 }) }
+  }
+  try {
+    const authority = requireAuthority(services)
+    const opened = await authority.openWorkspace(auth.auth, { workspaceId })
+    const role = relayRole(opened.role)
+    const orgId = typeof opened.workspace?.org_id === "string" && opened.workspace.org_id.trim()
+      ? opened.workspace.org_id
+      : undefined
+    if (opened.allowed !== true || !role) {
+      throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Workspace access is required")
+    }
+    if (!orgId) {
+      throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "Workspace organization authority is unavailable")
+    }
+    if (write && (!opened.allowed || !workspaceCheckpointRoleAllowsWrite(role))) {
+      throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Workspace write authority is required")
+    }
+    return { auth: auth.auth, role, orgId }
+  } catch (error) {
+    if (error instanceof ControlPlaneAuthError) {
+      return { response: Response.json(controlPlaneAuthErrorBody(error), { status: error.status }) }
+    }
+    throw error
+  }
+}
+
+export function workspaceCheckpointRoleAllowsWrite(role: string | undefined) {
+  return role === "editor" || role === "admin" || role === "owner"
+}
+
+export function workspaceCheckpointService(
+  auth: SignedControlPlaneAuth | undefined,
+  role: RelayRole,
+  workspaceOrgId: string | undefined,
+  services: ControlPlaneServices,
+  options: CheckpointRouteOptions,
+) {
+  const sandboxManager = services.sandbox.sandboxManager
+  if (!sandboxManager) throw new PublicApiError("workspace_checkpoint_unavailable", "sandbox_manager_unavailable")
+  let principalPromise: Promise<{
+    principalKind: "user" | "service"
+    actorId: string
+    userId?: string
+    actorKind: "human" | "agent"
+    orgId: string | undefined
+    role: RelayRole
+    actorPublicId?: string
+    actorName?: string
+    actorAvatarUrl?: string
+  }> | undefined
+  const principal = () => principalPromise ??= auth
+    ? resolveRuntimeActor(requireAuthority(services), auth).then((actor) => ({
+        principalKind: "user" as const,
+        orgId: workspaceOrgId,
+        role,
+        ...actor,
+      }))
+    : Promise.resolve({
+        principalKind: "service" as const,
+        actorId: "control-plane",
+        actorKind: "agent" as const,
+        orgId: workspaceOrgId,
+        role: "owner" as const,
+      })
+  const runtimeRequest = async (workspaceId: string, path: string, init: RequestInit | undefined, resume: boolean) => {
+    const identity = await principal()
+    return await sandboxFetch({
+      id: workspaceId,
+      org_id: identity.orgId,
+      directory: "/workspace",
+      kind: "cloud",
+      created_at: 0,
+      updated_at: 0,
+    }, path, init, {
+      sandboxManager,
+      relayProvider: services.relay.provider,
+      loopbackRelayUrl: options.loopbackRelayUrl,
+      defaultHomeRegion: services.defaultHomeRegion ?? options.defaultHomeRegion,
+      runtimeActor: {
+        principalKind: identity.principalKind,
+        actorId: identity.actorId,
+        ...("userId" in identity && identity.userId ? { userId: identity.userId } : {}),
+        actorKind: identity.actorKind,
+        ...("actorPublicId" in identity && identity.actorPublicId ? { actorPublicId: identity.actorPublicId } : {}),
+        ...("actorName" in identity && identity.actorName ? { actorName: identity.actorName } : {}),
+        ...("actorAvatarUrl" in identity && identity.actorAvatarUrl ? { actorAvatarUrl: identity.actorAvatarUrl } : {}),
+      },
+      ...(auth ? { auth } : {}),
+      orgId: identity.orgId,
+      role: identity.role,
+      resume,
+    })
+  }
+  return createWorkspaceCheckpointService({
+    sandboxManager,
+    inspectRuntimeRequest: async (workspaceId, path, init) =>
+      await runtimeRequest(workspaceId, path, init, false),
+    runtimeRequest: async (workspaceId, path, init) =>
+      await runtimeRequest(workspaceId, path, init, true),
+  })
+}
+
+function lifecycleError(c: { json: (body: unknown, status: 409 | 503) => Response }, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  const unavailable = statusOf(error) === 503
+  return c.json(encodeApiError({ ...asRecord(error), code: unavailable ? "workspace_checkpoint_unavailable" : "workspace_checkpoint_conflict", message }), unavailable ? 503 : 409)
+}

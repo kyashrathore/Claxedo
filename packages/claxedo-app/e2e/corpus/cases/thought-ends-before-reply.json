@@ -1,0 +1,34 @@
+{
+  "id": "thought-ends-before-reply",
+  "title": "A thought that ended shows how long it took, collapsed above the reply",
+  "source": {
+    "kind": "test",
+    "file": "../workspace-runtime/src/projection/client-presentation/projection.test.ts",
+    "name": "a thought ends with its duration when the reply starts, and a later thought is its own part"
+  },
+  "partKinds": [
+    "reasoning",
+    "text"
+  ],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "Check the config.",
+        "steps": [
+          {
+            "kind": "reasoning",
+            "text": "**Planning**\n\nRead the config before touching the types."
+          },
+          {
+            "kind": "text",
+            "text": "The config is fine."
+          }
+        ]
+      }
+    ]
+  },
+  "ready": "The config is fine.",
+  "interactions": [],
+  "invariant": "Reasoning shows by default. A thought that ended reads \"Thought for <duration>\" with its body collapsed, above the reply that ended it."
+}

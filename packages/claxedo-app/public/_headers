@@ -1,0 +1,69 @@
+# ---------------------------------------------------------------------------
+# Security headers.
+#
+# This file is the ONLY place they can land for the web app. The SPA has two
+# publishers, and both serve this file: Cloudflare Pages
+# (`wrangler pages deploy dist` in .github/workflows/deploy-claxedo-app.yml) and
+# the user deployment's static-assets Worker
+# (packages/claxedo-server/scripts/deploy/deploy-user-cloudflare.ts). Neither
+# routes the HTML document through the control-plane Worker, so the Hono
+# `securityHeaders()` middleware in
+# packages/claxedo-server/src/deployments/hosted-shared/hosted-core-app.ts
+# covers the API responses and NOTHING here. Both surfaces need their own set.
+#
+# A Cache-Control set here replaces the publisher's default
+# (`public, max-age=0, must-revalidate`) rather than adding to it, and a second
+# matching rule that sets it again is joined to the first with a comma. Every
+# response carries `no-transform`, so edge features that rewrite HTML or scripts
+# (Rocket Loader, email obfuscation, injected beacons) cannot add inline scripts
+# the build's meta Content-Security-Policy refuses; the rest of this value is
+# the default revalidation the SPA shell, its client routes (/, /w/:id, /s/:id)
+# and unhashed root files need, so a new deploy's asset references are picked
+# up at once.
+/*
+  Cache-Control: no-transform, public, max-age=0, must-revalidate
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  # Both publishers serve this project over HTTPS only, so the HSTS pin is
+  # unconditional here. (The control plane's HSTS is gated on transport because
+  # it also runs plaintext on localhost; the app's publishers never do.) No `preload` — that is a
+  # one-way door that needs a deliberate submission, not a config default.
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  # Legacy clickjacking header, kept for pre-CSP2 browsers only. Every current
+  # browser IGNORES it when `frame-ancestors` is present, and frame-ancestors
+  # below is authoritative. SAMEORIGIN matches the frame-ancestors policy on
+  # old browsers.
+  X-Frame-Options: SAMEORIGIN
+  # The fetch directives are enforced by the build's <meta http-equiv> policy
+  # (vite.content-security-policy.ts), which names the exact server and relay
+  # origins. A meta policy cannot carry frame-ancestors, so it stays here.
+  Content-Security-Policy: frame-ancestors 'self'
+
+# Vite emits content-hashed filenames under /assets (e.g. main-DUtf99h4.js), so
+# they are immutable. Both publishers apply a rule's `!` detach before its own
+# values, so this rule's Cache-Control replaces the one above instead of being
+# joined to its revalidation. The MIME type is set once on the specific
+# extensions.
+/assets/*
+  ! Cache-Control
+  Cache-Control: no-transform, public, max-age=31536000, immutable
+
+/assets/*.js
+  Content-Type: application/javascript
+
+/assets/*.mjs
+  Content-Type: application/javascript
+
+/assets/*.css
+  Content-Type: text/css
+
+# Root-level scripts/styles may be unhashed (service worker, etc.), so they
+# keep the revalidating Cache-Control above and get only their MIME type here.
+/*.js
+  Content-Type: application/javascript
+
+/*.mjs
+  Content-Type: application/javascript
+
+/*.css
+  Content-Type: text/css

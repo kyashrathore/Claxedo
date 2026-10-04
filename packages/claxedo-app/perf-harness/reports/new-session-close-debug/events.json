@@ -1,0 +1,684 @@
+[
+  {
+    "t": 1780817205374,
+    "type": "console",
+    "level": "debug",
+    "text": "[vite] connecting...",
+    "location": {
+      "url": "http://localhost:4445/@vite/client",
+      "lineNumber": 732,
+      "columnNumber": 8
+    }
+  },
+  {
+    "t": 1780817205384,
+    "type": "console",
+    "level": "debug",
+    "text": "[vite] connected.",
+    "location": {
+      "url": "http://localhost:4445/@vite/client",
+      "lineNumber": 826,
+      "columnNumber": 11
+    }
+  },
+  {
+    "t": 1780817205752,
+    "type": "console",
+    "level": "log",
+    "text": "[claxedo:boot] start http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+    "location": {
+      "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+      "lineNumber": 67,
+      "columnNumber": 35
+    }
+  },
+  {
+    "t": 1780817205752,
+    "type": "console",
+    "level": "log",
+    "text": "[claxedo:boot] before-render {hasRoot: true}",
+    "location": {
+      "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+      "lineNumber": 249,
+      "columnNumber": 35
+    }
+  },
+  {
+    "t": 1780817205760,
+    "type": "console",
+    "level": "log",
+    "text": "[claxedo:boot] after-render {rootChildren: 2}",
+    "location": {
+      "url": "http://localhost:4445/src/main.tsx?t=1780817172231",
+      "lineNumber": 272,
+      "columnNumber": 35
+    }
+  },
+  {
+    "t": 1780817205767,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817205768,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817205768,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/global/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817205840,
+    "type": "console",
+    "level": "warning",
+    "text": "Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview",
+    "location": {
+      "url": "http://localhost:4445/node_modules/.vite/deps/@clerk_clerk-js.js?v=72f84088",
+      "lineNumber": 45136,
+      "columnNumber": 39
+    }
+  },
+  {
+    "t": 1780817206775,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817207774,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817207774,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817208774,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817209774,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817209777,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817210775,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817211775,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817211780,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817212772,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817213774,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817213784,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817214773,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817215773,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817215789,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817216773,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817217775,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817217793,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817218773,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817219774,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817219797,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817220773,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817221774,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817221802,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817222774,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817223774,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817223806,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817224770,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817225766,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/global/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817225772,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817225811,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817226773,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817227775,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817227816,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817228773,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817229773,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817229819,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817230773,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817231774,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817231823,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817232774,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817233773,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817233828,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817234773,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817235773,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817235833,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817236773,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817237774,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817237838,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817238775,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817239772,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817239843,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/events",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  },
+  {
+    "t": 1780817240773,
+    "type": "console",
+    "level": "error",
+    "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "location": {
+      "url": "http://127.0.0.1:3001/api/claxedo/health",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  }
+]

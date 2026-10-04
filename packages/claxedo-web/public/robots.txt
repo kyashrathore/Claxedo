@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /app/
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /app/
+
+Sitemap: https://claxedo.com/sitemap-index.xml

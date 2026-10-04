@@ -1,0 +1,128 @@
+{
+  "generated_at": "2026-06-08T08:57:04.215Z",
+  "status": "fail",
+  "targets": {
+    "rate_target_hz": 120,
+    "rate_floor_hz": 60
+  },
+  "flows": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "three-pane-resize",
+      "name": "Resize the three-pane workbench",
+      "started_at": "2026-06-08T08:57:04.077Z",
+      "duration_ms": 60327.409875,
+      "seed": {
+        "repos": 1,
+        "sessions": 1,
+        "messages": 10000,
+        "terminals": 1,
+        "changed_files": 120,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "headline": {
+        "label": "three-pane-resize",
+        "worstFrameMs": 50.4,
+        "p95FrameMs": 50.4,
+        "framesOver833": 2,
+        "framesOver1667": 2,
+        "sampleCount": 2,
+        "completionMs": 36.31,
+        "verdict": "red"
+      },
+      "metrics": [
+        {
+          "metric": "divider_drag_ms",
+          "value": 0,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "divider_moved_px",
+          "value": 0,
+          "unit": "px",
+          "direction": "lower",
+          "samples": [
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        }
+      ],
+      "validation_failures": [
+        "error boundary rendered for three-pane-resize",
+        "session messages were not requested for three-pane-resize",
+        "terminal surface did not visibly open",
+        "workspace panel shell did not visibly open",
+        "diff/review surface did not visibly open",
+        "diff/review surface did not visibly open with changed files",
+        "no pane divider was visible to resize",
+        "transcript text was not visible for three-pane-resize: three-pane-resize session 1"
+      ],
+      "artifacts": {
+        "video": "reports/videos/claxedo-three-pane-resize-1.webm"
+      },
+      "attribution": {
+        "git_sha": "ae609dc6cb0e0618f85d7aad47b6f09752308120",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts run --scenario three-pane-resize --debug --output prod-three-pane-resize.json --no-trend",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:64649",
+          "mock_port": 32123,
+          "dev_command": "bun run serve -- --host 127.0.0.1 --port 64649"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:ae609dc6cb0e0618f85d7aad47b6f09752308120"
+      },
+      "budget": {
+        "scenario": "three-pane-resize",
+        "worst_frame_ms": 573
+      },
+      "status": "fail",
+      "failures": [
+        "p95 frame 50.40ms > 16.67ms — sustained below 60hz",
+        "error boundary rendered for three-pane-resize",
+        "session messages were not requested for three-pane-resize",
+        "terminal surface did not visibly open",
+        "workspace panel shell did not visibly open",
+        "diff/review surface did not visibly open",
+        "diff/review surface did not visibly open with changed files",
+        "no pane divider was visible to resize",
+        "transcript text was not visible for three-pane-resize: three-pane-resize session 1"
+      ],
+      "warnings": []
+    }
+  ]
+}

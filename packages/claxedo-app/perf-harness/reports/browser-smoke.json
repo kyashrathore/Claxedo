@@ -1,0 +1,140 @@
+{
+  "generated_at": "2026-05-23T08:34:13.784Z",
+  "status": "pass",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "launch-empty-home",
+      "name": "Launch Empty Home",
+      "started_at": "2026-05-23T08:34:13.736Z",
+      "duration_ms": 10187.192875,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 0,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "launch_first_window_ms",
+          "value": 4663.239292,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            4663.239292
+          ],
+          "p50": 4663.239292,
+          "p95": 4663.239292,
+          "min": 4663.239292,
+          "max": 4663.239292,
+          "mean": 4663.239292,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_first_useful_screen_ms",
+          "value": 4716.109625,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            4716.109625
+          ],
+          "p50": 4716.109625,
+          "p95": 4716.109625,
+          "min": 4716.109625,
+          "max": 4716.109625,
+          "mean": 4716.109625,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_workspace_ready_ms",
+          "value": 9718.720375,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            9718.720375
+          ],
+          "p50": 9718.720375,
+          "p95": 9718.720375,
+          "min": 9718.720375,
+          "max": 9718.720375,
+          "mean": 9718.720375,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_first_input_ms",
+          "value": 38.09862500000054,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            38.09862500000054
+          ],
+          "p50": 38.09862500000054,
+          "p95": 38.09862500000054,
+          "min": 38.09862500000054,
+          "max": 38.09862500000054,
+          "mean": 38.09862500000054,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "memory_rss_mb",
+          "value": 61.03515625,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            61.03515625
+          ],
+          "p50": 61.03515625,
+          "p95": 61.03515625,
+          "min": 61.03515625,
+          "max": 61.03515625,
+          "mean": 61.03515625,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 842.734,
+        "memory_rss_mb": 61.03515625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "artifacts": {
+        "video": "reports/videos/claxedo-launch-empty-home-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "launch-empty-home",
+        "metrics": {
+          "launch_first_window_ms": 5830,
+          "launch_first_useful_screen_ms": 5896,
+          "launch_workspace_ready_ms": 12149,
+          "launch_first_input_ms": 48,
+          "memory_rss_mb": 77
+        }
+      },
+      "status": "pass",
+      "failures": []
+    }
+  ],
+  "comparisons": []
+}

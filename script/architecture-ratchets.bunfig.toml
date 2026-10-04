@@ -1,0 +1,4 @@
+# The repository-level bunfig intentionally prevents broad root test discovery.
+# This dedicated config lets the architecture command run its explicit test file.
+[test]
+root = "."

@@ -1,0 +1,351 @@
+/**
+ * Unified token-verifier interface (P-shared).
+ *
+ * Each of the four Claxedo boundaries (relay/tunnel, optional modules,
+ * SDK runner, workspace host) historically defined its own ad-hoc
+ * verifier shape. This module is the single seam every downstream user
+ * can swap a custom implementation through.
+ *
+ * The interface is intentionally narrow: token in, claims out. It does
+ * not expose JWKS plumbing, audience-binding sugar, or replay-cache
+ * details — those belong to the impl, not the contract.
+ *
+ * See the boundary READMEs for wiring rules.
+ */
+
+import { createRemoteJWKSet, errors as joseErrors, jwtVerify, type JWTPayload } from "jose"
+
+import { isRecord, numberClaim, stringClaim } from "@claxedo/helpers/guards"
+import { isLoopbackHostname } from "@claxedo/helpers"
+
+export type TokenVerifierBaseClaims = {
+  iss: string
+  aud: string
+  sub: string
+  workspace_id: string
+  host_id: string
+  exp: number
+  iat: number
+  jti: string
+} & Record<string, unknown>
+
+export type RuntimeAccessVerifierClaims = Omit<TokenVerifierBaseClaims, "sub"> & {
+  org_id: string
+  role: "viewer" | "editor" | "admin" | "owner"
+  /** The whole workspace, or the one session `session_id` names. */
+  scope: "workspace" | "session"
+  session_id?: string
+  purpose?: "turn-execution"
+  principal_kind: "user" | "service"
+  actor_id: string
+  user_id?: string
+  actor_kind: "human" | "agent"
+  actor_public_id?: string
+  actor_name?: string
+  actor_avatar_url?: string
+}
+
+export type RelayHostVerifierClaims = Omit<TokenVerifierBaseClaims, "sub"> & {
+  org_id: string
+  role: "viewer" | "editor" | "admin" | "owner"
+  scope: "workspace" | "session"
+  session_id?: string
+  purpose?: "turn-execution"
+  principal_kind: "user" | "service"
+  actor_id: string
+  user_id?: string
+  actor_kind: "human" | "agent"
+  actor_public_id?: string
+  actor_name?: string
+  actor_avatar_url?: string
+  /** Durable Runtime Access Token id; distinct from this short-lived RHT jti. */
+  parent_jti: string
+  backing: "cloud-vm" | "local-worktree" | "durable-object"
+}
+
+export type TokenClaims<TClaims extends Record<string, unknown> = Record<string, unknown>> = {
+  /** Provider subject for provider-backed identity verifiers. Runtime and
+   * relay-host tokens instead carry canonical actor/principal claims. */
+  subject?: string
+  /** Scopes / capabilities asserted by the issuer. May be empty. */
+  scopes: string[]
+  /** Full claim payload. Carries the common verifier token contract plus
+   *  boundary-specific custom claims. */
+  claims: TClaims
+}
+
+export type TokenVerifier<TClaims extends Record<string, unknown> = Record<string, unknown>> = {
+  verify(token: string): Promise<TokenClaims<TClaims>>
+}
+
+export type OidcTokenVerifierClaims = JWTPayload & {
+  iss: string
+  sub: string
+  exp: number
+  iat?: number
+  jti?: string
+  sid?: string
+  org_id?: string
+  orgId?: string
+}
+
+export class TokenVerifierError extends Error {
+  readonly code: string
+  readonly status: number
+  constructor(input: { code: string; message: string; status?: number; cause?: unknown }) {
+    super(input.message)
+    this.name = "TokenVerifierError"
+    this.code = input.code
+    this.status = input.status ?? 401
+    if (input.cause !== undefined) (this as { cause?: unknown }).cause = input.cause
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// HttpTokenVerifier — calls a remote verifier endpoint over HTTP.
+// Use this when your authority lives behind a network call
+// (custom OIDC introspection endpoint, etc.).
+// ─────────────────────────────────────────────────────────────────────
+
+export type HttpTokenVerifierOptions = {
+  /** Verifier endpoint. Must accept POST with `{ token }` JSON body
+   *  and return `{ subject: string; scopes?: string[]; claims: TokenVerifierBaseClaims }`
+   *  on success, or HTTP non-2xx on failure. */
+  endpoint: string
+  /** Development only: permit HTTP to the exact loopback hosts. HTTPS is otherwise required. */
+  allowInsecureLoopback?: boolean
+  /** Optional fixed headers (e.g., bearer auth on the verifier itself). */
+  headers?: Record<string, string>
+  /** fetch override for tests. */
+  fetch?: typeof fetch
+  /** Request timeout in ms. Default 5000. */
+  timeoutMs?: number
+}
+
+export function createHttpTokenVerifier(options: HttpTokenVerifierOptions): TokenVerifier<TokenVerifierBaseClaims> {
+  let endpoint: URL
+  try {
+    endpoint = new URL(options.endpoint)
+    if (endpoint.username || endpoint.password || endpoint.hash
+      || (endpoint.protocol !== "https:" && !(options.allowInsecureLoopback && endpoint.protocol === "http:" && isLoopbackHostname(endpoint.hostname)))) {
+      throw new Error("untrusted verifier endpoint")
+    }
+  } catch {
+    throw new TokenVerifierError({ code: "verifier_endpoint_invalid", status: 500, message: "Verifier endpoint requires HTTPS without URL credentials or a fragment; explicit loopback development is the only HTTP exception" })
+  }
+  const fetchImpl = options.fetch ?? globalThis.fetch
+  if (!fetchImpl) {
+    throw new TokenVerifierError({
+      code: "fetch_unavailable",
+      message: "createHttpTokenVerifier requires a fetch implementation in this runtime",
+      status: 500,
+    })
+  }
+  const timeoutMs = options.timeoutMs ?? 5000
+  return {
+    async verify(token) {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), timeoutMs)
+      try {
+        const res = await fetchImpl(endpoint.href, {
+          method: "POST",
+          redirect: "error",
+          headers: {
+            "content-type": "application/json",
+            ...options.headers,
+          },
+          body: JSON.stringify({ token }),
+          signal: controller.signal,
+        })
+        if (!res.ok) {
+          throw new TokenVerifierError({
+            code: res.status === 401 || res.status === 403 ? "verifier_rejected" : "verifier_unavailable",
+            message: `Verifier endpoint returned ${res.status}`,
+            status: res.status === 401 || res.status === 403 ? res.status : 503,
+          })
+        }
+        const body: unknown = await res.json().catch(() => null)
+        if (!isRecord(body)) {
+          throw new TokenVerifierError({
+            code: "verifier_response_invalid",
+            message: "Verifier response is missing a subject",
+          })
+        }
+        const subject = stringClaim(body, "subject")
+        if (!subject) {
+          throw new TokenVerifierError({
+            code: "verifier_response_invalid",
+            message: "Verifier response is missing a subject",
+          })
+        }
+        const claims = tokenVerifierBaseClaims(body.claims)
+        if (!claims || claims.sub !== subject) {
+          throw new TokenVerifierError({
+            code: "verifier_response_invalid",
+            message: "Verifier response is missing required token claims",
+          })
+        }
+        const now = Date.now() / 1_000
+        const nbf = claims.nbf
+        if (claims.exp <= now || claims.iat > now || claims.exp <= claims.iat
+          || (nbf !== undefined && (typeof nbf !== "number" || !Number.isFinite(nbf) || nbf > now))) {
+          throw new TokenVerifierError({ code: "verifier_claims_invalid", message: "Verifier claims are expired or not yet valid" })
+        }
+        return {
+          subject,
+          scopes: Array.isArray(body.scopes) ? body.scopes.filter((s): s is string => typeof s === "string") : [],
+          claims,
+        }
+      } catch (err) {
+        if (err instanceof TokenVerifierError) throw err
+        throw new TokenVerifierError({
+          code: "verifier_unreachable",
+          message: err instanceof Error ? err.message : String(err),
+          status: 503,
+          cause: err,
+        })
+      } finally {
+        clearTimeout(timer)
+      }
+    },
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// OidcTokenVerifier — verifies short-lived session JWTs against a JWKS.
+//
+// Session tokens arrive on backend requests through
+// `Authorization: Bearer <token>` and are verified against the issuer's
+// JWKS.
+// ─────────────────────────────────────────────────────────────────────
+
+export type OidcTokenVerifierOptions = {
+  issuer: string
+  jwksUrl: string
+  audience?: string
+  scopes?: string[]
+  algorithms?: Array<"ES256" | "EdDSA" | "RS256">
+}
+
+const oidcJwks = new Map<string, ReturnType<typeof createRemoteJWKSet>>()
+
+export function createOidcTokenVerifier(options: OidcTokenVerifierOptions): TokenVerifier<OidcTokenVerifierClaims> {
+  const algorithms = options.algorithms ?? ["ES256", "EdDSA", "RS256"]
+  const remote = oidcJwks.get(options.jwksUrl) ?? createRemoteJWKSet(new URL(options.jwksUrl))
+  oidcJwks.set(options.jwksUrl, remote)
+  return {
+    async verify(token) {
+      try {
+        const result = await jwtVerify(token, remote, {
+          issuer: options.issuer,
+          audience: options.audience,
+          algorithms,
+        })
+        const claims = oidcClaims(result.payload)
+        if (!claims) {
+          throw new TokenVerifierError({
+            code: "oidc_claims_invalid",
+            message: "Session token is missing required claims",
+          })
+        }
+        return {
+          subject: claims.sub,
+          scopes: options.scopes ?? scopeClaims(claims),
+          claims,
+        }
+      } catch (err) {
+        if (err instanceof TokenVerifierError) throw err
+        const unavailable = err instanceof joseErrors.JWKSTimeout || !(err instanceof joseErrors.JOSEError)
+        throw new TokenVerifierError({
+          code: unavailable ? "oidc_verifier_unavailable" : "oidc_token_invalid",
+          message: unavailable ? "Session verifier is unavailable" : "Session token is invalid",
+          status: unavailable ? 503 : 401,
+          cause: err,
+        })
+      }
+    },
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// StaticTokenVerifier — a fixed table of accepted tokens.
+//
+// Intended for tests, self-hosted single-tenant deployments, and
+// integration scenarios where the operator wants to issue tokens out
+// of band. NOT for production multi-tenant use.
+// ─────────────────────────────────────────────────────────────────────
+
+export type StaticTokenVerifierOptions<TClaims extends Record<string, unknown> = Record<string, unknown>> = {
+  /** Map of token string → claims to return. */
+  tokens: Record<string, TokenClaims<TClaims>>
+}
+
+export function createStaticTokenVerifier<TClaims extends Record<string, unknown> = Record<string, unknown>>(
+  options: StaticTokenVerifierOptions<TClaims>,
+): TokenVerifier<TClaims> {
+  // Copied into a Map so a token string can only ever match an entry the caller
+  // supplied. A plain object lookup also resolves inherited keys, which would
+  // make "constructor", "toString", or "__proto__" verify successfully and
+  // return an Object.prototype member instead of claims.
+  const tokens = new Map<string, TokenClaims<TClaims>>(Object.entries(options.tokens))
+  return {
+    async verify(token) {
+      const claims = tokens.get(token)
+      if (!claims) {
+        throw new TokenVerifierError({
+          code: "token_not_in_static_table",
+          message: "Token is not present in the static verifier's accepted set",
+        })
+      }
+      return claims
+    },
+  }
+}
+
+function tokenVerifierBaseClaims(input: unknown): TokenVerifierBaseClaims | undefined {
+  if (!isRecord(input)) return undefined
+  const iss = stringClaim(input, "iss")
+  const aud = stringClaim(input, "aud")
+  const sub = stringClaim(input, "sub")
+  const workspace_id = stringClaim(input, "workspace_id")
+  const host_id = stringClaim(input, "host_id")
+  const exp = numberClaim(input, "exp")
+  const iat = numberClaim(input, "iat")
+  const jti = stringClaim(input, "jti")
+  if (!iss || !aud || !sub || !workspace_id || !host_id || !exp || !iat || !jti) return undefined
+  return {
+    ...input,
+    iss,
+    aud,
+    sub,
+    workspace_id,
+    host_id,
+    exp,
+    iat,
+    jti,
+  }
+}
+
+function oidcClaims(input: JWTPayload): OidcTokenVerifierClaims | undefined {
+  if (!input.iss || !input.sub || !input.exp) return undefined
+  const sid = stringClaim(input, "sid")
+  const org_id = stringClaim(input, "org_id")
+  const orgId = stringClaim(input, "orgId")
+  return {
+    ...input,
+    iss: input.iss,
+    sub: input.sub,
+    exp: input.exp,
+    ...(input.iat ? { iat: input.iat } : {}),
+    ...(typeof input.jti === "string" ? { jti: input.jti } : {}),
+    ...(sid ? { sid } : {}),
+    ...(org_id ? { org_id } : {}),
+    ...(orgId ? { orgId } : {}),
+  }
+}
+
+function scopeClaims(input: Record<string, unknown>) {
+  if (Array.isArray(input.scp)) return input.scp.filter((item): item is string => typeof item === "string")
+  if (typeof input.scope === "string") return input.scope.split(" ").filter(Boolean)
+  return []
+}

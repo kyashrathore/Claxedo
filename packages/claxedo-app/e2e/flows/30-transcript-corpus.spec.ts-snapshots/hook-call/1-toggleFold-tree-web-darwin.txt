@@ -1,0 +1,18 @@
+scrollTop: 0
+background subagents:
+(none)
+row 0:
+- text: Check the project after the hook runs. acp-script:hook-call-0 Build · <time>
+- button "Copy message"
+row 1:
+- button "Worked for 0s" [expanded]
+row 2:
+- button "Hook prompt summary=hook_prompt": summary=hook_prompt
+row 3:
+- paragraph: I’ll check the working tree.
+row 4:
+- button "Ran git status": git status
+row 5:
+- paragraph: The project is ready.
+- button "Copy response"
+- text: Build · 0s

@@ -1,0 +1,267 @@
+import type { Policy } from "../policy.ts"
+
+const SRC = "packages/claxedo-local-server/src"
+
+/**
+ * The desktop-local server, from the entry the desktop actually starts.
+ *
+ * `claxedo-desktop/src/server/entry.ts` starts the server through
+ * `@claxedo/local-server/self-hosted-execution` and mounts the feature
+ * compositions the same package publishes beside it. That subpath is the entry
+ * here, rather than the package's whole `exports` surface: the package-wide
+ * walk is `src/architecture/local-closure.test.ts`'s job and answers "what may
+ * a consumer import", while this answers "what does the shipped product load".
+ * Both are run by `verify:closure`.
+ *
+ * The forbidden list is the same one that test states, and for the same reason:
+ * each entry is a hosted capability an unsigned desktop has no way to use and
+ * no business carrying. When this measurement started, the desktop-local entry
+ * reached 259 first-party modules and 42 packages — better-auth, channels,
+ * connections — from a build that never signs in.
+ */
+export const localServer: Policy = {
+  id: "local-server",
+  summary: "@claxedo/local-server desktop entry (src/self-hosted-execution.ts)",
+  packageDir: "packages/claxedo-local-server",
+  entry: `${SRC}/self-hosted-execution.ts`,
+  roots: [SRC],
+
+  forbiddenPackages: [
+    "@claxedo/sandbox-manager",
+    "@claxedo/server",
+    "@claxedo/channels",
+    "@claxedo/connections",
+    "better-auth",
+    "posthog-node",
+    // Not in the package-wide list, and it belongs here: the desktop server is
+    // a child process of Electron, not the renderer, and a UI package in this
+    // graph would mean the split leaked in the other direction.
+    "@claxedo/app",
+  ],
+  forbiddenModules: [
+    "packages/claxedo-server/src",
+    "packages/claxedo-app/src",
+    "packages/sandbox-manager/src",
+    "packages/claxedo-channels/src",
+    "packages/claxedo-connections/src",
+  ],
+
+  control: {
+    minModules: 30,
+    requiredModules: [
+      `${SRC}/self-hosted-execution.ts`,
+      // The composition this entry exists to start. Absent means the walk
+      // stopped at the re-export.
+      `${SRC}/app/start-local-server.ts`,
+      `${SRC}/app/local-app.ts`,
+      `${SRC}/workspace/routes/resolve-route.ts`,
+    ],
+    // The embedded runtime and the HTTP framework. A walk that read no imports
+    // reports neither.
+    requiredPackages: ["@claxedo/workspace-runtime", "hono"],
+  },
+
+  // Measured with `runtimeOnly` — re-run, never summed: 63 modules, 27
+  // packages. What the desktop entry reaches beyond the composition and the
+  // workspace routes, and why each owner is this product's:
+  //  - the local usage pipeline (route, durable ports, scanner, pricing port,
+  //    host identity, composition) and the tenant-aware sandbox fetch
+  //    options: local workspace owners with no hosted capability package.
+  //  - `embedded-relay-host-auth.ts`: the verified actor hop stamp for
+  //    in-process embedded prompts (`claxedo.author` without managed authority).
+  //  - `workspace/runtime-dispatch/ingress-provenance.ts` and
+  //    `deployments/local/host-session-authority.ts`: whether a request is the
+  //    relay replaying a member onto this machine's loopback or the machine's
+  //    own user, and the private-session policy and relay-token verifier the
+  //    first consults. Only a process that serves both callers on one listener
+  //    has the question; they reach the workspace-runtime relay subpath and
+  //    host-serving's identity reader, both already here.
+  //  - `workspace/host-serving-routes.ts`: the loopback control route
+  //    through which Electron main hands the serving credential and the
+  //    embedded runtimes' `sessionAuthority` to @claxedo/host-serving, the
+  //    reviewed owner of the serving half of remote access (one relay loop for
+  //    the assigned∩acked set, and the per-workspace surface a relayed request
+  //    may reach) for this daemon and a `claxedo connect` host alike. That
+  //    package reaches server-core's log and peer-address leaves and the
+  //    workspace-runtime relay subpath, all already here.
+  //  - `platform/json.ts`: the one dependency-free leaf every reader of
+  //    untrusted JSON (request bodies, runtime event payloads, subprocess
+  //    output) narrows through.
+  //  - `shell/event-stream-response.ts`: the authorized event producer over
+  //    HTTP or WebSocket.
+  //  - `shell/host-events.ts`: the host aggregate `wr/events`, which serves
+  //    every embedded runtime's frames on one connection. Only a process that
+  //    hosts those runtimes can read their taps, so the handler belongs to
+  //    this product; it reaches the runtime's own event source and SSE
+  //    writer, both already here.
+  //  - `app/local-documents.ts`: the shared repository/managed document
+  //    backend composed for unsigned desktop editing.
+  //  - `credentials/broker.ts` and @claxedo/egress-broker: the loopback
+  //    credential broker mounted at `/bindings/*` and the authority behind it
+  //    (request policy, injection, mount gate, runtime-token verification).
+  //    The desktop-local server is the process that holds the credential value
+  //    and the harness never does. The table naming each provider's vendor
+  //    host, methods, paths and header shape is a fact about the vendor, so
+  //    server-core owns it and the cloud delivery adapter reads the same rows.
+  //  - `credentials/machine-credentials.ts`: asking a CLI what it is signed in
+  //    as, and withdrawing the stored mark so a harness runs on that login —
+  //    operations with no referent on a host where no harness is installed.
+  //  - `usage/adapters/token-tracker-usage-limits.ts`: the plan probe for
+  //    every agent installed on this machine, which only a server running on
+  //    that machine can ask; tokentracker-cli is already carried by the
+  //    history adapter beside it.
+  //  - `agent-plugins/builtin-groups.ts`: the tool groups this machine
+  //    consented to, read from the Marketplace's own activation rows in
+  //    `agent-plugins/activation/sqlite-store.ts`, so the first-party MCP
+  //    endpoint has one answer to that question.
+  // Packages beyond the framework and the runtime: @claxedo/helpers through
+  // the shared server-core surface; @claxedo/mcp, the first-party MCP endpoint
+  // mounted at `/api/claxedo/mcp` for the sessions this composition launches
+  // (runtime credential only; reaches the MCP SDK, hono, zod, helpers and the
+  // runtime contract); @claxedo/agent-runtime-contract, the
+  // dependency-free owner of the harness table and the credential-broker
+  // error vocabulary; @claxedo/host-serving and @claxedo/egress-broker as
+  // above.
+  //  - `workspace/host-provider-config.ts` and
+  //    `workspace/host-provider-config-routes.ts`: the provider rows the
+  //    owner pushed to THIS machine, held in memory by the process whose
+  //    runtimes resolve them, and the loopback route Electron main installs
+  //    them through. The parser and the `projectAuth` composition are
+  //    server-core's (`credentials/host-provider-config.ts`, already a
+  //    package edge), so these two cost no package.
+  //  - `app/daemon-admission.ts` (owner: the desktop-local composition): who
+  //    may drive this daemon, decided once ahead of every mount. It is this
+  //    product's own authority boundary — a loopback page is not the
+  //    application — so it belongs to the composition rather than to shared
+  //    server-core, which has no daemon to authenticate. `node:crypto` and
+  //    server-core's error body, both already here.
+  //  - `workspace/runtime-dispatch/relay-admission.ts` (owner: the runtime
+  //    dispatcher): the bound within which that gate defers to relayed
+  //    traffic. It lives beside the dispatcher because the paths and the
+  //    canonical ingress verification are the dispatcher's own knowledge, and
+  //    reaches only `internals.ts` and `ingress-provenance.ts` beside it.
+  //  - `node:worker_threads` via `shell/files.ts` (owner: the `/find` text
+  //    search): a caller-named regex can backtrack catastrophically on the
+  //    server thread, and only `worker.terminate()` interrupts synchronous
+  //    evaluation, so grepSearch evaluates the pattern in a bounded worker.
+  //  - `app/daemon-operation-store.ts` and `app/daemon-ownership-snapshot.ts`
+  //    (owner: the daemon lifecycle): machine-scope recovery receipts in this
+  //    machine's own database, and the redacted inventory it republishes for a
+  //    launcher that cannot reach its HTTP. Workspace ownership stays in each
+  //    workspace's RuntimeStore; what lives here spans every workspace at once,
+  //    so no single one of them can hold it. They reach `@claxedo/helpers`,
+  //    `@claxedo/agent-runtime-contract` (which owns the recovery scope key)
+  //    and the ClaxedoDB engine, all already here.
+  //  - `app/daemon-admission.ts` now actually reachable: the composition mounts
+  //    its capability admission and its machine-recovery fence, so the module
+  //    this comment already claimed was in the closure is in it.
+  //  - `plugins/{bundles,machine,registry,routes,service,store}.ts` with
+  //    `@claxedo/plugin-api` and `@claxedo/plugin-build` (owner: the daemon's
+  //    live plugins, an approved server addition in the app rebuild plan):
+  //    the daemon registers a machine's plugins, builds each into a hashed
+  //    bundle, serves it and announces changes, so the app on this machine
+  //    loads them without a release. Clone destination admission (`node:dns`)
+  //    moved with the projects route into server-core's projects module.
+  //  - `session/publish/*` (owner: the machine publisher, this daemon's half
+  //    of the control plane's session-rows endpoint): a signed-in machine
+  //    publishes each served session's list row and status, on change and in
+  //    full whenever its serving credential or workspace set changes, so the
+  //    control plane answers machine sessions from its own store. Only the
+  //    process that holds the projection, hosts the runtimes whose frames
+  //    carry status, and receives the Host Tunnel Token can do it. The five
+  //    modules reach the projection port and its change notices,
+  //    host-serving's credential listener, the runtime registry and
+  //    `platform/json.ts`, all already here, and server-core's session-rows
+  //    contract, which costs no package.
+  //  - `session/list/session-list-page.ts` (owner: the daemon's session
+  //    list): one keyset page per project or workspace, from the projection
+  //    for this machine and from the authority for a signed caller, each row
+  //    carrying its runtime's status. It reaches the projection's keyset read
+  //    and server-core's navigation list, both already here.
+  //  - `session/runtime-activity.ts` (owner: the in-process status read): a
+  //    mounted runtime's statuses, permissions and questions, read by the list
+  //    page and the machine publisher alike. It reaches `platform/json.ts`.
+  //  - `plugins/{authoring,scaffold}.ts` (owner: app plugin authoring, the
+  //    grant the daemon hands an owner-driven session behind the Claxedo MCP
+  //    `app_plugin_*` tools): scaffolds a plugin folder inside the
+  //    session's workspace, checks it with `@claxedo/plugin-build` and
+  //    registers it through the live-plugin service. It reaches the plugin
+  //    packages and the service, all already here.
+  //  - `shell/events.ts` beats on @claxedo/agent-runtime-contract's
+  //    `EVENT_STREAM_HEARTBEAT_MS` (owner: the event-stream liveness contract):
+  //    the local `cp/events` beats on the same constant as every `wr/events`,
+  //    so the app's one reader budget is sized against one constant. The
+  //    package was already here.
+  //  - `@claxedo/process-ownership/launch` through `app/local-daemon-lifecycle.ts`
+  //    (owner: local daemon lifecycle): creation identity and bounded retirement
+  //    keep daemon replacement tied to the process this machine launched.
+  //    It provides dependency-free data and OS reads, with no server, runtime
+  //    or store closure behind them.
+  //  - `@claxedo/account-contract/vocabulary` through
+  //    `credentials/broker.ts` (owner:
+  //    the account vocabulary the app, this daemon and the hosted server
+  //    share): whose account a person spends and where a stored account may
+  //    be delivered. The subpath is import-free.
+  //    80/29, no headroom.
+  // -1 module: `usage/adapters/token-tracker-local-history.ts` is gone with the
+  // machine's CLI-history Total view. 79/29, no headroom.
+  // -1 module: `credentials/operations/drop-copied-harness-logins.ts` is gone;
+  // startup leaves stored credentials untouched. 78/29, no headroom.
+  // +1 package: `@claxedo/session-core` (owner: the runtime-neutral session
+  // core that every workspace runtime composes through `createSessionCore`).
+  // The daemon's embedded runtime (`deployments/local/embedded-workspace-runtime.ts`),
+  // its session authority and PTY attachment, and `shell/host-events.ts` read
+  // the core's session access policy and event-stream frames from the core
+  // itself; `@claxedo/workspace-runtime` composes the core and no longer
+  // re-exports them. The terminal attachment the embedded runtime admits is
+  // its own module (`deployments/local/embedded-pty-attachment.ts`, owner: the
+  // embedded runtime's PTY admission). 79/30, no headroom.
+  // -6 modules, -2 packages: the daemon no longer carries the MCP install
+  // routes, the provider-auth service and credential routes, the credential
+  // migration, the control-plane route auth or the session-rows publisher;
+  // `@claxedo/agent-sdk-runtime`, `@claxedo/opencode-server-adapter`,
+  // `@claxedo/sandbox-contract` and `smol-toml` left with them.
+  // `@claxedo/harness` (owner: the harness registry the workspace provider
+  // catalog reads) and `@claxedo/process-ownership` arrived. 73/28, no headroom.
+  ceilings: { modules: 73, packages: 28 },
+
+  emitted: {
+    file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",
+    minModules: 500,
+    minChunks: 1,
+    requiredModules: [
+      // The facade is all re-exports and therefore has no generated range in
+      // Bun's source map. `entry` above still pins it; these prove its bodies.
+      `${SRC}/app/start-local-server.ts`,
+      `${SRC}/app/local-app.ts`,
+      "packages/claxedo-server-core/src/platform/db/db.ts",
+    ],
+  },
+
+  isolation: {
+    native: ["node-pty", "better-sqlite3"],
+    // These packages publish dist-only exports. Build them in dependency order
+    // inside the isolated workspace so the Local Server bundle never consumes
+    // outputs left behind by a developer's existing checkout.
+    buildPackages: [
+      // `@claxedo/helpers` publishes dist-only subpaths (`/guards`, `/string`)
+      // that every package below bundles against; it has no @claxedo/*
+      // dependencies, so it builds first.
+      { packageDir: "packages/claxedo-helpers" },
+      // server-core's agent-config, workspace store and sandbox routes read the
+      // driver contract; its published subpath is dist-only.
+      { packageDir: "packages/sandbox-contract" },
+      { packageDir: "packages/agent-runtime-contract" },
+      { packageDir: "packages/process-ownership" },
+      // The loopback credential broker the desktop composition mounts; its
+      // published entry is dist-only and it bundles against
+      // @claxedo/agent-runtime-contract, built above it.
+      { packageDir: "packages/egress-broker" },
+      { packageDir: "packages/workspace-relay-protocol" },
+      { packageDir: "packages/workspace-relay" },
+      { packageDir: "packages/session-core" },
+      { packageDir: "packages/workspace-runtime" },
+    ],
+    commands: [["bun", "run", "build"], ["bun", "run", "smoke:build"]],
+  },
+}

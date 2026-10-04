@@ -1,0 +1,119 @@
+import { expect, test } from "bun:test"
+import * as fs from "node:fs"
+import * as os from "node:os"
+import * as path from "node:path"
+
+import { spec as desktopContractSpec, verify, write, type Spec } from "./contract"
+
+const ROOT = path.resolve(import.meta.dir, "..")
+const SOURCE_COMMIT = "a".repeat(40)
+
+function temp() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-contract-"))
+}
+
+function make(root: string, file: string, value: string) {
+  const full = path.join(root, file)
+  fs.mkdirSync(path.dirname(full), { recursive: true })
+  fs.writeFileSync(full, value)
+}
+
+function spec(root: string): Spec {
+  return {
+    root,
+    file: path.join(root, "dist/.build-contract.json"),
+    input: ["src/app.ts", "config.json"],
+    output: ["out/app.js", "resources/app.js"],
+    match: [["out/app.js", "resources/app.js"]],
+  }
+}
+
+test("verify passes for matching contract", () => {
+  const root = temp()
+  make(root, "src/app.ts", "export const n = 1\n")
+  make(root, "config.json", "{}\n")
+  make(root, "out/app.js", "console.log(1)\n")
+  make(root, "resources/app.js", "console.log(1)\n")
+
+  write(spec(root), "dev", SOURCE_COMMIT)
+
+  expect(() => verify(spec(root), "dev", SOURCE_COMMIT)).not.toThrow()
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test("verify fails when an input drifts after build", () => {
+  const root = temp()
+  make(root, "src/app.ts", "export const n = 1\n")
+  make(root, "config.json", "{}\n")
+  make(root, "out/app.js", "console.log(1)\n")
+  make(root, "resources/app.js", "console.log(1)\n")
+
+  write(spec(root), "dev", SOURCE_COMMIT)
+  make(root, "src/app.ts", "export const n = 2\n")
+
+  expect(() => verify(spec(root), "dev", SOURCE_COMMIT)).toThrow("input changed: src/app.ts")
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test("verify fails when mirrored outputs diverge", () => {
+  const root = temp()
+  make(root, "src/app.ts", "export const n = 1\n")
+  make(root, "config.json", "{}\n")
+  make(root, "out/app.js", "console.log(1)\n")
+  make(root, "resources/app.js", "console.log(1)\n")
+
+  write(spec(root), "dev", SOURCE_COMMIT)
+  make(root, "resources/app.js", "console.log(2)\n")
+
+  expect(() => verify(spec(root), "dev", SOURCE_COMMIT)).toThrow("output changed: resources/app.js")
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test("verify fails when the candidate commit differs from the built artifact", () => {
+  const root = temp()
+  make(root, "src/app.ts", "export const n = 1\n")
+  make(root, "config.json", "{}\n")
+  make(root, "out/app.js", "console.log(1)\n")
+  make(root, "resources/app.js", "console.log(1)\n")
+
+  write(spec(root), "dev", SOURCE_COMMIT)
+
+  expect(() => verify(spec(root), "dev", "b".repeat(40))).toThrow("build contract source commit mismatch")
+  fs.rmSync(root, { recursive: true, force: true })
+})
+
+test("the packaged output always names the local renderer document and separate child resources", () => {
+  // Hosted capability changes only the optional dynamic contribution. The
+  // renderer document and separately fingerprinted resource roots are stable
+  // under either environment shape.
+  const documentFor = (hostedActivation: string | undefined) => {
+    const previous = process.env.VITE_CLAXEDO_HOSTED_ACTIVATION
+    if (hostedActivation === undefined) delete process.env.VITE_CLAXEDO_HOSTED_ACTIVATION
+    else process.env.VITE_CLAXEDO_HOSTED_ACTIVATION = hostedActivation
+    try {
+      return desktopContractSpec(ROOT).output.filter((entry) => entry.startsWith("out/renderer/") && entry.endsWith(".html"))
+    } finally {
+      if (previous === undefined) delete process.env.VITE_CLAXEDO_HOSTED_ACTIVATION
+      else process.env.VITE_CLAXEDO_HOSTED_ACTIVATION = previous
+    }
+  }
+
+  expect(documentFor("true")).toContain("out/renderer/index.local.html")
+  expect(documentFor("true")).not.toContain("out/renderer/index.html")
+
+  expect(documentFor(undefined)).toContain("out/renderer/index.local.html")
+  expect(documentFor(undefined)).not.toContain("out/renderer/index.html")
+  expect(desktopContractSpec(ROOT).output).toContain("out/product-boundary")
+  expect(desktopContractSpec(ROOT).output).toContain("resources/host-connector")
+  expect(desktopContractSpec(ROOT).input).toEqual(expect.arrayContaining([
+    "scripts/bundle-host-connector.ts",
+    "src/host-connector-child/entry.ts",
+    "src/main/host-connector/child-artifact.ts",
+    "src/main/host-connector/child-protocol.ts",
+    "src/main/host-connector/child-supervisor.ts",
+    "src/main/host-connector/electron-child.ts",
+    "src/main/host-connector/identity-store.ts",
+    "../claxedo-host-connector/package.json",
+    "../claxedo-host-connector/src",
+  ]))
+})

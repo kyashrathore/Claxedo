@@ -1,0 +1,198 @@
+{
+  "generated_at": "2026-06-05T20:19:52.877Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "large-diff-toggle",
+      "name": "Large Diff Toggle",
+      "started_at": "2026-06-05T20:19:52.772Z",
+      "duration_ms": 11507.866,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 500,
+        "terminals": 0,
+        "changed_files": 500,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "review_panel_open_ms",
+          "value": 555.3489169999993,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            555.3489169999993
+          ],
+          "p50": 555.3489169999993,
+          "p95": 555.3489169999993,
+          "min": 555.3489169999993,
+          "max": 555.3489169999993,
+          "mean": 555.3489169999993,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "vcs_load_ms",
+          "value": 22.365458999998737,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            22.365458999998737
+          ],
+          "p50": 22.365458999998737,
+          "p95": 22.365458999998737,
+          "min": 22.365458999998737,
+          "max": 22.365458999998737,
+          "mean": 22.365458999998737,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "hunk_render_ms",
+          "value": 42.05095799999981,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            42.05095799999981
+          ],
+          "p50": 42.05095799999981,
+          "p95": 42.05095799999981,
+          "min": 42.05095799999981,
+          "max": 42.05095799999981,
+          "mean": 42.05095799999981,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "diff_toggle_latency_ms",
+          "value": 23.799999952316284,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            23.799999952316284
+          ],
+          "p50": 23.799999952316284,
+          "p95": 23.799999952316284,
+          "min": 23.799999952316284,
+          "max": 23.799999952316284,
+          "mean": 23.799999952316284,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "review_panel_reopen_ms",
+          "value": 537.0999999642372,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            537.0999999642372
+          ],
+          "p50": 537.0999999642372,
+          "p95": 537.0999999642372,
+          "min": 537.0999999642372,
+          "max": 537.0999999642372,
+          "mean": 537.0999999642372,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "line_comment_latency_ms",
+          "value": 14.399999976158142,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            14.399999976158142
+          ],
+          "p50": 14.399999976158142,
+          "p95": 14.399999976158142,
+          "min": 14.399999976158142,
+          "max": 14.399999976158142,
+          "mean": 14.399999976158142,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "changed_file_navigation_ms",
+          "value": 25.511249999999563,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            25.511249999999563
+          ],
+          "p50": 25.511249999999563,
+          "p95": 25.511249999999563,
+          "min": 25.511249999999563,
+          "max": 25.511249999999563,
+          "mean": 25.511249999999563,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 1188.139,
+        "memory_rss_mb": 159.26361083984375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-large-diff-toggle-1.webm"
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts browser --all --target claxedo --scenario large-diff-toggle --output browser-claxedo-large-diff-panel-overlay-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:50752",
+          "mock_port": 50753,
+          "dev_command": "bun --cwd packages/claxedo-app dev"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "large-diff-toggle",
+        "metrics": {
+          "vcs_load_ms": 36,
+          "hunk_render_ms": 41,
+          "diff_toggle_latency_ms": 37,
+          "line_comment_latency_ms": 33,
+          "changed_file_navigation_ms": 7,
+          "review_panel_reopen_ms": 1688,
+          "review_panel_open_ms": 205
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "review_panel_open_ms p95 555.3489169999993 > 205",
+        "hunk_render_ms p95 42.05095799999981 > 41",
+        "changed_file_navigation_ms p95 25.511249999999563 > 7"
+      ]
+    }
+  ],
+  "comparisons": []
+}

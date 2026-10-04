@@ -1,0 +1,18 @@
+scrollTop: 0
+background subagents:
+(none)
+row 0:
+- text: "This agent's report was delivered. Reply with exactly this one token: HUMANPROMPT Build · claude-sonnet-4-6 · <time>"
+- button "Copy message"
+row 1:
+- paragraph: HUMANPROMPT
+- button "Copy response"
+- text: Build · claude-sonnet-4-6 · <duration>
+row 2:
+- group: "Message from Claude Code Goal: Reply with exactly this one token: AGENTOPENINGDONE"
+row 3:
+- button "Worked for <duration>"
+row 4:
+- paragraph: AGENTOPENINGDONE
+- button "Copy response"
+- text: Build · claude-sonnet-4-6 · <duration>

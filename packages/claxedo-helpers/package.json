@@ -1,0 +1,178 @@
+{
+  "name": "@claxedo/helpers",
+  "version": "0.2.0",
+  "type": "module",
+  "description": "Canonical small helpers shared across the workspace, one owner per behaviour",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyashrathore/Claxedo.git",
+    "directory": "packages/claxedo-helpers"
+  },
+  "keywords": [
+    "claxedo",
+    "helpers",
+    "guards",
+    "utilities"
+  ],
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    "./api-error": {
+      "development": "./src/api-error.ts",
+      "bun": "./src/api-error.ts",
+      "types": "./dist/api-error.d.ts",
+      "import": "./dist/api-error.mjs",
+      "default": "./dist/api-error.mjs"
+    },
+    ".": {
+      "development": "./src/index.ts",
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    },
+    "./guards": {
+      "development": "./src/guards.ts",
+      "bun": "./src/guards.ts",
+      "types": "./dist/guards.d.ts",
+      "import": "./dist/guards.mjs",
+      "default": "./dist/guards.mjs"
+    },
+    "./readers": {
+      "development": "./src/readers.ts",
+      "bun": "./src/readers.ts",
+      "types": "./dist/readers.d.ts",
+      "import": "./dist/readers.mjs",
+      "default": "./dist/readers.mjs"
+    },
+    "./skill-frontmatter": {
+      "development": "./src/skill-frontmatter.ts",
+      "bun": "./src/skill-frontmatter.ts",
+      "types": "./dist/skill-frontmatter.d.ts",
+      "import": "./dist/skill-frontmatter.mjs",
+      "default": "./dist/skill-frontmatter.mjs"
+    },
+    "./crypto": {
+      "development": "./src/crypto.ts",
+      "bun": "./src/crypto.ts",
+      "types": "./dist/crypto.d.ts",
+      "import": "./dist/crypto.mjs",
+      "default": "./dist/crypto.mjs"
+    },
+    "./env": {
+      "development": "./src/env.ts",
+      "bun": "./src/env.ts",
+      "types": "./dist/env.d.ts",
+      "import": "./dist/env.mjs",
+      "default": "./dist/env.mjs"
+    },
+    "./string": {
+      "development": "./src/string.ts",
+      "bun": "./src/string.ts",
+      "types": "./dist/string.d.ts",
+      "import": "./dist/string.mjs",
+      "default": "./dist/string.mjs"
+    },
+    "./claxedo-daemon": {
+      "development": "./src/claxedo-daemon.ts",
+      "bun": "./src/claxedo-daemon.ts",
+      "types": "./dist/claxedo-daemon.d.ts",
+      "import": "./dist/claxedo-daemon.mjs",
+      "default": "./dist/claxedo-daemon.mjs"
+    },
+    "./claxedo-document": {
+      "development": "./src/claxedo-document.ts",
+      "bun": "./src/claxedo-document.ts",
+      "types": "./dist/claxedo-document.d.ts",
+      "import": "./dist/claxedo-document.mjs",
+      "default": "./dist/claxedo-document.mjs"
+    },
+    "./sse": {
+      "development": "./src/sse.ts",
+      "bun": "./src/sse.ts",
+      "types": "./dist/sse.d.ts",
+      "import": "./dist/sse.mjs",
+      "default": "./dist/sse.mjs"
+    },
+    "./claxedo-credentials": {
+      "development": "./src/claxedo-credentials.ts",
+      "bun": "./src/claxedo-credentials.ts",
+      "types": "./dist/claxedo-credentials.d.ts",
+      "import": "./dist/claxedo-credentials.mjs",
+      "default": "./dist/claxedo-credentials.mjs"
+    },
+    "./fs": {
+      "development": "./src/fs.ts",
+      "bun": "./src/fs.ts",
+      "types": "./dist/fs.d.ts",
+      "import": "./dist/fs.mjs",
+      "default": "./dist/fs.mjs"
+    },
+    "./real-path": {
+      "development": "./src/real-path.ts",
+      "bun": "./src/real-path.ts",
+      "types": "./dist/real-path.d.ts",
+      "import": "./dist/real-path.mjs",
+      "default": "./dist/real-path.mjs"
+    },
+    "./path": {
+      "development": "./src/path.ts",
+      "bun": "./src/path.ts",
+      "types": "./dist/path.d.ts",
+      "import": "./dist/path.mjs",
+      "default": "./dist/path.mjs"
+    },
+    "./route-param": {
+      "development": "./src/route-param.ts",
+      "bun": "./src/route-param.ts",
+      "types": "./dist/route-param.d.ts",
+      "import": "./dist/route-param.mjs",
+      "default": "./dist/route-param.mjs"
+    },
+    "./process": {
+      "development": "./src/process.ts",
+      "bun": "./src/process.ts",
+      "types": "./dist/process.d.ts",
+      "import": "./dist/process.mjs",
+      "default": "./dist/process.mjs"
+    },
+    "./machine-name": {
+      "development": "./src/machine-name.ts",
+      "bun": "./src/machine-name.ts",
+      "types": "./dist/machine-name.d.ts",
+      "import": "./dist/machine-name.mjs",
+      "default": "./dist/machine-name.mjs"
+    },
+    "./net": {
+      "development": "./src/net.ts",
+      "bun": "./src/net.ts",
+      "types": "./dist/net.d.ts",
+      "import": "./dist/net.mjs",
+      "default": "./dist/net.mjs"
+    }
+  },
+  "files": [
+    "README.md",
+    "LICENSE",
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "prepublishOnly": "npm run build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test src"
+  },
+  "devDependencies": {
+    "@tsconfig/node-lts": "22.0.4",
+    "@types/bun": "1.3.13",
+    "typescript": "catalog:"
+  },
+  "sideEffects": false,
+  "dependencies": {
+    "yaml": "2.9.0"
+  }
+}

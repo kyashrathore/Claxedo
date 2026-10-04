@@ -1,0 +1,328 @@
+import { afterEach, beforeEach, describe, expect, test } from "vitest"
+import { execFileSync } from "node:child_process"
+import { createServer, type Server } from "node:http"
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import path from "node:path"
+import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
+import {
+  configureAgentConfig,
+  disposeAgentConfig,
+  saveUserConfig,
+} from "@claxedo/server-core/agent-config/index"
+import { FakeTransport, fakeConnectionProvider } from "@claxedo/session-core/testing"
+import { startLocalServer, type LocalServer } from "./start-local-server"
+import { testDaemon } from "./test-support/daemon"
+import {
+  configureEmbeddedWorkspaceRuntime,
+  shutdownEmbeddedWorkspaceRuntimes,
+} from "../deployments/local/embedded-workspace-runtime"
+import {
+  localHostSessionAccessPolicy,
+  resetLocalHostSessionAdoptions,
+  setLocalHostEndpoints,
+} from "../deployments/local/host-session-authority"
+
+/**
+ * Sessions that existed on the machine before its owner turned remote access
+ * on, reached over the relay for the first time.
+ *
+ * The control plane has no row for such a session, and a read of a session it
+ * has no row for is refused exactly as a read of someone else's is — so
+ * nothing the owner made locally would ever be reachable from the web without
+ * the daemon claiming it on that first refusal. What is proven here is that
+ * the claim happens for the machine's owner and for nobody else, against the
+ * real daemon with a real transcript on it.
+ */
+
+const OWNER = { actorId: "actor_owner", actorPublicId: "user_owner", actorName: "Owner", role: "owner" as const }
+/** Reaches this one session through a share, which is all a token that is not the owner's can reach. */
+const MEMBER = { actorId: "actor_member", actorPublicId: "user_member", actorName: "Member", role: "viewer" as const, sessionId: "ses_before_sharing" }
+/** Holds the workspace outright, but is not the person this machine is enrolled to. */
+const CO_OWNER = { actorId: "actor_co_owner", actorPublicId: "user_co_owner", actorName: "Co-owner", role: "owner" as const }
+
+/** A connection id the session-harness contract accepts: `ACP_CONNECTION_ID_PATTERN`. */
+const CONNECTION_ID = "adoption-fixture"
+
+const bearers = new Map<string, typeof OWNER | typeof MEMBER | typeof CO_OWNER>([
+  ["owner-token", OWNER],
+  ["member-token", MEMBER],
+  ["co-owner-token", CO_OWNER],
+])
+
+type AuthorityCall = { action: string; sessionId?: string; actorId?: string }
+
+let dataDir: string
+let previousDataDir: string | undefined
+let server: LocalServer | undefined
+let identity: ReturnType<typeof testDaemon>
+let authority: Server | undefined
+let origin: string
+let authorityCalls: AuthorityCall[]
+/** Sessions the control plane has a row for, and the actor it named as creator. */
+let registered: Map<string, string>
+/** What `adopt` answers before it would write, standing for the plane's own refusals. */
+let adoptionFault: { status: number; code: string } | undefined
+
+const capabilities = {
+  abort: false, reconnect: false, replay: true, permissions: false, questions: false,
+  todos: false, commands: false, fork: false, revert: false, unrevert: false,
+  configOptions: false, subagents: false,
+}
+
+/** Enough of a harness for the runtime to record a transcript; it is never prompted. */
+const provider = fakeConnectionProvider({
+  providerKey: "adoption-fixture-provider",
+  label: "Adoption fixture",
+  capabilities,
+  transport: () => new FakeTransport({ capabilities: { instructionChannel: "none" }, upstreamSessionId: () => "adoption-fixture" }),
+})
+
+/**
+ * The control plane reduced to its session rows: a read needs one naming the
+ * caller, and `adopt` writes one for the owner of the machine, once.
+ */
+function fakeAuthority() {
+  return createServer((request, response) => {
+    let raw = ""
+    request.on("data", (chunk) => { raw += chunk })
+    request.on("end", () => {
+      const body = JSON.parse(raw || "{}") as { action?: string; sessionId?: string; createdAt?: unknown; updatedAt?: unknown }
+      const bearer = /^Bearer\s+(.+)$/i.exec(request.headers.authorization ?? "")?.[1]
+      const caller = bearer ? bearers.get(bearer) : undefined
+      const sessionId = body.sessionId ?? ""
+      authorityCalls.push({
+        action: String(body.action),
+        ...(body.sessionId ? { sessionId: body.sessionId } : {}),
+        ...(caller ? { actorId: caller.actorId } : {}),
+      })
+      response.setHeader("content-type", "application/json")
+      const refuse = (status: number, code: string) => {
+        response.statusCode = status
+        response.end(JSON.stringify({ error: { code, message: code } }))
+      }
+      const timestamp = (value: unknown) => typeof value === "number" && value >= 0
+      if (body.action === "adopt" && !(timestamp(body.createdAt) && timestamp(body.updatedAt))) return refuse(400, "session_authority_request_invalid")
+      if (!caller) return refuse(403, "workspace_authorization_denied")
+      if (body.action === "adopt") {
+        if (adoptionFault) return refuse(adoptionFault.status, adoptionFault.code)
+        // The plane resolves the machine's enrollment owner; a workspace role
+        // of owner is not the same person and is refused there.
+        if (caller.actorId !== OWNER.actorId) return refuse(403, "session_adoption_requires_host_owner")
+        const held = registered.get(sessionId)
+        if (held && held !== caller.actorId) return refuse(403, "workspace_authorization_denied")
+        registered.set(sessionId, caller.actorId)
+        response.statusCode = 200
+        return response.end(JSON.stringify({ allowed: true, adopted: !held }))
+      }
+      if (registered.get(sessionId) !== caller.actorId) return refuse(403, "workspace_authorization_denied")
+      response.statusCode = 200
+      response.end(JSON.stringify({ allowed: true, lease: "stream_lease", expiresAt: Date.now() + 60_000 }))
+    })
+  })
+}
+
+function listen(target: Server) {
+  return new Promise<string>((resolve) => {
+    target.listen(0, "127.0.0.1", () => {
+      const address = target.address()
+      if (!address || typeof address === "string") throw new Error("no port")
+      resolve(`http://127.0.0.1:${address.port}`)
+    })
+  })
+}
+
+async function freePort() {
+  return await new Promise<number>((resolve, reject) => {
+    const probe = createServer()
+    probe.listen(0, "127.0.0.1", () => {
+      const address = probe.address()
+      if (!address || typeof address === "string") {
+        probe.close()
+        reject(new Error("could not allocate a port"))
+        return
+      }
+      probe.close(() => resolve(address.port))
+    })
+    probe.on("error", reject)
+  })
+}
+
+function relayed(token: string) {
+  return { authorization: `Bearer ${token}`, "x-forwarded-by": "workspace-relay" }
+}
+
+beforeEach(async () => {
+  dataDir = mkdtempSync(path.join(tmpdir(), "claxedo-desktop-adoption-"))
+  previousDataDir = process.env.CLAXEDO_DATA_DIR
+  process.env.CLAXEDO_DATA_DIR = dataDir
+  authorityCalls = []
+  registered = new Map()
+  adoptionFault = undefined
+  resetLocalHostSessionAdoptions()
+
+  authority = fakeAuthority()
+  setLocalHostEndpoints({ sessionAuthorityUrl: `${await listen(authority)}/api/runtime-authority/session-authorize` })
+
+  const port = await freePort()
+  origin = `http://127.0.0.1:${port}`
+  identity = testDaemon()
+  server = startLocalServer({
+    port,
+    daemon: identity.daemon,
+    runtimeProxyOptions: {
+      resolveRelayActor: async (request) => {
+        const bearer = /^Bearer\s+(.+)$/i.exec(request.headers.get("authorization") ?? "")?.[1]
+        const actor = bearer ? bearers.get(bearer) : undefined
+        if (!actor) return undefined
+        return { ...actor, actorKind: "human" as const, orgId: "org_1" }
+      },
+    },
+  })
+  await server.ready
+  // `startLocalServer` composes the two real harnesses, neither of which can
+  // run here; the policy and the loopback declaration are re-supplied because
+  // this call replaces the whole composition it made.
+  configureEmbeddedWorkspaceRuntime({
+    sessionIdWorkspace: () => undefined,
+    connectionProviders: [provider],
+    sessionAccessPolicy: localHostSessionAccessPolicy,
+    loopbackSessionAuthority: "local",
+  })
+  configureAgentConfig({ connectionConfigs: [provider] })
+  await saveUserConfig({
+    version: 3,
+    connections: {
+      [CONNECTION_ID]: {
+        connectionId: CONNECTION_ID,
+        providerKey: provider.providerKey,
+        configRevision: 1,
+        enabled: true,
+        config: {},
+      },
+    },
+  })
+})
+
+afterEach(async () => {
+  await shutdownEmbeddedWorkspaceRuntimes()
+  await server?.stop()
+  server = undefined
+  disposeAgentConfig()
+  configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined })
+  configureAgentConfig()
+  setLocalHostEndpoints(undefined)
+  resetLocalHostSessionAdoptions()
+  await new Promise<void>((resolve) => {
+    if (!authority) return resolve()
+    authority.close(() => resolve())
+  })
+  authority = undefined
+  ClaxedoDB.close()
+  if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
+  else process.env.CLAXEDO_DATA_DIR = previousDataDir
+  rmSync(dataDir, { recursive: true, force: true })
+})
+
+async function workspaceWithLocalSession(sessionId: string) {
+  const directory = path.join(dataDir, "project")
+  mkdirSync(directory)
+  execFileSync("git", ["init", directory])
+  const resolved = await identity.call(`${origin}/api/workspace/resolve?directory=${encodeURIComponent(directory)}`, { method: "POST" })
+  expect(resolved.status).toBe(200)
+  const { workspaceId } = await resolved.json() as { workspaceId: string }
+  // Created the way the user at the keyboard creates one: loopback, no relay
+  // marks, no reservation, before remote access exists.
+  const created = await identity.call(`${origin}/workspaces/${workspaceId}/session?connectionId=${CONNECTION_ID}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id: sessionId, title: "Before sharing" }),
+  })
+  expect(created.status).toBe(201)
+  return workspaceId
+}
+
+async function read(workspaceId: string, sessionId: string, headers: Record<string, string> = {}) {
+  const response = await fetch(`${origin}/workspaces/${workspaceId}/session/${sessionId}`, { headers })
+  const body = await response.json() as { id?: string; error?: { code?: string } }
+  return { status: response.status, id: body.id, error: body.error?.code }
+}
+
+describe("a session the machine held before remote access", () => {
+  test("the owner's first relayed read claims it; a share holder's token never claims it and is refused", async () => {
+    const workspaceId = await workspaceWithLocalSession("ses_before_sharing")
+
+    const owner = await read(workspaceId, "ses_before_sharing", relayed("owner-token"))
+    const member = await read(workspaceId, "ses_before_sharing", relayed("member-token"))
+
+    expect(owner.status).toBe(200)
+    expect(owner.id).toBe("ses_before_sharing")
+    expect(member.status).toBe(403)
+    expect(registered.get("ses_before_sharing")).toBe(OWNER.actorId)
+    expect(authorityCalls.map((call) => `${call.action}:${call.actorId}`)).toEqual([
+      `read:${OWNER.actorId}`,
+      `adopt:${OWNER.actorId}`,
+      `read:${OWNER.actorId}`,
+      `read:${MEMBER.actorId}`,
+    ])
+  })
+
+  test("the claim is made once and the machine's own user never causes one", async () => {
+    const workspaceId = await workspaceWithLocalSession("ses_before_sharing")
+
+    expect((await read(workspaceId, "ses_before_sharing", relayed("owner-token"))).status).toBe(200)
+    expect((await read(workspaceId, "ses_before_sharing", relayed("owner-token"))).status).toBe(200)
+    expect(authorityCalls.filter((call) => call.action === "adopt")).toHaveLength(1)
+
+    authorityCalls = []
+    expect((await read(workspaceId, "ses_before_sharing", identity.capability)).status).toBe(200)
+    expect(authorityCalls).toEqual([])
+  })
+
+  test("two concurrent first reads make one claim between them", async () => {
+    const workspaceId = await workspaceWithLocalSession("ses_before_sharing")
+
+    const both = await Promise.all([
+      read(workspaceId, "ses_before_sharing", relayed("owner-token")),
+      read(workspaceId, "ses_before_sharing", relayed("owner-token")),
+    ])
+
+    expect(both.map((answer) => answer.status)).toEqual([200, 200])
+    expect(authorityCalls.filter((call) => call.action === "adopt")).toHaveLength(1)
+  })
+
+  test("a session id this machine does not hold is never claimed", async () => {
+    const workspaceId = await workspaceWithLocalSession("ses_before_sharing")
+
+    const answer = await read(workspaceId, "ses_never_existed", relayed("owner-token"))
+
+    expect(answer.status).toBe(403)
+    expect(authorityCalls.some((call) => call.action === "adopt")).toBe(false)
+  })
+
+  test("a second workspace owner does not inherit the machine owner's claim", async () => {
+    const workspaceId = await workspaceWithLocalSession("ses_before_sharing")
+
+    expect((await read(workspaceId, "ses_before_sharing", relayed("owner-token"))).status).toBe(200)
+    const other = await read(workspaceId, "ses_before_sharing", relayed("co-owner-token"))
+
+    expect(other.status).toBe(403)
+    expect(registered.get("ses_before_sharing")).toBe(OWNER.actorId)
+  })
+
+  test("a refused claim is not retried, and one the authority could not answer is", async () => {
+    const workspaceId = await workspaceWithLocalSession("ses_before_sharing")
+    adoptionFault = { status: 403, code: "workspace_authorization_denied" }
+
+    expect((await read(workspaceId, "ses_before_sharing", relayed("owner-token"))).status).toBe(403)
+    expect((await read(workspaceId, "ses_before_sharing", relayed("owner-token"))).status).toBe(403)
+    expect(authorityCalls.filter((call) => call.action === "adopt")).toHaveLength(1)
+
+    adoptionFault = { status: 500, code: "authority_unavailable" }
+    resetLocalHostSessionAdoptions()
+    expect((await read(workspaceId, "ses_before_sharing", relayed("owner-token"))).status).toBe(403)
+    adoptionFault = undefined
+    expect((await read(workspaceId, "ses_before_sharing", relayed("owner-token"))).status).toBe(200)
+    expect(authorityCalls.filter((call) => call.action === "adopt")).toHaveLength(3)
+  })
+})

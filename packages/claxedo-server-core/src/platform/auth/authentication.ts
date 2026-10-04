@@ -1,0 +1,566 @@
+import {
+  INTERACTIVE_AUTH_METHODS,
+  bindNativeClient,
+  decodeAuthDescriptor,
+  type AuthAdapterId,
+  type InteractiveAuthMethod,
+  type AuthAdapterDescriptor,
+  type NativeCredentialBinding,
+} from "@claxedo/account-contract/auth"
+import { isJsonRecord, isNonEmptyString, isOneOf } from "../runtime/lib/json"
+
+export const AUTH_CLIENT_KINDS = ["browser", "cli", "desktop"] as const
+export const AUTH_ASSURANCE_LEVELS = ["insufficient", "single-factor", "multi-factor", "phishing-resistant"] as const
+export const AUTHENTICATION_EVIDENCE_METHODS = [
+  "oauth:google",
+  "oauth:github",
+  "password",
+  "totp",
+  "passkey",
+  "recovery",
+] as const
+
+export type AuthAssurance = (typeof AUTH_ASSURANCE_LEVELS)[number]
+export type AuthenticationEvidenceMethod = (typeof AUTHENTICATION_EVIDENCE_METHODS)[number]
+
+export type AuthIdentity = {
+  adapter: AuthAdapterId
+  issuer: string
+  subject: string
+}
+
+type CommonAuthClientBinding = {
+  id: string
+  resource: string
+  scopes: readonly string[]
+}
+
+export type BrowserAuthClientBinding = CommonAuthClientBinding & {
+  kind: "browser"
+  tokenKind: "browser-session"
+  origin: string
+}
+
+export type AuthClientBinding = BrowserAuthClientBinding | NativeCredentialBinding
+
+/**
+ * Provider output before application identity mapping. This is documentation
+ * for adapter authors; the request boundary receives `unknown` and validates
+ * every field before constructing a principal.
+ */
+export type VerifiedAuthSession = AuthIdentity & {
+  sessionId: string
+  authenticatedAt: number
+  methods: readonly AuthenticationEvidenceMethod[]
+  assurance?: AuthAssurance
+  client: AuthClientBinding
+}
+
+export type ControlPlanePrincipal = {
+  userId: string
+  actorId: string
+  actorKind: "human"
+  deploymentId: string
+  sessionId: string
+  authenticatedAt: number
+  methods: readonly AuthenticationEvidenceMethod[]
+  assurance: AuthAssurance
+  client: AuthClientBinding
+  identity: AuthIdentity
+}
+
+export type ReauthenticationChallenge = {
+  code: "reauthentication_required"
+  requiredAssurance: Exclude<AuthAssurance, "insufficient">
+  methods: readonly InteractiveAuthMethod[]
+  expiresAt: number
+}
+
+export type NativeAuthorizationPending = {
+  state: "pending"
+  binding: NativeCredentialBinding
+  authorizationUri: string
+  userCode?: string
+  deviceCode?: string
+  expiresAt: number
+  pollingIntervalSeconds?: number
+}
+
+export type NativeCredentialSet = {
+  state: "authorized"
+  binding: NativeCredentialBinding
+  sessionId: string
+  accessToken: string
+  accessTokenExpiresAt: number
+  refreshToken: string
+  refreshTokenExpiresAt: number
+}
+
+export type NativeAuthorizationPort = {
+  issue(input: {
+    binding: NativeCredentialBinding
+    redirectUri?: string
+    pkceChallenge?: string
+    state?: string
+  }): Promise<NativeAuthorizationPending | NativeCredentialSet>
+  refresh(input: {
+    binding: NativeCredentialBinding
+    sessionId: string
+    refreshToken: string
+  }): Promise<NativeCredentialSet>
+  revoke(input: {
+    binding: NativeCredentialBinding
+    sessionId: string
+    token: string
+    tokenKind: "access-token" | "refresh-token"
+  }): Promise<{ revokedAt: number }>
+}
+
+export type AuthAccountOperationKind = "disable-account" | "revoke-all-sessions" | "delete-account"
+export type AuthAccountOperationStatus =
+  | { state: "pending"; operationId: string; kind: AuthAccountOperationKind }
+  | { state: "completed"; operationId: string; kind: AuthAccountOperationKind; completedAt: number }
+  | { state: "retryable-failure"; operationId: string; kind: AuthAccountOperationKind; retryAfterMs: number }
+  | { state: "terminal-failure"; operationId: string; kind: AuthAccountOperationKind; code: string }
+
+export type AuthAccountLifecycle = {
+  disableAccount(input: { operationId: string; userId: string; reason: string }): Promise<AuthAccountOperationStatus>
+  revokeAllSessions(input: { operationId: string; userId: string }): Promise<AuthAccountOperationStatus>
+  /** Terminal: a deleted account cannot be restored or reprovisioned. */
+  deleteAccount(input: { operationId: string; userId: string }): Promise<AuthAccountOperationStatus>
+  operationStatus(operationId: string): Promise<AuthAccountOperationStatus>
+}
+
+export type RequestAuthenticationAdapter = {
+  descriptor: AuthAdapterDescriptor
+  authenticate(request: Request): Promise<ControlPlanePrincipal>
+  /**
+   * RFC 7662 introspection of one access token, as the deployment's own
+   * resource-server client, returning the raw response body.
+   *
+   * Separate from `authenticate` because that admits only the deployment's
+   * native clients on the native resource and maps the result onto an
+   * application principal. A token minted for a second resource — the MCP
+   * endpoint, held by a dynamically registered client — is a valid credential
+   * for that resource and not a control-plane principal at all, so its
+   * resource server reads the claims itself.
+   *
+   * Absent on an adapter whose provider exposes no introspection endpoint.
+   */
+  introspectAccessToken?(token: string): Promise<unknown>
+}
+
+/**
+ * Provider verification without application-account mapping.
+ *
+ * This narrow boundary is reserved for explicit enrollment flows. Ordinary
+ * product requests must use `RequestAuthenticationAdapter.authenticate`, which
+ * also requires an active application principal.
+ */
+export type RequestIdentityVerificationAdapter = {
+  descriptor: AuthAdapterDescriptor
+  verifyIdentity(request: Request): Promise<AuthIdentity>
+}
+
+export class AuthenticationError extends Error {
+  constructor(
+    public readonly status: 401 | 403 | 503,
+    public readonly code:
+      | "invalid_credentials"
+      | "ambiguous_credentials"
+      | "insufficient_assurance"
+      | "auth_unavailable"
+      | "auth_configuration_invalid"
+      | "identity_provisioning"
+      | "account_suspended"
+      | "account_deleted",
+    message: string,
+  ) {
+    super(message)
+    this.name = "AuthenticationError"
+  }
+}
+
+export type ApplicationIdentityResolution =
+  | { state: "active"; userId: string; actorId: string }
+  | { state: "provisioning"; retryAfterMs: number }
+  | { state: "suspended" }
+  | { state: "deleted" }
+  | { state: "unavailable"; retryAfterMs?: number }
+
+export type ApplicationIdentityResolver = (
+  identity: AuthIdentity,
+  /** Original verified request, used only by explicit deployment bootstrap policies. */
+  request?: Request,
+) => Promise<ApplicationIdentityResolution>
+
+function invalidCredentials(): AuthenticationError {
+  return new AuthenticationError(401, "invalid_credentials", "Authentication credential is invalid")
+}
+
+/** A non-empty array of unique, non-blank strings. */
+function exactStringArray(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length === 0) throw invalidCredentials()
+  const result: string[] = []
+  const seen = new Set<string>()
+  for (const item of value) {
+    if (!isNonEmptyString(item) || seen.has(item)) throw invalidCredentials()
+    seen.add(item)
+    result.push(item)
+  }
+  return result
+}
+
+/** The same, restricted to a closed set — and typed as that set's members. */
+function exactStringUnionArray<const Allowed extends readonly string[]>(
+  value: unknown,
+  allowed: Allowed,
+): Allowed[number][] {
+  const result: Allowed[number][] = []
+  for (const item of exactStringArray(value)) {
+    if (!isOneOf(item, allowed)) throw invalidCredentials()
+    result.push(item)
+  }
+  return result
+}
+
+function assertUniqueConfiguredStrings(value: readonly string[], message: string) {
+  if (value.length === 0 || value.some((entry) => !isNonEmptyString(entry)) || new Set(value).size !== value.length) {
+    throw new AuthenticationError(503, "auth_configuration_invalid", message)
+  }
+}
+
+function assertBrowserClientDescriptor(value: { clientId: string; resource: string; scopes: readonly string[] }) {
+  if (!isNonEmptyString(value.clientId) || !isNonEmptyString(value.resource)) {
+    throw new AuthenticationError(
+      503,
+      "auth_configuration_invalid",
+      "Browser auth client requires clientId, resource, and at least one scope",
+    )
+  }
+  assertUniqueConfiguredStrings(value.scopes, "Browser auth client requires unique non-empty scopes")
+}
+
+function isExactHttpsOrigin(value: string) {
+  try {
+    const url = new URL(value)
+    return (
+      url.protocol === "https:" &&
+      url.origin === value &&
+      !url.hostname.includes("*") &&
+      url.username === "" &&
+      url.password === "" &&
+      url.pathname === "/" &&
+      url.search === "" &&
+      url.hash === ""
+    )
+  } catch {
+    return false
+  }
+}
+
+function isExactHttpsUrl(value: string) {
+  try {
+    const url = new URL(value)
+    const normalized = `${url.origin}${url.pathname === "/" ? "" : url.pathname}`
+    return (
+      url.protocol === "https:" &&
+      value === normalized &&
+      !url.hostname.includes("*") &&
+      url.username === "" &&
+      url.password === "" &&
+      url.search === "" &&
+      url.hash === ""
+    )
+  } catch {
+    return false
+  }
+}
+
+function assertDescriptor(descriptor: AuthAdapterDescriptor, now: number) {
+  decodeAuthDescriptor(descriptor, {
+    now,
+    clients: ["cli", "desktop"],
+    url: (value, name, kind) => {
+      if (!(kind === "origin" ? isExactHttpsOrigin(value) : isExactHttpsUrl(value))) {
+        throw new AuthenticationError(503, "auth_configuration_invalid", `${name} must be an exact HTTPS ${kind}`)
+      }
+      return value
+    },
+    client: (client, kind) => {
+      if (new URL(client.resource).origin !== client.controlPlaneOrigin) {
+        throw new AuthenticationError(
+          503,
+          "auth_configuration_invalid",
+          `Native auth client ${kind} origins are invalid`,
+        )
+      }
+      if (new URL(client.revocation.endpoint).origin !== client.tokenEndpointOrigin) {
+        throw new AuthenticationError(
+          503,
+          "auth_configuration_invalid",
+          `Native auth client ${kind} revocation contract is invalid`,
+        )
+      }
+    },
+    error: (_code, message) => new AuthenticationError(503, "auth_configuration_invalid", message),
+  })
+
+  if (descriptor.browser.trustedOrigins.length === 0) {
+    throw new AuthenticationError(503, "auth_configuration_invalid", "Authentication descriptor is incomplete")
+  }
+  assertUniqueConfiguredStrings(descriptor.methods, "Authentication methods must be unique and non-empty")
+  if (descriptor.methods.some((method) => !isOneOf(method, INTERACTIVE_AUTH_METHODS))) {
+    throw new AuthenticationError(
+      503,
+      "auth_configuration_invalid",
+      "Authentication descriptor contains an unknown method",
+    )
+  }
+  if (descriptor.browser.trustedOrigins.some((origin) => !isExactHttpsOrigin(origin))) {
+    throw new AuthenticationError(
+      503,
+      "auth_configuration_invalid",
+      "browser.trustedOrigins must contain exact HTTPS origins",
+    )
+  }
+  assertBrowserClientDescriptor(descriptor.browser)
+
+  if (descriptor.browser.transport === "cookie") {
+    const cookie = descriptor.browser.cookie
+    if (
+      descriptor.browser.credentialPolicy !== "reject-cookie-and-authorization" ||
+      !isNonEmptyString(cookie?.name) ||
+      !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(cookie.name) ||
+      cookie.path !== "/" ||
+      !cookie.secure ||
+      !cookie.httpOnly ||
+      !cookie.hostOnly ||
+      (cookie.sameSite !== "lax" && cookie.sameSite !== "strict")
+    ) {
+      throw new AuthenticationError(503, "auth_configuration_invalid", "Cookie authentication posture is insecure")
+    }
+  } else if (
+    descriptor.browser.transport !== "bearer" ||
+    descriptor.browser.credentialPolicy !== "authorization-only"
+  ) {
+    throw new AuthenticationError(503, "auth_configuration_invalid", "Browser authentication transport is invalid")
+  }
+
+  if (descriptor.adapter === "better-auth") {
+    if (
+      descriptor.browser.transport !== "cookie" ||
+      descriptor.native.cli.flow !== "device-authorization" ||
+      descriptor.native.desktop.flow !== "authorization-code-pkce" ||
+      descriptor.native.cli.revocation.protocol !== "rfc7009" ||
+      descriptor.native.desktop.revocation.protocol !== "rfc7009" ||
+      descriptor.native.cli.revocation.tokenEndpointAuthMethod !== "none" ||
+      descriptor.native.desktop.revocation.tokenEndpointAuthMethod !== "none" ||
+      descriptor.native.cli.revocation.endpoint !== `${descriptor.issuer}/oauth2/revoke` ||
+      descriptor.native.desktop.revocation.endpoint !== `${descriptor.issuer}/oauth2/revoke`
+    ) {
+      throw new AuthenticationError(
+        503,
+        "auth_configuration_invalid",
+        "Better Auth transport and native flows are invalid",
+      )
+    }
+  }
+}
+
+function parseCommonClient(value: Record<string, unknown>) {
+  if (!isNonEmptyString(value.id) || !isNonEmptyString(value.resource)) throw invalidCredentials()
+  return {
+    id: value.id,
+    resource: value.resource,
+    scopes: exactStringArray(value.scopes),
+  }
+}
+
+function parseVerifiedSession(
+  value: unknown,
+  descriptor: AuthAdapterDescriptor,
+  now: number,
+  maxFutureSkewMs: number,
+): VerifiedAuthSession {
+  if (!isJsonRecord(value)) throw invalidCredentials()
+  if (value.adapter !== descriptor.adapter || value.issuer !== descriptor.issuer) throw invalidCredentials()
+  if (!isNonEmptyString(value.subject) || !isNonEmptyString(value.sessionId)) throw invalidCredentials()
+  if (
+    typeof value.authenticatedAt !== "number" ||
+    !Number.isFinite(value.authenticatedAt) ||
+    value.authenticatedAt <= 0 ||
+    value.authenticatedAt > now + maxFutureSkewMs
+  )
+    throw invalidCredentials()
+
+  const methods = exactStringUnionArray(value.methods, AUTHENTICATION_EVIDENCE_METHODS)
+  const assurance =
+    value.assurance === undefined
+      ? "insufficient"
+      : isOneOf(value.assurance, AUTH_ASSURANCE_LEVELS)
+        ? value.assurance
+        : (() => {
+            throw invalidCredentials()
+          })()
+  if (!isJsonRecord(value.client) || !isOneOf(value.client.kind, AUTH_CLIENT_KINDS)) throw invalidCredentials()
+
+  const common = parseCommonClient(value.client)
+  let client: AuthClientBinding
+  if (value.client.kind === "browser") {
+    if (
+      value.client.tokenKind !== "browser-session" ||
+      !isNonEmptyString(value.client.origin) ||
+      !descriptor.browser.trustedOrigins.includes(value.client.origin)
+    )
+      throw invalidCredentials()
+    client = { ...common, kind: "browser", tokenKind: "browser-session", origin: value.client.origin }
+  } else {
+    const expected = descriptor.native[value.client.kind]
+    if (
+      value.client.tokenKind !== "access-token" ||
+      value.client.deploymentId !== descriptor.deploymentId ||
+      value.client.adapter !== descriptor.adapter ||
+      value.client.issuer !== descriptor.issuer ||
+      value.client.tokenEndpointOrigin !== expected.tokenEndpointOrigin ||
+      value.client.controlPlaneOrigin !== expected.controlPlaneOrigin
+    )
+      throw invalidCredentials()
+    client = { ...bindNativeClient(descriptor, value.client.kind), ...common }
+  }
+
+  const expected = client.kind === "browser" ? descriptor.browser : descriptor.native[client.kind]
+  if (
+    client.id !== expected.clientId ||
+    client.resource !== expected.resource ||
+    client.scopes.some((scope) => !expected.scopes.includes(scope))
+  )
+    throw invalidCredentials()
+
+  return {
+    adapter: descriptor.adapter,
+    issuer: descriptor.issuer,
+    subject: value.subject,
+    sessionId: value.sessionId,
+    authenticatedAt: value.authenticatedAt,
+    methods,
+    assurance,
+    client,
+  }
+}
+
+function requestHasCookie(request: Request, name: string) {
+  return (request.headers.get("cookie") ?? "").split(";").some((part) => {
+    const trimmed = part.trim()
+    const separator = trimmed.indexOf("=")
+    return separator > 0 && trimmed.slice(0, separator) === name
+  })
+}
+
+/** True only when the statically selected adapter's browser/native credential is present. */
+export function requestHasAuthenticationCredential(request: Request, descriptor: AuthAdapterDescriptor) {
+  if (request.headers.has("authorization")) return true
+  return descriptor.browser.transport === "cookie" && requestHasCookie(request, descriptor.browser.cookie.name)
+}
+
+function assertUnambiguousCredential(request: Request, descriptor: AuthAdapterDescriptor) {
+  if (
+    descriptor.browser.transport === "cookie" &&
+    request.headers.has("authorization") &&
+    requestHasCookie(request, descriptor.browser.cookie.name)
+  ) {
+    throw new AuthenticationError(401, "ambiguous_credentials", "Multiple authentication credentials are not accepted")
+  }
+}
+
+function resolveApplicationIdentity(
+  result: ApplicationIdentityResolution,
+): Extract<ApplicationIdentityResolution, { state: "active" }> {
+  switch (result.state) {
+    case "active":
+      if (!isNonEmptyString(result.userId) || !isNonEmptyString(result.actorId)) {
+        throw new AuthenticationError(503, "auth_unavailable", "Application identity mapping is unavailable")
+      }
+      return result
+    case "provisioning":
+      throw new AuthenticationError(503, "identity_provisioning", "Application identity provisioning is in progress")
+    case "suspended":
+      throw new AuthenticationError(403, "account_suspended", "Application account is suspended")
+    case "deleted":
+      throw new AuthenticationError(403, "account_deleted", "Application account is deleted")
+    case "unavailable":
+      throw new AuthenticationError(503, "auth_unavailable", "Application identity mapping is unavailable")
+    default:
+      // `resolveIdentity` is supplied by the deployment, so a state outside the
+      // union can arrive at runtime. Falling out of the switch returned
+      // `undefined` and the caller read `.userId` off it — a TypeError instead
+      // of the 503 this failure actually is.
+      throw new AuthenticationError(503, "auth_unavailable", "Application identity mapping is unavailable")
+  }
+}
+
+export function createControlPlaneAuthenticationAdapter(input: {
+  descriptor: AuthAdapterDescriptor
+  verify(request: Request): Promise<unknown>
+  resolveIdentity: ApplicationIdentityResolver
+  now?: () => number
+  maxFutureSkewMs?: number
+}): RequestAuthenticationAdapter & RequestIdentityVerificationAdapter {
+  const now = input.now ?? Date.now
+  const maxFutureSkewMs = input.maxFutureSkewMs ?? 60_000
+  assertDescriptor(input.descriptor, now())
+
+  const verify = async (request: Request) => {
+    assertUnambiguousCredential(request, input.descriptor)
+
+    let verified: unknown
+    try {
+      verified = await input.verify(request)
+    } catch (error) {
+      if (error instanceof AuthenticationError) throw error
+      throw new AuthenticationError(503, "auth_unavailable", "Authentication verifier is unavailable")
+    }
+    const session = parseVerifiedSession(verified, input.descriptor, now(), maxFutureSkewMs)
+    const identity = {
+      adapter: session.adapter,
+      issuer: session.issuer,
+      subject: session.subject,
+    } satisfies AuthIdentity
+    return { identity, session }
+  }
+
+  return {
+    descriptor: input.descriptor,
+    async verifyIdentity(request) {
+      return (await verify(request)).identity
+    },
+    async authenticate(request) {
+      const { identity, session } = await verify(request)
+
+      let resolution: ApplicationIdentityResolution
+      try {
+        resolution = await input.resolveIdentity(identity, request)
+      } catch {
+        throw new AuthenticationError(503, "auth_unavailable", "Application identity mapping is unavailable")
+      }
+      const mapped = resolveApplicationIdentity(resolution)
+      return {
+        userId: mapped.userId,
+        actorId: mapped.actorId,
+        actorKind: "human",
+        deploymentId: input.descriptor.deploymentId,
+        sessionId: session.sessionId,
+        authenticatedAt: session.authenticatedAt,
+        methods: session.methods,
+        assurance: session.assurance ?? "insufficient",
+        client: session.client,
+        identity,
+      }
+    },
+  }
+}
+
+/** Authenticate through the one statically composed adapter; there is no fallback list. */
+export function authenticateControlPlaneRequest(request: Request, adapter: RequestAuthenticationAdapter) {
+  return adapter.authenticate(request)
+}

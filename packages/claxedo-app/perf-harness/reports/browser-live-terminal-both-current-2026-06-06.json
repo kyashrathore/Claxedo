@@ -1,0 +1,246 @@
+{
+  "generated_at": "2026-06-05T19:37:03.942Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo",
+    "upstream"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "live-terminal-switch",
+      "name": "Live Terminal Switch",
+      "started_at": "2026-06-05T19:36:31.137Z",
+      "duration_ms": 11344.333041999998,
+      "seed": {
+        "repos": 1,
+        "sessions": 3,
+        "messages": 1500,
+        "terminals": 3,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 34,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            34
+          ],
+          "p50": 34,
+          "p95": 34,
+          "min": 34,
+          "max": 34,
+          "mean": 34,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "pty_attach_ms",
+          "value": 1.6350000000002183,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.6350000000002183
+          ],
+          "p50": 1.6350000000002183,
+          "p95": 1.6350000000002183,
+          "min": 1.6350000000002183,
+          "max": 1.6350000000002183,
+          "mean": 1.6350000000002183,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "terminal_throughput_lines_per_s",
+          "value": 300000,
+          "unit": "lines/s",
+          "direction": "higher",
+          "samples": [
+            300000
+          ],
+          "p50": 300000,
+          "p95": 300000,
+          "min": 300000,
+          "max": 300000,
+          "mean": 300000,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "terminal_resize_latency_ms",
+          "value": 39,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            39
+          ],
+          "p50": 39,
+          "p95": 39,
+          "min": 39,
+          "max": 39,
+          "mean": 39,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "terminal_reconnect_latency_ms",
+          "value": 31.824666999998954,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            31.824666999998954
+          ],
+          "p50": 31.824666999998954,
+          "p95": 31.824666999998954,
+          "min": 31.824666999998954,
+          "max": 31.824666999998954,
+          "mean": 31.824666999998954,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "ansi_render_latency_ms",
+          "value": 0.9312909999989643,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.9312909999989643
+          ],
+          "p50": 0.9312909999989643,
+          "p95": 0.9312909999989643,
+          "min": 0.9312909999989643,
+          "max": 0.9312909999989643,
+          "mean": 0.9312909999989643,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 974.323,
+        "memory_rss_mb": 77.62908935546875,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-live-terminal-switch-1.webm"
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts browser --all --target both --scenario live-terminal-switch --output browser-live-terminal-both-current-2026-06-06.json --no-trend",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:52784",
+          "mock_port": 52785,
+          "dev_command": "bun --cwd packages/claxedo-app dev"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "live-terminal-switch",
+        "metrics": {
+          "surface_switch_latency_ms": 32,
+          "pty_attach_ms": 36,
+          "terminal_throughput_lines_per_s": 195000,
+          "terminal_resize_latency_ms": 80,
+          "terminal_reconnect_latency_ms": 59,
+          "ansi_render_latency_ms": 6
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "surface_switch_latency_ms p95 34 > 32"
+      ]
+    },
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "live-terminal-switch",
+      "name": "live-terminal-switch",
+      "started_at": "2026-06-05T19:37:03.797Z",
+      "duration_ms": 0,
+      "seed": {
+        "repos": 1,
+        "sessions": 3,
+        "messages": 1500,
+        "terminals": 3,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [],
+      "resources": {
+        "cpu_user_ms": 1260.151,
+        "memory_rss_mb": 104.84375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 0,
+        "event_backlog": 0
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "live-terminal-switch",
+        "metrics": {}
+      },
+      "status": "fail",
+      "failures": [
+        "browser scenario crashed: forFunction: Timeout 30000ms exceeded."
+      ],
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts browser --all --target both --scenario live-terminal-switch --output browser-live-terminal-both-current-2026-06-06.json --no-trend",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:52868",
+          "mock_port": 52869,
+          "dev_command": "bun --cwd packages/app dev"
+        },
+        "app_build_identity": "upstream:packages/app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      }
+    }
+  ],
+  "comparisons": []
+}

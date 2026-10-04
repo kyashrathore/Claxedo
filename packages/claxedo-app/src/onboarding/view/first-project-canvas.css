@@ -1,0 +1,235 @@
+.first-project {
+  --first-project-plate-ink: color-mix(in oklab, var(--text-base) 42%, transparent);
+  --first-project-edge: color-mix(in oklab, var(--text-interactive-base) 58%, transparent);
+
+  position: relative;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2.5rem 1.5rem 3.5rem;
+  background-color: var(--background-base);
+  isolation: isolate;
+}
+
+.first-project-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: 100%;
+  max-width: 35rem;
+  max-height: 100%;
+  min-height: 0;
+  margin: auto;
+  flex-direction: column;
+}
+
+.first-project-steps,
+.first-project-headline,
+.first-project-lede,
+.first-project-diagnostics {
+  flex-shrink: 0;
+}
+
+.first-project-plate {
+  --dot: 2px;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(ellipse 58% 62% at 50% 46%, rgb(0 0 0 / 0.22), #000 92%);
+  mask-image: radial-gradient(ellipse 58% 62% at 50% 46%, rgb(0 0 0 / 0.22), #000 92%);
+}
+
+.first-project-plate::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: calc(960 * var(--dot));
+  aspect-ratio: 960 / 661;
+  translate: -50% 0;
+  background-color: var(--first-project-plate-ink);
+  image-rendering: pixelated;
+  -webkit-mask: url("./assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat;
+  mask: url("./assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat;
+}
+
+html[data-color-scheme="dark"] .first-project {
+  --first-project-plate-ink: color-mix(in oklab, var(--text-base) 15%, transparent);
+}
+
+html[data-color-scheme="dark"] .first-project-plate::before {
+  -webkit-mask:
+    url("./assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    url("./assets/tod-jag-mandir-dither.webp") 0 0 / 100% 100% no-repeat exclude,
+    linear-gradient(#000 0 0);
+}
+
+.first-project-steps {
+  display: flex;
+  gap: 1.25rem;
+  margin: 0 0 1.1rem;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-small);
+  color: var(--text-weak);
+}
+
+.first-project-step {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.first-project-step[aria-current="step"] {
+  color: var(--text-strong);
+}
+
+.first-project-step-index {
+  display: inline-flex;
+  width: 1.25rem;
+  height: 1.25rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-x-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.first-project-step[aria-current="step"] .first-project-step-index {
+  border-color: var(--first-project-edge);
+  color: var(--text-strong);
+}
+
+.first-project-step[data-done="true"] .first-project-step-index {
+  background-color: var(--first-project-edge);
+  border-color: transparent;
+  color: var(--background-base);
+}
+
+.first-project-project {
+  color: var(--text-strong);
+  font-weight: var(--font-weight-medium);
+}
+
+.first-project-headline {
+  margin: 0;
+  font-size: var(--font-size-3x-large);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-display);
+  letter-spacing: var(--letter-spacing-display);
+  color: var(--text-strong);
+}
+
+.first-project-lede {
+  margin: 0.6rem 0 0;
+  max-width: 33rem;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-prose);
+  color: var(--text-weak);
+}
+
+.first-project-card {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  margin-top: 1.85rem;
+  padding: 1.5rem;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-2xl);
+  background-color: var(--surface-raised-stronger-non-alpha);
+  box-shadow: var(--shadow-lg);
+}
+
+.first-project-card-body {
+  min-height: 8rem;
+  flex: 0 1 auto;
+  margin-inline: -1.5rem;
+}
+
+.first-project-card-body > .scroll-view__viewport {
+  padding-inline: 1.5rem;
+  overscroll-behavior: contain;
+}
+
+.first-project-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  inset-inline: 14%;
+  height: 1px;
+  background-image: linear-gradient(to right, transparent, var(--first-project-edge), transparent);
+}
+
+.first-project-diagnostics {
+  margin-top: 1.1rem;
+  align-self: flex-start;
+  font-size: var(--font-size-small);
+  color: var(--text-weak);
+  text-underline-offset: 2px;
+}
+
+.first-project-diagnostics:hover,
+.first-project-diagnostics:focus-visible {
+  color: var(--text-strong);
+  text-decoration: underline;
+}
+
+.first-project-reveal {
+  animation: first-project-rise 420ms cubic-bezier(0.2, 0, 0, 1) both;
+  animation-delay: var(--first-project-delay, 0ms);
+}
+
+.first-project-card [data-step-panel="project"] > form > * {
+  animation: first-project-rise 380ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+.first-project-card [data-step-panel="project"] > form > *:nth-child(1) {
+  animation-delay: 130ms;
+}
+
+.first-project-card [data-step-panel="project"] > form > *:nth-child(2) {
+  animation-delay: 170ms;
+}
+
+.first-project-card [data-step-panel="project"] > form > *:nth-child(3) {
+  animation-delay: 210ms;
+}
+
+.first-project-card [data-step-panel="project"] > form > *:nth-child(4) {
+  animation-delay: 250ms;
+}
+
+.first-project-card [data-step-panel="project"] > form > *:nth-child(5) {
+  animation-delay: 290ms;
+}
+
+.first-project-card [data-step-panel="project"] > form > *:nth-child(n + 6) {
+  animation-delay: 290ms;
+}
+
+@keyframes first-project-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .first-project-reveal,
+  .first-project-card [data-step-panel="project"] > form > * {
+    animation: none;
+  }
+}

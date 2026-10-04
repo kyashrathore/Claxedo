@@ -1,0 +1,210 @@
+import { validateSandboxPersistenceCapabilities, type SandboxDriverMetadata } from "./contract"
+import { workspaceRuntimeVersion } from "./runtime-version"
+import { defaultSandboxImage } from "./image-name"
+import {
+  defaultSandboxDriverID,
+  dockerSandboxDriverEnabled as contractDockerSandboxDriverEnabled,
+  listSandboxDrivers,
+  sandboxDriverAuthValues,
+  sandboxDriverCredentialFields,
+  sandboxDriverId,
+  sandboxDriverLabels,
+  type SandboxDriverAuth,
+  type SandboxDriverConfig,
+  type SandboxDriverEnv,
+  type SandboxDriverID,
+} from "@claxedo/sandbox-contract"
+
+export { defaultSandboxDriverID, listSandboxDrivers, sandboxDriverId }
+
+export type SandboxDriverCatalogEntry<ID extends string = SandboxDriverID> = {
+  id: ID
+  label: string
+  metadata: SandboxDriverMetadata
+  credentialFields: ReadonlyArray<{ key: string; label: string; secret?: boolean }>
+  runtimeNetwork: { controlPlane: "docker-host" | "direct"; relay: "configured" | "local" }
+  runtimeEnv: "ensure" | "callback"
+  preparedImage: boolean
+}
+
+export { validateSandboxPersistenceCapabilities }
+
+export const localBrokeringTestDriverCatalogEntry = {
+  id: "local-brokering-test",
+  label: "Local brokering test driver",
+  credentialFields: [],
+  runtimeNetwork: { controlPlane: "direct", relay: "local" },
+  runtimeEnv: "ensure",
+  preparedImage: false,
+  metadata: {
+    driverRunsIn: ["local"],
+    hostStopBehavior: "terminates-host",
+    hostResumeBehavior: "same-host",
+    targetAccess: "loopback",
+    secretBrokering: "native",
+    egressControl: "hosts",
+    persistence: {
+      resume: "same-sandbox",
+      capture: "none",
+      clone: false,
+      captureSource: "not-applicable",
+      retention: "provider-managed",
+      restoreMount: "same-resource",
+    },
+  },
+} as const satisfies {
+  id: string
+  label: string
+  credentialFields: ReadonlyArray<{ key: string; label: string; secret?: boolean }>
+  metadata: SandboxDriverMetadata
+  runtimeNetwork: SandboxDriverCatalogEntry<string>["runtimeNetwork"]
+  runtimeEnv: SandboxDriverCatalogEntry<string>["runtimeEnv"]
+  preparedImage: boolean
+}
+
+export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogEntry> = {
+  modal: {
+    id: "modal",
+    label: sandboxDriverLabels.modal,
+    credentialFields: sandboxDriverCredentialFields.modal,
+    runtimeNetwork: { controlPlane: "direct", relay: "configured" },
+    runtimeEnv: "callback",
+    preparedImage: true,
+    metadata: {
+      driverRunsIn: ["node"],
+      hostStopBehavior: "terminates-host", hostResumeBehavior: "replacement-host",
+      targetAccess: "relay",
+      secretBrokering: "none",
+      // The driver does not install Modal's domain allowlist or alpha sidecar.
+      egressControl: "none",
+      persistence: {
+        resume: "replacement-restore",
+        capture: "filesystem",
+        clone: false,
+        captureSource: "preserved",
+        retention: "provider-managed",
+        restoreMount: "new-resource",
+      },
+    },
+  },
+  vercel: {
+    id: "vercel",
+    label: sandboxDriverLabels.vercel,
+    credentialFields: sandboxDriverCredentialFields.vercel,
+    runtimeNetwork: { controlPlane: "direct", relay: "configured" },
+    runtimeEnv: "callback",
+    preparedImage: false,
+    metadata: {
+      driverRunsIn: ["node"],
+      hostStopBehavior: "terminates-host", hostResumeBehavior: "replacement-host",
+      targetAccess: "relay",
+      secretBrokering: "native",
+      // The driver translates hosts only; the SDK's subnet rules are not wired to net.cidrs.
+      egressControl: "hosts",
+      persistence: {
+        resume: "replacement-restore",
+        capture: "filesystem",
+        clone: false,
+        captureSource: "stopped",
+        retention: "explicit",
+        restoreMount: "new-resource",
+      },
+    },
+  },
+  cloudflare: {
+    id: "cloudflare",
+    label: sandboxDriverLabels.cloudflare,
+    credentialFields: sandboxDriverCredentialFields.cloudflare,
+    runtimeNetwork: { controlPlane: "direct", relay: "configured" },
+    runtimeEnv: "callback",
+    preparedImage: false,
+    metadata: {
+      driverRunsIn: ["worker"],
+      hostStopBehavior: "terminates-host", hostResumeBehavior: "same-host",
+      targetAccess: "relay",
+      secretBrokering: "native",
+      // Credential handlers do not restrict unrelated destinations.
+      egressControl: "none",
+      persistence: {
+        resume: "replacement-restore",
+        capture: "directories",
+        clone: false,
+        captureSource: "preserved",
+        retention: "explicit",
+        restoreMount: "copy-on-write",
+      },
+    },
+  },
+  boat: {
+    id: "boat",
+    label: sandboxDriverLabels.boat,
+    credentialFields: sandboxDriverCredentialFields.boat,
+    runtimeNetwork: { controlPlane: "direct", relay: "configured" },
+    runtimeEnv: "callback",
+    preparedImage: true,
+    metadata: {
+      driverRunsIn: ["worker", "node"],
+      hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
+      targetAccess: "relay",
+      secretBrokering: "none",
+      egressControl: "none",
+      persistence: {
+        resume: "same-sandbox",
+        capture: "none",
+        clone: false,
+        captureSource: "not-applicable",
+        retention: "provider-managed",
+        restoreMount: "same-resource",
+      },
+    },
+  },
+  docker: {
+    id: "docker",
+    label: sandboxDriverLabels.docker,
+    credentialFields: sandboxDriverCredentialFields.docker,
+    runtimeNetwork: { controlPlane: "docker-host", relay: "configured" },
+    runtimeEnv: "callback",
+    preparedImage: true,
+    metadata: {
+      driverRunsIn: ["local"],
+      hostStopBehavior: "terminates-host", hostResumeBehavior: "same-host",
+      targetAccess: "loopback",
+      secretBrokering: "none",
+      egressControl: "none",
+      persistence: {
+        resume: "replacement-restore",
+        capture: "same-resource",
+        clone: false,
+        captureSource: "preserved",
+        retention: "provider-managed",
+        restoreMount: "same-resource",
+      },
+    },
+  },
+}
+
+export function sandboxDriverAuth<T extends SandboxDriverID>(
+  cfg: SandboxDriverConfig | undefined,
+  id: T,
+  env: SandboxDriverEnv = process.env,
+): SandboxDriverAuth[T] | undefined {
+  if (id === "docker") {
+    const configured = sandboxDriverAuthValues(cfg, "docker", env)
+    if (!configured) return undefined
+    const image = configured.image ?? defaultSandboxImage(workspaceRuntimeVersion(), undefined, env)
+    return { image } as SandboxDriverAuth[T]
+  }
+  return sandboxDriverAuthValues(cfg, id, env)
+}
+
+export function hasSandboxDriverAuth(
+  cfg: SandboxDriverConfig | undefined,
+  id: SandboxDriverID,
+  env: SandboxDriverEnv = process.env,
+) {
+  return !!sandboxDriverAuth(cfg, id, env)
+}
+
+export function dockerSandboxDriverEnabled(env: SandboxDriverEnv = process.env) {
+  return contractDockerSandboxDriverEnabled(env)
+}

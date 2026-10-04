@@ -1,0 +1,157 @@
+import type { AgentPluginArtifactStore } from "@claxedo/server-core/agent-plugins/artifacts/types"
+import type { SignedAgentPluginActivationStore } from "@claxedo/server-core/agent-plugins/activation/store"
+import {
+  createSafeEndpointFetch,
+  discoverMcpOAuth,
+  type McpOAuthAddressResolver,
+  type McpOAuthDiscoveryResult,
+  type McpOAuthDynamicRegistrationPort,
+} from "@claxedo/server-core/agent-plugins/mcp/discovery"
+import {
+  createMcpOAuthIntegration,
+  createMcpOAuthIntegrationFromAttempt,
+  mcpOAuthDeclaration,
+  isMcpOAuthIntegrationId,
+  MCP_BROKERED_PORT,
+} from "@claxedo/server-core/agent-plugins/mcp/integration"
+import type { AgentPluginHttpServer } from "@claxedo/server-core/agent-plugins/catalog/types"
+import type { HostedDynamicConnectionIntegrations } from "../../connections/hosted-d1/types"
+import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
+import { hostedMcpCatalogAuthentication } from "./catalog-auth"
+
+type Fetch = (url: string, init?: RequestInit) => Promise<Response>
+
+export type HostedMcpOAuthConfiguration = Readonly<{
+  callbackUrl: string
+  fetch: Fetch
+  /**
+   * DNS answers behind each destination hostname, enforced at connection
+   * time on every hop discovery and the token exchange make.
+   */
+  resolve: McpOAuthAddressResolver
+  preRegistered?: Readonly<Record<string, { clientId: string; clientSecret?: string }>>
+  clientIdMetadataDocumentUrl?: string
+  /**
+   * RFC 7591 client registration for authorization servers that support
+   * neither a pre-registered client nor a client-id metadata document
+   * (Composio and Context7 both). Deployment-wide: one client per issuer,
+   * shared by every org, so it is composed once and never per request.
+   */
+  dynamicRegistration?: McpOAuthDynamicRegistrationPort
+}>
+
+type RetainedServer = {
+  pluginInstanceId: string
+  server: AgentPluginHttpServer
+}
+
+async function retainedServers(
+  activations: SignedAgentPluginActivationStore,
+  artifacts: AgentPluginArtifactStore,
+  auth: NonNullable<Parameters<HostedDynamicConnectionIntegrations>[0]["auth"]>,
+) {
+  const result: RetainedServer[] = []
+  for (const known of (await activations.listKnown(auth)).toSorted((left, right) => left.pluginInstanceId.localeCompare(right.pluginInstanceId))) {
+    // Personal acquisition is the user's current definition; absent that, the
+    // organization definition wins over the Claxedo definition. This chooses
+    // bytes only. Project/harness activation remains a separate runtime check.
+    const pin = known.pins.user ?? known.pins.organization ?? known.pins.claxedo
+    if (!pin) continue
+    const artifact = await artifacts.get(pin.digest)
+    if (!artifact || artifact.plugin.mcp.status !== "valid") continue
+    for (const server of artifact.plugin.mcp.servers) {
+      if (server.type === "streamable-http") result.push({ pluginInstanceId: known.pluginInstanceId, server })
+    }
+  }
+  return result.toSorted((left, right) =>
+    left.pluginInstanceId.localeCompare(right.pluginInstanceId) || left.server.name.localeCompare(right.server.name))
+}
+
+async function requestedIssuer(request: Request | undefined): Promise<string | undefined> {
+  if (!request || request.method !== "POST") return undefined
+  const value = await readJsonRecord(request.clone())
+  if (value?.issuer === undefined) return undefined
+  if (typeof value.issuer !== "string" || value.issuer.length > 2_048) throw new Error("MCP authorization server selection is invalid")
+  return value.issuer
+}
+
+function discovery(input: HostedMcpOAuthConfiguration, server: RetainedServer, selectedIssuer?: string): Promise<McpOAuthDiscoveryResult> {
+  return discoverMcpOAuth({
+    resourceUrl: server.server.url,
+    fetch: input.fetch,
+    resolve: input.resolve,
+    ...(selectedIssuer ? { selectedIssuer } : {}),
+    ...(input.preRegistered ? { preRegistered: input.preRegistered } : {}),
+    ...(input.clientIdMetadataDocumentUrl ? { clientIdMetadataDocumentUrl: input.clientIdMetadataDocumentUrl } : {}),
+    ...(input.dynamicRegistration ? { dynamicRegistration: input.dynamicRegistration } : {}),
+  })
+}
+
+/**
+ * Adapts retained standard MCP declarations into the existing Connections
+ * registry. It owns no rows, attempts, tokens, or credential references.
+ */
+export function hostedAgentPluginConnectionIntegrations(input: Readonly<{
+  activations: SignedAgentPluginActivationStore
+  artifacts: AgentPluginArtifactStore
+  oauth: HostedMcpOAuthConfiguration
+}>): HostedDynamicConnectionIntegrations {
+  const authentication = hostedMcpCatalogAuthentication(input.oauth)
+  // Retained endpoints must pass address validation again when credentials are sent.
+  const tokenFetch = createSafeEndpointFetch(input.oauth.fetch, input.oauth.resolve)
+  return async (context) => {
+    // Built-in integrations (GitHub's device grant) settle through their own
+    // declaration; decoding their attempt or fields as MCP OAuth fails them.
+    if (context.integrationId && !isMcpOAuthIntegrationId(context.integrationId)) return []
+    if (context.attemptContext && context.integrationId) {
+      return [await createMcpOAuthIntegrationFromAttempt({
+        integrationId: context.integrationId,
+        serverName: "MCP",
+        attemptContext: context.attemptContext,
+        fetch: tokenFetch,
+        ...(input.oauth.preRegistered ? { preRegistered: input.oauth.preRegistered } : {}),
+        ...(input.oauth.dynamicRegistration ? { dynamicRegistration: input.oauth.dynamicRegistration } : {}),
+      })]
+    }
+    if (context.connectionFields && context.integrationId) {
+      return [await createMcpOAuthIntegrationFromAttempt({
+        integrationId: context.integrationId,
+        serverName: "MCP",
+        attemptContext: context.connectionFields,
+        fetch: tokenFetch,
+        ...(input.oauth.preRegistered ? { preRegistered: input.oauth.preRegistered } : {}),
+        ...(input.oauth.dynamicRegistration ? { dynamicRegistration: input.oauth.dynamicRegistration } : {}),
+      })]
+    }
+    if (!context.auth) return []
+    const servers = await retainedServers(input.activations, input.artifacts, context.auth)
+    const declarations = (await Promise.all(servers.map(async (server) => {
+      const auth = await authentication(server)
+      if (auth.state !== "oauth") return undefined
+      return {
+        server,
+        decl: await mcpOAuthDeclaration({
+          pluginInstanceId: server.pluginInstanceId,
+          serverName: server.server.name,
+        }),
+      }
+    }))).filter((value): value is NonNullable<typeof value> => value !== undefined)
+    // These two paths build no auth, but they still carry the port: the
+    // registry reads an integration's capability set off its ports, so an impl
+    // without one resolves for nothing.
+    if (!context.integrationId) {
+      return declarations.map(({ decl }) => ({ decl, impl: { actions: MCP_BROKERED_PORT } }))
+    }
+    const selected = declarations.find(({ decl }) => decl.id === context.integrationId)
+    if (!selected) return []
+    const discovered = await discovery(input.oauth, selected.server, await requestedIssuer(context.request))
+    if (discovered.status === "public") return [{ decl: selected.decl, impl: { actions: MCP_BROKERED_PORT } }]
+    return [await createMcpOAuthIntegration({
+      pluginInstanceId: selected.server.pluginInstanceId,
+      serverName: selected.server.server.name,
+      discovery: discovered.discovery,
+      callbackUrl: input.oauth.callbackUrl,
+      fetch: tokenFetch,
+    })]
+  }
+}

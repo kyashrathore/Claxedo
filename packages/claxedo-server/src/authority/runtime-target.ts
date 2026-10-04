@@ -1,0 +1,70 @@
+import type { WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
+import { defaultHomeRegion, normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
+import type { ControlPlaneServices } from "./services"
+import { trimToUndefined } from "@claxedo/helpers/string"
+
+export class WorkspaceRuntimeTargetError extends Error {
+  constructor(readonly status: number, readonly code: string, message: string, readonly retryAfterMs?: number) {
+    super(message)
+  }
+}
+
+export async function resolveWorkspaceRuntimeTarget(
+  services: ControlPlaneServices,
+  auth: ControlPlaneAuthContext | undefined,
+  input: { workspaceId: string; workspace?: WorkspaceRecord },
+) {
+  const { workspaceId, workspace } = input
+  if (workspace?.backing === "local-worktree") {
+    if (auth?.mode !== "signed") {
+      throw new WorkspaceRuntimeTargetError(
+        409,
+        "workspace_runtime_unavailable",
+        "Workspace has no available runtime target",
+      )
+    }
+    const activeLink = await requireAuthority(services).activeWorkspaceHost(auth, { workspaceId })
+    if (!activeLink.active) {
+      throw new WorkspaceRuntimeTargetError(
+        409,
+        "workspace_host_offline",
+        "The machine serving this workspace is offline",
+      )
+    }
+    return {
+      hostId: activeLink.host_id,
+      homeRegion: normalizeClaxedoRegion(
+        trimToUndefined(workspace.home_region) ?? trimToUndefined(workspace.homeRegion),
+        services.defaultHomeRegion ?? defaultHomeRegion(),
+      ),
+    }
+  }
+  const needsExplicitSignedPlacement = auth?.mode === "signed"
+  const hasExplicitPlacement = workspace?.backing !== undefined
+  if ((needsExplicitSignedPlacement || hasExplicitPlacement) && workspace?.backing !== "cloud-vm") {
+    throw new WorkspaceRuntimeTargetError(
+      409,
+      "workspace_runtime_unavailable",
+      "Workspace has no available runtime target",
+    )
+  }
+  const hostManager = services.sandbox.sandboxManager
+  if (!hostManager) {
+    throw new WorkspaceRuntimeTargetError(503, "sandbox_unavailable", "Sandbox manager is not configured")
+  }
+  const target = await hostManager.target(workspaceId).catch(() => undefined)
+  if (target?.status !== "ready") {
+    const retryAfterMs = target?.status === "unavailable" ? target.retryAfterMs : undefined
+    throw new WorkspaceRuntimeTargetError(409, "cloud_runtime_unavailable", "Cloud runtime is unavailable", retryAfterMs)
+  }
+  return {
+    hostId: target.hostId,
+    routingId: target.routingId,
+    homeRegion: normalizeClaxedoRegion(
+      target.homeRegion,
+      services.defaultHomeRegion ?? defaultHomeRegion(),
+    ),
+  }
+}

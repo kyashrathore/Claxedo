@@ -1,0 +1,129 @@
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
+
+import { afterEach, describe, expect, test } from "vitest"
+
+import { emittedManifestFindings } from "./emitted-manifest"
+import { serializeBuildManifest, type BuildManifest } from "./normalize-build-manifest"
+import type { Policy } from "./policy"
+
+const roots: string[] = []
+
+afterEach(() => {
+  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
+})
+
+function fixture(manifest?: BuildManifest) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-emitted-manifest-"))
+  roots.push(root)
+  const file = "artifact/manifest.json"
+  if (manifest) {
+    fs.mkdirSync(path.join(root, "artifact"), { recursive: true })
+    fs.writeFileSync(path.join(root, file), serializeBuildManifest(manifest))
+  }
+  const policy: Policy = {
+    id: "fixture",
+    summary: "fixture",
+    packageDir: "packages/app",
+    entry: "packages/app/src/index.ts",
+    roots: ["packages/app/src"],
+    forbiddenPackages: ["forbidden-sdk"],
+    forbiddenModules: ["packages/app/src/hosted"],
+    control: { minModules: 1, requiredModules: [] },
+    emitted: {
+      file,
+      minModules: 2,
+      minChunks: 1,
+      requiredModules: ["packages/app/src/index.ts"],
+      forbiddenChunkMarkers: ["forbidden-sdk"],
+    },
+  }
+  return { root, policy }
+}
+
+describe("emitted manifest boundary", () => {
+  test("accepts a populated manifest from the declared entry", () => {
+    const { root, policy } = fixture({
+      entry: "packages/app/src/index.ts",
+      modules: ["packages/app/src/index.ts", "solid-js/dist/solid.js"],
+      chunks: ["assets/index-abc.js"],
+      edges: { static: [], dynamic: [] },
+    })
+    expect(emittedManifestFindings(policy, root)).toEqual([])
+  })
+
+  test("refuses missing and empty measurements", () => {
+    const missing = fixture()
+    expect(emittedManifestFindings(missing.policy, missing.root)).toEqual([
+      "missing emitted manifest: artifact/manifest.json",
+    ])
+
+    const empty = fixture({ entry: "wrong.ts", modules: [], chunks: [], edges: { static: [], dynamic: [] } })
+    expect(emittedManifestFindings(empty.policy, empty.root)).toEqual(expect.arrayContaining([
+      "entry is wrong.ts; expected packages/app/src/index.ts",
+      "manifest has 0 modules; expected at least 2",
+      "manifest has 0 chunks; expected at least 1",
+      "required emitted module missing: packages/app/src/index.ts",
+    ]))
+  })
+
+  test("rejects forbidden package, source-root, and chunk identities", () => {
+    const { root, policy } = fixture({
+      entry: "packages/app/src/index.ts",
+      modules: [
+        "packages/app/src/index.ts",
+        "packages/app/src/hosted/private.ts",
+        "forbidden-sdk/dist/index.js",
+      ],
+      chunks: ["assets/vendor-forbidden-sdk.js"],
+      edges: { static: [], dynamic: [] },
+    })
+    expect(emittedManifestFindings(policy, root)).toEqual([
+      "forbidden emitted module packages/app/src/hosted: packages/app/src/hosted/private.ts",
+      "forbidden emitted package forbidden-sdk: forbidden-sdk/dist/index.js",
+      "forbidden emitted chunk marker forbidden-sdk: assets/vendor-forbidden-sdk.js",
+    ])
+  })
+
+  test("reports a required chunk marker that is not emitted", () => {
+    // The positive control for a build-selected cut: without it, a renamed
+    // chunk satisfies the forbidden rule on the disabled build AND passes
+    // unnoticed on the enabled one, so the exclusion reads as proven when
+    // nothing is being measured.
+    const { root, policy } = fixture({
+      entry: "packages/app/src/index.ts",
+      modules: ["packages/app/src/index.ts", "packages/app/src/optional/feature.ts"],
+      chunks: ["assets/index-abc.js"],
+      edges: { static: [], dynamic: [] },
+    })
+    policy.emitted!.requiredChunkMarkers = ["optional-feature"]
+    expect(emittedManifestFindings(policy, root)).toEqual([
+      "required emitted chunk marker missing: optional-feature",
+    ])
+  })
+
+  test("accepts a required chunk marker the build emitted", () => {
+    const { root, policy } = fixture({
+      entry: "packages/app/src/index.ts",
+      modules: ["packages/app/src/index.ts", "packages/app/src/optional/feature.ts"],
+      chunks: ["assets/index-abc.js", "assets/optional-feature-def.js"],
+      edges: { static: [], dynamic: [] },
+    })
+    policy.emitted!.requiredChunkMarkers = ["optional-feature"]
+    expect(emittedManifestFindings(policy, root)).toEqual([])
+  })
+
+  test("supports a narrower static emitted closure than the full source graph", () => {
+    const { root, policy } = fixture({
+      entry: "packages/app/src/index.ts",
+      modules: ["packages/app/src/index.ts", "packages/app/src/lazy/optional.ts"],
+      chunks: ["assets/index.js"],
+      edges: { static: [], dynamic: ["assets/index.js -> assets/optional.js"] },
+    })
+    policy.emitted!.forbiddenModules = ["packages/app/src/lazy"]
+    expect(emittedManifestFindings(policy, root)).toEqual([
+      "forbidden emitted module packages/app/src/lazy: packages/app/src/lazy/optional.ts",
+    ])
+  })
+})

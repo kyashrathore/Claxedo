@@ -1,0 +1,189 @@
+{
+  "generated_at": "2026-06-07T11:54:51.108Z",
+  "status": "pass",
+  "adapters": [
+    "deterministic"
+  ],
+  "targets": [
+    "claxedo"
+  ],
+  "scenarios": [
+    {
+      "adapter": "deterministic",
+      "target": "claxedo",
+      "id": "session-switch-stress",
+      "name": "Rapid-switch across many sessions, watching for call-stack overflows and loader blink",
+      "started_at": "2026-06-07T11:54:51.036Z",
+      "duration_ms": 0.055415999999979704,
+      "seed": {
+        "repos": 1,
+        "sessions": 8,
+        "messages": 4000,
+        "terminals": 3,
+        "changed_files": 80,
+        "projects": 2,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 100,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 129.97254070167585,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            129.58670592276525,
+            129.97254070167585,
+            128.85127633082914,
+            122.35530788111501,
+            119.76332237046284,
+            117.46748773892651,
+            111.8076629187601,
+            111.91484722299643,
+            113.70445533901864
+          ],
+          "p50": 119.76332237046284,
+          "p95": 129.97254070167585,
+          "min": 111.8076629187601,
+          "max": 129.97254070167585,
+          "mean": 120.6026229362833,
+          "relative_stddev": 0.05866813698584517
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 422.41075728044655,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            421.156794248987,
+            422.41075728044655,
+            418.76664807519467,
+            397.6547506136238,
+            389.23079770400426,
+            381.76933515151114,
+            363.3749044859703,
+            363.72325347473844,
+            369.5394798518106
+          ],
+          "p50": 389.23079770400426,
+          "p95": 422.41075728044655,
+          "min": 363.3749044859703,
+          "max": 422.41075728044655,
+          "mean": 391.9585245429208,
+          "relative_stddev": 0.05866813698584512
+        },
+        {
+          "metric": "session_switch_max_call_stack",
+          "value": 0,
+          "unit": "errors",
+          "direction": "lower",
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "session_switch_loader_fraction",
+          "value": 0.4332418023389196,
+          "unit": "ratio",
+          "direction": "lower",
+          "samples": [
+            0.4319556864092175,
+            0.4332418023389196,
+            0.4295042544360971,
+            0.4078510262703834,
+            0.39921107456820953,
+            0.3915582924630884,
+            0.37269220972920036,
+            0.3730494907433215,
+            0.37901485113006217
+          ],
+          "p50": 0.39921107456820953,
+          "p95": 0.4332418023389196,
+          "min": 0.37269220972920036,
+          "max": 0.4332418023389196,
+          "mean": 0.40200874312094437,
+          "relative_stddev": 0.05866813698584516
+        },
+        {
+          "metric": "memory_growth_mb",
+          "value": 86.6483604677839,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            86.3911372818435,
+            86.6483604677839,
+            85.90085088721942,
+            81.57020525407667,
+            79.8422149136419,
+            78.31165849261767,
+            74.53844194584006,
+            74.60989814866429,
+            75.80297022601243
+          ],
+          "p50": 79.8422149136419,
+          "p95": 86.6483604677839,
+          "min": 74.53844194584006,
+          "max": 86.6483604677839,
+          "mean": 80.40174862418888,
+          "relative_stddev": 0.05866813698584515
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 149.498,
+        "memory_rss_mb": 87.765625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 0,
+        "event_backlog": 4
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/test/runner.test.ts",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "deterministic",
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "adapter": "deterministic",
+        "target": "claxedo",
+        "scenario": "session-switch-stress",
+        "metrics": {
+          "surface_switch_latency_ms": 163,
+          "transcript_render_ms": 529,
+          "session_switch_max_call_stack": 0,
+          "session_switch_loader_fraction": 1,
+          "memory_growth_mb": 109
+        }
+      },
+      "status": "pass",
+      "failures": []
+    }
+  ],
+  "comparisons": []
+}

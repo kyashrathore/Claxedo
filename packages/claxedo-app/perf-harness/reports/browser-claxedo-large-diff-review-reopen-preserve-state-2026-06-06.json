@@ -1,0 +1,182 @@
+{
+  "generated_at": "2026-06-05T20:11:39.703Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "large-diff-toggle",
+      "name": "Large Diff Toggle",
+      "started_at": "2026-06-05T20:11:39.565Z",
+      "duration_ms": 12026.978833,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 500,
+        "terminals": 0,
+        "changed_files": 500,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "vcs_load_ms",
+          "value": 603.9659589999992,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            603.9659589999992
+          ],
+          "p50": 603.9659589999992,
+          "p95": 603.9659589999992,
+          "min": 603.9659589999992,
+          "max": 603.9659589999992,
+          "mean": 603.9659589999992,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "hunk_render_ms",
+          "value": 47.6583329999994,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            47.6583329999994
+          ],
+          "p50": 47.6583329999994,
+          "p95": 47.6583329999994,
+          "min": 47.6583329999994,
+          "max": 47.6583329999994,
+          "mean": 47.6583329999994,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "diff_toggle_latency_ms",
+          "value": 31.899999976158142,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            31.899999976158142
+          ],
+          "p50": 31.899999976158142,
+          "p95": 31.899999976158142,
+          "min": 31.899999976158142,
+          "max": 31.899999976158142,
+          "mean": 31.899999976158142,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "review_panel_reopen_ms",
+          "value": 640.3713750000006,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            640.3713750000006
+          ],
+          "p50": 640.3713750000006,
+          "p95": 640.3713750000006,
+          "min": 640.3713750000006,
+          "max": 640.3713750000006,
+          "mean": 640.3713750000006,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "line_comment_latency_ms",
+          "value": 14.100000023841858,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            14.100000023841858
+          ],
+          "p50": 14.100000023841858,
+          "p95": 14.100000023841858,
+          "min": 14.100000023841858,
+          "max": 14.100000023841858,
+          "mean": 14.100000023841858,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "changed_file_navigation_ms",
+          "value": 33.56512500000099,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            33.56512500000099
+          ],
+          "p50": 33.56512500000099,
+          "p95": 33.56512500000099,
+          "min": 33.56512500000099,
+          "max": 33.56512500000099,
+          "mean": 33.56512500000099,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 1259.482,
+        "memory_rss_mb": 189.78118896484375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-large-diff-toggle-1.webm"
+      },
+      "attribution": {
+        "git_sha": "8056cc20eb5afaf8ffa2561dc70969711f84ac1c",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts browser --all --target claxedo --scenario large-diff-toggle --output browser-claxedo-large-diff-review-reopen-preserve-state-2026-06-06.json",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:64384",
+          "mock_port": 64385,
+          "dev_command": "bun --cwd packages/claxedo-app dev"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:8056cc20eb5afaf8ffa2561dc70969711f84ac1c"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "large-diff-toggle",
+        "metrics": {
+          "vcs_load_ms": 36,
+          "hunk_render_ms": 41,
+          "diff_toggle_latency_ms": 37,
+          "line_comment_latency_ms": 33,
+          "changed_file_navigation_ms": 7,
+          "review_panel_reopen_ms": 1688
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "vcs_load_ms p95 603.9659589999992 > 36",
+        "hunk_render_ms p95 47.6583329999994 > 41",
+        "changed_file_navigation_ms p95 33.56512500000099 > 7"
+      ]
+    }
+  ],
+  "comparisons": []
+}

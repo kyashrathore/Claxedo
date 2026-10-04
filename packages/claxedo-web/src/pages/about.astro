@@ -1,0 +1,34 @@
+---
+import Layout from "../layouts/Layout.astro"
+import Nav from "../components/Nav.astro"
+import Footer from "../components/Footer.astro"
+import SectionHead from "../components/SectionHead.astro"
+import { github, contact } from "../config"
+import { requireClaim } from "../content/claims"
+import { routes } from "../content/routes"
+
+for (const id of ["harness-coverage", "agent-plugins", "connected-placement", "bring-your-own-sandbox", "mit-platform", "opencode-lineage", "cloudflare-five-minutes"]) requireClaim(id)
+---
+
+<Layout title="About Claxedo" description="One open-source app for every coding agent: Claude Code, Codex, Cursor, OpenCode and Pi, set up once, on any machine, for your whole team." canonicalPath={routes.about}>
+  <Nav />
+  <main id="main-content" class="page">
+    <div class="page-head"><SectionHead as="h1" title="About Claxedo.">One open-source app for every coding agent you use.</SectionHead></div>
+    <article class="prose">
+      <h2>What you get</h2>
+      <p>Claude Code, Codex, Cursor, OpenCode and Pi, side by side in one app. Set up your skills, plugins and MCP servers once, and every agent gets them. Run sessions on your laptop, your own machines or your own sandbox provider, and pick them up on desktop, browser or phone.</p>
+      <h2>Built in the open</h2>
+      <p>The app, the control plane and the workspace runtime are MIT licensed. Claxedo is built on the OpenCode engine, and its full history is public. Deploy it for your whole team on your own Cloudflare.</p>
+      <h2>Bring your own</h2>
+      <p>Claxedo sells no tokens. Use the model subscriptions and API keys you already have, on the compute you already run.</p>
+      <h2>Where to find us</h2>
+      <ul>
+        <li>Source, issues and releases: <a href={github}>{github}</a></li>
+        <li>Community: <a href={contact}>Discord</a></li>
+        <li>Downloads: <a href={routes.download}>claxedo.com/download</a></li>
+        <li>The fine print: <a href={routes.pricing}>Pricing</a>, <a href={routes.privacy}>Privacy</a>, <a href={routes.terms}>Terms</a></li>
+      </ul>
+    </article>
+  </main>
+  <Footer />
+</Layout>

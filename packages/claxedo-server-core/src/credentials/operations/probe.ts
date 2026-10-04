@@ -1,0 +1,81 @@
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import type { LocalCredentialItem } from "./sync"
+import type { CredentialDiscoveryProbe } from "./discovery"
+import { CredentialVerificationError, verifyCredential, type CredentialUsageWindow } from "./verify"
+import type { CredentialHealth, CredentialMetadata } from "@claxedo/server-core/credentials/types"
+
+const log = Log.create({ service: "credentials-probe" })
+
+/**
+ * Probes a *discovered but unsaved* candidate against its provider, before the
+ * user commits to it. A credential saved and then found broken is worse than
+ * one never offered — the user believes setup succeeded and only discovers
+ * otherwise mid-task.
+ *
+ * This spends one real request per candidate per scan, and for a ChatGPT
+ * subscription that request comes out of the user's own quota. Probes are
+ * therefore run once per discovery and stashed with it, never on re-render.
+ */
+export async function probeDiscoveredCredential(
+  item: LocalCredentialItem,
+  options: { fetch?: typeof fetch; now?: () => number } = {},
+): Promise<CredentialDiscoveryProbe> {
+  const now = options.now ?? Date.now
+  const at = now()
+  // The metadata a saved credential would have, so the probe exercises the same
+  // verification path a saved one takes. Nothing here is persisted.
+  const credential: CredentialMetadata = {
+    id: `discovery:${item.provider_id}`,
+    provider_id: item.provider_id,
+    kind: item.kind,
+    source: item.source,
+    label: item.label,
+    status: "available",
+    expires_at: null,
+    created_at: at,
+    updated_at: at,
+    revision: 1,
+    incarnation: `discovery:${item.provider_id}`,
+  }
+
+  try {
+    const outcome = await verifyCredential(credential, item.secret, options)
+    return verdict(outcome.health, outcome.usage)
+  } catch (error) {
+    // `CredentialVerificationError` means we could not form a verdict — an
+    // unsupported provider, an unreadable secret shape, or a failed request.
+    // That is "can't tell", never "broken".
+    if (error instanceof CredentialVerificationError) {
+      log.info("probe inconclusive", { provider: item.provider_id, reason: error.message })
+      return { state: "unknown", reason: inconclusiveCopy(error.code) }
+    }
+    throw error
+  }
+}
+
+function verdict(health: CredentialHealth, usage: CredentialUsageWindow[] | undefined): CredentialDiscoveryProbe {
+  // A quota-capped subscription authenticated: the provider answered us and
+  // will again once the window rolls over. That is working, not broken.
+  if (health === "ok") return { state: "working", health, ...(usage?.length ? { usage } : {}) }
+  if (health === "rate_capped") return { state: "working", health }
+  if (health === "auth_failed") {
+    return { state: "broken", health, reason: "The provider rejected this credential." }
+  }
+  if (health === "expired") {
+    return { state: "broken", health, reason: "This credential has expired and couldn't be renewed." }
+  }
+  if (health === "no_billing") {
+    return { state: "broken", health, reason: "The provider reports no active billing for this account." }
+  }
+  return { state: "unknown", reason: "The provider gave an answer we couldn't read." }
+}
+
+function inconclusiveCopy(code: string) {
+  if (code === "credential_verification_unsupported") {
+    return "Claxedo can't check this provider yet — it will be used as-is."
+  }
+  if (code === "credential_shape_invalid") {
+    return "This credential isn't in a shape Claxedo can check."
+  }
+  return "Couldn't reach the provider to check this."
+}

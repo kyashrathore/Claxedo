@@ -1,0 +1,740 @@
+import { describe, expect, test } from "vitest"
+import { CredentialVerificationError, verifyCredential } from "./verify"
+import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
+
+const NOW = 1_700_000_000_000
+
+test("unsupported providers return a typed verification error", async () => {
+  await expect(verifyCredential(credential({ provider_id: "unsupported-provider", expires_at: null }), "secret"))
+    .rejects.toMatchObject({ code: "credential_verification_unsupported", status: 400, retryable: false })
+})
+
+test("unreadable secrets return a typed validation error", async () => {
+  await expect(verifyCredential(credential({ provider_id: "openai", kind: "api_key", expires_at: null }), "{}"))
+    .rejects.toMatchObject({ code: "credential_shape_invalid", status: 400, retryable: false })
+})
+const TOKEN_URL = "https://auth.openai.com/oauth/token"
+const PROFILE_URL = "https://api.anthropic.com/api/oauth/profile"
+const CATALOG_URL = "https://api.anthropic.com/v1/models"
+
+function credential(input: Partial<CredentialMetadata> = {}): CredentialMetadata {
+  return {
+    id: "cred_1",
+    provider_id: "codex-app-server",
+    kind: "oauth_token",
+    source: "local_only",
+    status: "available",
+    created_at: NOW,
+    updated_at: NOW,
+    revision: 1,
+    incarnation: "cred_1",
+    ...input,
+  }
+}
+
+function codexSecret(access = "access_old") {
+  return JSON.stringify({
+    type: "codex_auth",
+    tokens: { access_token: access, refresh_token: "refresh_old", account_id: "acct_1" },
+    refresh: "refresh_old",
+    access,
+    expires: NOW - 1,
+    account_id: "acct_1",
+    oauth: { refresh: "refresh_old", access, expires: NOW - 1, account_id: "acct_1" },
+  })
+}
+
+/**
+ * One stub for all three hops: the token endpoint, the provider probe and
+ * Anthropic's profile read. Recording every one is the point — the bug this
+ * covers was a probe that never happened, and the profile read must stay off
+ * the verdict while still being visible to an assertion.
+ */
+function transport(input: {
+  token?: { ok?: boolean; body?: unknown }
+  probe?: { ok?: boolean; status?: number; body?: string; json?: unknown }
+  profile?: { ok?: boolean; status?: number; json?: unknown }
+  /** The model catalog an inference-scoped Anthropic token is asked for. */
+  catalog?: { ok?: boolean; status?: number; body?: string }
+}) {
+  const calls: Array<{
+    url: string
+    authorization?: string
+    headers: Record<string, string>
+    body?: Record<string, unknown>
+  }> = []
+  const stub = (async (url: string | URL, init?: RequestInit) => {
+    const target = String(url)
+    const headers = (init?.headers ?? {}) as Record<string, string>
+    calls.push({
+      url: target,
+      headers,
+      ...(headers.Authorization ? { authorization: headers.Authorization } : {}),
+      ...(typeof init?.body === "string" && init.body.startsWith("{")
+        ? { body: JSON.parse(init.body) as Record<string, unknown> }
+        : {}),
+    })
+    if (target === TOKEN_URL) {
+      const token = input.token ?? {}
+      return {
+        ok: token.ok ?? true,
+        status: token.ok === false ? 400 : 200,
+        json: async () => token.body ?? { access_token: "access_new", refresh_token: "refresh_new" },
+        text: async () => "",
+      } as unknown as Response
+    }
+    if (target === CATALOG_URL) {
+      const catalog = input.catalog ?? {}
+      return {
+        ok: catalog.ok ?? true,
+        status: catalog.status ?? (catalog.ok === false ? 401 : 200),
+        text: async () => catalog.body ?? "",
+        body: { cancel: async () => undefined },
+      } as unknown as Response
+    }
+    if (target === PROFILE_URL) {
+      const profile = input.profile ?? {}
+      return {
+        ok: profile.ok ?? true,
+        status: profile.status ?? (profile.ok === false ? 403 : 200),
+        text: async () => "",
+        json: async () => profile.json ?? {},
+      } as unknown as Response
+    }
+    const probe = input.probe ?? {}
+    return {
+      ok: probe.ok ?? true,
+      status: probe.status ?? (probe.ok === false ? 400 : 200),
+      text: async () => probe.body ?? "",
+      json: async () => probe.json ?? {},
+    } as unknown as Response
+  }) as unknown as typeof fetch
+  return {
+    stub,
+    calls,
+    tokenCalls: () => calls.filter((call) => call.url === TOKEN_URL),
+    probeCalls: () => calls.filter((call) => call.url !== TOKEN_URL && call.url !== PROFILE_URL && call.url !== CATALOG_URL),
+    profileCalls: () => calls.filter((call) => call.url === PROFILE_URL),
+  }
+}
+
+describe("verifyCredential — stale but refreshable", () => {
+  test("refreshes a stale Codex login, probes with the new token, and returns ok", async () => {
+    const transports = transport({})
+
+    const outcome = await verifyCredential(credential({ expires_at: NOW - 1 }), codexSecret(), {
+      fetch: transports.stub,
+      now: () => NOW,
+    })
+
+    expect(outcome.health).toBe("ok")
+    expect(transports.tokenCalls()).toHaveLength(1)
+    // The regression: before the fix the local expiry short-circuited and the
+    // provider was never contacted at all.
+    expect(transports.probeCalls()).toHaveLength(1)
+    expect(transports.probeCalls()[0].authorization).toBe("Bearer access_new")
+    expect(outcome.refreshed?.secret).toBeDefined()
+    expect(JSON.parse(outcome.refreshed!.secret).access).toBe("access_new")
+  })
+
+  test("hands the caller the renewed secret and its new expiry to persist", async () => {
+    const transports = transport({})
+
+    const outcome = await verifyCredential(credential({ expires_at: NOW - 1 }), codexSecret(), {
+      fetch: transports.stub,
+      now: () => NOW,
+    })
+
+    expect(outcome.refreshed?.expiresAt).toBe(NOW + 55 * 60 * 1000)
+    expect(JSON.parse(outcome.refreshed!.secret).tokens.refresh_token).toBe("refresh_new")
+  })
+
+  test("still reports a provider verdict after a successful refresh", async () => {
+    const transports = transport({ probe: { ok: false, status: 402, body: "insufficient_quota" } })
+
+    const outcome = await verifyCredential(credential({ expires_at: NOW - 1 }), codexSecret(), {
+      fetch: transports.stub,
+      now: () => NOW,
+    })
+
+    expect(outcome.health).toBe("no_billing")
+    expect(outcome.refreshed).toBeDefined()
+  })
+})
+
+describe("verifyCredential — stale and not refreshable", () => {
+  test("a rejected refresh token is expired, and the provider is not probed", async () => {
+    const transports = transport({ token: { ok: false } })
+
+    const outcome = await verifyCredential(credential({ expires_at: NOW - 1 }), codexSecret(), {
+      fetch: transports.stub,
+      now: () => NOW,
+    })
+
+    expect(outcome).toEqual({ health: "expired" })
+    expect(transports.tokenCalls()).toHaveLength(1)
+    expect(transports.probeCalls()).toHaveLength(0)
+  })
+
+  test("a secret with no refresh token is expired without any network call", async () => {
+    const transports = transport({})
+    const secret = JSON.stringify({ type: "codex_auth", access: "access_old", expires: NOW - 1 })
+
+    const outcome = await verifyCredential(credential({ expires_at: NOW - 1 }), secret, {
+      fetch: transports.stub,
+      now: () => NOW,
+    })
+
+    expect(outcome).toEqual({ health: "expired" })
+    expect(transports.calls).toHaveLength(0)
+  })
+
+  test("a provider with no refresh grant keeps the old short-circuit", async () => {
+    const transports = transport({})
+
+    const outcome = await verifyCredential(
+      credential({ provider_id: "claude-sdk", expires_at: NOW - 1 }),
+      JSON.stringify({ claudeAiOauth: { accessToken: "access_old" } }),
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    expect(outcome).toEqual({ health: "expired" })
+    expect(transports.calls).toHaveLength(0)
+  })
+})
+
+describe("verifyCredential — unexpired credentials are untouched", () => {
+  test("never calls the token endpoint when the credential is still fresh", async () => {
+    const transports = transport({})
+
+    const outcome = await verifyCredential(credential({ expires_at: NOW + 60_000 }), codexSecret(), {
+      fetch: transports.stub,
+      now: () => NOW,
+    })
+
+    expect(outcome).toEqual({ health: "ok", usage: [] })
+    expect(transports.tokenCalls()).toHaveLength(0)
+    expect(transports.probeCalls()[0].authorization).toBe("Bearer access_old")
+  })
+
+  test("maps provider failures without a refresh attempt", async () => {
+    const cases: Array<{ probe: { ok: false; status: number; body?: string }; health: string }> = [
+      { probe: { ok: false, status: 429 }, health: "rate_capped" },
+      { probe: { ok: false, status: 401 }, health: "auth_failed" },
+      { probe: { ok: false, status: 400, body: "token_expired" }, health: "expired" },
+    ]
+    for (const item of cases) {
+      const transports = transport({ probe: item.probe })
+      const outcome = await verifyCredential(credential({ expires_at: NOW + 60_000 }), codexSecret(), {
+        fetch: transports.stub,
+        now: () => NOW,
+      })
+      expect(outcome).toEqual({ health: item.health })
+      expect(transports.tokenCalls()).toHaveLength(0)
+    }
+  })
+
+  test("an api_key credential verifies with the raw secret", async () => {
+    const transports = transport({})
+
+    const outcome = await verifyCredential(
+      credential({ provider_id: "anthropic", kind: "api_key" }),
+      "sk-ant-key",
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    expect(outcome).toEqual({ health: "ok" })
+    expect(transports.probeCalls()[0].url).toBe("https://api.anthropic.com/v1/messages")
+    expect(transports.probeCalls()[0].headers["x-api-key"]).toBe("sk-ant-key")
+    expect(transports.probeCalls()[0].headers.Authorization).toBeUndefined()
+  })
+
+  /**
+   * A `claude setup-token` value is OAuth material that arrives through the
+   * API-key paste path, so it is stored as `api_key` — the asymmetry the
+   * cloud-sharing rule uses to tell a mintable token from an unshareable
+   * Keychain login. Branching the auth header on `kind` therefore sent a
+   * subscription token as `x-api-key`, which Anthropic rejects: the user pasted
+   * a valid token and onboarding told them it was refused. The header must
+   * follow the secret's shape, matching what `claudeAuthEnv` does at spawn.
+   */
+  test("a pasted setup-token verifies as OAuth even though it is stored as an api_key", async () => {
+    const transports = transport({})
+
+    const outcome = await verifyCredential(
+      credential({ provider_id: "claude-sdk", kind: "api_key" }),
+      "sk-ant-oat01-setup-token-value",
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    const probe = transports.probeCalls()[0]
+    expect(outcome).toEqual({ health: "ok", usage: [] })
+    expect(probe.url).toBe("https://api.anthropic.com/api/oauth/usage")
+    expect(probe.headers.Authorization).toBe("Bearer sk-ant-oat01-setup-token-value")
+    expect(probe.headers["anthropic-beta"]).toBe("oauth-2025-04-20")
+    expect(probe.headers["x-api-key"]).toBeUndefined()
+  })
+
+  test("a subscription token's check is the usage read, and it reports the plan's windows", async () => {
+    const transports = transport({
+      probe: {
+        json: {
+          five_hour: { utilization: 12.4, resets_at: "2026-09-12T18:00:00Z" },
+          seven_day: { utilization: 40, resets_at: "2026-09-15T00:00:00Z" },
+          seven_day_opus: null,
+        },
+      },
+    })
+
+    const outcome = await verifyCredential(
+      credential({ provider_id: "claude-sdk", kind: "api_key" }),
+      "sk-ant-oat01-setup-token-value",
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    expect(outcome).toEqual({
+      health: "ok",
+      usage: [
+        { window: "session", usedPercent: 12, resetsAt: Date.parse("2026-09-12T18:00:00Z") },
+        { window: "weekly", usedPercent: 40, resetsAt: Date.parse("2026-09-15T00:00:00Z") },
+      ],
+    })
+  })
+
+  /**
+   * A token pasted out of a terminal usually carries a trailing newline. The
+   * desktop form trims before saving, but nothing on the wire enforces that —
+   * `secret` is stored verbatim — so the server cannot depend on a client
+   * having done it. Untrimmed, the prefix match misses and the token takes the
+   * API-key branch: the exact failure the predicate exists to prevent.
+   */
+  test("a setup-token pasted with surrounding whitespace is still recognised as OAuth", async () => {
+    const transports = transport({})
+
+    await verifyCredential(
+      credential({ provider_id: "claude-sdk", kind: "api_key" }),
+      "  sk-ant-oat01-setup-token-value\n",
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    const probe = transports.probeCalls()[0]
+    expect(probe.headers.Authorization).toBe("Bearer sk-ant-oat01-setup-token-value")
+    expect(probe.headers["anthropic-beta"]).toBe("oauth-2025-04-20")
+    expect(probe.headers["x-api-key"]).toBeUndefined()
+  })
+
+  /**
+   * A leading space is not dropped by the Headers API — it survives into the
+   * value, so the provider is handed a token that is not the user's and returns
+   * auth_failed on a good key.
+   */
+  test("a console API key with surrounding whitespace is sent as the bare key", async () => {
+    const transports = transport({})
+
+    await verifyCredential(
+      credential({ provider_id: "anthropic", kind: "api_key" }),
+      "  sk-ant-api03-console-key\n",
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    expect(transports.probeCalls()[0].headers["x-api-key"]).toBe("sk-ant-api03-console-key")
+  })
+
+  test("a console API key is still sent as x-api-key, never as a bearer token", async () => {
+    const transports = transport({})
+
+    await verifyCredential(
+      credential({ provider_id: "claude-sdk", kind: "api_key" }),
+      "sk-ant-api03-console-key",
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    const probe = transports.probeCalls()[0]
+    expect(probe.headers["x-api-key"]).toBe("sk-ant-api03-console-key")
+    expect(probe.headers.Authorization).toBeUndefined()
+    expect(probe.headers["anthropic-beta"]).toBeUndefined()
+  })
+
+  test("a discovered Keychain login still verifies as OAuth", async () => {
+    const transports = transport({})
+
+    await verifyCredential(
+      credential({ provider_id: "claude-sdk", kind: "oauth_token" }),
+      JSON.stringify({ type: "claude_code_oauth", claudeAiOauth: { accessToken: "sk-ant-oat01-keychain" } }),
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    const probe = transports.probeCalls()[0]
+    expect(probe.headers.Authorization).toBe("Bearer sk-ant-oat01-keychain")
+    expect(probe.headers["anthropic-beta"]).toBe("oauth-2025-04-20")
+  })
+
+  test("a ChatGPT login is checked with the usage read Codex's own status screen makes", async () => {
+    const transports = transport({
+      probe: {
+        json: {
+          rate_limit: {
+            // Free plans get only the weekly window, in the primary slot.
+            primary_window: { used_percent: 63.5, limit_window_seconds: 604_800, reset_at: 1_757_700_000 },
+            secondary_window: null,
+          },
+        },
+      },
+    })
+
+    const outcome = await verifyCredential(credential({ expires_at: NOW + 60_000 }), codexSecret(), {
+      fetch: transports.stub,
+      now: () => NOW,
+    })
+
+    const probe = transports.probeCalls()[0]
+    expect(probe.url).toBe("https://chatgpt.com/backend-api/wham/usage")
+    expect(probe.headers.Authorization).toBe("Bearer access_old")
+    expect(probe.headers["ChatGPT-Account-Id"]).toBe("acct_1")
+    expect(probe.body).toBeUndefined()
+    expect(outcome).toEqual({
+      health: "ok",
+      usage: [{ window: "weekly", usedPercent: 64, resetsAt: 1_757_700_000_000 }],
+    })
+  })
+
+  test("both ChatGPT windows are named by their length, whichever slot carries them", async () => {
+    const transports = transport({
+      probe: {
+        json: {
+          rate_limit: {
+            primary_window: { used_percent: 5, limit_window_seconds: 18_000, reset_at: 1_757_600_000 },
+            secondary_window: { used_percent: 41, limit_window_seconds: 604_800, reset_at: 1_757_700_000 },
+          },
+        },
+      },
+    })
+
+    const outcome = await verifyCredential(credential({ expires_at: NOW + 60_000 }), codexSecret(), {
+      fetch: transports.stub,
+      now: () => NOW,
+    })
+
+    expect(outcome.usage).toEqual([
+      { window: "session", usedPercent: 5, resetsAt: 1_757_600_000_000 },
+      { window: "weekly", usedPercent: 41, resetsAt: 1_757_700_000_000 },
+    ])
+  })
+
+  test("a usage read the provider rejects is a verdict on the login, not on the read", async () => {
+    const transports = transport({ probe: { ok: false, status: 401 } })
+
+    const outcome = await verifyCredential(credential({ expires_at: NOW + 60_000 }), codexSecret(), {
+      fetch: transports.stub,
+      now: () => NOW,
+    })
+
+    expect(outcome).toEqual({ health: "auth_failed" })
+  })
+
+  test("keeps the public Responses shape for plain OpenAI API keys", async () => {
+    const transports = transport({})
+
+    await verifyCredential(credential({ provider_id: "openai", kind: "api_key" }), "sk-openai", {
+      fetch: transports.stub,
+      now: () => NOW,
+    })
+
+    const probe = transports.probeCalls()[0]
+    expect(probe.url).toBe("https://api.openai.com/v1/responses")
+    expect(probe.body!.input).toBe("Reply with OK.")
+    expect(probe.body!.max_output_tokens).toBe(1)
+  })
+
+  /**
+   * `GET /v1/me` is Cursor's documented key-introspection route — "retrieve
+   * information about the API key being used for authentication" — so it answers
+   * exactly the question a probe asks, spends no model quota, and mutates
+   * nothing. Bearer auth, per the same docs.
+   */
+  test("a Cursor key verifies against the documented key-introspection route", async () => {
+    const transports = transport({})
+
+    const outcome = await verifyCredential(
+      credential({ provider_id: "cursor-sdk", kind: "api_key" }),
+      "cursor-dashboard-key",
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    const probe = transports.probeCalls()[0]
+    expect(outcome).toEqual({ health: "ok" })
+    expect(probe.url).toBe("https://api.cursor.com/v1/me")
+    expect(probe.headers.Authorization).toBe("Bearer cursor-dashboard-key")
+    // A key check must never be a billable model call.
+    expect(probe.body).toBeUndefined()
+  })
+
+  test("a rejected Cursor key is auth_failed, not an error", async () => {
+    const transports = transport({ probe: { ok: false, status: 401, body: "unauthorized" } })
+
+    const outcome = await verifyCredential(
+      credential({ provider_id: "cursor-sdk", kind: "api_key" }),
+      "cursor-revoked-key",
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    expect(outcome).toEqual({ health: "auth_failed" })
+  })
+
+  test("a rate-capped Cursor key still authenticated", async () => {
+    const transports = transport({ probe: { ok: false, status: 429, body: "too many requests" } })
+
+    const outcome = await verifyCredential(
+      credential({ provider_id: "cursor-sdk", kind: "api_key" }),
+      "cursor-dashboard-key",
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    expect(outcome).toEqual({ health: "rate_capped" })
+  })
+
+  /**
+   * An unreachable provider says nothing about the key. It must surface as
+   * `CredentialVerificationError`, which `probeDiscoveredCredential` maps to the
+   * `unknown` verdict — an offline laptop must never render a red cross against
+   * a credential that is fine.
+   */
+  test("a network failure is inconclusive, never a verdict against the key", async () => {
+    const offline = (async () => {
+      throw new Error("getaddrinfo ENOTFOUND api.cursor.com")
+    }) as unknown as typeof fetch
+
+    await expect(
+      verifyCredential(
+        credential({ provider_id: "cursor-sdk", kind: "api_key" }),
+        "cursor-dashboard-key",
+        { fetch: offline, now: () => NOW },
+      ),
+    ).rejects.toBeInstanceOf(CredentialVerificationError)
+  })
+
+  test("a Cursor key pasted with surrounding whitespace is sent bare", async () => {
+    const transports = transport({})
+
+    await verifyCredential(
+      credential({ provider_id: "cursor-sdk", kind: "api_key" }),
+      "  cursor-dashboard-key\n",
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    expect(transports.probeCalls()[0].headers.Authorization).toBe("Bearer cursor-dashboard-key")
+  })
+
+  test("an unsupported provider is an error, not a health verdict", async () => {
+    const transports = transport({})
+
+    await expect(
+      verifyCredential(credential({ provider_id: "not-a-provider", kind: "api_key" }), "token", {
+        fetch: transports.stub,
+        now: () => NOW,
+      }),
+    ).rejects.toBeInstanceOf(CredentialVerificationError)
+  })
+})
+
+describe("verifyCredential — naming the account", () => {
+  function jwt(claims: Record<string, unknown>) {
+    return `eyJhbGciOiJub25lIn0.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.signature`
+  }
+
+  test("a ChatGPT subscription is named from its own claims, with no extra request", async () => {
+    const transports = transport({})
+    const secret = JSON.stringify({
+      type: "codex_auth",
+      tokens: {
+        id_token: jwt({ email: "chatgpt@example.com", chatgpt_account_id: "acct_1" }),
+        access_token: "access_old",
+        refresh_token: "refresh_old",
+        account_id: "acct_1",
+      },
+    })
+
+    const outcome = await verifyCredential(credential({ expires_at: NOW + 60_000 }), secret, {
+      fetch: transports.stub,
+      now: () => NOW,
+    })
+
+    expect(outcome).toEqual({ health: "ok", usage: [], accountEmail: "chatgpt@example.com" })
+    expect(transports.probeCalls()).toHaveLength(1)
+  })
+
+  test("an Anthropic subscription is named from the profile read", async () => {
+    const transports = transport({ profile: { json: { account: { email_address: "claude@example.com" } } } })
+
+    const outcome = await verifyCredential(
+      credential({ provider_id: "claude-sdk", kind: "oauth_token" }),
+      JSON.stringify({ type: "claude_code_oauth", claudeAiOauth: { accessToken: "sk-ant-oat01-keychain" } }),
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    expect(outcome).toEqual({ health: "ok", usage: [], accountEmail: "claude@example.com" })
+    expect(transports.profileCalls()[0].headers.Authorization).toBe("Bearer sk-ant-oat01-keychain")
+    expect(transports.profileCalls()[0].headers["anthropic-beta"]).toBe("oauth-2025-04-20")
+  })
+
+  /**
+   * `/api/oauth/profile` is not granted to every subscription. A token the
+   * usage read has just accepted is a working token, so a refusal there may
+   * only cost the account its name — never turn a working credential into
+   * `auth_failed`, which is what makes the user reconnect a good login.
+   */
+  test("a refused profile read leaves the usage read's verdict alone", async () => {
+    const transports = transport({
+      profile: { ok: false, status: 403, json: { account: { email_address: "refused@example.com" } } },
+    })
+
+    const outcome = await verifyCredential(
+      credential({ provider_id: "claude-sdk", kind: "oauth_token" }),
+      JSON.stringify({ type: "claude_code_oauth", claudeAiOauth: { accessToken: "sk-ant-oat01-keychain" } }),
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    expect(outcome).toEqual({ health: "ok", usage: [] })
+    expect(transports.profileCalls()).toHaveLength(1)
+  })
+
+  test("a rejected token is never asked who it belongs to", async () => {
+    const transports = transport({ probe: { ok: false, status: 401 }, catalog: { ok: false, status: 401 } })
+
+    const outcome = await verifyCredential(
+      credential({ provider_id: "claude-sdk", kind: "oauth_token" }),
+      JSON.stringify({ type: "claude_code_oauth", claudeAiOauth: { accessToken: "sk-ant-oat01-revoked" } }),
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    expect(outcome).toEqual({ health: "auth_failed" })
+    expect(transports.calls.map((call) => call.url)).toEqual([
+      "https://api.anthropic.com/api/oauth/usage",
+      "https://api.anthropic.com/v1/models",
+    ])
+  })
+
+  /**
+   * `claude setup-token` mints `user:inference` only, so the usage read turns
+   * the token away while every turn on it runs. The refusal is a verdict only
+   * once the inference scope's own route refuses too.
+   */
+  test("a setup-token the usage read turns away is live if the model catalog answers it", async () => {
+    const transports = transport({ probe: { ok: false, status: 403, body: '{"type":"error","error":{"type":"permission_error"}}' } })
+
+    const outcome = await verifyCredential(
+      credential({ provider_id: "claude-sdk", kind: "oauth_token" }),
+      "sk-ant-oat01-inference-only-setup-token",
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    expect(outcome).toEqual({ health: "ok" })
+    const catalog = transports.calls.find((call) => call.url === CATALOG_URL)!
+    expect(catalog.headers.Authorization).toBe("Bearer sk-ant-oat01-inference-only-setup-token")
+    expect(catalog.headers["anthropic-beta"]).toBe("oauth-2025-04-20")
+    expect(catalog.headers["x-api-key"]).toBeUndefined()
+    expect(transports.profileCalls()).toHaveLength(0)
+  })
+
+  test("a token the catalog also refuses is refused, and a console key never reaches the catalog", async () => {
+    const refused = transport({ probe: { ok: false, status: 401 }, catalog: { ok: false, status: 401 } })
+    expect(await verifyCredential(
+      credential({ provider_id: "claude-sdk", kind: "oauth_token" }),
+      "sk-ant-oat01-revoked",
+      { fetch: refused.stub, now: () => NOW },
+    )).toEqual({ health: "auth_failed" })
+
+    const key = transport({ probe: { ok: false, status: 401 } })
+    expect(await verifyCredential(
+      credential({ provider_id: "anthropic", kind: "api_key" }),
+      "sk-ant-api03-bad-key",
+      { fetch: key.stub, now: () => NOW },
+    )).toEqual({ health: "auth_failed" })
+    expect(key.calls.map((call) => call.url)).toEqual(["https://api.anthropic.com/v1/messages"])
+  })
+
+  test("an API key names no account", async () => {
+    const transports = transport({ profile: { json: { email: "leaked@example.com" } } })
+
+    const outcome = await verifyCredential(
+      credential({ provider_id: "anthropic", kind: "api_key" }),
+      "sk-ant-api03-console-key",
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    expect(outcome).toEqual({ health: "ok" })
+    expect(transports.profileCalls()).toHaveLength(0)
+  })
+})
+
+/**
+ * Sandbox provider keys were the one credential kind nothing could check: a bad
+ * key was first discovered at workspace creation, long after the user believed
+ * setup had succeeded. Routing the kind through the same entry point gives
+ * their rows the live verdicts AI credentials already get.
+ */
+describe("verifyCredential — sandbox providers", () => {
+  test("a sandbox driver credential is probed against its provider", async () => {
+    const transports = transport({})
+
+    const outcome = await verifyCredential(
+      credential({ provider_id: "boat", kind: "sandbox_driver" }),
+      JSON.stringify({ api_key: "boat_key" }),
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    expect(outcome).toEqual({ health: "ok" })
+    expect(transports.probeCalls()[0].url).toBe("https://boat.dev/api/v1/me")
+    expect(transports.probeCalls()[0].headers.Authorization).toBe("Bearer boat_key")
+  })
+
+  test("a rejected sandbox provider key is auth_failed, not an error", async () => {
+    const transports = transport({ probe: { ok: false, status: 401, body: "unauthorized" } })
+
+    const outcome = await verifyCredential(
+      credential({ provider_id: "boat", kind: "sandbox_driver" }),
+      JSON.stringify({ api_key: "boat_revoked" }),
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    expect(outcome).toEqual({ health: "auth_failed" })
+  })
+
+  test("a bare or non-object sandbox secret is refused without a provider request", async () => {
+    const transports = transport({})
+    for (const secret of ["boat_key", '"boat_key"', "[]", "null"]) {
+      await expect(verifyCredential(
+        credential({ provider_id: "boat", kind: "sandbox_driver" }),
+        secret,
+        { fetch: transports.stub, now: () => NOW },
+      )).rejects.toThrow("Sandbox provider credential has an unsupported shape")
+    }
+    expect(transports.probeCalls()).toEqual([])
+  })
+
+  test("a sandbox provider with no documented probe is an error, not a verdict", async () => {
+    const transports = transport({})
+
+    await expect(
+      verifyCredential(
+        credential({ provider_id: "modal", kind: "sandbox_driver" }),
+        JSON.stringify({ token_id: "ak-1", token_secret: "as-1" }),
+        { fetch: transports.stub, now: () => NOW },
+      ),
+    ).rejects.toBeInstanceOf(CredentialVerificationError)
+    expect(transports.probeCalls()).toHaveLength(0)
+  })
+
+  test("an unknown sandbox provider id is an error, not a verdict", async () => {
+    const transports = transport({})
+
+    await expect(
+      verifyCredential(
+        credential({ provider_id: "not-a-driver", kind: "sandbox_driver" }),
+        JSON.stringify({ api_key: "x" }),
+        { fetch: transports.stub, now: () => NOW },
+      ),
+    ).rejects.toBeInstanceOf(CredentialVerificationError)
+    expect(transports.probeCalls()).toHaveLength(0)
+  })
+})

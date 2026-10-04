@@ -1,0 +1,345 @@
+# Desktop hosted-operation matrix
+
+Status: **registry consolidated; hosted route coverage incomplete**. Each operation
+is declared in `packages/account-contract/src/hosted-operations.ts` with its
+method, path builder, input/output codecs, retry policy and exposure. Names and
+types derive from those declarations. Desktop and browser transports construct
+requests through `resolveHostedOperation`; desktop main owns credentials and
+`account-ipc.ts` owns renderer withholding. Nothing reads this document.
+
+## Why this document exists
+
+After the split, a signed desktop reaches Hosted Server through Electron main.
+The renderer holds no bearer token, so every authenticated call has to cross an
+IPC boundary. There is exactly one wrong way to build that boundary and it is
+the obvious way: expose `invoke("hostedFetch", { url, method, body })` and let
+the renderer keep calling what it calls today.
+
+That is a confused deputy. Electron main holds the account credential; a
+renderer compromise would then be able to spend it on any Hosted Server route,
+including ones no product surface uses. The IPC surface must therefore be a
+closed set of **named operations** with fixed method and path declared in account-contract —
+and a closed set can only be reviewed if it is written down first.
+
+This is that list. A hosted contribution that calls something absent here
+fails the inventory gate.
+
+## What is deliberately NOT an account operation
+
+Workspace **Runtime** traffic — HTTP, SSE, and WebSocket after a connection
+mint — does not cross the account port. The signed client asks Hosted Server for
+a connection (that call *is* in the matrix), then talks to Workspace Relay
+directly using the short-lived Runtime Access Token in that response. Relay is
+the data plane; Hosted Server is not a byte proxy and Electron IPC is not one
+either.
+
+The one-time user-deployed owner claim is also browser-only. The operator-facing
+`app/routes/bootstrap-owner.tsx` sends the claim from a transient password input
+to the fixed `POST /api/claxedo/auth/bootstrap-owner` route using the browser's
+same signed session. It is deliberately absent from Electron's account port:
+desktop is not an initial deployment-owner provisioning surface, and main must
+never receive or retain this one-use secret.
+
+Two consequences worth stating plainly:
+
+- Tunnelling Runtime bytes through Electron IPC would serialize every terminal
+  keystroke and token through the main process. It would also put a second
+  credential path in front of traffic that already has one.
+- `hostTunnelConnectionInfo` (`claxedo-server/src/connections/host-tunnel-connection.ts`,
+  the `local-worktree` branch of the connection mint) returns `relayUrl` and a
+  Runtime Access Token, and no address of the machine itself. The laptop is
+  never a direct client target, so no matrix row may return a laptop address.
+
+Also excluded from AccountPort (intentional non-rows):
+
+- **Workspace-scoped** `GET /api/wr/events` after connection mint — RAT data
+  plane (same as other post-mint runtime traffic). The control plane's own
+  notice stream is `controlPlane.events` below.
+- **Sandbox driver** routes (`GET|PUT /api/workspace/drivers*`) — local sidecar
+  only; signed hosted sessions may view them through the local proxy but do not
+  spend the Hosted Server bearer on them.
+- **Machine pause** — desktop reaches it through Host
+  Connector IPC. The enrollment handshake itself is the `host.enrollmentNonce` and
+  `host.enrollCurrentMachine` rows below, performed by main for the Host
+  Connector child; everything after the enroll response is machine-signed.
+  There is no `host.enrollmentHeartbeat` row: the beat is
+  `POST /api/claxedo/host/enrollments/heartbeat` in the machine-signed table
+  below, and no account credential reaches it.
+- `GET /documents/events` is not a mounted route; editors use the
+  `document.changed` doorbell on `controlPlane.events`.
+- **Machine-signed and invitation routes** — a `claxedo connect` host has no
+  account on the box, so nothing below is an AccountPort operation. Listed here
+  so the closed set stays complete.
+
+  | Method + path | Caller | Auth | Budget | Notes |
+  |---|---|---|---|---|
+  | `POST /api/claxedo/host/enrollments/redeem` | `packages/claxedo-host-connector/src/bootstrap.ts` | none: the single-use invitation secret is the credential | body 8 KiB; 120/min per client address; 5/min per `invitation_id` | Creates the enrollment from `chx_inv_1.<invitation_id>.<secret>`. Idempotent for the same key AND host id (`resumed: true`); `invitation_invalid` never says whether the id or the secret was wrong. Answers `relay { url, jwks_url }` and `authority { session_authority_url }`. |
+  | `POST /api/claxedo/host/enrollments/acquire` | `packages/claxedo-host-connector/src/machine-transport.ts` | machine-signed (`x-claxedo-enrollment-id`, `-host-ts`, `-host-nonce`, `-host-signature`) | body 16 KiB; 120/min per client address; 120/min per `machine:<enrollment_id>` after verification | A starting instance claims the next serving generation; every earlier generation's beats and tunnels are refused from then on. |
+  | `POST /api/claxedo/host/enrollments/heartbeat` (v3, no account credential) | `packages/claxedo-host-connector/src/machine-transport.ts` | machine-signed | body 16 KiB; 120/min per client address; 120/min per `machine:<enrollment_id>` | Renews the lease as the row's owner, records readiness from `acks[{workspaceId, revision}]`, returns `assignments` with revisions, the versioned `scope`, the endpoints and ONE Host Tunnel credential for the ready set, carrying `enrollment_id` + `generation`. The beat also DECLARES this machine's ECDH sealing public key and the provider-config revision it has stored, and the answer restates `provider_config { revision, sealed }` only while the two differ; the machine states a revision only once it has written the blob, so an ack is evidence the machine is configured. A lower generation is 409 `enrollment_generation_superseded`. This is the only beat the route accepts: the desktop enrolls through the owner's account and signs every request after that with its machine key, so no account credential reaches this path. |
+  | `POST /api/claxedo/host/enrollments/:id/provider-config` | owner account (Machines panel, `claxedo host push-config`) | signed | 120/min per account; body 32 KiB | The host-management grant, and the only one: the account that owns the enrollment may push provider credentials to it, and nothing else may — an organization groups people and grants nothing on a machine. The route reads the machine's declared ECDH sealing key, seals the rows for it at the next revision (`mseal1`, AAD `claxedo.machine-seal.v1\n<enrollment_id>\n<revision>`) and stores only the ciphertext; plaintext exists for the length of one call and is never written, logged or audited. A machine that has declared no key is 409 `host_sealing_key_undeclared`; a concurrent push is 409 `host_provider_config_revision_stale`. `{providers: {}}` is the withdrawal. The next revision is one above the HIGHER of the stored revision and the one the machine declares it holds, so a control plane restored from a backup still mints above the machine; the machine applies only a strictly newer revision, which is what refuses a replay. A beat that declares a different sealing key leaves the stored blob openable by nobody, so it stops being delivered and the fleet row reports `provider_config_rekeyed`. |
+  | `PATCH /api/claxedo/host/enrollments/:id/scope` | owner account (panel, `claxedo host scope`) | signed | 120/min per account | Writes `{ allowed_roots, visibility }`, bumps `scope_revision`, and in the same batch deletes every assignment now outside the roots with its readiness row and retires its workspace. AccountPort rows for the panel land with the remote access panel (P4). |
+  | `GET /api/claxedo/host/enrollments` | owner account | signed | 120/min per account | The existing `active` row plus `machines` (P1.6). |
+  | `POST /api/claxedo/host/invitations` | owner account | signed | 10/min per account (writes a row and mints a secret) | `{ scope, displayName?, expiresInMs? }` → `{ invitation_id, token, expires_at }`; expiry clamped to [5 min, 24 h]; the org is the caller's current one. |
+  | `GET /api/claxedo/host/invitations` | owner account | signed | 120/min per account | `{ invitations }`; never the secret. |
+  | `DELETE /api/claxedo/host/invitations/:id` | owner account | signed | 120/min per account | Revokes an unredeemed invitation. |
+  | `GET /internal/relay/host-generation?enrollmentId=` | the relay | resolver bearer or loopback, like the other `/internal/relay/*` routes | — | `{ enrollmentId, generation, revoked }` or 404; the relay's admission fence. |
+
+## Transport kinds
+
+| Kind | Meaning | Electron handler obligation |
+|---|---|---|
+| `unary` | One request, one decoded result. | Return the decoded value. Never the raw `Response`, never the token. |
+| `stream` | Server-sent events consumed until cancelled. | Own the stream handle and its cleanup; forward decoded events; cancel on renderer disconnect. |
+| `upload` | Request body is a file/blob. | Stream the body; do not buffer it into an IPC message. |
+| `websocket` | Bidirectional session. | Own the socket lifetime; close it when the owning surface unmounts. |
+
+## Retry and idempotency
+
+`safe` means the operation may be retried after an uncertain delivery.
+`idempotency-key` means retry is safe only when the caller replays the same
+key. `unsafe` means an uncertain result must be surfaced, never silently
+retried — a duplicate here creates a duplicate workspace, charge, or document.
+
+**There is no client-side idempotency-key mechanism today, and the desktop
+cannot grow one on its own.** `HOSTED_OPERATIONS` in
+`packages/account-contract/src/hosted-operations.ts` declares each request's
+method, path template, body fields and headers; no declaration sends an
+idempotency key header, and every route named below that accepts a key
+accepts it as a body field its schema must declare. So an `idempotency-key` row
+is only true when the ROUTE already carries the key, and each one says which
+field that is. A row that named a key the route does not accept would be worse
+than none: bodies are validated strictly, so the "safe retry" would 400 the
+first attempt. Where no such field exists the row is classified `unsafe`, which
+is the honest reading and the one a caller must act on.
+
+## The matrix
+
+Paths are Hosted Server route templates as mounted by `createHostedCoreApp`
+(`packages/claxedo-server/src/deployments/hosted-shared/hosted-core-app.ts`), which
+is the authoritative source for this column.
+
+### Account and organization
+
+| Operation ID | Owner module | Method + path | Transport | Retry | Notes |
+|---|---|---|---|---|---|
+| `account.mode` | `features/settings/ui/account-section.tsx` | `GET /api/claxedo/mode` | unary | safe | Deployment posture; drives which hosted surfaces render. |
+| `account.compatibility` | `app/boot/data/bootstrap-orchestrator.ts` | `GET /api/claxedo/compatibility` | unary | safe | Client/server version gate. |
+| `account.cliExchange` | none | `POST /api/auth/cli/exchange` | unary | unsafe | Mints a CLI session token. A replayed exchange must not mint twice, and nothing stops it: the route mints from the bearer and never reads the request body, so each call is a fresh separately-revocable pair. Refused to the renderer entirely (`RENDERER_WITHHELD_OPERATIONS`), because the result is itself a credential. |
+| `org.list` | none yet | `GET /api/control/orgs` | unary | safe | Orgs the signed caller belongs to; Settings + rail switcher. |
+| `org.create` | none yet | `POST /api/control/orgs` | unary | unsafe | Creates an org (and usually a default team). A retried create is a duplicate org. |
+| `org.teams.list` | none yet | `GET /api/control/orgs/:orgId/teams` | unary | safe | Teams for an org; Settings and rail switcher. |
+| `org.teams.create` | none yet | `POST /api/control/orgs/:orgId/teams` | unary | unsafe | Creates a team in an org. |
+| `org.ensureDefaultTeam` | none yet | `POST /api/control/orgs/:orgId/ensure-default-team` | unary | unsafe | Ensures the org has a default team; may create one. |
+| `org.members.list` | none yet | `GET /api/control/orgs/:orgId/members` | unary | safe | Members with role and `joined_at`; empty to a caller outside the org. |
+| `org.invitations.create` | none yet | `POST /api/control/orgs/:orgId/invitations` | unary | unsafe | Sends an invitation to the normalized email with no account lookup; generic 202 receipt. |
+| `org.invitations.list` | none yet | `GET /api/control/orgs/:orgId/invitations` | unary | safe | Admin-only metadata without token or hash. |
+| `org.invitations.revoke` | none yet | `DELETE /api/control/orgs/:orgId/invitations/:invitationId` | unary | unsafe | Revokes a pending invitation. |
+| `org.invitations.accept` | invitation link | `POST /api/control/invitations/accept` | unary | unsafe | Submits `{ token }` in the POST body using the signed caller's matching verified email; single-use, seven-day expiry. |
+| `org.members.update` | none yet | `PATCH /api/control/orgs/:orgId/members/:userPublicId` | unary | unsafe | Changes a member's role; the founding owner cannot be demoted. |
+| `org.members.remove` | none yet | `DELETE /api/control/orgs/:orgId/members/:userPublicId` | unary | unsafe | Also revokes the person's team memberships and project member grants in the org. |
+| `team.members.list` | none yet | `GET /api/control/teams/:teamId/members` | unary | safe | |
+| `team.members.add` | none yet | `POST /api/control/teams/:teamId/members` | unary | unsafe | |
+| `team.members.remove` | none yet | `DELETE /api/control/teams/:teamId/members` | unary | unsafe | |
+| `team.projects.list` | none yet | `GET /api/control/teams/:teamId/projects` | unary | safe | The team's project grants with role. |
+| `team.projects.grant` | none yet | `POST /api/control/teams/:teamId/projects` | unary | unsafe | Grants a project role to a team. |
+| `team.projects.revoke` | none yet | `DELETE /api/control/teams/:teamId/projects` | unary | unsafe | Revokes a team's project grant. |
+| `project.members.grant` | none yet | `POST /api/control/projects/:projectId/members` | unary | unsafe | Grants or changes one person's project role; project and org admins only, never the owner. |
+| `project.members.revoke` | none yet | `DELETE /api/control/projects/:projectId/members/:userPublicId` | unary | unsafe | Revokes one person's project grant. |
+| `project.access` | none yet | `GET /api/control/projects/:projectId/access` | unary | safe | Everyone who reaches the project, one entry per source (`owner`, `member`, `team:<teamId>`, `org-role`); project and org admins only. |
+
+### Workspace authority
+
+| Operation ID | Owner module | Method + path | Transport | Retry | Notes |
+|---|---|---|---|---|---|
+| `workspace.list.provisioner` | `features/workspaces/data/workspace-catalog.ts` | `GET /api/workspace?host=provisioner` | unary | safe | The provisioner's workspaces (`backing: cloud-vm`). The host is fixed in the path, not a parameter — see below. |
+| `workspace.list.machine` | `features/workspaces/data/workspace-catalog.ts` | `GET /api/workspace?host=machine` | unary | safe | Workspaces placed on an enrolled machine: the hosted handler filters the authority's rows to `backing: local-worktree`. A caller wanting the whole picture runs both operations and merges, which is what `controlPlaneCatalog` already does. |
+| `workspace.resolve` | `platform/runtime/workspace-runtime-record.ts` | `GET /api/workspace/resolve` | unary | safe | Optional query: `workspaceId`, `directory`. Desktop signed mode calls through AccountPort. |
+| `workspace.create` | `features/workspaces/data/workspace-create-api.ts`, `platform/runtime/agent/workspace-create-authority.ts` (bound in `app/composition/workspace-connection-authority-sync.tsx`) | `POST /api/workspace/create` | unary | unsafe | Provisions a cloud VM. Without a key, an uncertain response creates a second VM — and there is no key to replay. `createCloudBody` in `claxedo-server/src/routes/hosted/workspace.ts` is `.strict()` with no idempotency field, so a key sent from a client 400s the whole request. Classified `unsafe` until the route accepts one; an uncertain response must be surfaced, never retried. TWO owners today, which is the open question on this row: the create authority (composer + cloud-project dialog) reaches AccountPort only, and `workspace-create-api.ts` (project actions) prefers AccountPort and falls back to HTTP so it also serves unsigned and browser callers. Either way the connected-repository source travels as the declared `repoFullName` scalar and main re-nests it into `repo: { fullName }`. |
+| `workspace.lifecycle` | `features/workspaces/ui/panel/workspace-panel.tsx` | `POST /api/workspace/:id/lifecycle/:operation` | unary | unsafe | Stop/replace/cleanup/destroy. The route reads only `approved` and `checkpointId` and accepts no key. `stop`, `cleanup` and `destroy` converge on a state and tolerate a retry; `replace` provisions, so it does not — classified by its worst member. Every operation but `stop` refuses with 409 unless `approved: true` is in the body. |
+| `workspace.checkpoints.list` | `features/workspaces/ui/panel/workspace-panel.tsx` | `GET /api/workspace/:id/checkpoints` | unary | safe | |
+| `workspace.checkpoints.create` | `features/workspaces/ui/panel/workspace-panel.tsx` | `POST /api/workspace/:id/checkpoints` | unary | unsafe | Creates a checkpoint snapshot. |
+| `workspace.checkpoints.restore` | `features/workspaces/ui/panel/workspace-panel.tsx` | `POST /api/workspace/:id/checkpoints/:checkpointId/restore` | unary | unsafe | Destructive to working state. |
+| `workspace.connection.mint` | `platform/runtime/agent/workspace-relay-connection.ts` | `POST /api/workspace/:id/connection` | unary | safe | Mints the connection and may start compute; the GET on the same path is the read-only status form. Returns `relayUrl` plus a scoped Runtime Access Token, and no laptop address. Desktop signed mode calls through AccountPort (`id` path param). |
+| `workspace.connection.refresh` | `platform/runtime/agent/workspace-relay-connection.ts` | `POST /api/workspace/:id/connection/refresh` | unary | safe | Called before expiry and after a Relay 401. Desktop signed mode calls through AccountPort (`id` + optional `previousJti`). |
+
+**Why the workspace list is two operations.** `GET /api/workspace` with no
+`?host=` is not a wider list: the hosted handler
+(`claxedo-server/src/routes/hosted/workspace.ts`) requires a signed caller,
+reaches the authority, and answers rows only when `host` is `provisioner` or
+`machine`. An absent host falls through to `{ workspaces: [] }`, and any other
+value is refused with 400 `workspace_host_invalid`, so a single query-less row
+would return an empty list for its whole life, and an empty envelope decodes
+perfectly.
+
+The table could express a query PARAMETER: its `:name` substitution fills a
+query string as readily as a path segment. It is two operations instead
+because nothing picks a scope at runtime — the one caller wants both and
+merges them — and because the two properties this document exists for are
+per-name. The set of requests main can make stays readable in the table
+rather than depending on what the renderer passes, and
+`RENDERER_WITHHELD_OPERATIONS` can withhold one scope without withholding the
+other. So where a row carries a query, that query is written out in full and
+contains no `:name`; `hosted-operations.test.ts` enforces it.
+
+### Machine remote access
+
+The machine side lives in the Host Connector (the child that holds the
+machine key and beats machine-signed). The rows below are the **account**
+side: the two enrollment calls main performs for the child, the owner's
+assignment of a workspace to this machine, and the owner's rename. All five
+are withheld from the renderer (see "Withheld from the renderer" below).
+
+| Operation ID | Owner module | Method + path | Transport | Retry | Notes |
+|---|---|---|---|---|---|
+| `workspace.assignHost` | `src/main/host-connector/child-supervisor.ts` | `POST /api/workspace/:id/host-assignment` | unary | idempotency-key | The OWNER's declaration that this host serves the workspace — pure data, an upsert on workspace_id. No challenge and no machine signature: liveness is the enrollment lease and consent is the heartbeat's acked set; routing needs all three. **Main-only**: the host id must be THIS machine's, which only the supervisor knows, so `RENDERER_WITHHELD_OPERATIONS` refuses the account channel and the renderer's route is the data-only `claxedo.hostConnector.share` IPC. |
+| `workspace.unassignHost` | `src/main/host-connector/child-supervisor.ts` | `DELETE /api/workspace/:id/host-assignment` | unary | safe | Withdraws the owner's assignment; routing refuses immediately (intent AND consent). Main-only for the same reason as assign. |
+| `host.enrollCurrentMachine` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments` | unary | idempotency-key (`hostId`) | Enrolls the MACHINE once, with no workspace in the path — the successor of the retired per-workspace host-link registration. The key is the machine identity and it is a real one — `enrollHost` upserts on (owner, `host_id`), so a repeat enrollment rewrites that machine's row rather than inserting a second. **Main-only.** `publicKey` and `signature` are the machine identity, so a caller that supplies them enrolls a machine whose private half main has never seen; the route stores whatever public key it is handed, and a second enrollment on a known `host_id` overwrites the honest key and clears a revocation. The only caller is Electron main's Host Connector, which fills those fields from the key it owns. The renderer's route to this feature is the connector's own zero-argument IPC (`claxedo.hostConnector.start`), and `RENDERER_WITHHELD_OPERATIONS` refuses the account channel. |
+| `host.enrollmentNonce` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments/requests` | unary | unsafe | The one-use nonce the machine signs. Unsafe rather than safe: each call mints a new nonce, so a retry burns one. It carries no secret — the nonce is public and worthless without the machine's private key — but a caller that retried freely would fill the request table. Main-only, like the enrollment it precedes: a renderer able to mint nonces holds step one of the handshake, and the account channel is refused. |
+| `host.renameCurrentMachine` | `platform/remote-access/machine-remote-access-port.ts` | `PATCH /api/claxedo/host/enrollments/:enrollmentId/display-name` | unary | idempotent (same name, same result) | The owner's name for a machine, as every device sees it. **Main-only.** The route renames any enrollment the owner holds, so a caller that supplies `enrollmentId` can rename a machine the user is not sitting at. The only caller is the Host Connector supervisor, which reads that id from its own enrolled state; the renderer reaches the feature through `claxedo.hostConnector.rename`, which carries a display name and nothing that names a machine, and `RENDERER_WITHHELD_OPERATIONS` refuses the account channel. The name is stored on this machine too, because every enable re-enrolls and the enroll route overwrites `display_name`. |
+
+### Sessions
+
+| Operation ID | Owner module | Method + path | Transport | Retry | Notes |
+|---|---|---|---|---|---|
+| `session.list` | `platform/runtime/cloud/workspace-runtime-store.ts` | `GET /api/control/sessions` | unary | safe | Flat inventory for a workspace. |
+| `session.messages` | `platform/runtime/cloud/workspace-runtime-store.ts` | `GET /api/control/sessions/:sessionId/messages` | unary | safe | |
+| `session.gateway` | `platform/runtime/cloud/workspace-runtime-store.ts` | `GET /api/control/sessions/:sessionId/gateway` | unary | safe | |
+| `session.projection.register` | `platform/runtime/agent/session-projection.ts` | `POST /api/control/workspaces/:workspaceId/sessions/:sessionId/register` | unary | unsafe | Sync-back into the control plane; body carries `idempotencyKey`. |
+| `session.projection.checkpoint` | `platform/runtime/agent/session-projection.ts` | `POST /api/control/workspaces/:workspaceId/sessions/:sessionId/checkpoint` | unary | unsafe | |
+| `session.projection.repair` | `platform/runtime/agent/session-projection.ts` | `POST /api/control/workspaces/:workspaceId/sessions/:sessionId/repair` | unary | unsafe | |
+| `controlPlane.events` | `app/integrations/claxedo-event-targets.ts` | `GET /api/cp/events` | stream | safe | The control plane's notice stream (provision steps, worktree readiness, document doorbells, share grants, inventory changes) — never a session's frames, which are the workspace runtime's `/api/wr/events` on the RAT data plane. Resumes via declared `Last-Event-ID` header param. |
+| `session.shares.list` | none yet | `GET /api/control/sessions/:sessionId/shares` | unary | safe | `workspaceId` is a declared query parameter (not a free-form `:name` in the path). |
+| `session.shares.grant` | none yet | `POST /api/control/sessions/:sessionId/shares` | unary | unsafe | Grants a session share to one person at a declared `level`: `follow` (read and stream) or `send` (also prompt the agent and answer its permission and question prompts). The share is the only cross-person grant; no workspace or organization rank admits anyone to a session. |
+| `session.shares.revoke` | none yet | `DELETE /api/control/sessions/:sessionId/shares` | unary | unsafe | |
+
+### Documents
+
+| Operation ID | Owner module | Method + path | Transport | Retry | Notes |
+|---|---|---|---|---|---|
+| `documents.list` | `features/documents/data/documents-api.ts` | `GET /documents` | unary | safe | |
+| `documents.get` | `features/documents/data/documents-api.ts` | `GET /documents/:id` | unary | safe | |
+| `documents.create` | `features/documents/data/documents-api.ts` | `POST /documents` | unary | unsafe | |
+| `documents.update` | `features/documents/data/documents-api.ts` | `PATCH /documents/:id` | unary | safe | |
+| `documents.content.get` | `features/documents/data/documents-api.ts` | `GET /documents/:id/content` | unary | safe | |
+| `documents.content.put` | `features/documents/data/documents-api.ts` | `PUT /documents/:id/content` | upload | unsafe | Body is document content, not a JSON envelope. A `unary` handler here would buffer whole documents into IPC messages. |
+| `documents.export` | `features/documents/data/documents-api.ts` | `GET /documents/:id/export` | unary | safe | Binary payload returned as `{ bytesBase64, contentType? }` over IPC (not a raw Response). |
+| `documents.agentOpen` | `features/documents/data/documents-api.ts` | `POST /documents/:id/agent-open` | unary | unsafe | |
+| `documents.runtimeConflictResolve` | `features/documents/data/documents-api.ts` | `POST /documents/:id/runtime-conflict/resolve` | unary | unsafe | |
+| `documents.moveToRepository` | `features/documents/data/documents-api.ts` | `POST /documents/:id/move-to-repository` | unary | unsafe | |
+| `documents.fromRepo` | `features/documents/data/documents-api.ts` | `POST /documents/from-repo` | unary | unsafe | |
+| `documents.snapshots` | `features/documents/data/documents-api.ts` | `GET /documents/:id/snapshots` | unary | safe | |
+| `documents.snapshots.restore` | `features/documents/data/documents-api.ts` | `POST /documents/:id/snapshots/:snapshotId/restore` | unary | unsafe | |
+| `documents.workSource` | `features/documents/data/documents-api.ts` | `POST /documents/:id/work-source` | unary | safe | Declared in the shared hosted-operation registry; the app has no client builder for it today. |
+| `documents.workSourcePin` | `features/documents/data/documents-api.ts` | `POST /documents/:id/snapshots/:snapshotId/work-source-pin` | unary | safe | Declared in the shared hosted-operation registry; the app has no client builder for it today. |
+| `documents.statuses` | `features/documents/data/documents-api.ts` | `GET /documents/statuses` | unary | safe | |
+
+### Connections and integrations
+
+| Operation ID | Owner module | Method + path | Transport | Retry | Notes |
+|---|---|---|---|---|---|
+| `connections.list` | `features/settings/ui/connections.tsx` | `GET /api/claxedo/integrations` | unary | safe | |
+| `connections.connect` | `features/settings/ui/connections.tsx` | `POST /api/claxedo/integrations/:id/connect` | unary | unsafe | Starts an OAuth attempt or key connect. |
+| `connections.attempt` | `features/settings/ui/connections.tsx` | `GET /api/claxedo/integrations/attempts/:state` | unary | safe | |
+| `connections.disconnect` | `features/settings/ui/connections.tsx` | `DELETE /api/claxedo/integrations/connections/:id` | unary | safe | |
+| `connections.reverify` | `features/settings/ui/connections.tsx` | `POST /api/claxedo/integrations/connections/:id/reverify` | unary | unsafe | Re-checks stored credentials. |
+| `connections.repositories` | `platform/account/integrations-request.ts` | `GET /api/claxedo/integrations/connections/:id/repositories` | unary | safe | |
+
+### Agent Plugins
+
+| Operation ID | Owner module | Method + path | Transport | Retry | Notes |
+|---|---|---|---|---|---|
+| `agentPlugins.catalog` | `app/composition/agent-plugin-contribution-loader.tsx` | `GET /api/claxedo/plugins` | unary | safe | Cross-project effective defaults from the signed durable authority. |
+| `agentPlugins.catalog.refresh` | `app/composition/agent-plugin-contribution-loader.tsx` | `GET /api/claxedo/plugins/refresh` | unary | safe | Explicit source refresh; never mutates activation state. |
+| `agentPlugins.catalog.project` | `app/composition/agent-plugin-contribution-loader.tsx` | `GET /api/claxedo/plugins/projects/:projectId` | unary | safe | Effective state for one authorized project. |
+| `agentPlugins.catalog.project.refresh` | `app/composition/agent-plugin-contribution-loader.tsx` | `GET /api/claxedo/plugins/projects/:projectId/refresh` | unary | safe | Project view plus explicit source refresh. |
+| `agentPlugins.activation` | `app/composition/agent-plugin-contribution-loader.tsx` | `POST /api/claxedo/plugins/activation` | unary | unsafe | Writes user all-project or explicit-project choices at an optimistic revision. |
+| `agentPlugins.organizationDefault` | `app/composition/agent-plugin-contribution-loader.tsx` | `POST /api/claxedo/plugins/organization-default` | unary | unsafe | Organization-admin positive default mutation. |
+| `agentPlugins.update` | `app/composition/agent-plugin-contribution-loader.tsx` | `POST /api/claxedo/plugins/update` | unary | unsafe | Explicitly acquires and pins changed bytes. |
+| `agentPlugins.skill` | `app/composition/agent-plugin-account-api.ts` | `GET /api/claxedo/plugins/:pluginInstanceId/skills/:skill` | unary | safe | One retained SKILL.md for the marketplace detail pane. |
+| `agentPlugins.skill.project` | `app/composition/agent-plugin-account-api.ts` | `GET /api/claxedo/plugins/projects/:projectId/:pluginInstanceId/skills/:skill` | unary | safe | The same document through a project the caller administers. |
+| `agentPlugins.sources.list` | `app/composition/agent-plugin-account-directory-api.ts` | `GET /api/claxedo/plugins/sources` | unary | safe | Marketplaces the signed user or organization added from GitHub. |
+| `agentPlugins.sources.add` | `app/composition/agent-plugin-account-directory-api.ts` | `POST /api/claxedo/plugins/sources` | unary | unsafe | Registers a GitHub repository as a source after it serves at least one valid plugin; 422/409 carry diagnostics. |
+| `agentPlugins.sources.remove` | `app/composition/agent-plugin-account-directory-api.ts` | `DELETE /api/claxedo/plugins/sources/:id` | unary | safe | Idempotent removal; 404 is already removed. |
+| `agentPlugins.runtimeSelf` | `main/agent-plugins-signed-sync.ts` | `GET /api/claxedo/plugins/runtime/self` | unary | safe | The signed user's own runtime world plus gateway credentials; main-only, handed to the daemon's loopback signed-runtime surface. Withheld from the renderer. |
+
+### Provisioning and sandbox
+
+Sandbox driver configuration (`/api/workspace/drivers*`) is local-sidecar-only —
+see "What is deliberately NOT an account operation". Cloud create listens for
+`provision` frames on `controlPlane.events` rather than opening a second stream.
+
+### Billing
+
+| Operation ID | Owner module | Method + path | Transport | Retry | Notes |
+|---|---|---|---|---|---|
+| `billing.checkout` | `features/settings/ui/account-section.tsx` | `POST /api/billing/checkout` | unary | unsafe | Returns a redirect target. A duplicate is a duplicate charge attempt. |
+| `billing.portal` | `features/settings/ui/account-section.tsx` | `POST /api/billing/portal` | unary | safe | |
+
+### Usage
+
+| Operation ID | Owner module | Method + path | Transport | Retry | Notes |
+|---|---|---|---|---|---|
+| `usage.cloudFacts` | `features/usage/data/usage-api.ts` | `GET /api/claxedo/usage/cloud-facts` | unary | safe | The signed account's own cloud workspace turn revisions in `since`..`until` (both required query keys). The renderer hands them to the local sidecar's `POST /api/claxedo/usage`, which draws the Usage view; the dashboard itself is never read from the hosted plane on desktop. |
+
+### Agent config (extensions marketplace)
+
+| Operation ID | Owner module | Method + path | Transport | Retry | Notes |
+|---|---|---|---|---|---|
+
+## Withheld from the renderer
+
+`RENDERER_WITHHELD_OPERATIONS` in
+`packages/claxedo-desktop/src/main/account/account-ipc.ts` is the list of
+names main performs but the renderer may not ask for. Their IPC channels stay
+registered and answer with a refusal before any request is made, so the
+channel inventory still equals the operation table. The list, and the reason
+each is on it:
+
+| Operation ID | Why the renderer may not call it |
+|---|---|
+| `account.cliExchange` | The result is a credential (a CLI access + refresh pair). |
+| `host.enrollCurrentMachine` | `publicKey` and `signature` are the machine identity; the route stores whatever key it is handed and re-enrolling a known `host_id` overwrites the honest key and clears a revocation. The renderer's route is `claxedo.hostConnector.start`. |
+| `host.enrollmentNonce` | Step one of the same handshake. |
+| `host.renameCurrentMachine` | Names an enrollment id, and every enrollment the owner holds answers to it. The renderer's route is `claxedo.hostConnector.rename`, which carries a name only. |
+| `workspace.assignHost` | Names a host id the renderer must not choose; the supervisor supplies this machine's own. The renderer's route is `claxedo.hostConnector.share`. |
+| `workspace.unassignHost` | Same reason as assign. |
+| `agentPlugins.runtimeSelf` | The answer carries MCP gateway bearer credentials; main hands it to the daemon, never to a page. |
+
+Adding a name here narrows and needs no matrix change. Removing one means a
+renderer surface is about to reach an operation main was reserving.
+
+## Operations that are not yet platform-neutral
+
+Unit 1 is allowed to conclude that an operation cannot be platform-neutral,
+which blocks Unit 9 until it gets a typed broker contract. One remains flagged:
+
+1. **`connections.connect` opens a system browser** and completes through a
+   redirect back to the hosted origin. In the desktop composition there is no
+   hosted origin to return to; the callback has to arrive through Electron's
+   registered scheme and be dispatched to the waiting surface. This shares the
+   OAuth callback machinery Unit 6 builds for account sign-in and must reuse it
+   rather than adding a second callback path.
+
+## Enforcement
+
+- `packages/account-contract/src/hosted-operations.test.ts` checks the shared
+  declarations and result codecs. `hosted-operations.test-d.ts` checks that
+  input and output types derive from those codecs.
+- `packages/account-contract/src/hosted-operation-requests.test.ts` refuses
+  a generic proxy, a caller-selected query, a parameter that adds a path
+  segment, and any entry that reaches a machine-signed, invitation or
+  relay-fence route.
+
+`packages/claxedo-desktop/src/main/account/account-ipc.test.ts` pins all 81
+renderer-visible names, verifies the registry exposure agrees with main's
+withheld set, and invokes the registered unary channels.
+
+A browser signed in with Better Auth applies the same `exposure.renderer`
+allowlist to its own account (`claxedo-app/src/server/account.ts`) and sends
+each request to the server it is connected to with its session cookie.
+
+`packages/claxedo-server/src/deployments/hosted-shared/hosted-operation-routes.test.ts`
+compares every declaration's method and path pattern against the route table
+of the full hosted product: the core app with Pages, Agent Plugins and plugin
+backends. The CLI exchange is checked under the hosted core's explicit
+native-auth branch; Better Auth uses its own OAuth routes instead.

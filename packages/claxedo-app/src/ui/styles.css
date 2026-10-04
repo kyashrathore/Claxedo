@@ -1,0 +1,24 @@
+@layer theme, base, components, touch, utilities;
+
+@import "./reduced-motion.css" layer(base);
+@import "./touch.css";
+@import "@opencode-ai/ui/animated-number.css" layer(components);
+@import "@opencode-ai/ui/card.css" layer(components);
+@import "@opencode-ai/ui/collapsible.css" layer(components);
+@import "@opencode-ai/ui/dock-surface.css" layer(components);
+@import "@opencode-ai/ui/file-icon.css" layer(components);
+@import "@opencode-ai/ui/icon.css" layer(components);
+@import "@opencode-ai/ui/icon-button.css" layer(components);
+@import "@opencode-ai/ui/image-preview.css" layer(components);
+@import "@opencode-ai/ui/list.css" layer(components);
+@import "@opencode-ai/ui/popover.css" layer(components);
+@import "@opencode-ai/ui/provider-icon.css" layer(components);
+@import "@opencode-ai/ui/resize-handle.css" layer(components);
+@import "@opencode-ai/ui/scroll-view.css" layer(components);
+@import "@opencode-ai/ui/scroll-thumb.css" layer(components);
+@import "@opencode-ai/ui/spinner.css" layer(components);
+@import "@opencode-ai/ui/sticky-accordion-header.css" layer(components);
+@import "@opencode-ai/ui/text-field.css" layer(components);
+@import "@opencode-ai/ui/text-reveal.css" layer(components);
+@import "@opencode-ai/ui/text-strikethrough.css" layer(components);
+@import "@opencode-ai/ui/tooltip.css" layer(components);

@@ -1,0 +1,27 @@
+scrollTop: 0
+background subagents:
+(none)
+row 0:
+- text: Say hello first. acp-script:stream-upgrade-0 Build · <time>
+- button "Copy message"
+row 1:
+- paragraph: Hello, ready to stream.
+- button "Copy response"
+- text: Build · <duration>
+row 2:
+- text: Stream the math. acp-script:stream-upgrade-1 Build · <time>
+- button "Copy message"
+row 3:
+- paragraph: Before the formula.
+- paragraph:
+  - math: a 2 + b 2 = c 2 a^2 + b^2 = c^2
+- paragraph:
+  - text: Inline
+  - code: code
+  - text: stays inline.
+- code: const answer = 42
+- button "Copy"
+- paragraph: The blocks above are closed now.
+- paragraph: Still streaming the last paragraph. Upgrade stream done.
+- button "Copy response"
+- text: Build · <duration>

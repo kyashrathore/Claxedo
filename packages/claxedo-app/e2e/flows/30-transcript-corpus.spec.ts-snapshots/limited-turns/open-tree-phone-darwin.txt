@@ -1,0 +1,20 @@
+scrollTop: 0
+background subagents:
+(none)
+row 0:
+- text: Say hello. acp-script:limited-turns-0 Build · <time>
+- button "Copy message"
+row 1:
+- status:
+  - text: Rate limited Try again shortly.
+  - 'button "Internal error: API Error: Request rejected (429) · This request would exceed your account''s rate limit. Please try again later."'
+  - button "Resend"
+row 2:
+- text: Say hello again. acp-script:limited-turns-1 Build · <time>
+- button "Copy message"
+row 3:
+- paragraph: Starting again.
+- button "Copy response"
+- text: Build · 0s
+row 4:
+- status: Model usage limit reached You've reached your Codex usage limit. It will reset in about 5 hours. Choose another model or account.

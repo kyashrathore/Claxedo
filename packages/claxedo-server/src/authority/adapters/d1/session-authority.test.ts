@@ -1,0 +1,1407 @@
+import { inviteOrgMember } from "../../../test-support/invite-org-member"
+import { afterEach, describe, expect, test } from "vitest"
+import { Miniflare } from "miniflare"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
+import {
+  exercisePrivateSessionAdoptionConformance,
+  exercisePrivateSessionAuthorityConformance,
+  exerciseRuntimeForkReservationConformance,
+  exerciseSessionShareLevelConformance,
+  exerciseSessionShareRuntimeTokenConformance,
+  exerciseSessionWriteClassConformance,
+} from "@claxedo/server-core/platform/auth/private-session-authority.conformance"
+import {
+  exerciseSessionTurnAuthorityConformance,
+  exerciseSessionTurnGrantConformance,
+} from "@claxedo/server-core/platform/auth/session-turn-authority.conformance"
+import { exerciseSessionPageConformance } from "@claxedo/server-core/platform/auth/session-page.conformance"
+import { exerciseLatestViewConformance } from "@claxedo/server-core/platform/auth/latest-view.conformance"
+import { exerciseFirstReadConformance } from "@claxedo/server-core/platform/auth/first-read.conformance"
+import { exerciseTurnPageConformance } from "@claxedo/server-core/platform/auth/turn-page.conformance"
+import { exerciseSessionPartConformance } from "@claxedo/server-core/platform/auth/session-part.conformance"
+
+import { buildSessionListResponse, parseSessionListQuery } from "../../../session/list"
+import { D1WorkspaceAuthority } from "./workspace-authority"
+import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
+import { D1SessionAuthority } from "./session-authority"
+import { applyControlPlaneBaseline } from "../../../test-support/control-plane-migrations"
+
+
+const active: Miniflare[] = []
+
+afterEach(async () => {
+  await Promise.all(active.splice(0).map((instance) => instance.dispose()))
+})
+
+async function setup() {
+  const instance = new Miniflare({
+    modules: true,
+    script: "export default { fetch() { return new Response('ok') } }",
+    compatibilityDate: "2025-05-01",
+    d1Databases: ["CONTROL_PLANE_DB"],
+  })
+  active.push(instance)
+  const database = await instance.getD1Database("CONTROL_PLANE_DB")
+  await applyControlPlaneBaseline(database)
+  let sequence = 0
+  let currentTime = 1_800_000_000_000
+  const now = () => ++currentTime
+  const workspace = new D1WorkspaceAuthority(database, {
+    deploymentId: "deployment-a",
+    product: { kind: "claxedo-hosted" },
+    now,
+    randomId: (prefix) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
+  })
+  const sessions = new D1SessionAuthority(database, {
+    deploymentId: "deployment-a",
+    now,
+    randomId: (prefix) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
+  })
+  const runtimeTokens = new D1ChannelRuntimeAuthority(database, {
+    deploymentId: "deployment-a",
+    now,
+    randomId: () => `chn_${String(++sequence).padStart(4, "0")}`,
+  })
+  return {
+    database,
+    workspace,
+    sessions,
+    runtimeTokens,
+    now,
+    advancePast: (expiresAt: number) => {
+      currentTime = Math.max(currentTime, expiresAt)
+    },
+    rewindTo: (value: number) => {
+      currentTime = value
+    },
+  }
+}
+
+function identity(subject: string): AuthIdentity {
+  return { adapter: "better-auth", issuer: "https://auth.example.test", subject }
+}
+
+async function signed(authority: D1WorkspaceAuthority, subject: string): Promise<SignedControlPlaneAuth> {
+  const applicationIdentity = identity(subject)
+  const result = await authority.ensureApplicationIdentity(applicationIdentity)
+  if (result.state !== "active") throw new Error(`identity did not become active: ${result.state}`)
+  const principal: ControlPlanePrincipal = {
+    userId: result.userId,
+    actorId: result.actorId,
+    actorKind: "human",
+    deploymentId: "deployment-a",
+    sessionId: `auth:${subject}`,
+    authenticatedAt: 1_800_000_000_000,
+    methods: ["oauth:github"],
+    assurance: "single-factor",
+    client: {
+      kind: "browser",
+      tokenKind: "browser-session",
+      id: "browser",
+      resource: "https://api.example.test",
+      scopes: ["openid"],
+      origin: "https://app.example.test",
+    },
+    identity: applicationIdentity,
+  }
+  return {
+    mode: "signed",
+    principal,
+    user: {
+      subject,
+      tokenIdentifier: `${applicationIdentity.issuer}|${subject}`,
+      issuer: applicationIdentity.issuer,
+    },
+  }
+}
+
+async function sharedWorkspace(input: Awaited<ReturnType<typeof setup>>) {
+  const alice = await signed(input.workspace, "alice")
+  const bob = await signed(input.workspace, "bob")
+  const admin = await signed(input.workspace, "admin")
+  const outsider = await signed(input.workspace, "outsider")
+  const reader = await signed(input.workspace, "reader")
+  await input.workspace.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
+  await inviteOrgMember(input.database, alice, {
+    orgId: "org_acme",
+    userPublicId: bob.principal!.userId,
+    role: "member",
+  })
+  await inviteOrgMember(input.database, alice, {
+    orgId: "org_acme",
+    userPublicId: admin.principal!.userId,
+    role: "admin",
+  })
+  await inviteOrgMember(input.database, alice, {
+    orgId: "org_acme",
+    userPublicId: reader.principal!.userId,
+    role: "member",
+  })
+  const workspace = await input.workspace.createWorkspace(alice, {
+    workspaceId: "ws_main",
+    orgId: "org_acme",
+    displayName: "main",
+    repoUrl: "https://github.com/acme/main.git",
+    backing: "cloud-vm",
+  })
+  await input.database
+    .prepare(
+      `
+    insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at)
+    values (?, ?, 'editor', 1, 1, null)
+  `,
+    )
+    .bind(workspace.project_id, bob.principal!.userId)
+    .run()
+  await input.database
+    .prepare(
+      `
+    insert into project_memberships (project_id, user_id, role, created_at, updated_at, revoked_at)
+    values (?, ?, 'viewer', 1, 1, null)
+  `,
+    )
+    .bind(workspace.project_id, reader.principal!.userId)
+    .run()
+  return { alice, bob, admin, outsider, reader, workspace }
+}
+
+async function reserveAndRegister(
+  sessions: D1SessionAuthority,
+  auth: SignedControlPlaneAuth,
+  input: { operationId: string; sessionId: string; workspaceId?: string; title?: string },
+) {
+  await sessions.reserveSession(auth, {
+    operationId: input.operationId,
+    sessionId: input.sessionId,
+    workspaceId: input.workspaceId ?? "ws_main",
+    kind: "create",
+    title: input.title,
+  })
+  return await sessions.registerRuntimeSession({
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    principalKind: "user",
+    actorId: auth.principal!.actorId,
+    actorKind: "human",
+    operationId: input.operationId,
+    sessionId: input.sessionId,
+    workspaceId: input.workspaceId ?? "ws_main",
+    title: input.title,
+  })
+}
+
+describe("D1 private multiplayer session authority", () => {
+  test("satisfies the provider-neutral private-session conformance surface", async () => {
+    const input = await setup()
+    const { alice, admin } = await sharedWorkspace(input)
+
+    await expect(
+      exercisePrivateSessionAuthorityConformance({
+        authority: input.sessions,
+        setWorkspaceAvailable: async (available) => {
+          await input.database.prepare("UPDATE workspaces SET deleted_at = ? WHERE workspace_id = ?")
+            .bind(available ? null : input.now(), "ws_main").run()
+        },
+        turnAuthority: input.sessions,
+        workspaceId: "ws_main",
+        creator: {
+          auth: alice,
+          runtime: {
+            principalKind: "user",
+            actorId: alice.principal!.actorId,
+            actorKind: "human",
+          },
+        },
+        member: {
+          auth: admin,
+          runtime: {
+            principalKind: "user",
+            actorId: admin.principal!.actorId,
+            actorKind: "human",
+          },
+        },
+      }),
+    ).resolves.toEqual({
+      scenarios: [
+        "reservation-reconciliation-compensation",
+        "workspace-and-private-session-conjunction",
+        "canonical-actor-attribution",
+        "explicit-runtime-principal",
+      ],
+      lifecycle: { reserved: true, reconciled: true, compensated: true, released: true },
+      access: { memberRefusedTheSession: true, memberRefusedCreation: true },
+      attribution: { canonicalActorPreserved: true, forgedActorRemoved: true },
+    })
+  })
+
+  test("satisfies the provider-neutral runtime fork-reservation conformance surface", async () => {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+
+    await expect(
+      exerciseRuntimeForkReservationConformance({
+        authority: input.sessions,
+        setParentShare: async (sessionId, level) => {
+          const target = { sessionId, workspaceId: "ws_main", grantedToUserId: bob.principal!.userId }
+          if (level) await input.sessions.grantSessionShare(alice, { ...target, level })
+          else await input.sessions.revokeSessionShare(alice, target)
+        },
+        workspaceId: "ws_main",
+        creator: {
+          auth: alice,
+          runtime: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" },
+        },
+        member: {
+          auth: bob,
+          runtime: { principalKind: "user", actorId: bob.principal!.actorId, actorKind: "human" },
+        },
+      }),
+    ).resolves.toEqual({
+      forkReservedUnderAWritableParent: true,
+      registeredChildIsPrivateToItsCreator: true,
+      refusedUnderAnUnreadableParent: true,
+      refusedToAShareHolderAtEitherLevel: true,
+      refusedForAMismatchedIntent: true,
+    })
+  })
+
+  test("the parent is rechecked inside the fork's reservation and registration batches", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+    const principal = { principalKind: "user" as const, actorId: alice.principal!.actorId, actorKind: "human" as const }
+    for (const phase of ["reserve", "register"] as const) {
+      const parentSessionId = `ses_race_parent_${phase}`
+      await reserveAndRegister(input.sessions, alice, { operationId: `op_race_parent_${phase}`, sessionId: parentSessionId })
+      const intent = { operationId: `op_race_${phase}`, sessionId: `ses_race_${phase}`, workspaceId: "ws_main",
+        kind: "fork" as const, parentSessionId }
+      if (phase === "register") await input.sessions.reserveRuntimeSession(principal, intent)
+      let batches = 0
+      // Miniflare's RPC binding supplies methods dynamically, so intercept the
+      // database port passed to the authority rather than spying on the proxy.
+      const raced = new D1SessionAuthority(new Proxy(input.database, {
+        get(target, key) {
+          if (key === "batch") return async (statements: Parameters<typeof target.batch>[0]) => {
+            batches += 1
+            await target.prepare("UPDATE sessions SET deleted_at = 1 WHERE session_id = ?").bind(parentSessionId).run()
+            return target.batch(statements)
+          }
+          const value = Reflect.get(target, key)
+          return typeof value === "function" ? value.bind(target) : value
+        },
+      }), { deploymentId: "deployment-a", now: input.now })
+      const operation = phase === "reserve"
+        ? raced.reserveRuntimeSession(principal, intent)
+        : raced.registerRuntimeSession({ createdAt: Date.now(), updatedAt: Date.now(), ...principal, operationId: intent.operationId,
+            sessionId: intent.sessionId, workspaceId: intent.workspaceId })
+      const outcome = await operation.then(() => "accepted", () => "refused")
+      expect(batches).toBe(1)
+      expect(outcome).toBe("refused")
+      expect(await input.database.prepare("SELECT 1 FROM sessions WHERE session_id = ?").bind(intent.sessionId).first()).toBeNull()
+      expect(await input.database.prepare("SELECT state FROM session_registration_operations WHERE operation_id = ?")
+        .bind(intent.operationId).first()).toEqual(phase === "register" ? { state: "reserved" } : null)
+    }
+  })
+
+  test("satisfies the provider-neutral session-share-level conformance surface", async () => {
+    const input = await setup()
+    const { alice, admin, outsider } = await sharedWorkspace(input)
+    const teammate = await signed(input.workspace, "teammate")
+    await inviteOrgMember(input.database, alice, {
+      orgId: "org_acme",
+      userPublicId: teammate.principal!.userId,
+      role: "member",
+    })
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_shared", sessionId: "ses_shared" })
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_unshared", sessionId: "ses_unshared" })
+    await expect(input.workspace.openWorkspace(teammate, { workspaceId: "ws_main" }))
+      .rejects.toMatchObject({ code: "workspace_authorization_denied" })
+
+    await expect(
+      exerciseSessionShareLevelConformance({
+        authority: input.sessions,
+        shares: input.sessions,
+        workspaceId: "ws_main",
+        sessionId: "ses_shared",
+        otherSessionId: "ses_unshared",
+        creator: { auth: alice },
+        grantee: {
+          auth: teammate,
+          runtime: { principalKind: "user", actorId: teammate.principal!.actorId, actorKind: "human" },
+          target: { grantedToUserId: teammate.principal!.userId },
+        },
+        organizationAdministrator: {
+          auth: admin,
+          runtime: { principalKind: "user", actorId: admin.principal!.actorId, actorKind: "human" },
+        },
+        outsider: { target: { grantedToUserId: outsider.principal!.userId } },
+      }),
+    ).resolves.toEqual({
+      defaultsToFollow: true,
+      followReadsButDoesNotWrite: true,
+      sendWritesWithoutWorkspaceRank: true,
+      downgradeEndsWriting: true,
+      revokeEndsReading: true,
+      shareReachesNoOtherSession: true,
+      organizationAdministratorRefusedWithoutAGrant: true,
+      offerRefusedOutsideTheOrganization: true,
+    })
+  })
+
+  test("satisfies the provider-neutral session-share runtime-token conformance surface", async () => {
+    const input = await setup()
+    const { alice, admin } = await sharedWorkspace(input)
+    const teammate = await signed(input.workspace, "teammate")
+    await inviteOrgMember(input.database, alice, {
+      orgId: "org_acme",
+      userPublicId: teammate.principal!.userId,
+      role: "member",
+    })
+    await input.workspace.createWorkspace(admin, {
+      workspaceId: "ws_admin",
+      orgId: "org_acme",
+      displayName: "admin",
+      repoUrl: "https://github.com/acme/main.git",
+      backing: "cloud-vm",
+    })
+    await reserveAndRegister(input.sessions, admin, { operationId: "op_shared", sessionId: "ses_shared", workspaceId: "ws_admin" })
+
+    await expect(
+      exerciseSessionShareRuntimeTokenConformance({
+        sessions: input.sessions,
+        workspace: {
+          openWorkspace: (auth, args) => input.workspace.openWorkspace(auth, args),
+          recordRuntimeAccessToken: (auth, args) => input.runtimeTokens.recordRuntimeAccessToken(auth, args),
+          runtimeAccessTokenActive: (args) => input.runtimeTokens.runtimeAccessTokenActive(args),
+          grantSessionShare: (auth, args) => input.sessions.grantSessionShare(auth, args),
+        },
+        workspaceId: "ws_admin",
+        hostId: "host_alices_desktop",
+        sessionId: "ses_shared",
+        owner: {
+          auth: admin,
+          runtime: { principalKind: "user", actorId: admin.principal!.actorId, actorKind: "human" },
+          leaveOrganization: async () => {
+            await input.database
+              .prepare(`update org_memberships set revoked_at = 99 where org_id = 'org_acme' and user_id = ?`)
+              .bind(admin.principal!.userId)
+              .run()
+          },
+        },
+        grantee: {
+          auth: teammate,
+          runtime: { principalKind: "user", actorId: teammate.principal!.actorId, actorKind: "human" },
+          target: { grantedToUserId: teammate.principal!.userId },
+        },
+        expiresAt: 1_800_000_600_000,
+      }),
+    ).resolves.toEqual({
+      workspaceRefusedToAShareHolder: true,
+      workspaceTokenRefusedToAShareHolder: true,
+      sendShareDrivesTheTurn: true,
+      downgradeEndsTheTurn: true,
+      ownerHoldsTheWorkspaceToken: true,
+      offboardedOwnerLosesSessionWorkspaceAndToken: true,
+    })
+  })
+
+  test("satisfies the provider-neutral session-adoption conformance surface", async () => {
+    const input = await setup()
+    const { alice, bob, workspace } = await sharedWorkspace(input)
+
+    await expect(
+      exercisePrivateSessionAdoptionConformance({
+        authority: input.sessions,
+        workspaceId: "ws_main",
+        hostId: "host_alices_desktop",
+        assignHost: async () => {
+          await input.database
+            .prepare(
+              `
+            insert into host_workspace_assignments (
+              workspace_id, host_id, org_id, owner_user_id, owner_actor_id, assigned_at, updated_at
+            ) values (?, ?, ?, ?, ?, 1, 1)
+          `,
+            )
+            .bind(
+              "ws_main",
+              "host_alices_desktop",
+              workspace.org_id,
+              alice.principal!.userId,
+              alice.principal!.actorId,
+            )
+            .run()
+        },
+        owner: {
+          auth: alice,
+          runtime: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" },
+        },
+        member: {
+          auth: bob,
+          runtime: { principalKind: "user", actorId: bob.principal!.actorId, actorKind: "human" },
+        },
+      }),
+    ).resolves.toEqual({
+      refusedBeforeAssignment: true,
+      adoptedForEnrollmentOwner: true,
+      idempotent: true,
+      refusedForMember: true,
+      refusedWhileAReservationHoldsIt: true,
+    })
+  })
+
+  test("satisfies durable exactly-one turn admission across reconstructed adapters", async () => {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, {
+      operationId: "op_turn_conformance",
+      sessionId: "ses_turn_conformance",
+    })
+    await input.sessions.grantSessionShare(alice, {
+      sessionId: "ses_turn_conformance",
+      workspaceId: "ws_main",
+      grantedToUserId: bob.principal!.userId,
+      level: "send",
+    })
+    const reconstructed = new D1SessionAuthority(input.database, {
+      deploymentId: "deployment-a",
+      now: input.now,
+      turnLeaseTtlMs: 5_000,
+    })
+
+    await expect(exerciseSessionTurnAuthorityConformance({
+      authority: input.sessions,
+      reconstructed,
+      workspaceId: "ws_main",
+      sessionId: "ses_turn_conformance",
+      actor: {
+        principalKind: "user",
+        actorId: alice.principal!.actorId,
+        actorKind: "human",
+      },
+      competitor: {
+        principalKind: "user",
+        actorId: bob.principal!.actorId,
+        actorKind: "human",
+      },
+      advancePast: input.advancePast,
+    })).resolves.toEqual({
+      scenarios: [
+        "atomic-session-exclusion",
+        "idempotent-turn-retry",
+        "reconstruction-visibility",
+        "expiry-fencing-and-stale-release",
+      ],
+      exclusion: { concurrentDenied: true, reconstructionDenied: true },
+      retry: { idempotent: true },
+      recovery: { expiryTakeover: true, staleReleaseFenced: true },
+    })
+  })
+
+  test("satisfies deferred turn-grant conformance across reconstructed adapters", async () => {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_grant_parent", sessionId: "ses_grant_parent" })
+    const reconstructed = new D1SessionAuthority(input.database, { deploymentId: "deployment-a", now: input.now })
+
+    await expect(exerciseSessionTurnGrantConformance({
+      authority: input.sessions,
+      reconstructed,
+      registrations: input.sessions,
+      workspaceId: "ws_main",
+      sessionId: "ses_grant_parent",
+      creator: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" },
+      grantee: { principalKind: "user", actorId: bob.principal!.actorId, actorKind: "human" },
+      setGranteeShare: async (level) => {
+        const target = { sessionId: "ses_grant_parent", workspaceId: "ws_main", grantedToUserId: bob.principal!.userId }
+        if (level) await input.sessions.grantSessionShare(alice, { ...target, level })
+        else await input.sessions.revokeSessionShare(alice, target)
+      },
+      turnProducer: async (turnId) => {
+        const row = await input.database
+          .prepare("select actor_id from session_turn_producers where session_id = ? and turn_id = ?")
+          .bind("ses_grant_parent", turnId)
+          .first<{ actor_id: string }>()
+        return row ? { actorId: row.actor_id } : undefined
+      },
+      advancePast: input.advancePast,
+    })).resolves.toEqual({
+      scenarios: [
+        "grant-under-send-share",
+        "redeem-mints-lease-and-producer",
+        "same-turn-retry-returns-the-live-lease",
+        "redeemed-grant-refused-after-release",
+        "turn-id-and-prefix-mismatch-refused",
+        "wrong-actor-refused",
+        "expired-refused",
+        "downgraded-share-refused-without-lease-or-producer",
+        "revoked-refused",
+        "reconstruction-visibility",
+      ],
+      grant: { requiresSendShare: true, requiresChildRegistration: true },
+      redemption: { leaseAndProducer: true, sameTurnRetry: true, refusedAfterRelease: true },
+      refusals: { mismatch: true, wrongActor: true, expired: true, downgradedShare: true, revoked: true },
+      reconstruction: { visible: true },
+    })
+  })
+
+  test("parent share is rechecked inside the grant redemption batch", async () => {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_grant_race", sessionId: "ses_grant_race" })
+    await input.sessions.grantSessionShare(alice, {
+      sessionId: "ses_grant_race", workspaceId: "ws_main", grantedToUserId: bob.principal!.userId, level: "send",
+    })
+    const principal = { principalKind: "user" as const, actorId: bob.principal!.actorId, actorKind: "human" as const }
+    const grant = await input.sessions.grantSessionTurn({
+      ...principal, sessionId: "ses_grant_race", workspaceId: "ws_main", intent: "queued_prompt", turnId: "msg_race",
+    })
+    let batches = 0
+    // Miniflare's RPC binding supplies methods dynamically, so intercept the
+    // database port passed to the authority rather than spying on the proxy.
+    const raced = new D1SessionAuthority(new Proxy(input.database, {
+      get(target, key) {
+        if (key === "batch") return async (statements: Parameters<typeof target.batch>[0]) => {
+          batches += 1
+          await target.prepare("UPDATE session_share_grants SET level = 'follow' WHERE session_id = 'ses_grant_race'").run()
+          return target.batch(statements)
+        }
+        const value = Reflect.get(target, key)
+        return typeof value === "function" ? value.bind(target) : value
+      },
+    }), { deploymentId: "deployment-a", now: input.now })
+
+    const outcome = await raced.acquireSessionTurn({
+      ...principal, sessionId: "ses_grant_race", workspaceId: "ws_main", turnId: "msg_race", grantId: grant.grantId,
+    }).then(() => "accepted", (error: unknown) => (error instanceof Error && "status" in error ? error.status : error))
+    expect(batches).toBe(1)
+    expect(outcome).toBe(403)
+    expect(await input.database.prepare("select 1 from session_turn_leases where session_id = ?").bind("ses_grant_race").first()).toBeNull()
+    expect(await input.database.prepare("select 1 from session_turn_producers where session_id = ? and turn_id = ?")
+      .bind("ses_grant_race", "msg_race").first()).toBeNull()
+    expect(await input.database.prepare("select redeemed_at, redeemed_turn_id from session_turn_grants where grant_id = ?")
+      .bind(grant.grantId).first()).toEqual({ redeemed_at: null, redeemed_turn_id: null })
+  })
+
+  test("makes reservation retries exact and keeps ambiguous or compensated runtimes invisible", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+
+    const reserved = await input.sessions.reserveSession(alice, {
+      operationId: "op_create",
+      sessionId: "ses_create",
+      workspaceId: "ws_main",
+      kind: "create",
+      title: "created",
+    })
+    expect(reserved).toMatchObject({ changed: true, state: "reserved" })
+    expect(await input.sessions.listSessions(alice, { workspaceId: "ws_main" })).toEqual([])
+    await expect(
+      input.sessions.reserveSession(alice, {
+        operationId: "op_create",
+        sessionId: "ses_changed",
+        workspaceId: "ws_main",
+        kind: "create",
+        title: "created",
+      }),
+    ).rejects.toMatchObject({ code: "resource_conflict" })
+
+    await input.sessions.markSessionRegistrationAmbiguous({
+      principalKind: "user",
+      actorId: alice.principal!.actorId,
+      actorKind: "human",
+      operationId: "op_create",
+      sessionId: "ses_create",
+      workspaceId: "ws_main",
+      reason: "runtime result timed out",
+    })
+    expect(await input.sessions.listSessions(alice, { workspaceId: "ws_main" })).toEqual([])
+    await expect(
+      input.sessions.registerRuntimeSession({
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        principalKind: "user",
+        actorId: alice.principal!.actorId,
+        actorKind: "human",
+        operationId: "op_different_retry",
+        sessionId: "ses_create",
+        workspaceId: "ws_main",
+        title: "created",
+      }),
+    ).rejects.toMatchObject({ code: "registration_transition_denied" })
+    await expect(
+      input.sessions.registerRuntimeSession({
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        principalKind: "user",
+        actorId: alice.principal!.actorId,
+        actorKind: "human",
+        operationId: "op_create",
+        sessionId: "ses_create",
+        workspaceId: "ws_main",
+        title: "created",
+      }),
+    ).resolves.toMatchObject({ registered: true })
+    expect(await input.sessions.listSessions(alice, { workspaceId: "ws_main" })).toEqual([
+      expect.objectContaining({ session_id: "ses_create", project_id: expect.any(String) }),
+    ])
+
+    await input.workspace.createWorkspace(alice, {
+      workspaceId: "ws_other",
+      orgId: "org_acme",
+      displayName: "other",
+      repoUrl: "https://github.com/acme/other.git",
+      backing: "cloud-vm",
+    })
+    await expect(
+      input.sessions.reserveSession(alice, {
+        operationId: "op_cross_workspace_fork",
+        sessionId: "ses_cross_workspace_fork",
+        workspaceId: "ws_other",
+        kind: "fork",
+        parentSessionId: "ses_create",
+      }),
+    ).rejects.toMatchObject({ status: 403 })
+    expect(
+      await input.database
+        .prepare(
+          `
+      select 1 from session_registration_operations where operation_id = 'op_cross_workspace_fork'
+    `,
+        )
+        .first(),
+    ).toBeNull()
+    await expect(
+      input.database
+        .prepare(
+          `
+      insert into session_registration_operations (
+        operation_id, session_id, workspace_id, org_id, project_id, creator_actor_id,
+        operation_kind, parent_session_id, requested_title, state, state_reason, created_at, updated_at
+      ) values ('op_wrong_project', 'ses_wrong_project', 'ws_main', 'org_acme', 'prj_wrong', ?,
+        'create', null, null, 'reserved', null, 1, 1)
+    `,
+        )
+        .bind(alice.principal!.actorId)
+        .run(),
+    ).rejects.toThrow(/FOREIGN KEY constraint failed/)
+
+    await input.sessions.reserveSession(alice, {
+      operationId: "op_fork",
+      sessionId: "ses_fork",
+      workspaceId: "ws_main",
+      kind: "fork",
+      parentSessionId: "ses_create",
+    })
+    await expect(
+      input.sessions.registerRuntimeSession({
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        principalKind: "user",
+        actorId: alice.principal!.actorId,
+        actorKind: "human",
+        operationId: "op_fork",
+        sessionId: "ses_fork",
+        workspaceId: "ws_main",
+      }),
+    ).resolves.toMatchObject({ registered: true })
+
+    await input.sessions.reserveSession(alice, {
+      operationId: "op_compensate",
+      sessionId: "ses_compensate",
+      workspaceId: "ws_main",
+      kind: "create",
+    })
+    await input.sessions.beginSessionCompensation({
+      principalKind: "user",
+      actorId: alice.principal!.actorId,
+      actorKind: "human",
+      operationId: "op_compensate",
+      sessionId: "ses_compensate",
+      workspaceId: "ws_main",
+      reason: "runtime definitively denied creation",
+    })
+    await expect(
+      input.sessions.registerRuntimeSession({
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        principalKind: "user",
+        actorId: alice.principal!.actorId,
+        actorKind: "human",
+        operationId: "op_compensate",
+        sessionId: "ses_compensate",
+        workspaceId: "ws_main",
+      }),
+    ).rejects.toMatchObject({ code: "registration_transition_denied" })
+    await input.sessions.completeSessionCompensation({
+      principalKind: "user",
+      actorId: alice.principal!.actorId,
+      actorKind: "human",
+      operationId: "op_compensate",
+      sessionId: "ses_compensate",
+      workspaceId: "ws_main",
+      reason: "runtime confirmed deletion",
+    })
+    expect(
+      await input.database.prepare("select 1 from sessions where session_id = 'ses_compensate'").first(),
+    ).toBeNull()
+    expect(
+      await input.database
+        .prepare("select state, state_reason from session_registration_operations where operation_id = 'op_compensate'")
+        .first<{ state: string; state_reason: string }>(),
+    ).toEqual({ state: "compensated", state_reason: "runtime confirmed deletion" })
+
+    await expect(
+      input.sessions.reserveSession(alice, {
+        operationId: "op_compensate_retry",
+        sessionId: "ses_compensate",
+        workspaceId: "ws_main",
+        kind: "create",
+      }),
+    ).resolves.toMatchObject({ changed: true, state: "reserved", sessionId: "ses_compensate" })
+    expect(
+      await input.database
+        .prepare("select operation_id from session_registration_operations where session_id = 'ses_compensate'")
+        .all<{ operation_id: string }>(),
+    ).toMatchObject({ results: [{ operation_id: "op_compensate_retry" }] })
+
+    await expect(
+      input.sessions.registerRuntimeSession({
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        principalKind: "user",
+        actorId: alice.principal!.actorId,
+        actorKind: "human",
+        operationId: "op_unreserved",
+        sessionId: "ses_unreserved",
+        workspaceId: "ws_main",
+      }),
+    ).rejects.toMatchObject({ code: "registration_transition_denied" })
+
+    await expect(
+      input.database
+        .prepare(
+          `
+      update sessions set project_id = 'project_drift' where session_id = 'ses_create'
+    `,
+        )
+        .run(),
+    ).rejects.toThrow(/session scope is immutable/)
+  })
+
+  test("admits a session only to its workspace's owner or a share holder", async () => {
+    const input = await setup()
+    const { alice, bob, admin, outsider } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_private", sessionId: "ses_private" })
+
+    expect(await input.sessions.listSessions(bob, { workspaceId: "ws_main" })).toEqual([])
+    expect(await input.sessions.listSessions(admin, { workspaceId: "ws_main" })).toEqual([])
+    await expect(
+      input.sessions.authorizeSessionRead(admin, { sessionId: "ses_private", workspaceId: "ws_main" }),
+    ).rejects.toMatchObject({ status: 403 })
+    await expect(
+      input.sessions.authorizeSessionWrite(admin, { sessionId: "ses_private", workspaceId: "ws_main" }),
+    ).rejects.toMatchObject({ status: 403 })
+    expect(await input.sessions.listSessions(outsider, { workspaceId: "ws_main" })).toEqual([])
+    expect(
+      await input.sessions.readSessionMessages(outsider, {
+        sessionId: "ses_private",
+        workspaceId: "ws_main",
+      }),
+    ).toEqual({ allowed: false, messages: [] })
+    const share = { sessionId: "ses_private", workspaceId: "ws_main", grantedToUserId: bob.principal!.userId }
+    await input.sessions.grantSessionShare(alice, { ...share, level: "send" })
+    await expect(
+      input.sessions.authorizeSessionWrite(bob, { sessionId: "ses_private", workspaceId: "ws_main" }),
+    ).resolves.toBeUndefined()
+    expect(await input.sessions.listSessions(bob, { workspaceId: "ws_main" })).toEqual([
+      expect.objectContaining({ session_id: "ses_private" }),
+    ])
+    expect(await input.sessions.readSessionMessages(bob, { sessionId: "ses_private", workspaceId: "ws_main" }))
+      .toMatchObject({ allowed: true, role: "viewer" })
+    expect(await input.sessions.readSessionMessages(alice, { sessionId: "ses_private", workspaceId: "ws_main" }))
+      .toMatchObject({ allowed: true, role: "owner" })
+    await expect(reserveAndRegister(input.sessions, bob, { operationId: "op_bob", sessionId: "ses_bob" }))
+      .rejects.toMatchObject({ status: 403 })
+
+    await input.sessions.revokeSessionShare(alice, share)
+    await expect(
+      input.sessions.authorizeSessionRead(bob, { sessionId: "ses_private", workspaceId: "ws_main" }),
+    ).rejects.toMatchObject({ status: 403 })
+
+    await input.sessions.grantSessionShare(alice, { ...share, level: "follow" })
+    await expect(
+      input.sessions.authorizeSessionRead(bob, { sessionId: "ses_private", workspaceId: "ws_main" }),
+    ).resolves.toBeUndefined()
+    await input.database
+      .prepare(
+        `
+      update org_memberships set revoked_at = 99
+      where org_id = 'org_acme' and user_id = ?
+    `,
+      )
+      .bind(bob.principal!.userId)
+      .run()
+    // Leaving the organization ends every grant inside it: the share row
+    // stays and admits Bob to nothing.
+    await expect(
+      input.sessions.authorizeSessionRead(bob, { sessionId: "ses_private", workspaceId: "ws_main" }),
+    ).rejects.toMatchObject({ status: 403 })
+    expect(await input.sessions.listSessions(bob, { workspaceId: "ws_main" })).toEqual([])
+
+    // An active account is asked of the actor, not only of the signed caller,
+    // so a suspension reaches the runtime's own question too.
+    await input.database
+      .prepare(`update users set state = 'suspended', suspended_at = 101 where user_id = ?`)
+      .bind(alice.principal!.userId)
+      .run()
+    const nextRequest = { ...alice }
+    await expect(input.sessions.listSessions(nextRequest, { workspaceId: "ws_main" }))
+      .rejects.toMatchObject({ code: "account_suspended" })
+    await expect(
+      input.sessions.authorizeRuntimeSession({
+        principalKind: "user",
+        actorId: alice.principal!.actorId,
+        actorKind: "human",
+        sessionId: "ses_private",
+        workspaceId: "ws_main",
+        action: "read",
+      }),
+    ).rejects.toMatchObject({ status: 403 })
+  })
+
+  test("attributes a cloud turn's usage to the account that started that turn, and to nobody for a turn a machine served", async () => {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_usage", sessionId: "ses_usage" })
+    await input.sessions.grantSessionShare(alice, {
+      sessionId: "ses_usage",
+      workspaceId: "ws_main",
+      grantedToUserId: bob.principal!.userId,
+      level: "send",
+    })
+    const alicePrincipal = { principalKind: "user" as const, actorId: alice.principal!.actorId, actorKind: "human" as const }
+    const bobPrincipal = { principalKind: "user" as const, actorId: bob.principal!.actorId, actorKind: "human" as const }
+    const aliceOwner = { org_id: "org_acme", user_id: alice.principal!.userId }
+    const bobOwner = { org_id: "org_acme", user_id: bob.principal!.userId }
+
+    const turn = { sessionId: "ses_usage", workspaceId: "ws_main" }
+    const bobTurn = await input.sessions.acquireSessionTurn({ ...bobPrincipal, ...turn, turnId: "msg_bob" })
+    await input.sessions.releaseSessionTurn({ ...bobPrincipal, ...turn, turnId: "msg_bob", leaseId: bobTurn.leaseId, fencingToken: bobTurn.fencingToken })
+    const aliceTurn = await input.sessions.acquireSessionTurn({ ...alicePrincipal, ...turn, turnId: "msg_alice" })
+    await input.sessions.releaseSessionTurn({ ...alicePrincipal, ...turn, turnId: "msg_alice", leaseId: aliceTurn.leaseId, fencingToken: aliceTurn.fencingToken })
+    expect(await input.sessions.resolveCloudTurnUsageOwner({ sessionId: "ses_usage", turnId: "msg_bob" })).toEqual(bobOwner)
+    expect(await input.sessions.resolveCloudTurnUsageOwner({ sessionId: "ses_usage", turnId: "msg_alice" })).toEqual(aliceOwner)
+    expect(await input.sessions.resolveCloudTurnUsageOwner({ sessionId: "ses_usage", turnId: "msg_never" })).toBeUndefined()
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_usage_other", sessionId: "ses_usage_other" })
+    expect(await input.sessions.resolveCloudTurnUsageOwner({ sessionId: "ses_usage_other", turnId: "msg_bob" })).toBeUndefined()
+
+    await input.workspace.createWorkspace(alice, {
+      workspaceId: "ws_laptop",
+      orgId: "org_acme",
+      displayName: "laptop",
+      repoUrl: "https://github.com/acme/laptop.git",
+      backing: "local-worktree",
+    })
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_usage_laptop", sessionId: "ses_laptop", workspaceId: "ws_laptop" })
+    const laptop = { sessionId: "ses_laptop", workspaceId: "ws_laptop" }
+    const laptopTurn = await input.sessions.acquireSessionTurn({ ...alicePrincipal, ...laptop, turnId: "msg_laptop" })
+    await input.sessions.releaseSessionTurn({ ...alicePrincipal, ...laptop, turnId: "msg_laptop", leaseId: laptopTurn.leaseId, fencingToken: laptopTurn.fencingToken })
+    expect(await input.sessions.resolveCloudTurnUsageOwner({ sessionId: "ses_laptop", turnId: "msg_laptop" })).toBeUndefined()
+
+    await input.database.prepare("update workspaces set deleted_at = ? where workspace_id = ?").bind(input.now(), "ws_main").run()
+    expect(await input.sessions.resolveCloudTurnUsageOwner({ sessionId: "ses_usage", turnId: "msg_bob" })).toBeUndefined()
+  })
+
+  test("syncs only registered writable sessions and projects verified message attribution", async () => {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, {
+      operationId: "op_messages",
+      sessionId: "ses_messages",
+      title: "messages",
+    })
+    await input.sessions.grantSessionShare(alice, {
+      sessionId: "ses_messages",
+      workspaceId: "ws_main",
+      grantedToUserId: bob.principal!.userId,
+      level: "send",
+    })
+    const messages = [
+      {
+        info: {
+          id: "m1",
+          role: "user",
+          claxedo: { author: { id: alice.principal!.actorId, name: "forged" } },
+        },
+        parts: [{ type: "text", text: "hello" }],
+      },
+      {
+        info: {
+          id: "m2",
+          role: "user",
+          claxedo: { author: { id: bob.principal!.actorId, name: "forged" } },
+        },
+        parts: [{ type: "text", text: "forged" }],
+      },
+      {
+        info: {
+          id: "m3",
+          role: "assistant",
+          claxedo: { author: { id: alice.principal!.actorId, name: "also forged" } },
+        },
+        parts: [{ type: "text", text: "reply" }],
+      },
+    ]
+    const bobTurn = await input.sessions.acquireSessionTurn({
+      principalKind: "user",
+      actorId: bob.principal!.actorId,
+      actorKind: "human",
+      sessionId: "ses_messages",
+      workspaceId: "ws_main",
+      turnId: "m1",
+    })
+    await input.sessions.releaseSessionTurn({
+      principalKind: "user",
+      actorId: bob.principal!.actorId,
+      actorKind: "human",
+      sessionId: "ses_messages",
+      workspaceId: "ws_main",
+      turnId: "m1",
+      leaseId: bobTurn.leaseId,
+      fencingToken: bobTurn.fencingToken,
+    })
+    const aliceTurn = await input.sessions.acquireSessionTurn({
+      principalKind: "user",
+      actorId: alice.principal!.actorId,
+      actorKind: "human",
+      sessionId: "ses_messages",
+      workspaceId: "ws_main",
+      turnId: "m2",
+    })
+    await input.sessions.releaseSessionTurn({
+      principalKind: "user",
+      actorId: alice.principal!.actorId,
+      actorKind: "human",
+      sessionId: "ses_messages",
+      workspaceId: "ws_main",
+      turnId: "m2",
+      leaseId: aliceTurn.leaseId,
+      fencingToken: aliceTurn.fencingToken,
+    })
+    await expect(
+      input.sessions.syncSessionMessages(bob, {
+        updatedAt: Date.now(),
+        sessionId: "ses_messages",
+        workspaceId: "ws_main",
+        messages,
+        maxEventOrdinal: 7,
+        fencingToken: aliceTurn.fencingToken,
+      }),
+    ).resolves.toEqual({ ok: true, applied: true, maxEventOrdinal: 7 })
+
+    const page = (await input.sessions.readSessionMessages(alice, {
+      sessionId: "ses_messages",
+      workspaceId: "ws_main",
+      limit: 2,
+    })) as { messages: Array<Record<string, any>>; nextCursor?: string }
+    expect(page).toMatchObject({ maxEventOrdinal: 7 })
+    expect(page.messages.map((message) => message.info.id)).toEqual(["m2", "m3"])
+    expect(page.messages[0].info.claxedo.author).toEqual({
+      id: alice.principal!.actorId,
+      kind: "human",
+    })
+    expect(page.messages[1].info.claxedo).toBeUndefined()
+    expect(page.nextCursor).toEqual(expect.any(String))
+    const earlier = (await input.sessions.readSessionMessages(alice, {
+      sessionId: "ses_messages",
+      workspaceId: "ws_main",
+      limit: 2,
+      before: page.nextCursor,
+    })) as { messages: Array<Record<string, any>> }
+    expect(earlier.messages).toHaveLength(1)
+    expect(earlier.messages[0].info.claxedo.author).toEqual({
+      id: bob.principal!.actorId,
+      kind: "human",
+    })
+
+    await expect(
+      input.sessions.syncSessionMessages(bob, {
+        updatedAt: Date.now(),
+        sessionId: "ses_messages",
+        workspaceId: "ws_main",
+        messages,
+        maxEventOrdinal: 7,
+        fencingToken: aliceTurn.fencingToken,
+      }),
+    ).resolves.toEqual({ ok: true, applied: false, maxEventOrdinal: 7 })
+    await expect(
+      input.sessions.syncSessionMessages(bob, {
+        updatedAt: Date.now(),
+        sessionId: "ses_messages",
+        workspaceId: "ws_main",
+        messages: [...messages, { info: { id: "m4", role: "assistant" }, parts: [] }],
+        maxEventOrdinal: 7,
+        fencingToken: aliceTurn.fencingToken,
+      }),
+    ).rejects.toMatchObject({ code: "resource_conflict" })
+    const takeover = await input.sessions.acquireSessionTurn({
+      principalKind: "user",
+      actorId: bob.principal!.actorId,
+      actorKind: "human",
+      sessionId: "ses_messages",
+      workspaceId: "ws_main",
+      turnId: "m5",
+    })
+    await expect(
+      input.sessions.syncSessionMessages(bob, {
+        updatedAt: Date.now(),
+        sessionId: "ses_messages",
+        workspaceId: "ws_main",
+        messages,
+        maxEventOrdinal: 8,
+        fencingToken: aliceTurn.fencingToken,
+      }),
+    ).rejects.toMatchObject({ code: "resource_conflict", message: expect.stringContaining("stale") })
+    expect(takeover.fencingToken).toBeGreaterThan(aliceTurn.fencingToken)
+    await expect(
+      input.sessions.syncSessionMessages(bob, {
+        updatedAt: Date.now(),
+        sessionId: "ses_messages",
+        workspaceId: "ws_main",
+        messages: [{ info: { role: "user" }, parts: [] }],
+        maxEventOrdinal: 8,
+        fencingToken: takeover.fencingToken,
+      }),
+    ).rejects.toMatchObject({ code: "invalid_input" })
+    await expect(
+      input.sessions.syncSessionMessages(bob, {
+        updatedAt: Date.now(),
+        sessionId: "ses_unknown",
+        workspaceId: "ws_main",
+        messages,
+        maxEventOrdinal: 8,
+        fencingToken: takeover.fencingToken,
+      }),
+    ).rejects.toMatchObject({ status: 403 })
+    expect(await input.database.prepare("select 1 from sessions where session_id = 'ses_unknown'").first()).toBeNull()
+  })
+
+  test("updates only registered visible sessions, for the workspace's owner alone, and replace hides the omitted ones", async () => {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_a", sessionId: "ses_a" })
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_b", sessionId: "ses_b" })
+    await input.sessions.grantSessionShare(alice, {
+      sessionId: "ses_b",
+      workspaceId: "ws_main",
+      grantedToUserId: bob.principal!.userId,
+      level: "send",
+    })
+    await expect(input.sessions.upsertSessionVisibility(bob, {
+      workspaceId: "ws_main",
+      sessions: [{ sessionId: "ses_b", title: "share holder update" }],
+    })).rejects.toMatchObject({ status: 403 })
+    await expect(
+      input.sessions.upsertSessionVisibility(alice, {
+        workspaceId: "ws_main",
+        sessions: [{ sessionId: "ses_a", createdAt: 123 }],
+      }),
+    ).rejects.toMatchObject({ code: "resource_conflict" })
+    await expect(
+      input.sessions.upsertSessionVisibility(alice, {
+        workspaceId: "ws_main",
+        sessions: [{ sessionId: "ses_unknown", title: "must not fabricate" }],
+      }),
+    ).rejects.toMatchObject({ status: 403 })
+    expect(await input.database.prepare("select 1 from sessions where session_id = 'ses_unknown'").first()).toBeNull()
+    const updatedAt = async (sessionId: string) =>
+      await input.database.prepare("select updated_at, deleted_at from sessions where session_id = ?").bind(sessionId).first()
+    const registered = await updatedAt("ses_b")
+
+    await input.sessions.replaceSessionVisibility(alice, {
+      workspaceId: "ws_main",
+      sessions: [{ sessionId: "ses_a", title: "kept" }],
+    })
+    expect(await input.sessions.listSessions(alice, { workspaceId: "ws_main" })).toEqual([
+      expect.objectContaining({ session_id: "ses_a", title: "kept" }),
+    ])
+    expect(await input.sessions.listSessions(bob, { workspaceId: "ws_main" })).toEqual([])
+    expect(await updatedAt("ses_b")).toEqual({ ...registered, deleted_at: expect.any(Number) })
+  })
+
+  test("a send share deletes nothing of the session it reaches", async () => {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_a", sessionId: "ses_a" })
+    await input.sessions.grantSessionShare(alice, {
+      sessionId: "ses_a",
+      workspaceId: "ws_main",
+      grantedToUserId: bob.principal!.userId,
+      level: "send",
+    })
+    await expect(input.sessions.replaceSessionVisibility(bob, { workspaceId: "ws_main", sessions: [] }))
+      .rejects.toMatchObject({ status: 403 })
+    expect(await input.database.prepare("select deleted_at from sessions where session_id = 'ses_a'").first())
+      .toEqual({ deleted_at: null })
+    expect("deleteSessionVisibility" in input.sessions).toBe(false)
+  })
+
+  test("a title from an older runtime snapshot does not replace a newer one", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_a", sessionId: "ses_a" })
+    const write = (title: string, updatedAt: number) =>
+      input.sessions.upsertSessionVisibility(alice, { workspaceId: "ws_main", sessions: [{ sessionId: "ses_a", title, updatedAt }] })
+
+    await write("Renamed", 3_000_000_000_000)
+    await write("Original", 2_000_000_000_000)
+
+    expect(await input.sessions.listSessions(alice, { workspaceId: "ws_main" })).toEqual([
+      expect.objectContaining({ session_id: "ses_a", title: "Renamed", updated_at: 3_000_000_000_000 }),
+    ])
+  })
+
+  test("a turn lease records no human turn: the runtime's published row is that column's one writer", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_turn", sessionId: "ses_turn" })
+
+    await input.sessions.acquireSessionTurn({
+      principalKind: "user",
+      actorId: alice.principal!.actorId,
+      actorKind: "human",
+      sessionId: "ses_turn",
+      workspaceId: "ws_main",
+      turnId: "m1",
+    })
+
+    const rows = await input.sessions.listSessions(alice, { workspaceId: "ws_main" })
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).not.toHaveProperty("last_human_turn_at")
+  })
+
+  test("orders the session list by the last human turn and pages past the never-prompted rows", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+    for (const sessionId of ["ses_first", "ses_second", "ses_quiet"]) {
+      await reserveAndRegister(input.sessions, alice, { operationId: `op_${sessionId}`, sessionId })
+    }
+    // What the runtimes' published rows leave in the column.
+    const published = async (sessionId: string, at: number) => {
+      await input.database.prepare("update sessions set last_human_turn_at = ? where session_id = ?").bind(at, sessionId).run()
+    }
+    await published("ses_first", 1_900_000_000_001)
+    await published("ses_second", 1_900_000_000_002)
+
+    const sessions = await input.sessions.listSessions(alice, { workspaceId: "ws_main" })
+    const page = buildSessionListResponse({ query: sessionListQuery("limit=2"), sessions })
+    expect(page.items?.map((item) => item.sessionId)).toEqual(["ses_second", "ses_first"])
+
+    const rest = buildSessionListResponse({
+      query: sessionListQuery(`limit=2&cursor=${encodeURIComponent(page.nextCursor!)}`),
+      sessions,
+    })
+    expect(rest.items?.map((item) => item.sessionId)).toEqual(["ses_quiet"])
+  })
+})
+
+/** The query `GET /api/control/session-list` builds for a cloud workspace rail. */
+function sessionListQuery(search: string) {
+  return parseSessionListQuery(
+    new URL(
+      `https://control.test/api/control/session-list?scope=workspace&workspaceId=ws_main&sort=human_turn_desc&${search}`,
+    ),
+  )
+}
+
+describe("D1 session list pages", () => {
+  test("satisfies the provider-neutral session-page conformance surface", async () => {
+    const input = await setup()
+    const { alice, admin } = await sharedWorkspace(input)
+    const second = await input.workspace.createWorkspace(alice, {
+      workspaceId: "ws_second",
+      orgId: "org_acme",
+      displayName: "second",
+      repoUrl: "https://github.com/acme/main.git",
+      backing: "local-worktree",
+    })
+    await input.workspace.createWorkspace(admin, {
+      workspaceId: "ws_colleague",
+      orgId: "org_acme",
+      displayName: "colleague",
+      repoUrl: "https://github.com/acme/main.git",
+      backing: "local-worktree",
+    })
+    const stranger = await signed(input.workspace, "stranger")
+    await input.workspace.createHostedOrganization(stranger, { name: "Elsewhere", orgId: "org_elsewhere" })
+    const theirs = await input.workspace.createWorkspace(stranger, {
+      workspaceId: "ws_theirs",
+      orgId: "org_elsewhere",
+      displayName: "theirs",
+      repoUrl: "https://github.com/elsewhere/theirs.git",
+      backing: "cloud-vm",
+    })
+    const user = (auth: SignedControlPlaneAuth) => ({
+      auth,
+      runtime: { principalKind: "user" as const, actorId: auth.principal!.actorId, actorKind: "human" as const },
+    })
+
+    const report = await exerciseSessionPageConformance({
+      authority: input.sessions,
+      now: input.now,
+      publishHumanTurn: async ({ sessionId, workspaceId, at }) => {
+        await input.database
+          .prepare("update sessions set last_human_turn_at = max(coalesce(last_human_turn_at, 0), ?) where session_id = ? and workspace_id = ?")
+          .bind(at, sessionId, workspaceId)
+          .run()
+      },
+      projectId: second.project_id,
+      workspaceIds: ["ws_main", "ws_second"],
+      reader: user(alice),
+      colleague: { ...user(admin), workspaceId: "ws_colleague" },
+      stranger: { ...user(stranger), projectId: theirs.project_id, workspaceId: "ws_theirs" },
+    })
+
+    expect(report.pages).toBeGreaterThanOrEqual(3)
+    expect(report.strangerSees).toEqual([])
+    expect(report.readerSeesOfStrangersProject).toEqual([])
+  })
+})
+
+describe("D1 latest views", () => {
+  test("satisfies the provider-neutral latest-view conformance surface", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+
+    await expect(exerciseLatestViewConformance({
+      authority: input.sessions,
+      workspaceId: "ws_main",
+      creator: { auth: alice, runtime: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" } },
+    })).resolves.toEqual({ surface: ["u2", "a2"], turn: ["u2", "a2-tool", "a2"], earlier: ["u1", "a1"] })
+    await expect(exerciseFirstReadConformance({
+      authority: input.sessions,
+      workspaceId: "ws_main",
+      creator: { auth: alice, runtime: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" } },
+    })).resolves.toEqual({ outline: ["u1", "u2"], page: ["u1", "u2"] })
+    await expect(exerciseTurnPageConformance({
+      authority: input.sessions,
+      workspaceId: "ws_main",
+      creator: { auth: alice, runtime: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" } },
+    })).resolves.toEqual(["u1", "u2"])
+    await expect(exerciseSessionPartConformance({
+      authority: input.sessions,
+      workspaceId: "ws_main",
+      creator: { auth: alice, runtime: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" } },
+    })).resolves.toBe("a1-p0")
+  })
+  test("a turn with a prompt steered into it reads whole from its own prompt, by the turn ids the runtime published", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+    const sessionId = "ses_steered"
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_steered", sessionId })
+    const runtime = { principalKind: "user" as const, actorId: alice.principal!.actorId, actorKind: "human" as const, sessionId, workspaceId: "ws_main" }
+    let fencingToken = 0
+    for (const turnId of ["u1", "u2", "s2"]) {
+      const lease = await input.sessions.acquireSessionTurn({ ...runtime, turnId })
+      await input.sessions.releaseSessionTurn({ ...runtime, turnId, leaseId: lease.leaseId, fencingToken: lease.fencingToken })
+      fencingToken = lease.fencingToken
+    }
+    const entry = (id: string, role: "user" | "assistant", turnId: string, text: string) =>
+      ({ info: { id, role, sessionID: sessionId }, parts: [{ type: "text", text }], turnId })
+    await input.sessions.syncSessionMessages(alice, {
+      updatedAt: Date.now(), sessionId, workspaceId: "ws_main", maxEventOrdinal: 7, fencingToken,
+      messages: [
+        entry("u1", "user", "u1_r", "first"),
+        entry("u1_r", "assistant", "u1_r", "first answer"),
+        entry("u2", "user", "u2_r", "second"),
+        entry("u2_r", "assistant", "u2_r", "before the steer"),
+        entry("s2", "user", "u2_r", "steer"),
+        entry("s2_r", "assistant", "u2_r", "after the steer"),
+      ],
+    })
+    const read = async (page: { view: "latest-turn" | "latest-surface"; before?: string }) =>
+      await input.sessions.readSessionMessages(alice, { sessionId, workspaceId: "ws_main", ...page }) as {
+        messages: Array<{ info: { id: string }; turnId?: string }>
+        nextCursor?: string
+      }
+
+    const turn = await read({ view: "latest-turn" })
+    expect(turn.messages.map((message) => [message.info.id, message.turnId])).toEqual([
+      ["u2", "u2_r"], ["u2_r", "u2_r"], ["s2", "u2_r"], ["s2_r", "u2_r"],
+    ])
+    const earlier = await read({ view: "latest-turn", before: turn.nextCursor })
+    expect(earlier.messages.map((message) => message.info.id)).toEqual(["u1", "u1_r"])
+    expect(earlier.nextCursor).toBeUndefined()
+    const surface = await read({ view: "latest-surface" })
+    expect(surface.messages.map((message) => message.info.id)).toEqual(["u2", "s2", "s2_r"])
+  })
+})
+
+describe("D1 session authority, shares of a session this plane never registered", () => {
+  test("answer its workspace's owner, and refuse everyone else exactly as for another person's or an unknown session", async () => {
+    const input = await setup()
+    const { alice, outsider } = await sharedWorkspace(input)
+    const teammate = await signed(input.workspace, "teammate")
+    await inviteOrgMember(input.database, alice, {
+      orgId: "org_acme",
+      userPublicId: teammate.principal!.userId,
+      role: "member",
+    })
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_a", sessionId: "ses_a" })
+    const refusal = async (who: SignedControlPlaneAuth, sessionId: string, workspaceId = "ws_main") => {
+      const error = await input.sessions.listSessionShares(who, { sessionId, workspaceId })
+        .then(() => undefined, (cause: unknown) => cause as { code?: string; status?: number })
+      return { code: error?.code, status: error?.status }
+    }
+
+    await expect(input.sessions.listSessionShares(alice, {
+      sessionId: "ses_created_on_the_machine",
+      workspaceId: "ws_main",
+    })).resolves.toEqual({ can_manage_shares: false, grants: [] })
+    const denied = { code: "workspace_authorization_denied", status: 403 }
+    for (const who of [teammate, outsider]) {
+      expect(await refusal(who, "ses_created_on_the_machine")).toEqual(denied)
+      expect(await refusal(who, "ses_a")).toEqual(denied)
+      expect(await refusal(who, "ses_a", "ws_unknown")).toEqual(denied)
+    }
+  })
+})
+
+describe("D1 session authority, write classes", () => {
+  test("satisfies the provider-neutral session-write-class conformance surface", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+    const teammate = await signed(input.workspace, "teammate")
+    await inviteOrgMember(input.database, alice, {
+      orgId: "org_acme",
+      userPublicId: teammate.principal!.userId,
+      role: "member",
+    })
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_classes", sessionId: "ses_classes" })
+    await expect(input.workspace.openWorkspace(teammate, { workspaceId: "ws_main" }))
+      .rejects.toMatchObject({ code: "workspace_authorization_denied" })
+
+    await expect(
+      exerciseSessionWriteClassConformance({
+        authority: input.sessions,
+        shares: input.sessions,
+        workspaceId: "ws_main",
+        sessionId: "ses_classes",
+        creator: {
+          auth: alice,
+          runtime: { principalKind: "user", actorId: alice.principal!.actorId, actorKind: "human" },
+        },
+        grantee: {
+          runtime: { principalKind: "user", actorId: teammate.principal!.actorId, actorKind: "human" },
+          target: { grantedToUserId: teammate.principal!.userId },
+        },
+      }),
+    ).resolves.toEqual({
+      sendGranteeDrivesTheTurn: true,
+      sendGranteeRefusedSessionControl: true,
+      creatorHoldsBothClasses: true,
+      absentClassAsksAboutTheTurn: true,
+    })
+  })
+})

@@ -1,0 +1,42 @@
+{
+  "id": "thoughts-fold-into-commands",
+  "title": "Thoughts between commands fold into their work group, and a described command reads as its description",
+  "source": {
+    "kind": "test",
+    "file": "../agent-runtime-contract/src/turn-fold.test.ts",
+    "name": "a thought joins the tool group of the tool it comes before"
+  },
+  "partKinds": [
+    "reasoning",
+    "tool:execute",
+    "text"
+  ],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "What changed?",
+        "steps": [
+          { "kind": "reasoning", "text": "Check the working tree first." },
+          { "kind": "tool", "tool": "execute", "title": "git status --short", "input": { "command": "git status --short" }, "text": " M README.md" },
+          { "kind": "reasoning", "text": "Then the recent history." },
+          { "kind": "tool", "tool": "execute", "title": "git log --oneline -3", "input": { "command": "git log --oneline -3" }, "text": "abc1234 corpus" },
+          { "kind": "reasoning", "text": "One file changed since the last commit." },
+          { "kind": "text", "text": "README.md changed." }
+        ]
+      },
+      {
+        "prompt": "Count the TODOs.",
+        "steps": [
+          { "kind": "tool", "tool": "execute", "title": "grep -c TODO README.md", "input": { "command": "grep -c TODO README.md", "description": "Count TODO markers in the README" }, "text": "0" },
+          { "kind": "text", "text": "There are no TODOs." }
+        ]
+      }
+    ]
+  },
+  "ready": "There are no TODOs.",
+  "interactions": [
+    { "kind": "toggleFold", "turn": 0 }
+  ],
+  "invariant": "A thought that comes before a command sits inside that command's work group, whose header counts only the commands; the thought before the reply stays above it. A command whose agent described it reads as that description, and one with no description reads \"Ran <command>\"."
+}

@@ -1,0 +1,7 @@
+::highlight(composer-quote) {
+  background-color: rgb(from var(--surface-warning-base) r g b / 0.45);
+}
+
+::highlight(composer-quote-edit) {
+  background-color: rgb(from var(--v2-background-bg-accent) r g b / 0.35);
+}

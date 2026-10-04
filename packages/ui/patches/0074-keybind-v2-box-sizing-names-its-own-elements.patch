@@ -1,0 +1,31 @@
+Subject: keybind-v2: the border-box rule names the key and label it sizes
+
+What: `[data-component="keybind-v2"] *` and its `::before` / `::after` forms
+become the same rule on `.ui-keybind-v2-key` and `.ui-keybind-v2-label`, the
+only elements the component renders inside itself, and their pseudo-elements.
+Why: a selector whose rightmost compound is `*` is tested against every element
+on the page, and each test walks the element's ancestors looking for a
+keybind. The session pane has none, yet these three rules were about a quarter
+of its selector-matching time. Every element the rule matched before it matches
+now, so no computed style changes.
+
+diff --git a/src/v2/components/keybind-v2.css b/src/v2/components/keybind-v2.css
+index 2fcd7b1e81..277e091fc7 100644
+--- a/src/v2/components/keybind-v2.css
++++ b/src/v2/components/keybind-v2.css
+@@ -15,9 +15,12 @@
+   flex-shrink: 0;
+ }
+ 
+-[data-component="keybind-v2"] *,
+-[data-component="keybind-v2"] *::before,
+-[data-component="keybind-v2"] *::after {
++[data-component="keybind-v2"] .ui-keybind-v2-key,
++[data-component="keybind-v2"] .ui-keybind-v2-key::before,
++[data-component="keybind-v2"] .ui-keybind-v2-key::after,
++[data-component="keybind-v2"] .ui-keybind-v2-label,
++[data-component="keybind-v2"] .ui-keybind-v2-label::before,
++[data-component="keybind-v2"] .ui-keybind-v2-label::after {
+   box-sizing: border-box;
+ }
+ 

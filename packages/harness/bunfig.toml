@@ -1,0 +1,2 @@
+[test]
+preload = ["./e2e/harness/pinned-harnesses.ts"]

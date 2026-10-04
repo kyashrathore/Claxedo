@@ -1,0 +1,98 @@
+{
+  "name": "@opencode-ai/ui",
+  "version": "1.18.32",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anomalyco/opencode.git",
+    "directory": "packages/ui"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "files": [
+    "dist/**/*.d.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "!src/**/*.test.ts",
+    "!src/**/*.test.tsx",
+    "src/**/*.css",
+    "src/theme/themes/*.json",
+    "src/components/app-icons/sprite.svg",
+    "src/components/file-icons/sprite.svg",
+    "src/components/provider-icons/sprite.svg",
+    "src/assets/icons/app/*",
+    "src/assets/fonts/*",
+    "src/assets/audio/*",
+    "LICENSE"
+  ],
+  "exports": {
+    "./package.json": "./package.json",
+    "./*": "./src/components/*.tsx",
+    "./i18n/*": "./src/i18n/*.ts",
+    "./utils/*": "./src/utils/*.ts",
+    "./hooks": "./src/hooks/index.ts",
+    "./context": "./src/context/index.ts",
+    "./context/*": "./src/context/*.tsx",
+    "./styles": "./src/styles/index.css",
+    "./styles/tailwind": "./src/styles/tailwind/index.css",
+    "./theme": "./src/theme/index.ts",
+    "./theme/*": "./src/theme/*.ts",
+    "./theme/context": "./src/theme/context.tsx",
+    "./icons/provider": "./src/components/provider-icons/types.ts",
+    "./icons/file-type": "./src/components/file-icons/types.ts",
+    "./icons/app": "./src/components/app-icons/types.ts",
+    "./fonts/*": "./src/assets/fonts/*",
+    "./audio/*": "./src/assets/audio/*",
+    "./*.css": "./src/components/*.css",
+    "./v2/*.css": "./src/v2/components/*.css",
+    "./v2/*": "./src/v2/components/*.tsx",
+    "./v2/styles/*": "./src/v2/styles/*"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "typecheck": "tsgo --noEmit",
+    "test": "mkdir -p .artifacts/unit && node ../../script/test-deadline.mjs bun test src --only-failures --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
+    "dev": "vite",
+    "generate:tailwind": "bun run script/tailwind.ts",
+    "generate:v2-oc2": "bun run script/build-oc2-v2-overrides.ts",
+    "sync:upstream": "bun run script/sync-upstream.ts"
+  },
+  "devDependencies": {
+    "@solidjs/meta": "catalog:",
+    "@tsconfig/node22": "catalog:",
+    "@types/bun": "catalog:",
+    "@types/katex": "0.16.7",
+    "@typescript/native-preview": "catalog:",
+    "ajv": "8.20.0",
+    "marked-shiki": "catalog:",
+    "solid-js": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plugin-icons-spritesheet": "3.0.1",
+    "vite-plugin-solid": "catalog:"
+  },
+  "dependencies": {
+    "@claxedo/helpers": "workspace:*",
+    "@kobalte/core": "catalog:",
+    "@pierre/diffs": "catalog:",
+    "@solid-primitives/event-listener": "2.4.6",
+    "@solid-primitives/resize-observer": "2.2.0",
+    "fuzzysort": "catalog:",
+    "katex": "0.16.47",
+    "marked": "catalog:",
+    "motion": "12.34.5",
+    "remeda": "catalog:",
+    "solid-list": "catalog:",
+    "solid-sonner": "catalog:"
+  },
+  "peerDependencies": {
+    "@solidjs/meta": "^0.29.0",
+    "solid-js": "^1.9.0"
+  }
+}

@@ -1,0 +1,243 @@
+import type { MiddlewareHandler } from "hono"
+import { asRecord } from "@claxedo/helpers/guards"
+import type { RelayHostAuthContext, RelayHostAuthOptions } from "@claxedo/session-core/relay-host"
+import { trimToUndefined } from "@claxedo/helpers/string"
+import { sessionScopeReaches } from "@claxedo/workspace-relay-protocol"
+
+/** Hop-only header stamped by `@claxedo/local-server` `embedded()` after actor verification. */
+export const EMBEDDED_RELAY_HOST_AUTH_HEADER = "x-claxedo-embedded-relay-host-auth"
+
+/**
+ * Requests the embedding host admitted from outside its process as the
+ * machine's own user. Membership, not a header: the host builds the request it
+ * hands the runtime, so no caller of the host can write the mark, and every
+ * request the host's process makes for itself reaches the runtime unmarked.
+ */
+const machineUserRequests = new WeakSet<Request>()
+
+export function markEmbeddedMachineUserRequest(request: Request): Request {
+  machineUserRequests.add(request)
+  return request
+}
+
+export type WorkspaceRuntimeRequestGuard = (input: {
+  request: Request
+  path: string
+  method: string
+}) => boolean | Response | void | Promise<boolean | Response | void>
+
+export type WorkspaceRuntimeExposure =
+  | { kind: "loopback" }
+  | { kind: "relay"; auth: RelayHostAuthOptions }
+  | {
+      kind: "private-network"
+      protection: { kind: "host-guard"; name: string; guard: WorkspaceRuntimeRequestGuard }
+      runtimeAuth: WorkspaceRuntimeRequestGuard
+    }
+  | {
+      kind: "private-network"
+      protection: { kind: "dev-unsafe"; reason: string }
+      runtimeAuth: { kind: "dev-unsafe" }
+    }
+  | {
+      kind: "embedded"
+      owner: string
+      middleware: "caller-owned"
+      guard: WorkspaceRuntimeRequestGuard
+    }
+
+export function loopbackWorkspaceRuntimeExposure(): WorkspaceRuntimeExposure {
+  return { kind: "loopback" }
+}
+
+export function relayWorkspaceRuntimeExposure(auth: RelayHostAuthOptions): WorkspaceRuntimeExposure {
+  return { kind: "relay", auth }
+}
+
+export function privateNetworkDevUnsafeWorkspaceRuntimeExposure(reason: string): WorkspaceRuntimeExposure {
+  return {
+    kind: "private-network",
+    protection: {
+      kind: "dev-unsafe",
+      reason,
+    },
+    runtimeAuth: { kind: "dev-unsafe" },
+  }
+}
+
+export function privateNetworkWorkspaceRuntimeExposure(input: {
+  name: string
+  guard: WorkspaceRuntimeRequestGuard
+  runtimeAuth: WorkspaceRuntimeRequestGuard
+}): WorkspaceRuntimeExposure {
+  return {
+    kind: "private-network",
+    protection: {
+      kind: "host-guard",
+      name: input.name,
+      guard: input.guard,
+    },
+    runtimeAuth: input.runtimeAuth,
+  }
+}
+
+export function embeddedWorkspaceRuntimeExposure(input: {
+  owner: string
+  guard: WorkspaceRuntimeRequestGuard
+}): WorkspaceRuntimeExposure {
+  return {
+    kind: "embedded",
+    owner: input.owner,
+    middleware: "caller-owned",
+    guard: input.guard,
+  }
+}
+
+export function exposureBoundaryName(exposure: WorkspaceRuntimeExposure) {
+  if (exposure.kind === "private-network") {
+    return exposure.protection.kind === "dev-unsafe" ? "private-network-dev-unsafe" : "private-network-host-guard"
+  }
+  return exposure.kind
+}
+
+export function assertWorkspaceRuntimeExposure(input: {
+  exposure: WorkspaceRuntimeExposure | undefined
+  hostname?: string
+  isLoopbackHostname?: (hostname: string) => boolean
+  env?: Pick<NodeJS.ProcessEnv, "NODE_ENV">
+}) {
+  if (!input.exposure) throw new Error("Workspace runtime exposure is required")
+  if (input.exposure.kind === "loopback" && input.hostname && input.isLoopbackHostname && !input.isLoopbackHostname(input.hostname)) {
+    throw new Error(`Refusing loopback workspace runtime exposure on non-loopback host ${input.hostname}`)
+  }
+  if (input.exposure.kind === "relay" && !input.exposure.auth) {
+    throw new Error("Workspace runtime relay exposure requires relay auth")
+  }
+  if (input.exposure.kind === "embedded" && typeof input.exposure.guard !== "function") {
+    throw new Error("Workspace runtime embedded exposure requires a caller-owned guard")
+  }
+  if (
+    input.exposure.kind === "private-network"
+    && input.exposure.protection.kind === "host-guard"
+    && typeof input.exposure.protection.guard !== "function"
+  ) {
+    throw new Error("Workspace runtime private-network exposure requires a host guard")
+  }
+  if (
+    input.exposure.kind === "private-network"
+    && input.exposure.protection.kind === "host-guard"
+    && typeof input.exposure.runtimeAuth !== "function"
+  ) {
+    throw new Error("Workspace runtime private-network exposure requires runtime auth")
+  }
+  if (
+    input.exposure.kind === "private-network"
+    && input.exposure.protection.kind === "dev-unsafe"
+    && (input.env?.NODE_ENV === "production" || input.env?.NODE_ENV === "test")
+  ) {
+    throw new Error("Workspace runtime dev-unsafe private-network exposure is not allowed in production or test")
+  }
+}
+
+export function createWorkspaceRuntimeExposureMiddleware(exposure: WorkspaceRuntimeExposure): MiddlewareHandler {
+  return async (c, next) => {
+    const guard = exposure.kind === "embedded"
+      ? exposure.guard
+      : exposure.kind === "private-network" && exposure.protection.kind === "host-guard"
+        ? exposure.protection.guard
+        : undefined
+    const request = {
+      request: c.req.raw,
+      path: c.req.path,
+      method: c.req.method,
+    }
+    const result = guard ? await guard(request) : undefined
+    if (result instanceof Response) return result
+    if (result === false) {
+      return c.json({
+        error: {
+          code: "workspace_runtime_exposure_denied",
+          message: "Workspace runtime exposure guard denied the request",
+        },
+      }, 403)
+    }
+    if (exposure.kind === "embedded") {
+      const stamped = parseEmbeddedRelayHostAuth(c.req.header(EMBEDDED_RELAY_HOST_AUTH_HEADER))
+      if (stamped && !sessionScopeReaches(stamped.session_id, c.req.path, new URL(c.req.url).search)) {
+        return c.json({ error: { code: "relay_scope_denied", message: "This token reaches one session and nothing else" } }, 403)
+      }
+      if (stamped) {
+        c.set("relayHostAuth", stamped)
+      }
+      if (machineUserRequests.has(c.req.raw)) c.set("machineUserRequest", true)
+    }
+    if (exposure.kind === "private-network" && exposure.protection.kind === "host-guard") {
+      const runtimeAuth = typeof exposure.runtimeAuth === "function"
+        ? await exposure.runtimeAuth(request)
+        : false
+      if (runtimeAuth instanceof Response) return runtimeAuth
+      if (runtimeAuth === false) {
+        return c.json({
+          error: {
+            code: "workspace_runtime_auth_denied",
+            message: "Workspace runtime auth denied the request",
+          },
+        }, 401)
+      }
+    }
+    return await next()
+  }
+}
+
+function parseEmbeddedRelayHostAuth(value: string | undefined): RelayHostAuthContext["relayHostAuth"] {
+  if (!value?.trim()) return undefined
+  try {
+    const row = asRecord(JSON.parse(value))
+    if (!row) return undefined
+    const principal_kind = row.principal_kind === "user" || row.principal_kind === "service"
+      ? row.principal_kind
+      : undefined
+    const actor_id = trimToUndefined(row.actor_id)
+    const user_id = trimToUndefined(row.user_id)
+    const actor_kind = row.actor_kind === "human" || row.actor_kind === "agent" ? row.actor_kind : undefined
+    const actor_public_id = trimToUndefined(row.actor_public_id)
+    const actor_name = trimToUndefined(row.actor_name)
+    const workspace_id = trimToUndefined(row.workspace_id)
+    const org_id = trimToUndefined(row.org_id)
+    const session_id = trimToUndefined(row.session_id)
+    const role = row.role === "viewer" || row.role === "editor" || row.role === "admin" || row.role === "owner"
+      ? row.role
+      : undefined
+    if (
+      !principal_kind
+      || (row.user_id !== undefined && !user_id)
+      || !actor_id
+      || !actor_kind
+      || (principal_kind === "user" && actor_kind !== "human")
+      || (principal_kind === "service" && actor_kind !== "agent")
+      || !actor_public_id
+      || !actor_name
+      || !workspace_id
+      || !org_id
+      || !role
+      || (row.session_id !== undefined && !session_id)
+    ) return undefined
+    return {
+      principal_kind,
+      actor_id,
+      ...(user_id ? { user_id } : {}),
+      actor_kind,
+      actor_public_id,
+      actor_name,
+      ...(trimToUndefined(row.actor_avatar_url) ? { actor_avatar_url: trimToUndefined(row.actor_avatar_url) } : {}),
+      workspace_id,
+      org_id,
+      role,
+      ...(session_id ? { session_id } : {}),
+      ...(trimToUndefined(row.host_id) ? { host_id: trimToUndefined(row.host_id) } : {}),
+      ...(row.backing === "cloud-vm" || row.backing === "local-worktree" ? { backing: row.backing } : {}),
+    }
+  } catch {
+    return undefined
+  }
+}

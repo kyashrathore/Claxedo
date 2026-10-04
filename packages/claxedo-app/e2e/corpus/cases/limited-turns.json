@@ -1,0 +1,43 @@
+{
+  "id": "limited-turns",
+  "title": "A rate-limited turn offers Resend; a usage-limited turn asks for another model or account",
+  "source": {
+    "kind": "test",
+    "file": "src/session/view/timeline/turn-recovery.test.ts",
+    "name": "a rate limit asks to try again shortly and offers Resend"
+  },
+  "partKinds": [
+    "text",
+    "error"
+  ],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "Say hello.",
+        "steps": [
+          {
+            "kind": "error",
+            "message": "API Error: Request rejected (429) · This request would exceed your account's rate limit. Please try again later."
+          }
+        ]
+      },
+      {
+        "prompt": "Say hello again.",
+        "steps": [
+          {
+            "kind": "text",
+            "text": "Starting again."
+          },
+          {
+            "kind": "error",
+            "message": "You've reached your Codex usage limit. It will reset in about 5 hours."
+          }
+        ]
+      }
+    ]
+  },
+  "ready": "Starting again.",
+  "interactions": [],
+  "invariant": "The 429 turn reads 'Rate limited · Try again shortly.' with a Resend button; the exhausted window reads 'Usage limit reached' with no button."
+}

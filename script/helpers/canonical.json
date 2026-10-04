@@ -1,0 +1,90 @@
+{
+  "canonical": [
+    {
+      "module": "@claxedo/helpers/skill-frontmatter",
+      "owner": "packages/claxedo-helpers/src/skill-frontmatter.ts",
+      "names": [
+        "decodeSkillFrontmatter"
+      ]
+    },
+    {
+      "module": "@claxedo/helpers/guards",
+      "owner": "packages/claxedo-helpers/src/guards.ts",
+      "names": [
+        "asArray",
+        "asFiniteNumber",
+        "asRecord",
+        "asRecordOrEmpty",
+        "asString",
+        "assertRecord",
+        "isFiniteNumber",
+        "isRecord",
+        "isString",
+        "isStringList",
+        "nonEmptyString",
+        "numberClaim"
+      ]
+    },
+    {
+      "module": "@claxedo/helpers/readers",
+      "owner": "packages/claxedo-helpers/src/readers.ts",
+      "names": [
+        "readArray",
+        "readField",
+        "readFiniteNumber",
+        "readString"
+      ]
+    },
+    {
+      "module": "@claxedo/helpers/string",
+      "owner": "packages/claxedo-helpers/src/string.ts",
+      "names": [
+        "bearerToken",
+        "escapeRegExp",
+        "trimToEmpty",
+        "trimToUndefined"
+      ]
+    },
+    {
+      "module": "@claxedo/helpers",
+      "owner": "packages/claxedo-helpers/src/url.ts",
+      "names": [
+        "isLoopbackHostname",
+        "isLoopbackHttpUrl"
+      ]
+    },
+    {
+      "module": "@claxedo/helpers",
+      "owner": "packages/claxedo-helpers/src/ip.ts",
+      "names": [
+        "isLoopbackIpAddress",
+        "isPrivateIpAddress",
+        "parseIpAddress"
+      ]
+    },
+    {
+      "module": "@claxedo/helpers",
+      "owner": "packages/claxedo-helpers/src/peer.ts",
+      "names": [
+        "requestPeerAddress",
+        "stampRequestPeerAddress"
+      ]
+    },
+    {
+      "module": "@claxedo/helpers",
+      "owner": "packages/claxedo-helpers/src/env.ts",
+      "names": [
+        "envText"
+      ]
+    },
+    {
+      "module": "@claxedo/helpers/fs",
+      "owner": "packages/claxedo-helpers/src/fs.ts",
+      "names": [
+        "isMissingFile",
+        "readJsonFile"
+      ]
+    }
+  ],
+  "twins": []
+}

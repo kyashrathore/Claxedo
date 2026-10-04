@@ -1,0 +1,112 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "claxedo-app",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "cwd": "packages/claxedo-app",
+      "port": 4445
+    },
+    {
+      "name": "claxedo-app-verify",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PORT=4446",
+        "bun",
+        "run",
+        "dev"
+      ],
+      "cwd": "packages/claxedo-app",
+      "port": 4446,
+      "autoPort": false
+    },
+    {
+      "name": "claxedo-server",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "npm",
+        "run",
+        "dev"
+      ],
+      "cwd": "packages/claxedo-server",
+      "port": 2593,
+      "autoPort": false
+    },
+    {
+      "name": "claxedo-server-attach",
+      "url": "http://localhost:2593",
+      "port": 2593
+    },
+    {
+      "name": "claxedo-web-astro",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "astro",
+        "dev",
+        "--port",
+        "4610"
+      ],
+      "cwd": "packages/claxedo-web",
+      "port": 4610
+    },
+    {
+      "name": "claxedo-web-verify",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "astro",
+        "dev",
+        "--port",
+        "4612"
+      ],
+      "cwd": "packages/claxedo-web",
+      "port": 4612
+    },
+    {
+      "name": "claxedo-docs",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "--yes",
+        "mintlify@latest",
+        "dev",
+        "--port",
+        "3333"
+      ],
+      "cwd": "packages/claxedo-docs",
+      "port": 3333
+    },
+    {
+      "name": "claxedo-server-dev2594",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "CLAXEDO_SERVER_PORT=2594",
+        "CLAXEDO_DATA_DIR=/private/tmp/claude-501/-Users-yashvardhansingh-test-opencode/1818ab91-f95e-4561-a14e-eba4f617cd61/scratchpad/dev-data",
+        "CLAXEDO_EMBEDDED_AUTH_TRUSTED_ORIGINS=http://localhost:4445,http://127.0.0.1:4445",
+        "npm",
+        "run",
+        "dev"
+      ],
+      "cwd": "packages/claxedo-server",
+      "port": 2594,
+      "autoPort": false
+    },
+    {
+      "name": "claxedo-app-proxied",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PORT=4445",
+        "CLAXEDO_DEV_PROXY_TARGET=http://127.0.0.1:2594",
+        "VITE_CLAXEDO_SERVER_URL=http://localhost:4445",
+        "bun",
+        "run",
+        "dev"
+      ],
+      "cwd": "packages/claxedo-app",
+      "port": 4445,
+      "autoPort": false
+    }
+  ]
+}

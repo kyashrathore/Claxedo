@@ -1,0 +1,4 @@
+#!/bin/sh
+if [ -n "$PS_SHIM_EXIT" ]; then exit "$PS_SHIM_EXIT"; fi
+sleep "${PS_SHIM_DELAY_SECONDS:-0}"
+exec /bin/ps "$@"

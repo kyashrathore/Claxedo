@@ -1,0 +1,189 @@
+{
+  "name": "@claxedo/sandbox-manager",
+  "version": "0.10.0",
+  "type": "module",
+  "description": "Sandbox lifecycle manager with epoch-based leases and pluggable drivers for Modal, Vercel Sandbox, Cloudflare, Boat, and Docker",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyashrathore/Claxedo.git",
+    "directory": "packages/sandbox-manager"
+  },
+  "keywords": [
+    "claxedo",
+    "sandbox",
+    "modal",
+    "vercel",
+    "cloudflare",
+    "docker",
+    "boat",
+    "agents"
+  ],
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    },
+    "./command": {
+      "development": "./src/command.ts",
+      "bun": "./src/command.ts",
+      "types": "./dist/command.d.ts",
+      "import": "./dist/command.mjs",
+      "default": "./dist/command.mjs"
+    },
+    "./constants": {
+      "development": "./src/constants.ts",
+      "bun": "./src/constants.ts",
+      "types": "./dist/constants.d.ts",
+      "import": "./dist/constants.mjs",
+      "default": "./dist/constants.mjs"
+    },
+    "./checkpoint-manager": {
+      "development": "./src/checkpoint-manager.ts",
+      "bun": "./src/checkpoint-manager.ts",
+      "types": "./dist/checkpoint-manager.d.ts",
+      "import": "./dist/checkpoint-manager.mjs",
+      "default": "./dist/checkpoint-manager.mjs"
+    },
+    "./defaults": {
+      "development": "./src/defaults.ts",
+      "bun": "./src/defaults.ts",
+      "types": "./dist/defaults.d.ts",
+      "import": "./dist/defaults.mjs",
+      "default": "./dist/defaults.mjs"
+    },
+    "./driver-catalog": {
+      "development": "./src/driver-catalog.ts",
+      "bun": "./src/driver-catalog.ts",
+      "types": "./dist/driver-catalog.d.ts",
+      "import": "./dist/driver-catalog.mjs",
+      "default": "./dist/driver-catalog.mjs"
+    },
+    "./drivers/boat": {
+      "development": "./src/drivers/boat.ts",
+      "bun": "./src/drivers/boat.ts",
+      "types": "./dist/drivers/boat.d.ts",
+      "import": "./dist/drivers/boat.mjs",
+      "default": "./dist/drivers/boat.mjs"
+    },
+    "./drivers/cloudflare": {
+      "development": "./src/drivers/cloudflare.ts",
+      "bun": "./src/drivers/cloudflare.ts",
+      "types": "./dist/drivers/cloudflare.d.ts",
+      "import": "./dist/drivers/cloudflare.mjs",
+      "default": "./dist/drivers/cloudflare.mjs"
+    },
+    "./drivers/docker": {
+      "development": "./src/drivers/docker.ts",
+      "bun": "./src/drivers/docker.ts",
+      "types": "./dist/drivers/docker.d.ts",
+      "import": "./dist/drivers/docker.mjs",
+      "default": "./dist/drivers/docker.mjs"
+    },
+    "./drivers/local-brokering": {
+      "development": "./src/drivers/local-brokering.ts",
+      "bun": "./src/drivers/local-brokering.ts",
+      "types": "./dist/drivers/local-brokering.d.ts",
+      "import": "./dist/drivers/local-brokering.mjs",
+      "default": "./dist/drivers/local-brokering.mjs"
+    },
+    "./drivers/fetch-bridge": {
+      "development": "./src/drivers/fetch-bridge.ts",
+      "bun": "./src/drivers/fetch-bridge.ts",
+      "types": "./dist/drivers/fetch-bridge.d.ts",
+      "import": "./dist/drivers/fetch-bridge.mjs",
+      "default": "./dist/drivers/fetch-bridge.mjs"
+    },
+    "./drivers/modal": {
+      "development": "./src/drivers/modal.ts",
+      "bun": "./src/drivers/modal.ts",
+      "types": "./dist/drivers/modal.d.ts",
+      "import": "./dist/drivers/modal.mjs",
+      "default": "./dist/drivers/modal.mjs"
+    },
+    "./drivers/vercel": {
+      "development": "./src/drivers/vercel.ts",
+      "bun": "./src/drivers/vercel.ts",
+      "types": "./dist/drivers/vercel.d.ts",
+      "import": "./dist/drivers/vercel.mjs",
+      "default": "./dist/drivers/vercel.mjs"
+    },
+    "./image": {
+      "development": "./src/image.ts",
+      "bun": "./src/image.ts",
+      "types": "./dist/image.d.ts",
+      "import": "./dist/image.mjs",
+      "default": "./dist/image.mjs"
+    },
+    "./image-name": {
+      "development": "./src/image-name.ts",
+      "bun": "./src/image-name.ts",
+      "types": "./dist/image-name.d.ts",
+      "import": "./dist/image-name.mjs",
+      "default": "./dist/image-name.mjs"
+    },
+    "./lease-types": {
+      "development": "./src/lease-types.ts",
+      "bun": "./src/lease-types.ts",
+      "types": "./dist/lease-types.d.ts",
+      "import": "./dist/lease-types.mjs",
+      "default": "./dist/lease-types.mjs"
+    },
+    "./runtime-env": {
+      "development": "./src/runtime-env.ts",
+      "bun": "./src/runtime-env.ts",
+      "types": "./dist/runtime-env.d.ts",
+      "import": "./dist/runtime-env.mjs",
+      "default": "./dist/runtime-env.mjs"
+    },
+    "./service-url-exposure": {
+      "development": "./src/service-url-exposure.ts",
+      "bun": "./src/service-url-exposure.ts",
+      "types": "./dist/service-url-exposure.d.ts",
+      "import": "./dist/service-url-exposure.mjs",
+      "default": "./dist/service-url-exposure.mjs"
+    },
+    "./stores/memory": {
+      "development": "./src/stores/memory.ts",
+      "bun": "./src/stores/memory.ts",
+      "types": "./dist/stores/memory.d.ts",
+      "import": "./dist/stores/memory.mjs",
+      "default": "./dist/stores/memory.mjs"
+    }
+  },
+  "files": [
+    "README.md",
+    "LICENSE",
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@claxedo/egress-broker": "workspace:*",
+    "@claxedo/helpers": "workspace:*",
+    "@claxedo/sandbox-contract": "workspace:*",
+    "@vercel/sandbox": "3.3.0",
+    "modal": "0.10.1"
+  },
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "prepublishOnly": "npm run build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "live:boat": "bun scripts/boat-live-check.ts",
+    "test": "mkdir -p .artifacts/unit && node ../../script/test-deadline.mjs bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
+  },
+  "devDependencies": {
+    "@tsconfig/node-lts": "22.0.4",
+    "@types/bun": "1.3.13",
+    "@types/node": "24.12.2",
+    "esbuild": "0.25.12",
+    "typescript": "catalog:",
+    "vitest": "2.1.9"
+  }
+}

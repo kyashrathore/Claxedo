@@ -1,0 +1,77 @@
+Subject: transcript markdown: the enhancement pass names when it changes marked's output
+
+What: `markdownEnhances(html)` is exported next to the pass, and the pass's own
+math and code-block gates are the ones it reads. A test holds, for prose, lists,
+tables, math, fenced and indented code, that the pass changes marked's
+synchronous output exactly when the predicate says so.
+Why: the app paints a block from marked's synchronous output first and then runs
+this pass. When the pass would return that output unchanged, the app keeps the
+first-paint block instead of re-parsing it and replacing identical markup.
+
+diff --git a/src/context/marked-enhances.test.ts b/src/context/marked-enhances.test.ts
+new file mode 100644
+index 0000000000..783bbae0d9
+--- /dev/null
++++ b/src/context/marked-enhances.test.ts
+@@ -0,0 +1,26 @@
++import { expect, test } from "bun:test"
++import { Marked } from "marked"
++import { createMarkdownParser, markdownEnhances, transcriptMarkdownExtensions } from "./marked"
++
++const markdowns = [
++  "Plain **bold**, `code` and a [link](https://example.com).",
++  "- one\n- two\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n> quoted",
++  "Display math:\n\n$$a+b=c$$",
++  "Escaped parentheses \\(x\\) stay prose.",
++  "Inline math \\\\(x\\\\) in prose.",
++  "```ts\nconst fenced = 1\n```",
++  "An indented block:\n\n    const indented = 1\n\nAfter it.",
++]
++
++test("the asynchronous parse changes marked's synchronous output exactly when markdownEnhances says so", async () => {
++  const sync = new Marked(...transcriptMarkdownExtensions)
++  const parser = createMarkdownParser()
++  const seen = await Promise.all(
++    markdowns.map(async (markdown) => {
++      const first = sync.parse(markdown, { async: false })
++      return { markdown, changed: (await parser.parse(markdown)) !== first, enhances: markdownEnhances(first) }
++    }),
++  )
++  expect(seen.map((row) => ({ markdown: row.markdown, changed: row.changed }))).toEqual(seen.map((row) => ({ markdown: row.markdown, changed: row.enhances })))
++  expect(seen.filter((row) => row.enhances).map((row) => row.markdown)).toEqual([markdowns[2], markdowns[4], markdowns[5], markdowns[6]])
++})
+diff --git a/src/context/marked.tsx b/src/context/marked.tsx
+index b156c6a71c..2f4b1ef642 100644
+--- a/src/context/marked.tsx
++++ b/src/context/marked.tsx
+@@ -6,8 +6,19 @@ import { OpenCodeTheme } from "./marked-theme"
+ 
+ export { OpenCodeTheme } from "./marked-theme"
+ 
++const codeBlockPattern = /<pre><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g
++
++function hasMath(html: string) {
++  return html.includes("$$") || html.includes("\\(")
++}
++
++/** False when the asynchronous parse returns marked's synchronous output with the same extensions unchanged. */
++export function markdownEnhances(html: string) {
++  return hasMath(html) || html.search(codeBlockPattern) !== -1
++}
++
+ async function renderMathExpressions(html: string) {
+-  if (!html.includes("$$") && !html.includes("\\(")) return html
++  if (!hasMath(html)) return html
+   const math = await import("./marked-math")
+   return math.renderMathExpressions(html)
+ }
+@@ -24,8 +35,7 @@ async function renderMathExpressions(html: string) {
+  * blocks it builds itself.
+  */
+ async function highlightCodeBlocks(html: string): Promise<string> {
+-  const codeBlockRegex = /<pre><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g
+-  const matches = [...html.matchAll(codeBlockRegex)]
++  const matches = [...html.matchAll(codeBlockPattern)]
+   if (matches.length === 0) return html
+ 
+   const [{ bundledLanguages, addClassToHast }, { getSharedHighlighter }] = await Promise.all([

@@ -1,0 +1,68 @@
+---
+interface Props {
+  title: string
+  description?: string
+  image?: string
+  noindex?: boolean
+  canonicalPath?: string
+}
+
+const {
+  title,
+  description = "Claxedo is the open cloud workspace around the coding agents you already use. Use Claxedo Cloud or deploy the open control plane to your Cloudflare account.",
+  image = "/og.svg",
+  noindex = false,
+  // build.format "file" makes Astro.url.pathname end in ".html" at build time.
+  canonicalPath = Astro.url.pathname.replace(/\.html$/, ""),
+} = Astro.props
+
+const site = Astro.site ?? new URL("https://claxedo.com")
+const canonical = new URL(canonicalPath.replace(/\/$/, "") || "/", site)
+const ogImage = new URL(image, site)
+const markdownTwin = markdownTwins[canonicalPath.replace(/\/$/, "") || "/"]
+
+import "../styles/site.css"
+import StructuredData from "../components/StructuredData.astro"
+import { markdownTwins } from "../content/markdown"
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="description" content={description} />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#fcfcfc" />
+    <meta name="color-scheme" content="light" />
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+    <link rel="canonical" href={canonical} />
+    {markdownTwin && <link rel="alternate" type="text/markdown" href={new URL(markdownTwin, site)} />}
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Claxedo" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon-light.svg" media="(prefers-color-scheme: light)" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+    <StructuredData pathname={canonicalPath} />
+    <slot name="head" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <slot />
+    <script>
+      import "../scripts/analytics"
+      import "../scripts/posthog"
+    </script>
+  </body>
+</html>

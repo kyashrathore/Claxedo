@@ -1,0 +1,56 @@
+{
+  "url": "http://localhost:4445/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session",
+  "bodyText": "main\n·\nClaxedo · opencode\nmain\nClaxedo · opencode\n›\nC\nX\n13h\n13h\n14h\nGreeting\n1d\nLive browser happy-flow: reply OK.Live browser happy-flow: reply OK.\n2d\nwt-475c3b35\nClaxedo · opencode\n›\nC\nX\nmain\nformlink\n›\nC\nX\nNew Project\nMarketplace\nc/m\nNew Session\nC\nX\nAsk anything, / for commands, @ for context...\nCodex\nDefault (recommended)\nClaxedo\nLocal\nCloud\nSelect\nCreate new\nmain\nReview\nUncommitted\nLoading review...",
+  "tabs": [
+    {
+      "text": "c/mNew Session",
+      "current": true,
+      "rect": {
+        "x": 45,
+        "y": 5,
+        "w": 132,
+        "h": 28
+      },
+      "closeAria": "Close New Session"
+    }
+  ],
+  "closeButtons": [
+    {
+      "aria": "Close New Session",
+      "rect": {
+        "x": 155,
+        "y": 10,
+        "w": 18,
+        "h": 18
+      }
+    },
+    {
+      "aria": "Close workspace panel",
+      "rect": {
+        "x": 1407,
+        "y": 5,
+        "w": 28,
+        "h": 28
+      }
+    }
+  ],
+  "sidebarPinnedButton": [
+    "Pin sidebar",
+    "Show Sidebar"
+  ],
+  "storageKeys": [
+    "opencode.global.dat:server",
+    "claxedo:runner-map",
+    "claxedo.session-view.v1",
+    "claxedo.state.v5",
+    "opencode.global.dat:notification",
+    "opencode.global.dat:globalSync.project",
+    "claxedo:review-mode-map",
+    "__clerk_environment",
+    "highlights.v1",
+    "claxedo:acp-model-map",
+    "opencode.workspace.-Users-yashv.1r3b23u.dat:workspace:model-selection",
+    "claxedo-query-v1",
+    "opencode.global.dat:command.catalog.v1"
+  ]
+}

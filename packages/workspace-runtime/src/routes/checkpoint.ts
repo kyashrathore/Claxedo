@@ -1,0 +1,106 @@
+import { Hono } from "hono"
+import { DEFAULT_RECOVERY_BUDGETS } from "@claxedo/agent-runtime-contract"
+
+/**
+ * The longest freeze a caller may ask for. Four drain budgets: room for a slow
+ * but real drain, and short enough that a caller cannot turn a bounded
+ * operation back into the open-ended wait this deadline replaced by naming a
+ * deadline nobody will outlive.
+ */
+const MAX_FREEZE_DEADLINE_MS = DEFAULT_RECOVERY_BUDGETS.drainMs * 4
+import { asNumber, asString } from "@claxedo/helpers/guards"
+import { boundedJsonRecord, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "@claxedo/session-core"
+import type { WorkspaceCheckpointControl, WorkspaceCheckpointDrainPolicy } from "../workspace/host"
+import type { WorkspaceWorktreeManager } from "../worktree"
+import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
+import { authorizeHostCapability, type HostCapabilityAccessOptions } from "./host-capability-access"
+import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER } from "../management-auth"
+import { authorizeManagementAccess, type ManagementAccessOptions } from "./management-access"
+
+export function CheckpointRoutes(input: {
+  checkpoint: WorkspaceCheckpointControl
+  idleSince: () => number | undefined
+  worktrees?: WorkspaceWorktreeManager
+} & HostCapabilityAccessOptions & ManagementAccessOptions) {
+  return new Hono<{ Variables: RelayHostAuthContext }>()
+    .onError((err, c) => {
+      if (isRequestBodyTooLarge(err)) return c.json(requestBodyTooLargeBody(), 413)
+      throw err
+    })
+    .use("*", async (c, next) => {
+      if (c.req.header(WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER) !== undefined) {
+        const verdict = await authorizeManagementAccess(c, input, "runtime.checkpoint.control")
+        return verdict.ok ? await next() : c.json(errorBody(verdict.code, verdict.message), verdict.status)
+      }
+      const write = !["GET", "HEAD", "OPTIONS"].includes(c.req.method)
+      const denied = await authorizeHostCapability(c, input, write ? "checkpoint_write" : "checkpoint_read")
+      return denied ?? await next()
+    })
+    .get("/", (c) => c.json(input.checkpoint.detail()))
+    .post("/freeze", async (c) => {
+      const body = await boundedJsonRecord(c)
+      const policy: WorkspaceCheckpointDrainPolicy = body.policy === "interrupt" ? "interrupt" : "drain"
+      const requested = asNumber(body.deadlineMs)
+      if (requested !== undefined && (!Number.isFinite(requested) || requested < 0 || requested > MAX_FREEZE_DEADLINE_MS)) {
+        return c.json(
+          errorBody(
+            "workspace_checkpoint_freeze_invalid",
+            `deadlineMs must be a number between 0 and ${MAX_FREEZE_DEADLINE_MS}`,
+          ),
+          400,
+        )
+      }
+      const idleBefore = asNumber(body.idleBefore)
+      if (body.idleBefore !== undefined && (idleBefore === undefined || !Number.isSafeInteger(idleBefore))) {
+        return c.json(errorBody("workspace_checkpoint_freeze_invalid", "idleBefore must be an integer timestamp"), 400)
+      }
+      const idleSince = input.idleSince()
+      if (idleBefore !== undefined && (idleSince === undefined || idleSince > idleBefore)) {
+        return c.json(errorBody("workspace_not_idle", "The workspace has had work since the idle deadline"), 409)
+      }
+      // No await between the idle answer and the freeze: `freeze` closes admission before its first await.
+      const result = await input.checkpoint.freeze(policy, {
+        deadlineAt: Date.now() + (requested ?? DEFAULT_RECOVERY_BUDGETS.drainMs),
+      })
+      // 409, not 200 with a state field a caller might not read: a blocked
+      // freeze did not fence the writers it names, and the gate it kept is
+      // not the same thing as a taken checkpoint.
+      return c.json(result, result.state === "frozen" ? 200 : 409)
+    })
+    .post("/flush", async (c) => {
+      try {
+        await input.checkpoint.flush()
+        await input.worktrees?.flush()
+        return c.json({ ok: true })
+      } catch (error) {
+        return c.json(errorBody("workspace_checkpoint_flush_failed", message(error)), 409)
+      }
+    })
+    .post("/scrub", async (c) => {
+      try {
+        await input.checkpoint.scrub()
+        return c.json({ ok: true })
+      } catch (error) {
+        return c.json(errorBody("workspace_checkpoint_scrub_failed", message(error)), 409)
+      }
+    })
+    .post("/resume", async (c) => c.json(await input.checkpoint.resume()))
+    .post("/restore-reconcile", async (c) => {
+      const body = await boundedJsonRecord(c)
+      const epoch = asNumber(body.epoch)
+      const checkpointId = asString(body.checkpointId)
+      if (epoch === undefined || !Number.isSafeInteger(epoch) || epoch < 1 || !checkpointId?.trim()) {
+        return c.json(errorBody("workspace_checkpoint_reconcile_invalid", "epoch and checkpointId are required"), 400)
+      }
+      try {
+        await input.worktrees?.reconcile()
+        return c.json(await input.checkpoint.restoreReconcile({ epoch, checkpointId }))
+      } catch (error) {
+        return c.json(errorBody("workspace_checkpoint_reconcile_failed", message(error)), 409)
+      }
+    })
+}
+
+function message(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
+}

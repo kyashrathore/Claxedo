@@ -1,0 +1,1129 @@
+{
+  "adapter": "scripted-acp",
+  "initialState": {
+    "client": "scripted-acp",
+    "lastMessageId": null,
+    "assistantTextByMessageId": {},
+    "assistantThinkingByMessageId": {},
+    "status": "idle",
+    "turn": 0,
+    "tools": {}
+  },
+  "calls": [
+    {
+      "state": {
+        "client": "scripted-acp",
+        "lastMessageId": null,
+        "assistantTextByMessageId": {},
+        "assistantThinkingByMessageId": {},
+        "status": "idle",
+        "turn": 0,
+        "tools": {}
+      },
+      "event": {
+        "source": "acp.jsonrpc",
+        "method": "session/update",
+        "payload": {
+          "content": {
+            "text": "Inspect the file first",
+            "type": "text"
+          },
+          "sessionUpdate": "agent_thought_chunk"
+        }
+      },
+      "context": {
+        "harness": "scripted-acp",
+        "threadId": "scripted-5fb14d29-cbfc-4c8e-a07f-d47e05826d0c"
+      },
+      "callbacks": [],
+      "output": {
+        "events": [
+          {
+            "type": "thinking-delta",
+            "delta": "Inspect the file first"
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "state": {
+        "client": "scripted-acp",
+        "lastMessageId": null,
+        "assistantTextByMessageId": {},
+        "assistantThinkingByMessageId": {},
+        "status": "idle",
+        "turn": 0,
+        "tools": {}
+      },
+      "event": {
+        "source": "acp.jsonrpc",
+        "method": "session/update",
+        "payload": {
+          "content": {
+            "text": "H1_ACP",
+            "type": "text"
+          },
+          "sessionUpdate": "agent_message_chunk"
+        }
+      },
+      "context": {
+        "harness": "scripted-acp",
+        "threadId": "scripted-5fb14d29-cbfc-4c8e-a07f-d47e05826d0c"
+      },
+      "callbacks": [],
+      "output": {
+        "events": [
+          {
+            "type": "text-delta",
+            "delta": "H1_ACP"
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "state": {
+        "client": "scripted-acp",
+        "lastMessageId": null,
+        "assistantTextByMessageId": {},
+        "assistantThinkingByMessageId": {},
+        "status": "idle",
+        "turn": 0,
+        "tools": {}
+      },
+      "event": {
+        "source": "acp.jsonrpc",
+        "method": "session/update",
+        "payload": {
+          "content": {
+            "text": "_TEXT",
+            "type": "text"
+          },
+          "sessionUpdate": "agent_message_chunk"
+        }
+      },
+      "context": {
+        "harness": "scripted-acp",
+        "threadId": "scripted-5fb14d29-cbfc-4c8e-a07f-d47e05826d0c"
+      },
+      "callbacks": [],
+      "output": {
+        "events": [
+          {
+            "type": "text-delta",
+            "delta": "_TEXT"
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "state": {
+        "client": "scripted-acp",
+        "lastMessageId": null,
+        "assistantTextByMessageId": {},
+        "assistantThinkingByMessageId": {},
+        "status": "idle",
+        "turn": 0,
+        "tools": {}
+      },
+      "event": {
+        "source": "acp.jsonrpc",
+        "method": "session/update",
+        "payload": {
+          "toolCallId": "call_12962791",
+          "title": "Read sample",
+          "kind": "read",
+          "status": "in_progress",
+          "rawInput": {
+            "path": "sample.txt"
+          },
+          "sessionUpdate": "tool_call"
+        }
+      },
+      "context": {
+        "harness": "scripted-acp",
+        "threadId": "scripted-5fb14d29-cbfc-4c8e-a07f-d47e05826d0c"
+      },
+      "callbacks": [],
+      "output": {
+        "events": [
+          {
+            "type": "tool-status",
+            "toolCallId": "call_12962791",
+            "status": "running",
+            "display": {
+              "kind": "read",
+              "intent": "read",
+              "summary": "Read sample",
+              "path": "sample.txt",
+              "filePath": "sample.txt",
+              "files": [
+                "sample.txt"
+              ],
+              "sourcePath": "sample.txt",
+              "input": {
+                "path": "sample.txt"
+              }
+            },
+            "metadata": {
+              "acp": {
+                "kind": "read",
+                "intent": "read",
+                "summary": "Read sample",
+                "path": "sample.txt",
+                "filePath": "sample.txt",
+                "files": [
+                  "sample.txt"
+                ],
+                "sourcePath": "sample.txt",
+                "client": "scripted-acp",
+                "status": "running",
+                "title": "Read sample",
+                "toolCallId": "call_12962791"
+              }
+            }
+          },
+          {
+            "type": "tool-start",
+            "toolCallId": "call_12962791",
+            "toolName": "read",
+            "kind": "read",
+            "display": {
+              "kind": "read",
+              "intent": "read",
+              "summary": "Read sample",
+              "path": "sample.txt",
+              "filePath": "sample.txt",
+              "files": [
+                "sample.txt"
+              ],
+              "sourcePath": "sample.txt",
+              "input": {
+                "path": "sample.txt"
+              }
+            },
+            "metadata": {
+              "acp": {
+                "kind": "read",
+                "intent": "read",
+                "summary": "Read sample",
+                "path": "sample.txt",
+                "filePath": "sample.txt",
+                "files": [
+                  "sample.txt"
+                ],
+                "sourcePath": "sample.txt",
+                "client": "scripted-acp",
+                "status": "running",
+                "title": "Read sample",
+                "toolCallId": "call_12962791"
+              }
+            }
+          },
+          {
+            "type": "tool-input",
+            "toolCallId": "call_12962791",
+            "input": {
+              "path": "sample.txt",
+              "kind": "read",
+              "intent": "read",
+              "summary": "Read sample",
+              "filePath": "sample.txt",
+              "files": [
+                "sample.txt"
+              ]
+            },
+            "display": {
+              "kind": "read",
+              "intent": "read",
+              "summary": "Read sample",
+              "path": "sample.txt",
+              "filePath": "sample.txt",
+              "files": [
+                "sample.txt"
+              ],
+              "sourcePath": "sample.txt",
+              "input": {
+                "path": "sample.txt"
+              }
+            },
+            "metadata": {
+              "acp": {
+                "kind": "read",
+                "intent": "read",
+                "summary": "Read sample",
+                "path": "sample.txt",
+                "filePath": "sample.txt",
+                "files": [
+                  "sample.txt"
+                ],
+                "sourcePath": "sample.txt",
+                "client": "scripted-acp",
+                "status": "running",
+                "title": "Read sample",
+                "toolCallId": "call_12962791"
+              }
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "state": {
+        "client": "scripted-acp",
+        "lastMessageId": null,
+        "assistantTextByMessageId": {},
+        "assistantThinkingByMessageId": {},
+        "status": "idle",
+        "turn": 0,
+        "tools": {}
+      },
+      "event": {
+        "source": "acp.jsonrpc",
+        "method": "session/update",
+        "payload": {
+          "toolCallId": "call_12962791",
+          "status": "completed",
+          "content": [],
+          "rawOutput": "sample contents",
+          "sessionUpdate": "tool_call_update"
+        }
+      },
+      "context": {
+        "harness": "scripted-acp",
+        "threadId": "scripted-5fb14d29-cbfc-4c8e-a07f-d47e05826d0c"
+      },
+      "callbacks": [],
+      "output": {
+        "events": [
+          {
+            "type": "tool-output",
+            "toolCallId": "call_12962791",
+            "output": "sample contents",
+            "display": {
+              "kind": "read",
+              "intent": "read",
+              "summary": "Read sample",
+              "path": "sample.txt",
+              "filePath": "sample.txt",
+              "files": [
+                "sample.txt"
+              ],
+              "sourcePath": "sample.txt",
+              "input": {
+                "path": "sample.txt"
+              }
+            },
+            "metadata": {
+              "acp": {
+                "kind": "read",
+                "intent": "read",
+                "summary": "Read sample",
+                "path": "sample.txt",
+                "filePath": "sample.txt",
+                "files": [
+                  "sample.txt"
+                ],
+                "sourcePath": "sample.txt",
+                "client": "scripted-acp",
+                "status": "completed",
+                "title": "Read sample",
+                "toolCallId": "call_12962791"
+              }
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "state": {
+        "client": "scripted-acp",
+        "lastMessageId": null,
+        "assistantTextByMessageId": {},
+        "assistantThinkingByMessageId": {},
+        "status": "idle",
+        "turn": 0,
+        "tools": {}
+      },
+      "event": {
+        "source": "acp.jsonrpc",
+        "method": "session/update",
+        "payload": {
+          "toolCallId": "call_bfc389c7",
+          "title": "Fail example",
+          "kind": "execute",
+          "status": "in_progress",
+          "rawInput": {
+            "command": "false"
+          },
+          "sessionUpdate": "tool_call"
+        }
+      },
+      "context": {
+        "harness": "scripted-acp",
+        "threadId": "scripted-5fb14d29-cbfc-4c8e-a07f-d47e05826d0c"
+      },
+      "callbacks": [],
+      "output": {
+        "events": [
+          {
+            "type": "tool-status",
+            "toolCallId": "call_bfc389c7",
+            "status": "running",
+            "display": {
+              "kind": "execute",
+              "intent": "shell",
+              "summary": "Fail example",
+              "command": "false",
+              "input": {
+                "command": "false"
+              }
+            },
+            "metadata": {
+              "acp": {
+                "kind": "execute",
+                "intent": "shell",
+                "summary": "Fail example",
+                "command": "false",
+                "client": "scripted-acp",
+                "status": "running",
+                "title": "Fail example",
+                "toolCallId": "call_bfc389c7"
+              }
+            }
+          },
+          {
+            "type": "tool-start",
+            "toolCallId": "call_bfc389c7",
+            "toolName": "bash",
+            "kind": "execute",
+            "display": {
+              "kind": "execute",
+              "intent": "shell",
+              "summary": "Fail example",
+              "command": "false",
+              "input": {
+                "command": "false"
+              }
+            },
+            "metadata": {
+              "acp": {
+                "kind": "execute",
+                "intent": "shell",
+                "summary": "Fail example",
+                "command": "false",
+                "client": "scripted-acp",
+                "status": "running",
+                "title": "Fail example",
+                "toolCallId": "call_bfc389c7"
+              }
+            }
+          },
+          {
+            "type": "tool-input",
+            "toolCallId": "call_bfc389c7",
+            "input": {
+              "command": "false",
+              "kind": "execute",
+              "intent": "shell",
+              "summary": "Fail example"
+            },
+            "display": {
+              "kind": "execute",
+              "intent": "shell",
+              "summary": "Fail example",
+              "command": "false",
+              "input": {
+                "command": "false"
+              }
+            },
+            "metadata": {
+              "acp": {
+                "kind": "execute",
+                "intent": "shell",
+                "summary": "Fail example",
+                "command": "false",
+                "client": "scripted-acp",
+                "status": "running",
+                "title": "Fail example",
+                "toolCallId": "call_bfc389c7"
+              }
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "state": {
+        "client": "scripted-acp",
+        "lastMessageId": null,
+        "assistantTextByMessageId": {},
+        "assistantThinkingByMessageId": {},
+        "status": "idle",
+        "turn": 0,
+        "tools": {}
+      },
+      "event": {
+        "source": "acp.jsonrpc",
+        "method": "session/update",
+        "payload": {
+          "toolCallId": "call_bfc389c7",
+          "status": "failed",
+          "content": [
+            {
+              "content": {
+                "text": "example failed",
+                "type": "text"
+              },
+              "type": "content"
+            }
+          ],
+          "rawOutput": {
+            "error": "example failed"
+          },
+          "sessionUpdate": "tool_call_update"
+        }
+      },
+      "context": {
+        "harness": "scripted-acp",
+        "threadId": "scripted-5fb14d29-cbfc-4c8e-a07f-d47e05826d0c"
+      },
+      "callbacks": [],
+      "output": {
+        "events": [
+          {
+            "type": "tool-error",
+            "toolCallId": "call_bfc389c7",
+            "error": "{\"error\":\"example failed\"}",
+            "display": {
+              "kind": "execute",
+              "intent": "shell",
+              "summary": "Fail example",
+              "command": "false",
+              "input": {
+                "command": "false"
+              }
+            },
+            "metadata": {
+              "acp": {
+                "kind": "execute",
+                "intent": "shell",
+                "summary": "Fail example",
+                "command": "false",
+                "client": "scripted-acp",
+                "status": "failed",
+                "title": "Fail example",
+                "toolCallId": "call_bfc389c7"
+              }
+            }
+          },
+          {
+            "type": "tool-content",
+            "toolCallId": "call_bfc389c7",
+            "content": {
+              "content": {
+                "text": "example failed",
+                "type": "text"
+              },
+              "type": "content"
+            },
+            "display": {
+              "kind": "execute",
+              "intent": "shell",
+              "summary": "Fail example",
+              "command": "false",
+              "input": {
+                "command": "false"
+              }
+            },
+            "metadata": {
+              "acp": {
+                "kind": "execute",
+                "intent": "shell",
+                "summary": "Fail example",
+                "command": "false",
+                "client": "scripted-acp",
+                "status": "failed",
+                "title": "Fail example",
+                "toolCallId": "call_bfc389c7"
+              }
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "state": {
+        "client": "scripted-acp",
+        "lastMessageId": null,
+        "assistantTextByMessageId": {},
+        "assistantThinkingByMessageId": {},
+        "status": "idle",
+        "turn": 0,
+        "tools": {}
+      },
+      "event": {
+        "source": "acp.jsonrpc",
+        "method": "session/update",
+        "payload": {
+          "toolCallId": "call_656e1428",
+          "title": "Edit sample.txt",
+          "kind": "edit",
+          "status": "in_progress",
+          "locations": [
+            {
+              "path": "sample.txt"
+            }
+          ],
+          "rawInput": {
+            "path": "sample.txt"
+          },
+          "sessionUpdate": "tool_call"
+        }
+      },
+      "context": {
+        "harness": "scripted-acp",
+        "threadId": "scripted-5fb14d29-cbfc-4c8e-a07f-d47e05826d0c"
+      },
+      "callbacks": [],
+      "output": {
+        "events": [
+          {
+            "type": "tool-status",
+            "toolCallId": "call_656e1428",
+            "status": "running",
+            "display": {
+              "kind": "edit",
+              "intent": "edit",
+              "summary": "Edit sample.txt",
+              "path": "sample.txt",
+              "filePath": "sample.txt",
+              "files": [
+                "sample.txt"
+              ],
+              "sourcePath": "sample.txt",
+              "locations": [
+                {
+                  "path": "sample.txt"
+                }
+              ],
+              "input": {
+                "path": "sample.txt"
+              }
+            },
+            "metadata": {
+              "acp": {
+                "kind": "edit",
+                "intent": "edit",
+                "summary": "Edit sample.txt",
+                "path": "sample.txt",
+                "filePath": "sample.txt",
+                "files": [
+                  "sample.txt"
+                ],
+                "sourcePath": "sample.txt",
+                "locations": [
+                  {
+                    "path": "sample.txt"
+                  }
+                ],
+                "client": "scripted-acp",
+                "status": "running",
+                "title": "Edit sample.txt",
+                "toolCallId": "call_656e1428"
+              }
+            }
+          },
+          {
+            "type": "tool-start",
+            "toolCallId": "call_656e1428",
+            "toolName": "edit",
+            "kind": "edit",
+            "display": {
+              "kind": "edit",
+              "intent": "edit",
+              "summary": "Edit sample.txt",
+              "path": "sample.txt",
+              "filePath": "sample.txt",
+              "files": [
+                "sample.txt"
+              ],
+              "sourcePath": "sample.txt",
+              "locations": [
+                {
+                  "path": "sample.txt"
+                }
+              ],
+              "input": {
+                "path": "sample.txt"
+              }
+            },
+            "metadata": {
+              "acp": {
+                "kind": "edit",
+                "intent": "edit",
+                "summary": "Edit sample.txt",
+                "path": "sample.txt",
+                "filePath": "sample.txt",
+                "files": [
+                  "sample.txt"
+                ],
+                "sourcePath": "sample.txt",
+                "locations": [
+                  {
+                    "path": "sample.txt"
+                  }
+                ],
+                "client": "scripted-acp",
+                "status": "running",
+                "title": "Edit sample.txt",
+                "toolCallId": "call_656e1428"
+              }
+            }
+          },
+          {
+            "type": "tool-input",
+            "toolCallId": "call_656e1428",
+            "input": {
+              "path": "sample.txt",
+              "kind": "edit",
+              "intent": "edit",
+              "summary": "Edit sample.txt",
+              "filePath": "sample.txt",
+              "files": [
+                "sample.txt"
+              ]
+            },
+            "display": {
+              "kind": "edit",
+              "intent": "edit",
+              "summary": "Edit sample.txt",
+              "path": "sample.txt",
+              "filePath": "sample.txt",
+              "files": [
+                "sample.txt"
+              ],
+              "sourcePath": "sample.txt",
+              "locations": [
+                {
+                  "path": "sample.txt"
+                }
+              ],
+              "input": {
+                "path": "sample.txt"
+              }
+            },
+            "metadata": {
+              "acp": {
+                "kind": "edit",
+                "intent": "edit",
+                "summary": "Edit sample.txt",
+                "path": "sample.txt",
+                "filePath": "sample.txt",
+                "files": [
+                  "sample.txt"
+                ],
+                "sourcePath": "sample.txt",
+                "locations": [
+                  {
+                    "path": "sample.txt"
+                  }
+                ],
+                "client": "scripted-acp",
+                "status": "running",
+                "title": "Edit sample.txt",
+                "toolCallId": "call_656e1428"
+              }
+            }
+          },
+          {
+            "type": "tool-location",
+            "toolCallId": "call_656e1428",
+            "locations": [
+              {
+                "path": "sample.txt"
+              }
+            ]
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "state": {
+        "client": "scripted-acp",
+        "lastMessageId": null,
+        "assistantTextByMessageId": {},
+        "assistantThinkingByMessageId": {},
+        "status": "idle",
+        "turn": 0,
+        "tools": {}
+      },
+      "event": {
+        "source": "acp.jsonrpc",
+        "method": "session/update",
+        "payload": {
+          "toolCallId": "call_656e1428",
+          "status": "completed",
+          "content": [
+            {
+              "path": "sample.txt",
+              "oldText": "before",
+              "newText": "after",
+              "type": "diff"
+            }
+          ],
+          "rawOutput": null,
+          "sessionUpdate": "tool_call_update"
+        }
+      },
+      "context": {
+        "harness": "scripted-acp",
+        "threadId": "scripted-5fb14d29-cbfc-4c8e-a07f-d47e05826d0c"
+      },
+      "callbacks": [],
+      "output": {
+        "events": [
+          {
+            "type": "tool-input",
+            "toolCallId": "call_656e1428",
+            "input": {
+              "path": "sample.txt",
+              "kind": "edit",
+              "intent": "edit",
+              "summary": "Edit sample.txt",
+              "filePath": "sample.txt",
+              "files": [
+                "sample.txt"
+              ],
+              "oldString": "before",
+              "newString": "after"
+            },
+            "display": {
+              "kind": "edit",
+              "intent": "edit",
+              "summary": "Edit sample.txt",
+              "path": "sample.txt",
+              "filePath": "sample.txt",
+              "files": [
+                "sample.txt"
+              ],
+              "sourcePath": "sample.txt",
+              "locations": [
+                {
+                  "path": "sample.txt"
+                }
+              ],
+              "input": {
+                "path": "sample.txt"
+              }
+            },
+            "metadata": {
+              "filediff": {
+                "file": "sample.txt",
+                "before": "before",
+                "after": "after",
+                "additions": 1,
+                "deletions": 1
+              },
+              "files": [
+                {
+                  "filePath": "sample.txt",
+                  "relativePath": "sample.txt",
+                  "type": "update",
+                  "diff": "",
+                  "before": "before",
+                  "after": "after",
+                  "additions": 1,
+                  "deletions": 1
+                }
+              ],
+              "acp": {
+                "kind": "edit",
+                "intent": "edit",
+                "summary": "Edit sample.txt",
+                "path": "sample.txt",
+                "filePath": "sample.txt",
+                "files": [
+                  "sample.txt"
+                ],
+                "sourcePath": "sample.txt",
+                "locations": [
+                  {
+                    "path": "sample.txt"
+                  }
+                ],
+                "client": "scripted-acp",
+                "status": "completed",
+                "title": "Edit sample.txt",
+                "hasDiff": true,
+                "filediff": {
+                  "file": "sample.txt",
+                  "before": "before",
+                  "after": "after",
+                  "additions": 1,
+                  "deletions": 1
+                },
+                "patch": [
+                  {
+                    "filePath": "sample.txt",
+                    "relativePath": "sample.txt",
+                    "type": "update",
+                    "diff": "",
+                    "before": "before",
+                    "after": "after",
+                    "additions": 1,
+                    "deletions": 1
+                  }
+                ],
+                "toolCallId": "call_656e1428"
+              }
+            }
+          },
+          {
+            "type": "tool-content",
+            "toolCallId": "call_656e1428",
+            "content": {
+              "path": "sample.txt",
+              "oldText": "before",
+              "newText": "after",
+              "type": "diff"
+            },
+            "display": {
+              "kind": "edit",
+              "intent": "edit",
+              "summary": "Edit sample.txt",
+              "path": "sample.txt",
+              "filePath": "sample.txt",
+              "files": [
+                "sample.txt"
+              ],
+              "sourcePath": "sample.txt",
+              "locations": [
+                {
+                  "path": "sample.txt"
+                }
+              ],
+              "input": {
+                "path": "sample.txt"
+              }
+            },
+            "metadata": {
+              "filediff": {
+                "file": "sample.txt",
+                "before": "before",
+                "after": "after",
+                "additions": 1,
+                "deletions": 1
+              },
+              "files": [
+                {
+                  "filePath": "sample.txt",
+                  "relativePath": "sample.txt",
+                  "type": "update",
+                  "diff": "",
+                  "before": "before",
+                  "after": "after",
+                  "additions": 1,
+                  "deletions": 1
+                }
+              ],
+              "acp": {
+                "kind": "edit",
+                "intent": "edit",
+                "summary": "Edit sample.txt",
+                "path": "sample.txt",
+                "filePath": "sample.txt",
+                "files": [
+                  "sample.txt"
+                ],
+                "sourcePath": "sample.txt",
+                "locations": [
+                  {
+                    "path": "sample.txt"
+                  }
+                ],
+                "client": "scripted-acp",
+                "status": "completed",
+                "title": "Edit sample.txt",
+                "hasDiff": true,
+                "filediff": {
+                  "file": "sample.txt",
+                  "before": "before",
+                  "after": "after",
+                  "additions": 1,
+                  "deletions": 1
+                },
+                "patch": [
+                  {
+                    "filePath": "sample.txt",
+                    "relativePath": "sample.txt",
+                    "type": "update",
+                    "diff": "",
+                    "before": "before",
+                    "after": "after",
+                    "additions": 1,
+                    "deletions": 1
+                  }
+                ],
+                "toolCallId": "call_656e1428"
+              }
+            }
+          },
+          {
+            "type": "file-diff",
+            "toolCallId": "call_656e1428",
+            "path": "sample.txt",
+            "oldText": "before",
+            "newText": "after"
+          },
+          {
+            "type": "tool-output",
+            "toolCallId": "call_656e1428",
+            "output": [
+              {
+                "path": "sample.txt",
+                "oldText": "before",
+                "newText": "after",
+                "type": "diff"
+              }
+            ],
+            "display": {
+              "kind": "edit",
+              "intent": "edit",
+              "summary": "Edit sample.txt",
+              "path": "sample.txt",
+              "filePath": "sample.txt",
+              "files": [
+                "sample.txt"
+              ],
+              "sourcePath": "sample.txt",
+              "locations": [
+                {
+                  "path": "sample.txt"
+                }
+              ],
+              "input": {
+                "path": "sample.txt"
+              }
+            },
+            "metadata": {
+              "filediff": {
+                "file": "sample.txt",
+                "before": "before",
+                "after": "after",
+                "additions": 1,
+                "deletions": 1
+              },
+              "files": [
+                {
+                  "filePath": "sample.txt",
+                  "relativePath": "sample.txt",
+                  "type": "update",
+                  "diff": "",
+                  "before": "before",
+                  "after": "after",
+                  "additions": 1,
+                  "deletions": 1
+                }
+              ],
+              "acp": {
+                "kind": "edit",
+                "intent": "edit",
+                "summary": "Edit sample.txt",
+                "path": "sample.txt",
+                "filePath": "sample.txt",
+                "files": [
+                  "sample.txt"
+                ],
+                "sourcePath": "sample.txt",
+                "locations": [
+                  {
+                    "path": "sample.txt"
+                  }
+                ],
+                "client": "scripted-acp",
+                "status": "completed",
+                "title": "Edit sample.txt",
+                "hasDiff": true,
+                "filediff": {
+                  "file": "sample.txt",
+                  "before": "before",
+                  "after": "after",
+                  "additions": 1,
+                  "deletions": 1
+                },
+                "patch": [
+                  {
+                    "filePath": "sample.txt",
+                    "relativePath": "sample.txt",
+                    "type": "update",
+                    "diff": "",
+                    "before": "before",
+                    "after": "after",
+                    "additions": 1,
+                    "deletions": 1
+                  }
+                ],
+                "toolCallId": "call_656e1428"
+              }
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "state": {
+        "client": "scripted-acp",
+        "lastMessageId": null,
+        "assistantTextByMessageId": {},
+        "assistantThinkingByMessageId": {},
+        "status": "idle",
+        "turn": 0,
+        "tools": {}
+      },
+      "event": {
+        "source": "acp.jsonrpc",
+        "method": "session/update",
+        "payload": {
+          "entries": [
+            {
+              "content": "H1 inspect and change sample.txt",
+              "priority": "high",
+              "status": "completed"
+            }
+          ],
+          "sessionUpdate": "plan"
+        }
+      },
+      "context": {
+        "harness": "scripted-acp",
+        "threadId": "scripted-5fb14d29-cbfc-4c8e-a07f-d47e05826d0c"
+      },
+      "callbacks": [],
+      "output": {
+        "events": [
+          {
+            "type": "todo-update",
+            "todos": [
+              {
+                "id": "0",
+                "description": "H1 inspect and change sample.txt",
+                "status": "completed",
+                "priority": "high"
+              }
+            ]
+          }
+        ],
+        "diagnostics": []
+      }
+    }
+  ]
+}

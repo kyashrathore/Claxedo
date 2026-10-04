@@ -1,0 +1,25 @@
+@layer touch {
+  :root {
+    --touch-target: 44px;
+  }
+
+  @media (pointer: coarse) {
+    .ui-segmented-control-v2-item,
+    .scroll-thumb,
+    .ui-session-navigation-settle-touch {
+      position: relative;
+    }
+
+    .ui-segmented-control-v2-item::before,
+    .scroll-thumb::before,
+    .ui-session-navigation-settle-touch::before {
+      content: "";
+      position: absolute;
+      inset: min(0px, calc(50% - var(--touch-target) / 2));
+    }
+
+    [data-component="switch"] {
+      min-height: var(--touch-target);
+    }
+  }
+}

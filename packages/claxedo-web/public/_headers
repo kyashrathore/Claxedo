@@ -1,0 +1,16 @@
+# Cloudflare Pages headers. Agent-facing alternates (RFC 8288) and cache safety for markdown negotiation.
+/
+  Link: </sitemap-index.xml>; rel="sitemap", </index.md>; rel="alternate"; type="text/markdown", </llms.txt>; rel="alternate"; type="text/plain"
+  Vary: Accept
+/pricing
+  Link: </pricing.md>; rel="alternate"; type="text/markdown"
+  Vary: Accept
+/download
+  Link: </download.md>; rel="alternate"; type="text/markdown"
+  Vary: Accept
+/compare
+  Link: </compare.md>; rel="alternate"; type="text/markdown"
+  Vary: Accept
+/.well-known/*
+  Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=3600

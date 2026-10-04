@@ -1,0 +1,255 @@
+import path from "node:path"
+
+import { isRecord } from "../json"
+
+export type RollupChunkMetadata = {
+  type: "chunk"
+  fileName: string
+  facadeModuleId: string | null
+  isEntry: boolean
+  modules: Record<string, unknown>
+  imports: string[]
+  dynamicImports: string[]
+}
+
+export type RollupAssetMetadata = {
+  type: "asset"
+  fileName: string
+}
+
+export type RollupBundleMetadata = Record<string, RollupChunkMetadata | RollupAssetMetadata>
+
+export type BuildManifest = {
+  entry: string
+  modules: string[]
+  chunks: string[]
+  edges: {
+    static: string[]
+    dynamic: string[]
+  }
+}
+
+export type SourceMapMetadata = {
+  sourceRoot?: string
+  sources: string[]
+}
+
+export type EsbuildMetafile = {
+  inputs: Record<string, {
+    imports?: Array<{ path: string; kind: string; external?: boolean }>
+  }>
+  outputs: Record<string, {
+    entryPoint?: string
+    imports?: Array<{ path: string; kind: string; external?: boolean }>
+    inputs?: Record<string, unknown>
+  }>
+}
+
+function slash(value: string) {
+  return value.replaceAll("\\", "/")
+}
+
+function withoutQuery(value: string) {
+  const index = value.search(/[?#]/)
+  return index === -1 ? value : value.slice(0, index)
+}
+
+/**
+ * Turn a build-tool module id into a stable repository/package identity.
+ *
+ * Bun's install layout includes versioned `.bun/<pkg>@<version>/node_modules/`
+ * segments and temporary isolation workspaces live at random absolute paths.
+ * Keeping either in a committed comparison makes identical builds differ by
+ * machine. The final `node_modules/` segment is the runtime package identity;
+ * repository sources are relative to the supplied workspace root.
+ */
+/**
+ * Read a build's `.js.map` as source-map metadata.
+ *
+ * `JSON.parse` answers `any`, so every build script that read one either
+ * asserted the shape or annotated the binding and hoped. The scanner's whole
+ * job is the `sources` list, so it is checked here once: a map file without it
+ * is a build that changed shape, and that should fail at the read.
+ */
+export function readSourceMapMetadata(source: string, file: string): SourceMapMetadata {
+  const parsed: unknown = JSON.parse(source)
+  if (!isRecord(parsed)) throw new Error(`${file} is not a JSON object`)
+  const value = parsed
+  if (!Array.isArray(value.sources) || value.sources.some((entry) => typeof entry !== "string")) {
+    throw new Error(`${file} has no source-map "sources" list`)
+  }
+  const sources = value.sources.filter((entry): entry is string => typeof entry === "string")
+  const sourceRoot = typeof value.sourceRoot === "string" ? value.sourceRoot : undefined
+  return { sources, ...(sourceRoot === undefined ? {} : { sourceRoot }) }
+}
+
+export function normalizeModuleId(raw: string, workspaceRoot: string): string {
+  const value = slash(withoutQuery(raw))
+  if (value.startsWith("\0")) return `virtual:${value.slice(1)}`
+
+  const nodeModules = value.lastIndexOf("/node_modules/")
+  if (nodeModules !== -1) return value.slice(nodeModules + "/node_modules/".length)
+
+  const normalizedRoot = slash(path.resolve(workspaceRoot)).replace(/\/$/, "")
+  if (value === normalizedRoot) return "."
+  if (value.startsWith(`${normalizedRoot}/`)) return value.slice(normalizedRoot.length + 1)
+
+  if (path.isAbsolute(raw)) {
+    throw new Error(`build metadata contains a module outside the workspace: ${raw}`)
+  }
+  return value.replace(/^\.\//, "")
+}
+
+function sorted(values: Iterable<string>) {
+  return [...new Set(values)].sort((a, b) => a.localeCompare(b))
+}
+
+function edge(from: string, to: string) {
+  return `${slash(from)} -> ${slash(to)}`
+}
+
+function rollupEntryChunkMatches(input: {
+  entry: string
+  chunks: RollupChunkMetadata[]
+  workspaceRoot: string
+}) {
+  const entry = normalizeModuleId(input.entry, input.workspaceRoot)
+  return {
+    entry,
+    matches: input.chunks.filter((chunk) =>
+      Object.keys(chunk.modules).some((id) => normalizeModuleId(id, input.workspaceRoot) === entry),
+    ),
+  }
+}
+
+function rollupEntryChunk(input: {
+  entry: string
+  chunks: RollupChunkMetadata[]
+  workspaceRoot: string
+}) {
+  const { entry, matches } = rollupEntryChunkMatches(input)
+  if (matches.length !== 1) {
+    throw new Error(
+      `expected exactly one Rollup chunk containing ${entry}; found ${matches.map((chunk) => chunk.fileName).join(", ") || "none"}`,
+    )
+  }
+  return matches[0]!
+}
+
+/**
+ * Normalize only the chunks reachable from one runtime entry.
+ *
+ * Rollup's bundle object contains every emitted entry and lazy chunk, but a
+ * dynamic import's target is present in the artifact without being loaded by
+ * the static entry graph. The dynamic edge is kept as evidence while the
+ * target's chunks/modules are excluded.
+ * Callers that describe an activated optional contribution can opt into its
+ * dynamic descendants and exclude chunks already owned by the base closure.
+ */
+export function normalizeRollupEntryBuildManifest(input: {
+  entry: string
+  bundle: RollupBundleMetadata
+  workspaceRoot: string
+  includeDynamicImports?: boolean
+  excludeChunks?: Iterable<string>
+  /** Lazy entry modules that are edges from this closure, not part of it. */
+  cutAtEntries?: Iterable<string>
+}): BuildManifest {
+  const chunks = Object.values(input.bundle).filter((item): item is RollupChunkMetadata => item.type === "chunk")
+  const byFileName = new Map(chunks.map((chunk) => [slash(chunk.fileName), chunk]))
+  const excluded = new Set([...(input.excludeChunks ?? [])].map(slash))
+  for (const entry of input.cutAtEntries ?? []) {
+    const match = rollupEntryChunkMatches({ entry, chunks, workspaceRoot: input.workspaceRoot })
+    if (match.matches.length > 1) {
+      throw new Error(
+        `expected at most one Rollup cut-point chunk containing ${match.entry}; ` +
+          `found ${match.matches.map((chunk) => chunk.fileName).join(", ")}`,
+      )
+    }
+    if (match.matches[0]) excluded.add(slash(match.matches[0].fileName))
+  }
+  const reached = new Map<string, RollupChunkMetadata>()
+  const pending = [rollupEntryChunk({ entry: input.entry, chunks, workspaceRoot: input.workspaceRoot })]
+
+  while (pending.length > 0) {
+    const chunk = pending.pop()!
+    const fileName = slash(chunk.fileName)
+    if (reached.has(fileName) || excluded.has(fileName)) continue
+    reached.set(fileName, chunk)
+    const targets = input.includeDynamicImports
+      ? [...chunk.imports, ...chunk.dynamicImports]
+      : chunk.imports
+    for (const target of targets) {
+      const dependency = byFileName.get(slash(target))
+      if (dependency) pending.push(dependency)
+    }
+  }
+
+  const selected = [...reached.values()]
+  return {
+    entry: normalizeModuleId(input.entry, input.workspaceRoot),
+    modules: sorted(selected.flatMap((chunk) =>
+      Object.keys(chunk.modules).map((id) => normalizeModuleId(id, input.workspaceRoot)),
+    )),
+    chunks: sorted(selected.map((chunk) => slash(chunk.fileName))),
+    edges: {
+      static: sorted(selected.flatMap((chunk) => chunk.imports.map((target) => edge(chunk.fileName, target)))),
+      dynamic: sorted(selected.flatMap((chunk) => chunk.dynamicImports.map((target) => edge(chunk.fileName, target)))),
+    },
+  }
+}
+
+/** Normalize a single-file bundler's external source-map metadata. */
+export function normalizeSourceMapBuildManifest(input: {
+  entry: string
+  sourceMap: SourceMapMetadata
+  sourceMapDirectory: string
+  chunks: string[]
+  workspaceRoot: string
+}): BuildManifest {
+  const sourceRoot = input.sourceMap.sourceRoot ?? ""
+  return {
+    entry: normalizeModuleId(input.entry, input.workspaceRoot),
+    modules: sorted(input.sourceMap.sources.map((source) =>
+      normalizeModuleId(path.resolve(input.sourceMapDirectory, sourceRoot, source), input.workspaceRoot),
+    )),
+    chunks: sorted(input.chunks.map(slash)),
+    edges: { static: [], dynamic: [] },
+  }
+}
+
+/** Normalize esbuild/Wrangler metafiles without inspecting emitted code. */
+export function normalizeEsbuildBuildManifest(input: {
+  entry: string
+  metafile: EsbuildMetafile
+  workingDirectory: string
+  workspaceRoot: string
+}): BuildManifest {
+  const moduleId = (id: string) => normalizeModuleId(
+    path.isAbsolute(id) ? id : path.resolve(input.workingDirectory, id),
+    input.workspaceRoot,
+  )
+  const importTarget = (value: { path: string; external?: boolean }) =>
+    value.external ? normalizeModuleId(value.path, input.workspaceRoot) : moduleId(value.path)
+  const staticEdges: string[] = []
+  const dynamicEdges: string[] = []
+  for (const [from, metadata] of Object.entries(input.metafile.inputs)) {
+    for (const imported of metadata.imports ?? []) {
+      const target = imported.kind === "dynamic-import" ? dynamicEdges : staticEdges
+      target.push(edge(moduleId(from), importTarget(imported)))
+    }
+  }
+
+  return {
+    entry: normalizeModuleId(input.entry, input.workspaceRoot),
+    modules: sorted(Object.keys(input.metafile.inputs).map(moduleId)),
+    chunks: sorted(Object.entries(input.metafile.outputs)
+      .filter(([, output]) => output.entryPoint !== undefined || Object.keys(output.inputs ?? {}).length > 0)
+      .map(([output]) => slash(path.relative(input.workspaceRoot, path.resolve(input.workingDirectory, output))))),
+    edges: { static: sorted(staticEdges), dynamic: sorted(dynamicEdges) },
+  }
+}
+
+export function serializeBuildManifest(manifest: BuildManifest) {
+  return `${JSON.stringify(manifest, null, 2)}\n`
+}

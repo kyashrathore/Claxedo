@@ -1,0 +1,63 @@
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px 12px;
+  overflow: auto;
+}
+
+.settings-nav-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--text-base);
+}
+
+.settings-nav-row:hover {
+  background-color: var(--row-surface-hover);
+}
+
+.settings-nav-row[aria-current="page"] {
+  color: var(--text-strong);
+  background-color: var(--row-surface-selected);
+}
+
+.settings-nav-title {
+  padding: 10px 10px 0;
+  font-size: var(--font-size-large);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-strong);
+}
+
+.settings-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 20px;
+}
+
+.settings-nav-group-title {
+  padding: 0 10px 6px;
+}
+
+.settings-page {
+  flex: 1;
+  min-height: 0;
+  padding: 24px;
+  overflow: auto;
+}
+
+.settings-section {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.settings-section-title {
+  margin-bottom: 16px;
+  font-size: var(--font-size-x-large, 20px);
+  font-weight: var(--font-weight-medium, 500);
+}
+
+.settings-page-empty {
+  color: var(--v2-text-text-muted, #8a8686);
+}

@@ -1,0 +1,147 @@
+import { createHash, randomUUID } from "node:crypto"
+import fs from "node:fs/promises"
+import path from "node:path"
+import type { McpServerConfig, SettingSource } from "@cursor/sdk"
+import { lstatIfExists, readTextIfExists, realPathWithinRoot } from "@claxedo/helpers/fs"
+import { asRecord } from "@claxedo/helpers/guards"
+import type { McpServerSpec, PluginProjection, SkillRoot } from "../../contract"
+import { mirrorConfigEntries, mirrorConfigTree, pruneMirrorDirectory, type ConfigMirrorOptions } from "../config-mirror"
+
+const OWNER = "claxedo-agent-plugins"
+const PREFIX = "claxedo--"
+const MARKER = ".claxedo-agent-plugin.json"
+const MIRRORED = ["mcp.json", "settings.json", "sandbox.json", "hooks.json", "rules", "skills", "skills-cursor", "agents"] as const
+const SECRET_FILE = /^(?:mcp-auth\.json|auth\.json)$|(?:^|[-_.])(?:credential|credentials|oauth|auth|secret|token|password|keychain)(?:[-_.]|$)/i
+const mirror: ConfigMirrorOptions = { secretFile: SECRET_FILE, externalSkills: true }
+
+export type CursorPluginOptions = { settingSources?: SettingSource[] }
+
+export type CursorHome = { home: string; local: CursorPluginOptions }
+
+function cursorMcp(server: McpServerSpec): McpServerConfig {
+  if (server.kind === "stdio") return { type: "stdio", command: server.command, args: [...server.args ?? []], env: { ...server.env }, ...(server.cwd ? { cwd: server.cwd } : {}) }
+  return { type: server.kind, url: server.url, headers: { ...server.headers } }
+}
+
+export function projectCursorMcpServers(servers: readonly McpServerSpec[]): Record<string, McpServerConfig> {
+  return Object.fromEntries(servers.map((server) => [server.name, cursorMcp(server)]))
+}
+
+export function cursorHomeKey(accountOwner: string, binding: string,
+  projection: Pick<PluginProjection, "pluginRoots" | "pluginSelection">): string {
+  const selection = [...new Set(projection.pluginRoots.map((plugin) => plugin.pluginInstanceId))].sort()
+  return createHash("sha256").update(JSON.stringify([accountOwner, binding, selection, projection.pluginSelection?.mode ?? "default"])).digest("hex").slice(0, 16)
+}
+
+function managedPluginName(plugin: SkillRoot): string {
+  const readable = path.basename(plugin.root).toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "plugin"
+  return `${PREFIX}${readable}--${createHash("sha256").update(plugin.pluginInstanceId).digest("hex").slice(0, 12)}`
+}
+
+async function readPluginMarker(folder: string, name: string): Promise<Record<string, unknown> | undefined> {
+  const content = await readTextIfExists(path.join(folder, name, MARKER)).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOTDIR") return undefined
+    throw error
+  })
+  if (content === undefined) return undefined
+  const marker = asRecord(JSON.parse(content))
+  return marker?.owner === OWNER && marker.directory === name ? marker : undefined
+}
+
+async function managedEntries(folder: string): Promise<Set<string>> {
+  const managed = new Set<string>()
+  for (const name of await fs.readdir(folder)) {
+    if (name.startsWith(PREFIX) && await readPluginMarker(folder, name)) managed.add(name)
+  }
+  return managed
+}
+
+async function stagePlugin(folder: string, name: string, plugin: SkillRoot, transaction: string): Promise<string> {
+  const staging = path.join(folder, `.claxedo-staging-${transaction}-${name.slice(PREFIX.length)}`)
+  const pluginRoot = await fs.realpath(plugin.root)
+  const filter = async (pathname: string) => {
+    if (!(await realPathWithinRoot(pathname, pluginRoot)).within) throw new Error(`Cursor plugin link escapes its root: ${pathname}`)
+    return true
+  }
+  try {
+    await fs.cp(plugin.root, staging, { recursive: true, dereference: true, force: false, errorOnExist: true, filter })
+    await fs.writeFile(path.join(staging, MARKER), `${JSON.stringify({ owner: OWNER, directory: name, pluginInstanceId: plugin.pluginInstanceId }, null, 2)}\n`, { mode: 0o600 })
+  } catch (error) {
+    await fs.rm(staging, { recursive: true, force: true })
+    throw error
+  }
+  return staging
+}
+
+async function replaceManaged(folder: string, desired: Map<string, SkillRoot>, existing: Set<string>): Promise<void> {
+  const transaction = randomUUID()
+  const staged = new Map<string, string>()
+  const backups = new Map<string, string>()
+  const activated = new Set<string>()
+  try {
+    for (const [name, plugin] of desired) staged.set(name, await stagePlugin(folder, name, plugin, transaction))
+    for (const name of existing) {
+      const backup = path.join(folder, `.claxedo-backup-${transaction}-${name.slice(PREFIX.length)}`)
+      await fs.rename(path.join(folder, name), backup)
+      backups.set(name, backup)
+    }
+    for (const [name, staging] of staged) {
+      await fs.rename(staging, path.join(folder, name))
+      activated.add(name)
+    }
+  } catch (error) {
+    for (const staging of staged.values()) await fs.rm(staging, { recursive: true, force: true })
+    for (const name of activated) await fs.rm(path.join(folder, name), { recursive: true, force: true })
+    for (const [name, backup] of backups) await fs.rename(backup, path.join(folder, name))
+    throw error
+  }
+  for (const backup of backups.values()) await fs.rm(backup, { recursive: true, force: true })
+}
+
+async function projectCursorPlugins(projection: Pick<PluginProjection, "pluginRoots">, folder: string): Promise<boolean> {
+  await fs.mkdir(folder, { recursive: true, mode: 0o700 })
+  const existing = await managedEntries(folder)
+  const desired = new Map<string, SkillRoot>()
+  for (const plugin of projection.pluginRoots) {
+    const name = managedPluginName(plugin)
+    if (desired.has(name)) throw new Error(`Duplicate Cursor plugin ${plugin.pluginInstanceId}`)
+    if (!existing.has(name) && await lstatIfExists(path.join(folder, name))) {
+      throw new Error(`Cursor plugin destination ${path.join(folder, name)} is not owned by Claxedo`)
+    }
+    desired.set(name, plugin)
+  }
+  if (desired.size || existing.size) await replaceManaged(folder, desired, existing)
+  return desired.size > 0
+}
+
+function unmirroredPluginEntry(name: string): boolean {
+  return name.startsWith(".") || name.startsWith(PREFIX)
+}
+
+async function mirrorPersonalPlugins(personalFolder: string, folder: string, personalRoot: string, include: boolean): Promise<void> {
+  const relative = path.join("plugins", "local")
+  const names = include && (await lstatIfExists(personalFolder))?.isDirectory()
+    ? (await fs.readdir(personalFolder)).filter((name) => !unmirroredPluginEntry(name)) : []
+  await pruneMirrorDirectory(folder, relative, names, { ...mirror, keep: (entry) => unmirroredPluginEntry(path.basename(entry)) })
+  for (const name of names) {
+    await mirrorConfigTree(path.join(personalFolder, name), path.join(folder, name), personalRoot, mirror, path.join(relative, name))
+  }
+}
+
+async function mirrorPersonalConfig(personal: string | undefined, cursorDir: string, includePersonalPlugins: boolean): Promise<void> {
+  const source = personal && (await lstatIfExists(personal))?.isDirectory() ? personal : undefined
+  const root = await mirrorConfigEntries(source, cursorDir, MIRRORED, mirror)
+  const folder = path.join(cursorDir, "plugins", "local")
+  await fs.mkdir(folder, { recursive: true, mode: 0o700 })
+  if (root) await mirrorPersonalPlugins(path.join(root, "plugins", "local"), folder, root, includePersonalPlugins)
+}
+
+export async function composeCursorHome(input: { root: string; key: string; personalCursorDir?: string;
+  projection: Pick<PluginProjection, "pluginRoots" | "pluginSelection"> }): Promise<CursorHome> {
+  const home = path.join(input.root, input.key)
+  const cursorDir = path.join(home, ".cursor")
+  await fs.mkdir(cursorDir, { recursive: true, mode: 0o700 })
+  await mirrorPersonalConfig(input.personalCursorDir, cursorDir, input.projection.pluginSelection?.mode !== "selected")
+  const delivered = await projectCursorPlugins(input.projection, path.join(cursorDir, "plugins", "local"))
+  return { home, local: { settingSources: delivered ? ["user", "plugins"] : ["user"] } }
+}

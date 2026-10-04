@@ -1,0 +1,3043 @@
+{
+  "generated_at": "2026-05-23T09:16:14.894Z",
+  "status": "fail",
+  "adapters": [
+    "browser"
+  ],
+  "targets": [
+    "claxedo",
+    "upstream"
+  ],
+  "scenarios": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "launch-empty-home",
+      "name": "Launch Empty Home",
+      "started_at": "2026-05-23T09:14:09.110Z",
+      "duration_ms": 8677.995917,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 0,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "launch_first_window_ms",
+          "value": 3163.690791,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            3163.690791
+          ],
+          "p50": 3163.690791,
+          "p95": 3163.690791,
+          "min": 3163.690791,
+          "max": 3163.690791,
+          "mean": 3163.690791,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_first_useful_screen_ms",
+          "value": 3219.2358749999994,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            3219.2358749999994
+          ],
+          "p50": 3219.2358749999994,
+          "p95": 3219.2358749999994,
+          "min": 3219.2358749999994,
+          "max": 3219.2358749999994,
+          "mean": 3219.2358749999994,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_workspace_ready_ms",
+          "value": 8222.826333,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            8222.826333
+          ],
+          "p50": 8222.826333,
+          "p95": 8222.826333,
+          "min": 8222.826333,
+          "max": 8222.826333,
+          "mean": 8222.826333,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_first_input_ms",
+          "value": 35.21962499999972,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            35.21962499999972
+          ],
+          "p50": 35.21962499999972,
+          "p95": 35.21962499999972,
+          "min": 35.21962499999972,
+          "max": 35.21962499999972,
+          "mean": 35.21962499999972,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "memory_rss_mb",
+          "value": 61.03515625,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            61.03515625
+          ],
+          "p50": 61.03515625,
+          "p95": 61.03515625,
+          "min": 61.03515625,
+          "max": 61.03515625,
+          "mean": 61.03515625,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 853.475,
+        "memory_rss_mb": 61.03515625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-launch-empty-home-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "launch-empty-home",
+        "metrics": {
+          "launch_first_window_ms": 5664,
+          "launch_first_useful_screen_ms": 5720,
+          "launch_workspace_ready_ms": 14390,
+          "launch_first_input_ms": 62,
+          "memory_rss_mb": 92
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "launch-project-20-sessions",
+      "name": "Launch Project 20 Sessions",
+      "started_at": "2026-05-23T09:14:14.975Z",
+      "duration_ms": 5828.802125,
+      "seed": {
+        "repos": 1,
+        "sessions": 20,
+        "messages": 2000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "launch_first_window_ms",
+          "value": 325.2743750000009,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            325.2743750000009
+          ],
+          "p50": 325.2743750000009,
+          "p95": 325.2743750000009,
+          "min": 325.2743750000009,
+          "max": 325.2743750000009,
+          "mean": 325.2743750000009,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_workspace_ready_ms",
+          "value": 5373.014083,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            5373.014083
+          ],
+          "p50": 5373.014083,
+          "p95": 5373.014083,
+          "min": 5373.014083,
+          "max": 5373.014083,
+          "mean": 5373.014083,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 19.63683300000048,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            19.63683300000048
+          ],
+          "p50": 19.63683300000048,
+          "p95": 19.63683300000048,
+          "min": 19.63683300000048,
+          "max": 19.63683300000048,
+          "mean": 19.63683300000048,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "memory_rss_mb",
+          "value": 73.05145263671875,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            73.05145263671875
+          ],
+          "p50": 73.05145263671875,
+          "p95": 73.05145263671875,
+          "min": 73.05145263671875,
+          "max": 73.05145263671875,
+          "mean": 73.05145263671875,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 1373.729,
+        "memory_rss_mb": 73.05145263671875,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-launch-project-20-sessions-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "launch-project-20-sessions",
+        "metrics": {
+          "launch_first_window_ms": 570,
+          "launch_workspace_ready_ms": 9403,
+          "transcript_render_ms": 45,
+          "memory_rss_mb": 110
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "long-session-switch",
+      "name": "Long Session Switch",
+      "started_at": "2026-05-23T09:14:21.161Z",
+      "duration_ms": 6146.604667,
+      "seed": {
+        "repos": 1,
+        "sessions": 2,
+        "messages": 20000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 298.34383400000297,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            298.34383400000297
+          ],
+          "p50": 298.34383400000297,
+          "p95": 298.34383400000297,
+          "min": 298.34383400000297,
+          "max": 298.34383400000297,
+          "mean": 298.34383400000297,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 117.8752080000013,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            117.8752080000013
+          ],
+          "p50": 117.8752080000013,
+          "p95": 117.8752080000013,
+          "min": 117.8752080000013,
+          "max": 117.8752080000013,
+          "mean": 117.8752080000013,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "scroll_latency_ms",
+          "value": 29.768917000001238,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            29.768917000001238
+          ],
+          "p50": 29.768917000001238,
+          "p95": 29.768917000001238,
+          "min": 29.768917000001238,
+          "max": 29.768917000001238,
+          "mean": 29.768917000001238,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "incremental_append_latency_ms",
+          "value": 0.7015409999985422,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.7015409999985422
+          ],
+          "p50": 0.7015409999985422,
+          "p95": 0.7015409999985422,
+          "min": 0.7015409999985422,
+          "max": 0.7015409999985422,
+          "mean": 0.7015409999985422,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "tool_block_toggle_latency_ms",
+          "value": 3.3896249999997963,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            3.3896249999997963
+          ],
+          "p50": 3.3896249999997963,
+          "p95": 3.3896249999997963,
+          "min": 3.3896249999997963,
+          "max": 3.3896249999997963,
+          "mean": 3.3896249999997963,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "memory_growth_mb",
+          "value": 5.18798828125,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            5.18798828125
+          ],
+          "p50": 5.18798828125,
+          "p95": 5.18798828125,
+          "min": 5.18798828125,
+          "max": 5.18798828125,
+          "mean": 5.18798828125,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 2202.029,
+        "memory_rss_mb": 64.849853515625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-long-session-switch-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "long-session-switch",
+        "metrics": {
+          "surface_switch_latency_ms": 523,
+          "transcript_render_ms": 268,
+          "scroll_latency_ms": 55,
+          "incremental_append_latency_ms": 6,
+          "tool_block_toggle_latency_ms": 9,
+          "memory_growth_mb": 22
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "live-terminal-switch",
+      "name": "Live Terminal Switch",
+      "started_at": "2026-05-23T09:14:27.269Z",
+      "duration_ms": 6080.813833,
+      "seed": {
+        "repos": 1,
+        "sessions": 3,
+        "messages": 1500,
+        "terminals": 3,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 6.9325839999983145,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            6.9325839999983145
+          ],
+          "p50": 6.9325839999983145,
+          "p95": 6.9325839999983145,
+          "min": 6.9325839999983145,
+          "max": 6.9325839999983145,
+          "mean": 6.9325839999983145,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "pty_attach_ms",
+          "value": 10.683082999999897,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            10.683082999999897
+          ],
+          "p50": 10.683082999999897,
+          "p95": 10.683082999999897,
+          "min": 10.683082999999897,
+          "max": 10.683082999999897,
+          "mean": 10.683082999999897,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "terminal_throughput_lines_per_s",
+          "value": 300000,
+          "unit": "lines/s",
+          "direction": "higher",
+          "samples": [
+            300000
+          ],
+          "p50": 300000,
+          "p95": 300000,
+          "min": 300000,
+          "max": 300000,
+          "mean": 300000,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "terminal_resize_latency_ms",
+          "value": 3.2402079999992566,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            3.2402079999992566
+          ],
+          "p50": 3.2402079999992566,
+          "p95": 3.2402079999992566,
+          "min": 3.2402079999992566,
+          "max": 3.2402079999992566,
+          "mean": 3.2402079999992566,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "terminal_reconnect_latency_ms",
+          "value": 33.39091700000063,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            33.39091700000063
+          ],
+          "p50": 33.39091700000063,
+          "p95": 33.39091700000063,
+          "min": 33.39091700000063,
+          "max": 33.39091700000063,
+          "mean": 33.39091700000063,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "ansi_render_latency_ms",
+          "value": 0.7600830000010319,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.7600830000010319
+          ],
+          "p50": 0.7600830000010319,
+          "p95": 0.7600830000010319,
+          "min": 0.7600830000010319,
+          "max": 0.7600830000010319,
+          "mean": 0.7600830000010319,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 2684.298,
+        "memory_rss_mb": 68.85528564453125,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-live-terminal-switch-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "live-terminal-switch",
+        "metrics": {
+          "surface_switch_latency_ms": 32,
+          "pty_attach_ms": 36,
+          "terminal_throughput_lines_per_s": 195000,
+          "terminal_resize_latency_ms": 9,
+          "terminal_reconnect_latency_ms": 59,
+          "ansi_render_latency_ms": 6
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "large-diff-toggle",
+      "name": "Large Diff Toggle",
+      "started_at": "2026-05-23T09:14:33.376Z",
+      "duration_ms": 6068.093417,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 500,
+        "terminals": 0,
+        "changed_files": 500,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "vcs_load_ms",
+          "value": 10.38283400000364,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            10.38283400000364
+          ],
+          "p50": 10.38283400000364,
+          "p95": 10.38283400000364,
+          "min": 10.38283400000364,
+          "max": 10.38283400000364,
+          "mean": 10.38283400000364,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "hunk_render_ms",
+          "value": 15.944415999998455,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            15.944415999998455
+          ],
+          "p50": 15.944415999998455,
+          "p95": 15.944415999998455,
+          "min": 15.944415999998455,
+          "max": 15.944415999998455,
+          "mean": 15.944415999998455,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "diff_toggle_latency_ms",
+          "value": 11.166083999996772,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            11.166083999996772
+          ],
+          "p50": 11.166083999996772,
+          "p95": 11.166083999996772,
+          "min": 11.166083999996772,
+          "max": 11.166083999996772,
+          "mean": 11.166083999996772,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "line_comment_latency_ms",
+          "value": 7.17254099999991,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            7.17254099999991
+          ],
+          "p50": 7.17254099999991,
+          "p95": 7.17254099999991,
+          "min": 7.17254099999991,
+          "max": 7.17254099999991,
+          "mean": 7.17254099999991,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "changed_file_navigation_ms",
+          "value": 1.8519999999989523,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.8519999999989523
+          ],
+          "p50": 1.8519999999989523,
+          "p95": 1.8519999999989523,
+          "min": 1.8519999999989523,
+          "max": 1.8519999999989523,
+          "mean": 1.8519999999989523,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 3254.741,
+        "memory_rss_mb": 68.85528564453125,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-large-diff-toggle-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "large-diff-toggle",
+        "metrics": {
+          "vcs_load_ms": 36,
+          "hunk_render_ms": 41,
+          "diff_toggle_latency_ms": 37,
+          "line_comment_latency_ms": 33,
+          "changed_file_navigation_ms": 7
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "workspace-switch",
+      "name": "Workspace Switch",
+      "started_at": "2026-05-23T09:14:39.558Z",
+      "duration_ms": 6155.027083000001,
+      "seed": {
+        "repos": 1,
+        "sessions": 10,
+        "messages": 1000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 5,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "workspace_bootstrap_ms",
+          "value": 6.6414999999979045,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            6.6414999999979045
+          ],
+          "p50": 6.6414999999979045,
+          "p95": 6.6414999999979045,
+          "min": 6.6414999999979045,
+          "max": 6.6414999999979045,
+          "mean": 6.6414999999979045,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "workspace_switch_ms",
+          "value": 404.63445800000045,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            404.63445800000045
+          ],
+          "p50": 404.63445800000045,
+          "p95": 404.63445800000045,
+          "min": 404.63445800000045,
+          "max": 404.63445800000045,
+          "mean": 404.63445800000045,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "file_tree_load_ms",
+          "value": 5.997208000000683,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            5.997208000000683
+          ],
+          "p50": 5.997208000000683,
+          "p95": 5.997208000000683,
+          "min": 5.997208000000683,
+          "max": 5.997208000000683,
+          "mean": 5.997208000000683,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 1.6045000000012806,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.6045000000012806
+          ],
+          "p50": 1.6045000000012806,
+          "p95": 1.6045000000012806,
+          "min": 1.6045000000012806,
+          "max": 1.6045000000012806,
+          "mean": 1.6045000000012806,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 4054.698,
+        "memory_rss_mb": 64.849853515625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-workspace-switch-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "workspace-switch",
+        "metrics": {
+          "workspace_bootstrap_ms": 32,
+          "workspace_switch_ms": 709,
+          "file_tree_load_ms": 31,
+          "surface_switch_latency_ms": 7
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "command-palette-large-project",
+      "name": "Command Palette Large Project",
+      "started_at": "2026-05-23T09:14:45.535Z",
+      "duration_ms": 5937.353499999997,
+      "seed": {
+        "repos": 1,
+        "sessions": 40,
+        "messages": 8000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "command_palette_index_ms",
+          "value": 6.108625000000757,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            6.108625000000757
+          ],
+          "p50": 6.108625000000757,
+          "p95": 6.108625000000757,
+          "min": 6.108625000000757,
+          "max": 6.108625000000757,
+          "mean": 6.108625000000757,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "command_palette_open_ms",
+          "value": 2.823708000003535,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            2.823708000003535
+          ],
+          "p50": 2.823708000003535,
+          "p95": 2.823708000003535,
+          "min": 2.823708000003535,
+          "max": 2.823708000003535,
+          "mean": 2.823708000003535,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "command_palette_search_ms",
+          "value": 17.732624999996915,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            17.732624999996915
+          ],
+          "p50": 17.732624999996915,
+          "p95": 17.732624999996915,
+          "min": 17.732624999996915,
+          "max": 17.732624999996915,
+          "mean": 17.732624999996915,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "command_execution_overhead_ms",
+          "value": 1.0701659999976982,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.0701659999976982
+          ],
+          "p50": 1.0701659999976982,
+          "p95": 1.0701659999976982,
+          "min": 1.0701659999976982,
+          "max": 1.0701659999976982,
+          "mean": 1.0701659999976982,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 4524.475,
+        "memory_rss_mb": 68.85528564453125,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-command-palette-large-project-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "command-palette-large-project",
+        "metrics": {
+          "command_palette_index_ms": 32,
+          "command_palette_open_ms": 8,
+          "command_palette_search_ms": 43,
+          "command_execution_overhead_ms": 7
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "theme-switch",
+      "name": "Theme Switch",
+      "started_at": "2026-05-23T09:14:51.916Z",
+      "duration_ms": 6350.1890829999975,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 1000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark",
+          "claxedo-light",
+          "nord",
+          "github-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "theme_switch_latency_ms",
+          "value": 4.16162500000064,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            4.16162500000064
+          ],
+          "p50": 4.16162500000064,
+          "p95": 4.16162500000064,
+          "min": 4.16162500000064,
+          "max": 4.16162500000064,
+          "mean": 4.16162500000064,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "frame_time_ms",
+          "value": 5.041624999998021,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            5.041624999998021
+          ],
+          "p50": 5.041624999998021,
+          "p95": 5.041624999998021,
+          "min": 5.041624999998021,
+          "max": 5.041624999998021,
+          "mean": 5.041624999998021,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "dropped_frames",
+          "value": 0,
+          "unit": "frames",
+          "direction": "lower",
+          "samples": [
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "refresh_rate_stability",
+          "value": 0.99,
+          "unit": "ratio",
+          "direction": "higher",
+          "samples": [
+            0.99
+          ],
+          "p50": 0.99,
+          "p95": 0.99,
+          "min": 0.99,
+          "max": 0.99,
+          "mean": 0.99,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "animation_jank",
+          "value": 0,
+          "unit": "ratio",
+          "direction": "lower",
+          "samples": [
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 5007.763,
+        "memory_rss_mb": 57.506561279296875,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-theme-switch-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "theme-switch",
+        "metrics": {
+          "theme_switch_latency_ms": 10,
+          "frame_time_ms": 31,
+          "dropped_frames": 2,
+          "refresh_rate_stability": 0.64,
+          "animation_jank": 0
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "three-pane-resize",
+      "name": "Three Pane Resize",
+      "started_at": "2026-05-23T09:14:58.185Z",
+      "duration_ms": 6243.0845000000045,
+      "seed": {
+        "repos": 1,
+        "sessions": 1,
+        "messages": 10000,
+        "terminals": 1,
+        "changed_files": 120,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "frame_time_ms",
+          "value": 3.400832999999693,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            3.400832999999693
+          ],
+          "p50": 3.400832999999693,
+          "p95": 3.400832999999693,
+          "min": 3.400832999999693,
+          "max": 3.400832999999693,
+          "mean": 3.400832999999693,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "dropped_frames",
+          "value": 0,
+          "unit": "frames",
+          "direction": "lower",
+          "samples": [
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "scroll_latency_ms",
+          "value": 23.946750000002794,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            23.946750000002794
+          ],
+          "p50": 23.946750000002794,
+          "p95": 23.946750000002794,
+          "min": 23.946750000002794,
+          "max": 23.946750000002794,
+          "mean": 23.946750000002794,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "terminal_resize_latency_ms",
+          "value": 19.26708299999882,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            19.26708299999882
+          ],
+          "p50": 19.26708299999882,
+          "p95": 19.26708299999882,
+          "min": 19.26708299999882,
+          "max": 19.26708299999882,
+          "mean": 19.26708299999882,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "diff_toggle_latency_ms",
+          "value": 4.354083999998693,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            4.354083999998693
+          ],
+          "p50": 4.354083999998693,
+          "p95": 4.354083999998693,
+          "min": 4.354083999998693,
+          "max": 4.354083999998693,
+          "mean": 4.354083999998693,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 5567.141,
+        "memory_rss_mb": 68.85528564453125,
+        "open_file_descriptors": 0,
+        "subprocess_count": 1,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-three-pane-resize-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "three-pane-resize",
+        "metrics": {
+          "frame_time_ms": 9,
+          "dropped_frames": 2,
+          "scroll_latency_ms": 49,
+          "terminal_resize_latency_ms": 45,
+          "diff_toggle_latency_ms": 10
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "agent-control-navigation",
+      "name": "Agent Control Navigation",
+      "started_at": "2026-05-23T09:15:04.259Z",
+      "duration_ms": 6034.484708999997,
+      "seed": {
+        "repos": 1,
+        "sessions": 8,
+        "messages": 4000,
+        "terminals": 3,
+        "changed_files": 80,
+        "projects": 2,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 100,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "agent_action_dispatch_ms",
+          "value": 28.868374999998196,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            28.868374999998196
+          ],
+          "p50": 28.868374999998196,
+          "p95": 28.868374999998196,
+          "min": 28.868374999998196,
+          "max": 28.868374999998196,
+          "mean": 28.868374999998196,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "agent_state_verify_ms",
+          "value": 2.0473330000022543,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            2.0473330000022543
+          ],
+          "p50": 2.0473330000022543,
+          "p95": 2.0473330000022543,
+          "min": 2.0473330000022543,
+          "max": 2.0473330000022543,
+          "mean": 2.0473330000022543,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 0.8216670000037993,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.8216670000037993
+          ],
+          "p50": 0.8216670000037993,
+          "p95": 0.8216670000037993,
+          "min": 0.8216670000037993,
+          "max": 0.8216670000037993,
+          "mean": 0.8216670000037993,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "command_execution_overhead_ms",
+          "value": 0.5736669999969308,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.5736669999969308
+          ],
+          "p50": 0.5736669999969308,
+          "p95": 0.5736669999969308,
+          "min": 0.5736669999969308,
+          "max": 0.5736669999969308,
+          "mean": 0.5736669999969308,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "event_backlog",
+          "value": 250,
+          "unit": "events",
+          "direction": "lower",
+          "samples": [
+            250
+          ],
+          "p50": 250,
+          "p95": 250,
+          "min": 250,
+          "max": 250,
+          "mean": 250,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 6056.356,
+        "memory_rss_mb": 68.85528564453125,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 250,
+        "event_backlog": 4
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/claxedo-agent-control-navigation-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "claxedo",
+        "scenario": "agent-control-navigation",
+        "metrics": {
+          "agent_action_dispatch_ms": 54,
+          "agent_state_verify_ms": 8,
+          "surface_switch_latency_ms": 6,
+          "command_execution_overhead_ms": 6,
+          "event_backlog": 385
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "launch-empty-home",
+      "name": "Launch Empty Home",
+      "started_at": "2026-05-23T09:15:12.360Z",
+      "duration_ms": 7527.523166999999,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 0,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "launch_first_window_ms",
+          "value": 1910.5709169999973,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1910.5709169999973
+          ],
+          "p50": 1910.5709169999973,
+          "p95": 1910.5709169999973,
+          "min": 1910.5709169999973,
+          "max": 1910.5709169999973,
+          "mean": 1910.5709169999973,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_first_useful_screen_ms",
+          "value": 2037.4877080000078,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            2037.4877080000078
+          ],
+          "p50": 2037.4877080000078,
+          "p95": 2037.4877080000078,
+          "min": 2037.4877080000078,
+          "max": 2037.4877080000078,
+          "mean": 2037.4877080000078,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_workspace_ready_ms",
+          "value": 7039.993582999996,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            7039.993582999996
+          ],
+          "p50": 7039.993582999996,
+          "p95": 7039.993582999996,
+          "min": 7039.993582999996,
+          "max": 7039.993582999996,
+          "mean": 7039.993582999996,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_first_input_ms",
+          "value": 24.002957999997307,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            24.002957999997307
+          ],
+          "p50": 24.002957999997307,
+          "p95": 24.002957999997307,
+          "min": 24.002957999997307,
+          "max": 24.002957999997307,
+          "mean": 24.002957999997307,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "memory_rss_mb",
+          "value": 33.473968505859375,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            33.473968505859375
+          ],
+          "p50": 33.473968505859375,
+          "p95": 33.473968505859375,
+          "min": 33.473968505859375,
+          "max": 33.473968505859375,
+          "mean": 33.473968505859375,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 6505.892,
+        "memory_rss_mb": 33.473968505859375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/upstream-launch-empty-home-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "launch-empty-home",
+        "metrics": {
+          "launch_first_window_ms": 3344,
+          "launch_first_useful_screen_ms": 3566,
+          "launch_workspace_ready_ms": 12320,
+          "launch_first_input_ms": 50,
+          "memory_rss_mb": 51
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "launch-project-20-sessions",
+      "name": "Launch Project 20 Sessions",
+      "started_at": "2026-05-23T09:15:29.128Z",
+      "duration_ms": 16732.787292000008,
+      "seed": {
+        "repos": 1,
+        "sessions": 20,
+        "messages": 2000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "launch_first_window_ms",
+          "value": 180.16270799998892,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            180.16270799998892
+          ],
+          "p50": 180.16270799998892,
+          "p95": 180.16270799998892,
+          "min": 180.16270799998892,
+          "max": 180.16270799998892,
+          "mean": 180.16270799998892,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_workspace_ready_ms",
+          "value": 5953.390916999997,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            5953.390916999997
+          ],
+          "p50": 5953.390916999997,
+          "p95": 5953.390916999997,
+          "min": 5953.390916999997,
+          "max": 5953.390916999997,
+          "mean": 5953.390916999997,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 10008.882249999995,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            10008.882249999995
+          ],
+          "p50": 10008.882249999995,
+          "p95": 10008.882249999995,
+          "min": 10008.882249999995,
+          "max": 10008.882249999995,
+          "mean": 10008.882249999995,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "memory_rss_mb",
+          "value": 45.20416259765625,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            45.20416259765625
+          ],
+          "p50": 45.20416259765625,
+          "p95": 45.20416259765625,
+          "min": 45.20416259765625,
+          "max": 45.20416259765625,
+          "mean": 45.20416259765625,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 7618.221,
+        "memory_rss_mb": 45.20416259765625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [
+        "transcript text was not visible for launch-project-20-sessions: launch-project-20-sessions session 1"
+      ],
+      "artifacts": {
+        "video": "reports/videos/upstream-launch-project-20-sessions-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "launch-project-20-sessions",
+        "metrics": {
+          "launch_first_window_ms": 331,
+          "launch_workspace_ready_ms": 10419,
+          "transcript_render_ms": 17516,
+          "memory_rss_mb": 68
+        }
+      },
+      "status": "fail",
+      "failures": [
+        "transcript text was not visible for launch-project-20-sessions: launch-project-20-sessions session 1"
+      ]
+    },
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "long-session-switch",
+      "name": "Long Session Switch",
+      "started_at": "2026-05-23T09:15:34.923Z",
+      "duration_ms": 5765.364083000008,
+      "seed": {
+        "repos": 1,
+        "sessions": 2,
+        "messages": 20000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 149.09912500000792,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            149.09912500000792
+          ],
+          "p50": 149.09912500000792,
+          "p95": 149.09912500000792,
+          "min": 149.09912500000792,
+          "max": 149.09912500000792,
+          "mean": 149.09912500000792,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 126.48370799999975,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            126.48370799999975
+          ],
+          "p50": 126.48370799999975,
+          "p95": 126.48370799999975,
+          "min": 126.48370799999975,
+          "max": 126.48370799999975,
+          "mean": 126.48370799999975,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "scroll_latency_ms",
+          "value": 32.79370799999742,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            32.79370799999742
+          ],
+          "p50": 32.79370799999742,
+          "p95": 32.79370799999742,
+          "min": 32.79370799999742,
+          "max": 32.79370799999742,
+          "mean": 32.79370799999742,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "incremental_append_latency_ms",
+          "value": 0.368040999994264,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.368040999994264
+          ],
+          "p50": 0.368040999994264,
+          "p95": 0.368040999994264,
+          "min": 0.368040999994264,
+          "max": 0.368040999994264,
+          "mean": 0.368040999994264,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "tool_block_toggle_latency_ms",
+          "value": 0.8826670000125887,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.8826670000125887
+          ],
+          "p50": 0.8826670000125887,
+          "p95": 0.8826670000125887,
+          "min": 0.8826670000125887,
+          "max": 0.8826670000125887,
+          "mean": 0.8826670000125887,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "memory_growth_mb",
+          "value": 3.6163330078125,
+          "unit": "MB",
+          "direction": "lower",
+          "samples": [
+            3.6163330078125
+          ],
+          "p50": 3.6163330078125,
+          "p95": 3.6163330078125,
+          "min": 3.6163330078125,
+          "max": 3.6163330078125,
+          "mean": 3.6163330078125,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 8137.628,
+        "memory_rss_mb": 45.20416259765625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/upstream-long-session-switch-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "long-session-switch",
+        "metrics": {
+          "surface_switch_latency_ms": 300,
+          "transcript_render_ms": 277,
+          "scroll_latency_ms": 58,
+          "incremental_append_latency_ms": 6,
+          "tool_block_toggle_latency_ms": 6,
+          "memory_growth_mb": 20
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "live-terminal-switch",
+      "name": "Live Terminal Switch",
+      "started_at": "2026-05-23T09:15:40.501Z",
+      "duration_ms": 5539.339666999993,
+      "seed": {
+        "repos": 1,
+        "sessions": 3,
+        "messages": 1500,
+        "terminals": 3,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 5.6137910000106785,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            5.6137910000106785
+          ],
+          "p50": 5.6137910000106785,
+          "p95": 5.6137910000106785,
+          "min": 5.6137910000106785,
+          "max": 5.6137910000106785,
+          "mean": 5.6137910000106785,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "pty_attach_ms",
+          "value": 15.626625000004424,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            15.626625000004424
+          ],
+          "p50": 15.626625000004424,
+          "p95": 15.626625000004424,
+          "min": 15.626625000004424,
+          "max": 15.626625000004424,
+          "mean": 15.626625000004424,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "terminal_throughput_lines_per_s",
+          "value": 300000,
+          "unit": "lines/s",
+          "direction": "higher",
+          "samples": [
+            300000
+          ],
+          "p50": 300000,
+          "p95": 300000,
+          "min": 300000,
+          "max": 300000,
+          "mean": 300000,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "terminal_resize_latency_ms",
+          "value": 3.995249999992666,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            3.995249999992666
+          ],
+          "p50": 3.995249999992666,
+          "p95": 3.995249999992666,
+          "min": 3.995249999992666,
+          "max": 3.995249999992666,
+          "mean": 3.995249999992666,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "terminal_reconnect_latency_ms",
+          "value": 20.17437500000233,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            20.17437500000233
+          ],
+          "p50": 20.17437500000233,
+          "p95": 20.17437500000233,
+          "min": 20.17437500000233,
+          "max": 20.17437500000233,
+          "mean": 20.17437500000233,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "ansi_render_latency_ms",
+          "value": 0.9532919999910519,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.9532919999910519
+          ],
+          "p50": 0.9532919999910519,
+          "p95": 0.9532919999910519,
+          "min": 0.9532919999910519,
+          "max": 0.9532919999910519,
+          "mean": 0.9532919999910519,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 8514.73,
+        "memory_rss_mb": 45.20416259765625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/upstream-live-terminal-switch-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "live-terminal-switch",
+        "metrics": {
+          "surface_switch_latency_ms": 31,
+          "pty_attach_ms": 41,
+          "terminal_throughput_lines_per_s": 195000,
+          "terminal_resize_latency_ms": 9,
+          "terminal_reconnect_latency_ms": 46,
+          "ansi_render_latency_ms": 6
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "large-diff-toggle",
+      "name": "Large Diff Toggle",
+      "started_at": "2026-05-23T09:15:46.136Z",
+      "duration_ms": 5602.9492089999985,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 500,
+        "terminals": 0,
+        "changed_files": 500,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "vcs_load_ms",
+          "value": 3.4272909999999683,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            3.4272909999999683
+          ],
+          "p50": 3.4272909999999683,
+          "p95": 3.4272909999999683,
+          "min": 3.4272909999999683,
+          "max": 3.4272909999999683,
+          "mean": 3.4272909999999683,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "hunk_render_ms",
+          "value": 22.479749999998603,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            22.479749999998603
+          ],
+          "p50": 22.479749999998603,
+          "p95": 22.479749999998603,
+          "min": 22.479749999998603,
+          "max": 22.479749999998603,
+          "mean": 22.479749999998603,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "diff_toggle_latency_ms",
+          "value": 2.9535829999949783,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            2.9535829999949783
+          ],
+          "p50": 2.9535829999949783,
+          "p95": 2.9535829999949783,
+          "min": 2.9535829999949783,
+          "max": 2.9535829999949783,
+          "mean": 2.9535829999949783,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "line_comment_latency_ms",
+          "value": 30.264667000010377,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            30.264667000010377
+          ],
+          "p50": 30.264667000010377,
+          "p95": 30.264667000010377,
+          "min": 30.264667000010377,
+          "max": 30.264667000010377,
+          "mean": 30.264667000010377,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "changed_file_navigation_ms",
+          "value": 39.56383299999288,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            39.56383299999288
+          ],
+          "p50": 39.56383299999288,
+          "p95": 39.56383299999288,
+          "min": 39.56383299999288,
+          "max": 39.56383299999288,
+          "mean": 39.56383299999288,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 8818.407,
+        "memory_rss_mb": 45.20416259765625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/upstream-large-diff-toggle-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "large-diff-toggle",
+        "metrics": {
+          "vcs_load_ms": 9,
+          "hunk_render_ms": 48,
+          "diff_toggle_latency_ms": 8,
+          "line_comment_latency_ms": 56,
+          "changed_file_navigation_ms": 70
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "workspace-switch",
+      "name": "Workspace Switch",
+      "started_at": "2026-05-23T09:15:52.009Z",
+      "duration_ms": 5823.725542,
+      "seed": {
+        "repos": 1,
+        "sessions": 10,
+        "messages": 1000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 5,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "workspace_bootstrap_ms",
+          "value": 1.865749999997206,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.865749999997206
+          ],
+          "p50": 1.865749999997206,
+          "p95": 1.865749999997206,
+          "min": 1.865749999997206,
+          "max": 1.865749999997206,
+          "mean": 1.865749999997206,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "workspace_switch_ms",
+          "value": 291.2777500000084,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            291.2777500000084
+          ],
+          "p50": 291.2777500000084,
+          "p95": 291.2777500000084,
+          "min": 291.2777500000084,
+          "max": 291.2777500000084,
+          "mean": 291.2777500000084,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "file_tree_load_ms",
+          "value": 105.6931670000049,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            105.6931670000049
+          ],
+          "p50": 105.6931670000049,
+          "p95": 105.6931670000049,
+          "min": 105.6931670000049,
+          "max": 105.6931670000049,
+          "mean": 105.6931670000049,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 1.34725000000617,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.34725000000617
+          ],
+          "p50": 1.34725000000617,
+          "p95": 1.34725000000617,
+          "min": 1.34725000000617,
+          "max": 1.34725000000617,
+          "mean": 1.34725000000617,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 9351.273,
+        "memory_rss_mb": 45.20416259765625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/upstream-workspace-switch-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "workspace-switch",
+        "metrics": {
+          "workspace_bootstrap_ms": 7,
+          "workspace_switch_ms": 510,
+          "file_tree_load_ms": 256,
+          "surface_switch_latency_ms": 7
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "command-palette-large-project",
+      "name": "Command Palette Large Project",
+      "started_at": "2026-05-23T09:15:57.560Z",
+      "duration_ms": 5518.786583000008,
+      "seed": {
+        "repos": 1,
+        "sessions": 40,
+        "messages": 8000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "command_palette_index_ms",
+          "value": 2.2386249999981374,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            2.2386249999981374
+          ],
+          "p50": 2.2386249999981374,
+          "p95": 2.2386249999981374,
+          "min": 2.2386249999981374,
+          "max": 2.2386249999981374,
+          "mean": 2.2386249999981374,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "command_palette_open_ms",
+          "value": 1.8953340000007302,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.8953340000007302
+          ],
+          "p50": 1.8953340000007302,
+          "p95": 1.8953340000007302,
+          "min": 1.8953340000007302,
+          "max": 1.8953340000007302,
+          "mean": 1.8953340000007302,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "command_palette_search_ms",
+          "value": 7.4525419999990845,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            7.4525419999990845
+          ],
+          "p50": 7.4525419999990845,
+          "p95": 7.4525419999990845,
+          "min": 7.4525419999990845,
+          "max": 7.4525419999990845,
+          "mean": 7.4525419999990845,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "command_execution_overhead_ms",
+          "value": 0.4702919999981532,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.4702919999981532
+          ],
+          "p50": 0.4702919999981532,
+          "p95": 0.4702919999981532,
+          "min": 0.4702919999981532,
+          "max": 0.4702919999981532,
+          "mean": 0.4702919999981532,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 9783.745,
+        "memory_rss_mb": 45.20416259765625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/upstream-command-palette-large-project-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "command-palette-large-project",
+        "metrics": {
+          "command_palette_index_ms": 8,
+          "command_palette_open_ms": 7,
+          "command_palette_search_ms": 33,
+          "command_execution_overhead_ms": 6
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "theme-switch",
+      "name": "Theme Switch",
+      "started_at": "2026-05-23T09:16:03.425Z",
+      "duration_ms": 5840.380208000002,
+      "seed": {
+        "repos": 1,
+        "sessions": 0,
+        "messages": 1000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark",
+          "claxedo-light",
+          "nord",
+          "github-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "theme_switch_latency_ms",
+          "value": 1.8392499999899883,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.8392499999899883
+          ],
+          "p50": 1.8392499999899883,
+          "p95": 1.8392499999899883,
+          "min": 1.8392499999899883,
+          "max": 1.8392499999899883,
+          "mean": 1.8392499999899883,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "frame_time_ms",
+          "value": 1.7052499999990687,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            1.7052499999990687
+          ],
+          "p50": 1.7052499999990687,
+          "p95": 1.7052499999990687,
+          "min": 1.7052499999990687,
+          "max": 1.7052499999990687,
+          "mean": 1.7052499999990687,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "dropped_frames",
+          "value": 0,
+          "unit": "frames",
+          "direction": "lower",
+          "samples": [
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "refresh_rate_stability",
+          "value": 0.99,
+          "unit": "ratio",
+          "direction": "higher",
+          "samples": [
+            0.99
+          ],
+          "p50": 0.99,
+          "p95": 0.99,
+          "min": 0.99,
+          "max": 0.99,
+          "mean": 0.99,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "animation_jank",
+          "value": 0,
+          "unit": "ratio",
+          "direction": "lower",
+          "samples": [
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 10128.748,
+        "memory_rss_mb": 33.473968505859375,
+        "open_file_descriptors": 0,
+        "subprocess_count": 0,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/upstream-theme-switch-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "theme-switch",
+        "metrics": {
+          "theme_switch_latency_ms": 7,
+          "frame_time_ms": 7,
+          "dropped_frames": 2,
+          "refresh_rate_stability": 0.64,
+          "animation_jank": 0
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "three-pane-resize",
+      "name": "Three Pane Resize",
+      "started_at": "2026-05-23T09:16:09.224Z",
+      "duration_ms": 5772.192249999993,
+      "seed": {
+        "repos": 1,
+        "sessions": 1,
+        "messages": 10000,
+        "terminals": 1,
+        "changed_files": 120,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "frame_time_ms",
+          "value": 3.5409579999977723,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            3.5409579999977723
+          ],
+          "p50": 3.5409579999977723,
+          "p95": 3.5409579999977723,
+          "min": 3.5409579999977723,
+          "max": 3.5409579999977723,
+          "mean": 3.5409579999977723,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "dropped_frames",
+          "value": 0,
+          "unit": "frames",
+          "direction": "lower",
+          "samples": [
+            0
+          ],
+          "p50": 0,
+          "p95": 0,
+          "min": 0,
+          "max": 0,
+          "mean": 0,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "scroll_latency_ms",
+          "value": 24.58483399999386,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            24.58483399999386
+          ],
+          "p50": 24.58483399999386,
+          "p95": 24.58483399999386,
+          "min": 24.58483399999386,
+          "max": 24.58483399999386,
+          "mean": 24.58483399999386,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "terminal_resize_latency_ms",
+          "value": 46.91350000000966,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            46.91350000000966
+          ],
+          "p50": 46.91350000000966,
+          "p95": 46.91350000000966,
+          "min": 46.91350000000966,
+          "max": 46.91350000000966,
+          "mean": 46.91350000000966,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "diff_toggle_latency_ms",
+          "value": 5.845374999989872,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            5.845374999989872
+          ],
+          "p50": 5.845374999989872,
+          "p95": 5.845374999989872,
+          "min": 5.845374999989872,
+          "max": 5.845374999989872,
+          "mean": 5.845374999989872,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 10422.07,
+        "memory_rss_mb": 45.20416259765625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 1,
+        "network_calls": 250,
+        "event_backlog": 0
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/upstream-three-pane-resize-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "three-pane-resize",
+        "metrics": {
+          "frame_time_ms": 9,
+          "dropped_frames": 2,
+          "scroll_latency_ms": 50,
+          "terminal_resize_latency_ms": 83,
+          "diff_toggle_latency_ms": 31
+        }
+      },
+      "status": "pass",
+      "failures": []
+    },
+    {
+      "adapter": "browser",
+      "target": "upstream",
+      "id": "agent-control-navigation",
+      "name": "Agent Control Navigation",
+      "started_at": "2026-05-23T09:16:14.857Z",
+      "duration_ms": 5587.351333000013,
+      "seed": {
+        "repos": 1,
+        "sessions": 8,
+        "messages": 4000,
+        "terminals": 3,
+        "changed_files": 80,
+        "projects": 2,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 100,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "agent_action_dispatch_ms",
+          "value": 37.88887499997509,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            37.88887499997509
+          ],
+          "p50": 37.88887499997509,
+          "p95": 37.88887499997509,
+          "min": 37.88887499997509,
+          "max": 37.88887499997509,
+          "mean": 37.88887499997509,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "agent_state_verify_ms",
+          "value": 0.8155829999886919,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.8155829999886919
+          ],
+          "p50": 0.8155829999886919,
+          "p95": 0.8155829999886919,
+          "min": 0.8155829999886919,
+          "max": 0.8155829999886919,
+          "mean": 0.8155829999886919,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "surface_switch_latency_ms",
+          "value": 0.46591699999407865,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.46591699999407865
+          ],
+          "p50": 0.46591699999407865,
+          "p95": 0.46591699999407865,
+          "min": 0.46591699999407865,
+          "max": 0.46591699999407865,
+          "mean": 0.46591699999407865,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "command_execution_overhead_ms",
+          "value": 0.30112499999813735,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            0.30112499999813735
+          ],
+          "p50": 0.30112499999813735,
+          "p95": 0.30112499999813735,
+          "min": 0.30112499999813735,
+          "max": 0.30112499999813735,
+          "mean": 0.30112499999813735,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "event_backlog",
+          "value": 250,
+          "unit": "events",
+          "direction": "lower",
+          "samples": [
+            250
+          ],
+          "p50": 250,
+          "p95": 250,
+          "min": 250,
+          "max": 250,
+          "mean": 250,
+          "relative_stddev": 0
+        }
+      ],
+      "resources": {
+        "cpu_user_ms": 10771.006,
+        "memory_rss_mb": 61.03515625,
+        "open_file_descriptors": 0,
+        "subprocess_count": 3,
+        "network_calls": 250,
+        "event_backlog": 4
+      },
+      "validation_failures": [],
+      "artifacts": {
+        "video": "reports/videos/upstream-agent-control-navigation-1.webm"
+      },
+      "budget": {
+        "adapter": "browser",
+        "target": "upstream",
+        "scenario": "agent-control-navigation",
+        "metrics": {
+          "agent_action_dispatch_ms": 67,
+          "agent_state_verify_ms": 6,
+          "surface_switch_latency_ms": 6,
+          "command_execution_overhead_ms": 6,
+          "event_backlog": 385
+        }
+      },
+      "status": "pass",
+      "failures": []
+    }
+  ],
+  "comparisons": [
+    {
+      "scenario": "launch-empty-home",
+      "adapter": "browser",
+      "metric": "launch_first_window_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 3163.690791,
+      "upstream_p95": 1910.5709169999973,
+      "winner_delta_percent": 39.609429517096025
+    },
+    {
+      "scenario": "launch-empty-home",
+      "adapter": "browser",
+      "metric": "launch_first_useful_screen_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 3219.2358749999994,
+      "upstream_p95": 2037.4877080000078,
+      "winner_delta_percent": 36.708964887513616
+    },
+    {
+      "scenario": "launch-empty-home",
+      "adapter": "browser",
+      "metric": "launch_workspace_ready_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 8222.826333,
+      "upstream_p95": 7039.993582999996,
+      "winner_delta_percent": 14.384746826684621
+    },
+    {
+      "scenario": "launch-empty-home",
+      "adapter": "browser",
+      "metric": "launch_first_input_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 35.21962499999972,
+      "upstream_p95": 24.002957999997307,
+      "winner_delta_percent": 31.847775210560886
+    },
+    {
+      "scenario": "launch-empty-home",
+      "adapter": "browser",
+      "metric": "memory_rss_mb",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 61.03515625,
+      "upstream_p95": 33.473968505859375,
+      "winner_delta_percent": 45.15625
+    },
+    {
+      "scenario": "launch-project-20-sessions",
+      "adapter": "browser",
+      "metric": "launch_first_window_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 325.2743750000009,
+      "upstream_p95": 180.16270799998892,
+      "winner_delta_percent": 44.61208080101962
+    },
+    {
+      "scenario": "launch-project-20-sessions",
+      "adapter": "browser",
+      "metric": "launch_workspace_ready_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 5373.014083,
+      "upstream_p95": 5953.390916999997,
+      "winner_delta_percent": 9.748676713681311
+    },
+    {
+      "scenario": "launch-project-20-sessions",
+      "adapter": "browser",
+      "metric": "transcript_render_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 19.63683300000048,
+      "upstream_p95": 10008.882249999995,
+      "winner_delta_percent": 99.80380593447384
+    },
+    {
+      "scenario": "launch-project-20-sessions",
+      "adapter": "browser",
+      "metric": "memory_rss_mb",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 73.05145263671875,
+      "upstream_p95": 45.20416259765625,
+      "winner_delta_percent": 38.1201044386423
+    },
+    {
+      "scenario": "long-session-switch",
+      "adapter": "browser",
+      "metric": "surface_switch_latency_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 298.34383400000297,
+      "upstream_p95": 149.09912500000792,
+      "winner_delta_percent": 50.02439869429095
+    },
+    {
+      "scenario": "long-session-switch",
+      "adapter": "browser",
+      "metric": "transcript_render_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 117.8752080000013,
+      "upstream_p95": 126.48370799999975,
+      "winner_delta_percent": 6.8060148900745965
+    },
+    {
+      "scenario": "long-session-switch",
+      "adapter": "browser",
+      "metric": "scroll_latency_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 29.768917000001238,
+      "upstream_p95": 32.79370799999742,
+      "winner_delta_percent": 9.223693154785737
+    },
+    {
+      "scenario": "long-session-switch",
+      "adapter": "browser",
+      "metric": "incremental_append_latency_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 0.7015409999985422,
+      "upstream_p95": 0.368040999994264,
+      "winner_delta_percent": 47.53820518044865
+    },
+    {
+      "scenario": "long-session-switch",
+      "adapter": "browser",
+      "metric": "tool_block_toggle_latency_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 3.3896249999997963,
+      "upstream_p95": 0.8826670000125887,
+      "winner_delta_percent": 73.95974480915612
+    },
+    {
+      "scenario": "long-session-switch",
+      "adapter": "browser",
+      "metric": "memory_growth_mb",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 5.18798828125,
+      "upstream_p95": 3.6163330078125,
+      "winner_delta_percent": 30.294117647058822
+    },
+    {
+      "scenario": "live-terminal-switch",
+      "adapter": "browser",
+      "metric": "surface_switch_latency_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 6.9325839999983145,
+      "upstream_p95": 5.6137910000106785,
+      "winner_delta_percent": 19.023108843512844
+    },
+    {
+      "scenario": "live-terminal-switch",
+      "adapter": "browser",
+      "metric": "pty_attach_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 10.683082999999897,
+      "upstream_p95": 15.626625000004424,
+      "winner_delta_percent": 31.635378720633067
+    },
+    {
+      "scenario": "live-terminal-switch",
+      "adapter": "browser",
+      "metric": "terminal_throughput_lines_per_s",
+      "direction": "higher",
+      "winner": "tie",
+      "claxedo_p95": 300000,
+      "upstream_p95": 300000,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "live-terminal-switch",
+      "adapter": "browser",
+      "metric": "terminal_resize_latency_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 3.2402079999992566,
+      "upstream_p95": 3.995249999992666,
+      "winner_delta_percent": 18.89849195907128
+    },
+    {
+      "scenario": "live-terminal-switch",
+      "adapter": "browser",
+      "metric": "terminal_reconnect_latency_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 33.39091700000063,
+      "upstream_p95": 20.17437500000233,
+      "winner_delta_percent": 39.58124899654013
+    },
+    {
+      "scenario": "live-terminal-switch",
+      "adapter": "browser",
+      "metric": "ansi_render_latency_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 0.7600830000010319,
+      "upstream_p95": 0.9532919999910519,
+      "winner_delta_percent": 20.2675570540646
+    },
+    {
+      "scenario": "large-diff-toggle",
+      "adapter": "browser",
+      "metric": "vcs_load_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 10.38283400000364,
+      "upstream_p95": 3.4272909999999683,
+      "winner_delta_percent": 66.99079461350566
+    },
+    {
+      "scenario": "large-diff-toggle",
+      "adapter": "browser",
+      "metric": "hunk_render_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 15.944415999998455,
+      "upstream_p95": 22.479749999998603,
+      "winner_delta_percent": 29.07209377328731
+    },
+    {
+      "scenario": "large-diff-toggle",
+      "adapter": "browser",
+      "metric": "diff_toggle_latency_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 11.166083999996772,
+      "upstream_p95": 2.9535829999949783,
+      "winner_delta_percent": 73.5486227759362
+    },
+    {
+      "scenario": "large-diff-toggle",
+      "adapter": "browser",
+      "metric": "line_comment_latency_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 7.17254099999991,
+      "upstream_p95": 30.264667000010377,
+      "winner_delta_percent": 76.30061153490487
+    },
+    {
+      "scenario": "large-diff-toggle",
+      "adapter": "browser",
+      "metric": "changed_file_navigation_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 1.8519999999989523,
+      "upstream_p95": 39.56383299999288,
+      "winner_delta_percent": 95.31895708891682
+    },
+    {
+      "scenario": "workspace-switch",
+      "adapter": "browser",
+      "metric": "workspace_bootstrap_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 6.6414999999979045,
+      "upstream_p95": 1.865749999997206,
+      "winner_delta_percent": 71.90770157347293
+    },
+    {
+      "scenario": "workspace-switch",
+      "adapter": "browser",
+      "metric": "workspace_switch_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 404.63445800000045,
+      "upstream_p95": 291.2777500000084,
+      "winner_delta_percent": 28.01459583058839
+    },
+    {
+      "scenario": "workspace-switch",
+      "adapter": "browser",
+      "metric": "file_tree_load_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 5.997208000000683,
+      "upstream_p95": 105.6931670000049,
+      "winner_delta_percent": 94.32583186763587
+    },
+    {
+      "scenario": "workspace-switch",
+      "adapter": "browser",
+      "metric": "surface_switch_latency_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 1.6045000000012806,
+      "upstream_p95": 1.34725000000617,
+      "winner_delta_percent": 16.03303209690902
+    },
+    {
+      "scenario": "command-palette-large-project",
+      "adapter": "browser",
+      "metric": "command_palette_index_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 6.108625000000757,
+      "upstream_p95": 2.2386249999981374,
+      "winner_delta_percent": 63.35304589825272
+    },
+    {
+      "scenario": "command-palette-large-project",
+      "adapter": "browser",
+      "metric": "command_palette_open_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 2.823708000003535,
+      "upstream_p95": 1.8953340000007302,
+      "winner_delta_percent": 32.87783297712237
+    },
+    {
+      "scenario": "command-palette-large-project",
+      "adapter": "browser",
+      "metric": "command_palette_search_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 17.732624999996915,
+      "upstream_p95": 7.4525419999990845,
+      "winner_delta_percent": 57.97270849634286
+    },
+    {
+      "scenario": "command-palette-large-project",
+      "adapter": "browser",
+      "metric": "command_execution_overhead_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 1.0701659999976982,
+      "upstream_p95": 0.4702919999981532,
+      "winner_delta_percent": 56.05429438057603
+    },
+    {
+      "scenario": "theme-switch",
+      "adapter": "browser",
+      "metric": "theme_switch_latency_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 4.16162500000064,
+      "upstream_p95": 1.8392499999899883,
+      "winner_delta_percent": 55.80452347365019
+    },
+    {
+      "scenario": "theme-switch",
+      "adapter": "browser",
+      "metric": "frame_time_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 5.041624999998021,
+      "upstream_p95": 1.7052499999990687,
+      "winner_delta_percent": 66.1765799717405
+    },
+    {
+      "scenario": "theme-switch",
+      "adapter": "browser",
+      "metric": "dropped_frames",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 0,
+      "upstream_p95": 0,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "theme-switch",
+      "adapter": "browser",
+      "metric": "refresh_rate_stability",
+      "direction": "higher",
+      "winner": "tie",
+      "claxedo_p95": 0.99,
+      "upstream_p95": 0.99,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "theme-switch",
+      "adapter": "browser",
+      "metric": "animation_jank",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 0,
+      "upstream_p95": 0,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "three-pane-resize",
+      "adapter": "browser",
+      "metric": "frame_time_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 3.400832999999693,
+      "upstream_p95": 3.5409579999977723,
+      "winner_delta_percent": 3.957262413114397
+    },
+    {
+      "scenario": "three-pane-resize",
+      "adapter": "browser",
+      "metric": "dropped_frames",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 0,
+      "upstream_p95": 0,
+      "winner_delta_percent": 0
+    },
+    {
+      "scenario": "three-pane-resize",
+      "adapter": "browser",
+      "metric": "scroll_latency_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 23.946750000002794,
+      "upstream_p95": 24.58483399999386,
+      "winner_delta_percent": 2.595437496105229
+    },
+    {
+      "scenario": "three-pane-resize",
+      "adapter": "browser",
+      "metric": "terminal_resize_latency_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 19.26708299999882,
+      "upstream_p95": 46.91350000000966,
+      "winner_delta_percent": 58.930621249757856
+    },
+    {
+      "scenario": "three-pane-resize",
+      "adapter": "browser",
+      "metric": "diff_toggle_latency_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 4.354083999998693,
+      "upstream_p95": 5.845374999989872,
+      "winner_delta_percent": 25.512323845668806
+    },
+    {
+      "scenario": "agent-control-navigation",
+      "adapter": "browser",
+      "metric": "agent_action_dispatch_ms",
+      "direction": "lower",
+      "winner": "claxedo",
+      "claxedo_p95": 28.868374999998196,
+      "upstream_p95": 37.88887499997509,
+      "winner_delta_percent": 23.80777998814381
+    },
+    {
+      "scenario": "agent-control-navigation",
+      "adapter": "browser",
+      "metric": "agent_state_verify_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 2.0473330000022543,
+      "upstream_p95": 0.8155829999886919,
+      "winner_delta_percent": 60.16363727894808
+    },
+    {
+      "scenario": "agent-control-navigation",
+      "adapter": "browser",
+      "metric": "surface_switch_latency_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 0.8216670000037993,
+      "upstream_p95": 0.46591699999407865,
+      "winner_delta_percent": 43.296128481255266
+    },
+    {
+      "scenario": "agent-control-navigation",
+      "adapter": "browser",
+      "metric": "command_execution_overhead_ms",
+      "direction": "lower",
+      "winner": "upstream",
+      "claxedo_p95": 0.5736669999969308,
+      "upstream_p95": 0.30112499999813735,
+      "winner_delta_percent": 47.50874636335219
+    },
+    {
+      "scenario": "agent-control-navigation",
+      "adapter": "browser",
+      "metric": "event_backlog",
+      "direction": "lower",
+      "winner": "tie",
+      "claxedo_p95": 250,
+      "upstream_p95": 250,
+      "winner_delta_percent": 0
+    }
+  ]
+}

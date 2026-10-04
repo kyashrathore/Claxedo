@@ -1,0 +1,13 @@
+[data-slot="session-timeline-scroll"] .scroll-view__viewport {
+  container: session-timeline-content / inline-size;
+}
+
+[data-timeline-row="AssistantPart"] [data-component="markdown"] [data-markdown-rich="table"],
+[data-timeline-row="AssistantPart"] [data-component="markdown"] [data-markdown-rich="mermaid"] {
+  position: relative;
+  left: 50%;
+  width: fit-content;
+  min-width: 100%;
+  max-width: min(140%, 100cqw);
+  transform: translateX(-50%);
+}

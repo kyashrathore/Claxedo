@@ -1,0 +1,43 @@
+{
+  "name": "@claxedo/account-contract",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "The account vocabulary and hosted operation declarations shared by the app, desktop and server",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./vocabulary": {
+      "types": "./src/vocabulary.ts",
+      "default": "./src/vocabulary.ts"
+    },
+    "./machine": {
+      "types": "./src/machine.ts",
+      "default": "./src/machine.ts"
+    },
+    "./machine-seal": {
+      "types": "./src/machine-seal.ts",
+      "default": "./src/machine-seal.ts"
+    },
+    "./auth": {
+      "types": "./src/auth.ts",
+      "default": "./src/auth.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test src"
+  },
+  "devDependencies": {
+    "@tsconfig/node-lts": "22.0.4",
+    "@types/bun": "1.3.13",
+    "typescript": "catalog:"
+  },
+  "dependencies": {
+    "@claxedo/helpers": "workspace:*",
+    "@claxedo/plugin-api": "workspace:*"
+  }
+}

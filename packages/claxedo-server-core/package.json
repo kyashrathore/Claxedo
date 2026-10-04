@@ -1,0 +1,62 @@
+{
+  "name": "@claxedo/server-core",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Server-side primitives shared by the desktop-local and hosted Claxedo products: logging, data paths, the in-process event bus, and lazy initialization",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyashrathore/Claxedo.git",
+    "directory": "packages/claxedo-server-core"
+  },
+  "exports": {
+    "./authority/repository-key": {
+      "types": "./src/authority/repository-key.ts",
+      "bun": "./src/authority/repository-key.ts",
+      "development": "./src/authority/repository-key.ts",
+      "import": "./src/authority/repository-key.ts",
+      "default": "./src/authority/repository-key.ts"
+    },
+    "./*": {
+      "types": "./src/*.ts",
+      "bun": "./src/*.ts",
+      "development": "./src/*.ts",
+      "import": "./src/*.ts",
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default"
+  },
+  "devDependencies": {
+    "@hono/node-server": "1.19.11",
+    "@tsconfig/node-lts": "22.0.4",
+    "@types/better-sqlite3": "7.6.13",
+    "@types/bun": "1.3.13",
+    "typescript": "catalog:",
+    "vitest": "2.1.9"
+  },
+  "dependencies": {
+    "@claxedo/account-contract": "workspace:*",
+    "@claxedo/agent-runtime-contract": "workspace:*",
+    "@claxedo/egress-broker": "workspace:*",
+    "@claxedo/harness": "workspace:*",
+    "@claxedo/helpers": "workspace:*",
+    "@claxedo/sandbox-contract": "workspace:*",
+    "@claxedo/tasks": "workspace:*",
+    "@claxedo/usage-contract": "workspace:*",
+    "@claxedo/workspace-relay": "workspace:*",
+    "@claxedo/workspace-relay-protocol": "workspace:*",
+    "@claxedo/workspace-runtime": "workspace:*",
+    "@zip.js/zip.js": "2.7.62",
+    "better-sqlite3": "13.0.1",
+    "drizzle-orm": "catalog:",
+    "hono": "4.12.34",
+    "jose": "6.2.4",
+    "tokentracker-cli": "0.91.0",
+    "zod": "4.4.3",
+    "@claxedo/session-core": "workspace:*"
+  }
+}

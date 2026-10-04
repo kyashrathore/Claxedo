@@ -1,0 +1,97 @@
+[data-component="work-group-trigger"] {
+  width: 100%;
+  min-height: var(--transcript-tool-row-height, 32px);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--transcript-tool-gap, 8px);
+  cursor: default;
+
+  color: var(--transcript-tool-color, var(--text-weak));
+
+  [data-slot="work-group-icon"] {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--transcript-tool-icon-size, 14px);
+    height: var(--transcript-tool-icon-size, 14px);
+    color: inherit;
+  }
+
+  [data-slot="work-group-icon"] .ui-icon {
+    width: var(--transcript-tool-icon-size, 14px);
+    height: var(--transcript-tool-icon-size, 14px);
+    color: inherit;
+  }
+
+  .ui-work-group-summary {
+    min-width: 0;
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-family-sans);
+    font-size: var(--transcript-tool-size, var(--font-size-base));
+    font-weight: var(--transcript-tool-weight, var(--font-weight-medium));
+    line-height: var(--transcript-tool-line-height, var(--line-height-large));
+    color: var(--transcript-tool-color, var(--text-weak));
+    transition: color 0.15s ease;
+  }
+
+  .ui-collapsible-arrow {
+    color: var(--icon-weaker);
+    cursor: pointer;
+  }
+}
+
+@media (hover: hover) {
+  [data-slot="collapsible-trigger"]:hover
+    [data-component="work-group-trigger"]
+    .ui-work-group-summary {
+    color: var(--transcript-tool-hover-color, var(--text-strong));
+  }
+}
+
+[data-slot="collapsible-trigger"]:focus-visible
+  [data-component="work-group-trigger"]
+  .ui-work-group-summary {
+  color: var(--transcript-tool-hover-color, var(--text-strong));
+}
+
+.ui-work-group-list {
+  padding-left: var(--transcript-group-indent, 8px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--transcript-group-gap, 4px);
+  max-height: var(--transcript-group-cap, 224px);
+  overflow-y: auto;
+}
+
+.ui-work-group-list[data-member-open="true"] {
+  max-height: none;
+  overflow-y: visible;
+}
+
+.ui-work-group-list[data-overflowing="true"] {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black 24px,
+    black calc(100% - 24px),
+    transparent
+  );
+}
+
+.ui-work-group-list {
+  [data-slot="basic-tool-tool-title"],
+  [data-slot="message-part-title-text"] {
+    color: var(--transcript-tool-color, var(--text-weak));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="work-group-trigger"] .ui-work-group-summary {
+    transition: none;
+  }
+}

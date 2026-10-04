@@ -1,0 +1,59 @@
+{
+  "name": "@claxedo/process-ownership",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Process identity, launch ownership, lifecycle, and observation",
+  "exports": {
+    "./launch": {
+      "development": "./src/launch/index.ts",
+      "bun": "./src/launch/index.ts",
+      "types": "./dist/launch/index.d.ts",
+      "import": "./dist/launch/index.mjs",
+      "default": "./dist/launch/index.mjs"
+    },
+    "./launch-gate-child": {
+      "development": "./src/launch/launch-gate-child.ts",
+      "bun": "./src/launch/launch-gate-child.ts",
+      "types": "./dist/launch/launch-gate-child.d.ts",
+      "import": "./dist/launch-gate-child.mjs",
+      "default": "./dist/launch-gate-child.mjs"
+    },
+    "./process-lifecycle": {
+      "development": "./src/process-lifecycle.ts",
+      "bun": "./src/process-lifecycle.ts",
+      "types": "./dist/process-lifecycle.d.ts",
+      "import": "./dist/process-lifecycle.mjs",
+      "default": "./dist/process-lifecycle.mjs"
+    },
+    "./windows-process": {
+      "development": "./src/windows-process.ts",
+      "bun": "./src/windows-process.ts",
+      "types": "./dist/windows-process.d.ts",
+      "import": "./dist/windows-process.mjs",
+      "default": "./dist/windows-process.mjs"
+    },
+    "./spawn-env": {
+      "development": "./src/spawn-env.ts",
+      "bun": "./src/spawn-env.ts",
+      "types": "./dist/spawn-env.d.ts",
+      "import": "./dist/spawn-env.mjs",
+      "default": "./dist/spawn-env.mjs"
+    }
+  },
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "test": "bun test src",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@claxedo/agent-runtime-contract": "workspace:*",
+    "@claxedo/helpers": "workspace:*"
+  },
+  "devDependencies": {
+    "@tsconfig/bun": "1.0.9",
+    "@types/bun": "1.3.13",
+    "esbuild": "0.25.12",
+    "typescript": "catalog:"
+  }
+}

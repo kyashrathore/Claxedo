@@ -1,0 +1,74 @@
+[data-slot="session-navigation-row"] {
+  background-color: transparent;
+}
+
+[data-slot="session-navigation-row"]:hover {
+  background-color: color-mix(in srgb, var(--surface-base-hover) 40%, transparent);
+}
+
+[data-slot="session-navigation-row"][data-active="true"] {
+  background-color: var(--surface-base-hover);
+}
+
+.ui-session-navigation-title {
+  color: var(--text-weak);
+  font-weight: var(--font-weight-regular);
+}
+
+[data-slot="session-navigation-row"][data-active="true"] .ui-session-navigation-title {
+  color: var(--text-strong);
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+.ui-session-navigation-time {
+  color: var(--text-weaker);
+  opacity: 1;
+}
+
+[data-slot="session-navigation-row"][data-active="true"] .ui-session-navigation-time {
+  color: color-mix(in srgb, var(--text-base) 70%, transparent);
+}
+
+.ui-session-navigation-caption {
+  color: var(--text-weaker);
+}
+
+[data-slot="session-navigation-row"]:is(:hover, :focus-within) .ui-session-navigation-time {
+  opacity: 0;
+}
+
+.ui-session-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ui-session-title[data-marquee="true"] {
+  text-overflow: clip;
+}
+
+.ui-session-title[data-marquee="true"] .ui-session-title-text {
+  display: inline-block;
+  transform: translateX(calc(-1 * var(--session-title-distance)));
+  transition: transform var(--session-title-duration) linear 650ms;
+}
+
+[data-hide-working-status="true"] [data-slot="session-navigation-row"]:not(:hover, :focus-within) :is([data-sidebar-status="working"], [data-sidebar-status="background"]) {
+  visibility: hidden;
+}
+
+[data-hide-working-status="true"] [data-slot="session-navigation-row"]:not(:hover, :focus-within) :is([data-sidebar-status="working"], [data-sidebar-status="background"]) * {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-session-title[data-marquee="true"] {
+    text-overflow: ellipsis;
+  }
+
+  .ui-session-title[data-marquee="true"] .ui-session-title-text {
+    display: inline;
+    transform: none;
+    transition: none;
+  }
+}

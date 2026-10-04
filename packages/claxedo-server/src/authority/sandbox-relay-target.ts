@@ -1,0 +1,119 @@
+import type { SandboxManager } from "@claxedo/sandbox-manager"
+import type { RelayTargetLookup, RelayTargetResult } from "../deployments/shared-routes/internal-relay"
+import { sessionHostRootOf } from "@claxedo/workspace-relay-protocol"
+import { sessionHostAdmits, type SessionHostAuthority } from "./session-hosts"
+import type { HostTunnelTargetResolver } from "@claxedo/server-core/adapters/relay-port"
+import type { ControlPlaneTelemetry } from "./services"
+import { emitSandboxLeaseClosed } from "../platform/telemetry/product/metering"
+import { timeoutMsFromEnv, withTimeout } from "../platform/runtime/timeout"
+
+export type { HostTunnelTargetResolver, HostTunnelTargetResult } from "@claxedo/server-core/adapters/relay-port"
+
+/**
+ * The single SandboxManager-backed relay target lookup, consumed by hosted
+ * and local control-plane composition. Resolving a target also touches the
+ * lease (keep-alive) in the background; on Workers the caller passes
+ * `waitUntil` so the touch survives the response.
+ */
+export function sandboxRelayTargetLookup(input: {
+  sandboxManager?: SandboxManager
+  telemetry?: ControlPlaneTelemetry
+  hostTunnelResolver?: HostTunnelTargetResolver
+  sessionHosts?: Pick<SessionHostAuthority, "readSessionHostPlacement">
+  env?: Record<string, string | undefined>
+}): RelayTargetLookup {
+  const capture = (properties: Record<string, unknown>) => {
+    try {
+      input.telemetry?.capture("system", "sandbox.touch", properties)
+    } catch {
+      // Touch telemetry is operational evidence; it must never break routing.
+    }
+  }
+  // Metric spec §4.2: a touch that finds the lease no longer serving is
+  // the moment the relay LEARNS an interval ended without anyone asking for it
+  // — the idle path. The relay resolves targets for a tunnel and holds no
+  // session identity, so this lands on the ops plane; the authoritative
+  // duration is settled by the lease close path in the workspace authority,
+  // which is why `active_ms` is omitted here rather than guessed.
+  const closedByIdle = (workspaceId: string, status: string) => {
+    try {
+      emitSandboxLeaseClosed({
+        identity: undefined,
+        sink: input.telemetry,
+        lease: {
+          workspace_id: workspaceId,
+          driver: "unknown",
+          ended_at: Date.now(),
+          reason: "idle_timeout",
+        },
+        systemReason: "relay_target_has_no_session_identity",
+      })
+    } catch {
+      // Metering is evidence, never part of routing.
+    }
+    void status
+  }
+  const touch = (workspaceId: string, waitUntil?: (promise: Promise<unknown>) => void) => {
+    const sandboxManager = input.sandboxManager
+    if (!sandboxManager?.touch) return
+    const work = sandboxManager
+      .touch(workspaceId)
+      .then((result) => {
+        capture({ workspaceId, touched: result.touched, status: result.status })
+        // "stopped" is the explicit persistent-resume state the reaper writes
+        // when a ready lease goes silent; "missing" means the lease is gone
+        // entirely. Either way the interval this relay was serving has ended.
+        if (result.status === "stopped" || result.status === "missing") {
+          closedByIdle(workspaceId, result.status)
+        }
+      })
+      .catch(() => {
+        capture({ workspaceId, touched: false, status: "failed" })
+      })
+    if (waitUntil) waitUntil(work)
+    else void work
+  }
+  const resolveHostTunnel = async (args: { workspaceId: string; hostId: string }) => {
+    if (!input.hostTunnelResolver) return undefined
+    const link = await input.hostTunnelResolver(args.workspaceId)
+    if (!link.active || link.hostId !== args.hostId) return undefined
+    // The host dials *out* to the relay, so there is no baseUrl. The relay
+    // routes by hostId over the established tunnel.
+    return {
+      found: true as const,
+      baseUrl: "",
+      backing: link.backing,
+    }
+  }
+  const resolveSessionHost = async (args: { workspaceId: string; hostId: string; routingId?: string }, root: string): Promise<RelayTargetResult> => {
+    if (args.routingId) return { found: false, code: "runtime_access_token_invalid" }
+    const placement = await input.sessionHosts?.readSessionHostPlacement({ workspaceId: args.workspaceId, sessionId: root })
+    if (sessionHostAdmits(placement, { workspaceId: args.workspaceId, sessionId: root })) return { found: true, baseUrl: "", backing: "durable-object" }
+    return { found: false, code: placement ? "relay_resolver_workspace_target_unavailable" : "relay_resolver_workspace_not_found" }
+  }
+  return async (args) => {
+    const root = sessionHostRootOf(args.hostId)
+    if (root) return resolveSessionHost(args, root)
+    // Cloud workspaces resolve through the SandboxLease.
+    if (input.sandboxManager) {
+      const target = await withTimeout(
+        input.sandboxManager.target(args.workspaceId),
+        timeoutMsFromEnv("CLAXEDO_SANDBOX_TARGET_TIMEOUT_MS", 5_000, input.env),
+      )
+      if (target.status === "ready" && target.hostId === args.hostId) {
+        if (!args.routingId || args.routingId !== target.routingId) return { found: false, code: "runtime_access_token_invalid" }
+        touch(args.workspaceId, args.waitUntil)
+        return { found: true, baseUrl: target.url, backing: "cloud-vm" }
+      }
+    }
+    if (args.routingId) return { found: false, code: "runtime_access_token_invalid" }
+    // A machine-placed workspace has no sandbox lease; resolve the registered
+    // host link.
+    const tunnelled = await resolveHostTunnel(args)
+    if (tunnelled) return tunnelled
+    return {
+      found: false,
+      code: "relay_resolver_workspace_target_unavailable",
+    }
+  }
+}

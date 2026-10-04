@@ -1,0 +1,18 @@
+scrollTop: 0
+background subagents:
+(none)
+row 0:
+- text: Show the setup. acp-script:code-inside-prose-0 Build · <time>
+- button "Copy message"
+row 1:
+- paragraph: "Run these first:"
+- code: bun install bun run build
+- button "Copy"
+- list:
+  - listitem:
+    - paragraph: "Then add the helper:"
+    - code: "export const answer: number = 42"
+    - button "Copy"
+- paragraph: Then the setup is done.
+- button "Copy response"
+- text: Build · 0s

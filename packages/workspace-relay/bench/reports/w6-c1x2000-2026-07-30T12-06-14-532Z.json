@@ -1,0 +1,32 @@
+{
+  "rowId": "w6-c1x2000",
+  "shape": "c1x2000",
+  "target": "https://3939-410ac0a6-55ba-4bf4-a4f6-f36e0c7aa83c.daytonaproxy01.net",
+  "relay": "https://claxedo-workspace-relay-reeval-0730b.kanusdlp.workers.dev",
+  "httpP99OverheadMs": null,
+  "wsMessageP99OverheadMs": null,
+  "relayedWsMessages": {
+    "attempted": 2000,
+    "delivered": 2000
+  },
+  "directWsMessages": {
+    "attempted": 0,
+    "delivered": 0
+  },
+  "connectP95Ms": 365.47,
+  "upstreamOpenP95Ms": 365.47,
+  "upstreamOpenSource": "client-wall-clock",
+  "holderSetup": {
+    "attempted": 1,
+    "delivered": 1
+  },
+  "upstreamFailureCodes": {},
+  "upstreamFailureReasons": {},
+  "gates": {
+    "httpP99OverheadPass": true,
+    "wsMessageP99OverheadPass": true,
+    "zeroRelayedWsLossPass": true,
+    "latencyMeasurable": true,
+    "pass": true
+  }
+}

@@ -1,0 +1,239 @@
+Subject: radio list
+
+What: a themed single-choice list with a second line and a danger ring
+(radio-list.tsx, its sheet, loaded from styles/index.css, and its tests).
+Why: Settings' single-choice sections have no kit component upstream.
+
+diff --git a/src/components/radio-list.css b/src/components/radio-list.css
+new file mode 100644
+index 0000000000000000000000000000000000000000..b9ec5ddb5039cf8fdd6c40380b3f035924af6ffb
+--- /dev/null
++++ b/src/components/radio-list.css
+@@ -0,0 +1,98 @@
++.ui-radio-list {
++  display: flex;
++  flex-direction: column;
++}
++
++.ui-radio-list-item {
++  /* The control centres on the first text line, so a row that wraps keeps it
++     beside the label instead of halfway down the row. */
++  --radio-list-line-height: 20px;
++  --radio-list-control-size: 14px;
++
++  display: flex;
++  align-items: flex-start;
++  gap: 8px;
++  min-width: 0;
++
++  .ui-radio-list-item-control {
++    align-items: center;
++    aspect-ratio: 1;
++    background-color: transparent;
++    border: 1px solid var(--border-weak-base);
++    border-radius: var(--radius-pill);
++    box-sizing: border-box;
++    display: flex;
++    flex-shrink: 0;
++    height: var(--radio-list-control-size);
++    justify-content: center;
++    margin-top: calc((var(--radio-list-line-height) - var(--radio-list-control-size)) / 2);
++    transition:
++      border-color 180ms ease-out,
++      box-shadow 180ms ease-out;
++    width: var(--radio-list-control-size);
++  }
++
++  .ui-radio-list-item-indicator {
++    background-color: var(--icon-strong-base);
++    border-radius: var(--radius-pill);
++    height: 6px;
++    width: 6px;
++  }
++
++  .ui-radio-list-item-text {
++    display: flex;
++    flex: 1;
++    flex-direction: column;
++    gap: 2px;
++    min-width: 0;
++  }
++
++  .ui-radio-list-item-label {
++    cursor: default;
++    line-height: var(--radio-list-line-height);
++    user-select: none;
++  }
++
++  .ui-radio-list-item-description {
++    line-height: var(--radio-list-line-height);
++    user-select: none;
++  }
++
++  &[data-checked] .ui-radio-list-item-control {
++    border-color: var(--border-strong-base);
++  }
++
++  &:hover:not([data-disabled]) .ui-radio-list-item-control {
++    border-color: var(--border-hover);
++  }
++
++  [data-slot="radio-list-item-input"]:focus-visible ~ .ui-radio-list-item-control {
++    border-color: var(--border-focus);
++    box-shadow: var(--shadow-xs-border-focus);
++  }
++
++  &[data-invalid] .ui-radio-list-item-control,
++  &[data-invalid][data-checked] .ui-radio-list-item-control,
++  &[data-invalid]:hover:not([data-disabled]) .ui-radio-list-item-control {
++    border-color: var(--border-critical-selected);
++  }
++
++  &[data-invalid] .ui-radio-list-item-indicator {
++    background-color: var(--icon-critical-base);
++  }
++
++  &[data-disabled] {
++    cursor: not-allowed;
++
++    .ui-radio-list-item-control {
++      border-color: var(--border-disabled);
++    }
++
++    /* The words are the caller's, in the caller's own colour, so fading them is
++       the only way this sheet can say the row is not a choice. A cursor the
++       pointer has to arrive at first cannot say it. */
++    .ui-radio-list-item-text {
++      opacity: 0.55;
++    }
++  }
++}
+diff --git a/src/components/radio-list.test.ts b/src/components/radio-list.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..7991d96595c35b2f687edc514faaacf419c34718
+--- /dev/null
++++ b/src/components/radio-list.test.ts
+@@ -0,0 +1,32 @@
++import { describe, expect, test } from "bun:test"
++import { readFileSync } from "node:fs"
++
++const dir = import.meta.dir
++
++function css(file: string) {
++  return readFileSync(`${dir}/${file}`, "utf8")
++}
++
++describe("radio list", () => {
++  test("is its own module, not a second component under the segmented control's name", async () => {
++    const segmented = await import("./radio-group")
++    const list = await import("./radio-list")
++
++    expect(Object.keys(segmented).sort()).toEqual(["RadioGroup"])
++    expect(Object.keys(list).sort()).toEqual(["RadioList", "RadioListItem"])
++  })
++
++  test("carries its own stylesheet, and the package's styles entry pulls it in", () => {
++    expect(css("radio-list.css")).toContain(".ui-radio-list-item")
++    expect(css("radio-group.css")).not.toContain(".ui-radio-list")
++    expect(readFileSync(`${dir}/../styles/index.css`, "utf8"))
++      .toContain('@import "../components/radio-list.css"')
++  })
++
++  test("a row that is not a choice reads as one: the words fade, not only the cursor", () => {
++    const disabled = css("radio-list.css").split("&[data-disabled] {")[1]?.split("\n  }\n")[0] ?? ""
++
++    expect(disabled).toContain(".ui-radio-list-item-text")
++    expect(disabled).toContain("opacity")
++  })
++})
+diff --git a/src/components/radio-list.tsx b/src/components/radio-list.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..5bef2df31a2d4f04718efad6b284377740417a38
+--- /dev/null
++++ b/src/components/radio-list.tsx
+@@ -0,0 +1,73 @@
++import { RadioGroup as KobalteRadio } from "@kobalte/core/radio-group"
++import { Show, splitProps } from "solid-js"
++import type { ComponentProps, JSX, ParentProps } from "solid-js"
++
++/**
++ * A list of choices, one row each: a control, a label, an optional second line,
++ * and trailing controls of the caller's own. Its rows differ in width and in
++ * height, which is what separates it from the segmented `RadioGroup` beside it.
++ */
++
++export type RadioListProps = ParentProps<ComponentProps<typeof KobalteRadio>>
++
++/** A vertical list of choices, one row each, with the rows free to differ in width. */
++export function RadioList(props: RadioListProps) {
++  const [local, others] = splitProps(props, ["children", "class", "classList"])
++  return (
++    <KobalteRadio
++      {...others}
++      data-component="radio-list"
++      classList={{
++        "ui-radio-list": true,
++        ...local.classList,
++        [local.class ?? ""]: !!local.class,
++      }}
++    >
++      {local.children}
++    </KobalteRadio>
++  )
++}
++
++export type RadioListItemProps = ComponentProps<typeof KobalteRadio.Item> & {
++  label: JSX.Element
++  /** A second line under the label, for whatever the label alone does not say. */
++  description?: JSX.Element
++  /** Rings the control in the danger token: the value is stored but unusable. */
++  invalid?: boolean
++  /** Trailing controls; they sit outside the label, so pressing one does not select the row. */
++  children?: JSX.Element
++}
++
++export function RadioListItem(props: RadioListItemProps) {
++  const [local, others] = splitProps(props, ["children", "class", "classList", "label", "description", "invalid"])
++  return (
++    <KobalteRadio.Item
++      {...others}
++      data-slot="radio-list-item"
++      data-invalid={local.invalid ? "" : undefined}
++      classList={{
++        "ui-radio-list-item": true,
++        ...local.classList,
++        [local.class ?? ""]: !!local.class,
++      }}
++    >
++      <KobalteRadio.ItemInput data-slot="radio-list-item-input" />
++      <KobalteRadio.ItemControl data-slot="radio-list-item-control" class="ui-radio-list-item-control">
++        <KobalteRadio.ItemIndicator data-slot="radio-list-item-indicator" class="ui-radio-list-item-indicator" />
++      </KobalteRadio.ItemControl>
++      <div data-slot="radio-list-item-text" class="ui-radio-list-item-text">
++        <KobalteRadio.ItemLabel data-slot="radio-list-item-label" class="ui-radio-list-item-label">
++          {local.label}
++        </KobalteRadio.ItemLabel>
++        <Show when={local.description}>
++          {(description) => (
++            <KobalteRadio.ItemDescription data-slot="radio-list-item-description" class="ui-radio-list-item-description">
++              {description()}
++            </KobalteRadio.ItemDescription>
++          )}
++        </Show>
++      </div>
++      {local.children}
++    </KobalteRadio.Item>
++  )
++}
+diff --git a/src/styles/index.css b/src/styles/index.css
+index 9a268f6ba4a63af491b0112d0f066736c08c7c05..aa55bb2d5fb02d1c69d3107799add028ff3373fe 100644
+--- a/src/styles/index.css
++++ b/src/styles/index.css
+@@ -37,6 +37,7 @@
+ @import "../components/progress.css" layer(components);
+ @import "../components/progress-circle.css" layer(components);
+ @import "../components/radio-group.css" layer(components);
++@import "../components/radio-list.css" layer(components);
+ @import "../components/resize-handle.css" layer(components);
+ @import "../components/select.css" layer(components);
+ @import "../components/spinner.css" layer(components);

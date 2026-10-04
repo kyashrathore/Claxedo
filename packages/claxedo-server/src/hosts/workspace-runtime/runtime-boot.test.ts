@@ -1,0 +1,441 @@
+import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
+import { describe, expect, test, vi } from "vitest"
+import { execFile, execFileSync } from "node:child_process"
+import { existsSync } from "node:fs"
+import { mkdtemp, rm } from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
+import { promisify } from "node:util"
+import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
+import { loopbackWorkspaceRuntimeExposure, relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
+import { workspaceRuntimeBootEnv } from "@claxedo/sandbox-manager/runtime-env"
+import { mintOwnerGrant } from "../../session/owner-grant"
+import { serveGitOrigin } from "../../test-support/git-origin"
+import { usageReportPlane, USAGE_REPORT_URL } from "../../test-support/usage-report-plane"
+import { FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID } from "./first-party-mcp"
+import {
+  claxedoCorsOrigin,
+  claxedoRuntimeHarnessFromEnv,
+  claxedoWorkspaceRuntimeBootFromEnv,
+  claxedoWorkspaceRuntimeLaunch,
+} from "./runtime-boot"
+import {
+  buildAssistantMessage,
+  messageCompleted,
+  messageUpdated,
+  sessionUsage,
+} from "@claxedo/session-core"
+
+describe("claxedo workspace-runtime boot policy", () => {
+  test("installs the clone placeholder as an authorization header for the workspace repository alone before boot returns", async () => {
+    // Outside the repository: a checkout on CI carries its own github.com
+    // extraheader in the local config, which git reads ahead of the global
+    // file the boot writes.
+    const directory = await mkdtemp(path.join(os.tmpdir(), "broker-git-test-"))
+    const env = {
+      PATH: process.env.PATH,
+      HOME: directory,
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: path.join(directory, "gitconfig"),
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-git",
+      WORKSPACE_RUNTIME_DIRECTORY: directory,
+      WORKSPACE_RUNTIME_GIT_REPO_URL: "https://github.com/acme/private.git",
+      CLAXEDO_GITHUB_CLONE_AUTH: "secret_ref_clone",
+    }
+    const key = "http.https://github.com/acme/private.git.extraheader"
+    const git = (args: string[]) => execFileSync("git", args, { env, cwd: directory, encoding: "utf8" }).trim()
+    try {
+      await claxedoWorkspaceRuntimeBootFromEnv(env)
+      expect(git(["config", "--get-urlmatch", "http.extraheader", "https://github.com/acme/private.git/info/refs"]))
+        .toBe("Authorization: secret_ref_clone")
+      expect(() => git(["config", "--get-urlmatch", "http.extraheader", "https://github.com/acme/other.git/info/refs"]))
+        .toThrow()
+      expect(() => git(["config", "--get-urlmatch", "http.extraheader", "https://github.com.evil.test/acme/private.git"]))
+        .toThrow()
+      expect(() => git(["config", "--get-urlmatch", "http.extraheader", "http://github.com/acme/private.git"]))
+        .toThrow()
+      await claxedoWorkspaceRuntimeBootFromEnv({ ...env, CLAXEDO_GITHUB_CLONE_AUTH: "secret_ref_rotated" })
+      expect(git(["config", "--get-all", key])).toBe("Authorization: secret_ref_rotated")
+      await expect(claxedoWorkspaceRuntimeBootFromEnv({
+        ...env, CLAXEDO_GITHUB_CLONE_AUTH: "secret_ref_clone\r\nX-Injected: value",
+      })).rejects.toThrow("Invalid GitHub clone authorization header")
+      await expect(claxedoWorkspaceRuntimeBootFromEnv({
+        ...env, GIT_CONFIG_GLOBAL: path.join(directory, "missing", "config"),
+      })).rejects.toThrow()
+      // Withdrawal: the header an earlier boot wrote outlives the restart, so a
+      // wake without the placeholder has to remove it rather than keep using a
+      // credential the control plane took away.
+      const { CLAXEDO_GITHUB_CLONE_AUTH: _withdrawn, ...withoutClone } = env
+      await claxedoWorkspaceRuntimeBootFromEnv(withoutClone)
+      expect(() => git(["config", "--get-all", key])).toThrow()
+      // Nothing to remove is the ordinary case, not a boot failure.
+      await expect(claxedoWorkspaceRuntimeBootFromEnv(withoutClone)).resolves.toBeDefined()
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+  test("the boot's own git presents the clone header to a repository that refuses a clone without it", async () => {
+    const origin = await serveGitOrigin()
+    origin.served.authorization = "Bearer clone-token"
+    // A child process: the runtime's git environment is read from the
+    // process's own HOME, and only a HOME set at spawn reaches it.
+    const env = {
+      PATH: process.env.PATH,
+      HOME: origin.directory,
+      GIT_CONFIG_NOSYSTEM: "1",
+      CLAXEDO_DATA_DIR: path.join(origin.directory, "claxedo"),
+      WORKSPACE_RUNTIME_DATA_DIR: path.join(origin.directory, "workspace-runtime"),
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-clone",
+      WORKSPACE_RUNTIME_DIRECTORY: path.join(origin.directory, "workspace"),
+      WORKSPACE_RUNTIME_SOURCE_KIND: "git",
+      WORKSPACE_RUNTIME_GIT_REPO_URL: origin.repoUrl,
+    }
+    const script = `import { claxedoWorkspaceRuntimeBootFromEnv } from ${JSON.stringify(path.join(import.meta.dirname, "runtime-boot.ts"))}\n`
+      + "await claxedoWorkspaceRuntimeBootFromEnv()\nprocess.exit(0)\n"
+    const boot = (extra: Record<string, string> = {}) =>
+      promisify(execFile)("bun", ["--eval", script], { cwd: import.meta.dirname, env: { ...env, ...extra }, timeout: 60_000 })
+    try {
+      await expect(boot()).rejects.toThrow("could not read Username")
+      await boot({ CLAXEDO_GITHUB_CLONE_AUTH: "Bearer clone-token" })
+      expect(origin.git(["log", "-1", "--format=%s"], env.WORKSPACE_RUNTIME_DIRECTORY)).toBe("commit 5")
+    } finally {
+      await origin.close()
+    }
+  }, 90_000)
+
+  test("a booted checkout's history waits for the listener, and the drain ends a fetch still running", async () => {
+    const origin = await serveGitOrigin()
+    const directory = path.join(origin.directory, "workspace")
+    let fetches = 0
+    origin.served.onRequest = (request) => { if (request.url?.endsWith("/git-upload-pack")) fetches++ }
+    try {
+      const boot = await claxedoWorkspaceRuntimeBootFromEnv({
+        WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-history",
+        WORKSPACE_RUNTIME_DIRECTORY: directory,
+        WORKSPACE_RUNTIME_SOURCE_KIND: "git",
+        WORKSPACE_RUNTIME_GIT_REPO_URL: origin.repoUrl,
+      })
+      const checkoutFetches = fetches
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      expect(fetches).toBe(checkoutFetches)
+      expect(origin.git(["rev-list", "--count", "HEAD"], directory)).toBe("1")
+
+      origin.served.stalled = true
+      boot.onListening!()
+      await vi.waitFor(() => expect(fetches).toBe(checkoutFetches + 1))
+      const draining = Date.now()
+      await boot.options.onDrain!()
+      expect(Date.now() - draining).toBeLessThan(5_000)
+    } finally {
+      await origin.close()
+    }
+  })
+
+  test("launches the package bin with workspace-and-epoch scoped short-lived credentials", () => {
+    const launch = claxedoWorkspaceRuntimeLaunch({
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      leaseId: "lease_1",
+      epoch: 7,
+      directory: "/workspace",
+      port: 2593,
+      credential: { token: "bootstrap-token", expiresAt: 20_000 },
+      now: 10_000,
+    })
+    expect(launch).toEqual({
+      command: ["workspace-runtime"],
+      env: expect.objectContaining({
+        WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_1",
+        // The launch's stated host identity survives the lease env composed
+        // over it; the relay binds this host on exactly this value.
+        WORKSPACE_RUNTIME_HOST_ID: "host_1",
+        WORKSPACE_RUNTIME_LEASE_ID: "lease_1",
+        WORKSPACE_RUNTIME_EPOCH: "7",
+        WORKSPACE_RUNTIME_DIRECTORY: "/workspace",
+        WORKSPACE_RUNTIME_PORT: "2593",
+        WORKSPACE_RUNTIME_CONFIG_TOKEN: "bootstrap-token",
+      }),
+    })
+    expect(launch.env).not.toHaveProperty("WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN")
+    expect(launch.env).not.toHaveProperty("WORKSPACE_RUNTIME_BOOTSTRAP_EXPIRES_AT")
+    expect(() => claxedoWorkspaceRuntimeLaunch({
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      leaseId: "lease_1",
+      epoch: 7,
+      directory: "/workspace",
+      port: 2593,
+      credential: { token: "expired", expiresAt: 10_000 },
+      now: 10_000,
+    })).toThrow("expired")
+  })
+
+  test.each([
+    ["epoch NaN", { epoch: Number.NaN }],
+    ["epoch infinity", { epoch: Number.POSITIVE_INFINITY }],
+    ["port NaN", { port: Number.NaN }],
+    ["port zero", { port: 0 }],
+    ["expiry infinity", { credential: { token: "token", expiresAt: Number.POSITIVE_INFINITY } }],
+    ["now NaN", { now: Number.NaN }],
+  ])("rejects invalid launch input: %s", (_name, override) => {
+    expect(() => claxedoWorkspaceRuntimeLaunch({
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      leaseId: "lease_1",
+      epoch: 1,
+      directory: "/workspace",
+      port: 2593,
+      credential: { token: "bootstrap-token", expiresAt: 20_000 },
+      now: 10_000,
+      ...override,
+    })).toThrow()
+  })
+  test("defaults: port 3002, loopback exposure, no implicit harness", async () => {
+    const boot = await claxedoWorkspaceRuntimeBootFromEnv({
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-env",
+      WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
+    })
+    expect(boot.port).toBe(3002)
+    expect(boot.hostname).toBe("127.0.0.1")
+    expect(boot.options.exposure?.kind).toBe("loopback")
+    expect(boot.options.harness).toBeUndefined()
+    expect(boot.options.placement).toEqual({ placement: "cloud", machineOwnerUserId: "", canUseOwnLogin: false })
+    expect(boot.options.target).toEqual({ workspaceId: "ws-env", directory: process.cwd() })
+    expect(boot.options.relayHostAuth).toBeUndefined()
+    expect(boot.options.hostTunnel).toBeUndefined()
+  })
+
+  test("forwards the host entry's route contributions and always mounts the first-party MCP beside them", async () => {
+    const contribution = { id: "agent-plugins", mount: () => ({ path: "/", routes: {} as never, dispose() {} }) }
+    const env = { WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_test", WORKSPACE_RUNTIME_DIRECTORY: process.cwd() }
+    const boot = await claxedoWorkspaceRuntimeBootFromEnv(env, { routeContributions: [contribution as never] })
+    expect(boot.options.routeContributions?.map((entry) => entry.id))
+      .toEqual(["agent-plugins", FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID])
+    const plain = await claxedoWorkspaceRuntimeBootFromEnv(env)
+    expect(plain.options.routeContributions?.map((entry) => entry.id))
+      .toEqual([FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID])
+  })
+
+  test("selects either an explicit native harness or a configured connection", () => {
+    expect(claxedoRuntimeHarnessFromEnv({})).toBeUndefined()
+    expect(claxedoRuntimeHarnessFromEnv({ WORKSPACE_RUNTIME_NATIVE_HARNESS: "codex" })).toEqual({ kind: "native", harnessId: "codex" })
+    expect(claxedoRuntimeHarnessFromEnv({ WORKSPACE_RUNTIME_CONNECTION_ID: "openclaw" })).toEqual({ kind: "connection", connectionId: "openclaw" })
+    expect(() => claxedoRuntimeHarnessFromEnv({ WORKSPACE_RUNTIME_CONNECTION_ID: "openclaw", WORKSPACE_RUNTIME_NATIVE_HARNESS: "pi" })).toThrow("Choose either")
+  })
+
+  test("reads the default harness written into a sandbox driver's boot environment", async () => {
+    const env = workspaceRuntimeBootEnv({
+      workspaceId: "ws-env",
+      directory: process.cwd(),
+      port: 3002,
+      nativeHarness: "pi",
+    })
+    const boot = await claxedoWorkspaceRuntimeBootFromEnv(env)
+    expect(boot.options.harness).toEqual({ kind: "native", harnessId: "pi" })
+  })
+
+  test("rejects an unknown explicit native harness", () => {
+    expect(() => claxedoRuntimeHarnessFromEnv({ WORKSPACE_RUNTIME_NATIVE_HARNESS: "mystery" })).toThrow(
+      "Unsupported WORKSPACE_RUNTIME_NATIVE_HARNESS",
+    )
+  })
+
+  test.each(["abc", "3002junk", "0", "65536", "1.5"])("rejects invalid runtime port %s", async (port) => {
+    await expect(claxedoWorkspaceRuntimeBootFromEnv({
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-env",
+      WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
+      WORKSPACE_RUNTIME_PORT: port,
+    })).rejects.toThrow("WORKSPACE_RUNTIME_PORT")
+  })
+
+  test("non-loopback host without relay auth composes the dev-unsafe exposure", async () => {
+    const boot = await claxedoWorkspaceRuntimeBootFromEnv({
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-env",
+      WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
+      WORKSPACE_RUNTIME_HOST: "0.0.0.0",
+    })
+    expect(boot.hostname).toBe("0.0.0.0")
+    expect(boot.options.exposure?.kind).toBe("private-network")
+  })
+
+  test("relay env wires relay exposure and the host tunnel", async () => {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    const boot = await claxedoWorkspaceRuntimeBootFromEnv({
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-env",
+      WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
+      WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey),
+      WORKSPACE_RUNTIME_RELAY_URL: "https://relay.example",
+    })
+    expect(boot.options.exposure?.kind).toBe("relay")
+    expect(boot.options.relayHostAuth).toBeDefined()
+    expect(boot.options.hostTunnel).toMatchObject({ relayUrl: "https://relay.example", hostId: "ws-env" })
+  })
+
+  test("a relay runtime that answers to a session authority reports its turns' usage there, and ships what is left when it drains", async () => {
+    const plane = await usageReportPlane()
+    const store = await mkdtemp(path.join(os.tmpdir(), "claxedo-runtime-usage-"))
+    const relay = {
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_real",
+      WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
+      WORKSPACE_RUNTIME_STORE_DIR: store,
+      WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI((await generateKeyPair("EdDSA", { extractable: true })).publicKey),
+      WORKSPACE_RUNTIME_RELAY_URL: "https://relay.example",
+    }
+    vi.stubGlobal("fetch", plane.fetch)
+    try {
+      await plane.session("ses_boot")
+      const { options } = await claxedoWorkspaceRuntimeBootFromEnv({ ...relay, WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: USAGE_REPORT_URL })
+      options.bindSessionConfig!(() => ({ harness: { id: "codex", access: "native" }, model: { providerID: "openai", modelID: "gpt-5.4" } }))
+      options.bindSessionParents!(() => undefined)
+      const policy = options.sessionAccessPolicy!
+      const access = {
+        actor: { actorId: plane.member.principal!.actorId, actorKind: "human" as const },
+        authority: { managed: true as const, workspaceId: "ws_real", orgId: plane.orgId, role: "editor" as const },
+        credential: `Bearer ${await plane.relayToken(plane.member)}`,
+        operation: "prompt" as const,
+        sessionId: "ses_boot",
+      }
+      const acquired = await policy.acquireTurn!({ ...access, turnId: "msg_user_1" })
+      if (!acquired.allowed) throw new Error(`turn was refused: ${acquired.code}`)
+      const turn = { ...access, turnId: "msg_user_1", leaseId: acquired.leaseId, fencingToken: acquired.fencingToken }
+      const assistant = (id: string) => envelope(messageUpdated(buildAssistantMessage({
+        id, sessionID: "ses_boot", parentID: "msg_user_1", agent: "build",
+        model: { providerID: "openai", modelID: "gpt-5.4" }, directory: "/workspace", created: 1_000,
+      })))
+      const tokens = { input: 90, output: 9, reasoning: 0, cache: { read: 0, write: 0 } }
+      for (const event of [
+        assistant("msg_reply"),
+        envelope(sessionUsage({
+          sessionID: "ses_boot", messageID: "msg_reply", contextSize: 200_000, contextUsed: 99,
+          observation: { kind: "cumulative", providerObservationId: "obs_reply", observedAt: Date.now(), tokens },
+        })),
+        envelope(messageCompleted("ses_boot", "msg_reply")),
+        assistant("msg_tail"),
+      ]) options.onPresentationEvent!(event)
+      await policy.endTurn?.(turn)
+      expect(await policy.releaseTurn!(turn)).toEqual({ released: true })
+      options.onPresentationEvent!(envelope(messageCompleted("ses_boot", "msg_tail")))
+
+      await options.onDrain!()
+
+      expect((await plane.ledger.ownedBy({ org_id: plane.orgId, user_id: plane.member.principal!.userId })).map((fact) => [
+        fact.messageId, fact.location, fact.hostId, fact.settlement, fact.tokens,
+      ])).toEqual([
+        ["msg_reply", "cloud-workspace", "workspace:ws_real", "final", tokens],
+        ["msg_tail", "cloud-workspace", "workspace:ws_real", "unavailable", { input: null, output: null, reasoning: null, cache: { read: null, write: null } }],
+      ])
+      expect(existsSync(path.join(store, "usage.sqlite"))).toBe(true)
+
+      const unmetered = await claxedoWorkspaceRuntimeBootFromEnv(relay)
+      expect(unmetered.options.onPresentationEvent).toBeUndefined()
+      expect(unmetered.options.onDrain).toBeUndefined()
+      expect(unmetered.options.sessionAccessPolicy).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+      await plane.close()
+      await rm(store, { recursive: true, force: true })
+    }
+  })
+
+  test("a relay runtime that answers to a session authority publishes its session rows: reads, events, the pass route and a flush before the store closes", async () => {
+    const store = await mkdtemp(path.join(os.tmpdir(), "claxedo-runtime-rows-"))
+    const local = {
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_rows",
+      WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
+      WORKSPACE_RUNTIME_STORE_DIR: store,
+      WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: "https://core.test/api/runtime-authority/session-authorize",
+    }
+    try {
+      const unrelayed = await claxedoWorkspaceRuntimeBootFromEnv(local)
+      expect(unrelayed.options.bindSessionReads).toBeUndefined()
+      expect(unrelayed.options.beforeStoreClose).toBeUndefined()
+
+      const { options } = await claxedoWorkspaceRuntimeBootFromEnv({
+        ...local,
+        WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI((await generateKeyPair("EdDSA", { extractable: true })).publicKey),
+        WORKSPACE_RUNTIME_RELAY_URL: "https://relay.example",
+      })
+      expect(options.bindSessionReads).toBeTypeOf("function")
+      expect(options.onPresentationEvent).toBeTypeOf("function")
+      expect(options.beforeStoreClose).toBeTypeOf("function")
+      expect(options.routeContributions?.map((contribution) => contribution.id)).toContain("session-rows")
+      await options.onDrain!()
+    } finally {
+      await rm(store, { recursive: true, force: true })
+    }
+  })
+
+  test("seeds the first-party issuer with the owner the grant names, and verifies that grant with the management key", async () => {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    const signing = {
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(key.privateKey),
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: await exportSPKI(key.publicKey),
+    }
+    const scope = { userId: "alice", actorId: "actor:alice", orgId: "org-1", projectId: "project-a", workspaceId: "ws-env" }
+    const grant = await mintOwnerGrant(scope, signing)
+    const boot = await claxedoWorkspaceRuntimeBootFromEnv({
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-env",
+      WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
+      WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM: await exportSPKI(key.publicKey),
+      WORKSPACE_RUNTIME_OWNER_GRANT: grant.token,
+    })
+    const issuer = boot.options.firstPartyMcpLaunch!.issuer
+    expect(issuer.verify(issuer.current("ses_1"))).toMatchObject({ userId: "alice", sessionId: "ses_1", workspaceId: "ws-env" })
+    const identity = boot.options.ownerGrantIdentity
+    expect(identity).toBeDefined()
+    expect(await identity!(grant.token)).toMatchObject({ actor_id: "actor:alice", org_id: "org-1", workspace_id: "ws-env", role: "owner" })
+    expect(await identity!((await mintOwnerGrant({ ...scope, workspaceId: "ws-other" }, signing)).token)).toBeUndefined()
+    const foreign = await generateKeyPair("EdDSA", { extractable: true })
+    const forged = await mintOwnerGrant(scope, {
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(foreign.privateKey),
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: await exportSPKI(foreign.publicKey),
+    })
+    expect(await identity!(forged.token)).toBeUndefined()
+
+    const plain = await claxedoWorkspaceRuntimeBootFromEnv({ WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-env", WORKSPACE_RUNTIME_DIRECTORY: process.cwd() })
+    const plainIssuer = plain.options.firstPartyMcpLaunch!.issuer
+    expect(plainIssuer.verify(plainIssuer.current("ses_1"))?.userId).toBeUndefined()
+    expect(plain.options.ownerGrantIdentity).toBeUndefined()
+  })
+
+  test("boot composes claxedo's cors policy", async () => {
+    const boot = await claxedoWorkspaceRuntimeBootFromEnv({
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-env",
+      WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
+    })
+    expect(boot.options.corsOrigin).toBe(claxedoCorsOrigin)
+  })
+})
+
+describe("claxedo cors policy", () => {
+  const loopback = loopbackWorkspaceRuntimeExposure()
+
+  test("allows claxedo.com and localhost on loopback exposure", () => {
+    expect(claxedoCorsOrigin("https://app.claxedo.com", loopback)).toBe("https://app.claxedo.com")
+    expect(claxedoCorsOrigin("https://claxedo.com", loopback)).toBe("https://claxedo.com")
+    expect(claxedoCorsOrigin("http://localhost:4444", loopback)).toBe("http://localhost:4444")
+    expect(claxedoCorsOrigin("http://127.0.0.1:3000", loopback)).toBe("http://127.0.0.1:3000")
+  })
+
+  // Upstream's hosted app is no longer a default first-party origin.
+  test("rejects opencode.ai on loopback exposure", () => {
+    expect(claxedoCorsOrigin("https://app.opencode.ai", loopback)).toBeUndefined()
+    expect(claxedoCorsOrigin("https://opencode.ai", loopback)).toBeUndefined()
+  })
+
+  test("rejects other origins and non-loopback exposures", () => {
+    expect(claxedoCorsOrigin("https://evil.example", loopback)).toBeUndefined()
+    expect(claxedoCorsOrigin("https://claxedo.com.evil.example", loopback)).toBeUndefined()
+    const relay = relayWorkspaceRuntimeExposure({
+      key: new Uint8Array([1]),
+      workspaceId: "ws_1",
+      hostId: "host_1",
+    })
+    expect(claxedoCorsOrigin("https://app.claxedo.com", relay)).toBeUndefined()
+    expect(claxedoCorsOrigin("http://localhost:4444", relay)).toBeUndefined()
+  })
+})
+
+function envelope(payload: AgentEventEnvelope["payload"]): AgentEventEnvelope {
+  return { directory: "/workspace", payload }
+}

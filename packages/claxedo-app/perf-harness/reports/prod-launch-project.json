@@ -1,0 +1,137 @@
+{
+  "generated_at": "2026-06-08T08:57:54.156Z",
+  "status": "fail",
+  "targets": {
+    "rate_target_hz": 120,
+    "rate_floor_hz": 60
+  },
+  "flows": [
+    {
+      "adapter": "browser",
+      "target": "claxedo",
+      "id": "launch-project",
+      "name": "Launch into a project with 20 sessions",
+      "started_at": "2026-06-08T08:57:54.075Z",
+      "duration_ms": 33718.054459000006,
+      "seed": {
+        "repos": 1,
+        "sessions": 20,
+        "messages": 2000,
+        "terminals": 0,
+        "changed_files": 0,
+        "projects": 1,
+        "themes": [
+          "claxedo-dark"
+        ],
+        "agent_actions": 0,
+        "mask_keys": [
+          "timestamp",
+          "random_id",
+          "absolute_path"
+        ]
+      },
+      "headline": {
+        "label": "launch-project",
+        "worstFrameMs": 83.7,
+        "p95FrameMs": 83.7,
+        "framesOver833": 18,
+        "framesOver1667": 18,
+        "sampleCount": 18,
+        "completionMs": 227.66,
+        "verdict": "red"
+      },
+      "metrics": [
+        {
+          "metric": "launch_first_window_ms",
+          "value": 203.69341699999995,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            203.69341699999995
+          ],
+          "p50": 203.69341699999995,
+          "p95": 203.69341699999995,
+          "min": 203.69341699999995,
+          "max": 203.69341699999995,
+          "mean": 203.69341699999995,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "launch_workspace_ready_ms",
+          "value": 227.66274999999996,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            227.66274999999996
+          ],
+          "p50": 227.66274999999996,
+          "p95": 227.66274999999996,
+          "min": 227.66274999999996,
+          "max": 227.66274999999996,
+          "mean": 227.66274999999996,
+          "relative_stddev": 0
+        },
+        {
+          "metric": "transcript_render_ms",
+          "value": 10000,
+          "unit": "ms",
+          "direction": "lower",
+          "samples": [
+            10000
+          ],
+          "p50": 10000,
+          "p95": 10000,
+          "min": 10000,
+          "max": 10000,
+          "mean": 10000,
+          "relative_stddev": 0
+        }
+      ],
+      "validation_failures": [
+        "error boundary rendered for launch-project",
+        "session messages were not requested for launch-project",
+        "only 0 of 20 seeded sessions were visible in the session inventory",
+        "transcript text was not visible for launch-project: launch-project session 1"
+      ],
+      "artifacts": {
+        "video": "reports/videos/claxedo-launch-project-1.webm"
+      },
+      "attribution": {
+        "git_sha": "ae609dc6cb0e0618f85d7aad47b6f09752308120",
+        "git_branch": "codex/app-shell-identity-seam",
+        "git_dirty": true,
+        "command": "/Users/yashvardhansingh/.bun/bin/bun /Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness/src/cli.ts run --scenario launch-project --debug --output prod-launch-project.json --no-trend",
+        "cwd": "/Users/yashvardhansingh/test/opencode/projects/claxedo-perf-harness",
+        "bun_version": "1.3.13",
+        "platform": "darwin/arm64 25.2.0",
+        "target_package_dir": "packages/claxedo-app",
+        "adapter": "browser",
+        "browser": {
+          "name": "chromium",
+          "version": "147.0.7727.15"
+        },
+        "server": {
+          "base_url": "http://127.0.0.1:65026",
+          "mock_port": 32123,
+          "dev_command": "bun run serve -- --host 127.0.0.1 --port 65026"
+        },
+        "app_build_identity": "claxedo:packages/claxedo-app:codex/app-shell-identity-seam:ae609dc6cb0e0618f85d7aad47b6f09752308120"
+      },
+      "budget": {
+        "scenario": "launch-project",
+        "worst_frame_ms": 142
+      },
+      "status": "fail",
+      "failures": [
+        "error boundary rendered for launch-project",
+        "session messages were not requested for launch-project",
+        "only 0 of 20 seeded sessions were visible in the session inventory",
+        "transcript text was not visible for launch-project: launch-project session 1"
+      ],
+      "warnings": [
+        "p95 frame 83.70ms > 16.67ms — sustained below 60hz",
+        "18 frames dropped below 60hz (allowance 2)"
+      ]
+    }
+  ]
+}

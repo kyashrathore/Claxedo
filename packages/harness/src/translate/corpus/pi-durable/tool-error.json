@@ -1,0 +1,1547 @@
+{
+  "adapter": "pi-durable",
+  "initialState": {
+    "blocks": {},
+    "usage": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "noted": []
+  },
+  "calls": [
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "snapshot",
+        "payload": {
+          "type": "snapshot",
+          "entries": [],
+          "tools": [],
+          "compactions": [],
+          "inbox": [],
+          "agent": {
+            "model": {
+              "provider": "openai",
+              "modelId": "gpt-4.1"
+            },
+            "cwd": "/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/pi-record-x8xoft"
+          },
+          "usage": {
+            "models": {},
+            "tools": {}
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "message_start",
+        "payload": {
+          "type": "message_start",
+          "message": {
+            "role": "user",
+            "content": "Reply with exactly this one token: CORPUSMISSING",
+            "timestamp": 1791031076282
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "message_end",
+        "payload": {
+          "type": "message_end",
+          "entry": {
+            "model": [
+              {
+                "role": "user",
+                "content": "Reply with exactly this one token: CORPUSMISSING",
+                "timestamp": 1791031076282
+              }
+            ],
+            "kind": "pi.user",
+            "id": 6,
+            "conversationId": 1
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "submission",
+        "payload": {
+          "type": "submission",
+          "record": {
+            "conversationId": 1,
+            "type": "input",
+            "status": "placed",
+            "entry": 6,
+            "id": 7
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "run_start",
+        "payload": {
+          "type": "run_start",
+          "inputs": [
+            7
+          ]
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "turn_start",
+        "payload": {
+          "type": "turn_start"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "message_start",
+        "payload": {
+          "type": "message_start",
+          "message": {
+            "role": "system",
+            "content": "",
+            "toolsAdded": [
+              {
+                "name": "read",
+                "description": "Read the contents of a text file. Output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+                "parameters": {
+                  "type": "object",
+                  "required": [
+                    "path"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "description": "Path to the file to read (relative or absolute)"
+                    },
+                    "offset": {
+                      "type": "number",
+                      "description": "Line number to start reading from (1-indexed)"
+                    },
+                    "limit": {
+                      "type": "number",
+                      "description": "Maximum number of lines to read"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "write",
+                "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+                "parameters": {
+                  "type": "object",
+                  "required": [
+                    "path",
+                    "content"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "description": "Path to the file to write (relative or absolute)"
+                    },
+                    "content": {
+                      "type": "string",
+                      "description": "Content to write to the file"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "edit",
+                "description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+                "parameters": {
+                  "type": "object",
+                  "required": [
+                    "path",
+                    "edits"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "description": "Path to the file to edit (relative or absolute)"
+                    },
+                    "edits": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "oldText",
+                          "newText"
+                        ],
+                        "properties": {
+                          "oldText": {
+                            "type": "string",
+                            "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+                          },
+                          "newText": {
+                            "type": "string",
+                            "description": "Replacement text for this targeted edit."
+                          }
+                        }
+                      },
+                      "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+                    }
+                  }
+                }
+              },
+              {
+                "name": "bash",
+                "description": "Execute a bash command in the current working directory. Returns combined stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+                "parameters": {
+                  "type": "object",
+                  "required": [
+                    "command"
+                  ],
+                  "properties": {
+                    "command": {
+                      "type": "string",
+                      "description": "Bash command to execute"
+                    },
+                    "timeout": {
+                      "type": "number",
+                      "description": "Timeout in seconds (optional, no default timeout)"
+                    }
+                  }
+                }
+              }
+            ],
+            "timestamp": 1791031076282
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "message_end",
+        "payload": {
+          "type": "message_end",
+          "entry": {
+            "model": [
+              {
+                "role": "system",
+                "content": "",
+                "toolsAdded": [
+                  {
+                    "name": "read",
+                    "description": "Read the contents of a text file. Output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+                    "parameters": {
+                      "type": "object",
+                      "required": [
+                        "path"
+                      ],
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "description": "Path to the file to read (relative or absolute)"
+                        },
+                        "offset": {
+                          "type": "number",
+                          "description": "Line number to start reading from (1-indexed)"
+                        },
+                        "limit": {
+                          "type": "number",
+                          "description": "Maximum number of lines to read"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "name": "write",
+                    "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+                    "parameters": {
+                      "type": "object",
+                      "required": [
+                        "path",
+                        "content"
+                      ],
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "description": "Path to the file to write (relative or absolute)"
+                        },
+                        "content": {
+                          "type": "string",
+                          "description": "Content to write to the file"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "name": "edit",
+                    "description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+                    "parameters": {
+                      "type": "object",
+                      "required": [
+                        "path",
+                        "edits"
+                      ],
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "description": "Path to the file to edit (relative or absolute)"
+                        },
+                        "edits": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "oldText",
+                              "newText"
+                            ],
+                            "properties": {
+                              "oldText": {
+                                "type": "string",
+                                "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+                              },
+                              "newText": {
+                                "type": "string",
+                                "description": "Replacement text for this targeted edit."
+                              }
+                            }
+                          },
+                          "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "name": "bash",
+                    "description": "Execute a bash command in the current working directory. Returns combined stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+                    "parameters": {
+                      "type": "object",
+                      "required": [
+                        "command"
+                      ],
+                      "properties": {
+                        "command": {
+                          "type": "string",
+                          "description": "Bash command to execute"
+                        },
+                        "timeout": {
+                          "type": "number",
+                          "description": "Timeout in seconds (optional, no default timeout)"
+                        }
+                      }
+                    }
+                  }
+                ],
+                "timestamp": 1791031076282
+              }
+            ],
+            "kind": "pi.system",
+            "id": 9,
+            "conversationId": 1,
+            "byTaskId": 8
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "message_start",
+        "payload": {
+          "type": "message_start",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "toolCall",
+                "id": "call_4|fc_4",
+                "name": "read",
+                "arguments": {
+                  "path": "missing.txt"
+                }
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "gpt-4.1",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000002,
+                "output": 0.000008,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.000009999999999999999
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1791031076283,
+            "responseId": "resp_4",
+            "rawStopReason": "completed"
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "message_end",
+        "payload": {
+          "type": "message_end",
+          "entry": {
+            "model": [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "toolCall",
+                    "id": "call_4|fc_4",
+                    "name": "read",
+                    "arguments": {
+                      "path": "missing.txt"
+                    }
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "openai",
+                "model": "gpt-4.1",
+                "usage": {
+                  "input": 1,
+                  "output": 1,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "reasoning": 0,
+                  "totalTokens": 2,
+                  "cost": {
+                    "input": 0.000002,
+                    "output": 0.000008,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0.000009999999999999999
+                  }
+                },
+                "stopReason": "toolUse",
+                "timestamp": 1791031076283,
+                "responseId": "resp_4",
+                "rawStopReason": "completed"
+              }
+            ],
+            "kind": "pi.assistant",
+            "id": 10,
+            "conversationId": 1,
+            "byTaskId": 8
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "usage_changed",
+        "payload": {
+          "type": "usage_changed",
+          "usage": {
+            "models": {
+              "openai/gpt-4.1": {
+                "input": 1,
+                "output": 1,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "reasoning": 0,
+                "totalTokens": 2,
+                "cost": {
+                  "input": 0.000002,
+                  "output": 0.000008,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0.000009999999999999999
+                }
+              }
+            },
+            "tools": {}
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 1,
+            "output": 1,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": [
+          {
+            "type": "usage",
+            "contextSize": 0,
+            "contextUsed": 1,
+            "observation": {
+              "kind": "delta",
+              "tokens": {
+                "input": 1,
+                "output": 1,
+                "reasoning": 0,
+                "cache": {
+                  "read": 0,
+                  "write": 0
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 1,
+          "output": 1,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "tool_execution_start",
+        "payload": {
+          "type": "tool_execution_start",
+          "toolCallId": "call_4|fc_4",
+          "toolName": "read",
+          "args": {
+            "path": "missing.txt"
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 1,
+            "output": 1,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": [
+          {
+            "type": "tool-start",
+            "toolCallId": "call_4|fc_4",
+            "toolName": "read",
+            "kind": "file_read",
+            "display": {
+              "kind": "file_read",
+              "intent": "read",
+              "path": "missing.txt",
+              "input": {
+                "path": "missing.txt"
+              },
+              "filePath": "missing.txt"
+            }
+          },
+          {
+            "type": "tool-input",
+            "toolCallId": "call_4|fc_4",
+            "input": {
+              "path": "missing.txt"
+            },
+            "display": {
+              "kind": "file_read",
+              "intent": "read",
+              "path": "missing.txt",
+              "input": {
+                "path": "missing.txt"
+              },
+              "filePath": "missing.txt"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 1,
+          "output": 1,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "tool_execution_end",
+        "payload": {
+          "type": "tool_execution_end",
+          "toolCallId": "call_4|fc_4",
+          "toolName": "read",
+          "entry": {
+            "model": [
+              {
+                "role": "toolResult",
+                "toolCallId": "call_4|fc_4",
+                "toolName": "read",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "<harness>\n[error] ENOENT: no such file or directory, open '/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/pi-record-x8xoft/missing.txt'\n</harness>"
+                  }
+                ],
+                "isError": true,
+                "timestamp": 1791031076288
+              }
+            ],
+            "data": {
+              "diagnostics": [
+                {
+                  "severity": "error",
+                  "code": "tool_error",
+                  "message": "ENOENT: no such file or directory, open '/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/pi-record-x8xoft/missing.txt'"
+                }
+              ]
+            },
+            "kind": "pi.tool-result",
+            "id": 12,
+            "conversationId": 1,
+            "byTaskId": 11
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 1,
+            "output": 1,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": [
+          {
+            "type": "tool-error",
+            "toolCallId": "call_4|fc_4",
+            "error": "<harness>\n[error] ENOENT: no such file or directory, open '/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/pi-record-x8xoft/missing.txt'\n</harness>"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 1,
+          "output": 1,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "message_start",
+        "payload": {
+          "type": "message_start",
+          "message": {
+            "role": "toolResult",
+            "toolCallId": "call_4|fc_4",
+            "toolName": "read",
+            "content": [
+              {
+                "type": "text",
+                "text": "<harness>\n[error] ENOENT: no such file or directory, open '/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/pi-record-x8xoft/missing.txt'\n</harness>"
+              }
+            ],
+            "isError": true,
+            "timestamp": 1791031076288
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 1,
+            "output": 1,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 1,
+          "output": 1,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "message_end",
+        "payload": {
+          "type": "message_end",
+          "entry": {
+            "model": [
+              {
+                "role": "toolResult",
+                "toolCallId": "call_4|fc_4",
+                "toolName": "read",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "<harness>\n[error] ENOENT: no such file or directory, open '/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/pi-record-x8xoft/missing.txt'\n</harness>"
+                  }
+                ],
+                "isError": true,
+                "timestamp": 1791031076288
+              }
+            ],
+            "data": {
+              "diagnostics": [
+                {
+                  "severity": "error",
+                  "code": "tool_error",
+                  "message": "ENOENT: no such file or directory, open '/var/folders/t2/23hmqy6j43j7f3fg3m70gzhh0000gn/T/pi-record-x8xoft/missing.txt'"
+                }
+              ]
+            },
+            "kind": "pi.tool-result",
+            "id": 12,
+            "conversationId": 1,
+            "byTaskId": 11
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 1,
+            "output": 1,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 1,
+          "output": 1,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "turn_end",
+        "payload": {
+          "type": "turn_end"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 1,
+            "output": 1,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 1,
+          "output": 1,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "turn_start",
+        "payload": {
+          "type": "turn_start"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 1,
+            "output": 1,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 1,
+          "output": 1,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "message_start",
+        "payload": {
+          "type": "message_start",
+          "message": {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "CORPUSMISSING",
+                "textSignature": "{\"v\":1,\"id\":\"msg_5\"}"
+              }
+            ],
+            "api": "openai-responses",
+            "provider": "openai",
+            "model": "gpt-4.1",
+            "usage": {
+              "input": 1,
+              "output": 1,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "reasoning": 0,
+              "totalTokens": 2,
+              "cost": {
+                "input": 0.000002,
+                "output": 0.000008,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0.000009999999999999999
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1791031076290,
+            "responseId": "resp_5",
+            "rawStopReason": "completed"
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {
+            "0": "CORPUSMISSING"
+          },
+          "usage": {
+            "input": 1,
+            "output": 1,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": [
+          {
+            "type": "text-delta",
+            "delta": "CORPUSMISSING"
+          }
+        ]
+      }
+    },
+    {
+      "state": {
+        "blocks": {
+          "0": "CORPUSMISSING"
+        },
+        "usage": {
+          "input": 1,
+          "output": 1,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "message_end",
+        "payload": {
+          "type": "message_end",
+          "entry": {
+            "model": [
+              {
+                "role": "assistant",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "CORPUSMISSING",
+                    "textSignature": "{\"v\":1,\"id\":\"msg_5\"}"
+                  }
+                ],
+                "api": "openai-responses",
+                "provider": "openai",
+                "model": "gpt-4.1",
+                "usage": {
+                  "input": 1,
+                  "output": 1,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "reasoning": 0,
+                  "totalTokens": 2,
+                  "cost": {
+                    "input": 0.000002,
+                    "output": 0.000008,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "total": 0.000009999999999999999
+                  }
+                },
+                "stopReason": "stop",
+                "timestamp": 1791031076290,
+                "responseId": "resp_5",
+                "rawStopReason": "completed"
+              }
+            ],
+            "kind": "pi.assistant",
+            "id": 14,
+            "conversationId": 1,
+            "byTaskId": 13
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 1,
+            "output": 1,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 1,
+          "output": 1,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "turn_end",
+        "payload": {
+          "type": "turn_end"
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 1,
+            "output": 1,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 1,
+          "output": 1,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "run_end",
+        "payload": {
+          "type": "run_end",
+          "inputs": [
+            7
+          ]
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 1,
+            "output": 1,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 1,
+          "output": 1,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "submission",
+        "payload": {
+          "type": "submission",
+          "record": {
+            "conversationId": 1,
+            "type": "input",
+            "status": "done",
+            "entry": 6,
+            "id": 7,
+            "answer": 14
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 1,
+            "output": 1,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": []
+      }
+    },
+    {
+      "state": {
+        "blocks": {},
+        "usage": {
+          "input": 1,
+          "output": 1,
+          "reasoning": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "noted": []
+      },
+      "event": {
+        "source": "pi.durable",
+        "method": "usage_changed",
+        "payload": {
+          "type": "usage_changed",
+          "usage": {
+            "models": {
+              "openai/gpt-4.1": {
+                "input": 2,
+                "output": 2,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "reasoning": 0,
+                "totalTokens": 4,
+                "cost": {
+                  "input": 0.000004,
+                  "output": 0.000016,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0.000019999999999999998
+                }
+              }
+            },
+            "tools": {}
+          }
+        }
+      },
+      "context": {
+        "harness": "pi",
+        "threadId": "native-pi"
+      },
+      "callbacks": [],
+      "output": {
+        "state": {
+          "blocks": {},
+          "usage": {
+            "input": 2,
+            "output": 2,
+            "reasoning": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "noted": []
+        },
+        "events": [
+          {
+            "type": "usage",
+            "contextSize": 0,
+            "contextUsed": 1,
+            "observation": {
+              "kind": "delta",
+              "tokens": {
+                "input": 1,
+                "output": 1,
+                "reasoning": 0,
+                "cache": {
+                  "read": 0,
+                  "write": 0
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

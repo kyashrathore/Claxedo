@@ -1,0 +1,86 @@
+---
+import type { GetStaticPaths } from "astro"
+import Layout from "../../layouts/Layout.astro"
+import Nav from "../../components/Nav.astro"
+import Footer from "../../components/Footer.astro"
+import DownloadCta from "../../components/DownloadCta.astro"
+import SectionHead from "../../components/SectionHead.astro"
+import ComparisonTable from "../../components/ComparisonTable.astro"
+import ComparisonSources from "../../components/ComparisonSources.astro"
+import { comparisonIsExpired, publicComparisons, type Competitor } from "../../content/competitors"
+
+export const getStaticPaths = (() =>
+  publicComparisons.map((competitor) => ({ params: { competitor: competitor.slug }, props: { competitor } }))) satisfies GetStaticPaths
+
+interface Props { competitor: Competitor }
+const { competitor } = Astro.props
+const expired = comparisonIsExpired(competitor)
+---
+
+<Layout
+  title={`Claxedo vs. ${competitor.name}`}
+  description={`How Claxedo compares to ${competitor.name}: ${competitor.tagline}`}
+  noindex={expired}
+>
+  <Nav active="compare" />
+  <main id="main-content" class="page">
+    <div class="page-head">
+      <a href="/compare" class="quiet-link back">All comparisons</a>
+      <SectionHead as="h1" title={`Claxedo vs. ${competitor.name}`}>{competitor.verdict}</SectionHead>
+      <DownloadCta placement={`compare-${competitor.slug}`} />
+      {expired && <p class="notice" role="status">This comparison is past its review date. It stays at this address but is kept out of search until it's checked again.</p>}
+    </div>
+
+    <section class="section">
+      <SectionHead title="The capabilities that decide it." />
+      <ComparisonTable competitor={competitor} />
+    </section>
+
+    <section class="section">
+      <SectionHead title="An honest split." />
+      <div class="split">
+        <div>
+          <h3>Where {competitor.name} is better</h3>
+          <ul class="list">{competitor.genuineEdge.map((item) => <li>{item}</li>)}</ul>
+        </div>
+        <div>
+          <h3>Where Claxedo is different</h3>
+          <ul class="list">{competitor.claxedoDiffers.map((item) => <li>{item}</li>)}</ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <SectionHead title="Which should you pick?" />
+      <div class="choose">
+        <article class="card"><h3>Choose {competitor.name} if</h3><p>{competitor.chooseThem}</p></article>
+        <article class="card"><h3>Choose Claxedo if</h3><p>{competitor.chooseClaxedo}</p></article>
+      </div>
+    </section>
+
+    <section class="section">
+      <ComparisonSources competitor={competitor} />
+    </section>
+
+    <section class="closing">
+      <h2>Use the workspace. Read the source.</h2>
+      <p>The fastest way to compare is to run both.</p>
+      <DownloadCta placement={`compare-close-${competitor.slug}`} />
+      <a class="quiet-link" href="/compare">See all comparisons</a>
+    </section>
+  </main>
+  <Footer />
+</Layout>
+
+<style>
+  .back { display: inline-block; margin-bottom: 2rem; font-size: .875rem; }
+  .page-head :global(.section-head) { margin-bottom: 2rem; }
+  .notice { max-width: 46rem; margin: 2rem 0 0; padding: .9rem 1.1rem; border-radius: 12px; box-shadow: 0 0 0 1px var(--line); color: var(--ink-body); font-size: .9375rem; }
+  .split, .choose { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(1.5rem, 5vw, 4rem); }
+  .choose { gap: 1rem; }
+  .split h3 { margin: 0 0 1rem; font-size: 1.25rem; letter-spacing: -.015em; }
+  .choose .card p { color: var(--ink-body); font-size: 1.0625rem; }
+  @media (max-width: 47.99rem) {
+    .split, .choose { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>

@@ -1,0 +1,257 @@
+import { expect, test } from "bun:test"
+import * as fs from "node:fs"
+import { createHash } from "node:crypto"
+import * as os from "node:os"
+import * as path from "node:path"
+
+import {
+  ASAR_STRUCTURAL_ROOTS,
+  HOST_CONNECTOR_EXTRA_RESOURCE,
+  asarStructuralGlobs,
+  isDeclaredStructuralEntry,
+  requiredPackagedBoundaryEntries,
+} from "./package-structure"
+import { verifyPackageContents } from "./verify-package-contents"
+import { embeddedSdkPins, verifyOpenCodeSdkResources } from "./opencode-sdk-resources"
+
+/**
+ * The packaged app contains only declared structural resources.
+ *
+ * `electron-builder.config.ts` decides what goes in and
+ * `verify-package-contents.ts` checks what came out. Both read the same
+ * declaration, so the check can actually disagree with the config; these
+ * tests hold the pair together — including against a synthetic asar, so the
+ * invariant is exercised without a signed, notarized release build.
+ */
+
+test("the electron-builder file globs are exactly the declared roots", () => {
+  expect(asarStructuralGlobs()).toEqual(ASAR_STRUCTURAL_ROOTS.map((root) => `${root}/**/*`))
+
+  // And the config admits nothing beyond them. Read as text on purpose: the
+  // config's top level throws when the platform pty package is absent, so it
+  // cannot be imported in a unit test — but a hand-written positive glob is
+  // exactly the regression this catches, and it would be visible right here.
+  //
+  // Comments are dropped LINE-WISE, not by the usual block-comment regex: this
+  // file is full of globs like `"!**/node_modules/**"`, and `/**` inside a
+  // string opens a comment as far as that regex is concerned — it swallowed the
+  // rest of the file and the assertion below passed on nothing.
+  const config = fs.readFileSync(path.resolve(import.meta.dir, "../electron-builder.config.ts"), "utf8")
+  const block = config.match(/\n {2}files: \[\n([\s\S]*?)\n {2}\],/)?.[1]
+
+  expect(block).toBeString()
+  const code = block!
+    .split("\n")
+    .filter((line) => !/^\s*(\/\/|\/?\*)/.test(line))
+    .join("\n")
+
+  expect(code).toContain("asarStructuralGlobs()")
+  // Every remaining literal is either an exclusion or a native-module path —
+  // never a new structural root smuggled in beside the declared ones.
+  const literals = [...code.matchAll(/"([^"]+)"/g)].map((match) => match[1])
+  expect(literals.filter((glob) => !glob.startsWith("!") && !glob.includes("node_modules/"))).toEqual([])
+})
+
+test("the packaged Host Connector child uses the one declared extra-resource boundary", () => {
+  const config = fs.readFileSync(path.resolve(import.meta.dir, "../electron-builder.config.ts"), "utf8")
+  expect(config).toContain("...HOST_CONNECTOR_EXTRA_RESOURCE")
+  expect(HOST_CONNECTOR_EXTRA_RESOURCE).toEqual({
+    from: "resources/host-connector/",
+    to: "host-connector/",
+    filter: ["index.js", "manifest.json"],
+  })
+})
+
+test("only the declared roots count as structural", () => {
+  expect(isDeclaredStructuralEntry("out/main/index.js")).toBe(true)
+  expect(isDeclaredStructuralEntry("out/main/claxedo-server/index.js")).toBe(true)
+  expect(isDeclaredStructuralEntry("resources/icons/icon.icns")).toBe(true)
+  expect(isDeclaredStructuralEntry("package.json")).toBe(true)
+
+  expect(isDeclaredStructuralEntry("resources/acp/codex-acp")).toBe(false)
+  expect(isDeclaredStructuralEntry("src/main/index.ts")).toBe(false)
+  // Prefix, not substring: a sibling directory whose name merely starts the
+  // same way is not inside the declared root.
+  expect(isDeclaredStructuralEntry("outside/secret.js")).toBe(false)
+})
+
+/** Write an asar whose header lists `files`, which is all the verifier reads. */
+function fakeAsar(target: string, files: string[]) {
+  const tree: Record<string, unknown> = {}
+  for (const file of files) {
+    let node = tree
+    const parts = file.split("/")
+    for (const part of parts.slice(0, -1)) {
+      const next = (node[part] ??= { files: {} }) as { files: Record<string, unknown> }
+      node = next.files
+    }
+    node[parts.at(-1)!] = { size: 1, offset: "0" }
+  }
+  const json = Buffer.from(JSON.stringify({ files: tree }))
+  const head = Buffer.alloc(16)
+  head.writeUInt32LE(4, 0)
+  head.writeUInt32LE(json.length + 8, 4)
+  head.writeUInt32LE(json.length + 4, 8)
+  head.writeUInt32LE(json.length, 12)
+  fs.mkdirSync(path.dirname(target), { recursive: true })
+  fs.writeFileSync(target, Buffer.concat([head, json]))
+}
+
+function withAsar(
+  files: string[],
+  options: {
+    includeBoundary?: boolean
+    includeHostConnector?: boolean
+    corruptHostConnector?: boolean
+    includeMermaidRenderer?: boolean
+    includeSdk?: boolean
+    includeLaunchGate?: boolean
+  } = {},
+) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-asar-"))
+  const packaged = options.includeBoundary === false ? files : [...files, ...requiredPackagedBoundaryEntries(files)]
+  const resources = path.join(root, "dist/mac/Claxedo.app/Contents/Resources")
+  fakeAsar(path.join(resources, "app.asar"), packaged)
+  const compileCache = path.join(resources, "claxedo-server-compile-cache")
+  fs.mkdirSync(compileCache, { recursive: true })
+  fs.writeFileSync(path.join(compileCache, "manifest.json"), JSON.stringify({ version: 1, entries: [] }))
+  if (options.includeSdk !== false) {
+    const inventory = Object.entries(embeddedSdkPins()).map(([name, version]) => ({ name, version, directory: name }))
+    for (const entry of inventory) {
+      const directory = path.join(resources, "node_modules", entry.directory)
+      fs.mkdirSync(directory, { recursive: true })
+      fs.writeFileSync(path.join(directory, "package.json"), JSON.stringify(entry))
+    }
+    fs.writeFileSync(path.join(resources, "opencode-sdk-inventory.json"), JSON.stringify(inventory))
+  }
+  if (options.includeHostConnector !== false) {
+    const child = path.join(resources, "host-connector")
+    const contents = "host connector child"
+    fs.mkdirSync(child, { recursive: true })
+    fs.writeFileSync(path.join(child, "index.js"), contents)
+    fs.writeFileSync(path.join(child, "manifest.json"), JSON.stringify({
+      schema: "claxedo.host-connector-child/v1",
+      entry: "index.js",
+      sha256: options.corruptHostConnector ? "0".repeat(64) : createHash("sha256").update(contents).digest("hex"),
+    }))
+  }
+  if (options.includeMermaidRenderer !== false) {
+    const mermaidDir = path.join(resources, "mermaid")
+    fs.mkdirSync(mermaidDir, { recursive: true })
+    fs.writeFileSync(path.join(mermaidDir, "claxedo-mermaid-renderer.exe"), "synthetic fixture")
+  }
+  if (options.includeLaunchGate !== false) {
+    const unpacked = path.join(resources, "app.asar.unpacked/out/main")
+    fs.mkdirSync(unpacked, { recursive: true })
+    fs.writeFileSync(path.join(unpacked, "launch-gate-child.mjs"), "synthetic fixture")
+  }
+  try {
+    // This fixture proves package structure, not native execution. Declare a
+    // different target so the verifier checks presence without trying to run
+    // the synthetic cross-platform helper.
+    const platform = process.platform === "win32" ? "linux" : "win32"
+    return verifyPackageContents(root, { platform, arch: process.arch }).failures
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+}
+
+test("a package of declared output and native modules passes", () => {
+  expect(
+    withAsar([
+      "package.json",
+      "out/main/index.js",
+      "out/main/claxedo-server/index.js",
+      "out/renderer/index.html",
+      "resources/icons/icon.icns",
+      "node_modules/better-sqlite3/build/Release/better_sqlite3.node",
+      "node_modules/@lydell/node-pty/index.js",
+    ]),
+  ).toEqual([])
+})
+
+test("a packaged app must carry the external embedded SDK", () => {
+  expect(withAsar(["package.json", "out/main/index.js"], { includeSdk: false }))
+    .toContainEqual(expect.stringContaining("embedded SDK resources"))
+})
+
+test("the SDK verifier rejects escaped paths, duplicate engines, drift, and checkout links", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-sdk-verifier-"))
+  try {
+    const directory = path.join(root, "node_modules/@opencode-ai/core")
+    fs.mkdirSync(directory, { recursive: true })
+    const entry = { name: "@opencode-ai/core", version: "1", directory: "@opencode-ai/core" }
+    fs.writeFileSync(path.join(directory, "package.json"), JSON.stringify(entry))
+    const inventory = (entries: unknown[]) => fs.writeFileSync(path.join(root, "opencode-sdk-inventory.json"), JSON.stringify(entries))
+    inventory([entry])
+    expect(() => verifyOpenCodeSdkResources(root, { "@opencode-ai/core": "1" })).not.toThrow()
+    expect(() => verifyOpenCodeSdkResources(root, { "@opencode-ai/core": "2" })).toThrow("pinned")
+    inventory([entry, entry])
+    expect(() => verifyOpenCodeSdkResources(root, {})).toThrow("package path")
+    inventory([{ ...entry, directory: "../escape" }])
+    expect(() => verifyOpenCodeSdkResources(root, {})).toThrow("package path")
+    inventory([{ ...entry, version: "2" }])
+    expect(() => verifyOpenCodeSdkResources(root, {})).toThrow("match inventory")
+    inventory([entry])
+    fs.symlinkSync(path.join(directory, "package.json"), path.join(directory, "checkout-link"))
+    expect(() => verifyOpenCodeSdkResources(root, {})).toThrow("symlinks")
+  } finally { fs.rmSync(root, { recursive: true, force: true }) }
+})
+
+test("a packaged app must carry the verified Host Connector sidecar", () => {
+  const missing = withAsar(["package.json", "out/main/index.js"], { includeHostConnector: false })
+  expect(missing).toContainEqual(expect.stringContaining("Host Connector child manifest was not found"))
+
+  const corrupt = withAsar(["package.json", "out/main/index.js"], { corruptHostConnector: true })
+  expect(corrupt).toContainEqual(expect.stringContaining("Host Connector child fingerprint mismatch"))
+})
+
+test("a packaged app must carry exactly one native Mermaid renderer", () => {
+  const missing = withAsar(["package.json", "out/main/index.js"], { includeMermaidRenderer: false })
+  expect(missing).toContainEqual(expect.stringContaining("expected one packaged Mermaid renderer"))
+})
+
+test("a packaged app must unpack the launch gate child beside its main bundle", () => {
+  const missing = withAsar(["out/main/index.js"], { includeLaunchGate: false })
+  expect(missing).toContainEqual(expect.stringContaining("launch gate child is not unpacked"))
+})
+
+test("an undeclared structural directory fails, reported once by root", () => {
+  const failures = withAsar([
+    "package.json",
+    "out/main/index.js",
+    "resources/acp/codex-acp",
+    "resources/acp/claude-agent-acp",
+  ])
+
+  expect(failures.length).toBe(1)
+  expect(failures[0]).toContain("resources ships but is not a declared structural resource")
+})
+
+test("an undeclared node_modules package still fails", () => {
+  const failures = withAsar(["package.json", "out/main/index.js", "node_modules/hono/dist/index.js"])
+
+  expect(failures.length).toBe(1)
+  expect(failures[0]).toContain("node_modules/hono")
+})
+
+test("a packaged app must carry the always-local boundary manifests", () => {
+  expect(withAsar(["package.json", "out/main/index.js"])).toEqual([])
+
+  const failures = withAsar(["package.json", "out/main/index.js", "out/product-boundary/desktop-main.json"], {
+    includeBoundary: false,
+  })
+  expect(failures).toContainEqual(
+    expect.stringContaining("required product-boundary manifest is missing: out/product-boundary/desktop-renderer-local.json"),
+  )
+})
+
+test("a packaged account chunk requires its separate boundary manifest", () => {
+  const files = ["package.json", "out/main/index.js", "out/main/desktop-account-abc123.js"]
+  expect(withAsar(files)).toEqual([])
+
+  const failures = withAsar(files, { includeBoundary: false })
+  expect(failures).toContainEqual(
+    expect.stringContaining("required product-boundary manifest is missing: out/product-boundary/desktop-account.json"),
+  )
+})

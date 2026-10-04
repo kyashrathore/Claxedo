@@ -1,0 +1,261 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import { readFile } from "node:fs/promises"
+import type { Miniflare } from "miniflare"
+import { bootWorkerd, reapWorkerd } from "./workerd-fixture/boot"
+
+/**
+ * What the Cloudflare runtime does and does NOT tell a Durable Object about its
+ * own WebSocket send buffer.
+ *
+ * workerd's WebSocket has no `bufferedAmount` and no `getBufferedAmount()`, so
+ * a pre-send guard reading either would be `undefined > 8388608`: always false,
+ * a no-op that reads as a fix for the measured cloud failure (the DO's outbound
+ * buffer growing until workerd destroys the socket beneath the isolate,
+ * surfacing as 1006/1011 with zero logs and 13 ms of CPU). If Cloudflare ever
+ * ships the getter, the workerd test below FAILS, and whoever sees it learns the
+ * guard has become possible. Until then bounding this needs a protocol-level
+ * credit/ack window.
+ *
+ * Runtime globals are structurally typed rather than pulled from
+ * `@cloudflare/workers-types`, matching the rest of this package.
+ */
+
+/** Enough to sit ~4x over the 8 MiB limit the guards would have used. */
+const OVERSHOOT_FRAME_BYTES = 64 * 1024
+const OVERSHOOT_FRAMES = 500
+const GUARD_LIMIT_BYTES = 8 * 1024 * 1024
+
+const COMPAT_BEFORE_FLIP = "2026-03-16"
+const COMPAT_CURRENT = "2026-07-22"
+
+/** Every date this file measures — one hosted worker each, in the single boot. */
+const COMPAT_DATES = [COMPAT_BEFORE_FLIP, COMPAT_CURRENT]
+
+type SocketSurface = {
+  /** `"bufferedAmount" in socket` — the check a guard's truthiness depends on. */
+  hasBufferedAmountProperty: boolean
+  typeofBufferedAmount: string
+  typeofGetBufferedAmount: string
+  /** Every own property name up the prototype chain, so a failure says WHAT it found. */
+  prototypeProperties: string[]
+  constructorName?: string
+}
+
+type WorkerdReport = {
+  surface: SocketSurface
+  /** After queueing ~32 MiB at a peer that never reads. */
+  bufferedAmountAfterOvershoot: unknown
+  readyStateAfterOvershoot: number
+  /** The literal `cloudflare.ts` guard expression, had it been written. */
+  guardExpressionFires: boolean
+}
+
+/**
+ * The socket stays inside workerd and the report comes back over plain HTTP,
+ * for the same reason as `relay-workerd-binary.test.ts`: Bun's `ws` shim cannot
+ * drive miniflare's WebSocket client. Keeping it in the runtime also means the
+ * bytes cross a genuine workerd socket rather than a harness loopback.
+ *
+ * The client end of the pair is deliberately never returned or accepted, which
+ * is what makes it a peer that never reads — exactly the condition the cloud
+ * failure needed. It also means the report CANNOT travel over the socket under
+ * test (the overshoot frames would arrive ahead of it), so it goes over HTTP.
+ *
+ * No bundler here — the fixture imports nothing from the package, because the
+ * subject under test is the runtime's own WebSocket surface, not our code.
+ */
+const WORKERD_FIXTURE = `
+const GUARD_LIMIT_BYTES = ${GUARD_LIMIT_BYTES}
+
+const surfaceOf = (socket) => {
+  const prototypeProperties = []
+  let proto = Object.getPrototypeOf(socket)
+  while (proto && proto !== Object.prototype) {
+    prototypeProperties.push(...Object.getOwnPropertyNames(proto))
+    proto = Object.getPrototypeOf(proto)
+  }
+  return {
+    hasBufferedAmountProperty: "bufferedAmount" in socket,
+    typeofBufferedAmount: typeof socket.bufferedAmount,
+    typeofGetBufferedAmount: typeof socket.getBufferedAmount,
+    prototypeProperties,
+    constructorName: socket.constructor && socket.constructor.name,
+  }
+}
+
+const report = (socket) => {
+  const surface = surfaceOf(socket)
+  // Queue far more than any drain could absorb, at a peer that never reads.
+  const frame = "x".repeat(${OVERSHOOT_FRAME_BYTES})
+  for (let i = 0; i < ${OVERSHOOT_FRAMES}; i++) {
+    try { socket.send(frame) } catch { break }
+  }
+  return {
+    surface,
+    bufferedAmountAfterOvershoot: socket.bufferedAmount ?? null,
+    readyStateAfterOvershoot: socket.readyState,
+    // Exactly the shape W7.1a proposed for cloudflare.ts, verbatim semantics.
+    guardExpressionFires: socket.bufferedAmount > GUARD_LIMIT_BYTES,
+  }
+}
+
+export class BackpressureRoom {
+  constructor(state) { this.state = state }
+
+  async fetch(request) {
+    const pair = new WebSocketPair()
+    const server = pair[1]
+    // Two ways the room accepts a socket in production. Both are measured,
+    // because they are different code paths in workerd: hibernatable sockets are
+    // owned by the runtime and survive eviction, listener sockets are not.
+    if (new URL(request.url).searchParams.get("mode") === "hibernate") {
+      this.state.acceptWebSocket(server)
+    } else {
+      server.accept()
+    }
+    // pair[0] is intentionally dropped: nothing ever accepts or reads it, so
+    // everything sent below can only pile up in the runtime's send buffer.
+    return Response.json(report(server))
+  }
+
+  async webSocketMessage() {}
+  async webSocketClose() {}
+}
+
+export default {
+  async fetch(request, env) {
+    const mode = new URL(request.url).searchParams.get("mode") ?? "listener"
+    return env.ROOM.get(env.ROOM.idFromName(mode)).fetch(
+      new Request("https://relay.test/ws?mode=" + mode),
+    )
+  },
+}
+`
+
+/**
+ * Binding name (on the router) and worker name for one compatibility date.
+ * `2026-03-16` → binding `COMPAT_2026_03_16`, worker `compat-2026-03-16`.
+ */
+const bindingFor = (date: string) => `COMPAT_${date.replaceAll("-", "_")}`
+const workerFor = (date: string) => `compat-${date}`
+
+/**
+ * Entry worker: forwards the request, untouched, to the dated worker named by
+ * the `x-target-date` header. It exists so ONE Miniflare boot can host every
+ * compatibility date this file measures — see workerd-fixture/boot.ts for why
+ * a second boot in the same bun process wedges on Linux. The router carries no
+ * behavior of its own, so the dated workers see exactly the request the test
+ * sent.
+ */
+const ROUTER_SCRIPT = `
+export default {
+  async fetch(request, env) {
+    const date = request.headers.get("x-target-date")
+    const target = date && env["COMPAT_" + date.replaceAll("-", "_")]
+    if (!target) return Response.json({ error: "no worker hosts compatibility date " + date }, { status: 500 })
+    return target.fetch(request)
+  },
+}
+`
+
+let mf: Miniflare
+
+beforeAll(async () => {
+  // ONE boot for the whole file: the same fixture runs once per compatibility
+  // date, as separate workers behind the router. Per-date boots wedge under
+  // bun on Linux (see workerd-fixture/boot.ts).
+  mf = await bootWorkerd({
+    workers: [
+      {
+        name: "router",
+        modules: true,
+        script: ROUTER_SCRIPT,
+        compatibilityDate: COMPAT_CURRENT,
+        serviceBindings: Object.fromEntries(COMPAT_DATES.map((date) => [bindingFor(date), workerFor(date)])),
+      },
+      ...COMPAT_DATES.map((date) => ({
+        name: workerFor(date),
+        modules: true,
+        script: WORKERD_FIXTURE,
+        compatibilityDate: date,
+        durableObjects: { ROOM: { className: "BackpressureRoom", useSQLite: true } },
+      })),
+    ],
+  })
+}, 240_000)
+
+afterAll(() => {
+  // `mf` is deliberately NOT disposed: under bun on Linux a dispose wedges
+  // every later Miniflare boot in this process (the other workerd test file's
+  // boot included). SIGKILLing the workerd children does not.
+  reapWorkerd()
+})
+
+async function workerdSocketReport(input: {
+  compatibilityDate: string
+  mode: "listener" | "hibernate"
+}): Promise<WorkerdReport> {
+  const res = await mf.dispatchFetch(`http://relay.test/run?mode=${input.mode}`, {
+    headers: { "x-target-date": input.compatibilityDate },
+  })
+  const body = await res.json() as WorkerdReport & { error?: string }
+  if (!res.ok || body.error) throw new Error(`fixture worker failed: ${body.error ?? res.status}`)
+  return body
+}
+
+describe("real workerd WebSocket send-buffer surface", () => {
+  for (const mode of ["listener", "hibernate"] as const) {
+    test(`exposes no bufferedAmount on the ${mode} path`, async () => {
+      const report = await workerdSocketReport({ compatibilityDate: COMPAT_CURRENT, mode })
+
+      // The whole W7.1a fix shape rests on this being present. It is not.
+      expect(report.surface.hasBufferedAmountProperty).toBe(false)
+      expect(report.surface.typeofBufferedAmount).toBe("undefined")
+      // Nor is there a method form.
+      expect(report.surface.typeofGetBufferedAmount).toBe("undefined")
+      expect(report.surface.prototypeProperties).not.toContain("bufferedAmount")
+      expect(report.surface.prototypeProperties).not.toContain("getBufferedAmount")
+      // Sanity: this IS the runtime WebSocket and the chain was really walked.
+      expect(report.surface.constructorName).toBe("WebSocket")
+      expect(report.surface.prototypeProperties).toContain("send")
+      expect(report.surface.prototypeProperties).toContain("addEventListener")
+    }, 180_000)
+  }
+
+  test("stays silent and OPEN with ~32 MiB queued at a peer that never reads", async () => {
+    // The mechanism itself, as close as a local runtime can get: four times the
+    // limit any guard would have used, and the isolate can see NOTHING — no
+    // buffer depth, no state change, no throw. On the cloud it is at this point
+    // that workerd eventually destroys the socket underneath us, which is why
+    // the failure carried no logs and no exceptions.
+    const report = await workerdSocketReport({ compatibilityDate: COMPAT_CURRENT, mode: "hibernate" })
+
+    expect(report.bufferedAmountAfterOvershoot).toBeNull()
+    expect(report.readyStateAfterOvershoot).toBe(1)
+    // The proposed guard, run for real, over the limit: it does not fire.
+    expect(report.guardExpressionFires).toBe(false)
+  }, 180_000)
+
+  test("exposes no bufferedAmount at the pre-flip compatibility date either", async () => {
+    // Rules out "it is a compatibility-date-gated property", the one remaining
+    // way the port could have been salvaged by configuration.
+    const report = await workerdSocketReport({ compatibilityDate: COMPAT_BEFORE_FLIP, mode: "listener" })
+
+    expect(report.surface.typeofBufferedAmount).toBe("undefined")
+    expect(report.surface.typeofGetBufferedAmount).toBe("undefined")
+  }, 180_000)
+
+  test("@cloudflare/workers-types agrees that WebSocket has no bufferedAmount", async () => {
+    // Belt and braces on the runtime probe: Cloudflare's own published types
+    // never declare it. If a future version adds it, this fails alongside the
+    // runtime tests and the port becomes possible.
+    const types = await readFile(require.resolve("@cloudflare/workers-types"), "utf8")
+    // Guard the guard: if the file moves, fail loudly rather than pass vacuously.
+    const iface = types.match(/interface WebSocket extends EventTarget<WebSocketEventMap> \{[\s\S]*?\n\}/)?.[0]
+    expect(iface).toBeDefined()
+    // v5 types mention `bufferedAmount` in an MDN doc comment on send(); what
+    // matters is that the interface never DECLARES it as a member.
+    expect(iface).not.toMatch(/^\s*(readonly\s+)?(get\s+)?bufferedAmount\b/m)
+    expect(iface).not.toMatch(/getBufferedAmount\s*\(/)
+  })
+})

@@ -1,0 +1,38 @@
+Subject: Tailwind entry scans only the kit
+
+What: the kit's Tailwind entry sources only the kit's own src (tests excluded); each
+app declares its own @source.
+Why: the entry scanned claxedo-app and claxedo-desktop from inside the kit, so the
+app's candidate set and its test exclusions lived in a package that does not own
+them.
+
+diff --git a/src/styles/tailwind/index.css b/src/styles/tailwind/index.css
+index 8f72ac42dcc1c4a3f86690f6fa6366a6f3a7c064..2697d27a4bb46e69bf6a384b7fc61684793983b0 100644
+--- a/src/styles/tailwind/index.css
++++ b/src/styles/tailwind/index.css
+@@ -3,21 +3,11 @@
+ @import "tailwindcss/theme.css" layer(theme);
+ @import "tailwindcss/utilities.css" layer(utilities) source(none);
+ @source "../../";
+-@source "../../../../claxedo-app/src";
+-@source "../../../../claxedo-desktop/src/renderer";
+-/* Test files never contribute runtime markup, but their fixture strings DO
+-   register as candidates — e.g. prompt-preview.test.ts's "[file:src/a.ts]"
+-   emitted a literal `.\[file\:src\/a\.ts\]{file:src/a.ts}` arbitrary-property
+-   utility into the shipped CSS (the esbuild "file is not a known CSS property"
+-   build warnings). Keep them out of the scan. */
++/* Only the kit's own source: each app declares its own @source, so the kit entry
++   never scans a sibling package. Tests never render; their fixture
++   strings would register as candidates (a test's "[file:src/a.ts]" once emitted
++   `.\[file\:src\/a\.ts\]{file:src/a.ts}` into the shipped CSS). */
+ @source not "../../**/*.test.*";
+-@source not "../../../../claxedo-app/src/**/*.test.*";
+-@source not "../../../../claxedo-desktop/src/renderer/**/*.test.*";
+-/* Same garbage-candidate mechanism, but from doc comments in shipped source
+-   (prompt-preview.ts documents its "[file:<path>]" / "[image:<filename>]"
+-   output format), so a file exclusion cannot catch these two. */
+-@source not inline("[file:<path>]");
+-@source not inline("[image:<filename>]");
+ @import "./utilities.css";
+ 
+ @import "../foundation.css";

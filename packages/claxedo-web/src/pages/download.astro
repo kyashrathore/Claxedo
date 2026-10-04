@@ -1,0 +1,82 @@
+---
+import Layout from "../layouts/Layout.astro"
+import Nav from "../components/Nav.astro"
+import Footer from "../components/Footer.astro"
+import PlatePanel from "../components/PlatePanel.astro"
+import SectionHead from "../components/SectionHead.astro"
+import { downloads, github, version } from "../config"
+import { requireClaim } from "../content/claims"
+import { downloadPage } from "../content/site"
+
+for (const id of downloadPage.claims) requireClaim(id)
+
+type Download = (typeof downloads)[number]
+const byPlatform = (prefix: string, exclude?: string) => downloads.filter((d) => d.platform.startsWith(prefix) && (!exclude || !d.platform.includes(exclude)))
+const mac = byPlatform("macos-")
+const windows = byPlatform("windows-")
+const linux = [
+  { arch: "x86_64", builds: byPlatform("linux-", "arm64") },
+  { arch: "ARM64", builds: byPlatform("linux-arm64-") },
+]
+const track = (d: Download) => ({ "data-analytics-event": "download_app", "data-analytics-placement": "download-page", "data-analytics-platform": d.platform, "data-analytics-version": version })
+const formatName = (d: Download) => d.format.replace(/^\./, "")
+---
+
+<Layout title="Download Claxedo Desktop" description={`${downloadPage.title} ${downloadPage.subtitle}`}>
+  <Nav active="download" />
+  <main id="main-content" class="page">
+    <div class="page-head"><SectionHead as="h1" title={downloadPage.title}>{downloadPage.subtitle}</SectionHead></div>
+
+    <section class="section" id="releases">
+      <PlatePanel plate="trichinopoly" x={0.5} y={0.55} class="release-panel">
+        <div class="releases">
+          <article class="card release">
+            <h3>macOS</h3>
+            <p>Apple Silicon and Intel · v{version}</p>
+            <div class="release-actions">{mac.map((d, i) => <a class={i === 0 ? "btn-primary" : "btn-secondary"} href={d.href} {...track(d)}>{d.label.replace("macOS ", "").replace(/[()]/g, "")}</a>)}</div>
+          </article>
+          <article class="card release">
+            <h3>Windows</h3>
+            <p>64-bit installer · v{version}</p>
+            <div class="release-actions">{windows.map((d) => <a class="btn-primary" href={d.href} {...track(d)}>Download for Windows</a>)}</div>
+          </article>
+          <article class="card release">
+            <h3>Linux</h3>
+            <p>AppImage, deb or rpm · v{version}</p>
+            <div class="arch">{linux.map((row) => <div class="arch-row"><span>{row.arch}</span><div class="chips">{row.builds.map((d) => <a class="btn-secondary" href={d.href} {...track(d)}>{formatName(d)}</a>)}</div></div>)}</div>
+          </article>
+        </div>
+      </PlatePanel>
+      <p class="provenance">Every build comes straight from the <a class="quiet-link" href={`${github}/releases/tag/claxedo-v${version}`}>Claxedo GitHub release</a>.</p>
+    </section>
+
+    <section class="section">
+      <SectionHead title={downloadPage.stepsTitle} />
+      <div class="steps">{downloadPage.steps.map((step) => <div><h3>{step.title}</h3><p>{step.text}</p></div>)}</div>
+    </section>
+  </main>
+  <Footer />
+</Layout>
+
+<style>
+  .releases { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; padding: clamp(1.5rem, 4vw, 3.5rem); }
+  .release { display: flex; flex-direction: column; gap: .25rem; }
+  .release p { font-size: .9375rem; }
+  .release-actions, .arch { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1.5rem; }
+  .arch { display: grid; gap: .75rem; }
+  .arch-row { display: grid; grid-template-columns: 4rem 1fr; align-items: center; gap: .75rem; }
+  .arch-row span { color: var(--ink-soft); font-size: .875rem; }
+  .chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+  .chips a { min-height: 2.25rem; padding: 0 .9rem; font-size: .875rem; }
+  .provenance { margin: 1.25rem 0 0; color: var(--ink-soft); font-size: .9375rem; }
+  .provenance .quiet-link { font-size: inherit; }
+  .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2rem; }
+  .steps h3 { margin: 0 0 .5rem; padding-top: 1.25rem; border-top: 1px solid var(--line); font-size: 1.25rem; letter-spacing: -.015em; }
+  .steps p { margin: 0; color: var(--ink-soft); line-height: 1.5; }
+  @media (max-width: 60rem) {
+    .releases, .steps { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 30rem) {
+    .arch-row { grid-template-columns: minmax(0, 1fr); gap: .4rem; }
+  }
+</style>
