@@ -469,7 +469,7 @@ test("a startup elicitation suspends session/new and binds to its reservation", 
     name: "acp startup question",
     async backend() {
       const peer = await backend("websocket", "resume", true, undefined, false, true)
-      return { ...peer, connection: { ...peer.connection, startupTimeoutMs: 100 },
+      return { ...peer, connection: { ...peer.connection, startupTimeoutMs: 1_000 },
         onSetup(context) { owner = context.owner; ports = context.ports } }
     },
     makeTransport(services, state) {
@@ -483,7 +483,7 @@ test("a startup elicitation suspends session/new and binds to its reservation", 
     pending = owner?.broker.list({ sessionId: "s1" }).find((row) => row.request.kind === "elicitation")
   }
   expect(pending?.start).toEqual(ports?.startBinding)
-  await new Promise((resolve) => setTimeout(resolve, 200))
+  await new Promise((resolve) => setTimeout(resolve, 1_500))
   const answer = await owner!.broker.answer(pending!.request.requestId, { kind: "form", values: { answer: "yes" } },
     { start: ports!.startBinding! })
   expect(answer.ok).toBe(true)
