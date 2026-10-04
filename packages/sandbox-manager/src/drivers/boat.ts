@@ -216,6 +216,8 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
       + `--entrypoint sh ${image} -lc ${shell(bootScript)}`
     const identity = shell(`${resolveImage(input)} true -lc ${bootScript}`)
     const ours = `[ "$(docker inspect --format '{{.Config.Image}} {{.HostConfig.Init}} {{join .Config.Cmd " "}}' ${containerName} 2>/dev/null)" = ${identity} ]`
+    const sameBoot = `[ "$(docker inspect --format '{{.Config.Image}} {{join .Config.Cmd " "}}' ${containerName} 2>/dev/null)" = ${shell(`${resolveImage(input)} -lc ${bootScript}`)} ]`
+    const replace = `{ docker rm -f ${containerName} >/dev/null 2>&1 || true; } && ${run}`
     const steps = [
       `chmod 600 ${RUNTIME_ENV_PATH}`,
       `timeout ${DOCKER_DAEMON_WAIT_SECONDS} sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'`,
@@ -225,8 +227,8 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
           + `rc=$?; rm -f ${REGISTRY_PASSWORD_PATH}; (exit $rc); }`]
         : []),
       `if ${ours}; then docker start ${containerName} >/dev/null; `
-      + `else { docker rm -f ${containerName} >/dev/null 2>&1 || true; } `
-      + `&& { ${run} || { ${ours} && docker start ${containerName} >/dev/null; }; }; fi`,
+      + `else { ${replace}; } || { ${ours} && docker start ${containerName} >/dev/null; } `
+      + `|| { ${sameBoot} && { ${replace}; }; }; fi`,
     ]
     return steps.join(" && ")
   }

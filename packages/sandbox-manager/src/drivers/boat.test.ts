@@ -111,7 +111,7 @@ function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnc
  * answers the slot's image and boot command, and `run` fills the slot unless Boat's own
  * recreation (`recreatedDuringRun`) fills it first and the create conflicts.
  */
-function runStartCommand(command: string, vm: { existingImage?: string; existingCommand?: string; existingInit?: boolean; daemonUpAfter?: number; recreatedDuringRun?: string }) {
+function runStartCommand(command: string, vm: { existingImage?: string; existingCommand?: string; existingInit?: boolean; daemonUpAfter?: number; recreatedDuringRun?: string; recreatedInit?: boolean }) {
   const dir = mkdtempSync(path.join(tmpdir(), "boat-start-"))
   const bin = path.join(dir, "bin")
   mkdirSync(bin)
@@ -128,9 +128,12 @@ function runStartCommand(command: string, vm: { existingImage?: string; existing
     `echo "$*" >> ${log}`,
     `case "$1" in`,
     `  info) n=$(($(cat ${dir}/info 2>/dev/null || echo 0) + 1)); echo $n > ${dir}/info; [ $n -gt ${vm.daemonUpAfter ?? 0} ] ;;`,
-    `  inspect) cat ${slot} 2>/dev/null ;;`,
+    `  inspect) case "$*" in *HostConfig.Init*) cat ${slot} 2>/dev/null ;; *) sed -E 's/^([^ ]+) (true|false) /\\1 /' ${slot} 2>/dev/null ;; esac ;;`,
     `  rm) rm -f ${slot} ;;`,
-    `  run) init=false; for last; do [ "$last" != --init ] || init=true; done; printf '%s' "$last" > ${dir}/boot; printf '%s %s -lc %s' '${vm.recreatedDuringRun ?? vm.existingImage ?? IMAGE}' "$init" "$last" > ${slot}; if [ -n "${vm.recreatedDuringRun ?? ""}" ]; then echo Conflict >&2; exit 125; fi ;;`,
+    `  run) init=false; previous=; image=; for last; do [ "$last" != --init ] || init=true; [ "$last" != -lc ] || image="$previous"; previous="$last"; done`,
+    `    printf '%s' "$last" > ${dir}/boot`,
+    `    if [ -n "${vm.recreatedDuringRun ?? ""}" ] && [ ! -f ${dir}/recreated ]; then touch ${dir}/recreated; printf '%s %s -lc %s' '${vm.recreatedDuringRun ?? ""}' '${vm.recreatedInit ?? true}' "$last" > ${slot}; echo Conflict >&2; exit 125; fi`,
+    `    printf '%s %s -lc %s' "$image" "$init" "$last" > ${slot} ;;`,
     `  start) [ -f ${slot} ] ;;`,
     `esac`,
   ].join("\n"))
@@ -140,6 +143,7 @@ function runStartCommand(command: string, vm: { existingImage?: string; existing
     const workspace = path.join(dir, "claxedo-persistent", "workspace")
     mkdirSync(workspace, { recursive: true })
     writeFileSync(path.join(workspace, "user-work.txt"), "keep my work")
+    writeFileSync(slot, readFileSync(slot, "utf8").replace(IMAGE, vm.existingImage))
     if (vm.existingCommand) writeFileSync(slot, `${vm.existingImage} true -lc ${vm.existingCommand}`)
     if (vm.existingInit === false) writeFileSync(slot, readFileSync(slot, "utf8").replace(" true -lc ", " false -lc "))
     writeFileSync(log, "")
@@ -458,10 +462,17 @@ describe("boat sandbox driver", () => {
     expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d", "inspect --format", "start claxedo-runtime"])
   })
 
-  test("a create that fails for any other reason fails the start", async () => {
+  test("a create that races an older container restored without init replaces that container", async () => {
+    const run = runStartCommand(await startCommand(), { recreatedDuringRun: IMAGE, recreatedInit: false })
+    expect(run.status).toBe(0)
+    expect(readFileSync(path.join(run.dir, "container"), "utf8")).toContain(`${IMAGE} true -lc `)
+    expect(run.calls.filter((call) => call === "run -d")).toHaveLength(2)
+  })
+
+  test("a create that races a different image refuses to reuse or replace the competing container", async () => {
     const run = runStartCommand(await startCommand(), { recreatedDuringRun: "ghcr.io/test/sandbox:0" })
     expect(run.status).not.toBe(0)
-    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d", "inspect --format"])
+    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d", "inspect --format", "inspect --format"])
   })
 
   test("keeps env values and registry credentials out of command strings", async () => {
