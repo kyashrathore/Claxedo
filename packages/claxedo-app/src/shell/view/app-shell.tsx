@@ -32,8 +32,7 @@ export type AppShellProps = { readonly mainSidebar: JSX.Element; readonly compac
 
 export function principalScope(capabilities: Capabilities | undefined): string | undefined {
   if (!capabilities) return undefined
-  const principal = capabilities.principal
-  return principal.kind === "user" ? `user:${principal.userId}` : `machine:${principal.machineId}`
+  return `machine:${capabilities.principal.machineId}`
 }
 
 function centerOf(route: ShellRoute): CenterContent {

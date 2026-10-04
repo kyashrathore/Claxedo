@@ -7,8 +7,14 @@ type AccessKey =
   | "access.org.role.admin"
   | "access.org.role.member"
   | "access.org.you"
-  | "access.org.accounts"
-  | "access.org.accounts.hint"
+  | "access.org.yourRole"
+  | "access.org.members"
+  | "access.org.membersLoading"
+  | "access.org.membersFailed"
+  | "access.org.unnamed"
+  | "access.org.manager"
+  | "access.org.loading"
+  | "access.org.failed"
   | "access.org.restricted"
   | "access.org.signedOut"
   | "access.org.none"
@@ -19,13 +25,19 @@ type AccessKey =
 export const accessDictionary = {
   en: {
     "access.org.title": "Organization",
-    "access.org.description": "The people you work with. An organization grants nothing on any machine, folder or project.",
+    "access.org.description": "The people you work with. Being in an organization gives nobody access to your machines or projects.",
     "access.org.role.owner": "Owner",
     "access.org.role.admin": "Admin",
     "access.org.role.member": "Member",
     "access.org.you": "You",
-    "access.org.accounts": "Organization accounts",
-    "access.org.accounts.hint": "Provider accounts every member's agents may run on are managed under Accounts by an owner or admin.",
+    "access.org.yourRole": "Your role: {{role}}",
+    "access.org.members": "Members",
+    "access.org.membersLoading": "Loading members…",
+    "access.org.membersFailed": "Couldn't load the members",
+    "access.org.unnamed": "Member without a name",
+    "access.org.manager": "As an owner or admin you manage its members and the provider accounts everyone's agents can run on (Settings → Models).",
+    "access.org.loading": "Loading your organization…",
+    "access.org.failed": "Couldn't load your organization",
     "access.org.restricted": "Only owners and admins can manage the organization.",
     "access.org.signedOut": "Sign in to see your organization.",
     "access.org.none": "You are not in an organization.",

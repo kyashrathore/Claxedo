@@ -1,4 +1,4 @@
-import type { PlacementId, ProjectId } from "./ids"
+import type { OrgId, PlacementId, ProjectId } from "./ids"
 import type { DiffScope, FileSearchEntries } from "./git-types"
 
 export const queryKeys = {
@@ -10,6 +10,8 @@ export const queryKeys = {
   placements: (server: string) => ["server", server, "placements"] as const,
   placementsOf: (server: string, projectId: ProjectId) => ["server", server, "placements", projectId] as const,
   machines: (server: string) => ["server", server, "machines"] as const,
+  organizations: (server: string) => ["server", server, "organizations"] as const,
+  organizationMembers: (server: string, orgId: OrgId) => ["server", server, "organizations", orgId, "members"] as const,
   accounts: (server: string) => ["server", server, "accounts"] as const,
   accountsEffective: (server: string) => ["server", server, "accounts", "effective"] as const,
   machineLogins: (server: string) => ["server", server, "accounts", "machine-logins"] as const,

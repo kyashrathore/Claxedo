@@ -253,16 +253,22 @@ export type QueuedPromptControl = {
 
 export type OrgRole = "owner" | "admin" | "member"
 
-export type Principal =
-  | { readonly kind: "machine"; readonly machineId: MachineId }
-  | {
-      readonly kind: "user"
-      readonly userId: UserId
-      readonly name: string
-      readonly email?: string
-      readonly orgId?: OrgId
-      readonly orgRole?: OrgRole
-    }
+export type MachinePrincipal = { readonly kind: "machine"; readonly machineId: MachineId }
+
+export type UserPrincipal = {
+  readonly kind: "user"
+  readonly userId: UserId
+  readonly name: string
+  readonly email?: string
+  readonly orgId?: OrgId
+  readonly orgRole?: OrgRole
+}
+
+export type Principal = MachinePrincipal | UserPrincipal
+
+export type OrgMembership = { readonly orgId: OrgId; readonly name: string; readonly role: OrgRole }
+
+export type OrgMember = { readonly userId: UserId; readonly name?: string; readonly role: OrgRole; readonly you: boolean }
 
 export type HarnessInfo = {
   readonly id: string
@@ -275,7 +281,7 @@ export type HarnessInfo = {
 }
 
 export type Capabilities = {
-  readonly principal: Principal
+  readonly principal: MachinePrincipal
   readonly signedIn: boolean
   readonly thisMachine?: Machine
   readonly harnesses: readonly HarnessInfo[]

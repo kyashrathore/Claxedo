@@ -30,7 +30,7 @@ import type {
   GitStatus,
   WorktreeCreateInput,
 } from "./git-types"
-import type { PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
+import type { OrgId, PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
 import type { TasksClient } from "@claxedo/tasks/client"
 import type {
   MachineInstalled,
@@ -60,6 +60,8 @@ import type {
   GoalAction,
   HeldSessionReads,
   Machine,
+  OrgMember,
+  OrgMembership,
   Placement,
   Project,
   ProjectSource,
@@ -207,6 +209,11 @@ export type ServerQueries = {
     readonly byProject: (projectId: ProjectId) => FetchQuery<readonly Placement[]>
   }
   readonly machines: { readonly list: () => FetchQuery<readonly Machine[]> }
+  readonly organizations: {
+    readonly signedIn: boolean
+    readonly mine: () => FetchQuery<readonly OrgMembership[]>
+    readonly members: (orgId: OrgId) => FetchQuery<readonly OrgMember[]>
+  }
   readonly accounts: {
     readonly list: () => FetchQuery<readonly Account[]>
     readonly effective: () => FetchQuery<EffectiveAccounts>

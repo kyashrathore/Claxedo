@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/solid-query"
+import type { HostedAccount } from "./account"
 import { agentConnectionQueries } from "./agent-connections"
 import { integrationQueries } from "./integrations"
 import { providerConnectQueries } from "./provider-connect"
@@ -16,6 +17,7 @@ import type { ServerQueries } from "./api"
 import type { ProjectId } from "./ids"
 import { machineQueries } from "./machines"
 import { marketplaceQueries } from "./marketplace"
+import { organizationQueries } from "./organizations"
 import { projectQueries } from "./projects"
 import { queryKeys } from "./query-keys"
 import { taskQueries } from "./tasks"
@@ -37,13 +39,14 @@ function placementQueries(transport: Transport, workspaces: Workspaces) {
   return { list, byProject }
 }
 
-export function createQueries(transport: Transport, workspaces: Workspaces, thisMachineReport?: () => Promise<unknown>): ServerQueries {
+export function createQueries(transport: Transport, workspaces: Workspaces, account: HostedAccount | undefined, thisMachineReport?: () => Promise<unknown>): ServerQueries {
   const cloud = cloudQueries(transport)
   return {
     livePlugins: livePluginQueries(transport),
     projects: projectQueries(transport, workspaces),
     placements: placementQueries(transport, workspaces),
     machines: machineQueries(transport, workspaces, thisMachineReport),
+    organizations: organizationQueries(transport.serverUrl, account),
     accounts: accountQueries(transport),
     usage: usageQueries(transport),
     marketplace: marketplaceQueries(transport),

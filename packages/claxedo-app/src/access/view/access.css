@@ -52,9 +52,18 @@
   padding: 16px 0 40px;
 }
 
-.org-title {
-  font-size: var(--font-size-large);
-  font-weight: var(--font-weight-medium);
+.org-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.org-group-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .org-sign-in {

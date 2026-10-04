@@ -4,12 +4,12 @@ Owns: who may do what, answered only from facts the server reports, and the Orga
 
 ## Concepts
 
-- **Principal**: `Capabilities.principal` from `@/server`: a user (`userId`, `name`, optional `orgId` and `orgRole`) or a machine (`machineId`). The adapter (`src/server/capabilities.ts`) reports only the machine principal, so org-role actions answer `false` and the Organization section shows its signed-out branch until the server reports a user. Account removal uses the credential server's separately reported operator fact.
+- **Principal** (`Principal` from `@/server`): a user (`userId`, `name`, optional `email`, `orgId` and `orgRole`) or a machine (`machineId`). Signed in, on the web and on the desktop alike, it is the user: the name and email from the auth binding (`useAuth`), the organization and role from the control plane's membership list (`server.queries.organizations.mine()`, `org.list`). The role counts only when the person belongs to exactly one organization, the one the control plane resolves for them. Signed out it is the machine from `server.capabilities()`, so org-role actions answer `false`.
 - **Org role**: `owner`, `admin` or `member`. Owners and admins manage the org; members manage nothing. An org groups people and grants nothing on any machine, folder or project.
 
 ## `useAccess()` (`store.ts`)
 
-Returns `principal`, `orgRole` (the user principal's role, `undefined` for a machine), `can(action, facts?)` and `session(ref)`. It holds no state of its own: it reads `server.capabilities()` and accepts account-source facts from the account query, so it needs no provider.
+Returns `principal`, `memberships`, `orgRole` (the user principal's role, `undefined` for a machine), `can(action, facts?)` and `session(ref)`. It holds no state of its own: it reads the auth state, the membership query and `server.capabilities()`, and accepts account-source facts from the account query, so it needs no provider.
 
 | Action (`AccessAction`, `model.ts`) | Answered from |
 | --- | --- |
@@ -23,14 +23,15 @@ A fact the server has not reported answers `false`. Nothing is re-derived from r
 
 - **Organization** settings section (`organizationSettingsSection`, `/settings/organization`), drawn by `view/organization.tsx`:
   - signed out: the sign-in button when the auth binding offers sign-in (a failed sign-in shows a toast), "Checking account…" while signing in, otherwise a note to sign in;
-  - a user with no org: a note that they are not in one;
-  - a user in an org: their name, "You" and their role; owners and admins also see where the org's provider accounts are managed, members see that only owners and admins manage the org.
+  - signed in: each organization the person belongs to, with their role and its members (`server.queries.organizations.members(orgId)`, `org.members.list`): each member's name from the auth store (or "Member without a name"), "You" on the person's own row, and their role; owners and admins read that they manage the members and the provider accounts, members that only owners and admins manage the organization;
+  - no organization: a note that they are not in one;
+  - each read shows "Loading…" after the placeholder delay and a failure with Retry.
 
-There is no member list, team screen or org switcher: `src/server/` has no route that lists members.
+There is no invite, role change or org switcher here yet.
 
 ## Flows
 
-Flow 15 (`e2e/flows/15-settings.spec.ts`) opens the Organization section among the settings sections (`15-settings.navigation.ts`). `15-settings-remove-account.spec.ts` covers local-operator removal of a saved organization credential while preserving the machine login. No flow covers a signed-in user's org role.
+Flow 15 (`e2e/flows/15-settings.spec.ts`) opens the Organization section among the settings sections (`15-settings.navigation.ts`). `15-settings-remove-account.spec.ts` covers local-operator removal of a saved organization credential while preserving the machine login. `53-settings-web.spec.ts` covers a signed-in browser seeing its organization, role and members.
 
 ## Shared sessions
 

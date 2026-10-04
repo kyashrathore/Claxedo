@@ -32,6 +32,7 @@ async function setup() {
       CONTROL_PLANE_DB: database,
     },
     product: { kind: "claxedo-hosted" },
+    actorProfile: async (identity) => (identity?.subject === "carol" ? undefined : { name: `${identity?.subject} name` }),
   })
   const person = (subject: string) => signed(authority, subject)
   const alice = await person("alice")
@@ -102,17 +103,19 @@ const byJson = (a: unknown, b: unknown) => JSON.stringify(a).localeCompare(JSON.
 
 describe("D1 organization members", () => {
   test("an invitation joins a member, an admin changes their role and lists them; each change is audited", async () => {
-    const { authority, alice, bob, audit, database } = await setup()
+    const { authority, alice, bob, carol, audit, database } = await setup()
 
     expect(await inviteOrgMember(database, alice, { orgId: "org_acme", userPublicId: id(bob), role: "member" }))
       .toMatchObject({ user_id: id(bob), role: "member" })
     expect(await authority.updateOrgMember!(alice, { orgId: "org_acme", userPublicId: id(bob), role: "admin" }))
       .toMatchObject({ user_id: id(bob), role: "admin" })
 
-    const members = await authority.listOrgMembers!(alice, { orgId: "org_acme" })
-    expect(members.map(({ user_id, role }) => ({ user_id, role }))).toEqual([
-      { user_id: id(alice), role: "owner" },
-      { user_id: id(bob), role: "admin" },
+    await inviteOrgMember(database, alice, { orgId: "org_acme", userPublicId: id(carol), role: "member" })
+    const members = await authority.listOrgMembers!(bob, { orgId: "org_acme" })
+    expect(members.map(({ user_id, role, name, you }) => ({ user_id, role, name, you }))).toEqual([
+      { user_id: id(alice), role: "owner", name: "alice name", you: false },
+      { user_id: id(bob), role: "admin", name: "bob name", you: true },
+      { user_id: id(carol), role: "member", name: null, you: false },
     ])
     expect(members.every((member) => typeof member.joined_at === "number")).toBe(true)
     expect((await audit("org.member.")).filter((row) => row.orgId === "org_acme" && row.targetUserId === id(bob))).toEqual([

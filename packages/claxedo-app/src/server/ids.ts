@@ -15,5 +15,7 @@ export const projectId = (value: string) => value as ProjectId
 export const placementId = (value: string) => value as PlacementId
 export const sessionId = (value: string) => value as SessionId
 export const machineId = (value: string) => value as MachineId
+export const userId = (value: string) => value as UserId
+export const orgId = (value: string) => value as OrgId
 export const requestId = (value: string) => value as RequestId
 export const terminalId = (value: string) => value as TerminalId

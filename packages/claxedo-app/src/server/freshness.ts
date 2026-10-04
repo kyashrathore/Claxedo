@@ -27,6 +27,8 @@ export const freshness = {
   placements: catalog,
   placementsOf: catalog,
   machines: placementOwned,
+  organizations: { kind: "once", reason: "membership changes only through an invitation or an admin, neither of which this app does; the next sign-in reads it again" },
+  organizationMembers: { kind: "once", reason: "read when the Organization section opens; membership changes happen elsewhere" },
   cloud: placementOwned,
   livePlugins: { kind: "event-owned", events: ["pluginsChanged"] },
   usage: { kind: "event-owned", events: ["usageChanged"] },

@@ -1,6 +1,6 @@
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
-import type { OrgMember, OrgMemberRole } from "@claxedo/server-core/platform/auth/org-access-authority"
+import type { ListedOrgMember, OrgMember, OrgMemberRole } from "@claxedo/server-core/platform/auth/org-access-authority"
 import {
   accessAuditStatement,
   D1AccessAuthorityError,
@@ -9,6 +9,7 @@ import {
   type D1AccessContext,
 } from "./access-context"
 import { may, maySql, type BoundSql } from "./authorization"
+import type { D1ActorProfile } from "./workspace-authority"
 
 export const D1_ORG_MEMBER_AUTHORITY_METHODS = [
   "listOrgMembers",
@@ -27,21 +28,29 @@ type MembershipState = { founder: boolean; role: OrgMemberRole | null }
  * organization exists, which is what keeps every organization owned.
  */
 export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
-  constructor(private readonly context: D1AccessContext) {}
+  constructor(
+    private readonly context: D1AccessContext,
+    private readonly profile?: D1ActorProfile,
+  ) {}
 
   private get database() {
     return this.context.database
   }
 
-  async listOrgMembers(auth: SignedControlPlaneAuth, args: { orgId: string }): Promise<OrgMember[]> {
+  async listOrgMembers(auth: SignedControlPlaneAuth, args: { orgId: string }): Promise<ListedOrgMember[]> {
     const who = await this.context.principal(auth)
     const orgId = requireText(args.orgId, "orgId")
     if (!(await may(this.database, who, "member", { kind: "org", orgId }))) return []
+    const issuer = auth.principal!.identity.issuer
     const result = await this.database
       .prepare(`
         select member.user_id, member.user_id as public_id,
           case when org.owner_user_id = member.user_id then 'owner' else member.role end as role,
-          member.created_at as joined_at
+          member.created_at as joined_at,
+          (select identity.subject from auth_identities identity
+            where identity.user_id = member.user_id and identity.unlinked_at is null
+              and identity.adapter = 'better-auth' and identity.issuer = ?
+            order by identity.linked_at, identity.subject limit 1) as subject
         from org_memberships member
         join orgs org on org.org_id = member.org_id and org.deleted_at is null
         join users person on person.user_id = member.user_id and person.state = 'active'
@@ -49,9 +58,13 @@ export class D1OrgMemberAuthority implements D1OrgMemberAuthorityPort {
         order by case when org.owner_user_id = member.user_id or member.role = 'owner' then 3
           when member.role = 'admin' then 2 else 1 end desc, member.created_at, member.user_id
       `)
-      .bind(orgId)
-      .all<OrgMember>()
-    return result.results
+      .bind(issuer, orgId)
+      .all<OrgMember & { subject: string | null }>()
+    return await Promise.all(result.results.map(async ({ subject, ...member }) => ({
+      ...member,
+      name: subject ? (await this.profile?.({ adapter: "better-auth", issuer, subject }))?.name ?? null : null,
+      you: member.user_id === who.userId,
+    })))
   }
 
   async updateOrgMember(auth: SignedControlPlaneAuth, args: { orgId: string; userPublicId: string; role: OrgMemberRole }) {

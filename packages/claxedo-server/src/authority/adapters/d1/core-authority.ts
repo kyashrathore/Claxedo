@@ -143,7 +143,7 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     listSharedSessions: (auth) => listD1SharedSessions(database, options.deploymentId, options.actorProfile, auth),
     ...bindMethods(workspace, D1_WORKSPACE_AUTHORITY_METHODS),
     ...bindMethods(new D1TeamAuthority(access), D1_TEAM_AUTHORITY_METHODS),
-    ...bindMethods(new D1OrgMemberAuthority(access), D1_ORG_MEMBER_AUTHORITY_METHODS),
+    ...bindMethods(new D1OrgMemberAuthority(access, options.actorProfile), D1_ORG_MEMBER_AUTHORITY_METHODS),
     ...bindMethods(new D1OrgInvitationAuthority(access, options.invitations), D1_ORG_INVITATION_AUTHORITY_METHODS),
     ...bindMethods(new D1ProjectMemberAuthority(access), D1_PROJECT_MEMBER_AUTHORITY_METHODS),
     ...bindMethods(sessions, D1_SESSION_AUTHORITY_METHODS),

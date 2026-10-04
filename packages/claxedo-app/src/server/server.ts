@@ -111,7 +111,7 @@ export function createServer(config: ServerConfig): ServerHandle {
   const [connection, setConnection] = createSignal<ConnectionState>({ kind: "connecting" })
   const streams = createEventStreams({ config, transport, onFrame: intake.frame, onGap: intake.gap, onState: setConnection })
   const capabilities = createCapabilities(transport, workspaces)
-  const queries = createQueries(transport, workspaces, config.thisMachineReport)
+  const queries = createQueries(transport, workspaces, account, config.thisMachineReport)
   const startup = createStartup({ workspaces, streams, capabilities, setConnection })
   const projection = createSessionProjection(workspaces, account)
   const stopProjecting = intake.subscribe(projection.observe)

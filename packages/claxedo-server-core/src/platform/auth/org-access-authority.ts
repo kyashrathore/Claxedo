@@ -36,6 +36,8 @@ export type OrgInvitationDelivery = {
 
 export type OrgMember = { user_id: string; public_id: string; role: OrgMemberRole; joined_at: number }
 
+export type ListedOrgMember = OrgMember & { name: string | null; you: boolean }
+
 export type OrgMemberRemoval = {
   removed: boolean
   team_memberships_revoked: number
@@ -79,7 +81,7 @@ export type OrgAccessAuthority = {
     args: { teamId: string },
   ) => Promise<Array<{ team_id: string; project_id: string; role: ProjectGrantRole; updated_at: number }>>
   ensureDefaultTeam?: (auth: SignedControlPlaneAuth, args: { orgId: string }) => Promise<unknown>
-  listOrgMembers?: (auth: SignedControlPlaneAuth, args: { orgId: string }) => Promise<OrgMember[]>
+  listOrgMembers?: (auth: SignedControlPlaneAuth, args: { orgId: string }) => Promise<ListedOrgMember[]>
   createOrgInvitation?: (
     auth: SignedControlPlaneAuth,
     args: { orgId: string; email: string; role: OrgMemberRole },
