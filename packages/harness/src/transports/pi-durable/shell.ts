@@ -1,3 +1,4 @@
+import { once } from "node:events"
 import { existsSync } from "node:fs"
 import path from "node:path"
 import { errorMessage } from "@claxedo/helpers"
@@ -11,7 +12,7 @@ const SHELL = existsSync("/bin/bash") ? "/bin/bash" : "bash"
 const SCRIPT = `eval "$1"
 printf '%s%d\\n' "$2" "$?" >&2
 wait`
-const EXIT_STDIO_GRACE_MS = 100
+const EXIT_STDIO_GRACE_MS = 2_000
 const RETIRE_MS = 5_000
 
 export type PiShellServices = Pick<HarnessServices, "spawn" | "clock" | "log">
@@ -20,7 +21,8 @@ export type LiveProcesses = { add(owned: OwnedProcess): unknown; delete(owned: O
 
 export type PiShellHost = { sessionId: string; services: PiShellServices; env: Readonly<Record<string, string>>; live: LiveProcesses }
 
-type Exec = { owned: OwnedProcess; options: ShellExecOptions | undefined; context: Context; marker: ExitMarker; settled: boolean }
+type Exec = { owned: OwnedProcess; options: ShellExecOptions | undefined; context: Context; marker: ExitMarker; settled: boolean;
+  drained: Promise<void> }
 
 const execFailure = (code: ExecutionError["code"], message: string): Result<ShellExecResult, ExecutionError> =>
   ({ ok: false, error: new ExecutionError(code, message) })
@@ -55,7 +57,8 @@ async function settleExec(host: PiShellHost, exec: Exec): Promise<Result<ShellEx
   exec.context.abortSignal?.addEventListener("abort", onAbort, { once: true })
   const seconds = exec.options?.timeout
   const timer = seconds === undefined ? undefined : clock.setTimeout(() => stop("timeout"), seconds * 1000)
-  const grace = () => new Promise<void>((resolve) => { clock.setTimeout(() => resolve(), EXIT_STDIO_GRACE_MS) })
+  const grace = () => Promise.race([exec.drained,
+    new Promise<void>((resolve) => { clock.setTimeout(() => resolve(), EXIT_STDIO_GRACE_MS) })])
   try {
     const code = await exitCode(exec, grace)
     if (stopped) return execFailure(stopped, stopped === "timeout" ? `Command timed out after ${seconds} seconds` : "Command aborted")
@@ -86,7 +89,9 @@ async function ownedExec(host: PiShellHost, cwd: string, command: string, option
     return execFailure("spawn_error", errorMessage(error))
   }
   owned.stdin.end()
-  const exec = { owned, options, context, marker, settled: false }
+  const drained = Promise.all([once(owned.stdout, "close"), once(owned.stderr, "close")])
+    .then(() => undefined, (error: unknown) => host.services.log.warn("Pi bash output stream failed", { error: errorMessage(error) }))
+  const exec = { owned, options, context, marker, settled: false, drained }
   forward(exec)
   return settleExec(host, exec)
 }
