@@ -27,6 +27,16 @@ export const PI_LAUNCH_PROVIDERS = [
 
 export type PiLaunchProvider = (typeof PI_LAUNCH_PROVIDERS)[number]
 
+export const PI_PROVIDER_LABELS: Readonly<Record<PiLaunchProvider, string>> = {
+  "openai-codex": "OpenAI Codex",
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  openrouter: "OpenRouter",
+  google: "Google",
+  groq: "Groq",
+  xai: "xAI",
+}
+
 export function isPiLaunchProvider(providerID: string): providerID is PiLaunchProvider {
   return PI_LAUNCH_PROVIDERS.some((provider) => provider === providerID)
 }
