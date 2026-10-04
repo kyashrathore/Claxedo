@@ -5,6 +5,7 @@ import path from "node:path"
 import { describe, expect, test } from "vitest"
 import { createBoatSandboxDriver, type BoatFetch } from "./boat"
 import { createSandboxManager, type SandboxDriverEnsureInput } from ".."
+import { shell } from "../command"
 import { createMemoryLeaseStore, sandboxLease } from "../stores/memory"
 
 type Call = { path: string; method: string; headers: Record<string, string>; body?: any }
@@ -107,10 +108,10 @@ function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnc
  * Runs the driver's container start command under a real `sh`, with `docker`
  * and `timeout` replaced by a recorder over one container slot: `docker info`
  * fails until the daemon has been asked `daemonUpAfter` times, `inspect`
- * answers the slot's image, and `run` fills the slot unless Boat's own
+ * answers the slot's image and boot command, and `run` fills the slot unless Boat's own
  * recreation (`recreatedDuringRun`) fills it first and the create conflicts.
  */
-function runStartCommand(command: string, vm: { existingImage?: string; daemonUpAfter?: number; recreatedDuringRun?: string }) {
+function runStartCommand(command: string, vm: { existingImage?: string; existingCommand?: string; daemonUpAfter?: number; recreatedDuringRun?: string }) {
   const dir = mkdtempSync(path.join(tmpdir(), "boat-start-"))
   const bin = path.join(dir, "bin")
   mkdirSync(bin)
@@ -118,7 +119,6 @@ function runStartCommand(command: string, vm: { existingImage?: string; daemonUp
   const slot = path.join(dir, "container")
   writeFileSync(log, "")
   writeFileSync(path.join(dir, ".claxedo-runtime-env"), "")
-  if (vm.existingImage) writeFileSync(slot, vm.existingImage)
   const tool = (name: string, body: string) => {
     writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`)
     chmodSync(path.join(bin, name), 0o755)
@@ -130,20 +130,26 @@ function runStartCommand(command: string, vm: { existingImage?: string; daemonUp
     `  info) n=$(($(cat ${dir}/info 2>/dev/null || echo 0) + 1)); echo $n > ${dir}/info; [ $n -gt ${vm.daemonUpAfter ?? 0} ] ;;`,
     `  inspect) cat ${slot} 2>/dev/null ;;`,
     `  rm) rm -f ${slot} ;;`,
-    `  run) if [ -n "${vm.recreatedDuringRun ?? ""}" ]; then echo "${vm.recreatedDuringRun ?? ""}" > ${slot}; echo Conflict >&2; exit 125; fi; echo ${IMAGE} > ${slot} ;;`,
+    `  run) for last; do :; done; printf '%s' "$last" > ${dir}/boot; printf '%s -lc %s' '${vm.recreatedDuringRun ?? vm.existingImage ?? IMAGE}' "$last" > ${slot}; if [ -n "${vm.recreatedDuringRun ?? ""}" ]; then echo Conflict >&2; exit 125; fi ;;`,
     `  start) [ -f ${slot} ] ;;`,
     `esac`,
   ].join("\n"))
   tool("sleep", "exit 0")
+  if (vm.existingImage) {
+    spawnSync("sh", ["-c", command], { cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8" })
+    if (vm.existingCommand) writeFileSync(slot, `${vm.existingImage} -lc ${vm.existingCommand}`)
+    writeFileSync(log, "")
+    writeFileSync(path.join(dir, "info"), "0")
+  }
   const result = spawnSync("sh", ["-c", command], { cwd: dir, env: { PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8" })
   const calls = readFileSync(log, "utf8").split("\n").filter(Boolean).map((line) => line.split(" ").slice(0, 2).join(" "))
   return { status: result.status, calls, dir }
 }
 
-async function startCommand() {
+async function startCommand(input?: Partial<SandboxDriverEnsureInput>, runtimeCommand?: string) {
   const boat = fakeBoat()
-  const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0 })
-  await driver.ensureHost(ensureInput())
+  const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl, healthIntervalMs: 0, runtimeCommand })
+  await driver.ensureHost(ensureInput(input))
   const command = commandsOf(boat.calls).find((c) => c.includes("docker info"))
   if (!command) throw new Error("no container start command")
   return command
@@ -388,6 +394,34 @@ describe("boat sandbox driver", () => {
     const run = runStartCommand(await startCommand(), { existingImage: "ghcr.io/test/sandbox:0" })
     expect(run.status).toBe(0)
     expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d"])
+  })
+
+  test("a container with an older boot command is replaced while its persistent workspace is kept", async () => {
+    const run = runStartCommand(await startCommand(), { existingImage: IMAGE, existingCommand: "exec /usr/local/bin/workspace-runtime" })
+    expect(run.status).toBe(0)
+    expect(run.calls).toEqual(["info", "inspect --format", "rm -f", "run -d"])
+    expect(existsSync(path.join(run.dir, "claxedo-persistent", "workspace"))).toBe(true)
+  })
+
+  test.skipIf(process.platform !== "linux")("the actual boot command repairs a foreign-owned bind root before Git opens the checkout", async () => {
+    const root = (args: string[]) => process.getuid?.() === 0
+      ? spawnSync(args[0], args.slice(1), { encoding: "utf8" })
+      : spawnSync("sudo", ["-n", ...args], { encoding: "utf8" })
+    const dir = mkdtempSync(path.join(tmpdir(), "boat-mounted-owner-"))
+    const workspace = path.join(dir, "workspace with 'quote")
+    try {
+      expect(root(["git", "init", "--quiet", workspace]).status).toBe(0)
+      expect(root(["chown", "65534:65534", workspace]).status).toBe(0)
+      expect(root(["git", "-C", workspace, "rev-parse", "--show-toplevel"]).stderr).toContain("dubious ownership")
+      const run = runStartCommand(await startCommand({ workspaceRoot: workspace }, "git rev-parse --show-toplevel"), {})
+      const boot = readFileSync(path.join(run.dir, "boot"), "utf8").replace(". /run/claxedo-runtime.env", `. ${shell(path.join(run.dir, ".claxedo-runtime-env"))}`)
+      const result = root(["sh", "-c", boot])
+      expect(result.stderr).toBe("")
+      expect(result.status).toBe(0)
+      expect(result.stdout.trim()).toBe(workspace)
+    } finally {
+      root(["rm", "-rf", "--", dir])
+    }
   })
 
   test("a create that loses the race to Boat's recreation starts the container Boat recreated", async () => {

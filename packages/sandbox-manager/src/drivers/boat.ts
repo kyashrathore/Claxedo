@@ -192,7 +192,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
    * then recreates the containers that were running, pulling their images
    * again (docs.boat.dev/snapshots, "What is captured"), while the driver
    * boots the runtime too. Whichever creates the container first wins: an
-   * existing container of this image is started, and a create that loses the
+   * existing container of this image and boot command is started, and a create that loses the
    * race starts the one that won. The workspace and the runtime's own state
    * are bind-mounted from the sandbox filesystem the snapshot keeps.
    */
@@ -203,6 +203,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     const bootScript = [
       `. ${CONTAINER_ENV_PATH}`,
       `mkdir -p ${shell(directory)}`,
+      `chown "$(id -u):$(id -g)" ${shell(directory)}`,
       `cd ${shell(directory)}`,
       `exec ${runtimeCommand}`,
     ].join(" && ")
@@ -211,7 +212,8 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
       + `-v "$(pwd)/${RUNTIME_ENV_PATH}:${CONTAINER_ENV_PATH}:ro" `
       + mounts.map(([source, target]) => `-v "$(pwd)/${PERSISTENT_ROOT}/${source}":${shell(target)} `).join("")
       + `--entrypoint sh ${image} -lc ${shell(bootScript)}`
-    const ours = `[ "$(docker inspect --format '{{.Config.Image}}' ${containerName} 2>/dev/null)" = ${image} ]`
+    const identity = shell(`${resolveImage(input)} -lc ${bootScript}`)
+    const ours = `[ "$(docker inspect --format '{{.Config.Image}} {{join .Config.Cmd " "}}' ${containerName} 2>/dev/null)" = ${identity} ]`
     const steps = [
       `chmod 600 ${RUNTIME_ENV_PATH}`,
       `mkdir -p ${mounts.map(([source]) => `${PERSISTENT_ROOT}/${source}`).join(" ")}`,

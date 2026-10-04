@@ -77,6 +77,11 @@ comparison and each provider's required options. Swap `createMemoryLeaseStore`
 for a persisted `SandboxLeaseStore` implementation (e.g. backed by SQLite) to
 survive process restarts.
 
+The Boat driver assigns the mounted workspace root to the container's runtime
+user before starting the runtime, so Git accepts the checkout's ownership.
+It changes only the mount root's owner, preserving ownership within the person's
+checkout. A container is reused only when its image and boot command both match;
+replacing an outdated container preserves the bind-mounted workspace and state.
 The Boat driver checks the runtime's health endpoint after starting its container.
 If startup never becomes healthy, the failure includes a bounded container log
 tail and container exit information, with staged environment and registry secret
