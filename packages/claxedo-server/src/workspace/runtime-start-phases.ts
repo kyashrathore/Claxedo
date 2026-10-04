@@ -1,13 +1,13 @@
 import { isSandboxRuntimeStartPhase, type SandboxPhaseTiming, type SandboxRuntimeStartPhase } from "@claxedo/sandbox-contract"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
-import { RUNTIME_START_PHASES_PATH } from "../hosts/workspace-runtime/boot-contract"
+import { RUNTIME_START_PHASES_PATH } from "@claxedo/server-core/hosts/workspace-runtime/env"
 
 type RuntimeFetch = (path: string, init: RequestInit) => Promise<Response>
 
 const duration = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0
 
-function report(body: unknown) {
+function parsedStartPhases(body: unknown) {
   const record = asRecord(body)
   const phases = (Array.isArray(record?.phases) ? record.phases : [])
     .map((entry) => asRecord(entry))
@@ -27,6 +27,6 @@ export async function recordRuntimeStartPhases(input: { sandboxManager: SandboxM
   if (target.status !== "ready") return
   const response = await input.runtimeFetch(RUNTIME_START_PHASES_PATH, { method: "POST" })
   if (!response.ok) throw new Error(`the runtime answered ${response.status} for its start phases`)
-  const taken = report(await response.json())
+  const taken = parsedStartPhases(await response.json())
   if (taken.phases.length) await input.sandboxManager.recordStartPhases(input.workspaceId, { epoch: target.epoch, ...taken })
 }

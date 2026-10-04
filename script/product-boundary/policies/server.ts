@@ -100,8 +100,10 @@ export const serverWorkerd: Policy = {
   // plan mid-turn through `routes/runtime-credential-refresh.ts`, proven by
   // the turn lease check it shares with connection secrets
   // (`session/turn-lease-authority.ts`); both of a sandbox's secret routes are
-  // served by the `routes/runtime-sandbox-secrets.ts` router.
-  ceilings: { modules: 141, packages: 19 },
+  // served by the `routes/runtime-sandbox-secrets.ts` router. After it
+  // provisions a cloud runtime the plane takes the start phases that runtime
+  // timed in its sandbox (`workspace/runtime-start-phases.ts`).
+  ceilings: { modules: 142, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

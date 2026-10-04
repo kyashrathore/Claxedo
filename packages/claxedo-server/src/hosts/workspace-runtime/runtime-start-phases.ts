@@ -1,7 +1,7 @@
 import { Hono } from "hono"
 import { createSandboxPhaseTimer, type SandboxRuntimeStartPhase } from "@claxedo/sandbox-contract"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
-import { RUNTIME_START_PHASES_PATH } from "./boot-contract"
+import { RUNTIME_START_PHASES_PATH } from "@claxedo/server-core/hosts/workspace-runtime/env"
 import { controlPlaneOnly } from "./control-plane-only"
 
 /**

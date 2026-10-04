@@ -13,7 +13,7 @@ import { mintOwnerGrant } from "../../session/owner-grant"
 import { serveGitOrigin } from "../../test-support/git-origin"
 import { usageReportPlane, USAGE_REPORT_URL } from "../../test-support/usage-report-plane"
 import { FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID } from "./first-party-mcp"
-import { RUNTIME_START_PHASES_PATH } from "./boot-contract"
+import { RUNTIME_START_PHASES_PATH } from "@claxedo/server-core/hosts/workspace-runtime/env"
 import {
   claxedoCorsOrigin,
   claxedoRuntimeHarnessFromEnv,
