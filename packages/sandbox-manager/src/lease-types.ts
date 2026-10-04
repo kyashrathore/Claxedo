@@ -2,6 +2,7 @@ import type {
   SandboxCheckpointReference,
   SandboxPersistenceCapabilities,
   SandboxRestoreStatus,
+  SandboxStartProgress,
 } from "./contract"
 
 export type SandboxLeaseRowStatus =
@@ -54,6 +55,7 @@ export type SandboxLeaseRow = {
   checkpoint: SandboxCheckpointReference | null
   persistence: SandboxPersistenceCapabilities | null
   restore: SandboxRestoreStatus | null
+  start: SandboxStartProgress | null
   created_at: number
   updated_at: number
 }
