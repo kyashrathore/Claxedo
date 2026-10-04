@@ -49,7 +49,7 @@ import { embeddedSessionDrivenOnlyByMachineUser, onEmbeddedWorkspaceRuntime } fr
 import { ProjectRoutes } from "@claxedo/server-core/projects/routes"
 import { localProjectStore, systemRepoAddresses } from "@claxedo/server-core/projects/local-store"
 import { requireSignedControlPlaneRoute } from "@claxedo/server-core/platform/http/control-plane-route-auth"
-import { localSandboxDriverKeys } from "../credentials/sandbox-driver-keys"
+import { machineSandboxDriverKeys } from "@claxedo/server-core/credentials/machine-sandbox-driver-keys"
 import { CredentialRoutes } from "@claxedo/server-core/credentials/routes/credential"
 import { readMachineAgentUsage } from "../usage/adapters/token-tracker-usage-limits"
 import { ProviderAuthRoutes } from "@claxedo/server-core/credentials/routes/provider-auth"
@@ -446,7 +446,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   app.route("/", ProviderAuthRoutes({ service: createProviderAuthService(services.credentials), ...authRouteOptions(services) }))
   app.route("/api/claxedo/credentials", CredentialRoutes(services.credentials, {
     agentUsage: readMachineAgentUsage,
-    sandboxDriverKeys: localSandboxDriverKeys(env),
+    sandboxDriverKeys: machineSandboxDriverKeys(env),
     ...authRouteOptions(services),
     ...(env.CLAXEDO_CREDENTIALS_TOKEN?.trim() ? { token: env.CLAXEDO_CREDENTIALS_TOKEN.trim() } : {}),
     // Derived from the environment, never caller-supplied, since an omitted

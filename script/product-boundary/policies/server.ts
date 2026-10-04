@@ -101,7 +101,15 @@ export const serverWorkerd: Policy = {
   // the turn lease check it shares with connection secrets
   // (`session/turn-lease-authority.ts`); both of a sandbox's secret routes are
   // served by the `routes/runtime-sandbox-secrets.ts` router.
-  ceilings: { modules: 141, packages: 19 },
+  // +4 modules (owner: the hosted sandbox manager composition): an
+  // organization's own sandbox provider key provisions its new workspaces.
+  // `sandbox/org-sandbox-drivers.ts` picks the org's key or the operator's
+  // driver, `sandbox/org-sandbox-manager.ts` routes each workspace's lifecycle
+  // to the key its lease records, and the D1 plane keeps the org's chosen
+  // driver (`sandbox/stores/d1-org-driver.ts`) behind the shared credential
+  // routes' key policy (`sandbox/hosted-sandbox-driver-keys.ts`). None of
+  // them imports a sandbox provider. 145/19, no headroom.
+  ceilings: { modules: 145, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
