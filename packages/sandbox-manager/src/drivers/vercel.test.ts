@@ -317,11 +317,17 @@ describe("VercelSandboxDriver", () => {
   })
 
   test("reports its image ready when the sandbox exists, before the runtime starts", async () => {
-    const created = sandbox()
+    let commands = 0
+    const created = sandbox({
+      runCommand: vi.fn(async () => {
+        commands += 1
+        return { wait: vi.fn(async () => {}), kill: vi.fn(async () => {}), stdout: vi.fn(async () => "") }
+      }),
+    })
     const driver = createVercelSandboxDriver({ ...baseOptions, sandbox: factory({ create: vi.fn(async () => created) }) })
     let runtimeStarted: boolean | undefined
 
-    await driver.ensureHost({ ...input, onImageReady: async () => { runtimeStarted = vi.mocked(created.runCommand).mock.calls.length > 0 } })
+    await driver.ensureHost({ ...input, onImageReady: async () => { runtimeStarted = commands > 0 } })
 
     expect(runtimeStarted).toBe(false)
   })
