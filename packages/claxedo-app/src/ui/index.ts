@@ -3,7 +3,7 @@ export { ClaxedoIcon, ClaxedoIconV2, type ClaxedoIconName, type ClaxedoIconProps
 export { ClaxedoIconButton, type ClaxedoIconButtonProps } from "./controls/claxedo-icon-button"
 export { appIconNames } from "./icons/catalog"
 export { IconSkinContext, type IconSkinIcons } from "./icons/skin"
-export { ClaxedoLogo, ClaxedoSplash } from "./controls/claxedo-logo"
+export { ClaxedoLogo } from "./controls/claxedo-logo"
 export { animateHeightChanges } from "./controls/animate-height"
 export { SidePanel, SidePanelArea } from "./controls/side-panel"
 export { SidePanelSlot, SidePanelScope } from "./controls/side-panel-slot"

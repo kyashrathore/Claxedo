@@ -1,6 +1,4 @@
 import { For, Match, Show, Switch, type JSX } from "solid-js"
-import { useI18n } from "@/i18n"
-import type { SettingsSection } from "@/shell"
 import { Button } from "@/ui"
 import { usePluginsText } from "../i18n"
 import { usePluginHost } from "../provider"
@@ -12,7 +10,7 @@ function failedReason(state: LiveListState): string | undefined {
   return state.kind === "failed" ? state.reason : undefined
 }
 
-function PluginsSettings(): JSX.Element {
+export function PluginsSettings(): JSX.Element {
   const host = usePluginHost()
   const t = usePluginsText()
   return (
@@ -40,12 +38,4 @@ function PluginsSettings(): JSX.Element {
       </Show>
     </div>
   )
-}
-
-export const pluginsSettingsSection: SettingsSection = {
-  id: "app-plugins",
-  title: () => useI18n().t("plugins.settings.title"),
-  group: "app",
-  order: 90,
-  view: PluginsSettings,
 }

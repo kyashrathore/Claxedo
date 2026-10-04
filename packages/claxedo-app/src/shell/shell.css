@@ -70,3 +70,31 @@
   padding: 16px;
   color: var(--v2-text-text-muted, #8a8686);
 }
+
+#root:empty::before,
+.startup-shell::before {
+  --startup-line: color-mix(in srgb, var(--text-base, var(--startup-ink, #a0a0a0)) 16%, transparent);
+  --startup-bar: color-mix(in srgb, var(--text-base, var(--startup-ink, #a0a0a0)) 14%, transparent);
+  position: fixed;
+  inset: 0;
+  content: "";
+  background: linear-gradient(var(--startup-line) 0 0) 0 36px / 100% 1px no-repeat;
+}
+
+@media (min-width: 768px) {
+  #root:empty::before,
+  .startup-shell::before {
+    background:
+      linear-gradient(var(--startup-bar) 0 0) 20px 52px / 72px 8px no-repeat,
+      linear-gradient(var(--startup-bar) 0 0) 20px 84px / 96px 8px no-repeat,
+      linear-gradient(var(--startup-bar) 0 0) 20px 132px / 56px 6px no-repeat,
+      linear-gradient(var(--startup-bar) 0 0) 40px 172px / 160px 8px no-repeat,
+      linear-gradient(var(--startup-bar) 0 0) 40px 188px / 72px 6px no-repeat,
+      linear-gradient(var(--startup-bar) 0 0) 40px 224px / 128px 8px no-repeat,
+      linear-gradient(var(--startup-bar) 0 0) 40px 240px / 64px 6px no-repeat,
+      linear-gradient(var(--startup-bar) 0 0) 40px 276px / 144px 8px no-repeat,
+      linear-gradient(var(--startup-bar) 0 0) 40px 292px / 80px 6px no-repeat,
+      linear-gradient(var(--startup-line) 0 0) 260px 0 / 1px 100% no-repeat,
+      linear-gradient(var(--startup-line) 0 0) 261px 36px / 100% 1px no-repeat;
+  }
+}

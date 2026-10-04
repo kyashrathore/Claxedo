@@ -3,7 +3,7 @@ import { placementId, terminalId } from "@/server"
 import type { Json, PaneKind } from "@/shell"
 import { useTerminalRuntime } from "./context"
 import type { TerminalPaneState } from "./model"
-import { TerminalPane } from "./view/terminal-pane"
+import { lazyView } from "@/lib/lazy-view"
 
 function decodeTerminalPaneState(value: Json): TerminalPaneState | undefined {
   const placement = readString(value, "placementId")
@@ -20,7 +20,7 @@ export const terminalPaneKind: PaneKind<TerminalPaneState> = {
     return terminals.store(state.placementId).row(state.terminalId)?.title ?? terminals.defaultTitle()
   },
   icon: "terminal",
-  view: TerminalPane,
+  view: lazyView(() => import("./view/terminal-pane").then((module) => module.TerminalPane)),
   encode: (state) => ({ placementId: state.placementId, terminalId: state.terminalId }),
   decode: decodeTerminalPaneState,
   fromRoute: (route) =>

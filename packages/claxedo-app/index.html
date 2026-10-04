@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" style="background-color: var(--background-base, #101010)">
+<html lang="en" style="background-color: var(--background-base, var(--startup-base))">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content" />
@@ -12,39 +12,26 @@
     <meta name="theme-color" content="#F8F7F7" />
     <meta name="theme-color" content="#131010" media="(prefers-color-scheme: dark)" />
     <style id="claxedo-initial-paint">
+      html {
+        --startup-base: #131010;
+        --startup-ink: #a0a0a0;
+      }
+
+      html[data-color-scheme="light"] {
+        --startup-base: #f8f7f7;
+        --startup-ink: #6f6f6f;
+      }
+
       html,
       body,
       #root {
         min-height: 100%;
-        background-color: var(--background-base, #101010);
-        color: var(--text-base, #a0a0a0);
+        background-color: var(--background-base, var(--startup-base));
+        color: var(--text-base, var(--startup-ink));
       }
 
       body {
         margin: 0;
-      }
-
-      #root:empty {
-        display: grid;
-        min-height: 100dvh;
-        place-items: center;
-      }
-
-      #root:empty::before {
-        box-sizing: border-box;
-        width: 18px;
-        height: 18px;
-        content: "";
-        border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
-        border-top-color: currentColor;
-        border-radius: 999px;
-        animation: claxedo-initial-spin 0.8s linear infinite;
-      }
-
-      @keyframes claxedo-initial-spin {
-        to {
-          transform: rotate(1turn);
-        }
       }
     </style>
     <script id="oc-theme-preload-script" src="/oc-theme-preload.js"></script>

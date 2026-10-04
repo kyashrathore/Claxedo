@@ -1,4 +1,4 @@
-import { ComponentProps, For } from "solid-js"
+import { For } from "solid-js"
 
 const TILES: readonly [number, number][] = [
   [184, 56], [216, 56], [248, 56], [280, 56], [312, 56],
@@ -22,20 +22,6 @@ const CTiles = (props: { fill: string }) => (
     {([x, y]) => <rect x={x + SHIFT - 4.5} y={y - 4.5} width={33} height={33} rx={6} fill={props.fill} />}
   </For>
 )
-
-export const ClaxedoSplash = (props: Pick<ComponentProps<"svg">, "ref" | "class">) => {
-  return (
-    <svg
-      ref={props.ref}
-      classList={{ [props.class ?? ""]: !!props.class }}
-      viewBox="44 44 432 432"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <CTiles fill="var(--icon-strong-base)" />
-    </svg>
-  )
-}
 
 export const ClaxedoLogo = (props: { class?: string }) => {
   return (

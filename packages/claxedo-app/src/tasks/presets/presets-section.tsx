@@ -2,7 +2,6 @@ import { Show, createSignal, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { uuid } from "@/lib/uuid"
 import { SettingsIntro } from "@/settings"
-import type { SettingsSection } from "@/shell"
 import { Button, Switch } from "@/ui"
 import {
   followRetry,
@@ -14,7 +13,6 @@ import {
 } from "../data/queries"
 import { refusalOf } from "../data/refusal"
 import { tasksDictionary } from "../i18n"
-import { PRESETS_SECTION_ID } from "../links"
 import "../view/tasks.css"
 import { useCapabilityCatalog } from "./capabilities"
 import { emptyPresetEditorDraft, parsePresetEditorDraft, presetEditorDraftOf, type PresetEditorDraft } from "./draft"
@@ -144,12 +142,4 @@ export function PresetsSection(): JSX.Element {
       </Show>
     </div>
   )
-}
-
-export const presetsSettingsSection: SettingsSection = {
-  id: PRESETS_SECTION_ID,
-  title: () => useTranslator(tasksDictionary)("tasks.preset.title"),
-  group: "workspace",
-  order: 30,
-  view: PresetsSection,
 }

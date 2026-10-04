@@ -5,7 +5,6 @@ import { harnessDisplayLabel } from "@/lib/harness-catalog"
 import { connectionHarness, NATIVE_HARNESS_IDS, nativeHarness } from "@/lib/harness-selection"
 import { useServer } from "@/server"
 import { SettingsIntro } from "@/settings"
-import type { SettingsSection } from "@/shell"
 import { useAccountsText } from "../i18n"
 import { harnesses } from "../model"
 import { useSettingsPlacement } from "../model-sources"
@@ -29,7 +28,7 @@ function useModelsHarnesses() {
   })
 }
 
-function ModelsSection() {
+export function ModelsSection() {
   const t = useAccountsText()
   const accounts = useAccounts()
   const placement = useSettingsPlacement()
@@ -49,12 +48,4 @@ function ModelsSection() {
       <SandboxSection />
     </div>
   )
-}
-
-export const modelsSettingsSection: SettingsSection = {
-  id: "models",
-  title: () => useAccountsText()("settings.models.title"),
-  group: "account",
-  order: 35,
-  view: ModelsSection,
 }
