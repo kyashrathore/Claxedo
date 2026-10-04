@@ -529,12 +529,23 @@ describe("boat sandbox driver", () => {
       () => { throw new Error("expected ensure to fail") },
       (cause: unknown) => cause as Error,
     )
-    expect(redirect).toBe("error")
+    expect(redirect).toBe("manual")
     expect(error).toMatchObject({ code: "unauthorized", status: 401 })
     expect(error.message).not.toContain("boat_secret")
     for (const baseUrl of ["http://boat.dev/api/v1", "https://user:secret@boat.dev/api/v1", "https://boat.dev/api/v1?secret=x"]) {
       expect(() => createBoatSandboxDriver({ apiKey: "k", image: IMAGE, baseUrl })).toThrow(/HTTPS/)
     }
+  })
+
+  test.each([301, 302, 303, 307, 308])("refuses redirect %s without forwarding credentials or treating it as pending provisioning", async (status) => {
+    const calls: string[] = []
+    const driver = createBoatSandboxDriver({ apiKey: "boat_secret", image: IMAGE, fetchImpl: async (url, init) => {
+      calls.push(url)
+      expect(init?.redirect).toBe("manual")
+      return new Response(null, { status, headers: { Location: "https://other.example/collect" } })
+    } })
+    await expect(driver.ensureHost(ensureInput())).rejects.toMatchObject({ code: "redirect_refused", status })
+    expect(calls).toEqual([`${API}/sandboxes`])
   })
 
   test("option-like image identifiers are rejected before the docker run", async () => {

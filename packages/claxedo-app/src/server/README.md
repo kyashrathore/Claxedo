@@ -4,6 +4,8 @@ The only module that knows today's server: its routes, its OpenCode-shaped paylo
 
 ## Owned concepts
 
+- Cookie-authenticated mutations declare JSON content type even when the method carries no body. Explicit upload content types remain owned by their callers. The aggregate source budget includes the 12 added lines for this transport condition and its regression test; no per-file or domain ceiling changes.
+
 - Startup (`startup.ts`): the server owns `loading`, `ready`, and `failed { failure }`. Catalog and capability failures retain the typed error. Concurrent retries share the pending startup; failed startup retries reload capabilities even if its stream already opened, without opening a duplicate stream. Once ready, retry reconnects the existing stream. HTTP error envelopes preserve the server's explicit retry decision. Browser-account tests and flow 48 cover identity failure, canonical invitation admission, explicit retry, and reload recovery.
 
 - `SessionRef` belongs to `@claxedo/agent-runtime-contract` and identifies a session by `{ sessionId, workspaceId }`. `SessionLocation` is the app's navigation context: its placement id is the workspace id, with branded ids and separate project metadata. Plugins and Tasks exchange the canonical reference.
