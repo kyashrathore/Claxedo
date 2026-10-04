@@ -7,7 +7,7 @@ import type { OrgMember, OrgMembership } from "./access-types"
 import type { FetchQuery } from "./types"
 import { memberFromWire, membershipFromWire } from "./wire/organizations"
 
-function parsed<T>(rows: readonly unknown[], parse: (row: unknown) => T | undefined, what: string): readonly T[] {
+function parseRows<T>(rows: readonly unknown[], parse: (row: unknown) => T | undefined, what: string): readonly T[] {
   return rows.map((row) => {
     const value = parse(row)
     if (value === undefined) throw contractMismatch(what)
@@ -21,8 +21,8 @@ export function organizationQueries(serverUrl: string, account: HostedAccount | 
     return account
   }
   const mine = (): FetchQuery<readonly OrgMembership[]> =>
-    fetchQuery(queryKeys.organizations(serverUrl), async () => parsed(await signed().run("org.list"), membershipFromWire, "organization"))
+    fetchQuery(queryKeys.organizations(serverUrl), async () => parseRows(await signed().run("org.list"), membershipFromWire, "organization"))
   const members = (id: OrgId): FetchQuery<readonly OrgMember[]> =>
-    fetchQuery(queryKeys.organizationMembers(serverUrl, id), async () => parsed(await signed().run("org.members.list", { orgId: id }), memberFromWire, "organization member"))
+    fetchQuery(queryKeys.organizationMembers(serverUrl, id), async () => parseRows(await signed().run("org.members.list", { orgId: id }), memberFromWire, "organization member"))
   return { signedIn: account !== undefined, mine, members }
 }

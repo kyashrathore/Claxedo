@@ -530,8 +530,18 @@ export const desktopRenderer: Policy = {
   // `session/view/first-send-notice.ts`; a placement's lifecycle notice in
   // `session/view/placement-notice.tsx` replaces the four `workspace-sleep/`
   // cards; the workbench matches a pane by route in `workbench/route-match.ts`.
-  // They add no package edge. 1324/36, no headroom.
-  ceilings: { modules: 1324, packages: 36 },
+  // They add no package edge.
+  // Settings on the shared surfaces (owner: the app's settings domains): the
+  // signed person's memberships and members (`server/organizations.ts`,
+  // `server/wire/organizations.ts`, `server/access-types.ts`), the one form
+  // dialog and drawer (`ui/controls/form-surface.tsx`), the integration connect
+  // dialog (`settings/view/connect-dialog.tsx`), Usage's Cloud view
+  // (`usage/view/cloud-usage.tsx`) and a project's Where it runs list, its new
+  // cloud workspace dialog and environment drawer (`projects/view/where-it-runs.tsx`,
+  // `new-cloud-workspace-dialog.tsx`, `project-environment-drawer.tsx`) replace
+  // the cloud domain's section, row and inline create form, the placement list
+  // and the inline connect form. They add no package edge. 1326/36, no headroom.
+  ceilings: { modules: 1326, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

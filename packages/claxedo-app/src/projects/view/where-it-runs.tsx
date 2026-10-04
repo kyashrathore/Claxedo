@@ -9,7 +9,7 @@ import { usePlacementOpener } from "../open"
 import { useProjectPlacements } from "../store"
 import { DialogNewCloudWorkspace } from "./new-cloud-workspace-dialog"
 
-function MachineRow(props: { readonly placement: Placement; readonly machineName?: string }): JSX.Element {
+function MachinePlacementRow(props: { readonly placement: Placement; readonly machineName?: string }): JSX.Element {
   const t = useProjectsText()
   const open = usePlacementOpener()
   const detail = () => [props.placement.path, props.placement.branch, t(props.placement.reachable ? "projects.where.online" : "projects.where.offline")].filter(Boolean).join(" · ")
@@ -79,7 +79,7 @@ export function WhereItRuns(props: { readonly project: Project }): JSX.Element {
     <SettingsGroup title={t("projects.placements")} description={t("projects.where.description")}>
       <Show when={!empty()} fallback={<SettingsEmpty>{t("projects.placements.empty")}</SettingsEmpty>}>
         <SettingsList>
-          <For each={local()}>{(placement) => <MachineRow placement={placement} machineName={machineName(placement)} />}</For>
+          <For each={local()}>{(placement) => <MachinePlacementRow placement={placement} machineName={machineName(placement)} />}</For>
           <For each={cloudRows()}>{(row) => <CloudRow row={row} cloud={cloud} />}</For>
         </SettingsList>
       </Show>
