@@ -3,7 +3,7 @@ import { useTranslator } from "@/i18n"
 import type { PluginSourceRecord } from "@/server"
 import { Button } from "@/ui"
 import { marketplaceDictionary } from "../i18n"
-import { ALL, PERSONAL, type DirectorySourceView, type PluginCategoryView } from "../sections"
+import { ALL, type DirectorySourceView, type PluginCategoryView } from "../sections"
 
 function Chip(props: {
   readonly id: string
@@ -26,8 +26,8 @@ function Chip(props: {
       onClick={() => props.onSelect(props.id)}
     >
       {props.label}
-      <Show when={props.count !== undefined}>
-        <span class="ml-1.5 text-text-weaker">{props.count}</span>
+      <Show when={props.count}>
+        {(count) => <span class="ml-1.5 text-text-weaker">{count()}</span>}
       </Show>
     </button>
   )
@@ -36,17 +36,18 @@ function Chip(props: {
 export function SourceChips(props: {
   readonly sources: readonly DirectorySourceView[]
   readonly count: (id: string) => number
-  readonly personalCount: number
   readonly filter: string
   readonly onFilter: (id: string) => void
   readonly removable?: PluginSourceRecord
-  readonly onToggleAdd: () => void
+  readonly onAdd: () => void
   readonly onRemove: (source: PluginSourceRecord) => void
 }): JSX.Element {
   const t = useTranslator(marketplaceDictionary)
   return (
     <div role="tablist" aria-label={t("marketplace.sources")} class="flex flex-wrap items-center gap-2">
-      <Chip id={ALL} label={t("marketplace.all")} active={props.filter === ALL} onSelect={props.onFilter} />
+      <Show when={props.sources.length > 0}>
+        <Chip id={ALL} label={t("marketplace.all")} active={props.filter === ALL} onSelect={props.onFilter} />
+      </Show>
       <For each={props.sources}>
         {(source) => (
           <Chip
@@ -58,14 +59,7 @@ export function SourceChips(props: {
           />
         )}
       </For>
-      <Chip
-        id={PERSONAL}
-        label={t("marketplace.personal")}
-        count={props.personalCount}
-        active={props.filter === PERSONAL}
-        onSelect={props.onFilter}
-      />
-      <Button size="small" variant="ghost" onClick={() => props.onToggleAdd()}>
+      <Button size="small" variant="ghost" onClick={() => props.onAdd()}>
         {t("marketplace.source.addButton")}
       </Button>
       <Show when={props.removable}>

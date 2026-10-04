@@ -1,18 +1,19 @@
 import { createSignal, Show, type JSX } from "solid-js"
 import { useServer, type PluginCandidate } from "@/server"
+import { useDialog } from "@/ui"
 import { createPluginActions } from "../actions"
 import { createDirectory, createSelection } from "../directory-state"
 import { isBuiltIn, isInstalled } from "../model"
-import { ALL, personalEntryKey } from "../sections"
+import { ALL } from "../sections"
 import { createSourceActions } from "../source-actions"
 import { useTranslator } from "@/i18n"
 import { marketplaceDictionary } from "../i18n"
-import { AddSourceForm } from "./add-source"
+import { AddSourceDrawer } from "./add-source"
 import type { CardAction } from "./card"
 import { MarketplaceDetailsPanel } from "./details-panel"
 import { CategoryChips, SourceChips } from "./directory-chips"
 import { DirectoryHeader } from "./directory-header"
-import { CatalogSkeleton, DirectoryAlerts, PersonalSection, PluginSectionList } from "./directory-sections"
+import { CatalogSkeleton, DirectoryAlerts, PluginSectionList } from "./directory-sections"
 import { useInstallSheet } from "./install-sheet"
 
 function moveCardFocus(grid: HTMLElement | undefined, step: number) {
@@ -55,10 +56,9 @@ function createCardAction(
 
 function directoryKeys(selection: ReturnType<typeof createSelection>, grid: () => HTMLElement | undefined) {
   return (event: KeyboardEvent) => {
-    if (event.key === "Escape" && (selection.selectedId() || selection.personalKey())) {
+    if (event.key === "Escape" && selection.selectedId()) {
       event.preventDefault()
       selection.closePlugin()
-      selection.closePersonal()
       return
     }
     const forward = event.key === "ArrowDown" || event.key === "ArrowRight"
@@ -72,15 +72,16 @@ function directoryKeys(selection: ReturnType<typeof createSelection>, grid: () =
 export function MarketplacePage(): JSX.Element {
   const t = useTranslator(marketplaceDictionary)
   const directory = createDirectory()
-  const selection = createSelection({ candidates: directory.candidates, personal: directory.personal })
+  const selection = createSelection({ candidates: directory.candidates })
   const controls = createCatalogControls(directory)
   const actions = createPluginActions({ catalog: () => directory.catalog.data, reread: controls.reread })
-  const [adding, setAdding] = createSignal(false)
+  const dialog = useDialog()
   const sources = createSourceActions({
     refresh: controls.refresh,
     onRemoved: () => directory.setFilter(ALL),
-    onAdded: () => setAdding(false),
+    onAdded: () => dialog.close(),
   })
+  const addSource = () => dialog.show(() => <AddSourceDrawer onAdd={sources.add} onCancel={() => dialog.close()} />)
   const openInstall = useInstallSheet()
   const add = async (plugin: PluginCandidate) => {
     const catalog = directory.catalog.data
@@ -115,11 +116,10 @@ export function MarketplacePage(): JSX.Element {
             <SourceChips
               sources={directory.sourceViews()}
               count={directory.sourceCount}
-              personalCount={directory.personalCount()}
               filter={directory.filter()}
               onFilter={directory.setFilter}
               removable={directory.removable()}
-              onToggleAdd={() => setAdding((value) => !value)}
+              onAdd={addSource}
               onRemove={(source) => void sources.remove(source)}
             />
             <CategoryChips
@@ -127,9 +127,6 @@ export function MarketplacePage(): JSX.Element {
               category={directory.category()}
               onCategory={directory.setCategory}
             />
-            <Show when={adding()}>
-              <AddSourceForm onAdd={sources.add} onCancel={() => setAdding(false)} />
-            </Show>
             <DirectoryAlerts
               catalogError={directory.catalog.error?.message}
               sourcesError={directory.sources.error?.message}
@@ -145,17 +142,7 @@ export function MarketplacePage(): JSX.Element {
                 action={cardAction}
                 onOpen={(plugin) => selection.openPlugin(plugin.pluginInstanceId)}
               />
-              <PersonalSection
-                entries={directory.personal()}
-                error={directory.machine.error?.message}
-                selectedKey={selection.personalKey()}
-                onOpen={(entry) => selection.openPersonal(personalEntryKey(entry))}
-              />
-              <Show
-                when={
-                  directory.sections().length === 0 && directory.personal().length === 0 && !directory.catalog.isPending
-                }
-              >
+              <Show when={directory.sections().length === 0 && !directory.catalog.isPending}>
                 <p class="text-13-regular text-text-weak">{t("marketplace.noMatches")}</p>
               </Show>
             </div>

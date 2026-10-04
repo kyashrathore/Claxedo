@@ -1,16 +1,8 @@
-import type {
-  MachineInstalled,
-  MachineInstalledEntry,
-  MachineInstalledHarness,
-  MachineSkill,
-  PluginCandidate,
-  PluginSourceRecord,
-} from "@/server"
+import type { PluginCandidate, PluginSourceRecord } from "@/server"
 import type { MarketplaceKey } from "./i18n"
 import { isBuiltIn, isInstalled, matchesQuery, pluginStatus } from "./model"
 
 export const ALL = "all"
-export const PERSONAL = "personal"
 
 export type DirectorySection = {
   readonly id: string
@@ -40,15 +32,6 @@ export function categoryChips(candidates: readonly PluginCandidate[]): PluginCat
     return count > 0 ? [{ id: category.id, key: category.key, count }] : []
   })
 }
-
-export type PersonalPlugin = MachineInstalledEntry & {
-  readonly kind: "plugin"
-  readonly harnessId: MachineInstalledHarness["harnessId"]
-}
-
-export type PersonalSkill = MachineSkill & { readonly kind: "skill" }
-
-export type PersonalEntry = PersonalPlugin | PersonalSkill
 
 export type DirectorySourceView = Pick<PluginSourceRecord, "id" | "label">
 
@@ -103,7 +86,6 @@ function offerSections(offered: readonly PluginCandidate[], input: SectionInput,
 }
 
 export function directorySections(input: SectionInput): DirectorySection[] {
-  if (input.filter === PERSONAL) return []
   const query = input.query.trim().toLowerCase()
   const category = input.category ?? ALL
   const visible = input.candidates.filter(
@@ -119,29 +101,4 @@ export function directorySections(input: SectionInput): DirectorySection[] {
   if (installed.length > 0)
     sections.push({ id: "installed", title: { key: "marketplace.section.installed" }, plugins: installed })
   return [...sections, ...offerSections(offered, input, category)]
-}
-
-export function personalEntries(input: {
-  readonly machine: MachineInstalled | undefined
-  readonly query: string
-  readonly filter: string
-  readonly category?: string
-}): PersonalEntry[] {
-  if (input.filter !== ALL && input.filter !== PERSONAL) return []
-  if (input.category !== undefined && input.category !== ALL) return []
-  const query = input.query.trim().toLowerCase()
-  const plugins: PersonalEntry[] = (input.machine?.harnesses ?? []).flatMap((harness) =>
-    harness.entries
-      .filter((entry) => !entry.ownedByClaxedo && entry.name.toLowerCase().includes(query))
-      .map((entry) => ({ ...entry, kind: "plugin" as const, harnessId: harness.harnessId })),
-  )
-  const skills: PersonalEntry[] = (input.machine?.skills ?? [])
-    .filter((skill) => skill.name.toLowerCase().includes(query))
-    .map((skill) => ({ ...skill, kind: "skill" as const }))
-  return [...plugins, ...skills]
-}
-
-export function personalEntryKey(entry: PersonalEntry) {
-  const marketplace = entry.kind === "plugin" ? (entry.marketplace ?? "") : ""
-  return `${entry.kind}:${entry.harnessId}:${marketplace}:${entry.name}`
 }

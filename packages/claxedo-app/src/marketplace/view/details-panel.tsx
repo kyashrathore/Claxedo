@@ -6,7 +6,6 @@ import type { createSelection } from "../directory-state"
 import { marketplaceDictionary } from "../i18n"
 import { pluginLabel } from "../model"
 import { createMarketplacePanelSize, maxDetailsWidth, PANE_MIN_WIDTH } from "../pane-width"
-import { PersonalDetails } from "./personal-details"
 import { PluginDetails } from "./plugin-details"
 
 type MarketplaceDetailsProps = ParentProps<{
@@ -22,7 +21,7 @@ type MarketplaceDetailsProps = ParentProps<{
 export function MarketplaceDetailsPanel(props: MarketplaceDetailsProps): JSX.Element {
   const t = useTranslator(marketplaceDictionary)
   const size = createMarketplacePanelSize()
-  const open = () => !!(props.selection.selected() || props.selection.selectedPersonal())
+  const open = () => !!props.selection.selected()
   createEffect(
     on(open, (shown) => {
       if (!shown) size.setFullWidth(false)
@@ -30,12 +29,9 @@ export function MarketplaceDetailsPanel(props: MarketplaceDetailsProps): JSX.Ele
   )
   const name = () => {
     const plugin = props.selection.selected()
-    return plugin ? pluginLabel(plugin) : (props.selection.selectedPersonal()?.name ?? "")
+    return plugin ? pluginLabel(plugin) : ""
   }
-  const close = () => {
-    props.selection.closePlugin()
-    props.selection.closePersonal()
-  }
+  const close = () => props.selection.closePlugin()
   return (
     <>
       <SidePanelSlot
@@ -83,7 +79,6 @@ export function MarketplaceDetailsPanel(props: MarketplaceDetailsProps): JSX.Ele
           >
             {(exposed) => (
               <Show when={exposed()}>
-                <Show when={props.selection.selectedPersonal()}>{(entry) => <PersonalDetails entry={entry()} />}</Show>
                 <Show when={props.selection.selected()}>
                   {(plugin) => (
                     <PluginDetails

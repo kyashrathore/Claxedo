@@ -10,7 +10,7 @@ const PROVIDER_CATALOG_HARNESSES: ReadonlySet<string> = new Set(["pi"])
 
 function accountHarnessId(harness: HarnessType | undefined): HarnessId | undefined {
   if (harness?.kind !== "native") return undefined
-  return (HARNESS_IDS as readonly string[]).includes(harness.harnessId) ? (harness.harnessId as HarnessId) : undefined
+  return HARNESS_IDS.find((id) => id === harness.harnessId)
 }
 
 function providerCatalogHarness(harness: HarnessType | undefined): string | undefined {

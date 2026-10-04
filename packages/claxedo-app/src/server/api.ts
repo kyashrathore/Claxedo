@@ -34,7 +34,6 @@ import type { OrgMember, OrgMembership } from "./access-types"
 import type { OrgId, PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
 import type { TasksClient } from "@claxedo/tasks/client"
 import type {
-  MachineInstalled,
   MarketplaceCatalog,
   PluginActivationInput,
   PluginChange,
@@ -225,7 +224,6 @@ export type ServerQueries = {
     readonly catalog: (projectId?: ProjectId) => FetchQuery<MarketplaceCatalog>
     readonly sources: () => FetchQuery<readonly PluginSourceRecord[]>
     readonly skill: (request: PluginSkillRequest) => FetchQuery<PluginSkillDocument>
-    readonly machineInstalled: () => FetchQuery<MachineInstalled>
   }
   readonly tasks: { readonly availability: () => FetchQuery<FeatureAvailability> }
   readonly codeHost: {

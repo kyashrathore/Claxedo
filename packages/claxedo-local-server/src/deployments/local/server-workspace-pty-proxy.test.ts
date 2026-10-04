@@ -30,12 +30,8 @@ import { setLocalHostEndpoints } from "./host-session-authority"
  * is whether they are consulted at all.
  */
 
-/**
- * node-pty resolves a bare name through PATH on Windows and has no `/bin/sh`
- * to find there; the prompt is how a test knows the shell is reading.
- */
+/** node-pty resolves a bare name through PATH on Windows and has no `/bin/sh` to find there. */
 const SHELL = process.platform === "win32" ? "cmd.exe" : "/bin/sh"
-const PROMPT = process.platform === "win32" ? />/ : /[$#]/
 
 const OWNER = { actorId: "actor_owner", actorPublicId: "user_owner", actorName: "Owner" }
 const MEMBER = { actorId: "actor_member", actorPublicId: "user_member", actorName: "Member" }

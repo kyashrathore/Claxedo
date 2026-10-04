@@ -5,7 +5,6 @@ import { contractMismatch, responseError, ServerError } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import type { ProjectId } from "./ids"
 import type {
-  MachineInstalled,
   MarketplaceCatalog,
   PluginChange,
   PluginSkillDocument,
@@ -17,7 +16,7 @@ import { queryKeys } from "./query-keys"
 import { jsonInit, type Transport } from "./transport"
 import { pluginChangeFromWire, pluginSourceFromWire, pluginSourcesFromWire } from "./wire/marketplace"
 import { marketplaceCatalogFromWire, pluginSkillFromWire } from "./wire/marketplace-catalog"
-import { machineInstalledFromWire, sourceDiagnosticsFromWire } from "./wire/marketplace-machine"
+import { sourceDiagnosticsFromWire } from "./wire/marketplace-source-diagnostics"
 
 const PLUGINS_PATH = "/api/claxedo/plugins"
 
@@ -72,10 +71,6 @@ export function marketplaceQueries(transport: Transport) {
         if (!document) throw contractMismatch("plugin skill")
         return document
       }),
-    machineInstalled: () =>
-      fetchQuery<MachineInstalled>(queryKeys.marketplaceMachine(server), async () =>
-        machineInstalledFromWire(await transport.json(`${PLUGINS_PATH}/machine-installed`)),
-      ),
   }
 }
 

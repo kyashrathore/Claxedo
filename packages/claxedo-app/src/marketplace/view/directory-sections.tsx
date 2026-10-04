@@ -3,8 +3,8 @@ import { useTranslator } from "@/i18n"
 import type { MarketplaceCatalogError, PluginCandidate } from "@/server"
 import { marketplaceDictionary } from "../i18n"
 import { pluginStatus } from "../model"
-import { personalEntryKey, type DirectorySection, type PersonalEntry } from "../sections"
-import { DirectoryCard, PersonalCard, type CardAction } from "./card"
+import type { DirectorySection } from "../sections"
+import { DirectoryCard, type CardAction } from "./card"
 
 const GRID = "grid gap-2 grid-cols-[repeat(auto-fill,minmax(19rem,1fr))]"
 
@@ -73,42 +73,6 @@ export function PluginSectionList(props: {
         </section>
       )}
     </For>
-  )
-}
-
-export function PersonalSection(props: {
-  readonly entries: readonly PersonalEntry[]
-  readonly error?: string
-  readonly selectedKey?: string
-  readonly onOpen: (entry: PersonalEntry) => void
-}): JSX.Element {
-  const t = useTranslator(marketplaceDictionary)
-  return (
-    <Show when={props.entries.length > 0 || props.error}>
-      <section aria-label={t("marketplace.personal")}>
-        <SectionHeading
-          title={t("marketplace.personal")}
-          count={props.entries.length}
-          note={t("marketplace.personal.note")}
-        />
-        <Show when={props.error}>
-          {(error) => (
-            <p class="text-12-regular text-text-weak">{t("marketplace.personal.readFailed", { error: error() })}</p>
-          )}
-        </Show>
-        <div class={GRID}>
-          <For each={props.entries}>
-            {(entry) => (
-              <PersonalCard
-                entry={entry}
-                selected={props.selectedKey === personalEntryKey(entry)}
-                onOpen={() => props.onOpen(entry)}
-              />
-            )}
-          </For>
-        </div>
-      </section>
-    </Show>
   )
 }
 

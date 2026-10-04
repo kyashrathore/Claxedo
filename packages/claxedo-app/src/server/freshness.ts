@@ -52,7 +52,6 @@ export const freshness = {
   marketplace: { kind: "once", reason: "the plugin catalog changes through this app's installs, removals and activations, which invalidate every catalog" },
   marketplaceSources: { kind: "once", reason: "plugin sources change through this app's source writes, which invalidate the list" },
   marketplaceSkill: { kind: "once", reason: "a skill document changes only with its plugin; nothing in this app refreshes it after the first read" },
-  marketplaceMachine: { kind: "once", reason: "the machine-installed list is read once; a plugin install through this app does not invalidate it" },
   tasks: { kind: "once", reason: "whether the server offers the tasks route is a capability that does not change within an app life" },
   tasksAll: { kind: "once", reason: "task, preset and capability reads under this prefix are refreshed by this app's own task commands" },
   folderPaths: { kind: "once", reason: "the folder picker's starting paths are read once; nothing in this app refreshes them" },

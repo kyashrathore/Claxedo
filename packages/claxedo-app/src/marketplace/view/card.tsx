@@ -4,7 +4,6 @@ import type { PluginCandidate } from "@/server"
 import { Button, Tag } from "@/ui"
 import { marketplaceDictionary } from "../i18n"
 import { isBuiltIn, pluginLabel, type PluginStatus } from "../model"
-import type { PersonalEntry } from "../sections"
 import { PluginIconTile } from "./plugin-icon"
 import { PluginStatusLine } from "./status"
 
@@ -88,40 +87,5 @@ export function DirectoryCard(props: {
       </div>
       <CardTrailing builtIn={builtIn()} status={props.status} action={props.action} />
     </div>
-  )
-}
-
-const PERSONAL_TAG = "shrink-0 rounded-full border border-border-weak-base px-2 py-px text-11-medium"
-
-export function PersonalCard(props: {
-  readonly entry: PersonalEntry
-  readonly selected?: boolean
-  readonly onOpen: () => void
-}): JSX.Element {
-  const t = useTranslator(marketplaceDictionary)
-  return (
-    <button
-      type="button"
-      data-agent-plugin-personal={props.entry.name}
-      aria-label={props.entry.name}
-      aria-pressed={props.selected}
-      title={props.entry.root}
-      onClick={() => props.onOpen()}
-      class={`${CARD} text-left ${props.selected ? "border-border-base" : "border-border-weak-base hover:border-border-base"}`}
-    >
-      <PluginIconTile name={props.entry.name} />
-      <div class="min-w-0 flex-1">
-        <div class="truncate text-13-medium text-text-strong">{props.entry.name}</div>
-        <div class="mt-1 flex gap-1.5 overflow-hidden">
-          <span class={`${PERSONAL_TAG} text-text-weak`}>{props.entry.harnessId}</span>
-          <Show when={props.entry.kind === "skill"}>
-            <span class={`${PERSONAL_TAG} text-text-weaker`}>{t("marketplace.personal.skillTag")}</span>
-          </Show>
-          <Show when={props.entry.kind === "plugin" ? props.entry.marketplace : undefined}>
-            {(marketplace) => <span class={`${PERSONAL_TAG} text-text-weaker`}>{marketplace()}</span>}
-          </Show>
-        </div>
-      </div>
-    </button>
   )
 }

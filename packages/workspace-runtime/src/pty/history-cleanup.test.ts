@@ -6,7 +6,6 @@ import {
   cleanupOrphanedHistory,
   createDiskHistory,
   historyPath,
-  renameHistory,
 } from "./history-disk"
 
 let root: string

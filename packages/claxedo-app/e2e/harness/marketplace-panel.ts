@@ -1,19 +1,9 @@
-import fs from "node:fs/promises"
-import path from "node:path"
 import type { Page, TestInfo } from "@playwright/test"
 import { expect } from "@playwright/test"
 import { expectNothingAnimating } from "./animations"
 import type { Stack } from "./stack"
 
-const PERSONAL_SKILL = "panel-skill"
-
 export async function marketplacePanel(stack: Stack, app: Page, phone: boolean, testInfo: TestInfo): Promise<void> {
-  const root = path.join(stack.dataDir, ".agents", "skills", PERSONAL_SKILL)
-  await fs.mkdir(root, { recursive: true })
-  await fs.writeFile(
-    path.join(root, "SKILL.md"),
-    "---\nname: panel-skill\ndescription: Panel acceptance skill\n---\nPanel acceptance skill.\n",
-  )
   const response = await fetch(`${stack.url}/api/claxedo/plugins`)
   expect(response.status).toBe(200)
   const catalog = (await response.json()) as { candidates: Array<{ builtIn?: boolean; manifest: { name: string } }> }
@@ -40,23 +30,32 @@ export async function marketplacePanel(stack: Stack, app: Page, phone: boolean, 
   else await desktopPanel(app, panel)
   await panel.getByRole("button", { name: "Close details", exact: true }).last().click()
   await expect(panel).toHaveCount(0)
-  await app.getByRole("button", { name: PERSONAL_SKILL, exact: true }).click()
-  const personal = app.getByRole("complementary", { name: `${PERSONAL_SKILL} details`, exact: true })
-  await expect(personal).toBeVisible()
-  await expect(personal.getByRole("button", { name: "Details", exact: true })).toHaveCount(1)
-  if (!phone) {
-    await app.getByRole("button", { name: builtIn.manifest.name, exact: true }).click()
-    await expect(panel).toBeVisible()
-    await expect(personal).toHaveCount(0)
-    await expect(app.getByRole("complementary", { name: / details$/ })).toHaveCount(1)
-  }
+  await expect(app.getByText("Personal", { exact: true })).toHaveCount(0)
+  await app.getByRole("button", { name: builtIn.manifest.name, exact: true }).click()
+  await expect(panel).toBeVisible()
   await app.getByRole("complementary", { name: / details$/ }).getByRole("button", { name: "Details", exact: true }).focus()
   await app.keyboard.press("Escape")
   await expect(app.getByRole("complementary", { name: / details$/ })).toHaveCount(0)
-  const installed = (await (await fetch(`${stack.url}/api/claxedo/plugins/machine-installed`)).json()) as {
-    skills: Array<{ name: string; root: string }>
-  }
-  expect(installed.skills).toContainEqual({ name: PERSONAL_SKILL, harnessId: "agents", root })
+  expect((await fetch(`${stack.url}/api/claxedo/plugins/machine-installed`)).status).toBe(404)
+  await addSourceDrawer(app, phone, testInfo)
+}
+
+async function addSourceDrawer(app: Page, phone: boolean, testInfo: TestInfo): Promise<void> {
+  await app.getByRole("button", { name: "+ Add source…" }).click()
+  const drawer = app.getByRole("dialog", { name: "Add source" })
+  await expect(drawer).toBeVisible()
+  await expect(drawer.getByRole("textbox", { name: "GitHub repository" })).toBeFocused()
+  await expect(drawer.getByRole("textbox", { name: "Ref (optional)" })).toBeVisible()
+  await expect(drawer.getByRole("button", { name: "Add source" })).toBeDisabled()
+  const box = await drawer.boundingBox()
+  const viewport = app.viewportSize()
+  if (!box || !viewport) throw new Error("The Add source drawer is not laid out")
+  expect(box.x + box.width).toBeCloseTo(viewport.width, 0)
+  if (phone) expect(box.width).toBeCloseTo(viewport.width, 0)
+  await expectNothingAnimating(app)
+  if (testInfo.repeatEachIndex === 0) await app.screenshot({ path: testInfo.outputPath("add-source-drawer.png") })
+  await drawer.getByRole("button", { name: "Cancel" }).click()
+  await expect(drawer).toHaveCount(0)
 }
 
 async function fullHeightPanel(app: Page, panel: ReturnType<Page["getByRole"]>, phone: boolean): Promise<void> {

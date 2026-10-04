@@ -150,24 +150,3 @@ export type PluginSourceDiagnostic = {
   readonly message: string
 }
 
-export type MachineInstalledEntry = {
-  readonly name: string
-  readonly version?: string
-  readonly root: string
-  readonly marketplace?: string
-  readonly ownedByClaxedo: boolean
-}
-
-export type MachineInstalledHarness = {
-  readonly harnessId: Extract<PluginHarness, "claude" | "cursor" | "codex">
-  readonly entries: readonly MachineInstalledEntry[]
-}
-
-export type MachineSkillHarness = Extract<PluginHarness, "claude" | "cursor" | "codex" | "opencode"> | "agents"
-
-export type MachineSkill = { readonly name: string; readonly harnessId: MachineSkillHarness; readonly root: string }
-
-export type MachineInstalled = {
-  readonly harnesses: readonly MachineInstalledHarness[]
-  readonly skills: readonly MachineSkill[]
-}

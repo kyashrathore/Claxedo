@@ -5,7 +5,6 @@ import type { AgentPluginReconcilePort, CatalogSourceProvider } from "@claxedo/s
 import type { BuiltinDeployment, BuiltinToolGroup } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import { LocalAgentPluginActivationRoutes } from "./activation/routes"
 import { SignedAgentPluginRuntimeRoutes } from "./activation/signed-runtime-routes"
-import { MachineInstalledDiscoveryRoutes } from "./discovery/routes"
 import type { LocalAgentPluginsComposition } from "./local-composition"
 
 export function createLocalAgentPluginsModule(input: {
@@ -19,6 +18,5 @@ export function createLocalAgentPluginsModule(input: {
 }): AgentPluginsModule {
   const routes = LocalAgentPluginActivationRoutes(input)
   if (input.signedRuntime) routes.route("/signed-runtime", SignedAgentPluginRuntimeRoutes(input.signedRuntime))
-  routes.route("/machine-installed", MachineInstalledDiscoveryRoutes())
   return agentPluginsModule(routes)
 }
