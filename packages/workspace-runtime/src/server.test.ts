@@ -708,7 +708,6 @@ describe("workspace runtime host route auth", () => {
             actor: { actorId: "actor_1", actorKind: "human" },
             authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "editor" },
           },
-          sessionId: "session_hook",
           authorityLease: "lease-ws-1",
           authorityExpiresAt: Date.now() + 15_000,
         }
@@ -720,7 +719,6 @@ describe("workspace runtime host route auth", () => {
               actor: { actorId: "actor_other", actorKind: "human" },
               authority: { managed: true, workspaceId: "ws_other", orgId: "org_other", role: "editor" },
             },
-            sessionId: "session_hook",
             authorityLease: "lease-ws-other",
             authorityExpiresAt: Date.now() + 15_000,
           }
@@ -748,9 +746,9 @@ describe("workspace runtime host route auth", () => {
         authorize: async () => ({ allowed: true }),
         filterSessions: async (input) => input.sessionIds,
         authorizePrefix: async () => ({ allowed: true }),
-        authorizeStream: async (_input, lease) => ({
+        authorizeHost: async (input) => ({
           allowed: true,
-          lease: lease ?? "terminal-lease",
+          lease: input.lease ?? "terminal-lease",
           expiresAt: Date.now() + 15_000,
         }),
       } satisfies SessionAccessPolicy,

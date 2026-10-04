@@ -45,6 +45,7 @@ describe("private-session route inventory", () => {
         "DELETE /:ptyID",
         "GET /",
         "GET /:ptyID",
+        "GET /agents",
         "GET /:ptyID/connect",
         "POST /",
         "PUT /:ptyID",

@@ -23,7 +23,7 @@
     "WorkspaceRuntimeRouteManifest",
     "WorkspaceRuntimeRoutes",
     "WorkspaceWorktreeManager",
-    "authorizePtyAttach",
+    "admitTerminal",
     "createAuthorizedPtyConnection",
     "isPtyStreamSocket",
     "ptyAccessRefusalResponse",
