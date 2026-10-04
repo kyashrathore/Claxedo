@@ -2,7 +2,7 @@ import { isNonBlankString, isRecord } from "@claxedo/helpers/guards"
 import { readArray, readField } from "@claxedo/helpers/readers"
 import type { HostedAccount } from "./account"
 import { fetchQuery } from "./fetch-query"
-import { machineId } from "./ids"
+import { machineId, placementId } from "./ids"
 import { queryKeys } from "./query-keys"
 import type { Transport } from "./transport"
 import type { FetchQuery, Machine } from "./types"
@@ -11,7 +11,7 @@ import { UNENROLLED_MACHINE, type BootstrapDeclaration } from "./wire/placements
 
 const MACHINE_ONLINE_WINDOW_MS = 120_000
 
-type DeviceRow = { readonly host_id: string; readonly display_name: string; readonly last_seen_at: number }
+type DeviceRow = { readonly host_id: string; readonly display_name: string; readonly last_seen_at: number; readonly workspace_ids?: readonly unknown[] }
 
 type MachineReport = () => Promise<unknown>
 
@@ -26,6 +26,7 @@ function machineFromDevice(row: DeviceRow, self: string | undefined, now: number
     online: now - row.last_seen_at < MACHINE_ONLINE_WINDOW_MS,
     isThisMachine: self !== undefined && self === row.host_id,
     enrolled: true,
+    placementIds: (row.workspace_ids ?? []).filter(isNonBlankString).map(placementId),
   }
 }
 
@@ -35,7 +36,7 @@ export function thisMachineId(declaration: BootstrapDeclaration) {
 
 export function thisMachine(declaration: BootstrapDeclaration, loopback: boolean): Machine | undefined {
   if (!loopback) return undefined
-  return { id: thisMachineId(declaration), name: "This machine", online: true, isThisMachine: true, enrolled: declaration.enrollmentId !== undefined }
+  return { id: thisMachineId(declaration), name: "This machine", online: true, isThisMachine: true, enrolled: declaration.enrollmentId !== undefined, placementIds: [] }
 }
 
 function reportedMachineName(report: unknown): string | undefined {

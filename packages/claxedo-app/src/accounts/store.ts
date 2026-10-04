@@ -95,6 +95,10 @@ function useCloudConsent(server: Server, activity: Accessor<AccountActivity | un
   return { scopeErrors, allowInCloud: (key: string, ids: readonly string[], allowed: boolean) => void allowInCloud(key, ids, allowed) }
 }
 
+function anyHarnessRunnable(load: AccountsLoad, liveChecks: Readonly<Record<string, LiveCheck>>): boolean {
+  return load.kind === "ready" && harnesses.some((harness) => harnessRunnable(harness, load.snapshot, liveChecks))
+}
+
 export function useAccounts(): Accounts {
   const server = useServer()
   const reads = useAccountReads(server)
@@ -103,10 +107,6 @@ export function useAccounts(): Accounts {
   const [rescanning, setRescanning] = createSignal(false)
   const [liveChecks, setLiveChecks] = createSignal<Readonly<Record<string, LiveCheck>>>({})
   const remember = (id: string, check: LiveCheck) => setLiveChecks((previous) => ({ ...previous, [id]: check }))
-  const snapshot = () => {
-    const load = reads.load()
-    return load.kind === "ready" ? load.snapshot : undefined
-  }
   return {
     load: reads.load,
     onMachine: reads.onMachine,
@@ -116,10 +116,7 @@ export function useAccounts(): Accounts {
     activity,
     liveChecks,
     scopeErrors: consent.scopeErrors,
-    runnable: () => {
-      const current = snapshot()
-      return current !== undefined && harnesses.some((harness) => harnessRunnable(harness, current, liveChecks()))
-    },
+    runnable: () => anyHarnessRunnable(reads.load(), liveChecks()),
     rescan: () => run("checking", "", async () => {
       setRescanning(true)
       setLiveChecks({})

@@ -1,8 +1,8 @@
 import { unreachable } from "@/lib/machine"
 import { createMemo, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { useAuth } from "@/auth"
-import { userId, useServer, type OrgMembership, type OrgRole, type Principal, type SessionLocation } from "@/server"
+import { useAuth, type AuthUser } from "@/auth"
+import { userId, useServer, type OrgMembership, type OrgRole, type Principal, type SessionLocation, type UserPrincipal } from "@/server"
 import { isOrgManager, sessionControls, type AccessAction, type AccessFacts } from "./model"
 
 export type Access = {
@@ -13,6 +13,17 @@ export type Access = {
   readonly can: (action: AccessAction, facts?: AccessFacts) => boolean
 }
 
+function userPrincipal(user: AuthUser, memberships: readonly OrgMembership[] | undefined): UserPrincipal {
+  const sole = memberships?.length === 1 ? memberships[0] : undefined
+  return {
+    kind: "user",
+    userId: userId(user.id),
+    name: user.fullName ?? user.email ?? user.id,
+    ...(user.email ? { email: user.email } : {}),
+    ...(sole ? { orgId: sole.orgId, orgRole: sole.role } : {}),
+  }
+}
+
 export function useAccess(): Access {
   const server = useServer()
   const auth = useAuth()
@@ -21,16 +32,7 @@ export function useAccess(): Access {
   const memberships = () => mine.data
   const principal = createMemo((): Principal | undefined => {
     const state = auth.state()
-    if (state.kind !== "signedIn") return server.capabilities()?.principal
-    const { user } = state
-    const sole = memberships()?.length === 1 ? memberships()?.[0] : undefined
-    return {
-      kind: "user",
-      userId: userId(user.id),
-      name: user.fullName ?? user.email ?? user.id,
-      ...(user.email ? { email: user.email } : {}),
-      ...(sole ? { orgId: sole.orgId, orgRole: sole.role } : {}),
-    }
+    return state.kind === "signedIn" ? userPrincipal(state.user, memberships()) : server.capabilities()?.principal
   })
   const orgRole = () => {
     const who = principal()

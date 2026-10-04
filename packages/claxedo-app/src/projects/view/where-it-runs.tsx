@@ -70,7 +70,8 @@ export function WhereItRuns(props: { readonly project: Project }): JSX.Element {
     const state = cloud.list()
     return state.kind === "ready" ? state.rows : []
   }
-  const machineName = (placement: Placement) => machines.data?.find((machine) => machine.id === placement.machineId)?.name
+  const machineName = (placement: Placement) =>
+    (machines.data?.find((machine) => machine.placementIds.includes(placement.id)) ?? machines.data?.find((machine) => machine.id === placement.machineId))?.name
   const loading = () => placements().kind === "loading" || (cloudOffered() && cloud.list().kind === "loading")
   const empty = () => !loading() && local().length === 0 && cloudRows().length === 0
   const newCloud = () => dialog.show(() => <DialogNewCloudWorkspace cloud={cloud} />)

@@ -16,7 +16,8 @@ import type {
 import type { BackgroundWork, ListedStatus, SessionStatus } from "./status-types"
 import type { SolidQueryOptions } from "@tanstack/solid-query"
 import type { HarnessSelection } from "../lib/harness-selection"
-import type { MachineId, OrgId, PlacementId, ProjectId, RequestId, SessionId, UserId } from "./ids"
+import type { MachinePrincipal } from "./access-types"
+import type { MachineId, PlacementId, ProjectId, RequestId, SessionId, UserId } from "./ids"
 
 export type ErrorClass = "auth" | "rate_limit" | "network" | "not_found" | "conflict" | "invalid" | "internal"
 
@@ -49,6 +50,7 @@ export type Machine = {
   readonly online: boolean
   readonly isThisMachine: boolean
   readonly enrolled: boolean
+  readonly placementIds: readonly PlacementId[]
 }
 
 export type PlacementKind = "folder" | "worktree" | "cloud"
@@ -246,25 +248,6 @@ export type QueuedPromptControl = {
   readonly status?: "pending" | "unknown"
   readonly message?: string
 }
-
-export type OrgRole = "owner" | "admin" | "member"
-
-export type MachinePrincipal = { readonly kind: "machine"; readonly machineId: MachineId }
-
-export type UserPrincipal = {
-  readonly kind: "user"
-  readonly userId: UserId
-  readonly name: string
-  readonly email?: string
-  readonly orgId?: OrgId
-  readonly orgRole?: OrgRole
-}
-
-export type Principal = MachinePrincipal | UserPrincipal
-
-export type OrgMembership = { readonly orgId: OrgId; readonly name: string; readonly role: OrgRole }
-
-export type OrgMember = { readonly userId: UserId; readonly name?: string; readonly role: OrgRole; readonly you: boolean }
 
 export type HarnessInfo = {
   readonly id: string

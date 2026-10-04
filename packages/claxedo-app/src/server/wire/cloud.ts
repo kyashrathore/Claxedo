@@ -36,7 +36,7 @@ export function provisionStatus(frame: Record<string, unknown>): CloudWorkspaceS
 }
 
 export function cloudWorkspaceFromRow(row: unknown): CloudWorkspace | undefined {
-  if (!isRecord(row)) return undefined
+  if (!isRecord(row) || row.backing === "local-worktree") return undefined
   const id = nonEmptyString(row.workspace_id) ?? nonEmptyString(row.workspaceId)
   const owner = nonEmptyString(row.project_id) ?? nonEmptyString(row.projectId)
   if (!id || !owner) return undefined

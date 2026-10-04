@@ -3,7 +3,8 @@ import { contractMismatch, ServerError } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import type { OrgId } from "./ids"
 import { queryKeys } from "./query-keys"
-import type { FetchQuery, OrgMember, OrgMembership } from "./types"
+import type { OrgMember, OrgMembership } from "./access-types"
+import type { FetchQuery } from "./types"
 import { memberFromWire, membershipFromWire } from "./wire/organizations"
 
 function parsed<T>(rows: readonly unknown[], parse: (row: unknown) => T | undefined, what: string): readonly T[] {

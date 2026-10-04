@@ -1,9 +1,11 @@
 import { asRecord, asString } from "@claxedo/helpers/guards"
 import { orgId, userId } from "../ids"
-import type { OrgMember, OrgMembership, OrgRole } from "../types"
+import type { OrgMember, OrgMembership, OrgRole } from "../access-types"
+
+const ORG_ROLES: Readonly<Record<string, OrgRole>> = { owner: "owner", admin: "admin", member: "member" }
 
 function roleFromWire(value: unknown): OrgRole | undefined {
-  return value === "owner" || value === "admin" || value === "member" ? value : undefined
+  return typeof value === "string" && Object.hasOwn(ORG_ROLES, value) ? ORG_ROLES[value] : undefined
 }
 
 export function membershipFromWire(value: unknown): OrgMembership | undefined {

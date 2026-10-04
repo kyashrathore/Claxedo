@@ -1,4 +1,5 @@
 export type { AuthState } from "./model"
+export type { AuthUser } from "./display-user"
 export type { Auth } from "./store"
 export { authRoutes } from "./routes"
 export { AuthProvider, useAuth } from "./provider"

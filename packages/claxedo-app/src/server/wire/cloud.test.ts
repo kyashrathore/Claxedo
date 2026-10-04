@@ -16,3 +16,7 @@ test("cloud rows: every lifecycle status the hosted inventory sends maps to its 
 test("cloud rows: a row without a status is a contract failure the row shows", () => {
   expect(cloudWorkspaceFromRow(row)?.status).toEqual({ kind: "failed", reason: "The cloud workspace reports an unknown status: undefined" })
 })
+
+test("cloud rows: a workspace a machine serves is not a cloud workspace", () => {
+  expect(cloudWorkspaceFromRow({ ...row, backing: "local-worktree" })).toBeUndefined()
+})

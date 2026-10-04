@@ -30,6 +30,7 @@ import type {
   GitStatus,
   WorktreeCreateInput,
 } from "./git-types"
+import type { OrgMember, OrgMembership } from "./access-types"
 import type { OrgId, PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
 import type { TasksClient } from "@claxedo/tasks/client"
 import type {
@@ -60,8 +61,6 @@ import type {
   GoalAction,
   HeldSessionReads,
   Machine,
-  OrgMember,
-  OrgMembership,
   Placement,
   Project,
   ProjectSource,

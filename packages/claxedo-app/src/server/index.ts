@@ -1,5 +1,6 @@
 export type * from "./api"
 export type * from "./types"
+export type * from "./access-types"
 export type * from "./status-types"
 export type * from "./harness-types"
 export type * from "./terminal-types"
