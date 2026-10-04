@@ -49,6 +49,24 @@ test("24 an asleep draft can explicitly start its workspace before model discove
   expect(wakes.filter((request) => request.startsWith("POST /api/workspace/"))).toHaveLength(1)
 })
 
+test("24 a refused workspace start shows failure and waits for an explicit retry", async ({ signedCloud, page }) => {
+  const workspace = await makeCloudWorkspace(signedCloud, "refused-source", `${signedCloud.hosted.gitUrl}/unavailable`)
+  await signedCloud.signIn(page, signedCloud.owner)
+  await page.goto(`${signedCloud.url}${sessionRoute(workspace.id)}`)
+  await expect(page.getByText(ASLEEP)).toBeVisible()
+  const wakes = wakeRequests(page, workspace)
+  for (const action of ["Start workspace", "Try again"]) {
+    const refused = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === `/api/workspace/${workspace.id}/connection`)
+    await page.getByRole("button", { name: action, exact: true }).click()
+    const response = await refused
+    expect(response.status()).toBe(409)
+    expect(await response.json()).toMatchObject({ error: { code: "cloud_runtime_unavailable", retryAfterMs: expect.any(Number) } })
+    await expect(page.getByRole("alert").filter({ hasText: "Couldn't wake the workspace." })).toBeVisible()
+    await expect(page.getByText(WAKING)).toHaveCount(0)
+    expect(wakes.filter((request) => request.startsWith("POST /api/workspace/"))).toHaveLength(action === "Start workspace" ? 1 : 2)
+  }
+})
+
 function wakeRequests(page: Page, workspace: CloudWorkspace) {
   const seen: string[] = []
   page.on("request", (request) => {

@@ -24,7 +24,7 @@ const json = (body: unknown, status = 200) => Response.json(body, { status })
 test("workspace start: polls the explicit connect while it provisions, each wait the server's own, and adopts the ready link", async () => {
   const server = answers(
     json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 1_500, bootMode: "resume" }),
-    json({ error: { code: "cloud_runtime_unavailable", message: "Cloud runtime is unavailable", retryAfterMs: 20 } }, 409),
+    json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 20 }),
     json({ status: "provisioning", workspaceId: "ws_1", retryAfterMs: 90_000 }),
     json(READY),
   )
@@ -45,6 +45,14 @@ test("workspace start: a refusal with no retry hint fails at once with the serve
 
   await expect(start).rejects.toBeInstanceOf(ServerError)
   await expect(start).rejects.toMatchObject({ code: "billing_entitlement_required", message: "An active subscription is required" })
+  expect(server.calls).toHaveLength(1)
+})
+
+test("workspace start: a failed boot stays a failure even when the server provides a retry delay", async () => {
+  const server = answers(json({ error: { code: "cloud_runtime_unavailable", message: "Cloud runtime is unavailable", retryAfterMs: 20 } }, 409))
+  const progress: WorkspaceStartProgress[] = []
+  await expect(startWorkspace(server.connect, "ws_1", { onProgress: (step) => progress.push(step), wait: async () => undefined })).rejects.toMatchObject({ code: "cloud_runtime_unavailable" })
+  expect(progress).toEqual([])
   expect(server.calls).toHaveLength(1)
 })
 
