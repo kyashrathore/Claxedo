@@ -342,7 +342,6 @@ describe("boat sandbox driver", () => {
     expect(run?.body.command).toContain("ghcr.io/test/sandbox:1")
     expect(run?.body.command).toContain("-p 2593:2593")
     expect(run?.body.command).toContain(".claxedo-runtime-env:/run/claxedo-runtime.env:ro")
-    expect(run?.body.command).toContain("mkdir -p claxedo-persistent/workspace claxedo-persistent/claxedo claxedo-persistent/workspace-runtime")
     expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/workspace":'/workspace'`)
     expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/claxedo":'/root/.claxedo'`)
     expect(run?.body.command).toContain(`-v "$(pwd)/claxedo-persistent/workspace-runtime":'/root/.workspace-runtime'`)
@@ -374,13 +373,11 @@ describe("boat sandbox driver", () => {
     expect(failure?.message).not.toContain("synthetic-host-token")
   })
 
-  test("a fresh VM waits for the Docker daemon, then creates the runtime container", async () => {
+  test("a fresh VM waits for the Docker daemon, then creates the runtime container, leaving its bind sources for Docker to create", async () => {
     const run = runStartCommand(await startCommand(), { daemonUpAfter: 2 })
     expect(run.status).toBe(0)
     expect(run.calls).toEqual(["info", "info", "info", "inspect --format", "rm -f", "run -d"])
-    for (const state of ["workspace", "claxedo", "workspace-runtime"]) {
-      expect(existsSync(path.join(run.dir, "claxedo-persistent", state))).toBe(true)
-    }
+    expect(existsSync(path.join(run.dir, "claxedo-persistent"))).toBe(false)
   })
 
   test("a repeated start finds the container the first one created and only starts it", async () => {

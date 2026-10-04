@@ -73,7 +73,9 @@ const CONTAINER_ENV_PATH = "/run/claxedo-runtime.env"
 // Everything the runtime keeps lives under one root on the VM's disk: the
 // workspace, and the two home directories the image's runtime writes its
 // stores, harness homes and state to (`~/.claxedo`, `~/.workspace-runtime`;
-// the image runs as root).
+// the image runs as root). These bind sources are never created by the start
+// command, which runs as the VM user: Docker creates a missing `-v` source as
+// root, the container's user, and git refuses a workspace another uid owns.
 const PERSISTENT_ROOT = "claxedo-persistent"
 const PERSISTENT_HOME_MOUNTS = [["claxedo", "/root/.claxedo"], ["workspace-runtime", "/root/.workspace-runtime"]] as const
 
@@ -214,7 +216,6 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     const ours = `[ "$(docker inspect --format '{{.Config.Image}}' ${containerName} 2>/dev/null)" = ${image} ]`
     const steps = [
       `chmod 600 ${RUNTIME_ENV_PATH}`,
-      `mkdir -p ${mounts.map(([source]) => `${PERSISTENT_ROOT}/${source}`).join(" ")}`,
       `timeout ${DOCKER_DAEMON_WAIT_SECONDS} sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'`,
       ...(options.registryAuth
         ? [`{ chmod 600 ${REGISTRY_PASSWORD_PATH}; docker login ${shell(options.registryAuth.server)} `
