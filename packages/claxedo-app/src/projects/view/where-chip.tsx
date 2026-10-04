@@ -12,11 +12,11 @@ const CONNECT_COMPUTER = "connect-computer"
 
 const PLACE_GROUP: Record<WherePlace, ProjectsKey> = { computer: "projects.chip.self", cloud: "projects.chip.cloud", machine: "projects.chip.machines" }
 
-function placementLabel(t: ProjectsText, entry: { readonly place: WherePlace; readonly placement: Placement }): string {
+function whereEntryLabel(t: ProjectsText, entry: { readonly place: WherePlace; readonly placement: Placement }): string {
   return entry.place === "computer" && entry.placement.kind === "folder" ? t("projects.chip.main") : entry.placement.label
 }
 
-function placementDetail(context: DraftContext, entry: { readonly place: WherePlace; readonly placement: Placement }): string | undefined {
+function whereEntryDetail(context: DraftContext, entry: { readonly place: WherePlace; readonly placement: Placement }): string | undefined {
   if (entry.place === "cloud") return entry.placement.id
   if (entry.place === "machine") return (entry.placement.machineId && context.machineName(entry.placement.machineId)) ?? entry.placement.path
   return undefined
@@ -25,8 +25,8 @@ function placementDetail(context: DraftContext, entry: { readonly place: WherePl
 function whereOption(t: ProjectsText, context: DraftContext, entry: WhereEntry, grouped: ReadonlySet<WherePlace>): ContextChipOption {
   const group = grouped.has(entryPlace(entry)) ? { group: t(PLACE_GROUP[entryPlace(entry)]) } : {}
   if (entry.kind === "connectComputer") return { value: CONNECT_COMPUTER, label: t("projects.chip.connect"), detail: t("projects.chip.connect.detail"), ...group }
-  const detail = placementDetail(context, entry)
-  return { value: entry.placement.id, label: placementLabel(t, entry), ...(detail ? { detail } : {}), ...group }
+  const detail = whereEntryDetail(context, entry)
+  return { value: entry.placement.id, label: whereEntryLabel(t, entry), ...(detail ? { detail } : {}), ...group }
 }
 
 function whereIcon(context: DraftContext): JSX.Element {
@@ -43,7 +43,7 @@ function whereLabel(t: ProjectsText, context: DraftContext): string {
   if (choice.kind === "newCloud") return t("projects.chip.newCloud.named", { name: choice.name })
   if (choice.kind === "newWorktree") return t("projects.chip.newWorktree")
   const entry = context.entries().find((item) => item.kind === "placement" && item.placement.id === context.current()?.id)
-  return entry?.kind === "placement" ? placementLabel(t, entry) : ""
+  return entry?.kind === "placement" ? whereEntryLabel(t, entry) : ""
 }
 
 export function useWhereChip(context: DraftContext): () => ContextChip {

@@ -518,8 +518,14 @@ export const desktopRenderer: Policy = {
   // and `server/wire/sandbox-keys.ts`, keeps their activity in
   // `accounts/sandbox-store.ts`, and draws them from
   // `accounts/view/sandbox-section.tsx`, `sandbox-key-row.tsx` and
-  // `sandbox-key-form.tsx`. They add no package edge. 1321/36, no headroom.
-  ceilings: { modules: 1321, packages: 36 },
+  // `sandbox-key-form.tsx`. They add no package edge.
+  // The new-session row's Where chip (owner: the projects domain) groups the
+  // draft's placements in `projects/draft-where.ts`, draws them from
+  // `projects/view/where-chip.tsx` and asks a new cloud workspace's name in
+  // `projects/view/new-cloud-workspace-panel.tsx`, replacing
+  // `projects/draft-workspaces.ts`. They add no package edge. 1323/36, no
+  // headroom.
+  ceilings: { modules: 1323, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
