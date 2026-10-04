@@ -56,6 +56,8 @@ export function createOrgSandboxManager(input: {
     restore: async (workspaceId, request) => (await routed(workspaceId)).restore(workspaceId, request),
     stop: async (workspaceId, request) => (await routed(workspaceId)).stop(workspaceId, request),
     destroy: async (workspaceId) => (await routed(workspaceId)).destroy(workspaceId),
+    recordStartPhases: async (workspaceId, phases) => (await routed(workspaceId)).recordStartPhases(workspaceId, phases),
+    markStartPhase: async (workspaceId, phase) => (await routed(workspaceId)).markStartPhase(workspaceId, phase),
     garbageCollect: () => operator.garbageCollect(),
     list: () => operator.list(),
   }
