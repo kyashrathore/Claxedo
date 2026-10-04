@@ -4,7 +4,7 @@ import { useModelVisibility } from "@/composer"
 import type { HarnessSelection } from "@/lib/harness-selection"
 import { SettingsEmpty } from "@/settings"
 import { useAccountsText } from "../i18n"
-import { useCatalogModels, useHarnessModels, groupContext, modelKeyOf, type ModelSource, type SettingsPlacement } from "../model-sources"
+import { useModelSource, groupContext, modelKeyOf, type SettingsPlacement } from "../model-sources"
 import type { Harness } from "../model"
 import type { Accounts } from "../store"
 import { AgentHarnessAccounts } from "./harness-accounts"
@@ -63,10 +63,10 @@ function AccountsTab(props: { readonly harness: ModelsHarness; readonly accounts
   )
 }
 
-function HarnessModels(props: { readonly harness: ModelsHarness; readonly source: ModelSource; readonly workspace?: string }) {
+function HarnessModels(props: { readonly harness: ModelsHarness; readonly placement: SettingsPlacement }) {
   const t = useAccountsText()
   const visibility = useModelVisibility()
-  const source = () => props.source
+  const source = useModelSource(props.harness.selection, () => props.placement)
   const count = createMemo(() => enabledCount(source(), (item, group) => visibility.visible(modelKeyOf(item), groupContext(group, item))))
   return (
     <>
@@ -80,19 +80,9 @@ function HarnessModels(props: { readonly harness: ModelsHarness; readonly source
           )}
         </Show>
       </div>
-      <ModelsTab source={source()} harness={props.harness.slug} harnessLabel={props.harness.label} workspace={props.workspace} />
+      <ModelsTab source={source()} harness={props.harness.slug} harnessLabel={props.harness.label} workspace={props.placement.label} />
     </>
   )
-}
-
-function CatalogModels(props: { readonly harness: ModelsHarness }) {
-  const source = useCatalogModels(props.harness.slug)
-  return <HarnessModels harness={props.harness} source={source()} />
-}
-
-function RuntimeModels(props: { readonly harness: ModelsHarness; readonly placement: SettingsPlacement }) {
-  const source = useHarnessModels(props.harness.selection, () => props.placement)
-  return <HarnessModels harness={props.harness} source={source()} workspace={props.placement.label} />
 }
 
 export function HarnessSection(props: { readonly harness: ModelsHarness; readonly accounts: Accounts; readonly placement?: SettingsPlacement; readonly tab: HarnessTab; readonly onTab: (tab: HarnessTab) => void }) {
@@ -114,10 +104,9 @@ export function HarnessSection(props: { readonly harness: ModelsHarness; readonl
       <div class="flex flex-col gap-4">
         <HarnessTabs tab={props.tab} onTab={props.onTab} actions={actions} />
         <Show when={props.tab === "models"} fallback={<AccountsTab harness={props.harness} accounts={props.accounts} onAddRef={(open) => setAddAccount(() => open)} />}>
-          <Switch fallback={<SettingsEmpty><span>{t("settings.models.workspace.required")}</span></SettingsEmpty>}>
-            <Match when={props.harness.kind === "catalog"}><CatalogModels harness={props.harness} /></Match>
-            <Match when={props.placement}>{(placement) => <RuntimeModels harness={props.harness} placement={placement()} />}</Match>
-          </Switch>
+          <Show when={props.placement} fallback={<SettingsEmpty><span>{t("settings.models.workspace.required")}</span></SettingsEmpty>}>
+            {(placement) => <HarnessModels harness={props.harness} placement={placement()} />}
+          </Show>
         </Show>
       </div>
     </section>

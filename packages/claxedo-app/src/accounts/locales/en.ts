@@ -218,7 +218,6 @@ export default {
   "settings.models.add.providerSearch": "Search providers…",
   "settings.models.add.noProviders": "No providers match “{{query}}”.",
   "settings.models.harness.empty": "{{harness}} reports no models for {{workspace}}.",
-  "settings.models.catalog.empty": "{{harness}} reports no models for your account.",
   "settings.providers.status.notConnected": "Not connected",
   "common.loading": "Loading",
   "common.loading.ellipsis": "...",

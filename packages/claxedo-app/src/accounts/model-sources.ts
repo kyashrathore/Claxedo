@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { createProviderCatalog, harnessModelPickerProvider, modelGroupKey } from "@/composer"
-import type { HarnessSelection } from "@/lib/harness-selection"
+import { isCatalogHarnessId, type HarnessSelection } from "@/lib/harness-selection"
 import { inCatalogOrder, primaryPlacement, useProjects } from "@/projects"
 import { toAppError, useServer, type HarnessOptionChoice, type ModelChoice, type PlacementId } from "@/server"
 import { catalogProviders } from "./catalog-rules"
@@ -62,7 +62,7 @@ export function harnessGroups(selection: HarnessSelection, models: readonly Harn
   }))
 }
 
-export function useHarnessModels(selection: HarnessSelection, placement: Accessor<SettingsPlacement>): Accessor<ModelSource> {
+function useHarnessModels(selection: HarnessSelection, placement: Accessor<SettingsPlacement>): Accessor<ModelSource> {
   const server = useServer()
   const harness = selection.kind === "native" ? selection.harnessId : selection.connectionId
   const query = useQuery(() => server.queries.harnesses.options(placement().placementId, harness))
@@ -74,9 +74,9 @@ export function useHarnessModels(selection: HarnessSelection, placement: Accesso
   })
 }
 
-export function useCatalogModels(harness: string): Accessor<ModelSource> {
+function useCatalogModels(harness: string, placement: Accessor<SettingsPlacement>): Accessor<ModelSource> {
   const server = useServer()
-  const catalog = createProviderCatalog({ server, harness: () => harness, eager: true })
+  const catalog = createProviderCatalog({ server, harness: () => harness, placementId: () => placement().placementId, eager: true })
   const [hydrating, setHydrating] = createSignal(true)
   const providers = createMemo(() => catalogProviders([...catalog.all().values()], catalog.connected().map((item) => item.id), "", []))
   let hydrated = ""
@@ -109,4 +109,9 @@ export function useCatalogModels(harness: string): Accessor<ModelSource> {
     const error = catalog.error()
     return { loading, ...(error ? { error } : {}), empty: !loading && !error && groups.length === 0, groups }
   })
+}
+
+export function useModelSource(selection: HarnessSelection, placement: Accessor<SettingsPlacement>): Accessor<ModelSource> {
+  if (selection.kind === "native" && isCatalogHarnessId(selection.harnessId)) return useCatalogModels(selection.harnessId, placement)
+  return useHarnessModels(selection, placement)
 }

@@ -88,14 +88,12 @@ function ProviderModelCard(props: { readonly entry: SourceGroup }) {
   )
 }
 
-function SourceNote(props: { readonly source: ModelSource; readonly harness: string; readonly harnessLabel: string; readonly workspace?: string }) {
+function SourceNote(props: { readonly source: ModelSource; readonly harness: string; readonly harnessLabel: string; readonly workspace: string }) {
   const t = useAccountsText()
   const text = () => {
     if (props.source.loading) return `${t("common.loading")}${t("common.loading.ellipsis")}`
     if (props.source.error) return props.source.error
-    if (!props.source.empty) return undefined
-    return props.workspace ? t("settings.models.harness.empty", { harness: props.harnessLabel, workspace: props.workspace })
-      : t("settings.models.catalog.empty", { harness: props.harnessLabel })
+    return props.source.empty ? t("settings.models.harness.empty", { harness: props.harnessLabel, workspace: props.workspace }) : undefined
   }
   return (
     <Show when={text()}>
@@ -108,7 +106,7 @@ function SourceNote(props: { readonly source: ModelSource; readonly harness: str
   )
 }
 
-export function ModelsTab(props: { readonly source: ModelSource; readonly harness: string; readonly harnessLabel: string; readonly workspace?: string }) {
+export function ModelsTab(props: { readonly source: ModelSource; readonly harness: string; readonly harnessLabel: string; readonly workspace: string }) {
   const t = useAccountsText()
   const [providerQuery, setProviderQuery] = createSignal("")
   const sole = () => soleSelfGroup(props.source, props.harness)

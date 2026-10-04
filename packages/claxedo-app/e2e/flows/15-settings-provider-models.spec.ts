@@ -25,9 +25,7 @@ async function saveProvider(stack: Stack, providerID: string, name: string, coun
 }
 
 async function providerCard(stack: Stack, app: Page, count: number, multiple = false) {
-  const projects = await fetch(new URL("/api/claxedo/projects", stack.url))
-  expect(projects.status).toBe(200)
-  expect(await projects.json()).toMatchObject({ projects: [] })
+  await stack.daemon.makeWorkspace("provider-models", "Provider models")
   await saveProvider(stack, "provider-card", "Provider Card", count)
   if (multiple) {
     await saveProvider(stack, "team-gateway", "Team Gateway", 27)
