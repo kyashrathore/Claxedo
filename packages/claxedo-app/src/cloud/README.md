@@ -21,7 +21,7 @@ A create failure is shown by the create form; the workspace does not exist yet, 
 
 ## API
 
-`useCloudWorkspaces(projectId, enabled)` returns the list machine (`loading`, `ready(rows)`, `failed(error)`) and the commands. The first run places a new project in the cloud through `server.cloud.create({ source, name })` directly, on a hosted plane and on a signed desktop alike: the signed account creates it, and its control plane derives the project. Rows come from `server.queries.cloud.list()` and commands go through `server.cloud`.
+`useRunningCloudWorkspaces(enabled)` returns the same list machine and Start/Stop/Delete for every running workspace across projects (Settings → Usage → Cloud). `useCloudStatusText()` says a status in words; a provisioning step the server names (`acquiring_sandbox`, `cloning`, `starting_runtime`, `waiting_health`) is said as what it does, never as the step id. `useCloudWorkspaces(projectId, enabled)` returns the list machine (`loading`, `ready(rows)`, `failed(error)`) and the commands. The first run places a new project in the cloud through `server.cloud.create({ source, name })` directly, on a hosted plane and on a signed desktop alike: the signed account creates it, and its control plane derives the project. Rows come from `server.queries.cloud.list()` and commands go through `server.cloud`.
 
 ## Flows
 

@@ -14,6 +14,10 @@ export function canStop(state: CloudWorkspaceStatus): boolean {
   return state.kind === "ready" || state.kind === "starting" || state.kind === "provisioning"
 }
 
+export function isRunning(state: CloudWorkspaceStatus): boolean {
+  return state.kind !== "stopped" && state.kind !== "failed"
+}
+
 export function isBusy(state: CloudWorkspaceStatus): boolean {
   return state.kind === "provisioning" || state.kind === "starting" || state.kind === "stopping"
 }

@@ -1,11 +1,18 @@
 import { unreachable } from "@/lib/machine"
 import type { CloudWorkspaceStatus } from "@/server"
-import type { CloudText } from "../i18n"
+import { useCloudText, type CloudKey, type CloudText } from "../i18n"
+
+const PROVISIONING_STEP: Readonly<Record<string, CloudKey>> = {
+  acquiring_sandbox: "cloud.status.acquiring",
+  cloning: "cloud.status.cloning",
+  starting_runtime: "cloud.status.startingRuntime",
+  waiting_health: "cloud.status.waitingHealth",
+}
 
 export function cloudStatusText(t: CloudText, state: CloudWorkspaceStatus): string {
   switch (state.kind) {
     case "provisioning":
-      return t("cloud.status.provisioning", { step: state.step })
+      return t(PROVISIONING_STEP[state.step] ?? "cloud.status.provisioning")
     case "starting":
       return t("cloud.status.starting")
     case "ready":
@@ -19,4 +26,9 @@ export function cloudStatusText(t: CloudText, state: CloudWorkspaceStatus): stri
     default:
       return unreachable(state)
   }
+}
+
+export function useCloudStatusText(): (state: CloudWorkspaceStatus) => string {
+  const t = useCloudText()
+  return (state) => cloudStatusText(t, state)
 }

@@ -47,3 +47,47 @@
     min-height: var(--touch-target);
   }
 }
+
+.usage-cloud {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.usage-cloud-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: var(--radius-md);
+}
+
+.usage-cloud-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--touch-target, 44px);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--v2-border-border-muted);
+}
+
+.usage-cloud-row:last-child {
+  border-bottom: 0;
+}
+
+.usage-cloud-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.usage-cloud-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-compact);
+  color: var(--v2-text-text-base);
+}

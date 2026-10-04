@@ -11,7 +11,7 @@ import {
   type PlacementId,
   type ProjectId,
 } from "@/server"
-import { cloudWorkspaceTransition, type CloudWorkspaceEvent } from "./model"
+import { cloudWorkspaceTransition, isRunning, type CloudWorkspaceEvent } from "./model"
 
 export type CloudWorkspaceRow = CloudWorkspace & { readonly state: CloudWorkspaceStatus }
 
@@ -22,6 +22,7 @@ export type CloudList =
 
 export type CloudWorkspaces = {
   readonly list: Accessor<CloudList>
+  readonly refresh: () => void
   readonly create: (input: Omit<CloudProjectCreateInput, "projectId">) => Promise<CloudWorkspace>
   readonly start: (id: PlacementId) => Promise<void>
   readonly stop: (id: PlacementId) => Promise<void>
@@ -35,7 +36,7 @@ function displayedStatus(workspace: CloudWorkspace, pending: Pending | undefined
   return cloudWorkspaceTransition(workspace.status, pending.event)
 }
 
-export function useCloudWorkspaces(projectId: Accessor<ProjectId>, enabled: Accessor<boolean>): CloudWorkspaces {
+function useCloudCommands(enabled: Accessor<boolean>, include: (workspace: CloudWorkspace) => boolean) {
   const server = useServer()
   const query = useQuery(() => ({ ...server.queries.cloud.list(), enabled: enabled() }))
   const [pending, setPending] = createStore<Record<string, Pending | undefined>>({})
@@ -53,9 +54,7 @@ export function useCloudWorkspaces(projectId: Accessor<ProjectId>, enabled: Acce
 
   const list = createMemo((): CloudList => {
     if (query.data !== undefined) {
-      const rows = query.data
-        .filter((workspace) => workspace.projectId === projectId())
-        .map((workspace) => ({ ...workspace, state: displayedStatus(workspace, pending[workspace.id]) }))
+      const rows = query.data.filter(include).map((workspace) => ({ ...workspace, state: displayedStatus(workspace, pending[workspace.id]) }))
       return { kind: "ready", rows }
     }
     if (query.error) return { kind: "failed", error: query.error }
@@ -64,13 +63,26 @@ export function useCloudWorkspaces(projectId: Accessor<ProjectId>, enabled: Acce
 
   return {
     list,
+    refresh: () => void query.refetch(),
+    start: (id: PlacementId) => command(id, { type: "startRequested" }, () => server.cloud.start(id)),
+    stop: (id: PlacementId) => command(id, { type: "stopRequested" }, () => server.cloud.stop(id)),
+    remove: (id: PlacementId) => command(id, undefined, () => server.cloud.remove(id)),
+  }
+}
+
+export function useCloudWorkspaces(projectId: Accessor<ProjectId>, enabled: Accessor<boolean>): CloudWorkspaces {
+  const server = useServer()
+  const commands = useCloudCommands(enabled, (workspace) => workspace.projectId === projectId())
+  return {
+    ...commands,
     create: async (input) => {
       const workspace = await server.cloud.create({ projectId: projectId(), ...input })
-      void command(workspace.id, { type: "startRequested" }, () => server.cloud.start(workspace.id))
+      void commands.start(workspace.id)
       return workspace
     },
-    start: (id) => command(id, { type: "startRequested" }, () => server.cloud.start(id)),
-    stop: (id) => command(id, { type: "stopRequested" }, () => server.cloud.stop(id)),
-    remove: (id) => command(id, undefined, () => server.cloud.remove(id)),
   }
+}
+
+export function useRunningCloudWorkspaces(enabled: Accessor<boolean>): Omit<CloudWorkspaces, "create"> {
+  return useCloudCommands(enabled, (workspace) => isRunning(workspace.status))
 }

@@ -12,6 +12,8 @@ Owns: how much the user's agents used, read from the server's usage summary (`se
 - **Usage through Claxedo** (`view: "claxedo"`): the turns Claxedo ran in the last 7, 30 or 90 local days. The chosen measure (tokens or cost) leads the totals and draws one bar per local day of the range, a day without turns being a measured zero (`daily-series.ts`). Tokens are split into the context the model read (cache read, cache write, new input) and what it generated (output, reasoning) (`token-composition.ts`). The breakdown groups by provider or by model, 25 rows a page.
 - **Cost estimate** (`costEstimate`): `none` when nothing was measured, `unknown` when no token has a price, `partial` (a lower bound) when some tokens have none, `complete` otherwise. An unknown cost is never drawn as $0.00.
 - **Refresh** sends a `refresh_nonce`, so the server checks the quotas again instead of answering from its last read; a refresh it declines because the last one was too recent reports `throttledUntil`, shown as the time the next check can run.
+- **Cloud** (`view: "cloud"`, `cloud-usage.tsx`): the cloud workspaces running now (anything not stopped or failed), each with its project, branch and status in words, and Stop. Its rows and the Stop command are `useRunningCloudWorkspaces` from `@/cloud`, so the status is the cloud domain's one machine. It is offered only where the server offers cloud workspaces (`capabilities().features.cloud`). Machine time per period is not shown: no server record of when a workspace started and stopped reaches the app yet.
+- **Which views are offered**: Usage limits only on a machine (`capabilities().thisMachine`): the quota windows are the harness CLIs' and the stored accounts' as this machine reads them, and a hosted plane has no such source, so the web never shows an "unavailable" tab. Usage through Claxedo always; Cloud where cloud workspaces are offered. The first offered view opens.
 - There is no "Total" view: counting usage Claxedo didn't run was dropped.
 
 ## Data
@@ -20,7 +22,7 @@ The summary is fetched data: it lives in the TanStack Query cache under the adap
 
 ## Machine
 
-The read is `loading → ready(summary) | failed(error)`, derived from the query (`api.ts`). The loading text shows only after 150 ms.
+The read is `loading → ready(summary) | failed(error)`, derived from the query (`api.ts`), which runs only while a summary view is open. The loading text shows only after the placeholder delay.
 
 ## Screens
 

@@ -9,11 +9,11 @@ export type UsageSummaryRead = {
   readonly refresh: () => void
 }
 
-export function useUsageSummary(options: Accessor<UsageOptions>): UsageSummaryRead {
+export function useUsageSummary(options: Accessor<UsageOptions>, enabled: Accessor<boolean>): UsageSummaryRead {
   const server = useServer()
   const now = Date.now()
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
-  const query = useQuery(() => server.queries.usage.summary(usageRequest(options(), now, timeZone)))
+  const query = useQuery(() => ({ ...server.queries.usage.summary(usageRequest(options(), now, timeZone)), enabled: enabled() }))
   const load = createMemo((): UsageLoad => {
     if (query.data !== undefined) return { kind: "ready", summary: query.data }
     if (query.isError) return { kind: "failed", error: toAppError(query.error) }

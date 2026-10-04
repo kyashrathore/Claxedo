@@ -10,6 +10,8 @@ export type BreakdownRow = NonNullable<UsageSummary["breakdown"]>["rows"][number
 
 export type UsageView = "quota" | "claxedo"
 
+export type UsageTab = UsageView | "cloud"
+
 export type UsageMetric = "tokens" | "cost"
 
 export type UsageGroup = "provider" | "model"

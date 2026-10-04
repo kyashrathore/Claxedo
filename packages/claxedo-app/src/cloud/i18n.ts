@@ -19,7 +19,11 @@ const en = {
   "cloud.start": "Start",
   "cloud.stop": "Stop",
   "cloud.open": "Open",
-  "cloud.status.provisioning": "Provisioning: {{step}}",
+  "cloud.status.provisioning": "Setting up",
+  "cloud.status.acquiring": "Getting a machine",
+  "cloud.status.cloning": "Cloning the repository",
+  "cloud.status.startingRuntime": "Starting the workspace",
+  "cloud.status.waitingHealth": "Almost ready",
   "cloud.status.starting": "Starting",
   "cloud.status.ready": "Ready",
   "cloud.status.stopping": "Stopping",
@@ -27,7 +31,7 @@ const en = {
   "cloud.status.failed": "Failed",
 }
 
-type CloudKey = keyof typeof en
+export type CloudKey = keyof typeof en
 
 const cloudDictionary = {
   en,
