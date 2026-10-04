@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "vitest"
+import { projectPiProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-projection"
 import { HostedShellRoutes } from "./shell"
 import type { ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import type { OpenCodeCatalog } from "@claxedo/server-core/credentials/opencode-provider-projection"
@@ -98,6 +99,8 @@ describe("sign-in methods", () => {
 })
 
 describe("the Pi provider catalog", () => {
+  const plan = () => projectPiProviderCatalog(new Map([["openai-codex", "openai-codex"]]))
+
   test("provider catalog uses the verified owner and explicit unavailable states", async () => {
     const calls: string[] = []
     const catalog = HostedShellRoutes({
@@ -105,16 +108,30 @@ describe("the Pi provider catalog", () => {
       verifier,
       piProviderCatalog: async (auth) => {
         calls.push(auth.user.orgId!)
-        return { all: [], connected: [auth.user.orgId], default: {} }
+        return plan()
       },
     })
     const route = "/api/claxedo/agent-config/providers?nativeHarness=pi"
     expect((await catalog.request(route)).status).toBe(401)
     const response = await catalog.request(`${route}&workspaceId=org_b`, { headers: { authorization: "Bearer token-a" } })
     expect(response.status).toBe(200)
-    expect((await response.json()).connected).toEqual(["org_a"])
+    expect((await response.json()).connected).toEqual(["openai-codex"])
     expect(calls).toEqual(["org_a"])
     expect((await app().request(route, { headers: { authorization: "Bearer token-a" } })).status).toBe(503)
     expect((await catalog.request("/api/claxedo/agent-config/providers?nativeHarness=claude", { headers: { authorization: "Bearer token-a" } })).status).toBe(400)
+  })
+
+  test("a Pi draft's options are the launch models of the providers the account connected, with no runtime asked", async () => {
+    const catalog = HostedShellRoutes({ authConfig: signedConfig, verifier, piProviderCatalog: async () => plan() })
+    const route = "/api/claxedo/agent-config/harness/options?nativeHarness=pi"
+    expect((await catalog.request(route)).status).toBe(401)
+    const response = await catalog.request(route, { headers: { authorization: "Bearer token-a" } })
+    expect(response.status).toBe(200)
+    const body = await response.json() as { options: Array<{ id: string; selectOptions?: Array<{ id: string }> }> }
+    const models = body.options.find((option) => option.id === "model")?.selectOptions?.map((option) => option.id) ?? []
+    expect(models.length).toBeGreaterThan(0)
+    expect(models.every((model) => model.startsWith("openai-codex/"))).toBe(true)
+    expect((await catalog.request("/api/claxedo/agent-config/harness/options?nativeHarness=codex", { headers: { authorization: "Bearer token-a" } })).status).toBe(400)
+    expect((await app().request(route, { headers: { authorization: "Bearer token-a" } })).status).toBe(503)
   })
 })

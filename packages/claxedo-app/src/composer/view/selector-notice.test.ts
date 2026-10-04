@@ -9,6 +9,7 @@ import type { HarnessSelectionController, HarnessSelectionSnapshot } from "../ha
 import type { HarnessType } from "../harness/profile"
 import { createModelAvailability } from "./harness-model-availability"
 import type { SelectorCatalog } from "./selector-catalog"
+import type { HarnessAccountState } from "./harness-account-state"
 import { createSelectorNotice } from "./selector-notice"
 
 const scripted = connectionHarness("scripted")
@@ -39,11 +40,21 @@ function snapshot(harness: HarnessType, optionsAnswered: boolean): HarnessSelect
   }
 }
 
-function harnessNotice(harness: HarnessType, answered: (harness: HarnessType) => HarnessSelectionSnapshot = (type) => snapshot(type, true)) {
+type Situation = { account?: HarnessAccountState; asleep?: boolean }
+
+function harnessNotice(
+  harness: HarnessType,
+  answered: (harness: HarnessType) => HarnessSelectionSnapshot = (type) => snapshot(type, true),
+  situation: Situation = {},
+) {
   return createRoot((dispose) => {
     const [selection, setSelection] = createSignal(snapshot(harness, false))
     const [connection, setConnection] = createSignal<HarnessConnectionRef | undefined>(undefined)
-    const catalog = { unread: () => false } as unknown as SelectorCatalog
+    const catalog = {
+      unread: () => false,
+      providers: { resolved: () => true, loading: () => false, error: () => undefined, refresh: async () => undefined },
+      rows: () => ({ rows: [] }),
+    } as unknown as SelectorCatalog
     const availability = createModelAvailability({ harness: () => harness, selection, connectionDeclaration: connection, catalog, rows: () => [], switching: () => false })
     const { notice } = createSelectorNotice({
       active: () => true,
@@ -56,6 +67,8 @@ function harnessNotice(harness: HarnessType, answered: (harness: HarnessType) =>
       catalog,
       availability,
       polling: () => false,
+      asleep: () => situation.asleep === true,
+      account: () => situation.account ?? (harness.kind === "connection" ? "accountless" : "missing"),
       harnessLabel: () => "Scripted",
       openProviders: () => undefined,
     })
@@ -95,4 +108,37 @@ test("selector notice: a harness whose live options answer offers no model asks 
   view.answerOptions()
   expect(view.kind()).toBe("setup-required")
   view.dispose()
+})
+
+const piAnsweredEmpty = (type: HarnessType) => {
+  const { patch } = applyHarnessOptionsResponse({ type, payload: { source: "harness", stale: false, offersOptions: false, serviceTiers: [] } })
+  return { ...snapshot(type, true), configError: patch.configError, optionsLoading: patch.optionsLoading ?? false }
+}
+
+test("selector notice: a harness whose account source holds an account is never called not set up, whatever its live options say", () => {
+  const codex = harnessNotice(nativeHarness("codex"), undefined, { account: "present" })
+  codex.answerOptions()
+  expect(codex.kind()).not.toBe("setup-required")
+  codex.dispose()
+  const pi = harnessNotice(nativeHarness("pi"), piAnsweredEmpty, { account: "present" })
+  pi.answerOptions()
+  expect(pi.kind()).not.toBe("setup-required")
+  pi.dispose()
+})
+
+test("selector notice: an account source still loading claims nothing", () => {
+  const view = harnessNotice(nativeHarness("codex"), undefined, { account: "unknown" })
+  view.answerOptions()
+  expect(view.kind()).toBeUndefined()
+  view.dispose()
+})
+
+test("selector notice: on an asleep workspace every harness says a send wakes it, never that it is not set up", () => {
+  for (const harness of [nativeHarness("opencode"), nativeHarness("pi"), nativeHarness("codex"), scripted]) {
+    const view = harnessNotice(harness, piAnsweredEmpty, { asleep: true, account: harness.kind === "connection" ? "accountless" : "missing" })
+    view.answerOptions()
+    view.answerConnection()
+    expect(view.kind(), JSON.stringify(harness)).toBe("workspace-asleep")
+    view.dispose()
+  }
 })

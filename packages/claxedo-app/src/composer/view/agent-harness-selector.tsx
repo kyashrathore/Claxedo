@@ -1,6 +1,6 @@
 import { createMemo, type JSX } from "solid-js"
 import { useNavigate } from "@solidjs/router"
-import { useServer } from "@/server"
+import { isStoppedCloud, useServer } from "@/server"
 import { settingsPath } from "@/shell"
 import { sameHarnessSelection } from "@/lib/harness-selection"
 import { watchCatalogDraftDefault } from "../harness/catalog-draft-default"
@@ -18,6 +18,7 @@ import { HarnessOptionIcon } from "./harness-option-icon"
 import { createHarnessSwitch } from "./harness-switch"
 import { createHarnessTriggerLabel, createTriggerStyle, triggerStateOf } from "./harness-trigger"
 import { createSelectorCatalog } from "./selector-catalog"
+import { createHarnessAccountState } from "./harness-account-state"
 import { createSelectorNotice } from "./selector-notice"
 import { createSelectionWrites } from "./selection-writes"
 import { createScopeSelection, createSelectorScope } from "./selector-scope"
@@ -95,6 +96,11 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     catalog,
     availability,
     polling: isPolling,
+    asleep: () => {
+      const id = placementId()
+      return id !== undefined && isStoppedCloud(server.placements.byId(id))
+    },
+    account: createHarnessAccountState(server, harness),
     harnessLabel: optionList.label,
     openProviders,
   })

@@ -5,6 +5,7 @@ import type { ComposerNotice } from "./notice-slot"
 import { resolveHarnessNotice, type HarnessNoticeInput } from "./harness-notice"
 import type { ModelAvailability } from "./harness-model-availability"
 import type { PickerItem } from "./model-list"
+import type { HarnessAccountState } from "./harness-account-state"
 import type { SelectorCatalog } from "./selector-catalog"
 
 type SelectorNoticeInput = {
@@ -18,17 +19,25 @@ type SelectorNoticeInput = {
   catalog: SelectorCatalog
   availability: ModelAvailability
   polling: Accessor<boolean>
+  asleep: Accessor<boolean>
+  account: Accessor<HarnessAccountState>
   harnessLabel: (harness: HarnessType) => string
   openProviders: () => void
 }
 
+function liveSourceOffersNoModel(input: SelectorNoticeInput) {
+  if (input.availability.modelOptionsFailed()) return false
+  if (input.harness() && isCatalogHarness(input.harness())) {
+    return input.catalog.providers.resolved() && !input.catalog.providers.loading() && !input.catalog.providers.error() && input.catalog.rows().rows.length === 0
+  }
+  return input.availability.modelsAnswered() && !input.availability.managedDefaultModel() && !input.availability.modelLoading() && !input.availability.hasModelOptions() && !input.polling() && !input.availability.isError()
+}
+
 function createProviderSetupNeed(input: SelectorNoticeInput) {
   return createMemo(() => {
-    if (input.availability.modelOptionsFailed()) return false
-    if (input.harness() && isCatalogHarness(input.harness())) {
-      return input.catalog.providers.resolved() && !input.catalog.providers.loading() && !input.catalog.providers.error() && input.catalog.rows().rows.length === 0
-    }
-    return input.availability.modelsAnswered() && !input.availability.managedDefaultModel() && !input.availability.modelLoading() && !input.availability.hasModelOptions() && !input.polling() && !input.availability.isError()
+    if (!liveSourceOffersNoModel(input)) return false
+    const account = input.account()
+    return account === "missing" || account === "accountless"
   })
 }
 
@@ -36,6 +45,7 @@ function harnessNoticeInput(input: SelectorNoticeInput, setupRequired: boolean):
   const { selection, harness, catalog, availability } = input
   return {
     harnessLabel: harness() ? input.harnessLabel(harness()!) : "Agent",
+    asleep: input.asleep(),
     runtimeUnavailable: availability.isError(),
     connectionState: selection().connectionState,
     optionsFailed: availability.modelOptionsFailed(),

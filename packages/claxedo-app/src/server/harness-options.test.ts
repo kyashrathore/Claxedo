@@ -14,7 +14,7 @@ function reads(route: RuntimeRoute) {
     request: async (path: string) => (seen.push(`server ${path}`), Response.json(answer)),
     runtimeJson: async (_route: RuntimeRoute, path: string) => (seen.push(`runtime ${path}`), answer),
   } as unknown as Transport
-  const workspaces = { route: async () => route } as unknown as Workspaces
+  const workspaces = { route: async () => route, byId: () => undefined } as unknown as Workspaces
   return { seen, read: (sessionId?: string) => readHarnessOptions(transport, workspaces, { placementId: placementId(route.workspaceId), harness: "scripted-acp", ...(sessionId ? { sessionId } : {}) }) }
 }
 
@@ -37,6 +37,20 @@ test("a draft's model options on an asleep cloud workspace refuse without starti
   const transport = { ...server.context.transport, startRuntime: async (workspaceId: string) => void starts.push(workspaceId) }
   const options = harnessQueries(transport, server.context.workspaces).options(placementId("ws_cloud"), "codex")
   await expect(new QueryClient({ defaultOptions: { queries: { retry: false } } }).fetchQuery(options)).rejects.toMatchObject({ code: "workspace_stopped" })
+  expect(starts).toEqual([])
+  expect(server.runtimeCalls).toEqual([])
+  expect(server.requests.filter((path) => path.includes("/connection"))).toEqual([])
+})
+
+test("a Pi draft on an asleep cloud workspace reads its models from the account's catalog, never the workspace", async () => {
+  const server = fakeServer({ reachable: () => false })
+  await server.context.workspaces.load()
+  const starts: string[] = []
+  const transport = { ...server.context.transport, startRuntime: async (workspaceId: string) => void starts.push(workspaceId) }
+  const options = harnessQueries(transport, server.context.workspaces).options(placementId("ws_cloud"), "pi")
+  const read = await new QueryClient({ defaultOptions: { queries: { retry: false } } }).fetchQuery(options)
+  expect(read.offersOptions).toBe(true)
+  expect(server.requests.filter((path) => path.startsWith("/api/claxedo/agent-config/harness/options"))).toEqual(["/api/claxedo/agent-config/harness/options?nativeHarness=pi"])
   expect(starts).toEqual([])
   expect(server.runtimeCalls).toEqual([])
   expect(server.requests.filter((path) => path.includes("/connection"))).toEqual([])

@@ -67,6 +67,7 @@ function controlPlaneAnswer(options: FakeServerOptions, path: string): Response 
   if (path.startsWith("/api/control/sessions/ses_1/part")) return Response.json({ part: storedTool })
   if (path.startsWith("/api/control/sessions/ses_1/outline")) return firstRead(centralRow, { turns: [{ messages: stored, cursor: "cursor_older" }] })
   if (path.startsWith("/api/control/sessions?")) return Response.json({ sessions: [centralRow] })
+  if (path.startsWith("/api/claxedo/agent-config/harness/options")) return Response.json({ options: [{ id: "model", name: "Model", category: "model", type: "select", selectOptions: [{ id: "openai-codex/gpt-5.5", name: "GPT-5.5" }] }] })
   return Response.json({ error: { code: "unexpected", message: path } }, { status: 500 })
 }
 

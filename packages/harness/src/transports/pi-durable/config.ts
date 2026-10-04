@@ -2,12 +2,12 @@ import { PI_PERMISSION_MODES, type AgentPermissionModeState, type PromptModel, t
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 import { getSupportedThinkingLevels, type Api, type Model, type ModelThinkingLevel } from "@earendil-works/pi-ai"
 import type { ModelRef } from "@earendil-works/pi-durable"
-import { configOptionsPreview, modelAndEffortOptions, type ConfigOperations, type DraftLaunch, type HarnessSession,
-  type ModelSettings } from "../../contract"
+import type { ConfigOperations, DraftLaunch, HarnessSession, ModelSettings } from "../../contract"
 import { piPermissionMode } from "./approvals"
 import { PiCredentials } from "./credentials"
 import { piConfiguration, piDirectCredentialRequired } from "./errors"
-import { piCatalog, sessionModelCatalog, type PiCatalogModel } from "./model-catalog"
+import { piCatalogOptions, type PiCatalogModel } from "./launch-catalog"
+import { piCatalog, sessionModelCatalog } from "./model-catalog"
 import type { PiSession } from "./session"
 
 export function piModelRef(model: PromptModel | undefined): ModelRef {
@@ -62,11 +62,7 @@ function draftConfigTarget(draft: DraftLaunch): Target {
 }
 
 function piConfigPreview(target: Target) {
-  const models = target.models.map(({ id, name }) => ({ id, name, connected: true as const }))
-  const model = target.models.find((row) => row.id === target.model?.modelID)
-  const selected = model?.id
-  return configOptionsPreview(modelAndEffortOptions({ models, ...(selected ? { selected } : {}),
-    efforts: model?.efforts ?? [], ...(target.effort ? { currentEffort: target.effort } : {}) }))
+  return piCatalogOptions(target.models, target.model?.modelID, target.effort)
 }
 
 export function createPiConfig(input: { session(session: HarnessSession): PiSession }): ConfigOperations {

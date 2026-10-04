@@ -20,21 +20,25 @@ export type HarnessOptionsRequest = {
   readonly model?: string
 }
 
+function draftServedBySessionHost(workspaces: Workspaces, request: HarnessOptionsRequest) {
+  return !request.sessionId && request.harness === "pi" && workspaces.byId(request.placementId)?.kind === "cloud"
+}
+
+async function readOptionsRoute(transport: Transport, query: Record<string, string | undefined>): Promise<HarnessOptions> {
+  const response = await transport.request(withQuery(HARNESS_OPTIONS_PATH, query))
+  if (!response.ok) throw await responseError(response, "Model options")
+  return harnessOptionsFromWire(await response.json())
+}
+
 export async function readHarnessOptions(transport: Transport, workspaces: Workspaces, request: HarnessOptionsRequest): Promise<HarnessOptions> {
-  const route = await workspaces.route(request.sessionId ? { placementId: request.placementId, sessionId: sessionId(request.sessionId) } : request.placementId)
   const selection = harnessSelectionQuery(request.harness)
+  if (draftServedBySessionHost(workspaces, request)) return readOptionsRoute(transport, { ...selection, model: request.model })
+  const route = await workspaces.route(request.sessionId ? { placementId: request.placementId, sessionId: sessionId(request.sessionId) } : request.placementId)
   if (route.remote) {
     const path = request.sessionId ? `/session/${encodeURIComponent(request.sessionId)}/config-options` : "/api/wr/harness-config-options"
     return harnessOptionsFromWire(await transport.runtimeJson(route, withQuery(path, { ...selection, model: request.model })))
   }
-  const response = await transport.request(withQuery(HARNESS_OPTIONS_PATH, {
-    workspaceId: route.workspaceId,
-    ...selection,
-    sessionId: request.sessionId,
-    model: request.model,
-  }))
-  if (!response.ok) throw await responseError(response, "Model options")
-  return harnessOptionsFromWire(await response.json())
+  return readOptionsRoute(transport, { workspaceId: route.workspaceId, ...selection, sessionId: request.sessionId, model: request.model })
 }
 
 export function harnessQueries(transport: Transport, workspaces: Workspaces) {

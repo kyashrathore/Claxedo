@@ -23,13 +23,13 @@ test("harness notice: a dead runtime outranks setup, models and the saved model"
 })
 
 test("harness notice: setup, then failed models, then an unavailable saved model", () => {
-  expect(resolveHarnessNotice({ ...base, configError: "missing cursor-sdk API key", openProviders: open })).toMatchObject({ kind: "setup-required", action: { label: "Open Providers", ariaLabel: "Open Settings Providers" } })
+  expect(resolveHarnessNotice({ ...base, configError: "missing cursor-sdk API key", openProviders: open })).toMatchObject({ kind: "setup-required", detail: "Add an account in Settings → Models.", action: { label: "Open Models", ariaLabel: "Open Settings Models" } })
   expect(resolveHarnessNotice({ ...base, configError: "boom", noModels: true, savedModelUnavailable: "Opus" })).toEqual({ kind: "models-failed", tone: "critical", message: "Couldn't load Cursor models", detail: "boom", retry: true })
   expect(resolveHarnessNotice({ ...base, savedModelUnavailable: "Opus" })).toEqual({
     kind: "saved-model-unavailable",
     tone: "warning",
     message: "Opus is unavailable",
-    detail: "Reconnect its provider in Settings → Providers, or choose another model.",
+    detail: "Reconnect its account in Settings → Models, or choose another model.",
     retry: false,
   })
   expect(resolveHarnessNotice(base)).toBeUndefined()

@@ -13,6 +13,7 @@
  *   GET    /path                                synthetic path derived from ?directory
  *   GET    /api/claxedo/agent-config/providers  Pi provider catalog
  *   GET    /api/claxedo/agent-config/providers/auth  a harness's sign-in methods
+ *   GET    /api/claxedo/agent-config/harness/options  a Pi draft's models, from the account's connected providers
  *   GET    /api/claxedo/agent-config/connections  always unsupported on a central
  *   GET    /api/claxedo/agent-config/harness    a placement's harness health, read over
  *                                               the relay
@@ -48,6 +49,8 @@ import { providerAuthMethodsForHarness } from "@claxedo/server-core/credentials/
 import type { OpenCodeCatalog } from "@claxedo/server-core/credentials/opencode-provider-projection"
 import { runtimeProviderCatalog } from "@claxedo/server-core/credentials/runtime-provider-catalog"
 import { projectProviderCatalog, readProviderCatalogView, ProviderCatalogViewError } from "@claxedo/server-core/credentials/provider-catalog-view"
+import type { PiProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-projection"
+import { piCatalogOptions, piLaunchCatalog } from "@claxedo/harness/pi-catalog"
 
 export type HostedShellRouteOptions = {
   authentication?: RequestAuthenticationAdapter
@@ -79,7 +82,7 @@ export type HostedShellRouteOptions = {
    * verbatim, and `unknown` only forced a `c.json(… as never)` at the one place
    * that does.
    */
-  piProviderCatalog?: (auth: SignedControlPlaneAuth) => Promise<Record<string, unknown>>
+  piProviderCatalog?: (auth: SignedControlPlaneAuth) => Promise<PiProviderCatalog>
   opencodeProviderCatalog?: (auth: SignedControlPlaneAuth, workspaceId?: string) => Promise<OpenCodeCatalog>
   /**
    * Ask the runtime of a workspace placed on a machine for harness health and
@@ -538,6 +541,18 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         return c.json(await options.piProviderCatalog(auth))
       } catch (err) {
         if (err instanceof ProviderCatalogViewError) return c.json({ error: { code: err.code, message: err.message } }, err.status)
+        return authErrorResponse(c, err)
+      }
+    })
+    .get("/api/claxedo/agent-config/harness/options", async (c) => {
+      try {
+        const auth = await signedAuth(c, options)
+        if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+        if (c.req.query("nativeHarness") !== "pi") return c.json({ error: { code: "harness_options_unsupported", message: "Only a Pi draft's options are answered here" } }, 400)
+        if (!options.piProviderCatalog) return c.json({ error: { code: "provider_catalog_unavailable", message: "Pi provider catalog is not configured" } }, 503)
+        const catalog = await options.piProviderCatalog(auth)
+        return c.json(piCatalogOptions(piLaunchCatalog(catalog.connected), c.req.query("model") || undefined))
+      } catch (err) {
         return authErrorResponse(c, err)
       }
     })

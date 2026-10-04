@@ -5,6 +5,7 @@ import {
   piCredentialProviderIDs,
   type PiLaunchProvider,
 } from "@claxedo/agent-runtime-contract"
+import { piLaunchCatalog } from "@claxedo/harness/pi-catalog"
 import type { CredentialKind, CredentialMetadata } from "./types"
 import { VENDOR_PROVIDER_NAMES } from "./vendor-providers"
 
@@ -41,7 +42,7 @@ const providerNames: Record<PiLaunchProvider, string> = { "openai-codex": "OpenA
  * Registry connection metadata, from each connected Pi provider to the stored
  * provider id whose row connects it. A provider connected by another harness's
  * login (Anthropic through Claude Code's) names that harness and is not Pi's
- * to disconnect. Models come from the selected machine runtime.
+ * to disconnect. Models are the launch catalog the session host runs Pi with.
  */
 export function projectPiProviderCatalog(connected: ReadonlyMap<string, string>) {
   const source = (id: PiLaunchProvider) => {
@@ -50,10 +51,15 @@ export function projectPiProviderCatalog(connected: ReadonlyMap<string, string>)
     const harness = by === id ? undefined : harnessForProviderId(by)
     return harness ? { source: "harness", harness } : { source: "api" }
   }
+  const models = (id: PiLaunchProvider) => Object.fromEntries(piLaunchCatalog([id]).map((model) => {
+    const key = model.id.slice(id.length + 1)
+    return [key, { id: key, name: model.name }]
+  }))
   return {
-    all: PI_LAUNCH_PROVIDERS.map((id) => ({ id, name: providerNames[id], env: [], ...source(id), models: {} })),
+    all: PI_LAUNCH_PROVIDERS.map((id) => ({ id, name: providerNames[id], env: [], ...source(id), models: models(id) })),
     connected: PI_LAUNCH_PROVIDERS.filter((id) => connected.has(id)),
     default: {},
-    modelAvailability: "runtime_required" as const,
   }
 }
+
+export type PiProviderCatalog = ReturnType<typeof projectPiProviderCatalog>

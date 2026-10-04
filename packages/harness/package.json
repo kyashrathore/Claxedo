@@ -59,6 +59,12 @@
       "types": "./dist/transports/pi-durable/index.d.ts",
       "import": "./dist/transports/pi-durable/index.js"
     },
+    "./pi-catalog": {
+      "development": "./src/transports/pi-durable/launch-catalog.ts",
+      "bun": "./src/transports/pi-durable/launch-catalog.ts",
+      "types": "./dist/transports/pi-durable/launch-catalog.d.ts",
+      "import": "./dist/transports/pi-durable/launch-catalog.js"
+    },
     "./pi-durable/mcp-stdio": {
       "development": "./src/transports/pi-durable/mcp-stdio.ts",
       "bun": "./src/transports/pi-durable/mcp-stdio.ts",
