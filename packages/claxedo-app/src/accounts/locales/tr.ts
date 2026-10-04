@@ -51,8 +51,6 @@ export default {
   "settings.providers.agents.machineUnknown": "Bu ajana sorulamadı",
   "settings.providers.agents.machineCursorAcp": "Cursor ACP ile çalışır",
   "settings.providers.agents.machineCursorSdkKey": "Cursor SDK bir API anahtarı gerektirir",
-  "settings.providers.agents.reachLocal": "Bu bilgisayar",
-  "settings.providers.agents.reachCloud": "Bulut korumalı alanları",
   "settings.providers.agents.reachLocalCloudNote": "Bu bilgisayarda ve bulut korumalı alanlarında çalışır.",
   "settings.providers.agents.reachLocalOnlyNote": "Bu oturumu yalnızca bu bilgisayardaki çalışma alanları kullanabilir. Bulut korumalı alanları burada eklenmiş bir hesap ister.",
   "settings.providers.agents.machineStrands": "{{name}}, bu oturumun yerini alamayacağı kayıtlı bir anahtarla çalışacak şekilde ayarlı",

@@ -51,8 +51,6 @@ export default {
   "settings.providers.agents.machineUnknown": "Не удалось опросить этого агента",
   "settings.providers.agents.machineCursorAcp": "Работает с Cursor ACP",
   "settings.providers.agents.machineCursorSdkKey": "для Cursor SDK нужен ключ API",
-  "settings.providers.agents.reachLocal": "Этот компьютер",
-  "settings.providers.agents.reachCloud": "Облачные песочницы",
   "settings.providers.agents.reachLocalCloudNote": "Работает на этом компьютере и в облачных песочницах.",
   "settings.providers.agents.reachLocalOnlyNote": "Этот вход доступен только рабочим пространствам на этом компьютере. Облачным песочницам нужна учётная запись, добавленная здесь.",
   "settings.providers.agents.machineStrands": "{{name}} настроен на сохранённый ключ, который этот вход не заменит",

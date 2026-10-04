@@ -51,8 +51,6 @@ export default {
   "settings.providers.agents.machineUnknown": "Kunne ikke spørge denne agent",
   "settings.providers.agents.machineCursorAcp": "Virker med Cursor ACP",
   "settings.providers.agents.machineCursorSdkKey": "Cursor SDK kræver en API-nøgle",
-  "settings.providers.agents.reachLocal": "Denne computer",
-  "settings.providers.agents.reachCloud": "Sandkasser i skyen",
   "settings.providers.agents.reachLocalCloudNote": "Kører på denne computer og i sandkasser i skyen.",
   "settings.providers.agents.reachLocalOnlyNote": "Kun arbejdsområder på denne computer kan bruge dette login. Sandkasser i skyen kræver en konto tilføjet her.",
   "settings.providers.agents.machineStrands": "{{name}} kører på en gemt nøgle, som dette login ikke kan erstatte",

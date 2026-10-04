@@ -33,7 +33,17 @@ function useAccountRows(props: HarnessRowProps) {
   })
 }
 
-function AccountLabel(props: { readonly account: AccountWords }) {
+function sourceKey(account: AccountWords) {
+  if (account.key === ORG_ACCOUNT_KEY) return undefined
+  return account.machine ? "settings.providers.agents.sourceMachine" : "settings.providers.agents.sourceStored"
+}
+
+function AccountLabel(props: { readonly account: AccountWords; readonly onMachine: boolean }) {
+  const t = useAccountsText()
+  const source = () => {
+    const key = sourceKey(props.account)
+    return key ? t(key) : undefined
+  }
   return (
     <span class="flex flex-wrap items-center gap-1.5">
       <span class="text-13-regular text-text-strong">{props.account.label}</span>
@@ -47,7 +57,7 @@ function AccountLabel(props: { readonly account: AccountWords }) {
       <Show when={props.account.alert}>
         {(alert) => <ClaxedoIcon name="circle-alert" size="small" class="icon-warning-base" role="img" aria-hidden="false" aria-label={alert()} />}
       </Show>
-      <Show when={props.account.reach}>{(reach) => <Reach reach={reach()} />}</Show>
+      <Show when={props.onMachine ? props.account.reach : undefined}>{(reach) => <Reach reach={reach()} source={source()} />}</Show>
     </span>
   )
 }
@@ -90,7 +100,7 @@ function AccountItem(props: { readonly account: AccountWords; readonly row: Harn
           disabled={account().disabled}
           data-invalid={account().refused ? "" : undefined}
           title={account().identity}
-          label={<AccountLabel account={account()} />}
+          label={<AccountLabel account={account()} onMachine={accounts().onMachine()} />}
           description={account().detail === undefined ? undefined : <span class="text-13-regular text-text-weak">{account().detail}</span>}
         />
         <span class="flex shrink-0 items-center justify-end gap-2" classList={{ "w-full": confirming() }}>
@@ -138,6 +148,16 @@ function HarnessHeader(props: { readonly harness: Harness; readonly connecting: 
   )
 }
 
+function NoAccount(props: { readonly harness: Harness; readonly onAdd: () => void }) {
+  const t = useAccountsText()
+  return (
+    <div class="flex flex-wrap items-center justify-between gap-3 py-2">
+      <span class="text-13-regular text-text-weak">{t("settings.providers.agents.empty", { harness: props.harness.label })}</span>
+      <Button size="small" variant="neutral" data-action="agent-add-account" onClick={() => props.onAdd()}>{t("settings.providers.agents.addAccount")}</Button>
+    </div>
+  )
+}
+
 export function AgentHarnessRow(props: HarnessRowProps) {
   const t = useAccountsText()
   const dialog = useDialog()
@@ -159,7 +179,7 @@ export function AgentHarnessRow(props: HarnessRowProps) {
         <HarnessHeader harness={props.harness} connecting={connecting()} onAdd={() => openConnect()} />
       </Show>
       <div class="mb-3 flex flex-col" classList={{ "ml-8": !props.headerless }}>
-        <Show when={rows().length > 0}>
+        <Show when={rows().length > 0} fallback={<NoAccount harness={props.harness} onAdd={() => openConnect()} />}>
           <RadioGroup
             name={`agent-account-${props.harness.id}`}
             aria-label={props.harness.label}

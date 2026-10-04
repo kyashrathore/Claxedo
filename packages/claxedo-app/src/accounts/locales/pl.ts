@@ -51,8 +51,6 @@ export default {
   "settings.providers.agents.machineUnknown": "Nie udało się zapytać tego agenta",
   "settings.providers.agents.machineCursorAcp": "Działa z Cursor ACP",
   "settings.providers.agents.machineCursorSdkKey": "Cursor SDK wymaga klucza API",
-  "settings.providers.agents.reachLocal": "Ten komputer",
-  "settings.providers.agents.reachCloud": "Piaskownice w chmurze",
   "settings.providers.agents.reachLocalCloudNote": "Działa na tym komputerze i w piaskownicach w chmurze.",
   "settings.providers.agents.reachLocalOnlyNote": "Z tego logowania mogą korzystać tylko przestrzenie robocze na tym komputerze. Piaskownice w chmurze potrzebują konta dodanego tutaj.",
   "settings.providers.agents.machineStrands": "{{name}} korzysta z zapisanego klucza, którego to logowanie nie zastąpi",

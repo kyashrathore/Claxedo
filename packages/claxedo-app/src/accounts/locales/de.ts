@@ -51,8 +51,6 @@ export default {
   "settings.providers.agents.machineUnknown": "Dieser Agent war nicht erreichbar",
   "settings.providers.agents.machineCursorAcp": "Funktioniert mit Cursor ACP",
   "settings.providers.agents.machineCursorSdkKey": "das Cursor SDK braucht einen API-Schlüssel",
-  "settings.providers.agents.reachLocal": "Dieser Computer",
-  "settings.providers.agents.reachCloud": "Cloud-Sandboxes",
   "settings.providers.agents.reachLocalCloudNote": "Läuft auf diesem Computer und in Cloud-Sandboxes.",
   "settings.providers.agents.reachLocalOnlyNote": "Nur Arbeitsbereiche auf diesem Computer können diese Anmeldung nutzen. Cloud-Sandboxes brauchen ein hier hinzugefügtes Konto.",
   "settings.providers.agents.machineStrands": "{{name}} ist auf einen gespeicherten Schlüssel eingestellt, den dieses Login nicht ersetzen kann",

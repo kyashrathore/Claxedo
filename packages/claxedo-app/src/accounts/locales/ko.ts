@@ -51,8 +51,6 @@ export default {
   "settings.providers.agents.machineUnknown": "이 에이전트에 물어보지 못했습니다",
   "settings.providers.agents.machineCursorAcp": "Cursor ACP에서 작동합니다",
   "settings.providers.agents.machineCursorSdkKey": "Cursor SDK에는 API 키가 필요합니다",
-  "settings.providers.agents.reachLocal": "이 컴퓨터",
-  "settings.providers.agents.reachCloud": "클라우드 샌드박스",
   "settings.providers.agents.reachLocalCloudNote": "이 컴퓨터에서도, 클라우드 샌드박스에서도 실행됩니다.",
   "settings.providers.agents.reachLocalOnlyNote": "이 로그인은 이 컴퓨터의 워크스페이스에서만 쓸 수 있습니다. 클라우드 샌드박스에는 여기서 추가한 계정이 필요합니다.",
   "settings.providers.agents.machineStrands": "{{name}}은(는) 이 로그인으로 대체할 수 없는 저장된 키로 실행되도록 설정되어 있습니다",

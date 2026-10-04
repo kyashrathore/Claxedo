@@ -1,5 +1,5 @@
-import { Spinner } from "@/ui"
 import { Show } from "solid-js"
+import { useElapsed } from "@/lib/delay"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { useI18n } from "@/i18n"
 import { SettingsEmpty, SettingsList } from "@/settings"
@@ -10,15 +10,15 @@ import { AgentHarnessRow } from "./harness-row"
 
 const UNREAD: AccountsSnapshot = { cloudOnly: false, stored: [], effective: undefined, machineLogins: [], sources: { sources: new Map(), org: [], canRemoveOrgAccounts: false }, scannedAt: 0 }
 
-function ScanningNote() {
+function LoadingNote(props: { readonly onMachine: boolean }) {
   const t = useAccountsText()
+  const elapsed = useElapsed()
   return (
-    <SettingsEmpty>
-      <span class="flex items-center justify-center gap-2">
-        <Spinner class="size-4" />
-        <span>{t("settings.providers.agents.scanning")}</span>
-      </span>
-    </SettingsEmpty>
+    <Show when={elapsed()}>
+      <SettingsEmpty>
+        <span role="status">{t(props.onMachine ? "settings.providers.agents.scanning" : "settings.providers.agents.loading")}</span>
+      </SettingsEmpty>
+    </Show>
   )
 }
 
@@ -58,7 +58,7 @@ export function AgentHarnessAccounts(props: { readonly harness: Harness; readonl
     return load.kind === "failed" ? UNREAD : undefined
   }
   return (
-    <Show when={snapshot()} fallback={<ScanningNote />}>
+    <Show when={snapshot()} fallback={<LoadingNote onMachine={props.accounts.onMachine()} />}>
       {(current) => (
         <SettingsList>
           <AgentHarnessRow

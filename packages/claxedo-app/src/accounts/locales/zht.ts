@@ -51,8 +51,6 @@ export default {
   "settings.providers.agents.machineUnknown": "無法詢問該代理",
   "settings.providers.agents.machineCursorAcp": "適用於 Cursor ACP",
   "settings.providers.agents.machineCursorSdkKey": "Cursor SDK 需要 API 金鑰",
-  "settings.providers.agents.reachLocal": "這台電腦",
-  "settings.providers.agents.reachCloud": "雲端沙箱",
   "settings.providers.agents.reachLocalCloudNote": "可在這台電腦上執行，也可在雲端沙箱中執行。",
   "settings.providers.agents.reachLocalOnlyNote": "只有這台電腦上的工作區能使用這個登入。雲端沙箱需要在此新增帳戶。",
   "settings.providers.agents.machineStrands": "{{name}} 目前設定使用的是此登入無法取代的已儲存金鑰",

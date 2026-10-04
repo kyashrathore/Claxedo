@@ -51,8 +51,6 @@ export default {
   "settings.providers.agents.machineUnknown": "Kunne ikke spørre denne agenten",
   "settings.providers.agents.machineCursorAcp": "Fungerer med Cursor ACP",
   "settings.providers.agents.machineCursorSdkKey": "Cursor SDK krever en API-nøkkel",
-  "settings.providers.agents.reachLocal": "Denne maskinen",
-  "settings.providers.agents.reachCloud": "Sandkasser i skyen",
   "settings.providers.agents.reachLocalCloudNote": "Kjører på denne maskinen og i sandkasser i skyen.",
   "settings.providers.agents.reachLocalOnlyNote": "Bare arbeidsområder på denne maskinen kan bruke denne innloggingen. Sandkasser i skyen trenger en konto lagt til her.",
   "settings.providers.agents.machineStrands": "{{name}} kjører på en lagret nøkkel som denne innloggingen ikke kan erstatte",

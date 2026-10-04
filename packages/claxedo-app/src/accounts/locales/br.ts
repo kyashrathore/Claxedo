@@ -51,8 +51,6 @@ export default {
   "settings.providers.agents.machineUnknown": "Não foi possível consultar este agente",
   "settings.providers.agents.machineCursorAcp": "Funciona com o Cursor ACP",
   "settings.providers.agents.machineCursorSdkKey": "o SDK do Cursor precisa de uma chave de API",
-  "settings.providers.agents.reachLocal": "Este computador",
-  "settings.providers.agents.reachCloud": "Sandboxes na nuvem",
   "settings.providers.agents.reachLocalCloudNote": "Funciona neste computador e em sandboxes na nuvem.",
   "settings.providers.agents.reachLocalOnlyNote": "Apenas os espaços de trabalho deste computador podem usar este login. Sandboxes na nuvem precisam de uma conta adicionada aqui.",
   "settings.providers.agents.machineStrands": "{{name}} está definido para usar uma chave salva que este login não substitui",

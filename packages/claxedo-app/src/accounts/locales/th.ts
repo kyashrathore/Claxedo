@@ -51,8 +51,6 @@ export default {
   "settings.providers.agents.machineUnknown": "ถามเอเจนต์นี้ไม่ได้",
   "settings.providers.agents.machineCursorAcp": "ใช้ได้กับ Cursor ACP",
   "settings.providers.agents.machineCursorSdkKey": "Cursor SDK ต้องใช้คีย์ API",
-  "settings.providers.agents.reachLocal": "คอมพิวเตอร์เครื่องนี้",
-  "settings.providers.agents.reachCloud": "แซนด์บ็อกซ์บนคลาวด์",
   "settings.providers.agents.reachLocalCloudNote": "ทำงานได้ทั้งบนคอมพิวเตอร์เครื่องนี้และในแซนด์บ็อกซ์บนคลาวด์",
   "settings.providers.agents.reachLocalOnlyNote": "มีเพียงพื้นที่ทำงานบนคอมพิวเตอร์เครื่องนี้ที่ใช้การเข้าสู่ระบบนี้ได้ แซนด์บ็อกซ์บนคลาวด์ต้องใช้บัญชีที่เพิ่มไว้ที่นี่",
   "settings.providers.agents.machineStrands": "{{name}} ตั้งค่าให้ใช้คีย์ที่บันทึกไว้ซึ่งการเข้าสู่ระบบนี้แทนที่ไม่ได้",

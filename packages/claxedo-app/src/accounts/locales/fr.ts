@@ -51,8 +51,6 @@ export default {
   "settings.providers.agents.machineUnknown": "Impossible d'interroger cet agent",
   "settings.providers.agents.machineCursorAcp": "Fonctionne avec Cursor ACP",
   "settings.providers.agents.machineCursorSdkKey": "le SDK Cursor nécessite une clé API",
-  "settings.providers.agents.reachLocal": "Cet ordinateur",
-  "settings.providers.agents.reachCloud": "Bacs à sable cloud",
   "settings.providers.agents.reachLocalCloudNote": "Fonctionne sur cet ordinateur et dans les bacs à sable cloud.",
   "settings.providers.agents.reachLocalOnlyNote": "Seuls les espaces de travail de cet ordinateur peuvent utiliser cette connexion. Les bacs à sable cloud ont besoin d'un compte ajouté ici.",
   "settings.providers.agents.machineStrands": "{{name}} est configuré sur une clé enregistrée que cette connexion ne peut pas remplacer",

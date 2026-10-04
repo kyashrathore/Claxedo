@@ -3,7 +3,7 @@ import { ClaxedoIconButton, Button, Tooltip } from "@/ui"
 import type { AccountWords } from "../account-words"
 import { useAccountsText } from "../i18n"
 import { ORG_ACCOUNT_KEY, type AccountReach } from "../model"
-import { ACCOUNT_REACH_KEYS, AccountReachMarks } from "./account-status"
+import { ACCOUNT_REACH_KEYS } from "./account-status"
 
 export function LabelHint(props: { readonly value: string; readonly children: JSX.Element }) {
   return (
@@ -15,11 +15,13 @@ export function LabelHint(props: { readonly value: string; readonly children: JS
   )
 }
 
-export function Reach(props: { readonly reach: AccountReach }) {
+export function Reach(props: { readonly reach: AccountReach; readonly source?: string }) {
   const t = useAccountsText()
   return (
     <LabelHint value={t(ACCOUNT_REACH_KEYS[props.reach].note)}>
-      <AccountReachMarks reach={props.reach} t={t} class="flex items-center gap-1" iconClass="icon-weak-base" />
+      <span class="text-12-regular text-text-weak" data-reach={props.reach}>
+        {[props.source, t(ACCOUNT_REACH_KEYS[props.reach].label)].filter(Boolean).join(" · ")}
+      </span>
     </LabelHint>
   )
 }

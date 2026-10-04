@@ -51,8 +51,6 @@ export default {
   "settings.providers.agents.machineUnknown": "このエージェントに問い合わせできませんでした",
   "settings.providers.agents.machineCursorAcp": "Cursor ACP で動作します",
   "settings.providers.agents.machineCursorSdkKey": "Cursor SDK には API キーが必要です",
-  "settings.providers.agents.reachLocal": "このコンピュータ",
-  "settings.providers.agents.reachCloud": "クラウドのサンドボックス",
   "settings.providers.agents.reachLocalCloudNote": "このコンピュータでも、クラウドのサンドボックスでも動作します。",
   "settings.providers.agents.reachLocalOnlyNote": "このログインを使えるのは、このコンピュータのワークスペースだけです。クラウドのサンドボックスにはここで追加したアカウントが必要です。",
   "settings.providers.agents.machineStrands": "{{name}} はこのログインでは代替できない保存済みキーで動作する設定です",

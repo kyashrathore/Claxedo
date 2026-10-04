@@ -51,8 +51,6 @@ export default {
   "settings.providers.agents.machineUnknown": "تعذّر سؤال هذا الوكيل",
   "settings.providers.agents.machineCursorAcp": "يعمل مع Cursor ACP",
   "settings.providers.agents.machineCursorSdkKey": "يحتاج Cursor SDK إلى مفتاح API",
-  "settings.providers.agents.reachLocal": "هذا الكمبيوتر",
-  "settings.providers.agents.reachCloud": "صناديق العمل السحابية",
   "settings.providers.agents.reachLocalCloudNote": "يعمل على هذا الكمبيوتر وفي صناديق العمل السحابية.",
   "settings.providers.agents.reachLocalOnlyNote": "مساحات العمل على هذا الكمبيوتر وحدها يمكنها استخدام تسجيل الدخول هذا. تحتاج الصناديق السحابية إلى حساب مضاف هنا.",
   "settings.providers.agents.machineStrands": "{{name}} مضبوط على مفتاح محفوظ لا يمكن لتسجيل الدخول هذا أن يحل محله",
