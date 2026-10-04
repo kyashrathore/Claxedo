@@ -32,6 +32,7 @@ import {
   type SandboxCheckpointResult,
 } from "./checkpoint-manager"
 import { applySandboxRuntimeSnapshot } from "./runtime-snapshot"
+import { createSandboxStartRecorder } from "./start-telemetry"
 import { workspaceRuntimeIdentityEnvConflicts } from "./runtime-env"
 
 function egressUnenforcedMessage(input: {
@@ -166,6 +167,12 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
    * assertion about a promise nobody re-checked.
    */
   const lifecycleOperations = new Map<string, LifecycleOperation>()
+  const starts = createSandboxStartRecorder({
+    leaseStore: options.leaseStore,
+    driver: options.driver.id,
+    now,
+    ...(options.onStartPhase ? { onStartPhase: options.onStartPhase } : {}),
+  })
 
   function reportEgressUnenforced(input: { workspaceId: string; requested: SandboxNetworkPolicy }) {
     onEgressUnenforced({
@@ -282,12 +289,14 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
 
   // Runs driver ensure/resume for an owned lease epoch and records the
   // outcome. Shared by the fresh-acquire path, the ready-lease resume path,
-  // and the in-flight provisioning re-poll path.
+  // and the in-flight provisioning re-poll path. `enteredAt` is when the
+  // ensure that got here began, which is when a start it begins began.
   async function provision(
     workspaceId: string,
     lease: SandboxLease,
     homeRegion: SandboxRegion,
-    managerInput?: SandboxManagerInput,
+    managerInput: SandboxManagerInput,
+    enteredAt: number,
   ): Promise<SandboxEnsureResult> {
     try {
       const ensure = ensureHostInput({
@@ -314,6 +323,14 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           homeRegion,
         }
       }
+      const resuming = Boolean(lease.sandboxId && ensure.bootSource?.kind === "default" && options.driver.resumeHost)
+      const bootMode: SandboxBootMode = resuming ? "resume" : ensure.bootSource?.kind === "driver-snapshot" ? "restore" : "cold-start"
+      // A serving lease is re-ensured on every connection; only a lease that is
+      // not serving yet is starting, and an epoch starts once.
+      let start = lease.status === "ready" ? undefined : lease.start ?? await starts.begin(lease, bootMode, enteredAt, ensure.labels)
+      const ended = async (phase: "provider_ready" | "image_ready" | "runtime_ready") => {
+        if (start) start = await starts.mark(lease, start, phase, ensure.labels)
+      }
       ensure.onResource = async (resource) => {
         const recorded = await options.leaseStore.recordTarget(workspaceId, lease.epoch, {
           ...resource,
@@ -321,8 +338,9 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           persistence: options.driver.metadata.persistence,
         })
         if (!recorded) throw new Error("runtime_lease_changed")
+        await ended("provider_ready")
       }
-      const resuming = Boolean(lease.sandboxId && ensure.bootSource?.kind === "default" && options.driver.resumeHost)
+      ensure.onImageReady = () => ended("image_ready")
       const target = resuming
         ? await options.driver.resumeHost!({ lease, ensure })
         : await options.driver.ensureHost(ensure)
@@ -340,7 +358,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           // Honest progress for the connect UI: which of the three boot paths
           // this cycle is on. Derived from the same inputs that CHOSE the path
           // above, so it cannot drift from what actually ran.
-          bootMode: resuming ? "resume" : ensure.bootSource?.kind === "driver-snapshot" ? "restore" : "cold-start",
+          bootMode,
         }
       }
       const updated = await options.leaseStore.recordTarget(workspaceId, lease.epoch, {
@@ -357,7 +375,10 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       })
       if (!updated) return { status: "unavailable", error: "runtime_lease_changed", epoch: lease.epoch, homeRegion }
       const resolved = await leaseTarget(updated)
-      if (resolved.status === "ready") return resolved
+      if (resolved.status === "ready") {
+        await ended("runtime_ready")
+        return resolved
+      }
       return {
         status: "unavailable",
         error: resolved.reason,
@@ -412,6 +433,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
 
   return {
     async ensure(workspaceId, input) {
+      const enteredAt = now()
       // Egress disposition, decided BEFORE a lease is acquired.
       //
       // A caller that hands us a restricted policy is stating that this sandbox
@@ -486,12 +508,12 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         existing.status === "unavailable"
         || (existing.status === "acquiring" && (existing.nextRetryAt !== undefined || now() - existing.updatedAt >= staleAfterMs))
       )) {
-        return provision(workspaceId, existing, existing.homeRegion, input)
+        return provision(workspaceId, existing, existing.homeRegion, input, enteredAt)
       }
       if (existing?.status === "ready") {
         // Lazy resume: sandbox services can auto-stop/sleep runtimes, so a ready lease
         // must still be re-ensured through the driver (same epoch).
-        return provision(workspaceId, existing, existing.homeRegion, input)
+        return provision(workspaceId, existing, existing.homeRegion, input, enteredAt)
       }
       if (
         existing?.status === "acquiring" &&
@@ -502,7 +524,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         // arrived: continue the in-flight provision on the same epoch instead
         // of waiting for staleness (which would bump the epoch and orphan the
         // first sandbox).
-        return provision(workspaceId, existing, existing.homeRegion, input)
+        return provision(workspaceId, existing, existing.homeRegion, input, enteredAt)
       }
       const acquired = await options.leaseStore.acquire(workspaceId, {
         homeRegion: input.homeRegion,
@@ -519,7 +541,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           bootMode: leaseBootMode(acquired.lease),
         }
       }
-      return provision(workspaceId, acquired.lease, input.homeRegion, input)
+      return provision(workspaceId, acquired.lease, input.homeRegion, input, enteredAt)
     },
     async register(workspaceId, input) {
       return await runtimeSnapshot(workspaceId, input)
@@ -692,6 +714,8 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       return result
     },
     list: () => options.leaseStore.list(),
+    recordStartPhases: (workspaceId, input) => starts.report(workspaceId, input),
+    markStartPhase: (workspaceId, input) => starts.markAfter(workspaceId, input),
   }
 
   // A manager's only observer of the sandbox is the sandbox itself, so an

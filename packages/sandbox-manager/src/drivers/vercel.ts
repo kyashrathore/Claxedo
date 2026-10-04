@@ -427,6 +427,7 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
       throw err
     })
     if (!sandbox) return { provisioning: true as const, retryAfterMs: 2_000 }
+    await input.onImageReady?.()
     if (input.secrets?.length) {
       // Inject brokered credentials at the firewall — the raw values never
       // reach the sandbox env; they are spliced onto egress to their hosts.

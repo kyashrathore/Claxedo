@@ -272,6 +272,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
   async function boot(sandboxId: string, input: SandboxDriverEnsureInput, hostId: string): Promise<SandboxTarget> {
     const port = runtimePort(input)
     await startContainer(sandboxId, input, hostId)
+    await input.onImageReady?.()
     // Boat gates a hosted port behind a `_token` query, and `host url` prints
     // the gated URL again unless it also carries `--public`. The relay joins
     // request paths onto this base URL and would drop that query, so the

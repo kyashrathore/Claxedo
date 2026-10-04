@@ -1,5 +1,5 @@
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "./constants"
-import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
+import type { SandboxPhaseTiming, SandboxSecretBrokering, SandboxStartPhase } from "@claxedo/sandbox-contract"
 
 export type { SandboxProvisionerID, SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import {
@@ -302,6 +302,31 @@ export type SandboxLease = {
   checkpoint?: SandboxCheckpointReference
   persistence?: SandboxPersistenceCapabilities
   restore?: SandboxRestoreStatus
+  /** This epoch's start, recorded while it boots; a new epoch starts without one. */
+  start?: SandboxStartProgress
+}
+
+/**
+ * One lease epoch's start as far as it has been observed. Persisted because a
+ * start outlives the ensure call that began it: a driver that answers
+ * "provisioning" is polled again from another request, often another isolate.
+ */
+export type SandboxStartProgress = {
+  startedAt: number
+  bootMode: SandboxBootMode
+  /** When the last phase the control plane itself observed ended; the next one is timed from here. */
+  markedAt: number
+  phases: SandboxStartPhase[]
+}
+
+export type SandboxStartPhaseEvent = SandboxPhaseTiming<SandboxStartPhase> & {
+  workspaceId: string
+  epoch: number
+  driver: string
+  homeRegion: SandboxRegion
+  bootMode: SandboxBootMode
+  labels: Record<string, string>
+  repoSizeBytes?: number
 }
 
 export type SandboxLeaseAcquireInput = {
@@ -344,6 +369,7 @@ export type SandboxLeasePatch = Partial<
   checkpoint?: SandboxCheckpointReference | null
   /** `null` clears the stored value; `undefined` leaves it unchanged. */
   restore?: SandboxRestoreStatus | null
+  start?: SandboxStartProgress
 }
 
 /**
@@ -361,6 +387,7 @@ export function applySandboxLeasePatch(current: SandboxLease, patch: SandboxLeas
     ...(patch.lastError === undefined ? {} : { lastError: patch.lastError ?? undefined }),
     ...(patch.checkpoint === undefined ? {} : { checkpoint: patch.checkpoint ?? undefined }),
     ...(patch.restore === undefined ? {} : { restore: patch.restore ?? undefined }),
+    ...(patch.start === undefined ? {} : { start: patch.start }),
     updatedAt,
   }
 }
@@ -457,6 +484,8 @@ export type SandboxSource = { kind: "git"; repoUrl: string; branch?: string } | 
 export type SandboxDriverEnsureInput = {
   /** Await before readiness polling so the manager can durably fence the resource identity. */
   onResource?: (resource: Omit<SandboxProvisionedTarget, "url" | "persistence">) => Promise<void>
+  /** Called by a driver that sees its sandbox running from the image or snapshot before the runtime is up. */
+  onImageReady?: () => Promise<void>
   workspaceId: string
   hostId?: string
   homeRegion: SandboxRegion
@@ -550,6 +579,20 @@ export type SandboxManager = {
   release: (workspaceId: string) => Promise<{ released: boolean }>
   garbageCollect: () => Promise<SandboxGarbageCollectResult>
   list: () => Promise<SandboxLease[]>
+  /** Phases the runtime timed inside its sandbox, recorded into that epoch's start once each. */
+  recordStartPhases: (workspaceId: string, input: SandboxStartPhasesReport) => Promise<void>
+  /**
+   * Ends `phase` now, timed from the start's last observed phase. `notBefore`
+   * is when the evidence for it came into being; evidence older than the start
+   * belongs to an earlier one and records nothing.
+   */
+  markStartPhase: (workspaceId: string, input: { epoch: number; phase: SandboxStartPhase; notBefore: number }) => Promise<void>
+}
+
+export type SandboxStartPhasesReport = {
+  epoch: number
+  phases: readonly SandboxPhaseTiming<SandboxStartPhase>[]
+  repoSizeBytes?: number
 }
 
 export type SandboxManagerInput = {
@@ -732,5 +775,7 @@ export type SandboxManagerOptions = {
    * Pass `() => {}` only if you have another way to surface it.
    */
   onEgressUnenforced?: (event: SandboxEgressUnenforcedEvent) => void
+  /** Receives each start phase as it ends; a sink that throws is ignored. */
+  onStartPhase?: (event: SandboxStartPhaseEvent) => void
 }
 
