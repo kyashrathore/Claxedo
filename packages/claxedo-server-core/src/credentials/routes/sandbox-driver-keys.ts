@@ -11,6 +11,9 @@ import type { CredentialMetadata, CredentialWrite } from "../types"
 
 export type SandboxDriverKeyContext = { org: string; person: string; localOperator: boolean }
 
+/** A removed key, a key that was already gone, or the number of workspaces still on it, which keeps it. */
+export type SandboxKeyRemoval = { deleted: boolean } | { workspaces: number }
+
 /**
  * How one host keeps sandbox provider keys. A hosted plane keeps the
  * organization's keys (owner `null`) beside a deployment-managed driver; a
@@ -25,6 +28,12 @@ export type SandboxDriverKeys = {
   canManage: (request: Request, context: SandboxDriverKeyContext) => Promise<boolean>
   chosenDriver: (context: SandboxDriverKeyContext) => Promise<string | undefined>
   chooseDriver: (request: Request, context: SandboxDriverKeyContext, driver: SandboxDriverID | undefined) => Promise<void>
+  /**
+   * Present on a host whose workspaces record the key their machine was made
+   * on: a key is removed only while none of them still uses it, since their
+   * stop and destroy need it.
+   */
+  removeKey?: (request: Request, context: SandboxDriverKeyContext, keyId: string) => Promise<SandboxKeyRemoval>
 }
 
 function keyOwner(keys: SandboxDriverKeys, context: SandboxDriverKeyContext) {

@@ -1,4 +1,4 @@
-import type { SandboxDriver, SandboxGarbageCollectResult, SandboxLeaseStore, SandboxManager } from "@claxedo/sandbox-manager"
+import type { SandboxDriver, SandboxGarbageCollectResult, SandboxLease, SandboxLeaseStore, SandboxManager } from "@claxedo/sandbox-manager"
 import type { SandboxKeyedDriver } from "../authority/services"
 import { OPERATOR_SANDBOX_KEY, type OrgSandboxDrivers, type SandboxKeyBinding } from "./org-sandbox-drivers"
 
@@ -17,8 +17,9 @@ export function sandboxKeyOwner(key: string | undefined): SandboxKeyedDriver["ke
  * provider account that made the machine even after the organization adds or
  * switches keys. Lease-only operations need no driver and go to the operator's
  * manager, which shares the one lease store. A sweep visits the operator's
- * account and every organization key a lease names, each through its own
- * driver; one organization's revoked or removed key cannot stop the others'.
+ * account and every organization key a live machine was made on, each through
+ * its own driver; one organization's revoked or removed key cannot stop the
+ * others'.
  */
 export function createOrgSandboxManager(input: {
   leaseStore: SandboxLeaseStore
@@ -35,10 +36,7 @@ export function createOrgSandboxManager(input: {
     return manager
   }
   const bound = async (workspaceId: string, fresh: boolean): Promise<{ binding: SandboxKeyBinding; orgId?: string }> => {
-    const lease = await input.leaseStore.get(workspaceId)
-    const labels = lease && lease.status !== "destroyed" ? lease.labels : undefined
-    const key = labels?.[SANDBOX_KEY_LABEL]
-    const recordedOrg = labels?.[SANDBOX_ORG_LABEL]
+    const { key, orgId: recordedOrg } = machineKey(await input.leaseStore.get(workspaceId)) ?? {}
     if (key && key !== OPERATOR_SANDBOX_KEY && recordedOrg) {
       return { binding: await input.drivers.forKey(recordedOrg, key), orgId: recordedOrg }
     }
@@ -88,11 +86,19 @@ export function createOrgSandboxManager(input: {
   }
 }
 
+/**
+ * The key a lease's machine spends. A lease names its key from the moment it is taken, but one that never made a
+ * machine, or whose machine was destroyed, holds nothing on that key's account.
+ */
+function machineKey(lease: SandboxLease | undefined) {
+  if (!lease || lease.status === "destroyed" || !lease.sandboxId) return undefined
+  return { key: lease.labels?.[SANDBOX_KEY_LABEL], orgId: lease.labels?.[SANDBOX_ORG_LABEL] }
+}
+
 async function leasedOrgKeys(leaseStore: SandboxLeaseStore) {
   const keys = new Map<string, { key: string; orgId: string; driver: string }>()
   for (const lease of await leaseStore.list()) {
-    const key = lease.labels?.[SANDBOX_KEY_LABEL]
-    const orgId = lease.labels?.[SANDBOX_ORG_LABEL]
+    const { key, orgId } = machineKey(lease) ?? {}
     if (key && key !== OPERATOR_SANDBOX_KEY && orgId && !keys.has(key)) keys.set(key, { key, orgId, driver: lease.driver })
   }
   return [...keys.values()]

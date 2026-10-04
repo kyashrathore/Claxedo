@@ -334,6 +334,8 @@ export type SandboxLeaseAcquireInput = {
   driver: string
   staleAfterMs: number
   now?: number
+  /** The placement's labels, recorded on a fresh lease before the driver is asked for a resource; a resumed lease keeps its own. */
+  labels?: Record<string, string>
 }
 
 export type SandboxLeaseAcquireResult =

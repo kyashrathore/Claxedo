@@ -139,6 +139,16 @@ function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialB
   }
 }
 
+function sandboxKeyInUse(workspaces: number) {
+  const using = workspaces === 1 ? "1 workspace still uses" : `${workspaces} workspaces still use`
+  const them = workspaces === 1 ? "it" : "them"
+  return errorBody(
+    "sandbox_driver_key_in_use",
+    `${using} this sandbox provider key. Delete ${them} before removing the key.`,
+    { workspaces },
+  )
+}
+
 function invalidBody(error: z.ZodError) {
   return errorBody("credential_invalid_body", "Invalid credential request body", error.flatten())
 }
@@ -629,6 +639,11 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
     })
     .delete("/:id", async (c) => {
       const row = await readCredential(c.req.param("id"), org(c.req.raw))
+      if (row && sandboxKeys?.removeKey && await managedSandboxKey(c.req.raw, row)) {
+        const removal = await sandboxKeys.removeKey(c.req.raw, keyContext(c.req.raw), row.id)
+        if ("deleted" in removal) return c.json(removal)
+        return c.json(sandboxKeyInUse(removal.workspaces), 409)
+      }
       const removable = row && (
         row.owner === actor(c.req.raw)
         || (row.owner === null && fanoutEligible(row) && canRemoveOrgAccounts(c.req.raw))

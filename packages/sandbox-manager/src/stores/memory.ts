@@ -43,7 +43,7 @@ export function createMemoryLeaseStore(seed: SandboxLease[] = []): SandboxLeaseS
         driverResourceId: resumable ? current.driverResourceId : undefined,
         lastHeartbeatAt: resumable ? current.lastHeartbeatAt : undefined,
         lastActivityAt: resumable ? current.lastActivityAt : undefined,
-        labels: resumable ? current.labels : undefined,
+        labels: resumable ? current.labels : input.labels,
         checkpoint: current?.checkpoint,
         persistence: current?.persistence,
         restore: current?.restore,

@@ -31,6 +31,11 @@ export function orgSandboxDrivers(input: {
     (await input.credentials(orgId).listCredentials())
       .filter((row) => row.owner === null && row.kind === "sandbox_driver" && driverOf(row) !== undefined)
       .sort((left, right) => left.created_at - right.created_at)
+  const keyRow = async (orgId: string, key: string) => {
+    const row = (await orgKeys(orgId)).find((candidate) => candidate.id === key)
+    if (!row) throw new Error("The sandbox provider key this workspace was created with has been removed")
+    return row
+  }
   const built = new Map<string, SandboxKeyBinding>()
   const bind = async (orgId: string, row: CredentialMetadata): Promise<SandboxKeyBinding> => {
     const cached = built.get(row.id)
@@ -38,8 +43,17 @@ export function orgSandboxDrivers(input: {
     const id = driverOf(row)
     const secret = await input.credentials(orgId).resolveCredentialSecretById?.(row.id)
     const fields = secret ? parseJsonRecord(secret) : undefined
-    const driver = id && fields ? input.keys.create(id, jsonStringEntries(fields)) : undefined
-    if (!driver) throw new Error(`The organization's ${row.provider_id} sandbox provider key cannot build a driver`)
+    const created = id && fields ? input.keys.create(id, jsonStringEntries(fields)) : undefined
+    if (!created) throw new Error(`The organization's ${row.provider_id} sandbox provider key cannot build a driver`)
+    // The lease names this key before the driver is asked, and a key is removed only while no lease names it:
+    // reading the key again here refuses a machine on a key removed after this workspace chose it.
+    const driver: SandboxDriver = {
+      ...created,
+      ensureHost: async (ensure) => {
+        await keyRow(orgId, row.id)
+        return await created.ensureHost(ensure)
+      },
+    }
     const binding = { key: row.id, revision: row.revision, driver }
     built.set(row.id, binding)
     return binding
@@ -54,9 +68,7 @@ export function orgSandboxDrivers(input: {
       return row ? await bind(orgId, row) : operator
     },
     async forKey(orgId: string, key: string): Promise<SandboxKeyBinding> {
-      const row = (await orgKeys(orgId)).find((candidate) => candidate.id === key)
-      if (!row) throw new Error("The sandbox provider key this workspace was created with has been removed")
-      return await bind(orgId, row)
+      return await bind(orgId, await keyRow(orgId, key))
     },
   }
 }

@@ -30,5 +30,6 @@ export function hostedSandboxDriverKeys(input: {
         throw new Error("The organization's sandbox provider changed hands before it could be chosen")
       }
     },
+    remove: async (auth, orgId, keyId) => await store.remove(await person(auth), orgId, keyId),
   }
 }

@@ -1,15 +1,8 @@
 /**
- * `SandboxLeaseStore` over Cloudflare D1.
- *
- * Semantically identical to the local SQLite store (`./sqlite.ts`) — same
- * acquire/refuse rules, same epoch compare-and-set, same row<->port status
- * conversion via `sandboxLeaseStatus`. The ONE difference is how atomicity is
- * obtained: the SQLite store wraps read+write in `leaseTransaction`, while D1
- * has no multi-statement transaction. Here every write is instead a SINGLE
- * statement guarded by the epoch the caller observed, so a lost race is
- * reported by the write itself (`meta.changes === 0`) rather than prevented by
- * a lock. A loser re-reads and answers from the winner's row, which is exactly
- * what the transactional store would have produced for the second caller.
+ * `SandboxLeaseStore` over Cloudflare D1. Every write is a SINGLE statement
+ * guarded by the epoch the caller observed, so a lost race is reported by the
+ * write itself (`meta.changes === 0`) rather than prevented by a lock. A loser
+ * re-reads and answers from the winner's row.
  */
 
 import { applySandboxLeasePatch, applySandboxProvisionedTarget } from "@claxedo/sandbox-manager"
@@ -117,7 +110,6 @@ function json(input: unknown): string | null {
   return input === undefined || input === null ? null : JSON.stringify(input)
 }
 
-/** The full column tuple `write()` in `sqlite.ts` builds, in `COLUMNS` order. */
 function rowValues(
   lease: SandboxLease,
   current: SandboxLeaseRow | undefined,
@@ -237,7 +229,7 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
       driverResourceId: resumable ? currentLease.driverResourceId : undefined,
       lastHeartbeatAt: resumable ? currentLease.lastHeartbeatAt : undefined,
       lastActivityAt: resumable ? currentLease.lastActivityAt : undefined,
-      labels: resumable ? currentLease.labels : undefined,
+      labels: resumable ? currentLease.labels : acquireInput.labels,
       checkpoint: currentLease?.checkpoint,
       persistence: currentLease?.persistence,
       restore: currentLease?.restore,

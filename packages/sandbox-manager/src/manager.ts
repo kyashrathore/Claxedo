@@ -529,6 +529,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         driver: options.driver.id,
         staleAfterMs,
         now: now(),
+        ...(input.labels ? { labels: input.labels } : {}),
       })
       if (!acquired.acquired) {
         return {

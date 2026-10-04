@@ -70,6 +70,20 @@ function checkpointRuntime(): SandboxCheckpointRuntime {
 }
 
 describe("sandbox manager", () => {
+  test("a fresh lease names its placement before the driver is asked for a resource", async () => {
+    const store = createMemoryLeaseStore()
+    const seen: Array<Record<string, string> | undefined> = []
+    const driver = fakeDriver({ ensureHost: async (input) => {
+      seen.push((await store.get(input.workspaceId))?.labels)
+      return { sandboxId: "sb_1", hostId: "host_1", url: "https://runtime.test", labels: input.labels }
+    } })
+    const manager = createSandboxManager({ leaseStore: store, driver })
+
+    await manager.ensure("ws_1", { homeRegion: "us-east", labels: { placement: "key_1" } })
+    expect(seen).toEqual([{ placement: "key_1" }])
+    expect((await store.get("ws_1"))?.labels).toMatchObject({ placement: "key_1", workspaceId: "ws_1" })
+  })
+
   test("a resource report does not admit a second ensure during active acquisition", async () => {
     const store = createMemoryLeaseStore()
     let reported!: () => void
