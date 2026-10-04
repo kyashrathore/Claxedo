@@ -5,13 +5,6 @@
   max-width: 720px;
 }
 
-.plugins-settings-title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--v2-text-text-base);
-}
-
 .plugins-settings-description,
 .plugin-row-detail,
 .plugin-row-version,

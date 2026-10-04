@@ -5,7 +5,6 @@ import { Button } from "@/ui"
 import { usePluginsText } from "../i18n"
 import { usePluginHost } from "../provider"
 import { PluginRow } from "./plugin-row"
-import { PluginWarning } from "./plugin-warning"
 import type { LiveListState } from "../live/list-state"
 import "./plugins.css"
 
@@ -17,12 +16,9 @@ function PluginsSettings(): JSX.Element {
   const host = usePluginHost()
   const t = usePluginsText()
   return (
-    <section class="plugins-settings" aria-labelledby="plugins-settings-title">
-      <h2 id="plugins-settings-title" class="plugins-settings-title">
-        {t("plugins.settings.title")}
-      </h2>
+    <div class="plugins-settings">
       <p class="plugins-settings-description">{t("plugins.settings.description")}</p>
-      <PluginWarning platform={host.platform} />
+      <p class="plugins-settings-description">{t(host.platform === "desktop" ? "plugins.settings.trust.desktop" : "plugins.settings.trust.web")}</p>
       <Show when={host.safeMode()}>
         <div role="status" class="plugins-settings-safe-mode">
           <span>{t("plugins.safeMode")}</span>
@@ -38,11 +34,11 @@ function PluginsSettings(): JSX.Element {
         <Match when={failedReason(host.liveList())}>{(reason) => <p role="alert">{t("plugins.list.failed", { reason: reason() })}</p>}</Match>
       </Switch>
       <Show when={host.plugins().length > 0} fallback={<p>{t("plugins.settings.empty")}</p>}>
-        <ul class="plugins-settings-list" aria-labelledby="plugins-settings-title">
+        <ul class="plugins-settings-list" aria-label={t("plugins.settings.title")}>
           <For each={host.plugins()}>{(plugin) => <PluginRow plugin={plugin} />}</For>
         </ul>
       </Show>
-    </section>
+    </div>
   )
 }
 
