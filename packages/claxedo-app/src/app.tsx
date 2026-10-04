@@ -1,6 +1,6 @@
 import { accountBinding } from "#account-binding"
 import { createMemo, Show, type JSX, type ParentProps } from "solid-js"
-import { AuthProvider, useAuth, type Auth, type AuthState } from "@/auth"
+import { AuthProvider, useAuth, type Auth } from "@/auth"
 import { I18nProvider } from "@/i18n"
 import { desktopMachineReport } from "@/lib/desktop-bridge"
 import { ClockProvider } from "@/lib/clock"
@@ -17,8 +17,9 @@ import { DialogProvider, syncIconLibraryWithTheme, ThemeProvider } from "@/ui"
 
 export type AppProps = { readonly router?: ShellRouterComponent; readonly serverUrl?: string }
 
-function principalOf(state: AuthState): string | undefined {
-  return state.kind === "signedIn" ? state.user.id : undefined
+function principalOf(auth: Auth): string | undefined {
+  const state = auth.state()
+  return state.kind === "signedIn" ? state.user.id : auth.restoringUserId()
 }
 
 type ServerAccess = Pick<ServerConfig, "account" | "accountEvents" | "cookies" | "relayLinks">
@@ -52,7 +53,7 @@ function Alerts(props: ParentProps): JSX.Element {
 
 function SignedServer(props: ParentProps<{ readonly serverUrl?: string }>): JSX.Element {
   const auth = useAuth()
-  const principal = createMemo(() => principalOf(auth.state()))
+  const principal = createMemo(() => principalOf(auth))
   return (
     <Show when={{ principal: principal() }} keyed>
       {(scope) => (

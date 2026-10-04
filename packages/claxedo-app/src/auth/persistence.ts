@@ -23,3 +23,12 @@ export function recordAuthIdentity(userId: string | null | undefined) {
   if (previous && previous !== userId) clearPersistedAuthState()
   if (previous !== userId) localStorage.setItem(LAST_USER_ID_KEY, userId)
 }
+
+export function lastAuthIdentity(): string | undefined {
+  try {
+    return localStorage.getItem(LAST_USER_ID_KEY) ?? undefined
+  } catch (error) {
+    console.warn("The last signed-in user could not be read, so startup waits for the session before reading the account", { error })
+    return undefined
+  }
+}

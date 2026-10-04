@@ -1,15 +1,20 @@
-import { createEffect, type Accessor } from "solid-js"
+import { batch, createEffect, createSignal, type Accessor } from "solid-js"
 import type { AccountBinding, AccountSession } from "./binding"
 import { authMachine, type AuthState } from "./model"
+import { lastAuthIdentity } from "./persistence"
 
 export type Auth = Omit<AccountSession, "loading"> & {
   readonly state: Accessor<AuthState>
+  readonly restoringUserId: Accessor<string | undefined>
 }
 
-function followSession(session: AccountSession, auth: ReturnType<typeof authMachine>) {
+function followSession(session: AccountSession, auth: ReturnType<typeof authMachine>, restored: () => void) {
   const settle = () => {
     const reason = session.unavailable()
-    auth.send({ type: "settled", user: session.user(), ...(reason ? { reason } : {}) })
+    batch(() => {
+      auth.send({ type: "settled", user: session.user(), ...(reason ? { reason } : {}) })
+      restored()
+    })
   }
   createEffect(() => {
     if (session.loading()) auth.send({ type: "started" })
@@ -28,9 +33,11 @@ function followSession(session: AccountSession, auth: ReturnType<typeof authMach
 export function createAuth(binding: AccountBinding): Auth {
   const session = binding.open()
   const auth = authMachine(session.loading() ? { kind: "signingIn" } : { kind: "signedOut" })
-  const run = followSession(session, auth)
+  const [restoring, setRestoring] = createSignal(session.loading())
+  const run = followSession(session, auth, () => setRestoring(false))
   return {
     state: auth.state,
+    restoringUserId: () => (restoring() ? lastAuthIdentity() : undefined),
     user: session.user,
     methods: session.methods,
     unavailable: session.unavailable,
