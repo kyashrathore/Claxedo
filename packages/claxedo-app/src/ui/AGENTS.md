@@ -9,3 +9,14 @@
 - When migrating a caller, remove its replaced frame, controls, resize/motion helpers, unused exports and obsolete imports. Verify full-height alignment, close/maximize/resize behavior and inactive-page isolation through the real desktop and phone entrypoints.
 
 See `README.md` for the shared UI ownership map and the Marketplace and workspace wrappers for current callers.
+
+## Visual restraint
+
+Never draw these; remove them on sight:
+- a coloured accent border or bracket on one side of a block (a left rule before a chip, a quote-style stripe on a note);
+- a tinted or bordered warning box for a routine note: routine information is one muted line of text, and warning colour is kept for something the person must act on now;
+- a hover underline on a list row, or any hover effect that changes a row's text;
+- a heading that repeats the page's own title, or a section title that says the same thing as the heading above it;
+- an icon that carries meaning with no words beside it (a laptop or cloud mark for where an account works, a gauge for usage): say it in words, and keep a lone icon only for a universal action (close, copy) with an accessible name;
+- a disabled control or a "not available yet" block for something the surface cannot offer: hide it;
+- an internal id or internal term as primary text (`ws_…`, `prj_…`, placement, lease, code-host, work-source).

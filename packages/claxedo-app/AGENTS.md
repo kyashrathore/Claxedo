@@ -23,17 +23,6 @@ The app runs on today's server contracts. `src/server/` is the only place that k
   - Every screen and plugin slot has a phone layout at 390 px: the sidebar as a drawer, panes as sheets, no hover-only controls, touch targets of at least 44 px, no horizontal scroll.
   - A new screen extends flow 33 in the same change.
 
-## Visual restraint
-
-Never draw these; remove them on sight:
-- a coloured accent border or bracket on one side of a block (a left rule before a chip, a quote-style stripe on a note);
-- a tinted or bordered warning box for a routine note: routine information is one muted line of text, and warning colour is kept for something the person must act on now;
-- a hover underline on a list row, or any hover effect that changes a row's text;
-- a heading that repeats the page's own title, or a section title that says the same thing as the heading above it;
-- an icon that carries meaning with no words beside it (a laptop or cloud mark for where an account works, a gauge for usage): say it in words, and keep a lone icon only for a universal action (close, copy) with an accessible name;
-- a disabled control or a "not available yet" block for something the surface cannot offer: hide it;
-- an internal id or internal term as primary text (`ws_…`, `prj_…`, placement, lease, code-host, work-source).
-
 ## Access
 
 - Every access question in the UI goes through `can()` in `src/access/`, which answers only from facts the server reports. Never re-derive a server rule in the app.
