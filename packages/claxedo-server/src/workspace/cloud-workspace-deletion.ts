@@ -49,7 +49,7 @@ export function cloudWorkspaceDeletion(
       if (!sandboxManager) {
         return c.json({ error: apiError("sandbox_driver_unavailable", "No cloud sandbox driver is configured on this control plane") }, 503)
       }
-      const refused = await sandboxGone(sandboxManager, workspaceId)
+      const refused = await destroySandbox(sandboxManager, workspaceId)
       if (refused) return c.json({ error: apiError("workspace_sandbox_destroy_failed", "The workspace's sandbox could not be destroyed; delete it again", { reason: refused }) }, 502)
       await options.releaseRuntime?.({ workspaceId })
       const deleted = await authority.deleteWorkspace(auth, { workspaceId })
@@ -69,7 +69,7 @@ export function cloudWorkspaceDeletion(
  * remnant of an attempt still in flight is then unowned, which the sweep
  * collects.
  */
-async function sandboxGone(sandboxManager: SandboxManager, workspaceId: string): Promise<string | undefined> {
+async function destroySandbox(sandboxManager: SandboxManager, workspaceId: string): Promise<string | undefined> {
   const destroyed = await sandboxManager.destroy(workspaceId).catch((error: unknown) => ({
     ok: false as const,
     reason: error instanceof Error ? error.message : String(error),

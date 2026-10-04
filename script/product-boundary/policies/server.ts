@@ -110,8 +110,13 @@ export const serverWorkerd: Policy = {
   // to the key its lease records, and the D1 plane keeps the org's chosen
   // driver (`sandbox/stores/d1-org-driver.ts`) behind the shared credential
   // routes' key policy (`sandbox/hosted-sandbox-driver-keys.ts`). None of
-  // them imports a sandbox provider. 146/19, no headroom.
-  ceilings: { modules: 146, packages: 19 },
+  // them imports a sandbox provider.
+  // +2 modules (owner: the hosted workspace router): the owner deletes a cloud
+  // workspace through `workspace/cloud-workspace-deletion.ts`, which destroys
+  // its sandbox before the row, and the D1 deletion statements are a module of
+  // their own (`authority/adapters/d1/workspace-deletion.ts`). 148/19, no
+  // headroom.
+  ceilings: { modules: 148, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

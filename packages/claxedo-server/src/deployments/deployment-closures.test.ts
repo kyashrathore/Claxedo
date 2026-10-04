@@ -81,20 +81,23 @@ const ENTRIES = [
   // routing (`sandbox/org-sandbox-manager.ts`), the D1 org's chosen driver
   // (`sandbox/stores/d1-org-driver.ts`) and the credential routes' key policy
   // (`sandbox/hosted-sandbox-driver-keys.ts`); none imports a provider.
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 146, packages: 19 },
+  // Every entry deletes an owner's cloud workspace sandbox first
+  // (`workspace/cloud-workspace-deletion.ts`), with the D1 deletion statements
+  // as a module of their own (`d1/workspace-deletion.ts`).
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 148, packages: 19 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
   // plus `agent-plugins/signed-scope.ts`, the caller and write guard the
   // activation and source stores share, and the Pi launch a session served by
   // its own Durable Object is delivered (`agent-plugins/runtime/session-host-launch.ts`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 198, packages: 23 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 200, packages: 23 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
   // ready cloud runtime and admits it at the session-rows ingest, and only
   // this entry has cloud runtimes to publish rows.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 205, packages: 23 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 207, packages: 23 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
