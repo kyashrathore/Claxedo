@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
 import { fileURLToPath } from "node:url"
+import { hostedWorkerCompatibility } from "../../test-support/hosted-worker-bundle"
 
 let miniflare: Miniflare
 /** Kept so the cap test can stand up a second instance with a different cap. */
@@ -11,7 +12,9 @@ beforeAll(async () => {
   const bundled = await build({
     stdin: {
       contents: `
-        import { LiveSyncRoom, connectLiveSyncRoom, nudgeLiveSyncRoom } from ${JSON.stringify(fileURLToPath(new URL("./live-sync-room.cf.ts", import.meta.url)))}
+        import { LiveSyncRoom } from ${JSON.stringify(fileURLToPath(new URL("./live-sync-room.cf.ts", import.meta.url)))}
+        import { connectLiveSyncRoom } from ${JSON.stringify(fileURLToPath(new URL("./live-sync-client.cf.ts", import.meta.url)))}
+        import { nudgeLiveSyncRoom } from ${JSON.stringify(fileURLToPath(new URL("../../platform/http/live-sync-publish.ts", import.meta.url)))}
         export { LiveSyncRoom }
         // Subjects are parameterised, the org is the room key. Two subjects in
         // ONE org share a room and therefore ONE retention ring — the
@@ -33,6 +36,19 @@ beforeAll(async () => {
           fetch(request, env) {
             const url = new URL(request.url)
             const org = url.searchParams.get("org") ?? "acme"
+            if (url.pathname === "/abnormal-close") {
+              const pair = new WebSocketPair()
+              pair[0].accept()
+              pair[1].accept()
+              try {
+                new LiveSyncRoom({}, {}).webSocketClose(pair[1], 1006, "")
+                return new Response(null, { status: 204 })
+              } catch (error) {
+                return new Response(error.message, { status: 500 })
+              } finally {
+                pair[0].close(1000)
+              }
+            }
             if (url.pathname === "/connect") {
               const subject = url.searchParams.get("as") ?? "alice"
               const lastEventId = request.headers.get("last-event-id") ?? undefined
@@ -62,7 +78,7 @@ beforeAll(async () => {
   })
   workerModule = bundled.outputFiles[0].text
   miniflare = new Miniflare({
-    compatibilityDate: "2026-07-18",
+    ...hostedWorkerCompatibility(),
     modules: [{ type: "ESModule", path: "index.mjs", contents: workerModule }],
     durableObjects: { LIVE_SYNC_ROOM: "LiveSyncRoom" },
   })
@@ -152,6 +168,11 @@ function room(org: string) {
 }
 
 describe("LiveSyncRoom workerd integration", () => {
+  test("an abnormal close notification does not pass its reserved code to workerd's socket API", async () => {
+    const response = await miniflare.dispatchFetch("https://live-sync.test/abnormal-close")
+    expect(response.status, await response.text()).toBe(204)
+  })
+
   test("bridges a real hibernatable Durable Object socket to SSE and fans a nudge", async () => {
     const acme = room("acme")
     const stream = await acme.connect()
@@ -275,7 +296,7 @@ describe("LiveSyncRoom workerd integration", () => {
    */
   test("the room answers 503 once its connection cap is reached", async () => {
     const capped = new Miniflare({
-      compatibilityDate: "2026-07-18",
+      ...hostedWorkerCompatibility(),
       modules: [{ type: "ESModule", path: "index.mjs", contents: workerModule }],
       durableObjects: { LIVE_SYNC_ROOM: "LiveSyncRoom" },
       bindings: { LIVE_SYNC_MAX_CONNECTIONS: "2" },

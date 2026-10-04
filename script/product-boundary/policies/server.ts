@@ -103,7 +103,9 @@ export const serverWorkerd: Policy = {
   // served by the `routes/runtime-sandbox-secrets.ts` router.
   // Hosted OpenCode account projection is owned by credentials/worker/opencode.ts;
   // it joins the caller's selected D1 accounts with the authorized runtime catalog.
-  ceilings: { modules: 142, packages: 19 },
+  // The live-sync client's SSE bridge and shared handshake protocol are separate
+  // owners from LiveSyncRoom's connection and replay state, with no new packages.
+  ceilings: { modules: 144, packages: 19 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

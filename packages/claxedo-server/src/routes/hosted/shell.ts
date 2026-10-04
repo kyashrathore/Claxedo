@@ -30,7 +30,8 @@ import {
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
-import { connectLiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
+import { connectLiveSyncRoom } from "../../deployments/hosted-workerd/live-sync-client.cf"
+import type { LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
 import { requireAuthority, type WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
 import { createRelayRuntimeClient, decodeRelayRuntimeJson } from "../../workspace/relay-runtime-client"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"

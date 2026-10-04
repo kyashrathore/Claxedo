@@ -1,16 +1,11 @@
 import { describe, expect, test } from "vitest"
+import { connectLiveSyncRoom } from "./live-sync-client.cf"
+import { liveSyncRoomName, roomPrincipalFromHeaders, type LiveSyncSocket, type LiveSyncSubscriber } from "./live-sync-protocol"
+import { liveSyncRoomNameForPrincipal, nudgeLiveSyncRoom, type LiveSyncRoomNamespace } from "../../platform/http/live-sync-publish"
 import {
   DEFAULT_MAX_CONNECTIONS,
   LiveSyncRoom,
-  connectLiveSyncRoom,
-  liveSyncRoomName,
-  liveSyncRoomNameForPrincipal,
-  nudgeLiveSyncRoom,
-  roomPrincipalFromHeaders,
-  type LiveSyncRoomNamespace,
   type LiveSyncRoomState,
-  type LiveSyncSocket,
-  type LiveSyncSubscriber,
 } from "./live-sync-room.cf"
 import type { ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
@@ -253,6 +248,32 @@ const provisionStep = (workspaceId: string, step: "cloning" | "ready"): ControlP
 })
 
 describe("LiveSyncRoom — fan-out core", () => {
+  test.each([1000, 1006])("closing a socket with code %i releases replay state without sending an abnormal close code", async (code) => {
+    const namespace = createHibernatingNamespace()
+    const response = await connectLiveSyncRoom(namespace, subscriber("alice", "org_close"), 60_000)
+    const reader = response.body!.getReader()
+    await readFrame(reader)
+    const room = namespace.instances.get("org:org_close")!
+    const socket = namespace.states.get("org:org_close")!.sockets[0]
+    const closes: unknown[][] = []
+    const close = socket.close.bind(socket)
+    socket.close = (status?: number, reason?: string) => {
+      if (status === 1006) throw new Error("Invalid WebSocket close code: 1006")
+      closes.push([status, reason])
+      close()
+    }
+    expect(room.replayScopeCount).toBe(1)
+    if (code === 1006) socket.closed = true
+    try {
+      expect(() => room.webSocketClose(socket, code, "")).not.toThrow()
+      expect(closes).toEqual(code === 1006 ? [] : [[1000, ""]])
+      expect(room.replayScopeCount).toBe(0)
+      expect(room.replayTombstoneCount).toBe(1)
+    } finally {
+      await reader.cancel()
+    }
+  })
+
   test("hibernatable sockets survive room reconstruction while the public response remains SSE", async () => {
     const namespace = createHibernatingNamespace()
     const response = await connectLiveSyncRoom(namespace, subscriber("alice", "org_internal_acme"), 60_000)
