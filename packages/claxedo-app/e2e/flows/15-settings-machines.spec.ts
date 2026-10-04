@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test"
 import { expect, test } from "../harness"
+import { hostedFetch } from "../../../harness/e2e/harness/hosted-auth"
 
 async function machines(app: Page, url: string) {
   await app.goto(`${url}/settings/machines`)
@@ -25,12 +26,15 @@ test("15 Machines lists the machine the app runs on with its state, and Connect 
   await connectInstructions(app)
 })
 
-test("15 Machines on the web with no machine says so in one line and offers Connect a machine", async ({ signed, page }) => {
+test("15 Machines on the web lists the account's machines from the control plane by name, with no remote-access block", async ({ signed, page }) => {
   await page.goto(`${signed.url}/`)
   await signed.signIn(page, signed.owner)
-  await expect(page).not.toHaveURL(/\/login$/)
+  const devices = await hostedFetch(signed.hosted, "/api/claxedo/remote-access/devices", {}, signed.owner.person)
+  const [device] = (await devices.json() as { devices: Array<{ display_name: string }> }).devices
+  expect(device?.display_name).toBeTruthy()
   const yours = await machines(page, signed.url)
-  await expect(yours.getByText("No machine is connected yet.", { exact: true })).toBeVisible()
+  await expect(yours.getByText(device?.display_name ?? "", { exact: true })).toBeVisible()
+  await expect(yours.getByText(/^(Online|Offline)$/)).toHaveCount(1)
   await expect(page.getByText("Not available yet", { exact: true })).toHaveCount(0)
   await connectInstructions(page)
 })
