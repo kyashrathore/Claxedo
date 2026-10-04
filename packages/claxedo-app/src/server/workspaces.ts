@@ -222,6 +222,12 @@ function accountReads(linked: () => LinkedCatalog | undefined, signed: boolean, 
   }
 }
 
+async function refreshPlacementQueries(queryClient: QueryClient, serverUrl: string) {
+  await queryClient.invalidateQueries({ queryKey: queryKeys.placements(serverUrl) })
+  await queryClient.invalidateQueries({ queryKey: queryKeys.projects(serverUrl) })
+  await queryClient.invalidateQueries({ queryKey: queryKeys.cloud(serverUrl) })
+}
+
 export function createWorkspaces(transport: Transport, queryClient: QueryClient, account?: HostedAccount): Workspaces {
   const shared = createSharedSessions(account, transport.serverUrl, queryClient)
   const key = queryKeys.bootstrap(transport.serverUrl)
@@ -254,8 +260,7 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
     refresh: async () => {
       relearned.clear()
       await readCatalogs(reread(), accountPlacements?.reread())
-      await queryClient.invalidateQueries({ queryKey: queryKeys.placements(transport.serverUrl) })
-      await queryClient.invalidateQueries({ queryKey: queryKeys.projects(transport.serverUrl) })
+      await refreshPlacementQueries(queryClient, transport.serverUrl)
       await shared.refresh()
     },
     ...accountReads(merged.linked, accountPlacements !== undefined, load),

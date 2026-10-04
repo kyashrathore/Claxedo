@@ -15,9 +15,11 @@ Owns: the cloud workspace as a placement of a project, its lifecycle machine, an
 
 ## State machine
 
-`CloudWorkspaceStatus` (from `@/server`): `provisioning(step)`, `starting`, `ready`, `stopping`, `stopped`, `failed(reason)`. The server owns the lifecycle; the adapter maps it. Local events are optimistic: `startRequested` moves `stopped | failed → starting`, `stopRequested` moves `ready | starting | provisioning → stopping`, `commandFailed` moves any state to `failed(reason)`, shown on the row until the next command or a new server status.
+`CloudWorkspaceStatus` (from `@/server`): `provisioning(step)`, `starting`, `ready`, `stopping`, `stopped`, `failed(reason)`. The server owns the lifecycle; the adapter maps it. Local events are optimistic: `startRequested` moves `stopped | failed | provisioning → starting`, `stopRequested` moves `ready | starting | provisioning → stopping`, `commandFailed` moves any state to `failed(reason)`, shown on the row until the next command or a new server status. A provisioning row permits an explicit Start so a browser reload or interrupted background boot can continue on the existing lease.
 
-A create failure is shown by the create form; the workspace does not exist yet, so it has no row.
+A create failure is shown by the create form. Once a project workspace is created, the store starts it through the shared wake owner and displays boot failures on that workspace's row, so retry uses the existing workspace. The form remains busy through startup. Workspace refresh invalidates the cloud list as well as placements and projects, so the created row and final runtime status appear without a page reload.
+
+The explicit startup flow and its transition regression bring Projects and cloud to 3,026 counted lines. Together with the explicit draft wake action and cloud-list refresh regression, the app measures 96,766 lines. Aggregate budgets use those exact measurements; no file-size limit changed.
 
 ## API
 

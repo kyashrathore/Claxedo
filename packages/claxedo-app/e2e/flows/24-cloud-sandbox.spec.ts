@@ -20,6 +20,26 @@ import {
 const ASLEEP = "This workspace is asleep. Your next message wakes it."
 const WAKING = "Waking up the workspace…"
 
+test("24 an asleep draft can explicitly start its workspace before model discovery", async ({ signedCloud, page }) => {
+  test.setTimeout(150_000)
+  const workspace = await makeCloudWorkspace(signedCloud, "main")
+  await startCloudWorkspace(signedCloud, workspace)
+  await stopCloudWorkspace(signedCloud, workspace)
+  const wakes = wakeRequests(page, workspace)
+  await signedCloud.signIn(page, signedCloud.owner)
+  await page.goto(`${signedCloud.url}${sessionRoute(workspace.id)}`)
+  await expect(page.getByText(ASLEEP)).toBeVisible()
+  expect(wakes).toEqual([])
+  const started = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === `/api/workspace/${workspace.id}/connection`)
+  await page.getByRole("button", { name: "Start workspace", exact: true }).click()
+  const response = await started
+  expect(response.ok()).toBe(true)
+  expect(await response.json()).toMatchObject({ workspaceId: workspace.id, relayUrl: expect.any(String) })
+  await expect(page.getByText(ASLEEP)).toHaveCount(0)
+  await expect(page.getByText(WAKING)).toHaveCount(0, { timeout: 60_000 })
+  expect(wakes.filter((request) => request.startsWith("POST /api/workspace/"))).toHaveLength(1)
+})
+
 function wakeRequests(page: Page, workspace: CloudWorkspace) {
   const seen: string[] = []
   page.on("request", (request) => {

@@ -30,7 +30,10 @@ export function WorkspaceSleepCard(props: { readonly placementId: PlacementId })
       <Match when={runtime().kind === "asleep"}>
         <div role="status" class={CARD}>
           <ClaxedoIcon name="circle-alert" size="small" class="shrink-0 text-icon-weak-base" />
-          <span>{t("sessionScreen.workspace.asleep")}</span>
+          <span class="min-w-0 flex-1">{t("sessionScreen.workspace.asleep")}</span>
+          <Button variant="neutral" size="small" onClick={() => void retry()}>
+            {t("sessionScreen.workspace.start")}
+          </Button>
         </div>
       </Match>
       <Match when={waking()}>
