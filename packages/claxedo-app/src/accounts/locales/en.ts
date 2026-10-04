@@ -204,6 +204,5 @@ export default {
   "settings.providers.status.notConnected": "Not connected",
   "common.loading": "Loading",
   "common.loading.ellipsis": "...",
-  "settings.scope.workspace.loading": "Loading workspaces…",
-  "settings.scope.workspace.empty": "No workspaces yet",
+  "settings.models.workspace.required": "Open a workspace to discover this harness's models. Your connected accounts are available in the Accounts tab.",
 }

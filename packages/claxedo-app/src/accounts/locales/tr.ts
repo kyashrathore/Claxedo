@@ -194,6 +194,4 @@ export default {
   "settings.models.harness.empty": "{{harness}}, {{workspace}} için hiçbir model bildirmiyor.",
   "settings.providers.status.notConnected": "Bağlı değil",
   "common.loading": "Yükleniyor",
-  "settings.scope.workspace.loading": "Çalışma alanları yükleniyor…",
-  "settings.scope.workspace.empty": "Henüz çalışma alanı yok",
 }

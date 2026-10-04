@@ -190,6 +190,4 @@ export default {
   "settings.models.harness.empty": "لا يبلّغ {{harness}} عن أي نماذج لـ {{workspace}}.",
   "settings.providers.status.notConnected": "غير متصل",
   "common.loading": "جارٍ التحميل",
-  "settings.scope.workspace.loading": "جارٍ تحميل مساحات العمل…",
-  "settings.scope.workspace.empty": "لا توجد مساحات عمل بعد",
 }

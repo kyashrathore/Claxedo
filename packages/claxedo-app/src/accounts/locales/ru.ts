@@ -188,6 +188,4 @@ export default {
   "settings.models.harness.empty": "{{harness}} не сообщает о моделях для {{workspace}}.",
   "settings.providers.status.notConnected": "Не подключено",
   "common.loading": "Загрузка",
-  "settings.scope.workspace.loading": "Загрузка рабочих пространств…",
-  "settings.scope.workspace.empty": "Рабочих пространств пока нет",
 }
