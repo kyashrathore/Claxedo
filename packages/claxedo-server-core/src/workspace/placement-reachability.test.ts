@@ -7,7 +7,7 @@ test("cloud inventory reports the authoritative lease lifecycle without starting
     cold: { status: "unavailable", reason: "runtime_lease_missing" },
     starting: { status: "unavailable", reason: "runtime_acquiring", leaseStatus: "acquiring" },
     stopped: { status: "unavailable", reason: "runtime_stopped", leaseStatus: "stopped" },
-    failed: { status: "unavailable", reason: "provider_rejected", leaseStatus: "unavailable" },
+    failed: { status: "unavailable", reason: "runtime_lease_not_ready", leaseStatus: "unavailable", failure: { kind: "provider", message: "provider rejected", retrying: false } },
     ready: { status: "ready", sandboxId: "box", url: "https://runtime.test", hostId: "host", epoch: 1, homeRegion: "eu" },
   }
   const calls: string[] = []
@@ -18,7 +18,7 @@ test("cloud inventory reports the authoritative lease lifecycle without starting
   expect(calls).toEqual(Object.keys(targets))
   expect(rows).toMatchObject([
     { status: "stopped", reachable: false }, { status: "provisioning", reachable: false },
-    { status: "stopped", reachable: false }, { status: "failed", error: "provider_rejected", reachable: false },
+    { status: "stopped", reachable: false }, { status: "failed", error: "The cloud workspace could not start: provider rejected", reachable: false },
     { status: "ready", reachable: true }, { reachable: true },
   ])
   expect(rows[5]).not.toHaveProperty("status")

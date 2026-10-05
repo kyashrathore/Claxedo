@@ -1,7 +1,8 @@
-import type {
-  SandboxLeaseStore,
-  SandboxMutationResult,
-  SandboxRuntimeSnapshotInput,
+import {
+  SANDBOX_RUNTIME_UNHEALTHY,
+  type SandboxLeaseStore,
+  type SandboxMutationResult,
+  type SandboxRuntimeSnapshotInput,
 } from "./contract"
 
 /**
@@ -26,8 +27,6 @@ export type SandboxRuntimeLivenessPolicy =
     /** `undefined` means the budget is spent: the lease stays unavailable until an operator acts. */
     nextRetryAt: (input: { retryCount: number; now: number }) => number | undefined
   }
-
-const RUNTIME_UNHEALTHY = "runtime_unhealthy"
 
 /**
  * The one writer of a lease's liveness, shared by `SandboxManager`'s
@@ -80,7 +79,7 @@ export async function applySandboxRuntimeSnapshot(input: {
       ? {
         retryCount: current.retryCount + 1,
         nextRetryAt: liveness.nextRetryAt({ retryCount: current.retryCount + 1, now: timestamp }) ?? null,
-        lastError: RUNTIME_UNHEALTHY,
+        lastError: SANDBOX_RUNTIME_UNHEALTHY,
       }
       : {}),
   }, current.status)

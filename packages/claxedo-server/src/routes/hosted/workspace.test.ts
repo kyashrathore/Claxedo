@@ -1019,7 +1019,7 @@ describe("hosted workspace list (GET /api/workspace)", () => {
     const json = (await res.json()) as { workspaces: Array<{ workspace_id: string }> }
     expect(json.workspaces).toEqual([
       { workspace_id: "ws_user", backing: "local-worktree", reachable: false },
-      { workspace_id: "ws_cloud", backing: "cloud-vm", reachable: false, status: "failed", error: "Cloud runtime is unavailable" },
+      { workspace_id: "ws_cloud", backing: "cloud-vm", reachable: false, status: "failed", error: "This server runs no cloud workspaces" },
     ])
     expect(authority!.listWorkspaces).toHaveBeenCalledTimes(1)
   })
@@ -1051,7 +1051,8 @@ describe("hosted workspace list (GET /api/workspace)", () => {
       ws_booting: { status: "unavailable", reason: "runtime_acquiring", leaseStatus: "acquiring" },
       ws_stopped: { status: "unavailable", reason: "runtime_stopped", leaseStatus: "stopped" },
       ws_never: { status: "unavailable", reason: "runtime_lease_missing" },
-      ws_broken: { status: "unavailable", reason: "provider_rejected", leaseStatus: "unavailable" },
+      ws_retrying: { status: "unavailable", reason: "runtime_lease_not_ready", leaseStatus: "unavailable", failure: { kind: "provider", message: "quota exceeded", retrying: true } },
+      ws_broken: { status: "unavailable", reason: "runtime_lease_not_ready", leaseStatus: "unavailable", failure: { kind: "provider", message: "quota exceeded", retrying: false } },
     }
     const authority = fakeAuthority({ listWorkspaces: vi.fn(async () => Object.keys(leases).map((workspace_id) => ({ workspace_id, backing: "cloud-vm" }))) })
     const ensure = vi.fn()
@@ -1063,7 +1064,8 @@ describe("hosted workspace list (GET /api/workspace)", () => {
       { workspace_id: "ws_booting", backing: "cloud-vm", status: "provisioning", reachable: false },
       { workspace_id: "ws_stopped", backing: "cloud-vm", status: "stopped", reachable: false },
       { workspace_id: "ws_never", backing: "cloud-vm", status: "stopped", reachable: false },
-      { workspace_id: "ws_broken", backing: "cloud-vm", status: "failed", error: "provider_rejected", reachable: false },
+      { workspace_id: "ws_retrying", backing: "cloud-vm", status: "provisioning", reachable: false },
+      { workspace_id: "ws_broken", backing: "cloud-vm", status: "failed", error: "The cloud workspace could not start: quota exceeded", reachable: false },
     ])
     expect(ensure).not.toHaveBeenCalled()
   })

@@ -24,14 +24,23 @@ export type CloudRuntimeLifecycle =
   | { status: "ready" | "provisioning" | "stopped" }
   | { status: "failed"; error: string }
 
+/** What a cloud workspace whose start failed says, the start's own answer and a catalog row alike. */
+export function cloudRuntimeStartFailure(reason: string) {
+  return `The cloud workspace could not start: ${reason}`
+}
+
 function lifecycleOf(target: SandboxTargetResult | undefined): CloudRuntimeLifecycle {
-  if (!target) return { status: "failed", error: "Cloud runtime is unavailable" }
+  if (!target) return { status: "failed", error: "This server runs no cloud workspaces" }
   if (target.status === "ready") return { status: "ready" }
   if (target.leaseStatus === "acquiring") return { status: "provisioning" }
   if (target.leaseStatus === "stopped" || target.leaseStatus === "destroyed" || target.reason === "runtime_lease_missing") {
     return { status: "stopped" }
   }
-  return { status: "failed", error: target.reason }
+  const failure = target.failure
+  if (!failure) return { status: "failed", error: "The cloud workspace is not running" }
+  if (failure.retrying) return { status: "provisioning" }
+  if (failure.kind === "unhealthy") return { status: "failed", error: "The cloud workspace stopped answering" }
+  return { status: "failed", error: cloudRuntimeStartFailure(failure.message) }
 }
 
 /**

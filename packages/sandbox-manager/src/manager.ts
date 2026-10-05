@@ -20,6 +20,7 @@ import {
   type SandboxGarbageCollectResult,
   isSandboxListingUnsupported,
   isSandboxRuntimeBootFailure,
+  sandboxLeaseFailure,
   sandboxRuntimeBootFailedError,
   type SandboxManagerOptions
 } from "./contract"
@@ -263,11 +264,13 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
   async function leaseTarget(lease: SandboxLease): Promise<SandboxTargetResult> {
     const resource = leaseResource(lease)
     if (lease.status !== "ready" || !resource || !resource.url || !lease.routingId) {
+      const failure = sandboxLeaseFailure(lease, { now: now(), maxRetryCount })
       return {
         status: "unavailable",
         reason: "runtime_lease_not_ready",
         leaseStatus: lease.status,
         ...(lease.nextRetryAt !== undefined ? { retryAfterMs: Math.max(0, lease.nextRetryAt - now()) } : {}),
+        ...(failure ? { failure } : {}),
       }
     }
     return { ...resource, status: "ready", url: resource.url, routingId: lease.routingId }

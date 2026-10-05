@@ -692,6 +692,32 @@ describe("sandbox manager", () => {
     expect(driver.ensureHost).toHaveBeenCalledTimes(1)
   })
 
+  test("a lease whose start failed tells its reader why, and whether its scheduled retry is still ahead", async () => {
+    let now = 10_000
+    const store = createMemoryLeaseStore()
+    let failure: Error = new Error("Cloudflare ensure-runtime failed (500): quota exceeded")
+    const driver = fakeDriver({ ensureHost: vi.fn(async () => { throw failure }) })
+    const manager = createSandboxManager({ leaseStore: store, driver, now: () => now, retryDelayMs: () => 5_000, maxRetryCount: 2 })
+
+    await manager.ensure("ws_1", { homeRegion: "us-east" })
+    await expect(manager.target("ws_1")).resolves.toMatchObject({
+      leaseStatus: "unavailable",
+      failure: { kind: "provider", message: "Cloudflare ensure-runtime failed (500): quota exceeded", retrying: true },
+    })
+    now += 5_001
+    await expect(manager.target("ws_1")).resolves.toMatchObject({ failure: { kind: "provider", retrying: false } })
+
+    await manager.ensure("ws_1", { homeRegion: "us-east" })
+    await expect(manager.target("ws_1")).resolves.toMatchObject({ failure: { kind: "provider", retrying: false } })
+
+    failure = new SandboxRuntimeBootError("fatal: couldn't find remote ref refs/heads/missing")
+    await store.update("ws_1", (await store.get("ws_1"))!.epoch, { retryCount: 0, nextRetryAt: null })
+    await manager.ensure("ws_1", { homeRegion: "us-east" })
+    await expect(manager.target("ws_1")).resolves.toMatchObject({
+      failure: { kind: "boot", message: "fatal: couldn't find remote ref refs/heads/missing", retrying: false },
+    })
+  })
+
   test("a driver failure during an in-flight acquiring provision still demotes the lease", async () => {
     const now = 10_000
     const store = createMemoryLeaseStore([

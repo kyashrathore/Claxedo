@@ -44,6 +44,8 @@ export type SandboxTargetResult =
       leaseStatus?: SandboxLeaseStatus
       /** Delay until the lease's own next scheduled retry, when it carries one. */
       retryAfterMs?: number
+      /** What the lease's last start or health report failed on; `retrying` while its scheduled retry is ahead. */
+      failure?: { kind: "boot" | "unhealthy" | "provider"; message: string; retrying: boolean }
     }
 
 export type SandboxManagerPort = {
