@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { piLaunchCatalog } from "@claxedo/harness/pi-catalog"
 
 const engineSync = vi.hoisted(() => ({ calls: [] as unknown[][], fail: undefined as Error | undefined }))
 vi.mock("../fanout", () => ({
@@ -97,14 +98,15 @@ afterAll(async () => {
 })
 
 describe("control-plane Pi catalog", () => {
-  test("serves only the signed tenant's connected providers; machine runtime owns model discovery", async () => {
+  test("serves only the signed tenant's connected providers, with the models the session host launches Pi with", async () => {
     const response = await app.request("/providers?nativeHarness=pi&workspaceId=org_b", { headers: { authorization: "Bearer org_a" } })
     expect(response.status).toBe(200)
     const body = await response.json()
     expect(body.connected).toEqual(["openai"])
     const openai = body.all.find((provider: { id: string }) => provider.id === "openai")
     expect(openai.source).toBe("api")
-    expect(openai.models).toEqual({})
+    expect(Object.keys(openai.models)).toEqual(piLaunchCatalog(["openai"]).map((model) => model.id.slice("openai/".length)))
+    expect(Object.keys(openai.models).length).toBeGreaterThan(0)
     expect(JSON.stringify(body)).not.toContain("test-key")
     const other = await app.request("/providers?nativeHarness=pi", { headers: { authorization: "Bearer org_b" } })
     expect((await other.json()).connected).toEqual(["anthropic"])
