@@ -1,6 +1,7 @@
 import { Hono } from "hono"
 import { decodeProductEvent } from "@claxedo/account-contract/product-events"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "../auth/auth"
+import { keepAlivePastResponse } from "../http/background-work"
 import { errorBody } from "../http/http"
 import type { ControlPlaneTelemetry } from "./ports"
 
@@ -52,11 +53,11 @@ export function TelemetryTrackRoutes(input: {
     }
     const decoded = decodeProductEvent(await c.req.json().catch(() => null))
     if (!decoded.ok) return c.json(errorBody("telemetry_event_refused", "Event is not one this product emits", { reason: decoded.reason }), 400)
-    input.telemetry.capture(identity.userId, decoded.value.event, {
+    keepAlivePastResponse(c, Promise.resolve(input.telemetry.capture(identity.userId, decoded.value.event, {
       ...decoded.value.properties,
       org_id: identity.orgId,
       $groups: { org: identity.orgId },
-    })
+    })))
     return c.json({ ok: true })
   })
 }

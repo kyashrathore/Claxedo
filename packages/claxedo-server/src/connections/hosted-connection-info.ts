@@ -107,7 +107,6 @@ async function cloudConnectionIngress(
     properties: {
       backing: "cloud-vm",
       homeRegion,
-      relayRoom: workspaceId,
     },
   })
   return { authority, result, workspace: result.workspace, hostManager, homeRegion, relayUrl }
@@ -278,7 +277,6 @@ export async function hostedConnectionInfo(
     properties: {
       status: ensured.status,
       homeRegion,
-      relayRoom: workspaceId,
       ...(ensured.status === "provisioning" ? { leaseEpoch: ensured.epoch, retryAfterMs: ensured.retryAfterMs } : {}),
       ...(ensured.status === "unavailable" ? { retryAfterMs: ensured.retryAfterMs } : {}),
       ...(ensured.status === "ready" ? {
@@ -312,9 +310,7 @@ export async function hostedConnectionInfo(
       properties: {
         backing: "cloud-vm",
         homeRegion,
-        relayRoom: workspaceId,
         retryAfterMs: ensured.retryAfterMs,
-        ...(ensured.error ? { reason: ensured.error } : {}),
       },
     })
     // A boot that failed fails the same way until the person changes what it
@@ -409,7 +405,6 @@ export async function hostedConnectionStatus(
     properties: {
       status: target.status,
       homeRegion,
-      relayRoom: workspaceId,
       ...(target.status === "unavailable" ? { reason: target.reason, leaseStatus: target.leaseStatus } : {}),
       ...(target.status === "ready" ? { hostId: target.hostId, leaseEpoch: target.epoch } : {}),
     },

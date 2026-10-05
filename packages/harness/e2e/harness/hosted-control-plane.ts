@@ -122,6 +122,15 @@ export async function startHostedControlPlane(input: Input) {
         throw error
       }
     },
+    telemetryEvents: async () => {
+      try {
+        return (await fs.readFile(path.join(input.root, "hosted-telemetry.jsonl"), "utf8")).trim().split("\n").filter(Boolean)
+          .map((line) => JSON.parse(line) as { event: string; distinct_id: string; properties: Record<string, unknown> })
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return []
+        throw error
+      }
+    },
     /** The link in the last email the Worker's `EMAIL` binding sent `to` with `subject`. */
     recordedEmailActionUrl: (to: string, subject: string) => requestProvisioning(child, { emailTo: to, emailSubject: subject }, "actionUrl"),
     provisionOwnerClaim: (subject: string) => requestProvisioning(child, { subject }, "claim"),

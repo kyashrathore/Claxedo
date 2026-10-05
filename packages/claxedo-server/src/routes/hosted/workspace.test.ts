@@ -389,7 +389,6 @@ describe("hosted connection", () => {
       workspaceId: "ws_1",
       backing: "local-worktree",
       homeRegion: "us-east",
-      relayRoom: "ws_1",
       hostId: "host_1",
     })
     expect(capture).toHaveBeenCalledWith(
@@ -469,13 +468,11 @@ describe("hosted connection", () => {
       workspaceId: "ws_1",
       backing: "cloud-vm",
       homeRegion: "apac-south",
-      relayRoom: "ws_1",
     })
     expect(capture).toHaveBeenCalledWith("user_1", "sandbox.ensure", {
       workspaceId: "ws_1",
       status: "provisioning",
       homeRegion: "apac-south",
-      relayRoom: "ws_1",
       leaseEpoch: 3,
       retryAfterMs: 2_000,
     })
@@ -513,7 +510,6 @@ describe("hosted connection", () => {
       workspaceId: "ws_1",
       status: "unavailable",
       homeRegion: "apac-south",
-      relayRoom: "ws_1",
       reason: "runtime_lease_not_ready",
       leaseStatus: "acquiring",
     })
@@ -644,7 +640,6 @@ describe("hosted connection", () => {
       workspaceId: "ws_1",
       status: "ready",
       homeRegion: "eu-west",
-      relayRoom: "ws_1",
       hostId: "host_cloud_1",
       leaseEpoch: 8,
     })
@@ -705,16 +700,13 @@ describe("hosted connection", () => {
       workspaceId: "ws_1",
       status: "unavailable",
       homeRegion: "eu-west",
-      relayRoom: "ws_1",
       retryAfterMs: 5_000,
     })
     expect(capture).toHaveBeenCalledWith("user_1", "workspace.connection.unavailable", {
       workspaceId: "ws_1",
       backing: "cloud-vm",
       homeRegion: "eu-west",
-      relayRoom: "ws_1",
       retryAfterMs: 5_000,
-      reason: "retry cap reached",
     })
   })
 

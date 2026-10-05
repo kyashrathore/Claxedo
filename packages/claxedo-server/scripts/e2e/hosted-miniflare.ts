@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { readFileSync } from "node:fs"
+import { appendFileSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { Miniflare } from "miniflare"
 import { unstable_getMiniflareWorkerOptions } from "wrangler"
@@ -26,6 +26,8 @@ type Input = {
 }
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
+const HOSTED_E2E_ANALYTICS_HOST = "analytics.hosted-e2e.test"
+const HOSTED_E2E_TELEMETRY_FILE = "hosted-telemetry.jsonl"
 const wrangler = path.join(serverRoot, "node_modules/.bin/wrangler")
 
 function runWrangler(args: string[]) {
@@ -77,6 +79,9 @@ async function main(input: Input) {
     CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID: "hosted-e2e-organization",
     CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME: "Hosted E2E",
     CLAXEDO_EMAIL_FROM: "invitations@hosted-e2e.test",
+    CLAXEDO_TELEMETRY_MODE: "on",
+    CLAXEDO_POSTHOG_KEY: "phc_hosted_e2e",
+    CLAXEDO_POSTHOG_HOST: `https://${HOSTED_E2E_ANALYTICS_HOST}`,
   }
   env.CLAXEDO_AUTH_CONFIGURATION_ID = await betterAuthDeploymentConfigurationId({
     methods: input.emailPassword ? ["github", "email-password"] : ["github"], apiOrigin, appOrigin: input.appOrigin, githubClientId: env.GITHUB_CLIENT_ID,
@@ -101,6 +106,10 @@ async function main(input: Input) {
     httpsKey: readFileSync(input.key, "utf8"),
     httpsCert: readFileSync(input.certificate, "utf8"),
     outboundService: async (request: Request) => {
+      if (new URL(request.url).hostname === HOSTED_E2E_ANALYTICS_HOST) {
+        appendFileSync(path.join(input.root, HOSTED_E2E_TELEMETRY_FILE), `${await request.text()}\n`)
+        return Response.json({ status: 1 })
+      }
       const headers = new Headers(request.headers)
       headers.delete("host")
       headers.delete("content-length")

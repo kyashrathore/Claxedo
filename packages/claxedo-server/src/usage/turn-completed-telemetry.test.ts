@@ -40,7 +40,7 @@ async function filed() {
   const captured: Array<{ distinctId: string; event: string; properties?: Record<string, unknown> }> = []
   const writer = withTurnCompletedTelemetry(
     createD1UsageLedger({ database: database.database, now: () => DAY }),
-    { capture: (distinctId, event, properties) => captured.push({ distinctId, event, properties }) },
+    { capture: (distinctId, event, properties) => void captured.push({ distinctId, event, properties }) },
   )
   return { writer, captured }
 }

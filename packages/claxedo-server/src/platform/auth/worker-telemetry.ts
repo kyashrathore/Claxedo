@@ -96,13 +96,7 @@ export function workerTelemetry(env: TelemetryEnv = {}): ControlPlaneTelemetry {
     return { capture: () => {} }
   }
   return {
-    capture: (distinctId, event, properties) => {
-      try {
-        void postCapture(host, key, event, distinctId, properties ?? {}).catch(() => {})
-      } catch {
-        // Telemetry must never break the request.
-      }
-    },
+    capture: (distinctId, event, properties) => postCapture(host, key, event, distinctId, properties ?? {}).catch(() => {}),
   }
 }
 

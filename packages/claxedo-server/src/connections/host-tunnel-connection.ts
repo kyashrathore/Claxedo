@@ -87,7 +87,6 @@ export async function hostTunnelConnectionInfo(
     properties: {
       backing: "local-worktree",
       homeRegion,
-      relayRoom: workspaceId,
       hostId,
     },
   })

@@ -10,5 +10,6 @@
  * including a test spy.
  */
 export type ControlPlaneTelemetry = {
-  capture: (distinctId: string, event: string, properties?: Record<string, unknown>) => void
+  /** A sink that sends over the network answers the send, so a Worker route can keep it alive past its response. */
+  capture: (distinctId: string, event: string, properties?: Record<string, unknown>) => void | Promise<void>
 }
