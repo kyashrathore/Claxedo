@@ -3,6 +3,7 @@ import { Button } from "@/ui"
 import { usePluginsText } from "../i18n"
 import { usePluginHost } from "../provider"
 import { PluginRow } from "./plugin-row"
+import { PluginWarning } from "./plugin-warning"
 import type { LiveListState } from "../live/list-state"
 import "./plugins.css"
 
@@ -16,7 +17,7 @@ export function PluginsSettings(): JSX.Element {
   return (
     <div class="plugins-settings">
       <p class="plugins-settings-description">{t("plugins.settings.description")}</p>
-      <p class="plugins-settings-description">{t(host.platform === "desktop" ? "plugins.settings.trust.desktop" : "plugins.settings.trust.web")}</p>
+      <PluginWarning platform={host.platform} quiet />
       <Show when={host.safeMode()}>
         <div role="status" class="plugins-settings-safe-mode">
           <span>{t("plugins.safeMode")}</span>
