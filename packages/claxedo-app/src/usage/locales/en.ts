@@ -69,6 +69,7 @@ export default {
   "usage.breakdown.next": "Next breakdown page",
   "usage.breakdown.previous": "Previous breakdown page",
   "usage.claxedo.unavailable": "Usage through Claxedo is unavailable",
+  "usage.claxedo.empty": "No sessions ran through Claxedo in this period. Usage shows here once one does.",
   "usage.window.credits": "Credits",
   "usage.window.sparkSession": "Spark session",
   "usage.window.sparkWeekly": "Spark weekly",

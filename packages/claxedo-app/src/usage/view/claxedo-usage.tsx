@@ -25,6 +25,7 @@ export function ClaxedoUsage(props: {
   const claxedo = () => props.summary.claxedo
   const dates = createMemo(() => rangeDates(props.summary.range))
   const points = createMemo(() => (props.metric === "cost" ? dailyCost(dates(), claxedo().cost.daily) : dailyTokens(dates(), claxedo().daily)))
+  const empty = () => claxedo().status === "available" && claxedo().totals.turnCount === 0 && (claxedo().totals.unavailableTurnCount ?? 0) === 0
   return (
     <section class="usage-claxedo" aria-label={t("usage.view.claxedo")}>
       <Show when={claxedo().status !== "available" && claxedo().error}>
@@ -33,19 +34,21 @@ export function ClaxedoUsage(props: {
       <Show when={claxedo().status !== "available" && !claxedo().error}>
         <p class="usage-empty">{t("usage.claxedo.unavailable")}</p>
       </Show>
-      <UsageHeadline summary={props.summary} metric={props.metric} />
-      <Show when={points()} fallback={<p class="usage-empty">{t("usage.daily.costUnavailable")}</p>}>
-        {(daily) => <DailyChart points={daily()} value={props.metric === "cost" ? format.usd : format.count} />}
+      <Show when={!empty()} fallback={<p class="usage-empty">{t("usage.claxedo.empty")}</p>}>
+        <UsageHeadline summary={props.summary} metric={props.metric} />
+        <Show when={points()} fallback={<p class="usage-empty">{t("usage.daily.costUnavailable")}</p>}>
+          {(daily) => <DailyChart points={daily()} value={props.metric === "cost" ? format.usd : format.count} />}
+        </Show>
+        <TokenMix totals={claxedo().totals} />
+        <Breakdown
+          rows={props.summary.breakdown?.rows ?? []}
+          next={props.summary.breakdown?.next}
+          group={props.group}
+          metric={props.metric}
+          paging={props.paging}
+          onGroup={props.onGroup}
+        />
       </Show>
-      <TokenMix totals={claxedo().totals} />
-      <Breakdown
-        rows={props.summary.breakdown?.rows ?? []}
-        next={props.summary.breakdown?.next}
-        group={props.group}
-        metric={props.metric}
-        paging={props.paging}
-        onGroup={props.onGroup}
-      />
     </section>
   )
 }
