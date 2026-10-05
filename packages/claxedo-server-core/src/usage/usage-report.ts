@@ -100,7 +100,7 @@ export const USAGE_REPORT_RESULT_STATUSES = [
 export type UsageReportWriter = {
   writeRevision(
     fact: TurnUsageRevision,
-    filing: { owner: UsageOwner; turnId: string },
+    filing: { owner: UsageOwner; turnId: string; admittedAt?: number },
   ): Promise<UsageRevisionWriteResult | { status: "refused"; code: "usage_turn_full" }>
 }
 

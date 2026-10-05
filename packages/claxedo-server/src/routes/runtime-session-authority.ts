@@ -390,7 +390,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         const owner = owners.get(fact.turnId)
         if (!inBounds.includes(item)) results.push({ ...reported, status: "refused", code: "usage_fact_out_of_bounds" })
         else if (!owner) results.push({ ...reported, status: "refused", code: "usage_owner_unresolved" })
-        else results.push({ ...reported, ...await writer.writeRevision(revision, { owner, turnId: fact.turnId }) })
+        else results.push({ ...reported, ...await writer.writeRevision(revision, { owner, turnId: fact.turnId, ...(fact.turnId === lease.turnId ? { admittedAt: lease.acquiredAt } : {}) }) })
       }
       return context.json({ results })
     } catch {

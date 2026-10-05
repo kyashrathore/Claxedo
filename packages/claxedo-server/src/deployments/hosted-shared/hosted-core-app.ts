@@ -86,6 +86,7 @@ import { privateRepoHosts } from "../private-repo-hosts"
 import { hostedSandboxEgress } from "./hosted-sandbox-egress"
 import type { UsageProjectionLedger } from "@claxedo/server-core/usage/ledger"
 import type { UsageReportWriter } from "@claxedo/server-core/usage/usage-report"
+import { withTurnCompletedTelemetry } from "../../usage/turn-completed-telemetry"
 
 export type HostedCoreProductWorkspaceOptions = Pick<
   HostedWorkspaceRouteOptions,
@@ -559,7 +560,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         ...(plane.turnAuthority ? { turnAuthority: plane.turnAuthority } : {}),
         ...(sessionHostDelivery ? { sessionHostDelivery } : {}),
         ...(services.sessionHosts ? { sessionHosts: services.sessionHosts } : {}),
-        ...(options.usageLedger ? { usageWriter: options.usageLedger } : {}),
+        ...(options.usageLedger ? { usageWriter: withTurnCompletedTelemetry(options.usageLedger, services.telemetry) } : {}),
         ...(services.authority?.resolveWorkspaceOwner
           ? {
               ownerGrants: createOwnerGrantProof({
