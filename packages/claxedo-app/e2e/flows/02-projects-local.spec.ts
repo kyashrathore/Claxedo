@@ -3,12 +3,19 @@ import path from "node:path"
 import type { Page } from "@playwright/test"
 import { expect, gitFolder, sendPrompt, servingMachineName, sessionRoute, test, UI, type Stack } from "../harness"
 
-type ProjectRecord = { id: string; name: string; directory?: string | null; repoUrl?: string | null; available?: boolean; env?: Record<string, string> }
+type ProjectRecord = { id: string; name: string; directory?: string | null; repoUrl?: string | null; available?: boolean }
 
 async function serverProjects(url: string): Promise<ProjectRecord[]> {
   const response = await fetch(new URL("/api/claxedo/projects", url))
   expect(response.status).toBe(200)
   return ((await response.json()) as { projects: ProjectRecord[] }).projects
+}
+
+async function serverEnvironment(url: string, id: string): Promise<{ text: string; names: string[] }> {
+  const response = await fetch(new URL(`/api/claxedo/projects/${encodeURIComponent(id)}/environment`, url))
+  expect(response.status).toBe(200)
+  const text = await response.text()
+  return { text, names: (JSON.parse(text) as { names: string[] }).names }
 }
 
 async function serverProject(url: string, id: string): Promise<{ status: number; project?: ProjectRecord }> {
@@ -64,15 +71,29 @@ async function renameProject(stack: Stack, app: Page, id: string, from: string, 
     await edit()
     await expect(app.getByRole("heading", { level: 2, name: to })).toBeVisible()
   })
-  await test.step("the project's environment is edited in a drawer and read back by id", async () => {
-    await app.getByRole("group", { name: "Environment" }).getByRole("button", { name: "Edit…" }).click()
+  await test.step("X6: a variable is set in the drawer, listed by name, never shown again, then removed", async () => {
+    const section = app.getByRole("group", { name: "Environment" })
+    await section.getByRole("button", { name: "Edit…" }).click()
     const drawer = app.getByRole("dialog", { name: "Environment" })
     await drawer.getByRole("textbox", { name: "Variable name" }).fill("API_URL")
-    await drawer.getByRole("textbox", { name: "Variable value" }).fill("https://example.test")
+    await drawer.getByLabel("Variable value", { exact: true }).fill("https://secret.example.test")
     await drawer.getByRole("button", { name: "Save" }).click()
     await expect(drawer).toHaveCount(0)
-    await expect(app.getByRole("group", { name: "Environment" }).getByText("API_URL", { exact: true })).toBeVisible()
-    expect((await serverProject(stack.url, id)).project?.env).toEqual({ API_URL: "https://example.test" })
+    await expect(section.getByText("API_URL", { exact: true })).toBeVisible()
+    const stored = await serverEnvironment(stack.url, id)
+    expect(stored.names).toEqual(["API_URL"])
+    expect(stored.text).not.toContain("secret.example.test")
+
+    await section.getByRole("button", { name: "Edit…" }).click()
+    const name = drawer.getByRole("textbox", { name: "Variable name" }).first()
+    await expect(name).toHaveValue("API_URL")
+    await expect(name).toBeDisabled()
+    await expect(drawer.getByLabel("Variable value", { exact: true }).first()).toHaveValue("")
+    await drawer.getByRole("button", { name: "Remove variable" }).first().click()
+    await drawer.getByRole("button", { name: "Save" }).click()
+    await expect(drawer).toHaveCount(0)
+    await expect(section.getByText("None", { exact: true })).toBeVisible()
+    expect((await serverEnvironment(stack.url, id)).names).toEqual([])
   })
 }
 

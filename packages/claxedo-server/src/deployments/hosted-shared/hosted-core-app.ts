@@ -13,6 +13,8 @@ import { TelemetryTrackRoutes } from "@claxedo/server-core/platform/telemetry/tr
 import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
 import type { DocumentsBackend } from "@claxedo/server-core/documents/backend"
 import { DocumentsRoutes } from "@claxedo/server-core/documents/routes/index"
+import { ProjectEnvironmentRoutes } from "@claxedo/server-core/projects/environment-routes"
+import { requireSignedControlPlaneRoute } from "@claxedo/server-core/platform/http/control-plane-route-auth"
 import { PublicDocumentRoutes } from "@claxedo/server-core/documents/routes/public"
 import {
   DEPLOYMENT_MODE_ENV,
@@ -357,6 +359,13 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       }),
     }),
   )
+  if (plane.orgCredentials) {
+    app.route("/api/claxedo/projects", ProjectEnvironmentRoutes({
+      authenticate: (request) => requireSignedControlPlaneRoute(request, { authConfig, authentication: options.authentication }),
+      ...(services.authority ? { authority: services.authority } : {}),
+      credentials: plane.orgCredentials,
+    }))
+  }
   if (plane.orgCredentials && options.accountSetup) {
     app.route("/", hostedCredentialRoutes({
       authentication: options.authentication,

@@ -581,8 +581,11 @@ export const desktopRenderer: Policy = {
   // the Pi alternative that spends the same account (owner: the app's
   // composer, `composer/view/harness-unavailable-here.ts`). It adds no
   // package edge.
-  // 1348/36, no headroom.
-  ceilings: { modules: 1348, packages: 36 },
+  // A project's environment, write-only values listed by name through the
+  // hosted or local route (owner: the app's server adapter,
+  // `server/project-environment.ts`). It adds no package edge.
+  // 1349/36, no headroom.
+  ceilings: { modules: 1349, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

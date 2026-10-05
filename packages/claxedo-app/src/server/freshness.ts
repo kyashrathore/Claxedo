@@ -24,6 +24,7 @@ export const freshness = {
   sharedSessions: { kind: "event-owned", events: ["sessionsChanged", "streamGap"] },
   projects: catalog,
   project: catalog,
+  projectEnvironment: catalog,
   placements: catalog,
   placementsOf: catalog,
   machines: placementOwned,

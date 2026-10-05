@@ -14,6 +14,7 @@ import type { IntegrationQueries, IntegrationsApi } from "./integrations"
 import type { ProviderConnectApi, ProviderConnectQueries } from "./provider-connect"
 import type { ProviderCatalogQueries, ProviderCatalogsApi } from "./provider-catalogs"
 import type { FolderQueries, FoldersApi } from "./folders"
+import type { ProjectEnvironmentApi } from "./project-environment"
 import type { HarnessConfigApi } from "./harness-config"
 import type {
   DiffFile,
@@ -64,6 +65,7 @@ import type {
   Machine,
   Placement,
   Project,
+  ProjectEnvironment,
   ProjectSource,
   ProjectUpdate,
   PromptDelivery,
@@ -202,6 +204,7 @@ export type ServerQueries = {
   readonly projects: {
     readonly list: () => FetchQuery<readonly Project[]>
     readonly byId: (id: ProjectId) => FetchQuery<Project>
+    readonly environment: (id: ProjectId) => FetchQuery<ProjectEnvironment>
   }
   readonly placements: {
     readonly list: () => FetchQuery<readonly Placement[]>
@@ -267,7 +270,7 @@ export type Server = {
   readonly subscribe: (handler: (event: ServerEvent) => void) => () => void
   readonly telemetry: ProductTelemetry
   readonly sessions: SessionsApi
-  readonly projects: ProjectsApi
+  readonly projects: ProjectsApi & ProjectEnvironmentApi
   readonly placements: PlacementsApi
   readonly terminals: TerminalsApi
   readonly git: GitApi

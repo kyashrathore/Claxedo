@@ -46,6 +46,8 @@ import { ShellRoutes } from "../shell/routes"
 import { createHostAggregateEventsHandler } from "../shell/host-events"
 import { embeddedSessionDrivenOnlyByMachineUser, onEmbeddedWorkspaceRuntime } from "../deployments/local/embedded-workspace-runtime"
 import { ProjectRoutes } from "@claxedo/server-core/projects/routes"
+import { ProjectEnvironmentRoutes } from "@claxedo/server-core/projects/environment-routes"
+import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/default-credentials"
 import { localProjectStore, systemRepoAddresses } from "@claxedo/server-core/projects/local-store"
 import { requireSignedControlPlaneRoute } from "@claxedo/server-core/platform/http/control-plane-route-auth"
 import { machineSandboxDriverKeys } from "@claxedo/server-core/credentials/machine-sandbox-driver-keys"
@@ -508,6 +510,11 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     store: localProjectStore(),
     authenticate: (request) => requireSignedControlPlaneRoute(request, authRouteOptions(services)),
     repositories: { admission: { resolve: systemRepoAddresses } },
+  }))
+  const environmentCredentials = defaultControlPlaneCredentials()
+  app.route("/api/claxedo/projects", ProjectEnvironmentRoutes({
+    authenticate: (request) => requireSignedControlPlaneRoute(request, authRouteOptions(services)),
+    credentials: () => environmentCredentials,
   }))
   app.route(LIVE_PLUGINS_ROUTE_PATH, LivePluginRoutes(authRouteOptions(services)))
   // The renderer's inventory contract uses the hosted-compatible list path in

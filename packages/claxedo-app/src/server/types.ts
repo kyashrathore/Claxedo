@@ -87,16 +87,16 @@ export type Project = {
   readonly icon?: ProjectIcon
   readonly available: boolean
   readonly missingCheckout?: MissingCheckout
-  readonly env: Readonly<Record<string, string>>
   readonly createdAt: number
   readonly updatedAt: number
 }
 
 export type MissingCheckout = { readonly directory: string; readonly remote?: string }
 
+export type ProjectEnvironment = { readonly names: readonly string[]; readonly editable: boolean }
+
 export type ProjectUpdate = {
   readonly name?: string
-  readonly env?: Readonly<Record<string, string>>
   readonly icon?: ProjectIcon
 }
 

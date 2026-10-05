@@ -6,6 +6,9 @@ import path from "node:path"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../platform/auth/auth"
 import type { WorkspaceAuthority } from "../platform/auth/authority"
 import { ensureWorkspace, listProjects, listWorkspaces, updateProjectMetadata } from "../workspace/store/index"
+import { defaultControlPlaneCredentials } from "../authority/default-credentials"
+import { SINGLE_TENANT_ORG } from "../credentials/partition"
+import { projectEnvironment } from "./environment"
 import { localProjectStore, projectsDirectory, type LocalProjectStoreDeps } from "./local-store"
 import { githubCloneAuthorization, type RepositoryAccessResult, type RepositorySourceDeps } from "./repository-source"
 import { ProjectRoutes, type ProjectRouteOptions } from "./routes"
@@ -113,8 +116,8 @@ describe("local project routes", () => {
     const directory = await gitRepository("folder-")
     const res = await app.request("http://localhost/", json({ name: "Folder Project", source: { kind: "directory", directory } }))
     expect(res.status).toBe(201)
-    const { project } = await res.json() as { project: { id: string; name: string; directory: string; env: Record<string, string> } }
-    expect(project).toMatchObject({ name: "Folder Project", directory, env: {} })
+    const { project } = await res.json() as { project: { id: string; name: string; directory: string } }
+    expect(project).toMatchObject({ name: "Folder Project", directory })
     expect(project.id).toBeTruthy()
 
     const listed = await (await app.request("http://localhost/")).json() as { projects: Array<{ name: string }> }
@@ -160,14 +163,12 @@ describe("local project routes", () => {
     const res = await app.request("http://localhost/", json({
       name: "Repo Project",
       source: { kind: "repository", repoUrl: "https://github.com/acme/demo.git" },
-      env: { NODE_ENV: "development" },
     }))
     expect(res.status).toBe(201)
-    const { project } = await res.json() as { project: { directory: string; repoUrl: string; env: Record<string, string> } }
+    const { project } = await res.json() as { project: { directory: string; repoUrl: string } }
     // The store records real paths; on macOS the temp root is a symlink.
     expect(await fs.realpath(project.directory)).toBe(await fs.realpath(path.join(projectsDirectory(), "repo-project")))
     expect(project.repoUrl).toBe("https://github.com/acme/demo.git")
-    expect(project.env).toEqual({ NODE_ENV: "development" })
     expect((await fs.stat(path.join(project.directory, ".git"))).isDirectory()).toBe(true)
   })
 
@@ -239,20 +240,13 @@ describe("local project routes", () => {
     await expect(fs.stat(path.join(projectsDirectory(), "gone"))).rejects.toThrow()
   })
 
-  test("updates a project's environment and name, refusing invalid names and taken names", async () => {
+  test("updates a project's name, refusing a taken name and an environment in the body", async () => {
     const directory = await gitRepository("env-")
     const created = await (await app.request("http://localhost/", json({ name: "Env Project", source: { kind: "directory", directory } }))).json() as { project: { id: string } }
     const id = created.project.id
 
-    const patched = await app.request(`http://localhost/${id}`, { ...json({ env: { DATABASE_URL: "postgres://localhost/demo" } }), method: "PATCH" })
-    expect(patched.status).toBe(200)
-    expect(((await patched.json()) as { project: { env: Record<string, string> } }).project.env).toEqual({ DATABASE_URL: "postgres://localhost/demo" })
-
-    const read = await app.request(`http://localhost/${id}`)
-    expect(((await read.json()) as { project: { id: string; env: Record<string, string> } }).project).toMatchObject({ id, env: { DATABASE_URL: "postgres://localhost/demo" } })
-
-    const badEnv = await app.request(`http://localhost/${id}`, { ...json({ env: { "bad name": "x" } }), method: "PATCH" })
-    expect(badEnv.status).toBe(400)
+    const envBody = await app.request(`http://localhost/${id}`, { ...json({ env: { DATABASE_URL: "postgres://localhost/demo" } }), method: "PATCH" })
+    expect(envBody.status).toBe(400)
     const taken = await app.request(`http://localhost/${id}`, { ...json({ name: "Folder Project" }), method: "PATCH" })
     expect(taken.status).toBe(409)
     const renamed = await app.request(`http://localhost/${id}`, { ...json({ name: "Env Project 2" }), method: "PATCH" })
@@ -270,9 +264,11 @@ describe("local project routes", () => {
     expect(await missing.json()).toMatchObject({ error: { code: "project_not_found" } })
   })
 
-  test("removing a project forgets it and its placements, and leaves the folder on disk", async () => {
+  test("removing a project forgets it, its placements and its environment, and leaves the folder on disk", async () => {
     const directory = await gitRepository("remove-")
     const { project } = await (await app.request("http://localhost/", json({ name: "Removed", source: { kind: "directory", directory } }))).json() as { project: { id: string } }
+    const environment = projectEnvironment(defaultControlPlaneCredentials(), SINGLE_TENANT_ORG)
+    await environment.set(project.id, "DEPLOY_KEY", "removed-with-project")
     expect((await listWorkspaces()).some((workspace) => workspace.project_id === project.id)).toBe(true)
     const removed = await app.request(`http://localhost/${project.id}`, { method: "DELETE" })
     expect(removed.status).toBe(200)
@@ -280,6 +276,7 @@ describe("local project routes", () => {
     expect((await app.request(`http://localhost/${project.id}`)).status).toBe(404)
     expect((await app.request(`http://localhost/${project.id}`, { method: "DELETE" })).status).toBe(404)
     expect((await listWorkspaces()).some((workspace) => workspace.project_id === project.id)).toBe(false)
+    expect(await environment.names(project.id)).toEqual([])
     expect((await fs.stat(path.join(directory, ".git"))).isDirectory()).toBe(true)
     // The folder is free to become a project again, under a new id.
     const again = await app.request("http://localhost/", json({ name: "Removed", source: { kind: "directory", directory } }))
@@ -292,7 +289,7 @@ describe("local project routes", () => {
     const workspace = await ensureWorkspace({ directory, kind: "local" })
     const id = workspace?.project_id ?? ""
     const listed = await (await app.request("http://localhost/")).json() as { projects: Array<{ id: string }> }
-    expect(listed.projects.find((project) => project.id === id)).toMatchObject({ name: path.basename(directory), directory, env: {}, available: true })
+    expect(listed.projects.find((project) => project.id === id)).toMatchObject({ name: path.basename(directory), directory, available: true })
     expect((await app.request(`http://localhost/${id}`)).status).toBe(200)
   })
 
@@ -806,17 +803,15 @@ describe("project authorization between two unrelated signed accounts", () => {
     const created = await app.request("http://localhost/", post({
       name: "Operator Folder",
       source: { kind: "directory", directory },
-      env: { DEPLOY_KEY: "operator-only-secret" },
     }, asOperator))
     expect(created.status).toBe(201)
-    const { project } = await created.json() as { project: { id: string; env: Record<string, string> } }
-    expect(project.env).toEqual({ DEPLOY_KEY: "operator-only-secret" })
+    const { project } = await created.json() as { project: { id: string } }
 
-    const mine = await (await app.request("http://localhost/", { headers: asOperator })).json() as { projects: Array<{ id: string; env: Record<string, string> }> }
+    const mine = await (await app.request("http://localhost/", { headers: asOperator })).json() as { projects: Array<{ id: string }> }
     expect(mine.projects.map((item) => item.id)).toEqual([project.id])
 
     const theirs = await app.request("http://localhost/", { headers: asStranger })
-    expect(await theirs.text()).not.toContain("operator-only-secret")
+    expect(await theirs.text()).not.toContain(project.id)
 
     const strangerRead = await app.request(`http://localhost/${project.id}`, { headers: asStranger })
     expect(strangerRead.status).toBe(404)
@@ -824,14 +819,14 @@ describe("project authorization between two unrelated signed accounts", () => {
     expect((await app.request(`http://localhost/${project.id}`, { headers: asOperator })).status).toBe(200)
 
     const rewritten = await app.request(`http://localhost/${project.id}`, {
-      ...post({ name: "Stranger Owned", env: { DEPLOY_KEY: "attacker-supplied" } }, asStranger),
+      ...post({ name: "Stranger Owned" }, asStranger),
       method: "PATCH",
     })
     expect(rewritten.status).toBe(403)
     expect(await rewritten.json()).toMatchObject({ error: { code: "project_access_denied" } })
 
-    const after = await (await app.request(`http://localhost/${project.id}`, { headers: asOperator })).json() as { project: { name: string; env: Record<string, string> } }
-    expect(after.project).toMatchObject({ name: "Operator Folder", env: { DEPLOY_KEY: "operator-only-secret" } })
+    const after = await (await app.request(`http://localhost/${project.id}`, { headers: asOperator })).json() as { project: { name: string } }
+    expect(after.project).toMatchObject({ name: "Operator Folder" })
   })
 
   test("a signed composition missing its authorization dependencies reads nothing", async () => {

@@ -7,7 +7,7 @@ import { promisify } from "node:util"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { dockerSandboxDriverEnabled, isSandboxProvisionerID, type SandboxProvisionerID } from "@claxedo/sandbox-contract"
-import { isJsonRecord, jsonRecord, jsonString, jsonStringEntries } from "@claxedo/server-core/platform/runtime/lib/json"
+import { isJsonRecord, jsonRecord, jsonString } from "@claxedo/server-core/platform/runtime/lib/json"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import type { HostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { localWorkspaceRuntimeSessionAuthority } from "@claxedo/server-core/workspace/local-runtime-port"
@@ -53,15 +53,11 @@ export type CatalogWorkspace = Workspace & { session_authority?: HostSessionAuth
 /**
  * A project: a repository and a name. Where it executes is a workspace
  * (local worktree or cloud sandbox) that carries this project's id; the
- * project itself never runs anything. `env` is the environment every cloud
- * sandbox of the project starts with — plaintext by design, see
- * `SandboxHostInput.env`; credentials the agent must not read belong in
- * Connections.
+ * project itself never runs anything.
  */
 export type Project = {
   id: string
   name: string
-  env?: Record<string, string>
   created_at: number
   updated_at: number
 }
@@ -223,7 +219,6 @@ async function load(target: string) {
       projectsById.set(id, {
         id,
         name,
-        env: envRecord(item.env),
         created_at: storedTime(item.created_at),
         updated_at: storedTime(item.updated_at),
       })
@@ -365,11 +360,6 @@ type EnsureWorkspaceInput = {
   git_branch?: string
   remote_directory?: string
   status?: string
-}
-
-function envRecord(value: unknown): Record<string, string> | undefined {
-  const entries = jsonStringEntries(value)
-  return Object.keys(entries).length ? entries : undefined
 }
 
 export async function ensureWorkspace(input: EnsureWorkspaceInput) {
@@ -753,7 +743,7 @@ export async function findProjectRecordByName(name: string): Promise<Project | u
 }
 
 /** Creates or renames a project record; the workspace rows carrying `id` are its executions. */
-export async function upsertProjectRecord(input: { id: string; name: string; env?: Record<string, string> }): Promise<Project> {
+export async function upsertProjectRecord(input: { id: string; name: string }): Promise<Project> {
   await boot()
   const id = trimToUndefined(input.id)
   const name = trimToUndefined(input.name)
@@ -763,7 +753,6 @@ export async function upsertProjectRecord(input: { id: string; name: string; env
   const next: Project = {
     id,
     name,
-    env: input.env === undefined ? existing?.env : envRecord(input.env),
     created_at: existing?.created_at ?? now,
     updated_at: now,
   }
@@ -779,9 +768,4 @@ export async function deleteProjectRecord(id: string) {
   if (!key || !projectsById.delete(key)) return false
   await save()
   return true
-}
-
-/** The environment every cloud sandbox of the project starts with. */
-export async function projectEnv(projectId: string | undefined): Promise<Record<string, string> | undefined> {
-  return (await getProjectRecord(projectId))?.env
 }

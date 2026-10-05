@@ -1,6 +1,6 @@
 import { createMemo, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { useServer, type AppError, type Placement, type Project, type ProjectId } from "@/server"
+import { useServer, type AppError, type Placement, type Project, type ProjectEnvironment, type ProjectId } from "@/server"
 
 export type Loaded<T> =
   | { readonly kind: "loading" }
@@ -36,6 +36,12 @@ export function useProject(id: Accessor<ProjectId>): Accessor<ProjectView> {
     if (state.kind === "failed" && state.error.class === "not_found") return { kind: "missing" }
     return state
   })
+}
+
+export function useProjectEnvironment(projectId: Accessor<ProjectId>): Accessor<Loaded<ProjectEnvironment>> {
+  const server = useServer()
+  const query = useQuery(() => server.queries.projects.environment(projectId()))
+  return createMemo(() => loaded(query))
 }
 
 export function useProjectPlacements(projectId: Accessor<ProjectId>): { readonly state: Accessor<Loaded<readonly Placement[]>>; readonly retry: () => void } {

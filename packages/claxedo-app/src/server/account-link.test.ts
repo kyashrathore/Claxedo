@@ -47,7 +47,7 @@ test("account link: the shared workspace keeps its local placement; the control 
 test("account link: a control-plane-only project stands as its own project with its own placements", () => {
   const linked = linkAccountCatalog(local, account)
   expect(linked.projects).toEqual([
-    { id: projectId("prj_web"), name: "ada/web", source: { kind: "repository", url: "https://github.com/ada/web.git" }, available: true, env: {}, createdAt: 30, updatedAt: 40 },
+    { id: projectId("prj_web"), name: "ada/web", source: { kind: "repository", url: "https://github.com/ada/web.git" }, available: true, createdAt: 30, updatedAt: 40 },
   ])
   expect(linked.placements.find((record) => String(record.placement.id) === "ws_web")?.placement.projectId).toBe(projectId("prj_web"))
   expect(linked.accountProjectIds(projectId("prj_web"))).toEqual([projectId("prj_web")])

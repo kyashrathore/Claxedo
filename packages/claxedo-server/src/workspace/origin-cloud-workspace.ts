@@ -8,7 +8,6 @@ import {
   getProjectWorkspace,
   getWorkspace,
   ensureWorkspace,
-  projectEnv,
   type Workspace,
 } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneServices, SandboxKeyedDriver } from "../authority/services"
@@ -42,7 +41,7 @@ export type OriginCloudWorkspaceInput = {
    * process loss with nothing persisted to look the mapping up in.
    */
   originKey: string
-  /** The project whose authorized remote and environment this root clones. */
+  /** The project whose authorized remote this root clones. */
   projectId: string
   /** The organization the root is created in, whose sandbox provider key places it. */
   orgId: string
@@ -140,10 +139,7 @@ export async function allocateOriginCloudWorkspace(
     remote_directory: workspace.remote_directory,
   }, {
     egress: input.egress,
-    // The project's own environment first: a prepared value names this one
-    // root and must not be shadowed by a project-wide variable of the same
-    // name.
-    preparation: { env: { ...(await projectEnv(input.projectId)), ...prepared.env }, secrets: [...prepared.secrets ?? []] },
+    preparation: { env: { ...prepared.env }, secrets: [...prepared.secrets ?? []] },
   }))
   if (ready.status === "ready") return { workspace }
   if (ready.status === "provisioning") {

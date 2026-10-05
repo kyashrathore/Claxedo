@@ -2,12 +2,11 @@ import { isRecord } from "@claxedo/helpers/guards"
 import { unreachable } from "../../lib/machine"
 import { ServerError } from "../errors"
 import { projectId } from "../ids"
-import type { MissingCheckout, Project, ProjectIcon, ProjectSource } from "../types"
+import type { MissingCheckout, Project, ProjectEnvironment, ProjectIcon, ProjectSource } from "../types"
 
 type WireProject = {
   readonly id: string
   readonly name: string
-  readonly env?: Record<string, string>
   readonly directory?: string | null
   readonly repoUrl?: string | null
   readonly icon?: { readonly override?: unknown; readonly color?: unknown }
@@ -52,7 +51,6 @@ function projectFromWire(project: WireProject): Project {
     ...(icon ? { icon } : {}),
     available: project.available,
     ...(missingCheckout ? { missingCheckout } : {}),
-    env: project.env ?? {},
     createdAt: project.created_at,
     updatedAt: project.updated_at,
   }
@@ -81,4 +79,12 @@ export function oneProjectFromWire(body: unknown): Project {
   const project = body && typeof body === "object" ? (body as { project?: unknown }).project : undefined
   if (!isWireProject(project)) throw new ServerError({ class: "internal", message: "The projects route answered without a project" })
   return projectFromWire(project)
+}
+
+export function projectEnvironmentFromWire(body: unknown): ProjectEnvironment {
+  const names = isRecord(body) && Array.isArray(body.names) ? body.names.filter((name): name is string => typeof name === "string") : undefined
+  if (!names || !isRecord(body) || typeof body.editable !== "boolean") {
+    throw new ServerError({ class: "internal", message: "The project environment route answered without names" })
+  }
+  return { names, editable: body.editable }
 }

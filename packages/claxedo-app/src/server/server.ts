@@ -23,6 +23,7 @@ import type { ProjectId } from "./ids"
 import type { SessionLocation } from "./types"
 import type { Server, ServerQueries } from "./api"
 import { createProjectsApi } from "./projects"
+import { createProjectEnvironmentApi } from "./project-environment"
 import { queryKeys } from "./query-keys"
 import { createQueries } from "./queries"
 import { createPlacementStreams } from "./placement-streams"
@@ -73,7 +74,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     telemetry,
     sessions: createSessionsApi(transport, workspaces, status, wakes, projection, telemetry, account),
     sharedSessions: workspaces.shared,
-    projects: createProjectsApi(transport, queryClient, workspaces),
+    projects: { ...createProjectsApi(transport, queryClient, workspaces), ...createProjectEnvironmentApi(transport, queryClient, workspaces, account) },
     placements: {
       byId: workspaces.byId,
       list: workspaces.list,

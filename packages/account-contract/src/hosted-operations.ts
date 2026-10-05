@@ -480,6 +480,25 @@ export const HOSTED_OPERATIONS = {
     output: withArrays("entries"), retry: "safe",
     exposure: { renderer: true, app: false },
   }),
+  "project.environment.list": defineOperation({
+    method: "GET", path: operationPath("/api/claxedo/projects/:projectId/environment"),
+    input: operationInput({ projectId: requiredParameter }),
+    output: withArrays("names"), retry: "safe",
+    exposure: { renderer: true, app: false },
+  }),
+  "project.environment.set": defineOperation({
+    method: "PUT", path: operationPath("/api/claxedo/projects/:projectId/environment/:name"),
+    input: operationInput({ projectId: requiredParameter, name: requiredParameter, value: bodyField }),
+    output: withArrays("names"), retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("value"),
+  }),
+  "project.environment.remove": defineOperation({
+    method: "DELETE", path: operationPath("/api/claxedo/projects/:projectId/environment/:name"),
+    input: operationInput({ projectId: requiredParameter, name: requiredParameter }),
+    output: withArrays("names"), retry: "never",
+    exposure: { renderer: true, app: false },
+  }),
   "connections.list": defineOperation({
     method: "GET", path: operationPath("/api/claxedo/integrations"),
     input: operationInput({}),

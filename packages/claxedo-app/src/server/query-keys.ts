@@ -7,6 +7,7 @@ export const queryKeys = {
   accountCatalog: (server: string) => ["server", server, "account-catalog"] as const,
   projects: (server: string) => ["server", server, "projects"] as const,
   project: (server: string, id: ProjectId) => ["server", server, "projects", id] as const,
+  projectEnvironment: (server: string, id: ProjectId) => ["server", server, "projects", id, "environment"] as const,
   placements: (server: string) => ["server", server, "placements"] as const,
   placementsOf: (server: string, projectId: ProjectId) => ["server", server, "placements", projectId] as const,
   machines: (server: string) => ["server", server, "machines"] as const,

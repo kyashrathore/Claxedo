@@ -19,6 +19,7 @@ import { machineQueries } from "./machines"
 import { marketplaceQueries } from "./marketplace"
 import { organizationQueries } from "./organizations"
 import { projectQueries } from "./projects"
+import { projectEnvironmentQuery } from "./project-environment"
 import { queryKeys } from "./query-keys"
 import { taskQueries } from "./tasks"
 import { terminalQueries } from "./terminals"
@@ -44,7 +45,7 @@ export function createQueries(transport: Transport, workspaces: Workspaces, acco
   const cloud = cloudQueries(transport)
   return {
     livePlugins: livePluginQueries(transport),
-    projects: projectQueries(transport, workspaces),
+    projects: { ...projectQueries(transport, workspaces), environment: projectEnvironmentQuery(transport, workspaces, account) },
     placements: placementQueries(transport, workspaces),
     machines: machineQueries(transport, workspaces, account),
     organizations: organizationQueries(transport.serverUrl, account),

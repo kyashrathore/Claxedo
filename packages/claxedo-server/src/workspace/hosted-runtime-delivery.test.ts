@@ -95,7 +95,7 @@ async function composition() {
       return { workspace_id: args.workspaceId }
     },
     openWorkspace: async (_auth: unknown, args: { workspaceId: string }) => ({ allowed: true, role: "owner", workspace: rows.get(args.workspaceId) }),
-    resolveWorkspaceOwner: async () => ({ userId: "owner", orgId: "org" }),
+    resolveWorkspaceOwner: async () => ({ userId: "owner", orgId: "org", projectId: "project" }),
     auditAllow: async () => ({}),
     auditDeny: async () => ({}),
   }
@@ -113,7 +113,7 @@ async function composition() {
     workspaceDriver: async () => ({ driver, key: "operator" }),
     sandboxInput: async (workspaceId, prepared) => hostedSandboxInput(rows.get(workspaceId) ?? {}, { egress, ...prepared }),
     settings: { read: async () => ({ version: 3, connections: {} }), write: async () => {} },
-    credentials: () => ({ listCredentials: async () => [], accountSelections: async () => ({}) }) as never,
+    credentials: () => ({ listCredentials: async () => [], accountSelections: async () => ({}), resolveCredentialSecretById: async () => null }) as never,
     signingEnv: {},
     provisionedRunner: undefined,
     deliverSessionRowsPass: async (workspaceId) => { pushed.push(`session rows pass ${workspaceId}`) },

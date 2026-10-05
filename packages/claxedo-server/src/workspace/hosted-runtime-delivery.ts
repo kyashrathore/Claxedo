@@ -11,6 +11,7 @@ import {
   nativeProviderDeliveriesFromRepository,
   nativeProviderSecrets,
 } from "@claxedo/server-core/credentials/native-delivery-plan"
+import { projectEnvironment } from "@claxedo/server-core/projects/environment"
 import type { ControlPlaneCredentials, ControlPlaneServices, SandboxKeyedDriver } from "../authority/services"
 import { storeRenewal } from "../credentials/store-renewal"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "./route-support"
@@ -92,7 +93,10 @@ export function createHostedRuntimeDelivery(input: {
   const prepare = async ({ workspaceId }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
     if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return {}
     const person = await owner(workspaceId)
-    return { secrets: nativeProviderSecrets((await deliveries(workspaceId, person)).delivered) }
+    return {
+      secrets: nativeProviderSecrets((await deliveries(workspaceId, person)).delivered),
+      env: await projectEnvironment(input.credentials(person.orgId), person.orgId).values(person.projectId),
+    }
   }
   const push = async (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined) => {
     if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return

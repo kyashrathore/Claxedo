@@ -6,6 +6,8 @@ import { createBoundedGit, GIT_CLONE_TIMEOUT_MS, runGit, type GitHttpCredential 
 import type { RepoAddressResolver } from "@claxedo/sandbox-contract"
 import { dataDir } from "../platform/runtime/lib/paths"
 import type { SignedControlPlaneAuth } from "../platform/auth/auth"
+import { defaultControlPlaneCredentials } from "../authority/default-credentials"
+import { SINGLE_TENANT_ORG } from "../credentials/partition"
 import {
   deleteProjectRecord,
   deleteWorkspace,
@@ -20,6 +22,7 @@ import {
   updateProjectMetadata,
   upsertProjectRecord,
 } from "../workspace/store/index"
+import { projectEnvironment } from "./environment"
 import { lastPathSegment } from "./repository-source"
 import {
   freeProjectName,
@@ -129,8 +132,8 @@ type StoredProject = NonNullable<Awaited<ReturnType<typeof getProjectRecord>>>
  * A project is every entry of the workspace catalog, the list the engine's
  * own project routes serve, plus any record not placed yet. Its name, icon
  * and startup command are the catalog's (the root workspace's `project_*`
- * fields, which those routes also write); the record adds the environment,
- * and its name only lets creation refuse a taken one. It is available while
+ * fields, which those routes also write); the record's name only lets
+ * creation refuse a taken one. It is available while
  * one of its placements exists: a folder that is there, or a cloud workspace
  * that has not failed, whether or not its sandbox runs now (the placement's
  * `reachable` says that).
@@ -144,7 +147,6 @@ async function projectView(id: string, catalog: CatalogProject | undefined, reco
   return {
     id,
     name: catalog?.name ?? known.name,
-    env: record?.env ?? {},
     directory: workspace?.directory ?? null,
     repoUrl: workspace?.repo_url ?? null,
     ...(catalog?.icon ? { icon: catalog.icon } : {}),
@@ -257,7 +259,7 @@ export function localProjectStore(deps: LocalProjectStoreDeps = {}): ProjectStor
           throw new ProjectStoreError(502, "project_register_failed", `The project could not be registered for your account: ${message}`)
         }
       }
-      const record = await upsertProjectRecord({ id: workspace.project_id, name, env: input.env ?? {} })
+      const record = await upsertProjectRecord({ id: workspace.project_id, name })
       return (await findProject(record.id))!
     },
 
@@ -277,13 +279,7 @@ export function localProjectStore(deps: LocalProjectStoreDeps = {}): ProjectStor
         })
       }
       const record = await getProjectRecord(id)
-      if (input.env !== undefined || (record && name)) {
-        await upsertProjectRecord({
-          id,
-          name: name || record?.name || current.name,
-          ...(input.env !== undefined ? { env: input.env } : {}),
-        })
-      }
+      if (record && name) await upsertProjectRecord({ id, name })
       return findProject(id)
     },
 
@@ -305,6 +301,7 @@ export function localProjectStore(deps: LocalProjectStoreDeps = {}): ProjectStor
       }
       for (const workspace of placements) await deleteWorkspace(workspace.id)
       if (record) await deleteProjectRecord(id)
+      await projectEnvironment(defaultControlPlaneCredentials(), SINGLE_TENANT_ORG).clear(id)
       return true
     },
 

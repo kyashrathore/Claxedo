@@ -8,7 +8,7 @@ import { useProjectsText } from "../i18n"
 import { sourceLabel } from "../project-source"
 import { getAvatarColors } from "../project-avatar"
 import { projectSettingsPath } from "../routes"
-import { useProject, useProjectCommands } from "../store"
+import { useProject, useProjectCommands, useProjectEnvironment } from "../store"
 import { DialogEditProject } from "./edit-project-dialog"
 import { DrawerProjectEnvironment } from "./project-environment-drawer"
 import { WhereItRuns } from "./where-it-runs"
@@ -81,23 +81,44 @@ function ProjectFields(props: { readonly project: Project; readonly editable: bo
   )
 }
 
-function WorkspaceSetup(props: { readonly project: Project }): JSX.Element {
+function ProjectEnvironmentSection(props: { readonly project: Project }): JSX.Element {
   const t = useProjectsText()
   const dialog = useDialog()
-  const variables = () => Object.keys(props.project.env).join(", ")
+  const environment = useProjectEnvironment(() => props.project.id)
+  const ready = () => {
+    const state = environment()
+    return state.kind === "ready" ? state.data : undefined
+  }
+  const failure = () => {
+    const state = environment()
+    return state.kind === "failed" ? state.error.message : undefined
+  }
   return (
     <SettingsGroup
       title={t("projects.environment.title")}
       description={t("projects.environment.summary")}
       action={
-        <Button variant="neutral" size="small" onClick={() => dialog.show(() => <DrawerProjectEnvironment project={props.project} />)}>
-          {t("projects.environment.edit")}
-        </Button>
+        <Show when={ready()}>
+          {(loaded) => (
+            <Button
+              variant="neutral"
+              size="small"
+              data-testid="project-environment-edit"
+              onClick={() => dialog.show(() => <DrawerProjectEnvironment project={props.project} environment={loaded()} />)}
+            >
+              {t("projects.environment.edit")}
+            </Button>
+          )}
+        </Show>
       }
     >
       <SettingsList>
-        <SettingsRow title={t("projects.edit.environment")} description={variables() || t("projects.settings.none")} />
+        <SettingsRow
+          title={t("projects.edit.environment")}
+          description={ready() ? ready()!.names.join(", ") || t("projects.settings.none") : t("projects.loading")}
+        />
       </SettingsList>
+      <Show when={failure()}>{(message) => <SettingsNote tone="danger">{t("projects.environment.failed")}: {message()}</SettingsNote>}</Show>
     </SettingsGroup>
   )
 }
@@ -164,8 +185,8 @@ export function ProjectSettings(props: { readonly id: ProjectId }): JSX.Element 
               <Show when={row().missingCheckout}>{(checkout) => <MissingCheckoutSection id={props.id} checkout={checkout()} />}</Show>
               <ProjectFields project={row()} editable={configurable()} />
               <WhereItRuns project={row()} />
+              <ProjectEnvironmentSection project={row()} />
               <Show when={configurable()}>
-                <WorkspaceSetup project={row()} />
                 <ProjectRemoval id={props.id} name={row().name} />
               </Show>
             </>

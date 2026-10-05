@@ -75,7 +75,6 @@ function projectFromRows(id: string, rows: readonly Row[], placements: readonly 
     name: named,
     ...(source ? { source } : {}),
     available: placements.some((record) => record.placement.reachable),
-    env: {},
     createdAt: created,
     updatedAt: updated,
   }

@@ -18,14 +18,14 @@ async function createDelivery(config: UserAgentConfig, backing: "cloud-vm" | "lo
   const instance = await workspaceBackingDatabase([{ id: "ws", backing }])
   active.push(instance)
   return createHostedRuntimeDelivery({
-    authority: { resolveWorkspaceOwner: async () => ({ userId: "owner", orgId: "org" }) } as unknown as Input["authority"],
+    authority: { resolveWorkspaceOwner: async () => ({ userId: "owner", orgId: "org", projectId: "project" }) } as unknown as Input["authority"],
     database: instance.database,
     services: { sandbox: { sandboxManager: { target: async () => ({ status: "ready", hostId: "host", url: "https://runtime.test" }) } } } as unknown as Input["services"],
     sandboxManager: {} as Input["sandboxManager"],
     workspaceDriver: async () => ({ driver: { metadata: { secretBrokering: "native" } }, key: "operator" }) as Awaited<ReturnType<Input["workspaceDriver"]>>,
     sandboxInput: async () => { throw new Error("this test provisions no sandbox") },
     settings: { read: async () => config, write: async () => {} },
-    credentials: () => ({ listCredentials: async () => [], accountSelections: async () => ({}) }) as unknown as ReturnType<Input["credentials"]>,
+    credentials: () => ({ listCredentials: async () => [], accountSelections: async () => ({}), resolveCredentialSecretById: async () => null }) as unknown as ReturnType<Input["credentials"]>,
     signingEnv: {},
     provisionedRunner: "pi",
   })

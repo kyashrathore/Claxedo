@@ -7,8 +7,8 @@ export type ProjectIcon = { override?: string; color?: string }
 export type ProjectCommands = { start?: string }
 
 /**
- * A project as every deployment answers it: a record with an id, a name and
- * the environment its cloud sandboxes start with. `directory` is the checkout
+ * A project as every deployment answers it: a record with an id and a name.
+ * Its environment lives in the credential store (`./environment`). `directory` is the checkout
  * a server with a filesystem keeps for it, and `repoUrl` the repository it was
  * created from; either is null where the deployment has no such thing.
  * `available` is false when none of its placements exists any more: its
@@ -20,7 +20,6 @@ export type ProjectCommands = { start?: string }
 export type ProjectRecord = {
   id: string
   name: string
-  env: Record<string, string>
   directory: string | null
   repoUrl: string | null
   icon?: ProjectIcon
@@ -59,13 +58,11 @@ export type ProjectSourceInput =
 export type ProjectCreateInput = {
   name?: string
   source: ProjectSourceInput
-  env?: Record<string, string>
 }
 
 /** An empty `name` drops a name set by hand, so the project shows its default name again. */
 export type ProjectUpdateInput = {
   name?: string
-  env?: Record<string, string>
   icon?: ProjectIcon
   commands?: ProjectCommands
 }

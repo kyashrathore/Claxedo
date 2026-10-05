@@ -5,7 +5,7 @@ import { ProjectRoutes, type ProjectRouteOptions } from "./routes"
 import { ProjectStoreError, type ProjectCreateInput, type ProjectRecord, type ProjectStore } from "./store"
 
 function record(id: string, name: string): ProjectRecord {
-  return { id, name, env: {}, directory: null, repoUrl: null, available: true, created_at: 1, updated_at: 1 }
+  return { id, name, directory: null, repoUrl: null, available: true, created_at: 1, updated_at: 1 }
 }
 
 /** A store that keeps records in memory and remembers what it was asked. */
@@ -22,7 +22,6 @@ function memoryStore(input: { folders: boolean; records?: ProjectRecord[] }) {
       const repository = create.source.kind === "repository" ? await create.source.resolve() : undefined
       const item = {
         ...record(`prj_${records.size + 1}`, create.name ?? repository?.name ?? "unnamed"),
-        env: create.env ?? {},
         directory: create.source.kind === "directory" ? create.source.directory : null,
         repoUrl: repository?.repoUrl ?? null,
       }
@@ -32,7 +31,7 @@ function memoryStore(input: { folders: boolean; records?: ProjectRecord[] }) {
     update: async (id, patch) => {
       const existing = records.get(id)
       if (!existing) return undefined
-      const next = { ...existing, ...(patch.name ? { name: patch.name } : {}), ...(patch.env ? { env: patch.env } : {}) }
+      const next = { ...existing, ...(patch.name ? { name: patch.name } : {}) }
       records.set(id, next)
       return next
     },
@@ -76,19 +75,20 @@ describe("the projects route over its store", () => {
   test("a repository source reaches the store unresolved, and resolves to the URL and its name when the store asks", async () => {
     const { store, created } = memoryStore({ folders: false })
     const app = ProjectRoutes({ store, authenticate: asUnsigned })
-    const res = await app.request("http://localhost/", json("POST", { source: { kind: "repository", repoUrl: "https://github.com/acme/Demo.git" }, env: { A: "1" } }))
+    const res = await app.request("http://localhost/", json("POST", { source: { kind: "repository", repoUrl: "https://github.com/acme/Demo.git" } }))
     expect(res.status).toBe(201)
-    expect(await res.json()).toMatchObject({ project: { name: "Demo", repoUrl: "https://github.com/acme/Demo.git", env: { A: "1" } } })
+    expect(await res.json()).toMatchObject({ project: { name: "Demo", repoUrl: "https://github.com/acme/Demo.git" } })
     expect(created).toHaveLength(1)
     expect(created[0]?.source.kind).toBe("repository")
   })
 
-  test("a bad body, a bad environment and an unclonable URL are refused as 400s with their own codes", async () => {
+  test("a bad body, an environment in the body and an unclonable URL are refused as 400s with their own codes", async () => {
     const { store } = memoryStore({ folders: false })
     const app = ProjectRoutes({ store, authenticate: asUnsigned })
     expect((await app.request("http://localhost/", json("POST", { name: "No source" }))).status).toBe(400)
     const env = await app.request("http://localhost/", json("POST", { source: { kind: "repository", repoUrl: "https://github.com/a/b" }, env: { "not a name": "x" } }))
-    expect(await env.json()).toMatchObject({ error: { code: "project_env_invalid" } })
+    expect(env.status).toBe(400)
+    expect(await env.json()).toMatchObject({ error: { code: "project_invalid" } })
     const url = await app.request("http://localhost/", json("POST", { source: { kind: "repository", repoUrl: "not a url" } }))
     expect(url.status).toBe(400)
     expect(await url.json()).toMatchObject({ error: { code: "project_repository_invalid" } })

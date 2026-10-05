@@ -342,6 +342,19 @@ describe("resolveHostedOperation", () => {
       method: "GET",
       path: "/api/control/projects/proj_1/access",
     })
+    expect(resolveHostedOperation("project.environment.list", { projectId: "proj_1" })).toEqual({
+      method: "GET",
+      path: "/api/claxedo/projects/proj_1/environment",
+    })
+    expect(resolveHostedOperation("project.environment.set", { projectId: "proj_1", name: "API_URL", value: "https://api.test" })).toEqual({
+      method: "PUT",
+      path: "/api/claxedo/projects/proj_1/environment/API_URL",
+      body: { value: "https://api.test" },
+    })
+    expect(resolveHostedOperation("project.environment.remove", { projectId: "proj_1", name: "API_URL" })).toEqual({
+      method: "DELETE",
+      path: "/api/claxedo/projects/proj_1/environment/API_URL",
+    })
     expect(() => resolveHostedOperation("org.teams.create", { name: "Eng" })).toThrow(
       MissingOperationParameter,
     )
