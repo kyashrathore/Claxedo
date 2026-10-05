@@ -508,14 +508,14 @@ describe("two-user signed runtime transport acceptance", () => {
     })
     const aliceWide = await connect(
       runtimeApp,
-      await remint(aliceAuth, "jti_runtime_alice", undefined, 1),
+      await remint(aliceAuth, "jti_runtime_alice", undefined, 2),
       undefined,
       "workspace",
     )
     for (const token of [bobRht, caseyRht]) {
       expect((await runtimeRequest(runtimeApp, token, "/api/wr/events")).status).toBe(403)
     }
-    await new Promise((resolve) => setTimeout(resolve, 1_500))
+    await new Promise((resolve) => setTimeout(resolve, 3_000))
     sessionBus.publish({
       type: "pty.created",
       info: {
