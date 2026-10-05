@@ -7,7 +7,7 @@ export type OnboardingFunnel = {
   readonly finished: () => void
 }
 
-const order = (step: OnboardingStepId) => onboardingSteps.findIndex((item) => item.id === step)
+const stepIndex = (step: OnboardingStepId) => onboardingSteps.findIndex((item) => item.id === step)
 
 export function createOnboardingFunnel(telemetry: ProductTelemetry, first: OnboardingStepId): OnboardingFunnel {
   let current = first
@@ -21,7 +21,7 @@ export function createOnboardingFunnel(telemetry: ProductTelemetry, first: Onboa
   return {
     moved: (from, to) => {
       if (from === to) return
-      if (order(to) > order(from)) completed(from)
+      if (stepIndex(to) > stepIndex(from)) completed(from)
       current = to
       viewed(to)
     },

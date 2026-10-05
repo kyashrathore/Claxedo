@@ -7,6 +7,7 @@ import { fetchQuery } from "./fetch-query"
 import type { ProjectId } from "./ids"
 import type {
   MarketplaceCatalog,
+  PluginActivationInput,
   PluginChange,
   PluginSkillDocument,
   PluginSkillRequest,
@@ -112,6 +113,18 @@ function createChanges(transport: Transport, queryClient: QueryClient) {
   return { refreshAll, post }
 }
 
+async function setActivation(post: ReturnType<typeof createChanges>["post"], telemetry: ProductTelemetry, input: PluginActivationInput) {
+  const change = await post("/activation", {
+    pluginInstanceId: input.pluginInstanceId,
+    harnessIds: input.harnessIds,
+    choice: input.choice,
+    expectedRevision: input.revision,
+    ...(input.target ? { target: input.target } : {}),
+  })
+  if (input.choice === true) telemetry.record({ event: "feature_used", properties: { feature: "marketplace_install" } })
+  return change
+}
+
 export function createMarketplaceApi(transport: Transport, queryClient: QueryClient, telemetry: ProductTelemetry): MarketplaceApi {
   const server = transport.serverUrl
   const { refreshAll, post } = createChanges(transport, queryClient)
@@ -121,17 +134,7 @@ export function createMarketplaceApi(transport: Transport, queryClient: QueryCli
       queryClient.setQueryData(queryKeys.marketplace(server, projectId), catalog)
       return catalog
     },
-    setActivation: async (input) => {
-      const change = await post("/activation", {
-        pluginInstanceId: input.pluginInstanceId,
-        harnessIds: input.harnessIds,
-        choice: input.choice,
-        expectedRevision: input.revision,
-        ...(input.target ? { target: input.target } : {}),
-      })
-      if (input.choice === true) telemetry.record({ event: "feature_used", properties: { feature: "marketplace_install" } })
-      return change
-    },
+    setActivation: (input) => setActivation(post, telemetry, input),
     setOrganizationDefault: (input) =>
       post("/organization-default", {
         pluginInstanceId: input.pluginInstanceId,

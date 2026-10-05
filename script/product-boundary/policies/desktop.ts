@@ -556,8 +556,14 @@ export const desktopRenderer: Policy = {
   // replaces the inline new-cloud-workspace panel, the one cloud-workspace
   // display name (`cloud/view/cloud-name.ts`), and the note a localhost link
   // from another machine's workspace opens (`browser/view/elsewhere-page.tsx`).
-  // They add no package edge. 1336/36, no headroom.
-  ceilings: { modules: 1336, packages: 36 },
+  // They add no package edge.
+  // Product telemetry (owner: the app's server adapter and session requests):
+  // the one sender of product events (`server/telemetry.ts`), the allowlisted
+  // event contract it sends (`@claxedo/account-contract/product-events`, a
+  // package the renderer already reaches) and the permission reply's event
+  // (`session/requests/permission-decided.ts`). They add no package edge.
+  // 1339/36, no headroom.
+  ceilings: { modules: 1339, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
