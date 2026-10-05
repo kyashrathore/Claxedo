@@ -27,6 +27,7 @@ function hostedRoutes() {
   const plane = {
     services,
     env: { CLAXEDO_DEPLOYMENT_MODE: "hosted" },
+    orgCredentials: () => ({}),
     privateSessionAuthority: {},
     runtimeSessionAuthority: {},
     safetyLimits: {
