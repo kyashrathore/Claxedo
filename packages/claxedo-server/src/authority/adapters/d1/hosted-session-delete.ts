@@ -8,3 +8,11 @@ export async function deleteD1HostedSession(database: D1Database, input: { works
     .run()
   return result.meta.changes > 0
 }
+
+export async function listD1HostedSessions(database: D1Database, workspaceId: string): Promise<string[]> {
+  const rows = await database
+    .prepare(`select session_id from sessions where workspace_id = ? and session_host_root = session_id and deleted_at is null order by session_id`)
+    .bind(workspaceId)
+    .all<{ session_id: string }>()
+  return rows.results.map((row) => row.session_id)
+}

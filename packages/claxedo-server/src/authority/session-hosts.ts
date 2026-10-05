@@ -22,6 +22,8 @@ export type SessionHostAuthority = {
   recordSessionMcpRuntimeAccessToken(actorId: string, token: TurnRuntimeAccessTokenRecord): Promise<unknown>
   /** Whether this lease is still the session's live one: neither released nor expired nor superseded. */
   turnLeaseLive(input: { sessionId: string; turnId: string; leaseId: string; fencingToken: number }): Promise<boolean>
+  /** The live sessions of a workspace that are served by their own hosts. */
+  listHostedSessions(workspaceId: string): Promise<string[]>
   /** Deletes the live row of a session served by its own host; false when there was none. */
   deleteHostedSession(input: { workspaceId: string; sessionId: string }): Promise<boolean>
 }

@@ -9,12 +9,15 @@ import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import { contentfulStatus } from "../platform/http/status"
 import { apiError, captureWorkspaceTelemetry, missingBearerBody, signedOrError, type WorkspaceRouteOptions } from "./route-support"
 import { controlPlaneRateLimitError } from "./runtime-token-guards"
+import { hostedSessionHostConnection } from "../connections/hosted-connection-info"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 
 /**
- * `DELETE /api/workspace/:id` for a cloud workspace. The sandbox goes first,
- * then what its runtime was issued, then the row: until the row is deleted
- * every step can be asked again, and a deleted row means its sandbox is gone,
- * so a repeat is answered as done.
+ * `DELETE /api/workspace/:id` for a cloud workspace. The sessions served by
+ * their own hosts go first, then the sandbox, then what its runtime was
+ * issued, then the row: until the row is deleted every step can be asked
+ * again, and a deleted row means its sessions and sandbox are gone, so a
+ * repeat is answered as done.
  */
 export function cloudWorkspaceDeletion(
   services: ControlPlaneServices | undefined,
@@ -49,6 +52,8 @@ export function cloudWorkspaceDeletion(
       if (!sandboxManager) {
         return c.json({ error: apiError("sandbox_driver_unavailable", "No cloud sandbox driver is configured on this control plane") }, 503)
       }
+      const unerased = await eraseHostedSessions(services, options, auth, workspaceId)
+      if (unerased) return c.json({ error: apiError("workspace_session_erase_failed", "A session of the workspace could not be erased; delete it again", { reason: unerased }) }, 502)
       const refused = await destroySandbox(sandboxManager, workspaceId)
       if (refused) return c.json({ error: apiError("workspace_sandbox_destroy_failed", "The workspace's sandbox could not be destroyed; delete it again", { reason: refused }) }, 502)
       await options.releaseRuntime?.({ workspaceId })
@@ -62,6 +67,33 @@ export function cloudWorkspaceDeletion(
       throw err
     }
   }
+}
+
+/**
+ * Which session is still kept by its host; nothing once every one is erased.
+ * A session served by its own host keeps its transcript there, so deleting
+ * the workspace's row alone would strand it. Each goes the way a person
+ * deletes one: through its host, which has the control plane delete its row
+ * as this caller before it erases its storage.
+ */
+async function eraseHostedSessions(
+  services: ControlPlaneServices | undefined,
+  options: WorkspaceRouteOptions,
+  auth: SignedControlPlaneAuth,
+  workspaceId: string,
+): Promise<string | undefined> {
+  for (const sessionId of await services?.sessionHosts?.listHostedSessions(workspaceId) ?? []) {
+    const minted = await hostedSessionHostConnection(services, options, auth, { workspaceId, sessionId })
+    if ("error" in minted) return `${sessionId}: ${minted.error.code}`
+    const { relayUrl, runtimeAccessToken } = minted.connection
+    const host = `${relayUrl.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(workspaceId)}`
+    const answer = await fetch(`${host}/session/${encodeURIComponent(sessionId)}`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${runtimeAccessToken}` },
+    })
+    if (!answer.ok) return `${sessionId}: ${answer.status}`
+  }
+  return undefined
 }
 
 /**

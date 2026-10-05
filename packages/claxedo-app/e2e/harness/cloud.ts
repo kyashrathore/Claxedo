@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto"
+import { readdir } from "node:fs/promises"
+import path from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { expect } from "@playwright/test"
 import { acpScriptToken } from "../../../harness/e2e/harness/acp/script"
 import { SCRIPTED_ACP_HARNESS } from "../../../harness/e2e/harness/acp/connection"
@@ -164,5 +167,22 @@ export async function relayedTerminalOutput(signed: SignedStack, workspace: Clou
     socket.onclose = (event) => {
       if (!output.includes(marker)) reject(new Error(`The relayed terminal closed with ${event.code} before ${marker}: ${output.slice(-200)}`))
     }
+  })
+}
+
+export async function deleteCloudWorkspace(signed: SignedStack, workspace: CloudWorkspace) {
+  await asOwner(signed)("DELETE", `/api/workspace/${encodeURIComponent(workspace.id)}`)
+}
+
+/** Every table a session host's Durable Object holds, read from the relay's workerd storage beside it. */
+export async function sessionHostTables(signed: SignedStack): Promise<string[]> {
+  const root = path.join(signed.hosted.root, "relay", "durable-objects")
+  const hosts = (await readdir(root).catch(() => [])).filter((name) => name.includes("SessionDO"))
+  const files = (await Promise.all(hosts.map(async (host) => (await readdir(path.join(root, host))).filter((file) => file.endsWith(".sqlite")).map((file) => path.join(root, host, file))))).flat()
+  return files.flatMap((file) => {
+    const database = new DatabaseSync(file, { readOnly: true })
+    try {
+      return database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'sqlite_%'").all().map((row) => `${path.basename(file)}:${String(row.name)}`)
+    } finally { database.close() }
   })
 }

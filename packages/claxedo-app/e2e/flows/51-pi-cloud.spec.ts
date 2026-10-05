@@ -4,12 +4,14 @@ import {
   cloudMessages,
   cloudPrompt,
   createCloudSession,
+  deleteCloudWorkspace,
   expect,
   listedSessions,
   makeCloudWorkspace,
   relayedTerminalOutput,
   sendPrompt,
   sessionConnection,
+  sessionHostTables,
   sessionRoute,
   startCloudWorkspace,
   storeOwnerKey,
@@ -149,6 +151,18 @@ test("51 cloud Pi lists the workspace's sessions through Claxedo's first-party M
   const tools = messages.flatMap((message) => message.parts).filter((part) => part.type === "tool")
   expect(tools, JSON.stringify(messages)).toEqual([expect.objectContaining({ tool: "mcp__claxedo__sessions_list", state: expect.objectContaining({ status: "completed" }) })])
   expect(JSON.stringify(tools)).toContain(workspace.id)
+})
+
+test("51 deleting a cloud workspace erases its Pi sessions from their session hosts", async ({ signedCloud, page, isMobile }) => {
+  test.skip(isMobile, "the erasure proof runs at desktop width")
+  test.setTimeout(240_000)
+  const workspace = await runningCloudWorkspace(signedCloud)
+  await signedCloud.signIn(page, signedCloud.owner)
+  await startPiFromComposer(page, signedCloud, workspace, "Reply with exactly this one token: CLOUDPIERASED")
+  await expect(page.getByText("CLOUDPIERASED", { exact: true })).toBeVisible({ timeout: 60_000 })
+  expect(await sessionHostTables(signedCloud), "the session host keeps the Pi session").not.toEqual([])
+  await deleteCloudWorkspace(signedCloud, workspace)
+  await expect.poll(() => sessionHostTables(signedCloud), { message: "the deleted workspace's session host holds nothing" }).toEqual([])
 })
 
 test("51 a Pi draft on an asleep cloud workspace lists the account's models, never asks the workspace and never says Pi is not set up", async ({ signedCloud, page }, testInfo) => {
