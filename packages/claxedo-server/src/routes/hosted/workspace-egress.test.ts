@@ -16,6 +16,7 @@ import type { ControlPlaneDatabase } from "../../test-support/control-plane-migr
 import { inlineSandboxStart } from "../../test-support/inline-sandbox-start"
 import { workspaceBackingDatabase } from "../../test-support/workspace-backing-database"
 import { createHostedRuntimeDelivery } from "../../workspace/hosted-runtime-delivery"
+import { unusedSandboxStart } from "../../test-support/inline-sandbox-start"
 import { hostedSandboxInput } from "../../workspace/hosted-sandbox-input"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./workspace"
 
@@ -136,6 +137,7 @@ async function buildApp(egressControl: SandboxEgressControl, options: Partial<Ho
   // The production drive over this test's rows: what the route's start hands
   // the manager is what `hostedSandboxInput` rebuilds from the workspace row.
   const delivery = createHostedRuntimeDelivery({
+      sandboxStart: unusedSandboxStart,
     authority: services.authority as unknown as WorkspaceAuthority,
     database: backing.database,
     services,
@@ -301,7 +303,7 @@ function stepArguments(source = driveSource) {
 
 describe("the hosted manager steps cannot omit the egress policy", () => {
   test("the scanner actually finds the call sites (guard against an empty ratchet)", () => {
-    expect(stepArguments()).toHaveLength(3)
+    expect(stepArguments()).toHaveLength(2)
   })
 
   test("the ratchet fires on a call site that assembles its own input", () => {

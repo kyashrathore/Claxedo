@@ -13,7 +13,10 @@
  *   GET    /path                                synthetic path derived from ?directory
  *   GET    /api/claxedo/agent-config/providers  Pi provider catalog
  *   GET    /api/claxedo/agent-config/providers/auth  a harness's sign-in methods
- *   GET    /api/claxedo/agent-config/harness/options  a Pi draft's models, from the account's connected providers
+ *   GET    /api/claxedo/agent-config/harness/options  a cloud draft's options: a Pi draft's models from the
+ *                                               account's connected providers; for another native harness,
+ *                                               the refusal the workspace's accounts earn it, or 204 when
+ *                                               its runtime is the one to ask
  *   GET    /api/claxedo/agent-config/connections  always unsupported on a central
  *   GET    /api/claxedo/agent-config/harness    a placement's harness health, read over
  *                                               the relay
@@ -51,6 +54,10 @@ import { runtimeProviderCatalog } from "@claxedo/server-core/credentials/runtime
 import { projectProviderCatalog, readProviderCatalogView, ProviderCatalogViewError } from "@claxedo/server-core/credentials/provider-catalog-view"
 import type { PiProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-projection"
 import { piCatalogOptions, piLaunchCatalog } from "@claxedo/harness/pi-catalog"
+import { piAlternative } from "@claxedo/harness/pi-model-match"
+import { CredentialSelectionError, sessionAccountCredentials } from "@claxedo/harness/registry"
+import { isNativeHarnessId } from "@claxedo/server-core/agent-config/connections"
+import { credentialSnapshot, type CredentialSnapshot } from "@claxedo/agent-runtime-contract"
 
 export type HostedShellRouteOptions = {
   authentication?: RequestAuthenticationAdapter
@@ -83,6 +90,14 @@ export type HostedShellRouteOptions = {
    * that does.
    */
   piProviderCatalog?: (auth: SignedControlPlaneAuth) => Promise<PiProviderCatalog>
+  /**
+   * The accounts a cloud workspace's sandbox is delivered, for the caller who
+   * may open it; nothing for a workspace they cannot open or no sandbox serves.
+   * A draft's refusal is decided here from the organization's sandbox driver
+   * and the stored accounts, so a provider that cannot run the harness says so
+   * before any runtime, awake or asleep, is asked.
+   */
+  draftCredentials?: (auth: SignedControlPlaneAuth, workspaceId: string) => Promise<CredentialSnapshot | undefined>
   opencodeProviderCatalog?: (auth: SignedControlPlaneAuth, workspaceId?: string) => Promise<OpenCodeCatalog>
   /**
    * Ask the runtime of a workspace placed on a machine for harness health and
@@ -380,6 +395,38 @@ async function harnessStatusResponse(c: Context, options: HostedShellRouteOption
   }
 }
 
+/**
+ * The 409 a draft earns when the workspace's accounts cannot run its harness
+ * there, in the shape the runtime's own options route answers. The sandbox
+ * resolves each account's placeholder from its environment; here every
+ * placeholder the sandbox would be handed counts as present, so only the
+ * delivery's own refusals remain.
+ */
+function draftRefusal(c: Context, delivered: CredentialSnapshot, userId: string, harness: string) {
+  const placeholders = Object.values(delivered.accounts).flatMap((rows) => Object.values(rows).flatMap((row) => "placeholderEnv" in row && row.placeholderEnv ? [row.placeholderEnv] : []))
+  const snapshot = credentialSnapshot(delivered, Object.fromEntries(placeholders.map((name) => [name, name])))
+  if (!snapshot) throw new Error("The delivered accounts do not read back as a credential snapshot")
+  try {
+    sessionAccountCredentials({ ...snapshot, placement: "cloud", canUseOwnLogin: false, leaseGeneration: "draft" }, { kind: "person", userId }, { harness: { id: harness, access: "native" } })
+    return undefined
+  } catch (error) {
+    if (!(error instanceof CredentialSelectionError)) throw error
+    const alternative = piAlternative(error.detail, c.req.query("model") || undefined)
+    return c.json({ error: { code: error.code, message: error.message, details: {
+      retryable: error.retryable,
+      ...(error.detail.reason ? { reason: error.detail.reason } : {}),
+      ...(alternative ? { alternative } : {}),
+    } } }, 409)
+  }
+}
+
+export function hostedDraftCredentials(
+  services: ControlPlaneServices,
+  snapshot: (workspaceId: string) => Promise<CredentialSnapshot | undefined>,
+): NonNullable<HostedShellRouteOptions["draftCredentials"]> {
+  return async (auth, workspaceId) => (await openHarnessTarget(services, auth, workspaceId)) ? snapshot(workspaceId) : undefined
+}
+
 function authErrorResponse(c: Context, err: unknown) {
   if (err instanceof ControlPlaneAuthError) {
     return c.json(controlPlaneAuthErrorBody(err), err.status)
@@ -548,10 +595,18 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
       try {
         const auth = await signedAuth(c, options)
         if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
-        if (c.req.query("nativeHarness") !== "pi") return c.json({ error: { code: "harness_options_unsupported", message: "Only a Pi draft's options are answered here" } }, 400)
-        if (!options.piProviderCatalog) return c.json({ error: { code: "provider_catalog_unavailable", message: "Pi provider catalog is not configured" } }, 503)
-        const catalog = await options.piProviderCatalog(auth)
-        return c.json(piCatalogOptions(piLaunchCatalog(catalog.connected), c.req.query("model") || undefined))
+        const harness = c.req.query("nativeHarness") ?? ""
+        if (!isNativeHarnessId(harness) || c.req.query("connectionId")) return c.json({ error: { code: "harness_options_unsupported", message: "Only a native harness draft's options are answered here" } }, 400)
+        if (harness === "pi") {
+          if (!options.piProviderCatalog) return c.json({ error: { code: "provider_catalog_unavailable", message: "Pi provider catalog is not configured" } }, 503)
+          const catalog = await options.piProviderCatalog(auth)
+          return c.json(piCatalogOptions(piLaunchCatalog(catalog.connected), c.req.query("model") || undefined))
+        }
+        const workspaceId = c.req.query("workspaceId")
+        if (!workspaceId) return c.json({ error: { code: "agent_config_workspace_required", message: "workspaceId is required" } }, 400)
+        const snapshot = options.draftCredentials ? await options.draftCredentials(auth, workspaceId) : undefined
+        if (!snapshot) return c.json({ error: { code: "workspace_not_found", message: "Workspace not found" } }, 404)
+        return draftRefusal(c, snapshot, auth.user.subject, harness) ?? c.body(null, 204)
       } catch (err) {
         return authErrorResponse(c, err)
       }

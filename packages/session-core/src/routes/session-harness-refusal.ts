@@ -2,7 +2,7 @@ import type { Context } from "hono"
 import { AgentRuntimeContractError } from "@claxedo/agent-runtime-contract"
 import { isAgentHarnessEngineError, TransportError } from "@claxedo/harness/contract"
 import { CredentialSelectionError } from "@claxedo/harness/registry"
-import { piMatchingModel } from "@claxedo/harness/pi-model-match"
+import { piAlternative } from "@claxedo/harness/pi-model-match"
 import type { HarnessCapabilities } from "../host/capabilities"
 import type { AgentRuntime, HarnessTarget } from "../host/runtime"
 import { WorkspaceHarnessUnavailableError } from "../harness-unavailable-error"
@@ -14,12 +14,11 @@ export type CapabilityKey = {
 
 export function harnessUnavailableResponse(c: Context, error: unknown) {
   if (error instanceof CredentialSelectionError) {
-    const { reason, piProvider } = error.detail
-    const model = piProvider ? piMatchingModel(piProvider, c.req.query("model") || undefined) : undefined
+    const alternative = piAlternative(error.detail, c.req.query("model") || undefined)
     return c.json(errorBody(error.code, error.message, {
       retryable: error.retryable,
-      ...(reason ? { reason } : {}),
-      ...(model ? { alternative: { harness: "pi", model: { id: model.id, name: model.name } } } : {}),
+      ...(error.detail.reason ? { reason: error.detail.reason } : {}),
+      ...(alternative ? { alternative } : {}),
     }), 409)
   }
   if (error instanceof WorkspaceHarnessUnavailableError) return c.json(errorBody(error.code, error.message), 409)

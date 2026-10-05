@@ -3,6 +3,7 @@ import type { UserAgentConfig } from "@claxedo/server-core/agent-config/config"
 import type { ControlPlaneDatabase } from "../test-support/control-plane-migrations"
 import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
+import { unusedSandboxStart } from "../test-support/inline-sandbox-start"
 
 const configStatus = vi.hoisted(() => vi.fn(async (): Promise<import("@claxedo/workspace-runtime/config").RuntimeConfigApplyStatus> => ({ state: "idle", revision: 0 })))
 const configApplied = vi.hoisted(() => vi.fn(async (_snapshot: import("@claxedo/workspace-runtime/config").RuntimeSnapshot) => {}))
@@ -18,6 +19,7 @@ async function createDelivery(config: UserAgentConfig, backing: "cloud-vm" | "lo
   const instance = await workspaceBackingDatabase([{ id: "ws", backing }])
   active.push(instance)
   return createHostedRuntimeDelivery({
+      sandboxStart: unusedSandboxStart,
     authority: { resolveWorkspaceOwner: async () => ({ userId: "owner", orgId: "org", projectId: "project" }) } as unknown as Input["authority"],
     database: instance.database,
     services: { sandbox: { sandboxManager: { target: async () => ({ status: "ready", hostId: "host", url: "https://runtime.test" }) } } } as unknown as Input["services"],

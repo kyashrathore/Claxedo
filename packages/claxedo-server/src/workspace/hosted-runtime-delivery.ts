@@ -21,7 +21,8 @@ import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { cloudRootBacking } from "./cloud-root-backing"
 import { createHostedRuntimeFetch } from "./relay-runtime-client"
 import { recordRuntimeStartPhases } from "./runtime-start-phases"
-import type { SandboxStartAnswer, SandboxStartDrive } from "./sandbox-start"
+import type { SandboxStart, SandboxStartAnswer, SandboxStartDrive } from "./sandbox-start"
+import type { CredentialSnapshot } from "@claxedo/agent-runtime-contract"
 
 const log = Log.create({ service: "hosted-runtime-delivery" })
 
@@ -65,6 +66,8 @@ export function createHostedRuntimeDelivery(input: {
   provisionedRunner: RuntimeNativeHarnessId | undefined
   /** Hands a ready runtime its session rows pass after its settings land; a failure costs its rows until the next push. */
   deliverSessionRowsPass?: (workspaceId: string) => Promise<void>
+  /** The workspace's provisioner, which a refresh of a running sandbox goes through so it never races a start on the same epoch. */
+  sandboxStart: SandboxStart
 }) {
   const owner = async (workspaceId: string) => {
     const person = await input.authority.resolveWorkspaceOwner?.(workspaceId)
@@ -89,6 +92,10 @@ export function createHostedRuntimeDelivery(input: {
     })
     return { delivered, selections }
   }
+  const runtimeAuth = async (workspaceId: string, person: { userId: string; orgId: string }): Promise<CredentialSnapshot> => {
+    const { delivered, selections } = await deliveries(workspaceId, person)
+    return nativeProviderAuth(delivered, { owner: person.userId, machineOwnerUserId: person.userId, selections })
+  }
   // A machine-placed workspace gets its provider config from its own machine
   // through the host connector; no hosted sandbox serves it.
   const prepare = async ({ workspaceId }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
@@ -103,13 +110,12 @@ export function createHostedRuntimeDelivery(input: {
     if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return
     const person = await owner(workspaceId)
     const config = await userAgentConfigStore(input.settings, person.userId).read()
-    const { delivered, selections } = await deliveries(workspaceId, person)
     const snapshot = composeRuntimeConfigSnapshot({
       config,
       provisionedRunner: input.provisionedRunner,
       providers: [],
       commands: [],
-      auth: nativeProviderAuth(delivered, { owner: person.userId, machineOwnerUserId: person.userId, selections }),
+      auth: await runtimeAuth(workspaceId, person),
       plugins: hooks.pluginRuntime ? await hooks.pluginRuntime(workspaceId, preparation) : { mcp: {}, harnessLaunch: {} },
     })
     const { client, options } = await supervisorClient(input.services, workspaceId, input.signingEnv)
@@ -172,13 +178,10 @@ export function createHostedRuntimeDelivery(input: {
     return workspaces.filter((workspaceId): workspaceId is string => !!workspaceId)
   }
   const refresh = async (workspaceId: string) => {
-    const context = { workspaceId }
-    const preparation = await hooks.prepareRuntime(context)
-    const target = await input.sandboxManager.target(workspaceId)
-    if (target.status !== "ready") return
-    const ensured = await input.sandboxManager.ensure(workspaceId, await input.sandboxInput(workspaceId, { preparation, secrets: [] }))
-    if (ensured.status !== "ready") throw new Error(`hosted runtime refresh failed: ${ensured.status}`)
-    await provisionRuntime(context, preparation)
+    if ((await input.sandboxManager.target(workspaceId)).status !== "ready") return
+    const answer = await input.sandboxStart(workspaceId)
+    if (answer.status === "failed") throw new Error(answer.message)
+    if (answer.status === "unavailable") throw new Error(`hosted runtime refresh failed: ${answer.error}`)
   }
   const refreshRunning = async (predicate: (person: Awaited<ReturnType<typeof owner>>) => boolean) => {
     await Promise.all((await running(predicate)).map(refresh))
@@ -187,6 +190,11 @@ export function createHostedRuntimeDelivery(input: {
     prepareRuntime: prepare,
     provisionRuntime,
     start,
+    /** The accounts a cloud workspace's sandbox is delivered, as its runtime sees them; nothing for a workspace no sandbox serves. */
+    credentialSnapshot: async (workspaceId: string): Promise<CredentialSnapshot | undefined> => {
+      if (await cloudRootBacking(input.database, workspaceId) !== "cloud") return undefined
+      return runtimeAuth(workspaceId, await owner(workspaceId))
+    },
     /** Whether a ready sandbox has taken its settings; a refresh over applied settings keeps it connectable. */
     runtimeProvisioned: async ({ workspaceId }: WorkspaceRuntimeContext) => {
       const { client, options } = await supervisorClient(input.services, workspaceId, input.signingEnv)

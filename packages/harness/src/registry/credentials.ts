@@ -1,5 +1,6 @@
-import { HARNESS_NEEDS_BROKERING, isProviderUnavailable, piProviderSpending, type CredentialSnapshot, type PiLaunchProvider,
-  type ProviderProjection } from "@claxedo/agent-runtime-contract"
+import { HARNESS_NEEDS_BROKERING, HARNESS_TABLE, isHarnessId, isProviderUnavailable, PI_LAUNCH_PROVIDERS, piCredentialProviderIDs,
+  piProviderSpending, type CredentialSnapshot, type PiLaunchProvider, type PromptModel, type ProviderProjection,
+  type SessionHarness } from "@claxedo/agent-runtime-contract"
 import type { ResolvedCredentials } from "../contract/projection"
 import type { TurnActor } from "../contract/session"
 import { ownerMayUseMachineLogin, selectedProviderProjection, type MachineLoginPolicy } from "../contract/credentials"
@@ -62,4 +63,22 @@ export function selectSessionCredentials(snapshot: CredentialSelectionInput, own
     throw noAccountChosen()
   }
   return result
+}
+
+function accountProviderIds(harness: SessionHarness, model: PromptModel | undefined): readonly string[] | undefined {
+  if (harness.access !== "native") return undefined
+  if (isHarnessId(harness.id)) return HARNESS_TABLE[harness.id].providerIds
+  if (harness.id === "pi") {
+    const vendor = model?.providerID === "pi" ? model.modelID.split("/")[0] : undefined
+    return vendor ? piCredentialProviderIDs(vendor) : PI_LAUNCH_PROVIDERS.flatMap(piCredentialProviderIDs)
+  }
+  return undefined
+}
+
+const DIRECT_HARNESSES = ["pi", "codex", "opencode"]
+
+export function sessionAccountCredentials(snapshot: CredentialSelectionInput, owner: TurnActor, config: { harness: SessionHarness; model?: PromptModel }): ResolvedCredentials {
+  const providerIds = accountProviderIds(config.harness, config.model)
+  const directDelivery = config.harness.access === "native" && DIRECT_HARNESSES.includes(config.harness.id)
+  return selectSessionCredentials({ ...snapshot, ...(providerIds ? { providerIds } : {}), directDelivery }, owner)
 }

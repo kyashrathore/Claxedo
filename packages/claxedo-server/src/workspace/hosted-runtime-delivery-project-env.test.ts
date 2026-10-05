@@ -5,6 +5,7 @@ import { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } from "../credentials/wo
 import type { ControlPlaneDatabase } from "../test-support/control-plane-migrations"
 import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
+import { unusedSandboxStart } from "../test-support/inline-sandbox-start"
 
 type Input = Parameters<typeof createHostedRuntimeDelivery>[0]
 
@@ -18,6 +19,7 @@ async function setup() {
   active.push(instance)
   const credentials = (orgId: string) => hostedOrgCredentials(orgId, { database: instance.database, env: ENV })
   const delivery = createHostedRuntimeDelivery({
+      sandboxStart: unusedSandboxStart,
     authority: {
       resolveWorkspaceOwner: async () => ({ userId: "owner", actorId: "act_owner", orgId: "org", projectId: "project" }),
     } as unknown as Input["authority"],

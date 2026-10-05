@@ -255,6 +255,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         signingEnv: input.env,
         provisionedRunner: provisionedRunner(input.env),
         ...(sandbox.deliverSessionRowsPass ? { deliverSessionRowsPass: sandbox.deliverSessionRowsPass } : {}),
+        sandboxStart: sandbox.start,
       })
     : undefined
 
@@ -271,6 +272,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       agentConfigRepository: settings,
       ...(delivery && sandbox ? {
         settingsChanged: delivery.settingsChanged,
+        draftCredentials: delivery.credentialSnapshot,
         accountSetup: {
           changed: delivery.reconcileCredentialDelivery,
           ...(input.sandbox?.keys && isSandboxProvisionerID(input.sandbox.driver.id)

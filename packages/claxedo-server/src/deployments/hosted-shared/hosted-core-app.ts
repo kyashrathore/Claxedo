@@ -25,7 +25,8 @@ import {
 
 import { JwksRoutes } from "../../authority/routes/jwks"
 import { OAuthProtectedResourceRoutes } from "../../mcp/oauth-protected-resource"
-import { HostedShellRoutes, hostedHarnessRuntimeStatus, hostedRuntimeProviderCatalog } from "../../routes/hosted/shell"
+import type { CredentialSnapshot } from "@claxedo/agent-runtime-contract"
+import { HostedShellRoutes, hostedDraftCredentials, hostedHarnessRuntimeStatus, hostedRuntimeProviderCatalog } from "../../routes/hosted/shell"
 import { HostedAuthProfileRoutes } from "../../routes/hosted/auth-profile"
 import { HostedDeviceAuthRoutes } from "../../routes/hosted/device-auth"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
@@ -120,6 +121,8 @@ export type HostedCoreAppOptions = {
   product: StaticProductDescriptor
   requestGuardExemptions: readonly RouteGuardExemption[]
   productWorkspace?: HostedCoreProductWorkspaceOptions
+  /** The accounts a cloud workspace's sandbox is delivered, which decide a draft's refusal before its runtime is asked. */
+  draftCredentials?: (workspaceId: string) => Promise<CredentialSnapshot | undefined>
   agentConfigRepository?: UserAgentConfigRepository
   settingsChanged?: (userId: string) => Promise<void>
   /**
@@ -351,6 +354,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       liveSyncRoom: options.liveSyncRoom,
       ...(services.authority ? { resolveOrgId: (auth) => services.authority!.resolveOrgId(auth) } : {}),
       harnessStatus: hostedHarnessRuntimeStatus(services),
+      ...(options.draftCredentials ? { draftCredentials: hostedDraftCredentials(services, options.draftCredentials) } : {}),
       ...hostedOpenCodeCredentials({
         resolveOrgId: (auth) => requireAuthority(services).resolveOrgId(auth),
         credentials: plane.orgCredentials,

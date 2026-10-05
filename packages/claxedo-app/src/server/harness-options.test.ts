@@ -33,12 +33,14 @@ test("a local placement's model options come from the daemon, which falls back t
 
 test("a draft's model options on an asleep cloud workspace refuse without starting it, because only a send wakes", async () => {
   const server = fakeServer({ reachable: () => false })
+  await server.context.workspaces.load()
   const starts: string[] = []
   const transport = { ...server.context.transport, startRuntime: async (workspaceId: string) => void starts.push(workspaceId) }
   const options = harnessQueries(transport, server.context.workspaces).options(placementId("ws_cloud"), "codex")
   await expect(new QueryClient({ defaultOptions: { queries: { retry: false } } }).fetchQuery(options)).rejects.toMatchObject({ code: "workspace_stopped" })
   expect(starts).toEqual([])
   expect(server.runtimeCalls).toEqual([])
+  expect(server.requests.filter((path) => path.startsWith("/api/claxedo/agent-config/harness/options"))).toEqual(["/api/claxedo/agent-config/harness/options?nativeHarness=codex&workspaceId=ws_cloud"])
   expect(server.requests.filter((path) => path.includes("/connection"))).toEqual([])
 })
 
@@ -50,7 +52,7 @@ test("a Pi draft on an asleep cloud workspace reads its models from the account'
   const options = harnessQueries(transport, server.context.workspaces).options(placementId("ws_cloud"), "pi")
   const read = await new QueryClient({ defaultOptions: { queries: { retry: false } } }).fetchQuery(options)
   expect(read.offersOptions).toBe(true)
-  expect(server.requests.filter((path) => path.startsWith("/api/claxedo/agent-config/harness/options"))).toEqual(["/api/claxedo/agent-config/harness/options?nativeHarness=pi"])
+  expect(server.requests.filter((path) => path.startsWith("/api/claxedo/agent-config/harness/options"))).toEqual(["/api/claxedo/agent-config/harness/options?nativeHarness=pi&workspaceId=ws_cloud"])
   expect(starts).toEqual([])
   expect(server.runtimeCalls).toEqual([])
   expect(server.requests.filter((path) => path.includes("/connection"))).toEqual([])
@@ -62,16 +64,30 @@ test("a session's model options come from the host that serves it, its own sessi
   expect(server.hostedCalls).toEqual(["/session/ses_1/config-options?nativeHarness=pi"])
 })
 
-test("a harness the cloud provider cannot keep a key away from answers with the Pi model that spends the same account", async () => {
-  const refusal = { error: { code: "harness_needs_brokering", message: "This cloud provider cannot keep the account's key out of the workspace",
-    details: { retryable: false, alternative: { harness: "pi", model: { id: "anthropic/claude-sonnet-5-5", name: "Claude Sonnet 5.5" } } } } }
-  const server = fakeServer({ reachable: () => true, runtime: () => Response.json(refusal, { status: 409 }) })
-  await server.context.workspaces.load()
-  expect(await readHarnessOptions(server.context.transport, server.context.workspaces, { placementId: placementId("ws_cloud"), harness: "claude" })).toEqual({
-    source: "empty", stale: false, offersOptions: false, serviceTiers: [],
-    unavailableHere: { alternative: { harness: { kind: "native", harnessId: "pi" }, model: { id: "anthropic/claude-sonnet-5-5", name: "Claude Sonnet 5.5" } } },
-  })
-  const cursor = fakeServer({ reachable: () => true, runtime: () => Response.json({ error: { ...refusal.error, details: { retryable: false } } }, { status: 409 }) })
+const refusal = { error: { code: "harness_needs_brokering", message: "This cloud provider cannot keep the account's key out of the workspace",
+  details: { retryable: false, alternative: { harness: "pi", model: { id: "anthropic/claude-sonnet-5-5", name: "Claude Sonnet 5.5" } } } } }
+
+test("a harness the cloud provider cannot keep a key away from is refused by the control plane with the Pi model that spends the same account, awake or asleep, and no runtime is asked", async () => {
+  for (const reachable of [true, false]) {
+    const server = fakeServer({ reachable: () => reachable, draftOptions: () => Response.json(refusal, { status: 409 }) })
+    await server.context.workspaces.load()
+    expect(await readHarnessOptions(server.context.transport, server.context.workspaces, { placementId: placementId("ws_cloud"), harness: "claude", model: "claude-sonnet-5-5" })).toEqual({
+      source: "empty", stale: false, offersOptions: false, serviceTiers: [],
+      unavailableHere: { alternative: { harness: { kind: "native", harnessId: "pi" }, model: { id: "anthropic/claude-sonnet-5-5", name: "Claude Sonnet 5.5" } } },
+    })
+    expect(server.requests.filter((path) => path.startsWith("/api/claxedo/agent-config/harness/options")))
+      .toEqual(["/api/claxedo/agent-config/harness/options?nativeHarness=claude&workspaceId=ws_cloud&model=claude-sonnet-5-5"])
+    expect(server.runtimeCalls).toEqual([])
+  }
+  const cursor = fakeServer({ reachable: () => true, draftOptions: () => Response.json({ error: { ...refusal.error, details: { retryable: false } } }, { status: 409 }) })
   await cursor.context.workspaces.load()
   expect((await readHarnessOptions(cursor.context.transport, cursor.context.workspaces, { placementId: placementId("ws_cloud"), harness: "cursor" })).unavailableHere).toEqual({})
+})
+
+test("a native harness draft the control plane leaves to the runtime reads its options from the workspace", async () => {
+  const server = fakeServer({ reachable: () => true, runtime: () => Response.json(answer) })
+  await server.context.workspaces.load()
+  expect((await readHarnessOptions(server.context.transport, server.context.workspaces, { placementId: placementId("ws_cloud"), harness: "claude" })).offersOptions).toBe(true)
+  expect(server.requests.filter((path) => path.startsWith("/api/claxedo/agent-config/harness/options"))).toEqual(["/api/claxedo/agent-config/harness/options?nativeHarness=claude&workspaceId=ws_cloud"])
+  expect(server.runtimeCalls).toEqual(["/api/wr/harness-config-options?nativeHarness=claude"])
 })

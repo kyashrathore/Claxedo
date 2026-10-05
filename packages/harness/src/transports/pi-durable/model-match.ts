@@ -36,3 +36,8 @@ export function piMatchingModel(provider: PiLaunchProvider, hint?: string): PiMo
   const newest = releases.filter((row) => row.family === family).reduce<Release | undefined>((best, row) => best ? newer(row, best) : row, undefined)
   return newest?.model ?? models.find((row) => row.bare === PI_DEFAULT_MODELS[provider])?.model ?? models[0]?.model
 }
+
+export function piAlternative(detail: { piProvider?: PiLaunchProvider }, hint?: string): { harness: "pi"; model: PiModelChoice } | undefined {
+  const model = detail.piProvider ? piMatchingModel(detail.piProvider, hint) : undefined
+  return model ? { harness: "pi", model } : undefined
+}

@@ -129,6 +129,7 @@ async function composition() {
     signingEnv: {},
     provisionedRunner: undefined,
     deliverSessionRowsPass: async (workspaceId) => { pushed.push(`session rows pass ${workspaceId}`) },
+    sandboxStart: (workspaceId) => inlineSandboxStart(delivery.start)(workspaceId),
   })
   const env = { WORKSPACE_RUNTIME_MCP_TOOL_GROUPS: "sessions,subagents" }
   const secrets = [{ name: "ANTHROPIC_API_KEY", value: "sk-ant", hosts: ["api.anthropic.com"] }]

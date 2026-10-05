@@ -59,6 +59,8 @@ type FakeServerOptions = {
   runtime?: (path: string) => Response | Promise<Response>
   requested?: (path: string) => void
   sessionHosts?: Readonly<Record<string, string>>
+  /** The control plane's answer to a cloud draft's options read; absent, Pi gets a catalog and every other native harness is left to its runtime. */
+  draftOptions?: (path: string) => Response
 }
 
 function controlPlaneAnswer(options: FakeServerOptions, path: string): Response {
@@ -67,7 +69,11 @@ function controlPlaneAnswer(options: FakeServerOptions, path: string): Response 
   if (path.startsWith("/api/control/sessions/ses_1/part")) return Response.json({ part: storedTool })
   if (path.startsWith("/api/control/sessions/ses_1/outline")) return firstRead(centralRow, { turns: [{ messages: stored, cursor: "cursor_older" }] })
   if (path.startsWith("/api/control/sessions?")) return Response.json({ sessions: [centralRow] })
-  if (path.startsWith("/api/claxedo/agent-config/harness/options")) return Response.json({ options: [{ id: "model", name: "Model", category: "model", type: "select", selectOptions: [{ id: "openai-codex/gpt-5.5", name: "GPT-5.5" }] }] })
+  if (path.startsWith("/api/claxedo/agent-config/harness/options")) {
+    if (options.draftOptions) return options.draftOptions(path)
+    if (!path.includes("nativeHarness=pi")) return new Response(null, { status: 204 })
+    return Response.json({ options: [{ id: "model", name: "Model", category: "model", type: "select", selectOptions: [{ id: "openai-codex/gpt-5.5", name: "GPT-5.5" }] }] })
+  }
   return Response.json({ error: { code: "unexpected", message: path } }, { status: 500 })
 }
 

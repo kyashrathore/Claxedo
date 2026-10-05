@@ -21,12 +21,14 @@ export type HarnessOptionsRequest = {
   readonly model?: string
 }
 
-function draftServedBySessionHost(workspaces: Workspaces, request: HarnessOptionsRequest) {
-  return !request.sessionId && request.harness === "pi" && workspaces.byId(request.placementId)?.kind === "cloud"
+/** A cloud draft asks the control plane first: it answers Pi's models itself and refuses a harness its sandbox provider cannot run; 204 leaves the runtime to answer. */
+function draftServedByControlPlane(workspaces: Workspaces, request: HarnessOptionsRequest) {
+  return !request.sessionId && "nativeHarness" in harnessSelectionQuery(request.harness) && workspaces.byId(request.placementId)?.kind === "cloud"
 }
 
-async function readOptionsRoute(transport: Transport, query: Record<string, string | undefined>): Promise<HarnessOptions> {
+async function readOptionsRoute(transport: Transport, query: Record<string, string | undefined>): Promise<HarnessOptions | undefined> {
   const response = await transport.request(withQuery(HARNESS_OPTIONS_PATH, query))
+  if (response.status === 204) return undefined
   if (!response.ok) throw await responseError(response, "Model options")
   return harnessOptionsFromWire(await response.json())
 }
@@ -42,13 +44,16 @@ export async function readHarnessOptions(transport: Transport, workspaces: Works
 
 async function readOptions(transport: Transport, workspaces: Workspaces, request: HarnessOptionsRequest): Promise<HarnessOptions> {
   const selection = harnessSelectionQuery(request.harness)
-  if (draftServedBySessionHost(workspaces, request)) return readOptionsRoute(transport, { ...selection, model: request.model })
+  if (draftServedByControlPlane(workspaces, request)) {
+    const answered = await readOptionsRoute(transport, { ...selection, workspaceId: request.placementId, model: request.model })
+    if (answered) return answered
+  }
   const route = await workspaces.route(request.sessionId ? { placementId: request.placementId, sessionId: sessionId(request.sessionId) } : request.placementId)
   if (route.remote) {
     const path = request.sessionId ? `/session/${encodeURIComponent(request.sessionId)}/config-options` : "/api/wr/harness-config-options"
     return harnessOptionsFromWire(await transport.runtimeJson(route, withQuery(path, { ...selection, model: request.model })))
   }
-  return readOptionsRoute(transport, { workspaceId: route.workspaceId, ...selection, sessionId: request.sessionId, model: request.model })
+  return (await readOptionsRoute(transport, { workspaceId: route.workspaceId, ...selection, sessionId: request.sessionId, model: request.model })) ?? harnessOptionsFromWire(undefined)
 }
 
 export function harnessQueries(transport: Transport, workspaces: Workspaces) {

@@ -1,6 +1,7 @@
 import { expect, test, vi } from "vitest"
 import { vercelBrokeredNetworkPolicy } from "@claxedo/sandbox-manager/drivers/vercel"
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
+import { unusedSandboxStart } from "../test-support/inline-sandbox-start"
 import { hostedOrgCredentials, HOSTED_CREDENTIALS_FLAG } from "../credentials/worker"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
 import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
@@ -22,6 +23,7 @@ test("a workspace's sandbox is delivered its owner's account alone, and another 
     }
     type Input = Parameters<typeof createHostedRuntimeDelivery>[0]
     const delivery = createHostedRuntimeDelivery({
+      sandboxStart: unusedSandboxStart,
       authority: { resolveWorkspaceOwner: async (workspaceId: string) => ({ userId: OWNERS[workspaceId], orgId: "org" }) } as unknown as Input["authority"],
       database: database.database,
       services: { sandbox: { sandboxManager: { target: async () => ({ status: "ready", hostId: "host", url: "https://runtime.test" }) } } } as unknown as Input["services"], sandboxManager: {} as Input["sandboxManager"],
@@ -68,6 +70,7 @@ test("a key saved for Pi never moves Claude Code off its Anthropic login; only c
     const token = await credentials.putCredential({ owner, provider_id: "claude-sdk", kind: "oauth_token", source: "managed", secret: "sk-ant-oat01-token" })
     type Input = Parameters<typeof createHostedRuntimeDelivery>[0]
     const delivery = createHostedRuntimeDelivery({
+      sandboxStart: unusedSandboxStart,
       authority: { resolveWorkspaceOwner: async () => ({ userId: owner, orgId: "org", projectId: "project" }) } as unknown as Input["authority"],
       database: database.database,
       services: {} as Input["services"], sandboxManager: {} as Input["sandboxManager"],

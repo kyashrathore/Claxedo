@@ -3,6 +3,7 @@ import { projectPiProviderCatalog } from "@claxedo/server-core/credentials/pi-pr
 import { HostedShellRoutes } from "./shell"
 import type { ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import type { OpenCodeCatalog } from "@claxedo/server-core/credentials/opencode-provider-projection"
+import type { CredentialSnapshot } from "@claxedo/agent-runtime-contract"
 
 // An unverifiable bearer falls back to `verifyCliAccessBearer`, which reads
 // these from process.env. Clear them so "invalid token" is deterministic here
@@ -133,5 +134,45 @@ describe("the Pi provider catalog", () => {
     expect(models.every((model) => model.startsWith("openai-codex/"))).toBe(true)
     expect((await catalog.request("/api/claxedo/agent-config/harness/options?nativeHarness=codex", { headers: { authorization: "Bearer token-a" } })).status).toBe(400)
     expect((await app().request(route, { headers: { authorization: "Bearer token-a" } })).status).toBe(503)
+  })
+})
+
+describe("a native harness draft on a cloud workspace", () => {
+  const anthropic = { unavailable: true, reason: "harness_needs_brokering" }
+  const edge = { baseUrl: "https://api.anthropic.com", placeholderEnv: "CLAXEDO_PROVIDER_ANTHROPIC_1F", authMode: "api-key" }
+  const snapshots: Record<string, CredentialSnapshot> = {
+    ws_boat: { machineOwnerUserId: "user_a", accounts: { user_a: { anthropic, "claude-sdk": anthropic } } },
+    ws_edge: { machineOwnerUserId: "user_a", accounts: { user_a: { anthropic: edge } } },
+  }
+  const asked: string[] = []
+  const routes = HostedShellRoutes({ authConfig: signedConfig, verifier, draftCredentials: async (auth, workspaceId) => {
+    asked.push(`${auth.user.subject} ${workspaceId}`)
+    return snapshots[workspaceId]
+  } })
+  const read = (query: string) => routes.request(`/api/claxedo/agent-config/harness/options?${query}`, { headers: { authorization: "Bearer token-a" } })
+
+  test("is refused here, with the Pi model that spends the same account, when the organization's sandbox provider cannot keep the key out", async () => {
+    const refused = await read("nativeHarness=claude&workspaceId=ws_boat&model=claude-sonnet-5-5")
+    expect(refused.status).toBe(409)
+    expect(await refused.json()).toEqual({ error: {
+      code: "harness_needs_brokering",
+      message: "This cloud provider can't keep the account's key out of the workspace.",
+      details: { retryable: false, alternative: { harness: "pi", model: { id: "anthropic/claude-sonnet-5-5", name: expect.any(String) } } },
+    } })
+    const noAccount = await read("nativeHarness=codex&workspaceId=ws_boat")
+    expect(noAccount.status).toBe(409)
+    expect((await noAccount.json()).error.code).toBe("account_unavailable")
+  })
+
+  test("is left to its runtime when the provider brokers the key, and a placeholder the sandbox would be handed is no refusal", async () => {
+    expect((await read("nativeHarness=claude&workspaceId=ws_edge")).status).toBe(204)
+    expect(asked).toContain("user_a ws_edge")
+  })
+
+  test("names its workspace, which the caller must be able to open, and a native harness", async () => {
+    expect((await read("nativeHarness=claude")).status).toBe(400)
+    expect((await read("nativeHarness=claude&workspaceId=ws_gone")).status).toBe(404)
+    expect((await read("connectionId=scripted&workspaceId=ws_boat")).status).toBe(400)
+    expect((await app().request("/api/claxedo/agent-config/harness/options?nativeHarness=claude&workspaceId=ws_boat", { headers: { authorization: "Bearer token-a" } })).status).toBe(404)
   })
 })

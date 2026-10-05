@@ -1,8 +1,7 @@
 import type { PromptModel, SessionConfig, SessionHarness } from "@claxedo/agent-runtime-contract"
 import type { AttachInput, DraftLaunch, Locality, PluginProjection, ResolvedCredentials, StartInput, TurnActor } from "@claxedo/harness/contract"
 import type { HarnessBinding } from "@claxedo/harness/contract"
-import { HARNESS_TABLE, isHarnessId, PI_LAUNCH_PROVIDERS, piCredentialProviderIDs } from "@claxedo/agent-runtime-contract"
-import { selectSessionCredentials, sessionAccountOwner, type CredentialSelectionInput } from "@claxedo/harness/registry"
+import { sessionAccountCredentials, sessionAccountOwner, type CredentialSelectionInput } from "@claxedo/harness/registry"
 
 /**
  * What the workspace composition knows and a session launch needs: the plugin
@@ -73,36 +72,16 @@ export function draftLaunch(launch: LaunchComposer, input: {
   }
 }
 
-function accountProviderIds(harness: SessionHarness, model: PromptModel | undefined): readonly string[] | undefined {
-  if (harness.access !== "native") return undefined
-  if (isHarnessId(harness.id)) return HARNESS_TABLE[harness.id].providerIds
-  if (harness.id === "pi") {
-    const vendor = model?.providerID === "pi" ? model.modelID.split("/")[0] : undefined
-    return vendor ? piCredentialProviderIDs(vendor) : PI_LAUNCH_PROVIDERS.flatMap(piCredentialProviderIDs)
-  }
-  return undefined
-}
-
 export function accountHolder(launch: LaunchComposer, owner: TurnActor): string {
   const snapshot = launch.credentials()
   if (snapshot) return sessionAccountOwner(snapshot, owner).userId
   return owner.kind === "person" ? owner.userId : "machine-owner"
 }
 
-/**
- * Harnesses that spend an account handed over as its secret: Pi calls the
- * vendor in process, and Codex and OpenCode sign in with a ChatGPT plan's
- * access token.
- */
-const DIRECT_HARNESSES: ReadonlySet<string> = new Set(["pi", "codex", "opencode"])
-
 export function sessionCredentials(launch: LaunchComposer, session: Pick<SessionLaunch, "owner" | "config">): ResolvedCredentials {
   const snapshot = launch.credentials()
   if (!snapshot) {
     return { accountOwner: accountHolder(launch, session.owner), machineLoginAllowed: false, providers: {}, secrets: {}, leaseGeneration: "" }
   }
-  const { harness, model } = session.config
-  const providerIds = accountProviderIds(harness, model)
-  const directDelivery = harness.access === "native" && DIRECT_HARNESSES.has(harness.id)
-  return selectSessionCredentials({ ...snapshot, ...(providerIds ? { providerIds } : {}), directDelivery }, session.owner)
+  return sessionAccountCredentials(snapshot, session.owner, session.config)
 }
