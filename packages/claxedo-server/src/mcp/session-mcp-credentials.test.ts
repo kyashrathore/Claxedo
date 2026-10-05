@@ -118,6 +118,22 @@ describe("the first-party MCP credential of a session served by its own host", (
     expect(await plane.store.runtimeAccessTokenActive({ jti: String(token.jti), workspaceId: WORKSPACE_ID, hostId: sessionHostId(ROOT) })).toEqual({ active: true })
   })
 
+  test("a later turn's bearer calls a tool with no MCP session, over the owner token the session already holds", async () => {
+    const first = await delivered(ROOT)
+    await (await connect(first.url, first.token)).callTool({ name: "sessions_list", arguments: {} })
+    const held = relayed.at(-1)?.authorization
+    const later = await delivered(ROOT)
+    expect(later.token).not.toBe(first.token)
+    const called = await plane.app.request(later.url, {
+      method: "POST",
+      headers: { authorization: `Bearer ${later.token}`, "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-protocol-version": "2025-06-18" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "sessions_list", arguments: {} } }),
+    })
+    expect(called.headers.get("mcp-session-id")).toBeNull()
+    expect(await called.json()).toMatchObject({ id: 2, result: { content: [{ type: "text", text: expect.stringContaining(WORKSPACE_ID) }] } })
+    expect(relayed.at(-1)?.authorization).toBe(held)
+  })
+
   test("another session's address, an expired token, a token for another endpoint and a forged scope are refused", async () => {
     const mcp = await delivered(ROOT)
     expect((await mcpRequest(mcp.url, mcp.token)).status).toBe(200)

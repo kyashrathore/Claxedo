@@ -32,8 +32,10 @@ type RuntimeCredential = Extract<McpCredential, { kind: "runtime" }>
  * reach the session's own workspace and nothing else: the client is given no
  * control plane, the session's own routes at its own host, since the machine
  * does not hold that session, and every other route on the machine, each
- * through an owner's editor token minted per MCP session for that one host and
- * recorded only while the session is live.
+ * through an owner's editor token for that one host, recorded only for a live
+ * session. The endpoint answers each of these requests on its own, so each
+ * token is held per session and host for this isolate and minted again a
+ * minute before it expires.
  */
 export function sessionMcpCredentials(input: SessionMcpCredentialsInput) {
   const ownedSession = async (workspaceId: string, sessionId: string): Promise<WorkspaceOwnerIdentity | undefined> => {
@@ -45,7 +47,7 @@ export function sessionMcpCredentials(input: SessionMcpCredentialsInput) {
     return (placement.session.creatorUserId ?? owner.userId) === owner.userId ? owner : undefined
   }
 
-  const access = (host: "machine" | "session") => async (credential: RuntimeCredential): Promise<SessionHostMachineAccess> => {
+  const access = async (credential: RuntimeCredential, host: "machine" | "session"): Promise<SessionHostMachineAccess> => {
     const { workspaceId, sessionId, userId } = credential
     const owner = sessionId ? await ownedSession(workspaceId, sessionId) : undefined
     if (!owner || !sessionId || owner.userId !== userId) throw new Error(`Session ${sessionId ?? "(none)"} no longer reaches workspace ${workspaceId}`)
@@ -53,15 +55,18 @@ export function sessionMcpCredentials(input: SessionMcpCredentialsInput) {
     return host === "session" ? await sessionHostOwnAccess(input, grant) : await sessionHostMachineAccess(input, { scope: "session-mcp", ...grant })
   }
 
-  const relayFetch = (credential: RuntimeCredential, mint: (credential: RuntimeCredential) => Promise<SessionHostMachineAccess>): ClaxedoFetch => {
-    let held: Promise<SessionHostMachineAccess> | undefined
+  const held = new Map<string, { access: Promise<SessionHostMachineAccess>; expiresAt: number }>()
+
+  const relayFetch = (credential: RuntimeCredential, host: "machine" | "session"): ClaxedoFetch => {
+    const key = JSON.stringify([host, credential.workspaceId, credential.sessionId, credential.userId])
     const current = async () => {
-      const live = held ? await held : undefined
+      const live = await held.get(key)?.access
       if (live && live.expiresAt - Date.now() > MACHINE_TOKEN_RENEW_MS) return live
-      const minting = mint(credential)
-      held = minting
-      minting.catch(() => { if (held === minting) held = undefined })
-      return await minting
+      for (const [other, entry] of held) if (entry.expiresAt <= Date.now()) held.delete(other)
+      const entry = { access: access(credential, host), expiresAt: Date.now() + MACHINE_TOKEN_TTL_SECONDS * 1000 }
+      held.set(key, entry)
+      entry.access.catch(() => { if (held.get(key) === entry) held.delete(key) })
+      return await entry.access
     }
     return async (path, init) => {
       const { relayUrl, runtimeAccessToken } = await current()
@@ -113,11 +118,11 @@ export function sessionMcpCredentials(input: SessionMcpCredentialsInput) {
     },
 
     workspaceFetch(credential: RuntimeCredential): ClaxedoFetch {
-      return relayFetch(credential, access("machine"))
+      return relayFetch(credential, "machine")
     },
 
     sessionHostFetch(credential: RuntimeCredential): ClaxedoFetch {
-      return relayFetch(credential, access("session"))
+      return relayFetch(credential, "session")
     },
   }
 }

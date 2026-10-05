@@ -79,7 +79,7 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
   const runtime = new Hono()
     .get("/experimental/session", (c) => c.json(input.workspaceSessions()))
     .get("/session/status", (c) => c.json({}))
-  const mcp = createClaxedoMcpRoutes({
+  const mcpIsolate = () => new Hono().route(CLAXEDO_MCP_PATH, createClaxedoMcpRoutes({
     mount: "hosted",
     verifyRuntimeCredential: (token) => {
       calls.mcpBearers.push(token)
@@ -94,7 +94,8 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
     registerTools: CLAXEDO_MCP_TOOL_GROUPS,
     enabledToolGroups: () => ["sessions"],
     audit: () => {},
-  })
+  }).routes)
+  let mcp = mcpIsolate()
   const firstPartyMcp = (origin: string) => {
     const token = `session-mcp-${crypto.randomUUID()}`
     mcpBearers.add(token)
@@ -166,6 +167,8 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
       deleted = true
       return c.json({ deleted: true })
     })
-  const app = new Hono().route("/api/runtime-authority", authority).route(CLAXEDO_MCP_PATH, mcp.routes)
-  return { fetch: (request: Request) => app.fetch(request), calls, control }
+  const app = new Hono().route("/api/runtime-authority", authority).all(CLAXEDO_MCP_PATH, (c) => mcp.fetch(c.req.raw))
+  /** Every later MCP request lands on an endpoint that shares no memory with the one before, as on another Worker isolate. */
+  const newMcpIsolate = () => { mcp = mcpIsolate() }
+  return { fetch: (request: Request) => app.fetch(request), calls, control, newMcpIsolate }
 }

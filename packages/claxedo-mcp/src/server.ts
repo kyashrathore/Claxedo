@@ -240,6 +240,7 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
     request: Request,
     key: string,
     enabled: readonly string[] | undefined,
+    stateless: boolean,
   ): Promise<McpSession> => {
     const client = await options.createClient(credential, request)
     const server = new McpServer(CLAXEDO_MCP_SERVER_INFO)
@@ -268,11 +269,13 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
       server.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [] }))
     }
     const session: McpSession = {
-      transport: new WebStandardStreamableHTTPServerTransport({
-        sessionIdGenerator: () => crypto.randomUUID(),
-        onsessioninitialized: (id) => sessions.add(id, { session, credentialKey: key, close: session.close }),
-        onsessionclosed: (id) => sessions.remove(id),
-      }),
+      transport: new WebStandardStreamableHTTPServerTransport(stateless
+        ? { sessionIdGenerator: undefined, enableJsonResponse: true }
+        : {
+            sessionIdGenerator: () => crypto.randomUUID(),
+            onsessioninitialized: (id) => sessions.add(id, { session, credentialKey: key, close: session.close }),
+            onsessionclosed: (id) => sessions.remove(id),
+          }),
       close: () => session.transport.close(),
     }
     await server.connect(session.transport)
@@ -299,19 +302,40 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
     return session
   }
 
+  // A hosted runtime bearer is a session host's, minted again with every turn
+  // delivery, and the hosted worker's isolates share no memory, so a session
+  // held by one isolate is unknown to the next request. Each request is its
+  // own exchange, answered as JSON, with no server-to-client stream and so no
+  // elicitation.
+  const exchange = async (
+    request: Request,
+    credential: McpCredential,
+    key: string,
+    enabled: readonly string[] | undefined,
+  ): Promise<Response> => {
+    if (request.method !== "POST") return jsonRpcError(405, -32000, "Method not allowed")
+    const session = await createSession(credential, request, key, enabled, true)
+    try {
+      return await session.transport.handleRequest(request)
+    } finally {
+      await session.close()
+    }
+  }
+
   const dispatch = async (
     request: Request,
     credential: McpCredential,
     key: string,
     enabled: readonly string[] | undefined,
   ): Promise<Response> => {
+    if (options.mount === "hosted" && credential.kind === "runtime") return await exchange(request, credential, key, enabled)
     const sessionId = request.headers.get("mcp-session-id")
     if (sessionId) {
       const session = sessions.get(sessionId, key)
       if (!session) return jsonRpcError(404, -32001, "Session not found")
       return session.transport.handleRequest(request)
     }
-    const session = await createSession(credential, request, key, enabled)
+    const session = await createSession(credential, request, key, enabled, false)
     const response = await session.transport.handleRequest(request)
     if (!session.transport.sessionId) await session.close()
     return response

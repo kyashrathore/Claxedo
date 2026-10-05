@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { existsSync } from "node:fs"
+import { createServer } from "node:http"
 import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -7,6 +8,7 @@ import { DatabaseSync } from "node:sqlite"
 import { after, afterEach, before, describe, it } from "node:test"
 import { generateKeyPair } from "jose"
 import type { PluginProjection, RuntimeConfigSnapshotPlugins } from "@claxedo/harness/contract"
+import { asRecord, asString } from "@claxedo/helpers/guards"
 import { startScriptedModelServer, type ScriptedModelServer } from "../../harness/e2e/harness/scripted-model-server"
 import { eventually } from "../../harness/e2e/harness/eventually"
 import { releasePort, reservePort } from "../../harness/e2e/harness/ports"
@@ -27,6 +29,39 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
   if (message.method === "tools/call") return reply({ content: [{ type: "text", text: "MACHINE_MCP:" + message.params.arguments.marker + ":" + process.cwd() }] });
 });
 `
+
+/** A streamable-HTTP MCP server that keeps sessions in memory and loses them all on `restart()`. */
+async function restartableHttpMcp() {
+  const sessions = new Set<string>()
+  const server = createServer(async (request, response) => {
+    if (request.method === "DELETE") return void response.writeHead(204).end()
+    if (request.method !== "POST") return void response.writeHead(405).end()
+    let body = ""
+    for await (const chunk of request) body += String(chunk)
+    const message = asRecord(JSON.parse(body))
+    const params = asRecord(message?.params)
+    const session = request.headers["mcp-session-id"]
+    if (message?.method !== "initialize" && (typeof session !== "string" || !sessions.has(session))) return void response.writeHead(404).end()
+    if (message?.id === undefined) return void response.writeHead(202).end()
+    const reply = (result: unknown, headers: Record<string, string> = {}) =>
+      response.writeHead(200, { "content-type": "application/json", ...headers }).end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }))
+    if (message.method === "initialize") {
+      const id = crypto.randomUUID()
+      sessions.add(id)
+      return reply({ protocolVersion: params?.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "remote-mcp", version: "1" } }, { "mcp-session-id": id })
+    }
+    if (message.method === "tools/list") return reply({ tools: [{ name: "proof", inputSchema: { type: "object", properties: { marker: { type: "string" } } } }] })
+    return reply({ content: [{ type: "text", text: `REMOTE_MCP:${asString(asRecord(params?.arguments)?.marker)}` }] })
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const address = server.address()
+  if (!address || typeof address === "string") throw new Error("The MCP server is not listening on a port")
+  return {
+    url: `http://127.0.0.1:${address.port}/mcp`,
+    restart: () => sessions.clear(),
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  }
+}
 
 type StoredMessage = { info: { role: string; time?: { completed?: number } }; parts: Array<{ type: string; text?: string; tool?: string; state?: { status?: string; output?: string; error?: string } }> }
 
@@ -236,6 +271,28 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.ok(JSON.stringify(messages).includes(`MACHINE_MCP:M1:${directory}`), JSON.stringify(messages))
   })
 
+  void it("initializes an HTTP MCP server's session again after the server lost it, and the call goes through", { timeout: 120_000 }, async () => {
+    const remote = await restartableHttpMcp()
+    const before = plugins
+    plugins = { harnessLaunch: { pi: { generation: "remote", execution: { mode: "default" }, pluginRoots: [], notApplied: [],
+      mcpServers: [{ kind: "http", name: "remote", origin: "plugin", url: remote.url }] } }, mcp: {} }
+    try {
+      const host = await session("ses_http_mcp_restart")
+      const proved = async (marker: string) => {
+        model.scriptTool({ name: "mcp__remote__proof", input: { marker }, whenPromptIncludes: marker })
+        await host.prompt(`msg_${marker}`, `Call it, then reply with exactly this one token: ${marker}`)
+        const messages = JSON.stringify(await host.settled(marker))
+        assert.ok(messages.includes(`REMOTE_MCP:${marker}`), messages)
+      }
+      await proved("PIREMOTEFIRST")
+      remote.restart()
+      await proved("PIREMOTEAFTER")
+    } finally {
+      plugins = before
+      await remote.close()
+    }
+  })
+
   void it("lists and calls Claxedo's first-party MCP session tools with the bearer its turn was delivered", { timeout: 120_000 }, async () => {
     const root = "ses_first_party_mcp"
     const host = await session(root)
@@ -260,6 +317,24 @@ void describe("SessionDO under workerd with PiHarness", () => {
     const read = messages.flatMap((message) => message.parts).find((part) => part.type === "tool" && part.tool === "mcp__claxedo__session_transcript")
     assert.equal(read?.state?.status, "completed", JSON.stringify(read))
     assert.ok(read?.state?.output?.includes("Read your own transcript"), JSON.stringify(read))
+  })
+
+  void it("calls Claxedo's first-party MCP tools on a later turn's rotated bearer and on another isolate of the endpoint", { timeout: 120_000 }, async () => {
+    const root = "ses_first_party_mcp_rotation"
+    const host = await session(root)
+    host.controlPlane.control.firstPartyMcp = true
+    const listed = async (marker: string) => {
+      model.scriptTool({ name: "mcp__claxedo__sessions_list", input: {}, whenPromptIncludes: marker })
+      await host.prompt(`msg_${marker}`, `List the sessions, then reply with exactly this one token: ${marker}`)
+      return (await host.settled(marker)).flatMap((message) => message.parts)
+        .filter((part) => part.tool === "mcp__claxedo__sessions_list").map((part) => [part.state?.status, part.state?.output?.includes("WORKSPACE_SESSION_ROW")])
+    }
+    await listed("PIROTATEFIRST")
+    await listed("PIROTATESECOND")
+    host.controlPlane.newMcpIsolate()
+    const calls = await listed("PIROTATEISOLATE")
+    assert.deepEqual(calls, [["completed", true], ["completed", true], ["completed", true]])
+    assert.equal(new Set(host.controlPlane.calls.mcpBearers).size, 3)
   })
 
   void it("spends the accounts of the person who created the session, and a creator without any spends nobody's", { timeout: 120_000 }, async () => {

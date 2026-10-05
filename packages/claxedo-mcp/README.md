@@ -83,7 +83,11 @@ arrives on a later request and must reach the server that asked. Each
 process holds at most 256 sessions, drops one idle for 30 minutes, binds each
 to the credential that initialized it, and answers 404 for a session it no
 longer holds — the transport's signal to initialize again. On the hosted
-worker that state is per isolate. A destructive tool's confirmation rides the
+worker that state is per isolate, so a user credential's session lives only
+as long as its requests keep reaching that isolate. A runtime credential there
+is a session host's bearer, minted again with every turn, so each of its
+requests is answered on its own, as JSON, with no `Mcp-Session-Id`, no GET
+stream (405) and no elicitation. A destructive tool's confirmation rides the
 SSE stream of the tool call that asked whenever that is the only call open.
 Destructive tools require an accepted elicitation result. Clients without
 elicitation support receive a refusal; tool annotations do not grant approval.

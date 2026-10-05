@@ -403,6 +403,24 @@ describe("the hosted mount", () => {
     expect(await toolNames(client)).toEqual(["runtime_ping", "session_send", "wait"])
   })
 
+  test("answers a runtime credential without a session, so a rotated bearer on another isolate is served the next call", async () => {
+    const verifyRuntimeCredential = (token: string) => token.startsWith("rt-") ? runtimeClaims : undefined
+    const first = await hosted({ verifyRuntimeCredential })
+    const other = await hosted({ verifyRuntimeCredential })
+    const opened = await initialize(first.url, { headers: { authorization: "Bearer rt-first" } })
+    expect(opened.status).toBe(200)
+    expect(opened.headers.get("mcp-session-id")).toBeNull()
+    const called = await fetch(other.url, {
+      method: "POST",
+      headers: { authorization: "Bearer rt-rotated", "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-protocol-version": "2025-06-18" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "runtime_ping", arguments: {} } }),
+    })
+    expect(called.headers.get("content-type")).toContain("application/json")
+    expect(await called.json()).toMatchObject({ id: 2, result: { content: [{ type: "text", text: "runtime:runtime" }] } })
+    const stream = await fetch(first.url, { headers: { authorization: "Bearer rt-first", accept: "text/event-stream" } })
+    expect(stream.status).toBe(405)
+  })
+
   test("confirms a destructive tool through the host's elicitation and honours a decline", async () => {
     const { url, audits } = await hosted()
     const prompts: string[] = []

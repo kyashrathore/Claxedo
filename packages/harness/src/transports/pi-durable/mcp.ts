@@ -2,7 +2,7 @@ import { errorMessage } from "@claxedo/helpers"
 import { isJsonValue } from "@earendil-works/chord"
 import { Type } from "@earendil-works/pi-ai"
 import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable"
-import { McpClient, toLlmContent, type McpTransport } from "@earendil-works/pi-mcp"
+import { McpAuthRequiredError, McpClient, McpSessionExpiredError, toLlmContent, type McpTransport } from "@earendil-works/pi-mcp"
 import type { ProjectedMcpServer } from "../../contract"
 import type { McpListedTool, McpToolLists } from "./mcp-cache"
 
@@ -86,13 +86,22 @@ export class PiMcpTools {
       description: tool.description ?? `${tool.name} from MCP server ${server.name}`,
       parameters: Type.Unsafe<Record<string, unknown>>(tool.inputSchema),
       execute: async (args, _api, context) => {
-        const client = await this.client(server).catch((error: unknown) => {
-          this.clients.delete(server.name)
-          throw new Error(`MCP server ${server.name} is unavailable: ${errorMessage(error)}`, { cause: error })
+        const options = context.abortSignal ? { signal: context.abortSignal } : {}
+        const client = await this.connected(server)
+        const result = await client.callTool(tool.name, args, options).catch(async (error: unknown) => {
+          if (!(error instanceof McpSessionExpiredError || error instanceof McpAuthRequiredError)) throw error
+          await client.close()
+          return await (await this.connected(server)).callTool(tool.name, args, options)
         })
-        const result = await client.callTool(tool.name, args, context.abortSignal ? { signal: context.abortSignal } : {})
         return { content: toLlmContent(result), isError: result.isError === true }
       },
+    })
+  }
+
+  private connected(server: ProjectedMcpServer): Promise<McpClient> {
+    return this.client(server).catch((error: unknown) => {
+      this.clients.delete(server.name)
+      throw new Error(`MCP server ${server.name} is unavailable: ${errorMessage(error)}`, { cause: error })
     })
   }
 }
