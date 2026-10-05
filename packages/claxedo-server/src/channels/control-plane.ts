@@ -318,10 +318,7 @@ export function createControlPlaneChannels(input: {
             input.services.telemetry.capture(`channel:${envelope.channel}:${envelope.externalUserId}`, "channel.session.created", {
               sessionId: created.sessionId,
               channel: envelope.channel,
-              externalUserId: envelope.externalUserId,
-              threadKey: envelope.threadKey,
               workspaceId: created.workspaceId,
-              cost: null,
             })
           } catch {
             // Best-effort audit telemetry; session creation is already committed.
@@ -441,7 +438,7 @@ export function createControlPlaneChannels(input: {
       input.services.telemetry.capture(
         `channel:${envelope.channel}:${envelope.externalUserId}`,
         "channel.access.denied",
-        { channel: envelope.channel, externalUserId: envelope.externalUserId, reason, chatType: envelope.chatType ?? "dm" },
+        { channel: envelope.channel, reason, chatType: envelope.chatType ?? "dm" },
       )
     } catch {
       // best-effort audit

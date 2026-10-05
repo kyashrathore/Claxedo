@@ -150,6 +150,34 @@ export function workerErrorCapture(env: TelemetryEnv = {}): WorkerErrorCapture {
   }
 }
 
+const SYSTEM_DISTINCT_ID = "system"
+
+function isIdentifierKey(key: string) {
+  return key.endsWith("_id") || key.endsWith("Id")
+}
+
+/**
+ * Ids leave this system only as digests: a reader of the analytics project can
+ * still join one user's or workspace's events, but cannot recover the id, and a
+ * channel's external user id never reaches the vendor as itself.
+ */
+export async function pseudonymousId(id: string): Promise<string> {
+  if (id === SYSTEM_DISTINCT_ID) return id
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`claxedo:${id}`)))
+  return Array.from(digest.subarray(0, 16), (byte) => byte.toString(16).padStart(2, "0")).join("")
+}
+
+async function pseudonymousEntries(
+  record: Record<string, unknown>,
+  hashed: (key: string, value: unknown) => boolean,
+): Promise<Record<string, unknown>> {
+  return Object.fromEntries(await Promise.all(Object.entries(record).map(async ([key, value]) => {
+    const groups = key === "$groups" ? asRecord(value) : undefined
+    if (groups) return [key, await pseudonymousEntries(groups, () => true)]
+    return [key, typeof value === "string" && hashed(key, value) ? await pseudonymousId(value) : value]
+  })))
+}
+
 async function postCapture(
   host: string,
   key: string,
@@ -163,8 +191,8 @@ async function postCapture(
     body: JSON.stringify({
       api_key: key,
       event,
-      distinct_id: distinctId,
-      properties,
+      distinct_id: await pseudonymousId(distinctId),
+      properties: await pseudonymousEntries(properties, isIdentifierKey),
     }),
     signal: AbortSignal.timeout(5_000),
   })

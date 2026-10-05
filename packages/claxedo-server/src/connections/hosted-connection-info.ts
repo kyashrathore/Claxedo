@@ -178,18 +178,7 @@ async function mintCloudConnection(
     auth,
     event: "runtime_access_token.minted",
     workspaceId,
-    properties: {
-      backing: "cloud-vm",
-      hostId: target.hostId,
-      role,
-      jti: token.jti,
-      expiresAt: token.tokenExpiresAt,
-      homeRegion,
-      leaseEpoch: target.epoch,
-      ...(target.driverResourceId ? { driverResourceId: target.driverResourceId } : {}),
-      relayRoom: workspaceId,
-      relayUrl,
-    },
+    properties: { backing: "cloud-vm", role, homeRegion, leaseEpoch: target.epoch },
   })
   if (previousJti) {
     await authority.revokeRuntimeAccessToken(auth, { jti: previousJti, workspaceId })
@@ -422,11 +411,7 @@ export async function hostedConnectionStatus(
       homeRegion,
       relayRoom: workspaceId,
       ...(target.status === "unavailable" ? { reason: target.reason, leaseStatus: target.leaseStatus } : {}),
-      ...(target.status === "ready" ? {
-        hostId: target.hostId,
-        leaseEpoch: target.epoch,
-        ...(target.driverResourceId ? { driverResourceId: target.driverResourceId } : {}),
-      } : {}),
+      ...(target.status === "ready" ? { hostId: target.hostId, leaseEpoch: target.epoch } : {}),
     },
   })
   if (target.status !== "ready") {

@@ -193,21 +193,7 @@ export async function signedOrError(
   services?: ControlPlaneServices,
 ) {
   try {
-    const auth = await routeAuth(request, options)
-    if (auth) {
-      captureWorkspaceTelemetry({
-        services,
-        auth,
-        event: "control_plane.auth.signed",
-        properties: {
-          issuer: auth.user.issuer,
-          ...(auth.user.orgId ? { orgId: auth.user.orgId } : {}),
-        },
-      })
-    }
-    return {
-      auth,
-    }
+    return { auth: await routeAuth(request, options) }
   } catch (err) {
     if (err instanceof ControlPlaneAuthError) {
       captureWorkspaceTelemetry({

@@ -136,16 +136,7 @@ export async function hostTunnelConnectionInfo(
     auth,
     event: "runtime_access_token.minted",
     workspaceId,
-    properties: {
-      backing: "local-worktree",
-      hostId,
-      role,
-      jti: token.jti,
-      expiresAt: token.tokenExpiresAt,
-      hostLeaseExpiresAt: activeLink.expires_at,
-      relayRoom: workspaceId,
-      relayUrl,
-    },
+    properties: { backing: "local-worktree", role },
   })
   if (previousJti) {
     await authority.revokeRuntimeAccessToken(auth, { jti: previousJti, workspaceId })

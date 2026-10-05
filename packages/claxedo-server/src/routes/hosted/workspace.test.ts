@@ -395,15 +395,9 @@ describe("hosted connection", () => {
     expect(capture).toHaveBeenCalledWith(
       "user_1",
       "runtime_access_token.minted",
-      expect.objectContaining({
-        workspaceId: "ws_1",
-        backing: "local-worktree",
-        relayRoom: "ws_1",
-        relayUrl: "https://relay.test",
-        jti: "jti_rat",
-      }),
+      { workspaceId: "ws_1", backing: "local-worktree", role: "owner" },
     )
-    expect(JSON.stringify(capture.mock.calls)).not.toContain("rat-token")
+    expect(JSON.stringify(capture.mock.calls)).not.toMatch(/rat-token|jti_rat|relay\.test/)
   })
 
   test("uses the workspace home_region to choose the regional relay endpoint", async () => {
@@ -653,21 +647,13 @@ describe("hosted connection", () => {
       relayRoom: "ws_1",
       hostId: "host_cloud_1",
       leaseEpoch: 8,
-      driverResourceId: "driver-resource-secret-id",
     })
     expect(capture).toHaveBeenCalledWith(
       "user_1",
       "runtime_access_token.minted",
-      expect.objectContaining({
-        workspaceId: "ws_1",
-        backing: "cloud-vm",
-        relayRoom: "ws_1",
-        relayUrl: "https://relay.test",
-        driverResourceId: "driver-resource-secret-id",
-        jti: "jti_rat",
-      }),
+      { workspaceId: "ws_1", backing: "cloud-vm", role: "editor", homeRegion: "eu-west", leaseEpoch: 8 },
     )
-    expect(JSON.stringify(capture.mock.calls)).not.toContain("rat-token")
+    expect(JSON.stringify(capture.mock.calls)).not.toMatch(/rat-token|jti_rat|relay\.test|driver-resource-secret-id/)
     const body = await res.json()
     expect(body).toMatchObject({
       backing: "cloud-vm",

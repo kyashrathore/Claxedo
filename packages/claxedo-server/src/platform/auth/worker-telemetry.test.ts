@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { exceptionIdentity, parseStackFrames, workerErrorCapture, workerTelemetry } from "./worker-telemetry"
+import { exceptionIdentity, parseStackFrames, pseudonymousId, workerErrorCapture, workerTelemetry } from "./worker-telemetry"
 
 /**
  * The Worker cannot use `posthog-node` (forbidden import), so its `$exception`
@@ -90,18 +90,38 @@ describe("workerTelemetry", () => {
     expect(spy).not.toHaveBeenCalled()
   })
 
-  test("both opt-ins → one POST to /capture/ with the event payload", () => {
+  test("both opt-ins → one POST to /capture/ with ids leaving only as digests", async () => {
     const spy = fetchSpy()
-    workerTelemetry({ ...ON, CLAXEDO_POSTHOG_KEY: "phc_w" }).capture("user_1", "thing.happened", { a: 1 })
-    expect(spy).toHaveBeenCalledTimes(1)
+    workerTelemetry({ ...ON, CLAXEDO_POSTHOG_KEY: "phc_w" }).capture("user_1", "thing.happened", {
+      a: 1,
+      workspace_id: "ws_1",
+      hostId: "host_1",
+      surface: "app",
+      $groups: { org: "org_1" },
+    })
+    await vi.waitFor(() => expect(spy).toHaveBeenCalledTimes(1))
     const [url, init] = spy.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toBe("https://us.i.posthog.com/capture/")
     expect(JSON.parse(init.body as string)).toEqual({
       api_key: "phc_w",
       event: "thing.happened",
-      distinct_id: "user_1",
-      properties: { a: 1 },
+      distinct_id: await pseudonymousId("user_1"),
+      properties: {
+        a: 1,
+        workspace_id: await pseudonymousId("ws_1"),
+        hostId: await pseudonymousId("host_1"),
+        surface: "app",
+        $groups: { org: await pseudonymousId("org_1") },
+      },
     })
+    expect(init.body).not.toMatch(/user_1|ws_1|host_1|org_1/)
+  })
+
+  test("a digest is stable per id, distinct across ids, and the system id stays readable", async () => {
+    expect(await pseudonymousId("channel:slack:U123")).toBe(await pseudonymousId("channel:slack:U123"))
+    expect(await pseudonymousId("channel:slack:U123")).not.toBe(await pseudonymousId("channel:slack:U124"))
+    expect(await pseudonymousId("channel:slack:U123")).toMatch(/^[0-9a-f]{32}$/)
+    expect(await pseudonymousId("system")).toBe("system")
   })
 })
 
@@ -140,7 +160,7 @@ describe("workerErrorCapture", () => {
     const body = JSON.parse(init.body as string)
     expect(body.api_key).toBe("phc_w")
     expect(body.event).toBe("$exception")
-    expect(body.distinct_id).toBe("user_7")
+    expect(body.distinct_id).toBe(await pseudonymousId("user_7"))
     // Tags ride as top-level properties so an alert rule can match page_class.
     expect(body.properties.unit).toBe("worker")
     expect(body.properties.page_class).toBe("payment")
