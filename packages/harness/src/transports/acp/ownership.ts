@@ -1,10 +1,12 @@
-import { errorMessage } from "@claxedo/helpers"
+import { availableParallelism } from "node:os"
+import { errorMessage, limitConcurrency } from "@claxedo/helpers"
 import { AcpTransportError } from "./errors"
 
 type Retire = () => Promise<void>
 
 export class AcpPeerOwnership {
   private readonly owned = new Set<Retire>()
+  readonly launch = limitConcurrency(availableParallelism())
 
   own(peer: { retire: Retire }): void {
     this.owned.add(peer.retire)

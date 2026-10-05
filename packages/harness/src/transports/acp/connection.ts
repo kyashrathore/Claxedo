@@ -40,6 +40,11 @@ export async function connectAcp(input: StartInput, options: AcpConnectionOption
   if ((options.kind === "process") !== (input.locality === "local")) {
     throw new AcpTransportError("configuration", "ACP connection kind does not match locality")
   }
+  return launch.owner.launch(() => openPeer(input, options, services, handlers, launch))
+}
+
+async function openPeer(input: StartInput, options: AcpConnectionOptions, services: HarnessServices, handlers: AcpHandlers,
+  launch: AcpLaunch): Promise<AcpPeer> {
   const { process, stream } = await openAcpStream(input, options, services, launch)
   const startup = new AcpStartupDeadline(services.clock, options.startupTimeoutMs, "initialize")
   let initializing = true

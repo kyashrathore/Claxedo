@@ -112,3 +112,17 @@ export function singleFlightUntil<Args extends unknown[], Result>(
   }
 }
 
+export function limitConcurrency(limit: number): <T>(work: () => Promise<T>) => Promise<T> {
+  let active = 0
+  const queue: Array<() => void> = []
+  return async (work) => {
+    if (active >= limit) await new Promise<void>((resolve) => queue.push(resolve))
+    active += 1
+    try {
+      return await work()
+    } finally {
+      active -= 1
+      queue.shift()?.()
+    }
+  }
+}

@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process"
 import { realpath } from "node:fs/promises"
 import { runtimeEnvText } from "./env"
 import { buildSafeEnv } from "./pty/env"
+import { limitConcurrency } from "@claxedo/helpers"
 import { asRecord } from "@claxedo/helpers/guards"
 
 export const GIT_TIMEOUT_MS = 10_000
@@ -187,23 +188,6 @@ function defaultGit(args: string[], cwd: string, options: GitOptions) {
     if (options.signal?.aborted) end()
     else options.signal?.addEventListener("abort", end, { once: true })
   })
-}
-
-function limitConcurrency(limit: number) {
-  let active = 0
-  const queue: Array<() => void> = []
-  return async function run<T>(fn: () => Promise<T>) {
-    if (active >= limit) {
-      await new Promise<void>((resolve) => queue.push(resolve))
-    }
-    active += 1
-    try {
-      return await fn()
-    } finally {
-      active -= 1
-      queue.shift()?.()
-    }
-  }
 }
 
 export function createBoundedGit(options: BoundedGitOptions = {}) {

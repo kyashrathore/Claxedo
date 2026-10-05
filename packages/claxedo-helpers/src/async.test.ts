@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createKeyedSerializer, singleFlightUntil, sleep, waitForHealth } from "./async"
+import { createKeyedSerializer, limitConcurrency, singleFlightUntil, sleep, waitForHealth } from "./async"
 
 describe("sleep", () => {
   test("sleep(0) is a macrotask yield, not a microtask resolve", async () => {
@@ -163,3 +163,24 @@ describe("singleFlightUntil", () => {
   })
 })
 
+describe("limitConcurrency", () => {
+  test("runs at most the limit at once, admits waiters in order, and frees a slot when work fails", async () => {
+    const limit = limitConcurrency(2)
+    const gates = Array.from({ length: 4 }, () => Promise.withResolvers<void>())
+    const started: number[] = []
+    const runs = gates.map((gate, index) => limit(async () => {
+      started.push(index)
+      await gate.promise
+      if (index === 0) throw new Error("first failed")
+      return index
+    }))
+    await sleep(0)
+    expect(started).toEqual([0, 1])
+    gates[0]!.resolve()
+    await expect(runs[0]).rejects.toThrow("first failed")
+    expect(started).toEqual([0, 1, 2])
+    for (const gate of gates.slice(1)) gate.resolve()
+    expect(await Promise.all(runs.slice(1))).toEqual([1, 2, 3])
+    expect(started).toEqual([0, 1, 2, 3])
+  })
+})

@@ -1,3 +1,4 @@
+import { availableParallelism } from "node:os"
 import { expect, test } from "bun:test"
 import { reached, wireFixture } from "./test-support/acp-wire"
 
@@ -71,4 +72,29 @@ test("ACP rejects a late session/new question with the exact invalid-params wire
     expect(await reached(() => peer.messages.find((row) => row.id === "late-new"))).toMatchObject({ error: { code: -32602 } })
     expect(f.ports.readPending({ sessionId: "s1" })).toEqual([])
   } finally { await f.transport.dispose() }
+})
+
+test("ACP launches beyond the machine's parallelism wait for a slot, and each startup deadline starts with its own launch", async () => {
+  const limit = availableParallelism()
+  const held: { peer: import("./test-support/acp-wire").WirePeer; message: import("./test-support/acp-wire").Wire }[] = []
+  const f = wireFixture((peer, message) => {
+    if (message.method !== "initialize") return false
+    held.push({ peer, message })
+    return true
+  })
+  const deadlines: number[] = []
+  f.services.clock = { now: () => Date.now(), setTimeout: (_callback, ms) => deadlines.push(ms), clearTimeout: () => {} }
+  const starts = Array.from({ length: limit + 1 }, (_, index) => f.transport.start({ ...f.input, sessionId: `s${index}` }, f.sessionBroker))
+  try {
+    await reached(() => held.length === limit || undefined)
+    await Bun.sleep(50)
+    expect(f.peers).toHaveLength(limit)
+    expect(deadlines).toHaveLength(limit * 2)
+    const first = held.shift()!
+    first.peer.reply(first.message, { protocolVersion: 1, agentCapabilities: {} })
+    await reached(() => held.length === limit || undefined)
+    expect(f.peers).toHaveLength(limit + 1)
+    for (const { peer, message } of held) peer.reply(message, { protocolVersion: 1, agentCapabilities: {} })
+    expect(await Promise.all(starts)).toHaveLength(limit + 1)
+  } finally { await f.transport.dispose(); await Promise.allSettled(starts) }
 })
