@@ -105,7 +105,7 @@ export const agentsScene = ({ L, at, cues, variant = "film" }) => {
       const bend = { x: end.x * 0.18, y: end.y * 0.9 + y }
       pose(mark, {
         o: landed ? 0 : clamp(snap * 5),
-        x: (1 - f) * (1 - f) * 0 + 2 * (1 - f) * f * bend.x + f * f * end.x,
+        x: 2 * (1 - f) * f * bend.x + f * f * end.x,
         y: (1 - f) * (1 - f) * y + 2 * (1 - f) * f * bend.y + f * f * end.y,
         s: mix(s, markScale, f),
       })

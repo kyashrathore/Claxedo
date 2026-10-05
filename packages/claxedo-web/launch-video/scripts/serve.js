@@ -21,11 +21,11 @@ const respond = async (pathname) => {
   if (pathname === "/" || pathname === "/index.html") return new Response(Bun.file(join(root, "index.html")))
   if (pathname === "/site/harness-marks.js") return js(await harnessMarks())
   const [base, rest] = pathname.startsWith("/site/") ? [site, pathname.slice(6)] : [root, pathname.slice(1)]
-  if (base === site && !/^(src\/(icons|assets)|public)\//.test(rest)) return
+  if (base === site && !/^(src\/(icons|assets)|public)\//.test(rest)) return undefined
   const path = inside(base, rest)
-  if (!path) return
+  if (!path) return undefined
   const file = Bun.file(path)
-  if (!(await file.exists())) return
+  if (!(await file.exists())) return undefined
   if (path.endsWith(".ts")) return js(transpiler.transformSync(await file.text()))
   return new Response(file)
 }
