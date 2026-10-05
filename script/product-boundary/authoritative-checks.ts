@@ -35,6 +35,8 @@ export const AUTHORITATIVE_CHECKS: Record<string, AuthoritativeCheck[]> = {
       cwd: "packages/claxedo-local-server",
       command: [
         "node",
+        "../../script/test-home/run.mjs",
+        "node",
         "./node_modules/vitest/vitest.mjs",
         "run",
         "src/architecture/local-closure.test.ts",
@@ -81,6 +83,8 @@ export const AUTHORITATIVE_CHECKS: Record<string, AuthoritativeCheck[]> = {
       label: "Worker deployment closures",
       cwd: "packages/claxedo-server",
       command: [
+        "node",
+        "../../script/test-home/run.mjs",
         "node",
         "./node_modules/vitest/vitest.mjs",
         "run",
