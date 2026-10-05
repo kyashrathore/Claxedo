@@ -71,7 +71,7 @@ export function submitBlockReason(input: SubmitBlockInput): SubmitBlock | null {
     if (input.harnessReadiness === "degraded") return block("harness-degraded")
     if (input.harnessReadiness === "error" || input.harnessConfigError) return block("harness-error")
     if (input.harnessReadiness === "polling") return block("harness-polling")
-    if (input.harnessOptionsLoading) return block("models-loading")
+    if (input.harnessOptionsLoading && !input.harnessReadyForSubmit) return block("models-loading")
     if (input.harnessReadiness === "unresolved") return block("harness-polling")
     if (!input.harnessReadyForSubmit) return block("no-model")
   }

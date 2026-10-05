@@ -17,6 +17,9 @@ import { SessionHostMeta } from "./session-host-meta"
 import { SessionHostTurns, TurnAuthorityError } from "./turn-delivery"
 import { TurnLeases, type StoredTurnLease } from "./turn-leases"
 
+/** A request or control-plane call at or past this is logged with its timing, so a slow composer read can be placed. */
+const SLOW_REQUEST_MS = 1_000
+
 export type SessionHostEnv = {
   CONTROL_PLANE: { fetch(input: string, init?: RequestInit): Promise<Response> }
   WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: string
@@ -49,7 +52,14 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
     const root = ctx.id.name
     if (!root) throw new Error("A session host is addressed by its root session's id")
     this.root = root
-    this.controlPlane = (input, init) => env.CONTROL_PLANE.fetch(String(input instanceof Request ? input.url : input), init)
+    this.controlPlane = async (input, init) => {
+      const url = String(input instanceof Request ? input.url : input)
+      const askedAt = Date.now()
+      const response = await env.CONTROL_PLANE.fetch(url, init)
+      const ms = Date.now() - askedAt
+      if (ms >= SLOW_REQUEST_MS) console.warn("Slow control plane call from the session host", { path: new URL(url).pathname, status: response.status, ms })
+      return response
+    }
     this.meta = new SessionHostMeta(ctx.storage.sql)
     this.turns = new SessionHostTurns({ fetch: this.controlPlane, authorityUrl: env.WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL, leases: () => this.leases })
     this.leases = new TurnLeases(ctx.storage.sql, (lease) => this.turns.forget(lease))
@@ -78,9 +88,19 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
    * a typed refusal, and can still be deleted.
    */
   async fetch(request: Request): Promise<Response> {
+    const arrivedAt = Date.now()
     let failure: unknown
     const started = await this.lifecycle.start().then(() => true, (error: unknown) => { failure = error; return false })
-    if (started) return this.lifecycle.fetch(request)
+    const startedAt = Date.now()
+    const response = started ? await this.lifecycle.fetch(request) : await this.unstarted(request, failure)
+    const ms = Date.now() - arrivedAt
+    if (ms >= SLOW_REQUEST_MS) {
+      console.warn("Slow session host request", { method: request.method, path: new URL(request.url).pathname, status: response.status, ms, startMs: startedAt - arrivedAt })
+    }
+    return response
+  }
+
+  private unstarted(request: Request, failure: unknown): Promise<Response> {
     console.error("The session host could not start", failure)
     return this.serve(request, failure instanceof RuntimeStoreSchemaMismatchError
       ? { status: 409, code: "session_host_unsupported_store", message: "This session's stored state was written by a build this one does not read" }

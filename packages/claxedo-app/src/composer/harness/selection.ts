@@ -90,7 +90,7 @@ export function harnessModelNameForSubmit(state: HarnessSelectionState) {
 }
 
 export function harnessReadyForSubmit(state: HarnessSelectionState) {
-  if (state.configError || state.readiness === "error" || state.readiness === "degraded" || state.optionsLoading) return false
+  if (state.configError || state.readiness === "error" || state.readiness === "degraded") return false
   return connectionAllowsNoModel(state) || !!harnessModelKeyForSubmit(state)
 }
 
