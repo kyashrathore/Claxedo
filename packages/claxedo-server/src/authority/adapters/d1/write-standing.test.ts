@@ -3,6 +3,7 @@ import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 import { D1WorkspaceAuthority } from "./workspace-authority"
+import { D1ApplicationIdentityAuthority } from "./application-identity"
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { D1AuditAuthority } from "./audit-authority"
 import {
@@ -19,7 +20,7 @@ afterEach(async () => {
 const identity = (subject: string): AuthIdentity => ({ adapter: "better-auth", issuer: "https://auth.example.test", subject })
 
 async function signed(authority: D1WorkspaceAuthority, subject: string): Promise<SignedControlPlaneAuth> {
-  const mapped = await authority.ensureApplicationIdentity(identity(subject))
+  const mapped = await new D1ApplicationIdentityAuthority(authority.accessContext(), { kind: "claxedo-hosted" }).ensureApplicationIdentity(identity(subject))
   if (mapped.state !== "active") throw new Error(`identity did not become active: ${mapped.state}`)
   const principal: ControlPlanePrincipal = {
     userId: mapped.userId,
@@ -109,8 +110,8 @@ async function setup() {
 describe("a write re-asks its caller's standing inside the write", () => {
   test("an actor suspended before the write links no identity and creates no organization", async () => {
     const { database, options, alice, suspendActor } = await setup()
-    const linking = new D1WorkspaceAuthority(beforeWrite(database, /insert into auth_identities/, suspendActor), options)
-    await expect(linking.linkApplicationIdentity(alice, { identity: identity("alice-second") })).rejects.toMatchObject({ status: 403 })
+    const linking = new D1WorkspaceAuthority(beforeWrite(database, /insert into auth_identities/, suspendActor), options).accessContext()
+    await expect(new D1ApplicationIdentityAuthority(linking, options.product).linkApplicationIdentity(alice, { identity: identity("alice-second") })).rejects.toMatchObject({ status: 403 })
     expect(await database.prepare("select 1 from auth_identities where subject = 'alice-second'").first()).toBeNull()
 
     await database.prepare("update actors set state = 'active' where actor_id = ?").bind(alice.principal!.actorId).run()

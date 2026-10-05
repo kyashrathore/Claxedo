@@ -1,5 +1,7 @@
+import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { publicApiErrorShape } from "@claxedo/helpers/api-error"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
+import { d1BatchAssertionFailed } from "../../../platform/db/d1-constraint"
 
 export type D1WorkspaceAuthorityErrorCode =
   | "invalid_input"
@@ -15,5 +17,16 @@ export type D1WorkspaceAuthorityErrorCode =
 export class D1WorkspaceAuthorityError extends ClaxedoError<D1WorkspaceAuthorityErrorCode> {
   constructor(code: D1WorkspaceAuthorityErrorCode, message: string) {
     super({ code, message, ...publicApiErrorShape(code) })
+  }
+}
+
+export async function guardedBatch(database: D1Database, statements: D1PreparedStatement[], message: string) {
+  try {
+    return await database.batch(statements)
+  } catch (error) {
+    if (d1BatchAssertionFailed(error)) {
+      throw new D1WorkspaceAuthorityError("resource_conflict", message)
+    }
+    throw error
   }
 }

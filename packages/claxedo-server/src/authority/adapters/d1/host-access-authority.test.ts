@@ -15,6 +15,7 @@ import {
 import { sha256Hex } from "@claxedo/helpers/crypto"
 
 import { D1WorkspaceAuthority } from "./workspace-authority"
+import { D1ApplicationIdentityAuthority } from "./application-identity"
 import { createD1HostTunnelTargetResolver } from "./host-tunnel-relay-target"
 import { D1HostAccessAuthority } from "./host-access-authority"
 
@@ -116,7 +117,7 @@ async function signed(
   orgId?: string,
 ): Promise<SignedControlPlaneAuth> {
   const applicationIdentity = identity(subject)
-  const result = await authority.ensureApplicationIdentity(applicationIdentity)
+  const result = await new D1ApplicationIdentityAuthority(authority.accessContext(), { kind: "claxedo-hosted" }).ensureApplicationIdentity(applicationIdentity)
   if (result.state !== "active") throw new Error(`identity did not become active: ${result.state}`)
   const principal: ControlPlanePrincipal = {
     userId: result.userId,

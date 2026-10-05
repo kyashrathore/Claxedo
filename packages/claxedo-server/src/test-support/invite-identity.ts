@@ -2,6 +2,7 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { AuthIdentity } from "@claxedo/server-core/platform/auth/authentication"
 import type { OrgMemberRole } from "@claxedo/server-core/platform/auth/org-access-authority"
 import type { D1WorkspaceAuthority } from "../authority/adapters/d1/workspace-authority"
+import type { D1ApplicationIdentityAuthority } from "../authority/adapters/d1/application-identity"
 import { D1OrgInvitationAuthority } from "../authority/adapters/d1/org-invitation-authority"
 
 /**
@@ -11,6 +12,7 @@ import { D1OrgInvitationAuthority } from "../authority/adapters/d1/org-invitatio
  */
 export async function inviteIdentity(
   authority: D1WorkspaceAuthority,
+  identities: D1ApplicationIdentityAuthority,
   owner: SignedControlPlaneAuth,
   input: { orgId: string; identity: AuthIdentity; role: OrgMemberRole },
 ) {
@@ -21,7 +23,7 @@ export async function inviteIdentity(
     verifiedEmail: async () => email,
   })
   await invitations.createOrgInvitation(owner, { orgId: input.orgId, email, role: input.role })
-  const admitted = await authority.admitInvitedIdentity(input.identity, email)
+  const admitted = await identities.admitInvitedIdentity(input.identity, email)
   if (admitted.state !== "active") throw new Error(`invited identity was not admitted: ${admitted.state}`)
   return (invitee: SignedControlPlaneAuth) => invitations.acceptOrgInvitation(invitee, { token })
 }

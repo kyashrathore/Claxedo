@@ -94,20 +94,22 @@ const ENTRIES = [
   // each split from its authority. Every entry verifies the per-turn MCP
   // bearer of a session served by its own host (`mcp/session-mcp-credentials.ts`)
   // and mints that session's machine token (`authority/session-host-machine-access.ts`).
-  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 153, packages: 20 },
+  // Every entry admits a verified sign-in to a canonical user and human actor
+  // through `d1/application-identity.ts`, split from the workspace authority.
+  { name: "worker", entry: BETTER_AUTH_D1_ENTRY, modules: 154, packages: 20 },
   // Both Agent Plugins entries carry the plugin-backend platform
   // (`src/plugin-backends/`): seven modules, `@claxedo/plugin-api` for the
   // manifest, and `cloudflare:workers` for the supervisor and its entrypoints,
   // plus `agent-plugins/signed-scope.ts`, the caller and write guard the
   // activation and source stores share, and the Pi launch a session served by
   // its own Durable Object is delivered (`agent-plugins/runtime/session-host-launch.ts`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 205, packages: 24 },
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 206, packages: 24 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
   // ready cloud runtime and admits it at the session-rows ingest, and only
   // this entry has cloud runtimes to publish rows.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 212, packages: 24 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 213, packages: 24 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

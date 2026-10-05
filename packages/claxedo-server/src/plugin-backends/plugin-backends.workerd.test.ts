@@ -6,6 +6,7 @@ import { buildPluginBackend, type PluginBackendBuild } from "@claxedo/plugin-bui
 import type { AuthIdentity } from "@claxedo/server-core/platform/auth/authentication"
 import type { AgentPluginR2Bucket } from "../agent-plugins/artifacts/r2-artifact-adapter"
 import { D1WorkspaceAuthority } from "../authority/adapters/d1/workspace-authority"
+import { D1ApplicationIdentityAuthority } from "../authority/adapters/d1/application-identity"
 import { applyControlPlaneBaseline } from "../test-support/control-plane-migrations"
 import { hostedWorkerCompatibility, wranglerBundle } from "../test-support/hosted-worker-bundle"
 import { readPluginBackendState, writePluginBackendActivation } from "./activations"
@@ -44,12 +45,14 @@ function holdOutbound() {
 
 let held: Promise<void> = Promise.resolve()
 
-function authority() {
-  return new D1WorkspaceAuthority(database, {
+function identities() {
+  const product = { kind: "claxedo-hosted" } as const
+  const workspace = new D1WorkspaceAuthority(database, {
     deploymentId: DEPLOYMENT_ID,
-    product: { kind: "claxedo-hosted" },
+    product,
     randomId: (prefix) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
   })
+  return new D1ApplicationIdentityAuthority(workspace.accessContext(), product)
 }
 
 function identity(subject: string): AuthIdentity {
@@ -57,7 +60,7 @@ function identity(subject: string): AuthIdentity {
 }
 
 async function signIn(subject: string): Promise<{ token: string; userId: string }> {
-  const linked = await authority().ensureApplicationIdentity(identity(subject))
+  const linked = await identities().ensureApplicationIdentity(identity(subject))
   if (linked.state !== "active") throw new Error(`${subject} did not become active: ${linked.state}`)
   const claims = { userId: linked.userId, actorId: linked.actorId, subject }
   return { token: Buffer.from(JSON.stringify(claims)).toString("base64url"), userId: linked.userId }

@@ -28,6 +28,7 @@ import { hostedConnectionInfo } from "../connections/hosted-connection-info"
 import { hostTunnelConnectionInfo } from "../connections/host-tunnel-connection"
 import type { D1Database } from "@cloudflare/workers-types"
 import { D1WorkspaceAuthority } from "../authority/adapters/d1/workspace-authority"
+import { D1ApplicationIdentityAuthority } from "../authority/adapters/d1/application-identity"
 import type { ControlPlaneCredentials } from "../authority/services"
 import {
   createHostedCapabilityTokenResolver,
@@ -667,17 +668,18 @@ describe("Composio MCP through RFC 7591 dynamic client registration", () => {
       subject: "composio-owner",
     }
     let sequence = 0
+    const product = {
+      kind: "user-deployed",
+      organization: { id: "org_deployment", name: "Deployment" },
+      ownerIdentity,
+    } as const
     const authority = new D1WorkspaceAuthority(database, {
       deploymentId: "deployment-a",
-      product: {
-        kind: "user-deployed",
-        organization: { id: "org_deployment", name: "Deployment" },
-        ownerIdentity,
-      },
+      product,
       now: () => 1_900_000_000_000 + sequence,
       randomId: (prefix: string) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
     })
-    const active = await authority.ensureApplicationIdentity(ownerIdentity)
+    const active = await new D1ApplicationIdentityAuthority(authority.accessContext(), product).ensureApplicationIdentity(ownerIdentity)
     if (active.state !== "active") throw new Error(`identity did not become active: ${active.state}`)
     // The signed shape the authority verifies: a real application principal,
     // not a token claim (mirrors `signed()` in hosted-d1/setup.test.ts).

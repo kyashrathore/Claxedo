@@ -9,6 +9,7 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 
 import { D1WorkspaceAuthority } from "../../authority/adapters/d1/workspace-authority"
+import { D1ApplicationIdentityAuthority } from "../../authority/adapters/d1/application-identity"
 import {
   createD1ConnectionAttempts,
   HOSTED_ATTEMPT_RETENTION_MS,
@@ -52,8 +53,8 @@ function identity(subject: string): AuthIdentity {
 }
 
 /** The signed shape the authority verifies: a real application principal, not a token claim. */
-async function signed(authority: D1WorkspaceAuthority, applicationIdentity: AuthIdentity): Promise<SignedControlPlaneAuth> {
-  const result = await authority.ensureApplicationIdentity(applicationIdentity)
+async function signed(identities: D1ApplicationIdentityAuthority, applicationIdentity: AuthIdentity): Promise<SignedControlPlaneAuth> {
+  const result = await identities.ensureApplicationIdentity(applicationIdentity)
   if (result.state !== "active") throw new Error(`identity did not become active: ${result.state}`)
   const principal: ControlPlanePrincipal = {
     userId: result.userId,
@@ -195,20 +196,22 @@ async function rig(options: RigOptions = {}) {
   const target = await database()
   const ownerIdentity = identity("owner")
   let sequence = 0
+  const product = {
+    kind: "user-deployed",
+    organization: { id: "org_deployment", name: "Deployment" },
+    ownerIdentity,
+  } as const
   const authority = new D1WorkspaceAuthority(target, {
     deploymentId: "deployment-a",
-    product: {
-      kind: "user-deployed",
-      organization: { id: "org_deployment", name: "Deployment" },
-      ownerIdentity,
-    },
+    product,
     now: () => NOW + sequence,
     randomId: (prefix) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
   })
-  const owner = await signed(authority, ownerIdentity)
+  const identities = new D1ApplicationIdentityAuthority(authority.accessContext(), product)
+  const owner = await signed(identities, ownerIdentity)
   const memberIdentity = identity("member")
-  const accept = await inviteIdentity(authority, owner, { orgId: "org_deployment", identity: memberIdentity, role: "member" })
-  const member = await signed(authority, memberIdentity)
+  const accept = await inviteIdentity(authority, identities, owner, { orgId: "org_deployment", identity: memberIdentity, role: "member" })
+  const member = await signed(identities, memberIdentity)
   await accept(member)
 
   const credentials = credentialFake()

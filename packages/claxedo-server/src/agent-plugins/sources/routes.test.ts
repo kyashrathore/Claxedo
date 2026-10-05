@@ -16,6 +16,7 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 import type { ControlPlaneServices } from "../../authority/services"
 import { D1WorkspaceAuthority } from "../../authority/adapters/d1/workspace-authority"
+import { D1ApplicationIdentityAuthority } from "../../authority/adapters/d1/application-identity"
 import { applyControlPlaneBaseline } from "../../test-support/control-plane-migrations"
 import { D1AgentPluginSourceStore } from "./d1-store"
 import { HostedAgentPluginSourceRoutes } from "./routes"
@@ -41,7 +42,7 @@ async function signed(
   authority: D1WorkspaceAuthority,
   applicationIdentity: AuthIdentity,
 ): Promise<SignedControlPlaneAuth> {
-  const result = await authority.ensureApplicationIdentity(applicationIdentity)
+  const result = await new D1ApplicationIdentityAuthority(authority.accessContext(), { kind: "claxedo-hosted" }).ensureApplicationIdentity(applicationIdentity)
   if (result.state !== "active") throw new Error(`identity did not become active: ${result.state}`)
   const principal: ControlPlanePrincipal = {
     userId: result.userId,

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { D1Database } from "@cloudflare/workers-types"
 import { D1WorkspaceAuthority } from "./workspace-authority"
+import { D1ApplicationIdentityAuthority } from "./application-identity"
 import { D1AuditAuthority } from "./audit-authority"
 import { d1UserAgentConfigRepository } from "./user-agent-config"
 import { emptyUserAgentConfig } from "@claxedo/server-core/agent-config/config"
@@ -22,9 +24,10 @@ async function setup() {
   active.push(controlPlane)
   const database = controlPlane.database
   let now = 1_800_000_000_000
+  const product = { kind: "claxedo-hosted" } as const
   const workspace = new D1WorkspaceAuthority(database, {
     deploymentId: "deployment-test",
-    product: { kind: "claxedo-hosted" },
+    product,
     now: () => now,
   })
   const adapter = testRequestAuthenticationAdapter()
@@ -32,7 +35,7 @@ async function setup() {
     const principal = await adapter.authenticate(
       new Request("https://core.test", { headers: { authorization: `Bearer ${subject}` } }),
     )
-    const mapped = await workspace.ensureApplicationIdentity(principal.identity)
+    const mapped = await new D1ApplicationIdentityAuthority(workspace.accessContext(), product).ensureApplicationIdentity(principal.identity)
     if (mapped.state !== "active") throw new Error(mapped.state)
     return {
       mode: "signed",
@@ -72,6 +75,12 @@ async function setup() {
       now += ms
     },
   }
+}
+
+function deployedIdentities(s: Awaited<ReturnType<typeof setup>>, database: D1Database) {
+  const product = { kind: "user-deployed", organization: { id: "org_acme", name: "Acme" }, ownerIdentity: s.owner.principal!.identity } as const
+  const workspace = new D1WorkspaceAuthority(database, { deploymentId: "deployment-test", product, now: s.workspace.accessContext().now })
+  return new D1ApplicationIdentityAuthority(workspace.accessContext(), product)
 }
 
 describe("D1 organization invitations", () => {
@@ -141,14 +150,10 @@ describe("D1 organization invitations", () => {
 
   test.each(["orphan", "orphan-with-audit-and-config", "other-invitation", "member"] as const)("revocation handles an admitted %s", async (state) => {
     const s = await setup()
-    const workspace = new D1WorkspaceAuthority(s.database, {
-      deploymentId: "deployment-test",
-      product: { kind: "user-deployed", organization: { id: "org_acme", name: "Acme" }, ownerIdentity: s.owner.principal!.identity },
-      now: s.workspace.accessContext().now,
-    })
+    const identities = deployedIdentities(s, s.database)
     const first = await s.invite("new@example.com", "member")
     const identity = { ...s.owner.principal!.identity, subject: "new" }
-    const mapped = await workspace.admitInvitedIdentity(identity, "new@example.com")
+    const mapped = await identities.admitInvitedIdentity(identity, "new@example.com")
     if (mapped.state !== "active") throw new Error(mapped.state)
     const newcomer = { ...s.owner, principal: { ...s.owner.principal!, identity, userId: mapped.userId, actorId: mapped.actorId } }
     if (state === "member") await s.invitations.acceptOrgInvitation(newcomer, { token: first.token })
@@ -171,7 +176,7 @@ describe("D1 organization invitations", () => {
     })
     const retired = { identity: false, user: "deleted", actor: "revoked" }
     expect(await standing()).toEqual(state.startsWith("orphan") ? retired : { identity: true, user: "active", actor: "active" })
-    if (state.startsWith("orphan")) expect(await workspace.admitInvitedIdentity(identity, "new@example.com")).toEqual({ state: "unavailable" })
+    if (state.startsWith("orphan")) expect(await identities.admitInvitedIdentity(identity, "new@example.com")).toEqual({ state: "unavailable" })
     if (state === "orphan-with-audit-and-config") {
       expect(await s.database.prepare("select 1 from authority_audit_events where user_id = ?").bind(mapped.userId).first()).not.toBeNull()
       expect(await s.database.prepare("select 1 from user_agent_config where user_id = ?").bind(mapped.userId).first()).not.toBeNull()
@@ -184,17 +189,13 @@ describe("D1 organization invitations", () => {
 
   test("a retired admission is admitted afresh by a later invitation", async () => {
     const s = await setup()
-    const workspace = new D1WorkspaceAuthority(s.database, {
-      deploymentId: "deployment-test",
-      product: { kind: "user-deployed", organization: { id: "org_acme", name: "Acme" }, ownerIdentity: s.owner.principal!.identity },
-      now: s.workspace.accessContext().now,
-    })
+    const identities = deployedIdentities(s, s.database)
     const identity = { ...s.owner.principal!.identity, subject: "new" }
     const first = await s.invite("new@example.com", "member")
-    const before = await workspace.admitInvitedIdentity(identity, "new@example.com")
+    const before = await identities.admitInvitedIdentity(identity, "new@example.com")
     await s.invitations.revokeOrgInvitation(s.owner, { orgId: "org_acme", invitationId: first.id })
     await s.invite("new@example.com", "member")
-    const after = await workspace.admitInvitedIdentity(identity, "new@example.com")
+    const after = await identities.admitInvitedIdentity(identity, "new@example.com")
     expect(after).toMatchObject({ state: "active" })
     expect(before.state === "active" && after.state === "active" && after.userId !== before.userId).toBe(true)
   })
@@ -212,12 +213,8 @@ describe("D1 organization invitations", () => {
         return typeof value === "function" ? value.bind(target) : value
       },
     })
-    const workspace = new D1WorkspaceAuthority(database, {
-      deploymentId: "deployment-test",
-      product: { kind: "user-deployed", organization: { id: "org_acme", name: "Acme" }, ownerIdentity: s.owner.principal!.identity },
-      now: s.workspace.accessContext().now,
-    })
-    expect(await workspace.admitInvitedIdentity({ ...s.owner.principal!.identity, subject: "new" }, "new@example.com")).toEqual({ state: "unavailable" })
+    const identities = deployedIdentities(s, database)
+    expect(await identities.admitInvitedIdentity({ ...s.owner.principal!.identity, subject: "new" }, "new@example.com")).toEqual({ state: "unavailable" })
     expect(await s.database.prepare("select 1 from auth_identities where subject = 'new'").first()).toBeNull()
   })
 

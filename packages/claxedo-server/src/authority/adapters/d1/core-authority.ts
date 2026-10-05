@@ -33,6 +33,7 @@ import {
   D1_CHANNEL_RUNTIME_AUTHORITY_METHODS,
   type D1ChannelRuntimeAuthorityPort,
 } from "./channel-runtime-authority"
+import { D1ApplicationIdentityAuthority, D1_APPLICATION_IDENTITY_METHODS } from "./application-identity"
 import { D1OrgInvitationAuthority, D1_ORG_INVITATION_AUTHORITY_METHODS, type D1OrgInvitationAuthorityPort } from "./org-invitation-authority"
 import { publishD1HostSessionRows } from "./host-session-rows"
 import { deleteD1HostedSession, listD1HostedSessions } from "./hosted-session-delete"
@@ -64,12 +65,8 @@ export type D1CoreAuthorityPort = D1WorkspaceAuthorityCore &
   D1ChannelRuntimeAuthorityPort
 
 const WORKSPACE_LIFECYCLE_METHODS = [
-  "ensureApplicationIdentity",
-  "linkApplicationIdentity",
   "createHostedOrganization",
   "createWorkspace",
-  "claimUserDeployedOwner",
-  "admitInvitedIdentity",
 ] as const satisfies readonly (keyof D1WorkspaceAuthority)[]
 
 const HOST_LIFECYCLE_METHODS = [
@@ -78,6 +75,7 @@ const HOST_LIFECYCLE_METHODS = [
 
 export type D1CoreAuthorityBoundary = WorkspaceAuthority &
   Pick<D1WorkspaceAuthority, (typeof WORKSPACE_LIFECYCLE_METHODS)[number]> &
+  Pick<D1ApplicationIdentityAuthority, (typeof D1_APPLICATION_IDENTITY_METHODS)[number]> &
   PrivateSessionAuthority &
   SessionTurnAuthority &
   SessionHostAuthority &
@@ -151,6 +149,7 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     ...bindMethods(audit, D1_AUDIT_AUTHORITY_METHODS),
     ...bindMethods(channelsAndRuntime, D1_CHANNEL_RUNTIME_AUTHORITY_METHODS),
     ...bindMethods(workspace, WORKSPACE_LIFECYCLE_METHODS),
+    ...bindMethods(new D1ApplicationIdentityAuthority(access, options.product), D1_APPLICATION_IDENTITY_METHODS),
     ...bindMethods(sessions, PRIVATE_SESSION_AUTHORITY_METHODS),
     ...bindMethods(sessions, D1_SESSION_TURN_AUTHORITY_METHODS),
     ...bindMethods(hosts, HOST_LIFECYCLE_METHODS),

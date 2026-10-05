@@ -9,16 +9,16 @@ import type { BoundSql } from "./authorization"
 export type AccessPrincipal = { userId: string; actorId: string }
 
 /**
- * What the organization, team and project-member modules share with the
- * workspace authority: one database, one deployment, one clock, the caller as
- * `requireHuman` resolves it, and the product's rule on which organizations
- * may be addressed at all.
+ * What the identity-admission, organization, team and project-member modules
+ * share with the workspace authority: one database, one deployment, one clock,
+ * the caller as `requireHuman` resolves it, and the product's rule on which
+ * organizations may be addressed at all.
  */
 export type D1AccessContext = {
   database: D1Database
   deploymentId: string
   now: () => number
-  randomId: (prefix: "team" | "audit") => string
+  randomId: (prefix: "usr" | "act" | "org" | "assert" | "team" | "audit") => string
   principal: (auth: SignedControlPlaneAuth) => Promise<AccessPrincipal>
   assertOrganizationAllowed: (orgId: string) => void
 }

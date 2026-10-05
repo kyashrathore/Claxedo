@@ -25,6 +25,7 @@ import { exerciseSessionPartConformance } from "@claxedo/server-core/platform/au
 
 import { buildSessionListResponse, parseSessionListQuery } from "../../../session/list"
 import { D1WorkspaceAuthority } from "./workspace-authority"
+import { D1ApplicationIdentityAuthority } from "./application-identity"
 import { D1ChannelRuntimeAuthority } from "./channel-runtime-authority"
 import { D1SessionAuthority } from "./session-authority"
 import { applyControlPlaneBaseline } from "../../../test-support/control-plane-migrations"
@@ -86,7 +87,7 @@ function identity(subject: string): AuthIdentity {
 
 async function signed(authority: D1WorkspaceAuthority, subject: string): Promise<SignedControlPlaneAuth> {
   const applicationIdentity = identity(subject)
-  const result = await authority.ensureApplicationIdentity(applicationIdentity)
+  const result = await new D1ApplicationIdentityAuthority(authority.accessContext(), { kind: "claxedo-hosted" }).ensureApplicationIdentity(applicationIdentity)
   if (result.state !== "active") throw new Error(`identity did not become active: ${result.state}`)
   const principal: ControlPlanePrincipal = {
     userId: result.userId,

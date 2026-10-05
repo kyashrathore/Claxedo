@@ -1,10 +1,7 @@
-import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
+import type { D1Database } from "@cloudflare/workers-types"
 import { workspaceJson, type WorkspaceAccessRow } from "./workspace-row-json"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import {
-  type ApplicationIdentityResolution,
-  type AuthIdentity,
-} from "@claxedo/server-core/platform/auth/authentication"
+import type { AuthIdentity } from "@claxedo/server-core/platform/auth/authentication"
 import type {
   ProjectAction,
   ProjectRole,
@@ -16,15 +13,13 @@ import type { CloudWorkspaceCreateArgs, RuntimeCloudWorkspaceCreateArgs } from "
 import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repository-key"
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
-import { activeGuard, batchUnder, may, mayGuard, maySql, orgMemberSql, readProjectRole, type AuthorizationPrincipal, type BoundSql } from "./authorization"
+import { activeGuard, batchUnder, may, mayGuard, maySql, orgMemberSql, readProjectRole, type AuthorizationPrincipal } from "./authorization"
 import { ownerMembershipStatements, requireHuman, requireText, type D1AccessContext } from "./access-context"
-import { prepareInvitationAdmission } from "./org-invitation-authority"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
-import { d1BatchAssertionFailed } from "../../../platform/db/d1-constraint"
-import { D1WorkspaceAuthorityError } from "./workspace-authority-error"
+import { D1WorkspaceAuthorityError, guardedBatch } from "./workspace-authority-error"
 import { workspaceCreationStatements } from "./workspace-creation"
 import { workspaceDeletedBy, workspaceDeletionStatements } from "./workspace-deletion"
-import { requireBootstrapClaim, sameIdentity, userDeployedOwnerBootstrapClaimHash, userDeployedOwnerIdentityHash, validateIdentity } from "./owner-identity"
+import { validateIdentity } from "./owner-identity"
 
 const KNOWN_HOME_REGIONS = new Set(["apac-south", "apac-east", "eu-west", "us-east", "us-west"])
 
@@ -104,14 +99,6 @@ type Principal = {
   actorId: string
 }
 
-type IdentityRow = {
-  user_id: string
-  user_state: "active" | "suspended" | "deleted"
-  actor_id: string | null
-  actor_state: "active" | "suspended" | "revoked" | null
-  unlinked_at: number | null
-}
-
 type OrgRow = {
   org_id: string
   name: string
@@ -120,9 +107,10 @@ type OrgRow = {
 }
 
 /**
- * Worker-safe identity, organization creation, project and workspace authority.
- * Membership, teams and grants live in the modules sharing `accessContext()`,
- * session state in `D1SessionAuthority`; all read the same canonical D1 rows.
+ * Worker-safe organization creation, project and workspace authority.
+ * Identity admission, membership, teams and grants live in the modules sharing
+ * `accessContext()`, session state in `D1SessionAuthority`; all read the same
+ * canonical D1 rows.
  */
 export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   private readonly now: () => number
@@ -155,306 +143,6 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       principal: (auth) => requireHuman(this.database, this.options.deploymentId, auth),
       assertOrganizationAllowed: (orgId) => this.assertOrganizationAllowed(orgId),
     }
-  }
-
-  /** Adapter-neutral resolver wired into the selected auth adapter. */
-  async ensureApplicationIdentity(identity: AuthIdentity): Promise<ApplicationIdentityResolution> {
-    validateIdentity(identity)
-    const candidate = {
-      userId: this.randomId("usr"),
-      actorId: this.randomId("act"),
-      orgId: this.randomId("org"),
-    }
-    const now = this.now()
-
-    if (this.options.product.kind === "claxedo-hosted") {
-      await this.database.batch([
-        this.insertIdentity(identity, candidate.userId, now),
-        this.insertMappedUser(identity, candidate.userId, now),
-        this.insertHumanActor(identity, candidate.actorId, now),
-        this.database
-          .prepare(
-            `
-          insert into orgs (org_id, name, kind, owner_user_id, deployment_id, created_at, updated_at)
-          select ?, 'Personal', 'personal', ai.user_id, null, ?, ?
-          from auth_identities ai join users u on u.user_id = ai.user_id and u.state = 'active'
-          where ai.adapter = ? and ai.issuer = ? and ai.subject = ? and ai.unlinked_at is null
-            and not exists (
-              select 1 from orgs o
-              left join org_memberships m
-                on m.org_id = o.org_id and m.user_id = ai.user_id and m.revoked_at is null
-              where o.deleted_at is null and (o.owner_user_id = ai.user_id or m.user_id is not null)
-            )
-          on conflict do nothing
-        `,
-          )
-          .bind(candidate.orgId, now, now, identity.adapter, identity.issuer, identity.subject),
-        ...ownerMembershipStatements(this.accessContext(), {
-          owners: {
-            sql: `select o.org_id, ai.user_id from auth_identities ai
-              join orgs o on o.owner_user_id = ai.user_id and o.kind = 'personal' and o.deleted_at is null
-              where ai.adapter = ? and ai.issuer = ? and ai.subject = ? and ai.unlinked_at is null`,
-            bind: [identity.adapter, identity.issuer, identity.subject],
-          },
-          now,
-        }),
-      ])
-      return await this.identityResolution(identity)
-    }
-
-    const existing = await this.identityResolution(identity)
-    if (!this.options.product.ownerIdentity) return existing
-    if (!sameIdentity(identity, this.options.product.ownerIdentity)) {
-      if (existing.state !== "unavailable") return existing
-      return { state: "provisioning", retryAfterMs: 5_000 }
-    }
-    if (existing.state === "suspended" || existing.state === "deleted") return existing
-
-    const org = this.options.product.organization
-    if (existing.state === "active" && await may(this.database, existing, "member", { kind: "org", orgId: org.id })) return existing
-    await this.database.batch([
-      this.insertIdentity(identity, candidate.userId, now),
-      this.insertMappedUser(identity, candidate.userId, now),
-      this.insertHumanActor(identity, candidate.actorId, now),
-      this.database
-        .prepare(
-          `
-        insert into orgs (org_id, name, kind, owner_user_id, deployment_id, created_at, updated_at)
-        select ?, ?, 'deployment', ai.user_id, ?, ?, ?
-        from auth_identities ai
-        where ai.adapter = ? and ai.issuer = ? and ai.subject = ? and ai.unlinked_at is null
-        on conflict do nothing
-      `,
-        )
-        .bind(
-          org.id,
-          org.name,
-          this.options.deploymentId,
-          now,
-          now,
-          identity.adapter,
-          identity.issuer,
-          identity.subject,
-        ),
-      ...ownerMembershipStatements(this.accessContext(), {
-        owners: {
-          sql: `select o.org_id, ai.user_id from auth_identities ai
-            join orgs o on o.org_id = ? and o.kind = 'deployment' and o.deployment_id = ? and o.deleted_at is null
-            where ai.adapter = ? and ai.issuer = ? and ai.subject = ? and ai.unlinked_at is null`,
-          bind: [org.id, this.options.deploymentId, identity.adapter, identity.issuer, identity.subject],
-        },
-        now,
-      }),
-    ])
-    const resolution = await this.identityResolution(identity)
-    if (resolution.state !== "active" || !(await may(this.database, resolution, "member", { kind: "org", orgId: org.id }))) {
-      return { state: "unavailable" }
-    }
-    return resolution
-  }
-
-  /**
-   * A user-deployed instance admits anyone but its owner only while an
-   * invitation to their verified email is pending, so a stranger who signs in
-   * stays unavailable. Membership still waits for the accept.
-   */
-  async admitInvitedIdentity(identity: AuthIdentity, verifiedEmail: string): Promise<ApplicationIdentityResolution> {
-    validateIdentity(identity)
-    const existing = await this.identityResolution(identity)
-    if (this.options.product.kind !== "user-deployed" || existing.state !== "unavailable") return existing
-    const now = this.now()
-    const admission = await prepareInvitationAdmission(this.accessContext(), {
-      orgId: this.options.product.organization.id,
-      email: verifiedEmail,
-      now,
-    })
-    if (!admission) return existing
-    const userId = this.randomId("usr")
-    await this.database.batch([
-      this.insertIdentity(identity, userId, now, admission.guard),
-      this.insertMappedUser(identity, userId, now),
-      this.insertHumanActor(identity, this.randomId("act"), now),
-      admission.recordUser(userId),
-    ])
-    return await this.identityResolution(identity)
-  }
-
-  /**
-   * Atomically consumes one deployment-bound claim while creating the only
-   * bootstrap owner, canonical actor, deployment organization, and membership.
-   * A failed/expired/replayed claim aborts the entire D1 batch.
-   */
-  async claimUserDeployedOwner(identity: AuthIdentity, claim: string): Promise<ApplicationIdentityResolution> {
-    if (this.options.product.kind !== "user-deployed" || this.options.product.ownerBootstrap !== "one-use-claim") {
-      throw new D1WorkspaceAuthorityError("organization_policy_denied", "Bootstrap owner claims are disabled")
-    }
-    validateIdentity(identity)
-    const normalizedClaim = requireBootstrapClaim(claim)
-    const claimHash = await userDeployedOwnerBootstrapClaimHash(normalizedClaim)
-    const identityHash = await userDeployedOwnerIdentityHash(identity)
-    const existing = await this.identityResolution(identity)
-    if (existing.state !== "unavailable") return existing
-
-    const now = this.now()
-    const userId = this.randomId("usr")
-    const actorId = this.randomId("act")
-    const assertionId = this.randomId("assert")
-    const deploymentId = this.options.deploymentId
-    const org = this.options.product.organization
-    const claimGuard = `exists (
-      select 1 from user_deployed_owner_bootstrap_claims claim
-      where claim.deployment_id = ? and claim.claim_hash = ? and claim.admitted_identity_hash = ?
-        and claim.consumed_at is null and claim.expires_at > ?
-    )`
-
-    await this.guardedBatch(
-      [
-        this.database
-          .prepare(
-            `
-        insert into auth_identities (adapter, issuer, subject, user_id, linked_at, unlinked_at)
-        select ?, ?, ?, ?, ?, null
-        where ${claimGuard}
-          and not exists (select 1 from orgs where deployment_id = ? and deleted_at is null)
-        on conflict (adapter, issuer, subject) do nothing
-      `,
-          )
-          .bind(
-            identity.adapter,
-            identity.issuer,
-            identity.subject,
-            userId,
-            now,
-            deploymentId,
-            claimHash,
-            identityHash,
-            now,
-            deploymentId,
-          ),
-        this.insertMappedUser(identity, userId, now),
-        this.insertHumanActor(identity, actorId, now),
-        this.database
-          .prepare(
-            `
-        insert into orgs (org_id, name, kind, owner_user_id, deployment_id, created_at, updated_at, deleted_at)
-        select ?, ?, 'deployment', ai.user_id, ?, ?, ?, null
-        from auth_identities ai
-        where ai.adapter = ? and ai.issuer = ? and ai.subject = ? and ai.user_id = ? and ai.unlinked_at is null
-          and ${claimGuard}
-        on conflict do nothing
-      `,
-          )
-          .bind(
-            org.id,
-            org.name,
-            deploymentId,
-            now,
-            now,
-            identity.adapter,
-            identity.issuer,
-            identity.subject,
-            userId,
-            deploymentId,
-            claimHash,
-            identityHash,
-            now,
-          ),
-        ...ownerMembershipStatements(this.accessContext(), {
-          owners: {
-            sql: `select o.org_id, o.owner_user_id as user_id from orgs o
-              where o.org_id = ? and o.deployment_id = ? and o.owner_user_id = ? and o.deleted_at is null`,
-            bind: [org.id, deploymentId, userId],
-          },
-          now,
-        }),
-        this.database
-          .prepare(
-            `
-        update user_deployed_owner_bootstrap_claims
-        set consumed_at = ?, consumed_adapter = ?, consumed_issuer = ?, consumed_subject = ?
-        where deployment_id = ? and claim_hash = ? and admitted_identity_hash = ?
-          and consumed_at is null and expires_at > ?
-          and exists (
-            select 1 from auth_identities ai
-            join orgs o on o.owner_user_id = ai.user_id and o.deployment_id = ? and o.deleted_at is null
-            join org_memberships membership
-              on membership.org_id = o.org_id and membership.user_id = ai.user_id
-              and membership.role = 'owner' and membership.revoked_at is null
-            where ai.adapter = ? and ai.issuer = ? and ai.subject = ? and ai.user_id = ? and ai.unlinked_at is null
-          )
-      `,
-          )
-          .bind(
-            now,
-            identity.adapter,
-            identity.issuer,
-            identity.subject,
-            deploymentId,
-            claimHash,
-            identityHash,
-            now,
-            deploymentId,
-            identity.adapter,
-            identity.issuer,
-            identity.subject,
-            userId,
-          ),
-        this.database
-          .prepare(
-            `
-        insert into authority_batch_assertions (assertion_id, passed)
-        values (?, case when exists (
-          select 1 from user_deployed_owner_bootstrap_claims claim
-          join auth_identities ai
-            on ai.adapter = claim.consumed_adapter and ai.issuer = claim.consumed_issuer
-            and ai.subject = claim.consumed_subject and ai.unlinked_at is null
-          join orgs o on o.owner_user_id = ai.user_id and o.deployment_id = claim.deployment_id and o.deleted_at is null
-          join org_memberships membership
-            on membership.org_id = o.org_id and membership.user_id = ai.user_id
-            and membership.role = 'owner' and membership.revoked_at is null
-          where claim.deployment_id = ? and claim.claim_hash = ? and claim.admitted_identity_hash = ?
-            and claim.consumed_at = ?
-            and claim.consumed_adapter = ? and claim.consumed_issuer = ? and claim.consumed_subject = ?
-            and ai.user_id = ? and o.org_id = ?
-        ) then 1 else 0 end)
-      `,
-          )
-          .bind(
-            assertionId,
-            deploymentId,
-            claimHash,
-            identityHash,
-            now,
-            identity.adapter,
-            identity.issuer,
-            identity.subject,
-            userId,
-            org.id,
-          ),
-        this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(assertionId),
-      ],
-      "Bootstrap owner claim is invalid, expired, consumed, or conflicts with deployment authority",
-    )
-
-    return await this.identityResolution(identity)
-  }
-
-  /**
-   * Link another verified provider identity to an existing canonical user.
-   * An identity can never be moved between users, including after unlink.
-   */
-  async linkApplicationIdentity(auth: SignedControlPlaneAuth, input: { identity: AuthIdentity }) {
-    validateIdentity(input.identity)
-    const who = await this.requirePrincipal(auth)
-    await batchUnder(this.database, activeGuard(who), [this.insertIdentity(input.identity, who.userId, this.now())])
-    const row = await this.identityRow(input.identity)
-    if (!row || row.unlinked_at !== null || row.user_id !== who.userId) {
-      throw new D1WorkspaceAuthorityError(
-        "identity_conflict",
-        "Authentication identity is already linked or the target user is unavailable",
-      )
-    }
-    return { userId: row.user_id, actorId: requireActor(row) }
   }
 
   async createHostedOrganization(auth: SignedControlPlaneAuth, input: { name: string; orgId?: string }) {
@@ -504,7 +192,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
           .bind(assertionId, orgId, who.userId, name),
         this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(assertionId),
       ],
-      (statements) => this.guardedBatch(statements, "Organization creation conflicted with existing authority state"),
+      (statements) => guardedBatch(this.database, statements, "Organization creation conflicted with existing authority state"),
     )
     return { org_id: orgId, name, kind: "shared" as const, role: "owner" as const }
   }
@@ -668,7 +356,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
    */
   private async createWorkspaceAs(who: Principal, input: D1WorkspaceCreateArgs) {
     const creation = await this.workspaceCreation(who, input)
-    await this.guardedBatch(creation.statements, "Workspace identity conflicts with existing authority state")
+    await guardedBatch(this.database, creation.statements, "Workspace identity conflicts with existing authority state")
     const workspace = await this.openableWorkspace(who, creation.workspaceId)
     if (!workspace || workspace.org_id !== creation.orgId) {
       throw denied("Workspace creation authority was denied")
@@ -801,85 +489,9 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       this.database,
       mayGuard(who, "administer", { kind: "workspace", workspaceId }),
       workspaceDeletionStatements(this.database, { ownerUserId: who.userId, workspaceId, assertionId: this.randomId("assert"), now: this.now() }),
-      (statements) => this.guardedBatch(statements, "Workspace deletion changed concurrently"),
+      (statements) => guardedBatch(this.database, statements, "Workspace deletion changed concurrently"),
     )
     return { deleted: true }
-  }
-
-  private async guardedBatch(statements: D1PreparedStatement[], message: string) {
-    try {
-      return await this.database.batch(statements)
-    } catch (error) {
-      if (d1BatchAssertionFailed(error)) {
-        throw new D1WorkspaceAuthorityError("resource_conflict", message)
-      }
-      throw error
-    }
-  }
-
-  private insertIdentity(identity: AuthIdentity, userId: string, now: number, guard?: BoundSql) {
-    return this.database
-      .prepare(
-        `
-      insert into auth_identities (adapter, issuer, subject, user_id, linked_at, unlinked_at)
-      select ?, ?, ?, ?, ?, null${guard ? ` where ${guard.sql}` : ""}
-      on conflict (adapter, issuer, subject) do nothing
-    `,
-      )
-      .bind(identity.adapter, identity.issuer, identity.subject, userId, now, ...(guard?.bind ?? []))
-  }
-
-  private insertMappedUser(identity: AuthIdentity, userId: string, now: number) {
-    return this.database
-      .prepare(
-        `
-      insert into users (user_id, state, created_at, updated_at, suspended_at, deleted_at)
-      select ?, 'active', ?, ?, null, null
-      where exists (
-        select 1 from auth_identities
-        where adapter = ? and issuer = ? and subject = ? and user_id = ? and unlinked_at is null
-      )
-      on conflict (user_id) do nothing
-    `,
-      )
-      .bind(userId, now, now, identity.adapter, identity.issuer, identity.subject, userId)
-  }
-
-  private insertHumanActor(identity: AuthIdentity, actorId: string, now: number) {
-    return this.database
-      .prepare(
-        `
-      insert into actors (actor_id, user_id, kind, state, created_at, updated_at, revoked_at)
-      select ?, ai.user_id, 'human', 'active', ?, ?, null
-      from auth_identities ai join users u on u.user_id = ai.user_id and u.state = 'active'
-      where ai.adapter = ? and ai.issuer = ? and ai.subject = ? and ai.unlinked_at is null
-      on conflict do nothing
-    `,
-      )
-      .bind(actorId, now, now, identity.adapter, identity.issuer, identity.subject)
-  }
-
-  private async identityRow(identity: AuthIdentity) {
-    return await this.database
-      .prepare(
-        `
-      select ai.user_id, u.state as user_state, a.actor_id, a.state as actor_state, ai.unlinked_at
-      from auth_identities ai
-      join users u on u.user_id = ai.user_id
-      left join actors a on a.user_id = u.user_id and a.kind = 'human'
-      where ai.adapter = ? and ai.issuer = ? and ai.subject = ?
-    `,
-      )
-      .bind(identity.adapter, identity.issuer, identity.subject)
-      .first<IdentityRow>()
-  }
-
-  private async identityResolution(identity: AuthIdentity): Promise<ApplicationIdentityResolution> {
-    const row = await this.identityRow(identity)
-    if (!row || row.unlinked_at !== null || !row.actor_id || !row.actor_state) return { state: "unavailable" }
-    if (row.user_state === "deleted") return { state: "deleted" }
-    if (row.user_state === "suspended" || row.actor_state !== "active") return { state: "suspended" }
-    return { state: "active", userId: row.user_id, actorId: row.actor_id }
   }
 
   private requirePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
@@ -984,13 +596,6 @@ function openableWorkspacesSql(who: AuthorizationPrincipal, predicate: string) {
 
 function projectResult(row: { orgId: string; role: ProjectRole } | undefined): ProjectRoleResult {
   return row ? { ok: true, orgId: asOrgId(row.orgId), role: row.role } : { ok: false }
-}
-
-function requireActor(row: IdentityRow) {
-  if (!row.actor_id || row.actor_state !== "active") {
-    throw new D1WorkspaceAuthorityError("identity_conflict", "Canonical human actor is unavailable")
-  }
-  return row.actor_id
 }
 
 function validateHomeRegion(value?: string) {

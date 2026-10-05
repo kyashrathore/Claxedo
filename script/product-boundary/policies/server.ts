@@ -133,8 +133,12 @@ export const serverWorkerd: Policy = {
   // endpoint): the per-turn MCP bearer of a session served by its own host
   // (`mcp/session-mcp-credentials.ts`) and the machine token its tools and the
   // turn's tools both mint (`authority/session-host-machine-access.ts`).
-  // 153/20, no headroom.
-  ceilings: { modules: 153, packages: 20 },
+  // +1 module (owner: the D1 core authority composition): application-identity
+  // admission, which maps a verified sign-in to a canonical user and human
+  // actor, is its own module (`authority/adapters/d1/application-identity.ts`),
+  // split from the workspace authority.
+  // 154/20, no headroom.
+  ceilings: { modules: 154, packages: 20 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

@@ -5,6 +5,7 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 
 import { D1WorkspaceAuthority, type D1AuthorityProductPolicy } from "./workspace-authority"
+import { D1ApplicationIdentityAuthority } from "./application-identity"
 import { userDeployedOwnerBootstrapClaimHash, userDeployedOwnerIdentityHash } from "./owner-identity"
 import { D1SessionAuthority } from "./session-authority"
 import { inviteIdentity } from "../../../test-support/invite-identity"
@@ -35,7 +36,7 @@ async function setup(product: D1AuthorityProductPolicy) {
     now: () => 1_800_000_000_000 + sequence,
     randomId: (prefix) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
   })
-  return { authority, database }
+  return { authority, identities: new D1ApplicationIdentityAuthority(authority.accessContext(), product), database }
 }
 
 function identity(subject: string, adapter: AuthIdentity["adapter"] = "better-auth"): AuthIdentity {
@@ -43,11 +44,11 @@ function identity(subject: string, adapter: AuthIdentity["adapter"] = "better-au
 }
 
 async function signed(
-  authority: D1WorkspaceAuthority,
+  identities: D1ApplicationIdentityAuthority,
   applicationIdentity: AuthIdentity,
   deploymentId = "deployment-a",
 ): Promise<SignedControlPlaneAuth> {
-  const result = await authority.ensureApplicationIdentity(applicationIdentity)
+  const result = await identities.ensureApplicationIdentity(applicationIdentity)
   if (result.state !== "active") throw new Error(`identity did not become active: ${result.state}`)
   const principal: ControlPlanePrincipal = {
     userId: result.userId,
@@ -81,7 +82,7 @@ async function signed(
 
 describe("D1 hosted workspace authority", () => {
   test("reads the principal's identity row once per request auth object, whichever authority class asks", async () => {
-    const { authority: seeded, database } = await setup({ kind: "claxedo-hosted" })
+    const { identities: seeded, database } = await setup({ kind: "claxedo-hosted" })
     let identityReads = 0
     const counted = new Proxy(database, {
       get(target, key, receiver) {
@@ -126,10 +127,10 @@ describe("D1 hosted workspace authority", () => {
   })
 
   test("converges concurrent provider mapping and never accepts a token-only synthetic identity", async () => {
-    const { authority, database } = await setup({ kind: "claxedo-hosted" })
+    const { authority, identities, database } = await setup({ kind: "claxedo-hosted" })
     const aliceIdentity = identity("alice")
     const resolutions = await Promise.all(
-      Array.from({ length: 12 }, () => authority.ensureApplicationIdentity(aliceIdentity)),
+      Array.from({ length: 12 }, () => identities.ensureApplicationIdentity(aliceIdentity)),
     )
     expect(new Set(resolutions.map((result) => (result.state === "active" ? result.userId : result.state))).size).toBe(
       1,
@@ -144,10 +145,10 @@ describe("D1 hosted workspace authority", () => {
       (await database.prepare("select count(*) as count from org_memberships").first<{ count: number }>())?.count,
     ).toBe(1)
 
-    const alice = await signed(authority, aliceIdentity)
+    const alice = await signed(identities, aliceIdentity)
     const providerIdentity = identity("custom-alice", "custom")
-    await authority.linkApplicationIdentity(alice, { identity: providerIdentity })
-    const orgResolution = await authority.ensureApplicationIdentity(providerIdentity)
+    await identities.linkApplicationIdentity(alice, { identity: providerIdentity })
+    const orgResolution = await identities.ensureApplicationIdentity(providerIdentity)
     expect(orgResolution).toEqual({
       state: "active",
       userId: alice.principal!.userId,
@@ -155,8 +156,8 @@ describe("D1 hosted workspace authority", () => {
     })
     expect((await database.prepare("select count(*) as count from users").first<{ count: number }>())?.count).toBe(1)
 
-    const bob = await signed(authority, identity("bob"))
-    await expect(authority.linkApplicationIdentity(bob, { identity: providerIdentity })).rejects.toMatchObject({
+    const bob = await signed(identities, identity("bob"))
+    await expect(identities.linkApplicationIdentity(bob, { identity: providerIdentity })).rejects.toMatchObject({
       code: "identity_conflict",
     })
 
@@ -166,17 +167,17 @@ describe("D1 hosted workspace authority", () => {
         user: { subject: "alice", tokenIdentifier: "legacy|alice", issuer: "legacy" },
       }),
     ).rejects.toMatchObject({ status: 503, code: "identity_provisioning" })
-    await expect(authority.usersMe(await signed(authority, aliceIdentity, "deployment-b"))).rejects.toMatchObject({
+    await expect(authority.usersMe(await signed(identities, aliceIdentity, "deployment-b"))).rejects.toMatchObject({
       status: 401,
       code: "invalid_bearer_token",
     })
   })
 
   test("keeps hosted organizations isolated and derives every workspace decision from current D1 rows", async () => {
-    const { authority, database } = await setup({ kind: "claxedo-hosted" })
-    const alice = await signed(authority, identity("alice"))
-    const bob = await signed(authority, identity("bob"))
-    const outsider = await signed(authority, identity("outsider"))
+    const { authority, identities, database } = await setup({ kind: "claxedo-hosted" })
+    const alice = await signed(identities, identity("alice"))
+    const bob = await signed(identities, identity("bob"))
+    const outsider = await signed(identities, identity("outsider"))
     const team = await authority.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
     await inviteOrgMember(database, alice, {
       orgId: team.org_id,
@@ -308,9 +309,9 @@ describe("D1 hosted workspace authority", () => {
   })
 
   test("creates and deletes a cloud root for a resolved owner's actor, under the same admission a signed creator gets", async () => {
-    const { authority, database } = await setup({ kind: "claxedo-hosted" })
-    const alice = await signed(authority, identity("alice"))
-    const bob = await signed(authority, identity("bob"))
+    const { authority, identities, database } = await setup({ kind: "claxedo-hosted" })
+    const alice = await signed(identities, identity("alice"))
+    const bob = await signed(identities, identity("bob"))
     const team = await authority.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
     await inviteOrgMember(database, alice, { orgId: team.org_id, userPublicId: bob.principal!.userId, role: "member" })
     const project = await authority.createWorkspace(alice, {
@@ -381,7 +382,7 @@ describe("D1 user-deployed workspace authority", () => {
   test("atomically consumes one deployment-bound owner claim and rejects expiry, replay, and a second identity", async () => {
     const claim = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"
     const ownerIdentity = identity("random-better-auth-user-id")
-    const { authority, database } = await setup({
+    const { identities, database } = await setup({
       kind: "user-deployed",
       organization: { id: "org_deployment", name: "My deployment" },
       ownerBootstrap: "one-use-claim",
@@ -401,17 +402,17 @@ describe("D1 user-deployed workspace authority", () => {
       )
       .run()
 
-    expect(await authority.ensureApplicationIdentity(ownerIdentity)).toEqual({ state: "unavailable" })
+    expect(await identities.ensureApplicationIdentity(ownerIdentity)).toEqual({ state: "unavailable" })
     const [ownerAttempt, attackerAttempt] = await Promise.allSettled([
-      authority.claimUserDeployedOwner(ownerIdentity, claim),
-      authority.claimUserDeployedOwner(identity("attacker"), claim),
+      identities.claimUserDeployedOwner(ownerIdentity, claim),
+      identities.claimUserDeployedOwner(identity("attacker"), claim),
     ])
     expect(ownerAttempt.status).toBe("fulfilled")
     expect(attackerAttempt).toMatchObject({ status: "rejected", reason: { code: "resource_conflict" } })
     if (ownerAttempt.status !== "fulfilled") throw ownerAttempt.reason
     const owner = ownerAttempt.value
     expect(owner).toMatchObject({ state: "active" })
-    expect(await authority.claimUserDeployedOwner(ownerIdentity, claim)).toEqual(owner)
+    expect(await identities.claimUserDeployedOwner(ownerIdentity, claim)).toEqual(owner)
     expect(
       await database
         .prepare(
@@ -437,7 +438,7 @@ describe("D1 user-deployed workspace authority", () => {
     }
     expect(await founded()).toEqual([foundingOwner])
 
-    await expect(authority.claimUserDeployedOwner(identity("attacker"), claim)).rejects.toMatchObject({
+    await expect(identities.claimUserDeployedOwner(identity("attacker"), claim)).rejects.toMatchObject({
       code: "resource_conflict",
     })
     expect((await database.prepare("select count(*) as count from users").first<{ count: number }>())?.count).toBe(1)
@@ -462,7 +463,7 @@ describe("D1 user-deployed workspace authority", () => {
         1_600_000_000_000,
       )
       .run()
-    await expect(expired.authority.claimUserDeployedOwner(identity("late"), claim)).rejects.toMatchObject({
+    await expect(expired.identities.claimUserDeployedOwner(identity("late"), claim)).rejects.toMatchObject({
       code: "resource_conflict",
     })
     expect(await expired.database.prepare("select 1 from users").first()).toBeNull()
@@ -471,17 +472,17 @@ describe("D1 user-deployed workspace authority", () => {
 
   test("pins bootstrap ownership, admits multiplayer members, and cannot create a second organization", async () => {
     const ownerIdentity = identity("owner")
-    const { authority, database } = await setup({
+    const { authority, identities, database } = await setup({
       kind: "user-deployed",
       organization: { id: "org_deployment", name: "My deployment" },
       ownerIdentity,
     })
-    expect(await authority.ensureApplicationIdentity(identity("uninvited"))).toEqual({
+    expect(await identities.ensureApplicationIdentity(identity("uninvited"))).toEqual({
       state: "provisioning",
       retryAfterMs: 5_000,
     })
 
-    const owner = await signed(authority, ownerIdentity)
+    const owner = await signed(identities, ownerIdentity)
     expect(await authority.listOrgs(owner)).toEqual([
       {
         org_id: "org_deployment",
@@ -524,8 +525,8 @@ describe("D1 user-deployed workspace authority", () => {
     })
 
     const memberIdentity = identity("member")
-    const accept = await inviteIdentity(authority, owner, { orgId: "org_deployment", identity: memberIdentity, role: "member" })
-    const member = await signed(authority, memberIdentity)
+    const accept = await inviteIdentity(authority, identities, owner, { orgId: "org_deployment", identity: memberIdentity, role: "member" })
+    const member = await signed(identities, memberIdentity)
     await accept(member)
     await authority.createWorkspace(owner, {
       workspaceId: "ws_shared",
@@ -606,8 +607,8 @@ describe("a workspace's row carries its placement", () => {
   }
 
   test("publishes the enrolled machine the owner assigned and the directory on it", async () => {
-    const { authority, database } = await setup({ kind: "claxedo-hosted" })
-    const alice = await signed(authority, identity("alice"))
+    const { authority, identities, database } = await setup({ kind: "claxedo-hosted" })
+    const alice = await signed(identities, identity("alice"))
     const orgId = await two(authority, alice)
     const owner = await database
       .prepare(`
@@ -643,8 +644,8 @@ describe("a workspace's row carries its placement", () => {
   })
 
   test("a private repository's row names the connection it clones with, so a sibling workspace can clone it too", async () => {
-    const { authority } = await setup({ kind: "claxedo-hosted" })
-    const alice = await signed(authority, identity("alice"))
+    const { authority, identities } = await setup({ kind: "claxedo-hosted" })
+    const alice = await signed(identities, identity("alice"))
     const orgId = await authority.resolveOrgId(alice)
     await authority.createWorkspace(alice, {
       workspaceId: "ws_private",
@@ -660,8 +661,8 @@ describe("a workspace's row carries its placement", () => {
   })
 
   test("no workspace row carries an access mode any more", async () => {
-    const { authority, database } = await setup({ kind: "claxedo-hosted" })
-    const alice = await signed(authority, identity("alice"))
+    const { authority, identities, database } = await setup({ kind: "claxedo-hosted" })
+    const alice = await signed(identities, identity("alice"))
     await two(authority, alice)
 
     const columns = await database.prepare("select name from pragma_table_info('workspaces')").all<{ name: string }>()
@@ -672,8 +673,8 @@ describe("a workspace's row carries its placement", () => {
   })
 
   test("reachability is reported for machine-placed rows and withheld from provisioner-owned ones", async () => {
-    const { authority } = await setup({ kind: "claxedo-hosted" })
-    const alice = await signed(authority, identity("alice"))
+    const { authority, identities } = await setup({ kind: "claxedo-hosted" })
+    const alice = await signed(identities, identity("alice"))
     await two(authority, alice)
 
     const listed = new Map((await authority.listWorkspaces(alice)).map((row) => [row.workspace_id, row]))
@@ -684,9 +685,9 @@ describe("a workspace's row carries its placement", () => {
 
 describe("workspace creation admission", () => {
   test("admits a create against the organization creation resolves, whatever the caller named", async () => {
-    const { authority, database } = await setup({ kind: "claxedo-hosted" })
-    const alice = await signed(authority, identity("alice"))
-    const bob = await signed(authority, identity("bob"))
+    const { authority, identities, database } = await setup({ kind: "claxedo-hosted" })
+    const alice = await signed(identities, identity("alice"))
+    const bob = await signed(identities, identity("bob"))
 
     // One organization each: the caller names nothing and is still admitted
     // against the organization their workspace would land in.
@@ -762,21 +763,21 @@ describe("workspace creation admission", () => {
         ? async (statements: Parameters<typeof target.batch>[0]) => (writes += 1, await target.batch(statements))
         : Reflect.get(target, key, target),
     })
-    const authority = new D1WorkspaceAuthority(counted, { deploymentId: "deployment-a", product })
-    const first = await authority.ensureApplicationIdentity(identity("alice"))
+    const identities = new D1ApplicationIdentityAuthority(new D1WorkspaceAuthority(counted, { deploymentId: "deployment-a", product }).accessContext(), product)
+    const first = await identities.ensureApplicationIdentity(identity("alice"))
     expect(writes).toBe(1)
-    expect(await authority.ensureApplicationIdentity(identity("alice"))).toEqual(first)
-    expect(await authority.ensureApplicationIdentity(identity("alice"))).toEqual(first)
+    expect(await identities.ensureApplicationIdentity(identity("alice"))).toEqual(first)
+    expect(await identities.ensureApplicationIdentity(identity("alice"))).toEqual(first)
     expect(writes).toBe(1)
   })
 
   test("a user-deployed product admits creation only in its own organization", async () => {
-    const { authority } = await setup({
+    const { authority, identities } = await setup({
       kind: "user-deployed",
       organization: { id: "org_house", name: "House" },
       ownerIdentity: identity("alice"),
     })
-    const alice = await signed(authority, identity("alice"))
+    const alice = await signed(identities, identity("alice"))
 
     await expect(authority.authorizeWorkspaceCreate(alice, {})).resolves.toBeUndefined()
     await expect(authority.authorizeWorkspaceCreate(alice, { orgId: "org_house" })).resolves.toBeUndefined()
