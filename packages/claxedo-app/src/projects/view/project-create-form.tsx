@@ -52,11 +52,11 @@ function createRepositoryChoice(active: Accessor<boolean>, connectedOnly: Access
   const [chosenId, setChosenId] = createSignal<string>()
   const connection = createMemo(() => usable().find((item) => item.id === chosenId()) ?? usable()[0])
   const [entry, setEntry] = createSignal<RepositoryEntry>("list")
-  const view = (): "checking" | "url" | "connect" | "list" | "failed" | "unavailable" => {
-    if (!connectionsServed()) return connectedOnly() ? "unavailable" : "url"
+  const view = (): "checking" | "url" | "connect" | "list" | "failed" => {
+    if (!connectionsServed()) return "url"
     if (offered.isPending) return "checking"
     if (offered.error) return "failed"
-    if (!integration()) return connectedOnly() ? "unavailable" : "url"
+    if (!integration()) return "url"
     if (!connectedOnly() && entry() === "url") return "url"
     return connection() ? "list" : "connect"
   }
@@ -80,9 +80,6 @@ function RepositoryStatus(props: { choice: RepositoryChoice }): JSX.Element {
       <Show when={props.choice.view() === "failed"}>
         <p role="alert" class="text-12-regular text-icon-warning-base">{toAppError(props.choice.error()).message}</p>
         <Button type="button" variant="neutral" class="self-start" onClick={() => void props.choice.retry()}>{t("projects.create.retry")}</Button>
-      </Show>
-      <Show when={props.choice.view() === "unavailable"}>
-        <p role="alert" class="text-12-regular text-text-weak">{t("projects.create.hostUnavailable")}</p>
       </Show>
       <Show when={props.choice.view() === "connect" ? props.choice.integration() : undefined}>
         {(integration) => <ConnectCodeHost integration={integration()} />}

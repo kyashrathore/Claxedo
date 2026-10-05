@@ -126,7 +126,7 @@ export default {
   "settings.machines.step.here": "The computer you are sitting at",
   "settings.machines.step.here.description": "Install the Claxedo desktop app on it and sign in.",
   "settings.machines.step.another": "Another machine you own",
-  "settings.machines.step.another.description": "Run the first command here for a single-use token, then the second on the machine you are adding.",
+  "settings.machines.step.another.description": "Run the first command in a terminal on a computer where the Claxedo app is signed in, for a single-use token; then run the second on the machine you are adding.",
   "settings.machines.copyInvite": "Copy invite command",
   "settings.machines.copyConnect": "Copy connect command",
 } as const

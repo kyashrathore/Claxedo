@@ -1,6 +1,6 @@
 import { For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import type { PluginCandidate } from "@/server"
+import { useServer, type PluginCandidate } from "@/server"
 import { marketplaceDictionary } from "../i18n"
 import { activationSummary, installedHarnesses } from "../model"
 import { CHIP } from "./chrome"
@@ -9,10 +9,14 @@ import { useHarnessLabel } from "./harness-label"
 export function PluginFacts(props: { readonly plugin: PluginCandidate }): JSX.Element {
   const t = useTranslator(marketplaceDictionary)
   const label = useHarnessLabel()
+  const server = useServer()
   const status = () => {
     const summary = activationSummary(props.plugin)
     const state = t(summary.state.key)
-    return summary.authority ? `${state} · ${t(summary.authority.key)}` : state
+    if (!summary.authority) return state
+    if (summary.authority.key !== "marketplace.authority.machine") return `${state} · ${t(summary.authority.key)}`
+    const machine = server.capabilities()?.servingMachine?.name
+    return `${state} · ${machine ? t("marketplace.authority.machine", { machine }) : t("marketplace.authority.machineUnnamed")}`
   }
   return (
     <dl

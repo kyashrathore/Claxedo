@@ -41,7 +41,6 @@ export default {
   "projects.add.pasteUrl": "Paste URL",
   "projects.create.url.hint.host": "Claxedo clones it with your {{host}} account.",
   "projects.create.url.hint.none": "Claxedo clones a public repository by its URL.",
-  "projects.create.hostUnavailable": "Choosing a GitHub repository isn't available here yet.",
   "projects.create.folder.label": "Folder on {{machine}}",
   "projects.add.name": "Name (optional)",
   "projects.create.retry": "Retry",
