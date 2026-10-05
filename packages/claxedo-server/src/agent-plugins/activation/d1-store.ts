@@ -98,11 +98,6 @@ function revisionNumber(value: unknown) {
   return value
 }
 
-function enabled(value: unknown) {
-  if (value !== 0 && value !== 1) invalid("activation choice")
-  return value === 1
-}
-
 function artifactPin(row: PinRow | null): AgentPluginArtifactPin | undefined {
   if (!row) return undefined
   if (!isArtifactDigest(row.artifact_digest)) invalid("artifact digest")

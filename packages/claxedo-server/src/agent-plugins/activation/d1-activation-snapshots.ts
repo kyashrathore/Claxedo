@@ -43,7 +43,7 @@ const { database, scope, projectId } = input
           `)
           .bind(scope.orgId, scope.userId, projectId, listed)
           .all<ChoiceRow>()
-          .then((result) => pairs(result.results, (row) => row.enabled === 1))
+          .then((result) => pairs(result.results, (row) => activationChoice(row.enabled)))
       : new Map<string, boolean>(),
     database
       .prepare(`
@@ -52,7 +52,7 @@ const { database, scope, projectId } = input
       `)
       .bind(scope.orgId, scope.userId, listed)
       .all<ChoiceRow>()
-      .then((result) => pairs(result.results, (row) => row.enabled === 1)),
+      .then((result) => pairs(result.results, (row) => activationChoice(row.enabled))),
     database
       .prepare(`
         select plugin_instance_id, harness_id from agent_plugin_organization_defaults
@@ -105,4 +105,9 @@ const { database, scope, projectId } = input
       },
     }
   })]))
+}
+
+function activationChoice(value: unknown) {
+  if (value !== 0 && value !== 1) throw new Error("D1 returned an invalid Agent Plugins activation choice")
+  return value === 1
 }
