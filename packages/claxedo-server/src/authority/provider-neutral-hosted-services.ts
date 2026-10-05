@@ -47,6 +47,7 @@ import { isSandboxProvisionerID } from "@claxedo/sandbox-contract"
 import { orgSandboxDrivers, type HostedSandboxKeys } from "../sandbox/org-sandbox-drivers"
 import { createOrgSandboxManager } from "../sandbox/org-sandbox-manager"
 import { sandboxLifecycleSink, sandboxStartPhaseSink } from "../sandbox/sandbox-telemetry"
+import type { SandboxStart } from "../workspace/sandbox-start"
 
 export { HostedWorkerCompositionError } from "./composition-error"
 
@@ -153,12 +154,14 @@ export function sandboxEgressUnenforcedSink(telemetry: ControlPlaneTelemetry) {
 }
 
 /**
- * A full-hosted deployment's sandbox driver and durable lease store, and how a
- * ready sandbox's runtime is handed the pass it publishes session rows with.
+ * A full-hosted deployment's sandbox driver and durable lease store, the
+ * start its sandboxes run under, and how a ready sandbox's runtime is handed
+ * the pass it publishes session rows with.
  */
 export type HostedSandboxBinding = {
   driver: SandboxDriver
   leaseStore: SandboxLeaseStore
+  start: SandboxStart
   deliverSessionRowsPass?: (workspaceId: string) => Promise<void>
   /** Organization keys this deployment can provision with; absent, every workspace runs on `driver`. */
   keys?: HostedSandboxKeys

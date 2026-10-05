@@ -490,12 +490,6 @@ describe("signed Composio Gmail on Miniflare", () => {
       },
       sandbox: {
         sandboxManager: {
-          ensure: vi.fn(async () => ({
-            status: "ready",
-            hostId: "host_cloud",
-            epoch: 1,
-            homeRegion: "us-east",
-          })),
           target: vi.fn(async () => ({ status: "ready", hostId: "host_cloud", epoch: 1 })),
         },
       },
@@ -504,11 +498,12 @@ describe("signed Composio Gmail on Miniflare", () => {
       defaultHomeRegion: "us-east",
       relayUrl: "wss://relay.test",
       runtimeAccessTokenSigner: signer,
-      prepareRuntime: ({ workspaceId }) => prepareRuntime(workspaceId),
-      // `provisionRuntime` is declared to resolve void; the receipt this test
-      // asserts on is read from `receipts` instead.
-      provisionRuntime: async ({ workspaceId }, preparation?: WorkspaceRuntimePreparation) => {
-        await provisionForMint(workspaceId, preparation)
+      // The start applies the plugin to the ready sandbox before it answers,
+      // as the hosted drive does; the receipt this test asserts on is read
+      // from `receipts`.
+      sandboxStart: async (workspaceId) => {
+        await provisionForMint(workspaceId, await prepareRuntime(workspaceId))
+        return { status: "ready", sandboxId: "sb_cloud", url: "https://sandbox.test", hostId: "host_cloud", epoch: 1, homeRegion: "us-east" }
       },
     }, auth, "ws_cloud_mint", { admission: { capLease: async () => undefined }, usage: undefined })
 

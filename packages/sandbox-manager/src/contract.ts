@@ -576,7 +576,15 @@ export type SandboxDriver = {
 }
 
 export type SandboxManager = {
+  /** Takes or continues the workspace's lease and runs the driver for it until it answers. */
   ensure: (workspaceId: string, input: SandboxManagerInput) => Promise<SandboxEnsureResult>
+  /**
+   * The lease decision of `ensure` alone: `provisioning` names the epoch a
+   * caller that schedules its own driver work now holds and owes `provision`.
+   */
+  acquire: (workspaceId: string, input: SandboxManagerInput) => Promise<SandboxEnsureResult>
+  /** The driver work of `ensure` for the lease `acquire` handed out at `epoch`; another epoch answers `runtime_lease_changed`. */
+  provision: (workspaceId: string, epoch: number, input: SandboxManagerInput) => Promise<SandboxEnsureResult>
   register: (workspaceId: string, input: SandboxRuntimeSnapshotInput) => Promise<SandboxMutationResult>
   heartbeat: (workspaceId: string, input: SandboxRuntimeSnapshotInput) => Promise<SandboxMutationResult>
   target: (workspaceId: string) => Promise<SandboxTargetResult>

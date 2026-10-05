@@ -241,7 +241,8 @@ export function composeBetterAuthD1UserDeployedControlPlane(
   })
   const settings = d1UserAgentConfigRepository(input.controlPlaneDatabase)
   const { sandboxManager, workspaceDriver } = plane.services.sandbox
-  const delivery = input.sandbox && plane.orgCredentials && sandboxManager && workspaceDriver
+  const sandbox = input.sandbox
+  const delivery = sandbox && plane.orgCredentials && sandboxManager && workspaceDriver
     ? createHostedRuntimeDelivery({
         authority,
         database: input.controlPlaneDatabase,
@@ -253,7 +254,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
         credentials: plane.orgCredentials,
         signingEnv: input.env,
         provisionedRunner: provisionedRunner(input.env),
-        ...(input.sandbox.deliverSessionRowsPass ? { deliverSessionRowsPass: input.sandbox.deliverSessionRowsPass } : {}),
+        ...(sandbox.deliverSessionRowsPass ? { deliverSessionRowsPass: sandbox.deliverSessionRowsPass } : {}),
       })
     : undefined
 
@@ -268,7 +269,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     options: {
       authentication,
       agentConfigRepository: settings,
-      ...(delivery ? {
+      ...(delivery && sandbox ? {
         settingsChanged: delivery.settingsChanged,
         accountSetup: {
           changed: delivery.reconcileCredentialDelivery,
@@ -286,6 +287,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
             : {}),
         },
         productWorkspace: {
+          sandboxStart: sandbox.start,
           prepareRuntime: delivery.prepareRuntime,
           provisionRuntime: delivery.provisionRuntime,
           runtimeProvisioned: delivery.runtimeProvisioned,

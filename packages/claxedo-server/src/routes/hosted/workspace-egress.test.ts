@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
 import {
@@ -10,7 +10,13 @@ import {
 } from "@claxedo/sandbox-manager"
 import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
 import type { ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
+import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../../authority/services"
+import type { ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { inlineSandboxStart } from "../../test-support/inline-sandbox-start"
+import { workspaceBackingDatabase } from "../../test-support/workspace-backing-database"
+import { createHostedRuntimeDelivery } from "../../workspace/hosted-runtime-delivery"
+import { hostedSandboxInput } from "../../workspace/hosted-sandbox-input"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./workspace"
 
 /**
@@ -18,16 +24,25 @@ import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./works
  *
  * The explicit start (`POST /:id/connection`) is the hosted, multi-tenant
  * provisioning path: the sandbox it boots clones someone's private repository
- * and runs agent-authored code inside it. It called `sandboxManager.ensure` with no `net`, and an omitted
- * policy means allow-all, so every hosted sandbox ever provisioned could reach
- * any host on the internet. The egress machinery existed on the capable
- * drivers; nothing upstream engaged it.
+ * and runs agent-authored code inside it. It once reached the manager with no
+ * `net`, and an omitted policy means allow-all, so every hosted sandbox ever
+ * provisioned could reach any host on the internet. The egress machinery
+ * existed on the capable drivers; nothing upstream engaged it.
  *
- * These tests assert on what the DRIVER receives — a real `SandboxManager`
- * over a real lease store, with only the driver faked — because an assertion
- * on the route's argument object would have passed just as happily while the
- * manager or the driver dropped the policy on the way down.
+ * These tests assert on what the DRIVER receives — the real start drive over
+ * a real `SandboxManager` and lease store, with only the driver faked —
+ * because an assertion on an argument object would have passed just as
+ * happily while the drive, the manager or the driver dropped the policy on
+ * the way down.
  */
+
+// A ready sandbox takes its settings over the runtime client under a
+// supervisor token; neither is what these tests observe.
+vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: () => ({ applyConfig: async () => {} }) }))
+vi.mock("@claxedo/server-core/platform/auth/runtime-access-token", () => ({ mintSupervisorBackplaneToken: async () => ({ supervisorBackplaneToken: "supervisor-token" }) }))
+
+const active: ControlPlaneDatabase[] = []
+afterEach(async () => { await Promise.all(active.splice(0).map((instance) => instance.dispose())) })
 
 const authConfig = {
   enabled: true,
@@ -83,12 +98,14 @@ function fakeDriver(egressControl: SandboxEgressControl) {
   return { driver, seen }
 }
 
-function buildApp(egressControl: SandboxEgressControl, options: Partial<HostedWorkspaceRouteOptions> = {}) {
+async function buildApp(egressControl: SandboxEgressControl, options: Partial<HostedWorkspaceRouteOptions> = {}) {
   const { driver, seen } = fakeDriver(egressControl)
   const leaseStore = createMemoryLeaseStore()
   // The REAL manager, so the policy has to survive the whole descent from the
   // route to `driver.ensureHost`.
   const sandboxManager = createSandboxManager({ leaseStore, driver })
+  const backing = await workspaceBackingDatabase([])
+  active.push(backing)
   const capture = vi.fn()
   const rows = new Map<string, Record<string, unknown>>()
   const services = {
@@ -98,20 +115,43 @@ function buildApp(egressControl: SandboxEgressControl, options: Partial<HostedWo
       authorizeWorkspaceCreate: vi.fn(async () => {}),
       createCloudWorkspace: vi.fn(async (_auth: unknown, args: { workspaceId: string; projectId?: string; repoUrl?: string }) => {
         rows.set(args.workspaceId, { workspace_id: args.workspaceId, project_id: args.projectId, backing: "cloud-vm", repo_url: args.repoUrl })
+        await backing.database.prepare(`insert into workspaces
+          (workspace_id, org_id, project_id, owner_user_id, backing, display_name, created_at, updated_at, deleted_at)
+          values (?, 'org', 'project', 'owner', 'cloud-vm', 'Egress', 1, 1, null)`).bind(args.workspaceId).run()
         return { workspace_id: args.workspaceId }
       }),
       openWorkspace: vi.fn(async (_auth: unknown, args: { workspaceId: string }) => ({ allowed: true, role: "owner", workspace: rows.get(args.workspaceId) })),
+      resolveWorkspaceOwner: vi.fn(async () => ({ userId: "owner", orgId: "org" })),
       auditAllow: vi.fn(async () => ({})),
       auditDeny: vi.fn(async () => ({})),
     },
     sandbox: { sandboxManager, defaultDriver: driver.id },
     telemetry: { capture },
   } as unknown as ControlPlaneServices
+  const egress = {
+    relayUrl: RELAY_URL,
+    sandboxControlPlaneOrigin: CONTROL_PLANE_ORIGIN,
+    ...(options.sandboxEgressExtraHosts ? { sandboxEgressExtraHosts: options.sandboxEgressExtraHosts } : {}),
+  }
+  // The production drive over this test's rows: what the route's start hands
+  // the manager is what `hostedSandboxInput` rebuilds from the workspace row.
+  const delivery = createHostedRuntimeDelivery({
+    authority: services.authority as unknown as WorkspaceAuthority,
+    database: backing.database,
+    services,
+    sandboxManager,
+    workspaceDriver: async () => ({ driver, key: "operator" }),
+    sandboxInput: async (workspaceId, prepared) => hostedSandboxInput(rows.get(workspaceId) ?? {}, { egress, ...prepared }),
+    settings: { read: async () => ({ version: 3, connections: {} }), write: async () => {} },
+    credentials: () => ({ listCredentials: async () => [], accountSelections: async () => ({}) }) as never,
+    signingEnv: {},
+    provisionedRunner: undefined,
+  })
   const app = HostedWorkspaceRoutes(services, {
     authConfig,
     verifier,
-    relayUrl: RELAY_URL,
-    sandboxControlPlaneOrigin: CONTROL_PLANE_ORIGIN,
+    ...egress,
+    sandboxStart: inlineSandboxStart(delivery.start),
     runtimeAccessTokenSigner: async () => ({ runtimeAccessToken: "rat", tokenExpiresAt: 1_000_000, jti: "jti_rat" }),
     countActiveOrgSandboxLeases: async () => 0,
     // No real DNS in tests: clone admission resolves through this stub.
@@ -121,7 +161,7 @@ function buildApp(egressControl: SandboxEgressControl, options: Partial<HostedWo
   return { app, driver, seen, leaseStore, capture }
 }
 
-async function create(app: ReturnType<typeof buildApp>["app"], token = "user_1") {
+async function create(app: Awaited<ReturnType<typeof buildApp>>["app"], token = "user_1") {
   const res = await app.fetch(
     new Request(`${REQUEST_ORIGIN}/create`, {
       method: "POST",
@@ -143,7 +183,7 @@ async function create(app: ReturnType<typeof buildApp>["app"], token = "user_1")
 
 describe("the first start hands the driver a restricted egress policy", () => {
   test("the driver is provisioned with a restricted policy, not allow-all", async () => {
-    const { app, seen } = buildApp("hosts-and-cidrs")
+    const { app, seen } = await buildApp("hosts-and-cidrs")
     const { res } = await create(app)
 
     expect(res.status).toBe(200)
@@ -155,7 +195,7 @@ describe("the first start hands the driver a restricted egress policy", () => {
   })
 
   test("the allowlist carries the hosts a hosted sandbox genuinely needs", async () => {
-    const { app, seen } = buildApp("hosts-and-cidrs")
+    const { app, seen } = await buildApp("hosts-and-cidrs")
     await create(app)
     const hosts = seen[0].net!.hosts ?? []
 
@@ -175,7 +215,7 @@ describe("the first start hands the driver a restricted egress policy", () => {
   })
 
   test("the allowlist is not a rubber stamp — object storage stays out", async () => {
-    const { app, seen } = buildApp("hosts-and-cidrs")
+    const { app, seen } = await buildApp("hosts-and-cidrs")
     await create(app)
     const hosts = seen[0].net!.hosts ?? []
 
@@ -188,7 +228,7 @@ describe("the first start hands the driver a restricted egress policy", () => {
   })
 
   test("a deployment can widen the allowlist, but only by naming hosts", async () => {
-    const { app, seen } = buildApp("hosts-and-cidrs", {
+    const { app, seen } = await buildApp("hosts-and-cidrs", {
       sandboxEgressExtraHosts: ["models.internal.acme.test"],
     })
     await create(app)
@@ -208,7 +248,7 @@ describe("the first start with a driver that cannot contain egress", () => {
    * `public-docs/sandbox-egress.md`.
    */
   test("an uncontained driver still provisions, and is handed no policy", async () => {
-    const { app, driver, seen, leaseStore } = buildApp("none")
+    const { app, driver, seen, leaseStore } = await buildApp("none")
     const { res, body } = await create(app)
 
     expect(res.status).toBe(200)
@@ -240,6 +280,7 @@ describe("the first start with a driver that cannot contain egress", () => {
 // The behavioural tests above prove the policy is passed TODAY; this proves
 // nobody can quietly stop passing it.
 
+const driveSource = fs.readFileSync(path.join(import.meta.dirname, "../../workspace/hosted-runtime-delivery.ts"), "utf8")
 const routeSource = fs.readFileSync(path.join(import.meta.dirname, "../../connections/hosted-connection-info.ts"), "utf8")
 
 /** Strip whole-line comments so prose about `net:` cannot satisfy the check. */
@@ -251,14 +292,16 @@ function code(source: string) {
     .join("\n")
 }
 
-/** What each `.ensure(workspaceId, ...)` call in the route is handed, comments removed. */
-function ensureArguments(source = routeSource) {
-  return [...code(source).matchAll(/\.ensure\(\s*workspaceId,\s*([^\n]*)/g)].map((match) => match[1].trim())
+const MANAGER_STEP = /\.(?:ensure|acquire|provision)\(\s*workspaceId,\s*(?:epoch,\s*)?([^\n]*)/g
+
+/** What each manager step in the drive is handed, comments removed. */
+function stepArguments(source = driveSource) {
+  return [...code(source).matchAll(MANAGER_STEP)].map((match) => match[1].trim())
 }
 
-describe("the hosted ensure call site cannot omit the egress policy", () => {
-  test("the scanner actually finds the call site (guard against an empty ratchet)", () => {
-    expect(ensureArguments()).toHaveLength(1)
+describe("the hosted manager steps cannot omit the egress policy", () => {
+  test("the scanner actually finds the call sites (guard against an empty ratchet)", () => {
+    expect(stepArguments()).toHaveLength(3)
   })
 
   test("the ratchet fires on a call site that assembles its own input", () => {
@@ -268,17 +311,20 @@ describe("the hosted ensure call site cannot omit the egress policy", () => {
       "        void sandboxManager",
       "          .ensure(workspaceId, {",
       "            homeRegion,",
-      "            workspaceRoot: directory,",
       "          })",
     ].join("\n")
-    expect(ensureArguments(regressed).every((argument) => argument.startsWith("hostedSandboxInput("))).toBe(false)
+    expect(stepArguments(regressed).every((argument) => /^(?:await input\.)?sandboxInput\b|^\{ \.\.\.sandboxInput\b/.test(argument))).toBe(false)
   })
 
-  test("every hosted ensure call site is handed the one full-input builder", () => {
-    // `hostedSandboxInput` always supplies `net`, rebuilt from the workspace
-    // row, so a new hosted provisioning path gets the policy by using it. Do
-    // not add an exemption.
-    expect(ensureArguments().filter((argument) => !argument.startsWith("hostedSandboxInput("))).toEqual([])
-    expect(code(routeSource)).toContain('import { hostedSandboxInput } from "../workspace/hosted-sandbox-input"')
+  test("every manager step in the drive is handed the one full-input builder's answer", () => {
+    // `input.sandboxInput` is `hostedSandboxInput` over the live workspace
+    // row, which always supplies `net`, so a new step gets the policy by
+    // using it. Do not add an exemption.
+    expect(stepArguments().filter((argument) => !/^(?:await input\.)?sandboxInput\b|^\{ \.\.\.sandboxInput\b/.test(argument))).toEqual([])
+  })
+
+  test("the connect route runs no manager step of its own: a start reaches the driver only through the drive", () => {
+    expect([...code(routeSource).matchAll(MANAGER_STEP)]).toEqual([])
+    expect(code(routeSource)).toContain("options.sandboxStart(workspaceId)")
   })
 })

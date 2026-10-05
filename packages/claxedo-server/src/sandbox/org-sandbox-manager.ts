@@ -1,4 +1,4 @@
-import type { SandboxDriver, SandboxGarbageCollectResult, SandboxLease, SandboxLeaseStore, SandboxManager } from "@claxedo/sandbox-manager"
+import type { SandboxDriver, SandboxGarbageCollectResult, SandboxLease, SandboxLeaseStore, SandboxManager, SandboxManagerInput } from "@claxedo/sandbox-manager"
 import type { SandboxKeyedDriver } from "../authority/services"
 import { OPERATOR_SANDBOX_KEY, type OrgSandboxDrivers, type SandboxKeyBinding } from "./org-sandbox-drivers"
 
@@ -46,11 +46,24 @@ export function createOrgSandboxManager(input: {
     return { binding: await input.drivers.forOrg(orgId), orgId }
   }
   const routed = async (workspaceId: string) => managerFor((await bound(workspaceId, false)).binding)
+  /** A start's manager and its input stamped with the key it spends, so the lease records that key from its first write. */
+  const starting = async (workspaceId: string, managerInput: SandboxManagerInput) => {
+    const { binding, orgId } = await bound(workspaceId, true)
+    const labels = { ...managerInput.labels, [SANDBOX_KEY_LABEL]: binding.key, ...(orgId ? { [SANDBOX_ORG_LABEL]: orgId } : {}) }
+    return { manager: managerFor(binding), input: { ...managerInput, labels } }
+  }
   const manager: SandboxManager = {
     ensure: async (workspaceId, managerInput) => {
-      const { binding, orgId } = await bound(workspaceId, true)
-      const labels = { ...managerInput.labels, [SANDBOX_KEY_LABEL]: binding.key, ...(orgId ? { [SANDBOX_ORG_LABEL]: orgId } : {}) }
-      return await managerFor(binding).ensure(workspaceId, { ...managerInput, labels })
+      const start = await starting(workspaceId, managerInput)
+      return await start.manager.ensure(workspaceId, start.input)
+    },
+    acquire: async (workspaceId, managerInput) => {
+      const start = await starting(workspaceId, managerInput)
+      return await start.manager.acquire(workspaceId, start.input)
+    },
+    provision: async (workspaceId, epoch, managerInput) => {
+      const start = await starting(workspaceId, managerInput)
+      return await start.manager.provision(workspaceId, epoch, start.input)
     },
     register: (workspaceId, snapshot) => operator.register(workspaceId, snapshot),
     heartbeat: (workspaceId, snapshot) => operator.heartbeat(workspaceId, snapshot),

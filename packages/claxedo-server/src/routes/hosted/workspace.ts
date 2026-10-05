@@ -286,10 +286,8 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       .get("/resolve", (c) => c.json(null))
       // Cloud workspace creation on the HOSTED control plane records the
       // workspace in the authority and starts nothing. Its first lease opens on
-      // the explicit start (`POST /:id/connection`), which runs `ensure` inside
-      // its own request: a Worker cuts work held past a response (`waitUntil`)
-      // about 30 s after it, which left a cold start's lease `acquiring` with no
-      // sandbox until the 60 s stale window let the next start take it over.
+      // the explicit start (`POST /:id/connection`), under the workspace's
+      // sandbox provisioner.
       .post("/create", async (c) => {
         const authResult = await signedOrError(c.req.raw, authOptions(), services)
         if ("error" in authResult) return c.json(authResult.error, authResult.status)

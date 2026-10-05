@@ -38,6 +38,7 @@ import { createHostedTasksSessionBridge, type HostedTasksSessionBridgeInput } fr
 import { composeProviderNeutralHostedControlPlane } from "../authority/provider-neutral-hosted-services"
 import type { TasksRootIdentity } from "./root-capability"
 import type { ControlPlaneServices } from "../authority/services"
+import { unusedSandboxStart } from "../test-support/inline-sandbox-start"
 
 // Hoisted above the imports so it is set before the store's first read: left
 // unset, every row this file writes would land in the developer's own data
@@ -384,7 +385,7 @@ function composedHostedServices(driver: SandboxDriver) {
       auth: { config: { enabled: true, mode: "signed" } } as never,
       authority: {} as never,
       hostTunnelResolver: (async () => undefined) as never,
-      sandbox: { driver, leaseStore: createMemoryLeaseStore() },
+      sandbox: { driver, leaseStore: createMemoryLeaseStore(), start: unusedSandboxStart },
     },
   ).services
 }

@@ -163,6 +163,56 @@ describe("sandbox manager", () => {
     expect(await store.get("ws_1")).toMatchObject({ status })
   })
 
+  test("acquire takes the lease and runs no driver; provision at that epoch runs it, and at another epoch answers that the lease changed", async () => {
+    const driver = fakeDriver()
+    const leaseStore = createMemoryLeaseStore()
+    const manager = createSandboxManager({ leaseStore, driver, retryAfterMs: 250 })
+    let opened = 0
+
+    const acquired = await manager.acquire("ws_1", { homeRegion: "us-east", onLeaseOpened: () => { opened += 1 } })
+    expect(acquired).toMatchObject({ status: "provisioning", epoch: 1, retryAfterMs: 250, bootMode: "cold-start" })
+    expect(opened).toBe(1)
+    expect(driver.ensureHost).not.toHaveBeenCalled()
+    expect(await leaseStore.get("ws_1")).toMatchObject({ status: "acquiring", epoch: 1 })
+
+    expect(await manager.provision("ws_1", 2, { homeRegion: "us-east" })).toMatchObject({ status: "unavailable", error: "runtime_lease_changed", epoch: 2 })
+    expect(driver.ensureHost).not.toHaveBeenCalled()
+
+    expect(await manager.provision("ws_1", 1, { homeRegion: "us-east" })).toMatchObject({ status: "ready", epoch: 1, sandboxId: "sandbox_ws_1" })
+    expect(driver.ensureHost).toHaveBeenCalledTimes(1)
+
+    // The ready lease is re-ensured on the same epoch, which is nobody's opening.
+    expect(await manager.acquire("ws_1", { homeRegion: "us-east", onLeaseOpened: () => { opened += 1 } })).toMatchObject({ status: "provisioning", epoch: 1 })
+    expect(opened).toBe(1)
+    expect(await manager.provision("ws_1", 1, { homeRegion: "us-east" })).toMatchObject({ status: "ready", epoch: 1 })
+    expect(driver.ensureHost).toHaveBeenCalledTimes(2)
+  })
+
+  test("provision waits out the lease's own retry window, and refuses a lease that was stopped meanwhile", async () => {
+    let now = 1_000_000
+    const driver = fakeDriver({
+      ensureHost: vi.fn(async () => ({ provisioning: true as const, retryAfterMs: 5_000 })),
+    })
+    const manager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver, now: () => now })
+    const acquired = await manager.acquire("ws_1", { homeRegion: "us-east" })
+    expect(acquired.status).toBe("provisioning")
+
+    expect(await manager.provision("ws_1", 1, { homeRegion: "us-east" })).toMatchObject({ status: "provisioning", retryAfterMs: 5_000, epoch: 1 })
+    now += 1_000
+    expect(await manager.provision("ws_1", 1, { homeRegion: "us-east" })).toMatchObject({ status: "provisioning", retryAfterMs: 4_000, epoch: 1 })
+    expect(driver.ensureHost).toHaveBeenCalledTimes(1)
+    now += 4_000
+    await manager.provision("ws_1", 1, { homeRegion: "us-east" })
+    expect(driver.ensureHost).toHaveBeenCalledTimes(2)
+
+    await manager.release("ws_1")
+    const stopped = createSandboxManager({
+      leaseStore: createMemoryLeaseStore([sandboxLease({ workspaceId: "ws_2", epoch: 3, status: "stopped", sandboxId: "sandbox_ws_2", url: "https://runtime.test/ws_2", hostId: "host_ws_2" })]),
+      driver,
+    })
+    expect(await stopped.provision("ws_2", 3, { homeRegion: "us-east" })).toMatchObject({ status: "unavailable", error: "runtime_lease_stopped", epoch: 3 })
+  })
+
   test("concurrent ensure calls share a fresh acquiring lease", async () => {
     let now = 1_000
     const store = createMemoryLeaseStore()

@@ -112,8 +112,11 @@ const ENTRIES = [
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
   // ready cloud runtime and admits it at the session-rows ingest, and only
-  // this entry has cloud runtimes to publish rows.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 216, packages: 24 },
+  // this entry has cloud runtimes to publish rows. It alone hosts the Durable
+  // Object a sandbox start runs under (`sandbox/provisioner.cf.ts`) and the
+  // start's contract and lookup (`workspace/sandbox-start.ts`), since only it
+  // has a sandbox to start.
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 218, packages: 24 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

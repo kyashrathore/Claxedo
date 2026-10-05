@@ -8,6 +8,7 @@ import { d1OrgSandboxDriver } from "../../sandbox/stores/d1-org-driver"
 import type { HostedSandboxKeys } from "../../sandbox/org-sandbox-drivers"
 import { createSessionRowsPasses, type SessionRowsPasses } from "../../session/session-rows-pass"
 import { createHostedRuntimeFetch } from "../../workspace/relay-runtime-client"
+import { sandboxProvisioner, type SandboxProvisionerNamespace } from "../../workspace/sandbox-start"
 
 /**
  * The full-hosted entry's sandbox and its runtimes' session rows pass, wired
@@ -20,6 +21,7 @@ export function composeWithCloudSandbox<Composed extends { plane: { services: Co
     database: D1Database
     signingEnv: Record<string, string | undefined>
     driver: SandboxDriver
+    provisioner: SandboxProvisionerNamespace
     keyDrivers: Omit<HostedSandboxKeys, "chosenDriver">
   },
   compose: (extra: { sandbox: HostedSandboxBinding; sessionRowsPasses: SessionRowsPasses }) => Composed,
@@ -41,6 +43,7 @@ export function composeWithCloudSandbox<Composed extends { plane: { services: Co
     sandbox: {
       driver: input.driver,
       leaseStore,
+      start: (workspaceId) => sandboxProvisioner(input.provisioner, workspaceId).start(workspaceId),
       deliverSessionRowsPass: sessionRowsPasses.deliver,
       keys: { ...input.keyDrivers, chosenDriver: d1OrgSandboxDriver(input.database).chosen },
     },

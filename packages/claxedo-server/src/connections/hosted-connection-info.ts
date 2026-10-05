@@ -11,7 +11,6 @@ import {
   relayRole,
   type WorkspaceRouteOptions,
 } from "../workspace/route-support"
-import { hostedSandboxInput } from "../workspace/hosted-sandbox-input"
 import { hostTunnelConnectionInfo } from "./host-tunnel-connection"
 import {
   previousRuntimeAccessTokenError,
@@ -236,8 +235,10 @@ async function firstLeaseMeter(
 
 /**
  * The connect path (POST `/:id/connection`, POST `/:id/connection/refresh`):
- * the ONLY route that runs `sandboxManager.ensure`, so starting billable
- * compute always traces to an explicit connect — never to a read.
+ * the ONLY route that begins a sandbox start, so starting billable compute
+ * always traces to an explicit connect — never to a read. The start itself
+ * runs under `options.sandboxStart`, which answers at once: a Worker cuts
+ * work held past a response, and a cold start outlives any request.
  */
 export async function hostedConnectionInfo(
   services: ControlPlaneServices | undefined,
@@ -252,27 +253,16 @@ export async function hostedConnectionInfo(
   if ("tunnel" in ingress) {
     return hostTunnelConnectionInfo(services, options, auth, workspaceId, previousJti)
   }
-  const { authority, result, workspace, hostManager, homeRegion, relayUrl } = ingress
-
-  const runtimeContext = { workspaceId }
-  let preparation
-  try {
-    preparation = await options.prepareRuntime?.(runtimeContext)
-  } catch (cause) {
-    return {
-      error: apiError("runtime_prepare_failed", cause instanceof Error ? cause.message : "Runtime preparation failed"),
-      status: 409,
-    } as const
+  const { authority, result, hostManager, homeRegion, relayUrl } = ingress
+  if (!options.sandboxStart) {
+    return { error: apiError("sandbox_unavailable", "Cloud sandbox is not configured"), status: 503 } as const
   }
+
   const meter = await firstLeaseMeter(services, lease, auth, { workspaceId, hostManager })
   if (meter && typeof meter !== "function") return meter
-  let opened = false
-  const ensured = await hostManager.ensure(workspaceId, hostedSandboxInput(workspace, {
-    egress: options,
-    preparation,
-    ...(meter ? { onLeaseOpened: () => { opened = true; meter() } } : {}),
-  }))
-  if (opened) {
+  const started = await options.sandboxStart(workspaceId)
+  if (started.status === "provisioning" && started.opened) {
+    meter?.()
     await Promise.resolve(lease.usage?.recordLeaseTenant({ caller: { kind: "signed", auth }, workspaceId }))
       .catch((cause: unknown) => console.error(`[workspace] the lease tenant of ${workspaceId} was not recorded`, cause instanceof Error ? cause.message : String(cause)))
   }
@@ -282,33 +272,37 @@ export async function hostedConnectionInfo(
     event: "sandbox.ensure",
     workspaceId,
     properties: {
-      status: ensured.status,
+      status: started.status,
       homeRegion,
-      ...(ensured.status === "provisioning" ? { leaseEpoch: ensured.epoch, retryAfterMs: ensured.retryAfterMs } : {}),
-      ...(ensured.status === "unavailable" ? { retryAfterMs: ensured.retryAfterMs } : {}),
-      ...(ensured.status === "ready" ? {
-        hostId: ensured.hostId,
-        leaseEpoch: ensured.epoch,
-        ...(ensured.driverResourceId ? { driverResourceId: ensured.driverResourceId } : {}),
+      ...(started.status === "provisioning" ? { leaseEpoch: started.epoch, retryAfterMs: started.retryAfterMs } : {}),
+      ...(started.status === "unavailable" ? { retryAfterMs: started.retryAfterMs } : {}),
+      ...(started.status === "failed" ? { code: started.code } : {}),
+      ...(started.status === "ready" ? {
+        hostId: started.hostId,
+        leaseEpoch: started.epoch,
+        ...(started.driverResourceId ? { driverResourceId: started.driverResourceId } : {}),
       } : {}),
     },
   })
-  if (ensured.status === "provisioning") {
+  if (started.status === "provisioning") {
     return {
       connection: {
         status: "provisioning" as const,
         workspaceId,
         homeRegion,
-        retryAfterMs: ensured.retryAfterMs,
+        retryAfterMs: started.retryAfterMs,
         // Which boot path this cycle is on (restore | resume | cold-start),
         // when the manager knows it — the connect UI renders it instead of a
         // generic "preparing" spinner. Absent while the lease is still queued
         // behind a retry window or another caller.
-        ...(ensured.bootMode ? { bootMode: ensured.bootMode } : {}),
+        ...(started.bootMode ? { bootMode: started.bootMode } : {}),
       },
     } as const
   }
-  if (ensured.status === "unavailable") {
+  if (started.status === "failed") {
+    return { error: apiError(started.code, started.message), status: 409 } as const
+  }
+  if (started.status === "unavailable") {
     captureWorkspaceTelemetry({
       services,
       auth,
@@ -317,31 +311,19 @@ export async function hostedConnectionInfo(
       properties: {
         backing: "cloud-vm",
         homeRegion,
-        retryAfterMs: ensured.retryAfterMs,
+        retryAfterMs: started.retryAfterMs,
       },
     })
     // A boot that failed fails the same way until the person changes what it
     // boots from, so its reason is the answer rather than a wait.
-    const bootFailure = sandboxRuntimeBootFailure(ensured.error)
+    const bootFailure = sandboxRuntimeBootFailure(started.error)
     if (bootFailure) {
       return { error: apiError("cloud_runtime_boot_failed", cloudRuntimeStartFailure(bootFailure)), status: 409 } as const
     }
     return {
       error: apiError("cloud_runtime_unavailable", "Cloud runtime is unavailable", {
-        retryAfterMs: ensured.retryAfterMs,
+        retryAfterMs: started.retryAfterMs,
       }),
-      status: 409,
-    } as const
-  }
-
-  // The sandbox process being healthy is not the product-ready boundary.
-  // Build-selected runtime contributions materialize their authoritative
-  // state here; failure prevents token minting instead of exposing a partial VM.
-  try {
-    await options.provisionRuntime?.(runtimeContext, preparation)
-  } catch (cause) {
-    return {
-      error: apiError("runtime_provision_failed", cause instanceof Error ? cause.message : "Runtime provisioning failed"),
       status: 409,
     } as const
   }
@@ -352,7 +334,7 @@ export async function hostedConnectionInfo(
     workspaceId,
     homeRegion,
     relayUrl,
-    target: ensured,
+    target: started,
     previousJti,
   })
 }

@@ -48,6 +48,26 @@ runtime `harnesses` descriptor. An `npm publish` of
 versioning keys off the bundle build plus `SNAPSHOT_SCHEMA_VERSION`
 (`packages/sandbox-manager/src/image.ts`).
 
+## Cloud workspace start
+
+A cloud workspace's explicit start (`POST /api/workspace/:id/connection`,
+`connections/hosted-connection-info.ts`) begins the sandbox start and answers
+at once. The work runs under the workspace's `SandboxProvisioner` Durable
+Object (`sandbox/provisioner.cf.ts`, named `workspace:<id>`, bound as
+`SANDBOX_PROVISIONER` on the full-hosted artifact alone, migration tag `v3`):
+`start` takes the lease through `SandboxManager.acquire` and schedules its
+alarm; the alarm drives `SandboxManager.provision` for that lease epoch, step
+by step, until the lease is ready or the start has failed, and the first
+`start` after that settles reports the outcome. A Worker cuts work held past a
+response about 30 s after it, which is why nothing of the driver runs in the
+request. Each step is the hosted runtime delivery's
+(`workspace/hosted-runtime-delivery.ts`): the runtime's preparation, the
+manager step over `hostedSandboxInput` of the live workspace row, and a ready
+runtime's settings. A start still not settled 15 minutes after it began ends
+with that as its reason; the lease keeps what the driver last recorded and the
+next start continues it. The app polls the start with the `retryAfterMs` it
+answers.
+
 ## Control-plane D1 schema
 
 `migrations/control-plane/0001_baseline.sql` is the whole control-plane schema,

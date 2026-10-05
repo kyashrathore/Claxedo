@@ -6,6 +6,7 @@ import { build } from "esbuild"
 import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
 import { sourceClosure } from "@claxedo/server-core/platform/governance/source-closure"
+import { unusedSandboxStart } from "../../../test-support/inline-sandbox-start"
 
 import { decodeJwt } from "jose"
 import type { ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
@@ -207,7 +208,7 @@ describe("Better Auth + D1 user-deployed composition", () => {
         ownerBootstrap: "one-use-claim" as const,
       },
     }
-    const sandbox = { driver, leaseStore: createMemoryLeaseStore() }
+    const sandbox = { driver, leaseStore: createMemoryLeaseStore(), start: unusedSandboxStart }
     const composed = composeBetterAuthD1UserDeployedControlPlane({
       ...input,
       env: env({ CLAXEDO_SANDBOX_POSTURE: "full-hosted", CLAXEDO_SANDBOX_DRIVER: "cloudflare" }),
@@ -239,7 +240,7 @@ describe("Better Auth + D1 user-deployed composition", () => {
     const bridged = composeBetterAuthD1UserDeployedControlPlane({
       ...input,
       env: env({ CLAXEDO_SANDBOX_POSTURE: "full-hosted", CLAXEDO_SANDBOX_DRIVER: "fetch" }),
-      sandbox: { driver: sandboxDriver("fetch"), leaseStore: createMemoryLeaseStore() },
+      sandbox: { driver: sandboxDriver("fetch"), leaseStore: createMemoryLeaseStore(), start: unusedSandboxStart },
     })
     expect(bridged.plane.services.sandbox.sandboxManager).toBeDefined()
     expect(bridged.plane.services.sandbox.defaultDriver).toBe("fetch")

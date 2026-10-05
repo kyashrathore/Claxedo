@@ -277,12 +277,11 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     return { ...resource, status: "ready", url: resource.url, routingId: lease.routingId, ...(imageOutdated ? { imageOutdated: true as const } : {}) }
   }
 
-  // The boot path this lease is on, derived from the lease row alone. Used by
-  // the early-return provisioning branches (in-flight backoff, lost acquire
-  // race) that answer BEFORE provision() runs — i.e. most polls after the
-  // first — so the connect UI keeps its honest label across the whole wait.
-  // Mirrors the predicates provision() uses when no caller bootSource is set:
-  // ensureHostInput's driver-snapshot default and provision()'s `resuming`.
+  // The boot path this lease is on, derived from the lease row alone, for the
+  // provisioning answers given before provisionLease() runs, so the connect
+  // UI keeps its honest label across the whole wait. Mirrors the predicates
+  // provisionLease() uses when no caller bootSource is set: ensureHostInput's
+  // driver-snapshot default and its `resuming`.
   function leaseBootMode(lease: SandboxLease): SandboxBootMode {
     const restoring =
       Boolean(lease.checkpoint)
@@ -294,10 +293,8 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
   }
 
   // Runs driver ensure/resume for an owned lease epoch and records the
-  // outcome. Shared by the fresh-acquire path, the ready-lease resume path,
-  // and the in-flight provisioning re-poll path. `enteredAt` is when the
-  // ensure that got here began, which is when a start it begins began.
-  async function provision(
+  // outcome. `enteredAt` is when the start that got here began.
+  async function provisionLease(
     workspaceId: string,
     lease: SandboxLease,
     homeRegion: SandboxRegion,
@@ -436,119 +433,127 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     })
   }
 
+  function wanted(lease: SandboxLease, afterMs = retryAfterMs): SandboxEnsureResult {
+    return { status: "provisioning", retryAfterMs: afterMs, epoch: lease.epoch, homeRegion: lease.homeRegion, bootMode: leaseBootMode(lease) }
+  }
+
+  /** The lease's own answer while nothing may run the driver for it: a retry still ahead, or a spent retry budget. */
+  function waiting(existing: SandboxLease | undefined): SandboxEnsureResult | undefined {
+    if (!existing) return undefined
+    if (existing.nextRetryAt && existing.nextRetryAt > now()) {
+      if (existing.status === "acquiring") return wanted(existing, existing.nextRetryAt - now())
+      return {
+        status: "unavailable",
+        retryAfterMs: existing.nextRetryAt - now(),
+        error: existing.lastError,
+        epoch: existing.epoch,
+        homeRegion: existing.homeRegion,
+      }
+    }
+    if (existing.status === "unavailable" && existing.retryCount >= maxRetryCount && existing.nextRetryAt === undefined) {
+      // Capped lease without a cooldown timestamp (legacy rows): stay
+      // unavailable until an operator releases the lease.
+      return {
+        status: "unavailable",
+        error: existing.lastError ?? "runtime_retry_cap_exceeded",
+        epoch: existing.epoch,
+        homeRegion: existing.homeRegion,
+      }
+    }
+    return undefined
+  }
+
+  /**
+   * Whether a start continues this lease on its epoch rather than taking a
+   * new one: a ready lease is re-ensured so an auto-stopped runtime resumes;
+   * one that already names a sandbox is never orphaned by an epoch bump; and
+   * an in-flight provision whose driver asked to be polled again is polled.
+   */
+  function continues(lease: SandboxLease) {
+    if (lease.status === "ready") return true
+    const stale = now() - lease.updatedAt >= staleAfterMs
+    if (lease.status === "acquiring") {
+      return lease.sandboxId ? lease.nextRetryAt !== undefined || stale : lease.nextRetryAt !== undefined && !stale
+    }
+    return lease.status === "unavailable" && lease.sandboxId !== undefined
+  }
+
+  /** The lease a start runs the driver for, or the answer that stands in for one. */
+  async function admit(workspaceId: string, input: SandboxManagerInput): Promise<{ lease: SandboxLease } | SandboxEnsureResult> {
+    // Egress disposition, decided BEFORE a lease is acquired.
+    //
+    // A caller that hands us a restricted policy is stating that this sandbox
+    // must not reach the open internet. That is honoured where the driver can
+    // honour it and made LOUD — not fatal — where it cannot: refusing the
+    // create outright would take the most likely production driver
+    // (cloudflare, preferred by `defaultSandboxDriverName`) offline entirely.
+    //
+    // The withholding itself happens in `ensureHostInput`; the warning is
+    // raised here so it fires exactly once per create rather than once per
+    // driver retry.
+    const egress = sandboxEgressDisposition(options.driver.metadata.egressControl, input.net)
+    if (egress.action === "withhold" && input.net) {
+      reportEgressUnenforced({ workspaceId, requested: input.net })
+    }
+    if (egress.action === "refuse") {
+      // Still fail-closed, and deliberately so: this driver DOES enforce
+      // egress, it just cannot express this policy's encoding. Degrading an
+      // enforcing driver to "unrestricted" would weaken the path that does
+      // enforce. Not a provisioning failure
+      // either — a composition mistake must not burn a lease epoch or enter
+      // retry backoff.
+      return { status: "unavailable", error: egress.reason, homeRegion: input.homeRegion }
+    }
+    // Caller env restating the identity the driver's target reports — and
+    // `recordTarget` persists — is the same class of composition mistake as
+    // the egress refusal: the runtime would boot bound to a hostId the
+    // lease never authorized. Refused before a lease is touched; the driver
+    // rejects it again at compose time for callers that reach it directly.
+    const identityConflicts = workspaceRuntimeIdentityEnvConflicts(input.env)
+    if (identityConflicts.length) {
+      return {
+        status: "unavailable",
+        error: `sandbox env cannot set runtime identity: ${identityConflicts.join(", ")}`,
+        homeRegion: input.homeRegion,
+      }
+    }
+    const existing = await options.leaseStore.get(workspaceId)
+    const wait = waiting(existing)
+    if (wait) return wait
+    if (existing && continues(existing)) return { lease: existing }
+    const acquired = await options.leaseStore.acquire(workspaceId, {
+      homeRegion: input.homeRegion,
+      driver: options.driver.id,
+      staleAfterMs,
+      now: now(),
+      ...(input.labels ? { labels: input.labels } : {}),
+    })
+    if (!acquired.acquired) return wanted(acquired.lease, acquired.retryAfterMs)
+    if (!existing) input.onLeaseOpened?.()
+    return { lease: acquired.lease }
+  }
+
   return {
     async ensure(workspaceId, input) {
       const enteredAt = now()
-      // Egress disposition, decided BEFORE a lease is acquired.
-      //
-      // A caller that hands us a restricted policy is stating that this sandbox
-      // must not reach the open internet. That is honoured where the driver can
-      // honour it and made LOUD — not fatal — where it cannot: refusing the
-      // create outright would take the most likely production driver
-      // (cloudflare, preferred by `defaultSandboxDriverName`) offline entirely.
-      //
-      // The withholding itself happens in `ensureHostInput`; the warning is
-      // raised here so it fires exactly once per create rather than once per
-      // driver retry.
-      const egress = sandboxEgressDisposition(options.driver.metadata.egressControl, input.net)
-      if (egress.action === "withhold" && input.net) {
-        reportEgressUnenforced({ workspaceId, requested: input.net })
+      const admitted = await admit(workspaceId, input)
+      if (!("lease" in admitted)) return admitted
+      return provisionLease(workspaceId, admitted.lease, admitted.lease.homeRegion, input, enteredAt)
+    },
+    async acquire(workspaceId, input) {
+      const admitted = await admit(workspaceId, input)
+      return "lease" in admitted ? wanted(admitted.lease) : admitted
+    },
+    async provision(workspaceId, epoch, input) {
+      const enteredAt = now()
+      const lease = await options.leaseStore.get(workspaceId)
+      if (!lease || lease.epoch !== epoch) {
+        return { status: "unavailable", error: "runtime_lease_changed", epoch, homeRegion: input.homeRegion }
       }
-      if (egress.action === "refuse") {
-        // Still fail-closed, and deliberately so: this driver DOES enforce
-        // egress, it just cannot express this policy's encoding. Degrading an
-        // enforcing driver to "unrestricted" would weaken the path that does
-        // enforce. Not a provisioning failure
-        // either — a composition mistake must not burn a lease epoch or enter
-        // retry backoff.
-        return { status: "unavailable", error: egress.reason, homeRegion: input.homeRegion }
+      if (lease.status === "stopped" || lease.status === "destroyed") {
+        return { status: "unavailable", error: `runtime_lease_${lease.status}`, epoch, homeRegion: lease.homeRegion }
       }
-      // Caller env restating the identity the driver's target reports — and
-      // `recordTarget` persists — is the same class of composition mistake as
-      // the egress refusal: the runtime would boot bound to a hostId the
-      // lease never authorized. Refused before a lease is touched; the driver
-      // rejects it again at compose time for callers that reach it directly.
-      const identityConflicts = workspaceRuntimeIdentityEnvConflicts(input.env)
-      if (identityConflicts.length) {
-        return {
-          status: "unavailable",
-          error: `sandbox env cannot set runtime identity: ${identityConflicts.join(", ")}`,
-          homeRegion: input.homeRegion,
-        }
-      }
-      const existing = await options.leaseStore.get(workspaceId)
-      if (existing?.nextRetryAt && existing.nextRetryAt > now()) {
-        if (existing.status === "acquiring") {
-          return {
-            status: "provisioning",
-            retryAfterMs: existing.nextRetryAt - now(),
-            epoch: existing.epoch,
-            homeRegion: existing.homeRegion,
-            bootMode: leaseBootMode(existing),
-          }
-        }
-        return {
-          status: "unavailable",
-          retryAfterMs: existing.nextRetryAt - now(),
-          error: existing.lastError,
-          epoch: existing.epoch,
-          homeRegion: existing.homeRegion,
-        }
-      }
-      if (
-        existing?.status === "unavailable" &&
-        existing.retryCount >= maxRetryCount &&
-        existing.nextRetryAt === undefined
-      ) {
-        // Capped lease without a cooldown timestamp (legacy rows): stay
-        // unavailable until an operator releases the lease.
-        return {
-          status: "unavailable",
-          error: existing.lastError ?? "runtime_retry_cap_exceeded",
-          epoch: existing.epoch,
-          homeRegion: existing.homeRegion,
-        }
-      }
-      if (existing?.sandboxId && (
-        existing.status === "unavailable"
-        || (existing.status === "acquiring" && (existing.nextRetryAt !== undefined || now() - existing.updatedAt >= staleAfterMs))
-      )) {
-        return provision(workspaceId, existing, existing.homeRegion, input, enteredAt)
-      }
-      if (existing?.status === "ready") {
-        // Lazy resume: sandbox services can auto-stop/sleep runtimes, so a ready lease
-        // must still be re-ensured through the driver (same epoch).
-        return provision(workspaceId, existing, existing.homeRegion, input, enteredAt)
-      }
-      if (
-        existing?.status === "acquiring" &&
-        existing.nextRetryAt !== undefined &&
-        now() - existing.updatedAt < staleAfterMs
-      ) {
-        // The driver reported provisioning earlier and the retry time has
-        // arrived: continue the in-flight provision on the same epoch instead
-        // of waiting for staleness (which would bump the epoch and orphan the
-        // first sandbox).
-        return provision(workspaceId, existing, existing.homeRegion, input, enteredAt)
-      }
-      const acquired = await options.leaseStore.acquire(workspaceId, {
-        homeRegion: input.homeRegion,
-        driver: options.driver.id,
-        staleAfterMs,
-        now: now(),
-        ...(input.labels ? { labels: input.labels } : {}),
-      })
-      if (!acquired.acquired) {
-        return {
-          status: "provisioning",
-          retryAfterMs: acquired.retryAfterMs,
-          epoch: acquired.lease.epoch,
-          homeRegion: acquired.lease.homeRegion,
-          bootMode: leaseBootMode(acquired.lease),
-        }
-      }
-      if (!existing) input.onLeaseOpened?.()
-      return provision(workspaceId, acquired.lease, input.homeRegion, input, enteredAt)
+      return waiting(lease) ?? provisionLease(workspaceId, lease, lease.homeRegion, input, enteredAt)
     },
     async register(workspaceId, input) {
       return await runtimeSnapshot(workspaceId, input)

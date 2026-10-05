@@ -1,5 +1,7 @@
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
 import { hostedSandboxDriver, hostedSandboxKeyDrivers } from "../../authority/adapters/worker/hosted-sandbox-driver"
+import { sandboxProvisionerClass } from "../../sandbox/provisioner.cf"
+import type { SandboxProvisionerNamespace } from "../../workspace/sandbox-start"
 import { composeWithCloudSandbox } from "./full-hosted-sandbox"
 import {
   composeBetterAuthD1AgentPlugins,
@@ -15,6 +17,10 @@ import { settledCompositionCache } from "./settled-composition-cache"
 
 export { LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor }
 
+export type BetterAuthD1FullHostedWorkerEnv = BetterAuthD1AgentPluginsWorkerEnv & {
+  SANDBOX_PROVISIONER?: SandboxProvisionerNamespace
+}
+
 /**
  * The full-hosted Agent Plugins Worker: the Agent Plugins composition plus
  * cloud workspace execution. It is the only entry that bundles a sandbox
@@ -25,9 +31,10 @@ export { LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor }
  * Leases live in `CONTROL_PLANE_DB` (`sandbox/stores/d1.ts`): every isolate of
  * this Worker sees the same acquire/epoch state, which is what makes the
  * manager's stale-takeover and compare-and-set rules hold across isolates.
+ * Each workspace's sandbox start runs under its `SandboxProvisioner`.
  */
 const composition = settledCompositionCache(
-  (env: BetterAuthD1AgentPluginsWorkerEnv) => {
+  (env: BetterAuthD1FullHostedWorkerEnv) => {
     const driver = hostedSandboxDriver(stringEnvironment(env))
     if (!driver) {
       throw new HostedWorkerCompositionError(
@@ -35,13 +42,28 @@ const composition = settledCompositionCache(
         "full-hosted entry requires a completely configured CLAXEDO_SANDBOX_DRIVER",
       )
     }
+    if (!env.SANDBOX_PROVISIONER) {
+      throw new HostedWorkerCompositionError("hosted_dependency_missing", "The full-hosted Worker requires the SANDBOX_PROVISIONER binding")
+    }
     return composeWithCloudSandbox(
-      { database: env.CONTROL_PLANE_DB, signingEnv: stringEnvironment(env), driver, keyDrivers: hostedSandboxKeyDrivers(stringEnvironment(env)) },
+      {
+        database: env.CONTROL_PLANE_DB,
+        signingEnv: stringEnvironment(env),
+        driver,
+        provisioner: env.SANDBOX_PROVISIONER,
+        keyDrivers: hostedSandboxKeyDrivers(stringEnvironment(env)),
+      },
       (extra) => composeBetterAuthD1AgentPlugins(env, extra),
     )
   },
   (created) => created.authReady,
 )
+
+export class SandboxProvisioner extends sandboxProvisionerClass((env: BetterAuthD1FullHostedWorkerEnv) => {
+  const delivery = composition(env).runtimeDelivery
+  if (!delivery) throw new HostedWorkerCompositionError("hosted_capability_unavailable", "The full-hosted Worker composed no sandbox delivery")
+  return delivery.start
+}) {}
 
 const handler = createBetterAuthD1Worker({ composition })
 export default handler

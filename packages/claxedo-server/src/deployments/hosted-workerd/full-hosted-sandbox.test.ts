@@ -4,6 +4,7 @@ import type { SandboxDriver } from "@claxedo/sandbox-manager"
 import type { ControlPlaneServices } from "../../authority/services"
 import { createD1SandboxLeaseStore } from "../../sandbox/stores/d1"
 import { miniflareControlPlaneDatabase } from "../../test-support/control-plane-migrations"
+import { inlineSandboxProvisioner } from "../../test-support/inline-sandbox-start"
 import { composeWithCloudSandbox } from "./full-hosted-sandbox"
 
 const cleanup: Array<() => Promise<void>> = []
@@ -36,7 +37,10 @@ test("the composed plane's ready sandbox is handed a pass for its lease epoch ov
   } as unknown as ControlPlaneServices
   const driver = { id: "test" } as unknown as SandboxDriver
 
-  const composed = composeWithCloudSandbox({ database: backing.database, signingEnv, driver, keyDrivers: { drivers: [], create: () => undefined } }, (extra) => ({ plane: { services }, extra }))
+  const composed = composeWithCloudSandbox(
+    { database: backing.database, signingEnv, driver, provisioner: inlineSandboxProvisioner(), keyDrivers: { drivers: [], create: () => undefined } },
+    (extra) => ({ plane: { services }, extra }),
+  )
   await composed.extra.sandbox.deliverSessionRowsPass!("ws_cloud")
 
   expect(composed.extra.sandbox.driver).toBe(driver)

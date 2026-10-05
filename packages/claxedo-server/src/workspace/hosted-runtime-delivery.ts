@@ -1,5 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import type { SandboxBrokeredSecret, SandboxManager, SandboxManagerInput } from "@claxedo/sandbox-manager"
+import type { SandboxBrokeredSecret, SandboxEnsureResult, SandboxManager, SandboxManagerInput } from "@claxedo/sandbox-manager"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { UserAgentConfigRepository } from "@claxedo/server-core/agent-config/repository"
 import { userAgentConfigStore } from "@claxedo/server-core/agent-config/repository"
@@ -21,6 +21,7 @@ import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { cloudRootBacking } from "./cloud-root-backing"
 import { createHostedRuntimeFetch } from "./relay-runtime-client"
 import { recordRuntimeStartPhases } from "./runtime-start-phases"
+import type { SandboxStartAnswer, SandboxStartDrive } from "./sandbox-start"
 
 const log = Log.create({ service: "hosted-runtime-delivery" })
 
@@ -126,6 +127,42 @@ export function createHostedRuntimeDelivery(input: {
   }
   const provisionRuntime = (context: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => push(context.workspaceId, preparation)
   const hooks: HostedRuntimeHooks = { prepareRuntime: prepare }
+  const refused = (code: "runtime_prepare_failed" | "runtime_provision_failed", cause: unknown, message: string): SandboxStartAnswer =>
+    ({ status: "failed", code, message: cause instanceof Error ? cause.message : message })
+  // One step of a start: the runtime's preparation, the manager step over the
+  // full sandbox input, and a ready runtime's settings. The preparation is
+  // rebuilt on every step so a credential that changed mid-start reaches the
+  // driver and the runtime alike.
+  const step = async (
+    workspaceId: string,
+    run: (sandboxInput: SandboxManagerInput) => Promise<SandboxEnsureResult>,
+  ): Promise<SandboxStartAnswer> => {
+    const context = { workspaceId }
+    let preparation: WorkspaceRuntimePreparation
+    try {
+      preparation = await hooks.prepareRuntime(context)
+    } catch (cause) {
+      return refused("runtime_prepare_failed", cause, "Runtime preparation failed")
+    }
+    const ensured = await run(await input.sandboxInput(workspaceId, { preparation, secrets: [] }))
+    if (ensured.status !== "ready") return ensured
+    try {
+      await provisionRuntime(context, preparation)
+    } catch (cause) {
+      return refused("runtime_provision_failed", cause, "Runtime provisioning failed")
+    }
+    return ensured
+  }
+  const start: SandboxStartDrive = {
+    acquire: async (workspaceId) => {
+      let opened = false
+      const answer = await step(workspaceId, (sandboxInput) =>
+        input.sandboxManager.acquire(workspaceId, { ...sandboxInput, onLeaseOpened: () => { opened = true } }))
+      return answer.status === "provisioning" && opened ? { ...answer, opened: true } : answer
+    },
+    provision: (workspaceId, epoch) => step(workspaceId, (sandboxInput) => input.sandboxManager.provision(workspaceId, epoch, sandboxInput)),
+    target: (workspaceId) => input.sandboxManager.target(workspaceId),
+  }
   const running = async (predicate: (person: Awaited<ReturnType<typeof owner>>) => boolean) => {
     const leases = await input.sandboxManager.list()
     const workspaces = await Promise.all(leases.filter((lease) => lease.status === "ready").map(async (lease) => {
@@ -149,6 +186,7 @@ export function createHostedRuntimeDelivery(input: {
   return {
     prepareRuntime: prepare,
     provisionRuntime,
+    start,
     /** Whether a ready sandbox has taken its settings; a refresh over applied settings keeps it connectable. */
     runtimeProvisioned: async ({ workspaceId }: WorkspaceRuntimeContext) => {
       const { client, options } = await supervisorClient(input.services, workspaceId, input.signingEnv)

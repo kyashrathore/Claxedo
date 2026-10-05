@@ -32,10 +32,11 @@ function coreConfig(artifactId: (typeof CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS)[nu
 }
 
 describe("certified core resource ownership", () => {
-  test("every artifact binds auth/control D1, the EMAIL send_email binding, the limiter and LiveSyncRoom, the documents bucket, and only Agent Plugins binds the plugin-backend platform", () => {
+  test("every artifact binds auth/control D1, the EMAIL send_email binding, the limiter and LiveSyncRoom, the documents bucket; only Agent Plugins binds the plugin-backend platform and only full-hosted the sandbox provisioner", () => {
     for (const artifactId of CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS) {
       const config = coreConfig(artifactId)
-      const agentPlugins = certifiedHostedWorkerArtifact(artifactId).agentPlugins
+      const { agentPlugins, sandboxPosture } = certifiedHostedWorkerArtifact(artifactId)
+      const fullHosted = sandboxPosture === "full-hosted"
       expect([...config.matchAll(/^binding = "([A-Z][A-Z0-9_]+)"$/gm)].map((match) => match[1]), artifactId).toEqual([
         "CF_VERSION_METADATA",
         "AUTH_DB",
@@ -48,10 +49,13 @@ describe("certified core resource ownership", () => {
         "CLAXEDO_REQUEST_LIMITER",
         "LIVE_SYNC_ROOM",
         ...(agentPlugins ? ["PLUGIN_SUPERVISOR"] : []),
+        ...(fullHosted ? ["SANDBOX_PROVISIONER"] : []),
       ])
       expect(config).toContain('tag = "v1"\nnew_sqlite_classes = ["LiveSyncRoom"]')
       if (agentPlugins) expect(config).toContain('tag = "v2"\nnew_sqlite_classes = ["PluginSupervisor"]')
       else expect(config).not.toMatch(/PluginSupervisor|worker_loaders/)
+      if (fullHosted) expect(config).toContain('tag = "v3"\nnew_sqlite_classes = ["SandboxProvisioner"]')
+      else expect(config).not.toMatch(/SandboxProvisioner/)
       expect(config).not.toMatch(/POLAR|BILLING|crons/i)
     }
   })
@@ -66,6 +70,8 @@ describe("certified core resource ownership", () => {
           ? /export \{ LiveSyncRoom, PluginOutbound, PluginPlatform, PluginSupervisor \}/
           : /export \{ LiveSyncRoom \}/,
       )
+      if (artifact.sandboxPosture === "full-hosted") expect(source).toMatch(/export class SandboxProvisioner extends sandboxProvisionerClass\(/)
+      else expect(source).not.toMatch(/SandboxProvisioner/)
       expect(artifact.entrypointFromPackageRoot).not.toBe("src/deployments/hosted-workerd/core-worker.cf.ts")
     }
   })

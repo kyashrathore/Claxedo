@@ -8,10 +8,16 @@ import { HostedWorkspaceRoutes } from "../routes/hosted/workspace"
 import { createHostedRuntimeDelivery } from "./hosted-runtime-delivery"
 import { hostedSandboxInput } from "./hosted-sandbox-input"
 import type { ControlPlaneDatabase } from "../test-support/control-plane-migrations"
+import { inlineSandboxStart } from "../test-support/inline-sandbox-start"
 import { workspaceBackingDatabase } from "../test-support/workspace-backing-database"
 
 const pushed = vi.hoisted(() => [] as string[])
-vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: () => ({ applyConfig: async () => { pushed.push("config") } }) }))
+/** When set, the runtime refuses its settings with this reason. */
+const pushRefusal = vi.hoisted(() => ({ reason: undefined as string | undefined }))
+vi.mock("@claxedo/workspace-runtime/client", () => ({ createWorkspaceRuntimeClient: () => ({ applyConfig: async () => {
+  if (pushRefusal.reason) throw new Error(pushRefusal.reason)
+  pushed.push("config")
+} }) }))
 vi.mock("@claxedo/server-core/platform/auth/runtime-access-token", () => ({ mintSupervisorBackplaneToken: async () => ({ supervisorBackplaneToken: "supervisor-token" }) }))
 
 const CONTROL_PLANE_ORIGIN = "https://cp.claxedo.test"
@@ -19,7 +25,10 @@ const REQUEST_ORIGIN = "https://edge.claxedo.test"
 const RELAY_URL = "https://relay.claxedo.test"
 
 const active: ControlPlaneDatabase[] = []
-afterEach(async () => { await Promise.all(active.splice(0).map((instance) => instance.dispose())) })
+afterEach(async () => {
+  pushRefusal.reason = undefined
+  await Promise.all(active.splice(0).map((instance) => instance.dispose()))
+})
 
 const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
   mode: "signed" as const,
@@ -128,28 +137,90 @@ async function composition() {
     ...egress,
     countActiveOrgSandboxLeases: async () => 0,
     resolveRepoAddresses: async () => ["140.82.112.3"],
-    prepareRuntime,
-    provisionRuntime: async () => {},
+    sandboxStart: inlineSandboxStart(delivery.start),
   })
-  return { app, delivery, created, lose }
-}
-
-describe("refreshing a running hosted sandbox", () => {
-  test("a refresh that re-creates the host hands the driver everything the first start did", async () => {
-    const { app, delivery, created, lose } = await composition()
+  const create = async (body: Record<string, unknown>) => {
     const res = await app.fetch(new Request(`${REQUEST_ORIGIN}/create`, {
       method: "POST",
       headers: { authorization: "Bearer owner", "content-type": "application/json" },
-      body: JSON.stringify({
-        projectId: "proj_1",
-        workspaceName: "Widgets",
-        repoUrl: "https://github.com/acme/widgets.git",
-        gitBranch: "main",
-        remoteDirectory: "/srv/widgets",
-      }),
+      body: JSON.stringify({ projectId: "proj_1", workspaceName: "Widgets", repoUrl: "https://github.com/acme/widgets.git", ...body }),
     }))
     expect(res.status).toBe(200)
-    const { workspaceId } = await res.json() as { workspaceId: string }
+    return (await res.json() as { workspaceId: string }).workspaceId
+  }
+  return { app, delivery, created, lose, create, secrets, env }
+}
+
+describe("the steps of a hosted sandbox start", () => {
+  test("acquire takes the lease over the prepared input and runs no driver; provision at that epoch boots it and delivers its settings", async () => {
+    const { delivery, created, create, secrets, env } = await composition()
+    const workspaceId = await create({ gitBranch: "main", remoteDirectory: "/srv/widgets" })
+
+    const acquired = await delivery.start.acquire(workspaceId)
+    expect(acquired).toMatchObject({ status: "provisioning", epoch: 1, opened: true })
+    expect(created).toHaveLength(0)
+    expect(await delivery.start.target(workspaceId)).toMatchObject({ status: "unavailable", leaseStatus: "acquiring" })
+
+    const provisioned = await delivery.start.provision(workspaceId, 1)
+    expect(provisioned).toMatchObject({ status: "ready", epoch: 1, hostId: `test-${workspaceId}` })
+    expect(created).toHaveLength(1)
+    expect(created[0]).toMatchObject({
+      source: { kind: "git", repoUrl: "https://github.com/acme/widgets.git", branch: "main" },
+      workspaceRoot: "/srv/widgets",
+      labels: expect.objectContaining({ projectId: "proj_1" }),
+      net: { mode: "restricted", hosts: expect.arrayContaining(["relay.claxedo.test", "cp.claxedo.test", "github.com"]) },
+      env,
+      secrets,
+    })
+    expect(pushed.slice(-2)).toEqual(["config", `session rows pass ${workspaceId}`])
+    expect(await delivery.start.target(workspaceId)).toMatchObject({ status: "ready", epoch: 1 })
+  })
+
+  test("a later acquire of the ready lease asks for its resume on the same epoch, and names no opening", async () => {
+    const { delivery, create } = await composition()
+    const workspaceId = await create({})
+    await delivery.start.acquire(workspaceId)
+    await delivery.start.provision(workspaceId, 1)
+
+    const again = await delivery.start.acquire(workspaceId)
+    expect(again).toMatchObject({ status: "provisioning", epoch: 1 })
+    expect(again).not.toHaveProperty("opened")
+    expect(await delivery.start.provision(workspaceId, 1)).toMatchObject({ status: "ready", epoch: 1 })
+  })
+
+  test("a provision for an epoch the lease has left answers that the lease changed, and reaches no driver", async () => {
+    const { delivery, created, create } = await composition()
+    const workspaceId = await create({})
+    await delivery.start.acquire(workspaceId)
+    expect(await delivery.start.provision(workspaceId, 7)).toMatchObject({ status: "unavailable", error: "runtime_lease_changed" })
+    expect(created).toHaveLength(0)
+  })
+
+  test("a preparation that throws refuses the start before any lease is taken", async () => {
+    const { delivery, created, create } = await composition()
+    const workspaceId = await create({})
+    delivery.composeRuntime({ prepareRuntime: async () => { throw new Error("gateway signing key unavailable") } })
+
+    expect(await delivery.start.acquire(workspaceId)).toEqual({ status: "failed", code: "runtime_prepare_failed", message: "gateway signing key unavailable" })
+    expect(created).toHaveLength(0)
+    expect(await delivery.start.target(workspaceId)).toMatchObject({ status: "unavailable", reason: "runtime_lease_missing" })
+  })
+
+  test("a runtime that refuses its settings fails the start after the sandbox is ready, so no token is minted over a half-configured runtime", async () => {
+    const { delivery, create } = await composition()
+    const workspaceId = await create({})
+    await delivery.start.acquire(workspaceId)
+    pushRefusal.reason = "artifact corrupt"
+
+    expect(await delivery.start.provision(workspaceId, 1)).toEqual({ status: "failed", code: "runtime_provision_failed", message: "artifact corrupt" })
+    expect(await delivery.start.target(workspaceId)).toMatchObject({ status: "ready", epoch: 1 })
+  })
+})
+
+describe("refreshing a running hosted sandbox", () => {
+  test("a refresh that re-creates the host hands the driver everything the first start did", async () => {
+    const { app, delivery, created, lose, create } = await composition()
+    const workspaceId = await create({ gitBranch: "main", remoteDirectory: "/srv/widgets" })
     await app.fetch(new Request(`${REQUEST_ORIGIN}/${workspaceId}/connection`, {
       method: "POST",
       headers: { authorization: "Bearer owner", "content-type": "application/json" },

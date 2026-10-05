@@ -63,6 +63,15 @@ describe("the user-deployed Worker Wrangler config", () => {
     expect(() => render({ agentPluginsBucket: "claxedo-agent-plugins" })).toThrow(/plugin artifact bucket/)
   })
 
+  test("binds the sandbox provisioner, under its own migration tag, for the full-hosted artifact and only for it", () => {
+    const fullHosted = certifiedHostedWorkerArtifact("user-deployed-better-auth-d1-agent-plugins-full-hosted")
+    const config = render({ artifact: fullHosted, agentPluginsBucket: "claxedo-agent-plugins" })
+    expect(config).toContain('[[durable_objects.bindings]]\nname = "SANDBOX_PROVISIONER"\nclass_name = "SandboxProvisioner"')
+    expect(config).toContain('[[migrations]]\ntag = "v3"\nnew_sqlite_classes = ["SandboxProvisioner"]')
+    const agentPlugins = certifiedHostedWorkerArtifact("user-deployed-better-auth-d1-agent-plugins")
+    expect(render({ artifact: agentPlugins, agentPluginsBucket: "claxedo-agent-plugins" })).not.toMatch(/SandboxProvisioner|SANDBOX_PROVISIONER/)
+  })
+
   test("refuses a variable that would render as an empty or padded TOML string", () => {
     expect(() => render({ variables: { CLAXEDO_DEPLOYMENT_ID: " claxedo" } })).toThrow(/trimmed/)
   })

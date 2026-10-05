@@ -57,7 +57,8 @@ binding = "PLUGIN_LOADER"
     : ""
   // Durable Object migrations are append-only per Worker name: once a Worker
   // has applied v2 it cannot deploy the base artifact, which lacks the class,
-  // without a `deleted_classes` migration written for that purpose.
+  // without a `deleted_classes` migration written for that purpose; v3 holds
+  // a full-hosted Worker to the full-hosted artifact the same way.
   const pluginSupervisor = input.artifact.agentPlugins
     ? {
         binding: `
@@ -69,6 +70,20 @@ class_name = "PluginSupervisor"
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["PluginSupervisor"]
+`,
+      }
+    : { binding: "", migration: "" }
+  const sandboxProvisioner = input.artifact.sandboxPosture === "full-hosted"
+    ? {
+        binding: `
+[[durable_objects.bindings]]
+name = "SANDBOX_PROVISIONER"
+class_name = "SandboxProvisioner"
+`,
+        migration: `
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["SandboxProvisioner"]
 `,
       }
     : { binding: "", migration: "" }
@@ -122,11 +137,11 @@ period = 60
 [[durable_objects.bindings]]
 name = "LIVE_SYNC_ROOM"
 class_name = "LiveSyncRoom"
-${pluginSupervisor.binding}
+${pluginSupervisor.binding}${sandboxProvisioner.binding}
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["LiveSyncRoom"]
-${pluginSupervisor.migration}${agentPluginsBucket}`
+${pluginSupervisor.migration}${sandboxProvisioner.migration}${agentPluginsBucket}`
 }
 
 /**
