@@ -21,7 +21,7 @@ const CHECKPOINT_SETTLE_MS = 5_000
 function runtimeOf(wake: WakeState, asleep: boolean): WorkspaceRuntime {
   if (wake.kind === "waking") return { kind: "waking", ...(wake.bootMode ? { bootMode: wake.bootMode } : {}) }
   if (wake.kind === "outdated" && !asleep) return { kind: "outdated" }
-  if (wake.kind === "failed" && asleep) return { kind: "wakeFailed", error: wake.error }
+  if (wake.kind === "failed" && (asleep || wake.restart)) return { kind: "wakeFailed", error: wake.error }
   return asleep ? { kind: "asleep" } : { kind: "live" }
 }
 

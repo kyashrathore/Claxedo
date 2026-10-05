@@ -118,3 +118,22 @@ test("a running workspace on an older image reads outdated, and Restart to updat
   await restart
   expect(wakes.runtime(cloud)).toEqual({ kind: "live" })
 })
+
+test("a failed Restart to update keeps its reason and Try again on the running workspace, and an image announcement does not hide it", async () => {
+  const running = { value: true }
+  const { starts, outdated, wakes } = fixture(running)
+  const refusal = new ServerError({ class: "conflict", code: "cloud_runtime_unavailable", message: "No capacity for the new image" })
+  for (const announce of outdated) announce("ws_cloud")
+  const restart = wakes.start(cloud)
+  await settle()
+  starts[0]?.reject(refusal)
+  await expect(restart).rejects.toBe(refusal)
+  expect(wakes.runtime(cloud)).toEqual({ kind: "wakeFailed", error: refusal })
+  for (const announce of outdated) announce("ws_cloud")
+  expect(wakes.runtime(cloud)).toEqual({ kind: "wakeFailed", error: refusal })
+  const retry = wakes.start(cloud)
+  await settle()
+  starts[1]?.resolve()
+  await retry
+  expect(wakes.runtime(cloud)).toEqual({ kind: "live" })
+})
