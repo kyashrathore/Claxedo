@@ -136,3 +136,15 @@ test("a browser finds a cold session's host in its control-plane row and mints n
   expect(await transport.findSessionHost("ws_other", "ses_pi"), "a row of another workspace names no host here").toBeUndefined()
   expect(fetcher.mock.calls.map(([url]) => href(url))).toEqual(Array(2).fill("https://cp.test/api/control/session-list?scope=all&sessionId=ses_pi&limit=1&settled=all&sort=human_turn_desc"))
 })
+
+test("a workspace read as outdated reads live again once a connection answers ready, as after a restart from another tab", async () => {
+  const { transport } = signed(new Error(`HOSTED_HTTP 409 ${JSON.stringify({ body: { error: { code: "cloud_runtime_image_outdated", message: "The workspace runs an older image" } } })}`), link)
+  fetcher.mockResolvedValue(Response.json({}))
+  const workspaces = { byId: () => ({ kind: "cloud", reachable: true }) } as unknown as Workspaces
+  const wakes = createWorkspaceWakes(transport, workspaces)
+  const id = placementId("ws_cloud")
+  await expect(transport.runtime(cloud, "/api/wr/health")).rejects.toMatchObject({ code: "cloud_runtime_image_outdated" })
+  expect(wakes.runtime(id)).toEqual({ kind: "outdated" })
+  await transport.runtime(cloud, "/api/wr/health")
+  expect(wakes.runtime(id)).toEqual({ kind: "live" })
+})

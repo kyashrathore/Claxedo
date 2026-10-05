@@ -30,7 +30,7 @@ export type Transport = {
   readonly connectSession: (workspaceId: string, sessionId: string) => Promise<void>
   readonly findSessionHost: (workspaceId: string, sessionId: string) => Promise<string | undefined>
   readonly onSessionHost: (listener: SessionHostListener) => () => void
-  readonly onImageOutdated: (listener: (workspaceId: string) => void) => () => void
+  readonly onRuntimeImage: (listener: (workspaceId: string, outdated: boolean) => void) => () => void
 }
 
 function socketUrl(serverUrl: string, path: string) {
@@ -140,25 +140,29 @@ function sessionHostSignals() {
   }
 }
 
-function imageOutdatedSignals() {
-  const listeners = new Set<(workspaceId: string) => void>()
+function runtimeImageSignals() {
+  const listeners = new Set<(workspaceId: string, outdated: boolean) => void>()
   return {
-    refused: (workspaceId: string, error: unknown) => {
-      if (isImageOutdated(error)) for (const listener of listeners) listener(workspaceId)
+    answered: (workspaceId: string, answer: ConnectionAnswer) => {
+      if (answer.kind === "ready") for (const listener of listeners) listener(workspaceId, false)
+      return answer
     },
-    onImageOutdated: (listener: (workspaceId: string) => void) => {
+    refused: (workspaceId: string, error: unknown) => {
+      if (isImageOutdated(error)) for (const listener of listeners) listener(workspaceId, true)
+    },
+    onRuntimeImage: (listener: (workspaceId: string, outdated: boolean) => void) => {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
   }
 }
 
-function connectionReader(connections: WorkspaceConnections, hosts: ReturnType<typeof sessionHostSignals>, outdated: ReturnType<typeof imageOutdatedSignals>): WorkspaceConnections["read"] {
+function connectionReader(connections: WorkspaceConnections, hosts: ReturnType<typeof sessionHostSignals>, image: ReturnType<typeof runtimeImageSignals>): WorkspaceConnections["read"] {
   return async (workspaceId, sessionId) => {
     try {
-      return hosts.learned(workspaceId, sessionId, await connections.read(workspaceId, sessionId))
+      return hosts.learned(workspaceId, sessionId, image.answered(workspaceId, await connections.read(workspaceId, sessionId)))
     } catch (error) {
-      outdated.refused(workspaceId, error)
+      image.refused(workspaceId, error)
       throw error
     }
   }
@@ -207,8 +211,8 @@ export function createTransport(config: ServerConfig): Transport {
   const account = config.account ? createHostedAccount(config.account) : undefined
   const connections = createWorkspaceConnections(request, account)
   const hosts = sessionHostSignals()
-  const outdated = imageOutdatedSignals()
-  const relay = createRelay(connectionReader(connections, hosts, outdated), config.relayLinks)
+  const image = runtimeImageSignals()
+  const relay = createRelay(connectionReader(connections, hosts, image), config.relayLinks)
   const daemonProxy = loopback && config.account === undefined
   const { runtime, runtimeSocket } = runtimeRoutes(serverUrl, request, relay, daemonProxy)
   const label = (path: string, init?: RequestInit) => `${init?.method ?? "GET"} ${path}`
@@ -228,7 +232,7 @@ export function createTransport(config: ServerConfig): Transport {
     connectSession: sessionHostConnector(connections, relay, hosts),
     findSessionHost: daemonProxy ? async () => undefined : sessionRowHost(json, loopback ? account : undefined),
     onSessionHost: hosts.onSessionHost,
-    onImageOutdated: outdated.onImageOutdated,
+    onRuntimeImage: image.onRuntimeImage,
   }
 }
 

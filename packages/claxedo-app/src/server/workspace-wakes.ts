@@ -42,7 +42,7 @@ export function createWorkspaceWakes(transport: Transport, workspaces: Workspace
   const [wakes, setWakes] = createStore<Record<string, WakeState>>({})
   const send = (id: PlacementId, event: WakeEvent) => setWakes(id, (state) => wakeTransition(state ?? WAKE_IDLE, event))
   const running = new Map<string, Promise<void>>()
-  onCleanup(transport.onImageOutdated((workspaceId) => send(placementId(workspaceId), { type: "imageOutdated" })))
+  onCleanup(transport.onRuntimeImage((workspaceId, outdated) => send(placementId(workspaceId), { type: outdated ? "imageOutdated" : "imageCurrent" })))
   const run = (id: PlacementId) => wakeWorkspace(transport, workspaces, id, (event) => send(id, event)).finally(() => running.delete(id))
   const start = (id: PlacementId) => {
     const current = running.get(id)

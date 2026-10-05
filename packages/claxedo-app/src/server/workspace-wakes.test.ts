@@ -20,17 +20,17 @@ function fixture(running: { value: boolean }) {
     ws_cloud: { id: cloud, projectId: "proj" as Placement["projectId"], kind: "cloud", label: "main", reachable: false, onThisMachine: false },
     ws_folder: { id: folder, projectId: "proj" as Placement["projectId"], kind: "folder", label: "repo", reachable: false, onThisMachine: false },
   }
-  const outdated: ((workspaceId: string) => void)[] = []
+  const images: ((workspaceId: string, outdated: boolean) => void)[] = []
   const transport = {
-    onImageOutdated: (listener: (workspaceId: string) => void) => {
-      outdated.push(listener)
+    onRuntimeImage: (listener: (workspaceId: string, outdated: boolean) => void) => {
+      images.push(listener)
       return () => undefined
     },
     startRuntime: (_workspaceId: string, options?: StartOptions) => {
       options?.onProgress?.({ kind: "provisioning", bootMode: "resume" })
       return new Promise<void>((resolve, reject) => starts.push({ resolve, reject }))
     },
-  } as Pick<Transport, "startRuntime" | "onImageOutdated"> as Transport
+  } as Pick<Transport, "startRuntime" | "onRuntimeImage"> as Transport
   const workspaces = {
     load: async () => ({ declaration: { serverKind: "daemon", hostAggregate: false, issuesSessions: true, documents: false, connections: false }, placements: [] }),
     byId: (id: string) => ({ ...placements[id], reachable: id === "ws_cloud" && running.value }),
@@ -39,7 +39,7 @@ function fixture(running: { value: boolean }) {
   } as Pick<Workspaces, "load" | "byId" | "locate" | "refresh"> as Workspaces
   const waits: number[] = []
   const wait = async (ms: number) => { waits.push(ms) }
-  return { starts, waits, outdated, wakes: createRoot(() => createWorkspaceWakes(transport, workspaces, wait)) }
+  return { starts, waits, images, wakes: createRoot(() => createWorkspaceWakes(transport, workspaces, wait)) }
 }
 
 async function settle() {
@@ -108,8 +108,8 @@ test("wakes: settling after a checkpoint waits, then starts a workspace the chec
 
 test("a running workspace on an older image reads outdated, and Restart to update runs the start that brings it back live", async () => {
   const running = { value: true }
-  const { starts, outdated, wakes } = fixture(running)
-  for (const announce of outdated) announce("ws_cloud")
+  const { starts, images, wakes } = fixture(running)
+  for (const announce of images) announce("ws_cloud", true)
   expect(wakes.runtime(cloud)).toEqual({ kind: "outdated" })
   const restart = wakes.start(cloud)
   expect(wakes.runtime(cloud).kind).toBe("waking")
@@ -121,15 +121,15 @@ test("a running workspace on an older image reads outdated, and Restart to updat
 
 test("a failed Restart to update keeps its reason and Try again on the running workspace, and an image announcement does not hide it", async () => {
   const running = { value: true }
-  const { starts, outdated, wakes } = fixture(running)
+  const { starts, images, wakes } = fixture(running)
   const refusal = new ServerError({ class: "conflict", code: "cloud_runtime_unavailable", message: "No capacity for the new image" })
-  for (const announce of outdated) announce("ws_cloud")
+  for (const announce of images) announce("ws_cloud", true)
   const restart = wakes.start(cloud)
   await settle()
   starts[0]?.reject(refusal)
   await expect(restart).rejects.toBe(refusal)
   expect(wakes.runtime(cloud)).toEqual({ kind: "wakeFailed", error: refusal })
-  for (const announce of outdated) announce("ws_cloud")
+  for (const announce of images) announce("ws_cloud", true)
   expect(wakes.runtime(cloud)).toEqual({ kind: "wakeFailed", error: refusal })
   const retry = wakes.start(cloud)
   await settle()

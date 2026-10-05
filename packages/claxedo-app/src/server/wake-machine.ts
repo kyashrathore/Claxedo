@@ -14,6 +14,7 @@ export type WakeEvent =
   | { readonly type: "woke" }
   | { readonly type: "wakeFailed"; readonly error: AppError }
   | { readonly type: "imageOutdated" }
+  | { readonly type: "imageCurrent" }
 
 export const WAKE_IDLE: WakeState = { kind: "idle" }
 
@@ -36,6 +37,8 @@ export function wakeTransition(state: WakeState, event: WakeEvent): WakeState {
       return state.restart ? { kind: "failed", error: event.error, restart: true } : { kind: "failed", error: event.error }
     case "imageOutdated":
       return state.kind === "waking" || (state.kind === "failed" && state.restart) ? state : { kind: "outdated" }
+    case "imageCurrent":
+      return isRestart(state) ? WAKE_IDLE : state
     default:
       return unreachable(event)
   }
