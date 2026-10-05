@@ -1,4 +1,4 @@
-import { isPiLaunchProvider, type PiLaunchProvider } from "@claxedo/agent-runtime-contract"
+import { isPiLaunchProvider, PI_DEFAULT_MODELS, PI_LAUNCH_PROVIDERS, type PiLaunchProvider } from "@claxedo/agent-runtime-contract"
 import { getSupportedThinkingLevels, type Api, type Model, type ModelThinkingLevel, type Provider } from "@earendil-works/pi-ai"
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic"
 import { googleProvider } from "@earendil-works/pi-ai/providers/google"
@@ -25,8 +25,13 @@ export function piLaunchCatalog(providers: readonly string[]): PiCatalogModel[] 
     PI_BUILT_IN_PROVIDERS[provider]().getModels().map((model) => piCatalogModel(provider, model)))
 }
 
+export function piDefaultModel(models: readonly PiCatalogModel[]): PiCatalogModel | undefined {
+  const defaults = PI_LAUNCH_PROVIDERS.map((provider) => `${provider}/${PI_DEFAULT_MODELS[provider]}`)
+  return defaults.map((id) => models.find((row) => row.id === id)).find((row) => row !== undefined) ?? models[0]
+}
+
 export function piCatalogOptions(models: readonly PiCatalogModel[], selectedId?: string, effort?: string) {
-  const model = models.find((row) => row.id === selectedId)
+  const model = models.find((row) => row.id === selectedId) ?? piDefaultModel(models)
   return configOptionsPreview(modelAndEffortOptions({
     models: models.map(({ id, name }) => ({ id, name, connected: true as const })),
     ...(model ? { selected: model.id } : {}),

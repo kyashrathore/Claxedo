@@ -27,6 +27,18 @@ export const PI_LAUNCH_PROVIDERS = [
 
 export type PiLaunchProvider = (typeof PI_LAUNCH_PROVIDERS)[number]
 
+/**
+ * The model a Pi draft starts on for each provider: the vendor's newest
+ * general model. Pi's catalog carries no release dates and lists ids
+ * alphabetically, so its first row is the oldest-looking name, not the newest.
+ */
+export const PI_DEFAULT_MODELS: Readonly<Partial<Record<PiLaunchProvider, string>>> = {
+  "openai-codex": "gpt-6.1-sol",
+  anthropic: "claude-opus-5-5",
+  openai: "gpt-6.1-sol",
+  xai: "grok-4.7",
+}
+
 export const PI_PROVIDER_LABELS: Readonly<Record<PiLaunchProvider, string>> = {
   "openai-codex": "OpenAI Codex",
   anthropic: "Anthropic",
