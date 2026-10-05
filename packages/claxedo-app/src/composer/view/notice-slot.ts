@@ -9,6 +9,7 @@ export type ComposerNotice = {
   detail?: string
   title?: string
   action?: { label: string; ariaLabel?: string; run: () => void }
+  secondaryAction?: { label: string; run: () => void }
 }
 
 export type ComposerNoticeChannel = {
@@ -25,7 +26,7 @@ export function rankedNotices(published: Iterable<ComposerNotice>): readonly Com
 }
 
 function sameNotice(left: ComposerNotice, right: ComposerNotice): boolean {
-  return left.kind === right.kind && left.tone === right.tone && left.message === right.message && left.detail === right.detail && left.action?.label === right.action?.label
+  return left.kind === right.kind && left.tone === right.tone && left.message === right.message && left.detail === right.detail && left.action?.label === right.action?.label && left.secondaryAction?.label === right.secondaryAction?.label
 }
 
 export function createComposerNoticeChannel(): ComposerNoticeChannel {

@@ -1,4 +1,4 @@
-import type { AnyPaneKind, OpenedContent, PaneKind } from "@/shell"
+import type { AnyPaneKind, Json, OpenedContent, PaneKind } from "@/shell"
 import { reducers } from "./reducers/index"
 import { selectors } from "./selectors"
 import type { WorkbenchState } from "./types"
@@ -10,6 +10,7 @@ export type PaneApi = {
   readonly activePane: () => PaneView | undefined
   readonly openPane: <State>(kind: PaneKind<State>, state: State) => string
   readonly replacePane: <State>(paneId: string, kind: PaneKind<State>, state: State) => void
+  readonly updatePane: <State>(paneId: string, kind: PaneKind<State>, state: State) => void
   readonly closePane: (paneId: string) => void
 }
 
@@ -18,6 +19,7 @@ export type PaneApiHost = {
   readonly content: (contentId: string) => { readonly kind: AnyPaneKind; readonly content: OpenedContent | undefined } | undefined
   readonly open: <State>(kind: PaneKind<State>, state: State, focus?: boolean) => string
   readonly apply: (mutation: (layout: WorkbenchState) => WorkbenchState) => void
+  readonly setContentState: (contentId: string, kind: string, state: Json) => void
   readonly closeContent: (contentId: string) => void
 }
 
@@ -48,6 +50,10 @@ export function createPaneApi(host: PaneApiHost): PaneApi {
     },
     openPane,
     replacePane,
+    updatePane: (paneId, kind, state) => {
+      const contentId = host.layout().panes.find((pane) => pane.id === paneId)?.contentId
+      if (contentId) host.setContentState(contentId, kind.kind, kind.encode(state))
+    },
     closePane: (paneId) => {
       const pane = host.layout().panes.find((candidate) => candidate.id === paneId)
       if (!pane) return

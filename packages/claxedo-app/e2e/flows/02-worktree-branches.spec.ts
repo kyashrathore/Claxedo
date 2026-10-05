@@ -23,7 +23,7 @@ async function chooseScriptedHarness(app: Page) {
   await app.keyboard.press("Escape")
 }
 
-test("02 a refused session keeps the created worktree for retry", async ({ stack, api, app }) => {
+test("02 a refused session keeps the created worktree for retry, Edit message brings the draft back, and a reload keeps its Where", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("refused-worktree")
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
   await app.getByRole("button", { name: "Where it runs", exact: true }).click()
@@ -51,6 +51,14 @@ test("02 a refused session keeps the created worktree for retry", async ({ stack
   expect(creations).toBe(1)
   expect(await api.sessions(created.directory)).toHaveLength(0)
   expect(await api.sessions(workspace.directory)).toHaveLength(0)
+  await failure.getByRole("button", { name: "Edit message", exact: true }).click()
+  await expect(failure).toHaveCount(0)
+  await expect(app.getByRole("textbox", { name: UI.composer })).toHaveText("Keep the created worktree")
+  await expect(app.getByRole("button", { name: "Where it runs", exact: true })).toHaveText(created.name)
+  await app.reload()
+  await expect(app.getByRole("textbox", { name: UI.composer })).toHaveText("Keep the created worktree")
+  await expect(app.getByRole("button", { name: "Where it runs", exact: true })).toHaveText(created.name)
+  expect(creations).toBe(1)
 })
 
 test("02 existing worktrees show their own branch and dirty status with branch selection disabled", async ({ stack, app }, testInfo) => {

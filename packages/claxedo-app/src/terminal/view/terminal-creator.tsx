@@ -56,8 +56,14 @@ function LauncherGrid(props: {
 }): JSX.Element {
   const t = useTranslator(terminalDictionary)
   const server = useServer()
-  const agents = useQuery(() => server.queries.terminals.agents(props.placementId))
-  const launchers = () => terminalLaunchers(t("terminal.creator.shell"), agents.data ?? [])
+  const runtime = () => server.cloud.runtime(props.placementId).kind
+  const agents = useQuery(() => ({ ...server.queries.terminals.agents(props.placementId), enabled: runtime() === "live" }))
+  const launchers = () => terminalLaunchers(t("terminal.creator.shell"), runtime() === "live" ? (agents.data ?? []) : [])
+  const note = () => {
+    if (runtime() === "asleep") return t("terminal.creator.agentsAsleep", { name: server.placements.byId(props.placementId)?.label ?? "" })
+    if (runtime() === "live" && agents.isError) return t("terminal.creator.agentsFailed")
+    return runtime() !== "live" || agents.isPending ? t("terminal.creator.agentsLoading") : undefined
+  }
   return (
     <>
       <div class="grid gap-2 p-3" style={{ "grid-template-columns": "repeat(auto-fill, minmax(9.5rem, 1fr))" }}>
@@ -67,11 +73,7 @@ function LauncherGrid(props: {
           )}
         </For>
       </div>
-      <Show when={agents.isPending || agents.isError}>
-        <div class="px-3.5 pb-2.5 text-xs text-v2-text-text-faint">
-          {t(agents.isError ? "terminal.creator.agentsFailed" : "terminal.creator.agentsLoading")}
-        </div>
-      </Show>
+      <Show when={note()}>{(text) => <div class="px-3.5 pb-2.5 text-xs text-v2-text-text-faint">{text()}</div>}</Show>
     </>
   )
 }
@@ -120,6 +122,7 @@ export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Ele
                   branch={false}
                   resolver={draft}
                   onCreatingChange={setCreating}
+                  onPlaced={(placementId) => workbench.updatePane(props.paneId, terminalCreatorPaneKind, { placementId })}
                   onOpen={(target) =>
                     workbench.replacePane(props.paneId, terminalCreatorPaneKind, { placementId: target.placementId })
                   }

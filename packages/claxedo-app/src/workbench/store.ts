@@ -192,7 +192,7 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
   const handing = createHandover({ layout, revealed: holds.revealed })
 
   return {
-    ...createPaneApi({ layout, content, open, apply, closeContent }),
+    ...createPaneApi({ layout, content, open, apply, closeContent, setContentState: (contentId, kind, state) => setRecord((r) => (r.contents[contentId]?.kind === kind ? { ...r, contents: { ...r.contents, [contentId]: { kind, state } } } : r)) }),
     layout,
     content,
     open,

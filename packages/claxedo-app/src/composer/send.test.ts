@@ -123,3 +123,20 @@ test("saving a queue edit captures it before asynchronous settings and leaves th
   expect(promptImages(store.draft(KEY).prompt)).toEqual([IMAGE])
   expect(store.draft(KEY).goalArmed).toBe(true)
 })
+
+test("a first send its host withdraws puts the text back and returns to editing with no toast-raising rejection", async () => {
+  const store = createComposerStore()
+  const key = "draft:edit" as const
+  store.setPrompt(key, [{ type: "text", content: "Fix the login bug", start: 0, end: 17 }], 17)
+  let accepted = 0
+  const send = createRoot(() => createComposerSend({
+    key: () => key, store, mode: () => "normal", normalMode: () => undefined,
+    submission: async () => ({}), working: () => false, goalCapable: () => false,
+    view: () => undefined, queuedReplace: () => undefined, startSession: async () => undefined,
+    afterAccepted: () => { accepted++ }, focusEditor: () => undefined, goalStopFailed: () => undefined,
+  }))
+  await send.send()
+  expect(send.state().kind).toBe("editing")
+  expect(accepted).toBe(0)
+  expect(promptText(store.draft(key).prompt)).toBe("Fix the login bug")
+})

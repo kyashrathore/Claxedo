@@ -36,11 +36,12 @@ function createWhere(server: Server, draft: Accessor<DraftTarget>) {
 
 type Where = ReturnType<typeof createWhere>
 
-function createResolver(server: Server, where: Where, base: Accessor<string | undefined>) {
+function createResolver(server: Server, where: Where, base: Accessor<string | undefined>, placed: (id: PlacementId) => void) {
   const create = async (choice: WhereNew): Promise<PlacementId> => {
     const branch = base()
     const placement = await server.placements.createWorktree(choice.root, branch ? { baseRef: branch } : {})
     where.setChoice({ kind: "placement", id: placement.id, pendingName: placement.label })
+    placed(placement.id)
     return placement.id
   }
   return async (onCreate?: (choice: WhereNew) => void): Promise<PlacementId> => {
@@ -53,7 +54,7 @@ function createResolver(server: Server, where: Where, base: Accessor<string | un
 
 export type DraftContext = ReturnType<typeof createDraftContext>
 
-export function createDraftContext(draft: Accessor<DraftTarget>) {
+export function createDraftContext(draft: Accessor<DraftTarget>, placed: (id: PlacementId) => void) {
   const server = useServer()
   const project = useProject(() => draft().projectId)
   const where = createWhere(server, draft)
@@ -66,8 +67,18 @@ export function createDraftContext(draft: Accessor<DraftTarget>) {
   const choose = (choice: WhereChoice) => {
     branchChoice.reset()
     where.setChoice(choice)
+    if (choice.kind === "placement" && choice.id !== draft().placementId) placed(choice.id)
   }
-  createEffect(on(() => draft().placementId, (id) => choose({ kind: "placement", id }), { defer: true }))
+  createEffect(
+    on(
+      () => draft().placementId,
+      (id) => {
+        const chosen = where.choice()
+        if (chosen.kind !== "placement" || chosen.id !== id) choose({ kind: "placement", id })
+      },
+      { defer: true },
+    ),
+  )
   return {
     entries: where.entries,
     choice: where.choice,
@@ -84,7 +95,7 @@ export function createDraftContext(draft: Accessor<DraftTarget>) {
     branch: branchChoice.branch,
     base: branchChoice.base,
     chooseBranch: branchChoice.choose,
-    resolve: createResolver(server, where, branchChoice.base),
+    resolve: createResolver(server, where, branchChoice.base, placed),
   }
 }
 

@@ -81,18 +81,20 @@ function ComposerNoticeCard(props: { notice: ComposerNotice }) {
         <span class="truncate text-12-medium text-v2-text-text-base">{props.notice.message}</span>
         <Show when={props.notice.detail}>{(detail) => <span class="line-clamp-2 text-12-regular text-v2-text-text-faint">{detail()}</span>}</Show>
       </div>
+      <Show when={props.notice.secondaryAction}>{(action) => <ComposerNoticeActionButton action={action()} quiet />}</Show>
       <Show when={props.notice.action}>{(action) => <ComposerNoticeActionButton action={action()} />}</Show>
     </div>
   )
 }
 
-function ComposerNoticeActionButton(props: { action: NonNullable<ComposerNotice["action"]> }) {
+function ComposerNoticeActionButton(props: { action: NonNullable<ComposerNotice["action"]>; quiet?: boolean }) {
   return (
     <button
       type="button"
       data-action="composer-notice-action"
       aria-label={props.action.ariaLabel ?? props.action.label}
-      class="inline-flex h-5 shrink-0 items-center rounded-md px-1.5 text-12-medium text-v2-text-text-base transition-colors duration-150 hover:bg-surface-raised-strong focus:outline-none focus:ring-1 focus:ring-border-interactive-focus"
+      class="inline-flex h-5 shrink-0 items-center rounded-md px-1.5 transition-colors duration-150 hover:bg-surface-raised-strong focus:outline-none focus:ring-1 focus:ring-border-interactive-focus"
+      classList={{ "text-12-medium text-v2-text-text-base": !props.quiet, "text-12-regular text-v2-text-text-faint": props.quiet }}
       onClick={(event) => {
         event.preventDefault()
         event.stopPropagation()

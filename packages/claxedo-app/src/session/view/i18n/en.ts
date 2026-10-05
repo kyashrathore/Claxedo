@@ -78,7 +78,7 @@ export type SessionScreenTextKey =
   | "sessionScreen.workspace.retryWake"
   | "sessionScreen.workspace.wakeNow"
   | "sessionScreen.workspace.starting"
-  | `sessionScreen.firstSend.${"creatingWorktree" | "failed"}`
+  | `sessionScreen.firstSend.${"creatingWorktree" | "failed" | "edit"}`
   | "sessionScreen.child.promptDisabled"
   | "sessionScreen.child.backToParent"
   | "command.message.previous"
@@ -168,6 +168,7 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.workspace.wakeNow": "Wake now",
   "sessionScreen.firstSend.creatingWorktree": "Creating the worktree…",
   "sessionScreen.firstSend.failed": "Your message was not sent",
+  "sessionScreen.firstSend.edit": "Edit message",
   "sessionScreen.child.promptDisabled": "Subagent sessions cannot be prompted.",
   "sessionScreen.child.backToParent": "Back to main session.",
   "sessionScreen.timeline.command.session.new": "New session",

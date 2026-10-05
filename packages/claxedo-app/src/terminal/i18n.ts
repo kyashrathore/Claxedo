@@ -32,6 +32,7 @@ const en = {
   "terminal.creator.cursor": "Cursor's coding agent",
   "terminal.creator.agentsLoading": "Checking which agents this workspace has…",
   "terminal.creator.agentsFailed": "Couldn't check which agents this workspace has.",
+  "terminal.creator.agentsAsleep": "{{name}} is asleep. Its agents show here once it wakes.",
   "terminal.creator.starting": "Starting…",
   "terminal.command.new.description": "Create a new terminal tab",
   "terminal.command.toggle": "Toggle terminal",

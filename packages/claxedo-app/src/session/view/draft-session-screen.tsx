@@ -54,11 +54,14 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
     const state = firstSend.state()
     return state.kind === "sending" && server.cloud.runtime(state.placementId).kind === "live"
   }
-  const startSession = (submission: Submission, input: PromptInput, taken: Draft): Promise<SessionView> => {
+  const startSession = async (submission: Submission, input: PromptInput, taken: Draft): Promise<SessionView | undefined> => {
     const prompt = { ...input, messageId: server.sessions.newMessageId(), sentAt: Date.now() }
     setSent(prompt)
-    return firstSend.run(attempt(submission, prompt), { failed: () => composers.restore(key(), taken), retried: () => void composers.take(key()) })
+    const view = await firstSend.run(attempt(submission, prompt), { failed: () => composers.restore(key(), taken), retried: () => void composers.take(key()) })
+    if (!view) setSent(undefined)
+    return view
   }
+  const placed = (placementId: PlacementId) => workbench.updatePane(props.paneId, draftSessionPaneKind, { ...props.state, placementId })
   return (
     <section data-component="session-screen" data-variant="draft" aria-label={t("sessionScreen.draft.title")}>
       <ComposerNoticeProvider channel={notice}>
@@ -74,7 +77,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
               classList={{ "w-full": true, "max-w-[720px]": !sent(), "pointer-events-auto px-3 md:max-w-192 md:mx-auto 2xl:max-w-[880px]": !!sent() }}
             >
               <Show when={sent()} fallback={<PlacementNotice placementId={props.state.placementId} />}>
-                <FirstSendNotice state={firstSend.state()} onRetry={firstSend.retry} />
+                <FirstSendNotice state={firstSend.state()} onRetry={firstSend.retry} onEdit={firstSend.edit} />
               </Show>
               <ComposerNoticeRow notices={notice.notices()} />
               <div hidden={!!sent()} class="relative" classList={{ "z-10 -mt-2": notice.notices().length > 0 }}>
@@ -82,6 +85,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
                   projectId={props.state.projectId}
                   placementId={props.state.placementId}
                   resolver={draft}
+                  onPlaced={placed}
                   onOpen={(target) => workbench.replacePane(props.paneId, draftSessionPaneKind, newDraft(target))}
                 />
               </div>

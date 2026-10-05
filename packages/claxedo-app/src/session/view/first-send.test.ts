@@ -75,6 +75,21 @@ test("first send: closing the draft while a send waits for Retry ends it, so the
   await expect(result).rejects.toMatchObject({ code: "first_send_abandoned" })
 })
 
+test("first send: Edit message after a refusal ends the attempt with no session and returns to editing", async () => {
+  const { send } = firstSend()
+  let attempts = 0
+  const result = send.run(async () => {
+    attempts += 1
+    throw new ServerError({ class: "invalid", message: "The model is not available" })
+  })
+  await settle()
+  expect(send.state().kind).toBe("failed")
+  send.edit()
+  expect(await result).toBeUndefined()
+  expect(attempts).toBe(1)
+  expect(send.state()).toEqual({ kind: "idle" })
+})
+
 test("first send: Retry before any failure does nothing", async () => {
   const { send } = firstSend()
   send.retry()

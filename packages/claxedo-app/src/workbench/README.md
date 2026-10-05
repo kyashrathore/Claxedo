@@ -20,7 +20,7 @@ The panes, the slots and the chrome render in three `display: contents` layers o
 
 ## Opening and closing panes
 
-`useWorkbench()` gives `openPane(kind, state)` and `replacePane(paneId, kind, state)` to open a content, `closePane(paneId)` and `closeContent(contentId)` to close it, `move(tabId, index)` to put a tab at a position in the tab order (a tab id is its content id; the index is clamped to the strip), and `panes()` and `activePane()` to read what is shown.
+`useWorkbench()` gives `openPane(kind, state)` and `replacePane(paneId, kind, state)` to open a content, `updatePane(paneId, kind, state)` to change the state the pane's content keeps (persisted with the layout, its route follows) without remounting it, `closePane(paneId)` and `closeContent(contentId)` to close it, `move(tabId, index)` to put a tab at a position in the tab order (a tab id is its content id; the index is clamped to the strip), and `panes()` and `activePane()` to read what is shown.
 
 `onClosed(kind, listener)` calls the listener with the decoded state whenever a content of that kind leaves the workbench for good: its tab is closed, or it is replaced in its pane. Hiding a tab, closing a pane with `mod+w` (the content stays a tab) and dropping a hidden content from retention do not count. A domain whose content holds a server resource subscribes in its provider and releases the resource there, because a `PaneKind` is a static object and cannot reach a provider's stores.
 

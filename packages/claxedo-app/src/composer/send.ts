@@ -111,7 +111,7 @@ type SendInput = {
   working: Accessor<boolean>
   goalCapable: Accessor<boolean>
   view: Accessor<SessionView | undefined>
-  startSession?: (submission: Submission, prompt: PromptInput, draft: Draft) => Promise<SessionView>
+  startSession?: (submission: Submission, prompt: PromptInput, draft: Draft) => Promise<SessionView | undefined>
   afterAccepted?: (view: SessionView) => void
   queuedReplace: () => ((input: PromptInput) => Promise<boolean>) | undefined
   focusEditor: () => void
@@ -151,7 +151,7 @@ function createArmGoal(input: SendInput) {
   }
 }
 
-async function startDraftSession(input: SendInput, submission: Submission, prompt: PromptInput, setBooting: (booting: boolean) => void): Promise<SessionView> {
+async function startDraftSession(input: SendInput, submission: Submission, prompt: PromptInput, setBooting: (booting: boolean) => void): Promise<SessionView | undefined> {
   const key = input.key()
   const draft = input.store.take(key)
   setBooting(true)
@@ -159,12 +159,16 @@ async function startDraftSession(input: SendInput, submission: Submission, promp
     input.store.restore(key, draft)
     throw error
   })
+  if (!view) {
+    input.store.restore(key, draft)
+    return undefined
+  }
   input.store.addHistory(key, input.mode(), draft.prompt, historyComments(draft))
   input.normalMode()
   return view
 }
 
-async function deliverDraft(input: SendInput, draft: Draft, goal: GoalIntent, clientRequestId: string, setBooting: (booting: boolean) => void): Promise<SessionView> {
+async function deliverDraft(input: SendInput, draft: Draft, goal: GoalIntent, clientRequestId: string, setBooting: (booting: boolean) => void): Promise<SessionView | undefined> {
   const key = input.key()
   const replace = input.queuedReplace()
   const delivery = input.working() ? "queue" : undefined
@@ -202,6 +206,7 @@ export function createComposerSend(input: SendInput) {
     state.send({ type: "sendStarted", clientRequestId })
     try {
       const view = await deliverDraft(input, draft, goal, clientRequestId, setBooting)
+      if (!view) return state.send({ type: "sendWithdrawn", clientRequestId })
       state.send({ type: "sendAccepted", clientRequestId })
       input.afterAccepted?.(view)
     } catch (error) {

@@ -26,7 +26,7 @@ export type ComposerProps = {
   readonly readOnly?: boolean
   readonly manageSession?: boolean
   readonly hidden?: boolean
-  readonly startSession?: (submission: Submission, prompt: PromptInput, draft: Draft) => Promise<SessionView>
+  readonly startSession?: (submission: Submission, prompt: PromptInput, draft: Draft) => Promise<SessionView | undefined>
   readonly afterAccepted?: (view: SessionView) => void
   readonly queuedEdit?: { readonly active: () => boolean; readonly cancel: () => void; readonly replace: (input: PromptInput) => Promise<boolean> }
   readonly dropZone?: () => HTMLElement | undefined

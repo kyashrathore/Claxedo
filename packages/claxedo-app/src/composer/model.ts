@@ -170,6 +170,7 @@ export type SendEvent =
   | { type: "sendStarted"; clientRequestId: string }
   | { type: "sendAccepted"; clientRequestId: string }
   | { type: "sendRejected"; error: AppError }
+  | { type: "sendWithdrawn"; clientRequestId: string }
   | { type: "edited" }
 
 export const sendTransition: Transition<SendState, SendEvent> = (state, event) => {
@@ -182,6 +183,8 @@ export const sendTransition: Transition<SendState, SendEvent> = (state, event) =
         : state
     case "sendRejected":
       return state.kind === "sending" ? { kind: "rejected", error: event.error } : state
+    case "sendWithdrawn":
+      return state.kind === "sending" && state.clientRequestId === event.clientRequestId ? { kind: "editing" } : state
     case "edited":
       return state.kind === "sending" ? state : { kind: "editing" }
     default:

@@ -1,5 +1,5 @@
 import { createEffect, createMemo, type JSX } from "solid-js"
-import { projectId, useServer, type Project, type ProjectId } from "@/server"
+import { projectId, useServer, type PlacementId, type Project, type ProjectId } from "@/server"
 import { ClaxedoIcon as Icon, useDialog } from "@/ui"
 import { useProjectsText } from "../i18n"
 import { primaryPlacement } from "../open"
@@ -34,6 +34,7 @@ export function NewSessionContextRow(
   props: DraftTarget & {
     readonly resolver: DraftPlacementResolver
     readonly onOpen: (target: DraftTarget) => void
+    readonly onPlaced: (placementId: PlacementId) => void
     readonly branch?: boolean
     readonly onCreatingChange?: (creating: WhereCreation | undefined) => void
   },
@@ -65,7 +66,7 @@ export function NewSessionContextRow(
     onSelect: (value) => openProject(projectId(value)),
     actions: [{ label: t("projects.chip.create"), onSelect: () => dialog.show(() => <DialogCreateProject onCreated={(project) => openProject(project.id)} />) }],
   })
-  const context = createDraftContext(() => ({ projectId: props.projectId, placementId: props.placementId }))
+  const context = createDraftContext(() => ({ projectId: props.projectId, placementId: props.placementId }), (id) => props.onPlaced(id))
   props.resolver.attach(context)
   createEffect(() => props.onCreatingChange?.(context.creating()))
   const whereChip = useWhereChip(context)
