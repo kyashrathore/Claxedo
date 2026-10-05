@@ -78,7 +78,6 @@ export default {
   "settings.machines.yours": "Dine maskiner",
   "settings.machines.step.here": "Datamaskinen du sitter ved",
   "settings.machines.step.another": "En annen maskin du eier",
-  "settings.machines.step.another.description": "Kjør den første kommandoen her for et engangstoken, og deretter den andre på maskinen du legger til.",
   "settings.machines.copyInvite": "Kopier invitasjonskommando",
   "settings.machines.copyConnect": "Kopier tilkoblingskommando",
 }

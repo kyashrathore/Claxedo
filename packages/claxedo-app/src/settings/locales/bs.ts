@@ -79,7 +79,6 @@ export default {
   "settings.machines.yours": "Vaše mašine",
   "settings.machines.step.here": "Računar za kojim sjedite",
   "settings.machines.step.another": "Druga mašina koju posjedujete",
-  "settings.machines.step.another.description": "Pokrenite prvu naredbu ovdje za jednokratni token, a zatim drugu na mašini koju dodajete.",
   "settings.machines.copyInvite": "Kopiraj naredbu pozivnice",
   "settings.machines.copyConnect": "Kopiraj naredbu povezivanja",
 }

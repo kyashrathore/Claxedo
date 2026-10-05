@@ -79,7 +79,6 @@ export default {
   "settings.machines.yours": "Makineleriniz",
   "settings.machines.step.here": "Başında oturduğunuz bilgisayar",
   "settings.machines.step.another": "Sahip olduğunuz başka bir makine",
-  "settings.machines.step.another.description": "Tek kullanımlık belirteç için ilk komutu burada, ardından ikincisini eklediğiniz makinede çalıştırın.",
   "settings.machines.copyInvite": "Davet komutunu kopyala",
   "settings.machines.copyConnect": "Bağlantı komutunu kopyala",
 }

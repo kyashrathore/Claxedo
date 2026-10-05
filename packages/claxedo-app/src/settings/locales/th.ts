@@ -80,7 +80,6 @@ export default {
   "settings.machines.yours": "เครื่องของคุณ",
   "settings.machines.step.here": "คอมพิวเตอร์ที่คุณใช้อยู่",
   "settings.machines.step.another": "เครื่องอื่นที่คุณเป็นเจ้าของ",
-  "settings.machines.step.another.description": "เรียกใช้คำสั่งแรกที่นี่เพื่อรับโทเค็นใช้ครั้งเดียว แล้วเรียกใช้คำสั่งที่สองบนเครื่องที่คุณกำลังเพิ่ม",
   "settings.machines.copyInvite": "คัดลอกคำสั่งเชิญ",
   "settings.machines.copyConnect": "คัดลอกคำสั่งเชื่อมต่อ",
 }

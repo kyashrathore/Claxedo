@@ -79,7 +79,6 @@ export default {
   "settings.machines.yours": "Ваши машины",
   "settings.machines.step.here": "Компьютер, за которым вы сидите",
   "settings.machines.step.another": "Другая ваша машина",
-  "settings.machines.step.another.description": "Выполните здесь первую команду, чтобы получить одноразовый токен, затем вторую на добавляемой машине.",
   "settings.machines.copyInvite": "Копировать команду приглашения",
   "settings.machines.copyConnect": "Копировать команду подключения",
 }

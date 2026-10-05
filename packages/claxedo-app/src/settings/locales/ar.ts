@@ -80,7 +80,6 @@ export default {
   "settings.machines.yours": "أجهزتك",
   "settings.machines.step.here": "الكمبيوتر الذي تجلس أمامه",
   "settings.machines.step.another": "جهاز آخر تملكه",
-  "settings.machines.step.another.description": "شغّل الأمر الأول هنا للحصول على رمز يُستخدم مرة واحدة، ثم الثاني على الجهاز الذي تضيفه.",
   "settings.machines.copyInvite": "نسخ أمر الدعوة",
   "settings.machines.copyConnect": "نسخ أمر الاتصال",
 }

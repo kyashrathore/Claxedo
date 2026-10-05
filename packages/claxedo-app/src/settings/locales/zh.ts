@@ -80,7 +80,6 @@ export default {
   "settings.machines.yours": "你的机器",
   "settings.machines.step.here": "你正在使用的计算机",
   "settings.machines.step.another": "你拥有的另一台机器",
-  "settings.machines.step.another.description": "在此运行第一条命令获取一次性令牌，然后在要添加的机器上运行第二条。",
   "settings.machines.copyInvite": "复制邀请命令",
   "settings.machines.copyConnect": "复制连接命令",
 }

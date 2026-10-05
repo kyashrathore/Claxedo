@@ -80,7 +80,6 @@ export default {
   "settings.machines.yours": "あなたのマシン",
   "settings.machines.step.here": "今使っているコンピューター",
   "settings.machines.step.another": "所有している別のマシン",
-  "settings.machines.step.another.description": "ここで最初のコマンドを実行して使い捨てトークンを取得し、次に追加するマシンで 2 つ目を実行します。",
   "settings.machines.copyInvite": "招待コマンドをコピー",
   "settings.machines.copyConnect": "接続コマンドをコピー",
 }

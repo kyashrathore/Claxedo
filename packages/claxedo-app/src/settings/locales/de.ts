@@ -78,7 +78,6 @@ export default {
   "settings.machines.yours": "Deine Maschinen",
   "settings.machines.step.here": "Der Computer, an dem du sitzt",
   "settings.machines.step.another": "Eine weitere Maschine, die dir gehört",
-  "settings.machines.step.another.description": "Führe den ersten Befehl hier aus, um ein Einmal-Token zu erhalten, dann den zweiten auf der neuen Maschine.",
   "settings.machines.copyInvite": "Einladungsbefehl kopieren",
   "settings.machines.copyConnect": "Verbindungsbefehl kopieren",
 }

@@ -79,7 +79,6 @@ export default {
   "settings.machines.yours": "Suas máquinas",
   "settings.machines.step.here": "O computador que você está usando",
   "settings.machines.step.another": "Outra máquina sua",
-  "settings.machines.step.another.description": "Execute o primeiro comando aqui para obter um token de uso único e depois o segundo na máquina que você está adicionando.",
   "settings.machines.copyInvite": "Copiar comando de convite",
   "settings.machines.copyConnect": "Copiar comando de conexão",
 }

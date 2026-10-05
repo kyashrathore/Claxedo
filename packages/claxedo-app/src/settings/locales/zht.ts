@@ -80,7 +80,6 @@ export default {
   "settings.machines.yours": "你的機器",
   "settings.machines.step.here": "你正在使用的電腦",
   "settings.machines.step.another": "你擁有的另一台機器",
-  "settings.machines.step.another.description": "在此執行第一個指令取得一次性權杖，然後在要新增的機器上執行第二個。",
   "settings.machines.copyInvite": "複製邀請指令",
   "settings.machines.copyConnect": "複製連線指令",
 }

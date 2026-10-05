@@ -77,7 +77,6 @@ export default {
   "settings.machines.yours": "Vos machines",
   "settings.machines.step.here": "L'ordinateur devant lequel vous êtes",
   "settings.machines.step.another": "Une autre machine qui vous appartient",
-  "settings.machines.step.another.description": "Exécutez ici la première commande pour obtenir un jeton à usage unique, puis la seconde sur la machine à ajouter.",
   "settings.machines.copyInvite": "Copier la commande d'invitation",
   "settings.machines.copyConnect": "Copier la commande de connexion",
 }
