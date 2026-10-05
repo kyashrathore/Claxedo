@@ -6,23 +6,6 @@ This package is the Claxedo app. These rules apply to everything in it. The repo
 
 The app runs on today's server contracts. `src/server/` is the only place that knows routes, payloads and event names, and `src/server/wire/` is the only place that uses the server's names. Everything else uses Claxedo types from `src/server/index.ts`. Do not change a server contract from this package's work.
 
-## Areas that need extra care
-
-- **Transcript** (`src/transcript/`, `src/session/view/timeline/`):
-  - Hundreds of fixes live here. Change its logic only in a slice of its own, proven by the corpus (flow 30) and signed off by the owner.
-  - Mechanical changes (imports, names by the codemod, a kit twin that renders the same) still run the whole corpus.
-  - A fix here adds a corpus case in the same change.
-- **Session list** (`src/session/list/`):
-  - One store owns rows, order and reconciliation. Nothing else fetches, caches or patches rows.
-  - The reconcile rules are the first section of its `README.md`. A change to them changes the README and the race flows (flow 31) in the same change.
-- **Projects:**
-  - A project is a server record with an id. A folder, a worktree or a cloud workspace is a placement.
-  - Never use a folder path as a key, a route parameter or a stored identity. Only `src/server/` turns a placement into a directory.
-  - Design flows for hosted first.
-- **Phone:**
-  - Every screen and plugin slot has a phone layout at 390 px: the sidebar as a drawer, panes as sheets, no hover-only controls, touch targets of at least 44 px, no horizontal scroll.
-  - A new screen extends flow 33 in the same change.
-
 ## Access
 
 - Every access question in the UI goes through `can()` in `src/access/`, which answers only from facts the server reports. Never re-derive a server rule in the app.
@@ -45,8 +28,8 @@ Directives a tool reads are not comments and stay, with no prose added: `// @ts-
 ## Files and folders
 
 - One responsibility per file, and its name says what it owns. No `utils`, `helpers`, `common` or `misc` files or folders.
-- A file stays under 300 lines, a function under 40 and a component under 120. Past that, split along responsibilities; never compress lines to fit. The moved transcript files are split only in their own corpus-proven slice.
-- Organize by domain, not by layer. A domain lives in `src/<domain>/` and has:
+- A file stays under 300 lines, a function under 40 and a component under 120. Past that, split along responsibilities; never compress lines to fit.
+- Organize by domain: keep the code for a product concept, such as sessions or files, together. Technical layers such as views, state, and API calls live inside that domain instead of in separate app-wide folders. A domain lives in `src/<domain>/` and has:
   - `model.ts`: types, events and state machines;
   - `store.ts`: state and actions;
   - `api.ts`: calls into `src/server/`;
@@ -58,14 +41,13 @@ Directives a tool reads are not comments and stay, with no prose added: `// @ts-
 
 ## Names
 
-- Use Claxedo names only, outside `src/server/wire/`:
-  - `sessionId`, not `sessionID` (same for message, part, provider, model, call and project ids). The runtime contract's own fields `sessionID`, `messageID`, `partID`, `providerID` and `modelID` keep their spelling as property keys and accesses; a local, a parameter, a prop or an app type that names one uses the Claxedo spelling;
-  - a `data-component` value, and a `data-slot` value outside the kit (`src/ui`), exists only where something reads it: a stylesheet (the kit's or the app's), a selector in code or an e2e flow; and a selector string in code selects only a value something writes (a JSX attribute, `dataset.x =` or `setAttribute`, in the app or the kit). `scripts/checks/claxedo-names.ts` fails an unread value, a computed value whose type is not a union of string literals, and a dead selector;
-  - `@claxedo/*`, never `@opencode-ai/*` outside `src/ui`: today's kit (`@opencode-ai/ui`, `@opencode-ai/session-ui`) is the look, and code reaches it only through `@/ui`;
-  - no `oc-` prefixes, no `globalSDK` or `globalSync`, no OpenCode event names, no `directory` routing.
-- Name the domain concept, not the mechanism: `SessionRow`, `TurnStatus`, `startTurn`.
-- Events are past tense (`turnFinished`); commands are imperative (`startTurn`).
-- No abbreviations except `id`, `url` and `api`.
+- Use `camelCase` for variables, parameters, properties, and functions; `PascalCase` for types, classes, and components; and `kebab-case` for files and folders, such as `session-row.tsx`.
+- Name the concept or responsibility precisely: `SessionRow`, `TurnStatus`, `loadSession`. Use the same term for the same concept across its callers, implementation, and tests.
+- Use noun phrases for values and types, verb phrases for functions, and predicates such as `isVisible`, `hasChanges`, and `canEdit` for booleans.
+- Events describe what happened (`turnFinished`); commands describe what to do (`startTurn`).
+- Spell identifier suffixes consistently: `sessionId`, `projectId`, `imageUrl`. Prefer full words, with established abbreviations such as `id`, `url`, and `api` used consistently.
+- Preserve names required by external or persisted contracts at their boundary. Map them to application conventions in `src/server/wire/`; do not rename serialized fields to satisfy a local naming preference.
+- DOM hooks use descriptive `kebab-case` values. Each `data-component` value, and each `data-slot` value outside `src/ui`, must have a reader in styles, code, or tests. Every selector must match a value the app or UI kit writes. Dynamic hook values must have a finite string-literal union type.
 
 ## State and state machines
 
@@ -104,20 +86,13 @@ Directives a tool reads are not comments and stay, with no prose added: `// @ts-
 ## Loading states
 
 - Every async view renders from its machine: idle, loading, ready or failed, each drawn explicitly. No spinner without a failure path.
-- Show a placeholder only after 150 ms, so fast loads don't flash. A secondary load never blocks the shell or the transcript.
+- Show a placeholder only after `PLACEHOLDER_DELAY_MS` (50 ms, `src/lib/delay.ts`), so fast loads don't flash; past `SLOW_LOAD_MS` (2 s) it says what the load waits for. A secondary load never blocks the shell or the transcript.
 - Optimistic changes are pending entries in the store, confirmed or rolled back by the server; never a second copy of the data.
 
 ## Performance
 
-- **Budgets are part of done:**
-  - session switch p95 ≤ 50 ms cold and ≤ 20 ms warm;
-  - app start ≤ 1.1 s;
-  - idle CPU ≤ 4%;
-  - idle memory ≤ 700 MiB;
-  - an 8 MiB long-row session ready in ≤ 2.4 s.
-  - The agent-app-benchmark verdict must lose no row against the build before the change.
+- Benchmarks are not a completion gate. Run them only when the user requests benchmarking or performance measurement, following the root validation policy.
 - **No polling.** Timers only for bounded backoff and debouncing, each owned by one named module.
-- **Lists longer than 100 rows are virtualized.**
 - **No main-thread task over 50 ms during an interaction.**
 - **Every cache has a size cap, and every subscription is disposed with its owner.**
 
@@ -142,14 +117,14 @@ The suite must be robust, working, honest and fast.
   - Select by role and accessible name, then by the frozen hook list.
   - No CSS-class selectors and no sleeps; wait on a visible state.
 - **Every spec is proven able to fail:** record its red run (a scripted failure, or the feature switched off). When asserting an absence or a filter, check every route that answers the same question.
-- **Before a spec merges,** it passes 20 runs in a row locally and 3 repeated runs in CI. A flaky spec is a bug: find the cause before retrying.
+- **Before a spec merges,** it passes final verification. Do not require fixed repetition counts locally or in CI. Repeat tests only to investigate a specific failure or flake, and find the cause before retrying.
 - **Fast:** one flow in 60 seconds or less locally on a warm harness; the full suite in 12 minutes or less on CI.
 - **A change to user-visible behavior adds or updates its flow in the same change**, at desktop width and in the `phone` project.
 
 ## One owner per concept
 
 - Right side panels use the shared components and full-height shell mounting in [`src/ui/AGENTS.md`](src/ui/AGENTS.md); caller-specific state and policy stay in domain wrappers.
-- Before writing code, find the concept's owner (the domain `README.md` owner lists first, then the code) and extend it. Two implementations of one concept are a defect even when both work.
+- Before writing code, read the domain's `README.md`, nearby implementations, callers, and tests to understand its patterns and find the concept's owner. Extend or improve that owner. Extract shared behavior when it removes duplication or gives a responsibility a clear home, then remove the paths it replaces. Keep abstractions driven by the current work rather than hypothetical reuse.
 - A domain `README.md` lists the concepts it owns, its state machines and its flows. Adding a concept adds it there.
 - Before starting a task, check the plan's progress notes and open branches for the same work. Claim the task in the plan, and edit only the files your lane owns.
 
@@ -175,4 +150,4 @@ The suite must be robust, working, honest and fast.
 - freshness;
 - CSS invalidation.
 
-All must be at zero before a change is done, with `bun run typecheck` and `bun run test` passing. CI runs the checks in the `app rule checks` job of `.github/workflows/test.yml`, and the root `prepush` runs them too.
+During implementation, run only checks and tests targeted to the current change. Once all requested implementation work is finished, run `bun run check`, `bun run typecheck`, `bun run test`, and the applicable broader flows once as final verification. All checks must be at zero. If a check fails, investigate and rerun only the affected checks after fixing the cause; repeat broader validation only when evidence warrants it. CI runs the checks in the `app rule checks` job of `.github/workflows/test.yml`, and the root `prepush` runs them too.

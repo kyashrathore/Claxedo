@@ -2,9 +2,17 @@
 
 Before changing code, inspect the implementation, callers, contracts, tests, and runtime flow. Find the canonical owner, then extend, simplify, move, or fix it so the repository keeps one clear path. Reuse shared mechanisms while keeping caller-specific policy separate. Extract abstractions when they reduce future change locations or name a real concept. Give every function, file, directory, and package one clear responsibility, an accurate name, a narrow API, and the correct dependency direction. Keep related code and tests together. Preserve persisted and external contracts when required. Work in complete, reviewable slices; remove replaced paths; and verify behavior through focused tests, typechecks, builds, repository searches, and real public entrypoints.
 
+Learn the patterns in nearby code before adding a new implementation, including why those patterns exist. Look for existing code to extend or improve, and extract an abstraction when it gives repeated behavior one clear owner. Remove duplication, obsolete branches, and superseded code as part of the change. Aim for fewer concepts and fewer places to change; reduce lines by simplifying the design, never by compressing readable code or dropping necessary behavior. Keep these improvements tied to the requested work.
+
 ## Honest completion
 
 Treat work as complete when the implemented behavior satisfies the goal through real entrypoints and acceptance checks. Keep tests meaningful: exercise the actual implementation, preserve useful coverage, and investigate failures rather than shaping the test around the result. Use canonical data and events from their authoritative producer. Keep one implementation per responsibility and finish migrations by removing obsolete routes, flags, helpers, and temporary paths. Fallback and backward compatibility require an explicit user request. Verify the positive flow and relevant negative flows, including failure, recovery, persistence, security, and isolation. Report the exact commands run and their outcomes. When an environment or dependency is unavailable, identify the unverified acceptance criterion directly. Keep plans and documentation aligned with live code. Finish every requirement that can be completed; for anything blocked, state the unmet requirement, evidence, blocker, owner, and concrete follow-up.
+
+## Validation cadence
+
+During implementation, run only targeted tests and checks for the behavior being changed. Once all requested implementation work is finished and ready for final verification, run the applicable broader suites, corpus, typechecks, and architecture checks once. Do not run broad validation after each edit or run fixed repetition loops. If final validation fails, investigate and rerun only the affected tests or checks after fixing the cause; repeat a broader suite only when evidence shows the fix affects it. This cadence applies to package-level validation requirements too.
+
+Benchmarks and performance measurement are not routine completion requirements, including during final verification. Run them only when the user requests benchmarking or performance measurement. Benchmark documentation and driver instructions are reference material for that work, not a requirement to run benchmarks for other changes.
 
 ## Architecture ratchets
 
