@@ -17,6 +17,7 @@ export async function marketplacePanel(stack: Stack, app: Page, phone: boolean, 
   await expect(panel.getByRole("button", { name: "Add workspace tab" })).toHaveCount(0)
   await expect(panel.getByRole("button", { name: /Open (Files|Changes)/ })).toHaveCount(0)
   await expect(panel.getByText("Select a workspace to use this panel.")).toHaveCount(0)
+  for (const id of ["opencode", "claude", "codex", "cursor", "pi", "acp"]) await expect(panel.getByText(id, { exact: true }), "harnesses are named, never shown by id").toHaveCount(0)
   await expectNothingAnimating(app)
   await fullHeightPanel(app, panel, phone)
   if (testInfo.repeatEachIndex === 0) {

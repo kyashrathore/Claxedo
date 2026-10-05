@@ -4,9 +4,11 @@ import type { PluginCandidate } from "@/server"
 import { marketplaceDictionary } from "../i18n"
 import { activationSummary, installedHarnesses } from "../model"
 import { CHIP } from "./chrome"
+import { useHarnessLabel } from "./harness-label"
 
 export function PluginFacts(props: { readonly plugin: PluginCandidate }): JSX.Element {
   const t = useTranslator(marketplaceDictionary)
+  const label = useHarnessLabel()
   const status = () => {
     const summary = activationSummary(props.plugin)
     const state = t(summary.state.key)
@@ -31,7 +33,7 @@ export function PluginFacts(props: { readonly plugin: PluginCandidate }): JSX.El
       <Show when={installedHarnesses(props.plugin).length > 0}>
         <dt class="text-text-weaker">{t("marketplace.facts.harnesses")}</dt>
         <dd class="flex flex-wrap gap-1.5">
-          <For each={installedHarnesses(props.plugin)}>{(harness) => <span class={CHIP}>{harness}</span>}</For>
+          <For each={installedHarnesses(props.plugin)}>{(harness) => <span class={CHIP}>{label(harness)}</span>}</For>
         </dd>
       </Show>
     </dl>

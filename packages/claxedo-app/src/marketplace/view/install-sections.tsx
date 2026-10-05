@@ -2,6 +2,7 @@ import { For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { PluginCandidate, PluginHarness } from "@/server"
 import { marketplaceDictionary, type MarketplaceKey } from "../i18n"
+import { useHarnessLabel } from "./harness-label"
 
 export type HarnessRow = {
   readonly harnessId: PluginHarness
@@ -76,6 +77,7 @@ export function InstallHarnesses(props: {
   readonly onChange: (next: Set<PluginHarness>) => void
 }): JSX.Element {
   const t = useTranslator(marketplaceDictionary)
+  const label = useHarnessLabel()
   const reason = (row: HarnessRow) =>
     row.reason ? ("key" in row.reason ? t(row.reason.key) : row.reason.text) : undefined
   const toggle = (harnessId: PluginHarness, on: boolean) => {
@@ -102,7 +104,7 @@ export function InstallHarnesses(props: {
                 disabled={!row.available}
                 onChange={(event) => toggle(row.harnessId, event.currentTarget.checked)}
               />
-              {row.harnessId}
+              {label(row.harnessId)}
               <Show when={reason(row)}>{(text) => <span class="text-11-regular text-text-weaker">{text()}</span>}</Show>
             </label>
           )}

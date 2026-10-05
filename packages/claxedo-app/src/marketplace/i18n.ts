@@ -129,6 +129,7 @@ const en = {
   "marketplace.install.projects": "Projects",
   "marketplace.install.everyProject": "Applies to every project on this machine",
   "marketplace.install.harnesses": "Harnesses",
+  "marketplace.harness.acp": "ACP agents",
   "marketplace.install.harnessesNote": "Where the skills and MCP servers are materialized.",
   "marketplace.install.notServed": "This plugin does not serve this harness",
   "marketplace.install.artifactUnavailable": "The plugin artifact is unavailable",
