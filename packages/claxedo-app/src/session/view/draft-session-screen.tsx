@@ -19,6 +19,7 @@ export type DraftSessionState = {
   readonly projectId: ProjectId
   readonly placementId: PlacementId
   readonly draftId: string
+  readonly where?: PlacementId
 }
 
 export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
@@ -28,6 +29,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   const server = useServer()
   const workbench = useWorkbench()
   const key = () => draftComposerKey(props.state.draftId)
+  const where = () => props.state.where ?? props.state.placementId
   const notice = createComposerNoticeChannel()
   const draft = createDraftPlacementResolver()
   let pane: HTMLDivElement | undefined
@@ -43,7 +45,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   })
   const firstSend = createFirstSend()
   const attempt = (submission: Submission, prompt: SentPrompt): FirstSendAttempt<SessionView> => async (report) => {
-    const placementId = await draft.resolve(props.state, (choice) => report({ type: "createStarted", choice }))
+    const placementId = await draft.resolve({ projectId: props.state.projectId, placementId: where() }, (choice) => report({ type: "createStarted", choice }))
     report({ type: "placementResolved", placementId })
     const ref = await stores.list.create({ placementId, harness: submission.harness, model: submission.model, prompt })
     const view = stores.open(ref)
@@ -61,14 +63,14 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
     if (!view) setSent(undefined)
     return view
   }
-  const placed = (placementId: PlacementId) => workbench.updatePane(props.paneId, draftSessionPaneKind, { ...props.state, placementId })
+  const placed = (chosen: PlacementId) => workbench.updatePane(props.paneId, draftSessionPaneKind, { ...props.state, where: chosen })
   return (
     <section data-component="session-screen" data-variant="draft" aria-label={t("sessionScreen.draft.title")}>
       <ComposerNoticeProvider channel={notice}>
         <div ref={pane} class="relative flex size-full flex-col overflow-hidden bg-background-base">
           <Show when={sentMessage()} fallback={<div aria-hidden="true" class="h-[calc(34%+4.25rem)] shrink-0" />}>
             {(message) => (
-              <DraftTranscript message={message()} placementId={props.state.placementId} thinking={thinking()} />
+              <DraftTranscript message={message()} placementId={where()} thinking={thinking()} />
             )}
           </Show>
           <div classList={{ "flex shrink-0 justify-center": true, "px-6": !sent(), "pointer-events-none pb-3": !!sent() }}>
@@ -76,14 +78,14 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
               data-component="session-new-design-content"
               classList={{ "w-full": true, "max-w-[720px]": !sent(), "pointer-events-auto px-3 md:max-w-192 md:mx-auto 2xl:max-w-[880px]": !!sent() }}
             >
-              <Show when={sent()} fallback={<PlacementNotice placementId={props.state.placementId} />}>
+              <Show when={sent()} fallback={<PlacementNotice placementId={where()} />}>
                 <FirstSendNotice state={firstSend.state()} onRetry={firstSend.retry} onEdit={firstSend.edit} />
               </Show>
               <ComposerNoticeRow notices={notice.notices()} />
               <div hidden={!!sent()} class="relative" classList={{ "z-10 -mt-2": notice.notices().length > 0 }}>
                 <NewSessionContextRow
                   projectId={props.state.projectId}
-                  placementId={props.state.placementId}
+                  placementId={where()}
                   resolver={draft}
                   onPlaced={placed}
                   onOpen={(target) => workbench.replacePane(props.paneId, draftSessionPaneKind, newDraft(target))}

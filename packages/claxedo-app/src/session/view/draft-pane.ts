@@ -13,8 +13,9 @@ function decodeDraft(value: Json): DraftSessionState | undefined {
   const project = readString(value, "projectId")
   const placement = readString(value, "placementId")
   const draftId = readString(value, "draftId")
+  const where = readString(value, "where")
   if (!project || !placement || !draftId) return undefined
-  return { projectId: projectId(project), placementId: placementId(placement), draftId }
+  return { projectId: projectId(project), placementId: placementId(placement), draftId, ...(where ? { where: placementId(where) } : {}) }
 }
 
 export const draftSessionPaneKind: PaneKind<DraftSessionState> = {
@@ -22,7 +23,7 @@ export const draftSessionPaneKind: PaneKind<DraftSessionState> = {
   title: () => useSessionScreenText()("sessionScreen.draft.title"),
   icon: "plus",
   view: DraftSessionScreen,
-  encode: (state) => ({ projectId: state.projectId, placementId: state.placementId, draftId: state.draftId }),
+  encode: (state) => ({ projectId: state.projectId, placementId: state.placementId, draftId: state.draftId, ...(state.where ? { where: state.where } : {}) }),
   decode: decodeDraft,
   fromRoute: (route) => (route.kind === "draft" ? newDraft({ projectId: route.projectId, placementId: route.placementId }) : undefined),
   toRoute: (state) => ({ kind: "draft", projectId: state.projectId, placementId: state.placementId }),

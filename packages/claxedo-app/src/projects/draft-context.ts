@@ -52,6 +52,17 @@ function createResolver(server: Server, where: Where, base: Accessor<string | un
   }
 }
 
+function followDraftPlacement(draft: Accessor<DraftTarget>, where: Where, choose: (choice: WhereChoice) => void, placed: (id: PlacementId) => void) {
+  const follow = (id: PlacementId) => {
+    const chosen = where.choice()
+    if (chosen.kind !== "placement" || chosen.id !== id) choose({ kind: "placement", id })
+  }
+  createEffect(on(() => draft().placementId, follow, { defer: true }))
+  createEffect(on(() => where.current()?.id, (id) => {
+    if (id && id !== draft().placementId) placed(id)
+  }, { defer: true }))
+}
+
 export type DraftContext = ReturnType<typeof createDraftContext>
 
 export function createDraftContext(draft: Accessor<DraftTarget>, placed: (id: PlacementId) => void) {
@@ -67,18 +78,8 @@ export function createDraftContext(draft: Accessor<DraftTarget>, placed: (id: Pl
   const choose = (choice: WhereChoice) => {
     branchChoice.reset()
     where.setChoice(choice)
-    if (choice.kind === "placement" && choice.id !== draft().placementId) placed(choice.id)
   }
-  createEffect(
-    on(
-      () => draft().placementId,
-      (id) => {
-        const chosen = where.choice()
-        if (chosen.kind !== "placement" || chosen.id !== id) choose({ kind: "placement", id })
-      },
-      { defer: true },
-    ),
-  )
+  followDraftPlacement(draft, where, choose, placed)
   return {
     entries: where.entries,
     choice: where.choice,

@@ -25,8 +25,8 @@ export function rankedNotices(published: Iterable<ComposerNotice>): readonly Com
   return [...byKind.values()].toSorted((left, right) => TONE_ORDER.indexOf(left.tone) - TONE_ORDER.indexOf(right.tone))
 }
 
-function sameNotice(left: ComposerNotice, right: ComposerNotice): boolean {
-  return left.kind === right.kind && left.tone === right.tone && left.message === right.message && left.detail === right.detail && left.action?.label === right.action?.label && left.secondaryAction?.label === right.secondaryAction?.label
+function noticeSignature(notice: ComposerNotice): string {
+  return JSON.stringify([notice.kind, notice.tone, notice.message, notice.detail, notice.action?.label, notice.secondaryAction?.label])
 }
 
 export function createComposerNoticeChannel(): ComposerNoticeChannel {
@@ -35,7 +35,7 @@ export function createComposerNoticeChannel(): ComposerNoticeChannel {
   const publish = (source: object, notice: ComposerNotice | undefined) =>
     setPublished((current) => {
       const shown = current.get(source)
-      if (notice ? shown !== undefined && sameNotice(shown, notice) : shown === undefined) return current
+      if (notice ? shown !== undefined && noticeSignature(shown) === noticeSignature(notice) : shown === undefined) return current
       const next = new Map(current)
       if (notice) next.set(source, notice)
       else next.delete(source)
