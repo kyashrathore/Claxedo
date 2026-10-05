@@ -425,6 +425,10 @@ export async function hostedConnectionStatus(
       },
     } as const
   }
+  // A start re-ensures the sandbox, which boots the deployment's image and keeps the workspace's files.
+  if (target.imageOutdated) {
+    return { error: apiError("cloud_runtime_image_outdated", "This cloud workspace runs an older version. Restart it to update."), status: 409 } as const
+  }
   try {
     if (options.runtimeProvisioned && !(await options.runtimeProvisioned({ workspaceId }))) {
       return { connection: { status: "provisioning" as const, workspaceId, homeRegion } }

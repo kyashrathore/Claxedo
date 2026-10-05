@@ -542,9 +542,14 @@ export type SandboxCommandResult = { stdout: string; stderr: string; exitCode: n
 // A driver places and manages the sandbox process. It is deliberately
 // not a sandbox remote-control API; files, PTYs, sessions, and agent work go
 // through @claxedo/workspace-runtime over the relay.
+/** The label a target records the image its runtime booted from, when the control plane chose that image. */
+export const SANDBOX_IMAGE_LABEL = "image"
+
 export type SandboxDriver = {
   id: string
   metadata: SandboxDriverMetadata
+  /** The image this driver's next boot runs, when the control plane chooses it. */
+  image?: string
   ensureHost: (
     input: SandboxDriverEnsureInput,
   ) => Promise<SandboxTarget | { provisioning: true; retryAfterMs: number }>
@@ -674,7 +679,13 @@ export type SandboxEnsureResult =
   | { status: "unavailable"; retryAfterMs?: number; error?: string; epoch?: number; homeRegion: SandboxRegion }
 
 export type SandboxTargetResult =
-  | ({ status: "ready" } & SandboxTarget & { epoch: number; routingId?: string; homeRegion: SandboxRegion })
+  | ({ status: "ready" } & SandboxTarget & {
+      epoch: number
+      routingId?: string
+      homeRegion: SandboxRegion
+      /** The runtime booted from an image other than the driver's current one; its next ensure boots the current one. */
+      imageOutdated?: true
+    })
   | {
       status: "unavailable"
       reason: string

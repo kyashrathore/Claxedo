@@ -19,6 +19,7 @@ import {
   type SandboxMutationResult,
   type SandboxGarbageCollectResult,
   isSandboxListingUnsupported,
+  SANDBOX_IMAGE_LABEL,
   type SandboxManagerOptions
 } from "./contract"
 import { isSandboxRuntimeBootFailure, sandboxLeaseFailure, sandboxRuntimeBootFailedError } from "./lease-failure"
@@ -271,7 +272,9 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         ...(failure ? { failure } : {}),
       }
     }
-    return { ...resource, status: "ready", url: resource.url, routingId: lease.routingId }
+    const booted = resource.labels?.[SANDBOX_IMAGE_LABEL]
+    const imageOutdated = options.driver.image !== undefined && booted !== undefined && booted !== options.driver.image
+    return { ...resource, status: "ready", url: resource.url, routingId: lease.routingId, ...(imageOutdated ? { imageOutdated: true as const } : {}) }
   }
 
   // The boot path this lease is on, derived from the lease row alone. Used by

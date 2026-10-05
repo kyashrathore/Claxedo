@@ -381,6 +381,23 @@ describe("boat sandbox driver", () => {
     expect(existsSync(path.join(run.dir, "claxedo-persistent"))).toBe(false)
   })
 
+  test("a sandbox booted from an older image reads as outdated until its next start boots the deployment's image", async () => {
+    const store = createMemoryLeaseStore()
+    const boat = fakeBoat()
+    const manager = (image: string) => createSandboxManager({
+      leaseStore: store,
+      driver: createBoatSandboxDriver({ apiKey: "k", image, fetchImpl: boat.fetchImpl, healthIntervalMs: 0 }),
+      onEgressUnenforced: () => {},
+    })
+    expect(await manager("ghcr.io/test/sandbox:0").ensure("ws1", { homeRegion: "eu" })).toMatchObject({ status: "ready", labels: { image: "ghcr.io/test/sandbox:0" } })
+
+    const updated = manager(IMAGE)
+    expect(await updated.target("ws1")).toMatchObject({ status: "ready", imageOutdated: true })
+    expect(await updated.ensure("ws1", { homeRegion: "eu" })).toMatchObject({ status: "ready", labels: { image: IMAGE } })
+    expect(await updated.target("ws1")).not.toHaveProperty("imageOutdated")
+    expect(boat.calls.filter((call) => call.path === "/sandboxes" && call.method === "POST")).toHaveLength(1)
+  })
+
   test("a repeated start finds the container the first one created and only starts it", async () => {
     const run = runStartCommand(await startCommand(), { existingImage: IMAGE, daemonUpAfter: 1 })
     expect(run.status).toBe(0)

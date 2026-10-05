@@ -1,10 +1,11 @@
 import { trimToUndefined } from "@claxedo/helpers/string"
-import type {
-  SandboxDriver,
-  SandboxDriverEnsureInput,
-  SandboxLease,
-  SandboxTarget,
-  SandboxResource,
+import {
+  SANDBOX_IMAGE_LABEL,
+  type SandboxDriver,
+  type SandboxDriverEnsureInput,
+  type SandboxLease,
+  type SandboxTarget,
+  type SandboxResource,
 } from "../contract"
 import { SandboxRuntimeBootError } from "../lease-failure"
 import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"
@@ -307,7 +308,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
       hostId,
       driverResourceId: sandboxId,
       driver: { id: "boat", resourceId: sandboxId },
-      labels: input.labels,
+      labels: { ...input.labels, ...(resolveImage(input) === options.image ? { [SANDBOX_IMAGE_LABEL]: options.image } : {}) },
     }
   }
 
@@ -367,6 +368,7 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
   return {
     id: "boat",
     metadata: sandboxDriverCatalog.boat.metadata,
+    image: options.image,
     ensureHost,
     resumeHost,
     async touch() {},

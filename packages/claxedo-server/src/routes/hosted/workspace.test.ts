@@ -539,6 +539,21 @@ describe("hosted connection", () => {
     expect(ensure).not.toHaveBeenCalled()
   })
 
+  test("GET refuses a running workspace booted from an older image with a typed answer, and mints nothing", async () => {
+    const authority = fakeAuthority({ openWorkspace: async () => ({
+      allowed: true, role: "owner", workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm" },
+    }) })
+    const ensure = vi.fn()
+    const { app } = buildApp({ authority, sandboxManager: {
+      target: async () => ({ status: "ready", hostId: "host_1", epoch: 1, imageOutdated: true }), ensure,
+    } as unknown as SandboxManager })
+    const res = await app.fetch(get("/ws_1/connection"))
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ error: { code: "cloud_runtime_image_outdated", message: "This cloud workspace runs an older version. Restart it to update." } })
+    expect(authority.recordRuntimeAccessToken).not.toHaveBeenCalled()
+    expect(ensure).not.toHaveBeenCalled()
+  })
+
   test("GET reports a stopped cloud workspace without provisioning it", async () => {
     const authority = fakeAuthority({
       openWorkspace: vi.fn(async () => ({
