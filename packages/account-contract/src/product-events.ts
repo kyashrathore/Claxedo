@@ -4,7 +4,7 @@ import type { DecodeResult } from "./operation-definition"
 const ONBOARDING_STEPS = ["project", "ai", "execution"] as const
 const HARNESSES = ["claude", "codex", "cursor", "pi", "opencode", "connection", "default"] as const
 const ERROR_CLASSES = ["auth", "forbidden", "rate_limit", "network", "not_found", "conflict", "invalid", "internal"] as const
-const ERROR_SURFACES = ["startup", "connections", "organization", "terminal", "usage", "review"] as const
+const ERROR_SURFACES = ["startup", "connections", "organization", "terminal", "usage", "review", "machines", "projects"] as const
 const TOOL_KINDS = ["bash", "edit", "write", "read", "list", "grep", "glob", "websearch", "webfetch", "task", "mcp", "other"] as const
 const FEATURES = ["terminal", "marketplace_install", "file_open", "review"] as const
 

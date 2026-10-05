@@ -105,7 +105,7 @@ function MachineList(props: { readonly machines: readonly Machine[]; readonly ac
 
 export function MachinesSection() {
   const t = useTranslator(settingsDictionary)
-  const errorCopy = useErrorCopy()
+  const errorCopy = useErrorCopy("machines")
   const server = useServer()
   const connect = useConnectMachine()
   const query = useQuery(() => server.queries.machines.list())

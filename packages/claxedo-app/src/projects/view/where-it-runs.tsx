@@ -93,7 +93,7 @@ export function WhereItRuns(props: { readonly project: Project }): JSX.Element {
   const t = useProjectsText()
   const server = useServer()
   const dialog = useDialog()
-  const errorCopy = useErrorCopy()
+  const errorCopy = useErrorCopy("projects")
   const connectMachine = useConnectMachine()
   const cloudOffered = () => server.capabilities()?.features.cloud === true && props.project.source?.kind !== "folder"
   const cloud = useCloudWorkspaces(() => props.project.id, cloudOffered)
