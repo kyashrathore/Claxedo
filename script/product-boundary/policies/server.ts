@@ -137,8 +137,12 @@ export const serverWorkerd: Policy = {
   // admission, which maps a verified sign-in to a canonical user and human
   // actor, is its own module (`authority/adapters/d1/application-identity.ts`),
   // split from the workspace authority.
-  // 154/20, no headroom.
-  ceilings: { modules: 154, packages: 20 },
+  // +1 module (owner: the D1 session authority): granting, moving, revoking
+  // and listing a session's shares is its own module
+  // (`authority/adapters/d1/session-shares.ts`), split from the session
+  // authority, lent its database, clocks and access checks.
+  // 155/20, no headroom.
+  ceilings: { modules: 155, packages: 20 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
