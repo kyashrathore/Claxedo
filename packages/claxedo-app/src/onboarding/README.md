@@ -19,6 +19,10 @@ Owns: the first run. Today's app's first-project canvas and its three-step wizar
 - Step 3 offers one row for the serving machine, named by the machine (desktop, preselected), and A cloud workspace (only with `cloudAvailable`), whose required Name field names the workspace. Another connected machine is not offered: nothing can send a new project to a connected machine; its folders are added on it and arrive as projects. On the web with no connected machine a quiet "Connect a machine…" action opens Settings → Machines' instructions drawer (`useConnectMachine` from `@/settings`).
 - Finish (`place.ts`) on a desktop that keeps its own machine creates the project (`createOrOpenFolderProject`: a folder that already is a project opens that project) and opens the draft of its folder placement at `/w/<placement>/session`. A cloud choice, on a signed desktop or on a hosted plane, creates the cloud workspace with its name from the repository through the signed account (`server.cloud.create({ source, name })`), whose control plane derives the project, starts it (`startCreated`, so the first screen is live and its models load) and opens the workspace's draft.
 
+## Funnel
+
+`createOnboardingFunnel` (`funnel.ts`) records the wizard's product events: `onboarding_step_viewed` for the first step and every step moved to, `onboarding_step_completed` for a step left forward and for the last step when Finish opens what it made, and `onboarding_abandoned` with the current step when the wizard unmounts unfinished. A closed tab unmounts nothing and records nothing.
+
 ## Finish machine
 
 `createFinish` (`finish.ts`) runs Finish as an `@/lib/flow` flow, `creating` then `opening`, beside `created`: what Finish has made so far, a `project` or a `workspace` (`model.ts`). A failure keeps `created`, and the next click runs the flow again.

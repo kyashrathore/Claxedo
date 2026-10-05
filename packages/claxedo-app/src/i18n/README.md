@@ -40,7 +40,7 @@ The manifest is `locales.ts`: seventeen codes (`en`, `zh`, `zht`, `ko`, `de`, `e
 
 ## Error copy
 
-`useErrorCopy()` returns `(error: AppError) => { title, message, retry }`: the one table from an error class (`auth`, `rate_limit`, `network`, `not_found`, `conflict`, `invalid`, `internal`) to what the user reads, in all seventeen locales (`errors/<locale>.ts`). A domain may add copy for its own error codes (such as review's git codes) and fall back to this table for every other failure; the class copy lives only here. Each locale stores typed title/message pairs by error class and three shared actions; `error-copy.ts` produces the translation keys and selects the action once.
+`useErrorCopy(surface)` returns `(error: AppError) => { title, message, retry }`: the one table from an error class (`auth`, `forbidden`, `rate_limit`, `network`, `not_found`, `conflict`, `invalid`, `internal`) to what the user reads, in all seventeen locales (`errors/<locale>.ts`). A domain may add copy for its own error codes (such as review's git codes) and fall back to this table for every other failure; the class copy lives only here. Each locale stores typed title/message pairs by error class and three shared actions; `error-copy.ts` produces the translation keys and selects the action once. The first time a hook instance is asked for an error object's copy it records `ui_error_shown` with the class and the caller's surface (startup, connections, organization, terminal, usage, review).
 
 ## Flows
 

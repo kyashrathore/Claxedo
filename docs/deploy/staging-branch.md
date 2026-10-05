@@ -180,3 +180,24 @@ control-plane database only if it holds the current baseline.
 **The relay answers `mode: "node"` or stops resolving targets.** A deploy that
 omitted `CLAXEDO_CENTRAL_URL` removed it from the Worker. Rerun the `relay`
 component; `deploy-cloudflare.ts` refuses to build a command without it.
+
+### Product telemetry is a staging setting
+
+The `control-plane` job passes `CLAXEDO_TELEMETRY_MODE`, `CLAXEDO_POSTHOG_HOST` and the
+`CLAXEDO_POSTHOG_KEY` secret to the deploy (`packages/claxedo-server/src/platform/telemetry/README.md`
+lists what is sent). The deploy replaces the Worker's whole variable set, so a value set on the
+Worker by hand is gone after the next deploy; set them on the `staging` environment instead:
+
+| `staging` environment variables | `staging` environment secrets |
+| - | - |
+| `CLAXEDO_STAGING_TELEMETRY_MODE` (`on` or `off`), `CLAXEDO_STAGING_POSTHOG_HOST` (optional) | `CLAXEDO_POSTHOG_KEY` (required when the mode is `on`) |
+
+```sh
+gh variable set CLAXEDO_STAGING_TELEMETRY_MODE --env staging --body on
+gh variable set CLAXEDO_STAGING_POSTHOG_HOST --env staging --body https://us.i.posthog.com
+gh secret set CLAXEDO_POSTHOG_KEY --env staging          # paste the PostHog project key
+gh workflow run deploy-staging.yml -f components=control-plane
+```
+
+A user deploy takes the same three names from its environment
+(`public-docs/user-deployed-cloudflare.md`, Settings).

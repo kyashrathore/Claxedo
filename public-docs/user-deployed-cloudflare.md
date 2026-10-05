@@ -131,6 +131,8 @@ are forward-only; restore data to a point in time with
 | `CLAXEDO_DEPLOYMENT_ID`, `CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID` | the Worker name | Stable identities stored with your data; never change them after the first deploy. |
 | `CLAXEDO_AUTH_D1_DATABASE_NAME`, `CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME` | `<worker>-auth`, `<worker>-control-plane` | The two D1 databases. |
 | `CLAXEDO_DOCUMENTS_BUCKET` | `<worker>-documents` | The R2 bucket Pages are stored in; create it with `wrangler r2 bucket create`. |
+| `CLAXEDO_TELEMETRY_MODE` | off | `on` sends product events and unhandled route errors to your PostHog project, with ids hashed; it then requires the `CLAXEDO_POSTHOG_KEY` secret. Unset or `off`, nothing is sent. |
+| `CLAXEDO_POSTHOG_HOST` | `https://us.i.posthog.com` | Your PostHog ingest origin, for example `https://eu.i.posthog.com`. |
 
 `--agent-plugins` deploys the Agent Plugins build, which adds team plugins from one repository. It binds the R2
 bucket `CLAXEDO_AGENT_PLUGINS_BUCKET` (default `<worker>-agent-plugins`, created with

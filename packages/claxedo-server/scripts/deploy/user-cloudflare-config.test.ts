@@ -26,6 +26,20 @@ describe("user-deployed Cloudflare configuration", () => {
     expect(deployment.requiredSecrets).not.toContain("CLAXEDO_INTEGRATION_GITHUB_CLIENT_SECRET")
   })
 
+  test("product telemetry is sent only when the deploy turns it on, and then needs the PostHog key", () => {
+    const off = userCloudflareDeployment({ ...env, CLAXEDO_POSTHOG_HOST: "https://eu.i.posthog.com" }, { agentPlugins: false })
+    expect(workerVariables(off, "sha256:config")).not.toHaveProperty("CLAXEDO_TELEMETRY_MODE")
+    expect(workerVariables(off, "sha256:config")).not.toHaveProperty("CLAXEDO_POSTHOG_HOST")
+    expect(off.requiredSecrets).not.toContain("CLAXEDO_POSTHOG_KEY")
+
+    const on = userCloudflareDeployment({ ...env, CLAXEDO_TELEMETRY_MODE: " ON ", CLAXEDO_POSTHOG_HOST: "https://eu.i.posthog.com" }, { agentPlugins: false })
+    expect(workerVariables(on, "sha256:config")).toMatchObject({ CLAXEDO_TELEMETRY_MODE: "on", CLAXEDO_POSTHOG_HOST: "https://eu.i.posthog.com" })
+    expect(on.requiredSecrets).toContain("CLAXEDO_POSTHOG_KEY")
+
+    expect(() => userCloudflareDeployment({ ...env, CLAXEDO_TELEMETRY_MODE: "yes" }, { agentPlugins: false })).toThrow(/CLAXEDO_TELEMETRY_MODE/)
+    expect(() => userCloudflareDeployment({ ...env, CLAXEDO_TELEMETRY_MODE: "on", CLAXEDO_POSTHOG_HOST: "http://ph.example.com" }, { agentPlugins: false })).toThrow(/CLAXEDO_POSTHOG_HOST/)
+  })
+
   test("carries the email sender as a named deploy variable", () => {
     const deployment = userCloudflareDeployment({ ...env, CLAXEDO_EMAIL_FROM: "auth@example.com" }, { agentPlugins: false })
     expect(workerVariables(deployment, "sha256:config").CLAXEDO_EMAIL_FROM).toBe("auth@example.com")

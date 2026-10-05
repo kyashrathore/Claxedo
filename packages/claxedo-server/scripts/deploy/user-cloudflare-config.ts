@@ -40,6 +40,8 @@ export type UserCloudflareDeployment = UserCloudflareTarget & Readonly<{
   documentsBucket: string
   agentPluginsBucket?: string
   sandbox?: Readonly<{ driver: SandboxDriver; variables: Readonly<Record<string, string>> }>
+  /** Present only when the deploy says `CLAXEDO_TELEMETRY_MODE=on`; the Worker's PostHog key is then a required secret. */
+  telemetryVariables: Readonly<Record<string, string>>
   requiredSecrets: readonly string[]
   /** Uploaded when the environment carries them; a deploy without them still publishes. */
   optionalSecrets: readonly string[]
@@ -121,6 +123,16 @@ export function userCloudflareTarget(env: NodeJS.ProcessEnv): UserCloudflareTarg
   })
 }
 
+function productTelemetryVariables(env: NodeJS.ProcessEnv): Record<string, string> {
+  const mode = env.CLAXEDO_TELEMETRY_MODE?.trim().toLowerCase()
+  if (mode !== undefined && mode !== "" && mode !== "on" && mode !== "off") throw new Error("CLAXEDO_TELEMETRY_MODE must be on or off")
+  if (mode !== "on") return {}
+  return {
+    CLAXEDO_TELEMETRY_MODE: "on",
+    ...(env.CLAXEDO_POSTHOG_HOST?.trim() ? { CLAXEDO_POSTHOG_HOST: exactHttpsOrigin(env, "CLAXEDO_POSTHOG_HOST") } : {}),
+  }
+}
+
 export function userCloudflareDeployment(
   env: NodeJS.ProcessEnv,
   options: Readonly<{ agentPlugins: boolean }>,
@@ -152,6 +164,8 @@ export function userCloudflareDeployment(
 
   const githubAppClientId = env.CLAXEDO_INTEGRATION_GITHUB_CLIENT_ID?.trim()
   const integrationClientIds: Record<string, string> = githubAppClientId ? { CLAXEDO_INTEGRATION_GITHUB_CLIENT_ID: githubAppClientId } : {}
+
+  const telemetryVariables = productTelemetryVariables(env)
 
   const driver = profile.sandboxPosture === "full-hosted" ? profile.sandboxDriver : undefined
   const sandbox = driver
@@ -186,6 +200,7 @@ export function userCloudflareDeployment(
       ? { agentPluginsBucket: setting(env, "CLAXEDO_AGENT_PLUGINS_BUCKET", `${target.workerName}-agent-plugins`) }
       : {}),
     ...(sandbox ? { sandbox } : {}),
+    telemetryVariables,
     requiredSecrets: [
       ...DEPLOY_READ_SECRETS,
       "CLAXEDO_RELAY_RESOLVER_TOKEN",
@@ -195,6 +210,7 @@ export function userCloudflareDeployment(
       ...authMethods.filter((method) => method !== "email-password").map((method) => (method === "google" ? "GOOGLE_CLIENT_SECRET" : "GITHUB_CLIENT_SECRET")),
       ...(artifact.agentPlugins ? ["CLAXEDO_CREDENTIALS_KEK"] : []),
       ...(driver ? SANDBOX_DRIVER_SECRETS[driver] : []),
+      ...(telemetryVariables.CLAXEDO_TELEMETRY_MODE ? ["CLAXEDO_POSTHOG_KEY"] : []),
     ],
     optionalSecrets: ["CLAXEDO_INTEGRATION_GITHUB_CLIENT_SECRET"],
   })
@@ -242,6 +258,7 @@ export function workerVariables(deployment: UserCloudflareDeployment, configurat
     ...deployment.providerClientIds,
     ...deployment.integrationClientIds,
     ...deployment.sandbox?.variables,
+    ...deployment.telemetryVariables,
     ...(deployment.artifact.agentPlugins
       ? { CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1", CLAXEDO_PUBLIC_URL: deployment.apiOrigin }
       : {}),
