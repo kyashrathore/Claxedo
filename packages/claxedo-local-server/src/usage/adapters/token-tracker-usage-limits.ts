@@ -44,7 +44,6 @@ const AGENT_LABEL: Record<string, string> = {
   codex: "Codex",
   cursor: "Cursor",
   kimi: "Kimi",
-  gemini: "Gemini",
   kiro: "Kiro",
   antigravity: "Antigravity",
   copilot: "Copilot",
@@ -55,6 +54,9 @@ const AGENT_LABEL: Record<string, string> = {
   qoderCn: "Qoder CN",
   codingPlan: "Ark Coding Plan",
 }
+
+/** The probe still reads these; Claxedo shows no card for them. */
+const UNSHOWN_AGENTS: ReadonlySet<string> = new Set(["gemini"])
 
 /** An unnamed slot keeps the probe's own field, minus the suffix every one of them carries. */
 function slotName(agent: string, field: string) {
@@ -108,7 +110,7 @@ export function machineAgentUsage(probe: unknown, fallbackAt: number): MachineAg
   const fetchedAt = Date.parse(text(reported.fetched_at) ?? "")
   return Object.entries(reported).flatMap(([agent, value]) => {
     const row = record(value)
-    if (row === undefined || row.configured !== true) return []
+    if (row === undefined || row.configured !== true || UNSHOWN_AGENTS.has(agent)) return []
     const capturedAt = Date.parse(text(record(row.provenance)?.captured_at) ?? text(row.cached_at) ?? "")
     const error = text(row.error)
     const plan = text(row.plan_label)

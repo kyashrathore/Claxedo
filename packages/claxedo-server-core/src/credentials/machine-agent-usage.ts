@@ -14,7 +14,7 @@ import type { HarnessId } from "@claxedo/agent-runtime-contract"
 const log = Log.create({ service: "credentials-machine-agent-usage" })
 
 export type MachineAgentUsage = {
-  /** The agent as the probe names it: `claude`, `codex`, `gemini`, `opencodeGo`. */
+  /** The agent as the probe names it: `claude`, `codex`, `grok`, `opencodeGo`. */
   agent: string
   /** The harness this agent is, for the agents Claxedo runs turns on. */
   harness?: HarnessId

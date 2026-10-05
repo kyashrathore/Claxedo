@@ -21,7 +21,7 @@ describe("the vocabulary a vendor's usage answer is read into", () => {
   })
 
   test("an unnamed slot keeps the vendor's own word rather than being invented a tier", () => {
-    expect(usageWindowName("gemini", "primary_window")).toBe("primary_window")
+    expect(usageWindowName("grok", "primary_window")).toBe("primary_window")
     expect(usageWindowName("claude", "thirty_day")).toBe("thirty_day")
   })
 

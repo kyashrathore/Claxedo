@@ -19,10 +19,10 @@ describe("groupQuotaAccounts", () => {
 
   test("an installed agent that reports no plan is not connected, whatever its probe said", () => {
     const antigravity = account("antigravity", { otherAgent: true, label: "Antigravity", usageError: "Antigravity IDE is not running" })
-    const gemini = account("gemini", { otherAgent: true, label: "Gemini", usageError: "Gemini API error: HTTP 403" })
+    const grok = account("grok", { otherAgent: true, label: "Grok", usageError: "Grok API error: HTTP 403" })
     const kimi = account("kimi", { otherAgent: true, label: "Kimi" })
-    const groups = groupQuotaAccounts([antigravity, gemini, kimi])
-    expect(groups.notConnected).toEqual([antigravity, gemini, kimi])
+    const groups = groupQuotaAccounts([antigravity, grok, kimi])
+    expect(groups.notConnected).toEqual([antigravity, grok, kimi])
     expect([...groups.inUse, ...groups.signedIn]).toEqual([])
   })
 

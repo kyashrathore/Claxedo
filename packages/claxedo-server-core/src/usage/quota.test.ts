@@ -466,7 +466,7 @@ describe("usage quota reader", () => {
       credentials,
       now: () => 1_000,
       agentUsage: probe([
-        agent({ agent: "gemini", label: "Gemini", plan: "Pro", windows: [{ window: "primary", usedPercent: 80, resetsAt: null }] }),
+        agent({ agent: "grok", label: "Grok", plan: "Pro", windows: [{ window: "primary", usedPercent: 80, resetsAt: null }] }),
         agent({ agent: "copilot", label: "Copilot", error: "Copilot usage request timed out." }),
         // The probe sees the same Codex login the harness does; the card for it
         // is the one built from the login, not a second one from here.
@@ -479,7 +479,7 @@ describe("usage quota reader", () => {
       ["claude", false],
       ["codex", false],
       ["copilot", true],
-      ["gemini", true],
+      ["grok", true],
     ])
     expect(snapshot?.accounts[1]).toMatchObject({
       machineLogin: true,
@@ -500,7 +500,7 @@ describe("usage quota reader", () => {
   })
 
   test("a refresh asks the probe for figures newer than the ones it holds", async () => {
-    const agentUsage = probe([agent({ agent: "gemini", label: "Gemini" })])
+    const agentUsage = probe([agent({ agent: "grok", label: "Grok" })])
     const read = createUsageQuotaReader({ credentials: store({}), now: () => 1_000, agentUsage })
 
     await settle(read, { org: ORG, refresh: false })

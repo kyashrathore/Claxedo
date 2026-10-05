@@ -34,11 +34,17 @@ const probe = {
     secondary_window: { used_percent: 10, reset_at: "2026-10-01T00:00:00.000Z" },
     tertiary_window: null,
   },
-  gemini: {
+  antigravity: {
     configured: true,
     error: null,
     plan_label: "Pro",
     primary_window: { used_percent: 80, reset_at: null },
+  },
+  gemini: {
+    configured: true,
+    error: null,
+    plan_label: "Pro",
+    primary_window: { used_percent: 10, reset_at: null },
   },
   copilot: { configured: true, error: "Copilot usage request timed out." },
   kimi: { configured: false },
@@ -50,7 +56,7 @@ describe("tokentracker usage limits mapping", () => {
     expect(agents.map((agent) => [agent.agent, agent.harness, agent.label, agent.plan])).toEqual([
       ["claude", "claude", "Claude Code", "Max"],
       ["cursor", "cursor", "Cursor", "Pro"],
-      ["gemini", undefined, "Gemini", "Pro"],
+      ["antigravity", undefined, "Antigravity", "Pro"],
       ["copilot", undefined, "Copilot", undefined],
     ])
     // 60.4 arrives as 60: every surface draws this as a bar and prints it as a
@@ -91,6 +97,7 @@ describe("tokentracker usage limits mapping", () => {
   test("an agent this machine does not have is left out, and one that failed says so", () => {
     const agents = machineAgentUsage(probe, 5_000)
     expect(agents.map((agent) => agent.agent)).not.toContain("kimi")
+    expect(agents.map((agent) => agent.agent)).not.toContain("gemini")
     expect(agents.find((agent) => agent.agent === "copilot")).toMatchObject({
       error: "Copilot usage request timed out.",
       windows: [],
@@ -107,7 +114,7 @@ describe("tokentracker usage limits mapping", () => {
   test("a percentage the probe could not read is not a window at zero", () => {
     const agents = machineAgentUsage({
       fetched_at: FETCHED_AT,
-      gemini: {
+      antigravity: {
         configured: true,
         error: null,
         primary_window: { reset_at: "2026-10-01T00:00:00.000Z" },
