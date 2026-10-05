@@ -35,8 +35,8 @@ const deleteSchema = z.object({ sessionId: z.string().min(1) }).strict()
  * The calls a session's Durable Object makes of the control plane. Two per
  * turn, each proven by the turn lease the session authority issued it:
  * `/turn-delivery` hands it the provider accounts of the session's creator as
- * direct secrets and, for the workspace owner's own session, the first-party
- * MCP server with that turn's bearer; `/turn-execution` mints it a
+ * direct secrets and, for a turn the workspace owner drives in their own
+ * session, the first-party MCP server with that turn's bearer; `/turn-execution` mints it a
  * session-scoped token for the workspace's machine, where its tools run. Both
  * answer only that session's own host, only while its lease is the live one,
  * and only while the turn's actor may still send its turns.
@@ -104,7 +104,7 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
         return c.json({ error: { code: "agent_plugins_unavailable" } }, 502)
       }
       const expiresAt = Math.min(claims.expiresAt, ...Object.values(direct).flatMap((row) => row.expiresAt === undefined ? [] : [row.expiresAt]))
-      const firstPartyMcp = holder === owner.userId
+      const firstPartyMcp = holder === owner.userId && claims.actorId === owner.actorId
         ? await input.sessionMcp?.issue({ origin: new URL(c.req.url).origin, owner, workspaceId: claims.workspaceId, sessionId: claims.sessionId, expiresAt })
         : undefined
       const delivery: TurnDelivery = {

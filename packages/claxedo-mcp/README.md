@@ -38,8 +38,8 @@ a contribution like the others, mounted under its own owner.
   `Origin` with 403, reflect no CORS origin, and never read a credential
   from the URL.
 - A Pi session served by its own Durable Object reaches the hosted URL with
-  the bearer its turn's delivery carried (`?session=<id>`): the owner's own
-  session only, bound to owner, session and workspace, expiring with the turn
+  the bearer its turn's delivery carried (`?session=<id>`): only on a turn the
+  owner drives in their own session, never a member's, bound to owner, session and workspace, expiring with the turn
   and at most ten minutes, under an audience only this endpoint verifies, and
   refused once the session is deleted. It is a runtime credential with no
   control plane: its tools act on that workspace's machine and nowhere else.

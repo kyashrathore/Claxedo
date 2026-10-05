@@ -23,10 +23,11 @@ type RuntimeCredential = Extract<McpCredential, { kind: "runtime" }>
 /**
  * The first-party MCP credential of a session served by its own host.
  *
- * Issued with each turn's delivery, only for the workspace owner's own session
- * and only while the project has a first-party tool group on: a bearer bound
- * to (owner, session, workspace), expiring with the turn and at most ten
- * minutes out, under an audience only the MCP endpoint verifies. Every request
+ * Issued with each turn's delivery, only for a turn the workspace owner drives
+ * in their own session (a member who may send gets no owner identity) and only
+ * while the project has a first-party tool group on: a bearer bound to (owner,
+ * session, workspace), expiring with the turn and at most ten minutes out,
+ * under an audience only the MCP endpoint verifies. Every request
  * re-reads the session, so a deleted session, a session moved off its host or a
  * workspace with another owner is refused whatever the token says. The tools
  * reach the session's own workspace and nothing else: the client is given no

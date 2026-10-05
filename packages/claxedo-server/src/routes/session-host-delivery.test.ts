@@ -142,6 +142,7 @@ describe("/turn-delivery", () => {
       [ownerId]: { anthropic: expect.objectContaining({ delivery: "direct", baseUrl: "https://api.anthropic.com", secret: "sk-ant-api03-owner", authKind: "api-key" }) },
     })
     expect(delivery!.expiresAt).toBe(decodeJwt(lease.leaseId).authority_expires_at)
+    expect(delivery!.firstPartyMcp?.name).toBe("claxedo")
 
     await release(proof, ROOT, lease)
     const released = await plane.post("/turn-delivery", { turnLease: lease.leaseId })
@@ -153,13 +154,14 @@ describe("/turn-delivery", () => {
     expect((await plane.post("/turn-delivery", { turnLease: lease.leaseId })).status).toBe(403)
   })
 
-  test("a member's turn spends the owner's accounts, until the member can no longer send", async () => {
+  test("a member's turn spends the owner's accounts but gets no owner-identity MCP server, until the member can no longer send", async () => {
     await plane.store.grantSessionShare!(plane.owner, { sessionId: ROOT, workspaceId: WORKSPACE_ID, grantedToUserId: plane.member.principal!.userId, level: "send" })
     const proof = await plane.relayProof(plane.member, { hostId: sessionHostId(ROOT), backing: "durable-object", sessionId: ROOT, jti: "rat_member" })
     await plane.database.prepare("update session_turn_leases set released_at = ? where session_id = ?").bind(Date.now(), ROOT).run()
     const lease = await plane.acquire(proof, ROOT, "turn_member")
     const allowed = parseTurnDelivery(await (await plane.post("/turn-delivery", { turnLease: lease.leaseId })).json())
     expect(Object.keys(allowed!.auth.direct!)).toEqual([plane.owner.principal!.userId])
+    expect(allowed!.firstPartyMcp).toBeUndefined()
     await plane.store.revokeSessionShare!(plane.owner, { sessionId: ROOT, workspaceId: WORKSPACE_ID, grantedToUserId: plane.member.principal!.userId })
     const revoked = await plane.post("/turn-delivery", { turnLease: lease.leaseId })
     expect(revoked.status).toBe(403)
