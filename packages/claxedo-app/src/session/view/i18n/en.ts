@@ -77,6 +77,9 @@ export type SessionScreenTextKey =
   | "sessionScreen.workspace.wakeFailed"
   | "sessionScreen.workspace.retryWake"
   | "sessionScreen.workspace.wakeNow"
+  | "sessionScreen.workspace.outdated"
+  | "sessionScreen.workspace.outdated.detail"
+  | "sessionScreen.workspace.restartToUpdate"
   | "sessionScreen.workspace.starting"
   | `sessionScreen.firstSend.${"creatingWorktree" | "failed" | "edit"}`
   | "sessionScreen.child.promptDisabled"
@@ -166,6 +169,9 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.workspace.wakeFailed": "Couldn't wake {{name}}",
   "sessionScreen.workspace.retryWake": "Try again",
   "sessionScreen.workspace.wakeNow": "Wake now",
+  "sessionScreen.workspace.outdated": "{{name}} runs an older version",
+  "sessionScreen.workspace.outdated.detail": "Restart it to update. Its files are kept.",
+  "sessionScreen.workspace.restartToUpdate": "Restart to update",
   "sessionScreen.firstSend.creatingWorktree": "Creating the worktree…",
   "sessionScreen.firstSend.failed": "Your message was not sent",
   "sessionScreen.firstSend.edit": "Edit message",

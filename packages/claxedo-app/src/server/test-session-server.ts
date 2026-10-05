@@ -102,6 +102,7 @@ function fakeTransport(options: FakeServerOptions, calls: FakeCalls): Transport 
     startRuntime: async () => undefined,
     connectSession: async () => undefined,
     onSessionHost: () => () => undefined,
+    onImageOutdated: () => () => undefined,
     findSessionHost: async (_workspaceId: string, sessionId: string) => {
       calls.hostReads.push(sessionId)
       return options.sessionHosts?.[sessionId]

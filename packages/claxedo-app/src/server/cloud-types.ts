@@ -26,6 +26,7 @@ export type WorkspaceRuntime =
   | { readonly kind: "asleep" }
   | { readonly kind: "waking"; readonly bootMode?: WorkspaceBootMode }
   | { readonly kind: "wakeFailed"; readonly error: AppError }
+  | { readonly kind: "outdated" }
 
 export type CloudProjectCreateInput = {
   readonly projectId: ProjectId

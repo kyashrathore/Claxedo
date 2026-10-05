@@ -1,8 +1,9 @@
+import { onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { sleep } from "@claxedo/helpers"
 import type { WorkspaceRuntime } from "./cloud-types"
 import { toAppError } from "./errors"
-import type { PlacementId } from "./ids"
+import { placementId, type PlacementId } from "./ids"
 import { isStoppedCloud } from "./placement-runtime"
 import type { Transport } from "./transport"
 import { WAKE_IDLE, wakeTransition, type WakeEvent, type WakeState } from "./wake-machine"
@@ -19,6 +20,7 @@ const CHECKPOINT_SETTLE_MS = 5_000
 
 function runtimeOf(wake: WakeState, asleep: boolean): WorkspaceRuntime {
   if (wake.kind === "waking") return { kind: "waking", ...(wake.bootMode ? { bootMode: wake.bootMode } : {}) }
+  if (wake.kind === "outdated" && !asleep) return { kind: "outdated" }
   if (wake.kind === "failed" && asleep) return { kind: "wakeFailed", error: wake.error }
   return asleep ? { kind: "asleep" } : { kind: "live" }
 }
@@ -40,6 +42,7 @@ export function createWorkspaceWakes(transport: Transport, workspaces: Workspace
   const [wakes, setWakes] = createStore<Record<string, WakeState>>({})
   const send = (id: PlacementId, event: WakeEvent) => setWakes(id, (state) => wakeTransition(state ?? WAKE_IDLE, event))
   const running = new Map<string, Promise<void>>()
+  onCleanup(transport.onImageOutdated((workspaceId) => send(placementId(workspaceId), { type: "imageOutdated" })))
   const run = (id: PlacementId) => wakeWorkspace(transport, workspaces, id, (event) => send(id, event)).finally(() => running.delete(id))
   const start = (id: PlacementId) => {
     const current = running.get(id)

@@ -30,6 +30,12 @@ export function workspaceStopped(workspaceId: string): ServerError {
   return new ServerError({ class: "conflict", code: WORKSPACE_STOPPED, message: `The cloud workspace ${workspaceId} is not running` })
 }
 
+const CLOUD_RUNTIME_IMAGE_OUTDATED = "cloud_runtime_image_outdated"
+
+export function isImageOutdated(error: unknown): boolean {
+  return error instanceof ServerError && error.code === CLOUD_RUNTIME_IMAGE_OUTDATED
+}
+
 export function isCheckpointFrozen(error: unknown): boolean {
   return error instanceof ServerError && error.code === WORKSPACE_CHECKPOINT_FROZEN
 }

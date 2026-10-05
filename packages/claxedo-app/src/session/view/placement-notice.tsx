@@ -18,6 +18,9 @@ export function placementNotice(t: SessionScreenText, facts: PlacementFacts): Co
   if (runtime.kind === "wakeFailed") {
     return { kind: "workspace-lifecycle", tone: "critical", message: t("sessionScreen.workspace.wakeFailed", { name }), detail: runtime.error.message, action: { label: t("sessionScreen.workspace.retryWake"), run: facts.wake } }
   }
+  if (runtime.kind === "outdated") {
+    return { kind: "workspace-lifecycle", tone: "warning", message: t("sessionScreen.workspace.outdated", { name }), detail: t("sessionScreen.workspace.outdated.detail"), action: { label: t("sessionScreen.workspace.restartToUpdate"), run: facts.wake } }
+  }
   if (runtime.kind === "asleep") return { kind: "workspace-lifecycle", tone: "info", message: t("sessionScreen.workspace.asleep"), action: { label: t("sessionScreen.workspace.wakeNow"), run: facts.wake } }
   return facts.offline ? { kind: "machine-offline", tone: "warning", message: t("sessionScreen.workspace.machineOffline") } : undefined
 }

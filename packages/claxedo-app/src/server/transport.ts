@@ -3,7 +3,7 @@ import { createHostedAccount, type HostedAccount } from "./account"
 import { responseError, toAppError } from "./errors"
 import { createRelay, type Relay } from "./relay"
 import { startWorkspace, type StartOptions } from "./workspace-start"
-import { CLOUD_RUNTIME_UNAVAILABLE, connectionAnswerFromWire, unavailableRetryAfter, type ConnectionAnswer, type WorkspaceConnections } from "./wire/connection"
+import { CLOUD_RUNTIME_UNAVAILABLE, connectionAnswerFromWire, isImageOutdated, unavailableRetryAfter, type ConnectionAnswer, type WorkspaceConnections } from "./wire/connection"
 import { SESSION_LIST_SORT, sessionHostRootFromListItem } from "./wire/session-row"
 import { asArray, asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { ServerError } from "./errors"
@@ -30,6 +30,7 @@ export type Transport = {
   readonly connectSession: (workspaceId: string, sessionId: string) => Promise<void>
   readonly findSessionHost: (workspaceId: string, sessionId: string) => Promise<string | undefined>
   readonly onSessionHost: (listener: SessionHostListener) => () => void
+  readonly onImageOutdated: (listener: (workspaceId: string) => void) => () => void
 }
 
 function socketUrl(serverUrl: string, path: string) {
@@ -139,6 +140,19 @@ function sessionHostSignals() {
   }
 }
 
+function imageOutdatedSignals() {
+  const listeners = new Set<(workspaceId: string) => void>()
+  return {
+    refused: (workspaceId: string, error: unknown) => {
+      if (isImageOutdated(error)) for (const listener of listeners) listener(workspaceId)
+    },
+    onImageOutdated: (listener: (workspaceId: string) => void) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  }
+}
+
 function sessionHostConnector(connections: WorkspaceConnections, relay: Relay, hosts: ReturnType<typeof sessionHostSignals>): Transport["connectSession"] {
   return async (workspaceId, sessionId) => {
     const answer = hosts.learned(workspaceId, sessionId, await connections.mintSession(workspaceId, sessionId))
@@ -165,7 +179,16 @@ export function createTransport(config: ServerConfig): Transport {
   const account = config.account ? createHostedAccount(config.account) : undefined
   const connections = createWorkspaceConnections(request, account)
   const hosts = sessionHostSignals()
-  const relay = createRelay(async (workspaceId, sessionId) => hosts.learned(workspaceId, sessionId, await connections.read(workspaceId, sessionId)), config.relayLinks)
+  const outdated = imageOutdatedSignals()
+  const read = async (workspaceId: string, sessionId?: string) => {
+    try {
+      return hosts.learned(workspaceId, sessionId, await connections.read(workspaceId, sessionId))
+    } catch (error) {
+      outdated.refused(workspaceId, error)
+      throw error
+    }
+  }
+  const relay = createRelay(read, config.relayLinks)
   const daemonProxy = loopback && config.account === undefined
   const runtime = (route: RuntimeRoute, path: string, init?: RequestInit) => {
     if (!route.remote) return request(withQuery(path, { directory: route.directory }), init)
@@ -196,6 +219,7 @@ export function createTransport(config: ServerConfig): Transport {
     connectSession: sessionHostConnector(connections, relay, hosts),
     findSessionHost: daemonProxy ? async () => undefined : sessionRowHost(json, loopback ? account : undefined),
     onSessionHost: hosts.onSessionHost,
+    onImageOutdated: outdated.onImageOutdated,
   }
 }
 
