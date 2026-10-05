@@ -105,6 +105,7 @@ describe("workerTelemetry", () => {
     expect(JSON.parse(init.body as string)).toEqual({
       api_key: "phc_w",
       event: "thing.happened",
+      timestamp: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
       distinct_id: await pseudonymousId("user_1"),
       properties: {
         a: 1,

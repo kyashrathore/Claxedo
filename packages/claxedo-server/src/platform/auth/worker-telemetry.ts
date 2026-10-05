@@ -98,7 +98,7 @@ export function workerTelemetry(env: TelemetryEnv = {}): ControlPlaneTelemetry {
   const pending = new Set<Promise<void>>()
   return {
     capture: (distinctId, event, properties) => {
-      const send = postCapture(host, key, event, distinctId, properties ?? {})
+      const send = postCapture(host, key, event, distinctId, properties ?? {}, new Date())
         .catch(() => {})
         .finally(() => pending.delete(send))
       pending.add(send)
@@ -145,7 +145,7 @@ export function workerErrorCapture(env: TelemetryEnv = {}): WorkerErrorCapture {
               stacktrace: { type: "raw", frames },
             },
           ],
-        })
+        }, new Date())
       } catch {
         // Observability must never take down the request path.
       }
@@ -187,6 +187,7 @@ async function postCapture(
   event: string,
   distinctId: string,
   properties: Record<string, unknown>,
+  capturedAt: Date,
 ): Promise<void> {
   await fetch(`${host}/capture/`, {
     method: "POST",
@@ -194,6 +195,7 @@ async function postCapture(
     body: JSON.stringify({
       api_key: key,
       event,
+      timestamp: capturedAt.toISOString(),
       distinct_id: await pseudonymousId(distinctId),
       properties: await pseudonymousEntries(properties, isIdentifierKey),
     }),
