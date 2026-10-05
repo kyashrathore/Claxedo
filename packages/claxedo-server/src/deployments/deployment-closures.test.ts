@@ -103,13 +103,17 @@ const ENTRIES = [
   // plus `agent-plugins/signed-scope.ts`, the caller and write guard the
   // activation and source stores share, and the Pi launch a session served by
   // its own Durable Object is delivered (`agent-plugins/runtime/session-host-launch.ts`).
-  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 206, packages: 24 },
+  // The activation store reads a plugin set's state and builds its writes in
+  // two modules beside it (`activation/d1-activation-snapshots.ts`,
+  // `activation/d1-activation-writes.ts`), and both D1 stores key rows by the
+  // one `agent-plugins/scope-keys.ts`.
+  { name: "worker-agent-plugins", entry: BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, modules: 209, packages: 24 },
   // The full-hosted entry alone carries the session rows pass
   // (`session/session-rows-pass.ts`) and its wiring to the sandbox and the
   // relay (`hosted-workerd/full-hosted-sandbox.ts`): it delivers the pass to a
   // ready cloud runtime and admits it at the session-rows ingest, and only
   // this entry has cloud runtimes to publish rows.
-  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 213, packages: 24 },
+  { name: "worker-agent-plugins-full-hosted", entry: BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, modules: 216, packages: 24 },
 ] as const
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {

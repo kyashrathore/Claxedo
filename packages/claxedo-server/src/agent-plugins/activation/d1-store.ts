@@ -16,6 +16,7 @@ import {
   type AgentPluginHarnessId,
 } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { isArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { asOrgId, asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
 import type { SignedAgentPluginRuntimeSnapshot } from "../runtime/provision"
@@ -23,9 +24,8 @@ import { assertionId, batchUnder, may, maySql, type BoundSql } from "../../autho
 import { d1BatchAssertionFailed } from "../../platform/db/d1-constraint"
 import { agentPluginWriteGuard, resolveAgentPluginScope, type AgentPluginScope } from "../signed-scope"
 import { readActivationSnapshots, type Scope } from "./d1-activation-snapshots"
-import {
-  PIN_COLUMNS, artifactPin, invalid, organizationScopeKey, revisionNumber, text, userScopeKey, type PinRow,
-} from "./d1-rows"
+import { writePin, writeProjectOverride, writeUserDefault } from "./d1-activation-writes"
+import { organizationScopeKey, userScopeKey } from "../scope-keys"
 
 /** The project scope a user default addresses; never a real project ID. */
 export const AGENT_PLUGIN_ALL_PROJECTS_SCOPE = "all-projects"
@@ -56,6 +56,14 @@ type RequestResolution = {
 }
 
 
+type PinRow = {
+  plugin_instance_id: string
+  artifact_digest: string
+  source_id: string
+  relative_path: string
+  source_revision: string
+}
+
 type RevisionRow = {
   revision: number
   last_operation_id: string | null
@@ -72,6 +80,38 @@ type WorkspaceRow = {
   project_id: string
   owner_user_id: string
   backing: string
+}
+
+const PIN_COLUMNS = "plugin_instance_id, artifact_digest, source_id, relative_path, source_revision"
+
+function invalid(detail: string): never {
+  throw new Error(`D1 returned an invalid Agent Plugins ${detail}`)
+}
+
+function text(value: unknown, detail: string) {
+  if (typeof value !== "string" || !value) invalid(detail)
+  return value
+}
+
+function revisionNumber(value: unknown) {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) invalid("revision")
+  return value
+}
+
+function enabled(value: unknown) {
+  if (value !== 0 && value !== 1) invalid("activation choice")
+  return value === 1
+}
+
+function artifactPin(row: PinRow | null): AgentPluginArtifactPin | undefined {
+  if (!row) return undefined
+  if (!isArtifactDigest(row.artifact_digest)) invalid("artifact digest")
+  return {
+    digest: row.artifact_digest,
+    sourceId: text(row.source_id, "artifact source"),
+    relativePath: text(row.relative_path, "artifact path"),
+    sourceRevision: text(row.source_revision, "artifact source revision"),
+  }
 }
 
 function denied(message: string) {
@@ -207,7 +247,7 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     const now = this.now()
     const writes: D1PreparedStatement[] = []
     if (input.artifact) {
-      writes.push(this.writePin({
+      writes.push(writePin(this.database, {
         scopeKey,
         authority: "user",
         orgId: scope.orgId,
@@ -219,11 +259,11 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     }
     for (const harnessId of harnessIds) {
       if (input.target.scope === "all-projects") {
-        writes.push(this.writeUserDefault({ scope, pluginInstanceId: input.pluginInstanceId, harnessId, choice: input.choice, now }))
+        writes.push(writeUserDefault(this.database, { scope, pluginInstanceId: input.pluginInstanceId, harnessId, choice: input.choice, now }))
         continue
       }
       for (const projectId of projectIds) {
-        writes.push(this.writeProjectOverride({
+        writes.push(writeProjectOverride(this.database, {
           scope,
           projectId,
           pluginInstanceId: input.pluginInstanceId,
@@ -259,7 +299,7 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     const now = this.now()
     const writes: D1PreparedStatement[] = []
     if (input.artifact) {
-      writes.push(this.writePin({
+      writes.push(writePin(this.database, {
         scopeKey,
         authority: "organization",
         orgId: scope.orgId,
@@ -403,7 +443,7 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
       : organizationScopeKey(scope.orgId)
     if (!(await this.pinRow(scopeKey, input.pluginInstanceId))) throw artifactUnavailable()
     return await this.commit(agentPluginWriteGuard(scope, authority), scope.orgId, started.revision, operation, [
-      this.writePin({
+      writePin(this.database, {
         scopeKey,
         authority,
         orgId: scope.orgId,
@@ -571,115 +611,6 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
       throw conflict(revision, await this.currentRevision(orgId))
     }
     return next
-  }
-
-  private writePin(input: {
-    scopeKey: string
-    authority: "user" | "organization"
-    orgId: string
-    ownerUserId: string | null
-    pluginInstanceId: string
-    artifact: AgentPluginArtifactPin
-    now: number
-  }) {
-    return this.database
-      .prepare(`
-        insert into agent_plugin_artifact_pins (
-          scope_key, plugin_instance_id, authority, org_id, owner_user_id,
-          artifact_digest, source_id, relative_path, source_revision, updated_at
-        )
-        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        on conflict (scope_key, plugin_instance_id) do update set
-          artifact_digest = excluded.artifact_digest,
-          source_id = excluded.source_id,
-          relative_path = excluded.relative_path,
-          source_revision = excluded.source_revision,
-          updated_at = excluded.updated_at
-      `)
-      .bind(
-        input.scopeKey,
-        input.pluginInstanceId,
-        input.authority,
-        input.orgId,
-        input.ownerUserId,
-        input.artifact.digest,
-        input.artifact.sourceId,
-        input.artifact.relativePath,
-        input.artifact.sourceRevision,
-        input.now,
-      )
-  }
-
-  private writeUserDefault(input: {
-    scope: Scope
-    pluginInstanceId: string
-    harnessId: AgentPluginHarnessId
-    choice: boolean | undefined
-    now: number
-  }) {
-    if (input.choice === undefined) {
-      return this.database
-        .prepare(`
-          delete from agent_plugin_user_defaults
-          where org_id = ? and owner_user_id = ? and plugin_instance_id = ? and harness_id = ?
-        `)
-        .bind(input.scope.orgId, input.scope.userId, input.pluginInstanceId, input.harnessId)
-    }
-    return this.database
-      .prepare(`
-        insert into agent_plugin_user_defaults (
-          org_id, owner_user_id, plugin_instance_id, harness_id, enabled, updated_at
-        )
-        values (?, ?, ?, ?, ?, ?)
-        on conflict (org_id, owner_user_id, plugin_instance_id, harness_id) do update set
-          enabled = excluded.enabled,
-          updated_at = excluded.updated_at
-      `)
-      .bind(
-        input.scope.orgId,
-        input.scope.userId,
-        input.pluginInstanceId,
-        input.harnessId,
-        input.choice ? 1 : 0,
-        input.now,
-      )
-  }
-
-  private writeProjectOverride(input: {
-    scope: Scope
-    projectId: string
-    pluginInstanceId: string
-    harnessId: AgentPluginHarnessId
-    choice: boolean | undefined
-    now: number
-  }) {
-    if (input.choice === undefined) {
-      return this.database
-        .prepare(`
-          delete from agent_plugin_project_overrides
-          where org_id = ? and owner_user_id = ? and project_id = ? and plugin_instance_id = ? and harness_id = ?
-        `)
-        .bind(input.scope.orgId, input.scope.userId, input.projectId, input.pluginInstanceId, input.harnessId)
-    }
-    return this.database
-      .prepare(`
-        insert into agent_plugin_project_overrides (
-          org_id, owner_user_id, project_id, plugin_instance_id, harness_id, enabled, updated_at
-        )
-        values (?, ?, ?, ?, ?, ?, ?)
-        on conflict (org_id, owner_user_id, project_id, plugin_instance_id, harness_id) do update set
-          enabled = excluded.enabled,
-          updated_at = excluded.updated_at
-      `)
-      .bind(
-        input.scope.orgId,
-        input.scope.userId,
-        input.projectId,
-        input.pluginInstanceId,
-        input.harnessId,
-        input.choice ? 1 : 0,
-        input.now,
-      )
   }
 
   private async pinRow(scopeKey: string, pluginInstanceId: string) {

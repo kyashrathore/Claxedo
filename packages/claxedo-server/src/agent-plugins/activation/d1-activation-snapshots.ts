@@ -1,10 +1,14 @@
 import type { D1Database } from "@cloudflare/workers-types"
 import type { SignedActivationSnapshot } from "@claxedo/server-core/agent-plugins/activation/store"
 import { agentPluginHarnessRecord, type AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
-import {
-  CLAXEDO_SCOPE_KEY, PIN_COLUMNS, artifactPin, enabled, organizationScopeKey, text, userScopeKey,
-  type ChoiceRow, type HarnessRow, type ScopedPinRow,
-} from "./d1-rows"
+import { organizationScopeKey, userScopeKey } from "../scope-keys"
+import { isArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
+
+const CLAXEDO_SCOPE_KEY = "claxedo"
+
+type HarnessRow = { plugin_instance_id: string; harness_id: string }
+type ChoiceRow = HarnessRow & { enabled: number }
+type PinDigestRow = { scope_key: string; plugin_instance_id: string; artifact_digest: string }
 
 /** The data a snapshot reads is keyed by user and organization. */
 export type Scope = { userId: string; orgId: string }
@@ -27,7 +31,7 @@ const { database, scope, projectId } = input
   const ids = [...new Set(input.pluginInstanceIds)]
   const listed = JSON.stringify(ids)
   const pairs = <Row extends HarnessRow, T>(rows: readonly Row[], value: (row: Row) => T) =>
-    new Map(rows.map((row) => [`${text(row.plugin_instance_id, "plugin instance ID")}\n${text(row.harness_id, "harness")}`, value(row)]))
+    new Map(rows.map((row) => [`${row.plugin_instance_id}\n${row.harness_id}`, value(row)]))
   const [revision, overrides, userDefaults, organizationDefaults, claxedoDefaults, pins] = await Promise.all([
     input.revision,
     projectId
@@ -39,7 +43,7 @@ const { database, scope, projectId } = input
           `)
           .bind(scope.orgId, scope.userId, projectId, listed)
           .all<ChoiceRow>()
-          .then((result) => pairs(result.results, (row) => enabled(row.enabled)))
+          .then((result) => pairs(result.results, (row) => row.enabled === 1))
       : new Map<string, boolean>(),
     database
       .prepare(`
@@ -48,7 +52,7 @@ const { database, scope, projectId } = input
       `)
       .bind(scope.orgId, scope.userId, listed)
       .all<ChoiceRow>()
-      .then((result) => pairs(result.results, (row) => enabled(row.enabled))),
+      .then((result) => pairs(result.results, (row) => row.enabled === 1)),
     database
       .prepare(`
         select plugin_instance_id, harness_id from agent_plugin_organization_defaults
@@ -67,12 +71,15 @@ const { database, scope, projectId } = input
       .then((result) => pairs(result.results, () => true as const)),
     database
       .prepare(`
-        select scope_key, ${PIN_COLUMNS} from agent_plugin_artifact_pins
+        select scope_key, plugin_instance_id, artifact_digest from agent_plugin_artifact_pins
         where scope_key in (?, ?, ?) and plugin_instance_id in (select value from json_each(?))
       `)
       .bind(userScopeKey(scope.orgId, scope.userId), organizationScopeKey(scope.orgId), CLAXEDO_SCOPE_KEY, listed)
-      .all<ScopedPinRow>()
-      .then((result) => new Map(result.results.map((row) => [`${row.scope_key}\n${text(row.plugin_instance_id, "plugin instance ID")}`, artifactPin(row)!.digest]))),
+      .all<PinDigestRow>()
+      .then((result) => new Map(result.results.map((row) => {
+          if (!isArtifactDigest(row.artifact_digest)) throw new Error("D1 returned an invalid Agent Plugins artifact digest")
+          return [`${row.scope_key}\n${row.plugin_instance_id}`, row.artifact_digest]
+        }))),
   ])
   const pin = (scopeKey: string, pluginInstanceId: string) => pins.get(`${scopeKey}\n${pluginInstanceId}`)
   return new Map(ids.map((pluginInstanceId) => [pluginInstanceId, agentPluginHarnessRecord((harnessId): SignedActivationSnapshot => {

@@ -17,6 +17,7 @@ import {
   type AgentPluginScope as Scope,
   type AgentPluginScopeAuthority,
 } from "../signed-scope"
+import { organizationScopeKey, userScopeKey } from "../scope-keys"
 
 type SourceRow = {
   id: string
@@ -41,14 +42,6 @@ function text(value: unknown, detail: string) {
 function sourceAuthority(value: unknown): AgentPluginSourceAuthority {
   if (value !== "user" && value !== "organization") invalid("authority")
   return value
-}
-
-function userScopeKey(orgId: string, userId: string) {
-  return `${orgId}:user:${userId}`
-}
-
-function organizationScopeKey(orgId: string) {
-  return `${orgId}:organization`
 }
 
 function scopeKey(orgId: string, authority: AgentPluginSourceAuthority, userId: string) {
