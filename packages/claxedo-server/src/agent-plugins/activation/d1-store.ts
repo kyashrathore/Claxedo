@@ -11,9 +11,7 @@ import {
   type SignedKnownPlugin,
   type UpdateSignedArtifactPin,
 } from "@claxedo/server-core/agent-plugins/activation/store"
-import { isArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
 import {
-  agentPluginHarnessRecord,
   isAgentPluginHarnessId,
   type AgentPluginHarnessId,
 } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
@@ -24,14 +22,16 @@ import type { SignedAgentPluginRuntimeSnapshot } from "../runtime/provision"
 import { assertionId, batchUnder, may, maySql, type BoundSql } from "../../authority/adapters/d1/authorization"
 import { d1BatchAssertionFailed } from "../../platform/db/d1-constraint"
 import { agentPluginWriteGuard, resolveAgentPluginScope, type AgentPluginScope } from "../signed-scope"
+import { readActivationSnapshots, type Scope } from "./d1-activation-snapshots"
+import {
+  PIN_COLUMNS, artifactPin, invalid, organizationScopeKey, revisionNumber, text, userScopeKey, type PinRow,
+} from "./d1-rows"
 
 /** The project scope a user default addresses; never a real project ID. */
 export const AGENT_PLUGIN_ALL_PROJECTS_SCOPE = "all-projects"
 
 /** The workspace a signed desktop pull materializes into; never a real workspace ID. */
 export const AGENT_PLUGIN_DESKTOP_WORKSPACE = "desktop"
-
-const CLAXEDO_SCOPE_KEY = "claxedo"
 
 /**
  * The authority capabilities this store consumes. Signed methods resolve the
@@ -55,34 +55,11 @@ type RequestResolution = {
   projects: Map<string, Promise<void>>
 }
 
-/** The data a snapshot reads is keyed by user and organization; a runtime read has no actor. */
-type Scope = Pick<AgentPluginScope, "userId" | "orgId">
 
 type RevisionRow = {
   revision: number
   last_operation_id: string | null
   last_operation_revision: number | null
-}
-
-type PinRow = {
-  plugin_instance_id: string
-  artifact_digest: string
-  source_id: string
-  relative_path: string
-  source_revision: string
-}
-
-type HarnessRow = {
-  plugin_instance_id: string
-  harness_id: string
-}
-
-type ChoiceRow = HarnessRow & {
-  enabled: number
-}
-
-type ScopedPinRow = PinRow & {
-  scope_key: string
 }
 
 type InstanceRow = {
@@ -95,38 +72,6 @@ type WorkspaceRow = {
   project_id: string
   owner_user_id: string
   backing: string
-}
-
-const PIN_COLUMNS = "plugin_instance_id, artifact_digest, source_id, relative_path, source_revision"
-
-function invalid(detail: string): never {
-  throw new Error(`D1 returned an invalid Agent Plugins ${detail}`)
-}
-
-function text(value: unknown, detail: string) {
-  if (typeof value !== "string" || !value) invalid(detail)
-  return value
-}
-
-function revisionNumber(value: unknown) {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) invalid("revision")
-  return value
-}
-
-function enabled(value: unknown) {
-  if (value !== 0 && value !== 1) invalid("activation choice")
-  return value === 1
-}
-
-function artifactPin(row: PinRow | null): AgentPluginArtifactPin | undefined {
-  if (!row) return undefined
-  if (!isArtifactDigest(row.artifact_digest)) invalid("artifact digest")
-  return {
-    digest: row.artifact_digest,
-    sourceId: text(row.source_id, "artifact source"),
-    relativePath: text(row.relative_path, "artifact path"),
-    sourceRevision: text(row.source_revision, "artifact source revision"),
-  }
 }
 
 function denied(message: string) {
@@ -171,14 +116,6 @@ function requireHarnesses(values: readonly string[]) {
   const harnessIds: AgentPluginHarnessId[] = []
   for (const value of new Set(values)) harnessIds.push(requireHarness(value))
   return harnessIds
-}
-
-function userScopeKey(orgId: string, ownerUserId: string) {
-  return `${orgId}:user:${ownerUserId}`
-}
-
-function organizationScopeKey(orgId: string) {
-  return `${orgId}:organization`
 }
 
 /**
@@ -829,6 +766,10 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     })
   }
 
+  private snapshots(scope: Scope, pluginInstanceIds: readonly string[], projectId?: string) {
+    return readActivationSnapshots({ database: this.database, revision: this.currentRevision(scope.orgId), scope, pluginInstanceIds, ...(projectId ? { projectId } : {}) })
+  }
+
   private async snapshot(
     scope: Scope,
     pluginInstanceId: string,
@@ -839,94 +780,6 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     const row = rows.get(pluginInstanceId)?.[harnessId]
     if (!row) invalid("activation snapshot")
     return row
-  }
-
-  /**
-   * One statement per table whatever the plugin count: a catalog page reads
-   * every candidate, retained and built-in plugin on every harness, and D1 runs
-   * a Worker's statements a few at a time, so per-pair reads cost seconds.
-   * The ids travel as one JSON array so the bound-parameter limit never
-   * depends on how many plugins a caller has.
-   */
-  private async snapshots(
-    scope: Scope,
-    pluginInstanceIds: readonly string[],
-    projectId?: string,
-  ): Promise<Map<string, Record<AgentPluginHarnessId, SignedActivationSnapshot>>> {
-    const ids = [...new Set(pluginInstanceIds)]
-    const listed = JSON.stringify(ids)
-    const pairs = <Row extends HarnessRow, T>(rows: readonly Row[], value: (row: Row) => T) =>
-      new Map(rows.map((row) => [`${text(row.plugin_instance_id, "plugin instance ID")}\n${text(row.harness_id, "harness")}`, value(row)]))
-    const [revision, overrides, userDefaults, organizationDefaults, claxedoDefaults, pins] = await Promise.all([
-      this.currentRevision(scope.orgId),
-      projectId
-        ? this.database
-            .prepare(`
-              select plugin_instance_id, harness_id, enabled from agent_plugin_project_overrides
-              where org_id = ? and owner_user_id = ? and project_id = ?
-                and plugin_instance_id in (select value from json_each(?))
-            `)
-            .bind(scope.orgId, scope.userId, projectId, listed)
-            .all<ChoiceRow>()
-            .then((result) => pairs(result.results, (row) => enabled(row.enabled)))
-        : new Map<string, boolean>(),
-      this.database
-        .prepare(`
-          select plugin_instance_id, harness_id, enabled from agent_plugin_user_defaults
-          where org_id = ? and owner_user_id = ? and plugin_instance_id in (select value from json_each(?))
-        `)
-        .bind(scope.orgId, scope.userId, listed)
-        .all<ChoiceRow>()
-        .then((result) => pairs(result.results, (row) => enabled(row.enabled))),
-      this.database
-        .prepare(`
-          select plugin_instance_id, harness_id from agent_plugin_organization_defaults
-          where org_id = ? and plugin_instance_id in (select value from json_each(?))
-        `)
-        .bind(scope.orgId, listed)
-        .all<HarnessRow>()
-        .then((result) => pairs(result.results, () => true as const)),
-      this.database
-        .prepare(`
-          select plugin_instance_id, harness_id from agent_plugin_claxedo_defaults
-          where plugin_instance_id in (select value from json_each(?))
-        `)
-        .bind(listed)
-        .all<HarnessRow>()
-        .then((result) => pairs(result.results, () => true as const)),
-      this.database
-        .prepare(`
-          select scope_key, ${PIN_COLUMNS} from agent_plugin_artifact_pins
-          where scope_key in (?, ?, ?) and plugin_instance_id in (select value from json_each(?))
-        `)
-        .bind(userScopeKey(scope.orgId, scope.userId), organizationScopeKey(scope.orgId), CLAXEDO_SCOPE_KEY, listed)
-        .all<ScopedPinRow>()
-        .then((result) => new Map(result.results.map((row) => [`${row.scope_key}\n${text(row.plugin_instance_id, "plugin instance ID")}`, artifactPin(row)!.digest]))),
-    ])
-    const pin = (scopeKey: string, pluginInstanceId: string) => pins.get(`${scopeKey}\n${pluginInstanceId}`)
-    return new Map(ids.map((pluginInstanceId) => [pluginInstanceId, agentPluginHarnessRecord((harnessId): SignedActivationSnapshot => {
-      const pair = `${pluginInstanceId}\n${harnessId}`
-      const projectOverride = overrides.get(pair)
-      const userDefault = userDefaults.get(pair)
-      const user = pin(userScopeKey(scope.orgId, scope.userId), pluginInstanceId)
-      const organization = pin(organizationScopeKey(scope.orgId), pluginInstanceId)
-      const claxedo = pin(CLAXEDO_SCOPE_KEY, pluginInstanceId)
-      return {
-        revision,
-        pluginInstanceId,
-        harnessId,
-        ...(projectId ? { projectId } : {}),
-        ...(projectOverride === undefined ? {} : { projectOverride }),
-        ...(userDefault === undefined ? {} : { userDefault }),
-        ...(organizationDefaults.has(pair) ? { organizationDefault: true as const } : {}),
-        ...(claxedoDefaults.has(pair) ? { claxedoDefault: true as const } : {}),
-        pins: {
-          ...(user ? { user } : {}),
-          ...(organization ? { organization } : {}),
-          ...(claxedo ? { claxedo } : {}),
-        },
-      }
-    })]))
   }
 
   private async world(
