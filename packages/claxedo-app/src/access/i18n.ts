@@ -7,7 +7,6 @@ type AccessKey =
   | "access.org.role.admin"
   | "access.org.role.member"
   | "access.org.you"
-  | "access.org.yourRole"
   | "access.org.members"
   | "access.org.membersLoading"
   | "access.org.membersFailed"
@@ -30,7 +29,6 @@ export const accessDictionary = {
     "access.org.role.admin": "Admin",
     "access.org.role.member": "Member",
     "access.org.you": "You",
-    "access.org.yourRole": "Your role: {{role}}",
     "access.org.members": "Members",
     "access.org.membersLoading": "Loading members…",
     "access.org.membersFailed": "Couldn't load the members",

@@ -55,7 +55,6 @@ function OrganizationMembers(props: { readonly membership: OrgMembership }) {
     <section class="org-group" aria-labelledby={`org-${props.membership.orgId}`}>
       <div class="org-group-header">
         <h2 id={`org-${props.membership.orgId}`} class="org-heading">{props.membership.name}</h2>
-        <span class="org-note">{t("access.org.yourRole", { role: t(ROLE_KEY[props.membership.role]) })}</span>
       </div>
       <Switch>
         <Match when={members.error}>

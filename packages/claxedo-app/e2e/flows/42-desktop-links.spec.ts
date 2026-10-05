@@ -1,4 +1,4 @@
-import { expect, interceptSystemBrowser, test, UI } from "../harness"
+import { expect, interceptSystemBrowser, test } from "../harness"
 
 const PLUGINS_REPOSITORY = "https://github.com/kyashrathore/plugins"
 
@@ -13,8 +13,7 @@ for (const renderer of ["file", "http"] as const) {
       await window.reload()
       const document = window.url()
 
-      await window.getByRole("button", { name: UI.signInAccount, exact: true }).click()
-      await window.getByRole("menuitem", { name: "Settings" }).click()
+      await window.getByRole("button", { name: "Settings", exact: true }).click()
       for (const section of ["Keyboard shortcuts", "Appearance"]) {
         await window.getByRole("link", { name: section, exact: true }).click()
         await expect(window.getByRole("heading", { level: 1, name: section })).toBeVisible()

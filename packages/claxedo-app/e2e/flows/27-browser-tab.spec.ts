@@ -7,7 +7,7 @@ const PAGES: Readonly<Record<string, string>> = {
   "/second.html": '<!doctype html><title>Second</title><h1>Second preview page</h1><input aria-label="Page draft">',
 }
 
-async function visitShellPages(app: Page, isMobile: boolean, accountLabel: string) {
+async function visitShellPages(app: Page, isMobile: boolean) {
   await revealRail(app, isMobile)
   await app.getByTestId("sidebar-marketplace-entry").click()
   await expect(app.getByRole("searchbox", { name: "Search plugins" })).toBeVisible()
@@ -18,8 +18,7 @@ async function visitShellPages(app: Page, isMobile: boolean, accountLabel: strin
   await expect(app.getByTestId("browser-pane-webview-host")).toHaveCount(1)
   await details.getByRole("button", { name: "Close details", exact: true }).last().click()
   await revealRail(app, isMobile)
-  await app.getByRole("button", { name: accountLabel, exact: true }).click()
-  await app.getByRole("menuitem", { name: "Settings", exact: true }).click()
+  await app.getByRole("button", { name: "Settings", exact: true }).click()
   await openSection(app, isMobile, "Appearance")
   await expect(app.getByRole("complementary", { name: "Workspace panel" })).toHaveCount(0)
   await expect(app.getByTestId("browser-pane-webview-host")).toHaveCount(1)
@@ -68,7 +67,7 @@ test("27 browser tab: a local link from the agent opens in the panel's sandboxed
   await app.getByRole("button", { name: "Other session", exact: true }).click()
   if (isMobile) await app.getByRole("button", { name: UI.openRail }).click()
   await app.getByRole("button", { name: "Other workspace session", exact: true }).click()
-  await visitShellPages(app, isMobile, UI.signedOutAccount)
+  await visitShellPages(app, isMobile)
   if (isMobile) await app.getByRole("button", { name: UI.openRail }).click()
   await app.getByRole("button", { name: "Previews", exact: true }).click()
   await app.getByRole("button", { name: "Open workspace panel", exact: true }).click()
@@ -119,7 +118,7 @@ test("27 browser tab: desktop links reuse the guest across tabs, sessions and wo
   await expect(panel).toHaveCount(0)
   await window.getByRole("button", { name: "Other workspace session", exact: true }).click()
   await expect(window.getByRole("button", { name: "Open workspace panel", exact: true })).toBeVisible()
-  await visitShellPages(window, false, UI.signInAccount)
+  await visitShellPages(window, false)
   expect(await guestId()).toBe(originalGuestId)
   await window.getByRole("button", { name: "Browser links", exact: true }).click()
   await expect(address).toHaveValue(`${pages.url}/second.html`)

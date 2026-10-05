@@ -77,8 +77,7 @@ test("15 Connections on the desktop's local server says it offers no integration
   window.on("request", (request) => {
     if (new URL(request.url()).pathname.startsWith("/api/claxedo/integrations")) asked.push(request.url())
   })
-  await window.getByRole("button", { name: UI.signInAccount, exact: true }).click()
-  await window.getByRole("menuitem", { name: "Settings" }).click()
+  await window.getByRole("button", { name: "Settings", exact: true }).click()
   await window.getByRole("link", { name: "Connections", exact: true }).click()
   await expect(window.getByRole("heading", { level: 1, name: "Connections" })).toBeVisible()
   const group = window.getByRole("group", { name: "Integrations" })

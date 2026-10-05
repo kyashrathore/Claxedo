@@ -28,8 +28,7 @@ async function startWithFixture(desktop: Desktop) {
 }
 
 async function openSettingsSection(window: Page, link: string) {
-  await window.getByRole("button", { name: UI.signInAccount, exact: true }).click()
-  await window.getByRole("menuitem", { name: "Settings" }).click()
+  await window.getByRole("button", { name: "Settings", exact: true }).click()
   await window.getByRole("link", { name: link, exact: true }).click()
 }
 

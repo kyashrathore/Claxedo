@@ -4,16 +4,15 @@ Owns: who may do what, answered only from facts the server reports, and the Orga
 
 ## Concepts
 
-- **Principal** (`Principal` from `@/server`): a user (`userId`, `name`, optional `email`, `orgId` and `orgRole`) or a machine (`machineId`). Signed in, on the web and on the desktop alike, it is the user: the name and email from the auth binding (`useAuth`), the organization and role from the control plane's membership list (`server.queries.organizations.mine()`, `org.list`). The role counts only when the person belongs to exactly one organization, the one the control plane resolves for them. Signed out it is the machine from `server.capabilities()`, so org-role actions answer `false`.
+- **Principal** (`Principal` from `@/server`): a user (`userId`, `name`, optional `email`) or a machine (`machineId`). Signed in, on the web and on the desktop alike, it is the user, with the name and email from the auth binding (`useAuth`). Signed out it is the machine from `server.capabilities()`. A role belongs to one organization, so it is read per organization from the membership list (`server.queries.organizations.mine()`, `org.list`) where a screen needs it, never folded into the principal.
 - **Org role**: `owner`, `admin` or `member`. Owners and admins manage the org; members manage nothing. An org groups people and grants nothing on any machine, folder or project.
 
 ## `useAccess()` (`store.ts`)
 
-Returns `principal`, `memberships`, `orgRole` (the user principal's role, `undefined` for a machine), `can(action, facts?)` and `session(ref)`. It holds no state of its own: it reads the auth state, the membership query and `server.capabilities()`, and accepts account-source facts from the account query, so it needs no provider.
+Returns `principal`, `can(action, facts?)` and `session(ref)`. It holds no state of its own: it reads the auth state and `server.capabilities()`, and accepts the facts the account queries report, so it needs no provider.
 
 | Action (`AccessAction`, `model.ts`) | Answered from |
 | --- | --- |
-| `org.manage`, `org.accounts`, `plugins.manage` | the principal's org role is `owner` or `admin` (`isOrgManager`) |
 | `accounts.removeOrg` | `canRemoveOrgAccounts` from the credential server's account-source response; missing facts deny access |
 | `sandbox.manage` | `canManageSandboxKeys` from the credential server's sandbox-key listing (an org owner or admin on a hosted plane, the operator at the machine locally); missing facts deny access |
 
@@ -23,7 +22,7 @@ A fact the server has not reported answers `false`. Nothing is re-derived from r
 
 - **Organization** settings section (`organizationSettingsSection`, `/settings/organization`), drawn by `view/organization.tsx`:
   - signed out: the sign-in button when the auth binding offers sign-in (a failed sign-in shows a toast), "Checking account…" while signing in, otherwise a note to sign in;
-  - signed in: each organization the person belongs to, with their role and its members (`server.queries.organizations.members(orgId)`, `org.members.list`): each member's name from the auth store (or "Member without a name"), "You" on the person's own row, and their role; owners and admins read that they manage the members and the provider accounts, members that only owners and admins manage the organization;
+  - signed in: each organization the person belongs to and its members (`server.queries.organizations.members(orgId)`, `org.members.list`): each member's name from the auth store (or "Member without a name"), "You" on the person's own row, and their role; owners and admins read that they manage the members and the provider accounts, members that only owners and admins manage the organization;
   - no organization: a note that they are not in one;
   - each read shows "Loading…" after the placeholder delay and a failure with Retry.
 

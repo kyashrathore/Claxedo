@@ -111,21 +111,10 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content style={{ "max-width": "calc(100vw - 16px)" }}>
-          <div class="flex items-center gap-2 px-2 py-1" aria-hidden="true">
-            <IdentityMark view={view()} />
-            <span class="min-w-0 flex-1 truncate text-13-medium text-text-strong" title={view().label}>
-              {view().label}
-            </span>
-          </div>
-          <DropdownMenu.Separator />
           <DropdownMenu.Group>
             <DropdownMenu.Item onSelect={select(() => routing.navigate(settingsPath(USAGE_SECTION)))}>
               <Icon name="gauge" size="small" />
               {t("rail.account.usage")}
-            </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={select(() => routing.navigate(settingsPath()))}>
-              <Icon name="settings-gear" size="small" />
-              {t("rail.settings")}
             </DropdownMenu.Item>
             <DropdownMenu.Item onSelect={select(() => openExternal(HELP_URL))}>
               <Icon name="help" size="small" />

@@ -44,7 +44,6 @@ export async function leaveSettings(app: Page, isMobile: boolean) {
 
 export async function openSettings(app: Page, isMobile: boolean) {
   await revealRail(app, isMobile)
-  await app.getByRole("button", { name: UI.signedOutAccount }).click()
-  await app.getByRole("menuitem", { name: "Settings" }).click()
+  await app.getByRole("button", { name: "Settings", exact: true }).click()
   await openSection(app, isMobile, "Appearance")
 }

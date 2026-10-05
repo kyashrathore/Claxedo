@@ -89,7 +89,7 @@ const en = {
   "marketplace.skill.back": "Back to {{name}}",
   "marketplace.skill.reading": "Reading SKILL.md…",
   "marketplace.source.add": "Add source",
-  "marketplace.source.addButton": "+ Add source…",
+  "marketplace.source.addButton": "Add source…",
   "marketplace.source.remove": "Remove {{label}}",
   "marketplace.source.checking": "Checking…",
   "marketplace.source.invalid": "Enter a GitHub repository as owner/repository",

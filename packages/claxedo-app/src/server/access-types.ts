@@ -9,8 +9,6 @@ export type UserPrincipal = {
   readonly userId: UserId
   readonly name: string
   readonly email?: string
-  readonly orgId?: OrgId
-  readonly orgRole?: OrgRole
 }
 
 export type Principal = MachinePrincipal | UserPrincipal

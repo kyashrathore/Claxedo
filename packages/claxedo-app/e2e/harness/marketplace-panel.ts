@@ -42,7 +42,7 @@ export async function marketplacePanel(stack: Stack, app: Page, phone: boolean, 
 }
 
 async function addSourceDrawer(app: Page, phone: boolean, testInfo: TestInfo): Promise<void> {
-  await app.getByRole("button", { name: "+ Add source…" }).click()
+  await app.getByRole("button", { name: "Add source…" }).click()
   const drawer = app.getByRole("dialog", { name: "Add source" })
   await expect(drawer).toBeVisible()
   await expect(drawer.getByRole("textbox", { name: "GitHub repository" })).toBeFocused()

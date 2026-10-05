@@ -15,7 +15,7 @@ async function connectAndPlace(probe: Probe): Promise<Placement> {
     const capabilities = server.capabilities()
     const harnesses = capabilities?.harnesses.map((harness) => harness.id).join(", ")
     const features = Object.entries(capabilities?.features ?? {}).filter(([, on]) => on).map(([name]) => name).join(",")
-    return `connected, local execution=${capabilities?.localExecution}, harnesses ${harnesses}, features ${features}`
+    return `connected, serving machine=${capabilities?.servingMachine?.name ?? "none"}, harnesses ${harnesses}, features ${features}`
   })
   await check("fetched-data queries", async () => {
     const fetch = server.queryClient.fetchQuery.bind(server.queryClient)

@@ -59,7 +59,7 @@ export function SourceChips(props: {
           />
         )}
       </For>
-      <Button size="small" variant="ghost" onClick={() => props.onAdd()}>
+      <Button size="small" variant="ghost" icon="plus" onClick={() => props.onAdd()}>
         {t("marketplace.source.addButton")}
       </Button>
       <Show when={props.removable}>
