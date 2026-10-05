@@ -553,9 +553,8 @@ export const desktopRenderer: Policy = {
   // which the renderer did not reach before). They add no package edge.
   // The new-session flow (owner: the app's projects, cloud and browser
   // domains): the create-project dialog (`projects/view/create-project-dialog.tsx`)
-  // replaces the inline new-cloud-workspace panel, the one cloud-workspace
-  // display name (`cloud/view/cloud-name.ts`), and the note a localhost link
-  // from another machine's workspace opens (`browser/view/elsewhere-page.tsx`).
+  // replaces the inline new-cloud-workspace panel, and the note a localhost
+  // link from another machine's workspace opens (`browser/view/elsewhere-page.tsx`).
   // They add no package edge.
   // Product telemetry (owner: the app's server adapter and session requests):
   // the one sender of product events (`server/telemetry.ts`), the allowlisted
