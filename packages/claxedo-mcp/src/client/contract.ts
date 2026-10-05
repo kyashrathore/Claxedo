@@ -118,4 +118,11 @@ export interface ClaxedoMcpClient {
   /** The typed route surface (`session.*`, `permission.*`, `question.*`, ...) over `runtime(target)`. */
   server(target: WorkspaceTarget): Promise<WorkspaceRuntimeClient>
   workspaces(): Promise<readonly WorkspaceSummary[]>
+  /**
+   * One workspace's root sessions from the control plane's registry, which
+   * holds the sessions served by their own hosts beside the machine's.
+   * Undefined where the deployment has no registry to ask: the machine's own
+   * list is then the whole answer.
+   */
+  listSessions?(workspaceId: string, limit: number): Promise<readonly unknown[]>
 }

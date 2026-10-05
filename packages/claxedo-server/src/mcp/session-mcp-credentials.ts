@@ -16,6 +16,8 @@ export type SessionMcpCredentialsInput = SessionHostMachineDeps & {
   resolveWorkspaceOwner(workspaceId: string): Promise<WorkspaceOwnerIdentity | undefined>
   /** The first-party tool groups the workspace's project consented to, read as its owner. */
   toolGroups(owner: WorkspaceOwnerIdentity, workspaceId: string): Promise<readonly string[]>
+  /** The workspace's sessions as its owner lists them from the registry, which holds the ones served by their own hosts too. */
+  listSessions(owner: WorkspaceOwnerIdentity, workspaceId: string, limit: number): Promise<readonly unknown[]>
 }
 
 type RuntimeCredential = Extract<McpCredential, { kind: "runtime" }>
@@ -48,10 +50,16 @@ export function sessionMcpCredentials(input: SessionMcpCredentialsInput) {
     return (placement.session.creatorUserId ?? owner.userId) === owner.userId ? owner : undefined
   }
 
-  const access = async (credential: RuntimeCredential, host: "machine" | "session"): Promise<SessionHostMachineAccess> => {
+  const liveOwner = async (credential: RuntimeCredential): Promise<WorkspaceOwnerIdentity & { sessionId: string }> => {
     const { workspaceId, sessionId, userId } = credential
     const owner = sessionId ? await ownedSession(workspaceId, sessionId) : undefined
     if (!owner || !sessionId || owner.userId !== userId) throw new Error(`Session ${sessionId ?? "(none)"} no longer reaches workspace ${workspaceId}`)
+    return { ...owner, sessionId }
+  }
+
+  const access = async (credential: RuntimeCredential, host: "machine" | "session"): Promise<SessionHostMachineAccess> => {
+    const { workspaceId } = credential
+    const { sessionId, ...owner } = await liveOwner(credential)
     const grant = { actorId: owner.actorId, orgId: owner.orgId, workspaceId, sessionId, ttlSeconds: MACHINE_TOKEN_TTL_SECONDS }
     return host === "session" ? await sessionHostOwnAccess(input, grant) : await sessionHostMachineAccess(input, { scope: "session-mcp", ...grant })
   }
@@ -121,6 +129,12 @@ export function sessionMcpCredentials(input: SessionMcpCredentialsInput) {
 
     workspaceFetch(credential: RuntimeCredential): ClaxedoFetch {
       return relayFetch(credential, "machine")
+    },
+
+    async sessionList(credential: RuntimeCredential, workspaceId: string, limit: number): Promise<readonly unknown[]> {
+      if (workspaceId !== credential.workspaceId) throw new Error(`Session ${credential.sessionId ?? "(none)"} reaches workspace ${credential.workspaceId}, not ${workspaceId}`)
+      const { sessionId: _sessionId, ...owner } = await liveOwner(credential)
+      return await input.listSessions(owner, workspaceId, limit)
     },
 
     sessionHostFetch(credential: RuntimeCredential): ClaxedoFetch {

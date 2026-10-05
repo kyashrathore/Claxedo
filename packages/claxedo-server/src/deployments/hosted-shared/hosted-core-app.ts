@@ -58,7 +58,7 @@ import {
   hostedRouteGuardExemptions,
   type RouteGuardExemption,
 } from "../../platform/auth/request-guard"
-import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
+import { ownerSessionList, parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
 import { createSessionReadRoutes, authoritySessionReads } from "../../session/routes/session-read"
 import { createSessionReaderRoutes } from "../../session/routes/session-reader"
 import type { HostedControlPlane } from "../../authority/hosted-services"
@@ -574,6 +574,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         env: plane.env,
         resolveWorkspaceOwner,
         toolGroups: (owner, workspaceId) => sessionHostToolGroups({ userId: owner.userId, orgId: owner.orgId, projectId: owner.projectId, workspaceId }),
+        listSessions: (owner, workspaceId, limit) => ownerSessionList(requireAuthority(services), owner, workspaceId, limit),
       })
     : undefined
   const sessionHostDelivery = sessionHostMachine && plane.orgCredentials

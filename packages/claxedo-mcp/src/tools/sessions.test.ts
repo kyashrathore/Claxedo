@@ -415,6 +415,16 @@ function controlPlane(workspaces: readonly Workspace[], created: Workspace[]) {
         }))
       return Response.json({ workspaces: workspaceListHostRows(rows, url.searchParams.get("host")) })
     }
+    if (url.pathname === "/api/control/session-list") {
+      const row = [...workspaces, ...created].find((candidate) => candidate.id === url.searchParams.get("workspaceId"))
+      const items = (row?.sessions ?? []).filter((session) => !session.parentID).map((session) => ({
+        sessionId: session.id,
+        workspaceId: row?.id,
+        title: session.title,
+        ...(row?.status[session.id] ? { status: { kind: row.status[session.id].type, awaitingInput: false, at: 1 } } : {}),
+      }))
+      return Response.json({ items })
+    }
     if (url.pathname === "/api/workspace/create") {
       const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { workspaceName?: string }
       const row = workspace({ id: `ws_cloud_${created.length + 1}`, directory: "/workspace", backing: "cloud-vm", ...(body.workspaceName ? { name: body.workspaceName } : {}) })
@@ -678,8 +688,10 @@ describe("sessions_list", () => {
     const mac = listed.find((row) => row.workspace === "ws_local")
     expect(mac).toMatchObject({ name: "Mac", host: "machine" })
     const macSessions = (mac?.sessions ?? []) as Array<Record<string, unknown>>
-    expect(macSessions.map((row) => row.id)).toEqual(["ses_root"])
-    expect(macSessions[0]).toMatchObject({ status: { type: "busy" } })
+    expect(macSessions.map((row) => row.sessionId), "the registry's rows, which hold every host's sessions").toEqual(["ses_root"])
+    expect(macSessions[0]).toMatchObject({ status: { kind: "busy" } })
+    const cloudSessions = (listed.find((row) => row.workspace === "ws_cloud")?.sessions ?? []) as Array<Record<string, unknown>>
+    expect(cloudSessions.map((row) => row.sessionId)).toEqual(["ses_cloud"])
   })
 
   test("says a machine is offline instead of answering from a stale copy", async () => {

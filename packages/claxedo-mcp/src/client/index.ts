@@ -41,6 +41,8 @@ export type ClaxedoMcpClientOptions = Readonly<{
   ownSession?: Readonly<{ sessionId: string; fetch: ClaxedoFetch }>
   /** Control-plane routes, already authenticated as the calling user. */
   controlPlane?: Readonly<{ fetch: ClaxedoFetch }>
+  /** The registry's session list for a caller with no control-plane credential of its own: a session read as its workspace's owner. */
+  sessionList?: (workspaceId: string, limit: number) => Promise<readonly unknown[]>
   documents?: Readonly<{ fetch: ClaxedoFetch }>
   tasks?: TasksGrant
   appPlugins?: AppPluginsGrant
@@ -184,8 +186,20 @@ export function createClaxedoMcpClient(options: ClaxedoMcpClientOptions): Claxed
     return [...rows.values()]
   }
 
+  const listSessions = options.sessionList ?? (controlPlane
+    ? async (workspaceId: string, limit: number) => {
+        const query = new URLSearchParams({ scope: "workspace", workspaceId, limit: String(limit), settled: "all" })
+        const response = await controlPlane.fetch(`/api/control/session-list?${query}`, { method: "GET" })
+        if (!response.ok) throw await workspaceRuntimeClientError("session.list", response)
+        const items = asRecord(await response.json())?.items
+        if (!Array.isArray(items)) throw new ClaxedoMcpClientError("connection-invalid", "session.list returned no items array")
+        return items
+      }
+    : undefined)
+
   return {
     deployment,
+    ...(listSessions ? { listSessions } : {}),
     ...(options.documents ? { documents: options.documents.fetch } : {}),
     ...(options.tasks ? { tasks: options.tasks } : {}),
     ...(options.appPlugins ? { appPlugins: options.appPlugins } : {}),

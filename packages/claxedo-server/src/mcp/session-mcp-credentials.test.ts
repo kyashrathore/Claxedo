@@ -90,8 +90,12 @@ describe("the first-party MCP credential of a session served by its own host", (
     const names = (await client.listTools()).tools.map((tool) => tool.name)
     expect(names).toContain("sessions_list")
     expect(names.some((name) => name.startsWith("task"))).toBe(false)
-    const result = await client.callTool({ name: "sessions_list", arguments: {} })
-    expect(JSON.parse((result.content as Array<{ text: string }>)[0].text)).toEqual({ workspaces: [{ workspace: WORKSPACE_ID, sessions: [] }] })
+    const listed = JSON.parse((await client.callTool({ name: "sessions_list", arguments: {} }) as { content: Array<{ text: string }> }).content[0].text) as { workspaces: Array<{ workspace: string; sessions: Array<{ sessionId: string; sessionHostRoot?: string }> }> }
+    expect(listed.workspaces.map((row) => row.workspace)).toEqual([WORKSPACE_ID])
+    expect(listed.workspaces[0].sessions.map((row) => row.sessionId).toSorted(), "the registry lists the sessions served by their own hosts beside the machine's").toEqual([OTHER, ROOT, VM].toSorted())
+    expect(listed.workspaces[0].sessions.find((row) => row.sessionId === ROOT)?.sessionHostRoot).toBe(ROOT)
+    expect(relayed.filter((request) => request.path.includes("/session?") || request.path.endsWith("/session")), "the list asks no machine").toEqual([])
+    await client.callTool({ name: "session_get", arguments: { session: VM } })
     const bearer = relayed.at(-1)?.authorization?.replace(/^Bearer /, "") ?? ""
     expect(relayed.at(-1)?.path).toMatch(new RegExp(`^/workspaces/${WORKSPACE_ID}/session`))
     const token = decodeJwt(bearer)
@@ -100,7 +104,7 @@ describe("the first-party MCP credential of a session served by its own host", (
     expect(await plane.store.runtimeAccessTokenActive({ jti: String(token.jti), workspaceId: WORKSPACE_ID, hostId: VM_HOST })).toEqual({ active: true })
     const elsewhere = await client.callTool({ name: "sessions_list", arguments: { workspace: "ws_elsewhere" } })
     expect(JSON.parse((elsewhere.content as Array<{ text: string }>)[0].text)).toEqual({
-      workspaces: [{ workspace: "ws_elsewhere", unavailable: "Reaching workspace ws_elsewhere needs an account credential and none is reachable" }],
+      workspaces: [{ workspace: "ws_elsewhere", unavailable: `Session ${ROOT} reaches workspace ${WORKSPACE_ID}, not ws_elsewhere` }],
     })
     expect(relayed.filter((request) => request.path.includes("ws_elsewhere"))).toEqual([])
   })
@@ -132,12 +136,12 @@ describe("the first-party MCP credential of a session served by its own host", (
       return relayed.at(-1)?.authorization
     }
     const first = await delivered(ROOT)
-    const machine = await call(first.token, 1, "sessions_list", {})
+    const machine = await call(first.token, 1, "session_get", { session: VM })
     const ownHost = await call(first.token, 2, "session_transcript", { session: ROOT })
     expect(ownHost).not.toBe(machine)
     const later = await delivered(ROOT)
     expect(later.token).not.toBe(first.token)
-    expect(await call(later.token, 3, "sessions_list", {})).toBe(machine)
+    expect(await call(later.token, 3, "session_get", { session: VM })).toBe(machine)
     expect(await call(later.token, 4, "session_transcript", { session: ROOT })).toBe(ownHost)
   })
 

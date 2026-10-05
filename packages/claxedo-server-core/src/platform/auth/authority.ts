@@ -414,6 +414,8 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Pa
     args: { workspaceId: string },
   ) => Promise<AuthoritySessionInventoryRow[]>
   listSessionPage: (auth: SignedControlPlaneAuth, args: SessionPageQuery) => Promise<AuthoritySessionInventoryRow[]>
+  /** The page a workspace's owner reads, for a caller the plane already verified as that owner: a session host's first-party MCP bearer. */
+  listOwnerSessionPage?: (owner: { userId: string; actorId: string }, args: SessionPageQuery) => Promise<AuthoritySessionInventoryRow[]>
   publishHostSessionRows?: HostSessionRowsAuthority["publishHostSessionRows"]
   resolveSession?: (auth: SignedControlPlaneAuth, args: { sessionId: string }) => Promise<unknown>
   readSessionMessages: (

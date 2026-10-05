@@ -71,6 +71,8 @@ export type McpClientInputs = Readonly<{
   request: Request
   local?: Readonly<{ fetch: ClaxedoFetch; workspace: WorkspaceTarget }>
   controlPlane?: Readonly<{ fetch: ClaxedoFetch }>
+  /** The registry's session list for a session's own bearer; see `ClaxedoMcpClient.listSessions`. */
+  sessionList?: (workspaceId: string, limit: number) => Promise<readonly unknown[]>
   documents?: Readonly<{ fetch: ClaxedoFetch }>
   tasks?: TasksGrant
   appPlugins?: AppPluginsGrant

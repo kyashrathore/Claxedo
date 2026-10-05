@@ -450,8 +450,10 @@ async function workspaceSessions(ctx: McpToolContext, workspace: WorkspaceSummar
   }
   if (workspace.machineOnline === false) return { ...row, unavailable: "machine offline" }
   try {
-    const server = await ctx.client.server({ workspaceId: workspace.id })
-    return { ...row, sessions: await rootSessions(server, workspace.id, limit) }
+    const sessions = ctx.client.listSessions
+      ? await ctx.client.listSessions(workspace.id, limit)
+      : await rootSessions(await ctx.client.server({ workspaceId: workspace.id }), workspace.id, limit)
+    return { ...row, sessions: [...sessions] }
   } catch (error) {
     return { ...row, unavailable: error instanceof Error ? error.message : String(error) }
   }

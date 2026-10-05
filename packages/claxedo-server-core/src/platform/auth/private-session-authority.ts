@@ -296,6 +296,8 @@ export type PrivateSessionAuthority = {
     input: { workspaceId: string },
   ) => Promise<PrivateSessionInventoryRow[]>
   listSessionPage: (auth: SignedControlPlaneAuth, input: SessionPageQuery) => Promise<PrivateSessionInventoryRow[]>
+  /** The page a workspace's owner reads, for a caller the plane already verified as that owner: a session host's first-party MCP bearer. */
+  listOwnerSessionPage: (owner: { userId: string; actorId: string }, input: SessionPageQuery) => Promise<PrivateSessionInventoryRow[]>
   resolveSession: (auth: SignedControlPlaneAuth, input: { sessionId: string }) => Promise<unknown>
   readSessionMessages: (
     auth: SignedControlPlaneAuth,
@@ -351,6 +353,7 @@ export const PRIVATE_SESSION_AUTHORITY_METHODS = [
   "authorizeRuntimeSessionStartStatus",
   "listSessions",
   "listSessionPage",
+  "listOwnerSessionPage",
   "resolveSession",
   "readSessionMessages",
   "readSessionFirstRead",
