@@ -42,10 +42,11 @@ export function cloudWorkspaceFromRow(row: unknown): CloudWorkspace | undefined 
   const owner = nonEmptyString(row.project_id) ?? nonEmptyString(row.projectId)
   if (!id || !owner) return undefined
   const branch = nonEmptyString(row.git_branch) ?? nonEmptyString(row.gitBranch) ?? nonEmptyString(row.branch)
+  const name = cloudWorkspaceName(row, id)
   return {
     id: placementId(id),
     projectId: projectId(owner),
-    name: cloudWorkspaceName(row, id, branch),
+    ...(name ? { name } : {}),
     ...(branch ? { branch } : {}),
     status: cloudStatusFromWire(row.status, row.step, row.error),
   }

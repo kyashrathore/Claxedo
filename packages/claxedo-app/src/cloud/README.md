@@ -4,7 +4,7 @@ Owns: the cloud workspace as a placement of a project, its lifecycle machine, an
 
 ## Concepts
 
-- **Cloud workspace** (`CloudWorkspace`): a placement (`id: PlacementId`) of a project, with a name, an optional branch and the server-reported `status`. The name is required: every create form asks for it and the server refuses a create without one (`workspace_name_required`). A row shows the name, with the id as its tooltip; a workspace with no name of its own (or whose stored name is its id) reads "Cloud workspace" with its branch, never the id; `src/server/wire/workspace-name.ts` decides this once for every cloud row and placement.
+- **Cloud workspace** (`CloudWorkspace`): a placement (`id: PlacementId`) of a project, with a name, an optional branch and the server-reported `status`. The name is required: every create form asks for it and the server refuses a create without one (`workspace_name_required`). A row shows the name, with the id as its tooltip. A workspace with no name of its own (or whose stored name is its id) is decoded with no name (`src/server/wire/workspace-name.ts`, once for every cloud row and placement: `CloudWorkspace.name` and `Placement.label` are absent), and every view names it through `useWorkspaceName()` (`view/workspace-name.ts`), which reads the dictionary's "Cloud workspace" with its branch, never the id.
 - **Row** (`CloudWorkspaceRow`): a workspace with its effective `state`, the machine state the views draw.
 
 ## One home

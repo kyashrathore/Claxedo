@@ -1,6 +1,6 @@
 import { For, Match, Show, Switch, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { canStart, canStop, cloudFailureReason, useCloudCommandFailureText, useCloudStatusText, useCloudWorkspaces, type CloudWorkspaceRow, type CloudWorkspaces } from "@/cloud"
+import { canStart, canStop, cloudFailureReason, useCloudCommandFailureText, useCloudStatusText, useCloudWorkspaces, useWorkspaceName, type CloudWorkspaceRow, type CloudWorkspaces } from "@/cloud"
 import { useErrorCopy } from "@/i18n"
 import { FailureNotice } from "@/lib/failure"
 import { machineOfPlacement, useServer, type AppError, type Machine, type Placement, type Project } from "@/server"
@@ -36,10 +36,12 @@ function CloudRow(props: { readonly row: CloudWorkspaceRow; readonly cloud: Clou
   const open = usePlacementOpener()
   const status = useCloudStatusText()
   const commandFailure = useCloudCommandFailureText()
+  const named = useWorkspaceName()
+  const name = () => named(props.row.name, undefined)
   const detail = () => [props.row.branch, status(props.row.state), cloudFailureReason(props.row.state), commandFailure(props.row.commandFailure)].filter(Boolean).join(" · ")
   const remove = async () => {
     const confirmed = await requestConfirm(dialog, {
-      title: t("projects.where.delete.title", { name: props.row.name }),
+      title: t("projects.where.delete.title", { name: name() }),
       body: t("projects.where.delete.body"),
       confirmLabel: t("projects.where.delete.confirm"),
       cancelLabel: t("projects.where.cancel"),
@@ -47,7 +49,7 @@ function CloudRow(props: { readonly row: CloudWorkspaceRow; readonly cloud: Clou
     if (confirmed) await props.cloud.remove(props.row.id)
   }
   return (
-    <SettingsRow title={<span title={props.row.id}>{props.row.name}</span>} description={detail()}>
+    <SettingsRow title={<span title={props.row.id}>{name()}</span>} description={detail()}>
       <Show when={props.row.state.kind === "ready"}>
         <Button variant="neutral" size="small" onClick={() => open(props.row.id)}>{t("projects.placement.open")}</Button>
       </Show>

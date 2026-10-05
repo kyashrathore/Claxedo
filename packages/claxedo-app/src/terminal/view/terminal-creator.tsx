@@ -1,5 +1,6 @@
 import { createSignal, For, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
+import { useWorkspaceName } from "@/cloud"
 import { useErrorCopy, useTranslator } from "@/i18n"
 import { createDraftPlacementResolver, NewSessionContextRow, type WhereCreation } from "@/projects"
 import { toAppError, useServer, type PlacementId } from "@/server"
@@ -61,7 +62,12 @@ function LauncherGrid(props: {
   const live = () => runtime().kind === "live"
   const agents = useQuery(() => ({ ...server.queries.terminals.agents(props.placementId), enabled: live() }))
   const launchers = () => terminalLaunchers(t("terminal.creator.shell"), live() ? (agents.data ?? []) : [])
-  const note = () => agentsNote(t, runtime(), server.placements.byId(props.placementId)?.label ?? "", agents)
+  const named = useWorkspaceName()
+  const placementName = () => {
+    const placement = server.placements.byId(props.placementId)
+    return placement ? named(placement.label, placement.branch) : ""
+  }
+  const note = () => agentsNote(t, runtime(), placementName(), agents)
   return (
     <>
       <div class="grid gap-2 p-3" style={{ "grid-template-columns": "repeat(auto-fill, minmax(9.5rem, 1fr))" }}>

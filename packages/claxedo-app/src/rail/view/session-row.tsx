@@ -1,12 +1,12 @@
 import { createMemo, createSignal, Show, type JSX } from "solid-js"
-import { useTranslator, type DomainTranslate } from "@/i18n"
+import { useTranslator } from "@/i18n"
 import { useAgeClock } from "@/lib/clock"
 import { canSettle, type SessionRowView } from "@/session"
 import { useShellLayout } from "@/shell"
 import { createHoverEngagement } from "../hover-engagement"
-import { railDictionary, type RailKey } from "../i18n"
+import { railDictionary } from "../i18n"
 import { navigationStatus, sessionAge, sessionAgeSince } from "../model"
-import type { SessionMarker } from "../session-marker"
+import { markerLabel, type SessionMarker } from "../session-marker"
 import { NavigationRow, NavigationRowStatusGutter } from "./navigation-row"
 import { SessionRowMenu, type SessionRowMenuActions } from "./session-row-menu"
 import "../session-navigation.css"
@@ -40,13 +40,6 @@ function SessionTitle(props: { readonly title: string; readonly hovered: boolean
 }
 
 const MARKER_ICON = { cloud: "cloud", machine: "server", worktree: "worktree" } as const
-
-function markerLabel(t: DomainTranslate<RailKey>, marker: SessionMarker, projectLabel: string): string {
-  if (marker.kind === "cloud") return `${t("rail.marker.cloud")} · ${marker.name}`
-  if (marker.kind === "machine") return t("rail.marker.machine", { folder: marker.folder, machine: marker.name })
-  const base = t("rail.marker.worktree", { project: projectLabel, name: marker.name })
-  return marker.path && marker.path !== marker.name ? `${base} · ${marker.path}` : base
-}
 
 function SessionRowMeta(props: { readonly row: SessionRowView; readonly marker: SessionMarker | undefined; readonly projectLabel: string; readonly caption?: string }): JSX.Element {
   const t = useTranslator(railDictionary)

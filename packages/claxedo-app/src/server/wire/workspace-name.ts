@@ -1,16 +1,12 @@
 import { nonEmptyString } from "@claxedo/helpers/guards"
+import type { PlacementKind, PlacementName } from "../types"
 
-const UNNAMED_CLOUD_WORKSPACE = "Cloud workspace"
-
-function ownName(row: Record<string, unknown>, id: string): string | undefined {
+export function cloudWorkspaceName(row: Record<string, unknown>, id: string): string | undefined {
   return [row.workspace_name, row.workspaceName, row.display_name, row.displayName].map(nonEmptyString).find((name) => name !== undefined && name !== id)
 }
 
-export function cloudWorkspaceName(row: Record<string, unknown>, id: string, branch: string | undefined): string {
-  return ownName(row, id) ?? [UNNAMED_CLOUD_WORKSPACE, branch].filter(Boolean).join(" · ")
-}
-
-export function placementName(row: Record<string, unknown>, id: string, cloud: boolean, path: string | undefined, branch: string | undefined): string {
-  if (cloud) return cloudWorkspaceName(row, id, branch)
-  return ownName(row, id) ?? path?.split("/").filter(Boolean).pop() ?? path ?? id
+export function placementName(row: Record<string, unknown>, id: string, kind: PlacementKind, path: string | undefined): PlacementName {
+  const own = cloudWorkspaceName(row, id)
+  if (kind === "cloud") return own ? { kind, label: own } : { kind }
+  return { kind, label: own ?? path?.split("/").filter(Boolean).pop() ?? path ?? id }
 }

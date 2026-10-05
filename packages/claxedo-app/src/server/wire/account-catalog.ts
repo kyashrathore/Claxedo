@@ -42,10 +42,9 @@ function placementRecordFromRow(row: Row, workspace: string, project: string): P
   const gitRemote = firstTextOf(row, "repo_url", "repoUrl")
   const branch = firstTextOf(row, "git_branch", "gitBranch")
   const placement: Placement = {
+    ...placementName(row, workspace, cloud ? "cloud" : "worktree", remoteDirectory),
     id: placementId(workspace),
     projectId: projectId(project),
-    kind: cloud ? "cloud" : "worktree",
-    label: placementName(row, workspace, cloud, remoteDirectory, branch),
     ...(remoteDirectory ? { path: remoteDirectory } : {}),
     ...(branch ? { branch } : {}),
     reachable: row.reachable === true,

@@ -1,4 +1,5 @@
 import { createEffect, createMemo, on, onCleanup, Show, type Accessor, type JSX } from "solid-js"
+import { useWorkspaceName } from "@/cloud"
 import { useTranslator } from "@/i18n"
 import { useServer, type PlacementId } from "@/server"
 import { useTerminals, type TerminalItem } from "@/terminal"
@@ -20,10 +21,12 @@ export function RailTerminalRow(props: { readonly row: TerminalItem; readonly ac
   const terminals = useTerminals()
   const engagement = createHoverEngagement()
   const server = useServer()
+  const named = useWorkspaceName()
   const status = () => terminalNavigationStatus(props.row)
   const meta = () => {
     const current = status()
-    const where = server.placements.byId(props.row.placementId)?.label
+    const placement = server.placements.byId(props.row.placementId)
+    const where = placement && named(placement.label, placement.branch)
     return [where, current === "idle" ? undefined : t(TITLE_SUFFIX[current])].filter(Boolean).join(" · ")
   }
   const title = () => [props.row.title, meta()].filter(Boolean).join(" · ")

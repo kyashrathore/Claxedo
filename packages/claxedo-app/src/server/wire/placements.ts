@@ -62,8 +62,7 @@ function placementRecord(project: Record<string, unknown>, key: string, row: Rec
     placement: {
       id: placementId(id),
       projectId: projectId(owner),
-      kind,
-      label: placementName(row, id, kind === "cloud", location, branch),
+      ...placementName(row, id, kind, location),
       path: location,
       ...(branch ? { branch } : {}),
       reachable: row.reachable === true,

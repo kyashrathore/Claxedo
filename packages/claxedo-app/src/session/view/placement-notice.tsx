@@ -1,5 +1,6 @@
 import type { Accessor, JSX } from "solid-js"
 import { ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel, publishComposerNotice, type ComposerNotice } from "@/composer"
+import { useWorkspaceName } from "@/cloud"
 import { isOfflineMachine, useServer, type Placement, type PlacementId, type WorkspaceBootMode, type WorkspaceRuntime } from "@/server"
 import { useSessionScreenText, type SessionScreenText } from "./text"
 
@@ -9,10 +10,10 @@ function bootDetail(t: SessionScreenText, bootMode: WorkspaceBootMode | undefine
   return t("sessionScreen.workspace.starting")
 }
 
-type PlacementFacts = { readonly placement: Placement | undefined; readonly runtime: WorkspaceRuntime; readonly offline: boolean; readonly wake: () => void }
+type PlacementFacts = { readonly placement: Placement | undefined; readonly name: string; readonly runtime: WorkspaceRuntime; readonly offline: boolean; readonly wake: () => void }
 
 export function placementNotice(t: SessionScreenText, facts: PlacementFacts): ComposerNotice | undefined {
-  const name = facts.placement?.label ?? ""
+  const name = facts.name
   const runtime = facts.runtime
   if (runtime.kind === "waking") return { kind: "workspace-lifecycle", tone: "progress", message: t("sessionScreen.workspace.waking", { name }), detail: bootDetail(t, runtime.bootMode) }
   if (runtime.kind === "wakeFailed") {
@@ -28,13 +29,15 @@ export function placementNotice(t: SessionScreenText, facts: PlacementFacts): Co
 export function usePlacementNotice(placementId: Accessor<PlacementId | undefined>): Accessor<ComposerNotice | undefined> {
   const t = useSessionScreenText()
   const server = useServer()
+  const named = useWorkspaceName()
   const wake = (id: PlacementId) => () =>
     void server.cloud.start(id).catch((error: unknown) => console.warn("The workspace could not be woken", { placementId: id, error }))
   return () => {
     const id = placementId()
     if (!id) return undefined
     const placement = server.placements.byId(id)
-    return placementNotice(t, { placement, runtime: server.cloud.runtime(id), offline: isOfflineMachine(placement), wake: wake(id) })
+    const name = placement ? named(placement.label, placement.branch) : ""
+    return placementNotice(t, { placement, name, runtime: server.cloud.runtime(id), offline: isOfflineMachine(placement), wake: wake(id) })
   }
 }
 

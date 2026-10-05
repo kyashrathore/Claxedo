@@ -4,6 +4,7 @@ import type { PickDelivery } from "../pick-to-composer"
 import type { BrowserTab } from "../tab"
 import { watchTheme } from "./guest-theme"
 import { useQuery } from "@tanstack/solid-query"
+import { useWorkspaceName } from "@/cloud"
 import { isLocalPlacement, machineOfPlacement, useServer } from "@/server"
 import { isLoopbackPage } from "../url"
 import { ElsewherePage } from "./elsewhere-page"
@@ -15,10 +16,11 @@ const AGENT_BROWSER_PARTITION = "persist:agent-browser"
 export function PageHost(props: { readonly tab: BrowserTab; readonly active: boolean; readonly deliver: PickDelivery }): JSX.Element {
   const server = useServer()
   const machines = useQuery(() => server.queries.machines.list())
+  const named = useWorkspaceName()
   const elsewhere = (): { readonly place: string | undefined } | undefined => {
     const placement = server.placements.byId(props.tab.placementId)
     if (!isLoopbackPage(props.tab.state().url) || isLocalPlacement(placement)) return undefined
-    return { place: placement && (machineOfPlacement(machines.data ?? [], placement)?.name ?? placement.label) }
+    return { place: placement && (machineOfPlacement(machines.data ?? [], placement)?.name ?? named(placement.label, placement.branch)) }
   }
   return (
     <Show when={elsewhere() === undefined} fallback={<ElsewherePage url={props.tab.state().url} place={elsewhere()?.place} />}>

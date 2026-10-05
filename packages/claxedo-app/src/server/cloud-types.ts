@@ -12,7 +12,7 @@ export type CloudWorkspaceStatus =
 export type CloudWorkspace = {
   readonly id: PlacementId
   readonly projectId: ProjectId
-  readonly name: string
+  readonly name?: string
   readonly branch?: string
   readonly status: CloudWorkspaceStatus
 }

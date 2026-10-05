@@ -1,4 +1,5 @@
 import { createMemo, type Accessor } from "solid-js"
+import { useWorkspaceName } from "@/cloud"
 import { useProjectList } from "@/projects"
 import { useServer, type ProjectId } from "@/server"
 import { panePlacementOf } from "@/shell"
@@ -44,6 +45,7 @@ export function useSwitcherItems(): Accessor<readonly SwitcherItem[]> {
   const stores = useSessionStores()
   const terminals = useTerminals()
   const labels = useProjectLabels()
+  const named = useWorkspaceName()
   return createMemo(() =>
     workbench.selectors.aliveContents().flatMap((contentId) => {
       const opened = workbench.content(contentId)
@@ -62,7 +64,7 @@ export function useSwitcherItems(): Accessor<readonly SwitcherItem[]> {
           kind: kindOf(opened.kind.kind),
           title: opened.content?.title() ?? "",
           projectLabel: placement ? labels().get(placement.projectId) : undefined,
-          workspaceLabel: placement?.label,
+          workspaceLabel: placement ? named(placement.label, placement.branch) : undefined,
           status: row ? navigationStatus(row) : terminal ? terminalNavigationStatus(terminal) : "idle",
         },
       ]

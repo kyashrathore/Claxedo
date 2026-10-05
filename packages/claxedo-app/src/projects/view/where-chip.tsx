@@ -1,5 +1,5 @@
 import type { JSX } from "solid-js"
-import { cloudFailureReason, useCloudCommandFailureText, useCloudStatusText, useCloudWorkspaces, type CloudWorkspaces } from "@/cloud"
+import { cloudFailureReason, useCloudCommandFailureText, useCloudStatusText, useCloudWorkspaces, useWorkspaceName, type CloudWorkspaces, type WorkspaceName } from "@/cloud"
 import { placementId, type Placement } from "@/server"
 import { useConnectMachine } from "@/settings"
 import { ClaxedoIcon as Icon, useDialog } from "@/ui"
@@ -15,6 +15,7 @@ type Words = {
   readonly t: ProjectsText
   readonly context: DraftContext
   readonly cloudStatus: (placement: Placement) => string | undefined
+  readonly name: WorkspaceName
 }
 
 function placementOnline(words: Words, placement: Placement): string {
@@ -33,7 +34,7 @@ function whereOption(words: Words, entry: WhereEntry, grouped: ReadonlySet<Where
   const detail = entryDetail(words, entry.placement)
   return {
     value: entry.placement.id,
-    label: entry.placement.label,
+    label: words.name(entry.placement.label, undefined),
     ...(detail ? { detail } : {}),
     ...(grouped.has(entry.place) ? { group: words.t(PLACE_GROUP[entry.place]) } : {}),
   }
@@ -50,13 +51,13 @@ function whereLabel(words: Words): string {
   const choice = context.choice()
   if (choice.kind === "newWorktree") return t("projects.chip.newWorktree.pending")
   const current = context.current()
-  return current?.label ?? choice.pendingName ?? ""
+  return current ? words.name(current.label, current.branch) : choice.pendingName ?? ""
 }
 
 function createActions(words: Words, openCloud: () => void, connect: () => void): readonly ContextChipAction[] {
   const { t, context } = words
   const worktrees = context.worktreeRoots().map((root) => ({
-    label: t("projects.chip.newWorktree", { machine: context.machineOf(root)?.name ?? root.label }),
+    label: t("projects.chip.newWorktree", { machine: context.machineOf(root)?.name ?? words.name(root.label, undefined) }),
     onSelect: () => context.choose({ kind: "newWorktree", root: root.id }),
   }))
   const cloud = context.canCreateCloud() ? [{ label: t("projects.chip.newCloud"), onSelect: openCloud }] : []
@@ -79,7 +80,7 @@ export function useWhereChip(context: DraftContext): () => ContextChip {
   const dialog = useDialog()
   const connect = useConnectMachine()
   const cloud = useCloudWorkspaces(context.projectId, context.canCreateCloud)
-  const words: Words = { t, context, cloudStatus: useCloudStatus(cloud) }
+  const words: Words = { t, context, cloudStatus: useCloudStatus(cloud), name: useWorkspaceName() }
   const openCloud = () =>
     dialog.show(() => <DialogNewCloudWorkspace cloud={cloud} onCreated={(workspace) => context.choose({ kind: "placement", id: workspace.id, pendingName: workspace.name })} />)
   return () => {

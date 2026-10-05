@@ -57,11 +57,13 @@ export type ServingMachine = { readonly id?: MachineId; readonly name: string }
 
 export type PlacementKind = "folder" | "worktree" | "cloud"
 
-export type Placement = {
+export type PlacementName =
+  | { readonly kind: "cloud"; readonly label?: string }
+  | { readonly kind: "folder" | "worktree"; readonly label: string }
+
+export type Placement = PlacementName & {
   readonly id: PlacementId
   readonly projectId: ProjectId
-  readonly kind: PlacementKind
-  readonly label: string
   readonly path?: string
   readonly branch?: string
   readonly machineId?: MachineId

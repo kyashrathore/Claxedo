@@ -2,6 +2,7 @@ import { Index, Show } from "solid-js"
 import { SLOW_LOAD_MS, useElapsed } from "@/lib/delay"
 import { usePhone } from "@/lib/viewport"
 import { useQuery } from "@tanstack/solid-query"
+import { useWorkspaceName } from "@/cloud"
 import { machineOfPlacement, useServer, type PlacementId } from "@/server"
 import { DelayedLoading, SkeletonBar } from "@/ui"
 import { useSessionScreenText } from "./text"
@@ -78,10 +79,11 @@ export function SessionHistoryLoading(props: { placementId: PlacementId }) {
   const phone = usePhone()
   const slow = useElapsed(SLOW_LOAD_MS)
   const machines = useQuery(() => server.queries.machines.list())
+  const named = useWorkspaceName()
   const waiting = () => {
     if (!slow()) return undefined
     const placement = server.placements.byId(props.placementId)
-    const where = placement && (machineOfPlacement(machines.data ?? [], placement)?.name ?? placement.label)
+    const where = placement && (machineOfPlacement(machines.data ?? [], placement)?.name ?? named(placement.label, placement.branch))
     return where ? t("sessionScreen.loadingSlow", { where }) : t("sessionScreen.loadingSlowUnnamed")
   }
   return <SessionTimelineSkeleton centered={!phone()} waiting={waiting()} />

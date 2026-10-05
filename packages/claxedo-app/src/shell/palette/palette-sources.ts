@@ -1,4 +1,5 @@
 import { createMemo } from "solid-js"
+import { useWorkspaceName } from "@/cloud"
 import { useTranslator } from "@/i18n"
 import { useServer, type FileNode, type PlacementId } from "@/server"
 import { useSessionStores } from "@/session"
@@ -43,6 +44,7 @@ function useFileReads(placementId: () => PlacementId | undefined) {
 
 function useSessionSource(placementId: () => PlacementId | undefined) {
   const t = useTranslator(shellDictionary)
+  const named = useWorkspaceName()
   const server = useServer()
   const stores = useSessionStores()
   return (): PaletteEntry[] => {
@@ -58,7 +60,7 @@ function useSessionSource(placementId: () => PlacementId | undefined) {
       })
       .map((row) => {
         const placement = server.placements.byId(row.ref.placementId)
-        const description = placement ? `${t(`shell.palette.workspace.${workspaceKind(placement)}`)} : ${placement.label}` : ""
+        const description = placement ? `${t(`shell.palette.workspace.${workspaceKind(placement)}`)} : ${named(placement.label, placement.branch)}` : ""
         return sessionEntry(row, { title: row.title || t("shell.palette.newSession"), description, category: t("shell.palette.group.session") })
       })
   }

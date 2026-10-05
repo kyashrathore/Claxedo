@@ -14,6 +14,7 @@ const en = {
   "cloud.command.start.failed": "Couldn't start: {{reason}}",
   "cloud.command.stop.failed": "Couldn't stop: {{reason}}",
   "cloud.command.remove.failed": "Couldn't delete: {{reason}}",
+  "cloud.unnamed": "Cloud workspace",
 }
 
 export type CloudKey = keyof typeof en
