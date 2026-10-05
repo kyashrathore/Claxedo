@@ -19,11 +19,9 @@ import {
   type SandboxMutationResult,
   type SandboxGarbageCollectResult,
   isSandboxListingUnsupported,
-  isSandboxRuntimeBootFailure,
-  sandboxLeaseFailure,
-  sandboxRuntimeBootFailedError,
   type SandboxManagerOptions
 } from "./contract"
+import { isSandboxRuntimeBootFailure, sandboxLeaseFailure, sandboxRuntimeBootFailedError } from "./lease-failure"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "./constants"
 import {
   captureSandboxCheckpoint,

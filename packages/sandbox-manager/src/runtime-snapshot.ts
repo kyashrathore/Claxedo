@@ -1,9 +1,9 @@
-import {
-  SANDBOX_RUNTIME_UNHEALTHY,
-  type SandboxLeaseStore,
-  type SandboxMutationResult,
-  type SandboxRuntimeSnapshotInput,
+import type {
+  SandboxLeaseStore,
+  SandboxMutationResult,
+  SandboxRuntimeSnapshotInput,
 } from "./contract"
+import { SANDBOX_RUNTIME_UNHEALTHY } from "./lease-failure"
 
 /**
  * How a deployment moves a lease's retry budget when its runtime reports on

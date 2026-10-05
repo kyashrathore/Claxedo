@@ -29,10 +29,10 @@ import {
   type SandboxDriver,
   type SandboxDriverEnsureInput,
   type SandboxListingUnsupported,
-  SandboxRuntimeBootError,
   type SandboxTarget,
   type SandboxResource,
 } from "../contract"
+import { SandboxRuntimeBootError } from "../lease-failure"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { record, text } from "../json"
 import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"

@@ -1,4 +1,5 @@
 export * from "./contract"
+export * from "./lease-failure"
 export * from "./checkpoint-manager"
 export * from "./hosted-network-policy"
 export * from "./runtime-snapshot"

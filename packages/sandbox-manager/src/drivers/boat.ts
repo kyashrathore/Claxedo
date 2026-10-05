@@ -1,12 +1,12 @@
 import { trimToUndefined } from "@claxedo/helpers/string"
-import {
-  SandboxRuntimeBootError,
-  type SandboxDriver,
-  type SandboxDriverEnsureInput,
-  type SandboxLease,
-  type SandboxTarget,
-  type SandboxResource,
+import type {
+  SandboxDriver,
+  SandboxDriverEnsureInput,
+  SandboxLease,
+  SandboxTarget,
+  SandboxResource,
 } from "../contract"
+import { SandboxRuntimeBootError } from "../lease-failure"
 import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"
 import { envFile, shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
