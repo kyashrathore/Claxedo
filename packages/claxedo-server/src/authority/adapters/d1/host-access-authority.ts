@@ -46,7 +46,7 @@ import {
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
-import { listHostAssignmentDevices, stringList } from "./host-assignment-devices"
+import { listHostDevices, stringList } from "./host-devices"
 import type { D1WorkspaceAuthority } from "./workspace-authority"
 import {
   activeGuard, batchUnder, deleteAssertion, mayGuard, maySql, wonAssertion, type WorkspaceAction,
@@ -76,7 +76,7 @@ export const D1_HOST_ACCESS_AUTHORITY_METHODS = [
   "assignWorkspaceHost",
   "unassignWorkspaceHost",
   "activeWorkspaceHost",
-  "listHostAssignments",
+  "listHostDevices",
 ] as const satisfies readonly (keyof WorkspaceAuthority)[]
 
 export type D1HostAccessAuthorityPort = Pick<WorkspaceAuthority, (typeof D1_HOST_ACCESS_AUTHORITY_METHODS)[number]> & {
@@ -476,9 +476,8 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     }
   }
 
-  /** Every live assignment on the account, grouped for the devices surface. */
-  async listHostAssignments(auth: SignedControlPlaneAuth) {
-    return await listHostAssignmentDevices(this.database, (await this.requirePrincipal(auth)).actorId, this.now())
+  async listHostDevices(auth: SignedControlPlaneAuth) {
+    return await listHostDevices(this.database, (await this.requirePrincipal(auth)).actorId, this.now())
   }
 
   async createHostEnrollmentRequest(auth: SignedControlPlaneAuth, args: { hostId: string }) {

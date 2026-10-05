@@ -10,19 +10,20 @@ import type { Workspaces } from "./workspaces"
 import { servesFromMachine } from "./capabilities"
 import type { BootstrapDeclaration } from "./wire/placements"
 
-const MACHINE_ONLINE_WINDOW_MS = 120_000
+const DEVICE_STATES: ReadonlySet<unknown> = new Set(["online", "offline", "paused"])
 
-type DeviceRow = { readonly enrollment_id: string; readonly display_name: string; readonly last_seen_at: number }
+type DeviceRow = { readonly enrollment_id: string; readonly display_name: string; readonly state: "online" | "offline" | "paused" }
 
 function isDeviceRow(value: unknown): value is DeviceRow {
-  return isRecord(value) && isNonBlankString(value.enrollment_id) && typeof value.display_name === "string" && typeof value.last_seen_at === "number"
+  return isRecord(value) && isNonBlankString(value.enrollment_id) && typeof value.display_name === "string" && DEVICE_STATES.has(value.state)
 }
 
-function machineFromDevice(row: DeviceRow, self: string | undefined, now: number): Machine {
+function machineFromDevice(row: DeviceRow, self: string | undefined): Machine {
   return {
     id: machineId(row.enrollment_id),
     name: row.display_name,
-    online: now - row.last_seen_at < MACHINE_ONLINE_WINDOW_MS,
+    online: row.state === "online",
+    ...(row.state === "paused" ? { paused: true } : {}),
     isThisMachine: self === row.enrollment_id,
     enrolled: true,
   }
@@ -40,8 +41,7 @@ async function accountDevices(account: HostedAccount | undefined): Promise<reado
 
 async function loadMachines(workspaces: Workspaces, account: HostedAccount | undefined): Promise<readonly Machine[]> {
   const [{ declaration }, devices] = await Promise.all([workspaces.load(), accountDevices(account)])
-  const now = Date.now()
-  const enrolled = devices.filter(isDeviceRow).map((row) => machineFromDevice(row, declaration.enrollmentId, now))
+  const enrolled = devices.filter(isDeviceRow).map((row) => machineFromDevice(row, declaration.enrollmentId))
   if (!servesFromMachine(declaration)) return enrolled
   const listed = enrolled.find((machine) => machine.isThisMachine)
   if (listed) return [{ ...listed, online: true }, ...enrolled.filter((machine) => machine !== listed)]

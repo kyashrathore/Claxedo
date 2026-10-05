@@ -1,5 +1,6 @@
 import { Hono } from "hono"
 import { z } from "zod"
+import type { HostDeviceState } from "@claxedo/server-core/platform/auth/host-devices"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthErrorBody,
@@ -16,6 +17,7 @@ export type RemoteAccessOwnerService = {
     enrollmentId: string
     displayName: string
     lastSeenAt: number
+    state: HostDeviceState
     workspaceIds: string[]
   }>>
   revoke(auth: SignedControlPlaneAuth, hostId: string): Promise<{ revoked: boolean }>
@@ -86,6 +88,7 @@ export function RemoteAccessOwnerRoutes(options: RemoteAccessRouteOptions) {
         enrollment_id: device.enrollmentId,
         display_name: device.displayName,
         last_seen_at: device.lastSeenAt,
+        state: device.state,
         workspace_ids: device.workspaceIds,
       })),
     })

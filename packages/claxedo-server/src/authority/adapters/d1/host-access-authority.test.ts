@@ -464,11 +464,12 @@ describe("D1 host access authority", () => {
       workspace_id: "ws_local",
       display_name: "Laptop B",
     })
-    expect(await input.hostAccess.listHostAssignments(alice)).toMatchObject([
+    expect(await input.hostAccess.listHostDevices(alice)).toMatchObject([
       {
         host_id: "machine-b",
         enrollment_id: enrollmentId,
         display_name: "Laptop B",
+        state: "online",
         workspace_ids: ["ws_local"],
         acked_workspace_ids: ["ws_local"],
       },
@@ -482,9 +483,14 @@ describe("D1 host access authority", () => {
       backing: "local-worktree",
     })
     await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local_2", hostId: "machine-b" })
-    expect(await input.hostAccess.listHostAssignments(alice)).toMatchObject([
+    expect(await input.hostAccess.listHostDevices(alice)).toMatchObject([
       { host_id: "machine-b", workspace_ids: ["ws_local", "ws_local_2"] },
     ])
+    await input.hostAccess.pauseHostEnrollment(alice, { hostId: "machine-b", paused: true })
+    expect(await input.hostAccess.listHostDevices(alice)).toMatchObject([
+      { host_id: "machine-b", state: "paused", workspace_ids: ["ws_local", "ws_local_2"] },
+    ])
+    await input.hostAccess.pauseHostEnrollment(alice, { hostId: "machine-b", paused: false })
 
     await expect(
       input.hostAccess.assignWorkspaceHost(outsider, { workspaceId: "ws_local", hostId: "machine-b" }),
@@ -499,7 +505,9 @@ describe("D1 host access authority", () => {
     // The lease expiring makes everything inert without touching assignments.
     input.advance(8_001)
     expect(await input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local_2" })).toEqual({ active: false })
-    expect(await input.hostAccess.listHostAssignments(alice)).toEqual([])
+    expect(await input.hostAccess.listHostDevices(alice)).toMatchObject([
+      { host_id: "machine-b", state: "offline", workspace_ids: ["ws_local_2"] },
+    ])
 
     await input.hostAccess.revokeHostEnrollment(alice, { hostId: "machine-b" })
     const dangling = await input.database
@@ -1605,6 +1613,12 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
     const paused = await input.hostAccess.listHostEnrollments(alice)
     expect(paused.find((row) => row.host_id === "laptop")).toMatchObject({ paused_at: input.now() })
     expect(paused.find((row) => row.host_id === "vps")).not.toHaveProperty("paused_at")
+    const devices = await input.hostAccess.listHostDevices(alice)
+    expect(devices.map((device) => [device.host_id, device.state, device.workspace_ids])).toEqual(expect.arrayContaining([
+      ["laptop", "paused", []],
+      ["vps", "online", ["ws_api"]],
+    ]))
+    expect(devices).toHaveLength(2)
   })
 
   test("a refused assignment of a retired workspace leaves it retired", async () => {

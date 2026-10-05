@@ -89,7 +89,7 @@ const ENTRIES = [
   // connected Pi provider's models and answers a Pi draft's options from the
   // launch catalog the session host runs Pi with (`@claxedo/harness/pi-catalog`),
   // which brings `@earendil-works/pi-ai`. Every entry lists a person's machines
-  // by enrollment id (`d1/host-assignment-devices.ts`) and serializes a
+  // by enrollment id (`d1/host-devices.ts`) and serializes a
   // workspace row with its repository connection (`d1/workspace-row-json.ts`),
   // each split from its authority. Every entry verifies the per-turn MCP
   // bearer of a session served by its own host (`mcp/session-mcp-credentials.ts`)

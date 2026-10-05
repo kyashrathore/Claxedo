@@ -1,5 +1,5 @@
 import { isRecord } from "@claxedo/helpers/guards"
-import type { HostAssignmentDevice } from "./host-devices"
+import type { HostDevice } from "./host-devices"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "./auth"
 import type { OrgId, ProjectId } from "./branded-id"
 import type { CloudWorkspaceCreateArgs, RuntimeCloudWorkspaceCreateArgs } from "./cloud-workspace-create"
@@ -306,10 +306,10 @@ export type WorkspaceAuthority = OrgAccessAuthority & SessionShareAuthority & Pa
     }
     | { active: false }
   >
-  /** Every live assignment on the account, grouped for the devices surface. */
-  listHostAssignments: (
+  /** Every unrevoked enrollment on the account, each with its state and its machine's assigned workspaces. */
+  listHostDevices: (
     auth: SignedControlPlaneAuth,
-  ) => Promise<HostAssignmentDevice[]>
+  ) => Promise<HostDevice[]>
   /**
    * The machine's own heartbeat: the caller is the verified machine principal
    * (`verifyMachineRequest`), not an account bearer, and `who` is the row's

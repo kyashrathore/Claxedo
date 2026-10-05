@@ -16,28 +16,14 @@ export function hostedRemoteAccessService(authority: WorkspaceAuthority): Remote
       return { enrolled: active.active, enabled: active.active }
     },
     async devices(auth) {
-      const [assignments, active] = await Promise.all([
-        authority.listHostAssignments(auth),
-        authority.activeHostEnrollment(auth),
-      ])
-      const devices = assignments.map((host) => ({
-        hostId: host.host_id,
-        enrollmentId: host.enrollment_id,
-        displayName: host.display_name,
-        lastSeenAt: host.last_seen_at,
-        workspaceIds: host.workspace_ids,
+      return (await authority.listHostDevices(auth)).map((device) => ({
+        hostId: device.host_id,
+        enrollmentId: device.enrollment_id,
+        displayName: device.display_name,
+        lastSeenAt: device.last_seen_at,
+        state: device.state,
+        workspaceIds: device.workspace_ids,
       }))
-      // An enrolled machine that serves nothing yet is still a device.
-      if (active.active && !devices.some((device) => device.hostId === active.host_id)) {
-        devices.unshift({
-          hostId: active.host_id,
-          enrollmentId: active.enrollment_id,
-          displayName: active.display_name ?? active.host_id,
-          lastSeenAt: active.last_seen_at,
-          workspaceIds: [],
-        })
-      }
-      return devices
     },
     async revoke(auth, hostId) {
       if (!authority.revokeHostEnrollment) {
