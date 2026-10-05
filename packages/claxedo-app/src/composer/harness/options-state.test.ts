@@ -58,6 +58,11 @@ test("options state: a session keeps a model its catalog no longer lists, and na
   expect(patch).toMatchObject({ selectedModel: "gone", configError: "Selected model unavailable" })
 })
 
+test("options state: a session keeps its model when its harness answers no model list", () => {
+  const { patch } = applyHarnessOptionsResponse({ type: nativeHarness("pi"), selectedModel: "openai-codex/gpt-5.3-codex-spark", sessionModel: true, payload: live({ offersOptions: false }) })
+  expect(patch).toMatchObject({ selectedModel: "openai-codex/gpt-5.3-codex-spark", dynamicModels: [], configError: "No model options available" })
+})
+
 test.each(["max", undefined])("options state: catalog refresh preserves a session's explicit effort %s", (selectedThoughtLevel) => {
   for (const selection of [{ sessionModel: true }, { preserveSelectedModel: true }]) {
     const { patch } = applyHarnessOptionsResponse({ type: codex, selectedModel: "opus", selectedThoughtLevel, ...selection, payload: live({ models, thoughtLevels: efforts }) })

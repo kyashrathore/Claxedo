@@ -52,7 +52,8 @@ function loadedDecision(patch: HarnessOptionsStatePatch): HarnessOptionsDecision
 }
 
 function unresolvedDecision(input: OptionsResponseInput, base: HarnessOptionsStatePatch, dynamicModels: HarnessOptionsStatePatch["dynamicModels"]): HarnessOptionsDecision {
-  return loadedDecision({ ...base, dynamicModels, selectedModel: "", configError: modelOptionsUnavailableMessage({ stale: input.payload.stale }) })
+  const held = input.preserveSelectedModel || input.sessionModel ? input.selectedModel ?? "" : ""
+  return loadedDecision({ ...base, dynamicModels, selectedModel: held, configError: modelOptionsUnavailableMessage({ stale: input.payload.stale }) })
 }
 
 function modellessDecision(input: OptionsResponseInput, base: HarnessOptionsStatePatch): HarnessOptionsDecision {
