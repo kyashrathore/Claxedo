@@ -20,12 +20,6 @@ export async function reserveSession(account: HostedAccount, input: { readonly w
 
 type ReserveInput = { readonly workspaceId: string; readonly title?: string; readonly harness?: SessionHarness }
 
-/**
- * The reservation each first message's create holds until it succeeds, so a
- * retry of the same send creates under the same session id and operation:
- * the runtime then resumes or answers the session the first attempt made
- * instead of creating a second one.
- */
 export function createSessionReservations(account: HostedAccount) {
   const held = new Map<string, { readonly workspaceId: string; readonly reservation: SessionReservation }>()
   return {

@@ -48,7 +48,6 @@ export type Machine = {
   readonly name: string
   readonly ownerId?: UserId
   readonly online: boolean
-  /** Its owner paused it: enrolled, and serving nothing until resumed. */
   readonly paused?: boolean
   readonly isThisMachine: boolean
   readonly enrolled: boolean
