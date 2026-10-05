@@ -33,6 +33,7 @@ describe("provider-neutral private-session authority contract", () => {
       "authorizeRuntimeSessionStartStatus",
       "listSessions",
       "listSessionPage",
+      "listOwnerSessionPage",
       "resolveSession",
       "readSessionMessages",
       "readSessionFirstRead",
