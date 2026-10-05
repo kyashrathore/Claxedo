@@ -1,6 +1,6 @@
 import { For, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { canStart, canStop, cloudFailureReason, useCloudStatusText, useCloudWorkspaces, type CloudWorkspaceRow, type CloudWorkspaces } from "@/cloud"
+import { canStart, canStop, cloudFailureReason, useCloudStatusText, useCloudWorkspaceName, useCloudWorkspaces, type CloudWorkspaceRow, type CloudWorkspaces } from "@/cloud"
 import { machineOfPlacement, useServer, type Placement, type Project } from "@/server"
 import { SettingsEmpty, SettingsGroup, SettingsList, SettingsNote, SettingsRow, useConnectMachine } from "@/settings"
 import { Button, requestConfirm, useDialog } from "@/ui"
@@ -27,10 +27,11 @@ function CloudRow(props: { readonly row: CloudWorkspaceRow; readonly cloud: Clou
   const dialog = useDialog()
   const open = usePlacementOpener()
   const status = useCloudStatusText()
+  const name = useCloudWorkspaceName()
   const detail = () => [props.row.branch, status(props.row.state), cloudFailureReason(props.row.state)].filter(Boolean).join(" · ")
   const remove = async () => {
     const confirmed = await requestConfirm(dialog, {
-      title: t("projects.where.delete.title", { name: props.row.name }),
+      title: t("projects.where.delete.title", { name: name(props.row) }),
       body: t("projects.where.delete.body"),
       confirmLabel: t("projects.where.delete.confirm"),
       cancelLabel: t("projects.where.cancel"),
@@ -38,7 +39,7 @@ function CloudRow(props: { readonly row: CloudWorkspaceRow; readonly cloud: Clou
     if (confirmed) await props.cloud.remove(props.row.id)
   }
   return (
-    <SettingsRow title={<span title={props.row.id}>{props.row.name}</span>} description={detail()}>
+    <SettingsRow title={<span title={props.row.id}>{name(props.row)}</span>} description={detail()}>
       <Show when={props.row.state.kind === "ready"}>
         <Button variant="neutral" size="small" onClick={() => open(props.row.id)}>{t("projects.placement.open")}</Button>
       </Show>

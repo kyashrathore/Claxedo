@@ -51,7 +51,7 @@ for (const renderer of ["file", "http"] as const) {
       await expect(panel.getByRole("img", { name: "preview.png", exact: true })).toBeVisible()
       await fs.rm(artifact)
       await window.getByRole("link", { name: "Verification details", exact: true }).click()
-      await expect(panel.getByText(/ENOENT/)).toBeVisible()
+      await expect(panel.getByText(/The file does not exist\./)).toBeVisible()
       await fs.writeFile(artifact, "Restored artifact.\n")
       await window.reload()
       await window.getByRole("button", { name: "Artifact links", exact: true }).click()

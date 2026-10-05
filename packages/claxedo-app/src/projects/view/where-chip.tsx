@@ -1,5 +1,5 @@
 import type { JSX } from "solid-js"
-import { cloudFailureReason, useCloudStatusText, useCloudWorkspaces, type CloudWorkspaces } from "@/cloud"
+import { cloudFailureReason, useCloudStatusText, useCloudWorkspaceName, useCloudWorkspaces, type CloudWorkspaces } from "@/cloud"
 import { placementId, type Placement } from "@/server"
 import { useConnectMachine } from "@/settings"
 import { ClaxedoIcon as Icon, useDialog } from "@/ui"
@@ -11,7 +11,12 @@ import { DialogNewCloudWorkspace } from "./new-cloud-workspace-dialog"
 
 const PLACE_GROUP: Record<WherePlace, ProjectsKey> = { machine: "projects.chip.machines", cloud: "projects.chip.cloud" }
 
-type Words = { readonly t: ProjectsText; readonly context: DraftContext; readonly cloudStatus: (placement: Placement) => string | undefined }
+type Words = {
+  readonly t: ProjectsText
+  readonly context: DraftContext
+  readonly cloudStatus: (placement: Placement) => string | undefined
+  readonly cloudName: (placement: Placement) => string
+}
 
 function placementOnline(words: Words, placement: Placement): string {
   const machine = words.context.machineOf(placement)
@@ -20,12 +25,13 @@ function placementOnline(words: Words, placement: Placement): string {
 }
 
 function entryLabel(words: Words, placement: Placement): string {
+  if (placement.kind === "cloud") return words.cloudName(placement)
   if (placement.kind !== "folder") return placement.label
   return words.context.machineOf(placement)?.name ?? placement.label
 }
 
 function entryDetail(words: Words, placement: Placement): string | undefined {
-  if (placement.kind === "cloud") return words.cloudStatus(placement)
+  if (placement.kind === "cloud") return [words.cloudStatus(placement), placement.branch].filter(Boolean).join(" · ") || undefined
   const machine = placement.kind === "folder" ? placement.label : words.context.machineOf(placement)?.name
   return [machine, placementOnline(words, placement)].filter(Boolean).join(" · ")
 }
@@ -79,7 +85,8 @@ export function useWhereChip(context: DraftContext): () => ContextChip {
   const dialog = useDialog()
   const connect = useConnectMachine()
   const cloud = useCloudWorkspaces(context.projectId, context.canCreateCloud)
-  const words: Words = { t, context, cloudStatus: useCloudStatus(cloud) }
+  const name = useCloudWorkspaceName()
+  const words: Words = { t, context, cloudStatus: useCloudStatus(cloud), cloudName: (placement) => name({ id: placement.id, name: placement.label, ...(placement.branch ? { branch: placement.branch } : {}) }) }
   const openCloud = () =>
     dialog.show(() => <DialogNewCloudWorkspace cloud={cloud} onCreated={(workspace) => context.choose({ kind: "placement", id: workspace.id, pendingName: workspace.name })} />)
   return () => {

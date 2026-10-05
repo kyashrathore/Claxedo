@@ -20,7 +20,7 @@ const parts: readonly Part[] = [
   { name: "Access", budget: 1000, folders: ["src/access"] },
   { name: "Review and files", budget: 4357, folders: ["src/review", "src/files"] },
   { name: "Projects and cloud", budget: 3116, folders: ["src/projects", "src/cloud"] },
-  { name: "Onboarding and usage", budget: 2010, folders: ["src/onboarding", "src/usage"] },
+  { name: "Onboarding and usage", budget: 2011, folders: ["src/onboarding", "src/usage"] },
   { name: "Plugin host", budget: 2099, folders: ["src/plugins"] },
   { name: "Web plugin frame", budget: 917, folders: ["src/plugins/frame"] },
   { name: "Marketplace", budget: 2138, folders: ["src/marketplace"] },

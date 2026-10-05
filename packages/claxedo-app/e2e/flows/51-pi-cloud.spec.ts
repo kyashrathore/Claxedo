@@ -124,7 +124,7 @@ test("51 a Pi draft on an asleep cloud workspace lists the account's models, nev
   await page.goto(`${signedCloud.url}${sessionRoute(workspace.id)}`)
   await page.getByRole("button", { name: /^Select harness and model/ }).click()
   const picker = page.getByRole("dialog", { name: "Select harness, model and effort" })
-  await picker.getByRole("button", { name: /^Harness/ }).click()
+  await showHarnesses(picker)
   await page.getByRole("button", { name: "Pi", exact: true }).click()
   await expect(picker.getByRole("button", { name: "GPT-4.1", exact: true })).toBeVisible()
   if (testInfo.repeatEachIndex === 0) await page.screenshot({ path: testInfo.outputPath("pi-draft-asleep-picker.png") })

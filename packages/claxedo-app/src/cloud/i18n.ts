@@ -11,6 +11,7 @@ const en = {
   "cloud.status.stopping": "Stopping",
   "cloud.status.stopped": "Asleep",
   "cloud.status.failed": "Failed",
+  "cloud.unnamed": "Cloud workspace",
 }
 
 export type CloudKey = keyof typeof en
