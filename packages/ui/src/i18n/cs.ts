@@ -66,7 +66,6 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.retry.inSeconds": "za {{seconds}} s",
   "ui.sessionTurn.retry.attempt": "pokus #{{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} – pokus č. {{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "gemini je teď příliš vytížené",
   "ui.sessionTurn.error.freeUsageExceeded": "Bezplatné využití překročeno",
   "ui.sessionTurn.error.addCredits": "Přidejte kredity",
   "dialog.usageExceeded.freeTier.title": "Dosažen limit zdarma",

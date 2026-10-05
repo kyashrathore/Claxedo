@@ -64,7 +64,6 @@ export const dict = {
   "ui.sessionTurn.retry.inSeconds": "след {{seconds}}s",
   "ui.sessionTurn.retry.attempt": "опит #{{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} - опит #{{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "Gemini е претоварен в момента",
   "ui.sessionTurn.error.freeUsageExceeded": "Безплатното използване е превишено",
   "ui.sessionTurn.error.addCredits": "Добавете кредити",
   "dialog.usageExceeded.freeTier.title": "Безплатният лимит е достигнат",

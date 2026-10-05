@@ -67,7 +67,6 @@ export const dict = {
   "ui.sessionTurn.retry.inSeconds": "ใน {{seconds}} วินาที",
   "ui.sessionTurn.retry.attempt": "ครั้งที่ {{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} - ครั้งที่ {{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "ขณะนี้ Gemini มีการใช้งานหนาแน่นมาก",
   "ui.sessionTurn.error.freeUsageExceeded": "เกินขีดจำกัดการใช้งานฟรี",
   "ui.sessionTurn.error.addCredits": "เพิ่มเครดิต",
 

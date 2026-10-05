@@ -66,7 +66,6 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.retry.inSeconds": "{{seconds}}s",
   "ui.sessionTurn.retry.attempt": "bandymas #{{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} – bandymas #{{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "Gemini šiuo metu per daug apkrautas",
   "ui.sessionTurn.error.freeUsageExceeded": "Viršytas nemokamas naudojimas",
   "ui.sessionTurn.error.addCredits": "Pridėkite kreditų",
   "dialog.usageExceeded.freeTier.title": "Pasiektas nemokamas limitas",

@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.retry.inSeconds": "በ{{seconds}}ሰ",
   "ui.sessionTurn.retry.attempt": "ሙከራ #{{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} - ሙከራ #{{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "gemini አሁን በጣም ሞቃት ነው",
   "ui.sessionTurn.error.freeUsageExceeded": "ነፃ አጠቃቀም ታልፏል",
   "ui.sessionTurn.error.addCredits": "ክሬዲት አክል",
   "dialog.usageExceeded.freeTier.title": "ነፃ ገደብ ላይ ደርሷል",

@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.retry.inSeconds": "{{seconds}}s",
   "ui.sessionTurn.retry.attempt": "ცდა #{{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} - მცდელობა #{{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "Gemini ახლა ზედმეტად დატვირთულია",
   "ui.sessionTurn.error.freeUsageExceeded": "უფასო გამოყენება გადაჭარბებულია",
   "ui.sessionTurn.error.addCredits": "დაამატე კრედიტები",
   "dialog.usageExceeded.freeTier.title": "უფასო ლიმიტი მიღწეულია",

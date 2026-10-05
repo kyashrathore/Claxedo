@@ -19,7 +19,6 @@ const translations: Partial<Record<TranscriptTextKey, string>> = {
   "transcript.sessionTurn.retry.retrying": "ponovni pokušaj",
   "transcript.sessionTurn.retry.inSeconds": "za {{seconds}}s",
   "transcript.sessionTurn.retry.attemptLine": "{{line}} - pokušaj #{{attempt}}",
-  "transcript.sessionTurn.retry.geminiHot": "gemini je trenutno preopterećen",
   "transcript.sessionTurn.status.gatheringContext": "Istraživanje",
   "transcript.sessionTurn.status.gatheredContext": "Istraženo",
   "transcript.messagePart.diagnostic.error": "Greška",

@@ -10,7 +10,7 @@ const DESYNC_THRESHOLD = 3
 const DESYNC_COOLDOWN_MS = 1500
 const RESIZE_DEBOUNCE_MS = 100
 const OPEN_SETTLE_MS = 220
-const AGENT_TUI = /\b(?:codex|claude|opencode|gemini|cursor-agent|cursor)\b/i
+const AGENT_TUI = /\b(?:codex|claude|opencode|cursor-agent|cursor)\b/i
 
 type Rect = { readonly width: number; readonly height: number }
 

@@ -64,7 +64,6 @@ export const dict = {
   "ui.sessionTurn.retry.inSeconds": "во {{seconds}}с",
   "ui.sessionTurn.retry.attempt": "обид #{{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} - обид #{{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "Близнаците се премногу жешки во моментов",
   "ui.sessionTurn.error.freeUsageExceeded": "Бесплатната употреба е надмината",
   "ui.sessionTurn.error.addCredits": "Додадете кредити",
   "dialog.usageExceeded.freeTier.title": "Достигнато е бесплатното ограничување",

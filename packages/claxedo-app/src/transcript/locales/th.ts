@@ -19,7 +19,6 @@ const translations: Partial<Record<TranscriptTextKey, string>> = {
   "transcript.sessionTurn.retry.retrying": "กำลังลองใหม่",
   "transcript.sessionTurn.retry.inSeconds": "ใน {{seconds}}วิ",
   "transcript.sessionTurn.retry.attemptLine": "{{line}} - ครั้งที่ {{attempt}}",
-  "transcript.sessionTurn.retry.geminiHot": "gemini กำลังใช้งานหนาแน่นมาก",
   "transcript.sessionTurn.status.gatheringContext": "กำลังสำรวจ",
   "transcript.sessionTurn.status.gatheredContext": "สำรวจแล้ว",
   "transcript.messagePart.diagnostic.error": "ข้อผิดพลาด",

@@ -1,6 +1,6 @@
 import { createMemo, Show } from "solid-js"
 import { useSecondClock } from "@/lib/clock"
-import { isGeminiQuotaRetry, type SessionStatus } from "@/server"
+import type { SessionStatus } from "@/server"
 import { useTranscriptI18n } from "./i18n"
 import { Card, Tooltip, Spinner } from "@/ui"
 
@@ -18,9 +18,6 @@ export function SessionRetry(props: { status: SessionStatus; show?: boolean }) {
   const message = createMemo(() => {
     const current = retry()
     if (!current) return ""
-    if (isGeminiQuotaRetry(current.message)) {
-      return i18n.t("transcript.sessionTurn.retry.geminiHot")
-    }
     if (current.message.length > 80) return current.message.slice(0, 80) + "..."
     return current.message
   })

@@ -66,7 +66,6 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.retry.inSeconds": "ནང་ {{seconds}}s ནང་།",
   "ui.sessionTurn.retry.attempt": "ཚོད་ལྟ་ #{{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} - དཔའ་བཅམ་པ་ #{{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "ད་ལྟོ་ gemini འདི་ གནམ་མེད་ས་མེད་ཚ་དྲོད་ཆེ།",
   "ui.sessionTurn.error.freeUsageExceeded": "རིན་མེད་ལག་ལེན་ལས་བརྒལ་ཡོདཔ།",
   "ui.sessionTurn.error.addCredits": "སྐྱིན་འགྲུལ་ཁ་སྐོང་བརྐྱབ།",
   "dialog.usageExceeded.freeTier.title": "རིན་མེད་ཚད་ལུ་ལྷོད་ཡོདཔ།",

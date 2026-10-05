@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.retry.inSeconds": "{{seconds}}s sonra",
   "ui.sessionTurn.retry.attempt": "cəhd #{{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} - cəhd #{{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "Gemini hazırda həddindən artıq yüklənib",
   "ui.sessionTurn.error.freeUsageExceeded": "Pulsuz istifadə limiti aşıldı",
   "ui.sessionTurn.error.addCredits": "Kredit əlavə et",
   "dialog.usageExceeded.freeTier.title": "Pulsuz limitə çatdınız",

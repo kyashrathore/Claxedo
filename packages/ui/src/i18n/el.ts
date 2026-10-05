@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.retry.inSeconds": "σε {{seconds}}s",
   "ui.sessionTurn.retry.attempt": "προσπάθεια #{{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} - προσπάθεια #{{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "Το Gemini είναι υπερφορτωμένο αυτήν τη στιγμή",
   "ui.sessionTurn.error.freeUsageExceeded": "Υπέρβαση της δωρεάν χρήσης",
   "ui.sessionTurn.error.addCredits": "Προσθήκη πιστώσεων",
   "dialog.usageExceeded.freeTier.title": "Συμπληρώθηκε το δωρεάν όριο",

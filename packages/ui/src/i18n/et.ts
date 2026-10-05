@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.retry.inSeconds": "{{seconds}} s pärast",
   "ui.sessionTurn.retry.attempt": "katse #{{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} – katse #{{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "Gemini on praegu ülekoormatud",
   "ui.sessionTurn.error.freeUsageExceeded": "Tasuta kasutus on ületatud",
   "ui.sessionTurn.error.addCredits": "Lisa krediite",
   "dialog.usageExceeded.freeTier.title": "Tasuta limiit on täis",

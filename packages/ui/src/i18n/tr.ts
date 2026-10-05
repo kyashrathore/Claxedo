@@ -73,7 +73,6 @@ export const dict = {
   "ui.sessionTurn.retry.inSeconds": "{{seconds}} sn içinde",
   "ui.sessionTurn.retry.attempt": "deneme #{{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} - deneme #{{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "Gemini şu anda aşırı yoğun",
   "ui.sessionTurn.error.freeUsageExceeded": "Ücretsiz kullanım aşıldı",
   "ui.sessionTurn.error.addCredits": "Kredi ekle",
 

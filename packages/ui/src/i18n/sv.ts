@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.retry.inSeconds": "om {{seconds}} s",
   "ui.sessionTurn.retry.attempt": "försök #{{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} - försök #{{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "Gemini är alldeles för belastad just nu",
   "ui.sessionTurn.error.freeUsageExceeded": "Gränsen för kostnadsfri användning har överskridits",
   "ui.sessionTurn.error.addCredits": "Lägg till krediter",
   "dialog.usageExceeded.freeTier.title": "Gratisgränsen nådd",

@@ -65,7 +65,6 @@ export const dict = {
   "ui.sessionTurn.retry.inSeconds": "{{seconds}} စက္ကန့်အတွင်း",
   "ui.sessionTurn.retry.attempt": "#{{attempt}} ကြိုးစားပါ။",
   "ui.sessionTurn.retry.attemptLine": "{{line}} - ကြိုးစားပါ #{{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "Gemini သည် ယခုအချိန်တွင် အလွန်ပူပြင်းသည်။",
   "ui.sessionTurn.error.freeUsageExceeded": "အခမဲ့အသုံးပြုမှု ကျော်လွန်သွားပါပြီ။",
   "ui.sessionTurn.error.addCredits": "ခရက်ဒစ်များထည့်ပါ။",
   "dialog.usageExceeded.freeTier.title": "အခမဲ့ကန့်သတ်ချက် ပြည့်သွားပါပြီ။",

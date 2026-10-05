@@ -64,7 +64,6 @@ export const dict = {
   "ui.sessionTurn.retry.inSeconds": "{{seconds}} секундын дотор",
   "ui.sessionTurn.retry.attempt": "оролдлого #{{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} - оролдлого #{{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "Gemini яг одоо хэтэрхий халуун байна",
   "ui.sessionTurn.error.freeUsageExceeded": "Үнэгүй хэрэглээ хэтэрсэн",
   "ui.sessionTurn.error.addCredits": "Кредит нэмэх",
   "dialog.usageExceeded.freeTier.title": "Үнэгүй хязгаарт хүрсэн",

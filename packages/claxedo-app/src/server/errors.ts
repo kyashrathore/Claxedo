@@ -179,10 +179,6 @@ export function isAppError(value: unknown): value is AppError {
   return typeof row.class === "string" && ERROR_CLASSES.has(row.class) && typeof row.message === "string" && typeof row.retryable === "boolean"
 }
 
-export function isGeminiQuotaRetry(message: string): boolean {
-  return message.includes("exceeded your current quota") && message.includes("gemini")
-}
-
 export function isTurnAdmissionConflict(error: unknown): boolean {
   const data = asRecord(asRecord(error)?.data)
   return data?.code === "turn_already_active" ||

@@ -64,7 +64,6 @@ export const dict = {
   "ui.sessionTurn.retry.inSeconds": "ໃນ {{seconds}}s",
   "ui.sessionTurn.retry.attempt": "ພະຍາຍາມ #{{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} - ຄວາມພະຍາຍາມທີ່ຈະ #{{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "gemini ຮ້ອນເກີນໄປໃນຕອນນີ້",
   "ui.sessionTurn.error.freeUsageExceeded": "ເກີນການໃຊ້ຟຣີ",
   "ui.sessionTurn.error.addCredits": "ເພີ່ມເຄຣດິດ",
   "dialog.usageExceeded.freeTier.title": "ຮອດຂີດຈຳກັດຟຣີແລ້ວ",

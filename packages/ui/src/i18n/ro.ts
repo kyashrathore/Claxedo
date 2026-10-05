@@ -65,7 +65,6 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.retry.inSeconds": "în {{seconds}}s",
   "ui.sessionTurn.retry.attempt": "încercarea #{{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} - încercarea #{{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "gemini este prea solicitat acum",
   "ui.sessionTurn.error.freeUsageExceeded": "Ai depășit utilizarea gratuită",
   "ui.sessionTurn.error.addCredits": "Adaugă credit",
   "dialog.usageExceeded.freeTier.title": "Limită gratuită atinsă",

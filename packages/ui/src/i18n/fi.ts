@@ -63,7 +63,6 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.retry.inSeconds": "{{seconds}} s kuluttua",
   "ui.sessionTurn.retry.attempt": "yritys #{{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} - yritys #{{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "Gemini on juuri nyt pahasti ylikuormitettu",
   "ui.sessionTurn.error.freeUsageExceeded": "Ilmainen käyttöraja ylitetty",
   "ui.sessionTurn.error.addCredits": "Lisää krediittejä",
   "dialog.usageExceeded.freeTier.title": "Ilmainen raja saavutettu",

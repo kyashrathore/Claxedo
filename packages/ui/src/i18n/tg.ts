@@ -64,7 +64,6 @@ export const dict = {
   "ui.sessionTurn.retry.inSeconds": "дар {{seconds}}с",
   "ui.sessionTurn.retry.attempt": "кӯшиш #{{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} - кӯшиш #{{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "Gemini ҳоло хеле гарм аст",
   "ui.sessionTurn.error.freeUsageExceeded": "Истифодаи ройгон аз ҳад зиёд",
   "ui.sessionTurn.error.addCredits": "Илова кардани кредитҳо",
   "dialog.usageExceeded.freeTier.title": "Ба ҳадди ройгон расид",

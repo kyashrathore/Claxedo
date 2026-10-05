@@ -19,7 +19,6 @@ const translations: Partial<Record<TranscriptTextKey, string>> = {
   "transcript.sessionTurn.retry.retrying": "重试中",
   "transcript.sessionTurn.retry.inSeconds": "{{seconds}} 秒后",
   "transcript.sessionTurn.retry.attemptLine": "{{line}} - 第 {{attempt}} 次",
-  "transcript.sessionTurn.retry.geminiHot": "gemini 当前过载",
   "transcript.sessionTurn.status.gatheringContext": "正在探索",
   "transcript.sessionTurn.status.gatheredContext": "已探索",
   "transcript.messagePart.diagnostic.error": "错误",

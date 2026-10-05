@@ -36,7 +36,6 @@ const en = {
   "transcript.sessionTurn.retry.retrying": "retrying",
   "transcript.sessionTurn.retry.inSeconds": "in {{seconds}}s",
   "transcript.sessionTurn.retry.attemptLine": "{{line}} - attempt #{{attempt}}",
-  "transcript.sessionTurn.retry.geminiHot": "gemini is way too hot right now",
   "transcript.notice.compacting": "Compacting conversation…",
   "transcript.notice.compactionFailed": "Compaction failed: {{error}}",
   "transcript.notice.agentMessage": "Message from {{sender}}",

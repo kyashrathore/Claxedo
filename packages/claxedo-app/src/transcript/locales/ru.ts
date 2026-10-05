@@ -19,7 +19,6 @@ const translations: Partial<Record<TranscriptTextKey, string>> = {
   "transcript.sessionTurn.retry.retrying": "повтор",
   "transcript.sessionTurn.retry.inSeconds": "через {{seconds}}с",
   "transcript.sessionTurn.retry.attemptLine": "{{line}} - попытка №{{attempt}}",
-  "transcript.sessionTurn.retry.geminiHot": "gemini сейчас перегружен",
   "transcript.sessionTurn.status.gatheringContext": "Исследование",
   "transcript.sessionTurn.status.gatheredContext": "Исследовано",
   "transcript.messagePart.diagnostic.error": "Ошибка",

@@ -71,7 +71,6 @@ export const dict = {
   "ui.sessionTurn.retry.inSeconds": "{{seconds}} 秒後",
   "ui.sessionTurn.retry.attempt": "第 {{attempt}} 次",
   "ui.sessionTurn.retry.attemptLine": "{{line}} - 第 {{attempt}} 次",
-  "ui.sessionTurn.retry.geminiHot": "Gemini 目前負載過高",
   "ui.sessionTurn.error.freeUsageExceeded": "免費使用額度已用完",
   "ui.sessionTurn.error.addCredits": "新增點數",
 

@@ -64,7 +64,6 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.retry.inSeconds": "në {{seconds}}s",
   "ui.sessionTurn.retry.attempt": "përpjekje #{{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} - provoni #{{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "Gemini është i mbingarkuar për momentin",
   "ui.sessionTurn.error.freeUsageExceeded": "Përdorimi falas u tejkalua",
   "ui.sessionTurn.error.addCredits": "Shto kredite",
   "dialog.usageExceeded.freeTier.title": "U arrit kufiri falas",
