@@ -21,7 +21,7 @@ async function openSettings(page: Page, isMobile: boolean) {
   await expect(page.getByTestId("settings-page")).toBeVisible()
 }
 
-test("53 settings on the web: the signed-in person's organization, usage, models, connections and a project's Where it runs say only what applies on the web, at phone width too", async ({ signed, page, isMobile }) => {
+test("53 settings on the web: the signed-in person's organization, usage, models, connections and a project's Where it runs say only what applies on the web, at phone width too", async ({ signed, page, isMobile }, testInfo) => {
   const { orgName } = await colleague(signed, "Grace Member")
   await signed.makeWorkspace("settings-web", "Settings project")
   await signed.signIn(page, signed.owner)
@@ -48,6 +48,7 @@ test("53 settings on the web: the signed-in person's organization, usage, models
   await expect(page.getByText("No sessions ran through Claxedo in this period. Usage shows here once one does.", { exact: true })).toBeVisible()
   await expect(page.getByRole("group", { name: "Range" })).toBeVisible()
   await expect(page.getByRole("group", { name: "Daily usage" })).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath("usage-empty.png") })
 
   await openSection(page, isMobile, "Models")
   await expect(page.getByText(/Scanning|sign-ins on/)).toHaveCount(0)
@@ -55,6 +56,7 @@ test("53 settings on the web: the signed-in person's organization, usage, models
   const claude = page.locator("section").filter({ has: page.getByRole("heading", { level: 2, name: "Claude Code", exact: true }) }).last()
   await expect(claude.getByRole("button", { name: "Add an account" })).toHaveCount(1)
   await expect(claude.getByRole("tab")).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath("models-accountless.png") })
   await expect(page.getByText(/^(Local and cloud|Local only)$/)).toHaveCount(0)
 
   await openSection(page, isMobile, "Connections")
@@ -72,5 +74,6 @@ test("53 settings on the web: the signed-in person's organization, usage, models
   await expect(settings.getByRole("heading", { level: 2, name: "Settings", exact: true })).toHaveCount(0)
   const where = settings.getByRole("group", { name: "Where it runs" })
   await expect(where.getByText("settings-web", { exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath("project-where-it-runs.png") })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })
