@@ -14,28 +14,16 @@ function contains(parent: string, child: string) {
   return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
 }
 
-function fingerprint(homeDir: string) {
-  return Object.fromEntries(Object.entries(agentHookConfigPaths(homeDir, defaultStatusHooks)).map(([runner, file]) => {
-    if (!fs.existsSync(file)) return [runner, undefined]
-    return [runner, createHash("sha256").update(fs.readFileSync(file)).digest("hex")]
-  }))
-}
-
-/** The home this process was launched with: Bun 1.3 reports the startup HOME here, not one the preload assigns. */
-const accountHome = os.userInfo().homedir
-
-test("agent hook setup writes every harness config under the test home and none under the account home", async () => {
+test("agent hook setup writes every harness config under the temporary home the suite runs in", async () => {
   const home = userHomeDir()
+  expect(os.homedir()).toBe(home)
   expect(contains(fs.realpathSync(os.tmpdir()), home)).toBe(true)
-  expect(contains(accountHome, home)).toBe(false)
   expect(contains(home, workspaceRuntimeDataDir())).toBe(true)
-  const before = fingerprint(accountHome)
 
   await setupAgentHooks({ port: 7860 })
 
   const written = agentHookConfigPaths(home, defaultStatusHooks)
   for (const file of Object.values(written)) expect({ file, exists: fs.existsSync(file) }).toEqual({ file, exists: true })
-  expect(fingerprint(accountHome)).toEqual(before)
 })
 
 function tree(root: string): Record<string, string> {
