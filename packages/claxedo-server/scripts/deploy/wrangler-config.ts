@@ -172,16 +172,21 @@ new_sqlite_classes = ["SessionDO"]
 `
 }
 
-/** The static-assets Worker that serves the browser app on its own custom domain. */
+export const APP_ASSETS_WORKER = path.join(SERVER_ROOT, "scripts/deploy/app-assets-worker.ts")
+
+/** The static-assets Worker that serves the browser app on its own custom domain; its script answers only `/assets/*`. */
 export function renderAppWranglerConfig(input: Readonly<{ appWorkerName: string; browserDirectory: string }>) {
   return `name = ${quote(input.appWorkerName)}
+main = ${quote(APP_ASSETS_WORKER)}
 compatibility_date = "2025-05-01"
 workers_dev = false
 preview_urls = false
 
 [assets]
 directory = ${quote(path.resolve(input.browserDirectory))}
+binding = "ASSETS"
 not_found_handling = "single-page-application"
 html_handling = "auto-trailing-slash"
+run_worker_first = ["/assets/*"]
 `
 }

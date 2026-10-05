@@ -67,13 +67,15 @@ describe("the user-deployed Worker Wrangler config", () => {
     expect(() => render({ variables: { CLAXEDO_DEPLOYMENT_ID: " claxedo" } })).toThrow(/trimmed/)
   })
 
-  test("renders the app as an assets-only Worker with SPA routing", () => {
+  test("renders the app as SPA-routed assets whose Worker runs ahead of /assets/* only", () => {
     const browserDirectory = path.join(serverRoot, "app")
     const config = renderAppWranglerConfig({ appWorkerName: "claxedo-app", browserDirectory })
     expect(config).toContain('name = "claxedo-app"')
+    expect(config).toContain(`main = ${JSON.stringify(path.join(serverRoot, "scripts/deploy/app-assets-worker.ts"))}`)
     expect(config).toContain(`directory = ${JSON.stringify(browserDirectory)}`)
+    expect(config).toContain('binding = "ASSETS"')
     expect(config).toContain('not_found_handling = "single-page-application"')
-    expect(config).not.toContain("main =")
+    expect(config).toContain('run_worker_first = ["/assets/*"]')
   })
 })
 
