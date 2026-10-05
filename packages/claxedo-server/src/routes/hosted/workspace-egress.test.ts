@@ -143,7 +143,7 @@ async function buildApp(egressControl: SandboxEgressControl, options: Partial<Ho
     workspaceDriver: async () => ({ driver, key: "operator" }),
     sandboxInput: async (workspaceId, prepared) => hostedSandboxInput(rows.get(workspaceId) ?? {}, { egress, ...prepared }),
     settings: { read: async () => ({ version: 3, connections: {} }), write: async () => {} },
-    credentials: () => ({ listCredentials: async () => [], accountSelections: async () => ({}) }) as never,
+    credentials: () => ({ listCredentials: async () => [], accountSelections: async () => ({}), resolveCredentialSecretById: async () => null }) as never,
     signingEnv: {},
     provisionedRunner: undefined,
   })

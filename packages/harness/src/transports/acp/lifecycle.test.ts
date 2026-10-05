@@ -9,7 +9,7 @@ import type { AcpHost } from "./startup"
 function host(entry: AcpEntry) {
   const retired: string[] = []
   const peers = new AcpPeerOwnership()
-  const health = new AcpConnectionHealth({ now: () => 1 }, () => {})
+  const health = new AcpConnectionHealth({ now: () => 1, setTimeout, clearTimeout }, () => {})
   const observation = health.begin("ses_1", "/work")
   observation.ready()
   entry.observation = observation
