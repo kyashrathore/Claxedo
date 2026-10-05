@@ -14,6 +14,7 @@
   var mode = isDark ? "dark" : "light"
 
   document.documentElement.dataset.theme = themeId
+  if (location.pathname === "/login") document.documentElement.dataset.startup = "plain"
   document.documentElement.dataset.colorScheme = mode
   // Declared before any stylesheet loads so the UA paints its canvas, form
   // controls and scrollbars in the right scheme on the very first frame. The
