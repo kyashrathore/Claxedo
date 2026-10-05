@@ -77,7 +77,7 @@ async function signedSessionToken(claims: Record<string, unknown>, expiresInSeco
 describe("the first-party MCP credential of a session served by its own host", () => {
   test("each turn's delivery names the endpoint for that session with a bearer only the MCP endpoint accepts", async () => {
     const mcp = await delivered(ROOT)
-    expect(mcp).toMatchObject({ name: "claxedo", url: `https://plane.test/api/claxedo/mcp?session=${ROOT}` })
+    expect(mcp).toMatchObject({ name: "claxedo", url: `https://plane.test/api/claxedo/mcp?session=${ROOT}`, toolGroups: ["sessions"] })
     expect(decodeJwt(mcp.token)).toMatchObject({
       aud: "claxedo-session-mcp", sub: `session:${ROOT}`, session_id: ROOT, workspace_id: WORKSPACE_ID, user_id: plane.owner.principal!.userId,
     })

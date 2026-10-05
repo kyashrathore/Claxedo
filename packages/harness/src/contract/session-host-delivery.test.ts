@@ -21,10 +21,11 @@ test("a turn delivery round-trips the owner's direct rows, the plugin section an
   expect(parseTurnDelivery(JSON.parse(JSON.stringify(delivery)))).toEqual(delivery)
 })
 
-test("a turn delivery carries the first-party MCP server it names, and refuses one missing its token or carrying more", () => {
-  const firstPartyMcp = { name: "claxedo", url: "https://plane.example/api/claxedo/mcp?session=ses_1", token: "session-mcp" }
+test("a turn delivery carries the first-party MCP server it names, and refuses one missing its token or tool groups, or carrying more", () => {
+  const firstPartyMcp = { name: "claxedo", url: "https://plane.example/api/claxedo/mcp?session=ses_1", token: "session-mcp", toolGroups: ["sessions"] }
   expect(parseTurnDelivery({ ...delivery, firstPartyMcp })).toEqual({ ...delivery, firstPartyMcp })
   expect(parseTurnDelivery({ ...delivery, firstPartyMcp: { ...firstPartyMcp, token: "" } })).toBeUndefined()
+  expect(parseTurnDelivery({ ...delivery, firstPartyMcp: { ...firstPartyMcp, toolGroups: [] } })).toBeUndefined()
   expect(parseTurnDelivery({ ...delivery, firstPartyMcp: { ...firstPartyMcp, headers: {} } })).toBeUndefined()
 })
 

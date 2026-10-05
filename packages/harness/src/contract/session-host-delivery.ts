@@ -9,7 +9,7 @@ export type RuntimeConfigSnapshotPlugins = {
 
 export type TurnDeliveryRequest = { turnLease: string }
 
-export type FirstPartyMcpDelivery = { name: string; url: string; token: string }
+export type FirstPartyMcpDelivery = { name: string; url: string; token: string; toolGroups: readonly string[] }
 
 export type TurnDelivery = {
   expiresAt: number
@@ -50,10 +50,11 @@ function plugins(input: unknown): RuntimeConfigSnapshotPlugins | undefined {
 }
 
 function firstPartyMcp(input: unknown): FirstPartyMcpDelivery | undefined {
-  if (!isRecord(input) || !onlyKeys(input, ["name", "url", "token"])) return undefined
-  const { name, url, token } = input
+  if (!isRecord(input) || !onlyKeys(input, ["name", "url", "token", "toolGroups"])) return undefined
+  const { name, url, token, toolGroups } = input
   if (!isNonEmptyString(name) || !isNonEmptyString(url) || !isNonEmptyString(token)) return undefined
-  return { name, url, token }
+  if (!Array.isArray(toolGroups) || toolGroups.length === 0 || !toolGroups.every(isNonEmptyString)) return undefined
+  return { name, url, token, toolGroups }
 }
 
 export function parseTurnDelivery(input: unknown): TurnDelivery | undefined {

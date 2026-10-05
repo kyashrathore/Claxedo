@@ -52,7 +52,7 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
   let deleted = false
   const control = {
     refuseRenewals: false, leaseTtlMs: 60_000, reservation: `op_${input.root}`, viewers: new Set<string>(),
-    executionUnavailable: false, deleteUnavailable: false, firstPartyMcp: false,
+    executionUnavailable: false, deleteUnavailable: false, firstPartyMcp: false, toolGroups: ["sessions"],
   }
 
   const mint = async (lease: Lease) => {
@@ -92,7 +92,7 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
       ownSession: { sessionId: input.root, fetch: (path, init) => input.sessionHost()(path, init) },
     }),
     registerTools: CLAXEDO_MCP_TOOL_GROUPS,
-    enabledToolGroups: () => ["sessions"],
+    enabledToolGroups: () => control.toolGroups,
     audit: () => {},
   }).routes)
   let mcp = mcpIsolate()
@@ -101,7 +101,7 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
     mcpBearers.add(token)
     const url = new URL(CLAXEDO_MCP_PATH, origin)
     url.searchParams.set("session", input.root)
-    return { name: CLAXEDO_MCP_SERVER_INFO.name, url: url.href, token }
+    return { name: CLAXEDO_MCP_SERVER_INFO.name, url: url.href, token, toolGroups: control.toolGroups }
   }
 
   const authority = new Hono()

@@ -56,7 +56,9 @@ export class SessionHostTurns {
       const delivery = parseTurnDelivery(body)
       if (!delivery) throw new TurnAuthorityError(502, "turn_delivery_invalid")
       if (delivery.expiresAt <= Date.now()) throw new TurnAuthorityError(502, "turn_delivery_expired")
-      const turn = { key, delivery, generation: await deliveryGeneration([delivery.plugins, delivery.providerDefinitions]) }
+      const mcp = delivery.firstPartyMcp
+      const generation = await deliveryGeneration([delivery.plugins, delivery.providerDefinitions, mcp ? [mcp.name, mcp.url, mcp.toolGroups] : null])
+      const turn = { key, delivery, generation }
       if (this.deliveries.get(key) === fetched) this.delivered.set(key, turn)
       return turn
     })

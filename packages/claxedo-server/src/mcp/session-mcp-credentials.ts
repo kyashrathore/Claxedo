@@ -88,11 +88,12 @@ export function sessionMcpCredentials(input: SessionMcpCredentialsInput) {
       expiresAt: number
     }): Promise<TurnDelivery["firstPartyMcp"]> {
       const { owner, workspaceId, sessionId } = request
-      if ((await input.toolGroups(owner, workspaceId)).length === 0) return undefined
+      const toolGroups = await input.toolGroups(owner, workspaceId)
+      if (toolGroups.length === 0) return undefined
       const { token } = await mintSessionMcpToken({ userId: owner.userId, orgId: owner.orgId, workspaceId, sessionId, expiresAt: request.expiresAt }, input.env)
       const url = new URL(CLAXEDO_MCP_PATH, request.origin)
       url.searchParams.set("session", sessionId)
-      return { name: CLAXEDO_MCP_SERVER_INFO.name, url: url.href, token }
+      return { name: CLAXEDO_MCP_SERVER_INFO.name, url: url.href, token, toolGroups }
     },
 
     async verify(token: string): Promise<RuntimeCredentialClaims | undefined> {

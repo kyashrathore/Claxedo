@@ -337,6 +337,27 @@ void describe("SessionDO under workerd with PiHarness", () => {
     assert.equal(new Set(host.controlPlane.calls.mcpBearers).size, 3)
   })
 
+  void it("offers the first-party MCP tool groups the project has on from the next turn, and none once it turns them all off", { timeout: 120_000 }, async () => {
+    const root = "ses_first_party_mcp_toggle"
+    const host = await session(root)
+    const control = host.controlPlane.control
+    const offered = async (marker: string) => {
+      await host.prompt(`msg_${marker}`, `Reply with exactly this one token: ${marker}`)
+      await host.settled(marker)
+      const tools = model.requests.find((request) => request.prompt.includes(marker))?.tools.map((tool) => tool.name) ?? []
+      return ["mcp__claxedo__sessions_list", "mcp__claxedo__subagent_capabilities"].filter((name) => tools.includes(name))
+    }
+    assert.deepEqual(await offered("PITOGGLEOFF"), [])
+    control.firstPartyMcp = true
+    assert.deepEqual(await offered("PITOGGLEON"), ["mcp__claxedo__sessions_list"])
+    control.toolGroups = ["sessions", "subagents"]
+    assert.deepEqual(await offered("PITOGGLEMORE"), ["mcp__claxedo__sessions_list", "mcp__claxedo__subagent_capabilities"])
+    control.toolGroups = ["subagents"]
+    assert.deepEqual(await offered("PITOGGLEFEWER"), ["mcp__claxedo__subagent_capabilities"])
+    control.firstPartyMcp = false
+    assert.deepEqual(await offered("PITOGGLEOFFAGAIN"), [])
+  })
+
   void it("spends the accounts of the person who created the session, and a creator without any spends nobody's", { timeout: 120_000 }, async () => {
     const member = "user_member"
     const accounts = { [OWNER]: openai(SECRET), [member]: openai("member-secret") }
