@@ -84,6 +84,7 @@ import {
   type TurnLeaseRow,
   type WorkspaceAccessRow,
 } from "./session-rows"
+import { SESSION_STATUS_STAMP_SQL, sessionStatusStampBindings } from "./session-status-notices"
 
 export const D1_SESSION_AUTHORITY_METHODS = [
   "authorizeSessionRead",
@@ -722,11 +723,11 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     await this.database
       .prepare(
         `
-      update sessions set ${statusStampSql}
+      update sessions set ${SESSION_STATUS_STAMP_SQL}
       where session_id = ? and workspace_id = ? and deleted_at is null
     `,
       )
-      .bind(...statusStampBindings("busy", admittedAt), sessionId, workspaceId)
+      .bind(...sessionStatusStampBindings("busy", admittedAt), sessionId, workspaceId)
       .run()
   }
 
@@ -812,8 +813,8 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     )
     if (released) {
       await this.database
-        .prepare(`update sessions set ${statusStampSql} where session_id = ? and workspace_id = ? and deleted_at is null`)
-        .bind(...statusStampBindings("idle", row!.released_at!), sessionId, workspaceId)
+        .prepare(`update sessions set ${SESSION_STATUS_STAMP_SQL} where session_id = ? and workspace_id = ? and deleted_at is null`)
+        .bind(...sessionStatusStampBindings("idle", row!.released_at!), sessionId, workspaceId)
         .run()
     }
     return { released, sessionId, turnId, fencingToken }
@@ -1912,14 +1913,6 @@ type TurnAdmission = {
   leaseId: string
   now: number
   expiresAt: number
-}
-
-const statusStampSql = `status = case when status_at is null or status_at <= ? then ? else status end,
-        awaiting_input = case when status_at is null or status_at <= ? then 0 else awaiting_input end,
-        status_at = case when status_at is null or status_at <= ? then ? else status_at end`
-
-function statusStampBindings(status: "busy" | "idle", at: number) {
-  return [at, status, at, at, at]
 }
 
 function denied(message = "Session authorization was denied") {

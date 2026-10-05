@@ -7,10 +7,12 @@ import {
   exercisePrivateSessionAdoptionConformance,
   exercisePrivateSessionAuthorityConformance,
   exerciseRuntimeForkReservationConformance,
-  exerciseSessionShareLevelConformance,
-  exerciseSessionShareRuntimeTokenConformance,
   exerciseSessionWriteClassConformance,
 } from "@claxedo/server-core/platform/auth/private-session-authority.conformance"
+import {
+  exerciseSessionShareLevelConformance,
+  exerciseSessionShareRuntimeTokenConformance,
+} from "@claxedo/server-core/platform/auth/session-share.conformance"
 import {
   exerciseSessionTurnAuthorityConformance,
   exerciseSessionTurnGrantConformance,

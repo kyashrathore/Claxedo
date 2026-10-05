@@ -22,6 +22,14 @@ export type SessionStatusColumns = {
 export const SESSION_STATUS_COLUMNS =
   "session_id, workspace_id, org_id, status, status_at, awaiting_input, background_agents, background_shells, background_other, last_turn_status, last_turn_completed_at"
 
+export const SESSION_STATUS_STAMP_SQL = `status = case when status_at is null or status_at <= ? then ? else status end,
+        awaiting_input = case when status_at is null or status_at <= ? then 0 else awaiting_input end,
+        status_at = case when status_at is null or status_at <= ? then ? else status_at end`
+
+export function sessionStatusStampBindings(status: "busy" | "idle", at: number) {
+  return [at, status, at, at, at]
+}
+
 const REPORTED = [
   "status",
   "awaiting_input",
