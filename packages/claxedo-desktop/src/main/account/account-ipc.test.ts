@@ -610,6 +610,7 @@ test("the renderer-visible operation set stays pinned", async () => {
     "team.projects.grant",
     "team.projects.list",
     "team.projects.revoke",
+    "telemetry.track",
     "usage.cloudFacts",
     "workspace.checkpoints.create",
     "workspace.checkpoints.list",
