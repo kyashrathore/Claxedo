@@ -261,7 +261,7 @@ export function PanelBody(props: { readonly tabsShown: boolean }): JSX.Element {
                       <Show keyed when={props.tabsShown && panel.placementId()}>
                         {(placementId) => <ActiveTab placementId={placementId} />}
                       </Show>
-                      <Show when={!panel.placementId()}>
+                      <Show when={props.tabsShown && !panel.placementId()}>
                         <div class="flex h-full items-center justify-center px-6 text-center text-compact text-text-weak">
                           {t("panel.noPlacement")}
                         </div>
