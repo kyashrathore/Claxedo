@@ -19,6 +19,30 @@ test("cookie-authenticated bodyless mutations declare JSON without changing expl
   expect(new Headers(fetcher.mock.calls[1]?.[1]?.headers).get("content-type")).toBe("text/plain")
 })
 
+test("every cookie-authenticated mutation the app can send to the server declares JSON, with or without a body, on every route", async () => {
+  fetcher.mockImplementation(async () => new Response(null, { status: 204 }))
+  const transport = createTransport({ serverUrl: "https://cp.test", cookies: true })
+  const local = { directory: "/work", workspaceId: "ws_local", remote: false }
+  const bodies = [undefined, "{}", JSON.stringify({ a: 1 })]
+  for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+    for (const body of bodies) {
+      const init = body === undefined ? { method } : { method, body }
+      await transport.request("/api/x", init)
+      await transport.json("/api/x", init)
+      await transport.runtime(local, "/api/wr/x", init)
+      await transport.runtimeJson(local, "/api/wr/x", init)
+    }
+  }
+  const sent = fetcher.mock.calls.map(([, init]) => new Headers(init?.headers).get("content-type"))
+  expect(sent).toHaveLength(4 * bodies.length * 4)
+  expect(new Set(sent)).toEqual(new Set(["application/json"]))
+  expect(fetcher.mock.calls.every(([, init]) => init?.credentials === "include")).toBe(true)
+
+  fetcher.mockClear()
+  await transport.request("/api/x")
+  expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get("content-type")).toBeNull()
+})
+
 afterEach(() => fetcher.mockReset())
 afterAll(() => fetcher.mockRestore())
 
