@@ -19,7 +19,6 @@ export default {
   "projects.chip.project": "Проект",
   "projects.create.continue": "Отправить",
   "projects.connect.connecting": "Подключение…",
-  "projects.settings.group": "Настройки",
   "projects.placement.open": "Открыть",
   "projects.edit.environment": "Среда",
   "projects.environment.value.placeholder": "значение",

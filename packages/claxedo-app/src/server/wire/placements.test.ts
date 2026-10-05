@@ -7,6 +7,7 @@ const signedBody = {
   healthy: true,
   events: { hostAggregate: false },
   deployment: { serverKind: "daemon", issuesSessions: true, documents: false, connections: true },
+  host: { enrollment: "enr_self", name: "Ada's MacBook" },
   project: [
     {
       id: "proj_one",
@@ -24,11 +25,15 @@ const signedBody = {
 test("placements: a signed bootstrap places each control-plane workspace by its id, reachable as the server states", () => {
   const catalog = bootstrapCatalog(signedBody)
 
-  expect(catalog.declaration).toEqual({ serverKind: "daemon", hostAggregate: false, issuesSessions: true, documents: false, connections: true })
+  expect(catalog.declaration).toEqual({ serverKind: "daemon", hostAggregate: false, issuesSessions: true, documents: false, connections: true, enrollmentId: "enr_self", machineName: "Ada's MacBook" })
   expect(catalog.placements.map(({ placement, route }) => ({ id: placement.id, kind: placement.kind, reachable: placement.reachable, route }))).toEqual([
     { id: placementId("ws_running"), kind: "cloud", reachable: true, route: { directory: "workspace:ws_running", workspaceId: "ws_running", remote: true } },
     { id: placementId("ws_stopped"), kind: "cloud", reachable: false, route: { directory: "workspace:ws_stopped", workspaceId: "ws_stopped", remote: true } },
   ])
+  for (const { placement } of catalog.placements) {
+    expect(placement.onThisMachine).toBe(false)
+    expect(placement.machineId).toBeUndefined()
+  }
 })
 
 test("placements: a hosted bootstrap declares the posture and places nothing", () => {

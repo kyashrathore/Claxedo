@@ -1,11 +1,12 @@
-import { createMemo, createSignal, For, Show, type JSX } from "solid-js"
+import { createSignal, For, Match, Show, Switch, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { useTranslator } from "@/i18n"
+import { useErrorCopy, useTranslator } from "@/i18n"
+import { FailureNotice } from "@/lib/failure"
 import { copyText } from "@/lib/clipboard"
 import { useServer, type Machine } from "@/server"
 import { Button, ClaxedoIconButton, Drawer, useDialog } from "@/ui"
 import { settingsDictionary, type SettingsKey } from "../i18n"
-import { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsRow } from "./section"
+import { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsListSkeleton, SettingsRow } from "./section"
 
 const INVITE_COMMAND = "claxedo host invite --name build-box --root ~/code"
 const CONNECT_COMMAND = "claxedo connect --token-file ./invite.txt --install-service"
@@ -70,11 +71,6 @@ function machineStatus(machine: Machine): SettingsKey {
   return machine.enrolled ? "settings.machines.reachableElsewhere" : "settings.machines.reachableHereOnly"
 }
 
-function listedMachines(machines: readonly Machine[]): readonly Machine[] {
-  const listed = machines.filter((machine) => machine.enrolled || machine.isThisMachine)
-  return [...listed.filter((machine) => machine.isThisMachine), ...listed.filter((machine) => !machine.isThisMachine)]
-}
-
 function MachineRow(props: { readonly machine: Machine }) {
   const t = useTranslator(settingsDictionary)
   return (
@@ -86,12 +82,33 @@ function MachineRow(props: { readonly machine: Machine }) {
   )
 }
 
+function MachineList(props: { readonly machines: readonly Machine[]; readonly action: JSX.Element }) {
+  const t = useTranslator(settingsDictionary)
+  return (
+    <Show
+      when={props.machines.length > 0}
+      fallback={
+        <SettingsEmpty>
+          <span class="settings-empty-line">
+            <span>{t("settings.machines.empty")}</span>
+            {props.action}
+          </span>
+        </SettingsEmpty>
+      }
+    >
+      <SettingsList>
+        <For each={props.machines}>{(machine) => <MachineRow machine={machine} />}</For>
+      </SettingsList>
+    </Show>
+  )
+}
+
 export function MachinesSection() {
   const t = useTranslator(settingsDictionary)
+  const errorCopy = useErrorCopy()
   const server = useServer()
   const connect = useConnectMachine()
   const query = useQuery(() => server.queries.machines.list())
-  const machines = createMemo(() => listedMachines(query.data ?? []))
   const action = (
     <Button size="small" variant="ghost" data-action="add-machine" onClick={connect}>
       {t("settings.machines.connect.action")}
@@ -100,22 +117,13 @@ export function MachinesSection() {
   return (
     <div class="settings-body">
       <SettingsIntro description={t("settings.machines.description")} />
-      <SettingsGroup title={t("settings.machines.yours")} action={machines().length > 0 ? action : undefined}>
-        <Show
-          when={machines().length > 0}
-          fallback={
-            <SettingsEmpty>
-              <span class="settings-empty-line">
-                <span>{t("settings.machines.empty")}</span>
-                {action}
-              </span>
-            </SettingsEmpty>
-          }
-        >
-          <SettingsList>
-            <For each={machines()}>{(machine) => <MachineRow machine={machine} />}</For>
-          </SettingsList>
-        </Show>
+      <SettingsGroup title={t("settings.machines.yours")} action={query.data && query.data.length > 0 ? action : undefined}>
+        <Switch fallback={<SettingsListSkeleton />}>
+          <Match when={query.data}>{(machines) => <MachineList machines={machines()} action={action} />}</Match>
+          <Match when={query.error}>
+            {(error) => <FailureNotice title={t("settings.machines.failed")} message={errorCopy(error()).message} retryLabel={errorCopy(error()).retry} onRetry={() => void query.refetch()} />}
+          </Match>
+        </Switch>
       </SettingsGroup>
     </div>
   )

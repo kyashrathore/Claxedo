@@ -11,9 +11,9 @@ import {
   type PlacementId,
   type ProjectId,
 } from "@/server"
-import { cloudWorkspaceTransition, isRunning, type CloudWorkspaceEvent } from "./model"
+import { cloudWorkspaceTransition, isRunning, type CloudCommand, type CloudCommandFailure, type CloudWorkspaceEvent } from "./model"
 
-export type CloudWorkspaceRow = CloudWorkspace & { readonly state: CloudWorkspaceStatus }
+export type CloudWorkspaceRow = CloudWorkspace & { readonly state: CloudWorkspaceStatus; readonly commandFailure?: CloudCommandFailure }
 
 export type CloudList =
   | { readonly kind: "loading" }
@@ -36,37 +36,41 @@ function displayedStatus(workspace: CloudWorkspace, pending: Pending | undefined
   return cloudWorkspaceTransition(workspace.status, pending.event)
 }
 
+function useCommandRunner(statusKind: (id: PlacementId) => CloudWorkspaceStatus["kind"]) {
+  const [pending, setPending] = createStore<Record<string, Pending | undefined>>({})
+  const [failures, setFailures] = createStore<Record<string, CloudCommandFailure | undefined>>({})
+  const run = async (id: PlacementId, name: CloudCommand, event: CloudWorkspaceEvent | undefined, task: () => Promise<void>) => {
+    setFailures(id, undefined)
+    if (event) setPending(id, { event, at: statusKind(id) })
+    try {
+      await task()
+    } catch (cause) {
+      setPending(id, undefined)
+      setFailures(id, { command: name, reason: toAppError(cause).message })
+    }
+  }
+  const row = (workspace: CloudWorkspace): CloudWorkspaceRow => {
+    const failure = failures[workspace.id]
+    return { ...workspace, state: displayedStatus(workspace, pending[workspace.id]), ...(failure ? { commandFailure: failure } : {}) }
+  }
+  return { run, row }
+}
+
 function useCloudCommands(enabled: Accessor<boolean>, include: (workspace: CloudWorkspace) => boolean) {
   const server = useServer()
   const query = useQuery(() => ({ ...server.queries.cloud.list(), enabled: enabled() }))
-  const [pending, setPending] = createStore<Record<string, Pending | undefined>>({})
-  const statusKind = (id: PlacementId): CloudWorkspaceStatus["kind"] =>
-    query.data?.find((workspace) => workspace.id === id)?.status.kind ?? "stopped"
-
-  const command = async (id: PlacementId, event: CloudWorkspaceEvent | undefined, run: () => Promise<void>) => {
-    if (event) setPending(id, { event, at: statusKind(id) })
-    try {
-      await run()
-    } catch (cause) {
-      setPending(id, { event: { type: "commandFailed", reason: toAppError(cause).message }, at: statusKind(id) })
-    }
-  }
-
+  const commands = useCommandRunner((id) => query.data?.find((workspace) => workspace.id === id)?.status.kind ?? "stopped")
   const list = createMemo((): CloudList => {
-    if (query.data !== undefined) {
-      const rows = query.data.filter(include).map((workspace) => ({ ...workspace, state: displayedStatus(workspace, pending[workspace.id]) }))
-      return { kind: "ready", rows }
-    }
+    if (query.data !== undefined) return { kind: "ready", rows: query.data.filter(include).map(commands.row) }
     if (query.error) return { kind: "failed", error: query.error }
     return { kind: "loading" }
   })
-
   return {
     list,
     refresh: () => void query.refetch(),
-    start: (id: PlacementId) => command(id, { type: "startRequested" }, () => server.cloud.start(id)),
-    stop: (id: PlacementId) => command(id, { type: "stopRequested" }, () => server.cloud.stop(id)),
-    remove: (id: PlacementId) => command(id, undefined, () => server.cloud.remove(id)),
+    start: (id: PlacementId) => commands.run(id, "start", { type: "startRequested" }, () => server.cloud.start(id)),
+    stop: (id: PlacementId) => commands.run(id, "stop", { type: "stopRequested" }, () => server.cloud.stop(id)),
+    remove: (id: PlacementId) => commands.run(id, "remove", undefined, () => server.cloud.remove(id)),
   }
 }
 

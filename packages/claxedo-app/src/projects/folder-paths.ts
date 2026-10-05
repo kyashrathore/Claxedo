@@ -97,3 +97,7 @@ export function uniqueRows(rows: FolderRow[]) {
     return true
   })
 }
+
+export function homeRelativePath(path: string): string {
+  return path.replace(/^\/(?:Users|home)\/[^/]+(?=\/|$)/, "~")
+}

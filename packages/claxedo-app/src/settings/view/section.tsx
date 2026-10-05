@@ -1,4 +1,5 @@
-import { createUniqueId, Show, type JSX } from "solid-js"
+import { createUniqueId, For, Show, type JSX } from "solid-js"
+import { useElapsed } from "@/lib/delay"
 import "./settings.css"
 
 export function SettingsIntro(props: { readonly description?: string; readonly action?: JSX.Element }) {
@@ -75,5 +76,25 @@ export function SettingsNote(props: { readonly tone?: "muted" | "danger"; readon
     <p class="settings-note" data-tone={props.tone ?? "muted"} role={props.tone === "danger" ? "alert" : undefined}>
       {props.children}
     </p>
+  )
+}
+
+export function SettingsListSkeleton(props: { readonly rows?: number }) {
+  const visible = useElapsed()
+  return (
+    <Show when={visible()}>
+      <div class="settings-list" data-variant="card" aria-hidden="true">
+        <For each={Array.from({ length: props.rows ?? 2 })}>
+          {() => (
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <span class="settings-skeleton-bar" data-width="title" />
+                <span class="settings-skeleton-bar" data-width="description" />
+              </div>
+            </div>
+          )}
+        </For>
+      </div>
+    </Show>
   )
 }

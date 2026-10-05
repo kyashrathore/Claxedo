@@ -19,7 +19,6 @@ export default {
   "projects.chip.project": "مشروع",
   "projects.create.continue": "إرسال",
   "projects.connect.connecting": "جارٍ التوصيل…",
-  "projects.settings.group": "إعدادات",
   "projects.placement.open": "فتح",
   "projects.edit.environment": "البيئة",
   "projects.environment.value.placeholder": "قيمة",

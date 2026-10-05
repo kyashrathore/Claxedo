@@ -1,5 +1,6 @@
 import { unreachable } from "@/lib/machine"
 import type { CloudWorkspaceStatus } from "@/server"
+import type { CloudCommand, CloudCommandFailure } from "../model"
 import { useCloudText, type CloudKey, type CloudText } from "../i18n"
 
 const PROVISIONING_STEP: Readonly<Record<string, CloudKey>> = {
@@ -31,4 +32,15 @@ export function cloudStatusText(t: CloudText, state: CloudWorkspaceStatus): stri
 export function useCloudStatusText(): (state: CloudWorkspaceStatus) => string {
   const t = useCloudText()
   return (state) => cloudStatusText(t, state)
+}
+
+const COMMAND_FAILED: Readonly<Record<CloudCommand, CloudKey>> = {
+  start: "cloud.command.start.failed",
+  stop: "cloud.command.stop.failed",
+  remove: "cloud.command.remove.failed",
+}
+
+export function useCloudCommandFailureText(): (failure: CloudCommandFailure | undefined) => string | undefined {
+  const t = useCloudText()
+  return (failure) => (failure ? t(COMMAND_FAILED[failure.command], { reason: failure.reason }) : undefined)
 }

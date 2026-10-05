@@ -1,5 +1,5 @@
 import type { JSX } from "solid-js"
-import { cloudFailureReason, useCloudStatusText, useCloudWorkspaceName, useCloudWorkspaces, type CloudWorkspaces } from "@/cloud"
+import { cloudFailureReason, useCloudCommandFailureText, useCloudStatusText, useCloudWorkspaces, type CloudWorkspaces } from "@/cloud"
 import { placementId, type Placement } from "@/server"
 import { useConnectMachine } from "@/settings"
 import { ClaxedoIcon as Icon, useDialog } from "@/ui"
@@ -15,7 +15,6 @@ type Words = {
   readonly t: ProjectsText
   readonly context: DraftContext
   readonly cloudStatus: (placement: Placement) => string | undefined
-  readonly cloudName: (placement: Placement) => string
 }
 
 function placementOnline(words: Words, placement: Placement): string {
@@ -24,23 +23,16 @@ function placementOnline(words: Words, placement: Placement): string {
   return words.t(online ? "projects.where.online" : "projects.where.offline")
 }
 
-function entryLabel(words: Words, placement: Placement): string {
-  if (placement.kind === "cloud") return words.cloudName(placement)
-  if (placement.kind !== "folder") return placement.label
-  return words.context.machineOf(placement)?.name ?? placement.label
-}
-
 function entryDetail(words: Words, placement: Placement): string | undefined {
   if (placement.kind === "cloud") return [words.cloudStatus(placement), placement.branch].filter(Boolean).join(" · ") || undefined
-  const machine = placement.kind === "folder" ? placement.label : words.context.machineOf(placement)?.name
-  return [machine, placementOnline(words, placement)].filter(Boolean).join(" · ")
+  return [words.context.machineOf(placement)?.name, placementOnline(words, placement)].filter(Boolean).join(" · ")
 }
 
 function whereOption(words: Words, entry: WhereEntry, grouped: ReadonlySet<WherePlace>): ContextChipOption {
   const detail = entryDetail(words, entry.placement)
   return {
     value: entry.placement.id,
-    label: entryLabel(words, entry.placement),
+    label: entry.placement.label,
     ...(detail ? { detail } : {}),
     ...(grouped.has(entry.place) ? { group: words.t(PLACE_GROUP[entry.place]) } : {}),
   }
@@ -57,7 +49,7 @@ function whereLabel(words: Words): string {
   const choice = context.choice()
   if (choice.kind === "newWorktree") return t("projects.chip.newWorktree.pending")
   const current = context.current()
-  return current ? entryLabel(words, current) : choice.pendingName ?? ""
+  return current?.label ?? choice.pendingName ?? ""
 }
 
 function createActions(words: Words, openCloud: () => void, connect: () => void): readonly ContextChipAction[] {
@@ -73,10 +65,11 @@ function createActions(words: Words, openCloud: () => void, connect: () => void)
 
 function useCloudStatus(cloud: CloudWorkspaces): Words["cloudStatus"] {
   const status = useCloudStatusText()
+  const commandFailure = useCloudCommandFailureText()
   return (placement) => {
     const list = cloud.list()
     const row = list.kind === "ready" ? list.rows.find((item) => item.id === placement.id) : undefined
-    return row ? [status(row.state), cloudFailureReason(row.state)].filter(Boolean).join(" — ") : undefined
+    return row ? [status(row.state), cloudFailureReason(row.state), commandFailure(row.commandFailure)].filter(Boolean).join(" — ") : undefined
   }
 }
 
@@ -85,8 +78,7 @@ export function useWhereChip(context: DraftContext): () => ContextChip {
   const dialog = useDialog()
   const connect = useConnectMachine()
   const cloud = useCloudWorkspaces(context.projectId, context.canCreateCloud)
-  const name = useCloudWorkspaceName()
-  const words: Words = { t, context, cloudStatus: useCloudStatus(cloud), cloudName: (placement) => name({ id: placement.id, name: placement.label, ...(placement.branch ? { branch: placement.branch } : {}) }) }
+  const words: Words = { t, context, cloudStatus: useCloudStatus(cloud) }
   const openCloud = () =>
     dialog.show(() => <DialogNewCloudWorkspace cloud={cloud} onCreated={(workspace) => context.choose({ kind: "placement", id: workspace.id, pendingName: workspace.name })} />)
   return () => {

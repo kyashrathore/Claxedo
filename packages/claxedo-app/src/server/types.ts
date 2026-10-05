@@ -53,6 +53,8 @@ export type Machine = {
   readonly enrolled: boolean
 }
 
+export type ServingMachine = { readonly id?: MachineId; readonly name: string }
+
 export type PlacementKind = "folder" | "worktree" | "cloud"
 
 export type Placement = {
@@ -261,7 +263,7 @@ export type HarnessInfo = {
 export type Capabilities = {
   readonly principal: MachinePrincipal
   readonly signedIn: boolean
-  readonly localExecution: boolean
+  readonly servingMachine: ServingMachine | undefined
   readonly harnesses: readonly HarnessInfo[]
   readonly features: {
     readonly documents: boolean

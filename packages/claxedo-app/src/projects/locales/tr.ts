@@ -19,7 +19,6 @@ export default {
   "projects.chip.project": "Proje",
   "projects.create.continue": "Gönder",
   "projects.connect.connecting": "Bağlanıyor…",
-  "projects.settings.group": "Ayarlar",
   "projects.placement.open": "Aç",
   "projects.edit.environment": "Ortam",
   "projects.environment.value.placeholder": "değer",

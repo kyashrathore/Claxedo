@@ -1,7 +1,7 @@
 import { AGENT_HARNESS_IDS, HARNESS_EFFORT_LEVELS, HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
 import { createSignal, type Accessor } from "solid-js"
 import { machineId } from "./ids"
-import type { Capabilities, HarnessInfo } from "./types"
+import type { Capabilities, HarnessInfo, ServingMachine } from "./types"
 import type { Workspaces } from "./workspaces"
 import type { BootstrapDeclaration } from "./wire/placements"
 
@@ -27,15 +27,20 @@ export function servesFromMachine(declaration: BootstrapDeclaration): boolean {
   return declaration.serverKind === "daemon"
 }
 
+export function servingMachineOf(declaration: BootstrapDeclaration): ServingMachine | undefined {
+  if (!servesFromMachine(declaration) || !declaration.machineName) return undefined
+  return { ...(declaration.enrollmentId ? { id: machineId(declaration.enrollmentId) } : {}), name: declaration.machineName }
+}
+
 function capabilitiesFromDeclaration(declaration: BootstrapDeclaration): Capabilities {
   const signedIn = declaration.issuesSessions
-  const localExecution = servesFromMachine(declaration)
+  const servingMachine = servingMachineOf(declaration)
   return {
     principal: { kind: "machine", ...(declaration.enrollmentId ? { machineId: machineId(declaration.enrollmentId) } : {}) },
     signedIn,
-    localExecution,
+    servingMachine,
     harnesses: AGENT_HARNESS_IDS.map(harnessInfo),
-    features: { documents: declaration.documents, connections: declaration.connections, cloud: signedIn, livePlugins: localExecution },
+    features: { documents: declaration.documents, connections: declaration.connections, cloud: signedIn, livePlugins: servingMachine !== undefined },
   }
 }
 

@@ -19,7 +19,6 @@ export default {
   "projects.chip.project": "Projekat",
   "projects.create.continue": "Pošalji",
   "projects.connect.connecting": "Povezivanje…",
-  "projects.settings.group": "Postavke",
   "projects.placement.open": "Otvori",
   "projects.edit.environment": "Okruženje",
   "projects.environment.value.placeholder": "vrijednost",

@@ -19,7 +19,6 @@ export default {
   "projects.chip.project": "Projekt",
   "projects.create.continue": "Prześlij",
   "projects.connect.connecting": "Łączenie…",
-  "projects.settings.group": "Ustawienia",
   "projects.placement.open": "Otwórz",
   "projects.edit.environment": "Środowisko",
   "projects.environment.value.placeholder": "wartość",

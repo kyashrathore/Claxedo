@@ -18,7 +18,7 @@ Owns: the project as the app sees it, its placements, the create-project form (t
 | --- | --- | --- |
 | `useProjects()` | `queries.projects.list()` | `Loaded<readonly Project[]>`: loading, ready(data), failed(error) |
 | `useProject(id)` | `queries.projects.byId(id)` | `ProjectView`: loading, ready(project), missing, failed(error) |
-| `useProjectPlacements(projectId)` | `queries.placements.byProject(projectId)` | `Loaded<readonly Placement[]>` |
+| `useProjectPlacements(projectId)` | `queries.placements.byProject(projectId)` | `Loaded<readonly Placement[]>` and its `retry` |
 
 `useProjectCommands()` gives `remove` and `reclone`, which call `server.projects`. `reclone` is Settings → Projects' "Clone at this location": the server clones the recorded remote into the recorded folder (`POST /api/claxedo/projects/:id/reclone`) and refuses while anything is at that path. The Edit dialog saves the name, icon and colour, and the Environment drawer the environment, each in one `server.projects.update`; an empty name drops a name set by hand, as v1 did for the folder's own name. These configuration actions are daemon operations; on hosted the adapter refuses them before any HTTP request. The adapter updates the project queries from each answer; this domain never writes the query cache.
 

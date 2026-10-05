@@ -29,7 +29,7 @@ function createWhere(server: Server, draft: Accessor<DraftTarget>) {
     placement,
     machineOf,
     machinesLoaded: () => machines.data !== undefined,
-    hasMachine: () => machines.data?.some((machine) => machine.enrolled || machine.isThisMachine) === true,
+    hasMachine: () => (machines.data?.length ?? 0) > 0,
     roots: createMemo(() => worktreeRoots(entries())),
   }
 }

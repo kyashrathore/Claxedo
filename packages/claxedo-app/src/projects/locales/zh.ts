@@ -20,7 +20,6 @@ export default {
   "projects.create.continue": "提交",
   "projects.connect.connecting": "连接中…",
   "projects.connect.enter.before": "回车",
-  "projects.settings.group": "设置",
   "projects.placement.open": "打开",
   "projects.edit.environment": "环境",
   "projects.title": "项目",

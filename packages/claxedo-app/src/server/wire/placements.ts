@@ -3,6 +3,7 @@ import type { RuntimeRoute } from "../transport"
 import type { Placement } from "../types"
 import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
 import { contractMismatch } from "../errors"
+import { placementName } from "./workspace-name"
 
 export type ServerKind = "daemon" | "hosted"
 
@@ -42,10 +43,6 @@ function remoteOf(row: Record<string, unknown>, self: string | undefined): { rem
   return { remote: false, ...(self ? { machine: machineId(self) } : {}) }
 }
 
-function placementLabel(row: Record<string, unknown>, directory: string) {
-  return nonEmptyString(row.workspace_name) ?? nonEmptyString(row.workspaceName) ?? directory.split("/").filter(Boolean).pop() ?? directory
-}
-
 function gitRemoteOf(project: Record<string, unknown>, row: Record<string, unknown>): string | undefined {
   const git = isRecord(project.git) ? project.git : {}
   return nonEmptyString(row.repo_url) ?? nonEmptyString(row.repoUrl) ?? nonEmptyString(row.git_remote) ?? nonEmptyString(row.gitRemote) ?? nonEmptyString(git.remote)
@@ -58,15 +55,15 @@ function placementRecord(project: Record<string, unknown>, key: string, row: Rec
   const directory = nonEmptyString(row.directory) ?? key
   const location = nonEmptyString(row.remote_directory) ?? nonEmptyString(row.remoteDirectory) ?? directory
   const { remote, machine } = remoteOf(row, self)
-  const root = directory === nonEmptyString(project.worktree)
+  const kind = placementKind(row, directory === nonEmptyString(project.worktree))
   const gitRemote = gitRemoteOf(project, row)
   const branch = nonEmptyString(row.git_branch) ?? nonEmptyString(row.gitBranch)
   return {
     placement: {
       id: placementId(id),
       projectId: projectId(owner),
-      kind: placementKind(row, root),
-      label: placementLabel(row, location),
+      kind,
+      label: placementName(row, id, kind === "cloud", location, branch),
       path: location,
       ...(branch ? { branch } : {}),
       reachable: row.reachable === true,

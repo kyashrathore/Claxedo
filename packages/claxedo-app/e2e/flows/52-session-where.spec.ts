@@ -107,7 +107,7 @@ test("52 a refused cloud workspace says why in its dialog, and the draft keeps i
   await expect(page.getByRole("textbox", { name: UI.composer })).toHaveText("Keep this draft")
 })
 
-test("52 with one machine its folder is listed with the machine's own name and its state", async ({ signedCloud: signed, page }, testInfo) => {
+test("52 a machine folder is listed by its folder name, with the machine's own name and its state beside it", async ({ signedCloud: signed, page }, testInfo) => {
   const folder = await signed.makeWorkspace("notes-folder", "notes")
   const [device] = await ownerDevices(signed)
   await signed.signIn(page, signed.owner)

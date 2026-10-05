@@ -20,7 +20,6 @@ export default {
   "projects.create.continue": "Enviar",
   "projects.connect.connecting": "Conectando…",
   "projects.connect.enter.before": "Intro",
-  "projects.settings.group": "Ajustes",
   "projects.placement.open": "Abrir",
   "projects.edit.environment": "Entorno",
   "projects.environment.value.placeholder": "valor",

@@ -19,7 +19,6 @@ export default {
   "projects.chip.project": "專案",
   "projects.create.continue": "提交",
   "projects.connect.connecting": "連接中…",
-  "projects.settings.group": "設定",
   "projects.placement.open": "開啟",
   "projects.edit.environment": "環境",
   "projects.title": "專案",

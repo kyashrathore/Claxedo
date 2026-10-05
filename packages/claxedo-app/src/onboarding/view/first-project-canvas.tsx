@@ -22,8 +22,8 @@ export function FirstProjectCanvas(_props: PageProps) {
           {(known) => (
             <OnboardingWizard
               facts={{
-                localExecution: known().localExecution,
-                machineName: machines.data?.find((machine) => machine.isThisMachine)?.name,
+                localExecution: known().servingMachine !== undefined,
+                machineName: known().servingMachine?.name,
                 cloudAvailable: auth.state().kind === "signedIn",
                 machineConnected: machines.data?.some((machine) => machine.enrolled),
               }}

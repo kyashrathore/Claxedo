@@ -2,6 +2,7 @@ import { isRecord } from "@claxedo/helpers/guards"
 import { machineId, placementId, projectId } from "../ids"
 import type { Placement, Project, ProjectSource } from "../types"
 import type { PlacementRecord } from "./placements"
+import { placementName } from "./workspace-name"
 
 export type AccountCatalog = {
   readonly projects: readonly Project[]
@@ -44,7 +45,7 @@ function placementRecordFromRow(row: Row, workspace: string, project: string): P
     id: placementId(workspace),
     projectId: projectId(project),
     kind: cloud ? "cloud" : "worktree",
-    label: firstTextOf(row, "workspace_name", "workspaceName", "display_name", "displayName") ?? workspace,
+    label: placementName(row, workspace, cloud, remoteDirectory, branch),
     ...(remoteDirectory ? { path: remoteDirectory } : {}),
     ...(branch ? { branch } : {}),
     reachable: row.reachable === true,

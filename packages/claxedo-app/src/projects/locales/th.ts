@@ -19,7 +19,6 @@ export default {
   "projects.chip.project": "โปรเจกต์",
   "projects.create.continue": "ส่ง",
   "projects.connect.connecting": "กำลังเชื่อมต่อ…",
-  "projects.settings.group": "การตั้งค่า",
   "projects.placement.open": "เปิด",
   "projects.edit.environment": "สภาพแวดล้อม",
   "projects.environment.value.placeholder": "ค่า",

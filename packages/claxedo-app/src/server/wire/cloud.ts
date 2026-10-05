@@ -1,6 +1,7 @@
 import { placementId, projectId } from "../ids"
 import type { CloudWorkspace, CloudWorkspaceStatus, CodeHostRepository } from "../cloud-types"
 import { isRecord, nonEmptyString } from "@claxedo/helpers/guards"
+import { cloudWorkspaceName } from "./workspace-name"
 
 function cloudStatusFromWire(status: unknown, step?: unknown, message?: unknown): CloudWorkspaceStatus {
   switch (status) {
@@ -44,7 +45,7 @@ export function cloudWorkspaceFromRow(row: unknown): CloudWorkspace | undefined 
   return {
     id: placementId(id),
     projectId: projectId(owner),
-    name: nonEmptyString(row.workspace_name) ?? nonEmptyString(row.workspaceName) ?? nonEmptyString(row.display_name) ?? id,
+    name: cloudWorkspaceName(row, id, branch),
     ...(branch ? { branch } : {}),
     status: cloudStatusFromWire(row.status, row.step, row.error),
   }

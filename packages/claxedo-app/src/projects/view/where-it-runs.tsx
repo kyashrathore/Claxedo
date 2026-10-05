@@ -1,9 +1,12 @@
-import { For, Show, type JSX } from "solid-js"
+import { For, Match, Show, Switch, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { canStart, canStop, cloudFailureReason, useCloudStatusText, useCloudWorkspaceName, useCloudWorkspaces, type CloudWorkspaceRow, type CloudWorkspaces } from "@/cloud"
-import { machineOfPlacement, useServer, type Placement, type Project } from "@/server"
-import { SettingsEmpty, SettingsGroup, SettingsList, SettingsNote, SettingsRow, useConnectMachine } from "@/settings"
+import { canStart, canStop, cloudFailureReason, useCloudCommandFailureText, useCloudStatusText, useCloudWorkspaces, type CloudWorkspaceRow, type CloudWorkspaces } from "@/cloud"
+import { useErrorCopy } from "@/i18n"
+import { FailureNotice } from "@/lib/failure"
+import { machineOfPlacement, useServer, type AppError, type Placement, type Project } from "@/server"
+import { SettingsEmpty, SettingsGroup, SettingsList, SettingsListSkeleton, SettingsNote, SettingsRow, useConnectMachine } from "@/settings"
 import { Button, requestConfirm, useDialog } from "@/ui"
+import { homeRelativePath } from "../folder-paths"
 import { useProjectsText } from "../i18n"
 import { usePlacementOpener } from "../open"
 import { useProjectPlacements } from "../store"
@@ -12,9 +15,10 @@ import { DialogNewCloudWorkspace } from "./new-cloud-workspace-dialog"
 function MachinePlacementRow(props: { readonly placement: Placement; readonly machineName?: string }): JSX.Element {
   const t = useProjectsText()
   const open = usePlacementOpener()
-  const detail = () => [props.placement.path, props.placement.branch, t(props.placement.reachable ? "projects.where.online" : "projects.where.offline")].filter(Boolean).join(" · ")
+  const path = () => (props.placement.path ? homeRelativePath(props.placement.path) : undefined)
+  const detail = () => [props.machineName, path(), props.placement.branch, t(props.placement.reachable ? "projects.where.online" : "projects.where.offline")].filter(Boolean).join(" · ")
   return (
-    <SettingsRow title={props.machineName ?? props.placement.label} description={detail()}>
+    <SettingsRow title={props.placement.label} description={detail()}>
       <Button variant="neutral" size="small" onClick={() => open(props.placement.id)}>
         {t("projects.placement.open")}
       </Button>
@@ -27,11 +31,11 @@ function CloudRow(props: { readonly row: CloudWorkspaceRow; readonly cloud: Clou
   const dialog = useDialog()
   const open = usePlacementOpener()
   const status = useCloudStatusText()
-  const name = useCloudWorkspaceName()
-  const detail = () => [props.row.branch, status(props.row.state), cloudFailureReason(props.row.state)].filter(Boolean).join(" · ")
+  const commandFailure = useCloudCommandFailureText()
+  const detail = () => [props.row.branch, status(props.row.state), cloudFailureReason(props.row.state), commandFailure(props.row.commandFailure)].filter(Boolean).join(" · ")
   const remove = async () => {
     const confirmed = await requestConfirm(dialog, {
-      title: t("projects.where.delete.title", { name: name(props.row) }),
+      title: t("projects.where.delete.title", { name: props.row.name }),
       body: t("projects.where.delete.body"),
       confirmLabel: t("projects.where.delete.confirm"),
       cancelLabel: t("projects.where.cancel"),
@@ -39,7 +43,7 @@ function CloudRow(props: { readonly row: CloudWorkspaceRow; readonly cloud: Clou
     if (confirmed) await props.cloud.remove(props.row.id)
   }
   return (
-    <SettingsRow title={<span title={props.row.id}>{name(props.row)}</span>} description={detail()}>
+    <SettingsRow title={<span title={props.row.id}>{props.row.name}</span>} description={detail()}>
       <Show when={props.row.state.kind === "ready"}>
         <Button variant="neutral" size="small" onClick={() => open(props.row.id)}>{t("projects.placement.open")}</Button>
       </Show>
@@ -54,35 +58,65 @@ function CloudRow(props: { readonly row: CloudWorkspaceRow; readonly cloud: Clou
   )
 }
 
+function PlacementRows(props: { readonly local: readonly Placement[]; readonly cloudRows: readonly CloudWorkspaceRow[]; readonly cloud: CloudWorkspaces }): JSX.Element {
+  const t = useProjectsText()
+  const server = useServer()
+  const machines = useQuery(() => server.queries.machines.list())
+  const machineName = (placement: Placement) => machineOfPlacement(machines.data ?? [], placement)?.name
+  return (
+    <Show when={props.local.length + props.cloudRows.length > 0} fallback={<SettingsEmpty>{t("projects.placements.empty")}</SettingsEmpty>}>
+      <SettingsList>
+        <For each={props.local}>{(placement) => <MachinePlacementRow placement={placement} machineName={machineName(placement)} />}</For>
+        <For each={props.cloudRows}>{(row) => <CloudRow row={row} cloud={props.cloud} />}</For>
+      </SettingsList>
+    </Show>
+  )
+}
+
+type PlacementsReady = { readonly local: readonly Placement[]; readonly cloudRows: readonly CloudWorkspaceRow[] }
+
+type PlacementsLoad = { readonly kind: "loading" } | { readonly kind: "failed"; readonly error: AppError; readonly retry: () => void } | ({ readonly kind: "ready" } & PlacementsReady)
+
+function usePlacementsLoad(project: () => Project, cloud: CloudWorkspaces, cloudOffered: () => boolean): () => PlacementsLoad {
+  const placements = useProjectPlacements(() => project().id)
+  return () => {
+    const machine = placements.state()
+    const listed = cloudOffered() ? cloud.list() : { kind: "ready" as const, rows: [] }
+    if (machine.kind === "failed") return { kind: "failed", error: machine.error, retry: placements.retry }
+    if (listed.kind === "failed") return { kind: "failed", error: listed.error, retry: cloud.refresh }
+    if (machine.kind === "loading" || listed.kind === "loading") return { kind: "loading" }
+    return { kind: "ready", local: machine.data.filter((placement) => placement.kind !== "cloud"), cloudRows: listed.rows }
+  }
+}
+
 export function WhereItRuns(props: { readonly project: Project }): JSX.Element {
   const t = useProjectsText()
   const server = useServer()
   const dialog = useDialog()
+  const errorCopy = useErrorCopy()
   const connectMachine = useConnectMachine()
   const cloudOffered = () => server.capabilities()?.features.cloud === true && props.project.source?.kind !== "folder"
-  const placements = useProjectPlacements(() => props.project.id)
-  const machines = useQuery(() => server.queries.machines.list())
   const cloud = useCloudWorkspaces(() => props.project.id, cloudOffered)
-  const local = () => {
-    const state = placements()
-    return state.kind === "ready" ? state.data.filter((placement) => placement.kind !== "cloud") : []
+  const load = usePlacementsLoad(() => props.project, cloud, cloudOffered)
+  const ready = (): PlacementsReady | undefined => {
+    const state = load()
+    return state.kind === "ready" ? state : undefined
   }
-  const cloudRows = () => {
-    const state = cloud.list()
-    return state.kind === "ready" ? state.rows : []
+  const failed = () => {
+    const state = load()
+    return state.kind === "failed" ? state : undefined
   }
-  const machineName = (placement: Placement) => machineOfPlacement(machines.data ?? [], placement)?.name
-  const loading = () => placements().kind === "loading" || (cloudOffered() && cloud.list().kind === "loading")
-  const empty = () => !loading() && local().length === 0 && cloudRows().length === 0
   const newCloud = () => dialog.show(() => <DialogNewCloudWorkspace cloud={cloud} />)
   return (
     <SettingsGroup title={t("projects.placements")} description={t("projects.where.description")}>
-      <Show when={!empty()} fallback={<SettingsEmpty>{t("projects.placements.empty")}</SettingsEmpty>}>
-        <SettingsList>
-          <For each={local()}>{(placement) => <MachinePlacementRow placement={placement} machineName={machineName(placement)} />}</For>
-          <For each={cloudRows()}>{(row) => <CloudRow row={row} cloud={cloud} />}</For>
-        </SettingsList>
-      </Show>
+      <Switch fallback={<SettingsListSkeleton />}>
+        <Match when={ready()}>
+          {(ready) => <PlacementRows local={ready().local} cloudRows={ready().cloudRows} cloud={cloud} />}
+        </Match>
+        <Match when={failed()}>
+          {(failed) => <FailureNotice title={t("projects.placements.failed")} message={errorCopy(failed().error).message} retryLabel={errorCopy(failed().error).retry} onRetry={failed().retry} />}
+        </Match>
+      </Switch>
       <div class="projects-where-actions">
         <Show when={cloudOffered()}>
           <Button variant="neutral" size="small" icon="plus" onClick={newCloud}>{t("projects.where.newCloud")}</Button>

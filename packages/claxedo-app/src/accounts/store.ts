@@ -35,12 +35,11 @@ function effectiveByProvider(effective: EffectiveAccounts): ReadonlyMap<string, 
 }
 
 function useAccountReads(server: Server) {
-  const onMachine = () => server.capabilities()?.localExecution === true
+  const machineName = () => server.capabilities()?.servingMachine?.name
+  const onMachine = () => machineName() !== undefined
   const list = useQuery(() => server.queries.accounts.list())
   const effective = useQuery(() => server.queries.accounts.effective())
   const logins = useQuery(() => ({ ...server.queries.accounts.machineLogins(), enabled: onMachine() }))
-  const machines = useQuery(() => ({ ...server.queries.machines.list(), enabled: onMachine() }))
-  const machineName = () => machines.data?.find((machine) => machine.isThisMachine)?.name
   const sources = useQuery(() => server.queries.accounts.sources())
   const queries = [list, effective, logins, sources] as const
   const machineLogins = (): readonly MachineLogin[] | undefined => (onMachine() ? logins.data : [])

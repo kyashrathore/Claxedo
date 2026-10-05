@@ -19,7 +19,6 @@ export default {
   "projects.chip.project": "Projekt",
   "projects.create.continue": "Indsend",
   "projects.connect.connecting": "Forbinder…",
-  "projects.settings.group": "Indstillinger",
   "projects.placement.open": "Åbn",
   "projects.edit.environment": "Miljø",
   "projects.environment.value.placeholder": "værdi",

@@ -1,6 +1,6 @@
 import { For, Match, Show, Switch, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { useCloudStatusText, useCloudWorkspaceName, useRunningCloudWorkspaces } from "@/cloud"
+import { useCloudStatusText, useRunningCloudWorkspaces } from "@/cloud"
 import { useErrorCopy, useTranslator } from "@/i18n"
 import { useElapsed } from "@/lib/delay"
 import { FailureNotice } from "@/lib/failure"
@@ -15,7 +15,6 @@ export function CloudUsage(): JSX.Element {
   const elapsed = useElapsed()
   const running = useRunningCloudWorkspaces(() => true)
   const projects = useQuery(() => server.queries.projects.list())
-  const cloudName = useCloudWorkspaceName()
   const projectName = (id: ProjectId) => projects.data?.find((project) => project.id === id)?.name
   const statusLabel = useCloudStatusText()
   const failed = () => {
@@ -44,7 +43,7 @@ export function CloudUsage(): JSX.Element {
                   {(row) => (
                     <li class="usage-cloud-row" data-workspace-id={row.id} data-state={row.state.kind}>
                       <div class="usage-cloud-text">
-                        <span class="usage-cloud-name" title={row.id}>{cloudName(row)}</span>
+                        <span class="usage-cloud-name" title={row.id}>{row.name}</span>
                         <span class="usage-hint">{[projectName(row.projectId), row.branch, statusLabel(row.state)].filter(Boolean).join(" · ")}</span>
                       </div>
                       <Show when={row.state.kind !== "stopping"}>

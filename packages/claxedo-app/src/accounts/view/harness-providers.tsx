@@ -1,5 +1,4 @@
 import { createEffect, createMemo, createSignal, For, onMount, Show, type JSX } from "solid-js"
-import { useQuery } from "@tanstack/solid-query"
 import { createProviderCatalog } from "@/composer"
 import { harnessDisplayLabel } from "@/lib/harness-catalog"
 import { SettingsEmpty, SettingsList } from "@/settings"
@@ -15,7 +14,6 @@ import { SearchField } from "./search-field"
 export function createHarnessProviders(harness: () => string, placementId?: () => PlacementId | undefined) {
   const server = useServer()
   const catalog = createProviderCatalog({ server, harness, ...(placementId ? { placementId } : {}), eager: true })
-  const machines = useQuery(() => ({ ...server.queries.machines.list(), enabled: server.capabilities()?.localExecution === true }))
   const detailed = new Set<string>()
   createEffect(() => {
     const unsourced = catalog.connected().filter((provider) => provider.source === undefined && !detailed.has(provider.id))
@@ -38,7 +36,7 @@ export function createHarnessProviders(harness: () => string, placementId?: () =
       showToast({ title: t("common.requestFailed"), description: toAppError(error).message })
     }
   }
-  return { harness, catalog, sources, disconnect, connected: () => catalog.connected().length > 0, machine: () => machines.data?.find((machine) => machine.isThisMachine)?.name ?? "" }
+  return { harness, catalog, sources, disconnect, connected: () => catalog.connected().length > 0, machine: () => server.capabilities()?.servingMachine?.name ?? "" }
 }
 
 function ConnectedProvider(props: { readonly provider: CatalogProvider; readonly onDisconnect: () => void; readonly children: JSX.Element }) {

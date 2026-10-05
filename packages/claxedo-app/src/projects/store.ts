@@ -38,10 +38,10 @@ export function useProject(id: Accessor<ProjectId>): Accessor<ProjectView> {
   })
 }
 
-export function useProjectPlacements(projectId: Accessor<ProjectId>): Accessor<Loaded<readonly Placement[]>> {
+export function useProjectPlacements(projectId: Accessor<ProjectId>): { readonly state: Accessor<Loaded<readonly Placement[]>>; readonly retry: () => void } {
   const server = useServer()
   const query = useQuery(() => server.queries.placements.byProject(projectId()))
-  return createMemo(() => loaded(query))
+  return { state: createMemo(() => loaded(query)), retry: () => void query.refetch() }
 }
 
 export function useProjectCommands() {

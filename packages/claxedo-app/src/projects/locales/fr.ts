@@ -20,7 +20,6 @@ export default {
   "projects.create.continue": "Soumettre",
   "projects.connect.connecting": "Connexion…",
   "projects.connect.enter.before": "Entrée",
-  "projects.settings.group": "Paramètres",
   "projects.placement.open": "Ouvrir",
   "projects.edit.environment": "Environnement",
   "projects.environment.value.placeholder": "valeur",

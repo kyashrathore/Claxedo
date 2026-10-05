@@ -107,6 +107,7 @@ export default {
   "settings.machines.reachableHereOnly": "You're on this machine · not reachable from your other devices yet",
   "settings.machines.reachableElsewhere": "You're on this machine · reachable from your other devices",
   "settings.machines.empty": "No machine is connected yet.",
+  "settings.machines.failed": "Couldn't load your machines",
   "settings.machines.connect.action": "Connect a machine…",
   "settings.machines.connect.title": "Connect a machine",
   "settings.machines.connect.description": "Run sessions on a computer you own. It shows up here under its own name once it's online.",

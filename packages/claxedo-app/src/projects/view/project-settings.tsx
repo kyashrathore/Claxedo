@@ -58,7 +58,6 @@ function ProjectFields(props: { readonly project: Project; readonly editable: bo
   const color = () => props.project.icon?.color || "pink"
   return (
     <SettingsGroup
-      title={t("projects.settings.group")}
       action={
         props.editable ? (
           <Button variant="neutral" size="small" onClick={() => dialog.show(() => <DialogEditProject project={props.project} />)}>

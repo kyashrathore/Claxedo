@@ -19,7 +19,6 @@ export default {
   "projects.chip.project": "프로젝트",
   "projects.create.continue": "제출",
   "projects.connect.connecting": "연결 중…",
-  "projects.settings.group": "설정",
   "projects.placement.open": "열기",
   "projects.edit.environment": "환경",
   "projects.environment.value.placeholder": "값",
