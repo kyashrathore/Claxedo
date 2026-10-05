@@ -1,0 +1,56 @@
+{
+  "id": "thinking-row-live",
+  "title": "A turn the model has not answered yet shows one Thinking row",
+  "source": {
+    "kind": "inventory",
+    "ids": [
+      "V17"
+    ]
+  },
+  "partKinds": [
+    "reasoning",
+    "text"
+  ],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "Say hello first.",
+        "steps": [
+          {
+            "kind": "text",
+            "text": "Hello, ready."
+          }
+        ]
+      },
+      {
+        "prompt": "Think it through first: what is the sum of the first ten positive integers? Reply with just the number.",
+        "live": true,
+        "steps": [
+          {
+            "kind": "hold",
+            "name": "thinking-row-live-wait"
+          },
+          {
+            "kind": "reasoning",
+            "text": "Adding 1 through 10 gives 55.\n\n"
+          },
+          {
+            "kind": "text",
+            "text": "55"
+          }
+        ]
+      }
+    ]
+  },
+  "ready": "Thinking",
+  "interactions": [
+    {
+      "kind": "release",
+      "hold": "thinking-row-live-wait",
+      "ready": "55",
+      "settles": true
+    }
+  ],
+  "invariant": "Captured on staging 2026-10-05 (Claude Sonnet 5.5 via Pi, effort max): the assistant message arrives with no parts and the first reasoning delta follows seconds later. In that gap the turn shows exactly one Thinking row — one shimmering label, no stacked copies — and the row leaves when the reasoning starts."
+}

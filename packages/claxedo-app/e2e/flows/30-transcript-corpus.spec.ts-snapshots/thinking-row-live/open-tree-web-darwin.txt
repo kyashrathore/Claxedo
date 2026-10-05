@@ -1,0 +1,15 @@
+scrollTop: 0
+background subagents:
+(none)
+row 0:
+- text: Say hello first. acp-script:thinking-row-live-0 Build · <time>
+- button "Copy message"
+row 1:
+- paragraph: Hello, ready.
+- button "Copy response"
+- text: Build · <duration>
+row 2:
+- text: "Think it through first: what is the sum of the first ten positive integers? Reply with just the number. acp-script:thinking-row-live-1 Build · <time>"
+- button "Copy message"
+row 3:
+
