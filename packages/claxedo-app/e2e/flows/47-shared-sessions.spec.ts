@@ -11,7 +11,6 @@ import {
   startCloudWorkspace,
   test,
   UI,
-  type SignedStack,
 } from "../harness"
 import { hostedFetch } from "../../../harness/e2e/harness/hosted-auth"
 
