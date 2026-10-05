@@ -18,7 +18,7 @@ import { createMountedContents } from "./mount-policy"
 import { PaneChrome } from "./pane-chrome"
 
 export type WorkbenchProps = {
-  readonly renderEmpty?: () => JSX.Element
+  readonly renderEmpty?: () => JSX.Element | undefined
   readonly keyMap?: Partial<KeyMap>
   readonly onCloseFocusedPane?: (paneId: string, contentId: string | null) => void
 }

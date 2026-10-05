@@ -5,6 +5,7 @@ import { useShellLayout } from "../layout"
 import type { RouteParams } from "../routes"
 import type { PageEntry } from "../types"
 import { usePageTabFocused } from "./page-tab"
+import { useHomeEmpty } from "./home-empty"
 import { PageView } from "./page-view"
 import { Region } from "./region"
 import { Sidebar, type SidebarProps } from "./sidebar"
@@ -36,6 +37,7 @@ function CenterHeader(props: { readonly center: CenterContent; readonly tabs: JS
 function PanesRegion(): JSX.Element {
   const layout = useShellLayout()
   const workbench = useWorkbench()
+  const homeEmpty = useHomeEmpty()
   const railHidden = () => (layout.phone() ? !layout.sidebarShown() : !layout.sidebarPinned())
   const closeFocused = (paneId: string, contentId: string | null) => {
     if (railHidden() && contentId) return workbench.closeContent(contentId)
@@ -43,7 +45,7 @@ function PanesRegion(): JSX.Element {
   }
   return (
     <Region name="center">
-      <Workbench onCloseFocusedPane={closeFocused} />
+      <Workbench onCloseFocusedPane={closeFocused} renderEmpty={homeEmpty} />
     </Region>
   )
 }

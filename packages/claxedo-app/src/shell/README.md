@@ -84,7 +84,7 @@ On a server that issues sessions (`capabilities.signedIn`, from the bootstrap's 
 
 ## Home (`home-redirect.tsx`)
 
-`/` is never a screen of its own, as in today's app. When the projects list has loaded and is empty (`onboardingNeeded`), the shell replaces the URL with the onboarding screen; loading and failed lists never redirect. Otherwise it replaces `/` with the draft of the active workspace: the placement of the restored focused pane, else the folder placement of the first project `useProjectList()` lists.
+`/` is never a screen of its own, as in today's app. When the projects list has loaded and is empty (`onboardingNeeded`), the shell replaces the URL with the onboarding screen; loading and failed lists never redirect. Otherwise it replaces `/` with the draft of the active workspace: the placement of the restored focused pane, else the folder (or first) placement of the first available project `useProjectList()` lists, else of the first project with any placement, so a project whose only workspace is asleep still opens its draft (a send wakes it). When projects exist but none has a placement, the empty workbench says so and offers "Choose where it runs…", which opens that project's settings (`view/home-empty.tsx`).
 
 ## Local service lost (`daemon-status.ts`, `view/daemon-lost-banner.tsx`)
 
