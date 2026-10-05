@@ -57,7 +57,8 @@ export class AcpConnectionHealth implements HealthOperations {
 
   runtime(directory: string, sessionId?: string): TransportHealth {
     const state = this.connection(directory, sessionId).state
-    const healthy = sessionId ? state === "ready" : state !== "failed" && state !== "auth-required"
+    const observed = sessionId !== undefined && this.scoped(directory, sessionId).length > 0
+    const healthy = observed ? state === "ready" : state !== "failed" && state !== "auth-required"
     if (!healthy) return { status: "unavailable" }
     return this.scoped(directory, sessionId).map((row) => this.ignoredStops.health(row.sessionId)).find((health) => health !== undefined)
       ?? { status: "ok" }

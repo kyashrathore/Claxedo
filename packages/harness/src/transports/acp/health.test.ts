@@ -37,6 +37,10 @@ test("a session nobody observes reads as its directory does, never as disconnect
   health.begin("released", "/repo").ready()
   health.forget("released")
   expect(health.connection("/repo", "released").state).toBe("ready")
+  expect(health.runtime("/repo", "released")).toEqual({ status: "ok" })
+  health.begin("refused", "/repo").failed(new Error("Requested startup failure"))
+  expect(health.runtime("/repo", "released")).toEqual({ status: "ok" })
+  expect(health.runtime("/repo", "refused")).toEqual({ status: "unavailable" })
 })
 
 test("every applied observation and forgotten session reports a change, and a fenced one does not", () => {

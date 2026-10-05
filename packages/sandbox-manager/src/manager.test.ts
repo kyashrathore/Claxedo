@@ -189,7 +189,7 @@ describe("sandbox manager", () => {
   })
 
   test("a machine class the driver declares is kept on the lease and handed to the driver; one it does not declare is refused before any lease", async () => {
-    const sized = fakeDriver({ metadata: { machineClasses: ["small", "default", "large"] } as SandboxDriver["metadata"] })
+    const sized = fakeDriver({ metadata: { machineClasses: ["small", "default", "large"] } as unknown as SandboxDriver["metadata"] })
     const leaseStore = createMemoryLeaseStore()
     const manager = createSandboxManager({ leaseStore, driver: sized })
     expect(await manager.ensure("ws_1", { homeRegion: "us-east", machineClass: "large" })).toMatchObject({ status: "ready", epoch: 1 })
