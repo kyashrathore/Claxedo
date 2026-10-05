@@ -1,4 +1,4 @@
-import { type ComponentProps, type JSX, createEffect, on, onCleanup, onMount, splitProps } from "solid-js"
+import { type ComponentProps, type JSX, createEffect, createMemo, on, onCleanup, onMount, splitProps } from "solid-js"
 
 export function DockLayout(props: {
   children: JSX.Element
@@ -10,18 +10,22 @@ export function DockLayout(props: {
 }) {
   let root!: HTMLDivElement
   let overlay!: HTMLDivElement
-  const measure = () => props.onOverhang?.(Math.max(0, overlay.offsetHeight - (props.replace ? root.offsetHeight : 0)))
+  // Read once under this owner: a ResizeObserver callback runs with no owner,
+  // and a prop getter evaluated there builds an ownerless memo that is never
+  // disposed and keeps the caller's whole tree alive.
+  const replace = createMemo(() => !!props.replace)
+  const measure = () => props.onOverhang?.(Math.max(0, overlay.offsetHeight - (replace() ? root.offsetHeight : 0)))
   onMount(() => {
     const observer = new ResizeObserver(measure)
     observer.observe(root)
     observer.observe(overlay)
     onCleanup(() => observer.disconnect())
   })
-  createEffect(on(() => props.replace, measure, { defer: true }))
+  createEffect(on(replace, measure, { defer: true }))
   return (
-    <div ref={root} data-component="dock-layout" data-replace={props.replace || undefined} class={props.class}>
+    <div ref={root} data-component="dock-layout" data-replace={replace() || undefined} class={props.class}>
       <div ref={overlay} data-slot="dock-layout-overlay">{props.overlay}</div>
-      <div data-slot="dock-layout-base" inert={props.replace}>{props.children}</div>
+      <div data-slot="dock-layout-base" inert={replace()}>{props.children}</div>
     </div>
   )
 }
