@@ -58,7 +58,7 @@ import {
   hostedRouteGuardExemptions,
   type RouteGuardExemption,
 } from "../../platform/auth/request-guard"
-import { ownerSessionList, parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
+import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
 import { createSessionReadRoutes, authoritySessionReads } from "../../session/routes/session-read"
 import { createSessionReaderRoutes } from "../../session/routes/session-reader"
 import type { HostedControlPlane } from "../../authority/hosted-services"
@@ -82,7 +82,7 @@ import {
 } from "@claxedo/server-core/platform/http/route-contribution"
 import type { FirstPartyMcpOptions } from "@claxedo/mcp"
 import { firstPartyMcpContribution } from "../../mcp/first-party-mcp"
-import { sessionMcpCredentials } from "../../mcp/session-mcp-credentials"
+import { sessionMcpCredentials, type SessionMcpCredentialsInput } from "../../mcp/session-mcp-credentials"
 import type { CloudRootIdentity } from "../../agent-plugins/runtime/cloud-root-environment"
 import { readIntrospectedAccessToken, resolveOAuthMcpCredential } from "../../mcp/oauth-credential"
 import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
@@ -145,6 +145,8 @@ export type HostedCoreAppOptions = {
    * serves no integration routes at all.
    */
   integrationRoutes?: Hono
+  /** A workspace's sessions as its owner lists them from the registry, for a session host's first-party MCP; absent, such a session gets no first-party MCP. */
+  ownerSessionList?: SessionMcpCredentialsInput["listSessions"]
   /** The owner's Pi plugins a session served by its own Durable Object runs with; absent, it runs with none. */
   sessionHostPlugins?: (workspaceId: string) => Promise<RuntimeConfigSnapshotPlugins>
   /** The first-party tool groups a session served by its own host is offered; absent, such a session gets no first-party MCP. */
@@ -568,13 +570,13 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     ? { sessionHosts: services.sessionHosts, services, relayEndpoint: relayProvider.getRelayEndpoint, signRuntimeAccessToken }
     : undefined
   const sessionHostToolGroups = options.sessionHostToolGroups
-  const sessionMcp = sessionHostMachine && sessionHostToolGroups
+  const sessionMcp = sessionHostMachine && sessionHostToolGroups && options.ownerSessionList
     ? sessionMcpCredentials({
         ...sessionHostMachine,
         env: plane.env,
         resolveWorkspaceOwner,
         toolGroups: (owner, workspaceId) => sessionHostToolGroups({ userId: owner.userId, orgId: owner.orgId, projectId: owner.projectId, workspaceId }),
-        listSessions: (owner, workspaceId, limit) => ownerSessionList(requireAuthority(services), owner, workspaceId, limit),
+        listSessions: options.ownerSessionList,
       })
     : undefined
   const sessionHostDelivery = sessionHostMachine && plane.orgCredentials

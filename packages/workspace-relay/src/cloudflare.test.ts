@@ -18,7 +18,7 @@ import {
   createCachedHostGenerationClient,
   type HostGenerationLookup,
   type HostGenerationResult,
-} from "./server"
+} from "./resolver-clients"
 import { DEFAULT_RELAY_LOCATION_HINT, RELAY_LOCATION_HINTS } from "./relay-location"
 import type { WorkspaceRelayTarget } from "./relay-target"
 import { signUnfencedHostTunnelToken } from "./test-support/unfenced-host-token"

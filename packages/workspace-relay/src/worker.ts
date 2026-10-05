@@ -11,7 +11,6 @@ import {
   type WorkspaceRelayDurableObjectRoomOptions,
   type WorkspaceRelayDurableObjectSocket,
 } from "./cloudflare"
-import type { RuntimeAccessTokenActiveResult } from "./server"
 import { parseWorkspaceRelayTarget, type WorkspaceRelayTarget } from "./relay-target"
 import { isSessionHostNamespace } from "./session-host-forwarding"
 import {
@@ -22,8 +21,9 @@ import {
   parseRuntimeAccessTokenActiveResult,
   type HostGenerationLookup,
   type RevocationLookup,
+  type RuntimeAccessTokenActiveResult,
   type TargetLookup,
-} from "./server"
+} from "./resolver-clients"
 import { WorkspaceRelayAuthError, deriveRelayHostKid, deriveRelayHostPublicKey, type RelayKey, type RuntimeAccessTokenClaims } from "./auth"
 
 type WorkspaceRelayWorkerBindings = {

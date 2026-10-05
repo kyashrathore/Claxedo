@@ -16,6 +16,7 @@ import { d1UserAgentConfigRepository } from "../d1/user-agent-config"
 import { hostedSandboxDriverKeys } from "../../../sandbox/hosted-sandbox-driver-keys"
 import { isSandboxProvisionerID } from "@claxedo/sandbox-contract"
 import { createHostedRuntimeDelivery } from "../../../workspace/hosted-runtime-delivery"
+import { ownerSessionList } from "../../../session/list"
 import { hostedSandboxEgress } from "../../../deployments/hosted-shared/hosted-sandbox-egress"
 import { hostedWorkspaceSandboxInput } from "./hosted-workspace-sandbox-input"
 import { HostedWorkerCompositionError } from "../../composition-error"
@@ -270,6 +271,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     options: {
       authentication,
       agentConfigRepository: settings,
+      ownerSessionList: (owner, workspaceId, limit) => ownerSessionList(authority, owner, workspaceId, limit),
       ...(delivery && sandbox ? {
         settingsChanged: delivery.settingsChanged,
         draftCredentials: delivery.credentialSnapshot,

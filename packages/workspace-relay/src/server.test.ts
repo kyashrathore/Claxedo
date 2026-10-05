@@ -5,12 +5,10 @@ import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-proto
 import { createWorkspaceRelayDurableObjectRoom, type WorkspaceRelayDurableObjectRoomOptions } from "./cloudflare"
 import { createWorkspaceRelayDirectory } from "./directory"
 import type { RuntimeAccessVerifierClaims } from "@claxedo/workspace-relay-protocol"
+import { createCachedRevocationClient, createCachedTargetClient, runtimeAccessTokenRevocationDelayMs } from "./resolver-clients"
 import {
   authorizeWorkspaceRelayRequest,
-  createCachedRevocationClient,
-  createCachedTargetClient,
   disposeAuditSampler,
-  runtimeAccessTokenRevocationDelayMs,
   workspaceRelayForwardHeaders,
   workspaceRelayForwardRequestInit,
   workspaceRelayTargetUrl,

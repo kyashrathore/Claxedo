@@ -29,9 +29,9 @@ import {
   workspaceRelayForwardRequestInit,
   workspaceRelayTargetUrl,
   type AuthorizedWorkspaceRelayRequest,
-  type RuntimeAccessTokenActiveResult,
   type WorkspaceRelayOptions,
 } from "./server"
+import type { RuntimeAccessTokenActiveResult } from "./resolver-clients"
 import { createWorkspaceRelayDirectory } from "./directory"
 import { createOriginMatcher, DEFAULT_RELAY_APP_ORIGINS, parseAllowedOrigins, RELAY_ALLOWED_REQUEST_HEADERS } from "./cors-origins"
 import { isHostTunnelTarget } from "./host-tunnel-forwarding"

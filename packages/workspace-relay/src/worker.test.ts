@@ -84,7 +84,7 @@ describe("workspace relay Cloudflare Worker entrypoint", () => {
     ])
   })
 
-  test("resolver client revalidates targets and caches revocation responses", async () => {
+  test("resolver client caches a resolved target and a revocation answer for their TTLs", async () => {
     const requests: Request[] = []
     const client = workspaceRelayWorkerResolverClient({
       CLAXEDO_RELAY_RESOLVER_URL: "https://central.test/internal/relay",
@@ -110,7 +110,6 @@ describe("workspace relay Cloudflare Worker entrypoint", () => {
     await client.revocation({ jti: "jti_1", workspaceId: "ws_1", hostId: "host_1" })
 
     expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
-      "/internal/relay/target",
       "/internal/relay/target",
       "/internal/relay/revocation",
     ])

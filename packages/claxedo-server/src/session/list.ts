@@ -9,8 +9,8 @@ import {
 } from "@claxedo/server-core/session/navigation-list"
 import { controlPlaneAuthErrorBody, ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
-import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { sessionPageScope } from "@claxedo/server-core/platform/auth/private-session-authority"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { sessionPageScope, type PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { ControlPlaneServices } from "../authority/services"
 
 type SessionListRequestErrorCode = "session_list_scope_required"
@@ -83,12 +83,11 @@ export function sessionListErrorResponse(error: unknown): Response | undefined {
  * ones the workspace's machine holds.
  */
 export async function ownerSessionList(
-  authority: Pick<WorkspaceAuthority, "listOwnerSessionPage">,
+  authority: Pick<PrivateSessionAuthority, "listOwnerSessionPage">,
   owner: { userId: string; actorId: string },
   workspaceId: string,
   limit: number,
 ): Promise<SessionListResponse["items"]> {
-  if (!authority.listOwnerSessionPage) throw new Error("This control plane lists no sessions for a workspace owner")
   const query: SessionListQuery = { scope: "workspace", workspaceId, archived: "active", settled: "all", status: [], sort: "updated_desc", limit }
   const sessions = await authority.listOwnerSessionPage(owner, { ...sessionListKeysetPage(query), workspaceId })
   return buildSessionListResponse({ query, sessions, cursorApplied: true }).items
