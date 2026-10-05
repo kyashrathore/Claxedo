@@ -4,7 +4,7 @@ import { z } from "zod"
 import { sessionHostId } from "@claxedo/workspace-relay-protocol"
 import type { RuntimeConfigSnapshotPlugins, TurnDelivery, TurnExecutionAccess } from "@claxedo/harness/contract"
 import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
-import { bearerToken, ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
+import { bearerToken, ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import { privateSessionRuntimeProof, type PrivateSessionRuntimePrincipal, type SessionWriteClass } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
@@ -84,6 +84,11 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
   }
 
   return new Hono()
+    .onError((error, c) => {
+      if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
+      console.error(`[session-host-delivery] ${c.req.path} failed:`, error.stack ?? error.message)
+      return c.json({ error: { code: "session_host_authority_failed" } }, 500)
+    })
     .post("/turn-delivery", bodyLimit({ maxSize: 16 * 1024 }), async (c) => {
       c.header("cache-control", "no-store")
       const admitted = await admittedTurn(c)
@@ -93,10 +98,17 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
       if (!owner || owner.orgId !== claims.orgId) return denied(c)
       const holder = placement.session!.creatorUserId ?? owner.userId
       const direct = await ownerDirectRows(input.credentials(owner.orgId), holder, { providers: PI_DIRECT_PROVIDERS })
+      let plugins: RuntimeConfigSnapshotPlugins = { harnessLaunch: {}, mcp: {} }
+      try {
+        if (input.plugins) plugins = await input.plugins(claims.workspaceId)
+      } catch (error) {
+        console.error(`[session-host-delivery] the plugins of ${claims.workspaceId} were not applied:`, error instanceof Error ? error.message : String(error))
+        return c.json({ error: { code: "agent_plugins_unavailable" } }, 502)
+      }
       const delivery: TurnDelivery = {
         expiresAt: Math.min(claims.expiresAt, ...Object.values(direct).flatMap((row) => row.expiresAt === undefined ? [] : [row.expiresAt])),
         auth: { machineOwnerUserId: owner.userId, accounts: {}, direct: { [holder]: direct } },
-        plugins: input.plugins ? await input.plugins(claims.workspaceId) : { harnessLaunch: {}, mcp: {} },
+        plugins,
         providerDefinitions: [],
       }
       return c.json(delivery)

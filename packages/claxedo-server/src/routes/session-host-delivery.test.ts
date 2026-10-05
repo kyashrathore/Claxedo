@@ -16,12 +16,17 @@ const PI_PLUGINS = {
   mcp: {},
 }
 const pluginReads: string[] = []
+let pluginFailure: Error | undefined
 const ROOT = "ses_pi_root"
 const VM = "ses_vm"
 const VM_HOST = "host_vm"
 
 beforeAll(async () => {
-  plane = await sessionHostPlane({ plugins: async (workspaceId) => { pluginReads.push(workspaceId); return PI_PLUGINS } })
+  plane = await sessionHostPlane({ plugins: async (workspaceId) => {
+    if (pluginFailure) throw pluginFailure
+    pluginReads.push(workspaceId)
+    return PI_PLUGINS
+  } })
   const ownerId = plane.owner.principal!.userId
   const memberId = plane.member.principal!.userId
   const accounts = plane.credentials(plane.orgId)
@@ -174,6 +179,20 @@ describe("/turn-delivery", () => {
     expect((await plane.post("/turn-delivery", { turnLease: leaseId })).status).toBe(200)
   })
 
+  test("a machine that cannot apply the owner's plugins fails the turn with a typed answer", async () => {
+    const root = "ses_pi_plugins_unapplied"
+    const proof = await plane.createHostedSession(root)
+    const lease = await plane.acquire(proof, root, "turn_plugins_unapplied")
+    pluginFailure = new Error("Agent Plugins runtime apply failed (404)")
+    try {
+      const answer = await plane.post("/turn-delivery", { turnLease: lease.leaseId })
+      expect(answer.status).toBe(502)
+      expect(await answer.json()).toEqual({ error: { code: "agent_plugins_unavailable" } })
+    } finally {
+      pluginFailure = undefined
+    }
+  })
+
   test("refuses an expired, forged or malformed lease", async () => {
     expect((await plane.post("/turn-delivery", { turnLease: await expiredLease() })).status).toBe(401)
     expect((await plane.post("/turn-delivery", { turnLease: "not-a-lease" })).status).toBe(401)
@@ -201,6 +220,26 @@ describe("/turn-execution", () => {
     })
     const jti = String(decodeJwt(access!.runtimeAccessToken).jti)
     expect(await plane.store.runtimeAccessTokenActive({ jti, workspaceId: WORKSPACE_ID, hostId: VM_HOST })).toEqual({ active: true })
+  })
+
+  test("a machine target the store refuses answers the store's refusal, never an anonymous failure", async () => {
+    const root = "ses_pi_execution_refused"
+    const proof = await plane.createHostedSession(root)
+    const lease = await plane.acquire(proof, root, "turn_execution_refused")
+    plane.serve({ status: "ready", workspaceId: WORKSPACE_ID, sandboxId: "sbx", url: "https://vm.test", hostId: sessionHostId(ROOT), epoch: 1, homeRegion: "us-east" })
+    const answer = await plane.post("/turn-execution", { turnLease: lease.leaseId })
+    expect(answer.status).toBe(403)
+    expect(await answer.json()).toMatchObject({ error: { code: "workspace_authorization_denied" } })
+  })
+
+  test("a machine target the store cannot record answers a typed failure", async () => {
+    const root = "ses_pi_execution_failed"
+    const proof = await plane.createHostedSession(root)
+    const lease = await plane.acquire(proof, root, "turn_execution_failed")
+    plane.serve({ status: "ready", workspaceId: WORKSPACE_ID, sandboxId: "sbx", url: "https://vm.test", hostId: "", epoch: 1, homeRegion: "us-east" })
+    const answer = await plane.post("/turn-execution", { turnLease: lease.leaseId })
+    expect(answer.status).toBe(500)
+    expect(await answer.json()).toEqual({ error: { code: "session_host_authority_failed" } })
   })
 
   test("a session-scoped editor token reaches the session's own host, or its machine for a turn, and nothing else", async () => {
