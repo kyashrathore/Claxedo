@@ -188,6 +188,27 @@ describe("sandbox manager", () => {
     expect(driver.ensureHost).toHaveBeenCalledTimes(2)
   })
 
+  test("a machine class the driver declares is kept on the lease and handed to the driver; one it does not declare is refused before any lease", async () => {
+    const sized = fakeDriver({ metadata: { machineClasses: ["small", "default", "large"] } as SandboxDriver["metadata"] })
+    const leaseStore = createMemoryLeaseStore()
+    const manager = createSandboxManager({ leaseStore, driver: sized })
+    expect(await manager.ensure("ws_1", { homeRegion: "us-east", machineClass: "large" })).toMatchObject({ status: "ready", epoch: 1 })
+    expect(await leaseStore.get("ws_1")).toMatchObject({ machineClass: "large" })
+    expect(vi.mocked(sized.ensureHost).mock.calls[0]?.[0]).toMatchObject({ machineClass: "large" })
+    // A resume names nothing and still runs on the machine the lease has.
+    await manager.ensure("ws_1", { homeRegion: "us-east" })
+    expect(vi.mocked(sized.ensureHost).mock.calls[1]?.[0]).toMatchObject({ machineClass: "large" })
+
+    const unsized = fakeDriver()
+    const refusing = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: unsized })
+    expect(await refusing.ensure("ws_2", { homeRegion: "us-east", machineClass: "large" })).toMatchObject({
+      status: "unavailable",
+      error: "sandbox_machine_class_unsupported: test-driver has no large machines",
+    })
+    expect(unsized.ensureHost).not.toHaveBeenCalled()
+    expect(await refusing.target("ws_2")).toMatchObject({ reason: "runtime_lease_missing" })
+  })
+
   test("provision waits out the lease's own retry window, and refuses a lease that was stopped meanwhile", async () => {
     let now = 1_000_000
     const driver = fakeDriver({

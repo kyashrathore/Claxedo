@@ -10,6 +10,7 @@ import type {
 } from "@claxedo/server-core/platform/auth/authority"
 import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { CloudWorkspaceCreateArgs, RuntimeCloudWorkspaceCreateArgs } from "@claxedo/server-core/platform/auth/cloud-workspace-create"
+import type { SandboxMachineClass } from "@claxedo/sandbox-contract"
 import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repository-key"
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
@@ -73,6 +74,7 @@ export type D1WorkspaceCreateArgs = {
   orgId: string
   projectId?: string
   displayName: string
+  machineClass?: SandboxMachineClass
   repoUrl?: string
   repoName?: string
   gitBranch?: string
@@ -426,6 +428,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       repoName: input.repoName,
       gitBranch: input.gitBranch,
       repoConnectionId: input.repoConnectionId,
+      machineClass: input.machineClass,
     })
     return { who, workspaceId, orgId, statements }
   }

@@ -82,7 +82,8 @@ async function preparedBranch(directory: string, source: RepositorySource) {
  * place, so a boot stopped after init or mid-fetch leaves a repository whose
  * HEAD names no commit yet, which the next boot finishes. A checkout with a
  * commit is the person's work and is left exactly as it is. Answers, when a
- * repository is selected, the branch whose history is still to come.
+ * repository is selected, the branch whose history is still to come, and
+ * whether this boot made the checkout.
  */
 export async function prepareRuntimeRepository(directory: string, env: NodeJS.ProcessEnv) {
   const source = selectedSource(env)
@@ -104,7 +105,7 @@ export async function prepareRuntimeRepository(directory: string, env: NodeJS.Pr
     }
     const origin = (await run(["remote", "get-url", "origin"], directory)).trim()
     if (origin !== source.repoUrl) throw new Error("The workspace checkout's origin is not the selected repository")
-    return { branch: await checkOut(run, directory, source) }
+    return { branch: await checkOut(run, directory, source), fresh: true as const }
   } catch (error) {
     if (error instanceof GitTimeoutError) {
       throw new Error(`The selected repository was not checked out within ${RUNTIME_PREPARATION_DEADLINE_MS / 60_000} minutes`, { cause: error })

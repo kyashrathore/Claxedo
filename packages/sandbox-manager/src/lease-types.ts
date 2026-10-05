@@ -1,5 +1,6 @@
 import type {
   SandboxCheckpointReference,
+  SandboxMachineClass,
   SandboxPersistenceCapabilities,
   SandboxRestoreStatus,
   SandboxStartProgress,
@@ -16,8 +17,6 @@ export type SandboxLeaseRowStatus =
   | "stopped"
   | "destroyed"
   | "failed"
-
-export type SandboxComputeClass = "small" | "medium" | "large" | "gpu"
 
 export type SandboxLeaseRow = {
   workspace_id: string
@@ -47,7 +46,7 @@ export type SandboxLeaseRow = {
   last_activity_at: number | null
   last_health_failure_at: number | null
   last_error: string | null
-  compute_class: SandboxComputeClass | null
+  machine_class: SandboxMachineClass | null
   accel_base_image_id: string | null
   accel_prepared_image_id: string | null
   accel_snapshot_id: string | null

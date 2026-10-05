@@ -10,12 +10,8 @@ import type {
   SandboxRestoreStatus,
   SandboxStartProgress,
 } from "@claxedo/sandbox-manager"
-import { sandboxStartPhases } from "@claxedo/sandbox-contract"
-import type {
-  SandboxComputeClass,
-  SandboxLeaseRow,
-  SandboxLeaseRowStatus,
-} from "@claxedo/sandbox-manager/lease-types"
+import { isSandboxMachineClass, sandboxStartPhases, type SandboxMachineClass } from "@claxedo/sandbox-contract"
+import type { SandboxLeaseRow, SandboxLeaseRowStatus } from "@claxedo/sandbox-manager/lease-types"
 import { isRecord, parseJson } from "@claxedo/server-core/platform/json/index"
 
 const LEASE_STATUSES: readonly SandboxLeaseRowStatus[] = [
@@ -30,8 +26,6 @@ const LEASE_STATUSES: readonly SandboxLeaseRowStatus[] = [
   "destroyed",
   "failed",
 ]
-
-const COMPUTE_CLASSES: readonly SandboxComputeClass[] = ["small", "medium", "large", "gpu"]
 
 export function leaseText(input: unknown): string | null {
   return typeof input === "string" ? input : null
@@ -51,8 +45,8 @@ export function leaseStatus(input: unknown): SandboxLeaseRowStatus {
   return LEASE_STATUSES.find((status) => status === input) ?? "failed"
 }
 
-export function leaseComputeClass(input: unknown): SandboxComputeClass | null {
-  return COMPUTE_CLASSES.find((computeClass) => computeClass === input) ?? null
+export function leaseMachineClass(input: unknown): SandboxMachineClass | null {
+  return isSandboxMachineClass(input) ? input : null
 }
 
 /**
@@ -225,7 +219,7 @@ export function toSandboxLeaseRow(columns: RawLeaseColumns): SandboxLeaseRow {
     last_activity_at: leaseInteger(columns.last_activity_at),
     last_health_failure_at: leaseInteger(columns.last_health_failure_at),
     last_error: leaseText(columns.last_error),
-    compute_class: leaseComputeClass(columns.compute_class),
+    machine_class: leaseMachineClass(columns.machine_class),
     accel_base_image_id: leaseText(columns.accel_base_image_id),
     accel_prepared_image_id: leaseText(columns.accel_prepared_image_id),
     accel_snapshot_id: leaseText(columns.accel_snapshot_id),

@@ -458,7 +458,7 @@ CREATE TABLE sandbox_leases (
   last_activity_at integer,
   last_health_failure_at integer,
   last_error text,
-  compute_class text,
+  machine_class text,
   accel_base_image_id text,
   accel_prepared_image_id text,
   accel_snapshot_id text,
@@ -825,7 +825,7 @@ CREATE TABLE workspaces (
   repo_connection_id text,
   created_at integer not null,
   updated_at integer not null,
-  deleted_at integer, host_assignment_revision integer not null default 0,
+  deleted_at integer, host_assignment_revision integer not null default 0, machine_class text check (machine_class in ('small', 'default', 'large')),
   foreign key (project_id, org_id) references projects (project_id, org_id) deferrable initially deferred
 );
 

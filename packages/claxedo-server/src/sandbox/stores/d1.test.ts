@@ -439,6 +439,17 @@ describe("d1 sandbox lease store", () => {
     }
   })
 
+  test("the machine class a lease was taken with survives the row and a replacement epoch after a stop", async () => {
+    const { leaseStore } = await store(() => NOW)
+    const { lease } = await leaseStore.acquire("ws_1", { ...ACQUIRE, machineClass: "large" })
+    expect(lease.machineClass).toBe("large")
+    await leaseStore.recordTarget("ws_1", lease.epoch, { sandboxId: "sb_1", url: "https://runtime.test", hostId: "host_1", labels: {} })
+    expect(await leaseStore.get("ws_1")).toMatchObject({ status: "ready", machineClass: "large" })
+    await leaseStore.update("ws_1", lease.epoch, { status: "stopped" })
+    const resumed = await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW + 1 })
+    expect(resumed).toMatchObject({ acquired: true, lease: { epoch: 2, sandboxId: "sb_1", machineClass: "large" } })
+  })
+
   test("a sandbox manager provisions and lists a workspace against this store", async () => {
     const { leaseStore } = await store(() => NOW)
     const manager = createSandboxManager({ leaseStore, driver: fakeDriver() })

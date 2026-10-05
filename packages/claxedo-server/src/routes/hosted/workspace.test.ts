@@ -41,7 +41,7 @@ const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
   },
 })
 
-type CloudCreateArgs = { workspaceId: string; projectId?: string; repoUrl?: string; gitBranch?: string; remoteDirectory?: string; homeRegion?: string }
+type CloudCreateArgs = { workspaceId: string; projectId?: string; repoUrl?: string; gitBranch?: string; remoteDirectory?: string; homeRegion?: string; machineClass?: string }
 
 /** The row an authority stores for a cloud create, which the route reads back to provision from. */
 function cloudRow(args: CloudCreateArgs) {
@@ -53,6 +53,7 @@ function cloudRow(args: CloudCreateArgs) {
     ...(args.repoUrl ? { repo_url: args.repoUrl } : {}),
     ...(args.gitBranch ? { git_branch: args.gitBranch } : {}),
     ...(args.remoteDirectory ? { remote_directory: args.remoteDirectory } : {}),
+    ...(args.machineClass ? { machine_class: args.machineClass } : {}),
   }
 }
 
@@ -1144,6 +1145,32 @@ describe("hosted cloud workspace create (POST /create)", () => {
     expect(prepareRuntime).not.toHaveBeenCalled()
     const { workspaceId } = await res.json() as { workspaceId: string }
     expect(capture).toHaveBeenCalledWith("user_1", "workspace_created", { workspaceId, kind: "cloud", private_repository: false })
+  })
+
+  test("a create names the machine its sandboxes run on when the organization's driver has that grade", async () => {
+    const createCloudWorkspace = vi.fn(async () => ({}))
+    const authority = fakeAuthority({ createCloudWorkspace })
+    const workspaceDriver = vi.fn(async () => ({ driver: { id: "boat", metadata: { machineClasses: ["small", "default", "large"] } } as unknown as SandboxDriver, key: "operator" as const }))
+    const { app } = buildApp({ authority, sandboxManager: {} as SandboxManager, workspaceDriver })
+    const res = await app.fetch(post("/create", { workspaceName: "Big", repoUrl: "https://github.com/a/b", machineClass: "large" }))
+    expect(res.status).toBe(200)
+    expect(createCloudWorkspace).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ machineClass: "large" }))
+    const { workspaceId } = await res.json() as { workspaceId: string }
+    expect(workspaceDriver).toHaveBeenCalledWith(workspaceId)
+  })
+
+  test("a machine the organization's driver has no grade for is refused, and the row it would have placed is removed", async () => {
+    const deleteWorkspace = vi.fn(async () => ({ deleted: true }))
+    const authority = fakeAuthority({ createCloudWorkspace: vi.fn(async () => ({})), deleteWorkspace })
+    const workspaceDriver = vi.fn(async () => ({ driver: { id: "vercel", metadata: {} } as unknown as SandboxDriver, key: "operator" as const }))
+    const { app } = buildApp({ authority, sandboxManager: {} as SandboxManager, workspaceDriver })
+    const res = await app.fetch(post("/create", { workspaceName: "Big", repoUrl: "https://github.com/a/b", machineClass: "large" }))
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: { code: "machine_class_unsupported", message: "vercel has no large machines" } })
+    expect(deleteWorkspace).toHaveBeenCalledWith(expect.anything(), { workspaceId: expect.any(String) })
+
+    const unknown = await app.fetch(post("/create", { workspaceName: "Big", repoUrl: "https://github.com/a/b", machineClass: "gpu" }))
+    expect(unknown.status).toBe(400)
   })
 
   test("503 sandbox_driver_unavailable when no sandbox driver is composed", async () => {

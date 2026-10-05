@@ -6,6 +6,7 @@ import {
 } from "@claxedo/sandbox-manager"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { trimToUndefined } from "@claxedo/helpers/string"
+import { isSandboxMachineClass } from "@claxedo/sandbox-contract"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import { configuredRelayUrl, type WorkspaceRouteOptions, type WorkspaceRuntimePreparation } from "./route-support"
 
@@ -23,6 +24,7 @@ export type HostedWorkspaceRow = {
   repo_url?: unknown
   git_branch?: unknown
   remote_directory?: unknown
+  machine_class?: unknown
 }
 
 function rowSource(row: HostedWorkspaceRow): SandboxSource {
@@ -64,6 +66,7 @@ export function hostedSandboxInput(
     labels: { projectId },
     workspaceRoot: trimToUndefined(row.remote_directory) ?? WORKSPACE_DIR,
     source,
+    ...(isSandboxMachineClass(row.machine_class) ? { machineClass: row.machine_class } : {}),
     ...(secrets !== undefined ? { secrets } : {}),
     ...(input.preparation?.env ? { env: input.preparation.env } : {}),
     ...(input.onLeaseOpened ? { onLeaseOpened: input.onLeaseOpened } : {}),

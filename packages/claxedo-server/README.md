@@ -68,6 +68,26 @@ with that as its reason; the lease keeps what the driver last recorded and the
 next start continues it. The app polls the start with the `retryAfterMs` it
 answers.
 
+## Repository scripts and machine class
+
+A cloud workspace's runtime runs the repository's own `.claxedo/setup.sh` on
+the boot that makes its checkout and `.claxedo/start.sh` on every boot, after
+the checkout and before it listens (`hosts/workspace-runtime/repository-scripts.ts`),
+each timed as a start phase (`setup_script`, `start_script`). A script's
+output goes to the container log; a non-zero exit fails the boot with the
+script's name, exit code and the tail of what it wrote, which the Boat driver
+reads back as the boot failure the start answers with. These two files are the
+only setup format.
+
+A cloud workspace names the machine class its sandboxes are created on
+(`machineClass` on `POST /api/workspace/create`, stored as
+`workspaces.machine_class`, kept on the lease as `sandbox_leases.machine_class`).
+Each driver declares the classes it can place a sandbox on in
+`packages/sandbox-manager/src/driver-catalog.ts` (Boat: `small`, `default`,
+`large`, which Boat's create takes as `type`); the create refuses a class the
+organization's driver does not declare, and the manager refuses it again
+before taking a lease.
+
 ## Control-plane D1 schema
 
 `migrations/control-plane/0001_baseline.sql` is the whole control-plane schema,

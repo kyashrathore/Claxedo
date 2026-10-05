@@ -1,7 +1,7 @@
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "./constants"
-import type { SandboxPhaseTiming, SandboxSecretBrokering, SandboxStartPhase } from "@claxedo/sandbox-contract"
+import type { SandboxMachineClass, SandboxPhaseTiming, SandboxSecretBrokering, SandboxStartPhase } from "@claxedo/sandbox-contract"
 
-export type { SandboxProvisionerID, SandboxSecretBrokering } from "@claxedo/sandbox-contract"
+export type { SandboxMachineClass, SandboxProvisionerID, SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import {
   type SandboxCheckpointCaptureInput,
   type SandboxCheckpointRestoreInput,
@@ -125,6 +125,8 @@ export type SandboxDriverMetadata = {
    */
   egressControl: SandboxEgressControl
   persistence: SandboxPersistenceCapabilities
+  /** The machine classes the provider lets this driver choose at create; absent, the provider's one default. */
+  machineClasses?: readonly SandboxMachineClass[]
 }
 
 /** @see SandboxDriverMetadata.egressControl */
@@ -306,6 +308,8 @@ export type SandboxLease = {
   restore?: SandboxRestoreStatus
   /** This epoch's start, recorded while it boots; a new epoch starts without one. */
   start?: SandboxStartProgress
+  /** The machine the sandbox was placed on, from the lease that took it; a resumed lease keeps the machine it has. */
+  machineClass?: SandboxMachineClass
 }
 
 /**
@@ -339,6 +343,7 @@ export type SandboxLeaseAcquireInput = {
   now?: number
   /** The placement's labels, recorded on a fresh lease before the driver is asked for a resource; a resumed lease keeps its own. */
   labels?: Record<string, string>
+  machineClass?: SandboxMachineClass
 }
 
 export type SandboxLeaseAcquireResult =
@@ -505,6 +510,8 @@ export type SandboxDriverEnsureInput = {
   secrets?: SandboxBrokeredSecret[]
   source?: SandboxSource
   exposure?: SandboxExposure
+  /** The machine to create the sandbox on; one the driver declared, or nothing for the provider's default. */
+  machineClass?: SandboxMachineClass
   /**
    * Egress policy. Omitted means allow-all, which is only appropriate for a
    * single-tenant deployment the operator already trusts.
@@ -624,6 +631,8 @@ export type SandboxManagerInput = {
   env?: Record<string, string>
   /** Brokered secrets: injected on egress, never readable inside the sandbox. */
   secrets?: SandboxBrokeredSecret[]
+  /** The machine the workspace chose; refused before a lease is taken when its driver declares no such class. */
+  machineClass?: SandboxMachineClass
   source?: SandboxSource
   exposure?: SandboxExposure
   /**

@@ -11,6 +11,7 @@ export type WorkspaceAccessRow = {
   repo_connection_id: string | null
   git_branch: string | null
   remote_directory: string | null
+  machine_class: string | null
   host_enrollment_id: string | null
   deleted_at: number | null
 }
@@ -32,5 +33,6 @@ export function workspaceJson(row: WorkspaceAccessRow) {
     ...(row.repo_connection_id ? { repo_connection_id: row.repo_connection_id } : {}),
     ...(row.git_branch ? { git_branch: row.git_branch } : {}),
     ...(row.remote_directory ? { remote_directory: row.remote_directory } : {}),
+    ...(row.machine_class ? { machine_class: row.machine_class } : {}),
   }
 }

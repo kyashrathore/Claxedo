@@ -41,7 +41,7 @@ const COLUMNS = [
   "last_activity_at",
   "last_health_failure_at",
   "last_error",
-  "compute_class",
+  "machine_class",
   "accel_base_image_id",
   "accel_prepared_image_id",
   "accel_snapshot_id",
@@ -103,6 +103,7 @@ function toSandboxLease(input: SandboxLeaseRow): SandboxLease {
     persistence: input.persistence ?? undefined,
     restore: input.restore ?? undefined,
     start: input.start ?? undefined,
+    machineClass: input.machine_class ?? undefined,
   }
 }
 
@@ -133,7 +134,7 @@ function rowValues(
     lease.lastActivityAt ?? null,
     options?.lastHealthFailureAt ?? current?.last_health_failure_at ?? null,
     lease.lastError ?? null,
-    current?.compute_class ?? null,
+    lease.machineClass ?? current?.machine_class ?? null,
     current?.accel_base_image_id ?? null,
     current?.accel_prepared_image_id ?? null,
     current?.accel_snapshot_id ?? null,
@@ -230,6 +231,7 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
       lastHeartbeatAt: resumable ? currentLease.lastHeartbeatAt : undefined,
       lastActivityAt: resumable ? currentLease.lastActivityAt : undefined,
       labels: resumable ? currentLease.labels : acquireInput.labels,
+      machineClass: resumable ? currentLease.machineClass : acquireInput.machineClass,
       checkpoint: currentLease?.checkpoint,
       persistence: currentLease?.persistence,
       restore: currentLease?.restore,

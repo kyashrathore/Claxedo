@@ -34,7 +34,7 @@ describe("sandbox repository preparation", () => {
 
   test("without a selected branch the origin's default branch is checked out at its tip and tracked", async () => {
     const f = await origin()
-    await expect(prepareRuntimeRepository(f.checkout, f.env)).resolves.toEqual({ branch: "trunk" })
+    await expect(prepareRuntimeRepository(f.checkout, f.env)).resolves.toEqual({ branch: "trunk", fresh: true })
     expect(f.git(["rev-list", "--count", "HEAD"], f.checkout)).toBe("1")
     expect(f.git(["branch", "--show-current"], f.checkout)).toBe("trunk")
     expect(f.git(["rev-parse", "--abbrev-ref", "trunk@{upstream}"], f.checkout)).toBe("origin/trunk")
@@ -61,7 +61,7 @@ describe("sandbox repository preparation", () => {
     const f = await origin()
     await mkdir(f.checkout)
     f.git(["init", "--quiet"], f.checkout)
-    await expect(prepareRuntimeRepository(f.checkout, f.env)).resolves.toEqual({ branch: "trunk" })
+    await expect(prepareRuntimeRepository(f.checkout, f.env)).resolves.toEqual({ branch: "trunk", fresh: true })
     expect(f.git(["remote", "get-url", "origin"], f.checkout)).toBe(f.repoUrl)
     expect(await readFile(path.join(f.checkout, "hello.txt"), "utf8")).toBe("selected repository 5\n")
   })

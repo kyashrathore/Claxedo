@@ -29,6 +29,19 @@ export type SandboxDriverID = (typeof sandboxDriverIds)[number]
 export type SandboxProvisionerID = SandboxDriverID | "fetch"
 
 /**
+ * The machine a sandbox runs on, in the provider's own grades. A driver
+ * declares which of these it can place a sandbox on; a workspace that names
+ * one its driver does not declare is refused rather than placed elsewhere.
+ */
+export const sandboxMachineClasses = ["small", "default", "large"] as const
+
+export type SandboxMachineClass = (typeof sandboxMachineClasses)[number]
+
+export function isSandboxMachineClass(input: unknown): input is SandboxMachineClass {
+  return sandboxMachineClasses.some((machineClass) => machineClass === input)
+}
+
+/**
  * How a driver can honor a credential the sandbox may USE but must never READ.
  *
  * Here rather than in `@claxedo/sandbox-manager` because both sides of the

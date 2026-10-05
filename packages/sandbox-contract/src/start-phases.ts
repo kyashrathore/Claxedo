@@ -3,6 +3,7 @@ export const sandboxStartPhases = [
   "provider_ready",
   "image_ready",
   "repository_checkout",
+  "setup_script",
   "start_script",
   "runtime_ready",
   "first_session_ready",
@@ -11,7 +12,7 @@ export const sandboxStartPhases = [
 export type SandboxStartPhase = (typeof sandboxStartPhases)[number]
 
 /** The phases a workspace runtime measures inside its own sandbox and reports once per boot. */
-export const sandboxRuntimeStartPhases = ["repository_checkout", "start_script"] as const satisfies readonly SandboxStartPhase[]
+export const sandboxRuntimeStartPhases = ["repository_checkout", "setup_script", "start_script"] as const satisfies readonly SandboxStartPhase[]
 
 export type SandboxRuntimeStartPhase = (typeof sandboxRuntimeStartPhases)[number]
 

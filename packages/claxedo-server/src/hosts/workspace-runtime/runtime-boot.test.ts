@@ -2,7 +2,7 @@ import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import { describe, expect, test, vi } from "vitest"
 import { execFile, execFileSync } from "node:child_process"
 import { existsSync } from "node:fs"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -294,6 +294,43 @@ describe("claxedo workspace-runtime boot policy", () => {
       expect(first.phases).toEqual([{ phase: "repository_checkout", durationMs: expect.any(Number) }])
       expect(first.repoSizeBytes).toBeGreaterThan(0)
       expect(await (await takeStartPhases(boot)).json()).toEqual({ phases: [] })
+    } finally {
+      await origin.close()
+    }
+  })
+
+  test("a checkout's .claxedo/setup.sh runs once, on the boot that made it, and start.sh on every boot, each timed; a failing script fails the boot with its reason", async () => {
+    const origin = await serveGitOrigin()
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    const scripts = path.join(origin.directory, "origin.git", ".claxedo")
+    await mkdir(scripts, { recursive: true })
+    await writeFile(path.join(scripts, "setup.sh"), "echo prepared >> .claxedo-setup-runs\n")
+    await writeFile(path.join(scripts, "start.sh"), "echo \"started on $WORKSPACE_RUNTIME_WORKSPACE_ID\" >> .claxedo-start-runs\n")
+    origin.git(["add", "."])
+    origin.git(["-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "--quiet", "-m", "scripts"])
+    const env = {
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-scripts",
+      WORKSPACE_RUNTIME_DIRECTORY: path.join(origin.directory, "workspace"),
+      WORKSPACE_RUNTIME_SOURCE_KIND: "git",
+      WORKSPACE_RUNTIME_GIT_REPO_URL: origin.repoUrl,
+      WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey),
+      WORKSPACE_RUNTIME_RELAY_URL: "https://relay.example",
+    }
+    try {
+      const first = await claxedoWorkspaceRuntimeBootFromEnv(env)
+      const phases = await (await takeStartPhases(first)).json() as { phases: { phase: string }[] }
+      expect(phases.phases.map((phase) => phase.phase)).toEqual(["repository_checkout", "setup_script", "start_script"])
+      expect(await readFile(path.join(env.WORKSPACE_RUNTIME_DIRECTORY, ".claxedo-setup-runs"), "utf8")).toBe("prepared\n")
+      expect(await readFile(path.join(env.WORKSPACE_RUNTIME_DIRECTORY, ".claxedo-start-runs"), "utf8")).toBe("started on ws-scripts\n")
+
+      const second = await claxedoWorkspaceRuntimeBootFromEnv(env)
+      const again = await (await takeStartPhases(second)).json() as { phases: { phase: string }[] }
+      expect(again.phases.map((phase) => phase.phase)).toEqual(["repository_checkout", "start_script"])
+      expect(await readFile(path.join(env.WORKSPACE_RUNTIME_DIRECTORY, ".claxedo-setup-runs"), "utf8")).toBe("prepared\n")
+      expect(await readFile(path.join(env.WORKSPACE_RUNTIME_DIRECTORY, ".claxedo-start-runs"), "utf8")).toBe("started on ws-scripts\nstarted on ws-scripts\n")
+
+      await writeFile(path.join(env.WORKSPACE_RUNTIME_DIRECTORY, ".claxedo", "start.sh"), "echo installing\necho 'bun install failed' >&2\nexit 7\n")
+      await expect(claxedoWorkspaceRuntimeBootFromEnv(env)).rejects.toThrow(".claxedo/start.sh exited 7: installing\nbun install failed")
     } finally {
       await origin.close()
     }

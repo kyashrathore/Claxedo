@@ -49,7 +49,7 @@ function commandFinished(input: { stdout?: string; stderr?: string; exitCode?: n
  * creation → readiness polling → command execution (docker run / host /
  * health probe / host url). Records every call so tests can assert on it.
  */
-function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnce?: boolean; failingStderr?: string }) {
+function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnce?: boolean; failingStderr?: string; containerState?: string }) {
   const calls: Call[] = []
   const states = options?.states ?? ["ready"]
   let stateIdx = 0
@@ -80,7 +80,7 @@ function fakeBoat(options?: { states?: string[]; hostUrl?: string; failHealthOnc
       if (command.includes("/global/health")) {
         healthChecks++
         const healthy = options?.failHealthOnce ? healthChecks > 1 : true
-        return json(commandFinished({ stdout: healthy ? "200" : "000" }))
+        return json(commandFinished({ stdout: `${healthy ? "200" : "000"}\n${options?.containerState ?? "running"}` }))
       }
       if (command.startsWith("host url")) return json(commandFinished({ stdout: `${hostUrl}\n` }))
       return json(commandFinished({}))
@@ -231,9 +231,9 @@ describe("boat sandbox driver", () => {
     const boat = fakeBoat()
     const handoffError = new Error("epoch lost")
     const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, fetchImpl: boat.fetchImpl })
-    await expect(driver.ensureHost(ensureInput({ onResource: async () => { throw handoffError } }))).rejects.toBe(handoffError)
+    await expect(driver.ensureHost(ensureInput({ machineClass: "large", onResource: async () => { throw handoffError } }))).rejects.toBe(handoffError)
     expect(boat.calls.map(({ path, method, body }) => ({ path, method, body }))).toEqual([
-      { path: "/sandboxes", method: "POST", body: { noEnv: true, ttlSeconds: null } },
+      { path: "/sandboxes", method: "POST", body: { noEnv: true, ttlSeconds: null, type: "large" } },
       { path: `/sandboxes/${ID}`, method: "DELETE", body: undefined },
     ])
     expect(boat.calls[1].headers).toMatchObject({ "X-Ascii-Confirm-Delete": ID, Authorization: "Bearer k" })
@@ -541,6 +541,21 @@ describe("boat sandbox driver", () => {
     const target = await driver.ensureHost(ensureInput())
     if ("provisioning" in target) throw new Error("unexpected provisioning")
     expect(boat.healthChecks).toBeGreaterThanOrEqual(2)
+  })
+
+  test("a runtime container that exited fails the boot at the next probe, with its reason, instead of waiting out the health window", async () => {
+    const boat = fakeBoat({ failHealthOnce: true, containerState: "exited" })
+    const driver = createBoatSandboxDriver({ apiKey: "k", image: IMAGE, healthIntervalMs: 0, healthTimeoutMs: 60_000, fetchImpl: async (url, init) => {
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+      if (body?.command?.includes("docker logs")) {
+        return Response.json({ ok: true, ...commandFinished({ stdout: "status=exited exit=1 oom=false\n.claxedo/start.sh exited 1: bun install failed" }) })
+      }
+      return boat.fetchImpl(url, init)
+    } })
+    const failure = await driver.ensureHost(ensureInput()).catch((error: unknown) => error as Error)
+    expect(isSandboxRuntimeBootFailure(failure)).toBe(true)
+    expect((failure as Error).message).toContain("the runtime container is exited; status=exited exit=1 oom=false\n.claxedo/start.sh exited 1: bun install failed")
+    expect(boat.healthChecks).toBe(1)
   })
 
   test("an unhealthy runtime reports bounded container diagnostics with staged secrets redacted", async () => {

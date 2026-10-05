@@ -1,4 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types"
+import type { SandboxMachineClass } from "@claxedo/sandbox-contract"
 import type { BoundSql } from "./authorization"
 
 export type WorkspaceCreationRow = {
@@ -22,6 +23,7 @@ export type WorkspaceCreationRow = {
   gitBranch: string | undefined
   /** The code-host connection whose token clones this private repository; absent for a repository anyone can clone. */
   repoConnectionId: string | undefined
+  machineClass: SandboxMachineClass | undefined
 }
 
 /**
@@ -39,6 +41,7 @@ export function workspaceCreationStatements(database: D1Database, row: Workspace
     row.gitBranch ?? null,
     row.remoteDirectory,
     row.repoConnectionId ?? null,
+    row.machineClass ?? null,
   ]
   return [
     database
@@ -65,10 +68,10 @@ export function workspaceCreationStatements(database: D1Database, row: Workspace
         `
         insert into workspaces (
           workspace_id, org_id, project_id, owner_user_id, backing, display_name,
-          home_region, repo_url, repo_name, git_branch, remote_directory, repo_connection_id,
+          home_region, repo_url, repo_name, git_branch, remote_directory, repo_connection_id, machine_class,
           created_at, updated_at, deleted_at
         )
-        select ?, ?, p.project_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null
+        select ?, ?, p.project_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null
         from projects p
         where p.org_id = ? and p.repo_key = ? and p.deleted_at is null
           and (? is null or p.project_id = ?)
@@ -98,7 +101,7 @@ export function workspaceCreationStatements(database: D1Database, row: Workspace
           where w.workspace_id = ? and w.org_id = ? and w.owner_user_id = ?
             and w.backing = ? and w.display_name = ?
             and w.home_region is ? and w.repo_url is ? and w.repo_name is ?
-            and w.git_branch is ? and w.remote_directory is ? and w.repo_connection_id is ?
+            and w.git_branch is ? and w.remote_directory is ? and w.repo_connection_id is ? and w.machine_class is ?
             and w.deleted_at is null
             and p.repo_key = ? and (? is null or p.project_id = ?)
         ) then 1 else 0 end)

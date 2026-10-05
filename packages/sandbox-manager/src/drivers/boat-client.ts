@@ -1,3 +1,4 @@
+import type { SandboxMachineClass } from "@claxedo/sandbox-contract"
 import { record } from "../json"
 
 export type BoatSandboxState =
@@ -106,9 +107,11 @@ export function createBoatClient(options: { apiKey: string; baseUrl?: string; ti
 
   const path = (id: string) => `/sandboxes/${encodeURIComponent(id)}`
   return {
-    async create(input: { idempotencyKey: string; ttlSeconds: number | null }) {
+    async create(input: { idempotencyKey: string; ttlSeconds: number | null; type?: SandboxMachineClass }) {
       return sandbox(await api("/sandboxes", ["sandbox.created"], {
-        method: "POST", body: { noEnv: true, ttlSeconds: input.ttlSeconds }, headers: { "Idempotency-Key": input.idempotencyKey },
+        method: "POST",
+        body: { noEnv: true, ttlSeconds: input.ttlSeconds, ...(input.type ? { type: input.type } : {}) },
+        headers: { "Idempotency-Key": input.idempotencyKey },
       }))
     },
     async get(id: string) {

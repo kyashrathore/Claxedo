@@ -22,6 +22,7 @@ import { sandboxConnectionSecrets } from "./connection-secrets"
 import { sandboxDirectCredentialRefresh } from "./direct-credential-refresh"
 import { configureRuntimeGitAuth } from "./git-auth"
 import { prepareRuntimeRepository, repositorySizeBytes, selectsRepository } from "./repository-source"
+import { repositoryScript } from "./repository-scripts"
 import { runtimeStartPhases } from "./runtime-start-phases"
 import { repositoryHistory } from "./repository-history"
 import { workspaceRuntimeOwnerGrant } from "./owner-grant"
@@ -147,6 +148,10 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   if (checkout) {
     const size = await repositorySizeBytes(targetDirectory).catch(() => undefined)
     if (size !== undefined) startPhases.repositorySize(size)
+    const setup = checkout.fresh ? await repositoryScript(targetDirectory, "setup.sh", env) : undefined
+    if (setup) await startPhases.measure("setup_script", setup)
+    const start = await repositoryScript(targetDirectory, "start.sh", env)
+    if (start) await startPhases.measure("start_script", start)
   }
   const history = checkout?.branch ? repositoryHistory(targetDirectory, checkout.branch) : undefined
   // The owner the control plane launched this root for, presented on the

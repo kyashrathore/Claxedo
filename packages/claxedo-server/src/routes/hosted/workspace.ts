@@ -15,7 +15,7 @@ import { withAuthorityRowReachability } from "@claxedo/server-core/workspace/pla
 import { Hono, type Context } from "hono"
 import { routeParam } from "@claxedo/helpers/route-param"
 import { z } from "zod"
-import { admittedRepoUrl, type RepoAddressResolver } from "@claxedo/sandbox-contract"
+import { admittedRepoUrl, sandboxMachineClasses, type RepoAddressResolver } from "@claxedo/sandbox-contract"
 import { dohAddressResolver } from "@claxedo/server-core/agent-plugins/mcp/dns-resolver"
 import {
   ControlPlaneAuthError,
@@ -123,6 +123,7 @@ const createCloudBody = z
     // control plane composes ONE driver from env, so the field is accepted and
     // ignored rather than 400ing the shared client on a strict body.
     driver: z.string().optional(),
+    machineClass: z.enum(sandboxMachineClasses).optional(),
   })
   .strict()
   .refine((body) => Boolean(body.connectionId) === Boolean(body.repo), {
@@ -402,6 +403,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             remoteDirectory: directory,
             homeRegion,
             ...(repoConnectionId ? { repoConnectionId } : {}),
+            ...(body.machineClass ? { machineClass: body.machineClass } : {}),
           })
         } catch (err) {
           if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
@@ -410,6 +412,19 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           // about the world, which the caller can act on.
           if (isClaxedoError(err)) return c.json({ error: apiError(err.code, err.message) }, contentfulStatus(err.status))
           throw err
+        }
+        // The driver that places this workspace is its organization's, known
+        // once the row exists; a machine it has no grade for is refused here,
+        // before a start could be billed for it, and the row goes with it.
+        if (body.machineClass) {
+          const placed = await services.sandbox.workspaceDriver?.(workspaceId)
+          if (!placed?.driver.metadata.machineClasses?.includes(body.machineClass)) {
+            await requireAuthority(services).deleteWorkspace(auth, { workspaceId })
+            return c.json(
+              { error: apiError("machine_class_unsupported", `${placed?.driver.id ?? "This sandbox provider"} has no ${body.machineClass} machines`) },
+              400,
+            )
+          }
         }
         captureWorkspaceTelemetry({ services, auth, event: "workspace_created", workspaceId, properties: { kind: "cloud", private_repository: repoConnectionId !== undefined } })
         return c.json({ workspaceId, directory })

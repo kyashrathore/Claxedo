@@ -59,7 +59,9 @@ const DEFAULT_WORKSPACE_DIR = "/workspace"
 const DEFAULT_CONTAINER_NAME = "claxedo-runtime"
 const DEFAULT_PROVISION_TIMEOUT_MS = 120_000
 const DEFAULT_PROVISION_INTERVAL_MS = 2_000
-const DEFAULT_HEALTH_TIMEOUT_MS = 60_000
+// The runtime listens only after its checkout and the repository's own
+// scripts; a container that exited ends the wait at once instead.
+const DEFAULT_HEALTH_TIMEOUT_MS = 10 * 60_000
 const DEFAULT_HEALTH_INTERVAL_MS = 1_000
 // An image pull needs Boat's documented command maximum.
 const CONTAINER_START_TIMEOUT_SECONDS = 600
@@ -239,11 +241,16 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
     let last = "workspace runtime not ready"
     while (Date.now() < until) {
       const probe = await client.command(sandboxId, {
-        command: `curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:${port}/global/health || true`,
+        command: `curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:${port}/global/health || true; echo; `
+          + `docker inspect --format '{{.State.Status}}' ${shell(containerName)} 2>/dev/null || echo missing`,
       })
-      const code = trimToUndefined(probe.stdout)
+      const [code, state] = probe.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
       if (code === "200") return
-      last = `health probe returned ${code ?? "no response"}`
+      last = `health probe returned ${code || "no response"}`
+      if (state !== undefined && state !== "running") {
+        last = `the runtime container is ${state}`
+        break
+      }
       await sleep(healthIntervalMs)
     }
     let diagnostic: string
@@ -321,7 +328,11 @@ export function createBoatSandboxDriver(options: BoatSandboxDriverOptions): Sand
   async function ensureHost(input: SandboxDriverEnsureInput) {
     assertNetwork(input)
     const hostId = input.hostId ?? `boat-${input.workspaceId}`
-    const created = await client.create({ idempotencyKey: `claxedo:${input.workspaceId}:${input.epoch}`, ttlSeconds })
+    const created = await client.create({
+      idempotencyKey: `claxedo:${input.workspaceId}:${input.epoch}`,
+      ttlSeconds,
+      ...(input.machineClass ? { type: input.machineClass } : {}),
+    })
       .catch((err: unknown) => {
         if (isTransientDriverError(err, TRANSIENT_MARKERS)) return undefined
         throw err

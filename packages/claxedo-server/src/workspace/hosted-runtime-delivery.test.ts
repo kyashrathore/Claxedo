@@ -64,6 +64,7 @@ function recreatingDriver() {
         retention: "not-applicable",
         restoreMount: "not-applicable",
       },
+      machineClasses: ["small", "default", "large"],
     },
   } satisfies SandboxDriver
   return { driver, created, lose: () => hosts.clear() }
@@ -86,6 +87,7 @@ async function composition() {
       gitBranch?: string
       remoteDirectory?: string
       homeRegion?: string
+      machineClass?: string
     }) => {
       rows.set(args.workspaceId, {
         workspace_id: args.workspaceId,
@@ -97,6 +99,7 @@ async function composition() {
         ...(args.repoUrl ? { repo_url: args.repoUrl } : {}),
         ...(args.gitBranch ? { git_branch: args.gitBranch } : {}),
         ...(args.remoteDirectory ? { remote_directory: args.remoteDirectory } : {}),
+        ...(args.machineClass ? { machine_class: args.machineClass } : {}),
       })
       await instance.database.prepare(`insert into workspaces
         (workspace_id, org_id, project_id, owner_user_id, backing, display_name, created_at, updated_at, deleted_at)
@@ -110,7 +113,7 @@ async function composition() {
   }
   const services = {
     authority,
-    sandbox: { sandboxManager, defaultDriver: driver.id },
+    sandbox: { sandboxManager, defaultDriver: driver.id, workspaceDriver: async () => ({ driver, key: "operator" }) },
     telemetry: { capture: vi.fn() },
   } as unknown as ControlPlaneServices
   const egress = { relayUrl: RELAY_URL, sandboxControlPlaneOrigin: CONTROL_PLANE_ORIGIN }
@@ -154,7 +157,7 @@ async function composition() {
 describe("the steps of a hosted sandbox start", () => {
   test("acquire takes the lease over the prepared input and runs no driver; provision at that epoch boots it and delivers its settings", async () => {
     const { delivery, created, create, secrets, env } = await composition()
-    const workspaceId = await create({ gitBranch: "main", remoteDirectory: "/srv/widgets" })
+    const workspaceId = await create({ gitBranch: "main", remoteDirectory: "/srv/widgets", machineClass: "large" })
 
     const acquired = await delivery.start.acquire(workspaceId)
     expect(acquired).toMatchObject({ status: "provisioning", epoch: 1, opened: true })
@@ -171,6 +174,7 @@ describe("the steps of a hosted sandbox start", () => {
       net: { mode: "restricted", hosts: expect.arrayContaining(["relay.claxedo.test", "cp.claxedo.test", "github.com"]) },
       env,
       secrets,
+      machineClass: "large",
     })
     expect(pushed.slice(-2)).toEqual(["config", `session rows pass ${workspaceId}`])
     expect(await delivery.start.target(workspaceId)).toMatchObject({ status: "ready", epoch: 1 })

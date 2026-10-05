@@ -134,6 +134,9 @@ function ensureHostInput(input: {
     // as "preserve what you have".
     ...(input.managerInput?.secrets ? { secrets: input.managerInput.secrets } : {}),
     source: input.managerInput?.source,
+    ...(input.lease.machineClass ?? input.managerInput?.machineClass
+      ? { machineClass: input.lease.machineClass ?? input.managerInput?.machineClass }
+      : {}),
     exposure:
       input.managerInput?.exposure ??
       (input.driver.metadata.targetAccess === "loopback" ? { kind: "loopback" } : { kind: "relay" }),
@@ -517,6 +520,9 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         homeRegion: input.homeRegion,
       }
     }
+    if (input.machineClass && !options.driver.metadata.machineClasses?.includes(input.machineClass)) {
+      return { status: "unavailable", error: `sandbox_machine_class_unsupported: ${options.driver.id} has no ${input.machineClass} machines`, homeRegion: input.homeRegion }
+    }
     const existing = await options.leaseStore.get(workspaceId)
     const wait = waiting(existing)
     if (wait) return wait
@@ -527,6 +533,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       staleAfterMs,
       now: now(),
       ...(input.labels ? { labels: input.labels } : {}),
+      ...(input.machineClass ? { machineClass: input.machineClass } : {}),
     })
     if (!acquired.acquired) return wanted(acquired.lease, acquired.retryAfterMs)
     if (!existing) input.onLeaseOpened?.()

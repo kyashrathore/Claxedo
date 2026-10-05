@@ -14,7 +14,7 @@ import {
  */
 export async function liveWorkspaceRow(database: D1Database, workspaceId: string): Promise<HostedWorkspaceRow> {
   const row = await database
-    .prepare(`select workspace_id, project_id, home_region, repo_url, git_branch, remote_directory
+    .prepare(`select workspace_id, project_id, home_region, repo_url, git_branch, remote_directory, machine_class
       from workspaces where workspace_id = ? and deleted_at is null`)
     .bind(workspaceId)
     .first()

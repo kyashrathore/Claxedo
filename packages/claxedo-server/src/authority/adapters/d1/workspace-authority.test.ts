@@ -501,10 +501,11 @@ describe("D1 user-deployed workspace authority", () => {
     await authority.createCloudWorkspace(owner, {
       workspaceId: "ws_contract_cloud",
       displayName: "contract cloud",
+      machineClass: "large",
     })
     await expect(authority.openWorkspace(owner, { workspaceId: "ws_contract_cloud" })).resolves.toMatchObject({
       role: "owner",
-      workspace: { org_id: "org_deployment", backing: "cloud-vm" },
+      workspace: { org_id: "org_deployment", backing: "cloud-vm", machine_class: "large" },
     })
     await expect(authority.deleteWorkspace(owner, { workspaceId: "ws_contract_cloud" })).resolves.toEqual({
       deleted: true,

@@ -149,6 +149,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
         retention: "provider-managed",
         restoreMount: "same-resource",
       },
+      machineClasses: ["small", "default", "large"],
     },
   },
   docker: {

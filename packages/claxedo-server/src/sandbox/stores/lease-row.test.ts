@@ -28,9 +28,9 @@ describe("toSandboxLeaseRow", () => {
     expect(sandboxLeaseStatus(toSandboxLeaseRow({ ...ready, status: 7 }).status)).toBe("unavailable")
   })
 
-  test("a compute class outside the four sizes reads as absent", () => {
-    expect(toSandboxLeaseRow({ ...ready, compute_class: "large" }).compute_class).toBe("large")
-    expect(toSandboxLeaseRow({ ...ready, compute_class: "enormous" }).compute_class).toBeNull()
+  test("a machine class outside the provider grades reads as absent", () => {
+    expect(toSandboxLeaseRow({ ...ready, machine_class: "large" }).machine_class).toBe("large")
+    expect(toSandboxLeaseRow({ ...ready, machine_class: "gpu" }).machine_class).toBeNull()
   })
 
   test("wrong column types do not become row values", () => {
