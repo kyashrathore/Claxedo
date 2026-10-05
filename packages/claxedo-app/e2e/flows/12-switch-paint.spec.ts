@@ -56,7 +56,7 @@ test("12 a session switch shows the previous session until the next one is laid 
   const long = await seedTurns(stack, api, here.directory, "Long", 30, { lines: 40 })
   const failed = await seedTurns(stack, api, here.directory, "Failed", 12, { lastFails: true })
   const short = await seedTurns(stack, api, there.directory, "Short", 4)
-  const pi = await api.createSession(here.directory, { title: "Pi", harness: { id: "pi", access: "native" } })
+  const pi = await api.createSession(here.directory, { title: "Pi", harness: { id: "pi", access: "native" }, model: { providerId: "pi", modelId: "openai/gpt-4.1" } })
   await api.prompt(here.directory, pi.id, "Pi turn: review the fixture.")
   await app.addInitScript(installPaintedFrames)
   await app.goto(`${stack.url}${sessionRoute(here.id, previous.id)}`)
@@ -67,7 +67,7 @@ test("12 a session switch shows the previous session until the next one is laid 
   const acp = { model: "Scripted ACP default", nameKnown: true }
   const switches = [
     { label: "unvisited", next: target, nav: true, ...acp },
-    { label: "unvisited Pi", next: pi, nav: false, model: "anthropic/claude-opus-4-8", nameKnown: false },
+    { label: "unvisited Pi", next: pi, nav: false, model: "openai/gpt-4.1", nameKnown: false },
     { label: "another workspace", next: elsewhere, nav: true, ...acp },
     { label: "short unvisited", next: short, nav: false, ...acp },
     { label: "long rows", next: long, nav: true, ...acp },
