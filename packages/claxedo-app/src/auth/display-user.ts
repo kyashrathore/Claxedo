@@ -3,4 +3,5 @@ export type AuthUser = {
   fullName?: string
   email?: string
   imageUrl?: string
+  orgId?: string
 }

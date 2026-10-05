@@ -4,10 +4,11 @@ import { Dynamic } from "solid-js/web"
 import { ComposerStoreProvider } from "@/composer"
 import { preferenceKey } from "@/lib/persisted"
 import { PluginHostProvider } from "@/plugins"
-import { useServer, type Capabilities } from "@/server"
+import { useServer } from "@/server"
 import { Toast } from "@/ui"
 import { createWorkbenchStore, WorkbenchProvider } from "@/workbench"
 import { HomeRedirect } from "../home-redirect"
+import { principalScope } from "../principal-scope"
 import { signInGate } from "../sign-in-gate"
 import { ShellLayoutProvider } from "../layout"
 import { CommandsProvider } from "../palette/commands"
@@ -29,11 +30,6 @@ import { ShellStartup } from "./startup"
 const LOGIN_PATH = "/login"
 
 export type AppShellProps = { readonly mainSidebar: JSX.Element; readonly compactTabs: JSX.Element }
-
-export function principalScope(capabilities: Capabilities | undefined): string | undefined {
-  if (!capabilities) return undefined
-  return capabilities.principal.machineId ? `machine:${capabilities.principal.machineId}` : "machine"
-}
 
 function centerOf(route: ShellRoute): CenterContent {
   return route.kind === "page" && !route.page.tab ? { kind: "page", page: route.page, params: route.params } : { kind: "panes" }
@@ -84,7 +80,7 @@ export function AppShell(props: AppShellProps): JSX.Element {
   const auth = useAuth()
   const routing = useShellRoute()
   const gate = createMemo(() => signInGate(auth.state(), server.capabilities()))
-  const scope = createMemo(() => (gate() === "open" ? principalScope(server.capabilities()) : undefined))
+  const scope = createMemo(() => (gate() === "open" ? principalScope(auth.state(), server.capabilities()) : undefined))
   const screen = createMemo(() => {
     const route = routing.route()
     return route.kind === "screen" && (!route.screen.requiresSignIn || gate() === "open") ? route : undefined

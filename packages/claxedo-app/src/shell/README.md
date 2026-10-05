@@ -24,7 +24,7 @@ Today's app's shapes, id-only: `/` (home), `/w/:placementId/session` (the placem
 
 ## Placement providers (`placement-providers.tsx`)
 
-The workspace panel and the domains whose state is kept per placement (terminal, files, review, browser) mount their providers here with no props, under the commands provider inside the workbench; each reads the placement from `useShellRoute().placementId` and opens panes through `useWorkbench()`. The composer's draft store sits above the workbench and the panel, inside the principal's scope, so another principal starts with no drafts.
+The workspace panel and the domains whose state is kept per placement (terminal, files, review, browser) mount their providers here with no props, under the commands provider inside the workbench; each reads the placement from `useShellRoute().placementId` and opens panes through `useWorkbench()`. The composer's draft store sits above the workbench and the panel, inside the principal's scope, so another principal starts with no drafts. The scope (`principalScope`) is the signed-in user, with the organization the account names when it names one (`user:<id>[:org:<orgId>]`), on the web and the desktop alike, so signing out of one account and into another on the same browser or desktop shows none of the first account's drafts, panes, layout or plugin choices. Only a signed-out reader of a local server that issues no sign-in is scoped by its machine (`machine[:<enrollmentId>]`); while the account is still answering, nothing is scoped and the startup placeholder shows, so the shell never mounts under one scope and remounts under another.
 
 ## Look (`styles/`)
 

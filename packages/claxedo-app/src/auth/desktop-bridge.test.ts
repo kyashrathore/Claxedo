@@ -21,7 +21,7 @@ test("desktop bridge: main's states decode into the account's states", () => {
   expect(desktopAccountState({ status: "pending" })).toEqual({ kind: "pending" })
   expect(desktopAccountState({ status: "signed", identity: { userId: "u1", displayName: "Ada", email: "ada@claxedo.test", orgId: "org" } })).toEqual({
     kind: "signed",
-    user: { id: "u1", fullName: "Ada", email: "ada@claxedo.test" },
+    user: { id: "u1", fullName: "Ada", email: "ada@claxedo.test", orgId: "org" },
     identity: "known",
   })
   expect(desktopAccountState({ status: "unavailable", reason: "no-secure-storage", detail: "No keychain" })).toEqual({ kind: "unavailable", reason: "No keychain" })

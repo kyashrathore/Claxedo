@@ -24,3 +24,19 @@ test("among notices of one tone the latest published leads, and a source that cl
     dispose()
   })
 })
+
+test("a source that republishes the same notice keeps its place among notices of one tone", () => {
+  createRoot((dispose) => {
+    const channel = createComposerNoticeChannel()
+    const placement = {}
+    const harness = {}
+    channel.publish(placement, notice("machine-offline", "warning"))
+    channel.publish(harness, notice("setup-required", "warning"))
+    const shown = channel.notices()
+    channel.publish(placement, notice("machine-offline", "warning"))
+    expect(channel.notices()).toBe(shown)
+    channel.publish(placement, notice("machine-offline", "warning", "Ada's MacBook is offline"))
+    expect(channel.notices().map((item) => item.kind)).toEqual(["setup-required", "machine-offline"])
+    dispose()
+  })
+})

@@ -34,7 +34,8 @@ function signedState(raw: unknown): DesktopAccountState {
   if (!id) return { kind: "unavailable", reason: "The desktop account answered a signed state with no user" }
   const fullName = readString(identity, "displayName")
   const email = readString(identity, "email")
-  const user: AuthUser = { id, ...(fullName ? { fullName } : {}), ...(email ? { email } : {}) }
+  const orgId = readString(identity, "orgId")
+  const user: AuthUser = { id, ...(fullName ? { fullName } : {}), ...(email ? { email } : {}), ...(orgId ? { orgId } : {}) }
   const known = fullName !== undefined || email !== undefined
   const lookup = readString(raw, "identityLookup") === "failed" ? "failed" : "resolving"
   return { kind: "signed", user, identity: known ? "known" : lookup }
