@@ -138,13 +138,13 @@ function heldProducer() {
   return { provider, started, stopped, tail }
 }
 
-async function terminal(cwd: string, sessionId: string) {
+async function terminal(cwd: string) {
   // These cases are about who may attach to a terminal or what it pins, not
   // about which store owns its launch; a volatile owner records the launch and
   // nothing here reads it back. node-pty resolves a bare name through PATH on
   // Windows, where there is no `/bin/sh` to find.
   const command = process.platform === "win32" ? "cmd.exe" : "/bin/sh"
-  const info = await withSessionCore(testSessionCore(cwd), () => Pty.create({ command, cwd, sessionId }, volatileLaunchOwnership()))
+  const info = await withSessionCore(testSessionCore(cwd), () => Pty.create({ command, cwd }, volatileLaunchOwnership()))
   Pty.commit(info.id)
   return info
 }
@@ -993,7 +993,7 @@ describe("the daemon lifecycle on its real work sources", () => {
     try {
       lifecycle.start()
       await lifecycle.recovery.launchesReconciled()
-      pty = await terminal(project, "ses_lifecycle")
+      pty = await terminal(project)
       await sleep(heldMs)
 
       // A terminal stops pinning when its removal begins; retiring its process
@@ -1088,7 +1088,7 @@ describe("attaching to an embedded workspace terminal", () => {
     const { root, project } = await makeWorkspaceRoot("embedded-terminal-foreign-")
     const elsewhere = await makeWorkspaceRoot("embedded-terminal-elsewhere-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
-    const pty = await terminal(elsewhere.project, "ses_1")
+    const pty = await terminal(elsewhere.project)
     try {
       const attach = await attachEmbeddedWorkspacePty({
         workspace: workspace("ws_terminal", project),
@@ -1112,7 +1112,7 @@ describe("attaching to an embedded workspace terminal", () => {
     const refusing = hostAuthority(false)
     configureEmbeddedWorkspaceRuntime({
     sessionIdWorkspace: () => undefined, sessionAccessPolicy: refusing.policy })
-    const pty = await terminal(project, "ses_1")
+    const pty = await terminal(project)
     try {
       const ws = workspace("ws_terminal", project)
       const request = {
@@ -1146,7 +1146,7 @@ describe("attaching to an embedded workspace terminal", () => {
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
     const live = hostAuthority(true)
     configureEmbeddedWorkspaceRuntime({ sessionIdWorkspace: () => undefined, sessionAccessPolicy: live.policy })
-    const pty = await terminal(project, "ses_1")
+    const pty = await terminal(project)
     const received: string[] = []
     try {
       const attach = await attachEmbeddedWorkspacePty({

@@ -16,9 +16,8 @@ import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 import { Pty } from "../pty/index"
 import { withWorkspaceTarget } from "../target"
 
-const runningTerminal = (id: string, sessionId?: string) => ({
+const runningTerminal = (id: string) => ({
   id,
-  ...(sessionId ? { sessionId } : {}),
   title: id,
   command: "/bin/sh",
   args: [],
@@ -362,7 +361,6 @@ describe("AgentHookRoutes", () => {
     const get = spyOn(Pty, "get").mockImplementation((id) => id === terminalId
       ? {
           id: terminalId,
-          sessionId: "session_a",
           title: "private",
           command: "/bin/sh",
           args: [],
@@ -399,7 +397,7 @@ describe("AgentHookRoutes", () => {
       expect(owner.status).toBe(200)
       await expect(owner.json()).resolves.toMatchObject({
         session: {
-          sessionId: "session_a",
+          providerSessionId: "session_a",
           prompt: "private prompt",
           lastAssistantMessage: "private assistant response",
         },
@@ -441,14 +439,15 @@ describe("AgentHookRoutes", () => {
 
       expect(events).toHaveLength(1)
       expect(events[0]).toMatchObject({
-        sessionId: "session_a",
+        sessionId: undefined,
+        providerSessionId: "session_a",
         prompt: "private prompt",
         lastAssistantMessage: "private assistant response",
       })
       const preserved = await editorA.request(`http://localhost/terminal-session?terminalId=${terminalId}`)
       await expect(preserved.json()).resolves.toMatchObject({
         session: {
-          sessionId: "session_a",
+          providerSessionId: "session_a",
           prompt: "private prompt",
         },
       })
@@ -653,11 +652,10 @@ describe("AgentHookRoutes", () => {
     await expect(metadata.json()).resolves.toMatchObject({ source: "none", session: null })
   })
 
-  test("managed lifecycle writes bind to the runtime-recorded terminal owner and canonical workspace", async () => {
+  test("managed lifecycle writes bind to the runtime-recorded terminal owner and canonical workspace, and name no session", async () => {
     const get = spyOn(Pty, "get").mockImplementation((id) => id === "pty_owned"
       ? {
           id,
-          sessionId: "session_canonical",
           title: "owned",
           command: "/bin/sh",
           args: [],
@@ -705,13 +703,13 @@ describe("AgentHookRoutes", () => {
         workspaceId: "ws_1",
         terminalId: "pty_owned",
         providerSessionId: "provider_session_not_private_authority_id",
-        sessionId: "session_canonical",
+        sessionId: undefined,
       })])
-      expect(workspaceRuntimeEventSessionId(events[0] as never)).toBe("session_canonical")
+      expect(workspaceRuntimeEventSessionId(events[0] as never)).toBeUndefined()
       const metadata = await managedApp("actor_owner").request("http://localhost/terminal-session?terminalId=pty_owned")
       const metadataBody = await metadata.json() as { session?: { sessionId?: string; providerSessionId?: string } }
       expect(metadataBody.session).toMatchObject({ providerSessionId: "provider_session_not_private_authority_id" })
-      expect(metadataBody.session?.sessionId).toBe("session_canonical")
+      expect(metadataBody.session?.sessionId).toBeUndefined()
 
       const unverifiedOverwrite = await AgentHookRoutes({ bus: testBus }).request("http://localhost/agent-lifecycle", {
         method: "POST",
@@ -740,10 +738,10 @@ describe("AgentHookRoutes", () => {
     }
   })
 
-  test("an unattributed lifecycle write stamps the runtime's canonical workspace and the terminal's bound session, never the caller's claims", async () => {
+  test("an unattributed lifecycle write stamps the runtime's canonical workspace, never the caller's", async () => {
     const terminalId = "pty_unverified_canonical"
     const get = spyOn(Pty, "get").mockImplementation((id) => id === terminalId
-      ? { id, sessionId: "session_bound", title: id, command: "/bin/sh", args: [], cwd: "/tmp", status: "running" as const, pid: 1 }
+      ? { id, title: id, command: "/bin/sh", args: [], cwd: "/tmp", status: "running" as const, pid: 1 }
       : undefined)
     const owner = spyOn(Pty, "accessOwner").mockReturnValue(undefined)
     const events: Extract<WorkspaceRuntimeEvent, { type: "agent.lifecycle" }>[] = []
@@ -760,23 +758,16 @@ describe("AgentHookRoutes", () => {
             terminalId,
             workspaceId: "forged_workspace",
             provider: "claude",
-            sessionId: "forged_session",
+            sessionId: "provider_session",
             transcriptPath: "/transcripts/forged.jsonl",
             eventType: "Busy",
           }),
         }))
       expect(response.status).toBe(200)
-      await expect(response.json()).resolves.toMatchObject({ sessionId: "session_bound" })
-      expect(events).toEqual([expect.objectContaining({
-        workspaceId: "ws_canonical",
-        sessionId: "session_bound",
-        providerSessionId: "forged_session",
-      })])
-      expect(workspaceRuntimeEventSessionId(events[0])).toBe("session_bound")
-      // The terminal's stored record carries the same canonical ownership.
+      expect(events).toEqual([expect.objectContaining({ workspaceId: "ws_canonical", providerSessionId: "provider_session" })])
       const metadata = await AgentHookRoutes({ bus: testBus }).request(`http://localhost/terminal-session?terminalId=${terminalId}`)
-      const body = await metadata.json() as { session?: { sessionId?: string; workspaceId?: string } }
-      expect(body.session).toMatchObject({ sessionId: "session_bound", workspaceId: "ws_canonical" })
+      const body = await metadata.json() as { session?: { workspaceId?: string } }
+      expect(body.session).toMatchObject({ workspaceId: "ws_canonical" })
     } finally {
       unsubscribe()
       get.mockRestore()
@@ -887,7 +878,7 @@ describe("AgentHookRoutes", () => {
   test("unmanaged lifecycle writes name a live terminal and present its bound capability", async () => {
     const get = spyOn(Pty, "get").mockImplementation((id) => {
       if (id === "pty_live" || id === "pty_bound" || id === "pty_bound_unowned" || id === "pty_other") {
-        return runningTerminal(id, `session_${id}`)
+        return runningTerminal(id)
       }
       if (id === "pty_exited_unmanaged") return { ...runningTerminal(id), status: "exited" as const }
       return undefined
@@ -951,7 +942,6 @@ describe("AgentHookRoutes", () => {
   test("accepts only the terminal-scoped direct callback capability and derives claims from runtime state", async () => {
     const get = spyOn(Pty, "get").mockReturnValue({
       id: "pty_direct",
-      sessionId: "session_private",
       title: "direct",
       command: "/bin/sh",
       args: [],
@@ -1010,7 +1000,6 @@ describe("AgentHookRoutes", () => {
     })
     const get = spyOn(Pty, "get").mockReturnValue({
       id: "pty_revoked",
-      sessionId: "session_revoked",
       title: "revoked",
       command: "/bin/sh",
       args: [],

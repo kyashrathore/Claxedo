@@ -156,7 +156,6 @@ describe("PtyRoutes", () => {
   test("carries the opaque create request id through create and list DTOs", async () => {
     const info = {
       id: "pty_correlated",
-      sessionId: "session_a",
       createRequestId: "request-client-a",
       title: "Terminal",
       command: "/bin/sh",
@@ -406,10 +405,9 @@ describe("PtyRoutes", () => {
     }
   })
 
-  test("creates a terminal with no session and binds the agent hook to the host lease", async () => {
-    const create = spyOn(Pty, "create").mockImplementation(async (input) => ({
+  test("creates a terminal with no session, whatever session the body names, and binds the agent hook to the host lease", async () => {
+    const create = spyOn(Pty, "create").mockImplementation(async () => ({
       id: "pty_created",
-      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
       title: "Terminal",
       command: "/bin/sh",
       args: [],
@@ -425,9 +423,11 @@ describe("PtyRoutes", () => {
       const created = await appFor(hostPolicy(), "editor", { actorId: "editor_a" }).request("http://localhost/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "Terminal" }),
+        body: JSON.stringify({ title: "Terminal", sessionId: "ses_another_members" }),
       })
       expect(created.status).toBe(200)
+      expect(await created.json()).not.toHaveProperty("sessionId")
+      expect(create.mock.calls[0]?.[0]).not.toHaveProperty("sessionId")
       expect(create.mock.calls[0]?.[2]).toMatchObject({
         context: { actor: { actorId: "editor_a" }, authority: { workspaceId: "ws_1", role: "editor" } },
         authorityLease: "host-lease-1",

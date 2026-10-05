@@ -544,11 +544,10 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions) {
       const workspaceId = access.context.authority?.workspaceId ?? authoritativeWorkspaceId() ?? (clean(payload.workspaceId) || undefined)
       const toolScoped = !!(providerEvent?.userAction || providerEvent?.toolCompletion)
       const providerSessionId = clean(payload.sessionId) || undefined
-      // The terminal's bound session and the workspace the runtime was
-      // configured to serve are the frame's canonical owners; only a caller
-      // the runtime cannot attribute either to falls back to the provider's
-      // own session id, which delivery never scopes as a private session.
-      const sessionId = Pty.get(resolvedTerminalId)?.sessionId ?? (access.context.authority ? undefined : providerSessionId)
+      // A terminal belongs to its workspace, never to a session: a relayed
+      // hook's frame names none, and only an unstamped local hook, whose
+      // frames reach this machine's own user alone, keeps the provider's id.
+      const sessionId = access.context.authority ? undefined : providerSessionId
 
       // A managed session-less status event must not recover content from a
       // prior terminal mapping merely because it guessed the terminal id.

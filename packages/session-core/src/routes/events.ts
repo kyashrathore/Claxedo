@@ -99,6 +99,10 @@ function isGapFrame(frame: StreamFrame): frame is WorkspaceEventGapFrame {
   return "type" in frame && frame.type === "stream.replay-gap"
 }
 
+function isTerminalFrame(frame: StreamFrame) {
+  return !isGapFrame(frame) && frame.payload.type.startsWith("pty.")
+}
+
 function isControlFrame(frame: WorkspaceEventFrame): frame is { directory: string; payload: WorkspaceRuntimeEvent } {
   const type = frame.payload.type
   return type.startsWith("pty.") || type.startsWith("connection.") || type === "agent.lifecycle"
@@ -447,6 +451,8 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
     (input: Parameters<EventDeliveryPolicy<StreamFrame>>[0]) => {
       const sessionScope = input.principal.mode === "unmanaged-local" ? undefined : input.principal.sessionScope
       if (sessionScope && input.sessionId !== sessionScope) return "omit" as const
+      // A terminal's command, output and exit tail are for whoever may type into it.
+      if (input.principal.mode === "verified" && input.principal.role === "viewer" && isTerminalFrame(input.event)) return "omit" as const
       const startup = sessionStartEventDecision(options, input)
       if (startup) return startup
       const decision = delivery(input)

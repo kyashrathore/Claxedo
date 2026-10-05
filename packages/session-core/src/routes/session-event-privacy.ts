@@ -150,12 +150,7 @@ export function envelopeSessionId(event: AgentEventEnvelope) {
   return eventSessionId(event.payload)
 }
 
-/**
- * The session a control frame belongs to. A pty bound to a session (its
- * bytes, its exit) is that session's: a reader without a grant on the session
- * must not see the terminal the agent drove. A pty bound to none is the
- * workspace's.
- */
+/** The session a control frame belongs to; a terminal's frames belong to no session, only to the workspace. */
 export function workspaceRuntimeEventSessionId(event: WorkspaceRuntimeEvent): string | undefined {
   switch (event.type) {
     case "agent.lifecycle":
@@ -163,13 +158,6 @@ export function workspaceRuntimeEventSessionId(event: WorkspaceRuntimeEvent): st
     case "session.lifecycle":
     case "session.queue":
       return event.sessionID
-    case "pty.created":
-    case "pty.updated":
-      return event.info.sessionId
-    case "pty.exited":
-    case "pty.deleted":
-    case "pty.stream":
-      return event.sessionId
     default:
       return undefined
   }

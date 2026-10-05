@@ -7,7 +7,6 @@ import type { RelayHostAuthContext } from "@claxedo/session-core/relay-host"
 
 const info: Pty.Info = {
   id: "pty_1",
-  sessionId: "session_1",
   title: "Terminal",
   command: "/bin/sh",
   args: [],
@@ -372,9 +371,9 @@ describe("admission before the upgrade", () => {
     expect(refusalOf(admission)).toMatchObject({ status: 403, code: "session_actor_required" })
   })
 
-  test("a token scoped to one session is refused a terminal, even one labelled with it", async () => {
+  test("a token scoped to one session is refused a terminal", async () => {
     const { policy, state } = authority()
-    const admission = await admitTerminal(policy, relayed("editor", info.sessionId))
+    const admission = await admitTerminal(policy, relayed("editor", "session_1"))
 
     expect(refusalOf(admission)).toMatchObject({ status: 403, code: "relay_scope_denied" })
     expect(state.calls).toEqual([])

@@ -18,7 +18,6 @@ export type AgentHookAccessBinding = {
 }
 export const Info = z.object({
   id: z.string(),
-  sessionId: z.string().optional(),
   createRequestId: z.string().min(1).max(128).optional(),
   title: z.string(),
   command: z.string(),
@@ -31,7 +30,6 @@ export const Info = z.object({
 export type Info = z.infer<typeof Info>
 
 export const CreateInput = z.object({
-  sessionId: z.string().optional(),
   createRequestId: z.string().min(1).max(128).optional(),
   command: z.string().optional(),
   args: z.array(z.string()).optional(),

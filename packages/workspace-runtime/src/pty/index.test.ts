@@ -330,7 +330,6 @@ describe("Pty agent hook access", () => {
       actor: { actorId: "actor_1", actorKind: "human" as const },
       authority: { managed: true as const, workspaceId: "ws_1", orgId: "org_1", role: "editor" as const },
     },
-    sessionId: "ses_1",
     authorityLease: "lease_1",
     authorityExpiresAt: Date.now() + 60_000,
   })
@@ -340,7 +339,7 @@ describe("Pty agent hook access", () => {
     const token = "01234567-89ab-cdef-0123-456789abcdef"
     const info = await Pty.create({ cwd: tmpDir, title: "hook" }, ownership, hookAccess(token))
 
-    expect(Pty.agentHookAccessForToken(token)).toMatchObject({ terminalId: info.id, sessionId: "ses_1" })
+    expect(Pty.agentHookAccessForToken(token)).toMatchObject({ terminalId: info.id, token })
     expect(Pty.agentHookAccessForToken("01234567-89ab-cdef-0123-456789abcdee")).toBeUndefined()
     expect(Pty.agentHookAccessForToken("01234567-89ab-cdef-0123-456789abcdeff")).toBeUndefined()
     expect(Pty.agentHookAccessForToken("short")).toBeUndefined()

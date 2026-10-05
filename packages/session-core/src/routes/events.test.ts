@@ -143,7 +143,7 @@ describe("wr/events — one stream per workspace runtime", () => {
     const controller = new AbortController()
     const response = await app.request("http://localhost/api/wr/events", { signal: controller.signal })
     hub.publishGlobal(part("ses-1", "prt-1", { status: "running" }))
-    bus.publish({ type: "pty.exited", id: "pty-1", sessionId: "ses-1", exitCode: 0 })
+    bus.publish({ type: "pty.exited", id: "pty-1", exitCode: 0 })
     hub.publishGlobal({ directory: DIRECTORY, payload: { type: "subagent.updated", properties: { sessionID: "ses-1", update: { subagentKey: "child", revision: 1, status: "running" } } } })
     hub.publishRuntime({ directory: DIRECTORY, sessionId: "ses-1", payload: { type: "text-delta", delta: "raw runtime frames stay off the wire" } })
     const text = await readUntil(response, "subagent.updated")
@@ -169,7 +169,7 @@ describe("wr/events — one stream per workspace runtime", () => {
     const response = await app.request("http://localhost/api/wr/events", { signal: controller.signal })
     hub.publishGlobal(part("ses-1", "prt-tap", { status: "completed" }))
     hub.publishGlobal({ directory: DIRECTORY, payload: { type: "subagent.updated", properties: { sessionID: "ses-1", update: { subagentKey: "child", revision: 1, status: "running" } } } })
-    bus.publish({ type: "pty.exited", id: "pty-tap", sessionId: "ses-1", exitCode: 0 })
+    bus.publish({ type: "pty.exited", id: "pty-tap", exitCode: 0 })
     const text = await readUntil(response, "pty.exited")
     controller.abort()
 
@@ -179,10 +179,10 @@ describe("wr/events — one stream per workspace runtime", () => {
 
     // The tap is the handler's, not a connection's: a runtime nobody is
     // reading directly still feeds the host that aggregates it.
-    bus.publish({ type: "pty.exited", id: "pty-tap", sessionId: "ses-1", exitCode: 1 })
+    bus.publish({ type: "pty.exited", id: "pty-tap", exitCode: 1 })
     expect(tapped).toHaveLength(4)
     detach()
-    bus.publish({ type: "pty.exited", id: "pty-tap", sessionId: "ses-1", exitCode: 2 })
+    bus.publish({ type: "pty.exited", id: "pty-tap", exitCode: 2 })
     expect(tapped).toHaveLength(4)
   })
 
@@ -344,8 +344,8 @@ describe("wr/events — one stream per workspace runtime", () => {
     expect(text).toContain("prt-b")
   })
 
-  test.each([relayAuth, viewerAuth])("the unscoped stream carries a session's frames — parts, subagents, goals, its pty — only to a principal the authority grants it (role %#)", async (auth) => {
-    const { app, hub, bus, ptys } = harness({
+  test.each([relayAuth, viewerAuth])("the unscoped stream carries a session's frames — parts, subagents, goals — only to a principal the authority grants it (role %#)", async (auth) => {
+    const { app, hub } = harness({
       policy: managedPolicy({ workspace: "allow", session: (id) => id === "shared" }),
       relayAuth: auth,
     })
@@ -355,21 +355,35 @@ describe("wr/events — one stream per workspace runtime", () => {
     hub.publishGlobal(part("private", "prt-private", { status: "running" }))
     hub.publishGlobal({ directory: DIRECTORY, payload: { type: "subagent.updated", properties: { sessionID: "private", update: { subagentKey: "private-child", revision: 1, status: "running" } } } })
     hub.publishGlobal({ directory: DIRECTORY, payload: { type: "goal.updated", properties: { sessionID: "private", goal: { id: "g", status: "active", text: "private-goal" } as never } } })
-    ptys.set("pty-private", DIRECTORY)
-    ptys.set("pty-workspace", DIRECTORY)
-    bus.publish({ type: "pty.exited", id: "pty-private", sessionId: "private", exitCode: 0, tail: "private-terminal-bytes" })
-    bus.publish({ type: "pty.exited", id: "pty-workspace", exitCode: 0 })
     hub.publishGlobal({ directory: DIRECTORY, payload: { type: "subagent.updated", properties: { sessionID: "shared", update: { subagentKey: "shared-child", revision: 1, status: "running" } } } })
     hub.publishGlobal(part("shared", "prt-shared", { status: "running" }))
     const text = await readUntil(response, "prt-shared")
     controller.abort()
-    expect(text).toContain("pty-workspace")
     expect(text).toContain("shared-child")
     expect(text).toContain("prt-shared")
     expect(text).not.toContain("prt-private")
     expect(text).not.toContain("private-child")
     expect(text).not.toContain("private-goal")
-    expect(text).not.toContain("private-terminal-bytes")
+  })
+
+  test.each([
+    ["an editor", relayAuth, true],
+    ["a viewer", viewerAuth, false],
+  ] as const)("a terminal's command, exit tail and stream reach %s of the workspace only if they may type into it", async (_role, auth, delivered) => {
+    const { app, hub, bus, ptys } = harness({ policy: managedPolicy({ workspace: "allow", session: () => true }), relayAuth: auth })
+    const controller = new AbortController()
+    const response = await app.request("http://localhost/api/wr/events", { signal: controller.signal })
+    expect(response.status).toBe(200)
+    ptys.set("pty-workspace", DIRECTORY)
+    bus.publish({ type: "pty.created", info: { id: "pty-workspace", title: "t", command: "secret-command", args: ["--token"], cwd: DIRECTORY, status: "running", pid: 9 } })
+    bus.publish({ type: "pty.stream", id: "pty-workspace", kind: "exit", exitCode: 0, tail: "stream-terminal-bytes" })
+    bus.publish({ type: "pty.exited", id: "pty-workspace", exitCode: 0, tail: "exit-terminal-bytes" })
+    hub.publishGlobal(part("shared", "prt-after", { status: "running" }))
+    const text = await readUntil(response, "prt-after")
+    controller.abort()
+    for (const secret of ["secret-command", "stream-terminal-bytes", "exit-terminal-bytes"]) {
+      expect(text.includes(secret)).toBe(delivered)
+    }
   })
 
   test("a principal without workspace access is refused the unscoped stream, by a code only that refusal carries", async () => {
@@ -400,14 +414,11 @@ describe("wr/events — one stream per workspace runtime", () => {
     hub.publishGlobal(part("other", "prt-other", { status: "running" }))
     hub.publishGlobal(part("child-of-shared", "prt-child", { status: "running" }))
     ptys.set("pty-x", DIRECTORY)
-    ptys.set("pty-shared", DIRECTORY)
     bus.publish({ type: "pty.exited", id: "pty-x", exitCode: 0 })
-    bus.publish({ type: "pty.exited", id: "pty-shared", sessionId: "shared", exitCode: 0 })
     hub.publishGlobal({ directory: DIRECTORY, payload: { type: "subagent.updated", properties: { sessionID: "shared", update: { subagentKey: "shared-child", revision: 1, status: "running" } } } })
     hub.publishGlobal(part("shared", "prt-shared", { status: "running" }))
     const text = await readUntil(response, "prt-shared")
     expect(text).toContain("prt-child")
-    expect(text).toContain("pty-shared")
     expect(text).toContain("shared-child")
     expect(text).toContain("prt-shared")
     expect(text).not.toContain("prt-other")

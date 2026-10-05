@@ -221,10 +221,7 @@ export async function startTerminal(
     .prepare({
       role: "terminal",
       protocol: "direct",
-      scope: {
-        directory: cwd,
-        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
-      },
+      scope: { directory: cwd },
     })
     .catch((error: unknown) => { throw new LaunchRefusedError("terminal", error) })
 
@@ -283,7 +280,6 @@ export async function startTerminal(
 
   const info: ActiveSession["info"] = {
     id,
-    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
     ...(input.createRequestId ? { createRequestId: input.createRequestId } : {}),
     title: input.title || `Terminal ${id.slice(-4)}`,
     command,

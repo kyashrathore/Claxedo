@@ -727,7 +727,6 @@ describe("workspace runtime host route auth", () => {
     const renew = spyOn(Pty, "renewAgentHookAccess").mockReturnValue(true)
     const terminal = spyOn(Pty, "get").mockReturnValue({
       id: "pty_hook",
-      sessionId: "session_hook",
       title: "hook",
       command: "/bin/sh",
       args: [],

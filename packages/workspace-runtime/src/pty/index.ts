@@ -466,7 +466,7 @@ export namespace Pty {
         const id = session.info.id
         log.info("session exited", { id, exitCode })
         const tail = snapshot(id, 16_384)
-        const event = { id, ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}), exitCode, tail }
+        const event = { id, exitCode, tail }
         session.bus.publish({ type: "pty.exited", ...event })
         session.bus.publish({ type: "pty.stream", kind: "exit", ...event })
         await cleanupSession(session.info.id, session, "exit")
@@ -511,7 +511,6 @@ export namespace Pty {
       session.bus.publish({
         type: "pty.deleted",
         id,
-        ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
       })
       return result
     })()
@@ -647,7 +646,6 @@ export namespace Pty {
       session.bus.publish({
         type: "pty.stream",
         id,
-        ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
         kind: "error",
         message: "replay_send_failed",
       })
@@ -676,8 +674,7 @@ export namespace Pty {
         session.bus.publish({
           type: "pty.stream",
           id,
-          ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
-          kind: "disconnect",
+            kind: "disconnect",
         })
         if (session.subscribers.size === 0) {
           session.ready = false
