@@ -42,6 +42,7 @@ export function timelineAbsoluteFilePath(raw: string): string | undefined {
 }
 
 export function timelineAnchorFileHref(anchor: Element): string | undefined {
+  if (anchor.hasAttribute("data-subagent-key")) return undefined
   const href = anchor.getAttribute("href") ?? ""
   if (!href || href.startsWith("//") || href.startsWith("#") || href.startsWith("?")) return undefined
   if (/^[a-z][a-z0-9+.-]*:/i.test(href)) {

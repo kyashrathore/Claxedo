@@ -92,5 +92,18 @@ test("42 transcript file links: a workspace Markdown link opens its file and cop
   await expect(app.getByText("This file is outside the workspace, so it opens only in the desktop app on the machine that holds it.", { exact: true })).toBeVisible()
   await link.click()
   await expect(app.getByRole("complementary", { name: "Workspace panel" }).getByText("markdown-file-links", { exact: true }).first()).toBeVisible()
+  const panel = app.getByRole("complementary", { name: "Workspace panel" })
+  await expect(panel.getByTestId("workspace-navigator-overlay")).not.toBeVisible()
+  if (!coarsePointer) {
+    for (const navigator of ["Changes", "Files"]) {
+      await panel.getByRole("button", { name: `Open ${navigator}`, exact: true }).click()
+      await expect(panel.getByTestId("workspace-navigator-overlay")).toBeVisible()
+      await panel.getByRole("button", { name: "Close workspace panel", exact: true }).click()
+      await link.click()
+      await expect(panel.getByText("markdown-file-links", { exact: true }).first()).toBeVisible()
+      await expect(panel.getByTestId("workspace-navigator-overlay")).toHaveAttribute("data-open", "false")
+      await expect(panel.getByRole("button", { name: /^Close (Files|Changes)$/ })).toHaveCount(0)
+    }
+  }
   expect(assistantText(await api.messages(workspace.directory, session.id))).toContain("README.md:1")
 })

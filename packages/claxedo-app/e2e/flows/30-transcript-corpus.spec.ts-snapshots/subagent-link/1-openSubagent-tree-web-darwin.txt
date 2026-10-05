@@ -1,0 +1,14 @@
+scrollTop: 0
+background subagents:
+- region "Background subagents":
+  - heading "Background subagents" [level=2]
+  - link "acp, done":
+    - /url: /s/<id>
+    - text: acp Find the project name · Background · continues independently done
+row 0:
+- text: Delegate the lookup. acp-script:subagent-link-0 Build · <time>
+- button "Copy message"
+row 1:
+- paragraph: The parent received the answer.
+- button "Copy response"
+- text: Build · 0s

@@ -1,0 +1,25 @@
+{
+  "id": "subagent-link",
+  "title": "Subagent session links open transcripts without file navigation",
+  "source": {
+    "kind": "test",
+    "file": "e2e/flows/09-subagents.spec.ts",
+    "name": "09 subagents: a subagent link opens its transcript without a file navigator"
+  },
+  "partKinds": ["agent", "text"],
+  "replay": {
+    "agent": "acp",
+    "turns": [{
+      "prompt": "Delegate the lookup.",
+      "steps": [
+        { "kind": "subagent", "name": "researcher", "task": "Find the project name", "steps": [
+          { "kind": "text", "text": "The researcher found the project name." }
+        ] },
+        { "kind": "text", "text": "The parent received the answer." }
+      ]
+    }]
+  },
+  "ready": "The parent received the answer.",
+  "interactions": [{ "kind": "openSubagent", "task": "Find the project name", "reply": "The researcher found the project name." }],
+  "invariant": "A session anchor reaches the subagent handler, never file reading. Desktop opens the child panel with no navigator; phone opens the child session. Returning preserves the parent transcript."
+}

@@ -1,8 +1,6 @@
 import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test } from "../harness"
 
-test.skip(({ isMobile }) => isMobile, "flow 9 runs at desktop width")
-
-test("09 subagents: a subagent the agent creates opens beside its parent in the workspace panel", async ({ stack, api, app }) => {
+test("09 subagents: a subagent link opens its transcript without a file navigator", async ({ stack, api, app, isMobile }) => {
   const workspace = await stack.daemon.makeWorkspace("subagents")
   await stack.acp.write("delegate", {
     steps: [
@@ -20,10 +18,26 @@ test("09 subagents: a subagent the agent creates opens beside its parent in the 
   const chip = app.getByRole("region", { name: "Background subagents" }).getByRole("link").filter({ hasText: "Find the project name" })
   await expect(chip).toBeVisible()
   await chip.click()
+  if (isMobile) {
+    await expect(app.getByText("The researcher found the project name")).toBeVisible()
+    await expect(app.getByRole("complementary", { name: "Workspace panel" })).not.toBeVisible()
+    expect(assistantText(await api.messages(workspace.directory, children[0].id))).toContain("The researcher found the project name")
+    return
+  }
   const panel = app.getByRole("complementary", { name: "Workspace panel" })
   await expect(panel.getByText("The researcher found the project name")).toBeVisible()
+  await expect(panel.getByTestId("workspace-navigator-overlay")).not.toBeVisible()
   await expect(panel.getByText("Subagent sessions cannot be prompted.")).toBeVisible()
   await expect(app).toHaveURL(new RegExp(`${sessionRoute(workspace.id, session.id)}$`))
   await expect(app.getByText("The parent read the researcher's answer")).toBeVisible()
+  for (const navigator of ["Changes", "Files"]) {
+    await panel.getByRole("button", { name: `Open ${navigator}`, exact: true }).click()
+    await expect(panel.getByTestId("workspace-navigator-overlay")).toHaveAttribute("data-open", "true")
+    await panel.getByRole("button", { name: "Close workspace panel", exact: true }).click()
+    await chip.click()
+    await expect(panel.getByText("The researcher found the project name")).toBeVisible()
+    await expect(panel.getByTestId("workspace-navigator-overlay")).toHaveAttribute("data-open", "false")
+    await expect(panel.getByRole("button", { name: /^Close (Files|Changes)$/ })).toHaveCount(0)
+  }
   expect(assistantText(await api.messages(workspace.directory, children[0].id))).toContain("The researcher found the project name")
 })

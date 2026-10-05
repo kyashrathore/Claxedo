@@ -32,6 +32,7 @@ export type CaseInteraction =
   | { readonly kind: "prepend" }
   | { readonly kind: "find"; readonly text: string }
   | { readonly kind: "reload" }
+  | { readonly kind: "openSubagent"; readonly task: string; readonly reply: string }
   | { readonly kind: "toggleFold"; readonly turn: number }
   | { readonly kind: "toggleUserMessage"; readonly message: string }
   | { readonly kind: "toggleAgentMessage" }

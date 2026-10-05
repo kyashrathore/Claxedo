@@ -208,6 +208,22 @@ async function interact(live: { stack: Stack; api: ClaxedoApi; target: Target; a
     case "reload":
       await app.reload()
       return
+    case "openSubagent": {
+      const parentUrl = app.url()
+      await backgroundSubagents(app).getByRole("link").filter({ hasText: interaction.task }).click()
+      await expect(app.getByText(interaction.reply, { exact: true })).toBeVisible()
+      const panel = app.getByRole("complementary", { name: "Workspace panel" })
+      await expect(panel.getByTestId("workspace-navigator-overlay")).not.toBeVisible()
+      if ((app.viewportSize()?.width ?? 1280) < 768) {
+        await expect(panel).not.toBeVisible()
+        await app.goto(parentUrl)
+      } else {
+        await expect(panel.getByText(interaction.reply, { exact: true })).toBeVisible()
+        await expect(app).toHaveURL(parentUrl)
+        await panel.getByRole("button", { name: "Close workspace panel", exact: true }).click()
+      }
+      return
+    }
     default:
       throw new Error(`interaction ${interaction.kind} is not replayed yet`)
   }
