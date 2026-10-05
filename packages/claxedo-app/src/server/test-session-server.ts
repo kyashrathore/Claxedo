@@ -59,7 +59,6 @@ type FakeServerOptions = {
   runtime?: (path: string) => Response | Promise<Response>
   requested?: (path: string) => void
   sessionHosts?: Readonly<Record<string, string>>
-  /** The control plane's answer to a cloud draft's options read; absent, Pi gets a catalog and every other native harness is left to its runtime. */
   draftOptions?: (path: string) => Response
 }
 

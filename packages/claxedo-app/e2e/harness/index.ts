@@ -50,3 +50,4 @@ export { recordStillness, sinceFirstReady, stillnessAfter, type Stillness } from
 export { watchPageWork, type PageWork, type PageWorkInput } from "./page-work"
 export { uncovered } from "./occlusion"
 export { processAlive } from "../../../harness/e2e/harness/process-alive"
+export { ownersColleague, sharing } from "./colleague"

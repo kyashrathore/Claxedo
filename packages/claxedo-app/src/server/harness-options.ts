@@ -21,7 +21,6 @@ export type HarnessOptionsRequest = {
   readonly model?: string
 }
 
-/** A cloud draft asks the control plane first: it answers Pi's models itself and refuses a harness its sandbox provider cannot run; 204 leaves the runtime to answer. */
 function draftServedByControlPlane(workspaces: Workspaces, request: HarnessOptionsRequest) {
   return !request.sessionId && "nativeHarness" in harnessSelectionQuery(request.harness) && workspaces.byId(request.placementId)?.kind === "cloud"
 }
