@@ -296,8 +296,8 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
     }, sessionId),
     async delete(sessionId: string, directory?: RuntimeDirectory, authority?: ConnectionSecretAuthority) {
       const config = store.getSessionConfig(sessionId)
-      // A released session runs no harness, so there is nothing to close.
-      const attached = attachments.peek(sessionId)
+      // A released session runs no harness, so there is nothing to close; any other one is attached so its harness session is closed.
+      const attached = attachments.peek(sessionId) ?? (attachments.isReleased(sessionId) ? undefined : await attachments.for(sessionId, directory, undefined, authority))
       const sessionDirectory = attached?.session.directory ?? directory ?? attachments.binding(sessionId).directory
       if (attached) await attached.handle.transport.close(attached.session)
       input.broker.broker.closeSession(sessionId)

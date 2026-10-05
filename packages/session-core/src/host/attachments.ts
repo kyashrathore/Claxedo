@@ -47,18 +47,26 @@ function serviceOrigin(owner: TurnActor): TurnOrigin {
  */
 export class SessionAttachments {
   private readonly attached = new Map<string, AttachedSession>()
+  private readonly released = new Set<string>()
   private readonly attaching = createKeyedSerializer()
 
   constructor(private readonly input: AttachmentsInput) {}
 
   register(sessionId: string, attachment: AttachedSession): void {
+    this.released.delete(sessionId)
     this.attached.set(sessionId, attachment)
   }
 
   forget(sessionId: string): AttachedSession | undefined {
     const current = this.attached.get(sessionId)
     this.attached.delete(sessionId)
+    this.released.delete(sessionId)
     return current
+  }
+
+  /** Whether the session's harness execution was released and not attached since, so it has nothing left to close. */
+  isReleased(sessionId: string): boolean {
+    return this.released.has(sessionId)
   }
 
   peek(sessionId: string): AttachedSession | undefined {
@@ -114,6 +122,7 @@ export class SessionAttachments {
       const transport = attached.handle.transport
       if (!transport.release || !(await transport.release(attached.session))) return false
       this.attached.delete(sessionId)
+      this.released.add(sessionId)
       return true
     })
   }
@@ -161,7 +170,7 @@ export class SessionAttachments {
       permissionModeKept: (mode) => this.input.writeMode(sessionId, mode),
     }, binding, this.input.store.upstreamHasTurns(sessionId, binding.upstreamSessionId)), broker)
     const attachment: AttachedSession = { handle, session, broker, context, owner }
-    this.attached.set(sessionId, attachment)
+    this.register(sessionId, attachment)
     return attachment
   }
 
