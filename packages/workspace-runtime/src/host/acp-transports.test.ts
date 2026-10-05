@@ -21,7 +21,12 @@ async function fixture(setup: (peer: ReturnType<typeof acpPeer>) => void = () =>
   const host = createHostFixture({ transports: { "acp-test": transport } })
   const session = await host.runtime.sessions.create(sessionCreate({ harness: { id: "acp-test", access: "connection" } }))
   host.store.updateSessionConfig(session.id, { agent: "build", model: { providerID: "acp-test", modelID: "default" } })
+  // The host released the created session's agent at once; these tests drive
+  // the agent of an attached session, so attach it the way a use would.
+  await host.runtime.transportFor(session.id)
   return { ...peer, ...host, transport, id: session.id,
+    /** The agent the attached session runs on; the creation's agent is retired. */
+    peer: () => peer.peers.at(-1)!,
     dispose: async () => { await Promise.all([transport.dispose(), host.dispose()]) } }
 }
 
@@ -29,13 +34,15 @@ test("ACP death restarts the agent before the next turn, and an upstream session
   const f = await fixture()
   try {
     const old = f.store.getAgentSessionId(f.id)
-    f.peers[0].die()
+    f.peer().die()
+    f.loseSessions()
     await new Promise((resolve) => setTimeout(resolve, 10))
     await expect(f.runtime.turns.start({ sessionId: f.id, text: "continue", origin: LOOPBACK_ORIGIN }))
       .rejects.toMatchObject({ code: "session", message: `ACP agent no longer has session ${old}; it is not replaced` })
     expect(f.store.getAgentSessionId(f.id)).toBe(old)
-    expect(f.peers).toHaveLength(2)
-    expect(f.requests.filter((row) => row.method === "session/resume")).toHaveLength(1)
+    // The creation's agent, the attached one, and the one the restart started.
+    expect(f.peers).toHaveLength(3)
+    expect(f.requests.filter((row) => row.method === "session/resume")).toHaveLength(2)
     expect(f.requests.filter((row) => row.method === "session/new")).toHaveLength(1)
     expect(f.requests.filter((row) => row.method === "session/prompt")).toHaveLength(0)
     expect(f.store.getSessionConfig(f.id)?.handoff).toBeUndefined()
@@ -46,12 +53,13 @@ test("concurrent pre-turn restorations share one restart", async () => {
   const f = await fixture()
   try {
     const attached = f.runtime.attachments.peek(f.id)!
-    f.peers[0].die()
+    f.peer().die()
+    f.loseSessions()
     await new Promise((resolve) => setTimeout(resolve, 10))
     const outcomes = await Promise.allSettled([f.transport.restore!(attached.session), f.transport.restore!(attached.session)])
     expect(outcomes.map((outcome) => outcome.status)).toEqual(["rejected", "rejected"])
-    expect(f.requests.filter((row) => row.method === "session/resume")).toHaveLength(1)
-    expect(f.peers).toHaveLength(2)
+    expect(f.requests.filter((row) => row.method === "session/resume")).toHaveLength(2)
+    expect(f.peers).toHaveLength(3)
   } finally { await f.dispose() }
 })
 
@@ -69,9 +77,9 @@ test("the mode an ACP agent opens or moves a session in, and a turn's own mode, 
     expect(stored()).toMatchObject({ permissionMode: "ask", permissionModeLabel: "Ask every time" })
 
     const moved = { sessionId: f.store.getAgentSessionId(f.id)!, update: { sessionUpdate: "current_mode_update" as const, currentModeId: "code" } }
-    await f.peers[0].connection.sessionUpdate(moved)
+    await f.peer().connection.sessionUpdate(moved)
     await until(() => stored()?.permissionMode === "code")
-    await f.peers[0].connection.sessionUpdate(moved)
+    await f.peer().connection.sessionUpdate(moved)
     await new Promise((resolve) => setTimeout(resolve, 10))
     expect(stored()?.permissionModeLabel).toBe("Write code")
     expect(modes).toEqual(["Write code"])
@@ -131,7 +139,7 @@ test("ACP connection observations do not require the optional health extension",
   const f = await fixture()
   try {
     expect(f.transport.health?.connection("/repo", f.id).state).toBe("ready")
-    f.peers[0].die()
+    f.peer().die()
     await new Promise((resolve) => setTimeout(resolve, 10))
     expect(f.transport.health?.connection("/repo", f.id).state).toBe("disconnected")
   } finally { await f.dispose() }
@@ -153,9 +161,9 @@ test("ACP autonomous evidence is projected and finalized through a provider turn
   try {
     const attached = f.runtime.attachments.peek(f.id)!
     expect((await f.transport.goals!.start(attached.session, "Ship autonomously", attached.broker)).ok).toBe(true)
-    await f.peers[0].connection.sessionUpdate({ sessionId: attached.session.binding.upstreamSessionId,
+    await f.peer().connection.sessionUpdate({ sessionId: attached.session.binding.upstreamSessionId,
       update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Autonomous evidence" } } })
-    await f.peers[0].connection.sessionUpdate({ sessionId: attached.session.binding.upstreamSessionId,
+    await f.peer().connection.sessionUpdate({ sessionId: attached.session.binding.upstreamSessionId,
       update: { sessionUpdate: "session_info_update", _meta: { goal: { objective: "Ship autonomously", status: "complete", createdAt: 1, updatedAt: 2 } } } })
     await until(() => !!f.store.getSession(f.id)?.lastTurn)
     expect(JSON.stringify(f.store.getMessages(f.id))).toContain("Autonomous evidence")
@@ -206,10 +214,10 @@ test("ACP autonomous peer death fails its admitted provider turn", async () => {
   try {
     const attached = f.runtime.attachments.peek(f.id)!
     await f.transport.goals!.start(attached.session, "Autonomous work", attached.broker)
-    await f.peers[0].connection.sessionUpdate({ sessionId: attached.session.binding.upstreamSessionId,
+    await f.peer().connection.sessionUpdate({ sessionId: attached.session.binding.upstreamSessionId,
       update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Partial autonomous output" } } })
     await until(() => JSON.stringify(f.store.getMessages(f.id)).includes("Partial autonomous output"))
-    f.peers[0].die()
+    f.peer().die()
     await until(() => !!f.store.getSession(f.id)?.lastTurn)
     expect(f.store.getSession(f.id)?.lastTurn?.status).toBe("failed")
   } finally { await f.dispose() }
@@ -230,9 +238,9 @@ test("ACP content that arrives with the Goal's completion is finalized in the tu
     const attached = f.runtime.attachments.peek(f.id)!
     await f.transport.goals!.start(attached.session, "Autonomous work", attached.broker)
     const upstream = attached.session.binding.upstreamSessionId
-    await f.peers[0].connection.sessionUpdate({ sessionId: upstream, update: goalUpdate("Before completion. ", "active", 1) })
+    await f.peer().connection.sessionUpdate({ sessionId: upstream, update: goalUpdate("Before completion. ", "active", 1) })
     await until(() => JSON.stringify(f.store.getMessages(f.id)).includes("Before completion"))
-    await f.peers[0].connection.sessionUpdate({ sessionId: upstream, update: goalUpdate("Completion evidence", "complete", 1) })
+    await f.peer().connection.sessionUpdate({ sessionId: upstream, update: goalUpdate("Completion evidence", "complete", 1) })
     await until(() => !!f.store.getSession(f.id)?.lastTurn)
     const texts = assistantTexts(f)
     expect(texts).toHaveLength(1)
@@ -249,7 +257,7 @@ test("ACP content that is the Goal's first and last output is admitted and final
     f.eventHub.subscribeGlobal(({ payload }) => { if (payload.type === "runtime.diagnostic") diagnostics.push(payload.properties.code) })
     const attached = f.runtime.attachments.peek(f.id)!
     await f.transport.goals!.start(attached.session, "Autonomous work", attached.broker)
-    await f.peers[0].connection.sessionUpdate({ sessionId: attached.session.binding.upstreamSessionId, update: goalUpdate("Only evidence", "complete", 1) })
+    await f.peer().connection.sessionUpdate({ sessionId: attached.session.binding.upstreamSessionId, update: goalUpdate("Only evidence", "complete", 1) })
     await until(() => !!f.store.getSession(f.id)?.lastTurn)
     expect(assistantTexts(f)).toEqual([expect.stringContaining("Only evidence")])
     expect(f.store.getSession(f.id)?.lastTurn?.status).toBe("completed")
@@ -263,9 +271,9 @@ test("ACP content that arrives with the next Goal iteration opens that iteration
     const attached = f.runtime.attachments.peek(f.id)!
     await f.transport.goals!.start(attached.session, "Autonomous work", attached.broker)
     const upstream = attached.session.binding.upstreamSessionId
-    await f.peers[0].connection.sessionUpdate({ sessionId: upstream, update: goalUpdate("First iteration. ", "active", 1) })
+    await f.peer().connection.sessionUpdate({ sessionId: upstream, update: goalUpdate("First iteration. ", "active", 1) })
     await until(() => JSON.stringify(f.store.getMessages(f.id)).includes("First iteration"))
-    await f.peers[0].connection.sessionUpdate({ sessionId: upstream, update: goalUpdate("Second iteration evidence", "active", 2) })
+    await f.peer().connection.sessionUpdate({ sessionId: upstream, update: goalUpdate("Second iteration evidence", "active", 2) })
     await until(() => assistantTexts(f).length === 2 && assistantTexts(f)[1]?.includes("Second iteration evidence"))
     const [first] = assistantTexts(f)
     expect(first).toContain("First iteration")
@@ -329,7 +337,7 @@ test("ACP chunks streamed right behind a Goal iteration advance all land in the 
     const attached = f.runtime.attachments.peek(f.id)!
     await f.transport.goals!.start(attached.session, "Autonomous work", attached.broker)
     const upstream = attached.session.binding.upstreamSessionId
-    const peer = f.peers[0]?.connection
+    const peer = f.peer().connection
     if (!peer) throw new Error("No ACP peer")
     await peer.sessionUpdate({ sessionId: upstream, update: goalUpdate("First iteration. ", "active", 1) })
     await until(() => JSON.stringify(f.store.getMessages(f.id)).includes("First iteration"))
@@ -352,7 +360,7 @@ test("ACP chunks streamed right before a Goal completion all land in the turn it
     const attached = f.runtime.attachments.peek(f.id)!
     await f.transport.goals!.start(attached.session, "Autonomous work", attached.broker)
     const upstream = attached.session.binding.upstreamSessionId
-    const peer = f.peers[0]?.connection
+    const peer = f.peer().connection
     if (!peer) throw new Error("No ACP peer")
     await Promise.all([
       peer.sessionUpdate({ sessionId: upstream, update: chunk("PartA ") }),
@@ -375,8 +383,8 @@ test("ACP startup disconnect remains terminal and rejects adoption", async () =>
   const pending = f.runtime.sessions.create(sessionCreate({ id: "disconnected-start", harness: { id: "acp-test", access: "connection" } }))
   const result = pending.then(() => "adopted", () => "rejected")
   try {
-    await until(() => f.peers.length === 2)
-    f.peers[1].die()
+    await until(() => f.peers.length === 3)
+    f.peer().die()
     barrier.resolve()
     expect(await result).toBe("rejected")
     expect(f.transport.health!.connection("/repo", "disconnected-start").state).toBe("disconnected")

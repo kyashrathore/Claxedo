@@ -24,7 +24,8 @@ function resumable(entry: AcpEntry): boolean {
 
 function quiescent(entry: AcpEntry): boolean {
   return entry.phase === "ready" && !entry.turnBroker && !entry.providerTurn && !entry.startup && !entry.pendingRestart
-    && !entry.cancelSent && !entry.children.hasLive && entry.sideSessions.size === 0 && resumable(entry)
+    && !entry.cancelSent && !entry.children.hasLive && entry.sideSessions.size === 0 && !entry.peer.agent.signal.aborted
+    && resumable(entry)
 }
 
 export class AcpSessionLifecycle {

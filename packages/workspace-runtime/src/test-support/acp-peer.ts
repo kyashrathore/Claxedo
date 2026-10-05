@@ -19,6 +19,8 @@ export function acpPeer() {
   let startError: Error | undefined
   let startBarrier: Promise<void> | undefined
   let modes: SessionModeState | undefined
+  // The agent's own session store, which outlives any one of its processes.
+  const sessions = new Set<string>()
   services.firstPartyMcp = (sessionId) => ({ kind: "http", name: "claxedo", url: `http://localhost/mcp/${sessionId}`, headers: { Authorization: `Bearer ${sessionId}` } })
   services.spawn = async () => {
     const stdin = new PassThrough()
@@ -27,7 +29,6 @@ export function acpPeer() {
     let exit!: (value: { code: number; signal: null }) => void
     const exited = new Promise<{ code: number; signal: null }>((resolve) => { exit = resolve })
     let connection!: AgentSideConnection
-    const sessions = new Set<string>()
     let goal: Record<string, unknown> | null = null
     const agent: Agent = {
       initialize: async () => ({ protocolVersion: PROTOCOL_VERSION,
@@ -77,5 +78,5 @@ export function acpPeer() {
     peers.push({ connection, die })
     return { pid: 5_000_000 + generation, stdin, stdout, stderr: new PassThrough(), exited, retire: async () => { die(); return { stopped: true } } }
   }
-  return { services, peers, requests, setModes: (value: SessionModeState) => { modes = value }, holdStart: (barrier: Promise<void>) => { startBarrier = barrier }, setUsage: (value: PromptResponse["usage"]) => { usage = value }, setContext: (value: { size: number; used: number }) => { context = value }, failStart: (error: Error) => { startError = error } }
+  return { services, peers, requests, loseSessions: () => sessions.clear(), setModes: (value: SessionModeState) => { modes = value }, holdStart: (barrier: Promise<void>) => { startBarrier = barrier }, setUsage: (value: PromptResponse["usage"]) => { usage = value }, setContext: (value: { size: number; used: number }) => { context = value }, failStart: (error: Error) => { startError = error } }
 }

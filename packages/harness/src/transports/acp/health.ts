@@ -51,7 +51,7 @@ export class AcpConnectionHealth implements HealthOperations {
   connection(directory: string, sessionId?: string): ConnectionRuntimeStatus {
     const observations = this.scoped(directory, sessionId)
     const state = CONNECTION_PRECEDENCE.find((candidate) => observations.some((row) => row.state === candidate))
-      ?? (sessionId ? "disconnected" : "configured")
+      ?? (sessionId && !observations.length ? this.connection(directory).state : "configured")
     return { state, processes: observations.map(({ sessionId: _id, directory: _directory, ...observation }) => ({ ...observation })) }
   }
 

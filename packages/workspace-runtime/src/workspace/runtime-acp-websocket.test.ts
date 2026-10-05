@@ -53,14 +53,18 @@ test("public remote ACP disconnect preserves received output and never replays t
     expect(history).toContain("Output received before connection loss.")
     expect(history).toContain("uncertain")
     expect(prompts).toBe(1)
-    expect(connections).toBe(1)
+    // The created session's connection was released as idle; its first turn reconnected.
+    expect(connections).toBe(2)
     expect(host.readConnectionState({ sessionId: "remote-local", directory })?.state).toBe("disconnected")
     const continued = await request("/session/remote-local/message", "POST", { parts: [{ type: "text", text: "Inspect state and continue explicitly." }] })
     await continued.text()
     expect(prompts).toBe(2)
-    expect(connections).toBe(2)
+    expect(connections).toBe(3)
     expect(log.filter(row => row.method === "session/new")).toHaveLength(1)
-    expect(log.filter(row => row.method === "session/resume")).toMatchObject([{ params: { sessionId: "remote-persistent-session" } }])
+    expect(log.filter(row => row.method === "session/resume")).toMatchObject([
+      { params: { sessionId: "remote-persistent-session" } },
+      { params: { sessionId: "remote-persistent-session" } },
+    ])
     const submitted = log.filter(row => row.method === "session/prompt")
     expect(JSON.stringify(submitted[1]?.params?.prompt)).not.toContain("First operation; do not repeat.")
     const messages = await (await request("/session/remote-local/message")).json() as Array<{ info: Record<string, unknown> }>

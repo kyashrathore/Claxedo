@@ -29,6 +29,16 @@ test("a directory with no live sessions is healthy, and a forgotten session leav
   expect(health.runtime("/repo")).toEqual({ status: "unavailable" })
 })
 
+test("a session nobody observes reads as its directory does, never as disconnected", () => {
+  const health = new AcpConnectionHealth({ now: Date.now, setTimeout, clearTimeout }, () => {})
+  expect(health.connection("/repo", "released")).toEqual({ state: "configured", processes: [] })
+  health.begin("serving", "/repo").ready()
+  expect(health.connection("/repo", "released").state).toBe("ready")
+  health.begin("released", "/repo").ready()
+  health.forget("released")
+  expect(health.connection("/repo", "released").state).toBe("ready")
+})
+
 test("every applied observation and forgotten session reports a change, and a fenced one does not", () => {
   let changes = 0
   const health = new AcpConnectionHealth({ now: Date.now, setTimeout, clearTimeout }, () => { changes++ })

@@ -16,6 +16,7 @@ function host(entry: AcpEntry) {
   entry.peer = {
     retire: async () => { retired.push("peer") },
     handshake: { agentCapabilities: entry.peer?.handshake.agentCapabilities ?? { sessionCapabilities: { resume: {} } } },
+    agent: { signal: entry.peer?.agent?.signal ?? new AbortController().signal },
   } as unknown as AcpEntry["peer"]
   const entries = new Map([["ses_1", entry]])
   const lifecycle = new AcpSessionLifecycle({ entries, peers, health, disposed: () => false } as unknown as AcpHost)
@@ -57,6 +58,15 @@ for (const [what, overrides] of live) test(`${what} refuses the release and keep
   expect(await lifecycle.release(session)).toBe(false)
   expect(retired).toEqual([])
   expect(entries.size).toBe(1)
+})
+
+test("a session whose agent died keeps its entry and its disconnected observation for restore", async () => {
+  const dead = new AbortController()
+  dead.abort()
+  const { lifecycle, entries, health } = host(quiet({ peer: { handshake: { agentCapabilities: { sessionCapabilities: { resume: {} } } }, agent: { signal: dead.signal } } as unknown as AcpEntry["peer"] }))
+  expect(await lifecycle.release(session)).toBe(false)
+  expect(entries.size).toBe(1)
+  expect(health.connection("/work", "ses_1").state).toBe("ready")
 })
 
 test("an agent that declares neither resume nor load keeps its session attached", async () => {
