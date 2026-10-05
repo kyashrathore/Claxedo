@@ -42,7 +42,7 @@ const MARKER_ICON = { cloud: "cloud", machine: "server", worktree: "worktree" } 
 
 function markerLabel(t: DomainTranslate<RailKey>, marker: SessionMarker, projectLabel: string): string {
   if (marker.kind === "cloud") return `${t("rail.marker.cloud")} · ${marker.name}`
-  if (marker.kind === "machine") return `${t("rail.marker.machine")} · ${marker.name}`
+  if (marker.kind === "machine") return t("rail.marker.machine", { folder: marker.folder, machine: marker.name })
   const base = t("rail.marker.worktree", { project: projectLabel, name: marker.name })
   return marker.path && marker.path !== marker.name ? `${base} · ${marker.path}` : base
 }

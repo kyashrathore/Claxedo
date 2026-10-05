@@ -1,4 +1,5 @@
 import { createMemo } from "solid-js"
+import { useQuery } from "@tanstack/solid-query"
 import { useServer } from "@/server"
 import type { SessionRowView } from "@/session"
 import { sessionLinkPath, useShellRoute } from "@/shell"
@@ -10,6 +11,7 @@ export function createRowNavigation() {
   const server = useServer()
   const routing = useShellRoute()
   const workbench = useWorkbench()
+  const machines = useQuery(() => server.queries.machines.list())
   const shown = createMemo(() => {
     const content = routing.placementId() ? workbench.selectors.shownContent() : null
     return content ? workbench.routeOf(content) : undefined
@@ -21,7 +23,7 @@ export function createRowNavigation() {
       return pane?.kind === "session" ? pane.sessionId : undefined
     },
     open: (row: SessionRowView) => routing.navigate(sessionLinkPath(row.ref, server.placements.byId(row.ref.placementId))),
-    markerOf: (row: SessionRowView) => sessionMarker(server.placements.byId(row.ref.placementId)),
+    markerOf: (row: SessionRowView) => sessionMarker(server.placements.byId(row.ref.placementId), machines.data ?? []),
     prepareDrag: (row: RailRow) =>
       row.kind === "session"
         ? workbench.openRoute({ kind: "session", ...row.session.ref }, false)

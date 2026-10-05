@@ -76,7 +76,7 @@ const en = {
   "rail.renameFailed": "The session could not be renamed",
   "rail.workbenchPanes": "Workbench panes",
   "rail.marker.cloud": "Cloud workspace",
-  "rail.marker.machine": "Another machine",
+  "rail.marker.machine": "{{folder}} on {{machine}}",
   "rail.marker.worktree": "Worktree: {{project}} / {{name}}",
   "rail.terminal.close": "Close terminal",
   "rail.terminal.closeNamed": "Close terminal: {{title}}",
