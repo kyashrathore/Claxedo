@@ -284,6 +284,7 @@ export type Server = {
   readonly harnessConfig: HarnessConfigApi
   readonly queries: ServerQueries
   readonly attachPlacement: (ref: SessionLocation) => () => void
+  readonly watchPlacement: (id: PlacementId) => () => void
   readonly request: (path: string, init?: RequestInit) => Promise<Response>
   readonly operation: (name: string, input: unknown) => Promise<unknown>
   readonly acceptOrgInvitation: (token: string) => Promise<unknown>

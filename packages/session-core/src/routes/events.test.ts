@@ -386,6 +386,30 @@ describe("wr/events — one stream per workspace runtime", () => {
     }
   })
 
+  test("a workspace reader that asks for no sessions gets the terminals' frames and numbers only those", async () => {
+    const { app, hub, bus, ptys } = harness({ policy: managedPolicy({ workspace: "allow", session: () => true }), relayAuth })
+    const first = new AbortController()
+    const response = await app.request("http://localhost/api/wr/events?sessions=none", { signal: first.signal })
+    expect(response.status).toBe(200)
+    ptys.set("pty-a", DIRECTORY)
+    ptys.set("pty-b", DIRECTORY)
+    hub.publishGlobal(part("ses-a", "prt-a", { status: "running" }))
+    bus.publish({ type: "pty.created", info: { id: "pty-a", title: "a", command: "sh", args: [], cwd: DIRECTORY, status: "running", pid: 9 } })
+    const text = await readUntil(response, "pty-a")
+    first.abort()
+    expect(text).not.toContain("prt-a")
+    const cursor = frameId(text, "pty-a")
+    hub.publishGlobal(part("ses-a", "prt-b", { status: "running" }))
+    bus.publish({ type: "pty.created", info: { id: "pty-b", title: "b", command: "sh", args: [], cwd: DIRECTORY, status: "running", pid: 10 } })
+    const second = new AbortController()
+    const reconnect = await app.request("http://localhost/api/wr/events?sessions=none", { headers: { "Last-Event-ID": cursor! }, signal: second.signal })
+    const replayed = await readUntil(reconnect, "pty-b")
+    second.abort()
+    expect(replayed).not.toContain("prt-b")
+    expect(replayed).not.toContain("runtime.sse_replay_gap")
+    expect(Number(frameId(replayed, "pty-b"))).toBe(Number(cursor) + 1)
+  })
+
   test("a principal without workspace access is refused the unscoped stream, by a code only that refusal carries", async () => {
     const { app } = harness({ policy: managedPolicy({ workspace: "deny" }), relayAuth })
     const response = await app.request("http://localhost/api/wr/events")

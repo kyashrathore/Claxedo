@@ -18,6 +18,8 @@ export type EventDeliveryPrincipal =
       credential?: string
       /** The one session a session-scoped connection reads; its scope's ring numbers only that session's frames. */
       sessionScope?: string
+      /** A workspace connection that asked for the frames no session owns (terminals, their agents' status) and nothing else; its ring numbers only those. */
+      sessionless?: true
     }
 
 export type EventDeliveryDecision = "deliver" | "omit" | "terminate"
@@ -337,7 +339,7 @@ function isAuthorityAway(decision: { allowed: false; status: number } | undefine
 // as long as a grant is held: a revocation is seen at the next renewal.
 function scopeKey(principal: EventDeliveryPrincipal) {
   if (principal.mode === "unmanaged-local") return "local"
-  const session = principal.sessionScope ? `:session:${principal.sessionScope}` : ""
+  const session = principal.sessionScope ? `:session:${principal.sessionScope}` : principal.sessionless ? ":sessionless" : ""
   return `actor:${principal.orgId}:${principal.workspaceId}:${principal.actorKind}:${principal.actorId}:${principal.role}${session}`
 }
 

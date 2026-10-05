@@ -249,3 +249,38 @@ test("a session whose stream opened against its workspace moves to its own host 
     } finally { detach(); streams.close(); workspaces.dispose(); queryClient.clear(); dispose() }
   })
 })
+
+test("a watched remote placement streams its terminals once, with no session's frames, until the last watcher leaves or it stops", async () => {
+  const queryClient = new QueryClient()
+  const serverUrl = "https://account.test"
+  let reachable = true
+  const opened: Array<{ route: unknown; path: string; signal: AbortSignal | undefined }> = []
+  const transport = { serverUrl, runtime: async (route: unknown, path: string, init: RequestInit) => {
+    opened.push({ route, path, signal: init.signal ?? undefined })
+    return openBody()
+  } } as unknown as Transport
+  const watching = { ...workspaces, workspaceStreamRoute: (id: string) => id === placement && reachable ? record.route : undefined } as unknown as Workspaces
+  const streams = createPlacementStreams({ transport, workspaces: watching, queryClient, onFrame: () => undefined, onGap: () => undefined })
+  try {
+    const first = streams.watch(placement)
+    const second = streams.watch(placement)
+    const local = streams.watch(placementId("ws_local"))
+    await settle()
+    expect(opened.map(({ route, path }) => ({ route, path }))).toEqual([{ route: record.route, path: "/api/wr/events?sessions=none" }])
+    first()
+    await settle()
+    expect(opened[0]?.signal?.aborted).toBe(false)
+    reachable = false
+    queryClient.setQueryData(queryKeys.bootstrap(serverUrl), { revision: 1 })
+    await settle()
+    expect(opened[0]?.signal?.aborted).toBe(true)
+    reachable = true
+    queryClient.setQueryData(queryKeys.bootstrap(serverUrl), { revision: 2 })
+    await settle()
+    expect(opened).toHaveLength(2)
+    second()
+    local()
+    await settle()
+    expect(opened[1]?.signal?.aborted).toBe(true)
+  } finally { streams.close(); queryClient.clear() }
+})

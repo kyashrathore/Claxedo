@@ -1,7 +1,7 @@
 import { hashKey, type QueryClient } from "@tanstack/solid-query"
 import { toAppError } from "./errors"
 import { queryKeys } from "./query-keys"
-import { placementId, sessionId } from "./ids"
+import { placementId, sessionId, type PlacementId } from "./ids"
 import { openEventStream, type Stream } from "./stream"
 import type { RuntimeRoute, Transport } from "./transport"
 import type { SessionLocation } from "./types"
@@ -11,6 +11,7 @@ const RUNTIME_EVENTS_PATH = "/api/wr/events"
 
 export type PlacementStreams = {
   readonly attach: (ref: SessionLocation) => () => void
+  readonly watch: (id: PlacementId) => () => void
   readonly streams: (ref: SessionLocation) => boolean
   readonly close: () => void
 }
@@ -29,6 +30,8 @@ type StreamsState = {
   readonly input: StreamsInput
   readonly attached: Map<string, Map<string, number>>
   readonly sessions: Map<string, OpenStream>
+  readonly watched: Map<PlacementId, number>
+  readonly workspaces: Map<PlacementId, OpenStream>
 }
 
 function routeKey(route: RuntimeRoute): string {
@@ -58,64 +61,100 @@ function refreshCatalog(input: StreamsInput) {
   void input.workspaces.refresh().catch((error) => console.error("The placement catalog could not be refreshed after its event stream ended", error))
 }
 
-function reconcileStreams(state: StreamsState) {
-  const { input, sessions } = state
-  const want = wanted(state)
-  for (const [key, open] of sessions) {
+function openRuntimeStream(input: StreamsInput, route: RuntimeRoute, path: string): OpenStream {
+  return { route: routeKey(route), stream: openEventStream({
+    open: ({ headers, signal }) => input.transport.runtime(route, path, { headers, signal }),
+    onFrame: (frame) => input.onFrame(frame && typeof frame === "object" ? { ...frame, workspaceId: route.workspaceId } : frame),
+    onGap: input.onGap,
+    onState: (connection) => {
+      if (!route.sharedSession && connection.kind === "reconnecting" && connection.attempt === 1) refreshCatalog(input)
+    },
+    onRefused: () => {
+      if (route.sharedSession) void input.workspaces.shared.refresh().then(input.onGap, (error) => console.error("Shared sessions could not be refreshed", error))
+      else refreshCatalog(input)
+    },
+  }) }
+}
+
+function reconcileKeyed<K, W extends { readonly route: RuntimeRoute }>(open: Map<K, OpenStream>, want: Map<K, W>, start: (wanted: W) => OpenStream) {
+  for (const [key, current] of open) {
     const route = want.get(key)?.route
-    if (route && routeKey(route) === open.route) continue
-    open.stream.close()
-    sessions.delete(key)
+    if (route && routeKey(route) === current.route) continue
+    current.stream.close()
+    open.delete(key)
   }
-  for (const [key, { session, route }] of want) {
-    if (sessions.has(key)) continue
-    const path = `${RUNTIME_EVENTS_PATH}?sessionID=${encodeURIComponent(session)}`
-    sessions.set(key, { route: routeKey(route), stream: openEventStream({
-      open: ({ headers, signal }) => input.transport.runtime(route, path, { headers, signal }),
-      onFrame: (frame) => input.onFrame(frame && typeof frame === "object" ? { ...frame, workspaceId: route.workspaceId } : frame),
-      onGap: input.onGap,
-      onState: (connection) => {
-        if (!route.sharedSession && connection.kind === "reconnecting" && connection.attempt === 1) refreshCatalog(input)
-      },
-      onRefused: () => {
-        if (route.sharedSession) void input.workspaces.shared.refresh().then(input.onGap, (error) => console.error("Shared sessions could not be refreshed", error))
-        else refreshCatalog(input)
-      },
-    }) })
+  for (const [key, wanted] of want) if (!open.has(key)) open.set(key, start(wanted))
+}
+
+function watchedWorkspaces(state: StreamsState) {
+  return new Map([...state.watched.keys()].flatMap((id) => {
+    const route = state.input.workspaces.workspaceStreamRoute(id)
+    return route ? [[id, { route }] as const] : []
+  }))
+}
+
+function reconcileStreams(state: StreamsState) {
+  const { input } = state
+  reconcileKeyed(state.sessions, wanted(state), ({ session, route }) =>
+    openRuntimeStream(input, route, `${RUNTIME_EVENTS_PATH}?sessionID=${encodeURIComponent(session)}`))
+  reconcileKeyed(state.workspaces, watchedWorkspaces(state), ({ route }) => openRuntimeStream(input, route, `${RUNTIME_EVENTS_PATH}?sessions=none`))
+}
+
+function retain<K>(counts: Map<K, number>, key: K): () => void {
+  counts.set(key, (counts.get(key) ?? 0) + 1)
+  return () => {
+    const count = (counts.get(key) ?? 1) - 1
+    if (count > 0) counts.set(key, count)
+    else counts.delete(key)
   }
 }
 
-export function createPlacementStreams(input: StreamsInput): PlacementStreams {
-  const state: StreamsState = { input, attached: new Map(), sessions: new Map() }
+function followCatalog(state: StreamsState): () => void {
+  const { input } = state
   const catalogKeys = new Set([queryKeys.bootstrap(input.transport.serverUrl), queryKeys.accountCatalog(input.transport.serverUrl), queryKeys.sharedSessions(input.transport.serverUrl)].map(hashKey))
   const unsubscribeCatalog = input.queryClient.getQueryCache().subscribe((event) => {
     if (catalogKeys.has(event.query.queryHash) && event.type === "updated") reconcileStreams(state)
   })
   const unsubscribeHosts = input.workspaces.onSessionHostLearned(() => reconcileStreams(state))
+  return () => {
+    unsubscribeCatalog()
+    unsubscribeHosts()
+  }
+}
+
+export function createPlacementStreams(input: StreamsInput): PlacementStreams {
+  const state: StreamsState = { input, attached: new Map(), sessions: new Map(), watched: new Map(), workspaces: new Map() }
+  const unfollow = followCatalog(state)
   return {
     attach: (ref) => {
       const placement = String(ref.placementId)
       const session = String(ref.sessionId)
       const counts = state.attached.get(placement) ?? new Map<string, number>()
-      counts.set(session, (counts.get(session) ?? 0) + 1)
       state.attached.set(placement, counts)
+      const release = retain(counts, session)
       reconcileStreams(state)
       void input.workspaces.home(ref).then(() => reconcileStreams(state), (error: unknown) => {
         console.warn("A session's host could not be resolved for its live stream", { sessionId: session, error: toAppError(error) })
       })
       return () => {
-        const count = (counts.get(session) ?? 1) - 1
-        if (count > 0) counts.set(session, count)
-        else counts.delete(session)
+        release()
         if (counts.size === 0) state.attached.delete(placement)
+        reconcileStreams(state)
+      }
+    },
+    watch: (id) => {
+      const release = retain(state.watched, id)
+      reconcileStreams(state)
+      return () => {
+        release()
         reconcileStreams(state)
       }
     },
     streams: (ref) => state.sessions.has(sessionKey(String(ref.placementId), String(ref.sessionId))),
     close: () => {
-      unsubscribeCatalog()
-      unsubscribeHosts()
+      unfollow()
       state.attached.clear()
+      state.watched.clear()
       reconcileStreams(state)
     },
   }

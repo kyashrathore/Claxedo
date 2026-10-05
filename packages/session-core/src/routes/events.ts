@@ -368,7 +368,10 @@ export function streamWorkspaceEventFrames(c: Context, opened: OpenedWorkspaceEv
  * no exception: a session another member created in the workspace is not
  * theirs to read unless shared); a principal it refuses (a share grantee with
  * no workspace access) is answered 403 and re-opens with `?sessionID=`,
- * reading that session and its subagent children under a lease.
+ * reading that session and its subagent children under a lease. An admitted
+ * principal that asks `?sessions=none` reads the unscoped arm without any
+ * session's frames: the terminals and their agents' status, for a reader that
+ * streams the sessions it shows on their own connections.
  *
  * The unscoped arm is admitted on a workspace lease the control plane mints
  * for the read: the request's own relay host token expires within a minute,
@@ -451,6 +454,7 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
     (input: Parameters<EventDeliveryPolicy<StreamFrame>>[0]) => {
       const sessionScope = input.principal.mode === "unmanaged-local" ? undefined : input.principal.sessionScope
       if (sessionScope && input.sessionId !== sessionScope) return "omit" as const
+      if (input.principal.mode !== "unmanaged-local" && input.principal.sessionless && input.sessionId) return "omit" as const
       // A terminal's command, output and exit tail are for whoever may type into it.
       if (input.principal.mode === "verified" && input.principal.role === "viewer" && isTerminalFrame(input.event)) return "omit" as const
       const startup = sessionStartEventDecision(options, input)
@@ -521,9 +525,10 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
     const scope = await authorizeSessionEventScope(c, options.sessionAccessPolicy)
     if (isSessionEventScopeResponse(scope)) return scope
     const admitted = await (options.principal?.(c) ?? eventDeliveryPrincipal(c))
-    const principal: EventDeliveryPrincipal = scope.managed && admitted.mode !== "unmanaged-local"
-      ? { ...admitted, sessionScope: scope.sessionId }
-      : admitted
+    const principal: EventDeliveryPrincipal = admitted.mode === "unmanaged-local" ? admitted
+      : scope.managed ? { ...admitted, sessionScope: scope.sessionId }
+        : c.req.query("sessions") === "none" ? { ...admitted, sessionless: true }
+          : admitted
     if (scope.managed) {
       delivery.holdSession?.(principal, scope.sessionId, { lease: scope.lease, expiresAt: scope.expiresAt })
     } else if (scope.grant === "workspace") {

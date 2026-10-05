@@ -24,6 +24,7 @@ export type SessionHome = {
 export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
   readonly shared: SharedSessions
   readonly streamRoute: (ref: Pick<SessionLocation, "placementId" | "sessionId">) => RuntimeRoute | undefined
+  readonly workspaceStreamRoute: (id: PlacementId) => RuntimeRoute | undefined
   readonly servedHere: (id: PlacementId) => boolean
   readonly address: Address
   readonly route: (ref: Pick<SessionLocation, "placementId" | "sessionId"> | PlacementId) => Promise<RuntimeRoute>
@@ -169,7 +170,7 @@ function placementRoutes(find: (id: PlacementId) => Promise<PlacementRecord | un
   }
 }
 
-function sharedAware(reads: ReturnType<typeof placementReads>, shared: SharedSessions, hosts: SessionHosts): Pick<Workspaces, "address" | "streamRoute" | "servedHere"> {
+function sharedAware(reads: ReturnType<typeof placementReads>, shared: SharedSessions, hosts: SessionHosts): Pick<Workspaces, "address" | "streamRoute" | "workspaceStreamRoute" | "servedHere"> {
   return {
     address: {
       placementFor: (directory, workspaceId, sessionId) => {
@@ -179,6 +180,10 @@ function sharedAware(reads: ReturnType<typeof placementReads>, shared: SharedSes
       },
     },
     servedHere: (id) => reads.recordOf(id)?.route.remote === false,
+    workspaceStreamRoute: (id) => {
+      const record = reads.recordOf(id)
+      return record?.route.remote && record.placement.reachable ? record.route : undefined
+    },
     streamRoute: (ref) => {
       const record = reads.recordOf(ref.placementId)
       if (!record) return shared.route(ref)

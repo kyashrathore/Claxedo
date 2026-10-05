@@ -128,6 +128,7 @@ export function createServer(config: ServerConfig): ServerHandle {
     subscribe: intake.subscribe,
     ...serverApis(transport, workspaces, status, queryClient, queries, projection, account, port),
     attachPlacement: placementStreams.attach,
+    watchPlacement: placementStreams.watch,
     queries,
     retryConnection: startup.retry,
     ready: startup.ready,
