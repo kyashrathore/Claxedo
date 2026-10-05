@@ -71,6 +71,9 @@ export function NewSessionContextRow(
   createEffect(() => props.onCreatingChange?.(context.creating()))
   const whereChip = useWhereChip(context)
   const branchChip = useBranchChip(context)
-  const chips = createMemo((): ContextChip[] => [projectChip(), whereChip(), ...(props.branch === false ? [] : [branchChip()])])
+  const chips = createMemo((): ContextChip[] => {
+    const branch = props.branch === false ? undefined : branchChip()
+    return [projectChip(), whereChip(), ...(branch ? [branch] : [])]
+  })
   return <SessionContextRow chips={chips()} />
 }

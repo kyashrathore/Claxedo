@@ -79,6 +79,17 @@ test("24 a gone sandbox: its session reads from the control plane with the aslee
   expect(wakes.filter((request) => request.startsWith("POST /api/workspace/"))).toHaveLength(1)
 })
 
+test("24 a draft on an asleep cloud workspace with no known branch shows no branch chip, and nothing wakes it", async ({ signedCloud, page }) => {
+  const workspace = await makeCloudWorkspace(signedCloud, "main")
+  const wakes = wakeRequests(page, workspace)
+  await signedCloud.signIn(page, signedCloud.owner)
+  await page.goto(`${signedCloud.url}${sessionRoute(workspace.id)}`)
+  await expect(page.getByText(ASLEEP)).toBeVisible()
+  await expect(page.getByRole("button", { name: "Where it runs", exact: true })).toHaveText("main")
+  await expect(page.getByRole("button", { name: "Current branch", exact: true })).toHaveCount(0)
+  expect(wakes).toEqual([])
+})
+
 test("24 sending to a gone sandbox wakes it, shows the dock waking up, then sends and the reply arrives", async ({ signedCloud, page }) => {
   test.setTimeout(150_000)
   const { workspace, sessionId } = await asleepWithHistory(signedCloud)

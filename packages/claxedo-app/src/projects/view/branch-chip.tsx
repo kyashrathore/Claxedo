@@ -15,9 +15,14 @@ function branchLabel(t: ReturnType<typeof useProjectsText>, context: DraftContex
   return state.dirty ? t("projects.chip.branch.dirty", { branch }) : branch
 }
 
-export function useBranchChip(context: DraftContext): () => ContextChip {
+function unknowable(context: DraftContext): boolean {
+  return context.branches().kind === "failed" && !context.creating() && !context.current()?.branch
+}
+
+export function useBranchChip(context: DraftContext): () => ContextChip | undefined {
   const t = useProjectsText()
   return () => {
+    if (unknowable(context)) return undefined
     const state = context.branches()
     const selected = context.branch()
     return {
