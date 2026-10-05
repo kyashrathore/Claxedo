@@ -637,6 +637,13 @@ export const HOSTED_OPERATIONS = {
     output: object, retry: "never",
     exposure: { renderer: false, app: false },
   }),
+  "telemetry.track": defineOperation({
+    method: "POST", path: operationPath("/api/claxedo/track"),
+    input: operationInput({ event: requiredParameter, properties: bodyField }),
+    output: object, retry: "never",
+    exposure: { renderer: true, app: false },
+    body: selectBody("event", "properties"),
+  }),
   "usage.cloudFacts": defineOperation({
     method: "GET", path: operationPath("/api/claxedo/usage/cloud-facts", { query: ["since", "until"] }),
     input: operationInput({ since: requiredParameter, until: requiredParameter }),

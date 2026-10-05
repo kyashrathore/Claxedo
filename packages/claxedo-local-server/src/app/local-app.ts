@@ -30,7 +30,6 @@ import {
 import { unsignedLocalRequestGuard, deploymentMode } from "@claxedo/server-core/authority/deployment-mode"
 import { controlPlaneAuthContext, ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { getHarnessMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
-import { TelemetryTrackRoutes } from "@claxedo/server-core/platform/telemetry/track-route"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import { resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import {
@@ -285,7 +284,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
 
   // Both are properties of the composition, mounted once here rather than
   // reviewed on each family below, and both sit ahead of every route family —
-  // the broker and telemetry included — because a machine that has not
+  // the broker included — because a machine that has not
   // established what it owns must not spend a stored key at a vendor.
   //
   // The fence runs first: a held machine refuses work before admission decides
@@ -320,8 +319,6 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     const routes = loopbackBrokerRoutes({ broker: options.egressBroker, isLoopback: isLoopbackLocalRequest })
     app.all(BROKER_ROUTE_PATTERN, (c) => routes(c.req.raw))
   }
-
-  app.route("/", TelemetryTrackRoutes({ auth: services.auth, telemetry: services.telemetry }))
 
   // The shell reads these fields; an `{ ok: true }` stub would be a silent regression.
   app.get("/api/claxedo/health", (c) =>

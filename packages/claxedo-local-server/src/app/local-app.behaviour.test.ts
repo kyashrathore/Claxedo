@@ -220,7 +220,7 @@ describe("local composition — sandbox provider keys", () => {
   })
 })
 
-describe("local composition — health and telemetry", () => {
+describe("local composition — health", () => {
   test("serves the dedicated control-plane event stream", async () => {
     const controller = new AbortController()
     const response = await app().request("http://127.0.0.1/api/cp/events", {
@@ -375,7 +375,7 @@ describe("local composition — health and telemetry", () => {
     lifecycle.stop()
   })
 
-  test("a machine that is fenced spends no stored key and records no telemetry", async () => {
+  test("a machine that is fenced spends no stored key", async () => {
     const identity = { token: "installation-secret", protocol: 1, generation: "generation-1", pid: 42 }
     const lifecycle = createLocalDaemonLifecycle({
       activity: () => ({ ...emptyActivity(), residencyPins: 1, replacementBlockers: 1 }),
@@ -383,8 +383,7 @@ describe("local composition — health and telemetry", () => {
       machine: { machineId: "local", generation: "generation-1", budgets: { drainMs: 10_000 } },
     })
     lifecycle.start()
-    const capture = vi.fn()
-    const local = app({ daemon: { identity, lifecycle }, services: services({ telemetry: { capture } }) })
+    const local = app({ daemon: { identity, lifecycle } })
     const headers = { authorization: "Bearer installation-secret", [DAEMON_PROTOCOL_HEADER]: "1" }
 
     const inspected = await (await local.request("http://localhost/api/claxedo/daemon/recovery", { headers })).json() as {
@@ -404,8 +403,7 @@ describe("local composition — health and telemetry", () => {
     })
     expect(drained.status).toBe(200)
 
-    // The two families registered before the route mounts. The broker spends a
-    // stored credential at a vendor, which is the last thing a machine that has
+    // The broker spends a stored credential at a vendor, which is the last thing a machine that has
     // not established what it owns should be doing on its behalf.
     const brokered = await local.request("http://localhost/api/claxedo/broker/anthropic/v1/messages", {
       method: "POST",
@@ -414,14 +412,6 @@ describe("local composition — health and telemetry", () => {
     })
     expect(brokered.status).toBe(503)
     expect(await brokered.json()).toMatchObject({ error: { code: "machine_recovery_pending" } })
-
-    const tracked = await local.request("http://localhost/api/claxedo/track", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ distinctId: "d", event: "e" }),
-    })
-    expect(tracked.status).toBe(503)
-    expect(capture).not.toHaveBeenCalled()
     lifecycle.stop()
   })
 
@@ -609,138 +599,6 @@ describe("local composition — health and telemetry", () => {
       await new Promise((resolve) => setTimeout(resolve, 10))
     }
     expect(onStop).toHaveBeenCalledTimes(1)
-  })
-
-  test("telemetry rejects a body that does not match the schema", async () => {
-    const capture = vi.fn()
-    const response = await app({ services: services({ telemetry: { capture } }) }).request(
-      "http://localhost/api/claxedo/track",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        // `properties` must be a record; an array is not one.
-        body: JSON.stringify({ distinctId: "d", event: "e", properties: ["nope"] }),
-      },
-    )
-
-    expect(response.status).toBe(400)
-    expect(capture).not.toHaveBeenCalled()
-  })
-
-  test("telemetry forwards a valid body", async () => {
-    const capture = vi.fn()
-    const response = await app({ services: services({ telemetry: { capture } }) }).request(
-      "http://localhost/api/claxedo/track",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ distinctId: "d", event: "session_new", properties: { a: 1 } }),
-      },
-    )
-
-    expect(response.status).toBe(200)
-    expect(capture).toHaveBeenCalledWith("local", "session_new", { a: 1 })
-  })
-
-  test("telemetry derives the distinct id server-side: a spoofed one is never honored", async () => {
-    // The unsigned-local box's canonical owner is `localControlPlaneAuth`'s
-    // subject; whatever the body names is discarded.
-    const capture = vi.fn()
-    const response = await app({ services: services({ telemetry: { capture } }) }).request(
-      "http://localhost/api/claxedo/track",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ distinctId: "someone-else", event: "session_new" }),
-      },
-    )
-
-    expect(response.status).toBe(200)
-    expect(capture).toHaveBeenCalledWith("local", "session_new", undefined)
-  })
-
-  test("telemetry uses the signed session's subject when a bearer verifies", async () => {
-    process.env.CLAXEDO_SIGNED_CLOUD_AUTH = "1"
-    const capture = vi.fn()
-    const instance = createLocalApp({
-      services: services({
-        auth: customVerifierAuthAdapter({
-          issuer: "https://idp.example.test",
-          verifier: async (token, config) => ({
-            mode: "signed" as const,
-            user: {
-              subject: token,
-              tokenIdentifier: `${config.issuer}|${token}`,
-              issuer: config.issuer,
-            },
-          }),
-        }),
-        telemetry: { capture },
-      }),
-    }).app
-
-    const response = await instance.request("http://localhost/api/claxedo/track", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer user-42" },
-      body: JSON.stringify({ distinctId: "someone-else", event: "session_new" }),
-    })
-
-    expect(response.status).toBe(200)
-    expect(capture).toHaveBeenCalledWith("user-42", "session_new", undefined)
-  })
-
-  test("telemetry rejects an event the product does not emit", async () => {
-    const capture = vi.fn()
-    const response = await app({ services: services({ telemetry: { capture } }) }).request(
-      "http://localhost/api/claxedo/track",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ event: "made_up_event" }),
-      },
-    )
-
-    expect(response.status).toBe(400)
-    expect(await response.json()).toMatchObject({ error: { code: "telemetry_unknown_event" } })
-    expect(capture).not.toHaveBeenCalled()
-  })
-
-  test.each([
-    ["more keys than the bound", Object.fromEntries(Array.from({ length: 33 }, (_, i) => [`k${i}`, i]))],
-    ["more bytes than the bound", { payload: "x".repeat(4096) }],
-  ])("telemetry bounds the properties bag: %s", async (_label, properties) => {
-    const capture = vi.fn()
-    const response = await app({ services: services({ telemetry: { capture } }) }).request(
-      "http://localhost/api/claxedo/track",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ event: "session_new", properties }),
-      },
-    )
-
-    expect(response.status).toBe(400)
-    expect(await response.json()).toMatchObject({ error: { code: "telemetry_invalid_body" } })
-    expect(capture).not.toHaveBeenCalled()
-  })
-
-  test("telemetry refuses the request that exceeds its window", async () => {
-    const capture = vi.fn()
-    const local = app({ services: services({ telemetry: { capture } }) })
-    const track = () =>
-      local.request("http://localhost/api/claxedo/track", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ event: "session_new" }),
-      })
-
-    for (let i = 0; i < 120; i += 1) {
-      expect((await track()).status).toBe(200)
-    }
-    const limited = await track()
-    expect(limited.status).toBe(429)
-    expect(await limited.json()).toMatchObject({ error: { code: "rate_limited" } })
-    expect(capture).toHaveBeenCalledTimes(120)
   })
 })
 

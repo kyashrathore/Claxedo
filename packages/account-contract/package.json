@@ -25,6 +25,10 @@
     "./auth": {
       "types": "./src/auth.ts",
       "default": "./src/auth.ts"
+    },
+    "./product-events": {
+      "types": "./src/product-events.ts",
+      "default": "./src/product-events.ts"
     }
   },
   "scripts": {

@@ -9,6 +9,7 @@ import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-o
 import { securityHeaders } from "@claxedo/server-core/platform/http/security-headers"
 import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/browser-auth-security"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
+import { TelemetryTrackRoutes } from "@claxedo/server-core/platform/telemetry/track-route"
 import type { DocumentsBackend } from "@claxedo/server-core/documents/backend"
 import { DocumentsRoutes } from "@claxedo/server-core/documents/routes/index"
 import { PublicDocumentRoutes } from "@claxedo/server-core/documents/routes/public"
@@ -520,6 +521,14 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       telemetry: services.telemetry,
     }))
   }
+  app.route("/", TelemetryTrackRoutes({
+    identity: async (request) => {
+      const auth = await routeAuth(request, { authentication: options.authentication, requireSigned: true })
+      if (!auth?.principal) return undefined
+      return { userId: auth.principal.userId, orgId: await requireAuthority(services).resolveOrgId(auth) }
+    },
+    telemetry: services.telemetry,
+  }))
   const relayProvider = services.relay.provider
   const signRuntimeAccessToken = services.relay.runtimeAccessTokenSigner
   const sessionHostDelivery = services.sessionHosts && plane.orgCredentials && relayProvider && signRuntimeAccessToken
