@@ -520,6 +520,7 @@ test("an MCP prompt is listed as the session's command and a turn naming it runs
     const message = await request.json() as { id?: number; method: string; params?: { name?: string; arguments?: unknown } }
     if (message.id === undefined) return new Response(null, { status: 202 })
     if (message.method === "prompts/get") fetched.push(message.params)
+    if (message.method === "prompts/list") await Bun.sleep(1_000)
     const result = message.method === "initialize"
       ? { protocolVersion: "2025-06-18", capabilities: { tools: {}, prompts: {} }, serverInfo: { name: "docs", version: "1" } }
       : message.method === "tools/list" ? { tools: [] }
