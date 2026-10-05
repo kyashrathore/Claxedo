@@ -3,7 +3,8 @@ import type { BrowserBridge, BrowserWebview } from "../bridge"
 import type { PickDelivery } from "../pick-to-composer"
 import type { BrowserTab } from "../tab"
 import { watchTheme } from "./guest-theme"
-import { isLocalPlacement, useServer } from "@/server"
+import { useQuery } from "@tanstack/solid-query"
+import { isLocalPlacement, machineOfPlacement, useServer } from "@/server"
 import { isLoopbackPage } from "../url"
 import { ElsewherePage } from "./elsewhere-page"
 import { WebPreview } from "./web-preview"
@@ -13,12 +14,14 @@ const AGENT_BROWSER_PARTITION = "persist:agent-browser"
 
 export function PageHost(props: { readonly tab: BrowserTab; readonly active: boolean; readonly deliver: PickDelivery }): JSX.Element {
   const server = useServer()
-  const elsewhere = () => {
+  const machines = useQuery(() => server.queries.machines.list())
+  const elsewhere = (): { readonly place: string | undefined } | undefined => {
     const placement = server.placements.byId(props.tab.placementId)
-    return isLoopbackPage(props.tab.state().url) && !isLocalPlacement(placement) ? placement?.label ?? "" : undefined
+    if (!isLoopbackPage(props.tab.state().url) || isLocalPlacement(placement)) return undefined
+    return { place: placement && (machineOfPlacement(machines.data ?? [], placement)?.name ?? placement.label) }
   }
   return (
-    <Show when={elsewhere() === undefined} fallback={<ElsewherePage url={props.tab.state().url} place={elsewhere() ?? ""} />}>
+    <Show when={elsewhere() === undefined} fallback={<ElsewherePage url={props.tab.state().url} place={elsewhere()?.place} />}>
       <Show when={props.tab.bridge} fallback={<WebPreview tab={props.tab} />}>
         {(bridge) => <DesktopPage tab={props.tab} active={props.active} bridge={bridge()} deliver={props.deliver} />}
       </Show>
