@@ -2,8 +2,7 @@
  * Telemetry contracts the platform layer defines and domains implement.
  *
  * These live here rather than in `authority/services.ts` because platform code
- * (`platform/auth/worker-telemetry.ts`, `platform/telemetry/product/product.ts`)
- * needs them, and platform must not import a domain. `services.ts` is the
+ * (`platform/auth/worker-telemetry.ts`, the track route) needs them, and platform must not import a domain. `services.ts` is the
  * composition bag — it names every domain it wires together, so a platform file
  * importing a type from it drags the whole graph across the boundary.
  *

@@ -5,6 +5,7 @@ import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { SandboxDriver } from "@claxedo/sandbox-manager"
 import { createMemoryLeaseStore } from "@claxedo/sandbox-manager/stores/memory"
 import { composeProviderNeutralHostedControlPlane } from "./provider-neutral-hosted-services"
+import { pseudonymousId } from "../platform/auth/worker-telemetry"
 
 const servers: Server[] = []
 afterEach(async () => {
@@ -65,11 +66,22 @@ test("a hosted control plane reports each cloud start phase as an ops event tagg
   })
 
   await vi.waitFor(() => expect(telemetry.captured.filter((entry) => entry.event === "sandbox.start_phase")).toHaveLength(4))
+  const workspace = await pseudonymousId("ws_1")
+  const project = await pseudonymousId("prj_1")
   const phases = telemetry.captured.filter((entry) => entry.event === "sandbox.start_phase")
   expect(phases.map((entry) => entry.properties.phase)).toEqual(["lease_decision", "provider_ready", "image_ready", "runtime_ready"])
   for (const entry of phases) {
     expect(entry.distinct_id).toBe("system")
-    expect(entry.properties).toMatchObject({ workspace_id: "ws_1", epoch: 1, driver: "test", region: "eu-west", boot_mode: "cold-start", project_id: "prj_1", duration_ms: expect.any(Number) })
+    expect(entry.properties).toMatchObject({ workspace_id: workspace, epoch: 1, driver: "test", region: "eu-west", boot_mode: "cold-start", project_id: project, duration_ms: expect.any(Number) })
     expect(JSON.stringify(entry.properties)).not.toContain("acme")
   }
+  await vi.waitFor(() => expect(telemetry.captured.filter((entry) => entry.event === "workspace_ready")).toHaveLength(1))
+  expect(telemetry.captured.find((entry) => entry.event === "workspace_ready")?.properties)
+    .toMatchObject({ workspace_id: workspace, driver: "test", key_owner: "operator", boot_mode: "cold-start", start_ms: expect.any(Number) })
+
+  expect((await services.sandbox.sandboxManager!.stop("ws_1")).ok).toBe(true)
+  await vi.waitFor(() => expect(telemetry.captured.filter((entry) => entry.event === "workspace_stopped")).toHaveLength(1))
+  expect(telemetry.captured.find((entry) => entry.event === "workspace_stopped")?.properties)
+    .toMatchObject({ workspace_id: workspace, cause: "explicit", active_ms: expect.any(Number) })
+  expect(JSON.stringify(telemetry.captured)).not.toMatch(/ws_1|prj_1|acme/)
 })

@@ -33,6 +33,7 @@ import {
 } from "./checkpoint-manager"
 import { applySandboxRuntimeSnapshot } from "./runtime-snapshot"
 import { createSandboxStartRecorder } from "./start-telemetry"
+import { createLifecycleReporter } from "./lease-lifecycle"
 import { workspaceRuntimeIdentityEnvConflicts } from "./runtime-env"
 
 function egressUnenforcedMessage(input: {
@@ -167,6 +168,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
    * assertion about a promise nobody re-checked.
    */
   const lifecycleOperations = new Map<string, LifecycleOperation>()
+  const lifecycle = createLifecycleReporter(options.onLifecycle, now)
   const starts = createSandboxStartRecorder({
     leaseStore: options.leaseStore,
     driver: options.driver.id,
@@ -396,6 +398,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           if (resolved.status === "ready") return { ...resolved, stale: true }
         }
       }
+      lifecycle.failed(lease, bootFailed)
       const nextRetryCount = lease.retryCount + 1
       const retryCapped = nextRetryCount >= maxRetryCount
       const failed = await options.leaseStore.recordFailure(
@@ -592,12 +595,14 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           const captured = await capture(this, workspaceId, { runtime: input.runtime, policy: "drain", idleBefore: input.idleBefore }, true)
           const checkpoint = captured.checkpoint.providerReference
           if (persistence.captureSource === "preserved") await stopHost?.({ ...target, checkpoint })
+          if (lease) lifecycle.stopped(lease, input.idleBefore !== undefined)
           return stopped(checkpoint)
         }
         const checkpoint = lease?.checkpoint?.providerReference
         await stopHost?.({ ...target, ...(checkpoint ? { checkpoint } : {}) })
         const updated = await options.leaseStore.update(workspaceId, target.epoch, { status: "stopped" })
         if (!updated) return { ok: false, reason: "runtime_lease_changed" }
+        if (lease) lifecycle.stopped(lease, input.idleBefore !== undefined)
         return stopped(checkpoint)
       })
     },
@@ -611,6 +616,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         await options.driver.destroy?.(target)
         const updated = await options.leaseStore.update(workspaceId, target.epoch, { status: "destroyed" })
         if (!updated) return { ok: false as const, reason: "runtime_lease_changed" }
+        lifecycle.destroyed(lease)
         if (lease.checkpoint && lease.persistence?.capture !== "same-resource") {
           await discardSnapshot(options.driver.deleteSnapshot, target, lease.checkpoint.providerReference)
         }

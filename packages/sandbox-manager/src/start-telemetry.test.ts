@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { createSandboxManager, type SandboxDriver, type SandboxDriverEnsureInput, type SandboxStartPhaseEvent } from "."
+import { createSandboxManager, type SandboxDriver, type SandboxDriverEnsureInput, type SandboxLifecycleEvent, type SandboxStartPhaseEvent } from "."
 import { createMemoryLeaseStore } from "./stores/memory"
 
 const input = { homeRegion: "us-east", labels: { projectId: "prj_1" } }
@@ -154,5 +154,60 @@ describe("sandbox start telemetry", () => {
       onStartPhase: () => { throw new Error("telemetry down") },
     })
     expect((await manager.ensure("ws_1", input)).status).toBe("ready")
+  })
+})
+
+describe("sandbox lease lifecycle", () => {
+  function composeLifecycle(driver: SandboxDriver, time: ReturnType<typeof clock>) {
+    const starts: SandboxStartPhaseEvent[] = []
+    const lifecycle: SandboxLifecycleEvent[] = []
+    const manager = createSandboxManager({
+      leaseStore: createMemoryLeaseStore(),
+      driver,
+      now: time.now,
+      onStartPhase: (event) => starts.push(event),
+      onLifecycle: (event) => lifecycle.push(event),
+    })
+    return { manager, starts, lifecycle }
+  }
+
+  test("each boot's stop and destroy carry the machine time since that boot started", async () => {
+    const time = clock()
+    const resumeHost: SandboxDriver["resumeHost"] = async ({ ensure }) => {
+      time.advance(700)
+      return target(ensure)
+    }
+    const { manager, starts, lifecycle } = composeLifecycle(scriptedDriver([async (ensure) => {
+      time.advance(3_000)
+      return target(ensure)
+    }], resumeHost), time)
+
+    await manager.ensure("ws_1", input)
+    expect(starts.find((event) => event.phase === "runtime_ready")?.sinceStartMs).toBe(3_000)
+    time.advance(10_000)
+    expect((await manager.stop("ws_1", { idleBefore: time.now() })).ok).toBe(true)
+    expect((await manager.stop("ws_1")).ok).toBe(true)
+
+    await manager.ensure("ws_1", input)
+    expect(starts.filter((event) => event.phase === "runtime_ready").map((event) => [event.epoch, event.bootMode, event.sinceStartMs]))
+      .toEqual([[1, "cold-start", 3_000], [2, "resume", 700]])
+    time.advance(5_000)
+    expect((await manager.destroy("ws_1")).ok).toBe(true)
+
+    expect(lifecycle.map(({ kind, epoch, ...rest }) => ({ kind, epoch, activeMs: "activeMs" in rest ? rest.activeMs : undefined, idle: "idle" in rest ? rest.idle : undefined })))
+      .toEqual([
+        { kind: "stopped", epoch: 1, activeMs: 13_000, idle: true },
+        { kind: "destroyed", epoch: 2, activeMs: 5_700, idle: undefined },
+      ])
+    expect(lifecycle[0]).toMatchObject({ workspaceId: "ws_1", driver: "test-driver", labels: { projectId: "prj_1" } })
+  })
+
+  test("a provision that fails reports it without a reason text", async () => {
+    const time = clock()
+    const { manager, lifecycle } = composeLifecycle(scriptedDriver([async () => { throw new Error("provider said no") }]), time)
+
+    expect((await manager.ensure("ws_1", input)).status).toBe("unavailable")
+
+    expect(lifecycle).toEqual([{ workspaceId: "ws_1", epoch: 1, driver: "test-driver", labels: { projectId: "prj_1" }, kind: "failed", bootFailed: false }])
   })
 })

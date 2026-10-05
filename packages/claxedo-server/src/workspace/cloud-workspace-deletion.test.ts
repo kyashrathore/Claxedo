@@ -8,6 +8,7 @@ import { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } from "../credentials/wo
 import { HostedWorkspaceRoutes } from "../routes/hosted/workspace"
 import { orgSandboxDrivers } from "../sandbox/org-sandbox-drivers"
 import { createOrgSandboxManager } from "../sandbox/org-sandbox-manager"
+import { sandboxLifecycleSink } from "../sandbox/sandbox-telemetry"
 import { createD1SandboxLeaseStore } from "../sandbox/stores/d1"
 import { d1OrgSandboxDriver } from "../sandbox/stores/d1-org-driver"
 import { d1Authority } from "../test-support/d1-authority"
@@ -69,6 +70,8 @@ function providerAccount(id: SandboxDriver["id"], name: string, accounts: Map<st
 function plane() {
   const accounts = new Map<string, Account>()
   const released: string[] = []
+  const captured: Array<[string, string, Record<string, unknown>]> = []
+  const telemetry = { capture: (distinctId: string, event: string, properties: Record<string, unknown> = {}) => void captured.push([distinctId, event, properties]) }
   const leaseStore = createD1SandboxLeaseStore({ database: fixture.database })
   const sandboxes = createOrgSandboxManager({
     leaseStore,
@@ -82,12 +85,12 @@ function plane() {
       credentials: (org) => hostedOrgCredentials(org, { database: fixture.database, env }),
     }),
     workspaceOrg: async () => orgId,
-    manager: (driver) => createSandboxManager({ leaseStore, driver, onEgressUnenforced: () => {} }),
+    manager: (driver) => createSandboxManager({ leaseStore, driver, onEgressUnenforced: () => {}, onLifecycle: sandboxLifecycleSink(telemetry) }),
   })
   const services = {
     authority: fixture.authority,
     sandbox: { sandboxManager: sandboxes.manager },
-    telemetry: { capture: () => {} },
+    telemetry,
   } as unknown as ControlPlaneServices
   const app = HostedWorkspaceRoutes(services, {
     authentication,
@@ -102,12 +105,12 @@ function plane() {
   }
   const listed = async () => (await fixture.authority.listWorkspaces(people.owner) as Array<{ workspace_id: string }>).map((row) => row.workspace_id)
   const live = (account: string) => (accounts.get(account)?.live ?? []).map((target) => target.workspaceId)
-  return { accounts, released, remove, provisioned, listed, live, leaseStore }
+  return { accounts, released, remove, provisioned, listed, live, leaseStore, captured }
 }
 
 describe("DELETE /api/workspace/:id on the hosted control plane", () => {
   test("the owner's delete destroys the sandbox on the operator's account, withdraws its runtime, deletes the row, and a repeat is answered as done", async () => {
-    const { released, remove, provisioned, listed, live, leaseStore } = plane()
+    const { released, remove, provisioned, listed, live, leaseStore, captured } = plane()
     await provisioned("ws_operator")
     expect(live("operator")).toEqual(["ws_operator"])
 
@@ -119,6 +122,10 @@ describe("DELETE /api/workspace/:id on the hosted control plane", () => {
     expect(released).toEqual(["ws_operator"])
     expect(await listed()).not.toContain("ws_operator")
     await expect(fixture.authority.openWorkspace(people.owner, { workspaceId: "ws_operator" })).rejects.toMatchObject({ status: 403 })
+    expect(captured.map(([, event, properties]) => [event, properties.cause ?? properties.kind])).toEqual([
+      ["workspace_stopped", "deleted"],
+      ["workspace_deleted", "cloud"],
+    ])
 
     const again = await remove("ws_operator")
     expect(again.status).toBe(200)

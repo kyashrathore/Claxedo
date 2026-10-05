@@ -7,7 +7,7 @@ import type { SandboxManager } from "@claxedo/sandbox-manager"
 import type { ControlPlaneServices } from "../authority/services"
 import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import { contentfulStatus } from "../platform/http/status"
-import { apiError, missingBearerBody, signedOrError, type WorkspaceRouteOptions } from "./route-support"
+import { apiError, captureWorkspaceTelemetry, missingBearerBody, signedOrError, type WorkspaceRouteOptions } from "./route-support"
 import { controlPlaneRateLimitError } from "./runtime-token-guards"
 
 /**
@@ -54,6 +54,7 @@ export function cloudWorkspaceDeletion(
       await options.releaseRuntime?.({ workspaceId })
       const deleted = await authority.deleteWorkspace(auth, { workspaceId })
       await authority.auditAllow(auth, { action: "workspace.deleted", workspaceId, metadata: {} })
+      captureWorkspaceTelemetry({ services, auth, event: "workspace_deleted", workspaceId, properties: { kind: "cloud" } })
       return c.json(deleted)
     } catch (err) {
       if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)

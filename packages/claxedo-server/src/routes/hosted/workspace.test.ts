@@ -1113,7 +1113,7 @@ describe("hosted cloud workspace create (POST /create)", () => {
     const authority = fakeAuthority({ createCloudWorkspace: vi.fn(async () => ({ workspace_id: "ignored" })) })
     const ensure = vi.fn()
     const prepareRuntime = vi.fn()
-    const { app } = buildApp({ authority, sandboxManager: { ensure } as unknown as SandboxManager, options: { prepareRuntime } })
+    const { app, capture } = buildApp({ authority, sandboxManager: { ensure } as unknown as SandboxManager, options: { prepareRuntime } })
     const waitUntil = vi.fn()
     const res = await app.fetch(
       post("/create", { workspaceName: "Cold", repoUrl: "https://github.com/a/b" }),
@@ -1124,6 +1124,8 @@ describe("hosted cloud workspace create (POST /create)", () => {
     expect(waitUntil).not.toHaveBeenCalled()
     expect(ensure).not.toHaveBeenCalled()
     expect(prepareRuntime).not.toHaveBeenCalled()
+    const { workspaceId } = await res.json() as { workspaceId: string }
+    expect(capture).toHaveBeenCalledWith("user_1", "workspace_created", { workspaceId, kind: "cloud", private_repository: false })
   })
 
   test("503 sandbox_driver_unavailable when no sandbox driver is composed", async () => {

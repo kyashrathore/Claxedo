@@ -8,6 +8,7 @@ import {
   type SandboxCheckpointResult,
   type SandboxStopInput,
 } from "./checkpoint-manager"
+import type { SandboxLifecycleEvent } from "./lease-lifecycle"
 
 export { DEFAULT_WORKSPACE_RUNTIME_PORT }
 
@@ -320,6 +321,7 @@ export type SandboxStartProgress = {
 }
 
 export type SandboxStartPhaseEvent = SandboxPhaseTiming<SandboxStartPhase> & {
+  sinceStartMs: number
   workspaceId: string
   epoch: number
   driver: string
@@ -781,5 +783,6 @@ export type SandboxManagerOptions = {
   onEgressUnenforced?: (event: SandboxEgressUnenforcedEvent) => void
   /** Receives each start phase as it ends; a sink that throws is ignored. */
   onStartPhase?: (event: SandboxStartPhaseEvent) => void
+  onLifecycle?: (event: SandboxLifecycleEvent) => void
 }
 

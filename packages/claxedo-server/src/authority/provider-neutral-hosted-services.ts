@@ -36,7 +36,7 @@ import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/r
 import { sandboxRelayTargetLookup, type HostTunnelTargetResolver } from "./sandbox-relay-target"
 import type { SessionHostAuthority } from "./session-hosts"
 import type { RelayTargetLookup } from "../deployments/shared-routes/internal-relay"
-import type { SandboxDriver, SandboxEgressUnenforcedEvent, SandboxStartPhaseEvent } from "@claxedo/sandbox-manager"
+import type { SandboxDriver, SandboxEgressUnenforcedEvent } from "@claxedo/sandbox-manager"
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT, createSandboxManager, type SandboxLeaseStore } from "@claxedo/sandbox-manager"
@@ -45,7 +45,8 @@ import { recordRelayRuntimeToken } from "./relay-token-record"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { isSandboxProvisionerID } from "@claxedo/sandbox-contract"
 import { orgSandboxDrivers, type HostedSandboxKeys } from "../sandbox/org-sandbox-drivers"
-import { createOrgSandboxManager, SANDBOX_KEY_LABEL, sandboxKeyOwner } from "../sandbox/org-sandbox-manager"
+import { createOrgSandboxManager } from "../sandbox/org-sandbox-manager"
+import { sandboxLifecycleSink, sandboxStartPhaseSink } from "../sandbox/sandbox-telemetry"
 
 export { HostedWorkerCompositionError } from "./composition-error"
 
@@ -152,29 +153,6 @@ export function sandboxEgressUnenforcedSink(telemetry: ControlPlaneTelemetry) {
 }
 
 /**
- * Each cloud start phase as an ops-plane fact. The workspace's project is the
- * repository it checked out, which is what a per-repository read of recent
- * starts groups on; the repository URL itself is tenant data and stays out,
- * and so does the provider key: `key_owner` says only whose account it was.
- */
-export function sandboxStartPhaseSink(telemetry: ControlPlaneTelemetry) {
-  return (event: SandboxStartPhaseEvent) => {
-    telemetry.capture("system", "sandbox.start_phase", {
-      phase: event.phase,
-      duration_ms: event.durationMs,
-      workspace_id: event.workspaceId,
-      epoch: event.epoch,
-      driver: event.driver,
-      key_owner: sandboxKeyOwner(event.labels[SANDBOX_KEY_LABEL]),
-      region: event.homeRegion,
-      boot_mode: event.bootMode,
-      ...(event.labels.projectId ? { project_id: event.labels.projectId } : {}),
-      ...(event.repoSizeBytes === undefined ? {} : { repo_size_bytes: event.repoSizeBytes }),
-    })
-  }
-}
-
-/**
  * A full-hosted deployment's sandbox driver and durable lease store, and how a
  * ready sandbox's runtime is handed the pass it publishes session rows with.
  */
@@ -220,6 +198,7 @@ function sandboxManager(
     maxRetryCount: limits.sandboxMaxRetryCount,
     onEgressUnenforced: sandboxEgressUnenforcedSink(telemetry),
     onStartPhase: sandboxStartPhaseSink(telemetry),
+    onLifecycle: sandboxLifecycleSink(telemetry),
   })
   if (!sandbox.keys || !bindings.orgCredentials) {
     const operator = { driver: sandbox.driver, key: "operator" as const }

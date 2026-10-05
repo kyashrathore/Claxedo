@@ -199,7 +199,7 @@ describe("hosted sandbox admin routes", () => {
     expect(destroy).toHaveBeenCalled()
   })
 
-  test("a sweep over several keys closes what it destroyed and counts the keys it could not open, even when one account could not be listed", async () => {
+  test("a sweep over several keys counts what it destroyed and the keys it could not open, even when one account could not be listed", async () => {
     const orphan = { workspaceId: "ws_orphan", sandboxId: "sandbox_orphan", url: "https://runtime.test/orphan", hostId: "host_orphan", driver: { id: "boat", resourceId: "r" } }
     const sandboxManager = {
       garbageCollect: async () => ({
@@ -215,7 +215,6 @@ describe("hosted sandbox admin routes", () => {
 
     expect(res.status).toBe(501)
     expect(telemetry.capture).toHaveBeenCalledWith("system", "sandbox.garbage_collect", expect.objectContaining({ destroyed: 1, unreachable: 1 }))
-    expect(telemetry.capture).toHaveBeenCalledWith("system", "sandbox.lease_closed", expect.objectContaining({ workspace_id: "ws_orphan", driver: "boat", reason: "gc" }))
   })
 
   test("idle stop is authorized by its own token alone and answers a refused stop as a conflict", async () => {

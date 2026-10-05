@@ -149,12 +149,14 @@ export function captureWorkspaceTelemetry(input: {
   properties?: Record<string, unknown>
 }) {
   try {
+    const orgId = input.auth?.user.orgId
     input.services?.telemetry.capture(
       input.auth?.user.subject ?? "local",
       input.event,
       {
         ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
         ...input.properties,
+        ...(orgId ? { $groups: { org: orgId } } : {}),
       },
     )
   } catch {

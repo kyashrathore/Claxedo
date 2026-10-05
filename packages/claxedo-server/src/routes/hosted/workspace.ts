@@ -27,7 +27,7 @@ import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } fr
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import { hostedConnectionInfo, hostedConnectionStatus, hostedSessionConnection, hostedSessionHostConnection } from "../../connections/hosted-connection-info"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
-import { apiError, missingBearerBody, parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
+import { apiError, captureWorkspaceTelemetry, missingBearerBody, parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
 import { asRecord } from "@claxedo/helpers/guards"
 import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { contentfulStatus } from "../../platform/http/status"
@@ -413,6 +413,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           if (isClaxedoError(err)) return c.json({ error: apiError(err.code, err.message) }, contentfulStatus(err.status))
           throw err
         }
+        captureWorkspaceTelemetry({ services, auth, event: "workspace_created", workspaceId, properties: { kind: "cloud", private_repository: repoConnectionId !== undefined } })
         return c.json({ workspaceId, directory })
       })
       .get("/:id/connection", (c) => connectionResponse(c, { readOnly: true }))

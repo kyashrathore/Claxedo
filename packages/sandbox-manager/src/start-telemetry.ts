@@ -25,6 +25,7 @@ export function createSandboxStartRecorder(options: {
     try {
       options.onStartPhase?.({
         ...timing,
+        sinceStartMs: Math.max(0, options.now() - progress.startedAt),
         workspaceId: lease.workspaceId,
         epoch: lease.epoch,
         driver: options.driver,
