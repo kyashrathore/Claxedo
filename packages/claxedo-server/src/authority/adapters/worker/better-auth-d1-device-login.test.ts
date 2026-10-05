@@ -140,6 +140,15 @@ async function claimOwnership(person: { cookie: string; origin: string }) {
 }
 
 describe("claxedo login on the Better Auth D1 composition", () => {
+  test("a bearer this deployment never issued is a typed 401, whatever its shape", async () => {
+    const jwtShaped = "eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJzb21lb25lIn0.c2lnbmF0dXJl"
+    for (const token of ["not-a-token", jwtShaped, `clx_at_${jwtShaped}`, "clx_at_never-issued"]) {
+      const refused = await enrollments(token)
+      expect({ token, status: refused.status, body: await refused.json() })
+        .toMatchObject({ token, status: 401, body: { error: { code: "invalid_bearer_token" } } })
+    }
+  })
+
   test("device code → approval → token exchange → the access token reaches a signed route; refresh and revoke follow it", async () => {
     const owner = await signIn("owner@device-login.test")
     await claimOwnership(owner)

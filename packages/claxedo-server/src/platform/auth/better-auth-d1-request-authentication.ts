@@ -11,6 +11,7 @@ import {
   type VerifiedAuthSession,
 } from "@claxedo/server-core/platform/auth/authentication"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
+import { BETTER_AUTH_ACCESS_TOKEN_PREFIX } from "./better-auth-token-hash"
 
 type BetterAuthApiSurface = {
   getSession(input: {
@@ -273,6 +274,11 @@ function introspectAccessToken(
   input: BetterAuthD1RequestAuthenticationInput,
   accessToken: string,
 ): Promise<unknown> {
+  // Better Auth tries every token as a JWT first, and with its JWT plugin
+  // disabled that attempt throws "No jwks found", which its introspection
+  // answers with a 500. This deployment issues only prefixed opaque access
+  // tokens, so any other token is simply not active.
+  if (!accessToken.startsWith(BETTER_AUTH_ACCESS_TOKEN_PREFIX)) return Promise.resolve({ active: false })
   return input.auth.api.oauth2Introspect({
     body: {
       client_id: input.nativeIntrospectionClient.clientId,
