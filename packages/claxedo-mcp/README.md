@@ -24,7 +24,7 @@ source by the three processes that mount it.
 | --- | --- | --- | --- |
 | Desktop / local server (`@claxedo/local-server`, `createLocalApp`) | `firstPartyMcp: LoopbackFirstPartyMcpOptions` | the runtime credential only | this machine's runtimes, through the local app's own fetch bound to the credential's workspace |
 | Cloud VM runtime (`@claxedo/workspace-runtime`, `createWorkspaceRuntimeApp`) | `firstPartyMcp: LoopbackFirstPartyMcpOptions` | the runtime credential only | that workspace's runtime; under relay exposure the tools' in-process calls carry a token only the process knows, which relay-host auth accepts as direct |
-| Hosted worker (`@claxedo/server`, `createHostedCoreApp`) | `firstPartyMcp: FirstPartyMcpOptions` | the CLI JWT as the whole account; a runtime credential when the entry supplies `verifyRuntimeCredential` | nothing; the control plane, as the caller |
+| Hosted worker (`@claxedo/server`, `createHostedCoreApp`) | `firstPartyMcp: FirstPartyMcpOptions` | the CLI JWT as the whole account; the per-turn bearer of a session served by its own host | nothing in-process; the control plane as the caller, or for a session-host session its own workspace machine through the relay |
 
 Every mount is absent until its composition supplies the option; the route is
 a contribution like the others, mounted under its own owner.
@@ -37,6 +37,12 @@ a contribution like the others, mounted under its own owner.
   accept nothing else, reject a non-loopback socket peer, `Host`, or
   `Origin` with 403, reflect no CORS origin, and never read a credential
   from the URL.
+- A Pi session served by its own Durable Object reaches the hosted URL with
+  the bearer its turn's delivery carried (`?session=<id>`): the owner's own
+  session only, bound to owner, session and workspace, expiring with the turn
+  and at most ten minutes, under an audience only this endpoint verifies, and
+  refused once the session is deleted. It is a runtime credential with no
+  control plane: its tools act on that workspace's machine and nowhere else.
 - A person's own tools — Claude Code, Codex, Cursor, a phone — reach the
   hosted URL. The CLI JWT is the whole account: every scope, nothing
   read-only. A client with no credential is answered 401 with a

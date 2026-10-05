@@ -62,6 +62,8 @@ export class SessionDO extends DurableObject<SessionHostEnv> {
         await this.turns.delivery(root)
         return (await this.host()).turnContext()
       },
+      controlPlane: (input, init) => this.controlPlane(input, init),
+      firstPartyMcpToken: async () => (await this.turns.delivery(root)).delivery.firstPartyMcp?.token,
       refresh: async (credentialProviderId) => {
         await this.turns.delivery(root, { renew: true })
         return (await (await this.host()).turnContext()).credentials.direct?.[credentialProviderId]

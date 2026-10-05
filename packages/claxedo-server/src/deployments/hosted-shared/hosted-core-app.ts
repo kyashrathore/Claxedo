@@ -79,6 +79,8 @@ import {
 } from "@claxedo/server-core/platform/http/route-contribution"
 import type { FirstPartyMcpOptions } from "@claxedo/mcp"
 import { firstPartyMcpContribution } from "../../mcp/first-party-mcp"
+import { sessionMcpCredentials } from "../../mcp/session-mcp-credentials"
+import type { CloudRootIdentity } from "../../agent-plugins/runtime/cloud-root-environment"
 import { readIntrospectedAccessToken, resolveOAuthMcpCredential } from "../../mcp/oauth-credential"
 import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { UsageRoutes } from "@claxedo/server-core/usage/routes"
@@ -137,6 +139,8 @@ export type HostedCoreAppOptions = {
   integrationRoutes?: Hono
   /** The owner's Pi plugins a session served by its own Durable Object runs with; absent, it runs with none. */
   sessionHostPlugins?: (workspaceId: string) => Promise<RuntimeConfigSnapshotPlugins>
+  /** The first-party tool groups a session served by its own host is offered; absent, such a session gets no first-party MCP. */
+  sessionHostToolGroups?: (root: CloudRootIdentity) => Promise<readonly string[]>
   /**
    * The first-party MCP endpoint (`/api/claxedo/mcp`). Admits the CLI JWT as
    * the whole account; a runtime credential too when the entry supplies the
@@ -540,15 +544,26 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   }))
   const relayProvider = services.relay.provider
   const signRuntimeAccessToken = services.relay.runtimeAccessTokenSigner
-  const sessionHostDelivery = services.sessionHosts && plane.orgCredentials && relayProvider && signRuntimeAccessToken
+  const resolveWorkspaceOwner = (workspaceId: string) => services.authority?.resolveWorkspaceOwner?.(workspaceId) ?? Promise.resolve(undefined)
+  const sessionHostMachine = services.sessionHosts && relayProvider && signRuntimeAccessToken
+    ? { sessionHosts: services.sessionHosts, services, relayEndpoint: relayProvider.getRelayEndpoint, signRuntimeAccessToken }
+    : undefined
+  const sessionHostToolGroups = options.sessionHostToolGroups
+  const sessionMcp = sessionHostMachine && sessionHostToolGroups
+    ? sessionMcpCredentials({
+        ...sessionHostMachine,
+        env: plane.env,
+        resolveWorkspaceOwner,
+        toolGroups: (owner, workspaceId) => sessionHostToolGroups({ userId: owner.userId, orgId: owner.orgId, projectId: owner.projectId, workspaceId }),
+      })
+    : undefined
+  const sessionHostDelivery = sessionHostMachine && plane.orgCredentials
     ? {
-        sessionHosts: services.sessionHosts,
-        resolveWorkspaceOwner: (workspaceId: string) => services.authority?.resolveWorkspaceOwner?.(workspaceId) ?? Promise.resolve(undefined),
+        ...sessionHostMachine,
+        resolveWorkspaceOwner,
         credentials: plane.orgCredentials,
-        services,
         ...(options.sessionHostPlugins ? { plugins: options.sessionHostPlugins } : {}),
-        relayEndpoint: relayProvider.getRelayEndpoint,
-        signRuntimeAccessToken,
+        ...(sessionMcp ? { sessionMcp } : {}),
       }
     : undefined
   if (plane.runtimeSessionAuthority) {
@@ -626,6 +641,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
             }
           : {}),
         auditFallback: (record) => console.warn("[claxedo-server] mcp.audit unattributed", record),
+        ...(sessionMcp ? { sessionMcp } : {}),
       })
     : undefined
   if (firstPartyMcp) {

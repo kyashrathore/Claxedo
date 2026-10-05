@@ -10,6 +10,7 @@ import {
   type FirstPartyMcpOptions,
 } from "@claxedo/mcp"
 import type { McpAuditEvent, McpCredential } from "@claxedo/mcp/context"
+import type { SessionMcpCredentials } from "./session-mcp-credentials"
 
 export const FIRST_PARTY_MCP_CONTRIBUTION_ID = "claxedo-mcp"
 
@@ -24,6 +25,8 @@ export type FirstPartyMcpContributionInput = Readonly<{
   oauthCredential?: (request: Request) => Promise<McpCredential | undefined>
   /** Where a write is recorded when no authority can attribute it. */
   auditFallback: (record: ReturnType<typeof mcpAuditRecord>) => void
+  /** The bearer a session served by its own host presents; absent, the endpoint admits account credentials only. */
+  sessionMcp?: SessionMcpCredentials
 }>
 
 /** The actor a signed control-plane identity acts as. */
@@ -33,9 +36,12 @@ export function signedActorId(auth: SignedControlPlaneAuth): string {
 
 export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput): ControlPlaneRouteContribution {
   const auths = new WeakMap<McpCredential, SignedControlPlaneAuth>()
+  const { sessionMcp } = input
+  const enabledToolGroups = input.options.enabledToolGroups
+  const registered = (input.options.registerTools ?? []).map((group) => group.id)
   const mount = createClaxedoMcpRoutes({
     mount: "hosted",
-    ...(input.options.verifyRuntimeCredential ? { verifyRuntimeCredential: input.options.verifyRuntimeCredential } : {}),
+    ...(sessionMcp ? { verifyRuntimeCredential: (token: string) => sessionMcp.verify(token) } : {}),
     resolveUserCredential: async (request) => {
       const auth = await input.signedAuth(request)
       if (!auth) return await input.oauthCredential?.(request)
@@ -44,6 +50,14 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
       return credential
     },
     createClient: async (credential, request) => {
+      if (credential.kind === "runtime" && sessionMcp) {
+        return input.options.createClient({
+          deployment: "hosted",
+          credential,
+          request,
+          local: { fetch: sessionMcp.workspaceFetch(credential), workspace: { workspaceId: credential.workspaceId } },
+        })
+      }
       const authorization = request.headers.get("authorization")
       return input.options.createClient({
         deployment: "hosted",
@@ -58,7 +72,10 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
       })
     },
     registerTools: input.options.registerTools ?? [],
-    ...(input.options.enabledToolGroups ? { enabledToolGroups: input.options.enabledToolGroups } : {}),
+    enabledToolGroups: async (credential: McpCredential) => {
+      if (credential.kind === "runtime") return sessionMcp ? await sessionMcp.toolGroups(credential) : []
+      return enabledToolGroups ? await enabledToolGroups(credential) : registered
+    },
     audit: async (event: McpAuditEvent) => {
       const record = mcpAuditRecord(event)
       const auth = auths.get(event.credential)

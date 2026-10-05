@@ -16,7 +16,7 @@ export type ResolvedTarget = Readonly<{
   kind: "loopback" | "relay" | "node"
   workspaceId?: string
   directory?: string
-  /** What a runtime path appends to: `<relay origin>/workspaces/:id` on the relay, empty for the runtime in this process. */
+  /** What a runtime path appends to: `<relay origin>/workspaces/:id` on the relay, empty for the caller's own workspace, which its own fetch reaches. */
   baseUrl: string
   headers: Readonly<Record<string, string>>
   /** Until when the cached handshake stays valid; loopback never expires. */

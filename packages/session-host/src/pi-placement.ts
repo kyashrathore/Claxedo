@@ -4,7 +4,7 @@ import type { PiPlacement, PiSessionRuntime, PiTurnContext } from "@claxedo/harn
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 import type { Models } from "@earendil-works/pi-ai"
 import { createRegistry, Harness, type HarnessOptions } from "@earendil-works/pi-durable"
-import { StreamableHttpTransport, type McpTransport } from "@earendil-works/pi-mcp"
+import { StreamableHttpTransport, type McpFetch, type McpTransport } from "@earendil-works/pi-mcp"
 import type { PiHarness, PiHarnessFactory } from "agents/harness/pi"
 import { RelayedStdioMcpTransport } from "./mcp-relay-transport"
 import { RemoteExecutionEnv } from "./remote-env"
@@ -16,6 +16,8 @@ export type DurablePiHost = {
   turnContext(signal: AbortSignal): Promise<PiTurnContext>
   refresh(credentialProviderId: string): Promise<ProviderDirect | undefined>
   report(error: unknown): void
+  controlPlane: McpFetch
+  firstPartyMcpToken(): Promise<string | undefined>
 }
 
 /**
@@ -87,6 +89,9 @@ export class DurablePiPlacement implements PiPlacement {
   async mcpTransport(server: ProjectedMcpServer): Promise<McpTransport> {
     if (server.kind === "stdio") return new RelayedStdioMcpTransport(server.name, () => this.host.execution(this.turnSignal()))
     if (server.kind === "sse") throw new Error(`Pi cannot load SSE MCP server ${server.name}`)
+    if (server.origin === "first-party") {
+      return new StreamableHttpTransport({ url: server.url, fetch: this.host.controlPlane, authProvider: { token: () => this.host.firstPartyMcpToken() } })
+    }
     return new StreamableHttpTransport({ url: server.url, headers: { ...server.headers } })
   }
 

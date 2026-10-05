@@ -10,7 +10,11 @@ import { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } from "../credentials/wo
 import { RuntimeSessionAuthorityRoutes } from "../routes/runtime-session-authority"
 import type { ControlPlaneServices } from "../authority/services"
 import type { RuntimeConfigSnapshotPlugins } from "@claxedo/harness/contract"
+import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { d1Authority } from "./d1-authority"
+import { firstPartyMcpContribution } from "../mcp/first-party-mcp"
+import { sessionMcpCredentials } from "../mcp/session-mcp-credentials"
 
 export const SESSION_AUTHORIZE_URL = "https://plane.test/api/runtime-authority/session-authorize"
 export const WORKSPACE_ID = "ws_cloud"
@@ -18,10 +22,15 @@ export const DIRECTORY = "/workspace/repo"
 
 /**
  * A control plane on real D1 serving one cloud workspace, its owner, a member
- * of the owner's organization and an outsider, with the session authority and
- * the session-host turn routes mounted as the hosted Worker mounts them.
+ * of the owner's organization and an outsider, with the session authority,
+ * the session-host turn routes and the first-party MCP endpoint mounted as the
+ * hosted Worker mounts them.
  */
-export async function sessionHostPlane(input: { plugins?: (workspaceId: string) => Promise<RuntimeConfigSnapshotPlugins> } = {}) {
+export async function sessionHostPlane(input: {
+  plugins?: (workspaceId: string) => Promise<RuntimeConfigSnapshotPlugins>
+  relayUrl?: string
+  toolGroups?: readonly string[]
+} = {}) {
   const key = await generateKeyPair("EdDSA", { extractable: true })
   const env = {
     CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(key.privateKey),
@@ -45,21 +54,31 @@ export async function sessionHostPlane(input: { plugins?: (workspaceId: string) 
   const signRuntimeAccessToken = runtimeAccessTokenSigner(env)
 
   const services = { sandbox: { sandboxManager: { target: async () => target } }, defaultHomeRegion: "us-east" } as unknown as ControlPlaneServices
+  const machine = { sessionHosts: store, services, relayEndpoint: () => input.relayUrl ?? "https://relay.test/", signRuntimeAccessToken }
+  const resolveWorkspaceOwner = (workspaceId: string) => store.resolveWorkspaceOwner!(workspaceId)
+  const sessionMcp = sessionMcpCredentials({ ...machine, env, resolveWorkspaceOwner, toolGroups: async () => input.toolGroups ?? ["sessions"] })
   const app = new Hono().route("/api/runtime-authority", RuntimeSessionAuthorityRoutes({
     authority: store,
     turnAuthority: store,
     sessionHosts: store,
     env,
     sessionHostDelivery: {
-      sessionHosts: store,
-      resolveWorkspaceOwner: (workspaceId) => store.resolveWorkspaceOwner!(workspaceId),
+      ...machine,
+      resolveWorkspaceOwner,
       credentials,
-      services,
       ...(input.plugins ? { plugins: input.plugins } : {}),
-      relayEndpoint: () => "https://relay.test/",
-      signRuntimeAccessToken,
+      sessionMcp,
     },
   }))
+  const mcp = firstPartyMcpContribution({
+    app,
+    authority: undefined,
+    options: { createClient: (client) => createClaxedoMcpClient(client), registerTools: CLAXEDO_MCP_TOOL_GROUPS },
+    signedAuth: async () => undefined,
+    auditFallback: () => {},
+    sessionMcp,
+  })
+  app.route(mcp.path, mcp.routes)
 
   const post = async (path: string, body: Record<string, unknown>, bearer?: string) => await app.request(`https://plane.test/api/runtime-authority${path}`, {
     method: "POST",
@@ -115,6 +134,7 @@ export async function sessionHostPlane(input: { plugins?: (workspaceId: string) 
   }
 
   return {
+    app,
     env,
     key,
     orgId,

@@ -284,12 +284,27 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
    * its workspace's machine for its tools, and nothing else ever does.
    */
   async recordTurnRuntimeAccessToken(actorId: string, token: TurnRuntimeAccessTokenRecord) {
+    await this.requireHostedSessionMachine(token)
+    return await this.recordUserRuntimeToken(await this.requireActor(actorId), { ...token, role: "editor" }, { turn: true })
+  }
+
+  /**
+   * The workspace owner's editor token the first-party MCP endpoint reaches
+   * the machine with for the tools of a session served by its own host. It
+   * names no session, so the insert admits only the workspace's owner.
+   */
+  async recordSessionMcpRuntimeAccessToken(actorId: string, token: TurnRuntimeAccessTokenRecord) {
+    await this.requireHostedSessionMachine(token)
+    const { sessionId: _sessionId, ...workspaceToken } = token
+    return await this.recordUserRuntimeToken(await this.requireActor(actorId), { ...workspaceToken, role: "editor" })
+  }
+
+  private async requireHostedSessionMachine(token: TurnRuntimeAccessTokenRecord) {
     const hosted = await this.database
       .prepare(`select 1 from sessions where session_id = ? and workspace_id = ? and session_host_root = session_id and deleted_at is null`)
       .bind(requireText(token.sessionId, "sessionId"), requireText(token.workspaceId, "workspaceId"))
       .first()
     if (!hosted || sessionHostRootOf(token.hostId)) throw denied("Only a session served by its own host reaches its machine with a turn token")
-    return await this.recordUserRuntimeToken(await this.requireActor(actorId), { ...token, role: "editor" }, { turn: true })
   }
 
   async recordRuntimeAccessTokenForService(args: {

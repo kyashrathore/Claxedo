@@ -21,6 +21,13 @@ test("a turn delivery round-trips the owner's direct rows, the plugin section an
   expect(parseTurnDelivery(JSON.parse(JSON.stringify(delivery)))).toEqual(delivery)
 })
 
+test("a turn delivery carries the first-party MCP server it names, and refuses one missing its token or carrying more", () => {
+  const firstPartyMcp = { name: "claxedo", url: "https://plane.example/api/claxedo/mcp?session=ses_1", token: "session-mcp" }
+  expect(parseTurnDelivery({ ...delivery, firstPartyMcp })).toEqual({ ...delivery, firstPartyMcp })
+  expect(parseTurnDelivery({ ...delivery, firstPartyMcp: { ...firstPartyMcp, token: "" } })).toBeUndefined()
+  expect(parseTurnDelivery({ ...delivery, firstPartyMcp: { ...firstPartyMcp, headers: {} } })).toBeUndefined()
+})
+
 test("a turn delivery carrying brokered accounts, an unknown field or no expiry is refused", () => {
   const binding = { baseUrl: "https://broker.example", placeholder: "p", authMode: "api-key" }
   expect(parseTurnDelivery({ ...delivery, auth: { ...delivery.auth, accounts: { owner: { anthropic: binding } } } })).toBeUndefined()

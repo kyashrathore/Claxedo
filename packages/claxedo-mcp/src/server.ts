@@ -64,7 +64,7 @@ export type VerifyRuntimeCredential = (
   token: string,
 ) => Promise<RuntimeCredentialClaims | undefined> | RuntimeCredentialClaims | undefined
 
-/** What a mount can offer the client factory: the runtime in this process and the control plane as the caller. */
+/** What a mount can offer the client factory: the caller's own workspace runtime and the control plane as the caller. */
 export type McpClientInputs = Readonly<{
   deployment: ClaxedoMcpMount
   credential: McpCredential

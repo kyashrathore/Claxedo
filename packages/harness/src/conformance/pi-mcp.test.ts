@@ -35,7 +35,7 @@ async function mcpTurn(root: string, input: McpCase) {
       credentials: proofCredentials(input.endpoint, "proof-secret"),
       projection: { generation: "g1", pluginRoots: [], mcpServers: input.configured ?? [], notApplied: [] },
       configureServices: (services) => {
-        services.firstPartyMcp = (_sessionId, locality) => locality === "local" ? input.firstParty : undefined
+        services.firstPartyMcp = () => input.firstParty
         const spawn = services.spawn.bind(services)
         services.spawn = (command, options) => { commands.push(command); return spawn(command, options) }
       },
@@ -62,11 +62,14 @@ test("Pi calls Claxedo's first-party MCP tool with the session's bearer, which n
   for (const text of turn.texts) expect(text).not.toContain("pi-mcp-proof-bearer")
 }, 60_000)
 
-test("a remote Pi session gets no first-party MCP server", async () => {
+test("a remote Pi session calls the first-party MCP server its host offers", async () => {
   const root = await tempRoot("pi-remote-mcp-")
   const endpoint = startMcpProofEndpoint()
-  await mcpTurn(root, { endpoint, locality: "remote", firstParty: { kind: "http", name: "claxedo", url: `${endpoint.baseURL}/mcp` } })
-  expect(endpoint.offered).not.toContain(MCP_PROOF_TOOL)
+  const bearer = "Bearer pi-remote-mcp-bearer"
+  const turn = await mcpTurn(root, { endpoint, locality: "remote", firstParty: { kind: "http", name: "claxedo", url: `${endpoint.baseURL}/mcp`, headers: { authorization: bearer } } })
+  expect(endpoint.offered).toContain(MCP_PROOF_TOOL)
+  expect(endpoint.called).toEqual([bearer])
+  expect(JSON.stringify(turn.events)).toContain("MCP proof complete")
 }, 60_000)
 
 test("Pi calls a person's configured HTTP MCP server with its header kept literal", async () => {

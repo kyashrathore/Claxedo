@@ -7,11 +7,11 @@ import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/
 import { bearerToken, ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import { privateSessionRuntimeProof, type PrivateSessionRuntimePrincipal, type SessionWriteClass } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { asRecord } from "@claxedo/helpers/guards"
-import type { RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
-import type { ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
-import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
-import { sessionHostAdmits, type SessionHostAuthority, type SessionHostPlacement } from "../authority/session-hosts"
-import { resolveWorkspaceRuntimeTarget, WorkspaceRuntimeTargetError } from "../authority/runtime-target"
+import type { ControlPlaneCredentials } from "../authority/services"
+import { sessionHostAdmits, type SessionHostPlacement } from "../authority/session-hosts"
+import type { SessionMcpCredentials } from "../mcp/session-mcp-credentials"
+import { WorkspaceRuntimeTargetError } from "../authority/runtime-target"
+import { sessionHostMachineAccess, type SessionHostMachineDeps } from "../authority/session-host-machine-access"
 import { ownerDirectRows, PI_DIRECT_PROVIDERS } from "../credentials/direct-rows"
 import { sessionLeasePrincipal } from "../session/runtime-session-proofs"
 import type { RuntimeSessionAuthorityOptions } from "./runtime-session-authority"
@@ -19,14 +19,11 @@ import type { RuntimeSessionAuthorityOptions } from "./runtime-session-authority
 type TurnLeaseVerifier = NonNullable<RuntimeSessionAuthorityOptions["verifyTurnLease"]>
 type TurnLeaseClaims = Awaited<ReturnType<TurnLeaseVerifier>>
 
-export type SessionHostDeliveryOptions = {
-  sessionHosts: SessionHostAuthority
+export type SessionHostDeliveryOptions = SessionHostMachineDeps & {
   resolveWorkspaceOwner(workspaceId: string): Promise<WorkspaceOwnerIdentity | undefined>
   credentials(orgId: string): ControlPlaneCredentials
-  services: ControlPlaneServices
   plugins?(workspaceId: string): Promise<RuntimeConfigSnapshotPlugins>
-  relayEndpoint(workspaceId: string, homeRegion: ClaxedoRegion): string | Promise<string>
-  signRuntimeAccessToken: RuntimeAccessTokenSigner
+  sessionMcp?: Pick<SessionMcpCredentials, "issue">
 }
 
 const EXECUTION_TTL_SECONDS = 10 * 60
@@ -38,12 +35,13 @@ const deleteSchema = z.object({ sessionId: z.string().min(1) }).strict()
  * The calls a session's Durable Object makes of the control plane. Two per
  * turn, each proven by the turn lease the session authority issued it:
  * `/turn-delivery` hands it the provider accounts of the session's creator as
- * direct secrets, and `/turn-execution` mints it a session-scoped token for the
- * workspace's machine, where its tools run. Both answer only that session's own
- * host, only while its lease is the live one, and only while the turn's actor
- * may still send its turns. `/session-host-delete` deletes the session's row
- * for a request the host was relayed, as that request's actor, before the host
- * erases itself.
+ * direct secrets and, for the workspace owner's own session, the first-party
+ * MCP server with that turn's bearer; `/turn-execution` mints it a
+ * session-scoped token for the workspace's machine, where its tools run. Both
+ * answer only that session's own host, only while its lease is the live one,
+ * and only while the turn's actor may still send its turns.
+ * `/session-host-delete` deletes the session's row for a request the host was
+ * relayed, as that request's actor, before the host erases itself.
  */
 export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
   authority: RuntimeSessionAuthorityOptions["authority"]
@@ -105,11 +103,16 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
         console.error(`[session-host-delivery] the plugins of ${claims.workspaceId} were not applied:`, error instanceof Error ? error.message : String(error))
         return c.json({ error: { code: "agent_plugins_unavailable" } }, 502)
       }
+      const expiresAt = Math.min(claims.expiresAt, ...Object.values(direct).flatMap((row) => row.expiresAt === undefined ? [] : [row.expiresAt]))
+      const firstPartyMcp = holder === owner.userId
+        ? await input.sessionMcp?.issue({ origin: new URL(c.req.url).origin, owner, workspaceId: claims.workspaceId, sessionId: claims.sessionId, expiresAt })
+        : undefined
       const delivery: TurnDelivery = {
-        expiresAt: Math.min(claims.expiresAt, ...Object.values(direct).flatMap((row) => row.expiresAt === undefined ? [] : [row.expiresAt])),
+        expiresAt,
         auth: { machineOwnerUserId: owner.userId, accounts: {}, direct: { [holder]: direct } },
         plugins,
         providerDefinitions: [],
+        ...(firstPartyMcp ? { firstPartyMcp } : {}),
       }
       return c.json(delivery)
     })
@@ -120,43 +123,16 @@ export function SessionHostDeliveryRoutes(input: SessionHostDeliveryOptions & {
       const { claims } = admitted
       const directory = admitted.placement.workspace.directory
       if (claims.principalKind !== "user" || !directory) return denied(c)
-      let target: Awaited<ReturnType<typeof resolveWorkspaceRuntimeTarget>>
+      let machine: Awaited<ReturnType<typeof sessionHostMachineAccess>>
       try {
-        target = await resolveWorkspaceRuntimeTarget(input.services, undefined, { workspaceId: claims.workspaceId, workspace: { backing: "cloud-vm" } })
+        machine = await sessionHostMachineAccess(input, {
+          scope: "turn", actorId: claims.actorId, orgId: claims.orgId, workspaceId: claims.workspaceId, sessionId: claims.sessionId, ttlSeconds: EXECUTION_TTL_SECONDS,
+        })
       } catch (error) {
         if (!(error instanceof WorkspaceRuntimeTargetError) || error.status !== 409) throw error
         return c.json({ error: { code: "cloud_runtime_unavailable", retryAfterMs: error.retryAfterMs ?? UNAVAILABLE_RETRY_MS } }, 409)
       }
-      const token = await input.signRuntimeAccessToken({
-        principalKind: "user",
-        actorId: claims.actorId,
-        actorKind: "human",
-        orgId: claims.orgId,
-        workspaceId: claims.workspaceId,
-        hostId: target.hostId,
-        ...(target.routingId ? { routingId: target.routingId } : {}),
-        role: "editor",
-        sessionId: claims.sessionId,
-        purpose: "turn-execution",
-        ttlSeconds: EXECUTION_TTL_SECONDS,
-      })
-      await input.sessionHosts.recordTurnRuntimeAccessToken(claims.actorId, {
-        jti: token.jti,
-        workspaceId: claims.workspaceId,
-        hostId: target.hostId,
-        sessionId: claims.sessionId,
-        expiresAt: token.tokenExpiresAt,
-      })
-      const relayUrl = await input.relayEndpoint(claims.workspaceId, target.homeRegion)
-      const access: TurnExecutionAccess = {
-        relayUrl: relayUrl.replace(/\/+$/, ""),
-        workspaceId: claims.workspaceId,
-        hostId: target.hostId,
-        ...(target.routingId ? { routingId: target.routingId } : {}),
-        runtimeAccessToken: token.runtimeAccessToken,
-        expiresAt: token.tokenExpiresAt,
-        directory,
-      }
+      const access: TurnExecutionAccess = { ...machine, workspaceId: claims.workspaceId, directory }
       return c.json(access)
     })
     .post("/session-host-delete", bodyLimit({ maxSize: 16 * 1024 }), async (c) => {

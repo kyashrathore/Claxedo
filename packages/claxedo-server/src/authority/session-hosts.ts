@@ -18,6 +18,8 @@ export type SessionHostAuthority = {
   readSessionHostPlacement(input: { workspaceId: string; sessionId: string }): Promise<SessionHostPlacement | undefined>
   /** The editor token a session host is minted for one turn, reaching the workspace's machine for that session alone. */
   recordTurnRuntimeAccessToken(actorId: string, token: TurnRuntimeAccessTokenRecord): Promise<unknown>
+  /** The workspace owner's editor token the first-party MCP endpoint reaches the machine with for that session's tools. */
+  recordSessionMcpRuntimeAccessToken(actorId: string, token: TurnRuntimeAccessTokenRecord): Promise<unknown>
   /** Whether this lease is still the session's live one: neither released nor expired nor superseded. */
   turnLeaseLive(input: { sessionId: string; turnId: string; leaseId: string; fencingToken: number }): Promise<boolean>
   /** Deletes the live row of a session served by its own host; false when there was none. */

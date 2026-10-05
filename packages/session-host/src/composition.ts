@@ -45,11 +45,14 @@ function launchFromTurn(workspaceId: string, held: () => HeldTurn | undefined): 
   }
 }
 
-function services(clock: HarnessServices["clock"]): HarnessServices {
+function services(clock: HarnessServices["clock"], root: string, held: () => HeldTurn | undefined): HarnessServices {
   return {
     recordHomeUse: async () => {},
     spawn: async () => { throw new Error("A session host starts no process; its tools run on the workspace machine") },
-    firstPartyMcp: () => undefined,
+    firstPartyMcp: (sessionId) => {
+      const server = sessionId === root ? held()?.delivery.firstPartyMcp : undefined
+      return server ? { kind: "http", name: server.name, url: server.url } : undefined
+    },
     healthChanged: () => {},
     patternEvaluator: async () => {},
     log: console,
@@ -86,7 +89,7 @@ export function composeSessionHost(input: SessionHostCompositionInput) {
     retainLeasedTurnFailure: (sessionId, turn, error) => runtime.recovery.retainLeasedTurnFailure(sessionId, turn, error),
   })
   const runtime = createAgentRuntime({
-    log: console, store, eventHub, transports: piOnly(new PiDurableTransport(services(ports.clock), input.placement)), ports, ownerGeneration, launch,
+    log: console, store, eventHub, transports: piOnly(new PiDurableTransport(services(ports.clock, root, input.held), input.placement)), ports, ownerGeneration, launch,
     identity: { workspaceId }, savedCommands: () => [],
   })
   const core = createSessionCore({

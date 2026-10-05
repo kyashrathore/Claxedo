@@ -47,7 +47,7 @@ import { oauthMetadataEdgeCachedFetch } from "./mcp/oauth-metadata-edge-cache"
 import { dohAddressResolver } from "@claxedo/server-core/agent-plugins/mcp/dns-resolver"
 import { HostedAgentPluginSourceRoutes } from "./sources/routes"
 import { createHostedAgentPluginRuntimeProvisioner, desiredAgentPluginSelections } from "./runtime/provision"
-import { createBuiltinGroupReader, createCloudRootEnvironment, type CloudRootIdentity } from "./runtime/cloud-root-environment"
+import { createBuiltinGroupReader, createCloudRootEnvironment, createCloudRootToolGroups, type CloudRootIdentity } from "./runtime/cloud-root-environment"
 import { createHostedAgentPluginSelfRuntime } from "./runtime/self-runtime"
 import { hostedAgentPluginConnectionIntegrations } from "./mcp/connections"
 import { HostedMcpGatewayRoutes } from "./mcp/routes"
@@ -96,6 +96,8 @@ export type HostedAgentPluginsComposition = {
   pluginRuntime: (workspaceId: string, preparation: WorkspaceRuntimePreparation | undefined) => Promise<AgentPluginRuntimeContribution>
   /** The owner's Pi plugins for a session served by its own Durable Object in this workspace. */
   sessionHostPlugins: (workspaceId: string) => Promise<RuntimeConfigSnapshotPlugins>
+  /** The first-party tool groups a session served by its own Durable Object is offered, read as the workspace's owner. */
+  sessionHostToolGroups: (root: CloudRootIdentity) => Promise<readonly string[]>
   /** Revokes every pass `prepareRuntime` minted for a root whose workspace is now deleted. */
   releaseRuntime: (context: WorkspaceRuntimeContext) => Promise<void>
   /**
@@ -500,6 +502,7 @@ export function createHostedAgentPluginsComposition(input: {
     prepareRuntime,
     pluginRuntime,
     sessionHostPlugins: createSessionHostPlugins({ cloudWorkspace, activations, preparer, provisioner }),
+    sessionHostToolGroups: createCloudRootToolGroups({ activations, builtIn }),
     // A workspace that is gone takes every pass minted for it, whatever the audience.
     releaseRuntime: async ({ workspaceId }) => { await input.passes.revoke({ workspaceId, reason: "workspace_deleted" }) },
     rootEnvironment,

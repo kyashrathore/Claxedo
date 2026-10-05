@@ -9,11 +9,14 @@ export type RuntimeConfigSnapshotPlugins = {
 
 export type TurnDeliveryRequest = { turnLease: string }
 
+export type FirstPartyMcpDelivery = { name: string; url: string; token: string }
+
 export type TurnDelivery = {
   expiresAt: number
   auth: CredentialSnapshot
   plugins: RuntimeConfigSnapshotPlugins
   providerDefinitions: readonly CustomProviderDefinition[]
+  firstPartyMcp?: FirstPartyMcpDelivery
 }
 
 export type TurnExecutionAccess = {
@@ -46,14 +49,22 @@ function plugins(input: unknown): RuntimeConfigSnapshotPlugins | undefined {
   return { harnessLaunch: rows, mcp }
 }
 
+function firstPartyMcp(input: unknown): FirstPartyMcpDelivery | undefined {
+  if (!isRecord(input) || !onlyKeys(input, ["name", "url", "token"])) return undefined
+  const { name, url, token } = input
+  if (!isNonEmptyString(name) || !isNonEmptyString(url) || !isNonEmptyString(token)) return undefined
+  return { name, url, token }
+}
+
 export function parseTurnDelivery(input: unknown): TurnDelivery | undefined {
-  if (!isRecord(input) || !onlyKeys(input, ["expiresAt", "auth", "plugins", "providerDefinitions"]) || !epochMillis(input.expiresAt)) return undefined
+  if (!isRecord(input) || !onlyKeys(input, ["expiresAt", "auth", "plugins", "providerDefinitions", "firstPartyMcp"]) || !epochMillis(input.expiresAt)) return undefined
   const auth = credentialSnapshot(input.auth, {})
   if (!auth || Object.keys(auth.accounts).length > 0) return undefined
   const section = plugins(input.plugins)
   const providerDefinitions = input.providerDefinitions === undefined ? undefined : readProviderDefinitions(input.providerDefinitions)
-  if (!section || !providerDefinitions) return undefined
-  return { expiresAt: input.expiresAt, auth, plugins: section, providerDefinitions }
+  const mcp = input.firstPartyMcp === undefined ? undefined : firstPartyMcp(input.firstPartyMcp)
+  if (!section || !providerDefinitions || (input.firstPartyMcp !== undefined && !mcp)) return undefined
+  return { expiresAt: input.expiresAt, auth, plugins: section, providerDefinitions, ...(mcp ? { firstPartyMcp: mcp } : {}) }
 }
 
 export function parseTurnExecutionAccess(input: unknown): TurnExecutionAccess | undefined {

@@ -138,6 +138,7 @@ export function composeBetterAuthD1AgentPlugins(
       routeContributions: [...feature.routeContributions, ...tasks, pluginBackends],
       integrationRoutes: feature.integrationRoutes,
       sessionHostPlugins: feature.sessionHostPlugins,
+      sessionHostToolGroups: feature.sessionHostToolGroups,
       productWorkspace: {
         ...base.options.productWorkspace,
         connections: { repositoryForAuth: feature.repositoryForAuth },

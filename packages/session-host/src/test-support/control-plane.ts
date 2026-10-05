@@ -1,5 +1,7 @@
 import { Hono, type Context } from "hono"
 import { SignJWT, jwtVerify } from "jose"
+import { CLAXEDO_MCP_PATH, CLAXEDO_MCP_SERVER_INFO, CLAXEDO_MCP_TOOL_GROUPS, createClaxedoMcpRoutes } from "@claxedo/mcp"
+import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import type { ProviderDirect } from "@claxedo/agent-runtime-contract"
 import type { RuntimeConfigSnapshotPlugins, TurnDelivery, TurnExecutionAccess } from "@claxedo/harness/contract"
 import { bearerToken } from "@claxedo/session-core"
@@ -22,6 +24,8 @@ export type ControlPlaneInput = {
   accounts: () => Record<string, Record<string, ProviderDirect>>
   plugins: () => RuntimeConfigSnapshotPlugins
   machine: () => { relayUrl: string; directory: string; routingId?: string }
+  /** The workspace runtime's root sessions, which the first-party MCP endpoint lists for a session that carries its turn's bearer. */
+  workspaceSessions: () => Record<string, unknown>[]
 }
 
 /**
@@ -31,19 +35,22 @@ export type ControlPlaneInput = {
  * not the session's reservation and every write by a viewer, and mints real
  * turn-lease tokens it verifies again on renewal, release and delivery.
  * `/turn-delivery` hands over the session creator's accounts, as the real
- * route does, `/turn-execution` mints a machine token, and
- * `/session-host-delete` deletes the session for anyone but a viewer.
+ * route does, and with `firstPartyMcp` on a fresh first-party MCP bearer the
+ * real `/api/claxedo/mcp` route below admits until the session is deleted;
+ * `/turn-execution` mints a machine token, and `/session-host-delete` deletes
+ * the session for anyone but a viewer.
  */
 export function controlPlaneStandIn(input: ControlPlaneInput) {
   const leaseSecret = crypto.getRandomValues(new Uint8Array(32))
   const leases = new Map<string, Lease>()
-  const calls = { deliveries: [] as string[], executions: [] as string[], releases: [] as string[], deletes: [] as string[], renewals: 0 }
+  const calls = { deliveries: [] as string[], executions: [] as string[], releases: [] as string[], deletes: [] as string[], renewals: 0, mcpBearers: [] as string[] }
+  const mcpBearers = new Set<string>()
   let fencing = 0
   let creator: string | undefined
   let deleted = false
   const control = {
     refuseRenewals: false, leaseTtlMs: 60_000, reservation: `op_${input.root}`, viewers: new Set<string>(),
-    executionUnavailable: false, deleteUnavailable: false,
+    executionUnavailable: false, deleteUnavailable: false, firstPartyMcp: false,
   }
 
   const mint = async (lease: Lease) => {
@@ -67,7 +74,33 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
   }
   const refused = (c: Context, status: 401 | 403, code: string) => c.json({ error: { code } }, status)
 
-  const app = new Hono().basePath("/api/runtime-authority")
+  const runtime = new Hono()
+    .get("/experimental/session", (c) => c.json(input.workspaceSessions()))
+    .get("/session/status", (c) => c.json({}))
+  const mcp = createClaxedoMcpRoutes({
+    mount: "hosted",
+    verifyRuntimeCredential: (token) => {
+      calls.mcpBearers.push(token)
+      if (!mcpBearers.has(token) || deleted || !creator) return undefined
+      return { runtimeId: sessionHostId(input.root), workspaceId: WORKSPACE_ID, sessionId: input.root, userId: creator, expiresAt: Date.now() + control.leaseTtlMs }
+    },
+    createClient: () => createClaxedoMcpClient({
+      deployment: "hosted",
+      local: { fetch: async (path, init) => await runtime.request(path, init), workspace: { workspaceId: WORKSPACE_ID } },
+    }),
+    registerTools: CLAXEDO_MCP_TOOL_GROUPS,
+    enabledToolGroups: () => ["sessions"],
+    audit: () => {},
+  })
+  const firstPartyMcp = (origin: string) => {
+    const token = `session-mcp-${crypto.randomUUID()}`
+    mcpBearers.add(token)
+    const url = new URL(CLAXEDO_MCP_PATH, origin)
+    url.searchParams.set("session", input.root)
+    return { name: CLAXEDO_MCP_SERVER_INFO.name, url: url.href, token }
+  }
+
+  const authority = new Hono()
     .post("/session-authorize", async (c) => {
       const body = await c.req.json<Record<string, unknown>>()
       const action = String(body.action)
@@ -104,6 +137,7 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
         auth: { machineOwnerUserId: OWNER, accounts: {}, direct: { [creator]: input.accounts()[creator] ?? {} } },
         plugins: input.plugins(),
         providerDefinitions: [],
+        ...(control.firstPartyMcp ? { firstPartyMcp: firstPartyMcp(new URL(c.req.url).origin) } : {}),
       }
       return c.json(delivery)
     })
@@ -129,5 +163,6 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
       deleted = true
       return c.json({ deleted: true })
     })
+  const app = new Hono().route("/api/runtime-authority", authority).route(CLAXEDO_MCP_PATH, mcp.routes)
   return { fetch: (request: Request) => app.fetch(request), calls, control }
 }

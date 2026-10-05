@@ -122,13 +122,6 @@ describe("resolveTarget", () => {
     const now = () => 1_000_000
     const fixture = hostedFixture({ now })
     expect(() => createClaxedoMcpClient({ deployment: "hosted" })).toThrow(ClaxedoMcpClientError)
-    expect(() =>
-      createClaxedoMcpClient({
-        deployment: "hosted",
-        controlPlane: { fetch: fixture.controlPlane.fetch },
-        local: { fetch: local().fetch, workspace: {} },
-      }),
-    ).toThrow(ClaxedoMcpClientError)
     const client = createClaxedoMcpClient({ deployment: "hosted", controlPlane: { fetch: fixture.controlPlane.fetch }, fetch: fixture.relay.fetch, now })
     expect(client.ownWorkspace).toBeUndefined()
     await expect(client.resolveTarget({ directory: "/repo" })).rejects.toMatchObject({ code: "unresolvable-target" })
@@ -141,6 +134,17 @@ describe("resolveTarget", () => {
       expiresAt: 1_000_000 + 15 * 60_000,
     })
     expect(fixture.controlPlane.calls.map((call) => [call.method, call.path])).toEqual([["POST", "/api/workspace/ws%20a/connection"]])
+  })
+
+  test("hosted with a session's own workspace reaches only that workspace, through the fetch it was given", async () => {
+    const machine = local()
+    const client = createClaxedoMcpClient({ deployment: "hosted", local: { fetch: machine.fetch, workspace: { workspaceId: "ws_own" } } })
+    expect(client.controlPlane).toBeUndefined()
+    await expect(client.resolveTarget({})).resolves.toEqual({ kind: "relay", workspaceId: "ws_own", baseUrl: "", headers: {} })
+    await (await client.server({ workspaceId: "ws_own" })).session.list({ workspace: "ws_own" })
+    expect(machine.calls.map((call) => call.path)).toEqual(["/session?workspace=ws_own"])
+    await expect(client.runtime({ workspaceId: "ws_other" })).rejects.toMatchObject({ code: "control-plane-required" })
+    await expect(client.workspaces()).rejects.toMatchObject({ code: "control-plane-required" })
   })
 
   test("node serves its own workspace directly and relays the rest through its own connection route", async () => {

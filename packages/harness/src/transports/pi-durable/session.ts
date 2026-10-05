@@ -76,7 +76,7 @@ export class PiSession {
   }
 
   private async install(): Promise<void> {
-    const servers = sessionMcpServers(this.start, this.input.services, { includeFirstParty: this.start.locality === "local",
+    const servers = sessionMcpServers(this.start, this.input.services, { includeFirstParty: true,
       duplicate: (name) => piConfiguration(`Duplicate Pi MCP server ${name}`) })
     const tools = await this.mcp.tools(servers, JSON.stringify([this.start.projection.generation, servers.map((server) => server.name)]))
     this.runtime.registry.install(CodingTools)

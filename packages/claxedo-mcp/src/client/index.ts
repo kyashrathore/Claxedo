@@ -28,7 +28,11 @@ export type { WorkspaceConnection } from "./relay-connection"
 
 export type ClaxedoMcpClientOptions = Readonly<{
   deployment: ClaxedoMcpClient["deployment"]
-  /** The runtime running in this process and the one workspace it serves; absent on the hosted Worker, which serves nothing itself. */
+  /**
+   * The caller's own workspace runtime, reached without the control plane: in
+   * this process on loopback and node, and on the hosted Worker the machine of
+   * a session served by its own host, through the relay.
+   */
   local?: Readonly<{ fetch: ClaxedoFetch; workspace: WorkspaceTarget }>
   /** Control-plane routes, already authenticated as the calling user. */
   controlPlane?: Readonly<{ fetch: ClaxedoFetch }>
@@ -55,14 +59,11 @@ type WorkspaceListHost = (typeof WORKSPACE_LIST_HOSTS)[number]
 
 export function createClaxedoMcpClient(options: ClaxedoMcpClientOptions): ClaxedoMcpClient {
   const { deployment, local, controlPlane, now, sleep, refreshWindowMs, provisioningMaxAttempts } = options
-  if (deployment === "hosted" && local) {
-    throw new ClaxedoMcpClientError("unresolvable-target", "A hosted endpoint serves no runtime in-process")
-  }
   if (deployment !== "hosted" && !local) {
     throw new ClaxedoMcpClientError("local-runtime-required", `A ${deployment} endpoint needs its in-process runtime`)
   }
-  if (deployment === "hosted" && !controlPlane) {
-    throw new ClaxedoMcpClientError("control-plane-required", "A hosted endpoint needs the calling user's control-plane credential")
+  if (deployment === "hosted" && !controlPlane && !local) {
+    throw new ClaxedoMcpClientError("control-plane-required", "A hosted endpoint needs the calling user's control-plane credential or the session's own workspace")
   }
   const relayFetch = options.fetch ?? ((input: string, init?: RequestInit) => fetch(input, init))
   const connections = controlPlane
@@ -86,7 +87,7 @@ export function createClaxedoMcpClient(options: ClaxedoMcpClientOptions): Claxed
     const workspaceId = target.workspaceId ?? local?.workspace.workspaceId
     const directory = target.directory ?? local?.workspace.directory
     return {
-      kind: deployment === "node" ? "node" : "loopback",
+      kind: deployment === "hosted" ? "relay" : deployment,
       ...(workspaceId ? { workspaceId } : {}),
       ...(directory ? { directory } : {}),
       baseUrl: "",
@@ -143,7 +144,7 @@ export function createClaxedoMcpClient(options: ClaxedoMcpClientOptions): Claxed
   const server = async (target: WorkspaceTarget): Promise<WorkspaceRuntimeClient> => {
     const resolved = await resolveTarget(target)
     const runtimeFetch = await runtime(target)
-    const baseUrl = resolved.kind === "relay" ? resolved.baseUrl : IN_PROCESS_ORIGIN
+    const baseUrl = resolved.baseUrl || IN_PROCESS_ORIGIN
     const prefix = new URL(baseUrl).pathname.replace(/\/+$/, "")
     return createWorkspaceRuntimeClient({
       baseUrl,

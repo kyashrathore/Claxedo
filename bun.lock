@@ -615,6 +615,7 @@
         "hono": "catalog:",
       },
       "devDependencies": {
+        "@claxedo/mcp": "workspace:*",
         "@claxedo/process-ownership": "workspace:*",
         "@claxedo/workspace-relay": "workspace:*",
         "@claxedo/workspace-runtime": "workspace:*",

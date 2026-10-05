@@ -54,8 +54,9 @@ export type CloudRootEnvironmentInput = Readonly<{
  * token for.
  */
 export function createCloudRootEnvironment(input: CloudRootEnvironmentInput) {
+  const toolGroups = createCloudRootToolGroups(input)
   return async (root: CloudRootIdentity): Promise<Record<string, string>> => {
-    const groups = await enabledBuiltinGroups(input, root)
+    const groups = await toolGroups(root)
     const [tasks, owner] = await Promise.all([
       groups.includes(BUILTIN_TASKS_TOOL_GROUP) ? input.tasksGrant(root) : {},
       groups.includes(BUILTIN_SUBAGENTS_TOOL_GROUP) ? input.ownerGrant(root) : {},
@@ -64,11 +65,14 @@ export function createCloudRootEnvironment(input: CloudRootEnvironmentInput) {
   }
 }
 
-async function enabledBuiltinGroups(input: CloudRootEnvironmentInput, root: CloudRootIdentity): Promise<string[]> {
-  const enabled = await Promise.all(input.builtIn.groups.map(async (group) =>
-    (await groupEnabled(input, root, group)) ? group.id : undefined,
-  ))
-  return enabled.filter((group): group is string => group !== undefined)
+/** The first-party tool groups one cloud root's project has on, which its runtime and its session hosts' sessions are offered alike. */
+export function createCloudRootToolGroups(input: Pick<CloudRootEnvironmentInput, "activations" | "builtIn">) {
+  return async (root: CloudRootIdentity): Promise<string[]> => {
+    const enabled = await Promise.all(input.builtIn.groups.map(async (group) =>
+      (await groupEnabled(input, root, group)) ? group.id : undefined,
+    ))
+    return enabled.filter((group): group is string => group !== undefined)
+  }
 }
 
 async function groupEnabled(

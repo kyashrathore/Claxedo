@@ -54,6 +54,7 @@ export const supervisorBackplaneTokenAudience = "supervisor-backplane"
 export const supervisorBackplaneTokenIssuer = runtimeAccessTokenIssuer
 export const documentSessionTokenAudience = "document-session-writeback"
 export const documentRelayJobTokenAudience = "document-relay-job"
+export const sessionMcpTokenAudience = "claxedo-session-mcp"
 
 /** Signer-enforced Runtime Access Token TTL bounds (seconds). */
 export const RUNTIME_ACCESS_TOKEN_TTL_BOUNDS_SECONDS = { min: 15 * 60, max: 60 * 60 } as const
@@ -629,6 +630,66 @@ export async function verifyDocumentRelayJobToken(
     stringClaim(payload, "project_id") !== expected.projectId || stringClaim(payload, "workspace_id") !== expected.workspaceId || stringClaim(payload, "session_id") !== expected.sessionId ||
     stringClaim(payload, "document_id") !== expected.documentId) throw new Error("Document relay job scope is invalid")
   return { ...expected, operations, jobExpiresAt, jti }
+}
+
+/**
+ * The bearer a session served by its own host presents to the first-party MCP
+ * endpoint, minted per turn for the workspace owner's own session. Its audience
+ * is the MCP endpoint's alone: no relay or runtime verifier pins it, so it
+ * reaches nothing else, and the endpoint re-reads the session on every request.
+ */
+export type SessionMcpTokenClaims = Readonly<{
+  userId: string
+  orgId: string
+  workspaceId: string
+  sessionId: string
+  expiresAt: number
+  jti: string
+}>
+
+const SESSION_MCP_TOKEN_MAX_TTL_SECONDS = 10 * 60
+
+export async function mintSessionMcpToken(
+  input: Omit<SessionMcpTokenClaims, "jti">,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const alg = runtimeAccessTokenAlgorithm(env)
+  const privateKey = await loadPrivateKey(env, alg, "runtime_access_token_signer_unavailable")
+  const now = Math.floor(Date.now() / 1000)
+  const exp = Math.min(Math.floor(input.expiresAt / 1000), now + SESSION_MCP_TOKEN_MAX_TTL_SECONDS)
+  if (exp <= now) throw new Error("The session's turn has expired")
+  const jti = randomToken()
+  const token = await new SignJWT({
+    user_id: input.userId,
+    org_id: input.orgId,
+    workspace_id: input.workspaceId,
+    session_id: input.sessionId,
+  })
+    .setProtectedHeader({ alg, kid: await resolveMintKid(env, privateKey) })
+    .setIssuer(runtimeAccessTokenIssuer)
+    .setAudience(sessionMcpTokenAudience)
+    .setSubject(`session:${input.sessionId}`)
+    .setIssuedAt(now)
+    .setExpirationTime(exp)
+    .setJti(jti)
+    .sign(privateKey)
+  return { token, expiresAt: exp * 1000, jti }
+}
+
+export async function verifySessionMcpToken(token: string, env: NodeJS.ProcessEnv = process.env): Promise<SessionMcpTokenClaims> {
+  const alg = runtimeAccessTokenAlgorithm(env)
+  const { payload } = await jwtVerify(token, await tokenVerificationKey(env, alg), {
+    algorithms: [RUNTIME_ACCESS_TOKEN_ALGORITHM],
+    issuer: runtimeAccessTokenIssuer,
+    audience: sessionMcpTokenAudience,
+  })
+  const claims = payload as Record<string, unknown>
+  const [userId, orgId, workspaceId, sessionId, jti] = ["user_id", "org_id", "workspace_id", "session_id", "jti"].map((key) => stringClaim(claims, key))
+  const exp = numberClaim(claims, "exp")
+  if (!userId || !orgId || !workspaceId || !sessionId || !jti || !exp || payload.sub !== `session:${sessionId}`) {
+    throw new Error("Session MCP token scope is invalid")
+  }
+  return { userId, orgId, workspaceId, sessionId, expiresAt: exp * 1000, jti }
 }
 
 async function tokenVerificationKey(env: NodeJS.ProcessEnv, alg: typeof RUNTIME_ACCESS_TOKEN_ALGORITHM) {

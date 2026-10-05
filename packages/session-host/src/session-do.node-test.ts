@@ -80,6 +80,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
     const controlPlane = controlPlaneStandIn({
       root, relayHostKey: relayHost.publicKey, runtimeAccessKey: runtimeAccess.privateKey,
       accounts: () => options.accounts ?? { [OWNER]: openai(SECRET) }, plugins: () => plugins, machine: () => ({ relayUrl: machine.relayUrl, directory }),
+      workspaceSessions: () => [{ id: "ses_listed_on_machine", title: "WORKSPACE_SESSION_ROW" }],
     })
     if (options.leaseTtlMs) controlPlane.control.leaseTtlMs = options.leaseTtlMs
     const boot = async () => {
@@ -232,6 +233,20 @@ void describe("SessionDO under workerd with PiHarness", () => {
     await host.prompt("msg_mcp", "Call it, then reply with exactly this one token: PIMCP")
     const messages = await host.settled("PIMCP")
     assert.ok(JSON.stringify(messages).includes(`MACHINE_MCP:M1:${directory}`), JSON.stringify(messages))
+  })
+
+  void it("lists and calls Claxedo's first-party MCP session tools with the bearer its turn was delivered", { timeout: 120_000 }, async () => {
+    const root = "ses_first_party_mcp"
+    const host = await session(root)
+    host.controlPlane.control.firstPartyMcp = true
+    model.scriptTool({ name: "mcp__claxedo__sessions_list", input: {}, whenPromptIncludes: "PICLAXEDOMCP" })
+    await host.prompt("msg_claxedo_mcp", "List the sessions, then reply with exactly this one token: PICLAXEDOMCP")
+    const messages = await host.settled("PICLAXEDOMCP")
+    assert.ok(JSON.stringify(messages).includes("WORKSPACE_SESSION_ROW"), JSON.stringify(messages))
+    const offered = model.requests.find((request) => request.prompt.includes("PICLAXEDOMCP"))?.tools.map((tool) => tool.name) ?? []
+    assert.ok(offered.includes("mcp__claxedo__sessions_list"), JSON.stringify(offered))
+    assert.ok(host.controlPlane.calls.mcpBearers.length > 0)
+    assert.ok(host.controlPlane.calls.mcpBearers.every((bearer) => bearer.startsWith("session-mcp-")), JSON.stringify(host.controlPlane.calls.mcpBearers))
   })
 
   void it("spends the accounts of the person who created the session, and a creator without any spends nobody's", { timeout: 120_000 }, async () => {
