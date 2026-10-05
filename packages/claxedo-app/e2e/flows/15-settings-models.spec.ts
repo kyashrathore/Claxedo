@@ -19,6 +19,15 @@ test("15 settings: accounts can be connected before any workspace exists", async
   expect(projects.status).toBe(200)
   expect(await projects.json()).toMatchObject({ projects: [] })
   await app.goto(`${stack.url}/settings/models`)
+  const pi = harnessSection(app, "Pi")
+  await expect(pi.getByRole("tab", { name: "Models" })).toBeVisible()
+  const disconnect = pi.getByRole("button", { name: "Disconnect" })
+  for (let remaining = await disconnect.count(); remaining > 0; remaining--) {
+    await disconnect.first().click()
+    await expect(disconnect).toHaveCount(remaining - 1)
+  }
+  await expect(pi.getByRole("tab")).toHaveCount(0)
+  await expect(pi.getByRole("button", { name: "Connect" }).first()).toBeVisible()
   const cursor = harnessSection(app, "Cursor")
   await cursor.getByRole("button", { name: "Add an account" }).click()
   const dialog = app.getByRole("dialog").filter({ hasText: "Connect Cursor" })

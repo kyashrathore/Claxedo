@@ -1,8 +1,9 @@
 import { ProviderIcon } from "@/ui"
 import { createMemo, createSignal, For, Match, Show, Switch, type JSX } from "solid-js"
-import { useModelVisibility } from "@/composer"
+import { createProviderCatalog, useModelVisibility } from "@/composer"
 import type { HarnessSelection } from "@/lib/harness-selection"
 import { SettingsEmpty } from "@/settings"
+import { useServer } from "@/server"
 import { useAccountsText } from "../i18n"
 import { useModelSource, groupContext, modelKeyOf, type SettingsPlacement } from "../model-sources"
 import { harnessHasAccount, type Harness } from "../model"
@@ -90,39 +91,73 @@ function accountless(harness: ModelsHarness, accounts: Accounts): boolean {
   return harness.cli !== undefined && load.kind === "ready" && !harnessHasAccount(harness.cli, load.snapshot)
 }
 
-function HarnessTitle(props: { readonly harness: ModelsHarness }) {
+function HarnessTitle(props: { readonly harness: ModelsHarness; readonly actions?: JSX.Element }) {
   return (
     <div class="flex items-center gap-2">
       <ProviderIcon id={props.harness.slug} class="size-4 shrink-0 icon-strong-base" />
       <h2 class="text-14-medium text-text-strong">{props.harness.label}</h2>
+      <span class="flex-1" />
+      {props.actions}
     </div>
   )
 }
 
-export function HarnessSection(props: { readonly harness: ModelsHarness; readonly accounts: Accounts; readonly placement?: SettingsPlacement; readonly tab: HarnessTab; readonly onTab: (tab: HarnessTab) => void }) {
+function AddAccountAction(props: { readonly slug: string; readonly open: (() => void) | undefined }) {
+  const t = useAccountsText()
   return (
-    <Show
-      when={accountless(props.harness, props.accounts) && props.harness.cli}
-      fallback={<HarnessWithTabs harness={props.harness} accounts={props.accounts} tab={props.tab} onTab={props.onTab} {...(props.placement ? { placement: props.placement } : {})} />}
-    >
-      {(cli) => (
-        <section class="flex flex-col gap-2" data-harness-accountless={props.harness.slug}>
-          <HarnessTitle harness={props.harness} />
-          <AgentHarnessAccounts harness={cli()} accounts={props.accounts} headerless />
-        </section>
+    <Show when={props.open}>
+      {(open) => (
+        <button type="button" class={LINK} data-action="agent-add-account" onClick={() => open()()}>
+          {props.slug === "opencode" ? t("provider.custom.title") : t("settings.providers.agents.addAccount")}
+        </button>
       )}
     </Show>
   )
 }
 
-function HarnessWithTabs(props: { readonly harness: ModelsHarness; readonly accounts: Accounts; readonly placement?: SettingsPlacement; readonly tab: HarnessTab; readonly onTab: (tab: HarnessTab) => void }) {
+type SectionProps = { readonly harness: ModelsHarness; readonly accounts: Accounts; readonly placement?: SettingsPlacement; readonly tab: HarnessTab; readonly onTab: (tab: HarnessTab) => void }
+
+function CatalogHarnessSection(props: SectionProps) {
+  const server = useServer()
+  const catalog = createProviderCatalog({ server, harness: () => props.harness.slug, eager: true })
+  const [addAccount, setAddAccount] = createSignal<() => void>()
+  return (
+    <Show
+      when={catalog.connected().length > 0}
+      fallback={
+        <section class="flex flex-col gap-2" data-harness-accountless={props.harness.slug}>
+          <HarnessTitle harness={props.harness} actions={<AddAccountAction slug={props.harness.slug} open={addAccount()} />} />
+          <CatalogAccounts harness={props.harness.slug} onAddCustomRef={(open) => setAddAccount(() => open)} />
+        </section>
+      }
+    >
+      <HarnessWithTabs {...props} />
+    </Show>
+  )
+}
+
+export function HarnessSection(props: SectionProps) {
+  return (
+    <Switch fallback={<HarnessWithTabs {...props} />}>
+      <Match when={accountless(props.harness, props.accounts) && props.harness.cli}>
+        {(cli) => (
+          <section class="flex flex-col gap-2" data-harness-accountless={props.harness.slug}>
+            <HarnessTitle harness={props.harness} />
+            <AgentHarnessAccounts harness={cli()} accounts={props.accounts} headerless />
+          </section>
+        )}
+      </Match>
+      <Match when={props.harness.kind === "catalog"}>
+        <CatalogHarnessSection {...props} />
+      </Match>
+    </Switch>
+  )
+}
+
+function HarnessWithTabs(props: SectionProps) {
   const t = useAccountsText()
   const [addAccount, setAddAccount] = createSignal<() => void>()
-  const actions = <Show when={props.tab === "accounts" && addAccount()}>{(open) => (
-    <button type="button" class={LINK} data-action="agent-add-account" onClick={() => open()()}>
-      {props.harness.slug === "opencode" ? t("provider.custom.title") : t("settings.providers.agents.addAccount")}
-    </button>
-  )}</Show>
+  const actions = <Show when={props.tab === "accounts"}><AddAccountAction slug={props.harness.slug} open={addAccount()} /></Show>
   return (
     <section class="flex flex-col gap-4">
       <HarnessTitle harness={props.harness} />

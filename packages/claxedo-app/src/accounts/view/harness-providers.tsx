@@ -4,7 +4,7 @@ import { harnessDisplayLabel } from "@/lib/harness-catalog"
 import { SettingsEmpty, SettingsList } from "@/settings"
 import { toAppError, useServer, type CatalogProvider, type PlacementId } from "@/server"
 import { ClaxedoIcon as Icon, showToast, useDialog, Button, ProviderIcon, Tag } from "@/ui"
-import { canDisconnectProvider, catalogProviders, providerNote, providerSourceTag } from "../catalog-rules"
+import { canDisconnectProvider, catalogNeedsSearch, catalogProviders, providerNote, providerSourceTag } from "../catalog-rules"
 import { useAccountsText } from "../i18n"
 import { DialogCustomProvider } from "./custom-provider-dialog"
 import { CatalogAccountSourceChoice, createCatalogAccountSources } from "./catalog-account-source"
@@ -108,7 +108,7 @@ export function HarnessProvidersSection(props: { readonly providers: HarnessProv
           </SettingsEmpty>
         )}
       </Show>
-      <Show when={items().length > 1}>
+      <Show when={catalogNeedsSearch(items().length)}>
         <SearchField value={search()} onChange={setSearch} placeholder={t("settings.providers.search.placeholder")} action="settings-providers-search" />
       </Show>
       <SettingsList>
