@@ -37,8 +37,9 @@ export function sandboxImageRepository(env: SandboxImageEnv = process.env) {
  * removed content immutability at a fixed version; a build-id restores it.
  *
  * Naming scheme: the id is inserted AFTER the core version and BEFORE the
- * `-v<schema>` suffix, so ordering stays version → build → schema:
- *   image    ghcr.io/<repo>:workspace-runtime-<version>[-<id>]-v<schema>
+ * `-v<schema>` suffix, then a build carrying the Agent Plugins runtime entry
+ * says so, so ordering stays version → build → feature → schema:
+ *   image    ghcr.io/<repo>:workspace-runtime-<version>[-<id>][-agent-plugins]-v<schema>
  * An explicit CLAXEDO_SANDBOX_IMAGE wins outright; otherwise
  * CLAXEDO_SANDBOX_BUILD_ID (if set) pins the default name to a specific build.
  */
@@ -47,10 +48,19 @@ function buildIdSuffix(buildId: string | undefined, env: SandboxImageEnv) {
   return id ? `-${snapshotVersion(id)}` : ""
 }
 
+const AGENT_PLUGINS_TAG = "-agent-plugins"
+
 export function defaultSandboxImage(
   version = workspaceRuntimeVersion(),
   buildId?: string,
   env: SandboxImageEnv = process.env,
+  options: { agentPlugins?: boolean } = {},
 ) {
-  return `${sandboxImageRepository(env)}:workspace-runtime-${snapshotVersion(version)}${buildIdSuffix(buildId, env)}-v${SNAPSHOT_SCHEMA_VERSION}`
+  const feature = options.agentPlugins ? AGENT_PLUGINS_TAG : ""
+  return `${sandboxImageRepository(env)}:workspace-runtime-${snapshotVersion(version)}${buildIdSuffix(buildId, env)}${feature}-v${SNAPSHOT_SCHEMA_VERSION}`
+}
+
+/** Whether an image's tag names a build that carries the Agent Plugins runtime entry. */
+export function sandboxImageCarriesAgentPlugins(image: string) {
+  return new RegExp(`${AGENT_PLUGINS_TAG}-v\\d+$`).test(image)
 }

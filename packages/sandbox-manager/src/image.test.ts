@@ -4,6 +4,7 @@ import {
   SNAPSHOT_SCHEMA_VERSION,
   snapshotVersion,
 } from "./image"
+import { sandboxImageCarriesAgentPlugins } from "./image-name"
 import { workspaceRuntimeVersion } from "./runtime-version"
 
 describe("sandbox image contract", () => {
@@ -51,5 +52,15 @@ describe("sandbox image contract", () => {
     expect(defaultSandboxImage()).toBe(
       `ghcr.io/kyashrathore/claxedo-sandbox:workspace-runtime-${v}-v${SNAPSHOT_SCHEMA_VERSION}`,
     )
+  })
+
+  test("an Agent Plugins build says so in its tag, after the build id, and only such a tag reads as one", () => {
+    delete process.env.CLAXEDO_SANDBOX_BUILD_ID
+    const v = snapshotVersion(workspaceRuntimeVersion())
+    const image = defaultSandboxImage(workspaceRuntimeVersion(), "abc1230000", process.env, { agentPlugins: true })
+    expect(image).toBe(`ghcr.io/kyashrathore/claxedo-sandbox:workspace-runtime-${v}-abc1230000-agent-plugins-v${SNAPSHOT_SCHEMA_VERSION}`)
+    expect(sandboxImageCarriesAgentPlugins(image)).toBe(true)
+    expect(sandboxImageCarriesAgentPlugins(defaultSandboxImage(workspaceRuntimeVersion(), "abc1230000"))).toBe(false)
+    expect(sandboxImageCarriesAgentPlugins("ghcr.io/x/agent-plugins:latest")).toBe(false)
   })
 })

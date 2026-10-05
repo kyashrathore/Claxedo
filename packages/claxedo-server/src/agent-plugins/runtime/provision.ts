@@ -186,6 +186,9 @@ export function createHostedAgentPluginRuntimeProvisioner(input: {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     })
+    if (response.status === 404) {
+      throw new Error("This workspace's runtime does not have Agent Plugins, which this deployment needs. Restart it to update.")
+    }
     if (!response.ok) {
       const detail = await response.text().catch(() => "")
       throw new Error(`Agent Plugins runtime apply failed (${response.status})${detail ? `: ${detail.slice(0, 500)}` : ""}`)

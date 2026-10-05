@@ -83,6 +83,22 @@ describe("hosted Agent Plugins runtime provisioner", () => {
     expect(runtimeFetch).not.toHaveBeenCalled()
   })
 
+  test("a runtime with no apply route is told to restart in words, not a 404", async () => {
+    const first = await artifact("review-user")
+    const second = await artifact("review-org")
+    const provisioner = createHostedAgentPluginRuntimeProvisioner({
+      activations: { runtimeSnapshot: async () => snapshot({ first: first.digest, second: second.digest }) },
+      artifacts: {
+        put: async (value) => value,
+        get: async (digest) => digest === first.digest ? first : digest === second.digest ? second : undefined,
+      },
+      runtimeFetch: async () => new Response("404 Not Found", { status: 404 }),
+    })
+    await expect(provisioner.provision("ws_1")).rejects.toThrow(
+      "This workspace's runtime does not have Agent Plugins, which this deployment needs. Restart it to update.",
+    )
+  })
+
   test("rejects a successful VM response with a malformed launch receipt", async () => {
     const first = await artifact("review-user")
     const second = await artifact("review-org")

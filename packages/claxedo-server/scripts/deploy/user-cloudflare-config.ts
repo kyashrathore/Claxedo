@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 
-import { assertSandboxImageReference } from "@claxedo/sandbox-manager/image-name"
+import { assertSandboxImageReference, sandboxImageCarriesAgentPlugins } from "@claxedo/sandbox-manager/image-name"
 
 import { resolveDeploymentProfileFromEnv, type SandboxDriver } from "../../src/deployments/hosted-shared/deployment-profile"
 import {
@@ -133,6 +133,15 @@ function productTelemetryVariables(env: NodeJS.ProcessEnv): Record<string, strin
   }
 }
 
+/** A deployment with Agent Plugins applies them in every sandbox, so its image must carry their runtime entry. */
+function boatSandboxImage(env: NodeJS.ProcessEnv, agentPlugins: boolean) {
+  const image = assertSandboxImageReference(setting(env, "CLAXEDO_SANDBOX_IMAGE"))
+  if (agentPlugins && !sandboxImageCarriesAgentPlugins(image)) {
+    throw new Error(`CLAXEDO_SANDBOX_IMAGE ${image} is not an Agent Plugins build, and this deployment enables Agent Plugins: build the sandbox image with --agent-plugins (workflow input agent_plugins=true) and deploy its -agent-plugins tag`)
+  }
+  return image
+}
+
 export function userCloudflareDeployment(
   env: NodeJS.ProcessEnv,
   options: Readonly<{ agentPlugins: boolean }>,
@@ -176,7 +185,7 @@ export function userCloudflareDeployment(
           ...(driver === "cloudflare"
             ? { CLOUDFLARE_SANDBOX_WORKER_URL: exactHttpsOrigin(env, "CLAXEDO_SANDBOX_WORKER_URL") }
             : {}),
-          ...(driver === "boat" ? { CLAXEDO_SANDBOX_IMAGE: assertSandboxImageReference(setting(env, "CLAXEDO_SANDBOX_IMAGE")) } : {}),
+          ...(driver === "boat" ? { CLAXEDO_SANDBOX_IMAGE: boatSandboxImage(env, artifact.agentPlugins) } : {}),
           ...(driver === "fetch" ? { CLAXEDO_SANDBOX_DRIVER_URL: exactHttpsOrigin(env, "CLAXEDO_SANDBOX_DRIVER_URL") } : {}),
         },
       }

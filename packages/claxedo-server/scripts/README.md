@@ -17,8 +17,9 @@ the in-repo workspace-runtime host into `.build/`, which the Dockerfiles copy.
 
 A control plane deployed with `--agent-plugins` requires an image built with
 `--agent-plugins`, whose host mounts the runtime apply route. The
-`claxedo-sandbox-image` workflow accepts `agent_plugins=true` for this variant.
-It publishes the content-addressed image without changing `latest`; pin the
+`claxedo-sandbox-image` workflow accepts `agent_plugins=true` for this variant,
+whose tag ends `-agent-plugins-v<schema>`; a Boat deploy with `--agent-plugins`
+refuses a `CLAXEDO_SANDBOX_IMAGE` without that tag. It publishes the content-addressed image without changing `latest`; pin the
 matching staging or production deployment explicitly to the emitted image tag.
 
 ## `deploy/`

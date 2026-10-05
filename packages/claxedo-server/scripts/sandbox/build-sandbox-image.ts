@@ -433,7 +433,7 @@ async function main() {
   const bundle = await bundleClaxedoWorkspaceRuntimeHost(outDir, defaultExec, { agentPlugins })
   console.log(`host bundle: ${bundle.bundle}`)
 
-  const imageTag = defaultSandboxImage(version, bundle.buildId)
+  const imageTag = defaultSandboxImage(version, bundle.buildId, process.env, { agentPlugins })
 
   // Persist build-info for deploy tooling / operators. Always written next to
   // the sandbox scripts (deploy tooling reads a stable path even when the
