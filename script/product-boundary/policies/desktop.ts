@@ -551,8 +551,13 @@ export const desktopRenderer: Policy = {
   // split routes load through (`lib/lazy-view.ts`), and the auth store's read
   // of the last signed-in user for the startup restore (`auth/persistence.ts`,
   // which the renderer did not reach before). They add no package edge.
-  // 1334/36, no headroom.
-  ceilings: { modules: 1334, packages: 36 },
+  // The new-session flow (owner: the app's projects, cloud and browser
+  // domains): the create-project dialog (`projects/view/create-project-dialog.tsx`)
+  // replaces the inline new-cloud-workspace panel, the one cloud-workspace
+  // display name (`cloud/view/cloud-name.ts`), and the note a localhost link
+  // from another machine's workspace opens (`browser/view/elsewhere-page.tsx`).
+  // They add no package edge. 1336/36, no headroom.
+  ceilings: { modules: 1336, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
