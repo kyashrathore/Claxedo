@@ -30,7 +30,10 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   const server = useServer()
   const workbench = useWorkbench()
   const key = () => draftComposerKey(props.state.draftId)
-  const where = () => props.state.where ?? props.state.placementId
+  const where = () => {
+    const chosen = props.state.where
+    return chosen && server.placements.byId(chosen) ? chosen : props.state.placementId
+  }
   const notice = createComposerNoticeChannel()
   const draft = createDraftPlacementResolver()
   let pane: HTMLDivElement | undefined

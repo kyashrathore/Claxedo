@@ -177,3 +177,26 @@ test("02 a tag named like the root's branch moves neither the default base nor t
   expect((await git(chosen, "rev-parse", "HEAD")).trim()).toBe(branchCommit)
   expect(await api.sessions(chosen)).toHaveLength(1)
 })
+
+test("02 a draft whose chosen worktree was removed reopens on its own folder, and its first send lands there", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("removed-where")
+  const response = await fetch(`${stack.url}/experimental/worktree?workspaceId=${workspace.id}`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "doomed" }),
+  })
+  expect(response.status).toBe(200)
+  const created = await response.json() as { directory: string }
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  const where = app.getByRole("button", { name: "Where it runs", exact: true })
+  await chooseWorkspace(app, "doomed")
+  await expect(where).toHaveText("doomed")
+  const removed = await fetch(`${stack.url}/experimental/worktree?workspaceId=${workspace.id}`, {
+    method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ directory: created.directory }),
+  })
+  expect(removed.status, await removed.text()).toBe(200)
+  await app.reload()
+  await expect(where).toHaveText(path.basename(workspace.directory))
+  await chooseScriptedHarness(app)
+  await sendPrompt(app, "Lands in the folder")
+  await expect(app).toHaveURL(new RegExp(`/w/${workspace.id}/session/[^/?]+$`))
+  expect(await api.sessions(workspace.directory)).toHaveLength(1)
+})
