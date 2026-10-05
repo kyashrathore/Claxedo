@@ -243,7 +243,7 @@ run_codex_conformance() {
   build_dist_packages
   (
     cd packages/harness
-    bun test src/conformance/codex.test.ts
+    bun run test:files src/conformance/codex.test.ts
   )
 }
 

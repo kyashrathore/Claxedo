@@ -530,6 +530,9 @@ test("an MCP prompt is listed as the session's command and a turn naming it runs
         : {}
     return Response.json({ jsonrpc: "2.0", id: message.id, result })
   } })
+  const commands = path.join(process.env.XDG_CONFIG_HOME!, "opencode", "command")
+  await fs.mkdir(commands, { recursive: true })
+  await fs.writeFile(path.join(commands, "home-probe.md"), "---\ndescription: home probe\n---\nHOMEPROBE\n")
   const context = await setupConformance({ name: "opencode-mcp-prompt", backend: async () => Object.assign(await backend(), {
     projection: { generation: "prompt", pluginRoots: [], notApplied: [],
       mcpServers: [{ kind: "http" as const, name: "docs", url: `http://127.0.0.1:${port}/mcp`, origin: "configured" as const }] } }),
@@ -537,12 +540,12 @@ test("an MCP prompt is listed as the session's command and a turn naming it runs
   const state = context.backend as OpenCodeBackend
   try {
     const listed = await (context.transport as OpenCodeSdkTransport).commands.list({ session: context.session })
-    expect(listed.map((command) => command.name)).toContain("docs:review")
+    expect(listed.map((command) => command.name).toSorted()).toEqual(["docs:review", "home-probe", "init", "review"])
     expect((await collect(context, context.turn("/docs:review security"))).some((item) => item.event.type === "finish")).toBe(true)
     expect(fetched).toEqual([{ name: "review", arguments: { focus: "security" } }])
     expect(state.server.requests.some((row) => row.prompt.includes("PROMPTBODY focus=security"))).toBe(true)
     expect(state.server.requests.some((row) => row.prompt.includes("/docs:review"))).toBe(false)
-  } finally { await context.close(); await mcp.stop(true); releasePort(port) }
+  } finally { await context.close(); await mcp.stop(true); releasePort(port); await fs.rm(path.join(commands, "home-probe.md")) }
 }, 90_000)
 
 test("a new instance whose MCP server never settles prompts at the bound, reports it once, and never waits again", async () => {

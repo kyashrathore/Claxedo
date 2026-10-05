@@ -58,6 +58,8 @@ Typed errors: `TransportError` from `src/contract/errors.ts`, or transport-local
 
 ## Tests
 
+Tests run in a temporary home that `bun run test:files <paths>` creates, because embedded engines and harness CLIs read their config from the home and bun's `os.homedir()` ignores a `HOME` set at runtime; a bare `bun test` refuses to start.
+
 Real stack first: flows against real harnesses and the scripted model server; the translator corpus at the provider boundary; the wire corpus at public entrypoints. Focused tests only where the invariant map says a flow can't reach an invariant deterministically. Every flow has a targeted red run.
 
 ## Checks

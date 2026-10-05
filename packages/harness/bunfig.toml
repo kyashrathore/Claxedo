@@ -1,2 +1,2 @@
 [test]
-preload = ["./e2e/harness/pinned-harnesses.ts"]
+preload = ["./e2e/harness/temporary-home-guard.ts", "./e2e/harness/pinned-harnesses.ts"]
