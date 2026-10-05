@@ -1,0 +1,65 @@
+@font-face {
+  font-family: "Claxedo Mono";
+  src: url("/site/public/fonts/claxedo-mono.woff2") format("woff2");
+  font-weight: 100 900;
+}
+
+:root {
+  --paper: #fcfcfc;
+  --ink: #0f0f0f;
+  --ink-body: #3a3a3a;
+  --ink-soft: #6b6b6b;
+  --line: #e8e8e8;
+  --dot: #aaaaaa;
+  --success: #168447;
+  --shadow-card: 0 0 0 1px var(--line), 0 1px 2px rgb(15 20 30 / .06), 0 18px 40px -18px rgb(15 20 30 / .3);
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Inter, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Inter, sans-serif;
+  --font-mono: "Claxedo Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--paper); }
+body { overflow: hidden; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; font-kerning: normal; }
+
+.stage { position: relative; overflow: hidden; background: var(--paper); color: var(--ink); font-family: var(--font-sans); }
+.layer { position: absolute; inset: 0; }
+.abs { position: absolute; left: 0; top: 0; transform-origin: 50% 50%; }
+
+.headline {
+  position: absolute; left: 0; right: 0; margin: 0;
+  font: 400 var(--size, 88px)/1.04 var(--font-display);
+  letter-spacing: -.032em; text-align: center; color: var(--ink);
+  white-space: nowrap; text-wrap: balance;
+}
+.headline.left { text-align: left; }
+.headline .word { display: inline-block; white-space: pre; transform-origin: 50% 80%; }
+.subline {
+  position: absolute; left: 0; right: 0; margin: 0;
+  font: 400 var(--size, 30px)/1.35 var(--font-sans); letter-spacing: -.012em;
+  color: var(--ink-soft); text-align: center;
+}
+.subline.left { text-align: left; }
+
+.tile {
+  display: grid; place-items: center; border-radius: 40px; background: #ffffff; box-shadow: var(--shadow-card); color: var(--ink);
+}
+.tile .mark { width: 50%; height: 50%; }
+.tile-label { font: 400 26px/1 var(--font-sans); letter-spacing: -.01em; color: var(--ink-body); text-align: center; white-space: nowrap; }
+
+.plate { position: absolute; image-rendering: pixelated; }
+.plate-panel { position: absolute; overflow: hidden; border-radius: 28px; background: #f7f7f7; }
+.plate-panel canvas { position: absolute; image-rendering: pixelated; -webkit-mask-image: radial-gradient(ellipse 60% 55% at 50% 38%, rgb(0 0 0 / .35), #000 90%); mask-image: radial-gradient(ellipse 60% 55% at 50% 38%, rgb(0 0 0 / .35), #000 90%); }
+
+.pixel-mark { position: absolute; }
+.pixel-mark i { position: absolute; border-radius: 18%; background: var(--ink); }
+
+.btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 12px; height: 72px; padding: 0 40px; border-radius: 999px; background: var(--ink); color: var(--paper); font: 400 28px/1 var(--font-sans); letter-spacing: -.01em; white-space: nowrap; }
+.quiet { color: var(--ink-soft); font: 400 22px/1 var(--font-sans); white-space: nowrap; }
+
+.device {
+  position: absolute; width: 430px; height: 900px; padding: 14px; border-radius: 68px; background: #0f0f0f;
+  box-shadow: 0 0 0 2px #2a2a2a inset, 0 2px 4px rgb(0 0 0 / .08), 0 40px 90px -30px rgb(15 20 30 / .45);
+}
+.device .screen { position: relative; width: 100%; height: 100%; overflow: hidden; border-radius: 54px; background: #ffffff; }
+.device .island { position: absolute; left: 50%; top: 11px; width: 122px; height: 36px; margin-left: -61px; border-radius: 20px; background: #0f0f0f; z-index: 5; }

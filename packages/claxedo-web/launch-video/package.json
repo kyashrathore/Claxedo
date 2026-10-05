@@ -1,0 +1,15 @@
+{
+  "name": "@claxedo/launch-video",
+  "type": "module",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "preview": "bun scripts/serve.js",
+    "sheet": "bun scripts/sheet.js",
+    "score": "bun scripts/score.js",
+    "render": "bun scripts/render.js"
+  },
+  "devDependencies": {
+    "playwright": "1.61.1"
+  }
+}
