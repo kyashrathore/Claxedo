@@ -153,6 +153,17 @@ function imageOutdatedSignals() {
   }
 }
 
+function connectionReader(connections: WorkspaceConnections, hosts: ReturnType<typeof sessionHostSignals>, outdated: ReturnType<typeof imageOutdatedSignals>): WorkspaceConnections["read"] {
+  return async (workspaceId, sessionId) => {
+    try {
+      return hosts.learned(workspaceId, sessionId, await connections.read(workspaceId, sessionId))
+    } catch (error) {
+      outdated.refused(workspaceId, error)
+      throw error
+    }
+  }
+}
+
 function sessionHostConnector(connections: WorkspaceConnections, relay: Relay, hosts: ReturnType<typeof sessionHostSignals>): Transport["connectSession"] {
   return async (workspaceId, sessionId) => {
     const answer = hosts.learned(workspaceId, sessionId, await connections.mintSession(workspaceId, sessionId))
@@ -172,6 +183,23 @@ function sessionRowHost(json: Transport["json"], account: HostedAccount | undefi
   }
 }
 
+function runtimeRoutes(serverUrl: string, request: Transport["request"], relay: Relay, daemonProxy: boolean): Pick<Transport, "runtime" | "runtimeSocket"> {
+  return {
+    runtime: (route, path, init) => {
+      if (!route.remote) return request(withQuery(path, { directory: route.directory }), init)
+      const session = sessionScope(route)
+      if (daemonProxy && !session) return request(workspaceProxyPath(route, path), init)
+      return relay.fetch(route.workspaceId, withoutRouteQuery(path), init, session)
+    },
+    runtimeSocket: async (route, path) => {
+      if (!route.remote) return new WebSocket(socketUrl(serverUrl, withQuery(path, { directory: route.directory })))
+      const session = sessionScope(route)
+      if (daemonProxy && !session) return new WebSocket(socketUrl(serverUrl, workspaceProxyPath(route, path)))
+      return relay.webSocket(route.workspaceId, withoutRouteQuery(path), session)
+    },
+  }
+}
+
 export function createTransport(config: ServerConfig): Transport {
   const serverUrl = resolveServerUrl(config)
   const loopback = isLoopbackUrl(serverUrl)
@@ -180,28 +208,9 @@ export function createTransport(config: ServerConfig): Transport {
   const connections = createWorkspaceConnections(request, account)
   const hosts = sessionHostSignals()
   const outdated = imageOutdatedSignals()
-  const read = async (workspaceId: string, sessionId?: string) => {
-    try {
-      return hosts.learned(workspaceId, sessionId, await connections.read(workspaceId, sessionId))
-    } catch (error) {
-      outdated.refused(workspaceId, error)
-      throw error
-    }
-  }
-  const relay = createRelay(read, config.relayLinks)
+  const relay = createRelay(connectionReader(connections, hosts, outdated), config.relayLinks)
   const daemonProxy = loopback && config.account === undefined
-  const runtime = (route: RuntimeRoute, path: string, init?: RequestInit) => {
-    if (!route.remote) return request(withQuery(path, { directory: route.directory }), init)
-    const session = sessionScope(route)
-    if (daemonProxy && !session) return request(workspaceProxyPath(route, path), init)
-    return relay.fetch(route.workspaceId, withoutRouteQuery(path), init, session)
-  }
-  const runtimeSocket = async (route: RuntimeRoute, path: string): Promise<WebSocket> => {
-    if (!route.remote) return new WebSocket(socketUrl(serverUrl, withQuery(path, { directory: route.directory })))
-    const session = sessionScope(route)
-    if (daemonProxy && !session) return new WebSocket(socketUrl(serverUrl, workspaceProxyPath(route, path)))
-    return relay.webSocket(route.workspaceId, withoutRouteQuery(path), session)
-  }
+  const { runtime, runtimeSocket } = runtimeRoutes(serverUrl, request, relay, daemonProxy)
   const label = (path: string, init?: RequestInit) => `${init?.method ?? "GET"} ${path}`
   const json: Transport["json"] = async (path, init) => readJsonResponse(await request(path, init), label(path, init))
   return {
