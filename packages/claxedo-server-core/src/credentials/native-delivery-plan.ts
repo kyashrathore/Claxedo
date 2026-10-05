@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { accountHolderOf, holderAccountSources, ORG_ACCOUNT_UNAVAILABLE, selectedAccounts, spendsAccount, type AccountSelections } from "./account-holder"
-import type { CredentialSnapshot, ProviderDirect, ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
+import { HARNESS_NEEDS_BROKERING, type CredentialSnapshot, type ProviderDirect, type ProviderProjectionSource } from "@claxedo/agent-runtime-contract"
 import { destinationAuthMode, builtInProviderDestination, builtInProviderDestinationShape, type ProviderDestination } from "./built-in-destinations"
 import type { CredentialKind, CredentialMetadata } from "./types"
 import { isSubscriptionKind } from "./secret-material"
@@ -242,7 +242,7 @@ export async function nativeProviderDeliveriesFromRepository(input: DeliveryWalk
   secretBrokering?: SandboxSecretBrokering
 }): Promise<NativeProviderDelivery[]> {
   const walked = await walkDeliverableAccounts(input, (credential) =>
-    input.secretBrokering === "native" || deliveredDirect(credential) ? undefined : "secret_brokering_unsupported")
+    input.secretBrokering === "native" || deliveredDirect(credential) ? undefined : HARNESS_NEEDS_BROKERING)
   return walked.map((row) => "refused" in row ? row.refused : delivery(row.credential, row.destination))
 }
 

@@ -1,4 +1,4 @@
-import type { HarnessConnectionState, HarnessHealth, HarnessOptionChoice, HarnessOptionsSource, HarnessState, PlacementId } from "@/server"
+import type { HarnessConnectionState, HarnessHealth, HarnessOptionChoice, HarnessOptionsSource, HarnessState, HarnessUnavailableHere, PlacementId } from "@/server"
 import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import {
   hardFailedHarness,
@@ -27,6 +27,7 @@ export type HarnessStoreState = {
   optionsStale: boolean
   optionsLoading: boolean
   configError?: string
+  unavailableHere?: HarnessUnavailableHere
   workspaceId?: string
   draftDefaultAuthority?: DraftDefaultAuthority
   draftDefaultRevision?: number
@@ -149,6 +150,7 @@ export function harnessSwitchStartPatch(input: {
     serviceTiers: null,
     selectedServiceTier: undefined,
     configError: undefined,
+    unavailableHere: undefined,
     readiness: "ready",
     optionsSource: "empty",
     optionsStale: false,

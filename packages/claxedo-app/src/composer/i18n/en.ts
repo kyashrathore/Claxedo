@@ -10,6 +10,10 @@ export type ComposerTextKey =
   | "composer.models.empty"
   | "composer.models.asleep"
   | "composer.models.asleep.detail"
+  | "composer.unavailableHere"
+  | "composer.unavailableHere.alternative"
+  | "composer.unavailableHere.machines"
+  | "composer.unavailableHere.switch"
   | "composer.attachment.refused.title"
   | "composer.attachment.refused.description"
   | "composer.attachment.unreadable.title"
@@ -139,6 +143,10 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "composer.models.empty": "{{harness}} offers no models right now",
   "composer.models.asleep": "{{name}} is asleep",
   "composer.models.asleep.detail": "Its models load when it wakes; your next message wakes it.",
+  "composer.unavailableHere": "{{harness}} runs inside the workspace, and this cloud provider can't keep your key out of it.",
+  "composer.unavailableHere.alternative": "Use {{model}} through {{harness}} — same account.",
+  "composer.unavailableHere.machines": "It runs on your machines, or pick another harness here.",
+  "composer.unavailableHere.switch": "Switch to {{harness}}",
   "composer.attachment.refused.title": "{{harness}} cannot take this attachment",
   "composer.attachment.refused.description": "{{harness}} has no prompt input for {{mime}}, and this session has no workspace folder to keep the file in.",
   "composer.attachment.unreadable.title": "Attachment could not be read",

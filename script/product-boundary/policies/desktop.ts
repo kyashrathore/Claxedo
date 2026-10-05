@@ -577,8 +577,12 @@ export const desktopRenderer: Policy = {
   // (`cloud/view/workspace-name.ts`) and the Marketplace's project-scope copy
   // by sign-in state (`marketplace/view/project-scope.ts`). They add no
   // package edge.
-  // 1347/36, no headroom.
-  ceilings: { modules: 1347, packages: 36 },
+  // The picker's answer for a harness this cloud provider cannot run, with
+  // the Pi alternative that spends the same account (owner: the app's
+  // composer, `composer/view/harness-unavailable-here.ts`). It adds no
+  // package edge.
+  // 1348/36, no headroom.
+  ceilings: { modules: 1348, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

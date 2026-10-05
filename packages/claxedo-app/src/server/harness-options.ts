@@ -2,13 +2,14 @@ import { fetchQuery } from "./fetch-query"
 import { sessionId, type PlacementId } from "./ids"
 import { queryKeys } from "./query-keys"
 import { withQuery, type Transport } from "./transport"
-import { responseError } from "./errors"
+import { responseError, ServerError } from "./errors"
+import { HARNESS_NEEDS_BROKERING } from "@claxedo/agent-runtime-contract"
 import type { HarnessOptions } from "./harness-types"
 import type { FetchQuery, SessionLocation } from "./types"
 import type { Workspaces } from "./workspaces"
 import { harnessCommandQuery } from "./harness-commands"
 import { readStopsBackgroundTasks } from "./session-stop"
-import { harnessOptionsFromWire } from "./wire/harness-options"
+import { harnessOptionsFromWire, unavailableHereOptionsFromWire } from "./wire/harness-options"
 import { harnessSelectionQuery } from "./wire/harness-selection"
 
 const HARNESS_OPTIONS_PATH = "/api/claxedo/agent-config/harness/options"
@@ -31,6 +32,15 @@ async function readOptionsRoute(transport: Transport, query: Record<string, stri
 }
 
 export async function readHarnessOptions(transport: Transport, workspaces: Workspaces, request: HarnessOptionsRequest): Promise<HarnessOptions> {
+  try {
+    return await readOptions(transport, workspaces, request)
+  } catch (error) {
+    if (error instanceof ServerError && error.code === HARNESS_NEEDS_BROKERING) return unavailableHereOptionsFromWire(error.details)
+    throw error
+  }
+}
+
+async function readOptions(transport: Transport, workspaces: Workspaces, request: HarnessOptionsRequest): Promise<HarnessOptions> {
   const selection = harnessSelectionQuery(request.harness)
   if (draftServedBySessionHost(workspaces, request)) return readOptionsRoute(transport, { ...selection, model: request.model })
   const route = await workspaces.route(request.sessionId ? { placementId: request.placementId, sessionId: sessionId(request.sessionId) } : request.placementId)

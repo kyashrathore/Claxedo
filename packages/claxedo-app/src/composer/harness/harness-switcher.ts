@@ -1,3 +1,4 @@
+import type { ModelChoice } from "@/server"
 import {
   harnessHasConfigOptions,
   type HarnessType,
@@ -32,13 +33,13 @@ type SwitcherInput<ScopeInput extends HarnessScopeInput> = {
 export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(input: SwitcherInput<ScopeInput>) {
   const revisions = new Map<string, number>()
   let nextRevision = 0
-  const setHarness = (scope: string, type: HarnessType, params?: ScopeInput) => {
+  const setHarness = (scope: string, type: HarnessType, params?: ScopeInput, model?: ModelChoice) => {
     const key = harnessChangeKey(params ?? {}, type)
     const pending = input.cache.getPending(key)
     if (pending) return pending
     const revision = ++nextRevision
     revisions.set(scope, revision)
-    const run = setHarnessOnce(input, scope, type, params, () => revisions.get(scope) === revision)
+    const run = setHarnessOnce(input, { scope, type, params, model }, () => revisions.get(scope) === revision)
     input.cache.setPending(key, run)
     return run.finally(() => {
       input.cache.removePending(key, run)
@@ -48,21 +49,22 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
   return { setHarness }
 }
 
+type HarnessChange<ScopeInput> = { scope: string; type: HarnessType; params?: ScopeInput; model?: ModelChoice }
+
 async function setHarnessOnce<ScopeInput extends HarnessScopeInput>(
   input: SwitcherInput<ScopeInput>,
-  scope: string,
-  type: HarnessType,
-  params: ScopeInput | undefined,
+  { scope, type, params, model }: HarnessChange<ScopeInput>,
   active: () => boolean,
 ) {
   input.seed(scope)
   const draft = !params?.sessionId || params.sessionId === "new"
-  if (!draft && input.restoreHeldHarness(scope, type)) return
+  if (!model && !draft && input.restoreHeldHarness(scope, type)) return
+  const start = { ...harnessSwitchStartPatch({ type }), ...(model ? { selectedModel: model.modelId, selectedModelProvider: model.providerId } : {}) }
   if (draft) {
     input.beginDraftHarnessChoice?.(scope, type, params)
-    input.applyPatch(scope, harnessSwitchStartPatch({ type }))
+    input.applyPatch(scope, start)
   } else {
-    input.holdHarness(scope, harnessSwitchStartPatch({ type }))
+    input.holdHarness(scope, start)
   }
   const accepted = await loadPickedHarness(input, scope, type, params, active)
   if (draft && accepted && active()) input.rememberDraftHarness(scope, type, params)

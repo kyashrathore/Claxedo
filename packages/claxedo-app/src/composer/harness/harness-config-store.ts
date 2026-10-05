@@ -44,9 +44,9 @@ export function createHarnessConfigStore(server: Server, storage: DraftDefaultSt
     resolveDraftDefault: resolveCurrentDraftDefault.bind(null, wiring),
     setModel: modelWriter.setModel,
     settledConfig: modelWriter.settledConfig,
-    setHarness: ((scope, type, input) => {
+    setHarness: ((scope, type, input, model) => {
       hydrator.cancel(scope)
-      return switcher.setHarness(scope, type, input)
+      return switcher.setHarness(scope, type, input, model)
     }) satisfies typeof switcher.setHarness,
     releaseHeldHarness: store.releaseHeldHarness,
     setConnectionDeclaration: store.setConnectionDeclaration,

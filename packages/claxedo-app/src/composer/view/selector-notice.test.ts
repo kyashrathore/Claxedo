@@ -71,6 +71,7 @@ function harnessNotice(
       account: () => situation.account ?? (harness.kind === "connection" ? "accountless" : "missing"),
       harnessLabel: () => "Scripted",
       openProviders: () => undefined,
+      unavailableHere: () => undefined,
     })
     return {
       kind: () => notice()?.kind,

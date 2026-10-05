@@ -38,6 +38,9 @@ export type SessionConfig = {
   readonly permissionModeLabel?: string
 }
 
+export type HarnessAlternative = { readonly harness: HarnessSelection; readonly model: HarnessOptionChoice }
+
+export type HarnessUnavailableHere = { readonly alternative?: HarnessAlternative }
 
 export type HarnessOptions = {
   readonly source: HarnessOptionsSource
@@ -47,4 +50,5 @@ export type HarnessOptions = {
   readonly thoughtLevels?: HarnessOptionSelect
   readonly serviceTiers: readonly HarnessOptionChoice[]
   readonly resolvedModel?: HarnessOptionChoice
+  readonly unavailableHere?: HarnessUnavailableHere
 }

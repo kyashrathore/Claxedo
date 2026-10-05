@@ -69,3 +69,10 @@ test.each(["max", undefined])("options state: catalog refresh preserves a sessio
     expect(patch.selectedThoughtLevel).toBe(selectedThoughtLevel)
   }
 })
+
+test("options state: a harness this placement cannot run lists no model, reports no failure and keeps the alternative", () => {
+  const unavailableHere = { alternative: { harness: nativeHarness("pi"), model: { id: "anthropic/claude-sonnet-5-5", name: "Claude Sonnet 5.5" } } }
+  const { patch } = applyHarnessOptionsResponse({ type: nativeHarness("claude"), selectedModel: "opus", payload: { source: "empty", stale: false, offersOptions: false, serviceTiers: [], unavailableHere } })
+  expect(patch).toMatchObject({ dynamicModels: [], selectedModel: "", configError: undefined, optionsLoading: false, unavailableHere })
+  expect(applyHarnessOptionsResponse({ type: codex, payload: live({ models }) }).patch.unavailableHere).toBeUndefined()
+})

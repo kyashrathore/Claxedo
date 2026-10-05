@@ -9,7 +9,7 @@ import {
   isHarnessId,
   vendorCredentialProviderIds,
 } from "./harness-table"
-import { isPiLaunchProvider, PI_LAUNCH_PROVIDERS, piCredentialProviderIDs } from "./pi-providers"
+import { isPiLaunchProvider, PI_LAUNCH_PROVIDERS, piCredentialProviderIDs, piProviderSpending } from "./pi-providers"
 
 describe("harness table", () => {
   test("the connect provider leads the list a resolver reads in order", () => {
@@ -100,6 +100,14 @@ describe("piCredentialProviderIDs", () => {
   test("a provider Pi cannot launch has no rows to launch it on", () => {
     expect(piCredentialProviderIDs("cursor")).toEqual([])
     expect(piCredentialProviderIDs("constructor")).toEqual([])
+  })
+
+  test("a harness login is spent by the Pi provider that reaches the same vendor", () => {
+    expect(piProviderSpending("claude-sdk")).toBe("anthropic")
+    expect(piProviderSpending("anthropic")).toBe("anthropic")
+    expect(piProviderSpending("codex-app-server")).toBe("openai-codex")
+    expect(piProviderSpending("openai")).toBe("openai")
+    expect(piProviderSpending("cursor-sdk")).toBeUndefined()
   })
 
   test("every launch provider names at least one row, and only launch providers do", () => {

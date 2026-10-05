@@ -73,3 +73,8 @@ const credentialProviders: Record<PiLaunchProvider, readonly string[]> = {
 export function piCredentialProviderIDs(providerID: string): readonly string[] {
   return isPiLaunchProvider(providerID) ? credentialProviders[providerID] : []
 }
+
+/** The Pi provider that spends a stored row of this provider id, where one does. */
+export function piProviderSpending(credentialProviderId: string): PiLaunchProvider | undefined {
+  return PI_LAUNCH_PROVIDERS.find((provider) => credentialProviders[provider].includes(credentialProviderId))
+}

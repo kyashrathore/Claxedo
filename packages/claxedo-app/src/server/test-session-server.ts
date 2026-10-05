@@ -4,7 +4,7 @@ import { sessionEndpoint } from "./session-context"
 import { createStatusOwner } from "./status"
 import { withQuery, type RuntimeRoute, type Transport } from "./transport"
 import type { TranscriptPart } from "./types"
-import { workspaceStopped } from "./wire/connection"
+import { responseError } from "./errors"
 import { viewportQuery } from "./wire/turn-page"
 import { createWorkspaces } from "./workspaces"
 
@@ -96,7 +96,7 @@ function fakeTransport(options: FakeServerOptions, calls: FakeCalls): Transport 
     json: async (path: string) => readJson(await request(path)),
     runtimeJson: async (route: RuntimeRoute, path: string) => {
       const response = await runtime(route, path)
-      if (response.status === 409) throw workspaceStopped("ws_cloud")
+      if (!response.ok) throw await responseError(response)
       return readJson(response)
     },
     startRuntime: async () => undefined,

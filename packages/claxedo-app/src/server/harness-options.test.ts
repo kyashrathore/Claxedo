@@ -61,3 +61,17 @@ test("a session's model options come from the host that serves it, its own sessi
   await readHarnessOptions(server.context.transport, server.context.workspaces, { placementId: placementId("ws_cloud"), harness: "pi", sessionId: "ses_1" })
   expect(server.hostedCalls).toEqual(["/session/ses_1/config-options?nativeHarness=pi"])
 })
+
+test("a harness the cloud provider cannot keep a key away from answers with the Pi model that spends the same account", async () => {
+  const refusal = { error: { code: "harness_needs_brokering", message: "This cloud provider cannot keep the account's key out of the workspace",
+    details: { retryable: false, alternative: { harness: "pi", model: { id: "anthropic/claude-sonnet-5-5", name: "Claude Sonnet 5.5" } } } } }
+  const server = fakeServer({ reachable: () => true, runtime: () => Response.json(refusal, { status: 409 }) })
+  await server.context.workspaces.load()
+  expect(await readHarnessOptions(server.context.transport, server.context.workspaces, { placementId: placementId("ws_cloud"), harness: "claude" })).toEqual({
+    source: "empty", stale: false, offersOptions: false, serviceTiers: [],
+    unavailableHere: { alternative: { harness: { kind: "native", harnessId: "pi" }, model: { id: "anthropic/claude-sonnet-5-5", name: "Claude Sonnet 5.5" } } },
+  })
+  const cursor = fakeServer({ reachable: () => true, runtime: () => Response.json({ error: { ...refusal.error, details: { retryable: false } } }, { status: 409 }) })
+  await cursor.context.workspaces.load()
+  expect((await readHarnessOptions(cursor.context.transport, cursor.context.workspaces, { placementId: placementId("ws_cloud"), harness: "cursor" })).unavailableHere).toEqual({})
+})

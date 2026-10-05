@@ -7,6 +7,7 @@ import type { ModelAvailability } from "./harness-model-availability"
 import type { PickerItem } from "./model-list"
 import type { HarnessAccountState } from "./harness-account-state"
 import type { SelectorCatalog } from "./selector-catalog"
+import type { ModelLoadFailure } from "./harness-picker-model-section"
 
 type SelectorNoticeInput = {
   active: Accessor<boolean | undefined>
@@ -23,6 +24,7 @@ type SelectorNoticeInput = {
   account: Accessor<HarnessAccountState>
   harnessLabel: (harness: HarnessType) => string
   openProviders: () => void
+  unavailableHere: Accessor<ModelLoadFailure | undefined>
 }
 
 function liveSourceOffersNoModel(input: SelectorNoticeInput) {
@@ -59,6 +61,7 @@ function harnessNoticeInput(input: SelectorNoticeInput, setupRequired: boolean):
           : undefined,
     setupRequired,
     openProviders: input.openProviders,
+    unavailableHere: input.unavailableHere(),
   }
 }
 

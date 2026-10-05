@@ -30,7 +30,7 @@ test("an unrelated binding cannot authorize a provider and explicit unavailabili
   expect(() => selectSessionCredentials({ ...snapshot, providerIds: ["anthropic"] }, { kind: "person", userId: "B" }))
     .toThrow(CredentialSelectionError)
   expect(() => selectSessionCredentials({ ...snapshot, accounts: { A: { openai: { unavailable: true, reason: "expired" } } } },
-    { kind: "machine-owner" })).toThrow("expired")
+    { kind: "machine-owner" })).toThrow(expect.objectContaining({ code: "account_unavailable", detail: { reason: "expired" } }))
 })
 
 test("a usable binding wins over an unusable one earlier in the harness's provider order", () => {
@@ -70,5 +70,14 @@ test("a plan handed over directly stands in for the binding a cloud edge refused
   const cloud = { ...snapshot, placement: "cloud" as const, canUseOwnLogin: false, accounts: { B: refused }, directDelivery: true }
   expect(selectSessionCredentials({ ...cloud, direct: { B: { "codex-app-server": plan } } }, { kind: "person", userId: "B" }))
     .toMatchObject({ providers: refused, direct: { "codex-app-server": plan } })
-  expect(() => selectSessionCredentials(cloud, { kind: "person", userId: "B" })).toThrow("org_account_unavailable")
+  expect(() => selectSessionCredentials(cloud, { kind: "person", userId: "B" })).toThrow(expect.objectContaining({ detail: { reason: "org_account_unavailable" } }))
+})
+
+test("an account the sandbox cannot broker is refused as needing brokering, naming the Pi provider that spends it", () => {
+  const refused = { ...snapshot, placement: "cloud" as const, providerIds: ["claude-sdk", "claude-acp", "anthropic"],
+    accounts: { B: { "claude-sdk": { unavailable: true as const, reason: "harness_needs_brokering" } } } }
+  expect(() => selectSessionCredentials(refused, { kind: "person", userId: "B" }))
+    .toThrow(expect.objectContaining({ name: "CredentialSelectionError", code: "harness_needs_brokering", detail: { piProvider: "anthropic" } }))
+  const cursor = { ...refused, providerIds: ["cursor-sdk"], accounts: { B: { "cursor-sdk": { unavailable: true as const, reason: "harness_needs_brokering" } } } }
+  expect(() => selectSessionCredentials(cursor, { kind: "person", userId: "B" })).toThrow(expect.objectContaining({ code: "harness_needs_brokering", detail: {} }))
 })

@@ -1,4 +1,4 @@
-import type { HarnessConnectionState, HarnessOptionChoice, ModelChoice } from "@/server"
+import type { HarnessConnectionState, HarnessOptionChoice, HarnessUnavailableHere, ModelChoice } from "@/server"
 import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import type { HarnessModelChoice, HarnessReadiness } from "./selection"
 import type { HarnessType } from "./profile"
@@ -16,7 +16,7 @@ export type HarnessSelectionControllerStore = {
   reprobe(scope: string, input?: HarnessScopeInput): void | Promise<void>
   probeHealth(scope: string, input?: HarnessScopeInput): void | Promise<void>
   markUnavailable(scope: string): void
-  setHarness(scope: string, type: HarnessType, input?: HarnessScopeInput): void | Promise<void>
+  setHarness(scope: string, type: HarnessType, input?: HarnessScopeInput, model?: ModelChoice): void | Promise<void>
   setModel(scope: string, model: ModelChoice, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | Promise<void>
   setThoughtLevel(scope: string, value: string | undefined, input?: HarnessScopeInput): void | Promise<void>
   setServiceTier(scope: string, value: string | undefined): void
@@ -38,6 +38,7 @@ export type HarnessSelectionControllerStore = {
   optionsLoading(scope: string): boolean
   optionsAnswered(scope: string): boolean
   configError(scope: string): string | undefined
+  unavailableHere(scope: string): HarnessUnavailableHere | undefined
   draftDefaultState(scope: string): DraftDefaultResult["state"] | undefined
   draftDefaultLabels(scope: string): DraftDefaultLabels | undefined
   draftDefaultModel(scope: string): ModelChoice | undefined
@@ -71,6 +72,7 @@ export type HarnessSelectionSnapshot = {
   optionsLoading: boolean
   optionsAnswered: boolean
   configError: string | undefined
+  unavailableHere?: HarnessUnavailableHere
   draftDefaultState?: DraftDefaultResult["state"]
   draftDefaultLabels?: DraftDefaultLabels
   draftDefaultModel?: ModelChoice
@@ -97,6 +99,7 @@ function readSelection(store: HarnessSelectionControllerStore, scope: string): H
     optionsLoading: store.optionsLoading(scope),
     optionsAnswered: store.optionsAnswered(scope),
     configError: store.configError(scope),
+    unavailableHere: store.unavailableHere(scope),
     draftDefaultState: store.draftDefaultState(scope),
     draftDefaultLabels: store.draftDefaultLabels(scope),
     draftDefaultModel: store.draftDefaultModel(scope),
@@ -112,8 +115,8 @@ export function createHarnessSelectionController(store: HarnessSelectionControll
     reprobe: (scope: string, input?: HarnessScopeInput) => store.reprobe(scope, input),
     probeHealth: (scope: string, input?: HarnessScopeInput) => store.probeHealth(scope, input),
     markUnavailable: (scope: string) => store.markUnavailable(scope),
-    setHarness: (scope: string, type: HarnessType, input?: HarnessScopeInput) =>
-      store.setHarness(scope, type, input),
+    setHarness: (scope: string, type: HarnessType, input?: HarnessScopeInput, model?: ModelChoice) =>
+      store.setHarness(scope, type, input, model),
     setModel: (scope: string, model: ModelChoice, input?: HarnessScopeInput, labels?: DraftDefaultLabels) =>
       store.setModel(scope, model, input, labels),
     setThoughtLevel: (scope: string, value: string | undefined, input?: HarnessScopeInput) => store.setThoughtLevel(scope, value, input),

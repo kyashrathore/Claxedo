@@ -6,7 +6,7 @@ import { asRecordOrEmpty, asString } from "@claxedo/helpers/guards"
 import { lstatIfExists, readTextIfExists, writePrivateFileAtomic } from "@claxedo/helpers/fs"
 import { accountIdFromClaims, HARNESS_TABLE, type ProviderDirect, type ProviderProjection } from "@claxedo/agent-runtime-contract"
 import { selectedProviderProjection, type PluginProjection, type ResolvedCredentials } from "../../contract"
-import { CredentialSelectionError } from "../../registry/credentials"
+import { accountUnusable, CredentialSelectionError, noAccountChosen } from "../../registry/credentials"
 import { CLAXEDO_MARKETPLACE, codexHomeKey, codexStoreKey, codexMirror, linkConversationStore, mirrorOwnerCodexHome, type CodexAccount } from "./home"
 import { mirrorConfigTree } from "../config-mirror"
 
@@ -125,10 +125,8 @@ export function selectedCodexAccount(credentials: ResolvedCredentials): CodexAcc
   if (selected && !("unavailable" in selected)) return { kind: "brokered", binding: selected }
   const plan = codexPlan(credentials)
   if (plan) return { kind: "plan", plan }
-  if (selected) throw new CredentialSelectionError("account_unavailable", `Codex account unavailable: ${selected.reason}`)
-  if (!credentials.machineLoginAllowed) {
-    throw new CredentialSelectionError("account_unavailable", "Codex requires a selected account for this session owner")
-  }
+  if (selected) throw accountUnusable(selected.reason)
+  if (!credentials.machineLoginAllowed) throw noAccountChosen()
   return undefined
 }
 

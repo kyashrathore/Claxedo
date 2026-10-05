@@ -21,6 +21,7 @@ import { createSelectorCatalog } from "./selector-catalog"
 import { createHarnessAccountState } from "./harness-account-state"
 import { createModelsEmpty } from "./models-empty"
 import { createSelectorNotice } from "./selector-notice"
+import { createUnavailableHere } from "./harness-unavailable-here"
 import { createSelectionWrites } from "./selection-writes"
 import { createScopeSelection, createSelectorScope } from "./selector-scope"
 
@@ -91,7 +92,8 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     return id !== undefined && isStoppedCloud(server.placements.byId(id))
   }
   const account = createHarnessAccountState(server, harness)
-  const modelsEmpty = createModelsEmpty({ harness, harnessLabel: optionList.label, asleep, account, placementId, openProviders })
+  const unavailableHere = createUnavailableHere({ selection, harness, harnessLabel: optionList.label, adopt: harnessSwitch.adopt })
+  const modelsEmpty = createModelsEmpty({ harness, harnessLabel: optionList.label, asleep, account, placementId, openProviders, unavailableHere })
   const { notice, modelError } = createSelectorNotice({
     active,
     controller,
@@ -107,6 +109,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     account,
     harnessLabel: optionList.label,
     openProviders,
+    unavailableHere,
   })
 
   publishComposerNotice(notice)

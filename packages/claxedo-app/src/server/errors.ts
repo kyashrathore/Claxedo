@@ -23,12 +23,14 @@ export class ServerError extends Error implements AppError {
   readonly retryable: boolean
   readonly status?: number
   readonly code?: string
+  readonly details?: Readonly<Record<string, unknown>>
 
   constructor(input: {
     readonly class: ErrorClass
     readonly message: string
     readonly status?: number
     readonly code?: string
+    readonly details?: Readonly<Record<string, unknown>>
     readonly cause?: unknown
     readonly retryable?: boolean
   }) {
@@ -38,6 +40,7 @@ export class ServerError extends Error implements AppError {
     this.retryable = input.retryable ?? RETRYABLE[input.class]
     if (input.status !== undefined) this.status = input.status
     if (input.code !== undefined) this.code = input.code
+    if (input.details !== undefined) this.details = input.details
   }
 }
 
@@ -54,7 +57,7 @@ function errorClassForStatus(status: number, code?: string): ErrorClass {
   return "internal"
 }
 
-type ErrorBody = { readonly code?: string; readonly message?: string; readonly retryable?: boolean }
+type ErrorBody = { readonly code?: string; readonly message?: string; readonly retryable?: boolean; readonly details?: Readonly<Record<string, unknown>> }
 
 const SETTLED_CODES: ReadonlySet<string> = new Set(["harness_config_options_unavailable"])
 
@@ -70,11 +73,13 @@ function readErrorBody(text: string): ErrorBody {
   }
   if (!parsed || typeof parsed !== "object") return { message: text }
   const body = parsed as { error?: unknown; code?: unknown; message?: unknown; retryable?: unknown }
-  const envelope = body.error && typeof body.error === "object" ? (body.error as { code?: unknown; message?: unknown; retryable?: unknown }) : undefined
+  const envelope = body.error && typeof body.error === "object" ? (body.error as { code?: unknown; message?: unknown; retryable?: unknown; details?: unknown }) : undefined
   const code = envelope?.code ?? body.code
   const message = envelope?.message ?? (typeof body.error === "string" ? body.error : body.message)
   const retryable = envelope?.retryable ?? body.retryable
+  const details = asRecord(envelope?.details)
   return {
+    ...(details ? { details } : {}),
     ...(typeof code === "string" ? { code } : {}),
     ...(typeof message === "string" ? { message } : {}),
     ...(typeof retryable === "boolean" ? { retryable } : {}),
@@ -91,6 +96,7 @@ export function errorFromBody(status: number, body: ErrorBody, label = "Request"
     message: body.message ?? `${label} failed with status ${status}`,
     status,
     ...(body.code !== undefined ? { code: body.code } : {}),
+    ...(body.details !== undefined ? { details: body.details } : {}),
     ...(body.retryable !== undefined ? { retryable: body.retryable } : body.code !== undefined && SETTLED_CODES.has(body.code) ? { retryable: false } : {}),
   })
 }

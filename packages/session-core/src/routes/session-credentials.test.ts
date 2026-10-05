@@ -3,12 +3,13 @@ import { Hono } from "hono"
 import type { SessionRequestIdentity } from "../session-access-policy"
 import { createHostFixture, until } from "../test-support/host-fixture"
 import { testLaunch } from "../test-support/host-composition"
+import type { LaunchComposer } from "../host/launch"
 import { FakeTransport } from "../test-support/fake-transport"
 import { createSessionRoutes } from "./session-core"
 
-function fixture() {
-  const transport = new FakeTransport({ kind: "codex-app-server" })
-  const f = createHostFixture({ transports: { codex: transport }, launch: testLaunch("ws", ["user-A", "user-B"]) })
+function fixture(harness: "codex" | "claude" = "codex", launch: LaunchComposer = testLaunch("ws", ["user-A", "user-B"])) {
+  const transport = new FakeTransport({ kind: harness === "codex" ? "codex-app-server" : "claude-sdk" })
+  const f = createHostFixture({ transports: { [harness]: transport }, launch })
   const app = new Hono<{ Variables: { relayHostAuth: SessionRequestIdentity & { principal_kind: "user" | "service" } } }>()
   app.use("*", async (c, next) => {
     const agent = c.req.header("x-test-kind") === "agent"
@@ -23,7 +24,7 @@ function fixture() {
   app.route("/", createSessionRoutes({
     sessionIdWorkspace: () => undefined,
     runtime: async () => f.runtime,
-    defaultHarness: () => ({ id: "codex", access: "native" }),
+    defaultHarness: () => ({ id: harness, access: "native" }),
     requestedSessionHarness: () => undefined,
     resolveDirectory: () => "/repo",
     resolveWorkspaceId: () => "ws",
@@ -31,7 +32,7 @@ function fixture() {
   }))
   const headers = (caller: { user?: string; agent?: boolean }) => ({ "content-type": "application/json",
     ...(caller.user ? { "x-test-user": caller.user } : {}), ...(caller.agent ? { "x-test-kind": "agent" } : {}) })
-  const create = (id: string, caller: { user?: string; agent?: boolean }, parentID?: string) => app.request("/session", {
+  const create = (id: string, caller: { user?: string; agent?: boolean }, parentID?: string, query = "") => app.request(`/session${query}`, {
     method: "POST", headers: headers(caller), body: JSON.stringify({ id, ...(parentID ? { parentID } : {}) }),
   })
   const prompt = (id: string, caller: { user?: string; agent?: boolean }) => app.request(`/session/${id}/prompt_async`, {
@@ -69,5 +70,20 @@ test("a platform service with no user id creates as the runtime's owner and is a
     expect(sent.status, await sent.clone().text()).toBeLessThan(300)
     await until(() => transport.turns.length === 1)
     expect(transport.starts[1].credentials.providers.openai).toMatchObject({ placeholder: "fixture-user-A" })
+  } finally { await f.dispose() }
+})
+
+test("an account the cloud provider cannot broker refuses Claude Code with the Pi model that spends the same account", async () => {
+  const launch = testLaunch("ws")
+  const refused = { "claude-sdk": { unavailable: true as const, reason: "harness_needs_brokering" } }
+  const { f, transport, create } = fixture("claude", { ...launch, credentials: () => ({ ...launch.credentials()!, placement: "cloud", accounts: { "user-C": refused } }) })
+  try {
+    const plain = await create("plain", { user: "user-C" })
+    expect(plain.status).toBe(409)
+    expect(await plain.json()).toEqual({ error: { code: "harness_needs_brokering", message: "This cloud provider can't keep the account's key out of the workspace.",
+      details: { retryable: false, alternative: { harness: "pi", model: { id: "anthropic/claude-sonnet-5-5", name: "Claude Sonnet 5.5" } } } } })
+    const opus = await create("opus", { user: "user-C" }, undefined, "?model=opus")
+    expect(await opus.json()).toMatchObject({ error: { details: { alternative: { model: { id: "anthropic/claude-opus-5-5" } } } } })
+    expect(transport.starts).toHaveLength(0)
   } finally { await f.dispose() }
 })

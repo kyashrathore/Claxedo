@@ -1,9 +1,10 @@
 import { createMemo, createSignal, type Accessor } from "solid-js"
+import type { HarnessAlternative, ModelChoice } from "@/server"
 import { sameHarnessSelection } from "@/lib/harness-selection"
 import { catalogDraftDefaultInput } from "../harness/catalog-draft-default"
 import type { HarnessScopeInput, HarnessSelectionController } from "../harness/controller"
 import { resolveDraftDefault } from "../harness/draft-default-policy"
-import { isCatalogHarness, type HarnessType } from "../harness/profile"
+import { harnessSelectionId, isCatalogHarness, type HarnessType } from "../harness/profile"
 import { shouldApplyHarnessSelection } from "./agent-harness-selection-guard"
 import type { SelectorCatalog } from "./selector-catalog"
 
@@ -37,6 +38,20 @@ export function createHarnessSwitch(input: HarnessSwitchInput) {
   const switching = () => !!switchingHarness()
   const harnessDisabled = createMemo(() => input.polling() || switching())
   let openedViaMenu = false
+  const run = (next: HarnessType, model?: ModelChoice) => {
+    setSwitchingHarness(next)
+    const switchScope = input.scope()
+    const switchInput = input.scopeInput()
+    void Promise.resolve(
+      input.controller().setHarness(switchScope, next, switchInput, model),
+    ).then(() => model ? undefined : restoreCatalogModel(input, next, switchScope, switchInput)).finally(() => {
+      setSwitchingHarness((current) => sameHarnessSelection(current, next) ? undefined : current)
+    })
+  }
+  const adopt = (alternative: HarnessAlternative) => {
+    if (harnessDisabled()) return
+    run(alternative.harness, { providerId: harnessSelectionId(alternative.harness), modelId: alternative.model.id })
+  }
   const apply = (next: HarnessType | undefined) => {
     openedViaMenu = true
     const current = input.harness()
@@ -48,14 +63,7 @@ export function createHarnessSwitch(input: HarnessSwitchInput) {
     })
     openedViaMenu = false
     if (!allowed || !next) return
-    setSwitchingHarness(next)
-    const switchScope = input.scope()
-    const switchInput = input.scopeInput()
-    void Promise.resolve(
-      input.controller().setHarness(switchScope, next, switchInput),
-    ).then(() => restoreCatalogModel(input, next, switchScope, switchInput)).finally(() => {
-      setSwitchingHarness((current) => sameHarnessSelection(current, next) ? undefined : current)
-    })
+    run(next)
   }
-  return { switching, harnessDisabled, apply }
+  return { switching, harnessDisabled, apply, adopt }
 }

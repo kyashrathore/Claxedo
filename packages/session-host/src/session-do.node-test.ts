@@ -374,7 +374,7 @@ void describe("SessionDO under workerd with PiHarness", () => {
       const reply = (await bare.messages()).find((message) => message.info.role === "assistant" && message.info.time?.completed)
       return reply ? JSON.stringify(reply.info) : undefined
     }, 30_000)
-    assert.match(refused, /No selected account for session owner user_bare/)
+    assert.match(refused, /No account is chosen for this harness/)
     assert.equal(model.requests.slice(answered).some((request) => request.prompt.includes("PIBARE")), false)
   })
 

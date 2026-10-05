@@ -47,7 +47,7 @@ describe("a Cursor account in a native-brokering sandbox", () => {
   test("a driver that cannot broker still gets nothing", async () => {
     const deliveries = await cursorDeliveries("none")
     expect(nativeProviderSecrets(deliveries)).toEqual([])
-    expect(deliveries[0]?.projection).toEqual({ unavailable: true, reason: "secret_brokering_unsupported" })
+    expect(deliveries[0]?.projection).toEqual({ unavailable: true, reason: "harness_needs_brokering" })
   })
 
   test("Vercel's firewall writes the key only on Cursor's exchange request", async () => {

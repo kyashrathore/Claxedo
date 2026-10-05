@@ -1,5 +1,6 @@
 import type { HarnessOptionChoice, HarnessOptions, HarnessOptionSelect, HarnessOptionsSource } from "../harness-types"
 import { isRecord } from "@claxedo/helpers/guards"
+import { NATIVE_HARNESS_IDS, nativeHarness } from "../../lib/harness-selection"
 
 type ConfigOption = { readonly category: unknown; readonly type: unknown; readonly currentValue: unknown; readonly options: unknown; readonly selectOptions: unknown }
 
@@ -55,5 +56,18 @@ export function harnessOptionsFromWire(body: unknown): HarnessOptions {
     ...(thoughtLevels && thoughtLevels.choices.length > 1 ? { thoughtLevels } : {}),
     serviceTiers: decodedChoices(options.find((item) => item.category === "service_tier" && item.type === "select")?.selectOptions, selectOption),
     ...(resolvedModel ? { resolvedModel } : {}),
+  }
+}
+
+export function unavailableHereOptionsFromWire(details: Readonly<Record<string, unknown>> | undefined): HarnessOptions {
+  const alternative = isRecord(details?.alternative) ? details.alternative : undefined
+  const harnessId = NATIVE_HARNESS_IDS.find((id) => id === alternative?.harness)
+  const model = selectOption(alternative?.model)
+  return {
+    source: "empty",
+    stale: false,
+    offersOptions: false,
+    serviceTiers: [],
+    unavailableHere: harnessId && model ? { alternative: { harness: nativeHarness(harnessId), model } } : {},
   }
 }

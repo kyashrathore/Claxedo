@@ -1,4 +1,4 @@
-import type { HarnessOptionChoice, HarnessOptions, HarnessOptionsSource } from "@/server"
+import type { HarnessOptionChoice, HarnessOptions, HarnessOptionsSource, HarnessUnavailableHere } from "@/server"
 import {
   isNativeSdkHarness,
   isStaticCatalogOptions,
@@ -16,6 +16,7 @@ export type HarnessOptionsStatePatch = {
   optionsStale?: boolean
   optionsLoading?: boolean
   configError?: string
+  unavailableHere?: HarnessUnavailableHere
 }
 
 export type HarnessOptionsDecision = {
@@ -44,6 +45,7 @@ function optionsBase(input: OptionsResponseInput) {
     thoughtLevels: thought?.choices ?? [],
     serviceTiers: input.payload.serviceTiers,
     selectedThoughtLevel: input.sessionModel || input.preserveSelectedModel || kept ? input.selectedThoughtLevel : thought?.current,
+    unavailableHere: input.payload.unavailableHere,
   } satisfies HarnessOptionsStatePatch
 }
 
@@ -87,6 +89,7 @@ function listedModelsDecision(input: OptionsResponseInput, base: HarnessOptionsS
 
 export function applyHarnessOptionsResponse(input: OptionsResponseInput): HarnessOptionsDecision {
   const base = optionsBase(input)
+  if (input.payload.unavailableHere) return loadedDecision({ ...base, dynamicModels: [], selectedModel: "", configError: undefined })
   const models = input.payload.models
   return models ? listedModelsDecision(input, base, models) : modellessDecision(input, base)
 }

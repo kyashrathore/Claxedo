@@ -44,6 +44,13 @@ export type ProviderUnavailable = {
 }
 
 /**
+ * The refusal an account carries in a sandbox whose provider cannot keep the
+ * secret out of it: no harness running inside that sandbox may be handed it.
+ * A harness that calls the vendor from outside the sandbox still can.
+ */
+export const HARNESS_NEEDS_BROKERING = "harness_needs_brokering"
+
+/**
  * Whether a row is the refusal rather than a binding.
  *
  * Takes any object rather than a `ProviderProjection`, because the same

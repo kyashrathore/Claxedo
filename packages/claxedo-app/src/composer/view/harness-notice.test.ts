@@ -34,3 +34,11 @@ test("harness notice: setup, then failed models, then an unavailable saved model
   })
   expect(resolveHarnessNotice(base)).toBeUndefined()
 })
+
+test("harness notice: a harness this cloud provider cannot run outranks every load failure and carries its one action", () => {
+  const run = () => undefined
+  const unavailableHere = { message: "Claude Code runs inside the workspace", detail: "Use Claude Sonnet 5.5 through Pi — same account.", action: { label: "Switch to Pi", run } }
+  expect(resolveHarnessNotice({ ...base, runtimeUnavailable: true, optionsFailed: true, configError: "boom", noModels: true, setupRequired: true, openProviders: open, unavailableHere }))
+    .toEqual({ kind: "unavailable-here", tone: "warning", retry: false, ...unavailableHere })
+  expect(resolveHarnessNotice({ ...base, asleep: true, unavailableHere })).toBeUndefined()
+})

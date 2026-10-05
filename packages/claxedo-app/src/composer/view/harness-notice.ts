@@ -12,6 +12,7 @@ export type HarnessNoticeInput = {
   savedModelUnavailable?: string
   setupRequired?: boolean
   openProviders?: () => void
+  unavailableHere?: { message: string; detail?: string; action?: { label: string; run: () => void } }
 }
 
 export type HarnessNotice = {
@@ -45,6 +46,7 @@ export function resolveHarnessNotice(input: HarnessNoticeInput): HarnessNotice |
   const connection = connectionNotice(input)
   if (connection) return connection
   if (input.asleep) return undefined
+  if (input.unavailableHere) return { kind: "unavailable-here", tone: "warning", retry: false, ...input.unavailableHere }
   if (input.runtimeUnavailable) {
     return {
       kind: "runtime-unavailable",

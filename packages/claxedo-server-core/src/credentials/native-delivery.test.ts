@@ -245,7 +245,7 @@ describe("native provider delivery", () => {
     const deliveries = await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "none" })
     expect(nativeProviderSecrets(deliveries)).toEqual([])
     expect(nativeProviderAuth(deliveries, { owner: "local", machineOwnerUserId: "local", selections: {} }).accounts.local).toEqual({
-      "cursor-sdk": { unavailable: true, reason: "secret_brokering_unsupported" },
+      "cursor-sdk": { unavailable: true, reason: "harness_needs_brokering" },
     })
     expect(JSON.stringify(deliveries)).not.toContain("cursor-private-key")
   })
@@ -259,7 +259,7 @@ describe("native provider delivery", () => {
     // "none" driver cannot carry leaves the workspace unprovisionable forever.
     expect(nativeProviderSecrets(deliveries)).toEqual([])
     expect(nativeProviderAuth(deliveries, { owner: "local", machineOwnerUserId: "local", selections: {} }).accounts.local).toEqual({
-      "claude-sdk": { unavailable: true, reason: "secret_brokering_unsupported" },
+      "claude-sdk": { unavailable: true, reason: "harness_needs_brokering" },
     })
   })
 
@@ -270,7 +270,7 @@ describe("native provider delivery", () => {
     const deliveries = await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {} })
     expect(nativeProviderSecrets(deliveries)).toEqual([])
     expect(nativeProviderAuth(deliveries, { owner: "local", machineOwnerUserId: "local", selections: {} }).accounts.local).toEqual({
-      "claude-sdk": { unavailable: true, reason: "secret_brokering_unsupported" },
+      "claude-sdk": { unavailable: true, reason: "harness_needs_brokering" },
     })
   })
 
@@ -283,7 +283,7 @@ describe("native provider delivery", () => {
     const deliveries = await nativeProviderDeliveries({ owner: "local", machineOwnerUserId: "local", selections: {}, secretBrokering: "proxy" as never })
     expect(nativeProviderSecrets(deliveries)).toEqual([])
     expect(nativeProviderAuth(deliveries, { owner: "local", machineOwnerUserId: "local", selections: {} }).accounts.local).toEqual({
-      "claude-sdk": { unavailable: true, reason: "secret_brokering_unsupported" },
+      "claude-sdk": { unavailable: true, reason: "harness_needs_brokering" },
     })
   })
 
@@ -452,7 +452,7 @@ describe("native provider delivery", () => {
     // shared scope with nothing sends the harness no projection, and a harness
     // with no projection runs on the login its image carries.
     expect(snapshot.auth.accounts.local).toEqual({
-      "claude-sdk": { unavailable: true, reason: "secret_brokering_unsupported" },
+      "claude-sdk": { unavailable: true, reason: "harness_needs_brokering" },
     })
     expect(JSON.stringify(snapshot)).not.toContain(API_KEY)
   })
