@@ -116,6 +116,10 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
               <Icon name="gauge" size="small" />
               {t("rail.account.usage")}
             </DropdownMenu.Item>
+            <DropdownMenu.Item onSelect={select(() => routing.navigate(settingsPath()))}>
+              <Icon name="settings-gear" size="small" />
+              {t("rail.settings")}
+            </DropdownMenu.Item>
             <DropdownMenu.Item onSelect={select(() => openExternal(HELP_URL))}>
               <Icon name="help" size="small" />
               {t("rail.account.help")}

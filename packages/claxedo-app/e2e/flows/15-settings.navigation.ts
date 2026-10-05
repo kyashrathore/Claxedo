@@ -42,8 +42,13 @@ export async function leaveSettings(app: Page, isMobile: boolean) {
   await expect(app.getByTestId("settings-sidebar")).toHaveCount(0)
 }
 
+export async function chooseSettings(app: Page) {
+  await app.getByTestId("rail-account-trigger").click()
+  await app.getByRole("menuitem", { name: "Settings", exact: true }).click()
+}
+
 export async function openSettings(app: Page, isMobile: boolean) {
   await revealRail(app, isMobile)
-  await app.getByRole("button", { name: "Settings", exact: true }).click()
+  await chooseSettings(app)
   await openSection(app, isMobile, "Appearance")
 }

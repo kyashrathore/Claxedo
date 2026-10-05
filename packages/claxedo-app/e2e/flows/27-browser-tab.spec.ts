@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test"
 import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI } from "../harness"
-import { leaveSettings, openSection, revealRail } from "./15-settings.navigation"
+import { chooseSettings, leaveSettings, openSection, revealRail } from "./15-settings.navigation"
 
 const PAGES: Readonly<Record<string, string>> = {
   "/first.html": "<!doctype html><title>First</title><h1>First preview page</h1>",
@@ -18,7 +18,7 @@ async function visitShellPages(app: Page, isMobile: boolean) {
   await expect(app.getByTestId("browser-pane-webview-host")).toHaveCount(1)
   await details.getByRole("button", { name: "Close details", exact: true }).last().click()
   await revealRail(app, isMobile)
-  await app.getByRole("button", { name: "Settings", exact: true }).click()
+  await chooseSettings(app)
   await openSection(app, isMobile, "Appearance")
   await expect(app.getByRole("complementary", { name: "Workspace panel" })).toHaveCount(0)
   await expect(app.getByTestId("browser-pane-webview-host")).toHaveCount(1)

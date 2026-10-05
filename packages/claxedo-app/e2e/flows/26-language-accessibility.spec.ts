@@ -11,7 +11,7 @@ import {
   sessionRoute,
   UI,
 } from "../harness"
-import { openSection, openSettings } from "./15-settings.navigation"
+import { chooseSettings, openSection, openSettings } from "./15-settings.navigation"
 
 type Arranged = { readonly workspace: Workspace; readonly session: SessionRow }
 
@@ -35,7 +35,7 @@ async function expectSessionOpen(stack: Stack, app: Page, rail: string, title: s
 }
 
 async function openGeneralSettings(stack: Stack, app: Page): Promise<void> {
-  await app.getByRole("button", { name: "Settings", exact: true }).click()
+  await chooseSettings(app)
   await test.step("no General section; Language is its own section (DECISIONS Owner, 00:55)", async () => {
     await app.getByRole("group", { name: "App" }).getByRole("link", { name: "Language", exact: true }).click()
     await expect(app.getByRole("heading", { level: 1, name: "Language" })).toBeVisible()

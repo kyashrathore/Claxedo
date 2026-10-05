@@ -1,5 +1,5 @@
 import { expect, expectNothingAnimating, sessionRoute, test, UI } from "../harness"
-import { choose, leaveSettings, openSection, openSettings, picker, SECTIONS } from "./15-settings.navigation"
+import { choose, chooseSettings, leaveSettings, openSection, openSettings, picker, SECTIONS } from "./15-settings.navigation"
 
 test("15 settings: color scheme, a rebound shortcut and its reset, every section", async ({ stack, app, isMobile }) => {
   const workspace = await stack.daemon.makeWorkspace("settings", "Settings")
@@ -77,7 +77,7 @@ test("15 Connections on the desktop's local server shows no Integrations group a
   window.on("request", (request) => {
     if (new URL(request.url()).pathname.startsWith("/api/claxedo/integrations")) asked.push(request.url())
   })
-  await window.getByRole("button", { name: "Settings", exact: true }).click()
+  await chooseSettings(window)
   await window.getByRole("link", { name: "Connections", exact: true }).click()
   await expect(window.getByRole("heading", { level: 1, name: "Connections" })).toBeVisible()
   const page = window.getByTestId("settings-page")

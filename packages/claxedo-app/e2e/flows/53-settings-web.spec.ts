@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test"
 import { expect, test, UI, type SignedStack } from "../harness"
 import { hostedFetch, inviteHostedPerson } from "../../../harness/e2e/harness/hosted-auth"
-import { openSection } from "./15-settings.navigation"
+import { chooseSettings, openSection } from "./15-settings.navigation"
 
 async function colleague(signed: SignedStack, name: string) {
   const person = await signed.signUp(name)
@@ -17,7 +17,7 @@ async function colleague(signed: SignedStack, name: string) {
 
 async function openSettings(page: Page, isMobile: boolean) {
   if (isMobile) await page.getByRole("button", { name: UI.openRail }).click()
-  await page.getByRole("button", { name: "Settings", exact: true }).click()
+  await chooseSettings(page)
   await expect(page.getByTestId("settings-page")).toBeVisible()
 }
 

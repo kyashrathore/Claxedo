@@ -1,4 +1,5 @@
 import { expect, interceptSystemBrowser, test } from "../harness"
+import { chooseSettings } from "./15-settings.navigation"
 
 const PLUGINS_REPOSITORY = "https://github.com/kyashrathore/plugins"
 
@@ -13,7 +14,7 @@ for (const renderer of ["file", "http"] as const) {
       await window.reload()
       const document = window.url()
 
-      await window.getByRole("button", { name: "Settings", exact: true }).click()
+      await chooseSettings(window)
       for (const section of ["Keyboard shortcuts", "Appearance"]) {
         await window.getByRole("link", { name: section, exact: true }).click()
         await expect(window.getByRole("heading", { level: 1, name: section })).toBeVisible()

@@ -70,7 +70,7 @@ test("54 shell: rows are two lines, the home screen offers only the composer, th
   await page.getByRole("button", { name: signed.owner.name, exact: true }).click()
   const menu = page.getByRole("menu")
   await expect(menu.getByRole("menuitem", { name: "Usage" })).toBeVisible()
-  await expect(menu.getByRole("menuitem", { name: "Settings" })).toHaveCount(0)
+  await expect(menu.getByRole("menuitem", { name: "Settings" })).toBeVisible()
   await expect(menu.getByText(signed.owner.name, { exact: true })).toHaveCount(0)
   await page.getByRole("menuitem", { name: "Log out" }).click()
   await expect(page.getByRole("menuitem", { name: "Signing out…" })).toBeDisabled()

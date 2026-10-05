@@ -16,6 +16,7 @@ import {
   writeLivePlugin,
   type Desktop,
 } from "../harness"
+import { chooseSettings } from "./15-settings.navigation"
 
 async function startWithFixture(desktop: Desktop) {
   const workspace = await desktop.makeWorkspace("fixture", "Fixture project")
@@ -28,7 +29,7 @@ async function startWithFixture(desktop: Desktop) {
 }
 
 async function openSettingsSection(window: Page, link: string) {
-  await window.getByRole("button", { name: "Settings", exact: true }).click()
+  await chooseSettings(window)
   await window.getByRole("link", { name: link, exact: true }).click()
 }
 
