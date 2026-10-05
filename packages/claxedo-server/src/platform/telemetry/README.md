@@ -11,6 +11,8 @@ Worker's sink (`platform/auth/worker-telemetry.ts`) forwards everything to PostH
   with no network call (`errors/config.ts`).
 - Ids leave only as digests: the sink replaces the distinct id, every `*_id`/`*Id` property and every
   `$groups` value with the first 128 bits of SHA-256 over `claxedo:<id>`. `system` stays readable.
+- A Worker cancels work left running after its response, so the hosted core keeps the sink's `flush()` alive
+  past every response (`keepAlivePastResponse`): a capture any route started still reaches PostHog.
 - There is no user or org opt-out in the product today; the deployment switch is the only control.
 - The local server mounts no track route and composes no sink. A signed desktop's app events go to its
   account's control plane through Electron main (`telemetry.track` in `@claxedo/account-contract`); an
@@ -25,18 +27,17 @@ Worker's sink (`platform/auth/worker-telemetry.ts`) forwards everything to PostH
 - the body is decoded by `decodeProductEvent` (`@claxedo/account-contract/product-events`): an event outside
   `PRODUCT_EVENTS` or a property value outside its set is `400 telemetry_event_refused`, any other property
   is dropped, so no free text, path, prompt or email can be sent;
-- 120 events per caller per minute per isolate (`429` with `retry-after`);
-- on a Worker the send is kept alive past the response (`keepAlivePastResponse`).
+- 120 events per caller per minute per isolate (`429` with `retry-after`).
 
 ## Events
 
 | Event | Owner | Properties |
 | --- | --- | --- |
-| `onboarding_step_viewed`, `onboarding_step_completed`, `onboarding_abandoned` | app `onboarding/funnel.ts` | `step`: project, ai, execution. Abandoned fires when the wizard is left inside the app; closing the tab sends nothing. |
-| `session_started` | app `server/sessions.ts` `create` | `harness`: claude, codex, cursor, pi, opencode, connection, default; `where`: machine, cloud |
-| `permission_decided` | app `session/requests/store.ts` | `decision`: allow, deny, option (a harness-named option); `tool_kind`: bash, edit, write, read, list, grep, glob, websearch, webfetch, task, mcp, other |
-| `ui_error_shown` | app `i18n/error-copy.ts` `useErrorCopy(surface)`, once per error object | `error_class`: the app's error classes; `surface`: startup, connections, organization, terminal, usage, review |
-| `feature_used` | app `server/terminals.ts` create, `server/marketplace.ts` activation on, `panel/store.tsx` show and review toggle | `feature`: terminal, marketplace_install, file_open, review |
+| `onboarding_step_viewed`, `onboarding_step_completed`, `onboarding_abandoned` | `claxedo-app/src/onboarding/funnel.ts` | `step`: project, ai, execution. Abandoned fires when the wizard is left inside the app; closing the tab sends nothing. |
+| `session_started` | `claxedo-app/src/server/sessions.ts` `create` | `harness`: claude, codex, cursor, pi, opencode, connection, default; `where`: machine, cloud |
+| `permission_decided` | `claxedo-app/src/session/requests/store.ts` | `decision`: allow, deny, option (a harness-named option); `tool_kind`: bash, edit, write, read, list, grep, glob, websearch, webfetch, task, mcp, other |
+| `ui_error_shown` | `claxedo-app/src/i18n/error-copy.ts` `useErrorCopy(surface)`, once per error object | `error_class`: the app's error classes; `surface`: startup, connections, organization, terminal, usage, review |
+| `feature_used` | `claxedo-app/src/server/terminals.ts` create, `claxedo-app/src/server/marketplace.ts` activation on, `claxedo-app/src/panel/store.tsx` show and review toggle | `feature`: terminal, marketplace_install, file_open, review |
 | `turn_completed` | `usage/turn-completed-telemetry.ts`, wrapping the hosted usage writer | one per settled usage row the ledger accepts (a turn of several model calls is several rows): `harness`, `model_family`, `outcome`, `settlement`, `location`, `tokens_bucket`, `duration_ms` (since the turn's admission, when the row belongs to the reporting lease's turn) |
 | `workspace_created`, `workspace_deleted` | `routes/hosted/workspace.ts`, `workspace/cloud-workspace-deletion.ts` | `kind`: cloud; created also `private_repository` |
 | `workspace_ready`, `workspace_woken` | `sandbox/sandbox-telemetry.ts` from the sandbox manager's `runtime_ready` phase | `start_ms` (boot start to serving), `boot_mode`, `driver`, `key_owner`, `region`. Opens the metered interval. |

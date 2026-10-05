@@ -10,6 +10,7 @@ import { securityHeaders } from "@claxedo/server-core/platform/http/security-hea
 import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/browser-auth-security"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { TelemetryTrackRoutes } from "@claxedo/server-core/platform/telemetry/track-route"
+import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
 import type { DocumentsBackend } from "@claxedo/server-core/documents/backend"
 import { DocumentsRoutes } from "@claxedo/server-core/documents/routes/index"
 import { PublicDocumentRoutes } from "@claxedo/server-core/documents/routes/public"
@@ -244,6 +245,13 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   const app = withRouteOwnership(new Hono(), ownership, "hosted-core")
 
   app.use(securityHeaders())
+  const flushTelemetry = services.telemetry.flush
+  if (flushTelemetry) {
+    app.use(async (c, next) => {
+      await next()
+      keepAlivePastResponse(c, flushTelemetry())
+    })
+  }
   if (options.authentication.descriptor.browser.transport === "cookie") {
     app.use(browserAuthHttpSecurity(options.authentication.descriptor.browser))
   } else {

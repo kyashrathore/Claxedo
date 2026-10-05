@@ -38,15 +38,17 @@ function isProductEventName(value: unknown): value is ProductEventName {
   return typeof value === "string" && Object.hasOwn(PRODUCT_EVENTS, value)
 }
 
+function isProductEvent(candidate: { event: ProductEventName; properties: Record<string, unknown> }): candidate is ProductEvent {
+  const allowed: Readonly<Record<string, readonly string[]>> = PRODUCT_EVENTS[candidate.event]
+  return Object.entries(allowed).every(([key, values]) => {
+    const value = candidate.properties[key]
+    return typeof value === "string" && values.includes(value)
+  })
+}
+
 export function decodeProductEvent(raw: unknown): DecodeResult<ProductEvent> {
   if (!isRecord(raw) || !isProductEventName(raw.event)) return { ok: false, reason: "unknown_event" }
   const sent = isRecord(raw.properties) ? raw.properties : {}
-  const allowed: Readonly<Record<string, readonly string[]>> = PRODUCT_EVENTS[raw.event]
-  const properties: Record<string, string> = {}
-  for (const [key, values] of Object.entries(allowed)) {
-    const value = sent[key]
-    if (typeof value !== "string" || !values.includes(value)) return { ok: false, reason: `invalid_property:${key}` }
-    properties[key] = value
-  }
-  return { ok: true, value: { event: raw.event, properties } as ProductEvent }
+  const candidate = { event: raw.event, properties: Object.fromEntries(Object.keys(PRODUCT_EVENTS[raw.event]).map((key) => [key, sent[key]])) }
+  return isProductEvent(candidate) ? { ok: true, value: candidate } : { ok: false, reason: "invalid_properties" }
 }

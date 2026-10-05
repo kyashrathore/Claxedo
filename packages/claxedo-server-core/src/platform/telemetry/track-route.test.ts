@@ -98,23 +98,4 @@ describe("POST /api/claxedo/track", () => {
     expect((await track(event)).status).toBe(200)
     expect(captured).toHaveLength(122)
   })
-
-  test("on a Worker the send is kept alive past the response", async () => {
-    let settle: () => void = () => {}
-    const sent = new Promise<void>((resolve) => { settle = resolve })
-    const app = TelemetryTrackRoutes({ identity: async () => ({ userId: "user_1", orgId: "org_1" }), telemetry: { capture: () => sent } })
-    const kept: Promise<unknown>[] = []
-
-    const response = await app.request(
-      "http://cp.test/api/claxedo/track",
-      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ event: "feature_used", properties: { feature: "review" } }) },
-      {},
-      { waitUntil: (work: Promise<unknown>) => void kept.push(work), passThroughOnException: () => {}, props: {} } as never,
-    )
-
-    expect(response.status).toBe(200)
-    expect(kept).toHaveLength(1)
-    settle()
-    await expect(kept[0]).resolves.toBeUndefined()
-  })
 })

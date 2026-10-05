@@ -764,7 +764,7 @@ describe("hosted-core usage", () => {
     expect(reported.status).toBe(200)
     expect(writeRevision).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: "ses_cloud", workspaceId: "ws_cloud", hostId: "workspace:ws_cloud", location: "cloud-workspace" }),
-      { owner: { org_id: "org-1", user_id: "alice" }, turnId: "msg_user_1" },
+      { owner: { org_id: "org-1", user_id: "alice" }, turnId: "msg_user_1", admittedAt: expect.any(Number) },
     )
 
     const bare = createHostedCoreApp(composed, options)

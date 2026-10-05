@@ -134,7 +134,7 @@ describe("hosted core Worker root", () => {
   test("an unhandled route error is captured once with its route and code, never the request body", async () => {
     const posted: string[] = []
     vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {
-      posted.push(String(init.body))
+      posted.push(typeof init.body === "string" ? init.body : "")
       return new Response("ok")
     }))
     const routes = new Hono().post("/api/things/:thingId", () => {
@@ -155,7 +155,7 @@ describe("hosted core Worker root", () => {
     expect(response.status).toBe(500)
     expect(waits).toHaveLength(1)
     expect(posted).toHaveLength(1)
-    const capture = JSON.parse(posted[0]!)
+    const capture = JSON.parse(posted[0])
     expect(capture.event).toBe("$exception")
     expect(capture.distinct_id).toBe("system")
     expect(capture.properties).toMatchObject({ route: "/api/things/:thingId", method: "POST", code: "thing_store_unavailable" })

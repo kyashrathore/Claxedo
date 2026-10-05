@@ -188,3 +188,20 @@ describe("workerErrorCapture", () => {
     ).resolves.toBeUndefined()
   })
 })
+
+describe("workerTelemetry flush", () => {
+  test("settles only once every send it started has settled", async () => {
+    let answer: () => void = () => {}
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { answer = () => resolve(new Response("ok")) })))
+    const telemetry = workerTelemetry({ ...ON, CLAXEDO_POSTHOG_KEY: "phc_w" })
+    telemetry.capture("user_1", "thing.happened")
+    let flushed = false
+    const flush = telemetry.flush!().then(() => { flushed = true })
+
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+    expect(flushed).toBe(false)
+    answer()
+    await flush
+    expect(flushed).toBe(true)
+  })
+})

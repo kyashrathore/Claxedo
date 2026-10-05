@@ -95,8 +95,17 @@ export function workerTelemetry(env: TelemetryEnv = {}): ControlPlaneTelemetry {
   if (!key) {
     return { capture: () => {} }
   }
+  const pending = new Set<Promise<void>>()
   return {
-    capture: (distinctId, event, properties) => postCapture(host, key, event, distinctId, properties ?? {}).catch(() => {}),
+    capture: (distinctId, event, properties) => {
+      const send = postCapture(host, key, event, distinctId, properties ?? {})
+        .catch(() => {})
+        .finally(() => pending.delete(send))
+      pending.add(send)
+    },
+    flush: async () => {
+      await Promise.all(pending)
+    },
   }
 }
 
