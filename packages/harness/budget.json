@@ -9,7 +9,7 @@
   "transports/claude-sdk": 3409,
   "transports/codex-app-server": 3600,
   "transports/cursor-sdk": 1872,
-  "transports/acp": 3142,
+  "transports/acp": 3146,
   "transports/pi-durable": 1769,
   "transports/opencode-sdk": 3119,
   "compose.ts": 62

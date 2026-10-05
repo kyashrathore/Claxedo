@@ -194,10 +194,10 @@ describe("sandbox manager", () => {
     const manager = createSandboxManager({ leaseStore, driver: sized })
     expect(await manager.ensure("ws_1", { homeRegion: "us-east", machineClass: "large" })).toMatchObject({ status: "ready", epoch: 1 })
     expect(await leaseStore.get("ws_1")).toMatchObject({ machineClass: "large" })
-    expect(vi.mocked(sized.ensureHost).mock.calls[0]?.[0]).toMatchObject({ machineClass: "large" })
+    expect((sized.ensureHost as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]).toMatchObject({ machineClass: "large" })
     // A resume names nothing and still runs on the machine the lease has.
     await manager.ensure("ws_1", { homeRegion: "us-east" })
-    expect(vi.mocked(sized.ensureHost).mock.calls[1]?.[0]).toMatchObject({ machineClass: "large" })
+    expect((sized.ensureHost as ReturnType<typeof vi.fn>).mock.calls[1]?.[0]).toMatchObject({ machineClass: "large" })
 
     const unsized = fakeDriver()
     const refusing = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: unsized })

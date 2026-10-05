@@ -51,13 +51,17 @@ export class AcpConnectionHealth implements HealthOperations {
   connection(directory: string, sessionId?: string): ConnectionRuntimeStatus {
     const observations = this.scoped(directory, sessionId)
     const state = CONNECTION_PRECEDENCE.find((candidate) => observations.some((row) => row.state === candidate))
-      ?? (sessionId && !observations.length ? this.connection(directory).state : "configured")
+      ?? (sessionId && !observations.length ? this.unobserved(directory, sessionId) : "configured")
     return { state, processes: observations.map(({ sessionId: _id, directory: _directory, ...observation }) => ({ ...observation })) }
+  }
+
+  private unobserved(directory: string, sessionId: string): ConnectionRuntimeStatus["state"] {
+    return this.observations.has(sessionId) ? "disconnected" : this.connection(directory).state
   }
 
   runtime(directory: string, sessionId?: string): TransportHealth {
     const state = this.connection(directory, sessionId).state
-    const observed = sessionId !== undefined && this.scoped(directory, sessionId).length > 0
+    const observed = sessionId !== undefined && this.observations.has(sessionId)
     const healthy = observed ? state === "ready" : state !== "failed" && state !== "auth-required"
     if (!healthy) return { status: "unavailable" }
     return this.scoped(directory, sessionId).map((row) => this.ignoredStops.health(row.sessionId)).find((health) => health !== undefined)
