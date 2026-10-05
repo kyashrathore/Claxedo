@@ -63,7 +63,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
     <section data-component="session-screen" data-variant="draft" aria-label={t("sessionScreen.draft.title")}>
       <ComposerNoticeProvider channel={notice}>
         <div ref={pane} class="relative flex size-full flex-col overflow-hidden bg-background-base">
-          <Show when={sentMessage()} fallback={<div aria-hidden="true" class="h-[34%] shrink-0" />}>
+          <Show when={sentMessage()} fallback={<div aria-hidden="true" class="h-[calc(34%+4.25rem)] shrink-0" />}>
             {(message) => (
               <DraftTranscript message={message()} placementId={props.state.placementId} thinking={thinking()} />
             )}
