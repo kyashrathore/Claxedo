@@ -565,15 +565,20 @@ export const desktopRenderer: Policy = {
   // facts (owner: the app's marketplace domain): `marketplace/view/harness-label.ts`.
   // It adds no package edge.
   // Review round 1 (owner: the app's server adapter, shell, rail, composer and
-  // session list): the one workspace display name decoded by the wire
-  // (`server/wire/workspace-name.ts`, replacing `cloud/view/cloud-name.ts`), the
+  // session list): the workspace's own name decoded by the wire
+  // (`server/wire/workspace-name.ts`), the
   // per-user state scope (`shell/principal-scope.ts`), home's no-placement
   // action (`shell/view/home-empty.tsx`), the rail's machine marker
   // (`rail/session-marker.ts`), the picker's empty-model states
   // (`composer/view/models-empty.ts`) and a new session's first-words title
   // (`session/list/pending-title.ts`). They add no package edge.
-  // 1345/36, no headroom.
-  ceilings: { modules: 1345, packages: 36 },
+  // Review round 2 (owner: the app's cloud and marketplace domains): the
+  // reader-language name of a cloud workspace with no name of its own
+  // (`cloud/view/workspace-name.ts`) and the Marketplace's project-scope copy
+  // by sign-in state (`marketplace/view/project-scope.ts`). They add no
+  // package edge.
+  // 1347/36, no headroom.
+  ceilings: { modules: 1347, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

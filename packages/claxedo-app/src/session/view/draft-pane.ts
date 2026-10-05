@@ -9,7 +9,7 @@ export function newDraft(target: Omit<DraftSessionState, "draftId">): DraftSessi
   return { ...target, draftId: prefixedRandomId("draft") }
 }
 
-function decodeReservation(value: unknown): SessionReservation | undefined {
+function decodeHeldReservation(value: unknown): SessionReservation | undefined {
   const workspaceId = readString(value, "workspaceId")
   const sessionId = readString(value, "sessionId")
   const operationId = readString(value, "operationId")
@@ -23,7 +23,7 @@ function decodeDraft(value: Json): DraftSessionState | undefined {
   const placement = readString(value, "placementId")
   const draftId = readString(value, "draftId")
   const where = readString(value, "where")
-  const reservation = decodeReservation(readField(value, "reservation"))
+  const reservation = decodeHeldReservation(readField(value, "reservation"))
   if (!project || !placement || !draftId) return undefined
   return { projectId: projectId(project), placementId: placementId(placement), draftId, ...(where ? { where: placementId(where) } : {}), ...(reservation ? { reservation } : {}) }
 }
