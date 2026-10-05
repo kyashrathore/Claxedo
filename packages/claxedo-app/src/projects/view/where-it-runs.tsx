@@ -3,20 +3,24 @@ import { useQuery } from "@tanstack/solid-query"
 import { canStart, canStop, cloudFailureReason, useCloudCommandFailureText, useCloudStatusText, useCloudWorkspaces, type CloudWorkspaceRow, type CloudWorkspaces } from "@/cloud"
 import { useErrorCopy } from "@/i18n"
 import { FailureNotice } from "@/lib/failure"
-import { machineOfPlacement, useServer, type AppError, type Placement, type Project } from "@/server"
+import { machineOfPlacement, useServer, type AppError, type Machine, type Placement, type Project } from "@/server"
 import { SettingsEmpty, SettingsGroup, SettingsList, SettingsListSkeleton, SettingsNote, SettingsRow, useConnectMachine } from "@/settings"
 import { Button, requestConfirm, useDialog } from "@/ui"
 import { homeRelativePath } from "../folder-paths"
-import { useProjectsText } from "../i18n"
+import { useProjectsText, type ProjectsKey } from "../i18n"
 import { usePlacementOpener } from "../open"
 import { useProjectPlacements } from "../store"
 import { DialogNewCloudWorkspace } from "./new-cloud-workspace-dialog"
 
-function MachinePlacementRow(props: { readonly placement: Placement; readonly machineName?: string }): JSX.Element {
+function MachinePlacementRow(props: { readonly placement: Placement; readonly machine: Machine | undefined }): JSX.Element {
   const t = useProjectsText()
   const open = usePlacementOpener()
   const path = () => (props.placement.path ? homeRelativePath(props.placement.path) : undefined)
-  const detail = () => [props.machineName, path(), props.placement.branch, t(props.placement.reachable ? "projects.where.online" : "projects.where.offline")].filter(Boolean).join(" · ")
+  const state = (): ProjectsKey => {
+    if (props.machine?.paused) return "projects.where.paused"
+    return (props.machine?.online ?? props.placement.reachable) ? "projects.where.online" : "projects.where.offline"
+  }
+  const detail = () => [props.machine?.name, path(), props.placement.branch, t(state())].filter(Boolean).join(" · ")
   return (
     <SettingsRow title={props.placement.label} description={detail()}>
       <Button variant="neutral" size="small" onClick={() => open(props.placement.id)}>
@@ -62,11 +66,11 @@ function PlacementRows(props: { readonly local: readonly Placement[]; readonly c
   const t = useProjectsText()
   const server = useServer()
   const machines = useQuery(() => server.queries.machines.list())
-  const machineName = (placement: Placement) => machineOfPlacement(machines.data ?? [], placement)?.name
+  const machineOf = (placement: Placement) => machineOfPlacement(machines.data ?? [], placement)
   return (
     <Show when={props.local.length + props.cloudRows.length > 0} fallback={<SettingsEmpty>{t("projects.placements.empty")}</SettingsEmpty>}>
       <SettingsList>
-        <For each={props.local}>{(placement) => <MachinePlacementRow placement={placement} machineName={machineName(placement)} />}</For>
+        <For each={props.local}>{(placement) => <MachinePlacementRow placement={placement} machine={machineOf(placement)} />}</For>
         <For each={props.cloudRows}>{(row) => <CloudRow row={row} cloud={props.cloud} />}</For>
       </SettingsList>
     </Show>

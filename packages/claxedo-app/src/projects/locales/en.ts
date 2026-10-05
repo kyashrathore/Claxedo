@@ -90,6 +90,7 @@ export default {
   "projects.where.description": "The machines and cloud workspaces this project's sessions run in.",
   "projects.where.online": "Online",
   "projects.where.offline": "Offline",
+  "projects.where.paused": "Paused",
   "projects.where.start": "Start",
   "projects.where.stop": "Stop",
   "projects.where.delete": "Delete",

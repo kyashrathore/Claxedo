@@ -115,6 +115,7 @@ export default {
   "settings.machines.yours": "Your machines",
   "settings.machines.connected": "Online",
   "settings.machines.offline": "Offline",
+  "settings.machines.paused": "Paused",
   "settings.machines.reachableHereOnly": "You're on this machine · not reachable from your other devices yet",
   "settings.machines.reachableElsewhere": "You're on this machine · reachable from your other devices",
   "settings.machines.empty": "No machine is connected yet.",

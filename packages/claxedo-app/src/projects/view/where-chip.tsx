@@ -19,6 +19,7 @@ type Words = {
 
 function placementOnline(words: Words, placement: Placement): string {
   const machine = words.context.machineOf(placement)
+  if (machine?.paused) return words.t("projects.where.paused")
   const online = machine ? machine.online : placement.reachable
   return words.t(online ? "projects.where.online" : "projects.where.offline")
 }

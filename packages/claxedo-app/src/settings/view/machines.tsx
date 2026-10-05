@@ -66,6 +66,7 @@ export function useConnectMachine(): () => void {
 }
 
 function machineStatus(machine: Machine): SettingsKey {
+  if (machine.paused) return "settings.machines.paused"
   if (!machine.online) return "settings.machines.offline"
   if (!machine.isThisMachine) return "settings.machines.connected"
   return machine.enrolled ? "settings.machines.reachableElsewhere" : "settings.machines.reachableHereOnly"
