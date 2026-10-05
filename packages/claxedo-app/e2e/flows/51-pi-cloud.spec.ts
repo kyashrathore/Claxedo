@@ -54,15 +54,6 @@ async function createShellFromHeader(page: Page) {
   return decodeURIComponent(new URL(page.url()).pathname.split("/").at(-1) ?? "")
 }
 
-async function openTerminalByLink(page: Page, signed: SignedStack, workspace: CloudWorkspace) {
-  const url = new URL("/api/wr/pty", signed.hosted.workerUrl)
-  url.searchParams.set("directory", `workspace:${workspace.id}`)
-  const created = await signed.runtime(workspace.id)({ method: "POST", url: url.toString(), headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "Phone shell" }) })
-  const terminal = JSON.parse(created.body) as { id: string }
-  await page.goto(`${signed.url}/w/${encodeURIComponent(workspace.id)}/terminal/${encodeURIComponent(terminal.id)}`)
-  return terminal.id
-}
-
 test("51 Pi started from the composer on a cloud workspace runs in its own session host, writes on the workspace machine, reloads from the host and is deleted there", async ({ signedCloud, page, isMobile }) => {
   test.skip(isMobile, "workspace file panel coverage runs at desktop width")
   test.setTimeout(240_000)
@@ -193,7 +184,7 @@ test("51 a terminal on a cloud workspace beside a cloud Pi session, which anothe
   const pi = await startPiFromComposer(page, signedCloud, workspace, "Reply with exactly this one token: CLOUDPITERMINAL")
   await expect(page.getByText("CLOUDPITERMINAL", { exact: true })).toBeVisible({ timeout: 60_000 })
   expect(pi.sessionHostRoot).toBe(pi.sessionId)
-  const terminalId = isMobile ? await openTerminalByLink(page, signedCloud, workspace) : await createShellFromHeader(page)
+  const terminalId = await createShellFromHeader(page)
   const pane = page.locator(`[data-testid="terminal-pane"][data-terminal-id="${terminalId}"]`)
   await expect(pane).toHaveAttribute("data-terminal-connected", "true")
   await expect(page.getByText(/sign-in expired/)).toHaveCount(0)

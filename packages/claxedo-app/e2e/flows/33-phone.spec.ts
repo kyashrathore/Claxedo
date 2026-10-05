@@ -133,6 +133,20 @@ test("33 phone: what a mouse reveals on hover shows on touch, and icon buttons k
 })
 
 
+test("33 phone: the header's New Terminal starts a shell with a 44 px target", async ({ stack, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("phone-terminal", "Phone terminal")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  const newTerminal = app.getByRole("button", { name: "New Terminal", exact: true })
+  const target = await newTerminal.boundingBox()
+  expect(target?.width).toBeGreaterThanOrEqual(44)
+  expect(target?.height).toBeGreaterThanOrEqual(44)
+  await newTerminal.tap()
+  await app.getByTestId("terminal-creator").getByRole("button", { name: /^Shell\b/ }).tap()
+  await expect(app).toHaveURL(/\/w\/[^/]+\/terminal\/pty_[^/?]+$/)
+  await expect(app.locator('[data-testid="terminal-pane"]')).toHaveAttribute("data-terminal-connected", "true")
+  await expectNoHorizontalScroll(app)
+})
+
 test("33 phone: an invitation link uses the auth screen without horizontal scroll and has touch targets", async ({ stack, app }) => {
   await app.goto(`${stack.url}/invitations`)
   await expect(app.getByRole("heading", { name: "Invitation link is incomplete" })).toBeVisible()
