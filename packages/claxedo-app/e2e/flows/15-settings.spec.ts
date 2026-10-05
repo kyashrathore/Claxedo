@@ -69,7 +69,7 @@ test("15 settings opened and closed again leave nothing animating", async ({ sta
   await expectNothingAnimating(app)
 })
 
-test("15 Connections on the desktop's local server says it offers no integrations and asks for none", { tag: "@desktop" }, async ({ desktop }) => {
+test("15 Connections on the desktop's local server shows no Integrations group and asks for none", { tag: "@desktop" }, async ({ desktop }) => {
   await desktop.makeWorkspace("desktop-connections", "Desk")
   const window = desktop.window
   await window.reload()
@@ -80,9 +80,10 @@ test("15 Connections on the desktop's local server says it offers no integration
   await window.getByRole("button", { name: "Settings", exact: true }).click()
   await window.getByRole("link", { name: "Connections", exact: true }).click()
   await expect(window.getByRole("heading", { level: 1, name: "Connections" })).toBeVisible()
-  const group = window.getByRole("group", { name: "Integrations" })
-  await expect(group.getByText("This server doesn't offer integrations.")).toBeVisible()
-  await expect(group.getByText(/\b[45]\d\d\b/)).toHaveCount(0)
+  const page = window.getByTestId("settings-page")
+  await expect(page.getByText("Services your agents can use.", { exact: true })).toBeVisible()
+  await expect(page.getByRole("group", { name: "Integrations" })).toHaveCount(0)
+  await expect(page.getByText(/\b[45]\d\d\b/)).toHaveCount(0)
   expect(asked).toEqual([])
   const bootstrap = new URL("/api/claxedo/bootstrap?scope=shell", desktop.url).href
   const deployment = await window.evaluate(async (url) => ((await (await fetch(url)).json()) as { deployment?: unknown }).deployment, bootstrap)
