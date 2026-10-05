@@ -81,7 +81,10 @@ function cli(check: string, files: Readonly<Record<string, string>>) {
 }
 
 test("e2e CLI fails a production hook and passes clean source", () => {
-  const steered = { "e2e/flows/38-session-sources.spec.ts": 'import { test } from "@playwright/test"; test("source failure", async ({ page }) => { await page.route("**/sessions", route => route.abort()) })' }
+  const steered = {
+    "e2e/flows/38-session-sources.spec.ts": 'import { test } from "@playwright/test"; test("source failure", async ({ page }) => { await page.route("**/sessions", route => route.abort()) })',
+    "e2e/flows/54-shell-web.spec.ts": 'import { test } from "@playwright/test"; test("slow read", async ({ page }) => { await page.route("**/session", route => route.abort()) })',
+  }
   const bad = cli("e2e-hygiene", { ...steered, "src/view.ts": 'export const probe = "__claxedoTestState"' })
   expect(bad.code).toBe(1)
   expect(bad.output).toContain("src/view.ts:1 e2e-hygiene test-only hook")

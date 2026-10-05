@@ -39,6 +39,8 @@ const steeredReason = "reach the state through the real stack, or name the exter
 const steeredRoutes: Readonly<Record<string, string>> = {
   "e2e/flows/38-session-sources.spec.ts":
     "stands for a dropped connection on one project's session-list read, a network failure at the external boundary; the flow proves the rail keeps every other project's rows and Retry loads that one",
+  "e2e/flows/54-shell-web.spec.ts":
+    "stands for a slow network (a sign-out or a session's reads held in flight) and a dropped connection (a session's reads refused), failures at the external boundary; the flow proves logout and a session switch show their progress, the slow wait and Retry",
 }
 
 function main(): never {
