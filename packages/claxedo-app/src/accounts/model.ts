@@ -148,6 +148,11 @@ function harnessOnOrgAccount(harness: Harness, snapshot: AccountsSnapshot) {
   return harness.providerIds.length > 0 && harness.providerIds.every((id) => snapshot.sources.sources.get(id) === "org")
 }
 
+export function harnessHasAccount(harness: Harness, snapshot: AccountsSnapshot): boolean {
+  if (harnessAccounts(harness, snapshot.stored).length > 0 || machineLoginOf(harness, snapshot)) return true
+  return orgAccountOf(harness, snapshot) !== undefined || harnessOnOrgAccount(harness, snapshot)
+}
+
 export function strandedBinding(login: MachineLogin, harness: Harness, snapshot: AccountsSnapshot) {
   const serves = login.serves
   if (serves === undefined) return false

@@ -1,4 +1,5 @@
 import { Show, type Accessor } from "solid-js"
+import { useComposerText } from "../text"
 import { ModelList, type PickerState } from "./model-list"
 import { SectionHeader, SectionPanel, type HarnessPickerSection } from "./harness-picker-section"
 
@@ -14,7 +15,7 @@ export type ModelSectionProps = {
   modelLoading: Accessor<boolean>
   modelDisabled: Accessor<boolean>
   modelError?: Accessor<ModelLoadFailure | undefined>
-  onAddAccount?: () => void
+  modelsEmpty?: Accessor<ModelLoadFailure | undefined>
 }
 
 export function HarnessPickerModelSection(props: {
@@ -23,10 +24,12 @@ export function HarnessPickerModelSection(props: {
   onToggle: () => void
   onSelect: () => void
 }) {
+  const t = useComposerText()
+  const empty = () => (props.picker.model().list().length > 0 ? undefined : props.picker.modelsEmpty?.())
   return (
     <>
       <SectionHeader
-        label="Model"
+        label={t("composer.picker.model")}
         value={props.picker.modelLabel()}
         loading={props.picker.modelLoading()}
         expanded={props.section() === "model" && !props.picker.modelLoading()}
@@ -37,11 +40,8 @@ export function HarnessPickerModelSection(props: {
           <Show
             when={props.picker.modelError?.()}
             fallback={
-              <Show
-                when={props.picker.model().list().length > 0 || !props.picker.onAddAccount}
-                fallback={<ModelNotice critical={false} failure={{ message: "No models yet", detail: "Add an account for this harness to choose a model.", action: { label: "Add an account", run: () => props.picker.onAddAccount?.() } }} />}
-              >
-                <ModelList model={props.picker.model()} tooltips={false} onSelect={props.onSelect} />
+              <Show when={empty()} fallback={<ModelList model={props.picker.model()} tooltips={false} onSelect={props.onSelect} />}>
+                {(failure) => <ModelNotice critical={false} failure={failure()} />}
               </Show>
             }
           >

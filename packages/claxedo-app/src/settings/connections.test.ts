@@ -1,7 +1,10 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
 import type { IntegrationConnectOutcome } from "@/server"
-import { connectError, integrationPurpose } from "./connections"
+import { connectError, connectionReadinessKey, integrationPurpose } from "./connections"
+import en from "./locales/en"
+
+const t = (key: keyof typeof en, vars: Record<string, string> = {}) => en[key].replace(/{{(\w+)}}/g, (_, name: string) => vars[name] ?? "")
 
 type Failed = Extract<IntegrationConnectOutcome, { kind: "failed" }>
 
@@ -31,7 +34,12 @@ test("connectError: a verify failure names why the credentials were refused", ()
 })
 
 test("integrationPurpose says in one sentence what an integration is used for, never its capability ids", () => {
-  expect(integrationPurpose(["code-host", "work-source"], "en")).toBe("Lets agents clone your repositories into cloud workspaces and read the issues you give them.")
-  expect(integrationPurpose(["docs"], "en")).toBe("Lets agents read your documents.")
-  expect(integrationPurpose(["unknown-capability"], "en")).toBeUndefined()
+  expect(integrationPurpose(t, ["code-host", "work-source"], "en")).toBe("Lets agents clone your repositories into cloud workspaces and read the issues you give them.")
+  expect(integrationPurpose(t, ["docs"], "en")).toBe("Lets agents read your documents.")
+  expect(integrationPurpose(t, ["unknown-capability"], "en")).toBeUndefined()
+})
+
+test("an agent connection's readiness is said in words, never as its wire value", () => {
+  expect(t(connectionReadinessKey("configured"))).toBe("Set up, not checked yet")
+  expect(t(connectionReadinessKey("ready"))).toBe("Ready")
 })

@@ -1,5 +1,6 @@
 import { Show, type Accessor } from "solid-js"
 import { ClaxedoIcon as Icon } from "@/ui"
+import { useComposerText } from "../text"
 import { EffortSlider } from "./effort-slider"
 
 export type FastModeControl = {
@@ -26,12 +27,13 @@ export function EffortRow(props: {
   fast?: FastModeControl
   onFastToggle: (next: boolean) => void
 }) {
+  const t = useComposerText()
   return (
     <Show when={props.levels.length > 1 || props.fast}>
       <div class="flex flex-col gap-1">
         <Show when={props.levels.length > 1}>
           <div class="flex items-baseline justify-between gap-2 px-2.5 pt-1 text-compact">
-            <span class="font-medium text-text-base">Effort</span>
+            <span class="font-medium text-text-base">{t("composer.picker.effort")}</span>
             <span class="text-text-weak">{props.label(props.current)}</span>
           </div>
         </Show>

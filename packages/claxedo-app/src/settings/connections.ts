@@ -1,3 +1,5 @@
+import type { ConnectionReadiness } from "@claxedo/agent-runtime-contract"
+import type { SettingsKey } from "./i18n"
 import { createStore } from "solid-js/store"
 import { machine, unreachable, type Transition } from "@/lib/machine"
 import type { ConnectionScope, IntegrationConnectOutcome, IntegrationFailure } from "@/server"
@@ -73,19 +75,30 @@ export function grantError(reason: IntegrationFailure): string {
   return "Authorization failed. Try again."
 }
 
-const CAPABILITY_PURPOSE: Readonly<Record<string, string>> = {
-  "code-host": "clone your repositories into cloud workspaces",
-  "work-source": "read the issues you give them",
-  docs: "read your documents",
-  channel: "reach you in chat",
-  mcp: "use its tools",
+const CAPABILITY_PURPOSE: Readonly<Record<string, SettingsKey>> = {
+  "code-host": "settings.connections.purpose.codeHost",
+  "work-source": "settings.connections.purpose.workSource",
+  docs: "settings.connections.purpose.docs",
+  channel: "settings.connections.purpose.channel",
+  mcp: "settings.connections.purpose.mcp",
 }
 
-export function integrationPurpose(capabilities: readonly string[], locale: string): string | undefined {
+export function integrationPurpose(t: (key: SettingsKey, vars?: Record<string, string>) => string, capabilities: readonly string[], locale: string): string | undefined {
   const phrases = capabilities.flatMap((capability) => {
-    const phrase = CAPABILITY_PURPOSE[capability]
-    return phrase ? [phrase] : []
+    const key = CAPABILITY_PURPOSE[capability]
+    return key ? [t(key)] : []
   })
   if (phrases.length === 0) return undefined
-  return `Lets agents ${new Intl.ListFormat(locale, { type: "conjunction" }).format(phrases)}.`
+  return t("settings.connections.purpose", { uses: new Intl.ListFormat(locale, { type: "conjunction" }).format(phrases) })
+}
+
+const READINESS: Readonly<Record<ConnectionReadiness, SettingsKey>> = {
+  configured: "settings.connections.readiness.configured",
+  ready: "settings.connections.readiness.ready",
+  unavailable: "settings.connections.readiness.unavailable",
+  disabled: "settings.connections.readiness.disabled",
+}
+
+export function connectionReadinessKey(readiness: ConnectionReadiness): SettingsKey {
+  return READINESS[readiness]
 }

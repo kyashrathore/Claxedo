@@ -2,6 +2,14 @@ export type ComposerTextKey =
   | "composer.attachment.reading"
   | "composer.notice.more"
   | "composer.notice.less"
+  | "composer.picker.model"
+  | "composer.picker.effort"
+  | "composer.models.none"
+  | "composer.models.none.detail"
+  | "composer.models.addAccount"
+  | "composer.models.empty"
+  | "composer.models.asleep"
+  | "composer.models.asleep.detail"
   | "composer.attachment.refused.title"
   | "composer.attachment.refused.description"
   | "composer.attachment.unreadable.title"
@@ -123,6 +131,14 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "composer.attachment.reading": "Reading {{filename}}…",
   "composer.notice.more": "+{{count}} more",
   "composer.notice.less": "Show less",
+  "composer.picker.model": "Model",
+  "composer.picker.effort": "Effort",
+  "composer.models.none": "No models yet",
+  "composer.models.none.detail": "Add an account for {{harness}} in Settings → Models to choose a model.",
+  "composer.models.addAccount": "Add an account",
+  "composer.models.empty": "{{harness}} offers no models right now",
+  "composer.models.asleep": "{{name}} is asleep",
+  "composer.models.asleep.detail": "Its models load when it wakes; your next message wakes it.",
   "composer.attachment.refused.title": "{{harness}} cannot take this attachment",
   "composer.attachment.refused.description": "{{harness}} has no prompt input for {{mime}}, and this session has no workspace folder to keep the file in.",
   "composer.attachment.unreadable.title": "Attachment could not be read",

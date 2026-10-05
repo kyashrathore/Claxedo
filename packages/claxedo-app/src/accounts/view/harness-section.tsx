@@ -5,7 +5,7 @@ import type { HarnessSelection } from "@/lib/harness-selection"
 import { SettingsEmpty } from "@/settings"
 import { useAccountsText } from "../i18n"
 import { useModelSource, groupContext, modelKeyOf, type SettingsPlacement } from "../model-sources"
-import type { Harness } from "../model"
+import { harnessHasAccount, type Harness } from "../model"
 import type { Accounts } from "../store"
 import { AgentHarnessAccounts } from "./harness-accounts"
 import { createHarnessProviders, HarnessProvidersSection } from "./harness-providers"
@@ -85,7 +85,37 @@ function HarnessModels(props: { readonly harness: ModelsHarness; readonly placem
   )
 }
 
+function accountless(harness: ModelsHarness, accounts: Accounts): boolean {
+  const load = accounts.load()
+  return harness.cli !== undefined && load.kind === "ready" && !harnessHasAccount(harness.cli, load.snapshot)
+}
+
+function HarnessTitle(props: { readonly harness: ModelsHarness }) {
+  return (
+    <div class="flex items-center gap-2">
+      <ProviderIcon id={props.harness.slug} class="size-4 shrink-0 icon-strong-base" />
+      <h2 class="text-14-medium text-text-strong">{props.harness.label}</h2>
+    </div>
+  )
+}
+
 export function HarnessSection(props: { readonly harness: ModelsHarness; readonly accounts: Accounts; readonly placement?: SettingsPlacement; readonly tab: HarnessTab; readonly onTab: (tab: HarnessTab) => void }) {
+  return (
+    <Show
+      when={accountless(props.harness, props.accounts) && props.harness.cli}
+      fallback={<HarnessWithTabs harness={props.harness} accounts={props.accounts} tab={props.tab} onTab={props.onTab} {...(props.placement ? { placement: props.placement } : {})} />}
+    >
+      {(cli) => (
+        <section class="flex flex-col gap-2" data-harness-accountless={props.harness.slug}>
+          <HarnessTitle harness={props.harness} />
+          <AgentHarnessAccounts harness={cli()} accounts={props.accounts} headerless />
+        </section>
+      )}
+    </Show>
+  )
+}
+
+function HarnessWithTabs(props: { readonly harness: ModelsHarness; readonly accounts: Accounts; readonly placement?: SettingsPlacement; readonly tab: HarnessTab; readonly onTab: (tab: HarnessTab) => void }) {
   const t = useAccountsText()
   const [addAccount, setAddAccount] = createSignal<() => void>()
   const actions = <Show when={props.tab === "accounts" && addAccount()}>{(open) => (
@@ -95,12 +125,7 @@ export function HarnessSection(props: { readonly harness: ModelsHarness; readonl
   )}</Show>
   return (
     <section class="flex flex-col gap-4">
-      <div class="flex items-baseline justify-between gap-4">
-        <div class="flex items-center gap-2">
-          <ProviderIcon id={props.harness.slug} class="size-4 shrink-0 icon-strong-base" />
-          <h2 class="text-14-medium text-text-strong">{props.harness.label}</h2>
-        </div>
-      </div>
+      <HarnessTitle harness={props.harness} />
       <div class="flex flex-col gap-4">
         <HarnessTabs tab={props.tab} onTab={props.onTab} actions={actions} />
         <Show when={props.tab === "models"} fallback={<AccountsTab harness={props.harness} accounts={props.accounts} onAddRef={(open) => setAddAccount(() => open)} />}>

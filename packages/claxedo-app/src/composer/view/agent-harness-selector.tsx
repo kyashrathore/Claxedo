@@ -19,6 +19,7 @@ import { createHarnessSwitch } from "./harness-switch"
 import { createHarnessTriggerLabel, createTriggerStyle, triggerStateOf } from "./harness-trigger"
 import { createSelectorCatalog } from "./selector-catalog"
 import { createHarnessAccountState } from "./harness-account-state"
+import { createModelsEmpty } from "./models-empty"
 import { createSelectorNotice } from "./selector-notice"
 import { createSelectionWrites } from "./selection-writes"
 import { createScopeSelection, createSelectorScope } from "./selector-scope"
@@ -85,6 +86,12 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     modelNames,
   })
   const style = createTriggerStyle(() => props.triggerStyle)
+  const asleep = () => {
+    const id = placementId()
+    return id !== undefined && isStoppedCloud(server.placements.byId(id))
+  }
+  const account = createHarnessAccountState(server, harness)
+  const modelsEmpty = createModelsEmpty({ harness, harnessLabel: optionList.label, asleep, account, placementId, openProviders })
   const { notice, modelError } = createSelectorNotice({
     active,
     controller,
@@ -96,11 +103,8 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     catalog,
     availability,
     polling: isPolling,
-    asleep: () => {
-      const id = placementId()
-      return id !== undefined && isStoppedCloud(server.placements.byId(id))
-    },
-    account: createHarnessAccountState(server, harness),
+    asleep,
+    account,
     harnessLabel: optionList.label,
     openProviders,
   })
@@ -124,7 +128,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         }}
         onHarnessSelect={harnessSwitch.apply}
         modelError={modelError}
-        onAddAccount={openProviders}
+        modelsEmpty={modelsEmpty}
         model={model}
         modelLabel={trigger.label}
         modelLoading={availability.modelLoadingOrSwitching}

@@ -4,7 +4,7 @@ import { toAppError, useServer, type AppError, type Connection, type ConnectionS
 import type { HarnessConnectionRef, HarnessConnectionsCatalog } from "@claxedo/agent-runtime-contract"
 import { showToast, Button, Icon, useDialog } from "@/ui"
 import { useErrorCopy, useI18n, useTranslator } from "@/i18n"
-import { integrationPurpose, verifyFailedMessage } from "../connections"
+import { connectionReadinessKey, integrationPurpose, verifyFailedMessage } from "../connections"
 import { settingsDictionary, type SettingsKey } from "../i18n"
 import { DialogConnectIntegration } from "./connect-dialog"
 import { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsNote } from "./section"
@@ -100,7 +100,7 @@ function IntegrationBlock(props: {
       <div class="settings-inline">
         <div class="settings-row-text">
           <span class="settings-row-title">{props.integration.name}</span>
-          <Show when={integrationPurpose(props.integration.capabilities, i18n.intlTag())}>{(purpose) => <span class="settings-row-description">{purpose()}</span>}</Show>
+          <Show when={integrationPurpose(t, props.integration.capabilities, i18n.intlTag())}>{(purpose) => <span class="settings-row-description">{purpose()}</span>}</Show>
         </div>
         <Button size="small" variant="neutral" onClick={() => props.onConnecting({ integration: props.integration })}>
           <Icon name="plus-small" size="small" />
@@ -168,20 +168,21 @@ function AgentConnections(props: {
 }) {
   const t = useTranslator(settingsDictionary)
   const errorCopy = useErrorCopy("connections")
+  const server = useServer()
   const rows = () => (props.rows?.status === "supported" && props.rows.connections.length > 0 ? props.rows.connections : undefined)
   return (
     <>
       <Show when={props.error}>{(error) => <SettingsNote tone="danger">{errorCopy(error()).message}</SettingsNote>}</Show>
       <Show when={rows()}>
         {(list) => (
-          <SettingsGroup title={t("settings.connections.agents")} description={t("settings.connections.agents.description")}>
+          <SettingsGroup title={t("settings.connections.agents")} description={t("settings.connections.agents.description", { machine: server.capabilities()?.servingMachine?.name ?? t("settings.connections.agents.machineFallback") })}>
             <SettingsList>
               <For each={list()}>
                 {(row) => (
                   <div class="settings-account" data-agent-connection={row.connectionId}>
                     <div class="settings-account-text">
                       <span class="settings-row-title">{row.label}</span>
-                      <span class="settings-row-description">{row.readiness}</span>
+                      <span class="settings-row-description">{t(connectionReadinessKey(row.readiness))}</span>
                     </div>
                     <Button size="small" variant="ghost" disabled={props.busy === row.connectionId} onClick={() => props.onRemove(row)}>{t("settings.common.remove")}</Button>
                   </div>
