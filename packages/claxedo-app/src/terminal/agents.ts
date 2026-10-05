@@ -1,4 +1,5 @@
 import type { DomainTranslate } from "@/i18n"
+import { unreachable } from "@/lib/machine"
 import type { TerminalAgentId, WorkspaceRuntime } from "@/server"
 import type { TerminalKey } from "./i18n"
 
@@ -36,7 +37,7 @@ export const TERMINAL_AGENTS: readonly TerminalAgent[] = [
   },
 ]
 
-export function agentsNote(t: DomainTranslate<TerminalKey>, runtime: WorkspaceRuntime, name: string, agents: { readonly isError: boolean; readonly isPending: boolean }) {
+export function agentsNote(t: DomainTranslate<TerminalKey>, runtime: WorkspaceRuntime, name: string, agents: { readonly isError: boolean; readonly isPending: boolean }): string | undefined {
   switch (runtime.kind) {
     case "asleep":
       return t("terminal.creator.agentsAsleep", { name })
@@ -49,5 +50,7 @@ export function agentsNote(t: DomainTranslate<TerminalKey>, runtime: WorkspaceRu
     case "live":
       if (agents.isError) return t("terminal.creator.agentsFailed")
       return agents.isPending ? t("terminal.creator.agentsLoading") : undefined
+    default:
+      return unreachable(runtime)
   }
 }
