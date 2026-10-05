@@ -40,7 +40,8 @@ function installStillness({ sessionId, marker, scroller: inner }: { readonly ses
   const send = window.fetch.bind(window)
   window.fetch = (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), location.href)
-    const kind = kindOf(url)
+    const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase()
+    const kind = method === "GET" ? kindOf(url) : undefined
     if (kind) state.reads.push({ at: performance.now(), kind, path: `${url.pathname}${url.search}` })
     return send(input, init)
   }

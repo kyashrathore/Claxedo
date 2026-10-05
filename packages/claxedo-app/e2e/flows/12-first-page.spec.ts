@@ -276,5 +276,5 @@ test("12 a session on a connection that is not set up shows its setup notice onc
   expect((await answered).ok(), "the options read answered").toBe(true)
   const notice = app.locator('[data-notice="setup-required"]')
   await expect(notice).toContainText("Unset ACP is not set up")
-  await expect(notice.getByRole("button", { name: "Open Settings Providers" })).toBeVisible()
+  await expect(notice.getByRole("button", { name: "Open Settings Models" })).toBeVisible()
 })

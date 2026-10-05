@@ -13,7 +13,8 @@ test("48 startup: web onboarding asks for sign-in before it reads repository con
 test("48 startup: web onboarding starts from a connected GitHub repository, never a pasted URL", async ({ signed, page }) => {
   await signed.signIn(page, signed.owner)
   await expect(page.getByRole("heading", { name: "Start with a project" })).toBeVisible()
-  await expect(page.getByRole("button", { name: "Connect GitHub", exact: true })).toBeVisible()
+  await expect(page.getByRole("textbox", { name: "Fine-grained personal access token" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Connect with token", exact: true })).toBeVisible()
   await expect(page.getByRole("textbox", { name: "Repository URL" })).toHaveCount(0)
   await expect(page.getByRole("button", { name: "Paste URL" })).toHaveCount(0)
   await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeDisabled()
