@@ -28,7 +28,7 @@ Run product acceptance from `packages/workspace-runtime`:
 bun run build
 node scripts/node-sdk-smoke.mjs
 node scripts/node-host-smoke.mjs
-bun test ../harness/src/transports/opencode-sdk
+bun run --cwd ../harness test:files src/transports/opencode-sdk
 ```
 
 Run both smoke scripts with `ELECTRON_RUN_AS_NODE=1 /path/to/electron` to

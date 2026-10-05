@@ -24,7 +24,7 @@ $failed = 0
 foreach ($suite in $suites) {
   Write-Output "=== SUITE $($suite.Package)"
   Set-Location (Join-Path $root $suite.Package)
-  & bun test @($suite.Files) --timeout 30000
+  & node (Join-Path $root "script\test-home\run.mjs") bun test @($suite.Files) --timeout 30000
   Write-Output "=== SUITE EXIT $($suite.Package) $LASTEXITCODE"
   if ($LASTEXITCODE -ne 0) { $failed += 1 }
   Set-Location $root

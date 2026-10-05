@@ -28,7 +28,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default"
+    "test": "node ../../script/test-home/run.mjs node ./node_modules/vitest/vitest.mjs run --reporter=default"
   },
   "devDependencies": {
     "@hono/node-server": "1.19.11",

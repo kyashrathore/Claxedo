@@ -120,6 +120,13 @@ await test("the shared Bun.build wrapper fails open to the complete non-release 
   assert.equal(result.boundary_server, true)
 })
 
+await test("the shared temporary-home test runner fails open to the complete non-release suite", () => {
+  const result = classifyChangedFiles(["script/test-home/run.mjs"])
+  assert.equal(result.full, true)
+  assert.equal(result.unit, true)
+  assert.equal(result.windows, true)
+})
+
 await test("an empty or unavailable comparison fails open", () => {
   const result = classifyChangedFiles([])
   assert.equal(result.full, true)

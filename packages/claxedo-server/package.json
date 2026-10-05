@@ -40,7 +40,7 @@
     "build:workerd-boundary": "bun run scripts/boundary/build-workerd.ts",
     "smoke:workerd-boundary": "node --import tsx scripts/boundary/smoke-workerd.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node scripts/test/unit.mjs",
+    "test": "node ../../script/test-home/run.mjs node scripts/test/unit.mjs",
     "sandbox:image": "bun run scripts/sandbox/build-sandbox-image.ts",
     "rebuild:native": "npm rebuild better-sqlite3",
     "verify:closure": "bun ../../script/product-boundary/verify.ts"

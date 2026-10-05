@@ -35,7 +35,7 @@ function hookCommands(file: string) {
     group.hooks.map((hook) => hook.command.replaceAll("\\", "/"))))
 }
 
-/** The passwd home: `data-isolation.ts` has already pointed HOME, and so `os.homedir()`, at the temporary root. */
+/** The passwd home; script/test-home/run.mjs has pointed HOME, and so `os.homedir()`, at a temporary home. */
 const home = os.userInfo().homedir
 const temporary = realpathSync(os.tmpdir())
 

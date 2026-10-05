@@ -1,2 +1,2 @@
 [test]
-preload = ["./src/test-support/isolated-home.ts"]
+preload = ["../../script/test-home/guard.mjs"]

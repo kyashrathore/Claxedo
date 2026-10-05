@@ -233,7 +233,7 @@ run_workspace_files() {
   install_root
   (
     cd packages/workspace-runtime
-    bun test src/workspace-files/working-tree.test.ts src/routes/diff.test.ts src/target.test.ts
+    bun run test:files src/workspace-files/working-tree.test.ts src/routes/diff.test.ts src/target.test.ts
   )
 }
 

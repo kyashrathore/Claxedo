@@ -6,7 +6,7 @@ packages. Protocol and format contracts live beside their source owners.
 
 ## Checks
 
-Run `bun run check` from this package, or `bun run --cwd packages/harness check` from the repository root. `bun run test` runs the checks before the package tests. Run the fixture suite from this package with `bun test scripts`.
+Run `bun run check` from this package, or `bun run --cwd packages/harness check` from the repository root. `bun run test` runs the checks before the package tests. Run the fixture suite from this package with `bun run test:files scripts`.
 
 `scripts/check.ts` scans TypeScript and JavaScript files under `src/`, reports `path:line rule: fix`, and exits non-zero on violations. It parses with the TypeScript 5 compiler API from the `typescript-5` dev dependency, because TypeScript 7 ships no JavaScript API. Generated Codex protocol files under `src/transports/codex-app-server/{generated,generated-protocol,protocol}/` are excluded.
 

@@ -28,7 +28,7 @@ export default defineConfig({
     testTimeout: 60_000,
     hookTimeout: 30_000,
     fileParallelism: false,
-    setupFiles: ["../session-core/src/test-support/home/isolated-home.mjs"],
+    setupFiles: ["../../script/test-home/guard.mjs"],
     exclude: [...configDefaults.exclude],
   },
 })

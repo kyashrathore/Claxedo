@@ -9,13 +9,12 @@ const normalize = (file) => file.trim().replaceAll("\\", "/").replace(/^\.\//, "
 const startsWithAny = (file, prefixes) => prefixes.some((prefix) => file.startsWith(prefix))
 const equalsAny = (file, paths) => paths.includes(file)
 
-// `script/bun-build.ts` is the single `Bun.build` wrapper behind every bundle in
-// the repository — the desktop server and host-connector bundles, the
-// local-server and host-connector builds, and workspace-runtime's node bundle.
-// Nothing under `script/` belongs to a package prefix, so a change to it would
-// otherwise select no gate at all and a broken bundler could ship green. Its
-// consumers span every gate, so it fails open to the full suite rather than
-// being enumerated per-gate.
+// Nothing under `script/` belongs to a package prefix, so a change there would
+// otherwise select no gate at all. `script/bun-build.ts` is the single
+// `Bun.build` wrapper behind every bundle in the repository, and
+// `script/test-home/` starts the bun and Vitest suites of most packages in a
+// temporary home; their consumers span every gate, so they fail open to the
+// full suite rather than being enumerated per-gate.
 const GLOBAL_FILES = [
   "package.json",
   "bun.lock",
@@ -25,7 +24,7 @@ const GLOBAL_FILES = [
   "script/bun-build.ts",
   "script/bun-build.test.ts",
 ]
-const GLOBAL_PREFIXES = [".github/actions/"]
+const GLOBAL_PREFIXES = [".github/actions/", "script/test-home/"]
 const GLOBAL_WORKFLOWS = [".github/workflows/test.yml", ".github/workflows/typecheck.yml"]
 
 const DOC_PREFIXES = [

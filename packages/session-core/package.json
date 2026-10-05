@@ -34,25 +34,17 @@
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.mjs",
       "default": "./dist/testing.mjs"
-    },
-    "./testing/isolated-home": {
-      "types": "./src/test-support/home/isolated-home.d.mts",
-      "default": "./src/test-support/home/isolated-home.mjs"
     }
   },
   "files": [
     "dist",
-    "src/test-support/home/isolated-home.mjs",
-    "src/test-support/home/isolated-home.d.mts",
-    "src/test-support/home/harness-state-env.mjs",
-    "src/test-support/home/harness-state-env.d.mts",
-    "src/test-support/home/test-temp-dir.ts",
     "README.md"
   ],
   "scripts": {
     "build": "bun build src/index.ts --target=browser --format=esm --packages=external --outfile=dist/index.mjs && bun build src/session-access-policy.ts --target=browser --format=esm --packages=external --outfile=dist/access-policy.mjs && bun build src/relay-host-auth.ts --target=browser --format=esm --packages=external --outfile=dist/relay-host.mjs && bun build src/testing.ts --target=node --format=esm --packages=external --outfile=dist/testing.mjs && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test src && node --import tsx --import ./src/test-support/home/isolated-home.mjs --test src/store-durable-object.node-test.ts src/durable-object.node-test.ts"
+    "test": "bun run test:files src && node ../../script/test-home/run.mjs node --import tsx --import ../../script/test-home/guard.mjs --test src/store-durable-object.node-test.ts src/durable-object.node-test.ts",
+    "test:files": "node ../../script/test-home/run.mjs bun test"
   },
   "dependencies": {
     "@claxedo/agent-runtime-contract": "workspace:*",

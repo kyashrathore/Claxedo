@@ -42,7 +42,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml"
+    "test": "node ../../script/test-home/run.mjs node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml"
   },
   "dependencies": {
     "@claxedo/agent-runtime-contract": "workspace:*",

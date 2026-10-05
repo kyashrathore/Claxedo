@@ -261,10 +261,9 @@ describe("getShellArgs", () => {
 describe("getCommandShellArgs", () => {
   const zshRc = path.join(SHELL_DIR, ".zshrc")
   const bashRcfile = path.join(BASH_DIR, "rcfile")
-  // These rc files are the developer's real generated ones unless the
-  // isolated-home preload (bunfig.toml, applied only when bun runs from this
-  // package) moved the data root into the temp dir. afterEach runs even when
-  // beforeEach fails, so it checks too.
+  // These rc files are the developer's real generated ones unless the data
+  // root sits in the temporary home script/test-home/run.mjs starts bun in.
+  // afterEach runs even when beforeEach fails, so it checks too.
   const relative = path.relative(realpathSync(os.tmpdir()), CLAXEDO_DIR)
   const isolated = !relative.startsWith("..") && !path.isAbsolute(relative)
 

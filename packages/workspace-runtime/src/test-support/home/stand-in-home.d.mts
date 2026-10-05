@@ -1,4 +1,4 @@
-export declare function runUnderStandInHome(packageDir: string, files: string[]): Promise<{
+export declare function runUnderStandInHome(packageDir: string, command: string[]): Promise<{
   code: number | null
   output: string
   written: string[]
