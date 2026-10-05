@@ -56,6 +56,7 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
           credential,
           request,
           local: { fetch: sessionMcp.workspaceFetch(credential), workspace: { workspaceId: credential.workspaceId } },
+          ...(credential.sessionId ? { ownSession: { sessionId: credential.sessionId, fetch: sessionMcp.sessionHostFetch(credential) } } : {}),
         })
       }
       const authorization = request.headers.get("authorization")

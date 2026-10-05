@@ -105,6 +105,19 @@ describe("the first-party MCP credential of a session served by its own host", (
     expect(relayed.filter((request) => request.path.includes("ws_elsewhere"))).toEqual([])
   })
 
+  test("a tool aimed at the session itself reaches its own host with a token for that host alone, never the machine", async () => {
+    const mcp = await delivered(ROOT)
+    const client = await connect(mcp.url, mcp.token)
+    const before = relayed.length
+    const result = await client.callTool({ name: "session_transcript", arguments: { session: ROOT } })
+    expect(JSON.parse((result.content as Array<{ text: string }>)[0].text)).toEqual({ messages: [] })
+    const calls = relayed.slice(before)
+    expect(calls.map((call) => call.path.split("?")[0])).toEqual([`/workspaces/${WORKSPACE_ID}/session/${ROOT}/message`])
+    const token = decodeJwt(calls[0]?.authorization?.replace(/^Bearer /, "") ?? "")
+    expect(token).toMatchObject({ aud: "workspace-relay", host_id: sessionHostId(ROOT), session_id: ROOT, role: "editor", actor_id: plane.owner.principal!.actorId })
+    expect(await plane.store.runtimeAccessTokenActive({ jti: String(token.jti), workspaceId: WORKSPACE_ID, hostId: sessionHostId(ROOT) })).toEqual({ active: true })
+  })
+
   test("another session's address, an expired token, a token for another endpoint and a forged scope are refused", async () => {
     const mcp = await delivered(ROOT)
     expect((await mcpRequest(mcp.url, mcp.token)).status).toBe(200)
@@ -139,5 +152,17 @@ describe("the first-party MCP credential of a session served by its own host", (
     await expect(plane.store.recordSessionMcpRuntimeAccessToken(plane.owner.principal!.actorId, record("rat_mcp_host", ROOT, sessionHostId(ROOT)))).rejects.toThrow()
     await plane.store.recordSessionMcpRuntimeAccessToken(plane.owner.principal!.actorId, record("rat_mcp_owner", ROOT))
     expect(await plane.store.runtimeAccessTokenActive({ jti: "rat_mcp_owner", workspaceId: WORKSPACE_ID, hostId: VM_HOST })).toEqual({ active: true })
+  })
+
+  test("the owner's session-host token is recorded only for the workspace owner, for that live session's own host", async () => {
+    const expiresAt = Date.now() + 60_000
+    const record = (jti: string, sessionId: string, hostId = sessionHostId(sessionId)) => ({ jti, workspaceId: WORKSPACE_ID, hostId, sessionId, expiresAt })
+    const owner = plane.owner.principal!.actorId
+    await expect(plane.store.recordSessionMcpSessionHostAccessToken(plane.member.principal!.actorId, record("rat_mcph_member", ROOT))).rejects.toThrow()
+    await expect(plane.store.recordSessionMcpSessionHostAccessToken(owner, record("rat_mcph_vm", VM))).rejects.toThrow()
+    await expect(plane.store.recordSessionMcpSessionHostAccessToken(owner, record("rat_mcph_machine", ROOT, VM_HOST))).rejects.toThrow()
+    await expect(plane.store.recordSessionMcpSessionHostAccessToken(owner, record("rat_mcph_other", ROOT, sessionHostId(OTHER)))).rejects.toThrow()
+    await plane.store.recordSessionMcpSessionHostAccessToken(owner, record("rat_mcph_owner", ROOT))
+    expect(await plane.store.runtimeAccessTokenActive({ jti: "rat_mcph_owner", workspaceId: WORKSPACE_ID, hostId: sessionHostId(ROOT) })).toEqual({ active: true })
   })
 })

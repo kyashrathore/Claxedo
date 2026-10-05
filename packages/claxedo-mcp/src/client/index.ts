@@ -34,6 +34,11 @@ export type ClaxedoMcpClientOptions = Readonly<{
    * a session served by its own host, through the relay.
    */
   local?: Readonly<{ fetch: ClaxedoFetch; workspace: WorkspaceTarget }>
+  /**
+   * The calling session's own host, for a session served by its own host: the
+   * workspace's machine does not hold that session, so its own routes go here.
+   */
+  ownSession?: Readonly<{ sessionId: string; fetch: ClaxedoFetch }>
   /** Control-plane routes, already authenticated as the calling user. */
   controlPlane?: Readonly<{ fetch: ClaxedoFetch }>
   documents?: Readonly<{ fetch: ClaxedoFetch }>
@@ -137,7 +142,13 @@ export function createClaxedoMcpClient(options: ClaxedoMcpClientOptions): Claxed
   }
 
   const runtime = async (target: WorkspaceTarget): Promise<ClaxedoFetch> => {
-    if (servedLocally(target) && local) return local.fetch
+    if (servedLocally(target) && local) {
+      const { ownSession } = options
+      if (!ownSession) return local.fetch
+      const route = `/session/${encodeURIComponent(ownSession.sessionId)}`
+      const ownRoute = (path: string) => path === route || path.startsWith(`${route}/`) || path.startsWith(`${route}?`)
+      return (path, init) => (ownRoute(path) ? ownSession.fetch : local.fetch)(path, init)
+    }
     return relayRuntime(relayWorkspaceId(target))
   }
 

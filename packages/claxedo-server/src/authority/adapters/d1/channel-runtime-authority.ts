@@ -299,12 +299,27 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     return await this.recordUserRuntimeToken(await this.requireActor(actorId), { ...workspaceToken, role: "editor" })
   }
 
+  /**
+   * The workspace owner's editor token the first-party MCP endpoint reaches a
+   * session served by its own host with, for that session's own routes: the
+   * session's host and nothing else.
+   */
+  async recordSessionMcpSessionHostAccessToken(actorId: string, token: TurnRuntimeAccessTokenRecord) {
+    if (!(await this.hostedSession(token)) || token.hostId !== sessionHostId(token.sessionId)) {
+      throw denied("A session's first-party MCP token reaches its own host alone")
+    }
+    return await this.recordUserRuntimeToken(await this.requireActor(actorId), { ...token, role: "editor" })
+  }
+
   private async requireHostedSessionMachine(token: TurnRuntimeAccessTokenRecord) {
-    const hosted = await this.database
+    if (!(await this.hostedSession(token)) || sessionHostRootOf(token.hostId)) throw denied("Only a session served by its own host reaches its machine with a turn token")
+  }
+
+  private async hostedSession(token: TurnRuntimeAccessTokenRecord) {
+    return await this.database
       .prepare(`select 1 from sessions where session_id = ? and workspace_id = ? and session_host_root = session_id and deleted_at is null`)
       .bind(requireText(token.sessionId, "sessionId"), requireText(token.workspaceId, "workspaceId"))
       .first()
-    if (!hosted || sessionHostRootOf(token.hostId)) throw denied("Only a session served by its own host reaches its machine with a turn token")
   }
 
   async recordRuntimeAccessTokenForService(args: {

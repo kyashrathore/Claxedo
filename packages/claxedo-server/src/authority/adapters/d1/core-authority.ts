@@ -158,6 +158,7 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     readSessionHostPlacement: (input) => readD1SessionHostPlacement(database, input),
     recordTurnRuntimeAccessToken: (actorId, token) => channelsAndRuntime.recordTurnRuntimeAccessToken(actorId, token),
     recordSessionMcpRuntimeAccessToken: (actorId, token) => channelsAndRuntime.recordSessionMcpRuntimeAccessToken(actorId, token),
+    recordSessionMcpSessionHostAccessToken: (actorId, token) => channelsAndRuntime.recordSessionMcpSessionHostAccessToken(actorId, token),
     turnLeaseLive: (input) => readD1TurnLeaseLive(database, input, (options.now ?? Date.now)()),
     deleteHostedSession: (input) => deleteD1HostedSession(database, input, (options.now ?? Date.now)()),
     listHostedSessions: (workspaceId) => listD1HostedSessions(database, workspaceId),

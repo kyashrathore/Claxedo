@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono"
 import { SignJWT, jwtVerify } from "jose"
 import { CLAXEDO_MCP_PATH, CLAXEDO_MCP_SERVER_INFO, CLAXEDO_MCP_TOOL_GROUPS, createClaxedoMcpRoutes } from "@claxedo/mcp"
-import { createClaxedoMcpClient } from "@claxedo/mcp/client"
+import { createClaxedoMcpClient, type ClaxedoFetch } from "@claxedo/mcp/client"
 import type { ProviderDirect } from "@claxedo/agent-runtime-contract"
 import type { RuntimeConfigSnapshotPlugins, TurnDelivery, TurnExecutionAccess } from "@claxedo/harness/contract"
 import { bearerToken } from "@claxedo/session-core"
@@ -26,6 +26,8 @@ export type ControlPlaneInput = {
   machine: () => { relayUrl: string; directory: string; routingId?: string }
   /** The workspace runtime's root sessions, which the first-party MCP endpoint lists for a session that carries its turn's bearer. */
   workspaceSessions: () => Record<string, unknown>[]
+  /** The session's own object, reached as the relay reaches it, for the first-party MCP endpoint's calls about that session. */
+  sessionHost: () => ClaxedoFetch
 }
 
 /**
@@ -87,6 +89,7 @@ export function controlPlaneStandIn(input: ControlPlaneInput) {
     createClient: () => createClaxedoMcpClient({
       deployment: "hosted",
       local: { fetch: async (path, init) => await runtime.request(path, init), workspace: { workspaceId: WORKSPACE_ID } },
+      ownSession: { sessionId: input.root, fetch: (path, init) => input.sessionHost()(path, init) },
     }),
     registerTools: CLAXEDO_MCP_TOOL_GROUPS,
     enabledToolGroups: () => ["sessions"],

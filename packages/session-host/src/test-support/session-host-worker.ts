@@ -59,20 +59,25 @@ export function sessionHostClient(miniflare: Miniflare & { stderr(): string }, i
     "x-workspace-id": WORKSPACE_ID,
     "x-forwarded-by": "workspace-relay",
   })
-  const fetchObject = async (path: string, init: { method?: string; body?: unknown; signal?: AbortSignal; headers?: Record<string, string> } = {}) => {
+  const request = async (path: string, init: RequestInit = {}) => {
     const namespace = await miniflare.getDurableObjectNamespace("SESSION_HOST")
+    const relayed = new Headers(await headers())
+    new Headers(init.headers).forEach((value, name) => relayed.set(name, value))
     return namespace.get(namespace.idFromName(input.root)).fetch(`https://session-host.invalid${path}`, {
-      method: init.method ?? "GET",
-      headers: { ...await headers(), ...(init.body === undefined ? {} : { "content-type": "application/json" }), ...init.headers },
-      ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-      ...(init.signal ? { signal: init.signal } : {}),
-    }) as unknown as Promise<Response>
+      method: init.method ?? "GET", headers: Object.fromEntries(relayed), ...(init.body == null ? {} : { body: init.body as string }), ...(init.signal ? { signal: init.signal } : {}),
+    } as never) as unknown as Promise<Response>
   }
+  const fetchObject = (path: string, init: { method?: string; body?: unknown; signal?: AbortSignal; headers?: Record<string, string> } = {}) => request(path, {
+    method: init.method ?? "GET",
+    headers: { ...(init.body === undefined ? {} : { "content-type": "application/json" }), ...init.headers },
+    ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+    ...(init.signal ? { signal: init.signal } : {}),
+  })
   const json = async <T>(path: string, init?: Parameters<typeof fetchObject>[1]): Promise<T> => {
     const response = await fetchObject(path, init)
     const text = await response.text()
     if (!response.ok) throw new Error(`${init?.method ?? "GET"} ${path} answered ${response.status}: ${text}\n${miniflare.stderr()}`)
     return (text ? JSON.parse(text) : undefined) as T
   }
-  return { fetch: fetchObject, json }
+  return { fetch: fetchObject, request, json }
 }

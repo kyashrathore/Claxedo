@@ -1,5 +1,6 @@
+import { sessionHostId } from "@claxedo/workspace-relay-protocol"
 import type { RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
-import type { ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
+import { defaultHomeRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { ControlPlaneServices } from "./services"
 import type { SessionHostAuthority } from "./session-hosts"
 import { resolveWorkspaceRuntimeTarget } from "./runtime-target"
@@ -60,4 +61,26 @@ export async function sessionHostMachineAccess(deps: SessionHostMachineDeps, inp
     runtimeAccessToken: token.runtimeAccessToken,
     expiresAt: token.tokenExpiresAt,
   }
+}
+
+/**
+ * The workspace owner's editor token for the Durable Object that serves a
+ * session, which the first-party MCP endpoint reaches that session's own
+ * routes with, recorded before it is handed out. It never starts the machine.
+ */
+export async function sessionHostOwnAccess(deps: SessionHostMachineDeps, input: {
+  actorId: string
+  orgId: string
+  workspaceId: string
+  sessionId: string
+  ttlSeconds: number
+}): Promise<SessionHostMachineAccess> {
+  const { actorId, workspaceId, sessionId } = input
+  const hostId = sessionHostId(sessionId)
+  const token = await deps.signRuntimeAccessToken({
+    principalKind: "user", actorId, actorKind: "human", orgId: input.orgId, workspaceId, hostId, role: "editor", sessionId, ttlSeconds: input.ttlSeconds,
+  })
+  await deps.sessionHosts.recordSessionMcpSessionHostAccessToken(actorId, { jti: token.jti, workspaceId, hostId, sessionId, expiresAt: token.tokenExpiresAt })
+  const relayUrl = await deps.relayEndpoint(workspaceId, deps.services.defaultHomeRegion ?? defaultHomeRegion())
+  return { relayUrl: relayUrl.replace(/\/+$/, ""), hostId, runtimeAccessToken: token.runtimeAccessToken, expiresAt: token.tokenExpiresAt }
 }

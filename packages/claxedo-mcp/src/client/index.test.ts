@@ -147,6 +147,23 @@ describe("resolveTarget", () => {
     await expect(client.workspaces()).rejects.toMatchObject({ code: "control-plane-required" })
   })
 
+  test("hosted reaches the calling session's own routes at its own host and everything else on the machine", async () => {
+    const machine = local()
+    const host = local()
+    const client = createClaxedoMcpClient({
+      deployment: "hosted",
+      local: { fetch: machine.fetch, workspace: { workspaceId: "ws_own" } },
+      ownSession: { sessionId: "ses_pi", fetch: host.fetch },
+    })
+    const server = await client.server({ workspaceId: "ws_own" })
+    await server.session.messages({ sessionID: "ses_pi", workspace: "ws_own" })
+    await server.session.get({ sessionID: "ses_pi", workspace: "ws_own" })
+    await server.session.get({ sessionID: "ses_pi_child", workspace: "ws_own" })
+    await server.session.list({ workspace: "ws_own" })
+    expect(host.calls.map((call) => call.path)).toEqual(["/session/ses_pi/message?workspace=ws_own", "/session/ses_pi?workspace=ws_own"])
+    expect(machine.calls.map((call) => call.path)).toEqual(["/session/ses_pi_child?workspace=ws_own", "/session?workspace=ws_own"])
+  })
+
   test("node serves its own workspace directly and relays the rest through its own connection route", async () => {
     const now = () => 5_000
     const fixture = hostedFixture({ now, relayUrl: "https://node.example" })

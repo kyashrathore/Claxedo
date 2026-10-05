@@ -20,6 +20,8 @@ export type SessionHostAuthority = {
   recordTurnRuntimeAccessToken(actorId: string, token: TurnRuntimeAccessTokenRecord): Promise<unknown>
   /** The workspace owner's editor token the first-party MCP endpoint reaches the machine with for that session's tools. */
   recordSessionMcpRuntimeAccessToken(actorId: string, token: TurnRuntimeAccessTokenRecord): Promise<unknown>
+  /** The workspace owner's editor token the first-party MCP endpoint reaches the session's own host with, for that session's own routes. */
+  recordSessionMcpSessionHostAccessToken(actorId: string, token: TurnRuntimeAccessTokenRecord): Promise<unknown>
   /** Whether this lease is still the session's live one: neither released nor expired nor superseded. */
   turnLeaseLive(input: { sessionId: string; turnId: string; leaseId: string; fencingToken: number }): Promise<boolean>
   /** The live sessions of a workspace that are served by their own hosts. */
