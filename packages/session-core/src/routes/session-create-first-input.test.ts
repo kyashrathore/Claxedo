@@ -303,6 +303,23 @@ describe("a managed create that carries the session's first prompt", () => {
       "lifecycle:failed",
     ])
   })
+
+  test("a retry of the create its registration was undone for answers the authority's spent reservation, not a denial", async () => {
+    const journal: Journal = []
+    let compensated = false
+    const refusing = managedPolicy(journal, {
+      acquireTurn: async () => ({ allowed: false, status: 409, code: "session_turn_in_progress", message: "busy" }),
+      completeRegistrationCompensation: async () => { compensated = true; return { allowed: true } },
+      authorizeSessionStart: async () => compensated
+        ? { allowed: false, status: 409, code: "session_reservation_spent", message: "The create was undone" }
+        : { allowed: true },
+    })
+    const app = routes(journal, harness(journal), { policy: refusing, relayed: true })
+    expect((await create(app, { id: "ses_1", prompt: FIRST }, reserved)).status).toBe(409)
+    const retry = await create(app, { id: "ses_1", prompt: FIRST }, reserved)
+    expect(retry.status).toBe(409)
+    expect(await retry.json()).toMatchObject({ error: { code: "session_reservation_spent" } })
+  })
 })
 
 describe("a create that carries the session's first goal", () => {

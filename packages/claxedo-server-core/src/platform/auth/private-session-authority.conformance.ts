@@ -288,7 +288,10 @@ export async function exercisePrivateSessionAuthorityConformance(
   invariant(pending.state === "compensation_pending", "definitive denial did not begin compensation")
   const compensatedStart = { ...creator.runtime, workspaceId, sessionId: compensatedSessionId, registrationOperationId: compensatedOperationId }
   await authority.authorizeRuntimeSessionStartStatus(compensatedStart)
-  invariant(await rejects(() => authority.authorizeRuntimeSessionStart(compensatedStart)), "compensating session retained startup authority")
+  invariant(
+    (await refusalCode(() => authority.authorizeRuntimeSessionStart(compensatedStart))) === "workspace_authorization_denied",
+    "compensating session retained startup authority, or read as spent before its compensation completed",
+  )
   invariant(
     await rejects(() =>
       authority.registerRuntimeSession({
@@ -311,7 +314,10 @@ export async function exercisePrivateSessionAuthorityConformance(
   })
   invariant(compensated.state === "compensated", "compensation did not reach its terminal state")
   await authority.authorizeRuntimeSessionStartStatus(compensatedStart)
-  invariant(await rejects(() => authority.authorizeRuntimeSessionStart(compensatedStart)), "compensated session retained startup authority")
+  invariant(
+    (await refusalCode(() => authority.authorizeRuntimeSessionStart(compensatedStart))) === "session_reservation_spent",
+    "a compensated session's start was not refused as a spent reservation its creator can reserve again",
+  )
 
   const releasedOperationId = `${compensatedOperationId}_after_release`
   const released = await authority.reserveSession(creator.auth, {
@@ -344,6 +350,7 @@ export async function exercisePrivateSessionAuthorityConformance(
     restarted.changed && restarted.state === "reserved",
     "a compensated operation could not be reserved again under its own identifier",
   )
+  await authority.authorizeRuntimeSessionStart({ ...creator.runtime, workspaceId, sessionId: compensatedSessionId, registrationOperationId: releasedOperationId })
 
   const pendingSessionId = "ses_private_session_compensation_pending_contract"
   const pendingOperationId = "op_private_session_compensation_pending_contract"
@@ -776,6 +783,15 @@ async function refusesWith(operation: () => Promise<unknown>, code: string) {
     return false
   } catch (error) {
     return asRecord(error)?.code === code
+  }
+}
+
+async function refusalCode(operation: () => Promise<unknown>) {
+  try {
+    await operation()
+    return undefined
+  } catch (error) {
+    return asRecord(error)?.code
   }
 }
 

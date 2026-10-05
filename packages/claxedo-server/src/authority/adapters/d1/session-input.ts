@@ -23,7 +23,11 @@ const MAX_VISIBILITY_ROWS = 500
 export class D1SessionAuthorityError extends ClaxedoError {
   constructor(
     code:
-      "invalid_input" | "resource_conflict" | "registration_transition_denied" | "actor_authorization_denied",
+      | "invalid_input"
+      | "resource_conflict"
+      | "registration_transition_denied"
+      | "actor_authorization_denied"
+      | "session_reservation_spent",
     message: string,
   ) {
     super({

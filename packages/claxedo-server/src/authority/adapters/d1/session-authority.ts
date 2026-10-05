@@ -431,11 +431,13 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const operationId = requireText(input.registrationOperationId, "registrationOperationId")
     await this.requireWorkspace(actor, workspaceId, "create_session")
     const row = await this.registration(operationId)
-    if (!row || row.workspace_id !== workspaceId || row.session_id !== sessionId
-      || row.creator_actor_id !== actor.actorId
-      || (row.state !== "reserved" && row.state !== "reconciliation_required")) {
+    if (!row || row.workspace_id !== workspaceId || row.session_id !== sessionId || row.creator_actor_id !== actor.actorId) {
       throw denied("A matching live creator reservation is required")
     }
+    if (row.state === "compensated") {
+      throw new D1SessionAuthorityError("session_reservation_spent", "This session's create was undone; reserve it again to retry")
+    }
+    if (row.state !== "reserved" && row.state !== "reconciliation_required") throw denied("A matching live creator reservation is required")
     if (row.operation_kind === "fork") {
       await this.requireSessionAccess(actor, row.parent_session_id!, workspaceId, "agent_turn")
     }

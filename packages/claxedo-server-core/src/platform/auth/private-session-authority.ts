@@ -283,6 +283,11 @@ export type PrivateSessionAuthority = {
   ) => Promise<void>
   /** Reads only the creator-owned registration outcome, including terminal states. */
   authorizeRuntimeSessionStartStatus: (input: AuthorizeRuntimeSessionStartInput) => Promise<void>
+  /**
+   * Admits a live reservation's creator. Its creator's start after the create
+   * was undone (compensated) is refused `session_reservation_spent`, so the
+   * caller reserves again instead of retrying a refusal.
+   */
   authorizeRuntimeSessionStart: (input: AuthorizeRuntimeSessionStartInput) => Promise<void>
   authorizeRuntimeSession: (input: AuthorizeRuntimePrivateSessionInput) => Promise<void>
 

@@ -599,6 +599,10 @@ describe("the owner grant as a session proof", () => {
     expect(authority.authorizeRuntimeSessionStart).toHaveBeenCalledTimes(1)
     authority.authorizeRuntimeSessionStart.mockRejectedValueOnce(new ControlPlaneAuthError(403, "workspace_authorization_denied", "Reservation is no longer live"))
     expect((await request(target, token, { action: "start", operationId: "op_start", sessionId: "ses_start" })).status).toBe(403)
+    authority.authorizeRuntimeSessionStart.mockRejectedValueOnce(new D1SessionAuthorityError("session_reservation_spent", "The create was undone"))
+    const spent = await request(target, token, { action: "start", operationId: "op_start", sessionId: "ses_start" })
+    expect(spent.status).toBe(409)
+    expect(await spent.json()).toMatchObject({ error: { code: "session_reservation_spent" } })
   })
 
   test("registers, reads and writes as the workspace's owner, re-resolved from the authority on every call and never from the request", async () => {

@@ -64,6 +64,7 @@ export const PUBLIC_API_ERRORS = {
   host_provider_config_revision_stale: { status: 409, message: "host_provider_config_revision_stale" },
   identity_conflict: { status: 409, message: "identity_conflict" },
   registration_transition_denied: { status: 403, message: "registration_transition_denied" },
+  session_reservation_spent: { status: 409, message: "This session's create was undone; reserve it again to retry" },
   actor_authorization_denied: { status: 403, message: "actor_authorization_denied" },
 } as const
 
