@@ -14,10 +14,10 @@ import { readPart, readTurnPageBefore } from "./transcript-reads"
 import type { HostedAccount } from "./account"
 import { cancelRunningTurn, stopBackgroundTask } from "./session-stop"
 import type { StatusOwner } from "./status"
-import { jsonInit, withQuery, type Transport } from "./transport"
-import type { AgentRequestReply, PromptDelivery, PromptInput, SessionCreateInput, SessionLocation, SessionRow } from "./types"
+import { jsonInit, withQuery, type RuntimeRoute, type Transport } from "./transport"
+import type { AgentRequestReply, PromptDelivery, PromptInput, SessionCreateInput, SessionLocation, SessionReservation, SessionRow } from "./types"
 import type { SessionProjection } from "./session-projection"
-import { createSessionReservations, RESERVATION_HEADER, type SessionReservations } from "./session-reservation"
+import { createReserved, RESERVATION_HEADER } from "./session-reservation"
 import type { WorkspaceWakes } from "./workspace-wakes"
 import type { Workspaces } from "./workspaces"
 import { harnessIdentity, harnessSelectionQuery } from "./wire/harness-selection"
@@ -40,28 +40,26 @@ function createBody(input: SessionCreateInput) {
   }
 }
 
-async function createSession(context: SessionContext, wakes: WorkspaceWakes, reservations: SessionReservations | undefined, input: SessionCreateInput): Promise<SessionRow> {
+async function createSession(context: SessionContext, wakes: WorkspaceWakes, input: SessionCreateInput): Promise<SessionRow> {
   await wakes.wakeIfStopped(input.placementId)
   const where = await context.workspaces.route(input.placementId)
   const placement = context.workspaces.byId(input.placementId)
   if (!placement) throw new ServerError({ class: "not_found", message: `Placement ${input.placementId} is not in the catalog` })
-  const firstMessageId = input.prompt?.messageId
-  const reservation = where.remote && reservations
-    ? await reservations.reserve(firstMessageId, {
-      workspaceId: where.workspaceId,
-      ...(input.title ? { title: input.title } : {}),
-      ...(input.harness ? { harness: harnessIdentity(input.harness) } : {}),
-    })
-    : undefined
+  const reserve = { workspaceId: where.workspaceId, ...(input.title ? { title: input.title } : {}), ...(input.harness ? { harness: harnessIdentity(input.harness) } : {}) }
+  const created = where.remote && context.account
+    ? await createReserved(context.account, input.reservation, reserve, (reservation) => postCreate(context, where, input, reservation))
+    : await postCreate(context, where, input, undefined)
+  return sessionRowFromSession(created, { projectId: placement.projectId, placementId: input.placementId, sessionId: sessionId(created.id) })
+}
+
+async function postCreate(context: SessionContext, where: RuntimeRoute, input: SessionCreateInput, reservation: SessionReservation | undefined) {
   const hosted = reservation?.sessionHostRoot
   if (hosted) await context.transport.connectSession(where.workspaceId, hosted)
   const route = hosted ? { ...where, sessionHost: { sessionId: hosted } } : where
   const path = withQuery(hosted ? `/session/${encodeURIComponent(hosted)}` : "/session", input.harness ? harnessSelectionQuery(input.harness) : {})
   const body = { ...createBody(input), ...(reservation && !hosted ? { id: reservation.sessionId } : {}) }
   const init = jsonInit("POST", body, reservation ? { headers: { [RESERVATION_HEADER]: reservation.operationId } } : undefined)
-  const created = sessionFromWire(await context.transport.runtimeJson(route, path, init))
-  reservations?.created(firstMessageId)
-  return sessionRowFromSession(created, { projectId: placement.projectId, placementId: input.placementId, sessionId: sessionId(created.id) })
+  return sessionFromWire(await context.transport.runtimeJson(route, path, init))
 }
 
 async function replyToRequest(context: SessionContext, ref: SessionLocation, id: RequestId, answer: AgentRequestReply) {
@@ -117,7 +115,6 @@ async function patchSession(context: SessionContext, ref: SessionLocation, patch
 
 export function createSessionsApi(transport: Transport, workspaces: Workspaces, status: StatusOwner, wakes: WorkspaceWakes, projection: SessionProjection, telemetry: ProductTelemetry, account?: HostedAccount): SessionsApi {
   const context: SessionContext = { transport, workspaces, status, ...(account ? { account } : {}) }
-  const reservations = account ? createSessionReservations(account) : undefined
   const newMessageId = createMessageIds()
   return {
     list: (options) => listSessions(context, options),
@@ -128,7 +125,7 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
     part: (ref, messageId, partId) => readPart(context, ref, messageId, partId),
     turn: (ref, turnId) => readTurn(context, ref, turnId),
     create: async (input) => {
-      const row = await createSession(context, wakes, reservations, input)
+      const row = await createSession(context, wakes, input)
       void projection.created(row.ref)
       telemetry.record({ event: "session_started", properties: { harness: productHarness(input.harness), where: productWhere(workspaces.byId(input.placementId)?.kind) } })
       return row

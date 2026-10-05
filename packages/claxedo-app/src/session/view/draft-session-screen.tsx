@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, Show } from "solid-js"
 import { Composer, ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel, draftComposerKey, useComposerStore, type Draft, type Submission } from "@/composer"
 import { createDraftPlacementResolver, NewSessionContextRow } from "@/projects"
-import { useServer, type PlacementId, type ProjectId, type PromptInput } from "@/server"
+import { useServer, type PlacementId, type ProjectId, type PromptInput, type ReservationHold, type SessionReservation } from "@/server"
 import { useSessionStores, type SentPrompt, type SessionView } from "@/session"
 import type { PaneProps } from "@/shell"
 import { useWorkbench } from "@/workbench"
@@ -20,6 +20,7 @@ export type DraftSessionState = {
   readonly placementId: PlacementId
   readonly draftId: string
   readonly where?: PlacementId
+  readonly reservation?: SessionReservation
 }
 
 export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
@@ -43,11 +44,15 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
     const view = started()
     if (view && view.state().kind !== "loading") workbench.replacePane(props.paneId, sessionPaneKind, view.ref)
   })
+  const reservation: ReservationHold = {
+    held: () => props.state.reservation,
+    hold: (held) => workbench.updatePane(props.paneId, draftSessionPaneKind, { ...props.state, reservation: held }),
+  }
   const firstSend = createFirstSend()
   const attempt = (submission: Submission, prompt: SentPrompt): FirstSendAttempt<SessionView> => async (report) => {
     const placementId = await draft.resolve({ projectId: props.state.projectId, placementId: where() }, (choice) => report({ type: "createStarted", choice }))
     report({ type: "placementResolved", placementId })
-    const ref = await stores.list.create({ placementId, harness: submission.harness, model: submission.model, prompt })
+    const ref = await stores.list.create({ placementId, harness: submission.harness, model: submission.model, prompt, reservation })
     const view = stores.open(ref)
     view.showSent(prompt)
     return view

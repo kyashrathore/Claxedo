@@ -1,16 +1,19 @@
 import { prefixedRandomId } from "@claxedo/helpers/crypto"
-import { ServerError } from "./errors"
 import { isRecord } from "@claxedo/helpers/guards"
-import type { HostedAccount } from "./account"
 import type { SessionHarness } from "@claxedo/agent-runtime-contract"
-
-export type SessionReservation = { readonly sessionId: string; readonly operationId: string; readonly sessionHostRoot?: string }
+import type { HostedAccount } from "./account"
+import { ServerError } from "./errors"
+import type { ReservationHold, SessionReservation } from "./types"
 
 export const RESERVATION_HEADER = "x-claxedo-session-registration-operation"
 
-export async function reserveSession(account: HostedAccount, input: { readonly workspaceId: string; readonly title?: string; readonly harness?: SessionHarness }): Promise<SessionReservation> {
-  const reservation = { operationId: prefixedRandomId("session_registration"), sessionId: prefixedRandomId("ses") }
-  const body = await account.run("session.reserve", { ...reservation, ...input })
+const SESSION_RESERVATION_SPENT = "session_reservation_spent"
+
+type ReserveInput = { readonly workspaceId: string; readonly title?: string; readonly harness?: SessionHarness }
+
+export async function reserveSession(account: HostedAccount, input: ReserveInput): Promise<SessionReservation> {
+  const reservation = { workspaceId: input.workspaceId, operationId: prefixedRandomId("session_registration"), sessionId: prefixedRandomId("ses") }
+  const body = await account.run("session.reserve", { ...input, operationId: reservation.operationId, sessionId: reservation.sessionId })
   const answer = isRecord(body) ? body : {}
   if (answer.sessionId !== reservation.sessionId || answer.operationId !== reservation.operationId || answer.state !== "reserved") {
     throw new ServerError({ class: "internal", message: "The session reservation answered for a different session" })
@@ -18,22 +21,19 @@ export async function reserveSession(account: HostedAccount, input: { readonly w
   return typeof answer.sessionHostRoot === "string" ? { ...reservation, sessionHostRoot: answer.sessionHostRoot } : reservation
 }
 
-type ReserveInput = { readonly workspaceId: string; readonly title?: string; readonly harness?: SessionHarness }
-
-export function createSessionReservations(account: HostedAccount) {
-  const held = new Map<string, { readonly workspaceId: string; readonly reservation: SessionReservation }>()
-  return {
-    async reserve(firstMessageId: string | undefined, input: ReserveInput): Promise<SessionReservation> {
-      const kept = firstMessageId ? held.get(firstMessageId) : undefined
-      if (kept?.workspaceId === input.workspaceId) return kept.reservation
-      const reservation = await reserveSession(account, input)
-      if (firstMessageId) held.set(firstMessageId, { workspaceId: input.workspaceId, reservation })
-      return reservation
-    },
-    created(firstMessageId: string | undefined) {
-      if (firstMessageId) held.delete(firstMessageId)
-    },
-  }
+async function reserveHeld(account: HostedAccount, hold: ReservationHold | undefined, input: ReserveInput) {
+  const reservation = await reserveSession(account, input)
+  hold?.hold(reservation)
+  return reservation
 }
 
-export type SessionReservations = ReturnType<typeof createSessionReservations>
+export async function createReserved<Created>(account: HostedAccount, hold: ReservationHold | undefined, input: ReserveInput, create: (reservation: SessionReservation) => Promise<Created>): Promise<Created> {
+  const held = hold?.held()
+  const reservation = held?.workspaceId === input.workspaceId ? held : await reserveHeld(account, hold, input)
+  try {
+    return await create(reservation)
+  } catch (error) {
+    if (!(error instanceof ServerError && error.code === SESSION_RESERVATION_SPENT)) throw error
+    return await create(await reserveHeld(account, hold, input))
+  }
+}

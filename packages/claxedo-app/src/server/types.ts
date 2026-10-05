@@ -218,12 +218,20 @@ export type PromptInput = {
   readonly delivery?: PromptDeliveryRequest
 }
 
+export type SessionReservation = { readonly workspaceId: string; readonly sessionId: string; readonly operationId: string; readonly sessionHostRoot?: string }
+
+export type ReservationHold = {
+  readonly held: () => SessionReservation | undefined
+  readonly hold: (reservation: SessionReservation) => void
+}
+
 export type SessionCreateInput = {
   readonly placementId: PlacementId
   readonly harness?: string
   readonly model?: ModelChoice
   readonly title?: string
   readonly prompt?: PromptInput & { readonly messageId: string }
+  readonly reservation?: ReservationHold
 }
 
 export type QueuedPromptPart = { readonly type: string; readonly text?: string; readonly synthetic?: boolean; readonly filename?: string; readonly url?: string; readonly mime?: string }

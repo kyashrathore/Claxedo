@@ -14,6 +14,7 @@ import { bootstrap } from "./test-session-server"
 import { createTransport, type Transport } from "./transport"
 import { createWorkspaces, type Workspaces } from "./workspaces"
 import { createWorkspaceWakes, type WorkspaceWakes } from "./workspace-wakes"
+import type { SessionReservation } from "./types"
 
 const running: Array<{ stop: (force: boolean) => unknown }> = []
 const recorded: ProductEvent[] = []
@@ -65,7 +66,7 @@ test.each([["cloud", false], ["remote machine", true]] as const)("sessions: a %s
   workspaces.dispose()
 })
 
-test("sessions: a first send retried after its create failed creates under the same reservation, so the runtime answers the session the first attempt made", async () => {
+function reservingCloudServer() {
   const creates: Array<{ id?: unknown; operation: string | null }> = []
   let reserves = 0
   const server = Bun.serve({
@@ -82,6 +83,7 @@ test("sessions: a first send retried after its create failed creates under the s
         const body = (await request.json()) as { id?: unknown }
         creates.push({ id: body.id, operation: request.headers.get(RESERVATION_HEADER) })
         if (creates.length === 1) return Response.json({ error: { code: "upstream_unavailable", message: "The response was lost" } }, { status: 502 })
+        if (creates.length === 2) return Response.json({ error: { code: "session_reservation_spent", message: "The reservation was compensated" } }, { status: 409 })
         return Response.json({ id: body.id, title: "First", time: { created: 1, updated: 1 } })
       }
       if (url.pathname.startsWith("/api/control/")) return Response.json({ ok: true })
@@ -89,19 +91,28 @@ test("sessions: a first send retried after its create failed creates under the s
     },
   })
   running.push(server)
+  return { server, creates, reserves: () => reserves }
+}
+
+test("sessions: a first send resent after its create failed creates under the draft's held reservation, and a spent reservation is replaced once", async () => {
+  const { server, creates, reserves } = reservingCloudServer()
   const transport = createTransport({ serverUrl: `http://127.0.0.1:${server.port}`, cookies: true })
   const account = createBrowserHostedAccount(transport)
   const workspaces = createWorkspaces(transport, new QueryClient())
   const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createWorkspaceWakes(transport, workspaces), createSessionProjection(workspaces, account), telemetry, account)
-  const input = { placementId: placementId("ws_cloud"), prompt: { clientRequestId: "req_1", messageId: "msg_first", text: "hello", attachments: [] } }
+  let held: SessionReservation | undefined
+  const reservation = { held: () => held, hold: (next: SessionReservation) => { held = next } }
+  const send = (messageId: string, text: string) => ({ placementId: placementId("ws_cloud"), reservation, prompt: { clientRequestId: messageId, messageId, text, attachments: [] } })
 
-  await expect(sessions.create(input)).rejects.toBeDefined()
-  const row = await sessions.create(input)
+  await expect(sessions.create(send("msg_first", "hello"))).rejects.toBeDefined()
+  const row = await sessions.create(send("msg_edited", "hello again"))
 
-  expect(reserves).toBe(1)
-  expect(creates).toHaveLength(2)
+  expect(reserves()).toBe(2)
+  expect(creates).toHaveLength(3)
   expect(creates[1]).toEqual(creates[0])
-  expect(String(row.ref.sessionId)).toBe(String(creates[0]?.id))
+  expect(creates[2]?.id).not.toBe(creates[0]?.id)
+  expect(String(row.ref.sessionId)).toBe(String(creates[2]?.id))
+  expect(held?.sessionId).toBe(String(creates[2]?.id))
   workspaces.dispose()
 })
 
