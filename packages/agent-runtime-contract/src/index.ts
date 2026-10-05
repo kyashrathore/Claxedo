@@ -20,6 +20,7 @@ export * from "./harnesses"
 export * from "./permissions"
 export * from "./custom-provider-headers"
 export * from "./pi-providers"
+export * from "./prompt-title"
 export * from "./provider-projection"
 export * from "./question-answers"
 export {

@@ -1,9 +1,9 @@
-import type { PromptInput, AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
+import { promptTitle, type PromptInput, type AgentPresentationEvent } from "@claxedo/agent-runtime-contract"
 import type { HarnessSession, HarnessTransport } from "@claxedo/harness/contract"
 import { settleAtRequestDeadline } from "@claxedo/helpers"
 import type { RuntimeEventHub } from "../projection/runtime-event-hub"
 import type { AgentRuntimeStore } from "./contracts"
-import { deriveSessionTitle, extractPromptTitleText, isPlaceholderTitle } from "../session/session-title"
+import { extractPromptTitleText, isPlaceholderTitle } from "../session/session-title"
 import { acceptGeneratedTitle, sessionTitleRequest, TITLE_TURN_TIMEOUT_MS } from "./title-generation"
 import { buildSession, sessionUpdated, withDir } from "../projection/presentation-events"
 import { createSessionEventWriter } from "../projection/session-event-writer"
@@ -56,7 +56,7 @@ export function createSessionTitleOwner(input: { store: AgentRuntimeStore; event
     return sessionUpdated(buildSession({
       id: sessionId,
       directory,
-      title: deriveSessionTitle(text),
+      title: promptTitle(text),
       titleSource: "prompt",
       created,
       updated: Date.now(),

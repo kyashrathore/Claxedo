@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { deriveSessionTitle, extractPromptTitleText, isPlaceholderTitle } from "./session-title"
+import { extractPromptTitleText, isPlaceholderTitle } from "./session-title"
 
 describe("session title helpers", () => {
   test("recognises the titles no writer chose", () => {
@@ -17,8 +17,7 @@ describe("session title helpers", () => {
     expect(isPlaceholderTitle("New session architecture notes")).toBe(false)
   })
 
-  test("derives titles from prompt text", () => {
-    expect(deriveSessionTitle("Please fix the terminal pane")).toBe("fix the terminal pane")
+  test("reads a prompt's text for its title", () => {
     expect(extractPromptTitleText([{ type: "text", text: "hello" }])).toBe("hello")
     expect(extractPromptTitleText([{ type: "text", content: "from content" }])).toBe("from content")
   })
