@@ -20,9 +20,10 @@ client the tools call.
    mount hands it to `verifyRuntimeCredential`, the issuer of the runtime
    that mounted the route; the claims become a `runtime` credential carrying
    the runtime id, workspace id, the user the runtime serves, and
-   `?session=<id>` from the URL. A hosted or node mount asks
-   `resolveUserCredential` first and falls back to the runtime verifier when
-   it has one. No credential is 401 with a `WWW-Authenticate` challenge;
+   `?session=<id>` from the URL. A hosted or node mount with a runtime
+   verifier asks it first, a local signature check, so a session's bearer
+   never reaches account resolution (an OAuth introspection on hosted), and
+   then asks `resolveUserCredential`. No credential is 401 with a `WWW-Authenticate` challenge;
    hosted and node add `resource_metadata` pointing at
    `/.well-known/oauth-protected-resource`. `readOnly` applies to runtime
    credentials; a user credential's read-only state is the resolver's.

@@ -136,6 +136,21 @@ test("51 cloud Pi keeps its model available after first-turn credential delivery
   expect(assistantText(await host.call("GET", `/session/${reservation.sessionId}/message`) as MessageRow[])).toContain("PIMODELAGAIN")
 })
 
+test("51 cloud Pi lists the workspace's sessions through Claxedo's first-party MCP", async ({ signedCloud, page, isMobile }) => {
+  test.skip(isMobile, "the first-party MCP proof runs at desktop width")
+  test.setTimeout(240_000)
+  const workspace = await runningCloudWorkspace(signedCloud)
+  signedCloud.hosted.model.scriptTool({ name: "mcp__claxedo__sessions_list", input: {}, whenPromptIncludes: "CLOUDPIMCP" })
+  await signedCloud.signIn(page, signedCloud.owner)
+  const pi = await startPiFromComposer(page, signedCloud, workspace, "List the sessions, then reply with exactly this one token: CLOUDPIMCP")
+  await expect(page.getByText("CLOUDPIMCP", { exact: true })).toBeVisible({ timeout: 60_000 })
+  const host = await sessionConnection(signedCloud, workspace, pi.sessionId)
+  const messages = await host.call("GET", `/session/${pi.sessionId}/message`) as MessageRow[]
+  const tools = messages.flatMap((message) => message.parts).filter((part) => part.type === "tool")
+  expect(tools, JSON.stringify(messages)).toEqual([expect.objectContaining({ tool: "mcp__claxedo__sessions_list", state: expect.objectContaining({ status: "completed" }) })])
+  expect(JSON.stringify(tools)).toContain(workspace.id)
+})
+
 test("51 a Pi draft on an asleep cloud workspace lists the account's models, never asks the workspace and never says Pi is not set up", async ({ signedCloud, page }, testInfo) => {
   test.setTimeout(180_000)
   await storeOwnerKey(signedCloud, "openai", "cloud-owner-key")

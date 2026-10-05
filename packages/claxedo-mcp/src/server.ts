@@ -221,10 +221,9 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
 
   const resolveCredential = async (request: Request): Promise<McpCredential | undefined> => {
     const token = bearerToken(request.headers.get("authorization"))
-    if (options.mount === "loopback") return token ? runtimeCredential(token, request) : undefined
-    const user = await options.resolveUserCredential?.(request)
-    if (user) return user
-    return token && options.verifyRuntimeCredential ? runtimeCredential(token, request) : undefined
+    const runtime = token && options.verifyRuntimeCredential ? await runtimeCredential(token, request) : undefined
+    if (runtime || options.mount === "loopback") return runtime
+    return await options.resolveUserCredential?.(request)
   }
 
   const unauthorized = (request: Request) => {
