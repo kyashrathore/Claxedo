@@ -13,7 +13,7 @@ const HARNESS_ACCOUNT_MODELS: Partial<Record<PiLaunchProvider, Readonly<Record<s
 
 const DEFAULT_FAMILY: Partial<Record<PiLaunchProvider, string>> = { anthropic: "claude-sonnet" }
 
-function release(model: PiModelChoice, bare: string): Release | undefined {
+function parseRelease(model: PiModelChoice, bare: string): Release | undefined {
   const parsed = /^(.+?)-(\d{1,2}(?:-\d{1,2})*)$/.exec(bare)
   return parsed ? { model, family: parsed[1]!, version: parsed[2]!.split("-").map(Number) } : undefined
 }
@@ -31,7 +31,7 @@ export function piMatchingModel(provider: PiLaunchProvider, hint?: string): PiMo
   const models = Object.values(HARNESS_ACCOUNT_MODELS[provider] ?? {}).map((model) => ({ bare: model.id, model: { id: `${provider}/${model.id}`, name: model.name || model.id } }))
   const exact = models.find((row) => row.bare === hint)
   if (exact) return exact.model
-  const releases = models.flatMap((row) => release(row.model, row.bare) ?? [])
+  const releases = models.flatMap((row) => parseRelease(row.model, row.bare) ?? [])
   const family = (hint ? familyOf(releases, hint) : undefined) ?? DEFAULT_FAMILY[provider]
   const newest = releases.filter((row) => row.family === family).reduce<Release | undefined>((best, row) => best ? newer(row, best) : row, undefined)
   return newest?.model ?? models.find((row) => row.bare === PI_DEFAULT_MODELS[provider])?.model ?? models[0]?.model
