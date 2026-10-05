@@ -138,8 +138,8 @@ describe("the Pi provider catalog", () => {
 })
 
 describe("a native harness draft on a cloud workspace", () => {
-  const anthropic = { unavailable: true, reason: "harness_needs_brokering" }
-  const edge = { baseUrl: "https://api.anthropic.com", placeholderEnv: "CLAXEDO_PROVIDER_ANTHROPIC_1F", authMode: "api-key" }
+  const anthropic = { unavailable: true as const, reason: "harness_needs_brokering" }
+  const edge = { baseUrl: "https://api.anthropic.com", placeholderEnv: "CLAXEDO_PROVIDER_ANTHROPIC_1F", authMode: "api-key" as const }
   const snapshots: Record<string, CredentialSnapshot> = {
     ws_boat: { machineOwnerUserId: "user_a", accounts: { user_a: { anthropic, "claude-sdk": anthropic } } },
     ws_edge: { machineOwnerUserId: "user_a", accounts: { user_a: { anthropic: edge } } },

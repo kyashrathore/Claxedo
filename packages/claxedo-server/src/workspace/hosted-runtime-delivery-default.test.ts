@@ -24,7 +24,7 @@ async function createDelivery(config: UserAgentConfig, backing: "cloud-vm" | "lo
     database: instance.database,
     services: { sandbox: { sandboxManager: { target: async () => ({ status: "ready", hostId: "host", url: "https://runtime.test" }) } } } as unknown as Input["services"],
     sandboxManager: {} as Input["sandboxManager"],
-    workspaceDriver: async () => ({ driver: { metadata: { secretBrokering: "native" } }, key: "operator" }) as Awaited<ReturnType<Input["workspaceDriver"]>>,
+    workspaceSecretBrokering: async () => "native",
     sandboxInput: async () => { throw new Error("this test provisions no sandbox") },
     settings: { read: async () => config, write: async () => {} },
     credentials: () => ({ listCredentials: async () => [], accountSelections: async () => ({}), resolveCredentialSecretById: async () => null }) as unknown as ReturnType<Input["credentials"]>,

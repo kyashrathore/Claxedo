@@ -240,15 +240,15 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     }),
   })
   const settings = d1UserAgentConfigRepository(input.controlPlaneDatabase)
-  const { sandboxManager, workspaceDriver } = plane.services.sandbox
+  const { sandboxManager, workspaceSecretBrokering } = plane.services.sandbox
   const sandbox = input.sandbox
-  const delivery = sandbox && plane.orgCredentials && sandboxManager && workspaceDriver
+  const delivery = sandbox && plane.orgCredentials && sandboxManager && workspaceSecretBrokering
     ? createHostedRuntimeDelivery({
         authority,
         database: input.controlPlaneDatabase,
         services: plane.services,
         sandboxManager,
-        workspaceDriver,
+        workspaceSecretBrokering,
         sandboxInput: hostedWorkspaceSandboxInput({ database: input.controlPlaneDatabase, egress: hostedSandboxEgress(plane) }),
         settings,
         credentials: plane.orgCredentials,

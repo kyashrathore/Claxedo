@@ -12,7 +12,8 @@ import {
   nativeProviderSecrets,
 } from "@claxedo/server-core/credentials/native-delivery-plan"
 import { projectEnvironment } from "@claxedo/server-core/projects/environment"
-import type { ControlPlaneCredentials, ControlPlaneServices, SandboxKeyedDriver } from "../authority/services"
+import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
+import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import { storeRenewal } from "../credentials/store-renewal"
 import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "./route-support"
 import { mintSupervisorBackplaneToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
@@ -55,7 +56,7 @@ export function createHostedRuntimeDelivery(input: {
   database: D1Database
   services: ControlPlaneServices
   sandboxManager: SandboxManager
-  workspaceDriver: (workspaceId: string) => Promise<SandboxKeyedDriver>
+  workspaceSecretBrokering: (workspaceId: string) => Promise<SandboxSecretBrokering>
   sandboxInput(
     workspaceId: string,
     prepared: { preparation: WorkspaceRuntimePreparation | undefined; secrets: readonly SandboxBrokeredSecret[] },
@@ -88,7 +89,7 @@ export function createHostedRuntimeDelivery(input: {
       selected,
       readSecret: (credential) => credentials.resolveCredentialSecretById?.(credential.id) ?? Promise.resolve(null),
       renew: storeRenewal(credentials),
-      secretBrokering: (await input.workspaceDriver(workspaceId)).driver.metadata.secretBrokering,
+      secretBrokering: await input.workspaceSecretBrokering(workspaceId),
     })
     return { delivered, selections }
   }

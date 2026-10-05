@@ -54,7 +54,7 @@ async function signedInOrg(fixture: Fixture) {
   return { owner, orgId: (await fixture.authority.usersMe(owner) as { org_id: string }).org_id }
 }
 
-function rig(fixture: Fixture, orgId: string) {
+function rig(fixture: Fixture, orgId: string, options: { builds?: boolean } = {}) {
   const provisioned: Provisioned[] = []
   const stopped: string[] = []
   const built: Array<{ id: SandboxDriverID; fields: Record<string, string> }> = []
@@ -72,7 +72,7 @@ function rig(fixture: Fixture, orgId: string) {
         drivers: ["cloudflare", "boat"],
         create: (id, fields) => {
           built.push({ id, fields })
-          return providerAccount(id, `org-${id}-${Object.values(fields).join("+")}`, provisioned, stopped, live)
+          return options.builds === false ? undefined : providerAccount(id, `org-${id}-${Object.values(fields).join("+")}`, provisioned, stopped, live)
         },
         chosenDriver: d1OrgSandboxDriver(fixture.database).chosen,
       },
@@ -125,6 +125,18 @@ describe("organization sandbox keys on a hosted deployment", () => {
     await expect(manager.destroy("ws_after")).rejects.toThrow("has been removed")
     expect(await manager.ensure("ws_later", input)).toMatchObject({ status: "ready" })
     expect(provisioned.at(-1)).toMatchObject({ account: "operator", workspaceId: "ws_later" })
+  })
+
+  test("how a workspace's driver brokers secrets is read from the catalog, so a key that cannot build its driver still answers", async () => {
+    const { workspaceDriver, workspaceSecretBrokering, store } = rig(fixture, orgId, { builds: false })
+    expect(await workspaceSecretBrokering("ws_keyless")).toBe("native")
+    const boat = await store.putCredential({ owner: null, provider_id: "boat", kind: "sandbox_driver", source: "managed", secret: JSON.stringify({ api_key: "bx-org" }) })
+    try {
+      expect(await workspaceSecretBrokering("ws_keyed")).toBe("none")
+      await expect(workspaceDriver("ws_keyed")).rejects.toThrow("cannot build a driver")
+    } finally {
+      await store.deleteCredential(boat.id)
+    }
   })
 
   test("with several keys, new workspaces use the organization's chosen driver", async () => {

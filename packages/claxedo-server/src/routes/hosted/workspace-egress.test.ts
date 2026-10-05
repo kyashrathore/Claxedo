@@ -142,7 +142,7 @@ async function buildApp(egressControl: SandboxEgressControl, options: Partial<Ho
     database: backing.database,
     services,
     sandboxManager,
-    workspaceDriver: async () => ({ driver, key: "operator" }),
+    workspaceSecretBrokering: async () => driver.metadata.secretBrokering,
     sandboxInput: async (workspaceId, prepared) => hostedSandboxInput(rows.get(workspaceId) ?? {}, { egress, ...prepared }),
     settings: { read: async () => ({ version: 3, connections: {} }), write: async () => {} },
     credentials: () => ({ listCredentials: async () => [], accountSelections: async () => ({}), resolveCredentialSecretById: async () => null }) as never,

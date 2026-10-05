@@ -26,7 +26,7 @@ async function setup() {
     database: instance.database,
     services: {} as Input["services"],
     sandboxManager: {} as Input["sandboxManager"],
-    workspaceDriver: async () => ({ driver: { metadata: { secretBrokering: "native" } }, key: "operator" }) as Awaited<ReturnType<Input["workspaceDriver"]>>,
+    workspaceSecretBrokering: async () => "native",
     sandboxInput: async () => { throw new Error("this test provisions no sandbox") },
     settings: { read: async () => ({ version: 3, connections: {} }), write: async () => {} },
     credentials,

@@ -1,5 +1,6 @@
-import { effectiveSandboxDriver, type SandboxDriverID } from "@claxedo/sandbox-contract"
+import { effectiveSandboxDriver, type SandboxDriverID, type SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import type { SandboxDriver } from "@claxedo/sandbox-manager"
+import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import { jsonStringEntries } from "@claxedo/server-core/platform/runtime/lib/json"
 import { parseJsonRecord } from "@claxedo/server-core/platform/json/index"
@@ -58,17 +59,26 @@ export function orgSandboxDrivers(input: {
     built.set(row.id, binding)
     return binding
   }
+  const chosenRow = async (orgId: string) => {
+    const available = (await orgKeys(orgId)).filter(usableSandboxKey)
+    const keyed = available.flatMap((row) => driverOf(row) ?? [])
+    const chosen = effectiveSandboxDriver({ chosen: await input.keys.chosenDriver(orgId), keyed })
+    return available.find((candidate) => candidate.provider_id === chosen)
+  }
   return {
     operator,
     async forOrg(orgId: string): Promise<SandboxKeyBinding> {
-      const available = (await orgKeys(orgId)).filter(usableSandboxKey)
-      const keyed = available.flatMap((row) => driverOf(row) ?? [])
-      const chosen = effectiveSandboxDriver({ chosen: await input.keys.chosenDriver(orgId), keyed })
-      const row = available.find((candidate) => candidate.provider_id === chosen)
+      const row = await chosenRow(orgId)
       return row ? await bind(orgId, row) : operator
     },
     async forKey(orgId: string, key: string): Promise<SandboxKeyBinding> {
       return await bind(orgId, await keyRow(orgId, key))
+    },
+    /** How the driver a key names brokers secrets, from the catalog alone: a read, so a key that cannot build its driver still answers. */
+    async secretBrokering(orgId: string, key?: string): Promise<SandboxSecretBrokering> {
+      const row = key ? await keyRow(orgId, key) : await chosenRow(orgId)
+      const id = row ? driverOf(row) : undefined
+      return id ? sandboxDriverCatalog[id].metadata.secretBrokering : operator.driver.metadata.secretBrokering
     },
   }
 }

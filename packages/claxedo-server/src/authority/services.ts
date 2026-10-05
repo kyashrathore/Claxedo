@@ -1,3 +1,4 @@
+import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
 import { localOnlyAuthAdapter, type ControlPlaneAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import type { DurableSessionLog } from "@claxedo/server-core/platform/auth/durable-session-log"
@@ -68,6 +69,8 @@ export type HostedControlPlaneSandbox = Omit<ControlPlaneSandbox, "sandboxManage
   sandboxManager?: SandboxManager
   /** The driver a workspace's sandbox is, or would be, provisioned with. */
   workspaceDriver?: (workspaceId: string) => Promise<SandboxKeyedDriver>
+  /** How that driver brokers secrets, read from the catalog without building it. */
+  workspaceSecretBrokering?: (workspaceId: string) => Promise<SandboxSecretBrokering>
   /** The driver a new workspace of the organization would be provisioned with. */
   orgDriver?: (orgId: string) => Promise<SandboxKeyedDriver>
 }

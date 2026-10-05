@@ -205,7 +205,12 @@ function sandboxManager(
   })
   if (!sandbox.keys || !bindings.orgCredentials) {
     const operator = { driver: sandbox.driver, key: "operator" as const }
-    return { manager: manager(sandbox.driver), workspaceDriver: async () => operator, orgDriver: async () => operator }
+    return {
+      manager: manager(sandbox.driver),
+      workspaceDriver: async () => operator,
+      workspaceSecretBrokering: async () => sandbox.driver.metadata.secretBrokering,
+      orgDriver: async () => operator,
+    }
   }
   return createOrgSandboxManager({
     leaseStore: sandbox.leaseStore,
@@ -402,6 +407,7 @@ export function composeProviderNeutralHostedControlPlane(
       ? {
           sandboxManager: sandbox.manager,
           workspaceDriver: sandbox.workspaceDriver,
+          workspaceSecretBrokering: sandbox.workspaceSecretBrokering,
           orgDriver: sandbox.orgDriver,
           ...(managerDriver ? { defaultDriver: managerDriver } : {}),
         }

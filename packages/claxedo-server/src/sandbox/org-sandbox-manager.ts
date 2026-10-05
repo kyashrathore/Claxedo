@@ -1,4 +1,5 @@
 import type { SandboxDriver, SandboxGarbageCollectResult, SandboxLease, SandboxLeaseStore, SandboxManager, SandboxManagerInput } from "@claxedo/sandbox-manager"
+import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import type { SandboxKeyedDriver } from "../authority/services"
 import { OPERATOR_SANDBOX_KEY, type OrgSandboxDrivers, type SandboxKeyBinding } from "./org-sandbox-drivers"
 
@@ -35,15 +36,20 @@ export function createOrgSandboxManager(input: {
     managers.set(binding, manager)
     return manager
   }
-  const bound = async (workspaceId: string, fresh: boolean): Promise<{ binding: SandboxKeyBinding; orgId?: string }> => {
+  /** Whose key a workspace's machine spends: the one its lease recorded, else the operator's, else, for a start, its organization's choice. */
+  const choice = async (workspaceId: string, fresh: boolean): Promise<{ kind: "key"; orgId: string; key: string } | { kind: "operator"; orgId?: string } | { kind: "org"; orgId: string }> => {
     const { key, orgId: recordedOrg } = machineKey(await input.leaseStore.get(workspaceId)) ?? {}
-    if (key && key !== OPERATOR_SANDBOX_KEY && recordedOrg) {
-      return { binding: await input.drivers.forKey(recordedOrg, key), orgId: recordedOrg }
-    }
-    if (key || !fresh) return { binding: input.drivers.operator, ...(recordedOrg ? { orgId: recordedOrg } : {}) }
+    if (key && key !== OPERATOR_SANDBOX_KEY && recordedOrg) return { kind: "key", orgId: recordedOrg, key }
+    if (key || !fresh) return { kind: "operator", ...(recordedOrg ? { orgId: recordedOrg } : {}) }
     const orgId = await input.workspaceOrg(workspaceId)
     if (!orgId) throw new Error(`workspace ${workspaceId} has no active owner to choose a sandbox provider for`)
-    return { binding: await input.drivers.forOrg(orgId), orgId }
+    return { kind: "org", orgId }
+  }
+  const bound = async (workspaceId: string, fresh: boolean): Promise<{ binding: SandboxKeyBinding; orgId?: string }> => {
+    const chosen = await choice(workspaceId, fresh)
+    if (chosen.kind === "key") return { binding: await input.drivers.forKey(chosen.orgId, chosen.key), orgId: chosen.orgId }
+    if (chosen.kind === "org") return { binding: await input.drivers.forOrg(chosen.orgId), orgId: chosen.orgId }
+    return { binding: input.drivers.operator, ...(chosen.orgId ? { orgId: chosen.orgId } : {}) }
   }
   const routed = async (workspaceId: string) => managerFor((await bound(workspaceId, false)).binding)
   /** A start's manager and its input stamped with the key it spends, so the lease records that key from its first write. */
@@ -95,6 +101,11 @@ export function createOrgSandboxManager(input: {
   return {
     manager,
     workspaceDriver: async (workspaceId: string) => keyedDriver((await bound(workspaceId, true)).binding),
+    workspaceSecretBrokering: async (workspaceId: string): Promise<SandboxSecretBrokering> => {
+      const chosen = await choice(workspaceId, true)
+      if (chosen.kind === "operator") return input.drivers.operator.driver.metadata.secretBrokering
+      return input.drivers.secretBrokering(chosen.orgId, chosen.kind === "key" ? chosen.key : undefined)
+    },
     orgDriver: async (orgId: string) => keyedDriver(await input.drivers.forOrg(orgId)),
   }
 }
