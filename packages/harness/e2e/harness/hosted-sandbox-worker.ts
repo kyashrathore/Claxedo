@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import { appendFile, cp, readFile, rm, stat } from "node:fs/promises"
 import { createServer, request as httpsRequest } from "node:https"
 import http, { type IncomingMessage, type ServerResponse } from "node:http"
+import type { Duplex } from "node:stream"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { brokeredSecretFromRegistration } from "@claxedo/egress-broker"
@@ -129,13 +130,6 @@ async function restoreSandbox(root: string, sandboxId: string, backupId: string)
   return true
 }
 
-function proxy(request: IncomingMessage, responseStream: ServerResponse, target: SandboxTarget, rest: string, search: string) {
-  const destination = new URL(target.url)
-  destination.pathname = `/${rest}`
-  destination.search = search
-  return forward(request, responseStream, destination)
-}
-
 function forward(request: IncomingMessage, responseStream: ServerResponse, destination: URL) {
   const headers = { ...request.headers }
   delete headers.host
@@ -149,6 +143,43 @@ function forward(request: IncomingMessage, responseStream: ServerResponse, desti
     else responseStream.destroy(error)
   })
   request.pipe(upstream)
+}
+
+function sandboxDestination(sandboxes: Map<string, RunningSandbox>, rawUrl: string | undefined, origin: string) {
+  const url = new URL(rawUrl ?? "/", origin)
+  const [scope, id, action, ...rest] = url.pathname.split("/").filter(Boolean)
+  const running = scope === "sandbox" && id && action === "proxy" ? sandboxes.get(id) : undefined
+  if (!running) return undefined
+  const destination = new URL(running.target.url)
+  destination.pathname = `/${rest.join("/")}`
+  destination.search = url.search
+  return destination
+}
+
+function rawHead(statusLine: string, headers: string[]) {
+  const lines = [statusLine]
+  for (let index = 0; index < headers.length; index += 2) lines.push(`${headers[index]}: ${headers[index + 1]}`)
+  return `${lines.join("\r\n")}\r\n\r\n`
+}
+
+function forwardUpgrade(request: IncomingMessage, client: Duplex, head: Buffer, destination: URL) {
+  const headers = { ...request.headers }
+  delete headers.host
+  const upstream = http.request(destination, { method: request.method, headers })
+  upstream.on("upgrade", (answer, socket, upstreamHead) => {
+    client.write(rawHead(`HTTP/1.1 ${answer.statusCode} ${answer.statusMessage}`, answer.rawHeaders))
+    if (upstreamHead.length) client.write(upstreamHead)
+    socket.pipe(client).pipe(socket)
+    socket.on("error", () => client.destroy())
+    client.on("error", () => socket.destroy())
+  })
+  upstream.on("response", (answer) => {
+    client.write(rawHead(`HTTP/1.1 ${answer.statusCode} ${answer.statusMessage}`, answer.rawHeaders))
+    answer.pipe(client)
+  })
+  upstream.on("error", () => client.destroy())
+  if (head.length) upstream.write(head)
+  upstream.end()
 }
 
 /**
@@ -230,9 +261,9 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
       const parts = url.pathname.split("/").filter(Boolean)
       const id = parts[1]
       if (parts[0] === "sandbox" && id && parts[2] === "proxy") {
-        const running = sandboxes.get(id)
-        if (!running) return response(res, 404, { error: "sandbox not found" })
-        return proxy(request, res, running.target, parts.slice(3).join("/"), url.search)
+        const destination = sandboxDestination(sandboxes, url.pathname + url.search, url.origin)
+        if (!destination) return response(res, 404, { error: "sandbox not found" })
+        return forward(request, res, destination)
       }
       if (request.headers.authorization !== `Bearer ${input.token}`) return response(res, 401, { error: "unauthorized" })
       if (url.pathname === "/sandboxes" && request.method === "GET") {
@@ -317,6 +348,11 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
       console.error(message)
       return response(res, 500, { error: message })
     }
+  })
+  server.on("upgrade", (request: IncomingMessage, client: Duplex, head: Buffer) => {
+    const destination = sandboxDestination(sandboxes, request.url, `https://127.0.0.1:${input.port}`)
+    if (destination) forwardUpgrade(request, client, head, destination)
+    else client.end("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n")
   })
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject)

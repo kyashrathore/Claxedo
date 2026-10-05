@@ -7,6 +7,7 @@ import {
   expect,
   listedSessions,
   makeCloudWorkspace,
+  relayedTerminalOutput,
   sendPrompt,
   sessionConnection,
   sessionRoute,
@@ -19,6 +20,8 @@ import {
   type SignedStack,
   showHarnesses,
 } from "../harness"
+
+const TERMINAL_URL = /\/w\/[^/]+\/terminal\/pty_[^/?]+$/
 
 async function runningCloudWorkspace(signed: SignedStack) {
   await storeOwnerKey(signed, "openai", "cloud-owner-key")
@@ -38,6 +41,25 @@ async function startPiFromComposer(page: Page, signed: SignedStack, workspace: C
   const reserved = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/control/session-registrations/reserve")
   await sendPrompt(page, prompt)
   return await (await reserved).json() as { sessionId: string; sessionHostRoot?: string }
+}
+
+async function createShellFromHeader(page: Page) {
+  await page.getByRole("button", { name: "New Terminal", exact: true }).click()
+  const creator = page.getByTestId("terminal-creator")
+  await expect(creator.getByRole("button", { name: /^Gemini\b/ })).toHaveCount(0)
+  await expect(creator.getByText(/--dangerously|model_reasoning_effort/)).toHaveCount(0)
+  await creator.getByRole("button", { name: /^Shell\b/ }).click()
+  await expect(page).toHaveURL(TERMINAL_URL)
+  return decodeURIComponent(new URL(page.url()).pathname.split("/").at(-1) ?? "")
+}
+
+async function openTerminalByLink(page: Page, signed: SignedStack, workspace: CloudWorkspace) {
+  const url = new URL("/api/wr/pty", signed.hosted.workerUrl)
+  url.searchParams.set("directory", `workspace:${workspace.id}`)
+  const created = await signed.runtime(workspace.id)({ method: "POST", url: url.toString(), headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "Phone shell" }) })
+  const terminal = JSON.parse(created.body) as { id: string }
+  await page.goto(`${signed.url}/w/${encodeURIComponent(workspace.id)}/terminal/${encodeURIComponent(terminal.id)}`)
+  return terminal.id
 }
 
 test("51 Pi started from the composer on a cloud workspace runs in its own session host, writes on the workspace machine, reloads from the host and is deleted there", async ({ signedCloud, page, isMobile }) => {
@@ -136,23 +158,22 @@ test("51 a Pi draft on an asleep cloud workspace lists the account's models, nev
   expect(connections, "a draft's models never wake or reach the workspace").toEqual([])
 })
 
-test("51 a terminal on a cloud workspace opens beside a cloud Pi session, which another host serves", async ({ signedCloud, page, isMobile }, testInfo) => {
-  test.skip(isMobile, "terminal coverage runs at desktop width")
+test("51 a terminal on a cloud workspace beside a cloud Pi session, which another host serves, runs a typed command through the relay", async ({ signedCloud, page, isMobile }, testInfo) => {
   test.setTimeout(240_000)
   const workspace = await runningCloudWorkspace(signedCloud)
   await signedCloud.signIn(page, signedCloud.owner)
   const pi = await startPiFromComposer(page, signedCloud, workspace, "Reply with exactly this one token: CLOUDPITERMINAL")
   await expect(page.getByText("CLOUDPITERMINAL", { exact: true })).toBeVisible({ timeout: 60_000 })
   expect(pi.sessionHostRoot).toBe(pi.sessionId)
-  await page.getByRole("button", { name: "New Terminal", exact: true }).click()
-  const creator = page.getByTestId("terminal-creator")
-  await expect(creator.getByRole("button", { name: /^Gemini\b/ })).toHaveCount(0)
-  await expect(creator.getByText(/--dangerously|model_reasoning_effort/)).toHaveCount(0)
-  await creator.getByRole("button", { name: /^Shell\b/ }).click()
-  await expect(page).toHaveURL(/\/w\/[^/]+\/terminal\/pty_[^/?]+$/)
-  const terminalId = decodeURIComponent(new URL(page.url()).pathname.split("/").at(-1) ?? "")
-  await expect(page.locator(`[data-testid="terminal-pane"][data-terminal-id="${terminalId}"]`)).toBeVisible()
+  const terminalId = isMobile ? await openTerminalByLink(page, signedCloud, workspace) : await createShellFromHeader(page)
+  const pane = page.locator(`[data-testid="terminal-pane"][data-terminal-id="${terminalId}"]`)
+  await expect(pane).toHaveAttribute("data-terminal-connected", "true")
   await expect(page.getByText(/sign-in expired/)).toHaveCount(0)
+  await page.getByRole("textbox", { name: "Terminal input" }).focus()
+  await page.keyboard.type("echo cloud-terminal-$((6*7))")
+  await page.keyboard.press("Enter")
+  if (isMobile) await expect(pane.getByText("cloud-terminal-42", { exact: true })).toBeVisible()
+  expect(await relayedTerminalOutput(signedCloud, workspace, terminalId, "cloud-terminal-42")).toContain("cloud-terminal-42")
   const listed = new URL("/api/wr/pty", signedCloud.hosted.workerUrl)
   listed.searchParams.set("directory", `workspace:${workspace.id}`)
   const rows = JSON.parse((await signedCloud.runtime(workspace.id)({ method: "GET", url: listed.toString(), headers: {} })).body) as Array<{ id: string; sessionId?: string }>

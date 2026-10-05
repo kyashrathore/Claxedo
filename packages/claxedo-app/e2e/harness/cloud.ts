@@ -136,3 +136,33 @@ export async function cloudPrompt(signed: SignedStack, workspace: CloudWorkspace
 export async function cloudMessages(signed: SignedStack, workspace: CloudWorkspace, sessionId: string): Promise<MessageRow[]> {
   return JSON.parse((await runtimeCall(signed, workspace, "GET", `/session/${sessionId}/message`)).body) as MessageRow[]
 }
+
+function terminalFrameText(data: unknown, decoder: TextDecoder) {
+  if (typeof data === "string") return data
+  if (!(data instanceof ArrayBuffer)) return ""
+  const bytes = new Uint8Array(data)
+  if (bytes[0] !== 0) return decoder.decode(bytes, { stream: true })
+  const meta = JSON.parse(new TextDecoder().decode(bytes.subarray(1))) as { checkpoint?: { screen?: unknown } }
+  return typeof meta.checkpoint?.screen === "string" ? meta.checkpoint.screen : ""
+}
+
+export async function relayedTerminalOutput(signed: SignedStack, workspace: CloudWorkspace, terminalId: string, marker: string): Promise<string> {
+  const connection = JSON.parse((await asOwner(signed)("GET", `/api/workspace/${encodeURIComponent(workspace.id)}/connection`)).body) as { runtimeAccessToken: string }
+  const url = new URL(`/workspaces/${encodeURIComponent(workspace.id)}/api/wr/pty/${encodeURIComponent(terminalId)}/connect?cursor=0`, signed.hosted.relayUrl)
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
+  const socket = new WebSocket(url, [`claxedo-rat.${connection.runtimeAccessToken}`])
+  socket.binaryType = "arraybuffer"
+  const decoder = new TextDecoder()
+  let output = ""
+  return await new Promise<string>((resolve, reject) => {
+    socket.onmessage = (event) => {
+      output += terminalFrameText(event.data, decoder)
+      if (!output.includes(marker)) return
+      socket.close()
+      resolve(output)
+    }
+    socket.onclose = (event) => {
+      if (!output.includes(marker)) reject(new Error(`The relayed terminal closed with ${event.code} before ${marker}: ${output.slice(-200)}`))
+    }
+  })
+}
