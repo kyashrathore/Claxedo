@@ -27,6 +27,7 @@ import { createTurnEndReads, type TurnEndNotice } from "./turn-end-reads"
 import { listTransition } from "./transition"
 import { createRowViewCache, rowViews, UNKNOWN_STATUS, visibleOrder } from "./visible-rows"
 import { shownReader } from "./readers"
+import { pendingTitle } from "./pending-title"
 import { writeReader } from "./reader-writes"
 
 export type SessionListInternal = SessionList & {
@@ -72,7 +73,7 @@ const unknownPlacement = (placementId: PlacementId): AppError => ({
 function pendingRow(ref: SessionLocation, input: SessionCreateInput, at: number): SessionRow {
   return {
     ref,
-    title: input.title ?? "",
+    title: pendingTitle(input.title, input.prompt?.text),
     createdAt: at,
     updatedAt: at,
     ...(input.prompt ? { lastHumanTurnAt: at } : {}),
@@ -89,7 +90,7 @@ async function createPendingSession(server: Server, list: Machine<ListState, Lis
   list.send({ type: "createStarted", clientRequestId, row: pendingRow(ref, input, Date.now()) })
   try {
     const created = await server.sessions.create(input)
-    list.send({ type: "createConfirmed", clientRequestId, row: created })
+    list.send({ type: "createConfirmed", clientRequestId, row: created.title ? created : { ...created, title: pendingTitle(input.title, input.prompt?.text) } })
     return created.ref
   } catch (cause) {
     list.send({ type: "createFailed", clientRequestId })
