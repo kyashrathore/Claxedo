@@ -16,8 +16,11 @@ input.on("line", line => {
   } else if (message.method === "session/new") {
     send({ id: message.id, result: { sessionId: `upstream-${process.pid}-${message.id}` } })
   } else if (message.method === "session/resume") {
-    if (recovery === "missing") send({ id: message.id, error: { code: -32002, message: "Session missing", data: { sessionId: message.params.sessionId } } })
-    else if (recovery === "auth") send({ id: message.id, error: { code: -32000, message: "Authentication required" } })
+    // The host attaches an idle session on a fresh agent before each turn; the
+    // scripted loss or expired login happens only once the host has restarted.
+    const restarted = existsSync(logFile + ".restarted")
+    if (recovery === "missing" && restarted) send({ id: message.id, error: { code: -32002, message: "Session missing", data: { sessionId: message.params.sessionId } } })
+    else if (recovery === "auth" && restarted) send({ id: message.id, error: { code: -32000, message: "Authentication required" } })
     else send({ id: message.id, result: {} })
   } else if (message.method === "session/prompt") {
     send({ method: "session/update", params: { sessionId: message.params.sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Persisted recovery-peer answer." } } } })

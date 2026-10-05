@@ -17,9 +17,14 @@ function unverifiedRetirement(error: unknown): error is AcpTransportError {
   return error instanceof AcpTransportError && error.code === "ownership"
 }
 
+function resumable(entry: AcpEntry): boolean {
+  const capabilities = entry.peer.handshake.agentCapabilities
+  return !!(capabilities?.sessionCapabilities?.resume || capabilities?.loadSession)
+}
+
 function quiescent(entry: AcpEntry): boolean {
   return entry.phase === "ready" && !entry.turnBroker && !entry.providerTurn && !entry.startup && !entry.pendingRestart
-    && !entry.cancelSent && !entry.children.hasLive && entry.sideSessions.size === 0
+    && !entry.cancelSent && !entry.children.hasLive && entry.sideSessions.size === 0 && resumable(entry)
 }
 
 export class AcpSessionLifecycle {

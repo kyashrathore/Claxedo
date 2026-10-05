@@ -85,9 +85,12 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
         const prompts = log.filter(row => row.method === "session/prompt")
         expect(prompts).toHaveLength(3)
         const pidOf = (text: string) => prompts.find(row => JSON.stringify(row.params).includes(text))?.pid
-        // Each session runs its own agent process, and the stopped one keeps its
-        // process through the unresolved cancellation.
-        expect(pidOf("Continue after settlement.")).toBe(pidOf("Wait for cancellation."))
+        // Each session runs its own agent. The stopped one keeps its agent while
+        // its cancellation is unresolved: the cancel reaches the agent that holds
+        // the prompt, and only the turn that follows the settlement attaches a
+        // fresh one.
+        expect(log.find(row => row.method === "session/cancel")?.pid).toBe(pidOf("Wait for cancellation."))
+        expect(pidOf("Continue after settlement.")).not.toBe(pidOf("Wait for cancellation."))
         expect(pidOf("Independent sibling.")).not.toBe(pidOf("Wait for cancellation."))
         expect(JSON.stringify(log)).not.toContain("Must not run.")
         return
@@ -101,6 +104,7 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
         }
         expect(permissions).toHaveLength(1)
         await active.host.dispose()
+        await writeFile(logFile + ".restarted", "restarted")
         await (await waiting).text()
         active = await open()
         expect(await (await active.request("/permission")).json()).toEqual([])
@@ -110,7 +114,8 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
         const log = (await readFile(logFile, "utf8")).trim().split("\n").map(line => JSON.parse(line))
         expect(log.filter(row => row.method === "session/new")).toHaveLength(1)
         expect(log.filter(row => row.method === "session/prompt")).toHaveLength(2)
-        expect(log.filter(row => row.method === "session/resume")).toHaveLength(1)
+        // One resume attaches the idle session for its first turn; the restart's is the second.
+        expect(log.filter(row => row.method === "session/resume")).toHaveLength(2)
         expect(log.some(row => row.id === "approval-rpc" && row.result?.outcome?.outcome === "selected")).toBe(false)
         return
       }
@@ -118,6 +123,7 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
       const before = await (await active.request("/session/saved/message")).json()
       expect(JSON.stringify(before)).toContain("Persisted recovery-peer answer.")
       await active.host.dispose()
+      await writeFile(logFile + ".restarted", "restarted")
       active = await open()
       expect(await (await active.request("/session/saved/message")).json()).toEqual(before)
       const route = recovery === "missing" ? "prompt_async" : "message"
@@ -139,7 +145,10 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
       const after = JSON.stringify(await (await active.request("/session/saved/message")).json())
       expect(after).toContain("Persisted recovery-peer answer.")
       if (recovery === "resume") expect(prompts[1].params.sessionId).toBe(prompts[0].params.sessionId)
-      expect(new Set(log.map(row => row.pid)).size).toBe(2)
+      // The idle session is released after its creation and after its turn, so
+      // its creation, its first turn and the restart's turn each ran their own
+      // agent; an agent that cannot resume keeps the one it started with.
+      expect(new Set(log.map(row => row.pid)).size).toBe(recovery === "unsupported" ? 2 : 3)
     } finally { await active.host.dispose(); await rm(directory, { recursive: true, force: true }) }
   }, recovery === "cancel" ? 15_000 : undefined)
 }

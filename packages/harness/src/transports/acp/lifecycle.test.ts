@@ -13,7 +13,10 @@ function host(entry: AcpEntry) {
   const observation = health.begin("ses_1", "/work")
   observation.ready()
   entry.observation = observation
-  entry.peer = { retire: async () => { retired.push("peer") } } as unknown as AcpEntry["peer"]
+  entry.peer = {
+    retire: async () => { retired.push("peer") },
+    handshake: { agentCapabilities: entry.peer?.handshake.agentCapabilities ?? { sessionCapabilities: { resume: {} } } },
+  } as unknown as AcpEntry["peer"]
   const entries = new Map([["ses_1", entry]])
   const lifecycle = new AcpSessionLifecycle({ entries, peers, health, disposed: () => false } as unknown as AcpHost)
   return { lifecycle, entries, retired, health }
@@ -51,6 +54,13 @@ const live: Array<[string, Partial<AcpEntry>]> = [
 
 for (const [what, overrides] of live) test(`${what} refuses the release and keeps the session attached`, async () => {
   const { lifecycle, entries, retired } = host(quiet(overrides))
+  expect(await lifecycle.release(session)).toBe(false)
+  expect(retired).toEqual([])
+  expect(entries.size).toBe(1)
+})
+
+test("an agent that declares neither resume nor load keeps its session attached", async () => {
+  const { lifecycle, entries, retired } = host(quiet({ peer: { handshake: { agentCapabilities: {} } } as unknown as AcpEntry["peer"] }))
   expect(await lifecycle.release(session)).toBe(false)
   expect(retired).toEqual([])
   expect(entries.size).toBe(1)
