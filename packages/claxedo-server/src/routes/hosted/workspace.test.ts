@@ -1458,8 +1458,13 @@ describe("the start that opens a cloud workspace's first lease", () => {
   const leaseMissing = { status: "unavailable" as const, reason: "runtime_lease_missing" }
   const leaseAcquiring = { status: "unavailable" as const, reason: "runtime_lease_not_ready", leaseStatus: "acquiring" as const }
 
-  test("meters the lease under the driver, and whose key, it is placed on before ensure, stamps its tenant after, and meters a later start of it no more", async () => {
-    const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+  const acquiringEnsure = () => vi.fn(async (_id: string, input: { onLeaseOpened?: () => void }) => {
+    input.onLeaseOpened?.()
+    return { status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }
+  })
+
+  test("meters the lease under the driver, and whose key, it is placed on when its acquire opens it, stamps its tenant after, and meters a later start of it no more", async () => {
+    const ensure = acquiringEnsure()
     const target = vi.fn().mockResolvedValueOnce(leaseMissing).mockResolvedValue(leaseAcquiring)
     const workspaceDriver = vi.fn(async () => ({ driver: { id: "boat" } as SandboxDriver, key: "org" as const }))
     const sandboxUsage = { leaseOpened: vi.fn(), recordLeaseTenant: vi.fn(async () => undefined) }
@@ -1467,11 +1472,35 @@ describe("the start that opens a cloud workspace's first lease", () => {
 
     expect((await app.fetch(post("/ws_1/connection", {}))).status).toBe(200)
     expect(sandboxUsage.leaseOpened).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "ws_1", driver: "boat", keyOwner: "org" }))
-    expect(sandboxUsage.leaseOpened.mock.invocationCallOrder[0]).toBeLessThan(ensure.mock.invocationCallOrder[0])
     expect(sandboxUsage.recordLeaseTenant).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "ws_1" }))
-    expect(sandboxUsage.recordLeaseTenant.mock.invocationCallOrder[0]).toBeGreaterThan(ensure.mock.invocationCallOrder[0])
+    expect(sandboxUsage.recordLeaseTenant.mock.invocationCallOrder[0]).toBeGreaterThan(sandboxUsage.leaseOpened.mock.invocationCallOrder[0])
 
     expect((await app.fetch(post("/ws_1/connection", {}))).status).toBe(200)
+    expect(ensure).toHaveBeenCalledTimes(2)
+    expect(ensure.mock.calls[1]?.[1]).not.toHaveProperty("onLeaseOpened")
+    expect(sandboxUsage.leaseOpened).toHaveBeenCalledTimes(1)
+    expect(sandboxUsage.recordLeaseTenant).toHaveBeenCalledTimes(1)
+  })
+
+  test("of two first starts that both pass the cap, only the one whose acquire opened the lease meters it", async () => {
+    let acquired = false
+    const ensure = vi.fn(async (_id: string, input: { onLeaseOpened?: () => void }) => {
+      if (!acquired) {
+        acquired = true
+        input.onLeaseOpened?.()
+      }
+      return { status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }
+    })
+    const sandboxUsage = { leaseOpened: vi.fn(), recordLeaseTenant: vi.fn(async () => undefined) }
+    const { app } = buildApp({
+      authority: cloudAuthority(),
+      sandboxManager: { ensure, target: vi.fn(async () => leaseMissing) } as unknown as SandboxManager,
+      options: { sandboxUsage },
+    })
+
+    const starts = await Promise.all([app.fetch(post("/ws_1/connection", {})), app.fetch(post("/ws_1/connection", {}))])
+
+    expect(starts.map((res) => res.status)).toEqual([200, 200])
     expect(ensure).toHaveBeenCalledTimes(2)
     expect(sandboxUsage.leaseOpened).toHaveBeenCalledTimes(1)
     expect(sandboxUsage.recordLeaseTenant).toHaveBeenCalledTimes(1)

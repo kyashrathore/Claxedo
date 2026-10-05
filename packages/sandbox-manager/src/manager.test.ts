@@ -692,6 +692,23 @@ describe("sandbox manager", () => {
     expect(driver.ensureHost).toHaveBeenCalledTimes(1)
   })
 
+  test("of two concurrent first ensures, only the one whose acquire created the lease is told it opened it", async () => {
+    const store = createMemoryLeaseStore()
+    const manager = createSandboxManager({ leaseStore: store, driver: fakeDriver() })
+    const onLeaseOpened = vi.fn()
+
+    await Promise.all([
+      manager.ensure("ws_1", { homeRegion: "us-east", onLeaseOpened }),
+      manager.ensure("ws_1", { homeRegion: "us-east", onLeaseOpened }),
+    ])
+    await manager.ensure("ws_1", { homeRegion: "us-east", onLeaseOpened })
+    await manager.stop("ws_1")
+    const restarted = await manager.ensure("ws_1", { homeRegion: "us-east", onLeaseOpened })
+
+    expect(restarted).toMatchObject({ status: "ready", epoch: 2 })
+    expect(onLeaseOpened).toHaveBeenCalledTimes(1)
+  })
+
   test("a lease whose start failed tells its reader why, and whether its scheduled retry is still ahead", async () => {
     let now = 10_000
     const store = createMemoryLeaseStore()

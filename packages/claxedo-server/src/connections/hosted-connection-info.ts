@@ -208,18 +208,23 @@ export type FirstLease = {
   readonly usage: CloudCreateUsage | undefined
 }
 
-async function openingFirstLease(
+/**
+ * The cap a start that may open the workspace's first lease answers to, and
+ * the meter it runs if its own acquire creates that lease: two first starts
+ * racing both pass the cap, and only the one that wins the acquire meters.
+ */
+async function firstLeaseMeter(
   services: ControlPlaneServices | undefined,
   lease: FirstLease,
   auth: SignedControlPlaneAuth,
   input: { workspaceId: string; hostManager: SandboxManager },
-): Promise<HostedConnectionDenial | boolean> {
+): Promise<HostedConnectionDenial | (() => void) | undefined> {
   const current = await input.hostManager.target(input.workspaceId)
-  if (current.status !== "unavailable" || current.reason !== "runtime_lease_missing") return false
+  if (current.status !== "unavailable" || current.reason !== "runtime_lease_missing") return undefined
   const denied = await lease.admission.capLease({ kind: "signed", auth })
   if (denied) return { error: denied.body.error, status: denied.status }
   const placed = await services?.sandbox.workspaceDriver?.(input.workspaceId)
-  lease.usage?.leaseOpened({
+  return () => lease.usage?.leaseOpened({
     caller: { kind: "signed", auth },
     workspaceId: input.workspaceId,
     driver: placed?.driver.id ?? "unknown",
@@ -227,7 +232,6 @@ async function openingFirstLease(
     startedAt: Date.now(),
     ...(services ? { services } : {}),
   })
-  return true
 }
 
 /**
@@ -260,13 +264,14 @@ export async function hostedConnectionInfo(
       status: 409,
     } as const
   }
-  const opening = await openingFirstLease(services, lease, auth, { workspaceId, hostManager })
-  if (typeof opening !== "boolean") return opening
-  const ensured = await hostManager.ensure(workspaceId, hostedSandboxInput(workspace, {
-    egress: options,
-    preparation,
-  }))
-  if (opening && ensured.epoch !== undefined) {
+  const meter = await firstLeaseMeter(services, lease, auth, { workspaceId, hostManager })
+  if (meter && typeof meter !== "function") return meter
+  let opened = false
+  const ensured = await hostManager.ensure(workspaceId, {
+    ...hostedSandboxInput(workspace, { egress: options, preparation }),
+    ...(meter ? { onLeaseOpened: () => { opened = true; meter() } } : {}),
+  })
+  if (opened) {
     await Promise.resolve(lease.usage?.recordLeaseTenant({ caller: { kind: "signed", auth }, workspaceId }))
       .catch((cause: unknown) => console.error(`[workspace] the lease tenant of ${workspaceId} was not recorded`, cause instanceof Error ? cause.message : String(cause)))
   }

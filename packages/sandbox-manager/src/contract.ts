@@ -618,6 +618,12 @@ export type SandboxManagerInput = {
    */
   net?: SandboxNetworkPolicy
   snapshot?: string
+  /**
+   * Called by the one ensure whose acquire created the workspace's first
+   * lease, before its driver is asked for anything; a concurrent start that
+   * lost the acquire is not called.
+   */
+  onLeaseOpened?: () => void
 }
 
 /**

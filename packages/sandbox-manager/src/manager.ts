@@ -546,6 +546,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           bootMode: leaseBootMode(acquired.lease),
         }
       }
+      if (!existing) input.onLeaseOpened?.()
       return provision(workspaceId, acquired.lease, input.homeRegion, input, enteredAt)
     },
     async register(workspaceId, input) {
