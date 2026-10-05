@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { expect, test } from "bun:test"
-import { createRoot } from "solid-js"
+import { createEffect, createRoot } from "solid-js"
 import { desktopAccountBinding } from "./desktop-binding"
 import type { DesktopAccountBridge } from "./desktop-bridge"
 import { createAuth } from "./store"
@@ -77,23 +77,30 @@ test("desktop account: a state main pushed wins over an older answer still in fl
   })
 })
 
-test("desktop account: sign-in follows main's pushed transitions; sign-out returns to signed out", async () => {
+test("desktop account: sign-in and sign-out follow main's pushed transitions, and signing into another account stays signing in until main names it, so no signed-out scope opens in between", async () => {
   const fake = fakeBridge()
   await createRoot(async (dispose) => {
     const auth = createAuth(desktopAccountBinding(fake.bridge, { signInEnabled: true }))
-    fake.answers[0]?.resolve({ status: "unsigned" })
+    const seen: string[] = []
+    createEffect(() => {
+      const state = auth.state()
+      const label = state.kind === "signedIn" ? `signedIn:${state.user.id}` : state.kind
+      if (seen.at(-1) !== label) seen.push(label)
+    })
+    fake.answers[0]?.resolve(signed)
     await settle()
-    const signingIn = auth.signIn({ redirectUrl: "ignored" })
-    fake.push({ status: "pending" })
-    expect(auth.state().kind).toBe("signingIn")
-    fake.push(signed)
-    fake.answers[1]?.resolve(signed)
-    await signingIn
-    expect(auth.state().kind).toBe("signedIn")
     const signingOut = auth.signOut()
-    fake.answers[2]?.resolve({ status: "unsigned" })
+    fake.answers[1]?.resolve({ status: "unsigned" })
     await signingOut
-    expect(auth.state().kind).toBe("signedOut")
+    const unnamed = { status: "signed", identity: { userId: "" } }
+    const signingIn = auth.signIn()
+    fake.push({ status: "pending" })
+    fake.push(unnamed)
+    fake.answers[2]?.resolve(unnamed)
+    await signingIn
+    expect(auth.state().kind).toBe("signingIn")
+    fake.push({ status: "signed", identity: { userId: "u2", displayName: "Grace" } })
+    expect(seen).toEqual(["signingIn", "signedIn:u1", "signedOut", "signingIn", "signedIn:u2"])
     dispose()
   })
 })

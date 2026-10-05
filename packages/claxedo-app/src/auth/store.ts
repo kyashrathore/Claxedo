@@ -10,16 +10,14 @@ export type Auth = Omit<AccountSession, "loading"> & {
 
 function followSession(session: AccountSession, auth: ReturnType<typeof authMachine>, restored: () => void) {
   const settle = () => {
+    if (session.loading()) return auth.send({ type: "started" })
     const reason = session.unavailable()
     batch(() => {
       auth.send({ type: "settled", user: session.user(), ...(reason ? { reason } : {}) })
       restored()
     })
   }
-  createEffect(() => {
-    if (session.loading()) auth.send({ type: "started" })
-    else settle()
-  })
+  createEffect(settle)
   return async (task: () => Promise<void>) => {
     auth.send({ type: "started" })
     try {

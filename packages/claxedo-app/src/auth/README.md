@@ -18,7 +18,7 @@ Owns: the account, as one port with two bindings: the browser's own sign-in sess
 
 ## Machine
 
-`AuthState`: `signedOut(reason?)` → `signingIn` → `signedIn(user)`; `signedIn` → `expired` when a refresh is refused. Events: `started`, `settled(user, reason?)`, `signedOut`, `expired`. The session's `loading`, `user` and `unavailable` signals feed `settled`; nothing else decides the state. Main's desktop states map onto it: `pending` → `signingIn`, `signed` → `signedIn` (with `identityResolving` while its name is still being looked up), `unsigned` → `signedOut`, `unavailable` → `signedOut` with main's detail as the reason. A state main never sends decodes as unavailable, never as signed.
+`AuthState`: `signedOut(reason?)` → `signingIn` → `signedIn(user)`; `signedIn` → `expired` when a refresh is refused. Events: `started`, `settled(user, reason?)`, `signedOut`, `expired`. The session's `loading`, `user` and `unavailable` signals feed `settled`, and while `loading` holds the state stays `signingIn`, even after a sign-in call returns; nothing else decides the state. Main's desktop states map onto it: `pending` → `signingIn`; `signed` with no user id yet (main publishes it as soon as the credential is adopted, before userinfo names the account) → `signingIn`, so no signed-out scope opens between two accounts; `signed` with a user id → `signedIn` (with `identityResolving` while its name is still being looked up); `signed` whose lookup failed before naming any user → `signedOut` with the reason; `unsigned` → `signedOut`; `unavailable` → `signedOut` with main's detail as the reason. A state main never sends decodes as unavailable, never as signed.
 
 `restoringUserId()`: the last user id this browser recorded (`persistence.ts`), only from creation until the first `settled`, which ends it in the same update as the state; an interactive sign-in never sets it. The app builds the server scope for it so startup reads run beside the session read (`src/shell/README.md`).
 
@@ -38,6 +38,6 @@ Owns: the account, as one port with two bindings: the browser's own sign-in sess
 
 ## Flows
 
-21 (sign-in on a machine used unsigned: the desktop signs in through main, the account card, sign-out, and a cloud workspace from the account catalog), 23 (team sharing, two browsers), 36 (access).
+21 (sign-in on a machine used unsigned: the desktop signs in through main, the account card, sign-out, and a cloud workspace from the account catalog; logging out of one account and into another leaves neither one's draft behind), 23 (team sharing, two browsers), 36 (access).
 
 Invitation acceptance and email verification need the real D1 Worker with a deployment-owned email sender. The focused continuation tests cover the shared accept action; browser acceptance and flow 33 phone layout remain acceptance checks for the integration runner.

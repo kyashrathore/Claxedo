@@ -90,7 +90,7 @@ export function AppShell(props: AppShellProps): JSX.Element {
   })
   return (
     <>
-      <Show when={screen()} fallback={<Show when={scope()} fallback={<ShellStartup />}>{(s) => <ScopedShell scope={s()} mainSidebar={props.mainSidebar} compactTabs={props.compactTabs} />}</Show>}>
+      <Show when={screen()} fallback={<Show when={scope()} keyed fallback={<ShellStartup />}>{(s) => <ScopedShell scope={s} mainSidebar={props.mainSidebar} compactTabs={props.compactTabs} />}</Show>}>
         {(route) => <Dynamic component={route().screen.view} params={route().params} />}
       </Show>
       <Toast.Region />

@@ -15,6 +15,13 @@ export async function interceptSystemBrowser(electron: ElectronApplication): Pro
   }
 }
 
+function sessionCookie(url: string, account: Account) {
+  const separator = account.person.cookie.indexOf("=")
+  const name = account.person.cookie.slice(0, separator)
+  const value = account.person.cookie.slice(separator + 1)
+  return { name, value, url, secure: true, httpOnly: true, sameSite: "Lax" as const }
+}
+
 export async function signInDesktop(signed: SignedStack, desktop: Desktop, page: Page, account: Account = signed.owner): Promise<string> {
   const browser = await interceptSystemBrowser(desktop.electron)
   await desktop.window.getByRole("button", { name: "Sign in", exact: true }).click()
@@ -22,7 +29,7 @@ export async function signInDesktop(signed: SignedStack, desktop: Desktop, page:
   await expect.poll(async () => (await browser.opened()).length).toBe(1)
   const [authorize] = await browser.opened()
   if (!authorize) throw new Error("main opened no authorization page")
-  await signed.signIn(page, account)
+  await page.context().addCookies([sessionCookie(signed.url, account)])
   await page.goto(authorize)
   await page.getByRole("button", { name: "Allow" }).click()
   await expect(desktop.window.getByRole("button", { name: account.name, exact: true })).toBeVisible()

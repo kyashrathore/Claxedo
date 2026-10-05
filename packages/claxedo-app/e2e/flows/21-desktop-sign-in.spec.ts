@@ -37,3 +37,27 @@ test("21 desktop sign-in: main signs in through the system browser, the card nam
   await expect(cloudProject).toHaveCount(0)
   await expect(rail.getByText("Local App")).toBeVisible()
 })
+
+test("21 desktop account switch: a draft written signed in as one account is gone once it logs out, and the next account starts with an empty draft", { tag: "@desktop" }, async ({ signedCloud: signed, signedDesktop, page }) => {
+  const colleague = await signed.signUp("Grace Colleague")
+  await signedDesktop.makeWorkspace("switch-app", "Switch App")
+  const window = signedDesktop.window
+  await window.reload()
+  await signInDesktop(signed, signedDesktop, page)
+  const prompt = window.getByRole("textbox", { name: UI.composer })
+  await prompt.fill("Only in Ada's draft")
+
+  const logOut = async (name: string) => {
+    await window.getByRole("button", { name, exact: true }).click()
+    await window.getByRole("menuitem", { name: "Log out" }).click()
+    await expect(window.getByRole("button", { name: UI.signInAccount, exact: true })).toBeVisible()
+  }
+  await logOut(signed.owner.name)
+  await expect(prompt).toHaveText("")
+
+  await signInDesktop(signed, signedDesktop, page, colleague)
+  await expect(prompt).toHaveText("")
+  await prompt.fill("Only in Grace's draft")
+  await logOut(colleague.name)
+  await expect(prompt).toHaveText("")
+})

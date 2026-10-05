@@ -31,14 +31,15 @@ export function desktopAccountBridge(scope: unknown): DesktopAccountBridge | und
 function signedState(raw: unknown): DesktopAccountState {
   const identity = readField(raw, "identity")
   const id = readString(identity, "userId")
-  if (!id) return { kind: "unavailable", reason: "The desktop account answered a signed state with no user" }
+  const lookupFailed = readString(raw, "identityLookup") === "failed"
+  if (id === "" && !lookupFailed) return { kind: "pending" }
+  if (!id) return { kind: "unavailable", reason: "The desktop account is signed in but could not read who is signed in" }
   const fullName = readString(identity, "displayName")
   const email = readString(identity, "email")
   const orgId = readString(identity, "orgId")
   const user: AuthUser = { id, ...(fullName ? { fullName } : {}), ...(email ? { email } : {}), ...(orgId ? { orgId } : {}) }
   const known = fullName !== undefined || email !== undefined
-  const lookup = readString(raw, "identityLookup") === "failed" ? "failed" : "resolving"
-  return { kind: "signed", user, identity: known ? "known" : lookup }
+  return { kind: "signed", user, identity: known ? "known" : lookupFailed ? "failed" : "resolving" }
 }
 
 export function desktopAccountState(raw: unknown): DesktopAccountState {

@@ -32,6 +32,11 @@ test("desktop bridge: a signed account with no name is resolving until the looku
   expect(desktopAccountState({ status: "signed", identity: { userId: "u1" }, identityLookup: "failed" })).toMatchObject({ kind: "signed", identity: "failed" })
 })
 
+test("desktop bridge: a signed account main has not named yet is still signing in, and one main could not name is unavailable", () => {
+  expect(desktopAccountState({ status: "signed", identity: { userId: "" } })).toEqual({ kind: "pending" })
+  expect(desktopAccountState({ status: "signed", identity: { userId: "" }, identityLookup: "failed" })).toMatchObject({ kind: "unavailable" })
+})
+
 test("desktop bridge: a state main never sends is unavailable, never signed", () => {
   expect(desktopAccountState({ status: "signed", identity: {} })).toMatchObject({ kind: "unavailable" })
   expect(desktopAccountState({ status: "admin" })).toMatchObject({ kind: "unavailable" })
