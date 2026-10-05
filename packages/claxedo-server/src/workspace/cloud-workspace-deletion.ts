@@ -17,7 +17,8 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
  * their own hosts go first, then the sandbox, then what its runtime was
  * issued, then the row: until the row is deleted every step can be asked
  * again, and a deleted row means its sessions and sandbox are gone, so a
- * repeat is answered as done.
+ * repeat is answered as done. A session registered after the sessions were
+ * listed refuses the row's deletion as a conflict, and the repeat erases it.
  */
 export function cloudWorkspaceDeletion(
   services: ControlPlaneServices | undefined,
