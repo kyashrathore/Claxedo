@@ -133,12 +133,12 @@ test("selector notice: an account source still loading claims nothing", () => {
   view.dispose()
 })
 
-test("selector notice: on an asleep workspace every harness says a send wakes it, never that it is not set up", () => {
+test("selector notice: on an asleep workspace no harness claims anything, so the placement's asleep notice speaks alone", () => {
   for (const harness of [nativeHarness("opencode"), nativeHarness("pi"), nativeHarness("codex"), scripted]) {
     const view = harnessNotice(harness, piAnsweredEmpty, { asleep: true, account: harness.kind === "connection" ? "accountless" : "missing" })
     view.answerOptions()
     view.answerConnection()
-    expect(view.kind(), JSON.stringify(harness)).toBe("workspace-asleep")
+    expect(view.kind(), JSON.stringify(harness)).toBeUndefined()
     view.dispose()
   }
 })

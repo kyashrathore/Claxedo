@@ -41,16 +41,10 @@ function openModels(run: () => void) {
   return { label: "Open Models", ariaLabel: "Open Settings Models", run }
 }
 
-function asleepNotice(input: HarnessNoticeInput): HarnessNotice | undefined {
-  if (!input.asleep || !(input.noModels || input.optionsFailed || input.runtimeUnavailable || input.setupRequired)) return undefined
-  return { kind: "workspace-asleep", tone: "info", message: `${input.harnessLabel} models load when the workspace wakes`, detail: "Your next message wakes it.", retry: false }
-}
-
 export function resolveHarnessNotice(input: HarnessNoticeInput): HarnessNotice | undefined {
   const connection = connectionNotice(input)
   if (connection) return connection
-  const asleep = asleepNotice(input)
-  if (asleep) return asleep
+  if (input.asleep) return undefined
   if (input.runtimeUnavailable) {
     return {
       kind: "runtime-unavailable",
