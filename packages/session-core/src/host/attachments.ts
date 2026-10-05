@@ -27,6 +27,8 @@ type AttachmentsInput = {
   broker: BrokerOwner
   workspaceId: string
   executing: (sessionId: string, generation: object) => AttachedSession | undefined
+  /** Whether a turn of the session is admitted or still finishing, which keeps its attachment held. */
+  busy: (sessionId: string) => boolean
   writeMode: PermissionModeWrite
 }
 
@@ -97,6 +99,23 @@ export class SessionAttachments {
     const executing = generation ? this.input.executing(sessionId, generation) : undefined
     if (executing) return this.current(sessionId, executing)
     return await this.attaching.run(sessionId, async () => this.peek(sessionId) ?? await this.attach(sessionId, directory, authority))
+  }
+
+  /**
+   * Ends the harness execution of a session nothing is using, keeping its
+   * binding so a later use attaches it again; false while a turn holds it or
+   * its transport finds anything live. Serialized with every attach, so a use
+   * that arrives meanwhile finds the held attachment or makes a fresh one.
+   */
+  async release(sessionId: string): Promise<boolean> {
+    return await this.attaching.run(sessionId, async () => {
+      const attached = this.attached.get(sessionId)
+      if (!attached || attached.handle.retired() || this.input.busy(sessionId)) return false
+      const transport = attached.handle.transport
+      if (!transport.release || !(await transport.release(attached.session))) return false
+      this.attached.delete(sessionId)
+      return true
+    })
   }
 
   /**

@@ -135,6 +135,7 @@ export interface HarnessTransport {
   start(input: StartInput, session: SessionBroker): Promise<HarnessSession>
   attach(input: AttachInput, session: SessionBroker): Promise<HarnessSession>
   restore?(session: HarnessSession): Promise<HarnessSession>
+  release?(session: HarnessSession): Promise<boolean>
   send(session: HarnessSession, turn: TurnInput, broker: TurnBroker): AsyncIterable<RoutedEvent>
   cancel(session: HarnessSession, turn: TurnRef, deadline: Deadline): Promise<AdapterCancelOutcome>
   configure(session: HarnessSession, update: TransportConfigUpdate): Promise<ConfigApplied>

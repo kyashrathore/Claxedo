@@ -39,6 +39,8 @@ export type SessionLifecycleInput = {
   reportSessionFailure: (sessionId: string, error: unknown) => void
   forgetGoal: (sessionId: string) => void
   pushTitle: ReturnType<typeof createSessionTitleOwner>["push"]
+  /** Lets go of a session's harness execution once nothing of the session is live. */
+  settled: (sessionId: string) => Promise<void>
   writeRow: SessionRowWrite
   writeMode: PermissionModeWrite
 }
@@ -271,6 +273,7 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
       attachments.register(sessionId, { handle, session, broker, context, owner })
       const persisted = store.getSession(sessionId)
       if (!persisted) throw new Error(`Session ${sessionId} was not persisted`)
+      await input.settled(sessionId)
       return persisted
     },
     async update(sessionId: string, updates: { title?: string; time?: { archived?: number } }, directory?: RuntimeDirectory,
@@ -293,14 +296,16 @@ export function createSessionLifecycle(input: SessionLifecycleInput) {
     }, sessionId),
     async delete(sessionId: string, directory?: RuntimeDirectory, authority?: ConnectionSecretAuthority) {
       const config = store.getSessionConfig(sessionId)
-      const attached = await attachments.for(sessionId, directory, undefined, authority)
-      await attached.handle.transport.close(attached.session)
+      // A released session runs no harness, so there is nothing to close.
+      const attached = attachments.peek(sessionId)
+      const sessionDirectory = attached?.session.directory ?? directory ?? attachments.binding(sessionId).directory
+      if (attached) await attached.handle.transport.close(attached.session)
       input.broker.broker.closeSession(sessionId)
       attachments.forget(sessionId)
       await releaseKeptHandoffSource({
-        sessionId, directory: attached.session.directory, config,
+        sessionId, directory: sessionDirectory, config,
         closeSource: (harness, source, dir) => closeSource(harness, source, sessionId, dir, authority),
-        diagnose: diagnose(sessionId, attached.session.directory),
+        diagnose: diagnose(sessionId, sessionDirectory),
       })
       store.deleteSession(sessionId)
       input.forgetGoal(sessionId)

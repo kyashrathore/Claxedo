@@ -17,6 +17,11 @@ function unverifiedRetirement(error: unknown): error is AcpTransportError {
   return error instanceof AcpTransportError && error.code === "ownership"
 }
 
+function quiescent(entry: AcpEntry): boolean {
+  return entry.phase === "ready" && !entry.turnBroker && !entry.providerTurn && !entry.startup && !entry.pendingRestart
+    && !entry.cancelSent && !entry.children.hasLive && entry.sideSessions.size === 0
+}
+
 export class AcpSessionLifecycle {
   private readonly transitions = new Map<string, Transition>()
 
@@ -73,6 +78,15 @@ export class AcpSessionLifecycle {
     void this.restart(entry).catch((error: unknown) => {
       if (this.transitions.get(id)?.state !== "closing") entry.broker.reportFailure(error)
     })
+  }
+
+  async release(session: HarnessSession): Promise<boolean> {
+    const id = session.binding.sessionId
+    await this.settled(id)
+    const entry = this.host.entries.get(id)
+    if (!entry || !quiescent(entry)) return false
+    await this.close(session)
+    return true
   }
 
   async close(session: HarnessSession): Promise<void> {

@@ -32,6 +32,7 @@ export function createSessionTitleOwner(input: { store: AgentRuntimeStore; event
   })
   const deadlineMs = input.deadlineMs ?? TITLE_TURN_TIMEOUT_MS
   const attempted = new Set<string>()
+  const generating = new Map<string, Promise<void>>()
 
   /**
    * Hands the harness a title this store already committed. The store's title
@@ -70,7 +71,17 @@ export function createSessionTitleOwner(input: { store: AgentRuntimeStore; event
    * the title before the frame goes out, so a harness that echoes a rename
    * (Pi) does it before a reader that waited for the title starts another turn.
    */
-  async function generate(target: TitleTarget) {
+  function generate(target: TitleTarget) {
+    const running = generating.get(target.sessionId)
+    if (running) return running
+    const generation = generateOnce(target).finally(() => {
+      if (generating.get(target.sessionId) === generation) generating.delete(target.sessionId)
+    })
+    generating.set(target.sessionId, generation)
+    return generation
+  }
+
+  async function generateOnce(target: TitleTarget) {
     const session = store.getSession(target.sessionId)
     if (!session || session.parentID || session.titleSource === "user" || session.titleSource === "harness") return
     const naming = target.transport.naming
@@ -116,5 +127,11 @@ export function createSessionTitleOwner(input: { store: AgentRuntimeStore; event
     }
   }
 
-  return { placeholder, generate, push }
+  return {
+    placeholder,
+    generate,
+    push,
+    /** Settles once no title generation of the session is in flight; a release of its harness waits for this. */
+    settled: (sessionId: string) => generating.get(sessionId) ?? Promise.resolve(),
+  }
 }

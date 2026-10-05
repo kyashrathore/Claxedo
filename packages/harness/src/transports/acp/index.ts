@@ -246,6 +246,10 @@ export class AcpTransport implements HarnessTransport {
     return { state: "applied" }
   }
 
+  release(session: HarnessSession): Promise<boolean> {
+    return this.lifecycle.release(session)
+  }
+
   close(session: HarnessSession): Promise<void> {
     return this.lifecycle.close(session)
   }

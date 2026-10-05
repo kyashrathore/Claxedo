@@ -24,7 +24,12 @@ the README beside each owner.
    [`steered-inputs.ts`](../../packages/session-core/src/host/steered-inputs.ts)
    tracks when the harness reports a steer entering its conversation.
 3. [`SessionAttachments`](../../packages/session-core/src/host/attachments.ts)
-   attaches the transport named by the session's stored execution binding.
+   attaches the transport named by the session's stored execution binding, and
+   releases it again once nothing of the session is live
+   ([`idle-release.ts`](../../packages/session-core/src/host/idle-release.ts)
+   asks after a create and after each settled turn, with its title; a
+   transport that implements `release` ends a quiescent session's execution
+   and the next use attaches it afresh).
    [`createWorkspaceHost`](../../packages/workspace-runtime/src/workspace/runtime.ts)
    builds it with [`createHarnessComposer`](../../packages/harness/src/compose.ts).
 4. [`turnPrompt`](../../packages/session-core/src/host/turn-record.ts)

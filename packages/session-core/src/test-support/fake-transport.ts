@@ -77,6 +77,8 @@ export type FakeTransportOptions = {
   drainsAfterAbort?: boolean
   /** What a cancel answers; the default reports the turn terminal and its cleanup verified. */
   cancel?: (input: FakeCancel) => Promise<AdapterCancelOutcome>
+  /** Whether a release of a quiescent session is taken; a transport without it is never released. */
+  release?: (session: HarnessSession) => Promise<boolean>
   /** What a configuration push answers; the default applies it. */
   configure?: (update: TransportConfigUpdate, transport: FakeTransport, session: HarnessSession) => ConfigApplied | Promise<ConfigApplied>
   steer?: (session: HarnessSession, turn: TurnRef, input: TurnInput) => Promise<SteerResult>
@@ -114,6 +116,8 @@ export class FakeTransport implements HarnessTransport {
   readonly cancels: FakeCancel[] = []
   readonly configures: TransportConfigUpdate[] = []
   readonly closed: HarnessSession[] = []
+  readonly releases: HarnessSession[] = []
+  readonly release: ((session: HarnessSession) => Promise<boolean>) | undefined
   disposed = false
   activeStarts = 0
   activeTurns = 0
@@ -146,6 +150,8 @@ export class FakeTransport implements HarnessTransport {
     this.health = options.health
     this.steer = options.steer ? { steer: options.steer } : undefined
     this.fork = options.fork ? { fork: options.fork } : undefined
+    const release = options.release
+    this.release = release ? async (session) => { this.releases.push(session); return await release(session) } : undefined
   }
 
   get cancelled(): TurnRef[] {

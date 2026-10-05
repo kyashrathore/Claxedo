@@ -3,6 +3,8 @@ import type { AgentRuntimeStreamEvent, RuntimeDirectory } from "./contracts"
 import type { ConnectionSecretAuthority } from "@claxedo/agent-runtime-contract"
 import { createRequestBroker, type BrokerPorts } from "@claxedo/harness/broker"
 import type { HarnessSession, HarnessTransport } from "@claxedo/harness/contract"
+import { errorMessage } from "@claxedo/helpers"
+import { createIdleRelease } from "./idle-release"
 import { SessionAttachments, type AttachedSession } from "./attachments"
 import { createBackgroundTaskStops } from "./background-tasks"
 import { createChildTurns } from "./child-turns"
@@ -123,6 +125,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
       const current = executing.get(sessionId)
       return admissions.active(sessionId)?.generation === generation && current?.generation === generation ? current.attached : undefined
     },
+    busy: (sessionId) => admissions.active(sessionId) !== undefined || executing.has(sessionId),
   })
 
   const commitAndPublish: TurnRunnerHost["commit"] = (sessionId, directory, payload, source, fence, emit) => {
@@ -143,6 +146,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
   }
 
   const titles = createSessionTitleOwner({ store, eventHub, log: input.log })
+  const idle = createIdleRelease({ attachments, titles, report: (sessionId, error) => input.log.warn("Idle release failed", { sessionId, error: errorMessage(error) }) })
 
   const recovery = createRuntimeRecovery({
     store,
@@ -176,6 +180,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
     reportSessionFailure: recovery.reportSessionFailure,
     forgetGoal: (sessionId) => goals.forgetSession(sessionId),
     pushTitle: titles.push,
+    settled: (sessionId: string) => idle.settle(sessionId),
     writeRow,
     writeMode,
   })
@@ -287,7 +292,7 @@ export function createAgentRuntime(input: AgentRuntimeCompositionInput) {
         }), capture.leaseId).catch((error: unknown) => recovery.reportTurnFailure(capture, error)).finally(() => {
           if (executing.get(turn.sessionId)?.generation === claimed.generation) executing.delete(turn.sessionId)
           unpin()
-        })
+        }).then(() => idle.settle(turn.sessionId))
         executing.set(turn.sessionId, { generation: claimed.generation, attached, ended })
       } catch (error) {
         releaseAdmission()
