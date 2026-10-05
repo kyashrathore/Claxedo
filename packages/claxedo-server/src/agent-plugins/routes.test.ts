@@ -10,6 +10,7 @@ import {
   type MutateSignedOrganizationDefault,
   type MutateSignedUserActivation,
   type SignedActivationSnapshot,
+  type SignedActivationSnapshots,
   type SignedAgentPluginActivationStore,
   type SignedKnownPlugin,
   type UpdateSignedArtifactPin,
@@ -24,6 +25,7 @@ import type { CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/p
 import { fileSystemCollectionSource } from "@claxedo/server-core/agent-plugins/artifacts/node-tree"
 import {
   SUPPORTED_AGENT_PLUGIN_HARNESSES,
+  agentPluginHarnessRecord,
   isAgentPluginHarnessId,
   type AgentPluginHarnessId,
 } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
@@ -122,9 +124,19 @@ class MemorySignedActivations implements SignedAgentPluginActivationStore {
 
   async read(
     auth: SignedControlPlaneAuth,
-    input: { pluginInstanceId: string; harnessId: AgentPluginHarnessId; projectId?: string },
-  ): Promise<SignedActivationSnapshot> {
+    input: { pluginInstanceIds: readonly string[]; projectId?: string },
+  ): Promise<SignedActivationSnapshots> {
     if (input.projectId) await this.authorizeProject(auth, input.projectId)
+    return new Map(input.pluginInstanceIds.map((pluginInstanceId) => [
+      pluginInstanceId,
+      agentPluginHarnessRecord((harnessId) => this.snapshot(auth, { pluginInstanceId, harnessId, ...(input.projectId ? { projectId: input.projectId } : {}) })),
+    ]))
+  }
+
+  private snapshot(
+    auth: SignedControlPlaneAuth,
+    input: { pluginInstanceId: string; harnessId: AgentPluginHarnessId; projectId?: string },
+  ): SignedActivationSnapshot {
     const userDefault = this.userDefaults.get(mapKey(this.subject(auth), input.pluginInstanceId, input.harnessId))
     const projectOverride = input.projectId
       ? this.projectOverrides.get(mapKey(this.subject(auth), input.projectId, input.pluginInstanceId, input.harnessId))

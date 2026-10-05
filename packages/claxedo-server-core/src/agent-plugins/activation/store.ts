@@ -106,15 +106,18 @@ export type UpdateSignedArtifactPin = {
  * Authenticated durable metadata authority. Implementations resolve internal
  * user/org IDs and authorize every project; routes never accept owner IDs.
  */
+export type SignedActivationSnapshots = ReadonlyMap<string, Readonly<Record<AgentPluginHarnessId, SignedActivationSnapshot>>>
+
 export type SignedAgentPluginActivationStore = {
   /** Authorizes a project even when the catalog and retained set are empty. */
   authorizeProject(auth: SignedControlPlaneAuth, projectId: string): Promise<void>
   revision(auth: SignedControlPlaneAuth): Promise<number>
   listKnown(auth: SignedControlPlaneAuth): Promise<SignedKnownPlugin[]>
+  /** Every listed plugin's activation on every supported harness, in one read whatever the count. */
   read(
     auth: SignedControlPlaneAuth,
-    input: { pluginInstanceId: string; harnessId: AgentPluginHarnessId; projectId?: string },
-  ): Promise<SignedActivationSnapshot>
+    input: { pluginInstanceIds: readonly string[]; projectId?: string },
+  ): Promise<SignedActivationSnapshots>
   mutateUser(auth: SignedControlPlaneAuth, input: MutateSignedUserActivation): Promise<number>
   mutateOrganizationDefault(
     auth: SignedControlPlaneAuth,

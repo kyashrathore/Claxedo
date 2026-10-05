@@ -15,7 +15,7 @@ import type {
   SignedActivationSnapshot,
   SignedAgentPluginActivationStore,
 } from "@claxedo/server-core/agent-plugins/activation/store"
-import { SUPPORTED_AGENT_PLUGIN_HARNESSES } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
+import { SUPPORTED_AGENT_PLUGIN_HARNESSES, agentPluginHarnessRecord } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { BUILTIN_SUBAGENTS_TOOL_GROUP, BUILTIN_TASKS_TOOL_GROUP, builtinPluginInstanceId } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import { bearerToken, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -79,8 +79,11 @@ class ProjectSwitches implements SignedAgentPluginActivationStore {
   async authorizeProject() {}
   async revision() { return this.revisionValue }
   async listKnown() { return [] }
-  async read(_auth: SignedControlPlaneAuth, input: { pluginInstanceId: string; harnessId: AgentPluginHarnessId; projectId?: string }) {
-    return this.snapshot(input.pluginInstanceId, input.harnessId, input.projectId)
+  async read(_auth: SignedControlPlaneAuth, input: { pluginInstanceIds: readonly string[]; projectId?: string }) {
+    return new Map(input.pluginInstanceIds.map((pluginInstanceId) => [
+      pluginInstanceId,
+      agentPluginHarnessRecord((harnessId) => this.snapshot(pluginInstanceId, harnessId, input.projectId)),
+    ]))
   }
   async readRuntime(input: { projectId: string; pluginInstanceId: string; harnessId: AgentPluginHarnessId }) {
     return this.snapshot(input.pluginInstanceId, input.harnessId, input.projectId)

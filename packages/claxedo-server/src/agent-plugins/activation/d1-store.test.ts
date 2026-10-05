@@ -173,6 +173,16 @@ async function workspace(input: {
   })
 }
 
+/** One plugin on one harness, out of the store's set-shaped read. */
+async function readOne(
+  store: D1SignedAgentPluginActivationStore,
+  auth: SignedControlPlaneAuth,
+  input: { pluginInstanceId: string; harnessId: AgentPluginHarnessId; projectId?: string },
+) {
+  const rows = await store.read(auth, { pluginInstanceIds: [input.pluginInstanceId], ...(input.projectId ? { projectId: input.projectId } : {}) })
+  return rows.get(input.pluginInstanceId)![input.harnessId]
+}
+
 async function rejection(promise: Promise<unknown>) {
   let failure: unknown
   await promise.then(
@@ -204,7 +214,8 @@ describe("D1 signed Agent Plugins activation store", () => {
 
     expect(await store.revision(auth)).toBe(0)
     expect(await store.listKnown(auth)).toEqual([])
-    expect(await store.read(auth, { pluginInstanceId: PLUGIN, harnessId: "codex" })).toEqual({
+    expect(await readOne(store, auth, {
+      pluginInstanceId: PLUGIN, harnessId: "codex" })).toEqual({
       revision: 0,
       pluginInstanceId: PLUGIN,
       harnessId: "codex",
@@ -234,7 +245,7 @@ describe("D1 signed Agent Plugins activation store", () => {
     // One catalog read's worth of calls against the same auth object.
     await store.revision(auth)
     await store.listKnown(auth)
-    await Promise.all((["opencode", "claude", "codex", "cursor"] as const).map((harnessId) => store.read(auth, {
+    await Promise.all((["opencode", "claude", "codex", "cursor"] as const).map((harnessId) => readOne(store, auth, {
       pluginInstanceId: PLUGIN,
       harnessId,
       projectId: project.project_id,
@@ -269,14 +280,16 @@ describe("D1 signed Agent Plugins activation store", () => {
     expect(await store.listKnown(auth)).toEqual([
       { pluginInstanceId: PLUGIN, pins: { user: artifact("a") } },
     ])
-    expect(await store.read(auth, { pluginInstanceId: PLUGIN, harnessId: "codex" })).toEqual({
+    expect(await readOne(store, auth, {
+      pluginInstanceId: PLUGIN, harnessId: "codex" })).toEqual({
       revision: 1,
       pluginInstanceId: PLUGIN,
       harnessId: "codex",
       userDefault: true,
       pins: { user: digest("a") },
     })
-    expect(await store.read(auth, { pluginInstanceId: PLUGIN, harnessId: "cursor" })).toEqual({
+    expect(await readOne(store, auth, {
+      pluginInstanceId: PLUGIN, harnessId: "cursor" })).toEqual({
       revision: 1,
       pluginInstanceId: PLUGIN,
       harnessId: "cursor",
@@ -300,14 +313,14 @@ describe("D1 signed Agent Plugins activation store", () => {
       expectedRevision: 0,
     })
 
-    const enabled = await store.read(auth, {
+    const enabled = await readOne(store, auth, {
       pluginInstanceId: PLUGIN,
       harnessId: "codex",
       projectId: first.project_id,
     })
     expect(enabled.projectOverride).toBe(true)
     expect(enabled.projectId).toBe(first.project_id)
-    const untouched = await store.read(auth, {
+    const untouched = await readOne(store, auth, {
       pluginInstanceId: PLUGIN,
       harnessId: "codex",
       projectId: second.project_id,
@@ -456,7 +469,8 @@ describe("D1 signed Agent Plugins activation store", () => {
     })
 
     expect(revision).toBe(1)
-    const snapshot = await store.read(member.auth, { pluginInstanceId: PLUGIN, harnessId: "codex" })
+    const snapshot = await readOne(store, member.auth, {
+      pluginInstanceId: PLUGIN, harnessId: "codex" })
     expect(snapshot.organizationDefault).toBe(true)
     expect(snapshot.pins).toEqual({ organization: digest("a") })
   })
@@ -619,7 +633,7 @@ describe("D1 signed Agent Plugins activation store", () => {
     expect(snapshot.plugins[0].harnesses.codex.projectId).toBeUndefined()
     expect(snapshot.plugins[0].harnesses.codex.userDefault).toBe(true)
     // The same read scoped to that project still sees the explicit "off".
-    const scoped = await store.read(auth, {
+    const scoped = await readOne(store, auth, {
       pluginInstanceId: PLUGIN,
       harnessId: "codex",
       projectId: created.project_id,
@@ -750,5 +764,47 @@ describe("D1 signed Agent Plugins activation store", () => {
       .prepare("select count(*) as count from agent_plugin_artifact_pins")
       .first<{ count: number }>()
     expect(pins?.count).toBe(0)
+  })
+
+  test("reads every listed plugin on every harness in one statement per table, however many plugins", async () => {
+    const { authority, database } = await setup()
+    const prepared: string[] = []
+    const counting = new Proxy(database, {
+      get(target, property, receiver) {
+        if (property === "prepare") {
+          return (sql: string) => {
+            prepared.push(sql.replace(/\s+/g, " ").trim())
+            return target.prepare(sql)
+          }
+        }
+        const value: unknown = Reflect.get(target, property, receiver)
+        return typeof value === "function" ? value.bind(target) : value
+      },
+    })
+    const store = new D1SignedAgentPluginActivationStore({ database: counting, authority })
+    const auth = await signed(authority, identity("alice"))
+    const { orgId } = await principalOf(authority, auth)
+    const project = await workspace({ authority, auth, orgId, workspaceId: "ws-one", backing: "cloud-vm" })
+    await store.mutateUser(auth, {
+      pluginInstanceId: PLUGIN, harnessIds: ["codex"], choice: true, target: { scope: "all-projects" }, artifact: artifact("a"), expectedRevision: 0,
+    })
+    await store.mutateUser(auth, {
+      pluginInstanceId: OTHER_PLUGIN, harnessIds: ["cursor"], choice: false, target: { scope: "projects", projectIds: [project.project_id] },
+      artifact: artifact("b"), expectedRevision: 1,
+    })
+    const plugins = [PLUGIN, OTHER_PLUGIN, ...Array.from({ length: 30 }, (_, index) => `claxedo/plugin-${index}`)]
+
+    prepared.length = 0
+    const rows = await store.read(auth, { pluginInstanceIds: plugins, projectId: project.project_id })
+
+    expect(prepared.filter((sql) => sql.startsWith("select"))).toHaveLength(6)
+    expect(rows.size).toBe(plugins.length)
+    expect(rows.get(PLUGIN)!.codex).toMatchObject({ revision: 2, userDefault: true, projectId: project.project_id, pins: { user: digest("a") } })
+    expect(rows.get(PLUGIN)!.cursor).toMatchObject({ revision: 2, pins: { user: digest("a") } })
+    expect(rows.get(PLUGIN)!.cursor.userDefault).toBeUndefined()
+    expect(rows.get(OTHER_PLUGIN)!.cursor).toMatchObject({ projectOverride: false, pins: { user: digest("b") } })
+    expect(rows.get("claxedo/plugin-7")!.opencode).toEqual({
+      revision: 2, pluginInstanceId: "claxedo/plugin-7", harnessId: "opencode", projectId: project.project_id, pins: {},
+    })
   })
 })

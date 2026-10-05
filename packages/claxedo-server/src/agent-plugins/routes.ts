@@ -8,6 +8,7 @@ import type {
   AgentPluginArtifactPin,
   MutateSignedOrganizationDefault,
   MutateSignedUserActivation,
+  SignedActivationSnapshots,
   SignedAgentPluginActivationStore,
   SignedKnownPlugin,
   UpdateSignedArtifactPin,
@@ -173,23 +174,12 @@ async function mcpServerViews(input: {
   }))
 }
 
-async function candidateView(input: {
-  candidate: AgentPluginCatalogCandidate
-  /** The caller's retained plugins, read once per request by the catalog. */
-  known: SignedKnownPlugin[]
-  auth: SignedControlPlaneAuth
-  projectId?: string
-  activations: SignedAgentPluginActivationStore
-  artifacts: AgentPluginArtifactStore
-  mcpAuthentication?: AgentPluginMcpCatalogAuthenticationResolver
-  imageCommands: readonly string[]
-}) {
-  const states = await Promise.all(SUPPORTED_AGENT_PLUGIN_HARNESSES.map(async (harnessId) => {
-    const snapshot = await input.activations.read(input.auth, {
-      pluginInstanceId: input.candidate.pluginInstanceId,
-      harnessId,
-      ...(input.projectId ? { projectId: input.projectId } : {}),
-    })
+/** Each harness's activation for one plugin, from the catalog's single activation read. */
+function harnessStates(snapshots: SignedActivationSnapshots, pluginInstanceId: string) {
+  const rows = snapshots.get(pluginInstanceId)
+  if (!rows) throw new Error(`Agent Plugins activation for ${pluginInstanceId} was not read`)
+  return Object.fromEntries(SUPPORTED_AGENT_PLUGIN_HARNESSES.map((harnessId) => {
+    const snapshot = rows[harnessId]
     return [harnessId, {
       projectOverride: snapshot.projectOverride ?? null,
       userDefault: snapshot.userDefault ?? null,
@@ -207,6 +197,17 @@ async function candidateView(input: {
       }),
     }] as const
   }))
+}
+
+async function candidateView(input: {
+  candidate: AgentPluginCatalogCandidate
+  /** The caller's retained plugins, read once per request by the catalog. */
+  known: SignedKnownPlugin[]
+  snapshots: SignedActivationSnapshots
+  artifacts: AgentPluginArtifactStore
+  mcpAuthentication?: AgentPluginMcpCatalogAuthenticationResolver
+  imageCommands: readonly string[]
+}) {
   const known = input.known.find((item) => item.pluginInstanceId === input.candidate.pluginInstanceId)
   const retained = known?.pins.user ?? known?.pins.organization ?? known?.pins.claxedo
   let retainedArtifact: Awaited<ReturnType<AgentPluginArtifactStore["get"]>>
@@ -237,15 +238,13 @@ async function candidateView(input: {
       imageCommands: input.imageCommands,
     }),
     componentDiagnostics: input.candidate.componentDiagnostics,
-    harnesses: Object.fromEntries(states),
+    harnesses: harnessStates(input.snapshots, input.candidate.pluginInstanceId),
   }
 }
 
 async function retainedView(input: {
   known: SignedKnownPlugin
-  auth: SignedControlPlaneAuth
-  projectId?: string
-  activations: SignedAgentPluginActivationStore
+  snapshots: SignedActivationSnapshots
   artifacts: AgentPluginArtifactStore
   mcpAuthentication?: AgentPluginMcpCatalogAuthenticationResolver
   imageCommands: readonly string[]
@@ -258,29 +257,6 @@ async function retainedView(input: {
   } catch (cause) {
     artifactError = cause instanceof Error ? cause.message : "Retained plugin artifact is unreadable"
   }
-  const states = await Promise.all(SUPPORTED_AGENT_PLUGIN_HARNESSES.map(async (harnessId) => {
-    const snapshot = await input.activations.read(input.auth, {
-      pluginInstanceId: input.known.pluginInstanceId,
-      harnessId,
-      ...(input.projectId ? { projectId: input.projectId } : {}),
-    })
-    return [harnessId, {
-      projectOverride: snapshot.projectOverride ?? null,
-      userDefault: snapshot.userDefault ?? null,
-      organizationDefault: snapshot.organizationDefault ?? false,
-      claxedoDefault: snapshot.claxedoDefault ?? false,
-      effective: resolveEffectiveActivation({
-        mode: "signed",
-        pluginInstanceId: snapshot.pluginInstanceId,
-        harnessId,
-        projectOverride: snapshot.projectOverride,
-        userDefault: snapshot.userDefault,
-        organizationDefault: snapshot.organizationDefault,
-        claxedoDefault: snapshot.claxedoDefault,
-        pins: snapshot.pins,
-      }),
-    }] as const
-  }))
   return {
     pluginInstanceId: input.known.pluginInstanceId,
     sourceId: retainedPin?.sourceId ?? null,
@@ -304,7 +280,7 @@ async function retainedView(input: {
         })
       : [],
     componentDiagnostics: [],
-    harnesses: Object.fromEntries(states),
+    harnesses: harnessStates(input.snapshots, input.known.pluginInstanceId),
   }
 }
 
@@ -363,30 +339,23 @@ export function HostedAgentPluginRoutes(input: {
     const me: unknown = await input.services.authority.usersMe(result.auth)
     return { auth: result.auth, me }
   }
-  const builtInEntry = async (auth: SignedControlPlaneAuth, projectId: string | undefined) => {
-    const snapshots = new Map<string, boolean>()
-    await Promise.all(input.builtIn.groups.flatMap((group) =>
-      SUPPORTED_AGENT_PLUGIN_HARNESSES.map(async (harnessId) => {
-        const snapshot = await input.activations.read(auth, {
-          pluginInstanceId: builtinPluginInstanceId(group.id),
-          harnessId,
-          ...(projectId ? { projectId } : {}),
-        })
-        snapshots.set(`${group.id}:${harnessId}`, resolveBuiltinGroupActivation({
-          group,
-          harnessId,
-          deployment: input.builtIn.deployment,
-          mode: "signed",
-          ...(snapshot.projectOverride === undefined ? {} : { projectOverride: snapshot.projectOverride }),
-          ...(snapshot.userDefault === undefined ? {} : { userDefault: snapshot.userDefault }),
-          ...(snapshot.organizationDefault === undefined ? {} : { organizationDefault: snapshot.organizationDefault }),
-        }))
-      })))
-    return builtinCatalogEntry({
-      ...input.builtIn,
-      enabled: (group, harnessId) => snapshots.get(`${group.id}:${harnessId}`) ?? false,
-    })
-  }
+  const builtInIds = () => input.builtIn.groups.map((group) => builtinPluginInstanceId(group.id))
+  const builtInEntry = (snapshots: SignedActivationSnapshots) => builtinCatalogEntry({
+    ...input.builtIn,
+    enabled: (group, harnessId) => {
+      const snapshot = snapshots.get(builtinPluginInstanceId(group.id))?.[harnessId]
+      if (!snapshot) throw new Error(`Agent Plugins activation for ${group.id} was not read`)
+      return resolveBuiltinGroupActivation({
+        group,
+        harnessId,
+        deployment: input.builtIn.deployment,
+        mode: "signed",
+        ...(snapshot.projectOverride === undefined ? {} : { projectOverride: snapshot.projectOverride }),
+        ...(snapshot.userDefault === undefined ? {} : { userDefault: snapshot.userDefault }),
+        ...(snapshot.organizationDefault === undefined ? {} : { organizationDefault: snapshot.organizationDefault }),
+      })
+    },
+  })
 
   const apply = async (revision: number, auth: SignedControlPlaneAuth, consent?: { groupId: string }) => {
     try {
@@ -439,33 +408,32 @@ export function HostedAgentPluginRoutes(input: {
       input.administersOrganization(auth),
     ])
     if (before !== after) throw new Error("Catalog reads must not mutate Agent Plugins activation state")
-    timing.mark("state")
     const candidateIds = new Set(resolved.candidates.map((candidate) => candidate.pluginInstanceId))
-    const [builtIn, candidates, retained] = await Promise.all([
-      builtInEntry(auth, projectId),
+    // A group's activation row is the built-in entry's own state; listed
+    // on its own it would be a plugin with no source and no artifact.
+    const retainedEntries = known.filter((entry) => !candidateIds.has(entry.pluginInstanceId) && !isBuiltinPluginInstanceId(entry.pluginInstanceId))
+    const snapshots = await input.activations.read(auth, {
+      pluginInstanceIds: [...builtInIds(), ...candidateIds, ...retainedEntries.map((entry) => entry.pluginInstanceId)],
+      ...(projectId ? { projectId } : {}),
+    })
+    timing.mark("state")
+    const builtIn = builtInEntry(snapshots)
+    const [candidates, retained] = await Promise.all([
       Promise.all(resolved.candidates.map((candidate) => candidateView({
         candidate,
         known,
-        auth,
-        projectId,
-        activations: input.activations,
+        snapshots,
         artifacts: input.artifacts,
         ...(input.mcpAuthentication ? { mcpAuthentication: input.mcpAuthentication } : {}),
         imageCommands: input.imageCommands ?? [],
       }))),
-      // A group's activation row is the built-in entry's own state; listed
-      // on its own it would be a plugin with no source and no artifact.
-      Promise.all(known
-        .filter((entry) => !candidateIds.has(entry.pluginInstanceId) && !isBuiltinPluginInstanceId(entry.pluginInstanceId))
-        .map((entry) => retainedView({
-          known: entry,
-          auth,
-          projectId,
-          activations: input.activations,
-          artifacts: input.artifacts,
-          ...(input.mcpAuthentication ? { mcpAuthentication: input.mcpAuthentication } : {}),
-          imageCommands: input.imageCommands ?? [],
-        }))),
+      Promise.all(retainedEntries.map((entry) => retainedView({
+        known: entry,
+        snapshots,
+        artifacts: input.artifacts,
+        ...(input.mcpAuthentication ? { mcpAuthentication: input.mcpAuthentication } : {}),
+        imageCommands: input.imageCommands ?? [],
+      }))),
     ])
     timing.mark("views")
     timing.report(options.fresh ? "catalog.refresh" : "catalog", {

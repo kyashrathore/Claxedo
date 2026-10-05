@@ -6,13 +6,13 @@ import {
   type MutateSignedOrganizationDefault,
   type MutateSignedUserActivation,
   type SignedActivationSnapshot,
+  type SignedActivationSnapshots,
   type SignedAgentPluginActivationStore,
   type SignedKnownPlugin,
   type UpdateSignedArtifactPin,
 } from "@claxedo/server-core/agent-plugins/activation/store"
 import { isArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
 import {
-  SUPPORTED_AGENT_PLUGIN_HARNESSES,
   agentPluginHarnessRecord,
   isAgentPluginHarnessId,
   type AgentPluginHarnessId,
@@ -72,12 +72,17 @@ type PinRow = {
   source_revision: string
 }
 
-type EnabledRow = {
+type HarnessRow = {
+  plugin_instance_id: string
+  harness_id: string
+}
+
+type ChoiceRow = HarnessRow & {
   enabled: number
 }
 
-type PresenceRow = {
-  present: number
+type ScopedPinRow = PinRow & {
+  scope_key: string
 }
 
 type InstanceRow = {
@@ -231,12 +236,11 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
 
   async read(
     auth: SignedControlPlaneAuth,
-    input: { pluginInstanceId: string; harnessId: AgentPluginHarnessId; projectId?: string },
-  ): Promise<SignedActivationSnapshot> {
-    const harnessId = requireHarness(input.harnessId)
+    input: { pluginInstanceIds: readonly string[]; projectId?: string },
+  ): Promise<SignedActivationSnapshots> {
     const scope = await this.scope(auth)
     if (input.projectId) await this.requireProject(auth, scope, input.projectId, "read")
-    return await this.snapshot(scope, input.pluginInstanceId, harnessId, input.projectId)
+    return await this.snapshots(scope, input.pluginInstanceIds, input.projectId)
   }
 
   async mutateUser(auth: SignedControlPlaneAuth, input: MutateSignedUserActivation) {
@@ -831,70 +835,98 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     harnessId: AgentPluginHarnessId,
     projectId?: string,
   ): Promise<SignedActivationSnapshot> {
-    const [
-      revision,
-      projectOverride,
-      userDefault,
-      organizationDefault,
-      claxedoDefault,
-      userPin,
-      organizationPin,
-      claxedoPin,
-    ] = await Promise.all([
+    const rows = await this.snapshots(scope, [pluginInstanceId], projectId)
+    const row = rows.get(pluginInstanceId)?.[harnessId]
+    if (!row) invalid("activation snapshot")
+    return row
+  }
+
+  /**
+   * One statement per table whatever the plugin count: a catalog page reads
+   * every candidate, retained and built-in plugin on every harness, and D1 runs
+   * a Worker's statements a few at a time, so per-pair reads cost seconds.
+   * The ids travel as one JSON array so the bound-parameter limit never
+   * depends on how many plugins a caller has.
+   */
+  private async snapshots(
+    scope: Scope,
+    pluginInstanceIds: readonly string[],
+    projectId?: string,
+  ): Promise<Map<string, Record<AgentPluginHarnessId, SignedActivationSnapshot>>> {
+    const ids = [...new Set(pluginInstanceIds)]
+    const listed = JSON.stringify(ids)
+    const pairs = <Row extends HarnessRow, T>(rows: readonly Row[], value: (row: Row) => T) =>
+      new Map(rows.map((row) => [`${text(row.plugin_instance_id, "plugin instance ID")}\n${text(row.harness_id, "harness")}`, value(row)]))
+    const [revision, overrides, userDefaults, organizationDefaults, claxedoDefaults, pins] = await Promise.all([
       this.currentRevision(scope.orgId),
       projectId
         ? this.database
             .prepare(`
-              select enabled from agent_plugin_project_overrides
+              select plugin_instance_id, harness_id, enabled from agent_plugin_project_overrides
               where org_id = ? and owner_user_id = ? and project_id = ?
-                and plugin_instance_id = ? and harness_id = ?
+                and plugin_instance_id in (select value from json_each(?))
             `)
-            .bind(scope.orgId, scope.userId, projectId, pluginInstanceId, harnessId)
-            .first<EnabledRow>()
-        : Promise.resolve(null),
+            .bind(scope.orgId, scope.userId, projectId, listed)
+            .all<ChoiceRow>()
+            .then((result) => pairs(result.results, (row) => enabled(row.enabled)))
+        : new Map<string, boolean>(),
       this.database
         .prepare(`
-          select enabled from agent_plugin_user_defaults
-          where org_id = ? and owner_user_id = ? and plugin_instance_id = ? and harness_id = ?
+          select plugin_instance_id, harness_id, enabled from agent_plugin_user_defaults
+          where org_id = ? and owner_user_id = ? and plugin_instance_id in (select value from json_each(?))
         `)
-        .bind(scope.orgId, scope.userId, pluginInstanceId, harnessId)
-        .first<EnabledRow>(),
+        .bind(scope.orgId, scope.userId, listed)
+        .all<ChoiceRow>()
+        .then((result) => pairs(result.results, (row) => enabled(row.enabled))),
       this.database
         .prepare(`
-          select 1 as present from agent_plugin_organization_defaults
-          where org_id = ? and plugin_instance_id = ? and harness_id = ?
+          select plugin_instance_id, harness_id from agent_plugin_organization_defaults
+          where org_id = ? and plugin_instance_id in (select value from json_each(?))
         `)
-        .bind(scope.orgId, pluginInstanceId, harnessId)
-        .first<PresenceRow>(),
+        .bind(scope.orgId, listed)
+        .all<HarnessRow>()
+        .then((result) => pairs(result.results, () => true as const)),
       this.database
         .prepare(`
-          select 1 as present from agent_plugin_claxedo_defaults
-          where plugin_instance_id = ? and harness_id = ?
+          select plugin_instance_id, harness_id from agent_plugin_claxedo_defaults
+          where plugin_instance_id in (select value from json_each(?))
         `)
-        .bind(pluginInstanceId, harnessId)
-        .first<PresenceRow>(),
-      this.pinRow(userScopeKey(scope.orgId, scope.userId), pluginInstanceId),
-      this.pinRow(organizationScopeKey(scope.orgId), pluginInstanceId),
-      this.pinRow(CLAXEDO_SCOPE_KEY, pluginInstanceId),
+        .bind(listed)
+        .all<HarnessRow>()
+        .then((result) => pairs(result.results, () => true as const)),
+      this.database
+        .prepare(`
+          select scope_key, ${PIN_COLUMNS} from agent_plugin_artifact_pins
+          where scope_key in (?, ?, ?) and plugin_instance_id in (select value from json_each(?))
+        `)
+        .bind(userScopeKey(scope.orgId, scope.userId), organizationScopeKey(scope.orgId), CLAXEDO_SCOPE_KEY, listed)
+        .all<ScopedPinRow>()
+        .then((result) => new Map(result.results.map((row) => [`${row.scope_key}\n${text(row.plugin_instance_id, "plugin instance ID")}`, artifactPin(row)!.digest]))),
     ])
-    const user = artifactPin(userPin)
-    const organization = artifactPin(organizationPin)
-    const claxedo = artifactPin(claxedoPin)
-    return {
-      revision,
-      pluginInstanceId,
-      harnessId,
-      ...(projectId ? { projectId } : {}),
-      ...(projectOverride ? { projectOverride: enabled(projectOverride.enabled) } : {}),
-      ...(userDefault ? { userDefault: enabled(userDefault.enabled) } : {}),
-      ...(organizationDefault ? { organizationDefault: true as const } : {}),
-      ...(claxedoDefault ? { claxedoDefault: true as const } : {}),
-      pins: {
-        ...(user ? { user: user.digest } : {}),
-        ...(organization ? { organization: organization.digest } : {}),
-        ...(claxedo ? { claxedo: claxedo.digest } : {}),
-      },
-    }
+    const pin = (scopeKey: string, pluginInstanceId: string) => pins.get(`${scopeKey}\n${pluginInstanceId}`)
+    return new Map(ids.map((pluginInstanceId) => [pluginInstanceId, agentPluginHarnessRecord((harnessId): SignedActivationSnapshot => {
+      const pair = `${pluginInstanceId}\n${harnessId}`
+      const projectOverride = overrides.get(pair)
+      const userDefault = userDefaults.get(pair)
+      const user = pin(userScopeKey(scope.orgId, scope.userId), pluginInstanceId)
+      const organization = pin(organizationScopeKey(scope.orgId), pluginInstanceId)
+      const claxedo = pin(CLAXEDO_SCOPE_KEY, pluginInstanceId)
+      return {
+        revision,
+        pluginInstanceId,
+        harnessId,
+        ...(projectId ? { projectId } : {}),
+        ...(projectOverride === undefined ? {} : { projectOverride }),
+        ...(userDefault === undefined ? {} : { userDefault }),
+        ...(organizationDefaults.has(pair) ? { organizationDefault: true as const } : {}),
+        ...(claxedoDefaults.has(pair) ? { claxedoDefault: true as const } : {}),
+        pins: {
+          ...(user ? { user } : {}),
+          ...(organization ? { organization } : {}),
+          ...(claxedo ? { claxedo } : {}),
+        },
+      }
+    })]))
   }
 
   private async world(
@@ -903,19 +935,12 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     projectId?: string,
   ): Promise<SignedAgentPluginRuntimeSnapshot> {
     const [revision, known] = await Promise.all([this.currentRevision(scope.orgId), this.knownPlugins(scope)])
-    const plugins = await Promise.all(known.map(async (entry) => {
-      const rows = new Map(await Promise.all(SUPPORTED_AGENT_PLUGIN_HARNESSES.map(async (harnessId) =>
-        [harnessId, await this.snapshot(scope, entry.pluginInstanceId, harnessId, projectId)] as const)))
-      return {
-        pluginInstanceId: entry.pluginInstanceId,
-        pins: entry.pins,
-        harnesses: agentPluginHarnessRecord((harnessId) => {
-          const row = rows.get(harnessId)
-          if (!row) throw new Error(`Agent Plugins activation for ${harnessId} was not read`)
-          return row
-        }),
-      }
-    }))
+    const rows = await this.snapshots(scope, known.map((entry) => entry.pluginInstanceId), projectId)
+    const plugins = known.map((entry) => {
+      const harnesses = rows.get(entry.pluginInstanceId)
+      if (!harnesses) invalid("activation snapshot")
+      return { pluginInstanceId: entry.pluginInstanceId, pins: entry.pins, harnesses }
+    })
     return { revision, identity, plugins }
   }
 }
