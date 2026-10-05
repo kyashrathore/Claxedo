@@ -1,4 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
+import { Hono } from "hono"
+import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 
 const mocks = vi.hoisted(() => ({ createHostedCoreApp: vi.fn() }))
 
@@ -127,5 +129,38 @@ describe("hosted core Worker root", () => {
     expect(response.status).toBe(503)
     expect(await response.text()).toContain(binding)
     expect(compose).not.toHaveBeenCalled()
+  })
+
+  test("an unhandled route error is captured once with its route and code, never the request body", async () => {
+    const posted: string[] = []
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {
+      posted.push(String(init.body))
+      return new Response("ok")
+    }))
+    const routes = new Hono().post("/api/things/:thingId", () => {
+      throw new ClaxedoError({ code: "thing_store_unavailable", message: "Thing store is unavailable" })
+    })
+    mocks.createHostedCoreApp.mockReturnValue(routes)
+    const plane = { env: { CLAXEDO_TELEMETRY_MODE: "on", CLAXEDO_POSTHOG_KEY: "phc_test", CLAXEDO_POSTHOG_HOST: "https://ph.test" } }
+    const worker = createHostedCoreWorker(vi.fn(() => ({ plane: plane as never, options: {} as never, documentAccess })))
+    const waits: Promise<unknown>[] = []
+
+    const response = await worker.fetch(
+      new Request("https://core.example.test/api/things/t_1", { method: "POST", body: "prompt: my secret plan" }),
+      env(),
+      { waitUntil: (work: Promise<unknown>) => waits.push(work), passThroughOnException: () => {}, props: {} } as never,
+    )
+    await Promise.all(waits)
+
+    expect(response.status).toBe(500)
+    expect(waits).toHaveLength(1)
+    expect(posted).toHaveLength(1)
+    const capture = JSON.parse(posted[0]!)
+    expect(capture.event).toBe("$exception")
+    expect(capture.distinct_id).toBe("system")
+    expect(capture.properties).toMatchObject({ route: "/api/things/:thingId", method: "POST", code: "thing_store_unavailable" })
+    expect(posted[0]).not.toContain("secret plan")
+    expect(posted[0]).not.toContain("t_1")
+    vi.unstubAllGlobals()
   })
 })

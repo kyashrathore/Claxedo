@@ -18,12 +18,15 @@ import {
 } from "@claxedo/server-core/platform/http/security-headers"
 import { asRecord } from "@claxedo/server-core/platform/json/index"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
+import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
 
 import type { D1AccessContext } from "../../authority/adapters/d1/access-context"
 import { d1DocumentAccess } from "../../authority/adapters/d1/document-authority"
 import type { HostedControlPlane } from "../../authority/hosted-services"
 import { createIdempotencyCoordinator, d1ProjectionCommandIdempotency } from "../../authority/http/idempotency"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
+import { workerErrorCapture } from "../../platform/auth/worker-telemetry"
 import {
   cloudflareRateLimitStore,
   type CloudflareRateLimitBinding,
@@ -153,9 +156,15 @@ export function createHostedCoreWorker<Env extends HostedCoreWorkerEnv>(
         registerTools: CLAXEDO_MCP_TOOL_GROUPS,
       },
     })
+    const errors = workerErrorCapture(selected.plane.env)
     app.onError((error, context) => {
       if (error instanceof HTTPException) return error.getResponse()
       console.error(error)
+      keepAlivePastResponse(context, errors.captureException(error, "system", {
+        route: context.req.routePath,
+        method: context.req.method,
+        ...(isClaxedoError(error) ? { code: error.code } : {}),
+      }))
       return context.text("Internal Server Error", 500)
     })
     appByPlane.set(key, app)
