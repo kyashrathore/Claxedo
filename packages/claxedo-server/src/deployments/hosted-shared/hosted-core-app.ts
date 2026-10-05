@@ -86,6 +86,8 @@ import type { CloudRootIdentity } from "../../agent-plugins/runtime/cloud-root-e
 import { readIntrospectedAccessToken, resolveOAuthMcpCredential } from "../../mcp/oauth-credential"
 import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { UsageRoutes } from "@claxedo/server-core/usage/routes"
+import { createUsageQuotaReader } from "@claxedo/server-core/usage/quota"
+import { orgRoutedCredentials } from "../../credentials/worker/org-routed"
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import { privateRepoHosts } from "../private-repo-hosts"
 import { hostedSandboxEgress } from "./hosted-sandbox-egress"
@@ -537,6 +539,9 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         if (!auth?.principal) return undefined
         return { org_id: await requireAuthority(services).resolveOrgId(auth), user_id: auth.principal.userId }
       },
+      ...(plane.orgCredentials
+        ? { quota: createUsageQuotaReader({ credentials: orgRoutedCredentials(plane.orgCredentials, options.accountSetup?.changed ?? (async () => {})) }) }
+        : {}),
       // The hosted plane runs in a Worker, which has no home directory for a
       // refreshed catalog's cache.
       pricing: tokenTrackerPricing("bundled"),

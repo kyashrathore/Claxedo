@@ -40,6 +40,7 @@ export function orgRoutedCredentials(
     deleteCredentialsByProvider: (providerId, kind, org) => write(org, (store) => store.deleteCredentialsByProvider(providerId, kind, org)),
     updateCredentialStatus: (id, status, error, org) => write(org, (store) => store.updateCredentialStatus(id, status, error, org)),
     updateCredentialHealth: async (id, health, validatedAt, org) => await at(org).updateCredentialHealth?.(id, health, validatedAt, org),
+    updateCredentialUsage: async (id, windows, usedAt, org) => await at(org).updateCredentialUsage?.(id, windows, usedAt, org),
     updateCredentialSecret: (id, secret, expiresAt, org) => write(org, async (store) => (await store.updateCredentialSecret?.(id, secret, expiresAt, org)) ?? false),
     syncLocalCredentials: (providerIds, org, owner) => at(org).syncLocalCredentials(providerIds, org, owner),
     accountSelections: (org) => at(org).accountSelections(org),

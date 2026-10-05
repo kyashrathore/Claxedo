@@ -70,7 +70,7 @@ function probe(agents: MachineAgentUsage[]): MachineAgentUsageReader {
  * The answer once every source a read started has landed: re-read on each
  * doorbell, the way the dashboard does, until nothing is still running.
  */
-async function settle(read: UsageQuotaReader, input: { org: string; refresh: boolean }) {
+async function settle(read: UsageQuotaReader, input: Parameters<UsageQuotaReader>[0]) {
   let rung = 0
   const unsubscribe = controlBus.subscribe((event) => {
     if (event.type === "usage.quota.changed") rung += 1
@@ -82,7 +82,7 @@ async function settle(read: UsageQuotaReader, input: { org: string; refresh: boo
       const before = seen
       await vi.waitFor(() => expect(rung).toBeGreaterThan(before), { interval: 1 })
       seen = rung
-      answer = await read({ org: input.org, refresh: false })
+      answer = await read({ ...input, refresh: false })
     }
     return answer
   } finally {
@@ -118,7 +118,7 @@ describe("usage quota reader", () => {
     })
     const read = createUsageQuotaReader({ credentials, now: () => 1_000 })
 
-    expect(await settle(read, { org: ORG, refresh: false })).toEqual({
+    expect(await settle(read, { org: ORG, person: "local", refresh: false })).toEqual({
       status: "available",
       snapshot: {
         accounts: [
@@ -158,7 +158,7 @@ describe("usage quota reader", () => {
       effective: [credential({ id: "b", provider_id: "claude-acp", account_id: "acct_b" })],
     })
     const read = createUsageQuotaReader({ credentials, now: () => 1_000 })
-    const { snapshot } = await read({ org: ORG, refresh: false })
+    const { snapshot } = await read({ org: ORG, person: "local", refresh: false })
     expect(snapshot?.accounts.map((account) => [account.label, account.inUse])).toEqual([
       ["b@example.com", true],
       ["a@example.com", false],
@@ -180,7 +180,7 @@ describe("usage quota reader", () => {
       }),
       now: () => 1_000,
     })
-    expect((await settle(chosen, { org: ORG, refresh: false })).snapshot?.accounts.map((a) => [a.label, a.inUse])).toEqual([
+    expect((await settle(chosen, { org: ORG, person: "local", refresh: false })).snapshot?.accounts.map((a) => [a.label, a.inUse])).toEqual([
       ["acct_a", true],
       ["machine@example.com", false],
     ])
@@ -192,7 +192,7 @@ describe("usage quota reader", () => {
       }),
       now: () => 1_000,
     })
-    expect((await settle(withdrawn, { org: ORG, refresh: false })).snapshot?.accounts.map((a) => [a.label, a.inUse])).toEqual([
+    expect((await settle(withdrawn, { org: ORG, person: "local", refresh: false })).snapshot?.accounts.map((a) => [a.label, a.inUse])).toEqual([
       ["machine@example.com", true],
       ["acct_a", false],
     ])
@@ -203,7 +203,7 @@ describe("usage quota reader", () => {
       rows: [credential({ id: "a", provider_id: "claude-acp", account_id: "acct_a", health: "auth_failed" })],
     })
     const read = createUsageQuotaReader({ credentials, now: () => 1_000 })
-    expect((await read({ org: ORG, refresh: false })).snapshot?.accounts[0]).toMatchObject({ health: "auth_failed" })
+    expect((await read({ org: ORG, person: "local", refresh: false })).snapshot?.accounts[0]).toMatchObject({ health: "auth_failed" })
   })
 
   test("one account's windows are enough to draw, and an account without any is the card's own business", async () => {
@@ -221,7 +221,7 @@ describe("usage quota reader", () => {
       }),
       now: () => 1_000,
     })
-    const read = await settle(unread, { org: ORG, refresh: false })
+    const read = await settle(unread, { org: ORG, person: "local", refresh: false })
     expect(read.status).toBe("available")
     expect(read.snapshot?.accounts.map((account) => account.windows.length)).toEqual([1, 0])
 
@@ -229,10 +229,10 @@ describe("usage quota reader", () => {
       credentials: store({ rows: [credential({ id: "b", account_id: "acct_b" })] }),
       now: () => 1_000,
     })
-    expect((await settle(none, { org: ORG, refresh: false })).status).toBe("unavailable")
+    expect((await settle(none, { org: ORG, person: "local", refresh: false })).status).toBe("unavailable")
 
     const empty = createUsageQuotaReader({ credentials: store({}), now: () => 1_000 })
-    expect(await settle(empty, { org: ORG, refresh: false })).toEqual({ status: "unavailable", snapshot: { accounts: [] } })
+    expect(await settle(empty, { org: ORG, person: "local", refresh: false })).toEqual({ status: "unavailable", snapshot: { accounts: [] } })
   })
 
   test("a key authenticates a project and is not listed as a plan whose windows are missing", async () => {
@@ -240,13 +240,13 @@ describe("usage quota reader", () => {
       credentials: store({ rows: [credential({ id: "key_1", provider_id: "anthropic", kind: "api_key" })] }),
       now: () => 1_000,
     })
-    expect(await settle(read, { org: ORG, refresh: false })).toEqual({ status: "unavailable", snapshot: { accounts: [] } })
+    expect(await settle(read, { org: ORG, person: "local", refresh: false })).toEqual({ status: "unavailable", snapshot: { accounts: [] } })
   })
 
   test("a read asks no harness for a fresh answer and spends no vendor request", async () => {
     const credentials = store({ rows: [credential({ id: "a", account_id: "acct_a" })], secret: "sk-ant-oat-1" })
     const read = createUsageQuotaReader({ credentials, now: () => 1_000 })
-    await read({ org: ORG, refresh: false })
+    await read({ org: ORG, person: "local", refresh: false })
     expect(credentials.machineLogins).toHaveBeenCalledWith(undefined, { fresh: false })
     expect(credentials.resolveCredentialSecretById).not.toHaveBeenCalled()
   })
@@ -261,7 +261,7 @@ describe("usage quota reader", () => {
     let clock = 1_000
     const read = createUsageQuotaReader({ credentials, now: () => clock, fetch: fetchImpl as unknown as typeof fetch })
 
-    await settle(read, { org: ORG, refresh: true })
+    await settle(read, { org: ORG, person: "local", refresh: true })
     expect(credentials.resolveCredentialSecretById).toHaveBeenCalledTimes(1)
     expect(credentials.updateCredentialHealth).toHaveBeenCalledWith("a", "ok", 1_000, ORG)
     expect(credentials.updateCredentialUsage).toHaveBeenCalledWith(
@@ -273,11 +273,11 @@ describe("usage quota reader", () => {
     expect(credentials.machineLogins).toHaveBeenCalledWith(undefined, { fresh: true })
 
     clock = 30_000
-    await settle(read, { org: ORG, refresh: true })
+    await settle(read, { org: ORG, person: "local", refresh: true })
     expect(credentials.resolveCredentialSecretById).toHaveBeenCalledTimes(1)
 
     clock = 61_000
-    await settle(read, { org: ORG, refresh: true })
+    await settle(read, { org: ORG, person: "local", refresh: true })
     expect(credentials.resolveCredentialSecretById).toHaveBeenCalledTimes(2)
   })
 
@@ -286,16 +286,16 @@ describe("usage quota reader", () => {
     let clock = 1_000
     const read = createUsageQuotaReader({ credentials, now: () => clock, refreshIntervalMs: 60_000 })
 
-    expect(await read({ org: ORG, refresh: false })).not.toHaveProperty("throttledUntil")
-    expect(await read({ org: ORG, refresh: true })).not.toHaveProperty("throttledUntil")
+    expect(await read({ org: ORG, person: "local", refresh: false })).not.toHaveProperty("throttledUntil")
+    expect(await read({ org: ORG, person: "local", refresh: true })).not.toHaveProperty("throttledUntil")
 
     clock = 30_000
-    expect(await read({ org: ORG, refresh: true })).toMatchObject({ throttledUntil: 61_000 })
+    expect(await read({ org: ORG, person: "local", refresh: true })).toMatchObject({ throttledUntil: 61_000 })
     // The spacing dates the refresh, not the read that was answered from it.
-    expect(await read({ org: ORG, refresh: false })).not.toHaveProperty("throttledUntil")
+    expect(await read({ org: ORG, person: "local", refresh: false })).not.toHaveProperty("throttledUntil")
 
     clock = 61_000
-    expect(await read({ org: ORG, refresh: true })).not.toHaveProperty("throttledUntil")
+    expect(await read({ org: ORG, person: "local", refresh: true })).not.toHaveProperty("throttledUntil")
   })
 
   test("one account's failed check leaves every other plan on screen", async () => {
@@ -326,7 +326,7 @@ describe("usage quota reader", () => {
       fetch: (async () => { throw new Error("offline") }) as unknown as typeof fetch,
     })
 
-    const { status, snapshot } = await settle(read, { org: ORG, refresh: true })
+    const { status, snapshot } = await settle(read, { org: ORG, person: "local", refresh: true })
 
     expect(status).toBe("available")
     expect(snapshot?.accounts.map((account) => [account.label, account.windows.length])).toEqual([
@@ -356,7 +356,7 @@ describe("usage quota reader", () => {
       fetch: (async () => Response.json({ rate_limit: {} })) as unknown as typeof fetch,
     })
 
-    await settle(read, { org: ORG, refresh: true })
+    await settle(read, { org: ORG, person: "local", refresh: true })
 
     expect(resolve).toHaveBeenCalledTimes(2)
     expect(credentials.updateCredentialHealth).toHaveBeenCalledWith("b", "ok", 1_000, ORG)
@@ -372,7 +372,7 @@ describe("usage quota reader", () => {
     })
     const read = createUsageQuotaReader({ credentials, now: () => 1_000 })
 
-    const { snapshot } = await read({ org: ORG, refresh: false })
+    const { snapshot } = await read({ org: ORG, person: "local", refresh: false })
 
     expect(snapshot?.accounts.map((account) => [account.credentialId, account.usageAt, account.usageError])).toEqual([
       ["setup", 77, "Setup-tokens are inference-only, so this account runs turns but cannot report its plan usage. Sign the Claude CLI in to this account to see it."],
@@ -407,7 +407,7 @@ describe("usage quota reader", () => {
     })
     const read = createUsageQuotaReader({ credentials, now: () => 1_000 })
 
-    const { snapshot } = await read({ org: ORG, refresh: false })
+    const { snapshot } = await read({ org: ORG, person: "local", refresh: false })
 
     expect(snapshot?.accounts.map((account) => [account.harness, account.deliverable])).toEqual([
       ["claude", { local: true, cloud: true }],
@@ -432,7 +432,7 @@ describe("usage quota reader", () => {
     })
     const read = createUsageQuotaReader({ credentials, now: () => 1_000 })
 
-    const { snapshot } = await settle(read, { org: ORG, refresh: false })
+    const { snapshot } = await settle(read, { org: ORG, person: "local", refresh: false })
 
     expect(snapshot?.accounts.map((account) => [account.harness, account.machineLogin === true, account.inUse]))
       .toEqual([["codex", true, false]])
@@ -449,7 +449,7 @@ describe("usage quota reader", () => {
     })
     const read = createUsageQuotaReader({ credentials, now: () => 1_000 })
 
-    const { snapshot } = await settle(read, { org: ORG, refresh: false })
+    const { snapshot } = await settle(read, { org: ORG, person: "local", refresh: false })
 
     expect(snapshot?.accounts.map((account) => [account.label, account.inUse])).toEqual([
       ["me@example.com", true],
@@ -474,7 +474,7 @@ describe("usage quota reader", () => {
       ]),
     })
 
-    const { snapshot } = await settle(read, { org: ORG, refresh: false })
+    const { snapshot } = await settle(read, { org: ORG, person: "local", refresh: false })
     expect(snapshot?.accounts.map((account) => [account.harness, account.otherAgent === true])).toEqual([
       ["claude", false],
       ["codex", false],
@@ -503,10 +503,10 @@ describe("usage quota reader", () => {
     const agentUsage = probe([agent({ agent: "grok", label: "Grok" })])
     const read = createUsageQuotaReader({ credentials: store({}), now: () => 1_000, agentUsage })
 
-    await settle(read, { org: ORG, refresh: false })
+    await settle(read, { org: ORG, person: "local", refresh: false })
     expect(agentUsage).toHaveBeenCalledWith({ fresh: false })
 
-    await settle(read, { org: ORG, refresh: true })
+    await settle(read, { org: ORG, person: "local", refresh: true })
     expect(agentUsage).toHaveBeenCalledWith({ fresh: true })
   })
 
@@ -522,7 +522,7 @@ describe("usage quota reader", () => {
       ],
     } as unknown as ControlPlaneCredentials
     const read = createUsageQuotaReader({ credentials, now: () => 1_000 })
-    expect(await read({ org: ORG, refresh: false })).toMatchObject({
+    expect(await read({ org: ORG, person: "local", refresh: false })).toMatchObject({
       status: "available",
       snapshot: { accounts: [{ harness: "claude", credentialId: "a" }] },
     })
@@ -538,7 +538,7 @@ describe("usage quota reader", () => {
     })
     const read = createUsageQuotaReader({ credentials, now: () => 1_000 })
 
-    const first = await read({ org: ORG, refresh: false })
+    const first = await read({ org: ORG, person: "local", refresh: false })
     expect(first.refreshing).toBe(true)
     expect(first.snapshot?.accounts.map((account) => account.credentialId)).toEqual(["a"])
     expect(rings).toEqual([])
@@ -547,7 +547,7 @@ describe("usage quota reader", () => {
     await vi.waitFor(() => expect(rings).toEqual([1_000]))
     unsubscribe()
 
-    const landed = await read({ org: ORG, refresh: false })
+    const landed = await read({ org: ORG, person: "local", refresh: false })
     expect(landed).not.toHaveProperty("refreshing")
     expect(landed.snapshot?.accounts.map((account) => account.label)).toEqual(["acct_a", "codex@example.com"])
   })
@@ -559,9 +559,9 @@ describe("usage quota reader", () => {
     const agentUsage: MachineAgentUsageReader = vi.fn(() => new Promise<never>(() => {}))
     const read = createUsageQuotaReader({ credentials, now: () => 1_000, agentUsage })
 
-    await read({ org: ORG, refresh: false })
+    await read({ org: ORG, person: "local", refresh: false })
     await vi.waitFor(async () => {
-      const answer = await read({ org: ORG, refresh: false })
+      const answer = await read({ org: ORG, person: "local", refresh: false })
       expect(answer.snapshot?.accounts.map((account) => account.label)).toEqual(["codex@example.com"])
       expect(answer.refreshing).toBe(true)
     })
@@ -573,13 +573,13 @@ describe("usage quota reader", () => {
     let clock = 1_000
     const read = createUsageQuotaReader({ credentials, now: () => clock, agentUsage })
 
-    await settle(read, { org: ORG, refresh: false })
-    await settle(read, { org: ORG, refresh: false })
+    await settle(read, { org: ORG, person: "local", refresh: false })
+    await settle(read, { org: ORG, person: "local", refresh: false })
     expect(credentials.machineLogins).toHaveBeenCalledTimes(1)
     expect(agentUsage).toHaveBeenCalledTimes(1)
 
     clock = 61_000
-    await settle(read, { org: ORG, refresh: false })
+    await settle(read, { org: ORG, person: "local", refresh: false })
     expect(credentials.machineLogins).toHaveBeenCalledTimes(2)
   })
 
@@ -589,11 +589,11 @@ describe("usage quota reader", () => {
     })
     let clock = 1_000
     const read = createUsageQuotaReader({ credentials, now: () => clock })
-    await settle(read, { org: ORG, refresh: false })
+    await settle(read, { org: ORG, person: "local", refresh: false })
 
     credentials.machineLogins.mockRejectedValueOnce(new Error("codex app-server did not answer in time"))
     clock = 61_000
-    const answer = await settle(read, { org: ORG, refresh: false })
+    const answer = await settle(read, { org: ORG, person: "local", refresh: false })
 
     expect(credentials.machineLogins).toHaveBeenCalledTimes(2)
     expect(answer.snapshot?.accounts.map((account) => account.label)).toEqual(["codex@example.com"])
@@ -617,10 +617,10 @@ describe("usage quota reader", () => {
     credentials.resolveCredentialSecretById.mockImplementation(async (id: string) => `sk-ant-oat-${id}`)
     const read = createUsageQuotaReader({ credentials, now: () => 1_000, fetch: fetchImpl as unknown as typeof fetch })
 
-    expect(await read({ org: ORG, refresh: true })).toMatchObject({ refreshing: true })
+    expect(await read({ org: ORG, person: "local", refresh: true })).toMatchObject({ refreshing: true })
     await vi.waitFor(() => expect(started).toHaveLength(2))
     release()
-    await settle(read, { org: ORG, refresh: false })
+    await settle(read, { org: ORG, person: "local", refresh: false })
     expect(credentials.updateCredentialUsage).toHaveBeenCalledTimes(2)
   })
 })

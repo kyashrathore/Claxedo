@@ -22,7 +22,7 @@ function useUsageTabs() {
   const server = useServer()
   return () => {
     const capabilities = server.capabilities()
-    return [...(capabilities?.servingMachine ? [QUOTA] : []), CLAXEDO, ...(capabilities?.features.cloud ? [CLOUD] : [])]
+    return [QUOTA, CLAXEDO, ...(capabilities?.features.cloud ? [CLOUD] : [])]
   }
 }
 const RANGES: readonly Choice<"7" | "30" | "90">[] = [

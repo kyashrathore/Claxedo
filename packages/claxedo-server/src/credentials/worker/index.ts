@@ -49,6 +49,7 @@ import {
 } from "@claxedo/server-core/credentials/envelope"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { storedCredentialKind } from "@claxedo/server-core/credentials/secret-material"
+import { parseUsageWindows, serializeUsageWindows } from "@claxedo/server-core/credentials/usage-windows"
 import { fanoutEligible, fanoutEligibleAuth } from "@claxedo/server-core/credentials/account-kinds"
 import { deliveryOrigin } from "@claxedo/server-core/credentials/native-delivery-plan"
 import { ACCOUNT_SOURCES, type AccountSource } from "@claxedo/account-contract/vocabulary"
@@ -77,7 +78,7 @@ export type HostedCredentialStoreInput = {
 }
 
 const METADATA_COLUMNS =
-  "id, owner, org_id, provider_id, kind, source, label, account_id, status, health, expires_at, last_validated_at, last_error, revision, activated_at, created_at, updated_at"
+  "id, owner, org_id, provider_id, kind, source, label, account_id, status, health, expires_at, last_validated_at, last_error, revision, activated_at, usage_windows, usage_at, created_at, updated_at"
 
 /** Default-off feature flag for the hosted credential surface. */
 export const HOSTED_CREDENTIALS_FLAG = "CLAXEDO_HOSTED_CREDENTIALS_ENABLED"
@@ -228,6 +229,8 @@ export function hostedOrgCredentials(
            last_error = null,
            secret_envelope = excluded.secret_envelope,
            revision = hosted_provider_credentials.revision + 1,
+           usage_windows = null,
+           usage_at = null,
            activated_at = excluded.activated_at,
            updated_at = excluded.updated_at
          on conflict (org_id, ifnull(owner, ''), provider_id) do nothing
@@ -345,6 +348,12 @@ export function hostedOrgCredentials(
            where org_id = ? and id = ?`,
         )
         .bind(health, verdict, validatedAt, health === "ok" ? null : health, now(), org, id)
+        .run()
+    },
+    updateCredentialUsage: async (id, windows, at) => {
+      await database
+        .prepare("update hosted_provider_credentials set usage_windows = ?, usage_at = ? where org_id = ? and id = ?")
+        .bind(serializeUsageWindows(windows), at, org, id)
         .run()
     },
     updateCredentialSecret: async (id, secret, expiresAt) => {
@@ -493,6 +502,8 @@ function credentialMetadataRow(row: Record<string, unknown>): CredentialMetadata
     updated_at: requiredIntegerColumn(row, "updated_at"),
     revision: requiredIntegerColumn(row, "revision"),
     incarnation: requiredTextColumn(row, "id"),
+    usage_windows: parseUsageWindows(nullableTextColumn(row, "usage_windows")),
+    usage_at: nullableIntegerColumn(row, "usage_at"),
   }
 }
 

@@ -52,7 +52,7 @@ import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "../s
 import { startSessionRowsPublisher } from "../session/publish/start-session-rows-publisher"
 import { createLocalCredentialBroker } from "../credentials/broker"
 import { hostCredentialProjectAuth, localMachineOwnerUserId } from "../workspace/host-provider-config"
-import { requestOrg } from "@claxedo/server-core/credentials/routes/credential"
+import { requestActor, requestOrg } from "@claxedo/server-core/credentials/routes/credential"
 import { createUsageQuotaReader } from "@claxedo/server-core/usage/quota"
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "../deployments/local/port"
@@ -297,7 +297,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     // that caller alone.
     machineOperator: (request: Request) => isLoopbackLocalRequest(request),
     quota: async ({ request, refresh }: { request: Request; refresh: boolean }) =>
-      await readQuota({ org: await requestOrg(request, authOptions), refresh }),
+      await readQuota({ org: await requestOrg(request, authOptions), person: await requestActor(request, authOptions), refresh }),
     pricing: tokenTrackerPricing("refreshed"),
     telemetry: services.telemetry,
   }

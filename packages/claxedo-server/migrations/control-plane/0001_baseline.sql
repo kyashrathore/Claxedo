@@ -319,6 +319,8 @@ CREATE TABLE hosted_provider_credentials (
   secret_envelope text not null,
   revision integer not null,
   activated_at integer,
+  usage_windows text,
+  usage_at integer,
   created_at integer not null,
   updated_at integer not null,
   primary key (org_id, id)

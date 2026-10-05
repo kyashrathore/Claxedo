@@ -16,6 +16,8 @@
  */
 
 import { HARNESS_IDS, HARNESS_TABLE, harnessForProviderId, isHarnessId } from "@claxedo/agent-runtime-contract"
+import { accountHolderOf } from "../credentials/account-holder"
+import { fanoutEligible } from "../credentials/account-kinds"
 import { agentUsageOrNone } from "../credentials/machine-agent-usage"
 import { credentialReach } from "../credentials/reach"
 import { joinMachineLoginUsage, recordReportedUsage } from "../credentials/machine-login-report"
@@ -40,7 +42,17 @@ const INFERENCE_ONLY_LOGIN = "Setup-tokens are inference-only, so this account r
  */
 const REFRESH_INTERVAL_MS = 60_000
 
-export type UsageQuotaReader = (input: { org: string; refresh: boolean }) => Promise<UnifiedUsageResponse["quota"]>
+export type UsageQuotaReader = (input: { org: string; person: string; refresh: boolean }) => Promise<UnifiedUsageResponse["quota"]>
+
+/**
+ * The stored rows one person's quota view may draw: their own accounts and the
+ * organization's harness accounts any member may choose to spend, never
+ * another member's.
+ */
+function visibleTo(person: string) {
+  return (row: CredentialMetadata) =>
+    row.owner === null || row.owner === undefined ? fanoutEligible(row) : accountHolderOf(row.owner, person) === person
+}
 
 /** What the last reads of this machine's harnesses and probe left behind. */
 type MachineSources = {
@@ -107,26 +119,27 @@ export function createUsageQuotaReader(input: {
     }
   }
 
-  const check = (org: string) => {
-    checking.add(org)
-    void runChecks(credentials, org, { now, ...(input.fetch ? { fetch: input.fetch } : {}) })
+  const check = (org: string, person: string, key: string) => {
+    checking.add(key)
+    void runChecks(credentials, org, person, { now, ...(input.fetch ? { fetch: input.fetch } : {}) })
       .catch((error: unknown) => {
         log.warn("quota checks failed", { org, detail: error instanceof Error ? error.message : String(error) })
       })
       .finally(() => {
-        checking.delete(org)
+        checking.delete(key)
         ring()
       })
   }
 
-  return async ({ org, refresh }) => {
-    const last = lastRefresh.get(org)
+  return async ({ org, person, refresh }) => {
+    const key = `${org} ${person}`
+    const last = lastRefresh.get(key)
     const since = now() - (last ?? Number.NEGATIVE_INFINITY)
     let throttledUntil: number | undefined
     const refreshing = refresh && since >= interval
     if (refreshing) {
-      lastRefresh.set(org, now())
-      if (!checking.has(org)) check(org)
+      lastRefresh.set(key, now())
+      if (!checking.has(key)) check(org, person, key)
     } else if (refresh && last !== undefined) {
       // A Check spends a vendor request per stored account, so a second Refresh
       // inside the interval answers from what the first one wrote. Said out
@@ -137,12 +150,12 @@ export function createUsageQuotaReader(input: {
     }
     const machineDue = machineReadAt === undefined || now() - machineReadAt >= interval
     if (machinePending === 0 && (refreshing || machineDue)) readMachine(refreshing)
-    const snapshot = await composeSnapshot(credentials, org, held)
+    const snapshot = await composeSnapshot(credentials, org, person, held)
     return {
       status: quotaStatus(snapshot),
       snapshot,
       ...(throttledUntil === undefined ? {} : { throttledUntil }),
-      ...(machinePending > 0 || checking.has(org) ? { refreshing: true } : {}),
+      ...(machinePending > 0 || checking.has(key) ? { refreshing: true } : {}),
     }
   }
 }
@@ -170,15 +183,17 @@ type StoredAccount = {
 async function composeSnapshot(
   credentials: ControlPlaneCredentials,
   org: string,
+  person: string,
   machine: MachineSources,
 ): Promise<QuotaSnapshot> {
-  const rows = await credentials.listCredentials(org)
+  const visible = visibleTo(person)
+  const rows = (await credentials.listCredentials(org)).filter(visible)
   // Ownership is resolved over every stored row, and only then narrowed to the
   // rows that can carry a plan. A harness running on a stored API key has no
   // card here — a key has no window to draw — but it is still the account that
   // harness spends, so reading ownership off the cards alone would report its
   // machine login as the one in use.
-  const inUse = await accountsInUse(credentials, org, rows)
+  const inUse = await accountsInUse(credentials, org, rows, visible)
   const harnessesInUse = new Set(rows.filter((row) => inUse.has(row.id)).map(harnessOf))
   const stored = storedAccounts(rows)
   const accounts: QuotaAccount[] = stored.map((account) => {
@@ -309,10 +324,11 @@ async function accountsInUse(
   credentials: ControlPlaneCredentials,
   org: string,
   rows: readonly CredentialMetadata[],
+  visible: (row: CredentialMetadata) => boolean,
 ): Promise<Set<string>> {
   const effective = await credentials.effectiveCredentials?.("local", org)
   if (effective === undefined) return new Set(rows.filter((row) => row.is_active).map((row) => row.id))
-  const byProvider = new Map(effective.map((row) => [row.provider_id, row.id]))
+  const byProvider = new Map(effective.filter(visible).map((row) => [row.provider_id, row.id]))
   return new Set(
     [...new Set(rows.map(harnessOf))].flatMap((harness) => {
       const providerIds = isHarnessId(harness) ? HARNESS_TABLE[harness].providerIds : [harness]
@@ -323,7 +339,7 @@ async function accountsInUse(
 }
 
 /**
- * The Check the Providers list runs, once per stored plan account, all at
+ * The Check the Providers list runs, once per stored plan account the person sees, all at
  * once: each is a request to its own vendor, and none waits on another.
  *
  * One account's failure is not the view's: a revoked login should leave every
@@ -332,9 +348,11 @@ async function accountsInUse(
 async function runChecks(
   credentials: ControlPlaneCredentials,
   org: string,
+  person: string,
   options: { now: () => number; fetch?: typeof fetch },
 ) {
-  const rows = (await credentials.listCredentials(org)).filter((row) => isSubscriptionKind(row.kind))
+  const visible = visibleTo(person)
+  const rows = (await credentials.listCredentials(org)).filter((row) => isSubscriptionKind(row.kind) && visible(row))
   await Promise.all(rows.map(async (row) => {
     const outcome = await checkCredential(credentials, row, { org, ...options })
     if (outcome.status === "failed") {

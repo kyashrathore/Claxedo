@@ -36,22 +36,7 @@ import {
   type UsageSeries,
 } from "./projection"
 import { publicUsageHref } from "./public-href"
-
-function withTimeout<T>(promise: Promise<T>, ms: number, timeoutError: () => Error) {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(timeoutError()), ms)
-    promise.then(
-      (value) => {
-        clearTimeout(timer)
-        resolve(value)
-      },
-      (error) => {
-        clearTimeout(timer)
-        reject(error)
-      },
-    )
-  })
-}
+import { quotaAnswers } from "./quota-answers"
 
 // Ninety inclusive local calendar days can span one DST fall-back hour.
 // This still rejects a 91-day UTC request while accepting the advertised
@@ -500,10 +485,13 @@ export function UsageRoutes(input: {
    * throws the `ControlPlaneAuthError` its verifier raised.
    */
   identity(request: Request): Promise<{ org_id: string; user_id: string } | undefined>
+  /** Plan usage for the quota view: the signed person's own accounts and the organization's they may spend. */
+  quota?: (input: { org: string; person: string; refresh: boolean }) => Promise<UnifiedUsageResponse["quota"]>
   pricing: UsagePricing
   telemetry?: UsageTelemetry
 }) {
   const app = new Hono()
+  const quotas = quotaAnswers()
   // A signed desktop draws its Usage view from its own sidecar, which holds no
   // account credential; Electron main fetches the account's cloud turns here
   // and the renderer hands them to the sidecar with the usage request.
@@ -564,20 +552,26 @@ export function UsageRoutes(input: {
       }
       const { since, until, timeZone, group, metric, requestedLimit, view } = parsed.value
       if (view === "quota") {
+        const refresh = quotas.consumeRefreshNonce(c.req.query("refresh_nonce"))
+        if (refresh === undefined) return c.json({ error: "invalid_refresh_nonce" }, 400)
         const series = usageSeriesFromFacts({ facts: [], since, until, timeZone })
+        const readQuota = input.quota
+        const quota: UnifiedUsageResponse["quota"] = readQuota
+          ? await quotas.read(`${identity.org_id} ${identity.user_id}`, () => readQuota({ org: identity.org_id, person: identity.user_id, refresh }))
+          : { status: "unavailable" }
         captureUsage(input.telemetry, {
           deployment: "hosted",
           rangeDays: Math.ceil((until - since) / 86_400_000),
           latencyMs: Date.now() - startedAt,
           claxedoStatus: "unavailable",
-          quotaStatus: "unavailable",
+          quotaStatus: quota.status,
           pricedTokens: 0,
           unpricedTokens: 0,
         })
         return c.json({
           version: 1 as const,
           range: { since, until, timeZone },
-          quota: { status: "unavailable" as const },
+          quota,
           claxedo: {
             ...series,
             cost: emptyCost(),
@@ -821,24 +815,7 @@ export function LocalUsageRoutes(input: {
   telemetry?: UsageTelemetry
 }) {
   const app = new Hono()
-  const quotaCache = new Map<string, UnifiedUsageResponse["quota"]>()
-  const consumedRefreshNonces = new Set<number>()
-  const deadline = <T>(promise: Promise<T>, label: string, timeoutMs = 8_000) =>
-    withTimeout(promise, timeoutMs, () => new Error(`${label} timed out`))
-  const rememberQuota = (key: string, value: UnifiedUsageResponse["quota"]) => {
-    quotaCache.delete(key)
-    quotaCache.set(key, value)
-    while (quotaCache.size > 8) quotaCache.delete(quotaCache.keys().next().value!)
-  }
-  const consumeRefreshNonce = (raw: string | undefined) => {
-    if (raw === undefined) return false
-    const nonce = Number(raw)
-    if (!Number.isSafeInteger(nonce) || nonce <= 0) return undefined
-    if (consumedRefreshNonces.has(nonce)) return false
-    consumedRefreshNonces.add(nonce)
-    while (consumedRefreshNonces.size > 64) consumedRefreshNonces.delete(consumedRefreshNonces.values().next().value!)
-    return true
-  }
+  const quotas = quotaAnswers()
   // Machine scope — stored quota, facts no producer owns — belongs to the
   // machine's operator. A signed member is not one just for reaching the
   // route; when the composition names no predicate, only a bearer-less request
@@ -853,7 +830,7 @@ export function LocalUsageRoutes(input: {
     if (parsed.error) return c.json({ error: parsed.error }, 400)
     const { since, until, timeZone, group, metric, requestedLimit, view } = parsed.value
     const filters = filtersFromQuery((name) => c.req.query(name))
-    const refresh = consumeRefreshNonce(c.req.query("refresh_nonce"))
+    const refresh = quotas.consumeRefreshNonce(c.req.query("refresh_nonce"))
     if (refresh === undefined) return c.json({ error: "invalid_refresh_nonce" }, 400)
     let operator: boolean
     try {
@@ -868,28 +845,11 @@ export function LocalUsageRoutes(input: {
       // machine's accounts, which is exactly what `operator_required` exists
       // to refuse.
       if (!operator) return operatorRequired(c)
-      // The last good plans stand when a read fails: the figures a user is
-      // looking at did not stop being true because a refresh could not reach
-      // a vendor, and blanking every card is how Refresh came to lose the
-      // whole view.
-      //
       // Held per bearer, because the quota reader resolves its own tenant from
-      // the request: one principal's plans must never be drawn for another.
-      const quotaKey = c.req.header("authorization") ?? ""
-      const quota: UnifiedUsageResponse["quota"] = input.quota
-        ? await deadline(input.quota({ request: c.req.raw, refresh }), "quota read")
-            .then((answer) => {
-              // The plans are what a later failed read stands in with; the
-              // spacing of the refresh that produced them expires on its own
-              // and would date a held answer as if it had just been throttled.
-              if (answer.snapshot) rememberQuota(quotaKey, { status: answer.status, snapshot: answer.snapshot })
-              return answer
-            })
-            .catch((error: unknown) => {
-              const message = error instanceof Error ? error.message : String(error)
-              const held = quotaCache.get(quotaKey)
-              return held ? { ...held, error: message } : { status: "unavailable" as const, error: message }
-            })
+      // the request.
+      const readQuota = input.quota
+      const quota: UnifiedUsageResponse["quota"] = readQuota
+        ? await quotas.read(c.req.header("authorization") ?? "", () => readQuota({ request: c.req.raw, refresh }))
         : { status: "unavailable" }
       const series = usageSeriesFromFacts({ facts: [], since, until, timeZone })
       const response: UnifiedUsageResponse = {
