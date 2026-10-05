@@ -14,6 +14,8 @@ export async function marketplacePanel(stack: Stack, app: Page, phone: boolean, 
   const panel = app.getByRole("complementary", { name: `${builtIn.manifest.name} details`, exact: true })
   await expect(panel).toBeVisible()
   await expect(panel.getByRole("button", { name: "Details", exact: true })).toHaveCount(1)
+  await expect(panel.getByText(/^Every project on .+/), "a signed-out reader's plugins apply on the serving machine, not to an account").toBeVisible()
+  await expect(panel.getByText("Every project in your account", { exact: true })).toHaveCount(0)
   await expect(panel.getByRole("button", { name: "Add workspace tab" })).toHaveCount(0)
   await expect(panel.getByRole("button", { name: /Open (Files|Changes)/ })).toHaveCount(0)
   await expect(panel.getByText("Select a workspace to use this panel.")).toHaveCount(0)

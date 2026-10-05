@@ -3,6 +3,7 @@ import { useTranslator } from "@/i18n"
 import type { PluginCandidate, PluginHarness } from "@/server"
 import { marketplaceDictionary, type MarketplaceKey } from "../i18n"
 import { useHarnessLabel } from "./harness-label"
+import { useProjectScopeText } from "./project-scope"
 
 export type HarnessRow = {
   readonly harnessId: PluginHarness
@@ -44,6 +45,7 @@ function Environment(props: { readonly title: string; readonly detail: string })
 
 export function InstallPlacement(): JSX.Element {
   const t = useTranslator(marketplaceDictionary)
+  const scope = useProjectScopeText()
   return (
     <>
       <section
@@ -65,7 +67,7 @@ export function InstallPlacement(): JSX.Element {
         aria-label={t("marketplace.install.projects")}
       >
         <h4 class="text-13-medium text-text-strong">{t("marketplace.install.projects")}</h4>
-        <p class="text-12-regular text-text-weak">{t("marketplace.install.everyProject")}</p>
+        <p class="text-12-regular text-text-weak">{scope("install")}</p>
       </section>
     </>
   )

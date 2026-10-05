@@ -5,11 +5,13 @@ import { marketplaceDictionary } from "../i18n"
 import { activationSummary, installedHarnesses } from "../model"
 import { CHIP } from "./chrome"
 import { useHarnessLabel } from "./harness-label"
+import { useProjectScopeText } from "./project-scope"
 
 export function PluginFacts(props: { readonly plugin: PluginCandidate }): JSX.Element {
   const t = useTranslator(marketplaceDictionary)
   const label = useHarnessLabel()
   const server = useServer()
+  const scope = useProjectScopeText()
   const status = () => {
     const summary = activationSummary(props.plugin)
     const state = t(summary.state.key)
@@ -32,7 +34,7 @@ export function PluginFacts(props: { readonly plugin: PluginCandidate }): JSX.El
       </dd>
 
       <dt class="text-text-weaker">{t("marketplace.facts.projects")}</dt>
-      <dd class="text-text-base">{t("marketplace.facts.everyProject")}</dd>
+      <dd class="text-text-base">{scope("facts")}</dd>
 
       <Show when={installedHarnesses(props.plugin).length > 0}>
         <dt class="text-text-weaker">{t("marketplace.facts.harnesses")}</dt>
