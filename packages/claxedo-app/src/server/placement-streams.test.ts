@@ -209,43 +209,50 @@ test("a cloud session's stream opens only once its host is known, on the host th
   streams.close()
 })
 
-test("a session whose stream opened against its workspace moves to its own host once the host becomes known", async () => {
+function hostLearningTransport(seen: string[]) {
+  const opened: { route: RuntimeRoute; signal: AbortSignal }[] = []
+  let announce: SessionHostListener | undefined
+  const transport = {
+    serverUrl: "https://claxedo.test",
+    loopback: false,
+    json: async () => ({
+      deployment: { serverKind: "daemon", issuesSessions: true },
+      host: { name: "Ada's MacBook" },
+      project: [{ id: "prj_pi", worktree: "ws_cloud", workspaces: { ws_cloud: { id: "ws_cloud", backing: "cloud-vm", workspace_name: "pi", reachable: true, directory: "workspace:ws_cloud" } } }],
+    }),
+    findSessionHost: async () => undefined,
+    onSessionHost: (listener: SessionHostListener) => {
+      announce = listener
+      return () => undefined
+    },
+    runtime: async (route: RuntimeRoute, _path: string, init: { signal: AbortSignal }) => {
+      opened.push({ route, signal: init.signal })
+      seen.push(`opened ${route.sessionHost?.sessionId ?? "workspace"}`)
+      return openBody()
+    },
+  } as unknown as Transport
+  return { transport, opened, announce: (sessionHost: string) => announce?.("ws_cloud", "ses_pi", sessionHost) }
+}
+
+test("a session whose stream opened against its workspace moves to its own host once the host becomes known, and the reader re-reads what the move missed", async () => {
   await createRoot(async (dispose) => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const serverUrl = "https://claxedo.test"
-    const opened: { route: RuntimeRoute; signal: AbortSignal }[] = []
-    let announce: SessionHostListener | undefined
-    const transport = {
-      serverUrl,
-      loopback: false,
-      json: async () => ({
-        deployment: { serverKind: "daemon", issuesSessions: true },
-        host: { name: "Ada's MacBook" },
-        project: [{ id: "prj_pi", worktree: "ws_cloud", workspaces: { ws_cloud: { id: "ws_cloud", backing: "cloud-vm", workspace_name: "pi", reachable: true, directory: "workspace:ws_cloud" } } }],
-      }),
-      findSessionHost: async () => undefined,
-      onSessionHost: (listener: SessionHostListener) => {
-        announce = listener
-        return () => undefined
-      },
-      runtime: async (route: RuntimeRoute, _path: string, init: { signal: AbortSignal }) => {
-        opened.push({ route, signal: init.signal })
-        return openBody()
-      },
-    } as unknown as Transport
+    const seen: string[] = []
+    const { transport, opened, announce } = hostLearningTransport(seen)
     const workspaces = createWorkspaces(transport, queryClient)
-    const streams = createPlacementStreams({ transport, workspaces, queryClient, onFrame: () => undefined, onGap: () => undefined })
+    const streams = createPlacementStreams({ transport, workspaces, queryClient, onFrame: () => undefined, onGap: () => seen.push("re-read") })
     const session = { projectId: projectId("prj_pi"), placementId: placementId("ws_cloud"), sessionId: sessionId("ses_pi") }
     const detach = streams.attach(session)
     try {
       await workspaces.load()
       await settle()
       expect(opened.map((entry) => entry.route.sessionHost)).toEqual([undefined])
-      announce?.("ws_cloud", "ses_pi", "root_pi")
+      announce("root_pi")
       await settle()
       expect(opened.map((entry) => entry.route.sessionHost?.sessionId)).toEqual([undefined, "root_pi"])
       expect(opened[0]?.signal.aborted).toBe(true)
       expect(streams.streams(session)).toBe(true)
+      expect(seen).toEqual(["opened workspace", "opened root_pi", "re-read"])
     } finally { detach(); streams.close(); workspaces.dispose(); queryClient.clear(); dispose() }
   })
 })

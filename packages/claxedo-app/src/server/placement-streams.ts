@@ -61,12 +61,17 @@ function refreshCatalog(input: StreamsInput) {
   void input.workspaces.refresh().catch((error) => console.error("The placement catalog could not be refreshed after its event stream ended", error))
 }
 
-function openRuntimeStream(input: StreamsInput, route: RuntimeRoute, path: string): OpenStream {
+function openRuntimeStream(input: StreamsInput, route: RuntimeRoute, path: string, rerouted: boolean): OpenStream {
+  let missed = rerouted
   return { route: routeKey(route), stream: openEventStream({
     open: ({ headers, signal }) => input.transport.runtime(route, path, { headers, signal }),
     onFrame: (frame) => input.onFrame(frame && typeof frame === "object" ? { ...frame, workspaceId: route.workspaceId } : frame),
     onGap: input.onGap,
     onState: (connection) => {
+      if (missed && connection.kind === "connected") {
+        missed = false
+        input.onGap()
+      }
       if (!route.sharedSession && connection.kind === "reconnecting" && connection.attempt === 1) refreshCatalog(input)
     },
     onRefused: () => {
@@ -76,14 +81,16 @@ function openRuntimeStream(input: StreamsInput, route: RuntimeRoute, path: strin
   }) }
 }
 
-function reconcileKeyed<K, W extends { readonly route: RuntimeRoute }>(open: Map<K, OpenStream>, want: Map<K, W>, start: (wanted: W) => OpenStream) {
+function reconcileKeyed<K, W extends { readonly route: RuntimeRoute }>(open: Map<K, OpenStream>, want: Map<K, W>, start: (wanted: W, rerouted: boolean) => OpenStream) {
+  const rerouted = new Set<K>()
   for (const [key, current] of open) {
     const route = want.get(key)?.route
     if (route && routeKey(route) === current.route) continue
+    if (route) rerouted.add(key)
     current.stream.close()
     open.delete(key)
   }
-  for (const [key, wanted] of want) if (!open.has(key)) open.set(key, start(wanted))
+  for (const [key, wanted] of want) if (!open.has(key)) open.set(key, start(wanted, rerouted.has(key)))
 }
 
 function watchedWorkspaces(state: StreamsState) {
@@ -95,9 +102,9 @@ function watchedWorkspaces(state: StreamsState) {
 
 function reconcileStreams(state: StreamsState) {
   const { input } = state
-  reconcileKeyed(state.sessions, wanted(state), ({ session, route }) =>
-    openRuntimeStream(input, route, `${RUNTIME_EVENTS_PATH}?sessionID=${encodeURIComponent(session)}`))
-  reconcileKeyed(state.workspaces, watchedWorkspaces(state), ({ route }) => openRuntimeStream(input, route, `${RUNTIME_EVENTS_PATH}?sessions=none`))
+  reconcileKeyed(state.sessions, wanted(state), ({ session, route }, rerouted) =>
+    openRuntimeStream(input, route, `${RUNTIME_EVENTS_PATH}?sessionID=${encodeURIComponent(session)}`, rerouted))
+  reconcileKeyed(state.workspaces, watchedWorkspaces(state), ({ route }, rerouted) => openRuntimeStream(input, route, `${RUNTIME_EVENTS_PATH}?sessions=none`, rerouted))
 }
 
 function retain<K>(counts: Map<K, number>, key: K): () => void {
