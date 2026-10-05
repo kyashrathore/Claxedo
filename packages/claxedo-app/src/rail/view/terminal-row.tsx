@@ -19,11 +19,14 @@ export function RailTerminalRow(props: { readonly row: TerminalItem; readonly ac
   const t = useTranslator(railDictionary)
   const terminals = useTerminals()
   const engagement = createHoverEngagement()
+  const server = useServer()
   const status = () => terminalNavigationStatus(props.row)
-  const title = () => {
+  const meta = () => {
     const current = status()
-    return current === "idle" ? props.row.title : `${props.row.title} · ${t(TITLE_SUFFIX[current])}`
+    const where = server.placements.byId(props.row.placementId)?.label
+    return [where, current === "idle" ? undefined : t(TITLE_SUFFIX[current])].filter(Boolean).join(" · ")
   }
+  const title = () => [props.row.title, meta()].filter(Boolean).join(" · ")
   return (
     <NavigationRow
       class="group/terminal"
@@ -47,11 +50,9 @@ export function RailTerminalRow(props: { readonly row: TerminalItem; readonly ac
           <NavigationStatusMark status={status()} />
         </Show>
       </NavigationRowGlyph>
-      <span
-        class="relative z-[1] pointer-events-none font-mono text-sm leading-tight truncate flex-1 min-w-0"
-        classList={{ "text-text-strong font-semibold": props.active, "text-text-weak": !props.active }}
-      >
-        {title()}
+      <span class="relative z-[1] pointer-events-none flex flex-col gap-0.5 flex-1 min-w-0 overflow-hidden py-1.5">
+        <span class="ui-session-title leading-tight truncate" classList={{ "text-text-strong": props.active }}>{props.row.title}</span>
+        <Show when={meta()}>{(text) => <span class="ui-session-navigation-meta truncate text-xs leading-4">{text()}</span>}</Show>
       </span>
       <Tooltip placement="top" value={t("rail.terminal.close")}>
         <button

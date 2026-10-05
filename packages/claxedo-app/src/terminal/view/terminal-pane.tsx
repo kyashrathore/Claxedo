@@ -96,7 +96,7 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
       onFocusIn={() => setFocused(true)}
       onFocusOut={() => setFocused(false)}
     >
-      <div class="relative min-h-0 flex-1">
+      <div class="relative min-h-0 flex-1 pl-3 pt-1">
         <div
           ref={host}
           data-testid="terminal-host"

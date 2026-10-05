@@ -37,7 +37,7 @@ export function DialogNewCloudWorkspace(props: { readonly cloud: CloudWorkspaces
       onCancel={() => dialog.close()}
     >
       <TextField autofocus label={t("projects.where.new.name")} placeholder="checkout-flow" value={name()} onChange={setName} />
-      <TextField label={t("projects.where.new.branch")} description={t("projects.where.new.branch.description")} placeholder="main" spellcheck={false} value={branch()} onChange={setBranch} />
+      <TextField label={t("projects.where.new.branch")} description={t("projects.where.new.branch.description")} spellcheck={false} value={branch()} onChange={setBranch} />
     </FormDialog>
   )
 }
