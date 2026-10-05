@@ -6,6 +6,7 @@ import { SINGLE_TENANT_ORG } from "../credentials/partition"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "../platform/auth/auth"
 import { requireAuthority, type ProjectRole, type WorkspaceAuthority } from "../platform/auth/authority"
 import { asProjectId } from "../platform/auth/branded-id"
+import { errorBody } from "../platform/http/http"
 import { ProjectEnvironmentError, projectEnvironment } from "./environment"
 
 export type ProjectEnvironmentRouteOptions = {
@@ -19,10 +20,6 @@ export type ProjectEnvironmentRouteOptions = {
 const setBody = z.object({ value: z.string().min(1) }).strict()
 
 const EDITORS: readonly ProjectRole[] = ["admin", "owner"]
-
-function apiError(code: string, message: string) {
-  return { error: { code, message } }
-}
 
 /**
  * `/api/claxedo/projects/:id/environment`: the names of a project's variables
@@ -43,12 +40,12 @@ export function ProjectEnvironmentRoutes(options: ProjectEnvironmentRouteOptions
     editable: target.editable,
   })
   const denied = (c: Context, action: "read" | "admin") =>
-    c.json(apiError("project_access_denied", action === "read" ? "No such project" : "Only the project's admins and owners can change its environment"), action === "read" ? 404 : 403)
+    c.json(errorBody("project_access_denied", action === "read" ? "No such project" : "Only the project's admins and owners can change its environment"), action === "read" ? 404 : 403)
 
   return new Hono()
     .onError((error, c) => {
       if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
-      if (error instanceof ProjectEnvironmentError) return c.json(apiError(error.code, error.message), 400)
+      if (error instanceof ProjectEnvironmentError) return c.json(errorBody(error.code, error.message), 400)
       throw error
     })
     .get("/:id/environment", async (c) => {
@@ -59,7 +56,7 @@ export function ProjectEnvironmentRoutes(options: ProjectEnvironmentRouteOptions
       const target = await reach(c, "admin")
       if (!target) return denied(c, "admin")
       const body = setBody.safeParse(await c.req.json().catch(() => undefined))
-      if (!body.success) return c.json(apiError("project_env_invalid", "a non-empty value is required"), 400)
+      if (!body.success) return c.json(errorBody("project_env_invalid", "a non-empty value is required"), 400)
       await projectEnvironment(options.credentials(target.org), target.org).set(target.projectId, routeParam(c, "name"), body.data.value)
       return c.json(await listing(target))
     })
