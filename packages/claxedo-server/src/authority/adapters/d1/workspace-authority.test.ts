@@ -753,6 +753,23 @@ describe("workspace creation admission", () => {
       .resolves.toBeUndefined()
   })
 
+  test("a signed-in owner is resolved by reads alone; only the first sign-in writes the bootstrap", async () => {
+    const product = { kind: "user-deployed" as const, organization: { id: "org_house", name: "House" }, ownerIdentity: identity("alice") }
+    const { database } = await setup(product)
+    let writes = 0
+    const counted = new Proxy(database, {
+      get: (target, key) => key === "batch"
+        ? async (statements: Parameters<typeof target.batch>[0]) => (writes += 1, await target.batch(statements))
+        : Reflect.get(target, key, target),
+    })
+    const authority = new D1WorkspaceAuthority(counted, { deploymentId: "deployment-a", product })
+    const first = await authority.ensureApplicationIdentity(identity("alice"))
+    expect(writes).toBe(1)
+    expect(await authority.ensureApplicationIdentity(identity("alice"))).toEqual(first)
+    expect(await authority.ensureApplicationIdentity(identity("alice"))).toEqual(first)
+    expect(writes).toBe(1)
+  })
+
   test("a user-deployed product admits creation only in its own organization", async () => {
     const { authority } = await setup({
       kind: "user-deployed",

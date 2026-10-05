@@ -211,6 +211,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     if (existing.state === "suspended" || existing.state === "deleted") return existing
 
     const org = this.options.product.organization
+    if (existing.state === "active" && await may(this.database, existing, "member", { kind: "org", orgId: org.id })) return existing
     await this.database.batch([
       this.insertIdentity(identity, candidate.userId, now),
       this.insertMappedUser(identity, candidate.userId, now),

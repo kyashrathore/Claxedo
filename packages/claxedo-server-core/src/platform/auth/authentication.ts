@@ -529,33 +529,42 @@ export function createControlPlaneAuthenticationAdapter(input: {
     return { identity, session }
   }
 
+  const authenticated = new WeakMap<Request, Promise<ControlPlanePrincipal>>()
+  const authenticate = async (request: Request): Promise<ControlPlanePrincipal> => {
+    const { identity, session } = await verify(request)
+
+    let resolution: ApplicationIdentityResolution
+    try {
+      resolution = await input.resolveIdentity(identity, request)
+    } catch {
+      throw new AuthenticationError(503, "auth_unavailable", "Application identity mapping is unavailable")
+    }
+    const mapped = resolveApplicationIdentity(resolution)
+    return {
+      userId: mapped.userId,
+      actorId: mapped.actorId,
+      actorKind: "human",
+      deploymentId: input.descriptor.deploymentId,
+      sessionId: session.sessionId,
+      authenticatedAt: session.authenticatedAt,
+      methods: session.methods,
+      assurance: session.assurance ?? "insufficient",
+      client: session.client,
+      identity,
+    }
+  }
+
   return {
     descriptor: input.descriptor,
     async verifyIdentity(request) {
       return (await verify(request)).identity
     },
-    async authenticate(request) {
-      const { identity, session } = await verify(request)
-
-      let resolution: ApplicationIdentityResolution
-      try {
-        resolution = await input.resolveIdentity(identity, request)
-      } catch {
-        throw new AuthenticationError(503, "auth_unavailable", "Application identity mapping is unavailable")
-      }
-      const mapped = resolveApplicationIdentity(resolution)
-      return {
-        userId: mapped.userId,
-        actorId: mapped.actorId,
-        actorKind: "human",
-        deploymentId: input.descriptor.deploymentId,
-        sessionId: session.sessionId,
-        authenticatedAt: session.authenticatedAt,
-        methods: session.methods,
-        assurance: session.assurance ?? "insufficient",
-        client: session.client,
-        identity,
-      }
+    authenticate(request) {
+      const known = authenticated.get(request)
+      if (known) return known
+      const pending = authenticate(request)
+      authenticated.set(request, pending)
+      return pending
     },
   }
 }

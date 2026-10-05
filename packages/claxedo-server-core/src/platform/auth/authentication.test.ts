@@ -162,6 +162,21 @@ describe("provider-neutral control-plane authentication", () => {
     )
   })
 
+  test("one request is authenticated once however many of its routes ask, and the next request again", async () => {
+    const verify = vi.fn(async () => browserSession())
+    const resolveIdentity = vi.fn(activeIdentity)
+    const selected = adapter({ verify, resolveIdentity })
+    const request = () => new Request("https://api.example.test", { headers: { cookie: "better-auth.session_token=opaque" } })
+    const first = request()
+    const [one, two] = await Promise.all([selected.authenticate(first), selected.authenticate(first)])
+    expect(two).toBe(one)
+    await selected.authenticate(first)
+    expect(verify).toHaveBeenCalledTimes(1)
+    expect(resolveIdentity).toHaveBeenCalledTimes(1)
+    await selected.authenticate(request())
+    expect(verify).toHaveBeenCalledTimes(2)
+  })
+
   test("verifies an enrollment identity without creating or resolving an application account", async () => {
     const verify = vi.fn(async () => browserSession())
     const resolveIdentity = vi.fn(activeIdentity)
