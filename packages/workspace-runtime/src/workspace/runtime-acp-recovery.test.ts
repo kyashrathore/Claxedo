@@ -46,27 +46,19 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
         const inspected = await (await active.request("/session/saved/recovery")).json()
         expect(inspected.target).toMatchObject({ scope: "turn", sessionId: "saved" })
 
-        const previousTimeout = process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
-        let operation: Record<string, any>
-        try {
-          // The peer takes the cancel notification but holds its prompt open,
-          // so the cancellation cannot settle inside this window.
-          process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "50"
-          const stopped = await active.request("/session/saved/recovery", "POST", {
-            requestId: `req-${Date.now()}`,
-            action: "cancel_turn",
-            target: inspected.target,
-            scopeRevision: "1",
-            attempt: 1,
-          })
-          expect(stopped.status).toBe(200)
-          const outcome = await stopped.json()
-          expect(outcome.kind).toBe("operation")
-          operation = outcome.operation
-        } finally {
-          if (previousTimeout === undefined) delete process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
-          else process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = previousTimeout
-        }
+        // The peer takes the cancel notification but holds its prompt open, so
+        // this answers only once the ACP transport's 5 s cancel deadline passes.
+        const stopped = await active.request("/session/saved/recovery", "POST", {
+          requestId: `req-${Date.now()}`,
+          action: "cancel_turn",
+          target: inspected.target,
+          scopeRevision: "1",
+          attempt: 1,
+        })
+        expect(stopped.status).toBe(200)
+        const outcome = await stopped.json()
+        expect(outcome.kind).toBe("operation")
+        const operation: Record<string, any> = outcome.operation
         // The prompt is still open, so the operation does not succeed and the
         // turn reads as still running. A "cancelled" answer here would be the
         // exact lie this contract exists to prevent.
@@ -149,5 +141,5 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
       if (recovery === "resume") expect(prompts[1].params.sessionId).toBe(prompts[0].params.sessionId)
       expect(new Set(log.map(row => row.pid)).size).toBe(2)
     } finally { await active.host.dispose(); await rm(directory, { recursive: true, force: true }) }
-  })
+  }, recovery === "cancel" ? 15_000 : undefined)
 }

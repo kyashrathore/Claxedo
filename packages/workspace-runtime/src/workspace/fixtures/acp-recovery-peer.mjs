@@ -4,7 +4,11 @@ import { appendFileSync, existsSync } from "node:fs"
 const [logFile, recovery] = process.argv.slice(2)
 let pendingPrompt
 const send = body => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...body }) + "\n")
-createInterface({ input: process.stdin }).on("line", line => {
+const input = createInterface({ input: process.stdin })
+// The cancel release poll keeps the event loop alive, so without this a peer
+// whose host died before writing the release file never exits.
+input.on("close", () => process.exit(0))
+input.on("line", line => {
   const message = JSON.parse(line)
   appendFileSync(logFile, JSON.stringify({ pid: process.pid, ...message }) + "\n")
   if (message.method === "initialize") {
