@@ -101,3 +101,15 @@ test("accounts: in the cloud an account no sandbox can be delivered is never the
   const chatgpt = account("chatgpt", "codex-app-server", { kind: "oauth_token", active: true, activatedAt: 2, delivery: { local: true, cloud: false } })
   expect(selectedAccountKey(codex, snapshot({ cloudOnly: true, stored: [key, chatgpt], effective: [key, chatgpt] }))).toBe("key")
 })
+
+test("accounts: an account the org's cloud provider cannot hand a harness says where it still works, through Pi when Pi spends it", () => {
+  const brokered = { local: true, cloud: true, cloudHarness: true }
+  const refused = { local: true, cloud: true, cloudHarness: false }
+  const [claudeKey] = harnessAccounts(claude, [account("a", "claude-sdk", { delivery: refused })])
+  expect(storedAccountWords(words, claudeKey, undefined).cloudNote).toBe("Works on your machines and through Pi in cloud workspaces")
+  const cursorHarness = harnesses.find((harness) => harness.id === "cursor")!
+  const [cursorKey] = harnessAccounts(cursorHarness, [account("b", "cursor-sdk", { delivery: refused })])
+  expect(storedAccountWords(words, cursorKey, undefined).cloudNote).toBe("Works on your machines; this cloud provider can't run it")
+  const [usable] = harnessAccounts(claude, [account("c", "claude-sdk", { delivery: brokered })])
+  expect(storedAccountWords(words, usable, undefined).cloudNote).toBeUndefined()
+})

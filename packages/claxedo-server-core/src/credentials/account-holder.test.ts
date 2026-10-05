@@ -43,9 +43,9 @@ describe("the one account rule", () => {
       { owner: "bob", providerId: "openai", projection: own("bob") },
       { owner: null, providerId: "openai", projection: { unavailable: true, reason: "revoked" } as never },
     ])
-    expect(() => session(revoked, "bob")).toThrow("revoked")
+    expect(() => session(revoked, "bob")).toThrow(expect.objectContaining({ detail: { reason: "revoked" } }))
     const missing = snapshot({ bob: { openai: "org" } }, [{ owner: "bob", providerId: "openai", projection: own("bob") }])
-    expect(() => session(missing, "bob")).toThrow(ORG_ACCOUNT_UNAVAILABLE)
+    expect(() => session(missing, "bob")).toThrow(expect.objectContaining({ detail: { reason: ORG_ACCOUNT_UNAVAILABLE } }))
   })
 
   test("a revoked own account refuses rather than falling back to the org's", () => {
@@ -53,7 +53,7 @@ describe("the one account rule", () => {
       { owner: "bob", providerId: "openai", projection: { unavailable: true, reason: "revoked" } as never },
       { owner: null, providerId: "openai", projection: ORG },
     ])
-    expect(() => session(answer, "bob")).toThrow("revoked")
+    expect(() => session(answer, "bob")).toThrow(expect.objectContaining({ detail: { reason: "revoked" } }))
   })
 
   test("the machine owner's own login is never beaten by a org account they did not choose", () => {

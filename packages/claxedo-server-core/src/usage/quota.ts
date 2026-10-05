@@ -195,7 +195,7 @@ async function composeSnapshot(
       inUse: account.ids.some((id) => inUse.has(id)),
       // Every row of one account is the same login stored per binding, so the
       // account reaches a cloud sandbox exactly where any of them does.
-      deliverable: account.rows.map(credentialReach).find((reach) => reach.cloud) ?? credentialReach(account.first),
+      deliverable: account.rows.map((row) => credentialReach(row)).find((reach) => reach.cloud) ?? credentialReach(account.first),
       ...(health == null ? {} : { health }),
       windows: read?.usage_windows ?? [],
       ...(read?.usage_at == null ? {} : { usageAt: read.usage_at }),

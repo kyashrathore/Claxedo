@@ -58,6 +58,15 @@ function AccountLabel(props: { readonly account: AccountWords; readonly onMachin
   )
 }
 
+function AccountDescription(props: { readonly account: AccountWords }) {
+  return (
+    <span class="flex flex-col">
+      <Show when={props.account.detail}>{(detail) => <span class="text-13-regular text-text-weak">{detail()}</span>}</Show>
+      <Show when={props.account.cloudNote}>{(note) => <span class="text-12-regular text-text-weak">{note()}</span>}</Show>
+    </span>
+  )
+}
+
 function CloudConsentSwitch(props: { readonly account: AccountWords; readonly consent: CloudConsent; readonly accounts: Accounts }) {
   const t = useAccountsText()
   const error = () => props.accounts.scopeErrors()[props.account.key]
@@ -97,7 +106,7 @@ function AccountItem(props: { readonly account: AccountWords; readonly row: Harn
           data-invalid={account().refused ? "" : undefined}
           title={account().identity}
           label={<AccountLabel account={account()} onMachine={accounts().onMachine()} machineName={accounts().machineName()} />}
-          description={account().detail === undefined ? undefined : <span class="text-13-regular text-text-weak">{account().detail}</span>}
+          description={account().detail === undefined && account().cloudNote === undefined ? undefined : <AccountDescription account={account()} />}
         />
         <span class="flex shrink-0 items-center justify-end gap-2" classList={{ "w-full": confirming() }}>
           <Show when={!confirming() && account().checkedAt}>

@@ -61,6 +61,8 @@ export default {
   "settings.providers.agents.loading": "Loading accounts…",
   "settings.providers.agents.empty": "No {{harness}} account yet",
   "settings.providers.agents.reachLocalCloudNote": "Runs in sessions on your machines and in cloud workspaces.",
+  "settings.providers.agents.cloudThroughPi": "Works on your machines and through Pi in cloud workspaces",
+  "settings.providers.agents.cloudMachinesOnly": "Works on your machines; this cloud provider can't run it",
   "settings.providers.agents.reachLocalOnlyNote": "Only sessions on the machine it's signed in on can use it. Cloud workspaces need an account added here.",
   "settings.providers.agents.machineStrands": "{{name}} is set to run on a stored key this login can't replace",
   "settings.providers.agents.reconnectAccount": "Reconnect",

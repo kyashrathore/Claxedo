@@ -113,6 +113,12 @@ export async function storeOwnerKey(signed: SignedStack, providerId: string, sec
   await asOwner(signed)("PUT", "/api/claxedo/credentials", { provider_id: providerId, kind: "api_key", source: "managed", label: providerId, secret })
 }
 
+export async function chooseOrgSandboxProvider(signed: SignedStack, driver: string, fields: Record<string, string>) {
+  const call = asOwner(signed)
+  await call("PUT", "/api/claxedo/credentials", { provider_id: driver, kind: "sandbox_driver", secret: JSON.stringify(fields) })
+  await call("PUT", "/api/claxedo/credentials/sandbox-drivers/default", { driver })
+}
+
 export async function listedSessions(signed: SignedStack, workspace: CloudWorkspace) {
   const listed = await asOwner(signed)("GET", `/api/control/session-list?scope=workspace&workspaceId=${encodeURIComponent(workspace.id)}`)
   return (JSON.parse(listed.body) as { items: Array<{ sessionId: string; sessionHostRoot?: string }> }).items

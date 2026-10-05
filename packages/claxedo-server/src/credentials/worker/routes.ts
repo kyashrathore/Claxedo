@@ -6,7 +6,7 @@ import { createProviderAuthService } from "@claxedo/server-core/credentials/prov
 import { ControlPlaneAuthError, controlPlaneAuthContext, type ControlPlaneAuthConfig, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import type { SandboxDriverKeys, SandboxKeyRemoval } from "@claxedo/server-core/credentials/routes/sandbox-driver-keys"
-import type { SandboxDriverID, SandboxProvisionerID } from "@claxedo/sandbox-contract"
+import type { SandboxDriverID, SandboxProvisionerID, SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import type { ControlPlaneCredentials } from "../../authority/services"
 import { orgRoutedCredentials } from "./org-routed"
 
@@ -31,6 +31,7 @@ export type HostedSandboxDriverKeys = {
   chosen(orgId: string): Promise<string | undefined>
   choose(auth: SignedControlPlaneAuth, orgId: string, driver: SandboxDriverID | undefined): Promise<void>
   remove(auth: SignedControlPlaneAuth, orgId: string, keyId: string): Promise<SandboxKeyRemoval>
+  brokering(driver: SandboxProvisionerID): SandboxSecretBrokering | undefined
 }
 
 function orgSandboxDriverKeys(keys: HostedSandboxDriverKeys, signed: (request: Request) => Promise<SignedControlPlaneAuth>): SandboxDriverKeys {
@@ -42,6 +43,7 @@ function orgSandboxDriverKeys(keys: HostedSandboxDriverKeys, signed: (request: R
     chosenDriver: ({ org }) => keys.chosen(org),
     chooseDriver: async (request, { org }, driver) => keys.choose(await signed(request), org, driver),
     removeKey: async (request, { org }, keyId) => keys.remove(await signed(request), org, keyId),
+    brokering: (driver) => keys.brokering(driver),
   }
 }
 

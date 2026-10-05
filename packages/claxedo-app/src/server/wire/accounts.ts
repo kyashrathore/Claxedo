@@ -24,7 +24,7 @@ function deliveryFromWire(value: unknown): AccountDelivery | undefined {
   const row = asRecord(value)
   if (typeof row?.cloud !== "boolean") return undefined
   const reason = asString(row.reason)
-  return { local: row.local !== false, cloud: row.cloud, ...(reason ? { reason } : {}) }
+  return { local: row.local !== false, cloud: row.cloud, ...(reason ? { reason } : {}), ...(typeof row.cloudHarness === "boolean" ? { cloudHarness: row.cloudHarness } : {}) }
 }
 
 function definedFields<T extends object>(fields: T): Partial<T> {

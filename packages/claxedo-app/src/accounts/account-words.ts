@@ -1,3 +1,4 @@
+import { piProviderSpending } from "@claxedo/agent-runtime-contract"
 import type { QuotaWindow } from "@/usage"
 import type { AccountsKey, AccountsText } from "./i18n"
 import {
@@ -32,6 +33,7 @@ export type AccountWords = {
   readonly label: string
   readonly detail?: string
   readonly note?: string
+  readonly cloudNote?: string
   readonly alert?: string
   readonly checkedAt?: number
   readonly refused: boolean
@@ -67,6 +69,11 @@ function verdictWords(t: Words["t"], live: LiveCheck | undefined) {
   return [t(VERDICT_KEY[live.verdict]), ...(live.reason === undefined ? [] : [live.reason])]
 }
 
+function cloudNoteOf(t: Words["t"], row: HarnessAccount) {
+  if (row.delivery?.cloudHarness !== false) return {}
+  return { cloudNote: t(piProviderSpending(row.providerId) ? "settings.providers.agents.cloudThroughPi" : "settings.providers.agents.cloudMachinesOnly") }
+}
+
 function cloudConsentOf(row: HarnessAccount): CloudConsent | undefined {
   if (row.delivery === undefined) return undefined
   return { allowed: row.scope === "shared", partial: row.partialCloudConsent, deliverable: row.delivery.cloud && row.scope !== undefined }
@@ -93,6 +100,7 @@ export function storedAccountWords(words: Words, row: HarnessAccount, live: Live
     refused,
     ...(identity === undefined || identity.readable ? {} : { identity: identity.text }),
     ...(reach === undefined ? {} : { reach }),
+    ...cloudNoteOf(t, row),
     source: "stored",
     ...(cloudConsent === undefined ? {} : { cloudConsent }),
     machine: false,
@@ -129,6 +137,7 @@ export function orgAccountWords(words: Words, harness: Harness, snapshot: Accoun
     ...(check === undefined ? {} : { checkedAt: check.at }),
     refused: check?.verdict !== undefined && isRefusal(check.verdict),
     ...(reach === undefined ? {} : { reach }),
+    ...cloudNoteOf(t, row),
     machine: false,
     disabled: false,
   }

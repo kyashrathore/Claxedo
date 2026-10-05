@@ -1,5 +1,6 @@
 import type { D1Database } from "@cloudflare/workers-types"
-import type { SandboxDriverID, SandboxProvisionerID } from "@claxedo/sandbox-contract"
+import { isSandboxDriverID, type SandboxDriverID, type SandboxProvisionerID, type SandboxSecretBrokering } from "@claxedo/sandbox-contract"
+import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
@@ -12,6 +13,7 @@ export function hostedSandboxDriverKeys(input: {
   authority: Pick<WorkspaceAuthority, "usersMe">
   drivers: readonly SandboxDriverID[]
   managed: SandboxProvisionerID
+  managedBrokering: SandboxSecretBrokering
   now?: () => number
 }): HostedSandboxDriverKeys {
   const store = d1OrgSandboxDriver(input.database, input.now)
@@ -31,5 +33,7 @@ export function hostedSandboxDriverKeys(input: {
       }
     },
     remove: async (auth, orgId, keyId) => await store.remove(await person(auth), orgId, keyId),
+    brokering: (driver) => driver === input.managed ? input.managedBrokering
+      : isSandboxDriverID(driver) ? sandboxDriverCatalog[driver].metadata.secretBrokering : undefined,
   }
 }

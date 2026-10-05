@@ -54,6 +54,7 @@ function app() {
       authority: fixture.authority,
       drivers: ["cloudflare", "boat"],
       managed: "fetch",
+      managedBrokering: "none",
     }),
   })
 }
@@ -114,5 +115,14 @@ describe("organization sandbox provider keys on the hosted plane", () => {
     expect(await (await call("member", `/${row.id}`, "DELETE")).json()).toEqual({ deleted: false })
     expect(await (await call("owner", `/${row.id}`, "DELETE")).json()).toEqual({ deleted: true })
     expect((await listing("owner")).keys.map((key: { provider_id: string }) => key.provider_id)).toEqual(["cloudflare"])
+  })
+
+  test("an account says whether a harness inside a new cloud workspace can spend it, by the driver those workspaces get", async () => {
+    expect((await call("member", "", "PUT", { provider_id: "claude-sdk", kind: "api_key", secret: "sk-ant-member" })).status).toBe(200)
+    const reach = async () => (await (await call("member", "")).json()).credentials.map((row: { deliverable: unknown }) => row.deliverable)
+    expect(await reach()).toEqual([{ local: true, cloud: true, cloudHarness: true }])
+    expect((await call("owner", "", "PUT", boatKey)).status).toBe(200)
+    expect((await call("owner", "/sandbox-drivers/default", "PUT", { driver: "boat" })).status).toBe(200)
+    expect(await reach()).toEqual([{ local: true, cloud: true, cloudHarness: false }])
   })
 })

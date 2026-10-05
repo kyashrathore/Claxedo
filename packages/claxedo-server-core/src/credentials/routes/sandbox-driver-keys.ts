@@ -5,6 +5,7 @@ import {
   sandboxDriverSecret,
   type SandboxDriverID,
   type SandboxProvisionerID,
+  type SandboxSecretBrokering,
 } from "@claxedo/sandbox-contract"
 import { parseJsonRecord } from "@claxedo/server-core/platform/json/index"
 import type { CredentialMetadata, CredentialWrite } from "../types"
@@ -34,6 +35,8 @@ export type SandboxDriverKeys = {
    * stop and destroy need it.
    */
   removeKey?: (request: Request, context: SandboxDriverKeyContext, keyId: string) => Promise<SandboxKeyRemoval>
+  /** Whether a driver keeps a delivered secret out of its sandbox; absent where the host cannot tell. */
+  brokering?: (driver: SandboxProvisionerID) => SandboxSecretBrokering | undefined
 }
 
 function keyOwner(keys: SandboxDriverKeys, context: SandboxDriverKeyContext) {
@@ -78,6 +81,20 @@ export function storedSandboxKeys(keys: SandboxDriverKeys, rows: readonly Creden
   return rows.filter((row) => isSandboxKey(keys, row, context)).sort((left, right) => left.created_at - right.created_at)
 }
 
+async function newWorkspaceDriver(keys: SandboxDriverKeys, rows: readonly CredentialMetadata[], context: SandboxDriverKeyContext) {
+  const keyed = storedSandboxKeys(keys, rows, context).flatMap((row) => {
+    const id = usableSandboxKey(row) ? keyDriver(keys, row.provider_id) : undefined
+    return id ? [id] : []
+  })
+  return effectiveSandboxDriver({ chosen: await keys.chosenDriver(context), keyed, managed: keys.managed })
+}
+
+/** How the driver new cloud workspaces get treats a delivered secret. */
+export async function newWorkspaceBrokering(keys: SandboxDriverKeys, rows: readonly CredentialMetadata[], context: SandboxDriverKeyContext) {
+  const driver = await newWorkspaceDriver(keys, rows, context)
+  return driver ? keys.brokering?.(driver) : undefined
+}
+
 export async function sandboxKeyListing<Row>(
   keys: SandboxDriverKeys,
   rows: readonly CredentialMetadata[],
@@ -85,13 +102,9 @@ export async function sandboxKeyListing<Row>(
   options: { canManage: boolean; redact: (row: CredentialMetadata) => Row },
 ) {
   const stored = storedSandboxKeys(keys, rows, context)
-  const keyed = stored.flatMap((row) => {
-    const id = usableSandboxKey(row) ? keyDriver(keys, row.provider_id) : undefined
-    return id ? [id] : []
-  })
   return {
     drivers: keys.drivers.map((id) => ({ id, label: sandboxDriverLabels[id], fields: sandboxDriverCredentialFields[id] })),
-    default_driver: effectiveSandboxDriver({ chosen: await keys.chosenDriver(context), keyed, managed: keys.managed }) ?? null,
+    default_driver: await newWorkspaceDriver(keys, rows, context) ?? null,
     managed_driver: keys.managed ?? null,
     keys: options.canManage ? stored.map(options.redact) : [],
     can_manage: options.canManage,

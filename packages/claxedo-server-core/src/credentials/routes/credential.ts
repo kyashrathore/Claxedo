@@ -38,9 +38,11 @@ import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/partition"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import type { CredentialMetadata, CredentialWrite } from "@claxedo/server-core/credentials/types"
+import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import {
   chosenSandboxKey,
   isSandboxKey,
+  newWorkspaceBrokering,
   sandboxKeyListing,
   sandboxKeyWrite,
   type SandboxDriverKeyContext,
@@ -104,7 +106,7 @@ const accountSourcesBody = z.object({
   source: z.enum(ACCOUNT_SOURCES),
 }).strict()
 
-function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialByProvider"]>>) {
+function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialByProvider"]>>, brokering?: SandboxSecretBrokering) {
   if (!cred) return null
   return {
     id: cred.id,
@@ -135,7 +137,7 @@ function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialB
     // themselves. "Stored" is not the same fact: a ChatGPT subscription needs a
     // companion header no provider edge can attach, so it is local-only however
     // it was saved.
-    deliverable: credentialReach(cred),
+    deliverable: credentialReach(cred, brokering),
   }
 }
 
@@ -268,6 +270,11 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
       canManage: await managesSandboxKeys(request),
       redact: (row) => redact(row),
     })
+  const accountRows = async (request: Request, keep: (row: CredentialMetadata) => boolean) => {
+    const rows = await credentials.listCredentials(org(request))
+    const brokering = sandboxKeys ? await newWorkspaceBrokering(sandboxKeys, rows, keyContext(request)) : undefined
+    return rows.filter(keep).map((row) => redact(row, brokering))
+  }
   const sandboxKeysUnavailable = () => errorBody("sandbox_driver_keys_unavailable", "This host keeps no sandbox provider keys")
   const sandboxKeysForbidden = () => errorBody("sandbox_driver_keys_forbidden", "Only an organization owner or admin manages sandbox provider keys")
   /**
@@ -375,12 +382,7 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
     }
   })
   return app
-    .get("/", async (c) => {
-      const creds = (await credentials.listCredentials(org(c.req.raw)))
-        .filter((row) => row.owner === actor(c.req.raw) && row.kind !== "sandbox_driver")
-        .map(redact)
-      return c.json({ credentials: creds })
-    })
+    .get("/", async (c) => c.json({ credentials: await accountRows(c.req.raw, (row) => row.owner === actor(c.req.raw) && row.kind !== "sandbox_driver") }))
     .get("/effective", async (c) => {
       if (!credentials.effectiveCredentials) {
         return c.json(errorBody("credential_effective_unsupported", "This host does not report effective credentials"), 501)
@@ -390,14 +392,12 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
       const person = actor(c.req.raw)
       const sources = (await credentials.accountSelections(orgId))[person] ?? {}
       const rows = await credentials.effectiveCredentials(scope, orgId)
-      return c.json({ scope, credentials: rows.filter((row) => spendsAccount(row, person, sources, LOCAL_USER_ID)).map(redact) })
+      return c.json({ scope, credentials: rows.filter((row) => spendsAccount(row, person, sources, LOCAL_USER_ID)).map((row) => redact(row)) })
     })
     .get("/account-sources", async (c) => {
-      const orgId = org(c.req.raw)
-      const orgRows = (await credentials.listCredentials(orgId)).filter((row) => row.owner === null && fanoutEligible(row))
       return c.json({
-        sources: (await credentials.accountSelections(orgId))[actor(c.req.raw)] ?? {},
-        org: orgRows.map(redact),
+        sources: (await credentials.accountSelections(org(c.req.raw)))[actor(c.req.raw)] ?? {},
+        org: await accountRows(c.req.raw, (row) => row.owner === null && fanoutEligible(row)),
         can_remove_org_accounts: canRemoveOrgAccounts(c.req.raw),
       })
     })
@@ -604,7 +604,7 @@ export function CredentialRoutes(credentials: ControlPlaneCredentials, options: 
         }
         return c.json(errorBody("credential_not_activatable", "This credential is not an account a harness runs on"), 409)
       }
-      return c.json({ credentials: result.credentials.map(redact) })
+      return c.json({ credentials: result.credentials.map((row) => redact(row)) })
     })
     .patch("/:id/status", async (c) => {
       if (!await findCredential(c.req.param("id"), org(c.req.raw), actor(c.req.raw))) return c.json(errorBody("credential_not_found", "Credential not found"), 404)
