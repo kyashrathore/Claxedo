@@ -19,7 +19,7 @@ const STATUS_TONE = { connected: "success", degraded: "warning", broken: "danger
 
 export function ConnectionsSection() {
   const t = useTranslator(settingsDictionary)
-  const errorCopy = useErrorCopy()
+  const errorCopy = useErrorCopy("connections")
   const server = useServer()
   const offered = () => server.capabilities()?.features.connections === true
   const catalog = useQuery(() => ({ ...server.queries.integrations.catalog(), enabled: offered() }))
@@ -167,7 +167,7 @@ function AgentConnections(props: {
   readonly onRemove: (row: HarnessConnectionRef) => void
 }) {
   const t = useTranslator(settingsDictionary)
-  const errorCopy = useErrorCopy()
+  const errorCopy = useErrorCopy("connections")
   const rows = () => (props.rows?.status === "supported" && props.rows.connections.length > 0 ? props.rows.connections : undefined)
   return (
     <>

@@ -1,4 +1,4 @@
-import type { AppError, ErrorClass } from "@/server"
+import { useServer, type AppError, type ErrorClass, type ProductErrorSurface } from "@/server"
 import type { Locale } from "./locales"
 import type { ErrorMessages } from "./errors/model"
 import ar from "./errors/ar"
@@ -68,11 +68,20 @@ export const errorDictionary = {
   zht: errorTranslations(zht),
 } satisfies Record<Locale, Readonly<Record<ErrorKey, string>>>
 
-export function useErrorCopy(): (error: AppError) => ErrorCopy {
+export function useErrorCopy(surface: ProductErrorSurface): (error: AppError) => ErrorCopy {
   const t = useTranslator(errorDictionary)
-  return (error) => ({
+  const telemetry = useServer().telemetry
+  const shown = new WeakSet<AppError>()
+  const copy = (error: AppError): ErrorCopy => ({
     title: t(`i18n.error.${error.class}.title`),
     message: t(`i18n.error.${error.class}.message`),
     retry: t(error.class === "auth" ? "i18n.error.signIn" : error.class === "not_found" || error.class === "conflict" ? "i18n.error.reload" : "i18n.error.retry"),
   })
+  return (error) => {
+    if (!shown.has(error)) {
+      shown.add(error)
+      telemetry.record({ event: "ui_error_shown", properties: { error_class: error.class, surface } })
+    }
+    return copy(error)
+  }
 }

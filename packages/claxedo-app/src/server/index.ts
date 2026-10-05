@@ -35,6 +35,8 @@ export { accountEvents, type AccountStreamPort } from "./account-events"
 export { ServerError, isAppError, isGeminiQuotaRetry, isTurnAdmissionConflict, toAppError } from "./errors"
 export { ServerContext, useServer } from "./context"
 export { createServer, type ServerHandle } from "./server"
+export { productToolKind, type ProductErrorSurface, type ProductTelemetry } from "./telemetry"
+export type { ProductEvent } from "@claxedo/account-contract/product-events"
 export { promptEcho } from "./wire/prompt"
 export { ServerProvider } from "./provider"
 

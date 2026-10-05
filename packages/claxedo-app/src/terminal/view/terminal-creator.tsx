@@ -78,7 +78,7 @@ function LauncherGrid(props: {
 
 export function TerminalCreator(props: PaneProps<TerminalCreatorState>): JSX.Element {
   const t = useTranslator(terminalDictionary)
-  const errorCopy = useErrorCopy()
+  const errorCopy = useErrorCopy("terminal")
   const runtime = useTerminalRuntime()
   const server = useServer()
   const workbench = useWorkbench()

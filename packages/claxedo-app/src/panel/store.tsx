@@ -3,11 +3,11 @@ import { createSidePanelSize } from "@/lib/side-panel-size"
 import { SIDE_PANEL_BORDER_WIDTH } from "@/lib/side-panel-motion"
 import { useActiveSession } from "@/files"
 import { persistedSignal, preferenceKey } from "@/lib/persisted"
-import type { PlacementId } from "@/server"
+import { useServer, type PlacementId, type ProductTelemetry } from "@/server"
 import { useShellLayout, useShellRoute } from "@/shell"
 import { closeReviewWorkspaceTab } from "./close"
 import type { ReviewFocus } from "@/review"
-import { filePathFromTab, type FileReveal, type PanelFocus } from "./focus"
+import { filePathFromTab, panelFeature, type FileReveal, type PanelFeature, type PanelFocus } from "./focus"
 import { rememberPanelPerSession, type SessionPanelSnapshot } from "./session-memory"
 import { createPanelTabs } from "./tabs-store"
 import {
@@ -95,15 +95,22 @@ function createOpenRules(input: {
   readonly tabs: ReturnType<typeof createPanelTabs>
   readonly size: PanelSize
   readonly setFullWidth: (fullWidth: boolean) => void
+  readonly telemetry: ProductTelemetry
 }): Pick<Panel, "openingNavigator" | "toggle" | "toggleFullWidth" | "show"> {
-  const { layout, tabs, size, setFullWidth } = input
+  const { layout, tabs, size, setFullWidth, telemetry } = input
+  const used = (feature: PanelFeature | undefined) => {
+    if (feature) telemetry.record({ event: "feature_used", properties: { feature } })
+  }
   const onReview = () => tabs.activeTab().kind === "review"
   const openingNavigator = () => (onReview() ? (tabs.navigator() ?? "files") : tabs.navigator())
   return {
     openingNavigator,
     toggle: () => {
       if (layout.panelOpen()) setFullWidth(false)
-      else if (onReview()) tabs.setNavigator(openingNavigator())
+      else if (onReview()) {
+        tabs.setNavigator(openingNavigator())
+        used("review")
+      }
       layout.send({ type: "togglePanel" })
     },
     toggleFullWidth: () => {
@@ -113,6 +120,7 @@ function createOpenRules(input: {
     },
     show: (focus, options) => {
       if (focus) tabs.focus(focus)
+      used(focus && panelFeature(focus))
       if (options?.navigator !== undefined) tabs.setNavigator(options.navigator)
       layout.send({ type: "showPanel" })
     },
@@ -177,7 +185,7 @@ export function PanelProvider(props: ParentProps): JSX.Element {
         fullWidth: size.fullWidth(),
         width: size.width(),
       }),
-    ...createOpenRules({ layout, tabs, size, setFullWidth }),
+    ...createOpenRules({ layout, tabs, size, setFullWidth, telemetry: useServer().telemetry }),
     close,
     closeTab: (tabId) => closeReviewWorkspaceTab({ id: tabId, closePanel: close, closeTab: tabs.closeTab }),
   }

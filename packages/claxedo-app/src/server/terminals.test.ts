@@ -2,6 +2,7 @@
 import { expect, test } from "bun:test"
 import { placementId } from "./ids"
 import { createTerminalsApi } from "./terminals"
+import type { ProductEvent } from "@claxedo/account-contract/product-events"
 import type { Transport } from "./transport"
 import type { Workspaces } from "./workspaces"
 
@@ -10,6 +11,7 @@ const local = placementId("ws_local")
 
 function world() {
   const bodies: Array<Record<string, unknown>> = []
+  const recorded: ProductEvent[] = []
   const transport = {
     serverUrl: "http://127.0.0.1:4096",
     runtimeJson: async (_route: unknown, _path: string, init?: RequestInit) => {
@@ -24,13 +26,14 @@ function world() {
     route: async (id: string) => record(id).route,
     catalog: () => ({ projects: [], placements: [record(relayed), record(local)] }),
   } as unknown as Workspaces
-  return { api: createTerminalsApi(transport, workspaces), bodies }
+  return { api: createTerminalsApi(transport, workspaces, { record: (event) => void recorded.push(event) }), bodies, recorded }
 }
 
 test("a terminal on a placement reached over the relay is the workspace's: it is created with no session", async () => {
-  const { api, bodies } = world()
+  const { api, bodies, recorded } = world()
   await api.create({ placementId: relayed, title: "Shell", createRequestId: "c1" })
   await api.create({ placementId: local, title: "Shell", createRequestId: "c2" })
   expect(bodies.map((body) => body.sessionId)).toEqual([undefined, undefined])
+  expect(recorded).toEqual([{ event: "feature_used", properties: { feature: "terminal" } }, { event: "feature_used", properties: { feature: "terminal" } }])
   expect(bodies.map((body) => body.createRequestId)).toEqual(["c1", "c2"])
 })

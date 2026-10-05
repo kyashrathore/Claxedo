@@ -6,7 +6,7 @@ import { shellDictionary } from "../i18n"
 
 export function ShellStartup(): JSX.Element {
   const server = useServer()
-  const copy = useErrorCopy()
+  const copy = useErrorCopy("startup")
   const t = useTranslator(shellDictionary)
   const failure = () => {
     const state = server.startup()

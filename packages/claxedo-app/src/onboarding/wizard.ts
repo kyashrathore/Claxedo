@@ -7,6 +7,7 @@ import { createFinish } from "./finish"
 import { useOnboardingText } from "./i18n"
 import { executionBlock, executionPlan, type ExecutionChoice, type ExecutionFacts, type OnboardingDraft } from "./model"
 import { createOnboardingTarget, finishFailure, openedPlacement, startCreated, type Placing } from "./place"
+import { createOnboardingFunnel, type OnboardingFunnel } from "./funnel"
 import { onboardingSteps, type OnboardingStepId } from "./steps"
 
 export function draftName(draft: OnboardingDraft): string {
@@ -25,7 +26,7 @@ function createStepper() {
   return { step, visited, goTo, index, current }
 }
 
-function useOnboardingFinish(placing: Accessor<Placing | undefined>) {
+function useOnboardingFinish(placing: Accessor<Placing | undefined>, funnel: OnboardingFunnel) {
   const server = useServer()
   const navigate = useNavigate()
   const t = useOnboardingText()
@@ -38,6 +39,7 @@ function useOnboardingFinish(placing: Accessor<Placing | undefined>) {
     create: (hold) => createOnboardingTarget(server, t, held(), hold),
     open: async (created) => {
       await startCreated(server, created)
+      funnel.finished()
       navigate(draftPath(openedPlacement(t, created, (project) => primaryPlacement(server.placements.list(), project)?.id)))
     },
     describe: (error, created) => finishFailure(t, error, created),
@@ -60,12 +62,15 @@ export function createOnboardingWizard(facts: Accessor<ExecutionFacts>) {
     const held = draft()
     return held && { draft: held, plan: plan() }
   }
-  const finish = useOnboardingFinish(placing)
+  const funnel = createOnboardingFunnel(useServer().telemetry, stepper.step())
+  const finish = useOnboardingFinish(placing, funnel)
   const blocked = createMemo(() => executionBlock(plan(), facts(), draft()?.source))
   const move = (index: number) => {
     finish.moved()
     const target = onboardingSteps[index]
-    if (target) stepper.goTo(target.id)
+    if (!target) return
+    funnel.moved(stepper.step(), target.id)
+    stepper.goTo(target.id)
   }
   return {
     ...stepper,

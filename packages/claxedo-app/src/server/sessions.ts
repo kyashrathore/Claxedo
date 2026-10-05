@@ -1,4 +1,5 @@
 import { createMessageIds } from "@claxedo/agent-runtime-contract"
+import { productHarness, productWhere, type ProductTelemetry } from "./telemetry"
 import type { SessionsApi } from "./api"
 import { ServerError } from "./errors"
 import { sessionId, type RequestId } from "./ids"
@@ -112,7 +113,7 @@ async function patchSession(context: SessionContext, ref: SessionLocation, patch
   await context.transport.runtimeJson(await context.workspaces.route(ref), sessionEndpoint(ref), jsonInit("PATCH", patch))
 }
 
-export function createSessionsApi(transport: Transport, workspaces: Workspaces, status: StatusOwner, wakes: WorkspaceWakes, projection: SessionProjection, account?: HostedAccount): SessionsApi {
+export function createSessionsApi(transport: Transport, workspaces: Workspaces, status: StatusOwner, wakes: WorkspaceWakes, projection: SessionProjection, telemetry: ProductTelemetry, account?: HostedAccount): SessionsApi {
   const context: SessionContext = { transport, workspaces, status, ...(account ? { account } : {}) }
   const newMessageId = createMessageIds()
   return {
@@ -126,6 +127,7 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
     create: async (input) => {
       const row = await createSession(context, wakes, input)
       void projection.created(row.ref)
+      telemetry.record({ event: "session_started", properties: { harness: productHarness(input.harness), where: productWhere(workspaces.byId(input.placementId)?.kind) } })
       return row
     },
     prompt: (ref, input) => postPrompt(context, wakes, ref, input, input.messageId ?? newMessageId()),

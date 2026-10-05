@@ -31,6 +31,7 @@ import { createSessionsApi } from "./sessions"
 import { createStatusOwner, type StatusOwner } from "./status"
 import { createEventStreams } from "./streams"
 import { createStartup } from "./startup"
+import { createProductTelemetry } from "./telemetry"
 import { createTerminalsApi } from "./terminals"
 import { createTransport, type Transport } from "./transport"
 import { createWorkspaces, type Workspaces } from "./workspaces"
@@ -64,11 +65,13 @@ export type ServerHandle = Server & {
 }
 
 function serverApis(transport: Transport, workspaces: Workspaces, status: StatusOwner, queryClient: QueryClient, queries: ServerQueries, projection: SessionProjection, account: HostedAccount | undefined, port: HostedAccount | undefined) {
+  const telemetry = createProductTelemetry(account)
   const operations = createOperations(transport, port)
   const project = (id: ProjectId) => queryClient.fetchQuery(queries.projects.byId(id))
   const wakes = createWorkspaceWakes(transport, workspaces)
   return {
-    sessions: createSessionsApi(transport, workspaces, status, wakes, projection, account),
+    telemetry,
+    sessions: createSessionsApi(transport, workspaces, status, wakes, projection, telemetry, account),
     sharedSessions: workspaces.shared,
     projects: createProjectsApi(transport, queryClient, workspaces),
     placements: {
@@ -80,11 +83,11 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
       },
       createWorktree: createWorktreeCreator(transport, workspaces),
     },
-    terminals: createTerminalsApi(transport, workspaces),
+    terminals: createTerminalsApi(transport, workspaces, telemetry),
     git: createGitApi(transport, workspaces, queryClient),
     cloud: createCloudApi(transport, workspaces, wakes, project, account),
     accounts: createAccountsApi(transport, queryClient),
-    marketplace: createMarketplaceApi(transport, queryClient),
+    marketplace: createMarketplaceApi(transport, queryClient, telemetry),
     tasks: createTasksApi(transport),
     folders: createFoldersApi(transport),
     integrations: createIntegrationsApi(transport, queryClient),

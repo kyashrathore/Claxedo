@@ -1,4 +1,5 @@
 import { readField } from "@claxedo/helpers/readers"
+import type { ProductTelemetry } from "./telemetry"
 import type { QueryClient } from "@tanstack/solid-query"
 import type { MarketplaceApi } from "./api"
 import { contractMismatch, responseError, ServerError } from "./errors"
@@ -111,7 +112,7 @@ function createChanges(transport: Transport, queryClient: QueryClient) {
   return { refreshAll, post }
 }
 
-export function createMarketplaceApi(transport: Transport, queryClient: QueryClient): MarketplaceApi {
+export function createMarketplaceApi(transport: Transport, queryClient: QueryClient, telemetry: ProductTelemetry): MarketplaceApi {
   const server = transport.serverUrl
   const { refreshAll, post } = createChanges(transport, queryClient)
   return {
@@ -120,14 +121,17 @@ export function createMarketplaceApi(transport: Transport, queryClient: QueryCli
       queryClient.setQueryData(queryKeys.marketplace(server, projectId), catalog)
       return catalog
     },
-    setActivation: (input) =>
-      post("/activation", {
+    setActivation: async (input) => {
+      const change = await post("/activation", {
         pluginInstanceId: input.pluginInstanceId,
         harnessIds: input.harnessIds,
         choice: input.choice,
         expectedRevision: input.revision,
         ...(input.target ? { target: input.target } : {}),
-      }),
+      })
+      if (input.choice === true) telemetry.record({ event: "feature_used", properties: { feature: "marketplace_install" } })
+      return change
+    },
     setOrganizationDefault: (input) =>
       post("/organization-default", {
         pluginInstanceId: input.pluginInstanceId,

@@ -44,7 +44,7 @@ export function UsageSection(): JSX.Element {
   const [cursors, setCursors] = createSignal<readonly (string | undefined)[]>([])
   const usage = useUsageSummary(options, () => tab() !== "cloud")
   const elapsed = useElapsed()
-  const errorCopy = useErrorCopy()
+  const errorCopy = useErrorCopy("usage")
   const refresh = () => setOptions((current) => ({ ...current, refreshNonce: Date.now() }))
   const pickTab = (next: UsageTab) => {
     setTab(next)

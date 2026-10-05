@@ -11,7 +11,7 @@ import { usageDictionary } from "../i18n"
 export function CloudUsage(): JSX.Element {
   const t = useTranslator(usageDictionary)
   const server = useServer()
-  const errorCopy = useErrorCopy()
+  const errorCopy = useErrorCopy("usage")
   const elapsed = useElapsed()
   const running = useRunningCloudWorkspaces(() => true)
   const projects = useQuery(() => server.queries.projects.list())

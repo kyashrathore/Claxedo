@@ -1,4 +1,5 @@
 import type { AccountScope, AccountSource } from "@claxedo/account-contract/vocabulary"
+import type { ProductTelemetry } from "./telemetry"
 import type { Accessor } from "solid-js"
 import type { QueryClient } from "@tanstack/solid-query"
 import type { SharedSessions } from "./shared-sessions"
@@ -264,6 +265,7 @@ export type Server = {
   readonly retryConnection: () => Promise<void>
   readonly queryClient: QueryClient
   readonly subscribe: (handler: (event: ServerEvent) => void) => () => void
+  readonly telemetry: ProductTelemetry
   readonly sessions: SessionsApi
   readonly projects: ProjectsApi
   readonly placements: PlacementsApi

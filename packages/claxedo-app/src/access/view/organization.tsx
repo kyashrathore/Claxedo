@@ -48,7 +48,7 @@ function SignedOut() {
 function OrganizationMembers(props: { readonly membership: OrgMembership }) {
   const t = useTranslator(accessDictionary)
   const server = useServer()
-  const errorCopy = useErrorCopy()
+  const errorCopy = useErrorCopy("organization")
   const elapsed = useElapsed()
   const members = useQuery(() => server.queries.organizations.members(props.membership.orgId))
   return (
@@ -90,7 +90,7 @@ function OrganizationMembers(props: { readonly membership: OrgMembership }) {
 function Memberships() {
   const t = useTranslator(accessDictionary)
   const server = useServer()
-  const errorCopy = useErrorCopy()
+  const errorCopy = useErrorCopy("organization")
   const elapsed = useElapsed()
   const mine = useQuery(() => server.queries.organizations.mine())
   return (

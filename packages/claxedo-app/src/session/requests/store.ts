@@ -1,6 +1,7 @@
 import { createMemo, createSignal, type Accessor } from "solid-js"
 import { toAppError, type AgentRequest, type AgentRequestReply, type AppError, type RequestId, type Server, type ServerEvent, type SessionId, type SessionLocation } from "@/server"
 import type { RequestState } from "@/session"
+import { permissionDecided } from "./permission-decided"
 import { EXPIRED, applyRequestsEvent, initialRequestsData, isOpenRequest, readErrorOf, type RequestsData, type RequestsEvent } from "./model"
 
 export type RequestsInternal = {
@@ -39,11 +40,14 @@ async function sendReply(
   ref: SessionLocation,
   requestId: RequestId,
   answer: AgentRequestReply,
+  request: AgentRequest | undefined,
 ): Promise<void> {
   send({ type: "replyStarted", requestId })
   try {
     await server.sessions.reply(ref, requestId, answer)
     send({ type: "replyAccepted", requestId })
+    const decided = permissionDecided(request, answer)
+    if (decided) server.telemetry.record(decided)
   } catch (cause) {
     send({ type: "replyRejected", requestId, error: toAppError(cause) })
   }
@@ -65,6 +69,6 @@ export function createRequests(server: Server): RequestsInternal {
     read,
     readFailed: (ref, error, sentAt) => send({ type: "readFailed", ref, error, sentAt }),
     readErrorFor: (sessionId) => readErrorOf(data(), sessionId),
-    reply: (ref, requestId, answer) => sendReply(server, send, ref, requestId, answer),
+    reply: (ref, requestId, answer) => sendReply(server, send, ref, requestId, answer, data().entries.get(requestId)?.request),
   }
 }

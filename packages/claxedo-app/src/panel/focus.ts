@@ -100,3 +100,10 @@ export function applyFocus(set: WorkingSet, focus: PanelFocus, effects: FocusEff
       return unreachable(focus)
   }
 }
+
+export type PanelFeature = "file_open" | "review"
+
+export function panelFeature(focus: PanelFocus): PanelFeature | undefined {
+  if (focus.kind === "file") return "file_open"
+  return focus.kind === "review" ? "review" : undefined
+}

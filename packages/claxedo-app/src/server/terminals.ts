@@ -1,4 +1,5 @@
 import { readField } from "@claxedo/helpers/readers"
+import type { ProductTelemetry } from "./telemetry"
 import { contractMismatch, ServerError, responseErrorCode } from "./errors"
 import type { PlacementId, TerminalId } from "./ids"
 import type { TerminalsApi } from "./api"
@@ -72,7 +73,7 @@ export function terminalQueries(transport: Transport, workspaces: Workspaces) {
   return { agents }
 }
 
-export function createTerminalsApi(transport: Transport, workspaces: Workspaces): TerminalsApi {
+export function createTerminalsApi(transport: Transport, workspaces: Workspaces, telemetry: ProductTelemetry): TerminalsApi {
   const route = (placementId: PlacementId) => workspaces.route(placementId)
   return {
     list: async (placementId) => {
@@ -80,7 +81,11 @@ export function createTerminalsApi(transport: Transport, workspaces: Workspaces)
       if (!Array.isArray(rows)) throw contractMismatch("terminal list")
       return rows.flatMap((row) => terminalFromWire(row, placementId) ?? [])
     },
-    create: async (input) => createPty(transport, await route(input.placementId), input),
+    create: async (input) => {
+      const terminal = await createPty(transport, await route(input.placementId), input)
+      telemetry.record({ event: "feature_used", properties: { feature: "terminal" } })
+      return terminal
+    },
     update: async (placementId, terminalId, input) => {
       await transport.runtimeJson(await route(placementId), ptyPath(terminalId), jsonInit("PUT", input))
     },
