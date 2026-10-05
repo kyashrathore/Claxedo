@@ -56,7 +56,7 @@ export function HarnessModelPicker<H>(
           classList={{
             [`${COMPOSER_MENU_CLASS} claxedo-composer-menu-picker harness-picker-surface z-[260] flex flex-col gap-0.5 overflow-hidden outline-none`]: true,
             "h-[26rem]": section() === "model",
-            "h-80": section() === "harness",
+            "max-h-80": section() === "harness",
           }}
           onOpenAutoFocus={(event) => {
             event.preventDefault()
