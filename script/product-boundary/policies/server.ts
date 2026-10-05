@@ -128,8 +128,13 @@ export const serverWorkerd: Policy = {
   // (`authority/adapters/d1/host-assignment-devices.ts`) and a workspace row's
   // shape and JSON with its repository connection
   // (`authority/adapters/d1/workspace-row-json.ts`), split from their
-  // authorities. 151/20, no headroom.
-  ceilings: { modules: 151, packages: 20 },
+  // authorities.
+  // +2 modules (owner: the session-host turn routes and the first-party MCP
+  // endpoint): the per-turn MCP bearer of a session served by its own host
+  // (`mcp/session-mcp-credentials.ts`) and the machine token its tools and the
+  // turn's tools both mint (`authority/session-host-machine-access.ts`).
+  // 153/20, no headroom.
+  ceilings: { modules: 153, packages: 20 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

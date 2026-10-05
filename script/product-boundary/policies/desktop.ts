@@ -562,8 +562,11 @@ export const desktopRenderer: Policy = {
   // event contract it sends (`@claxedo/account-contract/product-events`, a
   // package the renderer already reaches) and the permission reply's event
   // (`session/requests/permission-decided.ts`). They add no package edge.
-  // 1339/36, no headroom.
-  ceilings: { modules: 1339, packages: 36 },
+  // The Marketplace's one harness label for its install sheet and plugin
+  // facts (owner: the app's marketplace domain): `marketplace/view/harness-label.ts`.
+  // It adds no package edge.
+  // 1340/36, no headroom.
+  ceilings: { modules: 1340, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

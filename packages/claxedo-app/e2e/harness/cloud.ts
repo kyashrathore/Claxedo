@@ -174,7 +174,6 @@ export async function deleteCloudWorkspace(signed: SignedStack, workspace: Cloud
   await asOwner(signed)("DELETE", `/api/workspace/${encodeURIComponent(workspace.id)}`)
 }
 
-/** Every table a session host's Durable Object holds, read from the relay's workerd storage beside it. */
 export async function sessionHostTables(signed: SignedStack): Promise<string[]> {
   const root = path.join(signed.hosted.root, "relay", "durable-objects")
   const hosts = (await readdir(root).catch(() => [])).filter((name) => name.includes("SessionDO"))
