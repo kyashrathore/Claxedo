@@ -60,10 +60,18 @@ function egressUnenforcedMessage(input: {
  * Drivers already warned about at composition time, so a control plane that
  * composes its services per request (the hosted Worker does) logs the boot
  * warning once per isolate instead of once per request. Keyed by driver id +
- * declared capability, never by workspace: the per-create `"ensure"` warning is
- * deliberately NOT deduped.
+ * declared capability, never by workspace.
  */
 const compositionEgressWarnings = new Set<string>()
+
+/**
+ * Drivers whose withheld policy was already reported from a start in this
+ * isolate. Every connection to a sleeping or starting cloud workspace runs
+ * `admit`, so without this the hosted Worker logged the same paragraph on
+ * each of them; the first start names the driver, one workspace and the
+ * allowlist it withheld, which is what an operator needs to act.
+ */
+const ensureEgressWarnings = new Set<string>()
 
 function defaultEgressUnenforcedSink(event: SandboxEgressUnenforcedEvent) {
   console.warn(event.message)
@@ -180,6 +188,9 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
   })
 
   function reportEgressUnenforced(input: { workspaceId: string; requested: SandboxNetworkPolicy }) {
+    const key = `${options.driver.id}|${egressControl}`
+    if (ensureEgressWarnings.has(key)) return
+    ensureEgressWarnings.add(key)
     onEgressUnenforced({
       phase: "ensure",
       reason: "sandbox_egress_uncontained",
@@ -492,8 +503,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     // (cloudflare, preferred by `defaultSandboxDriverName`) offline entirely.
     //
     // The withholding itself happens in `ensureHostInput`; the warning is
-    // raised here so it fires exactly once per create rather than once per
-    // driver retry.
+    // raised here, once per driver per isolate.
     const egress = sandboxEgressDisposition(options.driver.metadata.egressControl, input.net)
     if (egress.action === "withhold" && input.net) {
       reportEgressUnenforced({ workspaceId, requested: input.net })

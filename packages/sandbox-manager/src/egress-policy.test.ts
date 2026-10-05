@@ -220,7 +220,7 @@ describe("manager: document where we can't", () => {
     const { events, sink } = warnings()
     const manager = createSandboxManager({
       leaseStore: createMemoryLeaseStore(),
-      driver: fakeDriver("none", { id: "cloudflare" }),
+      driver: fakeDriver("none", { id: "withheld-warn-driver" }),
       onEgressUnenforced: sink,
     })
 
@@ -234,7 +234,7 @@ describe("manager: document where we can't", () => {
     expect(ensure[0]).toMatchObject({
       phase: "ensure",
       reason: "sandbox_egress_uncontained",
-      driver: "cloudflare",
+      driver: "withheld-warn-driver",
       egressControl: "none",
       workspaceId: "ws_abc",
       requested: { mode: "restricted", hosts: ["github.com", "api.anthropic.com"] },
@@ -242,9 +242,25 @@ describe("manager: document where we can't", () => {
     // The message has to be usable on its own — a sink that only forwards text
     // must still convey what is wrong and what to do about it.
     expect(ensure[0].message).toContain("UNRESTRICTED")
-    expect(ensure[0].message).toContain("cloudflare")
+    expect(ensure[0].message).toContain("withheld-warn-driver")
     expect(ensure[0].message).toContain("ws_abc")
     expect(ensure[0].message).toContain("public-docs/sandbox-egress.md")
+  })
+
+  test("a second start on the same driver in this isolate withholds silently: the first warning already named the gap", async () => {
+    const { events, sink } = warnings()
+    const manager = createSandboxManager({
+      leaseStore: createMemoryLeaseStore(),
+      driver: fakeDriver("none", { id: "once-per-isolate-driver" }),
+      onEgressUnenforced: sink,
+    })
+    const net = { mode: "restricted" as const, hosts: ["github.com"] }
+
+    await manager.ensure("ws_first", { homeRegion: "us-east", net })
+    await manager.ensure("ws_first", { homeRegion: "us-east", net })
+    await manager.ensure("ws_second", { homeRegion: "us-east", net })
+
+    expect(events.filter((event) => event.phase === "ensure").map((event) => event.workspaceId)).toEqual(["ws_first"])
   })
 
   test("composition warns at boot, before any workspace exists", async () => {
