@@ -196,3 +196,42 @@ test("a watched remote placement streams its terminals once, with no session's f
     expect(opened[1]?.signal?.aborted).toBe(true)
   } finally { streams.close(); queryClient.clear() }
 })
+
+test("a stream to a runtime that is not running stays closed across catalog reads until the placement's row changes, then reopens", async () => {
+  const queryClient = new QueryClient()
+  const serverUrl = "https://account.test"
+  let row = { ...record.placement, revision: 1 }
+  let refreshed = 0
+  let running = false
+  let opened = 0
+  const catalog = {
+    streamRoute: () => record.route,
+    byId: () => row,
+    home,
+    onSessionHostLearned: () => () => undefined,
+    refresh: async () => {
+      refreshed += 1
+      queryClient.setQueryData(queryKeys.bootstrap(serverUrl), { revision: refreshed })
+    },
+  } as unknown as Workspaces
+  const transport = { serverUrl, runtime: async () => {
+    opened += 1
+    return running ? openBody() : Response.json({ error: { code: "workspace_stopped", message: "The cloud workspace ws_shared is not running" } }, { status: 409 })
+  } } as unknown as Transport
+  const streams = createPlacementStreams({ transport, workspaces: catalog, queryClient, onFrame: () => undefined, onGap: () => undefined })
+  const detach = streams.attach(ref("ses_asleep"))
+  try {
+    await settle()
+    expect(opened).toBe(1)
+    expect(refreshed).toBe(1)
+    queryClient.setQueryData(queryKeys.bootstrap(serverUrl), { revision: "unrelated" })
+    await settle()
+    expect(opened).toBe(1)
+    running = true
+    row = { ...row, revision: 2 }
+    queryClient.setQueryData(queryKeys.bootstrap(serverUrl), { revision: "woke" })
+    await settle()
+    expect(opened).toBe(2)
+    expect(streams.streams(ref("ses_asleep"))).toBe(true)
+  } finally { detach(); streams.close(); queryClient.clear() }
+})

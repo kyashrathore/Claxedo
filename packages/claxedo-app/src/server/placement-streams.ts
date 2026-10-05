@@ -1,6 +1,6 @@
 import { hashKey, type QueryClient } from "@tanstack/solid-query"
 import { toAppError } from "./errors"
-import { isImageOutdated } from "./wire/connection"
+import { isImageOutdated, isRuntimeUnavailable } from "./wire/connection"
 import { queryKeys } from "./query-keys"
 import { placementId, sessionId, type PlacementId } from "./ids"
 import { openEventStream, type Stream } from "./stream"
@@ -25,7 +25,9 @@ type StreamsInput = {
   readonly onGap: () => void
 }
 
-type OpenStream = { readonly stream: Stream; readonly route: string; outdated: boolean }
+type Refusal = { readonly kind: "outdated" } | { readonly kind: "unavailable"; readonly row: string }
+
+type OpenStream = { readonly stream: Stream; readonly route: string; readonly placement: PlacementId; refused?: Refusal }
 
 type StreamsState = {
   readonly input: StreamsInput
@@ -48,11 +50,11 @@ function sessionKey(placement: string, session: string) {
 }
 
 function wanted(state: StreamsState) {
-  const sessions = new Map<string, { session: string; route: RuntimeRoute }>()
+  const sessions = new Map<string, { placement: PlacementId; session: string; route: RuntimeRoute }>()
   for (const [placement, attachedSessions] of state.attached) {
     for (const session of attachedSessions.keys()) {
       const route = liveRemoteRoute(state.input.workspaces, placement, session)
-      if (route) sessions.set(sessionKey(placement, session), { session, route })
+      if (route) sessions.set(sessionKey(placement, session), { placement: placementId(placement), session, route })
     }
   }
   return sessions
@@ -62,9 +64,18 @@ function refreshCatalog(input: StreamsInput) {
   void input.workspaces.refresh().catch((error) => console.error("The placement catalog could not be refreshed after its event stream ended", error))
 }
 
-function openRuntimeStream(input: StreamsInput, route: RuntimeRoute, path: string, rerouted: boolean): OpenStream {
+function placementRow(input: StreamsInput, placement: PlacementId) {
+  return JSON.stringify(input.workspaces.byId(placement) ?? null)
+}
+
+function reopens(input: StreamsInput, open: OpenStream) {
+  if (open.refused?.kind === "outdated") return true
+  return open.refused?.kind === "unavailable" && open.refused.row !== placementRow(input, open.placement)
+}
+
+function openRuntimeStream(input: StreamsInput, placement: PlacementId, route: RuntimeRoute, path: string, rerouted: boolean): OpenStream {
   let missed = rerouted
-  const open: OpenStream = { route: routeKey(route), outdated: false, stream: openEventStream({
+  const open: OpenStream = { route: routeKey(route), placement, stream: openEventStream({
     open: ({ headers, signal }) => input.transport.runtime(route, path, { headers, signal }),
     onFrame: (frame) => input.onFrame(frame && typeof frame === "object" ? { ...frame, workspaceId: route.workspaceId } : frame),
     onGap: input.onGap,
@@ -76,19 +87,22 @@ function openRuntimeStream(input: StreamsInput, route: RuntimeRoute, path: strin
       if (!route.sharedSession && connection.kind === "reconnecting" && connection.attempt === 1) refreshCatalog(input)
     },
     onRefused: (error) => {
-      if (isImageOutdated(error)) open.outdated = true
-      else if (route.sharedSession) void input.workspaces.shared.refresh().then(input.onGap, (error) => console.error("Shared sessions could not be refreshed", error))
+      if (isImageOutdated(error)) open.refused = { kind: "outdated" }
+      else if (isRuntimeUnavailable(error)) {
+        open.refused = { kind: "unavailable", row: placementRow(input, placement) }
+        refreshCatalog(input)
+      } else if (route.sharedSession) void input.workspaces.shared.refresh().then(input.onGap, (error) => console.error("Shared sessions could not be refreshed", error))
       else refreshCatalog(input)
     },
   }) }
   return open
 }
 
-function reconcileKeyed<K, W extends { readonly route: RuntimeRoute }>(open: Map<K, OpenStream>, want: Map<K, W>, start: (wanted: W, rerouted: boolean) => OpenStream) {
+function reconcileKeyed<K, W extends { readonly route: RuntimeRoute }>(input: StreamsInput, open: Map<K, OpenStream>, want: Map<K, W>, start: (wanted: W, rerouted: boolean) => OpenStream) {
   const rerouted = new Set<K>()
   for (const [key, current] of open) {
     const route = want.get(key)?.route
-    if (route && routeKey(route) === current.route && !current.outdated) continue
+    if (route && routeKey(route) === current.route && !reopens(input, current)) continue
     if (route) rerouted.add(key)
     current.stream.close()
     open.delete(key)
@@ -99,15 +113,16 @@ function reconcileKeyed<K, W extends { readonly route: RuntimeRoute }>(open: Map
 function watchedWorkspaces(state: StreamsState) {
   return new Map([...state.watched.keys()].flatMap((id) => {
     const route = state.input.workspaces.workspaceStreamRoute(id)
-    return route ? [[id, { route }] as const] : []
+    return route ? [[id, { id, route }] as const] : []
   }))
 }
 
 function reconcileStreams(state: StreamsState) {
   const { input } = state
-  reconcileKeyed(state.sessions, wanted(state), ({ session, route }, rerouted) =>
-    openRuntimeStream(input, route, `${RUNTIME_EVENTS_PATH}?sessionID=${encodeURIComponent(session)}`, rerouted))
-  reconcileKeyed(state.workspaces, watchedWorkspaces(state), ({ route }, rerouted) => openRuntimeStream(input, route, `${RUNTIME_EVENTS_PATH}?sessions=none`, rerouted))
+  reconcileKeyed(input, state.sessions, wanted(state), ({ placement, session, route }, rerouted) =>
+    openRuntimeStream(input, placement, route, `${RUNTIME_EVENTS_PATH}?sessionID=${encodeURIComponent(session)}`, rerouted))
+  reconcileKeyed(input, state.workspaces, watchedWorkspaces(state), ({ id, route }, rerouted) =>
+    openRuntimeStream(input, id, route, `${RUNTIME_EVENTS_PATH}?sessions=none`, rerouted))
 }
 
 function retain<K>(counts: Map<K, number>, key: K): () => void {

@@ -107,3 +107,52 @@ test.each([401, 403, 404])("a %i ends the stream: it reports the refusal once, g
   expect(stream.state().kind).toBe("offline")
   stream.close()
 })
+
+test("a stream to a workspace that is not running ends refused after one attempt", async () => {
+  jest.useFakeTimers()
+  let opens = 0
+  const refusals: string[] = []
+  const stream = openEventStream({
+    open: async () => {
+      opens += 1
+      return Response.json({ error: { code: "workspace_stopped", message: "The cloud workspace ws_1 is not running" } }, { status: 409 })
+    },
+    onFrame: () => undefined,
+    onGap: () => undefined,
+    onRefused: (reason) => void refusals.push(reason.code ?? ""),
+  })
+  await settle()
+  jest.advanceTimersByTime(60_000)
+  await settle()
+  expect(opens).toBe(1)
+  expect(stream.state()).toMatchObject({ kind: "offline" })
+  expect(refusals).toEqual(["workspace_stopped"])
+  stream.close()
+})
+
+test("a stream a dead host answers with 502 keeps reconnecting with backoff and logs the drop once", async () => {
+  jest.useFakeTimers()
+  const logged: unknown[] = []
+  const error = console.error
+  console.error = (...args: unknown[]) => void logged.push(args)
+  let opens = 0
+  const stream = openEventStream({
+    open: async () => {
+      opens += 1
+      return new Response("bad gateway", { status: 502 })
+    },
+    onFrame: () => undefined,
+    onGap: () => undefined,
+  })
+  try {
+    for (let step = 0; step < 10; step += 1) {
+      await settle()
+      jest.advanceTimersByTime(15_000)
+    }
+    expect(opens).toBeGreaterThan(5)
+    expect(logged).toHaveLength(1)
+  } finally {
+    console.error = error
+    stream.close()
+  }
+})
