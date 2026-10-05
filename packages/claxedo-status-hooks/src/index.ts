@@ -6,8 +6,6 @@ const events: StatusHookTemplate["events"] = {
   SessionStart: "running",
   UserPromptSubmit: "running",
   PostToolUse: { status: "running", toolCompletion: true },
-  BeforeAgent: "running",
-  AfterTool: { status: "running", toolCompletion: true },
   beforeSubmitPrompt: "running",
   sessionStart: "running",
   userPromptSubmitted: "running",
@@ -20,7 +18,6 @@ const events: StatusHookTemplate["events"] = {
   Interrupt: { status: "done", outcome: "cancelled" },
   Stop: "done",
   SessionEnd: "done",
-  AfterAgent: "done",
   stop: "done",
   sessionEnd: "done",
   "agent-turn-complete": "done",
@@ -127,32 +124,6 @@ export const firstPartyStatusHooks = readStatusHookTemplates([
         file: "cursor-hook.sh",
         content:
           '#!/bin/bash\n# Claxedo agent notification hook v1\nset -uo pipefail\n\nEVENT="${1:-}"\n# Every exit path below must already have answered Cursor\'s permission hooks.\ncase "$EVENT" in\n  "beforeShellExecution"|"beforeMCPExecution"|"PermissionRequest"|"UserActionRequired"|"QuestionRequest")\n    printf \'{"continue":true}\\n\'\n    ;;\n  *)\n    printf \'{}\\n\'\n    ;;\nesac\n\n# ~/.cursor/hooks.json is global: every Cursor session runs this script, and\n# only a Claxedo terminal tab sets CLAXEDO_TAB_ID.\n[ -n "${CLAXEDO_TAB_ID:-}" ] || exit 0\n[ -t 0 ] && exit 0\n\n# Cursor supplies hook_event_name and session metadata in its JSON input.\nINPUT=$(cat)\n[ -n "$INPUT" ] && bash "{{notify}}" --harness=cursor "$INPUT" >/dev/null 2>&1\nexit 0\n',
-        mode: 493,
-      },
-    ],
-  },
-  {
-    command: "gemini",
-    provider: "gemini",
-    install: {
-      type: "config-merge",
-      path: "~/.gemini/settings.json",
-      shape: "nested",
-      base: ["hooks"],
-      entries: {
-        BeforeAgent: { hooks: [{ type: "command", command: "{{hooks}}/gemini-hook.sh" }] },
-        AfterAgent: { hooks: [{ type: "command", command: "{{hooks}}/gemini-hook.sh" }] },
-        AfterTool: { hooks: [{ type: "command", command: "{{hooks}}/gemini-hook.sh" }] },
-      },
-      managedScript: "gemini-hook.sh",
-    },
-    events,
-    subagent: ["agent_id", "agentId"],
-    artifacts: [
-      {
-        file: "gemini-hook.sh",
-        content:
-          '#!/bin/bash\n# Claxedo agent notification hook v1\nset -uo pipefail\n\n# Preserve the full provider payload and finish delivery before the next hook.\n# notify.sh bounds HTTP delivery to two seconds; status reporting does not\n# change the provider\'s tool decision.\n# ~/.gemini/settings.json is global; only a Claxedo tab reports status.\n[ -n "${CLAXEDO_TAB_ID:-}" ] || { printf \'{}\\n\'; exit 0; }\nif [ ! -t 0 ]; then\n  INPUT=$(cat)\n  if [ -n "$INPUT" ]; then\n    bash "{{notify}}" --harness=gemini "$INPUT" >/dev/null 2>&1 || true\n  fi\nfi\nprintf \'{}\\n\'\n',
         mode: 493,
       },
     ],

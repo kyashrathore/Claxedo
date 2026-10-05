@@ -15,7 +15,6 @@ These hooks report running, waiting and done status for agent CLIs that a person
 | CLI | What Claxedo writes, and where |
 |---|---|
 | Cursor | `~/.cursor/hooks.json`, entries under `hooks` running `<data>/hooks/cursor-hook.sh <Event>` |
-| Gemini | `~/.gemini/settings.json`, `hooks.BeforeAgent` / `AfterAgent` / `AfterTool` running `<data>/hooks/gemini-hook.sh` |
 | Antigravity | `~/.gemini/config/hooks.json`, its own `claxedo-lifecycle` key |
 | Droid | the file in effect: `~/.factory/hooks.json` when it exists, otherwise `hooks` in `~/.factory/settings.json`; `hooks.json` is never created |
 | Mastra | `~/.mastracode/hooks.json` |
@@ -43,7 +42,7 @@ A hook that carries `agent_id` or `agentId` belongs to a subagent; Claude and Co
 
 ## Template ownership
 
-The nine CLI declarations live in the bundled `@claxedo/status-hooks` package, which validates them; `src/status-hooks.ts` composes its list. The engine takes the template list as input: `writeStatusHooksArtifacts` writes artifacts and wrappers, `materializeAgentHooks` merges configs through `config-merge.ts`, and `providerLifecycle` maps a raw event with the declaration of the terminal's provider. Project-file installation is shared wrapper machinery.
+The eight CLI declarations live in the bundled `@claxedo/status-hooks` package, which validates them; `src/status-hooks.ts` composes its list. The engine takes the template list as input: `writeStatusHooksArtifacts` writes artifacts and wrappers, `materializeAgentHooks` merges configs through `config-merge.ts`, and `providerLifecycle` maps a raw event with the declaration of the terminal's provider. Project-file installation is shared wrapper machinery.
 
 Templates come only from that bundled package: a plugin manifest that declares `statusHooks` is refused with `PluginStatusHooksRefusedError`, because a template defines shell wrappers and rewrites files in the person's home. `setupAgentHooks({ templates })` and `AgentHookRoutes({ statusHooks })` default to the bundled list; tests pass their own.
 

@@ -17,7 +17,7 @@ describe("Agent Plugins harness registry", () => {
       expect(agentPluginHarnessDescriptor(id)).toEqual({ id, ...AGENT_PLUGIN_HARNESS_REGISTRY[id] })
       expect(isAgentPluginHarnessId(id)).toBe(true)
     }
-    expect(isAgentPluginHarnessId("gemini")).toBe(false)
+    expect(isAgentPluginHarnessId("acme")).toBe(false)
   })
 
   test("builds exactly one value per registered harness", () => {

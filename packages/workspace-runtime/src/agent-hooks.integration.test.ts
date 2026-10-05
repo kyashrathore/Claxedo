@@ -75,7 +75,7 @@ describe("agent-hooks real-world execution", () => {
 
     notifyPath = path.join(hooksDir, "notify.sh")
     await fs.writeFile(notifyPath, notifyScript(serverPort), { mode: 0o755 })
-    await fs.writeFile(path.join(hooksDir, "gemini-hook.sh"), artifact("gemini", "gemini-hook.sh", notifyPath), { mode: 0o755 })
+    await fs.writeFile(path.join(hooksDir, "cursor-hook.sh"), artifact("cursor", "cursor-hook.sh", notifyPath), { mode: 0o755 })
     const claudeSettings = path.join(hooksDir, "claude-settings.json")
     await fs.writeFile(claudeSettings, artifact("claude", "claude-settings.json", notifyPath))
     await fs.writeFile(path.join(binDir, "claude"), wrapper("claude", notifyPath), { mode: 0o755 })
@@ -87,16 +87,15 @@ describe("agent-hooks real-world execution", () => {
     await fs.rm(rootDir, { recursive: true, force: true })
   })
 
-  it("Gemini hook should be non-blocking and return JSON immediately", async () => {
-    const geminiHook = path.join(hooksDir, "gemini-hook.sh")
+  it("Cursor hook should be non-blocking and return JSON immediately", async () => {
+    const cursorHook = path.join(hooksDir, "cursor-hook.sh")
 
-    expect(await fs.stat(geminiHook)).toBeDefined()
+    expect(await fs.stat(cursorHook)).toBeDefined()
 
     const startTime = Date.now()
 
-    // Execute gemini-hook.sh with mock Gemini JSON
-    const result = await runShell("bash", [geminiHook], {
-      input: '{"hook_event_name":"BeforeAgent"}',
+    const result = await runShell("bash", [cursorHook, "Start"], {
+      input: '{"hook_event_name":"beforeSubmitPrompt"}',
       env: {
         ...process.env,
         HOME: rootDir,
@@ -125,7 +124,7 @@ describe("agent-hooks real-world execution", () => {
     lastEvent = null
 
     const result = await runShell("bash", [notifyPath], {
-      input: '{"hook_event_name":"BeforeAgent"}',
+      input: '{"hook_event_name":"UserPromptSubmit"}',
       env: {
         ...process.env,
         HOME: rootDir,

@@ -48,7 +48,6 @@ async function startPiFromComposer(page: Page, signed: SignedStack, workspace: C
 async function createShellFromHeader(page: Page) {
   await page.getByRole("button", { name: "New Terminal", exact: true }).click()
   const creator = page.getByTestId("terminal-creator")
-  await expect(creator.getByRole("button", { name: /^Gemini\b/ })).toHaveCount(0)
   await expect(creator.getByText(/--dangerously|model_reasoning_effort/)).toHaveCount(0)
   await creator.getByRole("button", { name: /^Shell\b/ }).click()
   await expect(page).toHaveURL(TERMINAL_URL)

@@ -22,9 +22,9 @@ describe("agent harness process catalog", () => {
 
 describe("configured connection identity", () => {
   test("a validated descriptor identity uses structured connection access only", () => {
-    expect(normalizeHarnessIdentity({ id: "gemini", access: "connection" })).toEqual({ id: "gemini", access: "connection" })
-    expect(normalizeHarnessIdentity("connection:gemini")).toBeUndefined()
-    expect(harnessKey({ id: "gemini", access: "connection" })).toBe("connection:gemini")
+    expect(normalizeHarnessIdentity({ id: "acme", access: "connection" })).toEqual({ id: "acme", access: "connection" })
+    expect(normalizeHarnessIdentity("connection:acme")).toBeUndefined()
+    expect(harnessKey({ id: "acme", access: "connection" })).toBe("connection:acme")
   })
 
   test("native ids keep their built-in keys while connections are qualified internally", () => {
@@ -35,9 +35,9 @@ describe("configured connection identity", () => {
   })
 
   test("an unknown id never defaults to a native identity", () => {
-    expect(normalizeHarnessIdentity("gemini")).toBeUndefined()
-    expect(normalizeHarnessIdentity({ id: "gemini" })).toBeUndefined()
-    expect(normalizeHarnessIdentity({ id: "gemini", access: "native" })).toBeUndefined()
+    expect(normalizeHarnessIdentity("acme")).toBeUndefined()
+    expect(normalizeHarnessIdentity({ id: "acme" })).toBeUndefined()
+    expect(normalizeHarnessIdentity({ id: "acme", access: "native" })).toBeUndefined()
   })
 
   test("custom ids shadowing built-in names stay connection-qualified", () => {
@@ -47,13 +47,13 @@ describe("configured connection identity", () => {
 
   test("blank, malformed, or overlong slugs fail validation", () => {
     expect(isAcpConnectionId("")).toBe(false)
-    expect(isAcpConnectionId("Gemini")).toBe(false)
-    expect(isAcpConnectionId("1gemini")).toBe(false)
-    expect(isAcpConnectionId("gem ini")).toBe(false)
-    expect(isAcpConnectionId("connection:gemini")).toBe(false)
+    expect(isAcpConnectionId("Acme")).toBe(false)
+    expect(isAcpConnectionId("1acme")).toBe(false)
+    expect(isAcpConnectionId("acm e")).toBe(false)
+    expect(isAcpConnectionId("connection:acme")).toBe(false)
     expect(isAcpConnectionId("g".repeat(65))).toBe(false)
-    expect(isAcpConnectionId("gemini-2")).toBe(true)
-    expect(normalizeHarnessIdentity({ id: "Gem ini", access: "connection" })).toBeUndefined()
+    expect(isAcpConnectionId("acme-2")).toBe(true)
+    expect(normalizeHarnessIdentity({ id: "Acm e", access: "connection" })).toBeUndefined()
     expect(normalizeHarnessIdentity("connection:")).toBeUndefined()
   })
 })

@@ -250,12 +250,12 @@ describe("template NotifyScript", () => {
       // ...unless it is Claude's config replayed by cursor-agent, which stamps CURSOR_VERSION.
       expect(await invoke(["--harness=claude", stop], { CURSOR_VERSION: "2026.09.10" })).toBe(0)
       // A config with no label keeps today's delivery.
-      expect(await invoke([stop], { CLAXEDO_AGENT: "gemini" })).toBe(0)
+      expect(await invoke([stop], { CLAXEDO_AGENT: "amp" })).toBe(0)
       expect(delivered).toEqual([
         { provider: "cursor-agent", event: "Stop" },
         { provider: "claude", event: "Stop" },
         { provider: "droid", event: "Stop" },
-        { provider: "gemini", event: "Stop" },
+        { provider: "amp", event: "Stop" },
       ])
     } finally {
       await server.stop()
@@ -297,14 +297,6 @@ describe("template NotifyScript", () => {
   })
 })
 
-
-describe("template GeminiHook", () => {
-  it("includes marker and notify path", () => {
-    const script = artifact("gemini", "gemini-hook.sh", "/tmp/hooks/notify.sh")
-    expect(script).toContain(NOTIFY_MARKER)
-    expect(script).toContain("/tmp/hooks/notify.sh")
-  })
-})
 
 describe("template CursorHook", () => {
   it("includes marker and notify path", () => {
@@ -378,29 +370,27 @@ describe("template CursorHook", () => {
   })
 })
 
-for (const [name, generate] of [["gemini", (notify: string) => artifact("gemini", "gemini-hook.sh", notify)], ["copilot", (notify: string) => artifact("copilot", "copilot-hook.sh", notify)]] as const) {
-  it(`${name} hook outside a Claxedo tab answers and forwards nothing`, async () => {
-    const root = await mkdtemp(path.join(tmpdir(), `claxedo-${name}-outside-`))
-    let forwarded = 0
-    const server = await serveHookFake(async () => { forwarded++; return Response.json({ success: true }) })
-    try {
-      const notify = path.join(root, "notify.sh")
-      const hook = path.join(root, `${name}-hook.sh`)
-      await writeFile(notify, notifyScript(server.port))
-      await writeFile(hook, generate(notify))
-      const child = Bun.spawn(["/bin/bash", hook, "Stop"], {
-        env: { PATH: process.env.PATH ?? "", HOME: root, CLAXEDO_SERVER_PORT: String(server.port) },
-        stdin: new Blob([JSON.stringify({ hook_event_name: "Stop" })]), stdout: "pipe", stderr: "ignore",
-      })
-      expect((await new Response(child.stdout).text()).trim()).toBe("{}")
-      expect(await child.exited).toBe(0)
-      expect(forwarded).toBe(0)
-    } finally {
-      await server.stop()
-      await rm(root, { recursive: true, force: true })
-    }
-  })
-}
+it("copilot hook outside a Claxedo tab answers and forwards nothing", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "claxedo-copilot-outside-"))
+  let forwarded = 0
+  const server = await serveHookFake(async () => { forwarded++; return Response.json({ success: true }) })
+  try {
+    const notify = path.join(root, "notify.sh")
+    const hook = path.join(root, "copilot-hook.sh")
+    await writeFile(notify, notifyScript(server.port))
+    await writeFile(hook, artifact("copilot", "copilot-hook.sh", notify))
+    const child = Bun.spawn(["/bin/bash", hook, "Stop"], {
+      env: { PATH: process.env.PATH ?? "", HOME: root, CLAXEDO_SERVER_PORT: String(server.port) },
+      stdin: new Blob([JSON.stringify({ hook_event_name: "Stop" })]), stdout: "pipe", stderr: "ignore",
+    })
+    expect((await new Response(child.stdout).text()).trim()).toBe("{}")
+    expect(await child.exited).toBe(0)
+    expect(forwarded).toBe(0)
+  } finally {
+    await server.stop()
+    await rm(root, { recursive: true, force: true })
+  }
+})
 
 describe("template CopilotHook", () => {
   it("includes marker and notify path", () => {
@@ -428,37 +418,32 @@ describe("template CopilotProjectHooks", () => {
   })
 })
 
-for (const [provider, generate, event, argument] of [
-  ["gemini", (notify: string) => artifact("gemini", "gemini-hook.sh", notify), "BeforeAgent", ""],
-  ["cursor", (notify: string) => artifact("cursor", "cursor-hook.sh", notify), "beforeSubmitPrompt", "Start"],
-] as const) {
-  it(`${provider} forwards complete provider JSON and waits for the HTTP acknowledgement`, async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "claxedo-provider-hook-"))
-    let received: string | null = null
-    let acknowledged = false
-    const payload = JSON.stringify({ hook_event_name: event, conversation_id: "conversation", session_id: "provider-session", prompt: 'Keep "quotes" and\nnewlines', transcript_path: "/tmp/provider-session.jsonl" }, null, 2)
-    const server = await serveHookFake(async (request) => {
-      received = new URLSearchParams(await request.text()).get("providerEvent")
-      await Bun.sleep(100)
-      acknowledged = true
-      return Response.json({ success: true })
-    })
-    try {
-      const notify = path.join(root, "notify.sh")
-      const script = path.join(root, "hook.sh")
-      await writeFile(notify, notifyScript(server.port), { mode: 0o700 })
-      await writeFile(script, generate(notify))
-      const child = Bun.spawn(["/bin/bash", script, argument], {
-        stdin: new Blob([payload]), stdout: "pipe", stderr: "pipe",
-        env: { ...process.env, CLAXEDO_SERVER_PORT: String(server.port), CLAXEDO_TAB_ID: "provider-hook-tab", CLAXEDO_TERMINAL_ID: "provider-hook-terminal", CLAXEDO_AGENT: provider },
-      })
-      expect(await child.exited).toBe(0)
-      expect(acknowledged, "The next provider hook must not overtake an unacknowledged event").toBe(true)
-      expect<string | null>(received).toBe(payload)
-      expect(JSON.parse(await new Response(child.stdout).text())).toEqual({})
-    } finally {
-      await server.stop()
-      await rm(root, { recursive: true, force: true })
-    }
+it("cursor forwards complete provider JSON and waits for the HTTP acknowledgement", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "claxedo-provider-hook-"))
+  let received: string | null = null
+  let acknowledged = false
+  const payload = JSON.stringify({ hook_event_name: "beforeSubmitPrompt", conversation_id: "conversation", session_id: "provider-session", prompt: 'Keep "quotes" and\nnewlines', transcript_path: "/tmp/provider-session.jsonl" }, null, 2)
+  const server = await serveHookFake(async (request) => {
+    received = new URLSearchParams(await request.text()).get("providerEvent")
+    await Bun.sleep(100)
+    acknowledged = true
+    return Response.json({ success: true })
   })
-}
+  try {
+    const notify = path.join(root, "notify.sh")
+    const script = path.join(root, "hook.sh")
+    await writeFile(notify, notifyScript(server.port), { mode: 0o700 })
+    await writeFile(script, artifact("cursor", "cursor-hook.sh", notify))
+    const child = Bun.spawn(["/bin/bash", script, "Start"], {
+      stdin: new Blob([payload]), stdout: "pipe", stderr: "pipe",
+      env: { ...process.env, CLAXEDO_SERVER_PORT: String(server.port), CLAXEDO_TAB_ID: "provider-hook-tab", CLAXEDO_TERMINAL_ID: "provider-hook-terminal", CLAXEDO_AGENT: "cursor" },
+    })
+    expect(await child.exited).toBe(0)
+    expect(acknowledged, "The next provider hook must not overtake an unacknowledged event").toBe(true)
+    expect<string | null>(received).toBe(payload)
+    expect(JSON.parse(await new Response(child.stdout).text())).toEqual({})
+  } finally {
+    await server.stop()
+    await rm(root, { recursive: true, force: true })
+  }
+})

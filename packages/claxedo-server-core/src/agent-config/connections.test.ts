@@ -131,5 +131,5 @@ test("the provisioned runner is a native harness id or nothing", () => {
   expect(provisionedRunner({ CLAXEDO_RUNTIME_RUNNER: " pi " })).toBe("pi")
   expect(provisionedRunner({ CLAXEDO_RUNTIME_RUNNER: "  " })).toBeUndefined()
   expect(provisionedRunner({})).toBeUndefined()
-  expect(() => provisionedRunner({ CLAXEDO_RUNTIME_RUNNER: "gemini" })).toThrow("Unsupported CLAXEDO_RUNTIME_RUNNER: gemini")
+  expect(() => provisionedRunner({ CLAXEDO_RUNTIME_RUNNER: "acme" })).toThrow("Unsupported CLAXEDO_RUNTIME_RUNNER: acme")
 })

@@ -26,7 +26,6 @@ RUN printf '%s\n' \
       'min-release-age-exclude[]=@anthropic-ai/claude-*' \
       'min-release-age-exclude[]=@cursor/sdk*' \
       'min-release-age-exclude[]=@earendil-works/*' \
-      'min-release-age-exclude[]=@google/gemini-cli*' \
       'min-release-age-exclude[]=@openai/codex' \
       >> "$HOME/.npmrc"
 
@@ -34,8 +33,7 @@ RUN printf '%s\n' \
 RUN npm i -g --min-release-age=2 \
       tsx@4.22.3 \
       @anthropic-ai/claude-code@2.1.285 \
-      @openai/codex@0.159.2 \
-      @google/gemini-cli@0.62.0
+      @openai/codex@0.159.2
 
 COPY .build/install-agent-artifacts.sh /tmp/install-agent-artifacts.sh
 RUN sh /tmp/install-agent-artifacts.sh && \
@@ -45,7 +43,6 @@ RUN sh /tmp/install-agent-artifacts.sh && \
     ln -sf /root/.local/bin/droid /usr/local/bin/droid && \
     command -v claude && \
     command -v codex && \
-    command -v gemini && \
     command -v agent && \
     command -v cursor-agent && \
     command -v amp && \

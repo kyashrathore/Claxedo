@@ -33,7 +33,6 @@ describe("writeStatusHooksArtifacts", () => {
 
     expect(result).toEqual(manifest)
     expect(existsSync(manifest.files.notify)).toBe(true)
-    expect(existsSync(path.join(manifest.dirs.hooks, "gemini-hook.sh"))).toBe(true)
     expect(existsSync(path.join(manifest.dirs.hooks, "cursor-hook.sh"))).toBe(true)
     expect(JSON.parse(readFileSync(path.join(manifest.dirs.hooks, "claude-settings.json"), "utf-8")).hooks.UserPromptSubmit).toEqual([
       { hooks: [{ type: "command", command: `'${manifest.files.notify}' --harness=claude` }] },

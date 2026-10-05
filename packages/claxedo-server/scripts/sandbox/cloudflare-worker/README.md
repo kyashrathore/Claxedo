@@ -146,10 +146,10 @@ registration it forwards requests without a placeholder unchanged and refuses
 ones that carry a placeholder.
 
 Node and Bun HTTPS clients passed the local probe. The CLIs baked into
-`Dockerfile` — `claude`, `codex`, `gemini`, `pi`, `cursor-agent`, `amp`,
-`droid` — were not probed against an intercepted connection, and an agent CLI
-that pins its own CA bundle or ships its own TLS stack fails against one in a
-way no local test here shows. Deployed acceptance is still required.
+`Dockerfile` — `claude`, `codex`, `pi`, `cursor-agent`, `amp`, `droid` — were
+not probed against an intercepted connection, and an agent CLI that pins its
+own CA bundle or ships its own TLS stack fails against one in a way no local
+test here shows. Deployed acceptance is still required.
 
 The former `/egress` JWT route and signing secret are removed. Deploy the
 Worker and matching driver together, after destroying existing sandboxes (see

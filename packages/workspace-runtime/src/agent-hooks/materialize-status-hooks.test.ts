@@ -10,7 +10,6 @@ import { agentHookConfigPaths, materializeAgentHooks } from "./materialize-statu
 
 const root = path.join(os.tmpdir(), `agent-hooks-materializer-${randomUUID().slice(0, 8)}`)
 const notifyPath = path.join(root, ".claxedo", "hooks", "notify.sh")
-const geminiHookPath = path.join(root, ".claxedo", "hooks", "gemini-hook.sh")
 const cursorHookPath = path.join(root, ".claxedo", "hooks", "cursor-hook.sh")
 
 async function readJson(file: string) {
@@ -74,11 +73,6 @@ describe("materializeAgentHooks", () => {
     for (const personal of [".claude", ".codex"]) {
       await expect(fs.stat(path.join(root, personal))).rejects.toMatchObject({ code: "ENOENT" })
     }
-    await expect(readJson(path.join(root, ".gemini", "settings.json"))).resolves.toMatchObject({
-      hooks: {
-        BeforeAgent: [{ hooks: [{ type: "command", command: geminiHookPath }] }],
-      },
-    })
     await expect(readJson(path.join(root, ".mastracode", "hooks.json"))).resolves.toMatchObject({
       UserPromptSubmit: [{ type: "command", command: `bash '${notifyPath}' --harness=mastracode` }],
     })
@@ -122,13 +116,6 @@ describe("materializeAgentHooks", () => {
   })
 
   test.each([
-    ["gemini", ".gemini/settings.json", `{
-    "theme":   "Dracula",
-    "hooks": {
-        "BeforeAgent": [ { "hooks": [ { "type": "command", "command": "/user/before.sh" } ] } ]
-    }
-}
-`, `"BeforeAgent": [ { "hooks": [ { "type": "command", "command": "/user/before.sh" } ] }`],
     ["antigravity", ".gemini/config/hooks.json", `{
     "person-lifecycle": { "Stop": [ { "type": "command", "command": "/user/stop.sh" } ] }
 }
@@ -248,20 +235,20 @@ describe("materializeAgentHooks", () => {
   })
 
   test("reports a corrupted settings file as failed instead of rewriting it", async () => {
-    const geminiPath = path.join(root, ".gemini", "settings.json")
-    await fs.mkdir(path.dirname(geminiPath), { recursive: true })
-    await fs.writeFile(geminiPath, "{ this is not json")
+    const cursorPath = path.join(root, ".cursor", "hooks.json")
+    await fs.mkdir(path.dirname(cursorPath), { recursive: true })
+    await fs.writeFile(cursorPath, "{ this is not json")
 
     const results = await materializeAgentHooks({
       templates: defaultStatusHooks, homeDir: root,
       notifyPath,
     })
 
-    const gemini = results.find((item) => item.runner === "gemini")
-    expect(gemini?.status).toBe("failed")
-    expect(gemini?.reason).toContain("invalid JSON")
-    await expect(fs.readFile(geminiPath, "utf8")).resolves.toBe("{ this is not json")
-    expect(results.filter((item) => item.runner !== "gemini").every((item) => item.status === "applied")).toBe(true)
+    const cursor = results.find((item) => item.runner === "cursor")
+    expect(cursor?.status).toBe("failed")
+    expect(cursor?.reason).toContain("invalid JSON")
+    await expect(fs.readFile(cursorPath, "utf8")).resolves.toBe("{ this is not json")
+    expect(results.filter((item) => item.runner !== "cursor").every((item) => item.status === "applied")).toBe(true)
   })
 
 })
@@ -285,7 +272,6 @@ function scriptsIn(dataRoot: string) {
   const hooks = path.join(dataRoot, "hooks")
   return {
     notify: path.join(hooks, "notify.sh"),
-    gemini: path.join(hooks, "gemini-hook.sh"),
     cursor: path.join(hooks, "cursor-hook.sh"),
     antigravity: path.join(hooks, "antigravity-hook.sh"),
   }
@@ -295,7 +281,6 @@ async function writeGeneratedScripts(dataRoot: string) {
   const scripts = scriptsIn(dataRoot)
   await fs.mkdir(path.dirname(scripts.notify), { recursive: true })
   await fs.writeFile(scripts.notify, notifyScript(7860), { mode: 0o755 })
-  await fs.writeFile(scripts.gemini, artifact("gemini", "gemini-hook.sh", scripts.notify), { mode: 0o755 })
   await fs.writeFile(scripts.cursor, artifact("cursor", "cursor-hook.sh", scripts.notify), { mode: 0o755 })
   await fs.writeFile(scripts.antigravity, artifact("antigravity", "antigravity-hook.sh", scripts.notify), { mode: 0o755 })
   return scripts
@@ -331,7 +316,6 @@ describe("materializeAgentHooks across data roots", () => {
       await fs.rm(dataRoot, { recursive: true, force: true })
     }
     const files = agentHookConfigPaths(home, defaultStatusHooks)
-    expect(await commandsIn(files.gemini)).toEqual(times(3, last.gemini))
     expect(await commandsIn(files.mastracode)).toEqual(times(3, `bash '${last.notify}' --harness=mastracode`))
     expect(await commandsIn(files.droid)).toEqual(times(4, `'${last.notify}' --harness=droid`))
     expect((await commandsIn(files.cursor)).length).toBe(6)
@@ -348,15 +332,15 @@ describe("materializeAgentHooks across data roots", () => {
     const foreign = path.join(home, ".superset", "hooks", "notify.sh")
     await fs.mkdir(path.dirname(foreign), { recursive: true })
     await fs.writeFile(foreign, "#!/bin/bash\n# Superset agent notification hook\n", { mode: 0o755 })
-    const guardedMissing = `if [ -x '${deleted.gemini}' ]; then /bin/sh '${deleted.gemini}'; fi`
+    const guardedMissing = `if [ -x '${deleted.notify}' ]; then /bin/sh '${deleted.notify}'; fi`
     const command = (value: string) => ({ type: "command", command: value })
     const files = agentHookConfigPaths(home, defaultStatusHooks)
     const droidSettings = files.droid
     const droidHooks = path.join(path.dirname(files.droid), "hooks.json")
 
     await writeJson(droidHooks, {
-      Stop: [{ hooks: [command(deleted.notify)] }, { hooks: [command(foreign)] }],
-      PostToolUse: [{ matcher: "*", hooks: [command(`'${previous.notify}' --harness=droid`)] }],
+      Stop: [{ hooks: [command(deleted.notify)] }, { hooks: [command(foreign)] }, { hooks: [command(guardedMissing)] }],
+      PostToolUse: [{ matcher: "*", hooks: [command(`'${previous.notify}' --harness=droid`), command("/user/droid-notify.sh")] }],
     })
     await writeJson(droidSettings, { hooks: { Stop: [{ hooks: [command(deleted.notify), command(foreign)] }] } })
     await writeJson(files.mastracode, {
@@ -364,14 +348,6 @@ describe("materializeAgentHooks across data roots", () => {
       UserPromptSubmit: [command(`bash '${previous.notify}' --harness=mastracode`)],
       Notification: [command(`bash '${deleted.notify}'`)],
     })
-    await writeJson(files.gemini, { hooks: { BeforeAgent: [
-      { hooks: [command(deleted.gemini)] },
-      { hooks: [command(previous.gemini)] },
-      { hooks: [command(guardedMissing)] },
-    ], Notification: [
-      { hooks: [command(previous.gemini), command("/user/gemini-notify.sh")] },
-      { hooks: [command(deleted.gemini)] },
-    ] } })
     await writeJson(files.cursor, { version: 1, hooks: { stop: [
       { command: `${deleted.cursor} Stop` },
       { command: `${previous.cursor} Stop` },
@@ -387,10 +363,9 @@ describe("materializeAgentHooks across data roots", () => {
     }
 
     const sorted = (...commands: string[]) => commands.sort()
-    expect(await commandsIn(droidHooks)).toEqual(sorted(foreign, ...times(4, `'${current.notify}' --harness=droid`)))
+    expect(await commandsIn(droidHooks)).toEqual(sorted(foreign, guardedMissing, "/user/droid-notify.sh", ...times(4, `'${current.notify}' --harness=droid`)))
     expect(await commandsIn(droidSettings)).toEqual([foreign])
     expect(await commandsIn(files.mastracode)).toEqual(sorted(`bash '${foreign}'`, ...times(3, `bash '${current.notify}' --harness=mastracode`)))
-    expect(await commandsIn(files.gemini)).toEqual(sorted(guardedMissing, "/user/gemini-notify.sh", ...times(3, current.gemini)))
     expect(Object.keys((await readJson(files.cursor)).hooks as object)).not.toContain("afterAgentResponse")
     expect((await commandsIn(files.cursor)).filter((value) => !value.startsWith(`${current.cursor} `))).toEqual(["./scripts/format.sh"])
     expect(await commandsIn(files.antigravity)).toEqual([

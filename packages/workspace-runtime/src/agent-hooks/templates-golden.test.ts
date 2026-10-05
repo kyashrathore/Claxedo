@@ -19,7 +19,7 @@ function withoutComments(script: string) {
     .join("\n")
 }
 
-test("nine first-party templates reproduce the base wrappers, configs, hook artifacts and project file", async () => {
+test("eight first-party templates reproduce the base wrappers, configs, hook artifacts and project file", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "status-hooks-golden-"))
   try {
     const manifest = createStatusHooksManifest(path.join(root, "data"))
@@ -52,7 +52,7 @@ test("nine first-party templates reproduce the base wrappers, configs, hook arti
       project,
       manifest.files.notify,
     ).replaceAll(root, "{{root}}")
-    expect(defaultStatusHooks).toHaveLength(9)
+    expect(defaultStatusHooks).toHaveLength(8)
     const notify = "data/hooks/notify.sh"
     expect(withoutComments(actual[notify])).toBe(withoutComments(files[notify]))
     expect({ ...actual, [notify]: "" }).toEqual({ ...files, [notify]: "" })

@@ -62,7 +62,6 @@ describe("provider lifecycle normalization", () => {
 
   test.each([
     ["Claude", "UserPromptSubmit", "Stop"],
-    ["Gemini", "BeforeAgent", "AfterAgent"],
     ["Cursor", "beforeSubmitPrompt", "stop"],
     ["Copilot", "userPromptSubmitted", "sessionEnd"],
     ["MastraCode", "Start", "Stop"],

@@ -39,7 +39,7 @@ test("plugin catalog from the wire: the hosted catalog's targets, Pi and custom 
 })
 
 test("plugin catalog from the wire: an unknown target or a candidate missing a target is a contract mismatch", () => {
-  expect(marketplaceCatalogFromWire(catalog(["opencode", "gemini"], everyTarget))).toBeUndefined()
+  expect(marketplaceCatalogFromWire(catalog(["opencode", "acme"], everyTarget))).toBeUndefined()
   const withoutPi = Object.fromEntries(HOSTED_TARGETS.filter((id) => id !== "pi").map((id) => [id, activation]))
   expect(marketplaceCatalogFromWire(catalog(["opencode"], withoutPi))).toBeUndefined()
 })

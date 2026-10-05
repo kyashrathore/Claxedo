@@ -44,25 +44,6 @@
   },
   {
     "input": {
-      "hook_event_name": "BeforeAgent"
-    },
-    "output": {
-      "eventType": "Busy"
-    }
-  },
-  {
-    "input": {
-      "hook_event_name": "AfterTool"
-    },
-    "output": {
-      "eventType": "Busy",
-      "toolCompletion": {
-        "toolKey": null
-      }
-    }
-  },
-  {
-    "input": {
       "hook_event_name": "beforeSubmitPrompt"
     },
     "output": {
@@ -172,14 +153,6 @@
   },
   {
     "input": {
-      "hook_event_name": "AfterAgent"
-    },
-    "output": {
-      "eventType": "Idle"
-    }
-  },
-  {
-    "input": {
       "hook_event_name": "stop"
     },
     "output": {
@@ -448,29 +421,6 @@
   {
     "input": {
       "provider": "claude",
-      "hook_event_name": "BeforeAgent"
-    },
-    "output": {
-      "eventType": "Busy",
-      "provider": "claude"
-    }
-  },
-  {
-    "input": {
-      "provider": "claude",
-      "hook_event_name": "AfterTool"
-    },
-    "output": {
-      "eventType": "Busy",
-      "toolCompletion": {
-        "toolKey": null
-      },
-      "provider": "claude"
-    }
-  },
-  {
-    "input": {
-      "provider": "claude",
       "hook_event_name": "beforeSubmitPrompt"
     },
     "output": {
@@ -595,16 +545,6 @@
     "input": {
       "provider": "claude",
       "hook_event_name": "SessionEnd"
-    },
-    "output": {
-      "eventType": "Idle",
-      "provider": "claude"
-    }
-  },
-  {
-    "input": {
-      "provider": "claude",
-      "hook_event_name": "AfterAgent"
     },
     "output": {
       "eventType": "Idle",
@@ -925,29 +865,6 @@
   {
     "input": {
       "provider": "codex",
-      "hook_event_name": "BeforeAgent"
-    },
-    "output": {
-      "eventType": "Busy",
-      "provider": "codex"
-    }
-  },
-  {
-    "input": {
-      "provider": "codex",
-      "hook_event_name": "AfterTool"
-    },
-    "output": {
-      "eventType": "Busy",
-      "toolCompletion": {
-        "toolKey": null
-      },
-      "provider": "codex"
-    }
-  },
-  {
-    "input": {
-      "provider": "codex",
       "hook_event_name": "beforeSubmitPrompt"
     },
     "output": {
@@ -1072,16 +989,6 @@
     "input": {
       "provider": "codex",
       "hook_event_name": "SessionEnd"
-    },
-    "output": {
-      "eventType": "Idle",
-      "provider": "codex"
-    }
-  },
-  {
-    "input": {
-      "provider": "codex",
-      "hook_event_name": "AfterAgent"
     },
     "output": {
       "eventType": "Idle",
@@ -1402,29 +1309,6 @@
   {
     "input": {
       "provider": "cursor",
-      "hook_event_name": "BeforeAgent"
-    },
-    "output": {
-      "eventType": "Busy",
-      "provider": "cursor"
-    }
-  },
-  {
-    "input": {
-      "provider": "cursor",
-      "hook_event_name": "AfterTool"
-    },
-    "output": {
-      "eventType": "Busy",
-      "toolCompletion": {
-        "toolKey": null
-      },
-      "provider": "cursor"
-    }
-  },
-  {
-    "input": {
-      "provider": "cursor",
       "hook_event_name": "beforeSubmitPrompt"
     },
     "output": {
@@ -1549,16 +1433,6 @@
     "input": {
       "provider": "cursor",
       "hook_event_name": "SessionEnd"
-    },
-    "output": {
-      "eventType": "Idle",
-      "provider": "cursor"
-    }
-  },
-  {
-    "input": {
-      "provider": "cursor",
-      "hook_event_name": "AfterAgent"
     },
     "output": {
       "eventType": "Idle",
@@ -1825,483 +1699,6 @@
   },
   {
     "input": {
-      "provider": "gemini",
-      "hook_event_name": "Busy"
-    },
-    "output": {
-      "eventType": "Busy",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "Start"
-    },
-    "output": {
-      "eventType": "Busy",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "SessionStart"
-    },
-    "output": {
-      "eventType": "Busy",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "UserPromptSubmit"
-    },
-    "output": {
-      "eventType": "Busy",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "PostToolUse"
-    },
-    "output": {
-      "eventType": "Busy",
-      "toolCompletion": {
-        "toolKey": null
-      },
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "BeforeAgent"
-    },
-    "output": {
-      "eventType": "Busy",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "AfterTool"
-    },
-    "output": {
-      "eventType": "Busy",
-      "toolCompletion": {
-        "toolKey": null
-      },
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "beforeSubmitPrompt"
-    },
-    "output": {
-      "eventType": "Busy",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "sessionStart"
-    },
-    "output": {
-      "eventType": "Busy",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "userPromptSubmitted"
-    },
-    "output": {
-      "eventType": "Busy",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "postToolUse"
-    },
-    "output": {
-      "eventType": "Busy",
-      "toolCompletion": {
-        "toolKey": null
-      },
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "agent-turn-start"
-    },
-    "output": {
-      "eventType": "Busy",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "PostToolUseFailure"
-    },
-    "output": {
-      "eventType": "Busy",
-      "toolCompletion": {
-        "toolKey": null
-      },
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "postToolUseFailure"
-    },
-    "output": {
-      "eventType": "Busy",
-      "toolCompletion": {
-        "toolKey": null
-      },
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "PermissionDenied"
-    },
-    "output": {
-      "eventType": "Busy",
-      "toolCompletion": {
-        "toolKey": null
-      },
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "Idle"
-    },
-    "output": {
-      "eventType": "Idle",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "Interrupt"
-    },
-    "output": {
-      "eventType": "Idle",
-      "outcome": "cancelled",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "Stop"
-    },
-    "output": {
-      "eventType": "Idle",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "SessionEnd"
-    },
-    "output": {
-      "eventType": "Idle",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "AfterAgent"
-    },
-    "output": {
-      "eventType": "Idle",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "stop"
-    },
-    "output": {
-      "eventType": "Idle",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "sessionEnd"
-    },
-    "output": {
-      "eventType": "Idle",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "agent-turn-complete"
-    },
-    "output": {
-      "eventType": "Idle",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "Error"
-    },
-    "output": {
-      "eventType": "Error",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "Failed"
-    },
-    "output": {
-      "eventType": "Error",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "StopFailure"
-    },
-    "output": {
-      "eventType": "Error",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "session.error"
-    },
-    "output": {
-      "eventType": "Error",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "sessionError"
-    },
-    "output": {
-      "eventType": "Error",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "agent-turn-error"
-    },
-    "output": {
-      "eventType": "Error",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "task-failed"
-    },
-    "output": {
-      "eventType": "Error",
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "UserActionRequired"
-    },
-    "output": {
-      "eventType": "UserActionRequired",
-      "userAction": {
-        "toolKey": null
-      },
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "beforeShellExecution"
-    },
-    "output": {
-      "eventType": "UserActionRequired",
-      "userAction": {
-        "toolKey": null
-      },
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "beforeMCPExecution"
-    },
-    "output": {
-      "eventType": "UserActionRequired",
-      "userAction": {
-        "toolKey": null
-      },
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "PermissionRequest"
-    },
-    "output": {
-      "eventType": "UserActionRequired",
-      "userAction": {
-        "toolKey": null
-      },
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "QuestionRequest"
-    },
-    "output": {
-      "eventType": "UserActionRequired",
-      "userAction": {
-        "toolKey": null
-      },
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "question"
-    },
-    "output": {
-      "eventType": "UserActionRequired",
-      "userAction": {
-        "toolKey": null
-      },
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "question.asked"
-    },
-    "output": {
-      "eventType": "UserActionRequired",
-      "userAction": {
-        "toolKey": null
-      },
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "Notification"
-    },
-    "output": {
-      "eventType": "UserActionRequired",
-      "userAction": {
-        "toolKey": null
-      },
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "permission-request"
-    },
-    "output": {
-      "eventType": "UserActionRequired",
-      "userAction": {
-        "toolKey": null
-      },
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "question-request"
-    },
-    "output": {
-      "eventType": "UserActionRequired",
-      "userAction": {
-        "toolKey": null
-      },
-      "provider": "gemini"
-    }
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "PreToolUse"
-    },
-    "output": null
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "SubagentStart"
-    },
-    "output": null
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "SubagentStop"
-    },
-    "output": null
-  },
-  {
-    "input": {
-      "provider": "gemini",
-      "hook_event_name": "unknown"
-    },
-    "output": null
-  },
-  {
-    "input": {
       "provider": "antigravity",
       "hook_event_name": "Busy"
     },
@@ -2332,20 +1729,6 @@
     "input": {
       "provider": "antigravity",
       "hook_event_name": "PostToolUse"
-    },
-    "output": null
-  },
-  {
-    "input": {
-      "provider": "antigravity",
-      "hook_event_name": "BeforeAgent"
-    },
-    "output": null
-  },
-  {
-    "input": {
-      "provider": "antigravity",
-      "hook_event_name": "AfterTool"
     },
     "output": null
   },
@@ -2430,13 +1813,6 @@
     "input": {
       "provider": "antigravity",
       "hook_event_name": "SessionEnd"
-    },
-    "output": null
-  },
-  {
-    "input": {
-      "provider": "antigravity",
-      "hook_event_name": "AfterAgent"
     },
     "output": null
   },
@@ -2664,29 +2040,6 @@
   {
     "input": {
       "provider": "droid",
-      "hook_event_name": "BeforeAgent"
-    },
-    "output": {
-      "eventType": "Busy",
-      "provider": "droid"
-    }
-  },
-  {
-    "input": {
-      "provider": "droid",
-      "hook_event_name": "AfterTool"
-    },
-    "output": {
-      "eventType": "Busy",
-      "toolCompletion": {
-        "toolKey": null
-      },
-      "provider": "droid"
-    }
-  },
-  {
-    "input": {
-      "provider": "droid",
       "hook_event_name": "beforeSubmitPrompt"
     },
     "output": {
@@ -2811,16 +2164,6 @@
     "input": {
       "provider": "droid",
       "hook_event_name": "SessionEnd"
-    },
-    "output": {
-      "eventType": "Idle",
-      "provider": "droid"
-    }
-  },
-  {
-    "input": {
-      "provider": "droid",
-      "hook_event_name": "AfterAgent"
     },
     "output": {
       "eventType": "Idle",
@@ -3141,29 +2484,6 @@
   {
     "input": {
       "provider": "mastracode",
-      "hook_event_name": "BeforeAgent"
-    },
-    "output": {
-      "eventType": "Busy",
-      "provider": "mastracode"
-    }
-  },
-  {
-    "input": {
-      "provider": "mastracode",
-      "hook_event_name": "AfterTool"
-    },
-    "output": {
-      "eventType": "Busy",
-      "toolCompletion": {
-        "toolKey": null
-      },
-      "provider": "mastracode"
-    }
-  },
-  {
-    "input": {
-      "provider": "mastracode",
       "hook_event_name": "beforeSubmitPrompt"
     },
     "output": {
@@ -3288,16 +2608,6 @@
     "input": {
       "provider": "mastracode",
       "hook_event_name": "SessionEnd"
-    },
-    "output": {
-      "eventType": "Idle",
-      "provider": "mastracode"
-    }
-  },
-  {
-    "input": {
-      "provider": "mastracode",
-      "hook_event_name": "AfterAgent"
     },
     "output": {
       "eventType": "Idle",
@@ -3618,29 +2928,6 @@
   {
     "input": {
       "provider": "amp",
-      "hook_event_name": "BeforeAgent"
-    },
-    "output": {
-      "eventType": "Busy",
-      "provider": "amp"
-    }
-  },
-  {
-    "input": {
-      "provider": "amp",
-      "hook_event_name": "AfterTool"
-    },
-    "output": {
-      "eventType": "Busy",
-      "toolCompletion": {
-        "toolKey": null
-      },
-      "provider": "amp"
-    }
-  },
-  {
-    "input": {
-      "provider": "amp",
       "hook_event_name": "beforeSubmitPrompt"
     },
     "output": {
@@ -3765,16 +3052,6 @@
     "input": {
       "provider": "amp",
       "hook_event_name": "SessionEnd"
-    },
-    "output": {
-      "eventType": "Idle",
-      "provider": "amp"
-    }
-  },
-  {
-    "input": {
-      "provider": "amp",
-      "hook_event_name": "AfterAgent"
     },
     "output": {
       "eventType": "Idle",
@@ -4095,29 +3372,6 @@
   {
     "input": {
       "provider": "copilot",
-      "hook_event_name": "BeforeAgent"
-    },
-    "output": {
-      "eventType": "Busy",
-      "provider": "copilot"
-    }
-  },
-  {
-    "input": {
-      "provider": "copilot",
-      "hook_event_name": "AfterTool"
-    },
-    "output": {
-      "eventType": "Busy",
-      "toolCompletion": {
-        "toolKey": null
-      },
-      "provider": "copilot"
-    }
-  },
-  {
-    "input": {
-      "provider": "copilot",
       "hook_event_name": "beforeSubmitPrompt"
     },
     "output": {
@@ -4242,16 +3496,6 @@
     "input": {
       "provider": "copilot",
       "hook_event_name": "SessionEnd"
-    },
-    "output": {
-      "eventType": "Idle",
-      "provider": "copilot"
-    }
-  },
-  {
-    "input": {
-      "provider": "copilot",
-      "hook_event_name": "AfterAgent"
     },
     "output": {
       "eventType": "Idle",
@@ -5294,34 +4538,6 @@
   },
   {
     "input": {
-      "hook_event_name": "BeforeAgent",
-      "agent_id": "child",
-      "tool_name": "request_user_input",
-      "tool_input": {
-        "command": "ls"
-      }
-    },
-    "output": null
-  },
-  {
-    "input": {
-      "hook_event_name": "AfterTool",
-      "agent_id": "child",
-      "tool_name": "request_user_input",
-      "tool_input": {
-        "command": "ls"
-      }
-    },
-    "output": {
-      "eventType": "Busy",
-      "subagent": true,
-      "toolCompletion": {
-        "toolKey": "ls"
-      }
-    }
-  },
-  {
-    "input": {
       "hook_event_name": "beforeSubmitPrompt",
       "agent_id": "child",
       "tool_name": "request_user_input",
@@ -5468,17 +4684,6 @@
   {
     "input": {
       "hook_event_name": "SessionEnd",
-      "agent_id": "child",
-      "tool_name": "request_user_input",
-      "tool_input": {
-        "command": "ls"
-      }
-    },
-    "output": null
-  },
-  {
-    "input": {
-      "hook_event_name": "AfterAgent",
       "agent_id": "child",
       "tool_name": "request_user_input",
       "tool_input": {
@@ -5882,33 +5087,6 @@
   },
   {
     "input": {
-      "hook_event_name": "BeforeAgent",
-      "tool_name": "request_user_input",
-      "tool_input": {
-        "command": "ls"
-      }
-    },
-    "output": {
-      "eventType": "Busy"
-    }
-  },
-  {
-    "input": {
-      "hook_event_name": "AfterTool",
-      "tool_name": "request_user_input",
-      "tool_input": {
-        "command": "ls"
-      }
-    },
-    "output": {
-      "eventType": "Busy",
-      "toolCompletion": {
-        "toolKey": "ls"
-      }
-    }
-  },
-  {
-    "input": {
       "hook_event_name": "beforeSubmitPrompt",
       "tool_name": "request_user_input",
       "tool_input": {
@@ -6055,18 +5233,6 @@
   {
     "input": {
       "hook_event_name": "SessionEnd",
-      "tool_name": "request_user_input",
-      "tool_input": {
-        "command": "ls"
-      }
-    },
-    "output": {
-      "eventType": "Idle"
-    }
-  },
-  {
-    "input": {
-      "hook_event_name": "AfterAgent",
       "tool_name": "request_user_input",
       "tool_input": {
         "command": "ls"

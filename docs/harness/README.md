@@ -206,8 +206,8 @@ through hooks that post to `POST /api/wr/hook/agent-lifecycle`
 ([`AgentHookRoutes`](../../packages/workspace-runtime/src/routes/agent-hook.ts)).
 These hooks set tab status only; they never produce a session transcript.
 
-The nine first-party templates (Claude Code, Codex, Cursor, Gemini,
-Antigravity, Droid, Mastra, Amp and Copilot) are data in the bundled
+The eight first-party templates (Claude Code, Codex, Cursor, Antigravity,
+Droid, Mastra, Amp and Copilot) are data in the bundled
 `@claxedo/status-hooks` package. The engine in
 [`agent-hooks/`](../../packages/workspace-runtime/src/agent-hooks/README.md)
 installs each as wrapper flags, a config merge or a project file, and maps its

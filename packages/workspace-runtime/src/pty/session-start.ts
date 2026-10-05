@@ -93,7 +93,7 @@ const HISTORY_RETENTION_MS = (() => {
   return Math.floor(raw)
 })()
 const agentInitialCommand = (value: string) => {
-  const match = value.match(/^(\s*)(claude|codex|gemini|cursor)(?=\s|$)(.*)$/)
+  const match = value.match(/^(\s*)(claude|codex|cursor)(?=\s|$)(.*)$/)
   if (!match) return value
   const command = match[2]
   if (!command) return value

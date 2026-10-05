@@ -19,8 +19,8 @@ function standardBinDirs(): string[] {
 
 /**
  * Prepend the standard agent-install directories to PATH so the harnesses can
- * find the user's system-installed CLIs (`claude`, `codex`, `cursor-agent`,
- * `gemini`) when the app was launched from Finder/Dock with a trimmed PATH.
+ * find the user's system-installed CLIs (`claude`, `codex`, `cursor-agent`)
+ * when the app was launched from Finder/Dock with a trimmed PATH.
  * Both the embedded claxedo-server (this process) and the spawned sidecar
  * (inherits this env) then resolve them. Idempotent.
  */
