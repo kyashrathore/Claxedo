@@ -144,7 +144,7 @@ test("24 a terminal on a live sandbox belongs to the open session, and with no s
   await page.goto(`${signedCloud.url}${sessionRoute(workspace.id)}`)
   await page.getByRole("button", { name: "New Terminal", exact: true }).click()
   await page.getByRole("button", { name: /^Shell\b/ }).click()
-  await expect(page.getByText("Open a session in main to start a terminal there")).toBeVisible()
+  await expect(page.getByText("Open a session on this machine to start a terminal")).toBeVisible()
   expect(creates).toEqual([])
 
   await page.goto(`${signedCloud.url}${sessionRoute(workspace.id, sessionId)}`)
