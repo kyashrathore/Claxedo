@@ -5,7 +5,8 @@ import type { SessionRowView } from "@/session"
 import { sessionLinkPath, useShellRoute } from "@/shell"
 import { terminalPaneKind } from "@/terminal"
 import { useWorkbench } from "@/workbench"
-import { sessionMarker, type RailRow } from "../model"
+import type { RailRow } from "../model"
+import { sessionMarker } from "../session-marker"
 
 export function createRowNavigation() {
   const server = useServer()
