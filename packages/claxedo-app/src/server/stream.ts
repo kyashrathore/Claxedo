@@ -4,6 +4,7 @@ import { EVENT_STREAM_STALL_TIMEOUT_MS } from "@claxedo/agent-runtime-contract"
 import { machine, unreachable, type Machine } from "../lib/machine"
 import { responseError, ServerError, toAppError } from "./errors"
 import type { ConnectionState } from "./events"
+import { isImageOutdated } from "./wire/connection"
 import { streamSignalOf } from "./wire/stream-signals"
 
 export type StreamOptions = {
@@ -131,7 +132,7 @@ async function openStreamAttempt(run: StreamRun) {
   } catch (error) {
     if (run.closed || run.attempt !== controller) return
     const reason = toAppError(error)
-    if (reason.status === 401 || reason.status === 403 || reason.class === "not_found") return endRefusedStream(run, reason)
+    if (reason.status === 401 || reason.status === 403 || reason.class === "not_found" || isImageOutdated(reason)) return endRefusedStream(run, reason)
     console.error("The event stream dropped", reason)
     scheduleReconnect(run)
   } finally {

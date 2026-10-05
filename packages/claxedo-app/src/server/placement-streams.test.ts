@@ -291,3 +291,25 @@ test("a watched remote placement streams its terminals once, with no session's f
     expect(opened[1]?.signal?.aborted).toBe(true)
   } finally { streams.close(); queryClient.clear() }
 })
+
+test("a session stream refused because its workspace runs an older image stays closed, and reopens with a re-read once the catalog changes after a restart", async () => {
+  const serverUrl = "http://127.0.0.1:1"
+  const queryClient = new QueryClient()
+  let restarted = false
+  const seen: string[] = []
+  const transport = { serverUrl, runtime: async () => {
+    seen.push(restarted ? "opened" : "refused")
+    return restarted ? openBody() : Response.json({ error: { code: "cloud_runtime_image_outdated" } }, { status: 409 })
+  } } as unknown as Transport
+  const streams = createPlacementStreams({ transport, workspaces, queryClient, onFrame: () => undefined, onGap: () => seen.push("re-read") })
+  const detach = streams.attach(ref("ses_outdated"))
+  try {
+    await settle()
+    await Bun.sleep(600)
+    expect(seen).toEqual(["refused"])
+    restarted = true
+    queryClient.setQueryData(queryKeys.bootstrap(serverUrl), { revision: 1 })
+    await settle()
+    expect(seen).toEqual(["refused", "opened", "re-read"])
+  } finally { detach(); streams.close(); queryClient.clear() }
+})

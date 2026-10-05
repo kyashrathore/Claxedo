@@ -1,5 +1,6 @@
 import { hashKey, type QueryClient } from "@tanstack/solid-query"
 import { toAppError } from "./errors"
+import { isImageOutdated } from "./wire/connection"
 import { queryKeys } from "./query-keys"
 import { placementId, sessionId, type PlacementId } from "./ids"
 import { openEventStream, type Stream } from "./stream"
@@ -24,7 +25,7 @@ type StreamsInput = {
   readonly onGap: () => void
 }
 
-type OpenStream = { readonly stream: Stream; readonly route: string }
+type OpenStream = { readonly stream: Stream; readonly route: string; outdated: boolean }
 
 type StreamsState = {
   readonly input: StreamsInput
@@ -63,7 +64,7 @@ function refreshCatalog(input: StreamsInput) {
 
 function openRuntimeStream(input: StreamsInput, route: RuntimeRoute, path: string, rerouted: boolean): OpenStream {
   let missed = rerouted
-  return { route: routeKey(route), stream: openEventStream({
+  const open: OpenStream = { route: routeKey(route), outdated: false, stream: openEventStream({
     open: ({ headers, signal }) => input.transport.runtime(route, path, { headers, signal }),
     onFrame: (frame) => input.onFrame(frame && typeof frame === "object" ? { ...frame, workspaceId: route.workspaceId } : frame),
     onGap: input.onGap,
@@ -74,18 +75,20 @@ function openRuntimeStream(input: StreamsInput, route: RuntimeRoute, path: strin
       }
       if (!route.sharedSession && connection.kind === "reconnecting" && connection.attempt === 1) refreshCatalog(input)
     },
-    onRefused: () => {
-      if (route.sharedSession) void input.workspaces.shared.refresh().then(input.onGap, (error) => console.error("Shared sessions could not be refreshed", error))
+    onRefused: (error) => {
+      if (isImageOutdated(error)) open.outdated = true
+      else if (route.sharedSession) void input.workspaces.shared.refresh().then(input.onGap, (error) => console.error("Shared sessions could not be refreshed", error))
       else refreshCatalog(input)
     },
   }) }
+  return open
 }
 
 function reconcileKeyed<K, W extends { readonly route: RuntimeRoute }>(open: Map<K, OpenStream>, want: Map<K, W>, start: (wanted: W, rerouted: boolean) => OpenStream) {
   const rerouted = new Set<K>()
   for (const [key, current] of open) {
     const route = want.get(key)?.route
-    if (route && routeKey(route) === current.route) continue
+    if (route && routeKey(route) === current.route && !current.outdated) continue
     if (route) rerouted.add(key)
     current.stream.close()
     open.delete(key)
