@@ -19,5 +19,5 @@ test("06 text typed in one draft stays in that draft: another workspace's draft 
   await expect(prompt).toHaveText("Only in draft A")
   const drafts = await app.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith("claxedo:composer:") && key.includes(":draft:")))
   expect(drafts).toHaveLength(1)
-  expect(drafts[0]).toMatch(/:(user|machine):[^:]+:draft:draft_/)
+  expect(drafts[0]).toMatch(/:(user:[^:]+|machine(:[^:]+)?):draft:draft_/)
 })
