@@ -47,7 +47,7 @@ test("54 shell: sign-in shows the artwork beside the form on the web and the for
   expect(((await session.json()) as { user: { email: string } }).user.email).toBe(signed.owner.email)
 })
 
-test("54 shell: rows are two lines, the home screen offers only the composer, the account menu repeats neither the name nor Settings, and logout stays in the menu until it is done", async ({ signed, page, isMobile }, testInfo) => {
+test("54 shell: rows are two lines, the home screen offers only the composer, the account menu holds Usage and Settings but not the name, and logout stays in the menu until it is done", async ({ signed, page, isMobile }, testInfo) => {
   await sessionsIn(signed, ["Fix the login redirect"])
   await signed.signIn(page, signed.owner)
   await expect(page.getByRole("textbox", { name: UI.composer })).toBeVisible()
