@@ -3,7 +3,7 @@ import { toAppError } from "./errors"
 import { queryKeys } from "./query-keys"
 import { placementId, sessionId } from "./ids"
 import { openEventStream, type Stream } from "./stream"
-import type { Transport } from "./transport"
+import type { RuntimeRoute, Transport } from "./transport"
 import type { SessionLocation } from "./types"
 import type { Workspaces } from "./workspaces"
 
@@ -23,10 +23,16 @@ type StreamsInput = {
   readonly onGap: () => void
 }
 
+type OpenStream = { readonly stream: Stream; readonly route: string }
+
 type StreamsState = {
   readonly input: StreamsInput
   readonly attached: Map<string, Map<string, number>>
-  readonly sessions: Map<string, Stream>
+  readonly sessions: Map<string, OpenStream>
+}
+
+function routeKey(route: RuntimeRoute): string {
+  return JSON.stringify([route.workspaceId, route.directory, route.sessionHost?.sessionId, route.sharedSession?.sessionId])
 }
 
 function liveRemoteRoute(workspaces: Workspaces, placement: string, session: string) {
@@ -38,10 +44,11 @@ function sessionKey(placement: string, session: string) {
 }
 
 function wanted(state: StreamsState) {
-  const sessions = new Map<string, { placement: string; session: string }>()
+  const sessions = new Map<string, { session: string; route: RuntimeRoute }>()
   for (const [placement, attachedSessions] of state.attached) {
     for (const session of attachedSessions.keys()) {
-      if (liveRemoteRoute(state.input.workspaces, placement, session)) sessions.set(sessionKey(placement, session), { placement, session })
+      const route = liveRemoteRoute(state.input.workspaces, placement, session)
+      if (route) sessions.set(sessionKey(placement, session), { session, route })
     }
   }
   return sessions
@@ -54,16 +61,16 @@ function refreshCatalog(input: StreamsInput) {
 function reconcileStreams(state: StreamsState) {
   const { input, sessions } = state
   const want = wanted(state)
-  for (const [key, stream] of sessions) {
-    if (want.has(key)) continue
-    stream.close()
+  for (const [key, open] of sessions) {
+    const route = want.get(key)?.route
+    if (route && routeKey(route) === open.route) continue
+    open.stream.close()
     sessions.delete(key)
   }
-  for (const [key, { placement, session }] of want) {
-    const route = liveRemoteRoute(input.workspaces, placement, session)
-    if (!route || sessions.has(key)) continue
+  for (const [key, { session, route }] of want) {
+    if (sessions.has(key)) continue
     const path = `${RUNTIME_EVENTS_PATH}?sessionID=${encodeURIComponent(session)}`
-    sessions.set(key, openEventStream({
+    sessions.set(key, { route: routeKey(route), stream: openEventStream({
       open: ({ headers, signal }) => input.transport.runtime(route, path, { headers, signal }),
       onFrame: (frame) => input.onFrame(frame && typeof frame === "object" ? { ...frame, workspaceId: route.workspaceId } : frame),
       onGap: input.onGap,
@@ -74,16 +81,17 @@ function reconcileStreams(state: StreamsState) {
         if (route.sharedSession) void input.workspaces.shared.refresh().then(input.onGap, (error) => console.error("Shared sessions could not be refreshed", error))
         else refreshCatalog(input)
       },
-    }))
+    }) })
   }
 }
 
 export function createPlacementStreams(input: StreamsInput): PlacementStreams {
   const state: StreamsState = { input, attached: new Map(), sessions: new Map() }
   const catalogKeys = new Set([queryKeys.bootstrap(input.transport.serverUrl), queryKeys.accountCatalog(input.transport.serverUrl), queryKeys.sharedSessions(input.transport.serverUrl)].map(hashKey))
-  const unsubscribe = input.queryClient.getQueryCache().subscribe((event) => {
+  const unsubscribeCatalog = input.queryClient.getQueryCache().subscribe((event) => {
     if (catalogKeys.has(event.query.queryHash) && event.type === "updated") reconcileStreams(state)
   })
+  const unsubscribeHosts = input.workspaces.onSessionHostLearned(() => reconcileStreams(state))
   return {
     attach: (ref) => {
       const placement = String(ref.placementId)
@@ -105,7 +113,8 @@ export function createPlacementStreams(input: StreamsInput): PlacementStreams {
     },
     streams: (ref) => state.sessions.has(sessionKey(String(ref.placementId), String(ref.sessionId))),
     close: () => {
-      unsubscribe()
+      unsubscribeCatalog()
+      unsubscribeHosts()
       state.attached.clear()
       reconcileStreams(state)
     },

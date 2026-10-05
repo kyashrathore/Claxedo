@@ -5,7 +5,9 @@ import { placementId, projectId, sessionId } from "./ids"
 import { createPlacementStreams } from "./placement-streams"
 import { queryKeys } from "./query-keys"
 import type { Transport } from "./transport"
-import type { Workspaces } from "./workspaces"
+import { createWorkspaces, type Workspaces } from "./workspaces"
+import type { RuntimeRoute, SessionHostListener } from "./transport"
+import { createRoot } from "solid-js"
 
 async function settle() {
   for (let tick = 0; tick < 20; tick += 1) await Promise.resolve()
@@ -21,7 +23,7 @@ const record = {
   route: { directory: "workspace:ws_shared", workspaceId: "ws_shared", remote: true },
 }
 const home = async () => ({ route: record.route, central: false, live: true })
-const workspaces = { streamRoute: () => record.route, home, refresh: async () => undefined } as unknown as Workspaces
+const workspaces = { streamRoute: () => record.route, home, refresh: async () => undefined, onSessionHostLearned: () => () => undefined } as unknown as Workspaces
 
 function ref(id: string) {
   return { projectId: projectId("prj"), placementId: placement, sessionId: sessionId(id) }
@@ -34,6 +36,7 @@ function stoppingWorkspaces(queryClient: QueryClient, serverUrl: string) {
   const workspaces = {
     streamRoute: () => reachable ? record.route : undefined,
     home,
+    onSessionHostLearned: () => () => undefined,
     refresh: async () => {
       refreshed += 1
       reachable = false
@@ -96,7 +99,7 @@ test("a shared placement streams with session scope and a revoked share closes t
     routes.push(route); signal = init.signal ?? undefined; return openBody()
   } } as unknown as Transport
   const scoped = { ...record.route, sharedSession: { sessionId: "ses_shared", level: "follow" } }
-  const workspaces = { catalog: () => ({ placements: [] }), streamRoute: () => listed ? scoped : undefined, home } as unknown as Workspaces
+  const workspaces = { catalog: () => ({ placements: [] }), streamRoute: () => listed ? scoped : undefined, home, onSessionHostLearned: () => () => undefined } as unknown as Workspaces
   const streams = createPlacementStreams({ transport, workspaces, queryClient, onFrame: () => undefined, onGap: () => undefined })
   const detach = streams.attach(ref("ses_shared"))
   try {
@@ -141,7 +144,7 @@ for (const catalog of ["bootstrap", "accountCatalog"] as const) test(`a ${catalo
   const paths: string[] = []
   const serverUrl = "http://127.0.0.1:1"
   const queryClient = new QueryClient()
-  const workspaces = { streamRoute: () => reachable ? record.route : undefined, home } as unknown as Workspaces
+  const workspaces = { streamRoute: () => reachable ? record.route : undefined, home, onSessionHostLearned: () => () => undefined } as unknown as Workspaces
   const transport = { serverUrl, runtime: async (_route: unknown, path: string, init: RequestInit) => {
     paths.push(path)
     signal = init.signal ?? undefined
@@ -187,6 +190,7 @@ test("a cloud session's stream opens only once its host is known, on the host th
   const answered = Promise.withResolvers<void>()
   const workspaces = {
     streamRoute: () => known,
+    onSessionHostLearned: () => () => undefined,
     home: async () => {
       await answered.promise
       known = hosted
@@ -203,4 +207,45 @@ test("a cloud session's stream opens only once its host is known, on the host th
   expect(routes).toEqual([hosted])
   detach()
   streams.close()
+})
+
+test("a session whose stream opened against its workspace moves to its own host once the host becomes known", async () => {
+  await createRoot(async (dispose) => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const serverUrl = "https://claxedo.test"
+    const opened: { route: RuntimeRoute; signal: AbortSignal }[] = []
+    let announce: SessionHostListener | undefined
+    const transport = {
+      serverUrl,
+      loopback: false,
+      json: async () => ({
+        deployment: { serverKind: "daemon", issuesSessions: true },
+        host: { name: "Ada's MacBook" },
+        project: [{ id: "prj_pi", worktree: "ws_cloud", workspaces: { ws_cloud: { id: "ws_cloud", backing: "cloud-vm", workspace_name: "pi", reachable: true, directory: "workspace:ws_cloud" } } }],
+      }),
+      findSessionHost: async () => undefined,
+      onSessionHost: (listener: SessionHostListener) => {
+        announce = listener
+        return () => undefined
+      },
+      runtime: async (route: RuntimeRoute, _path: string, init: { signal: AbortSignal }) => {
+        opened.push({ route, signal: init.signal })
+        return openBody()
+      },
+    } as unknown as Transport
+    const workspaces = createWorkspaces(transport, queryClient)
+    const streams = createPlacementStreams({ transport, workspaces, queryClient, onFrame: () => undefined, onGap: () => undefined })
+    const session = { projectId: projectId("prj_pi"), placementId: placementId("ws_cloud"), sessionId: sessionId("ses_pi") }
+    const detach = streams.attach(session)
+    try {
+      await workspaces.load()
+      await settle()
+      expect(opened.map((entry) => entry.route.sessionHost)).toEqual([undefined])
+      announce?.("ws_cloud", "ses_pi", "root_pi")
+      await settle()
+      expect(opened.map((entry) => entry.route.sessionHost?.sessionId)).toEqual([undefined, "root_pi"])
+      expect(opened[0]?.signal.aborted).toBe(true)
+      expect(streams.streams(session)).toBe(true)
+    } finally { detach(); streams.close(); workspaces.dispose(); queryClient.clear(); dispose() }
+  })
 })

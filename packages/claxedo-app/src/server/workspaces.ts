@@ -31,6 +31,7 @@ export type Workspaces = Pick<PlacementsApi, "byId" | "list"> & {
   readonly home: (ref: SessionLocation) => Promise<SessionHome>
   readonly learn: (directory: string) => Promise<void>
   readonly hostSession: (ref: Pick<SessionLocation, "placementId" | "sessionId">, root: string | undefined) => void
+  readonly onSessionHostLearned: (listener: () => void) => () => void
   readonly catalog: () => BootstrapCatalog | undefined
   readonly load: () => Promise<BootstrapCatalog>
   readonly refresh: () => Promise<void>
@@ -73,9 +74,9 @@ function observeQuery(queryClient: QueryClient, key: readonly unknown[]): { read
 
 function placementReads(records: () => readonly PlacementRecord[]) {
   const recordOf = (id: PlacementId) => records().find((record) => record.placement.id === id)
-  const hosts: SessionHosts = { roots: new Map(), askedOrServedByWorkspace: new Map() }
+  const hosts: SessionHosts = { roots: new Map(), askedOrServedByWorkspace: new Map(), learned: new Set() }
   const answer = (key: string, root: string | undefined) => {
-    if (root) hosts.roots.set(key, root)
+    if (root) rememberSessionHost(hosts, key, root)
     hosts.askedOrServedByWorkspace.set(key, Promise.resolve())
   }
   const learnSessionHost = (workspaceId: string, sessionId: string, root: string) => {
@@ -87,10 +88,15 @@ function placementReads(records: () => readonly PlacementRecord[]) {
     list: () => records().map((record) => record.placement),
     hostSession: (ref, root) => answer(sessionHostKey(ref), root),
   }
+  const onSessionHostLearned = (listener: () => void) => {
+    hosts.learned.add(listener)
+    return () => void hosts.learned.delete(listener)
+  }
   return {
     recordOf,
     hosts,
     learnSessionHost,
+    onSessionHostLearned,
     published,
     address: {
       placementFor: (directory: string, workspaceId?: string) => {
@@ -101,7 +107,13 @@ function placementReads(records: () => readonly PlacementRecord[]) {
   }
 }
 
-type SessionHosts = { readonly roots: Map<string, string>; readonly askedOrServedByWorkspace: Map<string, Promise<unknown>> }
+type SessionHosts = { readonly roots: Map<string, string>; readonly askedOrServedByWorkspace: Map<string, Promise<unknown>>; readonly learned: Set<() => void> }
+
+function rememberSessionHost(hosts: SessionHosts, key: string, root: string) {
+  if (hosts.roots.get(key) === root) return
+  hosts.roots.set(key, root)
+  for (const listener of hosts.learned) listener()
+}
 
 const sessionHostKey = (ref: Pick<SessionLocation, "placementId" | "sessionId">) => JSON.stringify([ref.placementId, ref.sessionId])
 
@@ -117,7 +129,7 @@ function cloudSessionHosts(find: HostFinder, hosts: SessionHosts) {
     if (record.placement.kind !== "cloud") return hostedRoute(record, hosts, ref)
     const key = sessionHostKey(ref)
     const pending = hosts.askedOrServedByWorkspace.get(key) ?? find(record.route.workspaceId, ref.sessionId).then((root) => {
-      if (root) hosts.roots.set(key, root)
+      if (root) rememberSessionHost(hosts, key, root)
     }, (error: unknown) => {
       hosts.askedOrServedByWorkspace.delete(key)
       throw error
@@ -245,6 +257,7 @@ export function createWorkspaces(transport: Transport, queryClient: QueryClient,
   return {
     shared,
     ...reads.published,
+    onSessionHostLearned: reads.onSessionHostLearned,
     ...sharedAware(reads, shared, hosts),
     ...placementRoutes(async (id) => {
       await load()
