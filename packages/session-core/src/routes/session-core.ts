@@ -898,7 +898,7 @@ export function createSessionRoutes(opts: Opts) {
           }
           let reserved = false
           if (body.id && operationId) {
-            const refused = await creationReservationGuard(opts, c, body.id, operationId)
+            const refused = await creationReservationGuard(opts, c, directory, body.id, operationId)
             if (refused) return refused
             reserved = managed
           }
@@ -1545,7 +1545,7 @@ export function createSessionRoutes(opts: Opts) {
         ), 400)
       }
       if (body.id && operationId) {
-        const refused = await creationReservationGuard(opts, c, body.id, operationId)
+        const refused = await creationReservationGuard(opts, c, directory, body.id, operationId)
         if (refused) return refused
       }
       let child: { id: string }

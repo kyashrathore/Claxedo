@@ -2936,16 +2936,33 @@ describe("create against an id that already exists", () => {
     expect(f.created).toEqual(["ses_alice"])
   })
 
-  test("a create for a session the authority already registered is refused instead of updating it", async () => {
+  test("a create retried after its first attempt registered the session answers that session without updating it", async () => {
     const f = privateSessionFixture()
     f.reserve("alice", "op_alice", "ses_alice")
-    await f.create("alice", { id: "ses_alice", agent: "build" }, "op_alice")
+    await f.create("alice", { id: "ses_alice", title: "First", agent: "build" }, "op_alice")
 
-    const repeated = await f.create("alice", { id: "ses_alice", agent: "plan" }, "op_alice")
+    const repeated = await f.create("alice", { id: "ses_alice", title: "Second", agent: "plan" }, "op_alice")
 
-    expect(repeated.status).toBe(403)
+    expect(repeated.status).toBe(200)
+    expect(await repeated.json()).toMatchObject({ id: "ses_alice", title: "First" })
+    expect(f.created).toEqual(["ses_alice"])
+    expect(f.store.listSessions(WORKSPACE).map((session) => session.id)).toEqual(["ses_alice"])
     expect(f.store.getSessionConfig("ses_alice")).toMatchObject({ agent: "build" })
     expect(f.deleted).toEqual([])
+  })
+
+  test("a registered session's create retried under someone else's operation is still refused", async () => {
+    const f = privateSessionFixture()
+    f.reserve("alice", "op_alice", "ses_alice")
+    await f.create("alice", { id: "ses_alice", title: "Alice", agent: "build" }, "op_alice")
+
+    const foreignOperation = await f.create("alice", { id: "ses_alice", agent: "plan" }, "op_unreserved")
+    const otherActor = await f.create("bob", { id: "ses_alice", agent: "plan" }, "op_alice")
+
+    expect(foreignOperation.status).toBe(403)
+    expect(otherActor.status).toBe(403)
+    expect(await otherActor.text()).not.toContain("Alice")
+    expect(f.store.getSessionConfig("ses_alice")).toMatchObject({ agent: "build" })
   })
 
   test("the retry of an ambiguous registration finishes the same session without creating a second one", async () => {

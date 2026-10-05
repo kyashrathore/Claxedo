@@ -3,7 +3,8 @@ import { asRecord } from "@claxedo/helpers/guards"
 import { sessionAccessContext, sessionAccessDenied, type SessionAccessOperation } from "../session-access-policy"
 import { errorBody } from "./error-body"
 import { sessionOperationGuard } from "./session-operation-guard"
-import { managedSessionLifecycle, type SessionRouteContext as Ctx, type SessionRouteOptions as Opts } from "./session-route-options"
+import { managedSessionLifecycle, readSession, type SessionRouteContext as Ctx, type SessionRouteOptions as Opts } from "./session-route-options"
+import type { RuntimeDirectory } from "../host/contracts"
 import type { SessionStatusSnapshot } from "./session-status-snapshot"
 
 export async function sessionStartGuard(opts: Opts, c: Ctx, owner: AgentSessionStartBinding, operation: SessionAccessOperation, created = false) {
@@ -29,9 +30,10 @@ export async function sessionStartGuard(opts: Opts, c: Ctx, owner: AgentSessionS
  * that already exists in it. Only the operation that reserved the id may
  * create, retry or undo it, and the authority refuses an id held by someone
  * else without naming the session behind it — so a caller who guesses another
- * person's id learns nothing and changes nothing.
+ * person's id learns nothing and changes nothing. A retry of the caller's own
+ * create that already registered is answered with that session, unchanged.
  */
-export async function creationReservationGuard(opts: Opts, c: Ctx, sessionId: string, operationId: string) {
+export async function creationReservationGuard(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string, operationId: string) {
   if (!managedSessionLifecycle(opts, c)) return undefined
   const decision = await opts.sessionAccessPolicy!.authorizeSessionStart({
     ...sessionAccessContext(c),
@@ -41,7 +43,26 @@ export async function creationReservationGuard(opts: Opts, c: Ctx, sessionId: st
     method: c.req.method,
     path: c.req.path,
   })
-  return decision.allowed ? undefined : sessionAccessDenied(decision)
+  if (decision.allowed) return undefined
+  return await registeredCreation(opts, c, directory, sessionId, operationId) ?? sessionAccessDenied(decision)
+}
+
+/**
+ * The authority no longer admits the start, yet the operation is still the
+ * caller's own and the session reads as theirs: the first attempt registered it.
+ */
+async function registeredCreation(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string, operationId: string) {
+  const status = await opts.sessionAccessPolicy!.authorizeSessionStartStatus({
+    ...sessionAccessContext(c),
+    operation: "session_meta_read",
+    sessionId,
+    registrationOperationId: operationId,
+    method: c.req.method,
+    path: c.req.path,
+  })
+  if (!status.allowed || await sessionOperationGuard(opts, c, sessionId, "session_meta_read")) return undefined
+  const session = await readSession(opts, c, directory, sessionId)
+  return session ? c.json(session, 200) : undefined
 }
 
 export async function collectionSessionIds(

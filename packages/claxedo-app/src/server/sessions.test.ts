@@ -65,6 +65,46 @@ test.each([["cloud", false], ["remote machine", true]] as const)("sessions: a %s
   workspaces.dispose()
 })
 
+test("sessions: a first send retried after its create failed creates under the same reservation, so the runtime answers the session the first attempt made", async () => {
+  const creates: Array<{ id?: unknown; operation: string | null }> = []
+  let reserves = 0
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: async (request) => {
+      const url = new URL(request.url)
+      if (url.pathname === "/api/claxedo/bootstrap") return Response.json(bootstrap(() => true, false))
+      if (url.pathname === "/api/control/session-registrations/reserve") {
+        reserves += 1
+        return Response.json({ ...(await request.json()), state: "reserved" })
+      }
+      if (url.pathname === "/workspaces/ws_cloud/session" && request.method === "POST") {
+        const body = (await request.json()) as { id?: unknown }
+        creates.push({ id: body.id, operation: request.headers.get(RESERVATION_HEADER) })
+        if (creates.length === 1) return Response.json({ error: { code: "upstream_unavailable", message: "The response was lost" } }, { status: 502 })
+        return Response.json({ id: body.id, title: "First", time: { created: 1, updated: 1 } })
+      }
+      if (url.pathname.startsWith("/api/control/")) return Response.json({ ok: true })
+      return Response.json({ error: { code: "unexpected", message: url.pathname } }, { status: 500 })
+    },
+  })
+  running.push(server)
+  const transport = createTransport({ serverUrl: `http://127.0.0.1:${server.port}`, cookies: true })
+  const account = createBrowserHostedAccount(transport)
+  const workspaces = createWorkspaces(transport, new QueryClient())
+  const sessions = createSessionsApi(transport, workspaces, createStatusOwner(transport), createWorkspaceWakes(transport, workspaces), createSessionProjection(workspaces, account), telemetry, account)
+  const input = { placementId: placementId("ws_cloud"), prompt: { clientRequestId: "req_1", messageId: "msg_first", text: "hello", attachments: [] } }
+
+  await expect(sessions.create(input)).rejects.toBeDefined()
+  const row = await sessions.create(input)
+
+  expect(reserves).toBe(1)
+  expect(creates).toHaveLength(2)
+  expect(creates[1]).toEqual(creates[0])
+  expect(String(row.ref.sessionId)).toBe(String(creates[0]?.id))
+  workspaces.dispose()
+})
+
 type HostedRequest = { method: string; path: string; authorization: string | null; id?: unknown; operation: string | null }
 
 function sessionHostServer(minted: unknown[], hosted: HostedRequest[], reservations: unknown[]) {
