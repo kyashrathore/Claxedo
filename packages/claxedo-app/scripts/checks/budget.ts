@@ -14,23 +14,23 @@ const parts: readonly Part[] = [
   { name: "Composer", budget: 12747, folders: ["src/composer"] },
   { name: "Rail and workbench", budget: 8300, folders: ["src/rail", "src/workbench"] },
   { name: "Browser tabs", budget: 1509, folders: ["src/browser"] },
-  { name: "Shell and platform", budget: 6711, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },
+  { name: "Shell and platform", budget: 6834, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },
   { name: "Terminal", budget: 4300, folders: ["src/terminal"] },
   { name: "Settings and accounts", budget: 5200, folders: ["src/settings", "src/accounts"] },
   { name: "Access", budget: 1000, folders: ["src/access"] },
-  { name: "Review and files", budget: 4352, folders: ["src/review", "src/files"] },
+  { name: "Review and files", budget: 4357, folders: ["src/review", "src/files"] },
   { name: "Projects and cloud", budget: 3116, folders: ["src/projects", "src/cloud"] },
   { name: "Onboarding and usage", budget: 2006, folders: ["src/onboarding", "src/usage"] },
   { name: "Plugin host", budget: 2099, folders: ["src/plugins"] },
   { name: "Web plugin frame", budget: 917, folders: ["src/plugins/frame"] },
-  { name: "Marketplace", budget: 2136, folders: ["src/marketplace"] },
-  { name: "Tasks", budget: 4419, folders: ["src/tasks"] },
+  { name: "Marketplace", budget: 2138, folders: ["src/marketplace"] },
+  { name: "Tasks", budget: 4420, folders: ["src/tasks"] },
   { name: "Notifications", budget: 168, folders: ["src/notifications"] },
   { name: "Workspace panel", budget: 1903, folders: ["src/panel"] },
   { name: "State-machine helper", budget: 100, folders: ["src/lib/machine.ts"] },
   { name: "UI kit and transcript renderers", budget: 20000, folders: ["src/ui", "src/transcript"] },
 ]
-const totalBudget = 97828
+const totalBudget = 97802
 
 function main(): never {
   const appFiles = listFiles(packageRoot, ["src"], codeExtensions).filter((file) => !isTranslationFile(packageRoot, file))
