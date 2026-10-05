@@ -107,12 +107,14 @@ export function spawnLaunchGate(input: SpawnLaunchGateInput): LaunchGateHandle {
     if (frame.type === "failed") failAcknowledged(new Error(`Launch gate could not start the payload: ${String(frame.message)}`))
   })
 
+  let undelivered: Error | undefined
   const exit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
     child.on("exit", (code, signal) => {
       reporting = false
       const detail = startupStderr.trim()
       const reason = new Error(
         `Launch gate exited (code ${String(code)}, signal ${String(signal)}) before reporting ${gatePhase(code)}${detail ? `: ${detail}` : ""}`,
+        undelivered ? { cause: undelivered } : undefined,
       )
       failReported(reason)
       failAcknowledged(reason)
@@ -132,7 +134,12 @@ export function spawnLaunchGate(input: SpawnLaunchGateInput): LaunchGateHandle {
     reported,
     acknowledged,
     exit,
-    activate: (gateNonce: string, payload: GatePayload) => { child.send({ type: "activate", gateNonce, payload }) },
+    // Node reports a send to a gate that already died as an EPIPE `error`
+    // event, often before `exit`; the callback keeps it off that event, so the
+    // exit, which says why the gate died, is the reason the launch fails with.
+    activate: (gateNonce: string, payload: GatePayload) => {
+      child.send({ type: "activate", gateNonce, payload }, (error) => { if (error) undelivered = error })
+    },
   }
 }
 

@@ -43,7 +43,8 @@
   },
   "scripts": {
     "build": "bun scripts/build.ts",
-    "test": "bun test src",
+    "test": "bun test src && bun run test:node",
+    "test:node": "bun run build && node --test scripts/launch-gate.node.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
