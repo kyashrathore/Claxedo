@@ -564,8 +564,16 @@ export const desktopRenderer: Policy = {
   // The Marketplace's one harness label for its install sheet and plugin
   // facts (owner: the app's marketplace domain): `marketplace/view/harness-label.ts`.
   // It adds no package edge.
-  // 1340/36, no headroom.
-  ceilings: { modules: 1340, packages: 36 },
+  // Review round 1 (owner: the app's server adapter, shell, rail, composer and
+  // session list): the one workspace display name decoded by the wire
+  // (`server/wire/workspace-name.ts`, replacing `cloud/view/cloud-name.ts`), the
+  // per-user state scope (`shell/principal-scope.ts`), home's no-placement
+  // action (`shell/view/home-empty.tsx`), the rail's machine marker
+  // (`rail/session-marker.ts`), the picker's empty-model states
+  // (`composer/view/models-empty.ts`) and a new session's first-words title
+  // (`session/list/pending-title.ts`). They add no package edge.
+  // 1345/36, no headroom.
+  ceilings: { modules: 1345, packages: 36 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

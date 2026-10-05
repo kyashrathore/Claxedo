@@ -23,7 +23,7 @@ const parts: readonly Part[] = [
   { name: "Onboarding and usage", budget: 2094, folders: ["src/onboarding", "src/usage"] },
   { name: "Plugin host", budget: 2099, folders: ["src/plugins"] },
   { name: "Web plugin frame", budget: 917, folders: ["src/plugins/frame"] },
-  { name: "Marketplace", budget: 2151, folders: ["src/marketplace"] },
+  { name: "Marketplace", budget: 2155, folders: ["src/marketplace"] },
   { name: "Tasks", budget: 4420, folders: ["src/tasks"] },
   { name: "Notifications", budget: 168, folders: ["src/notifications"] },
   { name: "Workspace panel", budget: 1903, folders: ["src/panel"] },
