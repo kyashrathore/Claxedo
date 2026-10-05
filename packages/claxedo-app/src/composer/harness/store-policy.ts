@@ -3,6 +3,7 @@ import { harnessHasConfigOptions, harnessSelectionId, isCatalogHarness, type Har
 
 export type HarnessScopeInput = {
   placementId?: PlacementId
+  draftDefaultPlacementId?: PlacementId
   sessionId?: string
   sessionRef?: SessionLocation
   sessionHarness?: HarnessType

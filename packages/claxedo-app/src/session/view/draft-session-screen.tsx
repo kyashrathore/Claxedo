@@ -103,7 +103,8 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
                 <div hidden={firstSend.state().kind === "failed"}>
                   <Composer
                     composerKey={key()}
-                    placementId={props.state.placementId}
+                    placementId={where()}
+                    draftDefaultPlacementId={props.state.placementId}
                     attachmentWorkspace={true}
                     startSession={startSession}
                     afterAccepted={setStarted}

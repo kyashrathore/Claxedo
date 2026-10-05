@@ -21,6 +21,7 @@ import { createRecovery, type ComposerRecovery } from "./recovery"
 export type ComposerProps = {
   readonly composerKey: ComposerKey
   readonly placementId?: PlacementId
+  readonly draftDefaultPlacementId?: PlacementId
   readonly view?: SessionView
   readonly attachmentWorkspace: boolean
   readonly readOnly?: boolean

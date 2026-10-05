@@ -122,7 +122,7 @@ export function wireSwitcher(wiring: HarnessWiring, fetchConfigOptions: FetchCon
 
 function draftDefaultIdentity(api: HarnessConfigApi, input?: HarnessScopeInput) {
   if (!input?.placementId || (input.sessionId && input.sessionId !== "new")) return undefined
-  return { serverUrl: api.serverUrl, placementId: input.placementId }
+  return { serverUrl: api.serverUrl, placementId: input.draftDefaultPlacementId ?? input.placementId }
 }
 
 function rememberDraftHarnessInWorkspace({ api, store }: HarnessWiring, scope: string, type: HarnessType, input?: HarnessScopeInput) {

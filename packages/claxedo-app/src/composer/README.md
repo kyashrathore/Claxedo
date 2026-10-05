@@ -63,6 +63,7 @@ The prompt editor and everything that turns a draft into one `PromptInput` for `
 
 - Defaults are kept per harness, because harnesses share no model namespace: one slot would let a Claude pick overwrite the Codex model.
 - The record lives under `preferenceKey("draft-default", serverUrl, placementId)`, with the localhost spellings of one server folded into one URL. A placement is the identity, never its folder, so two placements of one folder keep separate defaults.
+- A draft's composer reads its harnesses, models, availability and @-suggestions from the chosen Where (`placementId`), because a harness is installed per placement, while its default stays keyed to the placement the draft opened on (`draftDefaultPlacementId`), so changing the Where never replaces the default or a model already picked.
 - A fresh options answer keeps only a user-chosen model, including one the catalog no longer offers, so "Saved model unavailable" can name it; a model the harness resolved is re-answered on every load.
 - A catalog harness opens on a provider's default only when exactly one provider default is eligible.
 

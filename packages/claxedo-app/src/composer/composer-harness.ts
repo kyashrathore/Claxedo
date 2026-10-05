@@ -17,7 +17,7 @@ export type ComposerHarness = ReturnType<typeof createComposerHarness>
 
 function harnessScopeInput(props: ComposerProps): HarnessScopeInput {
   const view = props.view
-  if (!view) return { placementId: props.placementId }
+  if (!view) return { placementId: props.placementId, ...(props.draftDefaultPlacementId ? { draftDefaultPlacementId: props.draftDefaultPlacementId } : {}) }
   const sessionHarness = view.row()?.harness
   return {
     placementId: view.ref.placementId,
