@@ -82,9 +82,12 @@ function runtimeEnv(env: Record<string, string>, root: string, sandboxId: string
     "CLAXEDO_DATA_DIR",
     "HOME",
   ])
+  const runtimeHome = path.join(root, "runtime-data", sandboxId)
   return {
     ...Object.fromEntries(Object.entries(env).filter(([name]) => !omitted.has(name))),
-    CLAXEDO_DATA_DIR: path.join(root, "runtime-data", sandboxId),
+    CLAXEDO_DATA_DIR: path.join(runtimeHome, ".claxedo"),
+    WORKSPACE_RUNTIME_DATA_DIR: path.join(runtimeHome, ".workspace-runtime"),
+    WORKSPACE_RUNTIME_WORKSPACES_DIR: path.join(runtimeHome, ".claxedo", "workspaces"),
   }
 }
 
@@ -100,7 +103,11 @@ function source(env: Record<string, string>) {
   }
 }
 
-/** What this emulator captures in place of the Cloudflare driver's workspace and runtime HOME. */
+/**
+ * What this emulator captures in place of the Cloudflare driver's workspace
+ * and runtime HOME. The local driver gives the runtime a throwaway HOME, so
+ * the runtime's HOME-relative stores are pointed into `runtime-data`.
+ */
 const BACKED_UP = ["sandbox-workspaces", "runtime-data"] as const
 
 async function exists(file: string) {
@@ -272,9 +279,9 @@ export async function startHostedSandboxWorker(input: HostedSandboxWorkerInput) 
       if (parts[0] !== "sandbox" || !id) return response(res, 404, { error: "not found" })
       if (request.method === "DELETE" && !parts[2]) {
         const running = sandboxes.get(id)
-        if (!running) return response(res, 404, { error: "sandbox not found" })
-        await destroy(running.target)
+        if (running) await destroy(running.target)
         sandboxes.delete(id)
+        for (const tree of BACKED_UP) await rm(path.join(input.root, tree, id), { recursive: true, force: true })
         return response(res, 200, { ok: true })
       }
       if (request.method !== "POST") return response(res, 405, { error: "method not allowed" })
