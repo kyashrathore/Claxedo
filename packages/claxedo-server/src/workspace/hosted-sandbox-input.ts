@@ -49,6 +49,7 @@ export function hostedSandboxInput(
     egress: WorkspaceSandboxEgress
     preparation: WorkspaceRuntimePreparation | undefined
     secrets?: readonly SandboxBrokeredSecret[]
+    onLeaseOpened?: () => void
   },
 ): SandboxManagerInput {
   const projectId = trimToUndefined(row.project_id)
@@ -65,6 +66,7 @@ export function hostedSandboxInput(
     source,
     ...(secrets !== undefined ? { secrets } : {}),
     ...(input.preparation?.env ? { env: input.preparation.env } : {}),
+    ...(input.onLeaseOpened ? { onLeaseOpened: input.onLeaseOpened } : {}),
     net: hostedSandboxNetworkPolicy({
       controlPlane: [configuredRelayUrl(input.egress, homeRegion), input.egress.sandboxControlPlaneOrigin],
       source,

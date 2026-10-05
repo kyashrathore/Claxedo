@@ -267,10 +267,11 @@ export async function hostedConnectionInfo(
   const meter = await firstLeaseMeter(services, lease, auth, { workspaceId, hostManager })
   if (meter && typeof meter !== "function") return meter
   let opened = false
-  const ensured = await hostManager.ensure(workspaceId, {
-    ...hostedSandboxInput(workspace, { egress: options, preparation }),
+  const ensured = await hostManager.ensure(workspaceId, hostedSandboxInput(workspace, {
+    egress: options,
+    preparation,
     ...(meter ? { onLeaseOpened: () => { opened = true; meter() } } : {}),
-  })
+  }))
   if (opened) {
     await Promise.resolve(lease.usage?.recordLeaseTenant({ caller: { kind: "signed", auth }, workspaceId }))
       .catch((cause: unknown) => console.error(`[workspace] the lease tenant of ${workspaceId} was not recorded`, cause instanceof Error ? cause.message : String(cause)))
