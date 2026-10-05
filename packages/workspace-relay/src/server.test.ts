@@ -8,6 +8,7 @@ import type { RuntimeAccessVerifierClaims } from "@claxedo/workspace-relay-proto
 import {
   authorizeWorkspaceRelayRequest,
   createCachedRevocationClient,
+  createCachedTargetClient,
   disposeAuditSampler,
   runtimeAccessTokenRevocationDelayMs,
   workspaceRelayForwardHeaders,
@@ -1995,4 +1996,38 @@ test("stale routing tokens are rejected before forwarding even after a positive 
   expect((await request(await mint("new"))).status).toBe(200)
   expect((await request(old)).status).toBe(401)
   expect(forwarded).toBe(2)
+})
+
+describe("cached target lookups", () => {
+  const target = { workspaceId: "ws_1", hostId: "host_1", baseUrl: "https://runtime.test", backing: "cloud-vm" as const }
+
+  test("a resolved target is answered from the cache for the TTL, concurrent misses share one lookup, and the next request past it asks again", async () => {
+    let clockNow = 1_000_000
+    let lookups = 0
+    const lookup = createCachedTargetClient(async () => { lookups++; return target }, { ttlMs: 10_000, now: () => clockNow })
+    const args = { workspaceId: "ws_1", hostId: "host_1", routingId: "r1" }
+    expect(await Promise.all([lookup(args), lookup(args)])).toEqual([target, target])
+    expect(lookups).toBe(1)
+    clockNow += 9_999
+    expect(await lookup(args)).toEqual(target)
+    expect(lookups).toBe(1)
+    clockNow += 1
+    expect(await lookup(args)).toEqual(target)
+    expect(lookups).toBe(2)
+    await lookup({ ...args, routingId: "r2" })
+    expect(lookups, "a replaced sandbox's routing id is another key").toBe(3)
+  })
+
+  test("a workspace still starting is asked about on every request, and a failed lookup is not remembered", async () => {
+    let answer: typeof target | undefined
+    let lookups = 0
+    const lookup = createCachedTargetClient(async () => { lookups++; if (lookups === 2) throw new Error("resolver down"); return answer }, { ttlMs: 10_000 })
+    const args = { workspaceId: "ws_1", hostId: "host_1" }
+    expect(await lookup(args)).toBeUndefined()
+    await expect(lookup(args)).rejects.toThrow("resolver down")
+    answer = target
+    expect(await lookup(args)).toEqual(target)
+    expect(await lookup(args)).toEqual(target)
+    expect(lookups).toBe(3)
+  })
 })

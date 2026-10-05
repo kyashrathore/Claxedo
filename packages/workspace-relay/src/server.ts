@@ -260,6 +260,7 @@ const RUNTIME_ACCESS_TOKEN_CACHE_MAX_ENTRIES = 8192
 const RESOLVER_CACHE_MAX_ENTRIES = 8192
 const RUNTIME_ACCESS_TOKEN_CACHE_TTL_MS_DEFAULT = 10_000
 const REVOCATION_CACHE_TTL_MS_DEFAULT = 10_000
+const TARGET_CACHE_TTL_MS_DEFAULT = 10_000
 
 export const RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT = 30_000
 const relayHostTokenCaches = new WeakMap<WorkspaceRelayOptions, Map<string, RelayHostTokenCacheEntry>>()
@@ -466,17 +467,40 @@ export async function checkHostTunnelGeneration(
   return { ok: true }
 }
 
-export function createCoalescedTargetClient(inner: TargetLookup): TargetLookup {
-  const pending = new Map<string, Promise<WorkspaceRelayTarget | undefined>>()
-  return (args) => {
+export type CachedTargetOptions = { ttlMs?: number; now?: () => number }
+
+/**
+ * Wraps the target lookup with a small in-memory cache keyed by workspace,
+ * host and routing id. Only a resolved target is cached: a workspace whose
+ * sandbox is still starting answers nothing, and must be seen the moment it
+ * is ready. Concurrent misses share one lookup. A target that stopped keeps
+ * answering for at most the TTL, the same lag the revocation cache allows.
+ */
+export function createCachedTargetClient(inner: TargetLookup, options: CachedTargetOptions = {}): TargetLookup {
+  const ttlMs = options.ttlMs ?? TARGET_CACHE_TTL_MS_DEFAULT
+  const now = options.now ?? Date.now
+  const cache = new Map<string, { expiresAt: number; promise?: Promise<WorkspaceRelayTarget | undefined>; target?: WorkspaceRelayTarget }>()
+  return async (args) => {
     const key = `${args.workspaceId}\0${args.hostId}\0${args.routingId ?? ""}`
-    const existing = pending.get(key)
-    if (existing) return existing
-    const promise = Promise.resolve().then(() => inner(args)).finally(() => {
-      if (pending.get(key) === promise) pending.delete(key)
-    })
-    if (pending.size < RESOLVER_CACHE_MAX_ENTRIES) pending.set(key, promise)
-    return promise
+    const at = now()
+    const entry = cache.get(key)
+    if (entry && entry.expiresAt > at) {
+      if (entry.target) return entry.target
+      if (entry.promise) return await entry.promise
+    }
+    const promise = inner(args)
+      .then((target) => {
+        pruneExpiringCache(cache, now(), RESOLVER_CACHE_MAX_ENTRIES)
+        if (target) cache.set(key, { target, expiresAt: now() + ttlMs })
+        else cache.delete(key)
+        return target
+      })
+      .catch((err) => {
+        cache.delete(key)
+        throw err
+      })
+    cache.set(key, { promise, expiresAt: at + ttlMs })
+    return await promise
   }
 }
 

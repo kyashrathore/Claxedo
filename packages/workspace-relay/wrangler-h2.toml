@@ -19,6 +19,8 @@
 #     /host-generation are derived from it, so the host-tunnel serving-generation fence is always on)
 #   CLAXEDO_RELAY_HOST_GENERATION_URL (absolute lookup URL; only when it is not <resolver base>/host-generation)
 #   CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS (default 10000)
+#   CLAXEDO_RELAY_TARGET_CACHE_TTL_MS (default 10000; how long a stopped sandbox or session host keeps answering)
+#   CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS (default 10000)
 
 name = "claxedo-workspace-relay-h2-reeval"
 main = "src/worker-h2.ts"

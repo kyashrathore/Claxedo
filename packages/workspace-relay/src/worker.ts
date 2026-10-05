@@ -17,7 +17,7 @@ import { isSessionHostNamespace } from "./session-host-forwarding"
 import {
   createCachedHostGenerationClient,
   createCachedRevocationClient,
-  createCoalescedTargetClient,
+  createCachedTargetClient,
   createHostGenerationResolverLookup,
   parseRuntimeAccessTokenActiveResult,
   type HostGenerationLookup,
@@ -43,6 +43,7 @@ type WorkspaceRelayWorkerBindings = {
   CLAXEDO_RELAY_TRACE_SAMPLE_RATE?: string
   CLAXEDO_RELAY_TRACE_FORCE_SECRET?: string
   CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS?: string
+  CLAXEDO_RELAY_TARGET_CACHE_TTL_MS?: string
   /**
    * Absolute URL of the control plane's host-generation lookup. Unset derives
    * `<resolver base>/host-generation` from the same base `/target` and
@@ -179,7 +180,8 @@ export function workspaceRelayWorkerResolverClient(env: WorkspaceRelayWorkerEnv,
     if (!result) throw new Error("relay revocation resolver returned a malformed result")
     return result
   }
-  const target = createCoalescedTargetClient(targetUncached)
+  const targetCacheTtlMs = positiveInteger(env.CLAXEDO_RELAY_TARGET_CACHE_TTL_MS)
+  const target = createCachedTargetClient(targetUncached, (targetCacheTtlMs ? { ttlMs: targetCacheTtlMs } : {}))
   const revocationCacheTtlMs = positiveInteger(env.CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS)
   const revocation = createCachedRevocationClient(revocationUncached, (revocationCacheTtlMs ? { ttlMs: revocationCacheTtlMs } : {}))
   const hostGenerationCacheTtlMs = positiveInteger(env.CLAXEDO_RELAY_HOST_GENERATION_CACHE_TTL_MS)
