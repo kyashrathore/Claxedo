@@ -25,18 +25,19 @@ test("among notices of one tone the latest published leads, and a source that cl
   })
 })
 
-test("a source that republishes the same notice keeps its place among notices of one tone", () => {
+test("a source that republishes keeps its place among notices of one tone, and its newest notice's action is the one that runs", () => {
   createRoot((dispose) => {
     const channel = createComposerNoticeChannel()
     const placement = {}
     const harness = {}
-    channel.publish(placement, notice("machine-offline", "warning"))
+    const woken: string[] = []
+    const asleep = (workspace: string): ComposerNotice => ({ ...notice("asleep", "warning"), action: { label: "Wake now", run: () => woken.push(workspace) } })
+    channel.publish(placement, asleep("A"))
     channel.publish(harness, notice("setup-required", "warning"))
-    const shown = channel.notices()
-    channel.publish(placement, notice("machine-offline", "warning"))
-    expect(channel.notices()).toBe(shown)
-    channel.publish(placement, notice("machine-offline", "warning", "Ada's MacBook is offline"))
-    expect(channel.notices().map((item) => item.kind)).toEqual(["setup-required", "machine-offline"])
+    channel.publish(placement, asleep("B"))
+    expect(channel.notices().map((item) => item.kind)).toEqual(["setup-required", "asleep"])
+    channel.notices().find((item) => item.kind === "asleep")?.action?.run()
+    expect(woken).toEqual(["B"])
     dispose()
   })
 })

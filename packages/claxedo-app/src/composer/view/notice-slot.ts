@@ -25,17 +25,13 @@ export function rankedNotices(published: Iterable<ComposerNotice>): readonly Com
   return [...byKind.values()].toSorted((left, right) => TONE_ORDER.indexOf(left.tone) - TONE_ORDER.indexOf(right.tone))
 }
 
-function noticeSignature(notice: ComposerNotice): string {
-  return JSON.stringify([notice.kind, notice.tone, notice.message, notice.detail, notice.action?.label, notice.secondaryAction?.label])
-}
-
 export function createComposerNoticeChannel(): ComposerNoticeChannel {
   const [published, setPublished] = createSignal<ReadonlyMap<object, ComposerNotice>>(new Map())
   const notices = createMemo(() => rankedNotices([...published().values()].toReversed()))
   const publish = (source: object, notice: ComposerNotice | undefined) =>
     setPublished((current) => {
       const shown = current.get(source)
-      if (notice ? shown !== undefined && noticeSignature(shown) === noticeSignature(notice) : shown === undefined) return current
+      if (shown === notice) return current
       const next = new Map(current)
       if (notice) next.set(source, notice)
       else next.delete(source)
